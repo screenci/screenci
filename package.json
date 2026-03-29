@@ -1,0 +1,51 @@
+{
+  "name": "screenci",
+  "version": "0.0.6",
+  "description": "ScreenCI",
+  "keywords": [
+    "screenci"
+  ],
+  "license": "MIT",
+  "author": "Olli Paloviita",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "screenci": "./cli.ts"
+  },
+  "publishConfig": {
+    "bin": {
+      "screenci": "./dist/cli.js"
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "build:image": "podman build -t screenci .",
+    "prepublishOnly": "npm run build",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "release": "npm run test:run && npm publish"
+  },
+  "devDependencies": {
+    "@types/node": "25.0.3",
+    "typescript": "5.9.3"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.57.0"
+  },
+  "dependencies": {
+    "tsx": "^4.21.0"
+  }
+}

@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ScreenCI Interaction Test Fixtures</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        padding: 2rem;
+        max-width: 500px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 1.4rem;
+        margin-bottom: 1.5rem;
+      }
+      .group {
+        margin: 1.5rem 0;
+        padding: 1rem;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+      }
+      .group h2 {
+        margin: 0 0 0.75rem;
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #666;
+      }
+      label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+        padding: 0.3rem 0;
+        user-select: none;
+      }
+      input[type='checkbox'] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+      }
+      input[type='text'] {
+        width: 100%;
+        padding: 0.4rem 0.6rem;
+        font-size: 1rem;
+        border: 1px solid #aaa;
+        border-radius: 4px;
+        box-sizing: border-box;
+      }
+      button {
+        padding: 0.5rem 1.25rem;
+        font-size: 1rem;
+        cursor: pointer;
+        border: 1px solid #aaa;
+        border-radius: 4px;
+        background: #f5f5f5;
+      }
+      button:active {
+        background: #e0e0e0;
+      }
+      .status {
+        margin: 0.5rem 0 0;
+        font-size: 0.85rem;
+        color: #555;
+        min-height: 1.2em;
+      }
+      .offscreen-section {
+        margin-top: 2000px;
+        border-top: 3px dashed #aaa;
+        padding-top: 1rem;
+      }
+      .offscreen-section > h2 {
+        font-size: 1.1rem;
+        color: #888;
+        margin-bottom: 1rem;
+      }
+      #log {
+        font-family: monospace;
+        font-size: 0.8rem;
+        line-height: 1.6;
+        color: #333;
+        max-height: 150px;
+        overflow-y: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>ScreenCI Interaction Test Fixtures</h1>
+    <p style="color: #555; font-size: 0.9rem">
+      This page is used for testing <code>click</code>, <code>fill</code>,
+      <code>pressSequentially</code>, <code>tap</code>, <code>check</code>,
+      <code>uncheck</code>, and <code>hover</code> instrumentation in screenci.
+      Open in a browser to interact manually, or load via
+      <code>page.setContent()</code> in automated tests. Off-screen elements are
+      placed 2000px below the fold to test scroll-into-view behaviour.
+    </p>
+
+    <!-- ── In-viewport elements ─────────────────────────────────────────── -->
+
+    <!-- Click target -->
+    <div class="group">
+      <h2>Click target</h2>
+      <button id="click-button" type="button">Click me</button>
+      <p id="click-status" class="status">Not clicked</p>
+    </div>
+
+    <!-- Select -->
+    <div class="group">
+      <h2>Select</h2>
+      <label for="cars">Choose a car:</label>
+      <select id="cars" name="cars">
+        <option value="volvo">Volvo</option>
+        <option value="saab">Saab</option>
+        <option value="opel">Opel</option>
+        <option value="audi">Audi</option>
+      </select>
+      <p id="cars-status" class="status">No selection</p>
+    </div>
+
+    <!-- Text inputs -->
+    <div class="group">
+      <h2>Text inputs</h2>
+      <input type="text" id="text-input" placeholder="Type here…" />
+    </div>
+
+    <!-- Checkboxes -->
+    <div class="group">
+      <h2>Checkboxes</h2>
+      <label>
+        <input type="checkbox" id="checkbox-unchecked" />
+        Unchecked checkbox (for check test)
+      </label>
+      <label>
+        <input type="checkbox" id="checkbox-checked" checked />
+        Pre-checked checkbox (for uncheck test)
+      </label>
+    </div>
+
+    <!-- Tap target -->
+    <div class="group">
+      <h2>Tap target</h2>
+      <button id="tap-target" type="button">Tap / Click me</button>
+      <p id="tap-status" class="status">Not yet tapped</p>
+    </div>
+
+    <!-- Hover target -->
+    <div class="group">
+      <h2>Hover target</h2>
+      <button id="hover-target" type="button">Hover me</button>
+      <p id="hover-status" class="status">Not hovered</p>
+    </div>
+
+    <!-- Drag and drop -->
+    <div class="group">
+      <h2>Drag and drop</h2>
+      <div style="display: flex; gap: 1.5rem; align-items: center">
+        <div
+          id="drag-source"
+          style="
+            padding: 0.5rem 1rem;
+            background: #e0e8ff;
+            border: 1px solid #99b;
+            border-radius: 4px;
+            cursor: grab;
+            user-select: none;
+          "
+        >
+          Drag me
+        </div>
+        <div
+          id="drop-target"
+          style="
+            padding: 0.5rem 1rem;
+            background: #f5f5f5;
+            border: 2px dashed #aaa;
+            border-radius: 4px;
+            min-width: 80px;
+            text-align: center;
+          "
+        >
+          Drop here
+        </div>
+      </div>
+      <p id="drag-status" class="status">Not dragged</p>
+    </div>
+
+    <!-- Select text target -->
+    <div class="group">
+      <h2>Select text target</h2>
+      <input
+        type="text"
+        id="select-text-input"
+        value="Triple-click to select this text"
+        readonly
+        style="width: 100%; box-sizing: border-box"
+      />
+      <p id="select-text-status" class="status">Not selected</p>
+    </div>
+
+    <!-- ── Off-screen elements (require scrolling) ───────────────────────── -->
+
+    <div class="offscreen-section">
+      <h2>Off-screen elements (scroll required)</h2>
+
+      <!-- Off-screen click target -->
+      <div class="group">
+        <h2>Click target (off-screen)</h2>
+        <button id="offscreen-click-button" type="button">Click me</button>
+        <p id="offscreen-click-status" class="status">Not clicked</p>
+      </div>
+
+      <!-- Off-screen text input -->
+      <div class="group">
+        <h2>Text input (off-screen)</h2>
+        <input type="text" id="offscreen-text-input" placeholder="Type here…" />
+      </div>
+
+      <!-- Off-screen checkboxes -->
+      <div class="group">
+        <h2>Checkboxes (off-screen)</h2>
+        <label>
+          <input type="checkbox" id="offscreen-checkbox-unchecked" />
+          Unchecked checkbox (for check test)
+        </label>
+        <label>
+          <input type="checkbox" id="offscreen-checkbox-checked" checked />
+          Pre-checked checkbox (for uncheck test)
+        </label>
+      </div>
+
+      <!-- Off-screen tap target -->
+      <div class="group">
+        <h2>Tap target (off-screen)</h2>
+        <button id="offscreen-tap-target" type="button">Tap / Click me</button>
+        <p id="offscreen-tap-status" class="status">Not yet tapped</p>
+      </div>
+
+      <!-- Off-screen select -->
+      <div class="group">
+        <h2>Select (off-screen)</h2>
+        <label for="offscreen-cars">Choose a car:</label>
+        <select id="offscreen-cars" name="offscreen-cars">
+          <option value="volvo">Volvo</option>
+          <option value="saab">Saab</option>
+          <option value="opel">Opel</option>
+          <option value="audi">Audi</option>
+        </select>
+        <p id="offscreen-cars-status" class="status">No selection</p>
+      </div>
+    </div>
+
+    <!-- Interaction log (manual testing aid) -->
+    <div
+      class="group"
+      style="
+        position: fixed;
+        bottom: 1rem;
+        right: 1rem;
+        width: 260px;
+        background: #fff;
+        z-index: 100;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      "
+    >
+      <h2>Interaction log</h2>
+      <div id="log"></div>
+    </div>
+
+    <script>
+      const log = document.getElementById('log')
+
+      function addLog(text) {
+        const line = document.createElement('div')
+        line.textContent = new Date().toISOString().slice(11, 23) + '  ' + text
+        log.prepend(line)
+      }
+
+      // Select (in-viewport)
+      document.getElementById('cars').addEventListener('change', (e) => {
+        document.getElementById('cars-status').textContent =
+          'Selected: ' + e.target.value
+        addLog('cars → ' + e.target.value)
+      })
+
+      // Select (off-screen)
+      document
+        .getElementById('offscreen-cars')
+        .addEventListener('change', (e) => {
+          document.getElementById('offscreen-cars-status').textContent =
+            'Selected: ' + e.target.value
+          addLog('offscreen-cars → ' + e.target.value)
+        })
+
+      // Click button
+      document.getElementById('click-button').addEventListener('click', () => {
+        const ts = new Date().toISOString().slice(11, 23)
+        document.getElementById('click-status').textContent = 'Clicked at ' + ts
+        addLog('click-button → clicked')
+      })
+
+      // Off-screen click button
+      document
+        .getElementById('offscreen-click-button')
+        .addEventListener('click', () => {
+          const ts = new Date().toISOString().slice(11, 23)
+          document.getElementById('offscreen-click-status').textContent =
+            'Clicked at ' + ts
+          addLog('offscreen-click-button → clicked')
+        })
+
+      // Checkboxes (in-viewport)
+      document
+        .getElementById('checkbox-unchecked')
+        .addEventListener('change', (e) => {
+          addLog(
+            'checkbox-unchecked → ' +
+              (e.target.checked ? 'checked' : 'unchecked')
+          )
+        })
+
+      document
+        .getElementById('checkbox-checked')
+        .addEventListener('change', (e) => {
+          addLog(
+            'checkbox-checked → ' + (e.target.checked ? 'checked' : 'unchecked')
+          )
+        })
+
+      // Checkboxes (off-screen)
+      document
+        .getElementById('offscreen-checkbox-unchecked')
+        .addEventListener('change', (e) => {
+          addLog(
+            'offscreen-checkbox-unchecked → ' +
+              (e.target.checked ? 'checked' : 'unchecked')
+          )
+        })
+
+      document
+        .getElementById('offscreen-checkbox-checked')
+        .addEventListener('change', (e) => {
+          addLog(
+            'offscreen-checkbox-checked → ' +
+              (e.target.checked ? 'checked' : 'unchecked')
+          )
+        })
+
+      // Drag and drop — ghost clone follows the cursor
+      let isDragging = false
+      let dragGhost = null
+
+      function removeDragGhost() {
+        if (dragGhost) {
+          dragGhost.remove()
+          dragGhost = null
+        }
+      }
+
+      document
+        .getElementById('drag-source')
+        .addEventListener('mousedown', (e) => {
+          isDragging = true
+          addLog('drag-source → mousedown')
+
+          const source = document.getElementById('drag-source')
+          const ghost = source.cloneNode(true)
+          const rect = source.getBoundingClientRect()
+          ghost.style.position = 'fixed'
+          ghost.style.left = rect.left + 'px'
+          ghost.style.top = rect.top + 'px'
+          ghost.style.width = rect.width + 'px'
+          ghost.style.height = rect.height + 'px'
+          ghost.style.margin = '0'
+          ghost.style.opacity = '0.75'
+          ghost.style.pointerEvents = 'none'
+          ghost.style.zIndex = '9999'
+          ghost.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)'
+          ghost.style.cursor = 'grabbing'
+          document.body.appendChild(ghost)
+          dragGhost = ghost
+
+          const offsetX = e.clientX - rect.left
+          const offsetY = e.clientY - rect.top
+
+          function onMouseMove(ev) {
+            if (dragGhost) {
+              dragGhost.style.left = ev.clientX - offsetX + 'px'
+              dragGhost.style.top = ev.clientY - offsetY + 'px'
+            }
+          }
+
+          function onMouseUp() {
+            removeDragGhost()
+            document.removeEventListener('mousemove', onMouseMove)
+            document.removeEventListener('mouseup', onMouseUp)
+          }
+
+          document.addEventListener('mousemove', onMouseMove)
+          document.addEventListener('mouseup', onMouseUp)
+        })
+
+      document.getElementById('drop-target').addEventListener('mouseup', () => {
+        if (isDragging) {
+          document.getElementById('drag-status').textContent = 'Dropped!'
+          addLog('drop-target → dropped')
+          isDragging = false
+        }
+      })
+
+      // Select text target
+      document
+        .getElementById('select-text-input')
+        .addEventListener('select', () => {
+          document.getElementById('select-text-status').textContent =
+            'Selected!'
+          addLog('select-text-input → text selected')
+        })
+
+      // Hover target
+      document
+        .getElementById('hover-target')
+        .addEventListener('mouseover', () => {
+          document.getElementById('hover-status').textContent = 'Hovered!'
+          addLog('hover-target → hovered')
+        })
+
+      document
+        .getElementById('hover-target')
+        .addEventListener('mouseout', () => {
+          document.getElementById('hover-status').textContent = 'Not hovered'
+          addLog('hover-target → unhovered')
+        })
+
+      // Tap targets
+      document
+        .getElementById('tap-target')
+        .addEventListener('pointerup', () => {
+          const ts = new Date().toISOString().slice(11, 23)
+          document.getElementById('tap-status').textContent = 'Tapped at ' + ts
+          addLog('tap-target → tapped')
+        })
+
+      document
+        .getElementById('offscreen-tap-target')
+        .addEventListener('pointerup', () => {
+          const ts = new Date().toISOString().slice(11, 23)
+          document.getElementById('offscreen-tap-status').textContent =
+            'Tapped at ' + ts
+          addLog('offscreen-tap-target → tapped')
+        })
+    </script>
+  </body>
+</html>

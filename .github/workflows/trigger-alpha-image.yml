@@ -1,0 +1,38 @@
+name: Trigger Alpha Image
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.next_tag.outputs.tag }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-tags: true
+
+      - name: Compute and push next alpha tag
+        id: next_tag
+        run: |
+          BASE=$(node -p "require('./package.json').version" | sed 's/-.*//')
+          LATEST=$(git tag -l "v${BASE}-alpha.*" | sort -V | tail -1)
+          NEXT=$([ -z "$LATEST" ] && echo 1 || echo $(( $(echo "$LATEST" | sed "s/v${BASE}-alpha\.//") + 1 )))
+          NEW_TAG="v${BASE}-alpha.${NEXT}"
+          git tag $NEW_TAG && git push origin $NEW_TAG
+          echo "tag=${NEW_TAG}" >> $GITHUB_OUTPUT
+          echo "Created tag: ${NEW_TAG}"
+
+  publish:
+    needs: create-tag
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-and-push-image.yml
+    with:
+      tag: ${{ needs.create-tag.outputs.tag }}

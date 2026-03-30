@@ -15,17 +15,6 @@ import {
   DEFAULT_ZOOM_DURATION,
   DEFAULT_ZOOM_EASING,
 } from './defaults.js'
-import { getDimensions } from './dimensions.js'
-
-/**
- * Serialised form of {@link ResolvedRenderOptions} written to `data.json`.
- * `aspectRatio` and `quality` are merged into a single `resolution` string.
- */
-type SerializedRenderOptions = Omit<ResolvedRenderOptions, 'output'> & {
-  output: Omit<ResolvedRenderOptions['output'], 'aspectRatio' | 'quality'> & {
-    resolution: `${number}x${number}`
-  }
-}
 
 export type VideoStartEvent = {
   type: 'videoStart'
@@ -237,7 +226,7 @@ export type RecordingMetadata = {
 
 export type RecordingData = {
   events: RecordingEvent[]
-  renderOptions?: RenderOptions
+  renderOptions: ResolvedRenderOptions
   recordOptions?: RecordOptions
   metadata?: RecordingMetadata
 }
@@ -526,23 +515,6 @@ export class EventRecorder implements IEventRecorder {
       },
     }
 
-    const { width, height } = getDimensions(
-      resolved.output.aspectRatio,
-      resolved.output.quality
-    )
-    const {
-      aspectRatio: _aspectRatio,
-      quality: _quality,
-      ...restOutput
-    } = resolved.output
-    const serializedRenderOptions: SerializedRenderOptions = {
-      ...resolved,
-      output: {
-        ...restOutput,
-        resolution: `${width}x${height}` as `${number}x${number}`,
-      },
-    }
-
     const languageSet = new Set<string>()
     for (const event of this.events) {
       if (event.type === 'captionStart') {
@@ -560,7 +532,7 @@ export class EventRecorder implements IEventRecorder {
 
     const data: RecordingData = {
       events: this.events,
-      renderOptions: serializedRenderOptions,
+      renderOptions: resolved,
       ...(this.recordOptions !== undefined && {
         recordOptions: this.recordOptions,
       }),

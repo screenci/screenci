@@ -18,6 +18,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./recording": {
+      "types": "./dist/src/recording.d.ts",
+      "import": "./dist/src/recording.js",
+      "default": "./dist/src/recording.js"
     }
   },
   "files": [

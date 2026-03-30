@@ -1209,7 +1209,7 @@ describe('CLI', () => {
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining(`my-project/Dockerfile`),
-        expect.stringContaining('FROM screenci')
+        expect.stringContaining('FROM ghcr.io/screenci/record:latest')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining(`my-project/.gitignore`),

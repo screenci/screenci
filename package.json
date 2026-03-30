@@ -1,6 +1,6 @@
 {
   "name": "screenci",
-  "version": "0.0.6",
+  "version": "0.0.8",
   "description": "ScreenCI",
   "keywords": [
     "screenci"
@@ -11,12 +11,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "screenci": "./cli.ts"
-  },
-  "publishConfig": {
-    "bin": {
-      "screenci": "./dist/cli.js"
-    }
+    "screenci": "./dist/cli.js"
   },
   "exports": {
     ".": {
@@ -40,12 +35,10 @@
   },
   "devDependencies": {
     "@types/node": "25.0.3",
+    "tsx": "^4.21.0",
     "typescript": "5.9.3"
   },
   "peerDependencies": {
     "@playwright/test": ">=1.57.0"
-  },
-  "dependencies": {
-    "tsx": "^4.21.0"
   }
 }

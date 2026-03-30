@@ -440,7 +440,7 @@ function generatePackageJson(
 }
 
 function generateDockerfile(): string {
-  return `FROM screenci
+  return `FROM ghcr.io/screenci/record:latest
 
 COPY package.json ./
 COPY screenci.config.ts ./

@@ -199,9 +199,7 @@ function startScreenRecording(
 
     ffmpeg.on('close', (code) => {
       clearTimeout(timeout)
-      if (code === 0) {
-        logger.info('Screen recording completed successfully')
-      } else if (code !== null && !hasErrored) {
+      if (code !== null && code !== 0 && code !== 255 && !hasErrored) {
         logger.error(`FFmpeg exited with code ${code}`)
       }
     })

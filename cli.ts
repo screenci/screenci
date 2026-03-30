@@ -2,7 +2,7 @@
 
 import { spawn, spawnSync } from 'child_process'
 import { createReadStream } from 'fs'
-import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync } from 'fs'
 import { createHash } from 'crypto'
 import { createServer } from 'http'
 import type { AddressInfo } from 'net'
@@ -13,6 +13,85 @@ import { fileURLToPath } from 'url'
 import { logger } from './src/logger.js'
 import type { RecordingData } from './src/events.js'
 import type { ScreenCIConfig } from './src/types.js'
+
+function writeInline(msg: string): void {
+  process.stdout.write(msg)
+}
+
+function completeInline(msg: string): void {
+  process.stdout.write(`\r\x1b[K${msg}\n`)
+}
+
+function parseDockerfileVersion(dockerfilePath: string): string {
+  let content: string
+  try {
+    content = readFileSync(dockerfilePath, 'utf-8')
+  } catch {
+    return 'unknown'
+  }
+  const fromLine = content.split('\n').find((line) =>
+    line.trim().toUpperCase().startsWith('FROM')
+  )
+  if (!fromLine) return 'unknown'
+  const match = fromLine.match(/:([^\s@]+)/)
+  return match?.[1] ?? 'unknown'
+}
+
+function spawnSilent(cmd: string, args: string[]): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: 'pipe' })
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve()
+      } else {
+        reject(new Error(`${cmd} exited with code ${code}`))
+      }
+    })
+    child.on('error', reject)
+  })
+}
+
+const CONTAINER_LOG_FILTER = [
+  /^Running ScreenCI /,
+  /^Using config:/,
+  /^Starting Xvfb /,
+  /^Xvfb started /,
+  /^Recording video to:/,
+  /^Recording with /,
+  /^Stopping recording\.\.\./,
+  /^FFmpeg exited /,
+  /^Video saved to:/,
+  /^Events saved to:/,
+]
+
+function spawnContainerRecording(cmd: string, args: string[]): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: ['inherit', 'pipe', 'pipe'] })
+
+    function forwardFiltered(chunk: Buffer, out: NodeJS.WriteStream): void {
+      const lines = chunk.toString().split('\n')
+      for (const line of lines) {
+        if (line === '') continue
+        if (!CONTAINER_LOG_FILTER.some((re) => re.test(line.trimStart()))) {
+          out.write(line + '\n')
+        }
+      }
+    }
+
+    child.stdout?.on('data', (chunk: Buffer) => forwardFiltered(chunk, process.stdout))
+    child.stderr?.on('data', (chunk: Buffer) => forwardFiltered(chunk, process.stderr))
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve()
+      } else {
+        reject(new Error(`${cmd} exited with code ${code}`))
+      }
+    })
+
+    child.on('error', reject)
+  })
+}
 
 function clearDirectory(dir: string): void {
   mkdirSync(dir, { recursive: true })
@@ -62,6 +141,7 @@ function parseArgs(args: string[]): {
   configPath: string | undefined
   noContainer: boolean
   imageTag: string | undefined
+  verbose: boolean
   otherArgs: string[]
 } {
   const command = args[0]
@@ -73,6 +153,7 @@ function parseArgs(args: string[]): {
   let configPath: string | undefined
   let noContainer = false
   let imageTag: string | undefined
+  let verbose = false
   const otherArgs: string[] = []
 
   for (let i = 1; i < args.length; i++) {
@@ -88,6 +169,8 @@ function parseArgs(args: string[]): {
       }
     } else if (arg === '--no-container') {
       noContainer = true
+    } else if (arg === '--verbose' || arg === '-v') {
+      verbose = true
     } else if (arg === '--tag') {
       const nextArg = args[i + 1]
       if (nextArg !== undefined) {
@@ -102,7 +185,7 @@ function parseArgs(args: string[]): {
     }
   }
 
-  return { command, configPath, noContainer, imageTag, otherArgs }
+  return { command, configPath, noContainer, imageTag, verbose, otherArgs }
 }
 
 async function findLatestEntry(screenciDir: string): Promise<string | null> {
@@ -230,18 +313,20 @@ async function uploadRecordings(
   apiUrl: string,
   secret: string,
   specificEntry?: string
-): Promise<void> {
+): Promise<string | null> {
   let entries: string[]
   try {
     entries = await readdir(screenciDir)
   } catch {
     logger.warn('No .screenci directory found, skipping upload')
-    return
+    return null
   }
 
   if (specificEntry !== undefined) {
     entries = entries.filter((e) => e === specificEntry)
   }
+
+  let firstProjectId: string | null = null
 
   for (const entry of entries) {
     const dataJsonPath = resolve(screenciDir, entry, 'data.json')
@@ -258,7 +343,7 @@ async function uploadRecordings(
 
     const videoName = data.metadata?.videoName ?? entry
 
-    logger.info(`Uploading "${videoName}"...`)
+    writeInline(`Uploading "${videoName}"...`)
     try {
       // Step 1: register upload and get recordingId
       const startResponse = await fetch(`${apiUrl}/cli/upload/start`, {
@@ -271,13 +356,19 @@ async function uploadRecordings(
       })
       if (!startResponse.ok) {
         const text = await startResponse.text()
+        process.stdout.write('\n')
         logger.warn(
           `Failed to start upload for "${videoName}": ${startResponse.status} ${text}`
         )
         continue
       }
-      const { recordingId } = (await startResponse.json()) as {
+      const { recordingId, projectId } = (await startResponse.json()) as {
         recordingId: string
+        projectId: string
+      }
+
+      if (firstProjectId === null) {
+        firstProjectId = projectId
       }
 
       // Step 1b: upload asset files referenced in data.json
@@ -310,6 +401,7 @@ async function uploadRecordings(
         )
         if (!recordingResponse.ok) {
           const text = await recordingResponse.text()
+          process.stdout.write('\n')
           logger.warn(
             `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}`
           )
@@ -317,11 +409,14 @@ async function uploadRecordings(
         }
       }
 
-      logger.info(`Uploaded "${videoName}" successfully`)
+      completeInline(`Uploading "${videoName}" ✓`)
     } catch (err) {
+      process.stdout.write('\n')
       logger.warn(`Network error uploading "${videoName}":`, err)
     }
   }
+
+  return firstProjectId
 }
 
 async function uploadLatest(configPath: string | undefined): Promise<void> {
@@ -376,14 +471,25 @@ async function uploadLatest(configPath: string | undefined): Promise<void> {
     return
   }
 
+  const appUrl = process.env.SCREENCI_APP_URL
+    ? process.env.SCREENCI_APP_URL
+    : process.env.DEV_PORT
+      ? `http://localhost:${process.env.DEV_PORT}`
+      : 'https://app.screenci.com'
+
   logger.info(`Uploading latest recording: "${latestEntry}"`)
-  await uploadRecordings(
+  const projectId = await uploadRecordings(
     screenciDir,
     screenciConfig.projectName,
     apiUrl,
     secret,
     latestEntry
   )
+  if (projectId !== null) {
+    logger.info('')
+    logger.info('Recording finished, results available at:')
+    logger.info(`${appUrl}/project/${projectId}`)
+  }
 }
 
 function generateConfig(projectName: string): string {
@@ -548,9 +654,9 @@ async function performBrowserLogin(appUrl: string): Promise<string> {
       const callbackUrl = `http://localhost:${port}/callback`
       const loginUrl = `${appUrl}/cli-auth?callback=${encodeURIComponent(callbackUrl)}`
 
-      logger.info('Opening browser for authentication...')
       logger.info(`If the browser does not open automatically, visit:`)
-      logger.info(`  ${loginUrl}`)
+      logger.info(loginUrl)
+      logger.info('')
 
       openBrowser(loginUrl)
     })
@@ -610,11 +716,9 @@ async function runInitAuth(): Promise<void> {
     (devPort ? `http://localhost:${devPort}` : 'https://app.screenci.com')
   try {
     const secret = await performBrowserLogin(appUrl)
-    await writeFile(
-      resolve(process.cwd(), '.env'),
-      `SCREENCI_SECRET=${secret}\n`
-    )
-    logger.info('API key saved to .env')
+    const savePath = resolve(process.cwd(), '.env')
+    await writeFile(savePath, `SCREENCI_SECRET=${secret}\n`)
+    logger.info(`Successfully saved SCREENCI_SECRET to ${savePath}`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     logger.warn(`Authentication failed: ${msg}`)
@@ -701,7 +805,7 @@ async function runInit(
 
 export async function main() {
   const args = process.argv.slice(2)
-  const { command, configPath, noContainer, imageTag, otherArgs } = parseArgs(args)
+  const { command, configPath, noContainer, imageTag, verbose, otherArgs } = parseArgs(args)
 
   switch (command) {
     case 'record': {
@@ -745,7 +849,7 @@ export async function main() {
 
           if (!process.env.SCREENCI_SECRET) {
             logger.info(
-              'SCREENCI_SECRET not found. Opening browser to sign in and select a plan...'
+              'No SCREENCI_SECRET in .env file, opening browser for authentication...'
             )
             const devPort = process.env.DEV_PORT
             const appUrl =
@@ -758,13 +862,13 @@ export async function main() {
               envFilePath ?? resolve(dirname(resolvedConfigForSecret), '.env')
             await writeFile(savePath, `SCREENCI_SECRET=${secret}\n`)
             process.env.SCREENCI_SECRET = secret
-            logger.info('API key saved.')
+            logger.info(`Successfully saved SCREENCI_SECRET to ${savePath}`)
           }
         }
       }
 
       if (useContainer) {
-        await runWithContainer(otherArgs, configPath, imageTag)
+        await runWithContainer(otherArgs, configPath, imageTag, verbose)
       } else {
         await run(command, otherArgs, configPath)
       }
@@ -792,6 +896,11 @@ export async function main() {
           const apiUrl = process.env.DEV_PORT
             ? `http://localhost:${process.env.DEV_PORT}`
             : 'https://api.screenci.com'
+          const appUrl = process.env.SCREENCI_APP_URL
+            ? process.env.SCREENCI_APP_URL
+            : process.env.DEV_PORT
+              ? `http://localhost:${process.env.DEV_PORT}`
+              : 'https://app.screenci.com'
           const secret = process.env.SCREENCI_SECRET
           if (!secret) {
             logger.info(
@@ -801,12 +910,17 @@ export async function main() {
           }
           const configDir = dirname(resolvedConfigPath)
           const screenciDir = resolve(configDir, '.screenci')
-          await uploadRecordings(
+          const projectId = await uploadRecordings(
             screenciDir,
             screenciConfig.projectName,
             apiUrl,
             secret
           )
+          if (projectId !== null) {
+            logger.info('')
+            logger.info('Recording finished, results available at:')
+            logger.info(`${appUrl}/project/${projectId}`)
+          }
         } catch (err) {
           logger.warn('Failed to load config for upload:', err)
         }
@@ -928,10 +1042,34 @@ export function detectContainerRuntime(): string {
   process.exit(1)
 }
 
+async function buildImage(
+  cmd: string,
+  args: string[],
+  label: string,
+  verbose: boolean
+): Promise<void> {
+  if (verbose) {
+    await spawnInherited(cmd, args)
+    return
+  }
+  writeInline(`${label}...`)
+  try {
+    await spawnSilent(cmd, args)
+    completeInline(`${label} ✓`)
+  } catch (err) {
+    process.stdout.write('\n')
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.error(msg)
+    logger.error('Run again with --verbose to see the full build output')
+    process.exit(1)
+  }
+}
+
 async function runWithContainer(
   additionalArgs: string[],
   customConfigPath?: string,
-  imageTag?: string
+  imageTag?: string,
+  verbose = false
 ) {
   const configPath = findScreenCIConfig(customConfigPath)
 
@@ -966,6 +1104,8 @@ async function runWithContainer(
 
   const ghcrImage = 'ghcr.io/screenci/record:latest'
 
+  const dockerfileVersion = parseDockerfileVersion(dockerfilePath)
+
   if (process.env['SCREENCI_LOCAL_IMAGE']) {
     logger.info('SCREENCI_LOCAL_IMAGE set — skipping screenci image build')
   } else if (imageTag !== undefined) {
@@ -974,44 +1114,53 @@ async function runWithContainer(
       spawnSync(containerRuntime, ['image', 'exists', remoteImage], {
         stdio: 'ignore',
       }).status === 0
-    if (imageExists) {
-      logger.info(`Using cached screenci image ${remoteImage}`)
-    } else {
-      logger.info(`Pulling screenci image ${remoteImage}...`)
-      await spawnInherited(containerRuntime, ['pull', remoteImage])
-    }
     logger.info(
-      `Note: using image tag ${imageTag} instead of the version in Dockerfile`
+      `Using image tag ${imageTag} instead of the version ${dockerfileVersion} from Dockerfile`
     )
-    await spawnInherited(containerRuntime, ['tag', remoteImage, ghcrImage])
+    if (!imageExists) {
+      await buildImage(containerRuntime, ['pull', remoteImage], 'Pulling image', verbose)
+    }
+    await spawnSilent(containerRuntime, ['tag', remoteImage, ghcrImage])
   } else {
     const cliDir = dirname(fileURLToPath(import.meta.url))
     const screenciPackageRoot = resolve(cliDir, '..')
     const screenciDockerfilePath = resolve(cliDir, 'Dockerfile')
 
-    logger.info(`Building container image with ${containerRuntime}...`)
-    logger.info(`Using Dockerfile: ${screenciDockerfilePath}`)
-    logger.info(`Build context: ${screenciPackageRoot}`)
-    await spawnInherited(containerRuntime, [
-      'build',
-      '-f',
-      screenciDockerfilePath,
-      '-t',
-      ghcrImage,
-      screenciPackageRoot,
-    ])
+    if (verbose) {
+      await spawnInherited(containerRuntime, [
+        'build', '-f', screenciDockerfilePath, '-t', ghcrImage, screenciPackageRoot,
+      ])
+      await spawnInherited(containerRuntime, [
+        'build', '-f', dockerfilePath, '-t', 'screenci', configDir,
+      ])
+    } else {
+      writeInline('Building image...')
+      try {
+        await spawnSilent(containerRuntime, [
+          'build', '-f', screenciDockerfilePath, '-t', ghcrImage, screenciPackageRoot,
+        ])
+        await spawnSilent(containerRuntime, [
+          'build', '-f', dockerfilePath, '-t', 'screenci', configDir,
+        ])
+        completeInline('Building image ✓')
+      } catch (err) {
+        process.stdout.write('\n')
+        const msg = err instanceof Error ? err.message : String(err)
+        logger.error(msg)
+        logger.error('Run again with --verbose to see the full build output')
+        process.exit(1)
+      }
+    }
   }
 
-  logger.info(`Using Dockerfile: ${dockerfilePath}`)
-  logger.info(`Build context: ${configDir}`)
-  await spawnInherited(containerRuntime, [
-    'build',
-    '-f',
-    dockerfilePath,
-    '-t',
-    'screenci',
-    configDir,
-  ])
+  if (imageTag !== undefined || process.env['SCREENCI_LOCAL_IMAGE']) {
+    await buildImage(
+      containerRuntime,
+      ['build', '-f', dockerfilePath, '-t', 'screenci', configDir],
+      'Building image',
+      verbose
+    )
+  }
 
   clearDirectory(resolve(configDir, '.screenci'))
 
@@ -1020,9 +1169,7 @@ async function runWithContainer(
     logger.error('Error: SCREENCI_SECRET is not set')
     process.exit(1)
   }
-
-  logger.info('Running recording in container...')
-  await spawnInherited(containerRuntime, [
+  await spawnContainerRecording(containerRuntime, [
     'run',
     '--rm',
     '-e',
@@ -1072,8 +1219,10 @@ async function run(
 
   const mode =
     command === 'dev' ? (isHeaded ? 'headed mode' : 'UI mode') : 'recorder'
-  logger.info(`Running ScreenCI ${mode} with npx...`)
-  logger.info(`Using config: ${configPath}`)
+  if (process.env.SCREENCI_IN_CONTAINER !== 'true') {
+    logger.info(`Running ScreenCI ${mode} with npx...`)
+    logger.info(`Using config: ${configPath}`)
+  }
 
   const playwrightArgs = [
     'playwright',

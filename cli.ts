@@ -2,7 +2,14 @@
 
 import { spawn, spawnSync } from 'child_process'
 import { createReadStream } from 'fs'
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync } from 'fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+} from 'fs'
 import { createHash } from 'crypto'
 import { createServer } from 'http'
 import type { AddressInfo } from 'net'
@@ -29,9 +36,9 @@ function parseDockerfileVersion(dockerfilePath: string): string {
   } catch {
     return 'unknown'
   }
-  const fromLine = content.split('\n').find((line) =>
-    line.trim().toUpperCase().startsWith('FROM')
-  )
+  const fromLine = content
+    .split('\n')
+    .find((line) => line.trim().toUpperCase().startsWith('FROM'))
   if (!fromLine) return 'unknown'
   const match = fromLine.match(/:([^\s@]+)/)
   return match?.[1] ?? 'unknown'
@@ -78,8 +85,12 @@ function spawnContainerRecording(cmd: string, args: string[]): Promise<void> {
       }
     }
 
-    child.stdout?.on('data', (chunk: Buffer) => forwardFiltered(chunk, process.stdout))
-    child.stderr?.on('data', (chunk: Buffer) => forwardFiltered(chunk, process.stderr))
+    child.stdout?.on('data', (chunk: Buffer) =>
+      forwardFiltered(chunk, process.stdout)
+    )
+    child.stderr?.on('data', (chunk: Buffer) =>
+      forwardFiltered(chunk, process.stderr)
+    )
 
     child.on('close', (code) => {
       if (code === 0) {
@@ -805,7 +816,8 @@ async function runInit(
 
 export async function main() {
   const args = process.argv.slice(2)
-  const { command, configPath, noContainer, imageTag, verbose, otherArgs } = parseArgs(args)
+  const { command, configPath, noContainer, imageTag, verbose, otherArgs } =
+    parseArgs(args)
 
   switch (command) {
     case 'record': {
@@ -1118,7 +1130,12 @@ async function runWithContainer(
       `Using image tag ${imageTag} instead of the version ${dockerfileVersion} from Dockerfile`
     )
     if (!imageExists) {
-      await buildImage(containerRuntime, ['pull', remoteImage], 'Pulling image', verbose)
+      await buildImage(
+        containerRuntime,
+        ['pull', remoteImage],
+        'Pulling image',
+        verbose
+      )
     }
     await spawnSilent(containerRuntime, ['tag', remoteImage, ghcrImage])
   } else {
@@ -1128,19 +1145,39 @@ async function runWithContainer(
 
     if (verbose) {
       await spawnInherited(containerRuntime, [
-        'build', '-f', screenciDockerfilePath, '-t', ghcrImage, screenciPackageRoot,
+        'build',
+        '-f',
+        screenciDockerfilePath,
+        '-t',
+        ghcrImage,
+        screenciPackageRoot,
       ])
       await spawnInherited(containerRuntime, [
-        'build', '-f', dockerfilePath, '-t', 'screenci', configDir,
+        'build',
+        '-f',
+        dockerfilePath,
+        '-t',
+        'screenci',
+        configDir,
       ])
     } else {
       writeInline('Building image...')
       try {
         await spawnSilent(containerRuntime, [
-          'build', '-f', screenciDockerfilePath, '-t', ghcrImage, screenciPackageRoot,
+          'build',
+          '-f',
+          screenciDockerfilePath,
+          '-t',
+          ghcrImage,
+          screenciPackageRoot,
         ])
         await spawnSilent(containerRuntime, [
-          'build', '-f', dockerfilePath, '-t', 'screenci', configDir,
+          'build',
+          '-f',
+          dockerfilePath,
+          '-t',
+          'screenci',
+          configDir,
         ])
         completeInline('Building image ✓')
       } catch (err) {

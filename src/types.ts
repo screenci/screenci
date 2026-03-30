@@ -160,7 +160,8 @@ export const RENDER_OPTIONS_DEFAULTS = {
     aspectRatio: '16:9' as AspectRatio,
     quality: '1080p' as Quality,
     background: {
-      backgroundCss: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+      backgroundCss:
+        'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
     } as { assetPath: string } | { backgroundCss: string },
   },
 }

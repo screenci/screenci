@@ -1,6 +1,6 @@
 {
   "name": "screenci",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "ScreenCI",
   "keywords": [
     "screenci"
@@ -25,6 +25,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "postbuild": "cp Dockerfile dist/",
     "build:image": "podman build -t screenci .",
     "prepublishOnly": "npm run build",
     "test": "vitest",

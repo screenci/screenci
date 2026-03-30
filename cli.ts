@@ -45,7 +45,9 @@ function findRepoRoot(startDir: string): string | null {
   while (true) {
     if (
       existsSync(resolve(current, '.git')) ||
-      existsSync(resolve(current, 'pnpm-workspace.yaml'))
+      existsSync(resolve(current, 'pnpm-workspace.yaml')) ||
+      existsSync(resolve(current, 'package-lock.json')) ||
+      existsSync(resolve(current, 'yarn.lock'))
     ) {
       return current
     }
@@ -59,6 +61,7 @@ function parseArgs(args: string[]): {
   command: string
   configPath: string | undefined
   noContainer: boolean
+  imageTag: string | undefined
   otherArgs: string[]
 } {
   const command = args[0]
@@ -69,6 +72,7 @@ function parseArgs(args: string[]): {
   }
   let configPath: string | undefined
   let noContainer = false
+  let imageTag: string | undefined
   const otherArgs: string[] = []
 
   for (let i = 1; i < args.length; i++) {
@@ -84,12 +88,21 @@ function parseArgs(args: string[]): {
       }
     } else if (arg === '--no-container') {
       noContainer = true
+    } else if (arg === '--tag') {
+      const nextArg = args[i + 1]
+      if (nextArg !== undefined) {
+        imageTag = nextArg
+        i++ // skip next arg
+      } else {
+        logger.error('Error: --tag requires a tag argument')
+        process.exit(1)
+      }
     } else if (arg !== undefined) {
       otherArgs.push(arg)
     }
   }
 
-  return { command, configPath, noContainer, otherArgs }
+  return { command, configPath, noContainer, imageTag, otherArgs }
 }
 
 async function findLatestEntry(screenciDir: string): Promise<string | null> {
@@ -342,13 +355,9 @@ async function uploadLatest(configPath: string | undefined): Promise<void> {
     }
   }
 
-  const convexUrl = screenciConfig.apiUrl ?? process.env.SCREENCI_URL
-  if (!convexUrl) {
-    logger.error(
-      'No API URL configured. Set apiUrl in screenci.config.ts or SCREENCI_URL env var.'
-    )
-    process.exit(1)
-  }
+  const apiUrl = process.env.DEV_PORT
+    ? `http://localhost:${process.env.DEV_PORT}`
+    : 'https://api.screenci.com'
 
   const secret = process.env.SCREENCI_SECRET
   if (!secret) {
@@ -371,7 +380,7 @@ async function uploadLatest(configPath: string | undefined): Promise<void> {
   await uploadRecordings(
     screenciDir,
     screenciConfig.projectName,
-    convexUrl,
+    apiUrl,
     secret,
     latestEntry
   )
@@ -382,7 +391,6 @@ function generateConfig(projectName: string): string {
 
 export default defineConfig({
   projectName: ${JSON.stringify(projectName)},
-  apiUrl: process.env.SCREENCI_URL ?? 'http://localhost:8787',
   envFile: '.env',
   videoDir: './videos',
   forbidOnly: !!process.env.CI,
@@ -693,7 +701,7 @@ async function runInit(
 
 export async function main() {
   const args = process.argv.slice(2)
-  const { command, configPath, noContainer, otherArgs } = parseArgs(args)
+  const { command, configPath, noContainer, imageTag, otherArgs } = parseArgs(args)
 
   switch (command) {
     case 'record': {
@@ -756,7 +764,7 @@ export async function main() {
       }
 
       if (useContainer) {
-        await runWithContainer(otherArgs, configPath)
+        await runWithContainer(otherArgs, configPath, imageTag)
       } else {
         await run(command, otherArgs, configPath)
       }
@@ -764,7 +772,7 @@ export async function main() {
       // Upload only from the host, not from inside the container
       if (process.env.SCREENCI_IN_CONTAINER === 'true') break
 
-      // After recording, upload results to Convex if configured
+      // After recording, upload results to API if configured
       const resolvedConfigPath = findScreenCIConfig(configPath)
       if (resolvedConfigPath) {
         try {
@@ -781,13 +789,9 @@ export async function main() {
               logger.warn(`Failed to load env file ${envFilePath}:`, err)
             }
           }
-          const convexUrl = screenciConfig.apiUrl ?? process.env.SCREENCI_URL
-          if (!convexUrl) {
-            logger.info(
-              'No API URL configured, skipping upload. Set apiUrl in screenci.config.ts or SCREENCI_URL env var.'
-            )
-            break
-          }
+          const apiUrl = process.env.DEV_PORT
+            ? `http://localhost:${process.env.DEV_PORT}`
+            : 'https://api.screenci.com'
           const secret = process.env.SCREENCI_SECRET
           if (!secret) {
             logger.info(
@@ -800,7 +804,7 @@ export async function main() {
           await uploadRecordings(
             screenciDir,
             screenciConfig.projectName,
-            convexUrl,
+            apiUrl,
             secret
           )
         } catch (err) {
@@ -926,7 +930,8 @@ export function detectContainerRuntime(): string {
 
 async function runWithContainer(
   additionalArgs: string[],
-  customConfigPath?: string
+  customConfigPath?: string,
+  imageTag?: string
 ) {
   const configPath = findScreenCIConfig(customConfigPath)
 
@@ -959,22 +964,41 @@ async function runWithContainer(
 
   const containerRuntime = detectContainerRuntime()
 
+  const ghcrImage = 'ghcr.io/screenci/record:latest'
+
   if (process.env['SCREENCI_LOCAL_IMAGE']) {
     logger.info('SCREENCI_LOCAL_IMAGE set — skipping screenci image build')
+  } else if (imageTag !== undefined) {
+    const remoteImage = `ghcr.io/screenci/record:${imageTag}`
+    const imageExists =
+      spawnSync(containerRuntime, ['image', 'exists', remoteImage], {
+        stdio: 'ignore',
+      }).status === 0
+    if (imageExists) {
+      logger.info(`Using cached screenci image ${remoteImage}`)
+    } else {
+      logger.info(`Pulling screenci image ${remoteImage}...`)
+      await spawnInherited(containerRuntime, ['pull', remoteImage])
+    }
+    logger.info(
+      `Note: using image tag ${imageTag} instead of the version in Dockerfile`
+    )
+    await spawnInherited(containerRuntime, ['tag', remoteImage, ghcrImage])
   } else {
     const cliDir = dirname(fileURLToPath(import.meta.url))
+    const screenciPackageRoot = resolve(cliDir, '..')
     const screenciDockerfilePath = resolve(cliDir, 'Dockerfile')
 
     logger.info(`Building container image with ${containerRuntime}...`)
     logger.info(`Using Dockerfile: ${screenciDockerfilePath}`)
-    logger.info(`Build context: ${repoRoot}`)
+    logger.info(`Build context: ${screenciPackageRoot}`)
     await spawnInherited(containerRuntime, [
       'build',
       '-f',
       screenciDockerfilePath,
       '-t',
-      'screenci',
-      repoRoot,
+      ghcrImage,
+      screenciPackageRoot,
     ])
   }
 
@@ -991,6 +1015,12 @@ async function runWithContainer(
 
   clearDirectory(resolve(configDir, '.screenci'))
 
+  const secret = process.env['SCREENCI_SECRET']
+  if (secret === undefined) {
+    logger.error('Error: SCREENCI_SECRET is not set')
+    process.exit(1)
+  }
+
   logger.info('Running recording in container...')
   await spawnInherited(containerRuntime, [
     'run',
@@ -999,6 +1029,8 @@ async function runWithContainer(
     'SCREENCI_IN_CONTAINER=true',
     '-e',
     'SCREENCI_RECORD=true',
+    '-e',
+    `SCREENCI_SECRET=${secret}`,
     '-v',
     `${configDir}/.screenci:/app/.screenci`,
     '-v',

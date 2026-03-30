@@ -6,7 +6,9 @@ import type {
   Easing,
   RecordOptions,
   RenderOptions,
+  ResolvedRenderOptions,
 } from './types.js'
+import { RENDER_OPTIONS_DEFAULTS } from './types.js'
 import type { VoiceKey } from './voices.js'
 import {
   DEFAULT_ZOOM_AMOUNT,
@@ -16,14 +18,12 @@ import {
 import { getDimensions } from './dimensions.js'
 
 /**
- * Serialised form of `RenderOptions` written to `data.json`.
+ * Serialised form of {@link ResolvedRenderOptions} written to `data.json`.
+ * `aspectRatio` and `quality` are merged into a single `resolution` string.
  */
-type SerializedRenderOptions = Omit<RenderOptions, 'output'> & {
-  output?: Omit<
-    NonNullable<RenderOptions['output']>,
-    'aspectRatio' | 'quality'
-  > & {
-    resolution?: `${number}x${number}`
+type SerializedRenderOptions = Omit<ResolvedRenderOptions, 'output'> & {
+  output: Omit<ResolvedRenderOptions['output'], 'aspectRatio' | 'quality'> & {
+    resolution: `${number}x${number}`
   }
 }
 
@@ -485,40 +485,62 @@ export class EventRecorder implements IEventRecorder {
   async writeToFile(dir: string, videoName: string): Promise<void> {
     const filePath = join(dir, 'data.json')
 
-    // Always default output.aspectRatio to '16:9' if not explicitly set.
-    const renderOptionsWithDefaults: RenderOptions = {
-      ...this.renderOptions,
+    // Resolve all defaults so data.json always contains a complete set of
+    // render options.
+    const ro = this.renderOptions
+    const resolved: ResolvedRenderOptions = {
+      recording: {
+        size: ro?.recording?.size ?? RENDER_OPTIONS_DEFAULTS.recording.size,
+        roundness:
+          ro?.recording?.roundness ??
+          RENDER_OPTIONS_DEFAULTS.recording.roundness,
+        shape: ro?.recording?.shape ?? RENDER_OPTIONS_DEFAULTS.recording.shape,
+        dropShadow:
+          ro?.recording?.dropShadow ??
+          RENDER_OPTIONS_DEFAULTS.recording.dropShadow,
+      },
+      voiceOvers: {
+        size: ro?.voiceOvers?.size ?? RENDER_OPTIONS_DEFAULTS.voiceOvers.size,
+        roundness:
+          ro?.voiceOvers?.roundness ??
+          RENDER_OPTIONS_DEFAULTS.voiceOvers.roundness,
+        shape:
+          ro?.voiceOvers?.shape ?? RENDER_OPTIONS_DEFAULTS.voiceOvers.shape,
+        corner:
+          ro?.voiceOvers?.corner ?? RENDER_OPTIONS_DEFAULTS.voiceOvers.corner,
+        padding:
+          ro?.voiceOvers?.padding ?? RENDER_OPTIONS_DEFAULTS.voiceOvers.padding,
+        dropShadow:
+          ro?.voiceOvers?.dropShadow ??
+          RENDER_OPTIONS_DEFAULTS.voiceOvers.dropShadow,
+      },
+      cursor: {
+        size: ro?.cursor?.size ?? RENDER_OPTIONS_DEFAULTS.cursor.size,
+      },
       output: {
-        ...this.renderOptions?.output,
-        aspectRatio: this.renderOptions?.output?.aspectRatio ?? '16:9',
+        aspectRatio:
+          ro?.output?.aspectRatio ?? RENDER_OPTIONS_DEFAULTS.output.aspectRatio,
+        quality: ro?.output?.quality ?? RENDER_OPTIONS_DEFAULTS.output.quality,
+        background:
+          ro?.output?.background ?? RENDER_OPTIONS_DEFAULTS.output.background,
       },
     }
 
-    let serializedRenderOptions: SerializedRenderOptions =
-      renderOptionsWithDefaults
-    // outputOpts is always defined because renderOptionsWithDefaults.output is always set above
-
-    const outputOpts = renderOptionsWithDefaults.output!
-    if (
-      outputOpts.aspectRatio !== undefined &&
-      outputOpts.quality !== undefined
-    ) {
-      const { width, height } = getDimensions(
-        outputOpts.aspectRatio,
-        outputOpts.quality
-      )
-      const {
-        aspectRatio: _aspectRatio,
-        quality: _quality,
-        ...restOutput
-      } = outputOpts
-      serializedRenderOptions = {
-        ...renderOptionsWithDefaults,
-        output: {
-          ...restOutput,
-          resolution: `${width}x${height}` as `${number}x${number}`,
-        },
-      }
+    const { width, height } = getDimensions(
+      resolved.output.aspectRatio,
+      resolved.output.quality
+    )
+    const {
+      aspectRatio: _aspectRatio,
+      quality: _quality,
+      ...restOutput
+    } = resolved.output
+    const serializedRenderOptions: SerializedRenderOptions = {
+      ...resolved,
+      output: {
+        ...restOutput,
+        resolution: `${width}x${height}` as `${number}x${number}`,
+      },
     }
 
     const languageSet = new Set<string>()

@@ -124,10 +124,74 @@ export type RenderOptions = {
      * Combined with `aspectRatio`, this determines the final pixel dimensions.
      * See {@link Quality} for available presets.
      *
+     * Defaults to `'1080p'` when not specified.
+     *
      * @example '1080p'
      */
     quality?: Quality
     background?: { assetPath: string } | { backgroundCss: string }
+  }
+}
+
+/**
+ * Default values applied to every field of {@link RenderOptions} that has a
+ * default. Used by {@link EventRecorder} when writing `data.json` so that the
+ * file always contains a fully-resolved set of render options.
+ */
+export const RENDER_OPTIONS_DEFAULTS = {
+  recording: {
+    size: 1.0,
+    roundness: 0,
+    shape: 'rounded' as const,
+    dropShadow: 'drop-shadow(0 8px 24px rgba(0,0,0,0.5))',
+  },
+  voiceOvers: {
+    size: 0.3,
+    roundness: 0,
+    shape: 'squircle' as const,
+    corner: 'bottom-right' as const,
+    padding: 0.04,
+    dropShadow: 'drop-shadow(0 8px 24px rgba(0,0,0,0.5))',
+  },
+  cursor: {
+    size: 0.05,
+  },
+  output: {
+    aspectRatio: '16:9' as AspectRatio,
+    quality: '1080p' as Quality,
+    background: {
+      backgroundCss: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+    } as { assetPath: string } | { backgroundCss: string },
+  },
+}
+
+/**
+ * {@link RenderOptions} after all defaults have been resolved.
+ * Every field that has a default in {@link RENDER_OPTIONS_DEFAULTS} is
+ * guaranteed to be present. This is the shape written to `data.json`.
+ */
+export type ResolvedRenderOptions = {
+  recording: {
+    size: number
+    roundness: number
+    shape: 'rounded' | 'squircle'
+    dropShadow: string
+  }
+  voiceOvers: {
+    size: number
+    roundness: number
+    shape: 'rounded' | 'squircle'
+    dropShadow: string
+    corner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+    padding: number
+  }
+  cursor: {
+    size: number
+  }
+  output: {
+    aspectRatio: AspectRatio
+    quality: Quality
+    background: { assetPath: string } | { backgroundCss: string }
   }
 }
 
@@ -570,11 +634,6 @@ export type ScreenCIConfig = Omit<
    * Name of the project. Used to identify the project in screenci.com.
    */
   projectName: string
-  /**
-   * ScreenCI API URL to upload recordings to after `screenci record`.
-   * Can also be set via the SCREENCI_URL environment variable.
-   */
-  apiUrl?: string
   /**
    * Path to a .env file to load before uploading.
    * Relative to the screenci.config.ts file.

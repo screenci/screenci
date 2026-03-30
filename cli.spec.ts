@@ -435,7 +435,7 @@ describe('CLI', () => {
           '-f',
           expect.stringContaining('Dockerfile'),
           '-t',
-          'screenci',
+          'ghcr.io/screenci/record:latest',
         ]),
         expect.objectContaining({ stdio: 'inherit' })
       )
@@ -687,6 +687,9 @@ describe('CLI', () => {
         if (typeof path === 'string' && path.endsWith('.git')) return false
         if (typeof path === 'string' && path.endsWith('pnpm-workspace.yaml'))
           return false
+        if (typeof path === 'string' && path.endsWith('package-lock.json'))
+          return false
+        if (typeof path === 'string' && path.endsWith('yarn.lock')) return false
         return true
       })
 

@@ -1,14 +1,4 @@
-# Stage 1: Build screenci ────────────────────────────────────────────────────
-FROM docker.io/library/node:25.2.1-slim AS screenci-builder
-
-WORKDIR /build
-COPY package.json .
-RUN npm install
-COPY . .
-RUN npm run build
-
-
-# Stage 2: Recording runtime ─────────────────────────────────────────────────
+# Recording runtime ───────────────────────────────────────────────────────────
 FROM docker.io/library/node:25.2.1-slim
 
 WORKDIR /app
@@ -27,9 +17,9 @@ RUN printf '{"private":true,"workspaces":["screenci"]}' > package.json && npm in
 # Playwright browser download: only re-runs when the playwright version changes.
 RUN npx playwright install chromium --with-deps
 
-# ── screenci build output (from stage 1) ─────────────────────────────────────
-# Only this layer (and those below) are invalidated when screenci source changes.
-COPY --from=screenci-builder /build/dist ./screenci/dist/
+# ── screenci build output ─────────────────────────────────────────────────────
+# Copy pre-built dist directly from the screenci package directory.
+COPY dist ./screenci/dist/
 
 # Explicit bin wrapper — no npm bin-linking magic needed.
 RUN printf '#!/bin/sh\nexec node /app/screenci/dist/cli.js "$@"\n' > /app/node_modules/.bin/screenci && \

@@ -6,6 +6,10 @@ on:
       tag:
         required: true
         type: string
+      latest:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build-and-push-image:
@@ -30,7 +34,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/record
-          tags: type=raw,value=${{ inputs.tag }}
+          tags: |
+            type=raw,value=${{ inputs.tag }}
+            ${{ inputs.latest && 'type=raw,value=latest' || '' }}
 
       - name: Build and push image
         uses: docker/build-push-action@v6

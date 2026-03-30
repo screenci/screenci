@@ -6,6 +6,7 @@ export type {
   Trace,
   RecordOptions,
   RenderOptions,
+  ResolvedRenderOptions,
   ScreenCIConfig,
   ExtendedScreenCIConfig,
   CaptionConfig,
@@ -14,6 +15,7 @@ export type {
   PostClickMove,
   ClickBeforeFillOption,
 } from './src/types.js'
+export { RENDER_OPTIONS_DEFAULTS } from './src/types.js'
 
 // Re-export voices
 export { voices } from './src/voices.js'

@@ -260,37 +260,70 @@ describe('EventRecorder', () => {
       expect(click.events[1]).toMatchObject({ type: 'mouseUp' })
     })
 
-    it('writes renderOptions with default aspectRatio 16:9 when no renderOptions provided', async () => {
+    it('writes all render option defaults when no renderOptions provided', async () => {
       recorder.start()
       await recorder.writeToFile(tmpDir, 'Test Video')
 
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed: RecordingData = JSON.parse(content)
-      expect(parsed.renderOptions?.output?.aspectRatio).toBe('16:9')
+      const ro = parsed.renderOptions as Record<string, unknown>
+      // output: 16:9 + 1080p → 1920x1080, with background css
+      expect((ro.output as Record<string, unknown>).resolution).toBe('1920x1080')
+      expect((ro.output as Record<string, unknown>).aspectRatio).toBeUndefined()
+      expect((ro.output as Record<string, unknown>).background).toEqual({
+        backgroundCss:
+          'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+      })
+      // recording defaults
+      expect((ro.recording as Record<string, unknown>).size).toBe(1.0)
+      expect((ro.recording as Record<string, unknown>).roundness).toBe(0)
+      expect((ro.recording as Record<string, unknown>).shape).toBe('rounded')
+      expect((ro.recording as Record<string, unknown>).dropShadow).toBe(
+        'drop-shadow(0 8px 24px rgba(0,0,0,0.5))'
+      )
+      // voiceOvers defaults
+      expect((ro.voiceOvers as Record<string, unknown>).size).toBe(0.3)
+      expect((ro.voiceOvers as Record<string, unknown>).roundness).toBe(0)
+      expect((ro.voiceOvers as Record<string, unknown>).shape).toBe('squircle')
+      expect((ro.voiceOvers as Record<string, unknown>).corner).toBe('bottom-right')
+      expect((ro.voiceOvers as Record<string, unknown>).padding).toBe(0.04)
+      expect((ro.voiceOvers as Record<string, unknown>).dropShadow).toBe(
+        'drop-shadow(0 8px 24px rgba(0,0,0,0.5))'
+      )
+      // cursor default
+      expect((ro.cursor as Record<string, unknown>).size).toBe(0.05)
     })
 
-    it('writes renderOptions with default aspectRatio 16:9 when output is not set', async () => {
+    it('merges explicit values with defaults', async () => {
       recorder = new EventRecorder({ recording: { size: 0.8 } })
       recorder.start()
       await recorder.writeToFile(tmpDir, 'Test Video')
 
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed: RecordingData = JSON.parse(content)
-      expect(parsed.renderOptions?.output?.aspectRatio).toBe('16:9')
-      expect(parsed.renderOptions?.recording?.size).toBe(0.8)
+      const ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.recording as Record<string, unknown>).size).toBe(0.8)
+      // other recording fields still defaulted
+      expect((ro.recording as Record<string, unknown>).roundness).toBe(0)
+      expect((ro.recording as Record<string, unknown>).shape).toBe('rounded')
+      // output also defaulted
+      expect((ro.output as Record<string, unknown>).resolution).toBe('1920x1080')
     })
 
-    it('preserves explicit aspectRatio when set', async () => {
+    it('preserves explicit aspectRatio and serialises to resolution', async () => {
       recorder = new EventRecorder({ output: { aspectRatio: '9:16' } })
       recorder.start()
       await recorder.writeToFile(tmpDir, 'Test Video')
 
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed: RecordingData = JSON.parse(content)
-      expect(parsed.renderOptions?.output?.aspectRatio).toBe('9:16')
+      const ro = parsed.renderOptions as Record<string, unknown>
+      // 9:16 + default 1080p → 1080x1920
+      expect((ro.output as Record<string, unknown>).resolution).toBe('1080x1920')
+      expect((ro.output as Record<string, unknown>).aspectRatio).toBeUndefined()
     })
 
-    it('converts aspectRatio + quality to resolution string', async () => {
+    it('always serialises aspectRatio + quality to resolution string', async () => {
       recorder = new EventRecorder({
         output: { aspectRatio: '16:9', quality: '1080p' },
       })
@@ -299,10 +332,53 @@ describe('EventRecorder', () => {
 
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed: RecordingData = JSON.parse(content)
+      const ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.output as Record<string, unknown>).resolution).toBe('1920x1080')
+      expect((ro.output as Record<string, unknown>).aspectRatio).toBeUndefined()
+    })
+
+    it('applies default dropShadow and background when not provided', async () => {
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed: RecordingData = JSON.parse(content)
+      const ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.recording as Record<string, unknown>).dropShadow).toBe(
+        'drop-shadow(0 8px 24px rgba(0,0,0,0.5))'
+      )
+      expect((ro.voiceOvers as Record<string, unknown>).dropShadow).toBe(
+        'drop-shadow(0 8px 24px rgba(0,0,0,0.5))'
+      )
       expect(
-        (parsed.renderOptions?.output as { resolution?: string })?.resolution
-      ).toBe('1920x1080')
-      expect(parsed.renderOptions?.output?.aspectRatio).toBeUndefined()
+        (ro.output as Record<string, unknown>).background
+      ).toEqual({
+        backgroundCss:
+          'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+      })
+    })
+
+    it('overrides dropShadow and background when explicitly provided', async () => {
+      recorder = new EventRecorder({
+        recording: { dropShadow: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' },
+        voiceOvers: { dropShadow: 'drop-shadow(0 1px 2px rgba(0,0,0,0.2))' },
+        output: { background: { backgroundCss: '#000' } },
+      })
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed: RecordingData = JSON.parse(content)
+      const ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.recording as Record<string, unknown>).dropShadow).toBe(
+        'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+      )
+      expect((ro.voiceOvers as Record<string, unknown>).dropShadow).toBe(
+        'drop-shadow(0 1px 2px rgba(0,0,0,0.2))'
+      )
+      expect((ro.output as Record<string, unknown>).background).toEqual({
+        backgroundCss: '#000',
+      })
     })
 
     it('omits languages from metadata when no captions are used', async () => {

@@ -13,3 +13,4 @@ jobs:
     uses: ./.github/workflows/build-and-push-image.yml
     with:
       tag: ${{ github.ref_name }}
+      latest: true

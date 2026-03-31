@@ -4,7 +4,7 @@ import type {
   VideoCaptionTranslation,
   VideoCaptionTranslationFile,
 } from './events.js'
-import type { VoiceKey, VoiceForLang, Lang } from './voices.js'
+import type { VoiceKey, VoiceForLang, Lang, CustomVoiceRef } from './voices.js'
 import { isInsideHide } from './hide.js'
 
 // One frame at 24fps — ensures at least one rendered frame captures each caption state.
@@ -142,7 +142,7 @@ type AllCaptions<
   Record<string, CaptionMapValue>
 
 type MultiLangMap<L extends Lang, T extends Record<string, CaptionMapValue>> = {
-  [K in L]: { voice: VoiceForLang<K>; captions: T }
+  [K in L]: { voice: VoiceForLang<K> | CustomVoiceRef; captions: T }
 }
 
 /**
@@ -166,12 +166,18 @@ type MultiLangMap<L extends Lang, T extends Record<string, CaptionMapValue>> = {
  */
 export function createCaptions<
   M extends Partial<
-    Record<Lang, { voice: VoiceKey; captions: Record<string, CaptionMapValue> }>
+    Record<
+      Lang,
+      {
+        voice: VoiceKey | CustomVoiceRef
+        captions: Record<string, CaptionMapValue>
+      }
+    >
   >,
 >(
   languagesMap: M & {
     [L in keyof M]: {
-      voice: VoiceForLang<L & string>
+      voice: VoiceForLang<L & string> | CustomVoiceRef
       captions: AllCaptions<M>
     }
   }
@@ -213,7 +219,7 @@ function buildMultiLangCaptions<
         if (typeof val === 'string') {
           videoTranslations[lang] = {
             text: val,
-            voice: languagesMap[lang].voice as VoiceKey,
+            voice: languagesMap[lang].voice,
           }
         } else {
           const fileTrans: VideoCaptionTranslationFile = {
@@ -251,7 +257,7 @@ function buildMultiLangCaptions<
         if (val !== undefined && typeof val === 'string') {
           textTranslations[lang] = {
             text: val,
-            voice: languagesMap[lang].voice as VoiceKey,
+            voice: languagesMap[lang].voice,
           }
         }
       }

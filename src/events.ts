@@ -9,7 +9,7 @@ import type {
   ResolvedRenderOptions,
 } from './types.js'
 import { RENDER_OPTIONS_DEFAULTS } from './types.js'
-import type { VoiceKey } from './voices.js'
+import type { VoiceKey, CustomVoiceRef } from './voices.js'
 import {
   DEFAULT_ZOOM_AMOUNT,
   DEFAULT_ZOOM_DURATION,
@@ -111,7 +111,7 @@ export type InputEvent = {
 
 export type CaptionTranslation = {
   text: string
-  voice: VoiceKey
+  voice: VoiceKey | CustomVoiceRef
 }
 
 export type CaptionStartEvent = {
@@ -144,7 +144,7 @@ export type VideoCaptionTranslationFile = {
 /** TTS-based video caption translation — generates audio via text-to-speech. */
 export type VideoCaptionTranslationTTS = {
   text: string
-  voice: VoiceKey
+  voice: VoiceKey | CustomVoiceRef
 }
 export type VideoCaptionTranslation =
   | VideoCaptionTranslationFile

@@ -62,3 +62,26 @@ export type VoiceForLang<L extends string> = L extends keyof Voices
 
 /** Union of supported language codes, e.g. `'en' | 'fi'`. */
 export type Lang = keyof Voices
+
+/**
+ * A reference to a local audio or video file for ElevenLabs Instant Voice Cloning.
+ * Pass as the `voice` in `createCaptions` to clone a voice from the file at `path`.
+ *
+ * @example
+ * ```ts
+ * createCaptions({
+ *   en: { voice: { path: './my-voice.mp3' }, captions: { intro: 'Hello.' } },
+ * })
+ * ```
+ */
+export type CustomVoiceRef = { path: string }
+
+/** Returns true when the value is a `CustomVoiceRef` object. */
+export function isCustomVoiceRef(value: unknown): value is CustomVoiceRef {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'path' in value &&
+    typeof (value as Record<string, unknown>).path === 'string'
+  )
+}

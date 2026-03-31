@@ -1190,6 +1190,24 @@ describe('CLI', () => {
     })
   })
 
+  describe('dev URL helpers', () => {
+    it('should use DEV_BACKEND_PORT for local backend uploads', async () => {
+      process.env.DEV_BACKEND_PORT = '8787'
+
+      const { getDevBackendUrl } = await import('./cli')
+
+      expect(getDevBackendUrl()).toBe('http://localhost:8787')
+    })
+
+    it('should use DEV_FRONTEND_PORT for local frontend auth and links', async () => {
+      process.env.DEV_FRONTEND_PORT = '5173'
+
+      const { getDevFrontendUrl } = await import('./cli')
+
+      expect(getDevFrontendUrl()).toBe('http://localhost:5173')
+    })
+  })
+
   describe('init command', () => {
     function setupReadlineMock(answer: string): void {
       const mockRl = {

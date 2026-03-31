@@ -21,6 +21,47 @@ import { logger } from './src/logger.js'
 import type { RecordingData } from './src/events.js'
 import type { ScreenCIConfig } from './src/types.js'
 
+function resolveRecordingFileCandidates(
+  filePath: string,
+  configDir: string
+): string[] {
+  return [
+    filePath,
+    resolve(configDir, 'videos', filePath),
+    resolve(configDir, pathRelative('/app', filePath)),
+  ]
+}
+
+async function readRecordingFile(
+  filePath: string,
+  configDir: string
+): Promise<{ buffer: Buffer; resolvedPath: string } | null> {
+  for (const candidate of resolveRecordingFileCandidates(filePath, configDir)) {
+    try {
+      return { buffer: await readFile(candidate), resolvedPath: candidate }
+    } catch {
+      // try next candidate
+    }
+  }
+  return null
+}
+
+function contentTypeForPath(filePath: string): string {
+  const ext = filePath.split('.').pop()?.toLowerCase() ?? 'bin'
+  const contentTypeMap: Record<string, string> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+    mp3: 'audio/mpeg',
+    svg: 'image/svg+xml',
+  }
+  return contentTypeMap[ext] ?? 'application/octet-stream'
+}
+
 function writeInline(msg: string): void {
   process.stdout.write(msg)
 }
@@ -249,46 +290,15 @@ async function uploadAssets(
     if (seenNames.has(event.name)) continue
     seenNames.add(event.name)
 
-    // Resolve the asset file. Recording runs in a Docker container where configDir → /app,
-    // so stored paths may be container-internal absolute or relative paths.
-    // Resolution order:
-    //   1. Path as-is (works for absolute host paths)
-    //   2. Relative path resolved from configDir/videos (the video scripts directory)
-    //   3. Container path translated: /some/path → configDir/../some/path
-    const candidates = [
-      assetPath,
-      resolve(configDir, 'videos', assetPath),
-      resolve(configDir, pathRelative('/app', assetPath)),
-    ]
-    let fileBuffer: Buffer | undefined
-    let resolvedPath = assetPath
-    for (const candidate of candidates) {
-      try {
-        fileBuffer = await readFile(candidate)
-        resolvedPath = candidate
-        break
-      } catch {
-        // try next
-      }
-    }
-    if (fileBuffer === undefined) {
+    const resolvedFile = await readRecordingFile(assetPath, configDir)
+    if (resolvedFile === null) {
       logger.warn(`Asset file not found, skipping upload: ${assetPath}`)
       continue
     }
+    const { buffer: fileBuffer, resolvedPath } = resolvedFile
 
     const sha256 = createHash('sha256').update(fileBuffer).digest('hex')
-    const ext = assetPath.split('.').pop()?.toLowerCase() ?? 'bin'
-    const contentTypeMap: Record<string, string> = {
-      png: 'image/png',
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      gif: 'image/gif',
-      webp: 'image/webp',
-      mp4: 'video/mp4',
-      webm: 'video/webm',
-      svg: 'image/svg+xml',
-    }
-    const contentType = contentTypeMap[ext] ?? 'application/octet-stream'
+    const contentType = contentTypeForPath(resolvedPath)
 
     try {
       const res = await fetch(`${apiUrl}/cli/upload/${recordingId}/asset`, {
@@ -314,6 +324,85 @@ async function uploadAssets(
       }
     } catch (err) {
       logger.warn(`Network error uploading asset ${assetPath}:`, err)
+    }
+  }
+}
+
+async function uploadCustomVoiceAssets(
+  data: RecordingData,
+  apiUrl: string,
+  secret: string,
+  recordingId: string,
+  configDir: string
+): Promise<void> {
+  const customVoicePaths = new Set<string>()
+
+  for (const event of data.events) {
+    if (event.type === 'captionStart' && event.translations) {
+      for (const translation of Object.values(event.translations)) {
+        if (
+          typeof translation.voice === 'object' &&
+          translation.voice !== null &&
+          'path' in translation.voice &&
+          typeof translation.voice.path === 'string'
+        ) {
+          customVoicePaths.add(translation.voice.path)
+        }
+      }
+    }
+
+    if (event.type === 'videoCaptionStart' && event.translations) {
+      for (const translation of Object.values(event.translations)) {
+        if (
+          'text' in translation &&
+          typeof translation.voice === 'object' &&
+          translation.voice !== null &&
+          'path' in translation.voice &&
+          typeof translation.voice.path === 'string'
+        ) {
+          customVoicePaths.add(translation.voice.path)
+        }
+      }
+    }
+  }
+
+  for (const voicePath of customVoicePaths) {
+    const resolvedFile = await readRecordingFile(voicePath, configDir)
+    if (resolvedFile === null) {
+      logger.warn(
+        `Custom voice file not found locally, assuming previously uploaded recording asset is valid: ${voicePath}`
+      )
+      continue
+    }
+
+    const { buffer: fileBuffer, resolvedPath } = resolvedFile
+    const sha256 = createHash('sha256').update(fileBuffer).digest('hex')
+    const contentType = contentTypeForPath(resolvedPath)
+
+    try {
+      const res = await fetch(`${apiUrl}/cli/upload/${recordingId}/asset`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-ScreenCI-Secret': secret,
+        },
+        body: JSON.stringify({
+          sha256,
+          fileBase64: fileBuffer.toString('base64'),
+          contentType,
+          assetName: voicePath,
+        }),
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        logger.warn(
+          `Failed to upload custom voice ${voicePath}: ${res.status} ${text}`
+        )
+      } else {
+        logger.info(`Custom voice uploaded: ${voicePath}`)
+      }
+    } catch (err) {
+      logger.warn(`Network error uploading custom voice ${voicePath}:`, err)
     }
   }
 }
@@ -390,6 +479,13 @@ async function uploadRecordings(
         recordingId,
         resolve(screenciDir, '..')
       )
+      await uploadCustomVoiceAssets(
+        data,
+        apiUrl,
+        secret,
+        recordingId,
+        resolve(screenciDir, '..')
+      )
 
       // Step 2: stream the recording video file (if it exists)
       const recordingPath = resolve(screenciDir, entry, 'recording.mp4')
@@ -430,6 +526,20 @@ async function uploadRecordings(
   return firstProjectId
 }
 
+export function getDevBackendUrl(): string {
+  const devBackendPort = process.env.DEV_BACKEND_PORT
+  return devBackendPort
+    ? `http://localhost:${devBackendPort}`
+    : 'https://api.screenci.com'
+}
+
+export function getDevFrontendUrl(): string {
+  const devFrontendPort = process.env.DEV_FRONTEND_PORT
+  return devFrontendPort
+    ? `http://localhost:${devFrontendPort}`
+    : 'https://app.screenci.com'
+}
+
 async function uploadLatest(configPath: string | undefined): Promise<void> {
   const resolvedConfigPath = findScreenCIConfig(configPath)
   if (!resolvedConfigPath) {
@@ -461,9 +571,7 @@ async function uploadLatest(configPath: string | undefined): Promise<void> {
     }
   }
 
-  const apiUrl = process.env.DEV_PORT
-    ? `http://localhost:${process.env.DEV_PORT}`
-    : 'https://api.screenci.com'
+  const apiUrl = getDevBackendUrl()
 
   const secret = process.env.SCREENCI_SECRET
   if (!secret) {
@@ -482,11 +590,7 @@ async function uploadLatest(configPath: string | undefined): Promise<void> {
     return
   }
 
-  const appUrl = process.env.SCREENCI_APP_URL
-    ? process.env.SCREENCI_APP_URL
-    : process.env.DEV_PORT
-      ? `http://localhost:${process.env.DEV_PORT}`
-      : 'https://app.screenci.com'
+  const appUrl = getDevFrontendUrl()
 
   logger.info(`Uploading latest recording: "${latestEntry}"`)
   const projectId = await uploadRecordings(
@@ -721,10 +825,7 @@ function toKebabCase(name: string): string {
 }
 
 async function runInitAuth(): Promise<void> {
-  const devPort = process.env.DEV_PORT
-  const appUrl =
-    process.env.SCREENCI_APP_URL ??
-    (devPort ? `http://localhost:${devPort}` : 'https://app.screenci.com')
+  const appUrl = getDevFrontendUrl()
   try {
     const secret = await performBrowserLogin(appUrl)
     const savePath = resolve(process.cwd(), '.env')
@@ -863,12 +964,7 @@ export async function main() {
             logger.info(
               'No SCREENCI_SECRET in .env file, opening browser for authentication...'
             )
-            const devPort = process.env.DEV_PORT
-            const appUrl =
-              process.env.SCREENCI_APP_URL ??
-              (devPort
-                ? `http://localhost:${devPort}`
-                : 'https://app.screenci.com')
+            const appUrl = getDevFrontendUrl()
             const secret = await performBrowserLogin(appUrl)
             const savePath =
               envFilePath ?? resolve(dirname(resolvedConfigForSecret), '.env')
@@ -905,14 +1001,8 @@ export async function main() {
               logger.warn(`Failed to load env file ${envFilePath}:`, err)
             }
           }
-          const apiUrl = process.env.DEV_PORT
-            ? `http://localhost:${process.env.DEV_PORT}`
-            : 'https://api.screenci.com'
-          const appUrl = process.env.SCREENCI_APP_URL
-            ? process.env.SCREENCI_APP_URL
-            : process.env.DEV_PORT
-              ? `http://localhost:${process.env.DEV_PORT}`
-              : 'https://app.screenci.com'
+          const apiUrl = getDevBackendUrl()
+          const appUrl = getDevFrontendUrl()
           const secret = process.env.SCREENCI_SECRET
           if (!secret) {
             logger.info(

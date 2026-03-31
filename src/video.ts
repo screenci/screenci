@@ -24,10 +24,17 @@ import type { Page } from '@playwright/test'
 export { getDimensions } from './dimensions.js'
 import { getDimensions } from './dimensions.js'
 import { isHeadless, startXvfb, type XvfbInstance } from './xvfb.js'
-import { setActiveCaptionRecorder, resetCaptionChain } from './caption.js'
+import {
+  setActiveCaptionRecorder,
+  resetCaptionChain,
+  validateCustomVoiceRefs,
+} from './caption.js'
 import { setActiveHideRecorder } from './hide.js'
 import { setActiveAutoZoomRecorder } from './autoZoom.js'
-import { setActiveAssetRecorder } from './asset.js'
+import {
+  setActiveAssetRecorder,
+  validateRegisteredAssetPaths,
+} from './asset.js'
 import {
   DEFAULT_VIDEO_OPTIONS,
   DEFAULT_ASPECT_RATIO,
@@ -432,6 +439,9 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     // Wait for browser window to be fully rendered before starting recording
     // This prevents black screen captures
     await page.waitForTimeout(1500)
+
+    await validateCustomVoiceRefs(testInfo.file)
+    await validateRegisteredAssetPaths(testInfo.file)
 
     // Hide browser toolbar via CDP fullscreen. --kiosk alone is not reliable on
     // Xvfb; the CDP call triggers Chromium's internal fullscreen mode which

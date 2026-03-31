@@ -62,6 +62,15 @@ function contentTypeForPath(filePath: string): string {
   return contentTypeMap[ext] ?? 'application/octet-stream'
 }
 
+type CustomVoiceRefLike = { id: string; path: string }
+
+type PreparedCustomVoiceAsset = {
+  id: string
+  path: string
+  fileBuffer?: Buffer
+  contentType?: string
+}
+
 function writeInline(msg: string): void {
   process.stdout.write(msg)
 }
@@ -328,14 +337,11 @@ async function uploadAssets(
   }
 }
 
-async function uploadCustomVoiceAssets(
+async function prepareCustomVoiceAssets(
   data: RecordingData,
-  apiUrl: string,
-  secret: string,
-  recordingId: string,
   configDir: string
-): Promise<void> {
-  const customVoicePaths = new Set<string>()
+): Promise<PreparedCustomVoiceAsset[]> {
+  const customVoiceRefsByPath = new Map<string, CustomVoiceRefLike[]>()
 
   for (const event of data.events) {
     if (event.type === 'captionStart' && event.translations) {
@@ -346,7 +352,9 @@ async function uploadCustomVoiceAssets(
           'path' in translation.voice &&
           typeof translation.voice.path === 'string'
         ) {
-          customVoicePaths.add(translation.voice.path)
+          const refs = customVoiceRefsByPath.get(translation.voice.path) ?? []
+          refs.push(translation.voice)
+          customVoiceRefsByPath.set(translation.voice.path, refs)
         }
       }
     }
@@ -360,25 +368,55 @@ async function uploadCustomVoiceAssets(
           'path' in translation.voice &&
           typeof translation.voice.path === 'string'
         ) {
-          customVoicePaths.add(translation.voice.path)
+          const refs = customVoiceRefsByPath.get(translation.voice.path) ?? []
+          refs.push(translation.voice)
+          customVoiceRefsByPath.set(translation.voice.path, refs)
         }
       }
     }
   }
 
-  for (const voicePath of customVoicePaths) {
+  const preparedAssets: PreparedCustomVoiceAsset[] = []
+
+  for (const [voicePath, refs] of customVoiceRefsByPath) {
     const resolvedFile = await readRecordingFile(voicePath, configDir)
     if (resolvedFile === null) {
+      const existingId = refs.find((ref) => typeof ref.id === 'string')?.id
+      if (!existingId) {
+        throw new Error(
+          `Custom voice file not found and no cached id available: ${voicePath}`
+        )
+      }
       logger.warn(
         `Custom voice file not found locally, assuming previously uploaded recording asset is valid: ${voicePath}`
       )
+      for (const ref of refs) {
+        ref.id = existingId
+      }
+      preparedAssets.push({ id: existingId, path: voicePath })
       continue
     }
 
     const { buffer: fileBuffer, resolvedPath } = resolvedFile
-    const sha256 = createHash('sha256').update(fileBuffer).digest('hex')
+    const id = createHash('sha256').update(fileBuffer).digest('hex')
     const contentType = contentTypeForPath(resolvedPath)
+    for (const ref of refs) {
+      ref.id = id
+    }
+    preparedAssets.push({ id, path: voicePath, fileBuffer, contentType })
+  }
 
+  return preparedAssets
+}
+
+async function uploadCustomVoiceAssets(
+  assets: PreparedCustomVoiceAsset[],
+  apiUrl: string,
+  secret: string,
+  recordingId: string
+): Promise<void> {
+  for (const asset of assets) {
+    if (!asset.fileBuffer || !asset.contentType) continue
     try {
       const res = await fetch(`${apiUrl}/cli/upload/${recordingId}/asset`, {
         method: 'PUT',
@@ -387,22 +425,22 @@ async function uploadCustomVoiceAssets(
           'X-ScreenCI-Secret': secret,
         },
         body: JSON.stringify({
-          sha256,
-          fileBase64: fileBuffer.toString('base64'),
-          contentType,
-          assetName: voicePath,
+          sha256: asset.id,
+          fileBase64: asset.fileBuffer.toString('base64'),
+          contentType: asset.contentType,
+          assetName: asset.id,
         }),
       })
       if (!res.ok) {
         const text = await res.text()
         logger.warn(
-          `Failed to upload custom voice ${voicePath}: ${res.status} ${text}`
+          `Failed to upload custom voice ${asset.path}: ${res.status} ${text}`
         )
       } else {
-        logger.info(`Custom voice uploaded: ${voicePath}`)
+        logger.info(`Custom voice uploaded: ${asset.path}`)
       }
     } catch (err) {
-      logger.warn(`Network error uploading custom voice ${voicePath}:`, err)
+      logger.warn(`Network error uploading custom voice ${asset.path}:`, err)
     }
   }
 }
@@ -442,6 +480,10 @@ async function uploadRecordings(
     }
 
     const videoName = data.metadata?.videoName ?? entry
+    const preparedCustomVoiceAssets = await prepareCustomVoiceAssets(
+      data,
+      resolve(screenciDir, '..')
+    )
 
     writeInline(`Uploading "${videoName}"...`)
     try {
@@ -480,11 +522,10 @@ async function uploadRecordings(
         resolve(screenciDir, '..')
       )
       await uploadCustomVoiceAssets(
-        data,
+        preparedCustomVoiceAssets,
         apiUrl,
         secret,
-        recordingId,
-        resolve(screenciDir, '..')
+        recordingId
       )
 
       // Step 2: stream the recording video file (if it exists)

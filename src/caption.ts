@@ -1,11 +1,16 @@
 import type {
   IEventRecorder,
   CaptionTranslation,
+  RecordingCustomVoiceRef,
   VideoCaptionTranslation,
   VideoCaptionTranslationFile,
 } from './events.js'
 import type { VoiceKey, VoiceForLang, Lang, CustomVoiceRef } from './voices.js'
+import { isCustomVoiceRef } from './voices.js'
 import { isInsideHide } from './hide.js'
+import { access, readFile } from 'fs/promises'
+import { createHash } from 'crypto'
+import { dirname, resolve } from 'path'
 
 // One frame at 24fps — ensures at least one rendered frame captures each caption state.
 export const ONE_FRAME_MS = 1000 / 24
@@ -37,6 +42,8 @@ export function setSleepFn(fn: (ms: number) => void): void {
 
 let activeRecorder: IEventRecorder | null = null
 let captionStarted = false
+const registeredCustomVoiceRefs = new Set<CustomVoiceRef>()
+const registeredVideoCaptionAssetPaths = new Set<string>()
 
 export function setActiveCaptionRecorder(
   recorder: IEventRecorder | null
@@ -46,6 +53,75 @@ export function setActiveCaptionRecorder(
 
 export function resetCaptionChain(): void {
   captionStarted = false
+}
+
+export function resetRegisteredCustomVoiceRefs(): void {
+  registeredCustomVoiceRefs.clear()
+  registeredVideoCaptionAssetPaths.clear()
+}
+
+export async function validateCustomVoiceRefs(
+  testFilePath: string
+): Promise<void> {
+  const testDir = dirname(testFilePath)
+
+  for (const ref of registeredCustomVoiceRefs) {
+    const candidates = [ref.path, resolve(testDir, ref.path)]
+    let fileBuffer: Buffer | null = null
+
+    for (const candidate of candidates) {
+      try {
+        await access(candidate)
+        fileBuffer = await readFile(candidate)
+        break
+      } catch {
+        // try next candidate
+      }
+    }
+
+    if (fileBuffer === null) {
+      throw new Error(`Custom voice file not found: ${ref.path}`)
+    }
+
+    ;(ref as CustomVoiceRef & { id: string }).id = createHash('sha256')
+      .update(fileBuffer)
+      .digest('hex')
+  }
+
+  for (const assetPath of registeredVideoCaptionAssetPaths) {
+    const candidates = [assetPath, resolve(testDir, assetPath)]
+    let exists = false
+
+    for (const candidate of candidates) {
+      try {
+        await access(candidate)
+        exists = true
+        break
+      } catch {
+        // try next candidate
+      }
+    }
+
+    if (!exists) {
+      throw new Error(`Video caption asset file not found: ${assetPath}`)
+    }
+  }
+}
+
+function toRecordedVoice(
+  voice: VoiceKey | CustomVoiceRef
+): VoiceKey | RecordingCustomVoiceRef {
+  if (!isCustomVoiceRef(voice)) return voice
+  if (
+    !('id' in voice) ||
+    typeof (voice as CustomVoiceRef & { id?: string }).id !== 'string'
+  ) {
+    throw new Error(`Custom voice id missing for path: ${voice.path}`)
+  }
+  return {
+    id: (voice as CustomVoiceRef & { id: string }).id,
+    path: voice.path,
+  }
 }
 
 function captionWaitEnd(): void {
@@ -198,6 +274,13 @@ function buildMultiLangCaptions<
   const firstLang = langs[0]
   if (firstLang === undefined) return {} as Captions<T>
 
+  for (const lang of langs) {
+    const voice = languagesMap[lang].voice
+    if (isCustomVoiceRef(voice)) {
+      registeredCustomVoiceRefs.add(voice)
+    }
+  }
+
   const result = {} as Captions<T>
 
   for (const key in languagesMap[firstLang].captions) {
@@ -219,13 +302,14 @@ function buildMultiLangCaptions<
         if (typeof val === 'string') {
           videoTranslations[lang] = {
             text: val,
-            voice: languagesMap[lang].voice,
+            voice: toRecordedVoice(languagesMap[lang].voice),
           }
         } else {
           const fileTrans: VideoCaptionTranslationFile = {
             assetPath: val.path,
             ...(val.subtitle !== undefined && { subtitle: val.subtitle }),
           }
+          registeredVideoCaptionAssetPaths.add(val.path)
           videoTranslations[lang] = fileTrans
         }
       }
@@ -257,7 +341,7 @@ function buildMultiLangCaptions<
         if (val !== undefined && typeof val === 'string') {
           textTranslations[lang] = {
             text: val,
-            voice: languagesMap[lang].voice,
+            voice: toRecordedVoice(languagesMap[lang].voice),
           }
         }
       }
@@ -391,6 +475,7 @@ function buildSingleLangVideoCaptions<
     if (entry === undefined) continue
     const assetPath = typeof entry === 'string' ? entry : entry.path
     const subtitle = typeof entry === 'string' ? undefined : entry.subtitle
+    registeredVideoCaptionAssetPaths.add(assetPath)
 
     result[key] = {
       async start() {
@@ -430,6 +515,8 @@ function buildMultiLangVideoCaptions<
     for (const lang of langs) {
       const entry = languagesMap[lang].captions[keyStr]
       if (entry !== undefined) {
+        const assetPath = typeof entry === 'string' ? entry : entry.path
+        registeredVideoCaptionAssetPaths.add(assetPath)
         translations[lang] = entryToVideoTranslation(entry)
       }
     }

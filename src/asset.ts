@@ -1,4 +1,6 @@
 import type { IEventRecorder } from './events.js'
+import { access } from 'fs/promises'
+import { dirname, resolve } from 'path'
 
 type ImageExt = 'png' | 'jpg' | 'jpeg' | 'gif' | 'webp' | 'svg' | 'bmp'
 
@@ -27,9 +29,39 @@ type AssetConfigFor<P extends string> =
     : { path: P; audio: number; fullScreen: boolean }
 
 let activeRecorder: IEventRecorder | null = null
+const registeredAssetPaths = new Set<string>()
 
 export function setActiveAssetRecorder(recorder: IEventRecorder | null): void {
   activeRecorder = recorder
+}
+
+export function resetRegisteredAssetPaths(): void {
+  registeredAssetPaths.clear()
+}
+
+export async function validateRegisteredAssetPaths(
+  testFilePath: string
+): Promise<void> {
+  const testDir = dirname(testFilePath)
+
+  for (const assetPath of registeredAssetPaths) {
+    const candidates = [assetPath, resolve(testDir, assetPath)]
+    let exists = false
+
+    for (const candidate of candidates) {
+      try {
+        await access(candidate)
+        exists = true
+        break
+      } catch {
+        // try next candidate
+      }
+    }
+
+    if (!exists) {
+      throw new Error(`Asset file not found: ${assetPath}`)
+    }
+  }
 }
 
 export interface AssetController {
@@ -102,6 +134,7 @@ export function createAssets<
 
   for (const name in assetsMap) {
     const config = assetsMap[name]! as AssetConfig
+    registeredAssetPaths.add(config.path)
     result[name] = createAssetController(name, config)
   }
 

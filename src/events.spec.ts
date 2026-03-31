@@ -267,11 +267,9 @@ describe('EventRecorder', () => {
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed: RecordingData = JSON.parse(content)
       const ro = parsed.renderOptions as Record<string, unknown>
-      // output: 16:9 + 1080p → 1920x1080, with background css
-      expect((ro.output as Record<string, unknown>).resolution).toBe(
-        '1920x1080'
-      )
-      expect((ro.output as Record<string, unknown>).aspectRatio).toBeUndefined()
+      // output: stored as aspectRatio + quality (not pre-computed resolution)
+      expect((ro.output as Record<string, unknown>).aspectRatio).toBe('16:9')
+      expect((ro.output as Record<string, unknown>).quality).toBe('1080p')
       expect((ro.output as Record<string, unknown>).background).toEqual({
         backgroundCss:
           'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
@@ -311,9 +309,8 @@ describe('EventRecorder', () => {
       expect((ro.recording as Record<string, unknown>).roundness).toBe(0)
       expect((ro.recording as Record<string, unknown>).shape).toBe('rounded')
       // output also defaulted
-      expect((ro.output as Record<string, unknown>).resolution).toBe(
-        '1920x1080'
-      )
+      expect((ro.output as Record<string, unknown>).aspectRatio).toBe('16:9')
+      expect((ro.output as Record<string, unknown>).quality).toBe('1080p')
     })
 
     it('preserves explicit aspectRatio and serialises to resolution', async () => {
@@ -324,11 +321,9 @@ describe('EventRecorder', () => {
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed: RecordingData = JSON.parse(content)
       const ro = parsed.renderOptions as Record<string, unknown>
-      // 9:16 + default 1080p → 1080x1920
-      expect((ro.output as Record<string, unknown>).resolution).toBe(
-        '1080x1920'
-      )
-      expect((ro.output as Record<string, unknown>).aspectRatio).toBeUndefined()
+      // explicit aspectRatio preserved, quality defaulted
+      expect((ro.output as Record<string, unknown>).aspectRatio).toBe('9:16')
+      expect((ro.output as Record<string, unknown>).quality).toBe('1080p')
     })
 
     it('always serialises aspectRatio + quality to resolution string', async () => {
@@ -341,10 +336,8 @@ describe('EventRecorder', () => {
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed: RecordingData = JSON.parse(content)
       const ro = parsed.renderOptions as Record<string, unknown>
-      expect((ro.output as Record<string, unknown>).resolution).toBe(
-        '1920x1080'
-      )
-      expect((ro.output as Record<string, unknown>).aspectRatio).toBeUndefined()
+      expect((ro.output as Record<string, unknown>).aspectRatio).toBe('16:9')
+      expect((ro.output as Record<string, unknown>).quality).toBe('1080p')
     })
 
     it('applies default dropShadow and background when not provided', async () => {

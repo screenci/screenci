@@ -437,7 +437,7 @@ describe('CLI', () => {
           '-t',
           'ghcr.io/screenci/record:latest',
         ]),
-        expect.objectContaining({ stdio: 'inherit' })
+        expect.objectContaining({ stdio: 'pipe' })
       )
 
       expect(mockSpawn).toHaveBeenNthCalledWith(
@@ -450,7 +450,7 @@ describe('CLI', () => {
           '-t',
           'screenci',
         ]),
-        expect.objectContaining({ stdio: 'inherit' })
+        expect.objectContaining({ stdio: 'pipe' })
       )
 
       expect(mockSpawn).toHaveBeenNthCalledWith(
@@ -467,7 +467,7 @@ describe('CLI', () => {
           'screenci',
           'record',
         ]),
-        expect.objectContaining({ stdio: 'inherit' })
+        expect.objectContaining({ stdio: ['inherit', 'pipe', 'pipe'] })
       )
     })
 
@@ -526,7 +526,7 @@ describe('CLI', () => {
         3,
         'podman',
         expect.arrayContaining(['screenci', 'record', '--project=chromium']),
-        expect.objectContaining({ stdio: 'inherit' })
+        expect.objectContaining({ stdio: ['inherit', 'pipe', 'pipe'] })
       )
     })
 
@@ -559,6 +559,10 @@ describe('CLI', () => {
     it('should log build and run steps', async () => {
       process.argv = ['node', 'cli.js', 'record']
 
+      const stdoutSpy = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation(() => true)
+
       const { main } = await import('./cli')
       const mainPromise = main()
 
@@ -573,14 +577,11 @@ describe('CLI', () => {
 
       await mainPromise
 
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        expect.stringMatching(
-          /Building container image with (podman|docker)\.\.\./
-        )
+      expect(stdoutSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Building image')
       )
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        'Running recording in container...'
-      )
+
+      stdoutSpy.mockRestore()
     })
 
     it('should support --config flag', async () => {
@@ -627,7 +628,10 @@ describe('CLI', () => {
       await new Promise((resolve) => setTimeout(resolve, 10))
       mockBuildProcess.emit('close', 1)
 
-      await expect(mainPromise).rejects.toThrow('podman exited with code 1')
+      await expect(mainPromise).rejects.toThrow('process.exit called')
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('podman exited with code 1')
+      )
     })
 
     it('should reject when podman run fails', async () => {
@@ -860,11 +864,17 @@ describe('CLI', () => {
 
       await mainPromise
 
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        'Running ScreenCI recorder with npx...'
-      )
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Using config:')
+      // Inside container, running/config log messages are suppressed;
+      // verify playwright was spawned with the default config path
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        expect.arrayContaining([
+          'playwright',
+          'test',
+          '--config',
+          expect.stringContaining('screenci.config.ts'),
+        ]),
+        expect.any(Object)
       )
     })
 
@@ -886,11 +896,17 @@ describe('CLI', () => {
 
       await mainPromise
 
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Using config:')
-      )
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        expect.stringContaining('custom.config.ts')
+      // Inside container, running/config log messages are suppressed;
+      // verify playwright was spawned with the custom config path
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        expect.arrayContaining([
+          'playwright',
+          'test',
+          '--config',
+          expect.stringContaining('custom.config.ts'),
+        ]),
+        expect.any(Object)
       )
     })
   })

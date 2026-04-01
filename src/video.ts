@@ -50,8 +50,8 @@ import {
 import { logger } from './logger.js'
 
 async function setupMouseTracking(
-  page: Page,
-  recorder: EventRecorder
+  _page: Page,
+  _recorder: EventRecorder
 ): Promise<void> {
   /*
   await page.exposeFunction(
@@ -303,7 +303,10 @@ const _videoBase = base.extend<VideoFixtureOptions>({
 
   // Internal worker fixture to manage xvfb per test
   _xvfbSetup: [
-    async ({ recordOptions }, use: (arg: void) => Promise<void>) => {
+    async (
+      { recordOptions: _recordOptions },
+      use: (arg: void) => Promise<void>
+    ) => {
       const shouldRecord = process.env.SCREENCI_RECORD === 'true'
 
       if (shouldRecord && !currentXvfb && isHeadless()) {

@@ -14,7 +14,6 @@ const mockReaddirSync = vi.fn(() => [] as string[])
 const mockReaddir = vi.fn()
 const mockReadFile = vi.fn()
 const mockStat = vi.fn()
-const mockFetch = vi.fn()
 const mockCreateReadStream = vi.fn()
 const mockWriteFile = vi.fn()
 const mockMkdir = vi.fn()
@@ -80,6 +79,7 @@ describe('CLI', () => {
   let mockChildProcess: EventEmitter
   let loggerErrorSpy: ReturnType<typeof vi.spyOn>
   let loggerInfoSpy: ReturnType<typeof vi.spyOn>
+  let loggerWarnSpy: ReturnType<typeof vi.spyOn>
   let processExitSpy: ReturnType<typeof vi.spyOn>
   let originalArgv: string[]
   let originalEnv: NodeJS.ProcessEnv
@@ -123,6 +123,7 @@ describe('CLI', () => {
     // Mock logger methods
     loggerErrorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {})
     loggerInfoSpy = vi.spyOn(logger, 'info').mockImplementation(() => {})
+    loggerWarnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
 
     // Mock process.exit
     processExitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
@@ -138,6 +139,7 @@ describe('CLI', () => {
     // Restore spies
     loggerErrorSpy?.mockRestore()
     loggerInfoSpy?.mockRestore()
+    loggerWarnSpy?.mockRestore()
     processExitSpy?.mockRestore()
   })
 
@@ -327,7 +329,9 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await new Promise((resolve) => setTimeout(resolve, 10))
+      await vi.waitFor(() => {
+        expect(mockSpawn).toHaveBeenCalled()
+      })
       mockChildProcess.emit('close', 0)
 
       await mainPromise
@@ -530,6 +534,38 @@ describe('CLI', () => {
       )
     })
 
+    it('should use docker when --docker is provided', async () => {
+      process.argv = ['node', 'cli.js', 'record', '--docker']
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        error: undefined,
+        stdout: 'Docker version 28.0.1, build abc123',
+        stderr: '',
+      })
+
+      const { main } = await import('./cli')
+      const mainPromise = main()
+
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      mockBuildProcess.emit('close', 0)
+
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      mockRecordingBuildProcess.emit('close', 0)
+
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      mockRunProcess.emit('close', 0)
+
+      await mainPromise
+
+      expect(mockSpawn).toHaveBeenNthCalledWith(
+        1,
+        'docker',
+        expect.arrayContaining(['build']),
+        expect.objectContaining({ stdio: 'pipe' })
+      )
+      expect(mockSpawnSync).toHaveBeenCalledTimes(1)
+    })
+
     it('should clear and recreate .screenci directory before running container', async () => {
       process.argv = ['node', 'cli.js', 'record']
 
@@ -710,20 +746,30 @@ describe('CLI', () => {
 
   describe('detectContainerRuntime', () => {
     it('should return podman when available', async () => {
-      mockSpawnSync.mockReturnValue({ status: 0, error: undefined })
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        error: undefined,
+        stdout: 'podman version 5.2.0',
+        stderr: '',
+      })
 
       const { detectContainerRuntime } = await import('./cli')
 
       expect(detectContainerRuntime()).toBe('podman')
       expect(mockSpawnSync).toHaveBeenCalledWith('podman', ['--version'], {
-        stdio: 'ignore',
+        encoding: 'utf8',
       })
     })
 
     it('should return docker when podman is not available', async () => {
       mockSpawnSync
         .mockReturnValueOnce({ status: 1, error: undefined }) // podman fails
-        .mockReturnValueOnce({ status: 0, error: undefined }) // docker succeeds
+        .mockReturnValueOnce({
+          status: 0,
+          error: undefined,
+          stdout: 'Docker version 28.0.1, build abc123',
+          stderr: '',
+        }) // docker succeeds
 
       const { detectContainerRuntime } = await import('./cli')
 
@@ -731,11 +777,17 @@ describe('CLI', () => {
     })
 
     it('should prefer podman over docker when both are available', async () => {
-      mockSpawnSync.mockReturnValue({ status: 0, error: undefined })
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        error: undefined,
+        stdout: 'podman version 5.2.0',
+        stderr: '',
+      })
 
       const { detectContainerRuntime } = await import('./cli')
 
       expect(detectContainerRuntime()).toBe('podman')
+      expect(mockSpawnSync).toHaveBeenCalledTimes(1)
     })
 
     it('should exit when neither podman nor docker is available', async () => {
@@ -746,6 +798,11 @@ describe('CLI', () => {
       expect(() => detectContainerRuntime()).toThrow('process.exit called')
       expect(loggerErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining('Neither podman nor docker found')
+      )
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'https://screenci.com/guides/getting-started/#prerequisites'
+        )
       )
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })
@@ -759,6 +816,66 @@ describe('CLI', () => {
       const { detectContainerRuntime } = await import('./cli')
 
       expect(() => detectContainerRuntime()).toThrow('process.exit called')
+      expect(processExitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('should warn when preferred podman version is below the recommendation', async () => {
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        error: undefined,
+        stdout: 'podman version 4.9.3',
+        stderr: '',
+      })
+
+      const { detectContainerRuntime } = await import('./cli')
+
+      expect(detectContainerRuntime()).toBe('podman')
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('podman 5+ recommended')
+      )
+    })
+
+    it('should not warn about docker when podman is available and up to date', async () => {
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        error: undefined,
+        stdout: 'podman version 5.2.0',
+        stderr: '',
+      })
+
+      const { detectContainerRuntime } = await import('./cli')
+
+      expect(detectContainerRuntime()).toBe('podman')
+      expect(loggerWarnSpy).not.toHaveBeenCalled()
+      expect(mockSpawnSync).toHaveBeenCalledTimes(1)
+    })
+
+    it('should return forced docker when docker is available', async () => {
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        error: undefined,
+        stdout: 'Docker version 28.0.1, build abc123',
+        stderr: '',
+      })
+
+      const { detectContainerRuntime } = await import('./cli')
+
+      expect(detectContainerRuntime('docker')).toBe('docker')
+      expect(mockSpawnSync).toHaveBeenCalledTimes(1)
+      expect(mockSpawnSync).toHaveBeenCalledWith('docker', ['--version'], {
+        encoding: 'utf8',
+      })
+    })
+
+    it('should exit when forced podman is unavailable', async () => {
+      mockSpawnSync.mockReturnValue({ status: 1, error: undefined })
+
+      const { detectContainerRuntime } = await import('./cli')
+
+      expect(() => detectContainerRuntime('podman')).toThrow(
+        'process.exit called'
+      )
+      expect(loggerErrorSpy).toHaveBeenCalledWith('Error: podman not found.')
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })
   })
@@ -846,6 +963,19 @@ describe('CLI', () => {
 
       expect(loggerErrorSpy).toHaveBeenCalledWith(
         'Error: --config requires a path argument'
+      )
+      expect(processExitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('should exit if both --podman and --docker are provided', async () => {
+      process.argv = ['node', 'cli.js', 'record', '--podman', '--docker']
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow('process.exit called')
+
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        'Error: --podman and --docker cannot be used together'
       )
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })
@@ -1420,6 +1550,61 @@ describe('CLI', () => {
       await main()
 
       expect(mockCreateHttpServer).not.toHaveBeenCalled()
+    })
+
+    it('should warn during init when neither podman nor docker is installed', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+      mockSpawnSync
+        .mockReturnValueOnce({ status: 1, error: undefined })
+        .mockReturnValueOnce({ status: 1, error: undefined })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Neither podman nor docker found')
+      )
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'https://screenci.com/guides/getting-started/#prerequisites'
+        )
+      )
+    })
+
+    it('should warn during init when podman is present but below version 5', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        error: undefined,
+        stdout: 'podman version 4.9.3',
+        stderr: '',
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('podman 5+ recommended')
+      )
+    })
+
+    it('should not warn during init when podman is available and supported', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        error: undefined,
+        stdout: 'podman version 5.2.0',
+        stderr: '',
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerWarnSpy).not.toHaveBeenCalled()
+      expect(mockSpawnSync).toHaveBeenCalledTimes(1)
     })
 
     it('should automatically run npm install', async () => {

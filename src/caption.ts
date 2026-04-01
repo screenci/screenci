@@ -5,12 +5,7 @@ import type {
   VideoCaptionTranslation,
   VideoCaptionTranslationFile,
 } from './events.js'
-import type {
-  VoiceKey,
-  VoiceForLang,
-  Lang,
-  CustomVoiceRef,
-} from './voices.js'
+import type { VoiceKey, VoiceForLang, Lang, CustomVoiceRef } from './voices.js'
 import { isCustomVoiceRef } from './voices.js'
 import { isInsideHide } from './hide.js'
 import { access, readFile } from 'fs/promises'

@@ -64,9 +64,11 @@ function contentTypeForPath(filePath: string): string {
 
 type CustomVoiceRefLike = { id: string; path: string }
 
-type PreparedCustomVoiceAsset = {
-  id: string
+type PreparedUploadAsset = {
+  fileHash: string
   path: string
+  size: number
+  name?: string
   fileBuffer?: Buffer
   contentType?: string
 }
@@ -92,6 +94,81 @@ function parseDockerfileVersion(dockerfilePath: string): string {
   if (!fromLine) return 'unknown'
   const match = fromLine.match(/:([^\s@]+)/)
   return match?.[1] ?? 'unknown'
+}
+
+const CONTAINER_RUNTIME_DOCS_URL =
+  'https://screenci.com/guides/getting-started/#prerequisites'
+
+const MIN_CONTAINER_RUNTIME_MAJOR_VERSION = {
+  podman: 5,
+  docker: 28,
+} as const
+
+type ContainerRuntimeName = keyof typeof MIN_CONTAINER_RUNTIME_MAJOR_VERSION
+
+type ContainerRuntimeCheckResult = {
+  runtime: ContainerRuntimeName
+  version: string
+  majorVersion: number | null
+}
+
+function parseContainerRuntimeMajorVersion(
+  versionOutput: string
+): number | null {
+  const match = versionOutput.match(/(\d+)(?:\.\d+){0,2}/)
+  if (!match) return null
+
+  const majorVersion = Number.parseInt(match[1] ?? '', 10)
+  return Number.isNaN(majorVersion) ? null : majorVersion
+}
+
+function checkContainerRuntime(
+  runtime: ContainerRuntimeName
+): ContainerRuntimeCheckResult | null {
+  const result = spawnSync(runtime, ['--version'], { encoding: 'utf8' })
+
+  if (result.status !== 0 || result.error !== undefined) {
+    return null
+  }
+
+  const version = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
+
+  return {
+    runtime,
+    version,
+    majorVersion: parseContainerRuntimeMajorVersion(version),
+  }
+}
+
+function getPreferredContainerRuntime(): ContainerRuntimeCheckResult | null {
+  const podman = checkContainerRuntime('podman')
+  if (podman) return podman
+
+  return checkContainerRuntime('docker')
+}
+
+function exitContainerRuntimeNotFound(runtime: ContainerRuntimeName): never {
+  logger.error(`Error: ${runtime} not found.`)
+  logger.error(`Install ${runtime} or remove the --${runtime} flag.`)
+  logger.error(`See prerequisites: ${CONTAINER_RUNTIME_DOCS_URL}`)
+  process.exit(1)
+}
+
+function warnIfContainerRuntimeVersionIsOld(
+  runtimeCheck: ContainerRuntimeCheckResult
+): void {
+  const minimumVersion =
+    MIN_CONTAINER_RUNTIME_MAJOR_VERSION[runtimeCheck.runtime]
+
+  if (
+    runtimeCheck.majorVersion !== null &&
+    runtimeCheck.majorVersion < minimumVersion
+  ) {
+    logger.warn(
+      `Warning: ${runtimeCheck.runtime} ${minimumVersion}+ recommended (detected: ${runtimeCheck.version})`
+    )
+    logger.warn(`See prerequisites: ${CONTAINER_RUNTIME_DOCS_URL}`)
+  }
 }
 
 function spawnSilent(cmd: string, args: string[]): Promise<void> {
@@ -203,6 +280,7 @@ function parseArgs(args: string[]): {
   noContainer: boolean
   imageTag: string | undefined
   verbose: boolean
+  forcedRuntime: ContainerRuntimeName | undefined
   otherArgs: string[]
 } {
   const command = args[0]
@@ -215,6 +293,7 @@ function parseArgs(args: string[]): {
   let noContainer = false
   let imageTag: string | undefined
   let verbose = false
+  let forcedRuntime: ContainerRuntimeName | undefined
   const otherArgs: string[] = []
 
   for (let i = 1; i < args.length; i++) {
@@ -232,6 +311,18 @@ function parseArgs(args: string[]): {
       noContainer = true
     } else if (arg === '--verbose' || arg === '-v') {
       verbose = true
+    } else if (arg === '--podman') {
+      if (forcedRuntime === 'docker') {
+        logger.error('Error: --podman and --docker cannot be used together')
+        process.exit(1)
+      }
+      forcedRuntime = 'podman'
+    } else if (arg === '--docker') {
+      if (forcedRuntime === 'podman') {
+        logger.error('Error: --podman and --docker cannot be used together')
+        process.exit(1)
+      }
+      forcedRuntime = 'docker'
     } else if (arg === '--tag') {
       const nextArg = args[i + 1]
       if (nextArg !== undefined) {
@@ -246,7 +337,15 @@ function parseArgs(args: string[]): {
     }
   }
 
-  return { command, configPath, noContainer, imageTag, verbose, otherArgs }
+  return {
+    command,
+    configPath,
+    noContainer,
+    imageTag,
+    verbose,
+    forcedRuntime,
+    otherArgs,
+  }
 }
 
 async function findLatestEntry(screenciDir: string): Promise<string | null> {
@@ -276,71 +375,10 @@ async function findLatestEntry(screenciDir: string): Promise<string | null> {
   return latestEntry
 }
 
-async function uploadAssets(
-  data: RecordingData,
-  apiUrl: string,
-  secret: string,
-  recordingId: string,
-  configDir: string
-): Promise<void> {
-  type AssetStartEvent = Extract<
-    RecordingData['events'][number],
-    { type: 'assetStart' }
-  >
-  const assetEvents = (data.events as RecordingData['events']).filter(
-    (e): e is AssetStartEvent => e.type === 'assetStart'
-  )
-  if (assetEvents.length === 0) return
-
-  // Deduplicate by name — each unique asset name is uploaded once
-  const seenNames = new Set<string>()
-  for (const event of assetEvents) {
-    const assetPath = event.path
-    if (seenNames.has(event.name)) continue
-    seenNames.add(event.name)
-
-    const resolvedFile = await readRecordingFile(assetPath, configDir)
-    if (resolvedFile === null) {
-      logger.warn(`Asset file not found, skipping upload: ${assetPath}`)
-      continue
-    }
-    const { buffer: fileBuffer, resolvedPath } = resolvedFile
-
-    const sha256 = createHash('sha256').update(fileBuffer).digest('hex')
-    const contentType = contentTypeForPath(resolvedPath)
-
-    try {
-      const res = await fetch(`${apiUrl}/cli/upload/${recordingId}/asset`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-ScreenCI-Secret': secret,
-        },
-        body: JSON.stringify({
-          sha256,
-          fileBase64: fileBuffer.toString('base64'),
-          contentType,
-          assetName: event.name,
-        }),
-      })
-      if (!res.ok) {
-        const text = await res.text()
-        logger.warn(
-          `Failed to upload asset ${assetPath}: ${res.status} ${text}`
-        )
-      } else {
-        logger.info(`Asset uploaded: ${assetPath}`)
-      }
-    } catch (err) {
-      logger.warn(`Network error uploading asset ${assetPath}:`, err)
-    }
-  }
-}
-
 async function prepareCustomVoiceAssets(
   data: RecordingData,
   configDir: string
-): Promise<PreparedCustomVoiceAsset[]> {
+): Promise<PreparedUploadAsset[]> {
   const customVoiceRefsByPath = new Map<string, CustomVoiceRefLike[]>()
 
   for (const event of data.events) {
@@ -376,7 +414,7 @@ async function prepareCustomVoiceAssets(
     }
   }
 
-  const preparedAssets: PreparedCustomVoiceAsset[] = []
+  const preparedAssets: PreparedUploadAsset[] = []
 
   for (const [voicePath, refs] of customVoiceRefsByPath) {
     const resolvedFile = await readRecordingFile(voicePath, configDir)
@@ -393,7 +431,12 @@ async function prepareCustomVoiceAssets(
       for (const ref of refs) {
         ref.id = existingId
       }
-      preparedAssets.push({ id: existingId, path: voicePath })
+      preparedAssets.push({
+        fileHash: existingId,
+        path: voicePath,
+        size: 0,
+        contentType: contentTypeForPath(voicePath),
+      })
       continue
     }
 
@@ -403,21 +446,157 @@ async function prepareCustomVoiceAssets(
     for (const ref of refs) {
       ref.id = id
     }
-    preparedAssets.push({ id, path: voicePath, fileBuffer, contentType })
+    preparedAssets.push({
+      fileHash: id,
+      path: voicePath,
+      size: fileBuffer.byteLength,
+      fileBuffer,
+      contentType,
+    })
   }
 
   return preparedAssets
 }
 
-async function uploadCustomVoiceAssets(
-  assets: PreparedCustomVoiceAsset[],
+async function collectUploadAssets(
+  data: RecordingData,
+  configDir: string
+): Promise<PreparedUploadAsset[]> {
+  const assets = new Map<string, PreparedUploadAsset>()
+
+  for (const event of data.events) {
+    if (event.type === 'assetStart') {
+      if (assets.has(`name:${event.name}`)) continue
+      const resolvedFile = await readRecordingFile(event.path, configDir)
+      if (resolvedFile === null) {
+        logger.warn(`Asset file not found, skipping upload: ${event.path}`)
+        continue
+      }
+      const { buffer: fileBuffer, resolvedPath } = resolvedFile
+      assets.set(`name:${event.name}`, {
+        fileHash: createHash('sha256').update(fileBuffer).digest('hex'),
+        path: event.path,
+        name: event.name,
+        size: fileBuffer.byteLength,
+        fileBuffer,
+        contentType: contentTypeForPath(resolvedPath),
+      })
+      continue
+    }
+
+    if (event.type === 'videoCaptionStart') {
+      if (typeof event.assetPath === 'string') {
+        const key = `path:${event.assetPath}`
+        if (!assets.has(key)) {
+          const resolvedFile = await readRecordingFile(
+            event.assetPath,
+            configDir
+          )
+          if (resolvedFile === null) {
+            logger.warn(
+              `Video caption asset file not found, skipping upload: ${event.assetPath}`
+            )
+          } else {
+            const { buffer: fileBuffer, resolvedPath } = resolvedFile
+            assets.set(key, {
+              fileHash: createHash('sha256').update(fileBuffer).digest('hex'),
+              path: event.assetPath,
+              size: fileBuffer.byteLength,
+              fileBuffer,
+              contentType: contentTypeForPath(resolvedPath),
+            })
+          }
+        }
+      }
+
+      if (event.translations) {
+        for (const translation of Object.values(event.translations)) {
+          if (
+            typeof translation === 'object' &&
+            translation !== null &&
+            'assetPath' in translation &&
+            typeof translation.assetPath === 'string'
+          ) {
+            const key = `path:${translation.assetPath}`
+            if (assets.has(key)) continue
+            const resolvedFile = await readRecordingFile(
+              translation.assetPath,
+              configDir
+            )
+            if (resolvedFile === null) {
+              logger.warn(
+                `Video caption asset file not found, skipping upload: ${translation.assetPath}`
+              )
+              continue
+            }
+            const { buffer: fileBuffer, resolvedPath } = resolvedFile
+            assets.set(key, {
+              fileHash: createHash('sha256').update(fileBuffer).digest('hex'),
+              path: translation.assetPath,
+              size: fileBuffer.byteLength,
+              fileBuffer,
+              contentType: contentTypeForPath(resolvedPath),
+            })
+          }
+        }
+      }
+    }
+  }
+
+  for (const asset of await prepareCustomVoiceAssets(data, configDir)) {
+    assets.set(`path:${asset.path}`, asset)
+  }
+
+  return [...assets.values()]
+}
+
+async function uploadAssets(
+  assets: PreparedUploadAsset[],
   apiUrl: string,
   secret: string,
   recordingId: string
 ): Promise<void> {
   for (const asset of assets) {
-    if (!asset.fileBuffer || !asset.contentType) continue
     try {
+      const checkRes = await fetch(
+        `${apiUrl}/cli/upload/${recordingId}/asset/check`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-ScreenCI-Secret': secret,
+          },
+          body: JSON.stringify({
+            fileHash: asset.fileHash,
+            contentType: asset.contentType,
+            size: asset.size,
+            path: asset.path,
+            ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
+          }),
+        }
+      )
+
+      if (!checkRes.ok) {
+        const text = await checkRes.text()
+        logger.warn(
+          `Failed to check asset ${asset.path}: ${checkRes.status} ${text}`
+        )
+        continue
+      }
+
+      const checkBody = (await checkRes.json()) as { exists: boolean }
+      if (checkBody.exists) {
+        logger.info(`Asset already exists: ${asset.path}`)
+        continue
+      }
+
+      if (!asset.fileBuffer || !asset.contentType) {
+        logger.warn(
+          `Asset bytes not available for upload and backend does not have it yet: ${asset.path}`
+        )
+        continue
+      }
+
       const res = await fetch(`${apiUrl}/cli/upload/${recordingId}/asset`, {
         method: 'PUT',
         headers: {
@@ -425,22 +604,28 @@ async function uploadCustomVoiceAssets(
           'X-ScreenCI-Secret': secret,
         },
         body: JSON.stringify({
-          sha256: asset.id,
+          fileHash: asset.fileHash,
           fileBase64: asset.fileBuffer.toString('base64'),
           contentType: asset.contentType,
-          assetName: asset.id,
+          size: asset.size,
+          path: asset.path,
+          ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
         }),
       })
       if (!res.ok) {
         const text = await res.text()
-        logger.warn(
-          `Failed to upload custom voice ${asset.path}: ${res.status} ${text}`
-        )
+        if (res.status === 409 && text.includes('already exists')) {
+          logger.info(`Asset already exists: ${asset.path}`)
+        } else {
+          logger.warn(
+            `Failed to upload asset ${asset.path}: ${res.status} ${text}`
+          )
+        }
       } else {
-        logger.info(`Custom voice uploaded: ${asset.path}`)
+        logger.info(`Asset uploaded: ${asset.path}`)
       }
     } catch (err) {
-      logger.warn(`Network error uploading custom voice ${asset.path}:`, err)
+      logger.warn(`Network error uploading asset ${asset.path}:`, err)
     }
   }
 }
@@ -480,7 +665,7 @@ async function uploadRecordings(
     }
 
     const videoName = data.metadata?.videoName ?? entry
-    const preparedCustomVoiceAssets = await prepareCustomVoiceAssets(
+    const preparedUploadAssets = await collectUploadAssets(
       data,
       resolve(screenciDir, '..')
     )
@@ -513,20 +698,8 @@ async function uploadRecordings(
         firstProjectId = projectId
       }
 
-      // Step 1b: upload asset files referenced in data.json
-      await uploadAssets(
-        data,
-        apiUrl,
-        secret,
-        recordingId,
-        resolve(screenciDir, '..')
-      )
-      await uploadCustomVoiceAssets(
-        preparedCustomVoiceAssets,
-        apiUrl,
-        secret,
-        recordingId
-      )
+      // Step 1b: upload all referenced files via the shared asset flow
+      await uploadAssets(preparedUploadAssets, apiUrl, secret, recordingId)
 
       // Step 2: stream the recording video file (if it exists)
       const recordingPath = resolve(screenciDir, entry, 'recording.mp4')
@@ -896,6 +1069,7 @@ async function runInit(
   localPackagePath?: string
 ): Promise<void> {
   checkNodeVersion()
+  checkContainerRuntimeForInit()
 
   let projectName = projectNameArg?.trim()
 
@@ -958,8 +1132,15 @@ async function runInit(
 
 export async function main() {
   const args = process.argv.slice(2)
-  const { command, configPath, noContainer, imageTag, verbose, otherArgs } =
-    parseArgs(args)
+  const {
+    command,
+    configPath,
+    noContainer,
+    imageTag,
+    verbose,
+    forcedRuntime,
+    otherArgs,
+  } = parseArgs(args)
 
   switch (command) {
     case 'record': {
@@ -1017,7 +1198,13 @@ export async function main() {
       }
 
       if (useContainer) {
-        await runWithContainer(otherArgs, configPath, imageTag, verbose)
+        await runWithContainer(
+          otherArgs,
+          configPath,
+          imageTag,
+          verbose,
+          forcedRuntime
+        )
       } else {
         await run(command, otherArgs, configPath)
       }
@@ -1169,20 +1356,42 @@ function spawnInherited(cmd: string, args: string[]): Promise<void> {
   })
 }
 
-export function detectContainerRuntime(): string {
-  for (const runtime of ['podman', 'docker']) {
-    const result = spawnSync(runtime, ['--version'], { stdio: 'ignore' })
-    if (result.status === 0 && result.error === undefined) {
-      return runtime
-    }
+export function detectContainerRuntime(
+  forcedRuntime?: ContainerRuntimeName
+): string {
+  const runtimeCheck = forcedRuntime
+    ? checkContainerRuntime(forcedRuntime)
+    : getPreferredContainerRuntime()
+
+  if (runtimeCheck) {
+    warnIfContainerRuntimeVersionIsOld(runtimeCheck)
+    return runtimeCheck.runtime
   }
+
+  if (forcedRuntime) {
+    exitContainerRuntimeNotFound(forcedRuntime)
+  }
+
   logger.error('Error: Neither podman nor docker found.')
   logger.error(
     'Please install podman (recommended) or docker to use screenci record.'
   )
-  logger.error('  podman: https://podman.io/docs/installation')
-  logger.error('  docker: https://docs.docker.com/get-docker/')
+  logger.error(`See prerequisites: ${CONTAINER_RUNTIME_DOCS_URL}`)
   process.exit(1)
+}
+
+function checkContainerRuntimeForInit(): void {
+  const runtimeCheck = getPreferredContainerRuntime()
+
+  if (!runtimeCheck) {
+    logger.warn(
+      'Warning: Neither podman nor docker found. Install one before running screenci record.'
+    )
+    logger.warn(`See prerequisites: ${CONTAINER_RUNTIME_DOCS_URL}`)
+    return
+  }
+
+  warnIfContainerRuntimeVersionIsOld(runtimeCheck)
 }
 
 async function buildImage(
@@ -1212,7 +1421,8 @@ async function runWithContainer(
   additionalArgs: string[],
   customConfigPath?: string,
   imageTag?: string,
-  verbose = false
+  verbose = false,
+  forcedRuntime?: ContainerRuntimeName
 ) {
   const configPath = findScreenCIConfig(customConfigPath)
 
@@ -1243,7 +1453,7 @@ async function runWithContainer(
     process.exit(1)
   }
 
-  const containerRuntime = detectContainerRuntime()
+  const containerRuntime = detectContainerRuntime(forcedRuntime)
 
   const ghcrImage = 'ghcr.io/screenci/record:latest'
 

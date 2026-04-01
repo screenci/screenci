@@ -1178,7 +1178,6 @@ export function instrumentLocator(locator: Locator): Locator {
       dragEasing = 'ease-in-out',
       sourcePosition,
       targetPosition,
-      ...dragOpts
     } = options ?? {}
 
     const page = locator.page()

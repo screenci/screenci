@@ -5,7 +5,12 @@ import type {
   VideoCaptionTranslation,
   VideoCaptionTranslationFile,
 } from './events.js'
-import type { VoiceKey, VoiceForLang, Lang, CustomVoiceRef } from './voices.js'
+import type {
+  VoiceKey,
+  VoiceForLang,
+  Lang,
+  CustomVoiceRef,
+} from './voices.js'
 import { isCustomVoiceRef } from './voices.js'
 import { isInsideHide } from './hide.js'
 import { access, readFile } from 'fs/promises'
@@ -218,7 +223,10 @@ type AllCaptions<
   Record<string, CaptionMapValue>
 
 type MultiLangMap<L extends Lang, T extends Record<string, CaptionMapValue>> = {
-  [K in L]: { voice: VoiceForLang<K> | CustomVoiceRef; captions: T }
+  [K in L]: {
+    voice: VoiceForLang<K> | CustomVoiceRef
+    captions: T
+  }
 }
 
 /**

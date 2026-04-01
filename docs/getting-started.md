@@ -9,9 +9,9 @@ screenci records product videos from code. Scripts are Playwright test files —
 
 ## Prerequisites
 
-You need **Node.js 18+** and **Docker** (or Podman) installed. Node.js is used to run screenci scripts; Docker provides the isolated environment for recording.
+You need **Node.js** and **Podman** (or Docker) installed. Node.js runs screenci scripts; Podman or Docker provides the isolated environment for recording. **Node.js 20+** is recommended, as well as **Podman 5+** or **Docker 28+**.
 
-<!-- SCREENCI_STARLIGHT_OS_TABS -->
+<!-- OS_SPECIFIC_PREREQUISITES_HERE -->
 
 ## Init a project
 

@@ -566,7 +566,8 @@ async function performSimpleAction(
   doAction: (options: SimpleActionOptions) => Promise<void>,
   options: SimpleActionOptions,
   subType: 'tap' | 'check' | 'uncheck' | 'select',
-  clickOpt?: ClickBeforeFillOption
+  clickOpt?: ClickBeforeFillOption,
+  position?: { x: number; y: number }
 ): Promise<void> {
   let innerEvents: Array<MouseMoveEvent | MouseDownEvent | MouseUpEvent> = []
   let elementRect: ElementRect | undefined
@@ -578,7 +579,6 @@ async function performSimpleAction(
       moveEasing,
       postClickPause,
       postClickMove,
-      position,
     } = clickOpt
 
     const clickActionResult = await performClickActions(
@@ -772,6 +772,7 @@ export function instrumentLocator(locator: Locator): Locator {
   >[1] & {
     click?: ClickBeforeFillOption
     hideMouse?: boolean
+    position?: { x: number; y: number }
   }
 
   const originalPressSequentially = locator.pressSequentially.bind(locator)
@@ -787,13 +788,13 @@ export function instrumentLocator(locator: Locator): Locator {
     if (options?.click !== undefined) {
       // Click before fill: performClickActions handles scrolling and bounding box.
       const clickOpt = options.click
+      const position = options.position
       const {
         moveDuration,
         beforeClickPause,
         moveEasing,
         postClickPause,
         postClickMove,
-        position,
         ...clickOptions
       } = clickOpt
 
@@ -897,6 +898,7 @@ export function instrumentLocator(locator: Locator): Locator {
       duration?: number
       timeout?: number
       click?: ClickBeforeFillOption
+      position?: { x: number; y: number }
       hideMouse?: boolean
     }
   ) => {
@@ -905,6 +907,8 @@ export function instrumentLocator(locator: Locator): Locator {
     const pressOptions: PressSequentiallyOptions = { delay }
     if (options?.timeout !== undefined) pressOptions.timeout = options.timeout
     if (options?.click !== undefined) pressOptions.click = options.click
+    if (options?.position !== undefined)
+      pressOptions.position = options.position
     if (options?.hideMouse !== undefined)
       pressOptions.hideMouse = options.hideMouse
     return locator.pressSequentially(value, pressOptions)
@@ -915,62 +919,57 @@ export function instrumentLocator(locator: Locator): Locator {
     options?: Parameters<Locator['tap']>[0] & { click?: ClickBeforeFillOption }
   ): Promise<void> => {
     const clickOpt = options?.click
-    const { click: _click, ...tapOpts } = options ?? {}
+    const { click: _click, position, ...tapOpts } = options ?? {}
     return performSimpleAction(
       locator,
       (options: Parameters<Locator['tap']>[0]) => originalTap(options),
       tapOpts as Parameters<Locator['tap']>[0],
       'tap',
-      clickOpt
+      clickOpt,
+      position
     )
   }
 
   const originalCheck = locator.check.bind(locator)
   locator.check = async (
     options?: Parameters<Locator['check']>[0] & {
-      click?: Omit<ClickBeforeFillOption, 'position'>
+      click?: ClickBeforeFillOption
     }
   ): Promise<void> => {
     const clickOpt = options?.click
     const { click: _click, position, ...checkOpts } = options ?? {}
-    const effectiveClickOpt =
-      clickOpt !== undefined && position !== undefined
-        ? { ...clickOpt, position }
-        : clickOpt
     return performSimpleAction(
       locator,
       (options: Parameters<Locator['check']>[0]) => originalCheck(options),
       checkOpts as Parameters<Locator['check']>[0],
       'check',
-      effectiveClickOpt
+      clickOpt,
+      position
     )
   }
 
   const originalUncheck = locator.uncheck.bind(locator)
   locator.uncheck = async (
     options?: Parameters<Locator['uncheck']>[0] & {
-      click?: Omit<ClickBeforeFillOption, 'position'>
+      click?: ClickBeforeFillOption
     }
   ): Promise<void> => {
     const clickOpt = options?.click
     const { click: _click, position, ...uncheckOpts } = options ?? {}
-    const effectiveClickOpt =
-      clickOpt !== undefined && position !== undefined
-        ? { ...clickOpt, position }
-        : clickOpt
     return performSimpleAction(
       locator,
       (options: Parameters<Locator['uncheck']>[0]) => originalUncheck(options),
       uncheckOpts as Parameters<Locator['uncheck']>[0],
       'uncheck',
-      effectiveClickOpt
+      clickOpt,
+      position
     )
   }
 
   locator.setChecked = async (
     checked: boolean,
     options?: Parameters<Locator['check']>[0] & {
-      click?: Omit<ClickBeforeFillOption, 'position'>
+      click?: ClickBeforeFillOption
     }
   ): Promise<void> => {
     if (checked) {
@@ -985,10 +984,11 @@ export function instrumentLocator(locator: Locator): Locator {
     values: Parameters<Locator['selectOption']>[0],
     options?: Parameters<Locator['selectOption']>[1] & {
       click?: ClickBeforeFillOption
+      position?: { x: number; y: number }
     }
   ): Promise<string[]> => {
     const clickOpt = options?.click
-    const { click: _click, ...selectOpts } = options ?? {}
+    const { click: _click, position, ...selectOpts } = options ?? {}
     let result: string[] = []
     await performSimpleAction(
       locator,
@@ -998,7 +998,8 @@ export function instrumentLocator(locator: Locator): Locator {
         }),
       selectOpts as Parameters<Locator['selectOption']>[1],
       'select',
-      clickOpt
+      clickOpt,
+      position
     )
     return result
   }

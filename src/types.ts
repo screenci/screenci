@@ -276,11 +276,15 @@ export type AutoZoomOptions = {
 }
 
 /**
- * Options for an automatic click that precedes a `fill` or `pressSequentially`.
+ * Options for an automatic click that precedes a `fill`, `pressSequentially`,
+ * `check`, `uncheck`, `setChecked`, or `selectOption`.
  *
- * When passed as `click` to `fill`/`pressSequentially`, the locator is clicked
- * first (with animated cursor movement), then typing begins immediately. No
- * extra zoom-pan sleep is inserted — the cursor-move animation covers it.
+ * When passed as `click` to these methods, the locator is clicked first (with
+ * animated cursor movement), then the action begins immediately. No extra
+ * zoom-pan sleep is inserted — the cursor-move animation covers it.
+ *
+ * To control where on the element the cursor moves, pass `position` at the
+ * top level of the method's options (not inside `click`).
  */
 export type ClickBeforeFillOption = {
   moveDuration?: number
@@ -288,7 +292,6 @@ export type ClickBeforeFillOption = {
   moveEasing?: Easing
   postClickPause?: number
   postClickMove?: PostClickMove
-  position?: { x: number; y: number }
 }
 
 /**
@@ -408,6 +411,9 @@ export type ScreenCILocator = Omit<
    *   element to be actionable.
    * @param options.click - When provided, clicks the element before typing
    *   (animated cursor move + click). No extra zoom-pan sleep is inserted.
+   * @param options.position - Point relative to the element's top-left corner
+   *   to click before filling. Only used when `click` is also provided.
+   *   Defaults to the element center.
    * @param options.hideMouse - When `true`, the mouse cursor is hidden while
    *   typing and shown again on the next mouse move. Defaults to `false`.
    */
@@ -417,6 +423,7 @@ export type ScreenCILocator = Omit<
       duration?: number
       timeout?: number
       click?: ClickBeforeFillOption
+      position?: { x: number; y: number }
       hideMouse?: boolean
     }
   ): Promise<void>
@@ -429,6 +436,9 @@ export type ScreenCILocator = Omit<
    *   element to be actionable.
    * @param options.click - When provided, clicks the element before typing
    *   (animated cursor move + click). No extra zoom-pan sleep is inserted.
+   * @param options.position - Point relative to the element's top-left corner
+   *   to click before typing. Only used when `click` is also provided.
+   *   Defaults to the element center.
    * @param options.hideMouse - When `true`, the mouse cursor is hidden while
    *   typing and shown again on the next mouse move. Defaults to `false`.
    */
@@ -436,42 +446,49 @@ export type ScreenCILocator = Omit<
     text: string,
     options?: Parameters<Locator['pressSequentially']>[1] & {
       click?: ClickBeforeFillOption
+      position?: { x: number; y: number }
       hideMouse?: boolean
     }
   ): Promise<void>
   /**
    * Checks the checkbox or radio button.
    *
+   * @param options.position - Point relative to the element's top-left corner
+   *   to click. Defaults to the element center.
    * @param options.click - When provided, animates the cursor to the element
    *   before checking it. The click timing data is embedded in the recorded event.
    */
   check(
     options?: Parameters<Locator['check']>[0] & {
-      click?: Omit<ClickBeforeFillOption, 'position'>
+      click?: ClickBeforeFillOption
     }
   ): Promise<void>
   /**
    * Unchecks the checkbox.
    *
+   * @param options.position - Point relative to the element's top-left corner
+   *   to click. Defaults to the element center.
    * @param options.click - When provided, animates the cursor to the element
    *   before unchecking it. The click timing data is embedded in the recorded event.
    */
   uncheck(
     options?: Parameters<Locator['uncheck']>[0] & {
-      click?: Omit<ClickBeforeFillOption, 'position'>
+      click?: ClickBeforeFillOption
     }
   ): Promise<void>
   /**
    * Sets the checked state of a checkbox or radio element.
    * Delegates to the instrumented `check()` or `uncheck()` based on `checked`.
    *
+   * @param options.position - Point relative to the element's top-left corner
+   *   to click. Defaults to the element center.
    * @param options.click - When provided, animates the cursor to the element
    *   before acting. The click timing data is embedded in the recorded event.
    */
   setChecked(
     checked: boolean,
     options?: Parameters<Locator['check']>[0] & {
-      click?: Omit<ClickBeforeFillOption, 'position'>
+      click?: ClickBeforeFillOption
     }
   ): Promise<void>
   /**
@@ -558,11 +575,15 @@ export type ScreenCILocator = Omit<
    * @param values - The option(s) to select (value, label, index, or element).
    * @param options.click - When provided, animates the cursor to the select
    *   element. The click timing data is embedded in the recorded event.
+   * @param options.position - Point relative to the element's top-left corner
+   *   to click before selecting. Only used when `click` is also provided.
+   *   Defaults to the element center.
    */
   selectOption(
     values: Parameters<Locator['selectOption']>[0],
     options?: Parameters<Locator['selectOption']>[1] & {
       click?: ClickBeforeFillOption
+      position?: { x: number; y: number }
     }
   ): Promise<string[]>
   page(): ScreenCIPage

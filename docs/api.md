@@ -336,6 +336,44 @@ type Trace = 'on' | 'off' | 'retain-on-failure'
 
 Controls Playwright trace recording. `'retain-on-failure'` keeps traces only when tests fail.
 
+### `ClickBeforeFillOption`
+
+→ [Full type details](/reference/api/type-aliases/clickbeforefilloption/)
+
+Controls the animated cursor move that happens before `fill()`, `pressSequentially()`, `check()`, `uncheck()`, `setChecked()`, or `selectOption()`.
+
+```ts
+type ClickBeforeFillOption = {
+  moveDuration?: number // cursor move duration in ms (default: 1000)
+  beforeClickPause?: number // pause between cursor arrival and click in ms
+  moveEasing?: Easing // easing for the cursor move (default: 'ease-in-out')
+  postClickPause?: number // pause after the click in ms
+  postClickMove?: PostClickMove // optional camera pan after click
+}
+```
+
+Pass `click` as a named option on the method:
+
+```ts
+await page.locator('input').fill('Jane', { click: { moveDuration: 500 } })
+await page.locator('#submit').check({ click: { moveDuration: 500 } })
+```
+
+**`position` is always at the top level** (not inside `click`), matching Playwright's own convention:
+
+```ts
+// Point relative to the element's top-left corner to click before acting.
+await page.locator('input').fill('Jane', {
+  click: { moveDuration: 500 },
+  position: { x: 10, y: 5 },
+})
+
+await page.locator('#checkbox').check({
+  click: { moveDuration: 500 },
+  position: { x: 1, y: 1 },
+})
+```
+
 ### `ScreenCIConfig`
 
 → [Full type details](/reference/api/type-aliases/screenciconfig/)

@@ -33,7 +33,14 @@ describe('EventRecorder', () => {
   describe('addInput', () => {
     it('does nothing before start is called', () => {
       recorder.addInput('mouseMove', undefined, [
-        { type: 'mouseMove', startMs: 1200, endMs: 1300, x: 100, y: 200 },
+        {
+          type: 'mouseMove',
+          startMs: 1200,
+          endMs: 1300,
+          duration: 100,
+          x: 100,
+          y: 200,
+        },
       ])
       expect(recorder.getEvents()).toHaveLength(0)
     })
@@ -41,7 +48,14 @@ describe('EventRecorder', () => {
     it('records a click with relative timestamps after start', () => {
       recorder.start() // startTime = 1000
       recorder.addInput('click', undefined, [
-        { type: 'mouseMove', startMs: 1200, endMs: 1300, x: 100, y: 200 },
+        {
+          type: 'mouseMove',
+          startMs: 1200,
+          endMs: 1300,
+          duration: 100,
+          x: 100,
+          y: 200,
+        },
         {
           type: 'mouseDown',
           startMs: 1300,
@@ -59,6 +73,7 @@ describe('EventRecorder', () => {
         type: 'mouseMove',
         startMs: 200,
         endMs: 300,
+        duration: 100,
         x: 100,
         y: 200,
       })
@@ -77,7 +92,14 @@ describe('EventRecorder', () => {
     it('records a mouseMove InputEvent with one inner event', () => {
       recorder.start() // startTime = 1000
       recorder.addInput('mouseMove', undefined, [
-        { type: 'mouseMove', startMs: 1200, endMs: 1300, x: 100, y: 200 },
+        {
+          type: 'mouseMove',
+          startMs: 1200,
+          endMs: 1300,
+          duration: 100,
+          x: 100,
+          y: 200,
+        },
       ])
       const events = recorder.getEvents()
       expect(events).toHaveLength(2)
@@ -87,6 +109,7 @@ describe('EventRecorder', () => {
         type: 'mouseMove',
         startMs: 200,
         endMs: 300,
+        duration: 100,
         x: 100,
         y: 200,
       })
@@ -117,7 +140,14 @@ describe('EventRecorder', () => {
       recorder.start()
       const rect = { x: 10, y: 20, width: 100, height: 40 }
       recorder.addInput('click', rect, [
-        { type: 'mouseMove', startMs: 1100, endMs: 1200, x: 50, y: 60 },
+        {
+          type: 'mouseMove',
+          startMs: 1100,
+          endMs: 1200,
+          duration: 100,
+          x: 50,
+          y: 60,
+        },
         { type: 'mouseDown', startMs: 1200, endMs: 1250 },
         { type: 'mouseUp', startMs: 1250, endMs: 1300 },
       ])
@@ -131,7 +161,14 @@ describe('EventRecorder', () => {
     it('throws from addAutoZoomStart when timeMs is strictly inside an input event', () => {
       recorder.start() // startTime=1000
       recorder.addInput('click', undefined, [
-        { type: 'mouseMove', startMs: 1100, endMs: 1200, x: 100, y: 100 },
+        {
+          type: 'mouseMove',
+          startMs: 1100,
+          endMs: 1200,
+          duration: 100,
+          x: 100,
+          y: 100,
+        },
         { type: 'mouseDown', startMs: 1200, endMs: 1250 },
         { type: 'mouseUp', startMs: 1250, endMs: 1400 },
       ]) // stored as [100ms, 400ms]
@@ -154,7 +191,14 @@ describe('EventRecorder', () => {
     it('throws from addAutoZoomEnd when timeMs is strictly inside an input event', () => {
       recorder.start()
       recorder.addInput('mouseMove', undefined, [
-        { type: 'mouseMove', startMs: 1100, endMs: 1500, x: 0, y: 0 },
+        {
+          type: 'mouseMove',
+          startMs: 1100,
+          endMs: 1500,
+          duration: 400,
+          x: 0,
+          y: 0,
+        },
       ]) // stored as [100ms, 500ms]
       now = 1300 // relative: 300ms — inside [100, 500]
       expect(() => recorder.addAutoZoomEnd()).toThrow(
@@ -193,7 +237,14 @@ describe('EventRecorder', () => {
     it('throws when two input events overlap', () => {
       recorder.start() // startTime = 1000
       recorder.addInput('mouseMove', undefined, [
-        { type: 'mouseMove', startMs: 1100, endMs: 1300, x: 100, y: 100 },
+        {
+          type: 'mouseMove',
+          startMs: 1100,
+          endMs: 1300,
+          duration: 200,
+          x: 100,
+          y: 100,
+        },
       ])
       expect(() =>
         recorder.addInput('click', undefined, [
@@ -205,7 +256,14 @@ describe('EventRecorder', () => {
     it('allows events that are adjacent (not overlapping)', () => {
       recorder.start()
       recorder.addInput('mouseMove', undefined, [
-        { type: 'mouseMove', startMs: 1100, endMs: 1200, x: 100, y: 100 },
+        {
+          type: 'mouseMove',
+          startMs: 1100,
+          endMs: 1200,
+          duration: 100,
+          x: 100,
+          y: 100,
+        },
       ])
       expect(() =>
         recorder.addInput('click', undefined, [

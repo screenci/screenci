@@ -258,29 +258,27 @@ function buildMultiLangCaptions<
     })
 
     if (hasFileEntry) {
-      const videoTranslations: Record<string, VideoCaptionTranslation> = {}
-      for (const lang of langs) {
-        const val = languagesMap[lang].captions[keyStr]
-        if (val === undefined) continue
-        if (typeof val === 'string') {
-          videoTranslations[lang] = {
-            text: val,
-            voice: toRecordedVoice(languagesMap[lang].voice),
-          }
-        } else {
-          const fileTrans: VideoCaptionTranslationFile = {
-            assetPath: val.path,
-            ...(val.subtitle !== undefined && { subtitle: val.subtitle }),
-          }
-          registeredVideoCaptionAssetPaths.add(val.path)
-          videoTranslations[lang] = fileTrans
-        }
-      }
       result[key as keyof T] = {
         async start() {
           if (activeRecorder === null) return
           if (isInsideHide())
             throw new Error('Cannot call caption.start inside hide()')
+          const videoTranslations: Record<string, VideoCaptionTranslation> = {}
+          for (const lang of langs) {
+            const val = languagesMap[lang].captions[keyStr]
+            if (val === undefined) continue
+            if (typeof val === 'string') {
+              videoTranslations[lang] = {
+                text: val,
+                voice: toRecordedVoice(languagesMap[lang].voice),
+              }
+            } else {
+              videoTranslations[lang] = {
+                assetPath: val.path,
+                ...(val.subtitle !== undefined && { subtitle: val.subtitle }),
+              } satisfies VideoCaptionTranslationFile
+            }
+          }
           captionStarted = true
           sleepFn(2 * ONE_FRAME_MS)
           activeRecorder.addVideoCaptionStart(
@@ -295,21 +293,21 @@ function buildMultiLangCaptions<
         },
       }
     } else {
-      const textTranslations: Record<string, CaptionTranslation> = {}
-      for (const lang of langs) {
-        const val = languagesMap[lang].captions[keyStr]
-        if (val !== undefined && typeof val === 'string') {
-          textTranslations[lang] = {
-            text: val,
-            voice: toRecordedVoice(languagesMap[lang].voice),
-          }
-        }
-      }
       result[key as keyof T] = {
         async start() {
           if (activeRecorder === null) return
           if (isInsideHide())
             throw new Error('Cannot call caption.start inside hide()')
+          const textTranslations: Record<string, CaptionTranslation> = {}
+          for (const lang of langs) {
+            const val = languagesMap[lang].captions[keyStr]
+            if (val !== undefined && typeof val === 'string') {
+              textTranslations[lang] = {
+                text: val,
+                voice: toRecordedVoice(languagesMap[lang].voice),
+              }
+            }
+          }
           captionStarted = true
           sleepFn(2 * ONE_FRAME_MS)
           activeRecorder.addCaptionStart(

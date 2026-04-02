@@ -86,6 +86,47 @@ function sleep(ms: number): Promise<void> {
 
 const CLICK_DURATION_MS = 200
 
+function assertDurationOrSpeed(
+  duration: number | undefined,
+  speed: number | undefined,
+  context: string
+): void {
+  if (duration !== undefined && speed !== undefined) {
+    throw new Error(
+      `[screenci] ${context} accepts either duration or speed, not both.`
+    )
+  }
+  if (duration !== undefined && (!Number.isFinite(duration) || duration < 0)) {
+    throw new Error(
+      `[screenci] ${context} duration must be a finite number >= 0.`
+    )
+  }
+  if (speed !== undefined && (!Number.isFinite(speed) || speed <= 0)) {
+    throw new Error(`[screenci] ${context} speed must be a finite number > 0.`)
+  }
+}
+
+function resolveMouseMoveDuration(
+  page: object,
+  targetX: number,
+  targetY: number,
+  options: {
+    duration: number | undefined
+    speed: number | undefined
+    defaultDuration: number | undefined
+    context: string
+  }
+): number {
+  const { duration, speed, defaultDuration, context } = options
+  assertDurationOrSpeed(duration, speed, context)
+  if (speed !== undefined) {
+    const startPos = mousePositions.get(page) ?? { x: 0, y: 0 }
+    const distancePx = Math.hypot(targetX - startPos.x, targetY - startPos.y)
+    return (distancePx / speed) * 1000
+  }
+  return duration ?? defaultDuration ?? 0
+}
+
 const LOCATOR_RETURN_METHODS = [
   'locator',
   'getByAltText',
@@ -304,10 +345,13 @@ async function animateMouseMove(
 
   mousePositions.set(page, { x: targetX, y: targetY })
 
+  const endMs = Date.now()
+
   return {
     type: 'mouseMove',
     startMs: eventStartMs,
-    endMs: Date.now(),
+    endMs,
+    duration: Math.max(0, endMs - eventStartMs),
     x: targetX,
     y: targetY,
     easing,
@@ -331,7 +375,8 @@ async function performClickActions(
   doClick: (options: Parameters<Locator['click']>[0]) => Promise<void>,
   clickOptions: Parameters<Locator['click']>[0],
   position?: { x: number; y: number },
-  moveDuration = 1000,
+  moveDuration?: number,
+  moveSpeed?: number,
   beforeClickPause = CLICK_DURATION_MS / 2,
   moveEasing: Easing = 'ease-in-out',
   postClickPause = CLICK_DURATION_MS / 2,
@@ -399,7 +444,13 @@ async function performClickActions(
   if (targetPos && locatorRect) {
     const targetX = locatorRect.x + targetPos.x
     const targetY = locatorRect.y + targetPos.y
-    const effectiveDuration = Math.max(0, moveDuration - scrollElapsedMs)
+    const resolvedDuration = resolveMouseMoveDuration(page, targetX, targetY, {
+      duration: moveDuration,
+      speed: moveSpeed,
+      defaultDuration: 1000,
+      context: 'click move',
+    })
+    const effectiveDuration = Math.max(0, resolvedDuration - scrollElapsedMs)
     innerEvents.push(
       await animateMouseMove(
         page,
@@ -413,7 +464,11 @@ async function performClickActions(
       )
     )
   } else {
-    const remainingMs = Math.max(0, moveDuration - scrollElapsedMs)
+    assertDurationOrSpeed(moveDuration, moveSpeed, 'click move')
+    const remainingMs = Math.max(
+      0,
+      (moveSpeed === undefined ? (moveDuration ?? 1000) : 0) - scrollElapsedMs
+    )
     if (remainingMs > 0) {
       await new Promise<void>((resolve) => setTimeout(resolve, remainingMs))
     }
@@ -499,7 +554,12 @@ async function performClickActions(
 
     if (targetX !== undefined && targetY !== undefined) {
       const easing = postClickMove.easing ?? 'ease-in-out'
-      const { duration } = postClickMove
+      const duration = resolveMouseMoveDuration(page, targetX, targetY, {
+        duration: postClickMove.duration,
+        speed: postClickMove.speed,
+        defaultDuration: undefined,
+        context: 'postClickMove',
+      })
       const steps = Math.max(1, Math.floor(duration / CURSOR_STEP_MS))
       const stepMs = duration / steps
 
@@ -518,10 +578,12 @@ async function performClickActions(
         }
       }
 
+      const postClickMoveEndMs = Date.now()
       innerEvents.push({
         type: 'mouseMove',
         startMs: postClickMoveStartMs,
-        endMs: Date.now(),
+        endMs: postClickMoveEndMs,
+        duration: Math.max(0, postClickMoveEndMs - postClickMoveStartMs),
         x: targetX,
         y: targetY,
         easing,
@@ -575,6 +637,7 @@ async function performSimpleAction(
   if (clickOpt !== undefined) {
     const {
       moveDuration,
+      moveSpeed,
       beforeClickPause,
       moveEasing,
       postClickPause,
@@ -587,6 +650,7 @@ async function performSimpleAction(
       {},
       position,
       moveDuration,
+      moveSpeed,
       beforeClickPause,
       moveEasing,
       postClickPause,
@@ -660,7 +724,8 @@ async function recordedClick(
   doClick: (options: Parameters<Locator['click']>[0]) => Promise<void>,
   clickOptions: Parameters<Locator['click']>[0],
   position?: { x: number; y: number },
-  moveDuration = 1000,
+  moveDuration?: number,
+  moveSpeed?: number,
   beforeClickPause = CLICK_DURATION_MS / 2,
   moveEasing: Easing = 'ease-in-out',
   postClickPause = CLICK_DURATION_MS / 2,
@@ -672,6 +737,7 @@ async function recordedClick(
     clickOptions,
     position,
     moveDuration,
+    moveSpeed,
     beforeClickPause,
     moveEasing,
     postClickPause,
@@ -737,6 +803,7 @@ export function instrumentLocator(locator: Locator): Locator {
   locator.click = async (
     options?: Parameters<Locator['click']>[0] & {
       moveDuration?: number
+      moveSpeed?: number
       beforeClickPause?: number
       moveEasing?: Easing
       postClickPause?: number
@@ -745,6 +812,7 @@ export function instrumentLocator(locator: Locator): Locator {
   ) => {
     const {
       moveDuration,
+      moveSpeed,
       beforeClickPause,
       moveEasing,
       postClickPause,
@@ -754,12 +822,15 @@ export function instrumentLocator(locator: Locator): Locator {
       ...clickOptions
     } = options ?? {}
 
+    assertDurationOrSpeed(moveDuration, moveSpeed, 'click move')
+
     return recordedClick(
       locator,
       (options: Parameters<Locator['click']>[0]) => originalClick(options),
       clickOptions,
       position,
       moveDuration,
+      moveSpeed,
       beforeClickPause,
       moveEasing,
       postClickPause,
@@ -791,6 +862,7 @@ export function instrumentLocator(locator: Locator): Locator {
       const position = options.position
       const {
         moveDuration,
+        moveSpeed,
         beforeClickPause,
         moveEasing,
         postClickPause,
@@ -804,6 +876,7 @@ export function instrumentLocator(locator: Locator): Locator {
         clickOptions,
         position,
         moveDuration,
+        moveSpeed,
         beforeClickPause,
         moveEasing,
         postClickPause,
@@ -1008,17 +1081,21 @@ export function instrumentLocator(locator: Locator): Locator {
   locator.hover = async (
     options?: Parameters<Locator['hover']>[0] & {
       moveDuration?: number
+      moveSpeed?: number
       easing?: Easing
       hoverDuration?: number
     }
   ): Promise<void> => {
     const {
-      moveDuration = 1000,
+      moveDuration,
+      moveSpeed,
       easing: moveEasing = 'ease-in-out',
       hoverDuration = 1000,
       position,
       ...hoverOptions
     } = options ?? {}
+
+    assertDurationOrSpeed(moveDuration, moveSpeed, 'hover move')
 
     const page = locator.page()
     const mouseMoveInternal =
@@ -1039,7 +1116,18 @@ export function instrumentLocator(locator: Locator): Locator {
     if (targetPos && locatorRect) {
       const targetX = locatorRect.x + targetPos.x
       const targetY = locatorRect.y + targetPos.y
-      const effectiveDuration = Math.max(0, moveDuration - scrollElapsedMs)
+      const resolvedDuration = resolveMouseMoveDuration(
+        page,
+        targetX,
+        targetY,
+        {
+          duration: moveDuration,
+          speed: moveSpeed,
+          defaultDuration: 1000,
+          context: 'hover move',
+        }
+      )
+      const effectiveDuration = Math.max(0, resolvedDuration - scrollElapsedMs)
       innerEvents.push(
         await animateMouseMove(
           page,
@@ -1079,18 +1167,22 @@ export function instrumentLocator(locator: Locator): Locator {
   locator.selectText = async (
     options?: Parameters<Locator['selectText']>[0] & {
       moveDuration?: number
+      moveSpeed?: number
       easing?: Easing
       beforeClickPause?: number
       selectDuration?: number
     }
   ): Promise<void> => {
     const {
-      moveDuration = 1000,
+      moveDuration,
+      moveSpeed,
       easing: moveEasing = 'ease-in-out',
       beforeClickPause = CLICK_DURATION_MS / 2,
       selectDuration = 600,
       ...selectOpts
     } = options ?? {}
+
+    assertDurationOrSpeed(moveDuration, moveSpeed, 'selectText move')
 
     const page = locator.page()
     const mouseMoveInternal =
@@ -1110,7 +1202,18 @@ export function instrumentLocator(locator: Locator): Locator {
     if (targetPos && locatorRect) {
       const targetX = locatorRect.x + targetPos.x
       const targetY = locatorRect.y + targetPos.y
-      const effectiveDuration = Math.max(0, moveDuration - scrollElapsedMs)
+      const resolvedDuration = resolveMouseMoveDuration(
+        page,
+        targetX,
+        targetY,
+        {
+          duration: moveDuration,
+          speed: moveSpeed,
+          defaultDuration: 1000,
+          context: 'selectText move',
+        }
+      )
+      const effectiveDuration = Math.max(0, resolvedDuration - scrollElapsedMs)
       innerEvents.push(
         await animateMouseMove(
           page,
@@ -1165,21 +1268,28 @@ export function instrumentLocator(locator: Locator): Locator {
     target: Locator,
     options?: Omit<NonNullable<Parameters<Locator['dragTo']>[1]>, 'steps'> & {
       moveDuration?: number
+      moveSpeed?: number
       moveEasing?: Easing
       preDragPause?: number
       dragDuration?: number
+      dragSpeed?: number
       dragEasing?: Easing
     }
   ): Promise<void> => {
     const {
-      moveDuration = 1000,
+      moveDuration,
+      moveSpeed,
       moveEasing = 'ease-in-out',
       preDragPause = CLICK_DURATION_MS / 2,
-      dragDuration = 1000,
+      dragDuration,
+      dragSpeed,
       dragEasing = 'ease-in-out',
       sourcePosition,
       targetPosition,
     } = options ?? {}
+
+    assertDurationOrSpeed(moveDuration, moveSpeed, 'dragTo move')
+    assertDurationOrSpeed(dragDuration, dragSpeed, 'dragTo drag')
 
     const page = locator.page()
     const mouseMoveInternal =
@@ -1217,7 +1327,13 @@ export function instrumentLocator(locator: Locator): Locator {
     if (sourcePos && sourceRect) {
       const toX = sourceRect.x + sourcePos.x
       const toY = sourceRect.y + sourcePos.y
-      const effectiveDuration = Math.max(0, moveDuration - scrollElapsedMs)
+      const resolvedDuration = resolveMouseMoveDuration(page, toX, toY, {
+        duration: moveDuration,
+        speed: moveSpeed,
+        defaultDuration: 1000,
+        context: 'dragTo move',
+      })
+      const effectiveDuration = Math.max(0, resolvedDuration - scrollElapsedMs)
       innerEvents.push(
         await animateMouseMove(
           page,
@@ -1249,13 +1365,19 @@ export function instrumentLocator(locator: Locator): Locator {
     if (targetPos && targetRect) {
       const toX = targetRect.x + targetPos.x
       const toY = targetRect.y + targetPos.y
+      const resolvedDuration = resolveMouseMoveDuration(page, toX, toY, {
+        duration: dragDuration,
+        speed: dragSpeed,
+        defaultDuration: 1000,
+        context: 'dragTo drag',
+      })
       innerEvents.push(
         await animateMouseMove(
           page,
           mouseMoveInternal,
           toX,
           toY,
-          dragDuration,
+          resolvedDuration,
           dragEasing,
           dragStartTime,
           targetRect
@@ -1364,6 +1486,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
     selector: string,
     options?: Parameters<Page['click']>[1] & {
       moveDuration?: number
+      moveSpeed?: number
       beforeClickPause?: number
       moveEasing?: Easing
       postClickMove?: PostClickMove
@@ -1381,15 +1504,30 @@ export async function instrumentPage(page: Page): Promise<Page> {
       move: (
         x: number,
         y: number,
-        options?: { steps?: number; duration?: number; easing?: Easing }
+        options?: {
+          steps?: number
+          duration?: number
+          speed?: number
+          easing?: Easing
+        }
       ) => Promise<void>
     }
   ).move = async (
     x: number,
     y: number,
-    options?: { steps?: number; duration?: number; easing?: Easing }
+    options?: {
+      steps?: number
+      duration?: number
+      speed?: number
+      easing?: Easing
+    }
   ) => {
-    const duration = options?.duration ?? 0
+    const duration = resolveMouseMoveDuration(page, x, y, {
+      duration: options?.duration,
+      speed: options?.speed,
+      defaultDuration: 0,
+      context: 'page.mouse.move',
+    })
     const easing = options?.easing ?? 'ease-in-out'
     const startMs = Date.now()
 
@@ -1431,6 +1569,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
         type: 'mouseMove',
         startMs,
         endMs,
+        duration: endMs - startMs,
         x,
         y,
         ...(duration > 0 ? { easing } : {}),

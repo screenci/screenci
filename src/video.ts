@@ -489,6 +489,19 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     }
 
     await use(page)
+
+    // Stop ffmpeg BEFORE closing the page to avoid a black frame at the end
+    if (didStart) {
+      logger.info('Stopping recording...')
+      await stopScreenRecording(ffmpegProcess)
+      logger.info(`Video saved to: ${videoPath}`)
+    } else {
+      // Kill the process if it's still running
+      if (!ffmpegProcess.killed) {
+        ffmpegProcess.kill('SIGKILL')
+      }
+    }
+
     await page.close()
     setActiveCaptionRecorder(null)
     setActiveClickRecorder(null)
@@ -496,20 +509,10 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     setActiveAutoZoomRecorder(null)
     setActiveAssetRecorder(null)
 
-    // Stop ffmpeg recording after test (only if it started)
+    // Write recorded events next to the video
     if (didStart) {
-      logger.info('Stopping recording...')
-      await stopScreenRecording(ffmpegProcess)
-      logger.info(`Video saved to: ${videoPath}`)
-
-      // Write recorded events next to the video
       await recorder.writeToFile(videoDir, testInfo.title)
       logger.info(`Events saved to: ${join(videoDir, 'data.json')}`)
-    } else {
-      // Kill the process if it's still running
-      if (!ffmpegProcess.killed) {
-        ffmpegProcess.kill('SIGKILL')
-      }
     }
   },
 })

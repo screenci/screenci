@@ -8,6 +8,7 @@ import {
 import { hide, setActiveHideRecorder } from './hide.js'
 import type { IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
+import type { CustomVoiceRef } from './voices.js'
 import { voices } from './voices.js'
 
 function createMockRecorder(): IEventRecorder {
@@ -168,6 +169,38 @@ describe('createCaptions', () => {
       const captions = createCaptions(langMap)
       await captions.intro.start()
       expect(order).toEqual(['sleep', 'captionStart(multilang)'])
+    })
+
+    it('allows custom voice refs before validation and resolves them at start()', async () => {
+      const customVoice = {
+        path: './olli-sample.mp3',
+      } as CustomVoiceRef & { id?: string }
+      const captions = createCaptions({
+        en: {
+          voice: voices.en.Jude,
+          captions: { intro: 'Hello world' },
+        },
+        fi: {
+          voice: customVoice,
+          captions: { intro: 'Hei maailma' },
+        },
+      })
+
+      customVoice.id = 'voice-hash'
+      await captions.intro.start()
+
+      expect(recorder.addCaptionStart).toHaveBeenCalledWith(
+        '',
+        'intro',
+        undefined,
+        {
+          en: { text: 'Hello world', voice: voices.en.Jude },
+          fi: {
+            text: 'Hei maailma',
+            voice: { id: 'voice-hash', path: './olli-sample.mp3' },
+          },
+        }
+      )
     })
   })
 })

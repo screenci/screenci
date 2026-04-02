@@ -275,6 +275,46 @@ export type AutoZoomOptions = {
   postZoomInOutDelay?: number
 }
 
+export type MouseMoveTimingOption =
+  | {
+      duration?: number
+      speed?: never
+    }
+  | {
+      duration?: never
+      speed?: number
+    }
+
+export type RequiredMouseMoveTimingOption =
+  | {
+      duration: number
+      speed?: never
+    }
+  | {
+      duration?: never
+      speed: number
+    }
+
+export type CursorMoveTimingOption =
+  | {
+      moveDuration?: number
+      moveSpeed?: never
+    }
+  | {
+      moveDuration?: never
+      moveSpeed?: number
+    }
+
+export type CursorDragTimingOption =
+  | {
+      dragDuration?: number
+      dragSpeed?: never
+    }
+  | {
+      dragDuration?: never
+      dragSpeed?: number
+    }
+
 /**
  * Options for an automatic click that precedes a `fill`, `pressSequentially`,
  * `check`, `uncheck`, `setChecked`, or `selectOption`.
@@ -286,8 +326,7 @@ export type AutoZoomOptions = {
  * To control where on the element the cursor moves, pass `position` at the
  * top level of the method's options (not inside `click`).
  */
-export type ClickBeforeFillOption = {
-  moveDuration?: number
+export type ClickBeforeFillOption = CursorMoveTimingOption & {
   beforeClickPause?: number
   moveEasing?: Easing
   postClickPause?: number
@@ -305,21 +344,19 @@ export type ClickBeforeFillOption = {
  * (negative values pan in the opposite direction).
  */
 export type PostClickMove =
-  | {
-      duration: number
+  | (RequiredMouseMoveTimingOption & {
       easing?: Easing
       /** Output pixels added to each side of the element rect before computing the shift. */
       padding?: number
       direction: 'up' | 'down' | 'left' | 'right'
-    }
-  | {
-      duration: number
+    })
+  | (RequiredMouseMoveTimingOption & {
       easing?: Easing
       /** Horizontal camera shift in output pixels (negative = left). */
       x: number
       /** Vertical camera shift in output pixels (negative = up). */
       y: number
-    }
+    })
 
 type LocatorReturnMethodNames =
   | 'locator'
@@ -345,12 +382,13 @@ type ScreenCIMouse = Omit<Mouse, 'move'> & {
    * @param options.steps - Ignored; use `duration` and `easing` instead.
    * @param options.duration - Duration of the animated move in milliseconds.
    *   When provided and greater than 0, the cursor is animated with easing.
+   * @param options.speed - Cursor speed in pixels per second.
    * @param options.easing - Easing function for the cursor animation (default: 'ease-in-out').
    */
   move(
     x: number,
     y: number,
-    options?: { steps?: number; duration?: number; easing?: Easing }
+    options?: { steps?: number; easing?: Easing } & MouseMoveTimingOption
   ): Promise<void>
   /**
    * Shows the mouse cursor in the recorded video.
@@ -392,13 +430,13 @@ export type ScreenCILocator = Omit<
    *   the element after the click (e.g. to simulate the cursor moving off a button).
    */
   click(
-    options?: Parameters<Locator['click']>[0] & {
-      moveDuration?: number
-      beforeClickPause?: number
-      moveEasing?: Easing
-      postClickPause?: number
-      postClickMove?: PostClickMove
-    }
+    options?: Parameters<Locator['click']>[0] &
+      CursorMoveTimingOption & {
+        beforeClickPause?: number
+        moveEasing?: Easing
+        postClickPause?: number
+        postClickMove?: PostClickMove
+      }
   ): Promise<void>
   /**
    * Types `value` character-by-character using `pressSequentially`.
@@ -512,11 +550,11 @@ export type ScreenCILocator = Omit<
    *   Defaults to the element center.
    */
   hover(
-    options?: Parameters<Locator['hover']>[0] & {
-      moveDuration?: number
-      easing?: Easing
-      hoverDuration?: number
-    }
+    options?: Parameters<Locator['hover']>[0] &
+      CursorMoveTimingOption & {
+        easing?: Easing
+        hoverDuration?: number
+      }
   ): Promise<void>
   /**
    * Selects all text content of the element with an animated cursor move and
@@ -529,12 +567,12 @@ export type ScreenCILocator = Omit<
    *   Divided into 6 equal segments: 3 mouseDown + 3 mouseUp phases.
    */
   selectText(
-    options?: Parameters<Locator['selectText']>[0] & {
-      moveDuration?: number
-      easing?: Easing
-      beforeClickPause?: number
-      selectDuration?: number
-    }
+    options?: Parameters<Locator['selectText']>[0] &
+      CursorMoveTimingOption & {
+        easing?: Easing
+        beforeClickPause?: number
+        selectDuration?: number
+      }
   ): Promise<void>
   /**
    * Drags the element to the target locator with animated cursor movement.
@@ -556,13 +594,13 @@ export type ScreenCILocator = Omit<
    */
   dragTo(
     target: Locator,
-    options?: Omit<NonNullable<Parameters<Locator['dragTo']>[1]>, 'steps'> & {
-      moveDuration?: number
-      moveEasing?: Easing
-      preDragPause?: number
-      dragDuration?: number
-      dragEasing?: Easing
-    }
+    options?: Omit<NonNullable<Parameters<Locator['dragTo']>[1]>, 'steps'> &
+      CursorMoveTimingOption &
+      CursorDragTimingOption & {
+        moveEasing?: Easing
+        preDragPause?: number
+        dragEasing?: Easing
+      }
   ): Promise<void>
   /**
    * Selects an option in a `<select>` element.
@@ -614,12 +652,12 @@ export type ScreenCIPage = Omit<
   mouse: ScreenCIMouse
   click(
     selector: string,
-    options?: Parameters<Page['click']>[1] & {
-      moveDuration?: number
-      beforeClickPause?: number
-      moveEasing?: Easing
-      postClickMove?: PostClickMove
-    }
+    options?: Parameters<Page['click']>[1] &
+      CursorMoveTimingOption & {
+        beforeClickPause?: number
+        moveEasing?: Easing
+        postClickMove?: PostClickMove
+      }
   ): Promise<void>
   locator(...args: Parameters<Page['locator']>): ScreenCILocator
   getByAltText(...args: Parameters<Page['getByAltText']>): ScreenCILocator

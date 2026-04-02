@@ -47,6 +47,7 @@ function clickableLocator(locator: Locator): {
   click(
     opts?: Parameters<Locator['click']>[0] & {
       moveDuration?: number
+      moveSpeed?: number
       beforeClickPause?: number
       moveEasing?: Easing
       postClickPause?: number
@@ -123,7 +124,12 @@ type InstrumentedMouse = {
   move(
     x: number,
     y: number,
-    options?: { steps?: number; duration?: number; easing?: string }
+    options?: {
+      steps?: number
+      duration?: number
+      speed?: number
+      easing?: string
+    }
   ): Promise<void>
 }
 
@@ -795,8 +801,26 @@ test.describe('mouse.move instrumentation', () => {
     expect(event!.startMs).toBeGreaterThanOrEqual(0)
     expect(event!.endMs).toBeGreaterThanOrEqual(event!.startMs)
     expect(event!.endMs - event!.startMs).toBeGreaterThanOrEqual(100)
+    expect(event!.duration).toBeGreaterThanOrEqual(100)
     expect(event!.x).toBeCloseTo(targetX, 0)
     expect(event!.y).toBeCloseTo(targetY, 0)
+  })
+
+  test('derives duration from speed and stores it on the mouseMove event', async ({
+    page,
+  }) => {
+    await (page.mouse as unknown as InstrumentedMouse).move(300, 400, {
+      speed: 500,
+    })
+
+    const events = mouseMoveEvents()
+    expect(events).toHaveLength(1)
+    const [event] = events
+    const expectedDuration = (Math.hypot(300, 400) / 500) * 1000
+    expect(event!.duration).toBeCloseTo(expectedDuration, -1)
+    expect(event!.endMs - event!.startMs).toBeGreaterThanOrEqual(
+      expectedDuration
+    )
   })
 
   test('records easing when duration is provided', async ({ page }) => {

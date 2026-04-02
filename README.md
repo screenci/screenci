@@ -146,15 +146,6 @@ const captions = createCaptions({
 })
 ```
 
-### Sync actions to audio
-
-```ts
-// Wait until the voiceover is 60% done, then perform the action
-await captions.intro.waitUntil('60%')
-await page.locator('#cta').click()
-await captions.intro.end()
-```
-
 ## Hide the boring parts
 
 `hide()` cuts a section from the final video. Perfect for logins, page loads, and test setup.

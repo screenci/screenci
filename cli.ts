@@ -550,6 +550,59 @@ async function collectUploadAssets(
   return [...assets.values()]
 }
 
+function annotateRecordingDataWithAssetHashes(
+  data: RecordingData,
+  assets: PreparedUploadAsset[]
+): RecordingData {
+  const byName = new Map<string, string>()
+  const byPath = new Map<string, string>()
+
+  for (const asset of assets) {
+    if (typeof asset.name === 'string') byName.set(asset.name, asset.fileHash)
+    byPath.set(asset.path, asset.fileHash)
+  }
+
+  return {
+    ...data,
+    events: data.events.map((event) => {
+      if (event.type === 'assetStart') {
+        const fileHash = byName.get(event.name) ?? byPath.get(event.path)
+        return fileHash ? { ...event, fileHash } : event
+      }
+
+      if (event.type !== 'videoCaptionStart') return event
+
+      if (event.translations) {
+        const translations = Object.fromEntries(
+          Object.entries(event.translations).map(([language, translation]) => {
+            if (
+              typeof translation === 'object' &&
+              translation !== null &&
+              'assetPath' in translation &&
+              typeof translation.assetPath === 'string'
+            ) {
+              const fileHash = byPath.get(translation.assetPath)
+              return [
+                language,
+                fileHash ? { ...translation, fileHash } : translation,
+              ]
+            }
+            return [language, translation]
+          })
+        )
+        return { ...event, translations }
+      }
+
+      if (typeof event.assetPath === 'string') {
+        const fileHash = byPath.get(event.assetPath)
+        return fileHash ? { ...event, fileHash } : event
+      }
+
+      return event
+    }),
+  }
+}
+
 async function uploadAssets(
   assets: PreparedUploadAsset[],
   apiUrl: string,
@@ -669,6 +722,7 @@ async function uploadRecordings(
       data,
       resolve(screenciDir, '..')
     )
+    data = annotateRecordingDataWithAssetHashes(data, preparedUploadAssets)
 
     writeInline(`Uploading "${videoName}"...`)
     try {

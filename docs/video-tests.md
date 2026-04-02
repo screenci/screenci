@@ -122,26 +122,9 @@ await page.goto('https://example.com/signup')
 await captions.intro.end()
 ```
 
-### `.waitUntil(percent)` — time an action to the voiceover
-
-Resolves when the given percentage of the audio has played. Useful for clicking a button exactly when the voiceover mentions it:
-
-```ts
-await captions.cta.start()
-await captions.cta.waitUntil('70%') // wait until 70% of words have appeared
-await page.locator('#cta').click() // then click
-await captions.cta.end()
-```
-
-| Value    | Resolves when                        |
-| -------- | ------------------------------------ |
-| `'0%'`   | Immediately, before any word appears |
-| `'50%'`  | After half the words have appeared   |
-| `'100%'` | After all words (same as `.start()`) |
-
 ### `.end()` — end the caption
 
-Call it after every `.start()` or `.waitUntil()`. Calling it when no caption is active is a no-op.
+Call it after every `.start()`. Calling it when no caption is active is a no-op.
 
 ### Multi-language captions
 
@@ -174,25 +157,18 @@ Missing a translation key in any language is a TypeScript error.
 import { video, createAssets } from 'screenci'
 
 const assets = createAssets({
-  logo: { path: './logo.png', audio: 0, fullScreen: false, duration: 3000 },
+  logo: { path: './logo.png', audio: 0, fullScreen: false },
   intro: { path: './intro.mp4', audio: 1.0, fullScreen: true },
 })
 
 video('Product demo', async ({ page }) => {
-  await assets.logo // shows logo for 3 s, then auto-hides
+  await assets.logo.start()
   await page.goto('/dashboard')
-
-  assets.intro.show() // start video overlay (non-blocking)
-  await page.waitForTimeout(4000)
-  await assets.intro.hide() // hide manually
+  await assets.intro.start()
 })
 ```
 
-**Image assets** require a `duration` (ms). After that time the asset auto-hides. Calling `.hide()` before the timer fires cancels it.
-
-**Video assets** play for their natural length. Call `.hide()` to stop them early.
-
-`await assets.logo` is shorthand for `await assets.logo.show()`.
+`start()` marks the asset in the recording timeline and returns immediately. The renderer places the asset at that point in the video and plays it for its natural duration — no timing config required.
 
 ---
 

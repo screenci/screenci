@@ -16,7 +16,6 @@ function createMockRecorder(): IEventRecorder {
     addClick: vi.fn(),
     addMouseMove: vi.fn(),
     addCaptionStart: vi.fn(),
-    addCaptionUntil: vi.fn(),
     addCaptionEnd: vi.fn(),
     getEvents: vi.fn<[], RecordingEvent[]>().mockReturnValue([]),
     writeToFile: vi
@@ -46,9 +45,6 @@ describe('createCaptions', () => {
           translations ? `captionStart(multilang)` : `captionStart(${text})`
         )
     )
-    ;(recorder.addCaptionUntil as ReturnType<typeof vi.fn>).mockImplementation(
-      (percentage: number) => order.push(`captionUntil(${percentage})`)
-    )
     ;(recorder.addCaptionEnd as ReturnType<typeof vi.fn>).mockImplementation(
       () => order.push('captionEnd')
     )
@@ -71,7 +67,6 @@ describe('createCaptions', () => {
     expect(captions.intro).toBeDefined()
     expect(captions.outro).toBeDefined()
     expect(typeof captions.intro.start).toBe('function')
-    expect(typeof captions.intro.waitUntil).toBe('function')
     expect(typeof captions.intro.end).toBe('function')
   })
 
@@ -80,16 +75,6 @@ describe('createCaptions', () => {
 
     await captions.intro.start()
     expect(order).toEqual(['sleep', 'captionStart(multilang)'])
-  })
-
-  it('captions.key.waitUntil(percent): captionUntil → sleep', async () => {
-    const captions = createCaptions(singleLangMap)
-
-    await captions.intro.start()
-    order = []
-
-    await captions.intro.waitUntil('50%')
-    expect(order).toEqual(['captionUntil(50)', 'sleep'])
   })
 
   it('captions.key.end(): captionEnd → sleep', async () => {
@@ -110,25 +95,6 @@ describe('createCaptions', () => {
     )
   })
 
-  it('throws when calling waitUntil() without start()', async () => {
-    const captions = createCaptions(singleLangMap)
-
-    await expect(captions.intro.waitUntil('50%')).rejects.toThrow(
-      'No caption has been started'
-    )
-  })
-
-  describe('waitUntil(percent) — invalid percentage', () => {
-    it('throws for an invalid percentage', async () => {
-      const captions = createCaptions(singleLangMap)
-      await captions.intro.start()
-
-      await expect(captions.intro.waitUntil('abc%')).rejects.toThrow(
-        'Invalid percentage'
-      )
-    })
-  })
-
   describe('without recorder', () => {
     beforeEach(() => setActiveCaptionRecorder(null))
 
@@ -136,7 +102,6 @@ describe('createCaptions', () => {
       const captions = createCaptions(singleLangMap)
 
       await captions.intro.start()
-      await captions.intro.waitUntil('50%')
       await captions.intro.end()
 
       expect(order).toEqual([])
@@ -163,17 +128,6 @@ describe('createCaptions', () => {
           await captions.intro.end()
         })
       ).rejects.toThrow('Cannot call caption.waitEnd inside hide()')
-    })
-
-    it('throws when calling waitUntil() inside hide()', async () => {
-      const captions = createCaptions(singleLangMap)
-      await captions.intro.start()
-
-      await expect(
-        hide(async () => {
-          await captions.intro.waitUntil('50%')
-        })
-      ).rejects.toThrow('Cannot call caption.waitUntil inside hide()')
     })
   })
 

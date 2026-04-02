@@ -14,7 +14,6 @@ function makeRecorder(): IEventRecorder {
     addClick: vi.fn(),
     addMouseMove: vi.fn(),
     addCaptionStart: vi.fn(),
-    addCaptionUntil: vi.fn(),
     addCaptionEnd: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),

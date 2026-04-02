@@ -1,32 +1,24 @@
 import type { IEventRecorder } from './events.js'
 import { access } from 'fs/promises'
 import { dirname, resolve } from 'path'
+import { ONE_FRAME_MS } from './caption.js'
 
-type ImageExt = 'png' | 'jpg' | 'jpeg' | 'gif' | 'webp' | 'svg' | 'bmp'
-
-/** Asset config for image files. `duration` is required (images have no intrinsic duration). */
-export type ImageAssetConfig = {
-  path: string
-  audio: number
-  fullScreen: boolean
-  /** How long (in ms) to display the image before auto-hiding. */
-  duration: number
-}
-
-/** Asset config for video/audio files. Duration is inferred from the media file. */
-export type VideoAssetConfig = {
+export type AssetConfig = {
   path: string
   audio: number
   fullScreen: boolean
 }
 
-export type AssetConfig = ImageAssetConfig | VideoAssetConfig
+let sleepFn = (ms: number): void => {
+  const end = performance.now() + ms
+  while (performance.now() < end) {
+    /* spin */
+  }
+}
 
-// Enforces `duration` when path ends with a known image extension
-type AssetConfigFor<P extends string> =
-  Lowercase<P> extends `${string}.${ImageExt}`
-    ? { path: P; audio: number; fullScreen: boolean; duration: number }
-    : { path: P; audio: number; fullScreen: boolean }
+export function setAssetSleepFn(fn: (ms: number) => void): void {
+  sleepFn = fn
+}
 
 let activeRecorder: IEventRecorder | null = null
 const registeredAssetPaths = new Set<string>()
@@ -66,34 +58,25 @@ export async function validateRegisteredAssetPaths(
 
 export interface AssetController {
   /**
-   * Shows the asset overlay and records an assetStart event.
+   * Marks the asset in the recording timeline. Resolves immediately after
+   * recording the start and end events.
    *
-   * For image assets, `show()` blocks for the configured `duration` ms and
-   * then auto-records the assetEnd event. Calling `hide()` before the timer
-   * fires cancels the auto-hide.
-   *
-   * Also directly awaitable: `await assets.logo` is equivalent to
-   * `await assets.logo.show()`.
+   * The renderer places the asset at this point in the video and plays it
+   * for its natural duration — no timing config required.
    *
    * @example
    * ```ts
-   * await assets.logo          // show image for its configured duration
-   * await page.goto('/page')
-   * await assets.clip.show()   // start playing video overlay
-   * await assets.clip.hide()   // stop video overlay manually
+   * const assets = createAssets({
+   *   logo:  { path: './logo.png',  audio: 0,   fullScreen: false },
+   *   intro: { path: './intro.mp4', audio: 1.0, fullScreen: true },
+   * })
+   *
+   * await assets.logo.start()
+   * await page.goto('/dashboard')
+   * await assets.intro.start()
    * ```
    */
-  show(): Promise<void>
-  /**
-   * Hides the asset overlay and records an assetEnd event.
-   * For image assets, also cancels any pending auto-hide timer.
-   */
-  hide(): Promise<void>
-  // Thenable — `await assets.logo` calls show() internally
-  then<T>(
-    onfulfilled?: ((value: void) => T | PromiseLike<T>) | null,
-    onrejected?: ((reason: unknown) => T | PromiseLike<T>) | null
-  ): PromiseLike<T>
+  start(): Promise<void>
 }
 
 export type Assets<T extends Record<string, AssetConfig>> = {
@@ -103,33 +86,27 @@ export type Assets<T extends Record<string, AssetConfig>> = {
 /**
  * Creates a set of typed asset controllers, one per key in the map.
  *
- * Each controller exposes `show()` and `hide()` methods. It is also
- * directly awaitable — `await assets.logo` is shorthand for
- * `await assets.logo.show()`.
- *
- * **Image assets** require a `duration` (in ms). Calling `show()` will
- * automatically record the assetEnd after that many milliseconds. Calling
- * `hide()` before the timer fires cancels the auto-hide.
- *
- * **Video assets** do not require a `duration` — the video's natural length
- * determines how long it plays. Call `hide()` explicitly to stop it.
+ * Each controller exposes a single `start()` method that marks the asset
+ * in the recording timeline. The renderer places the asset at that point
+ * and plays it for its natural duration.
  *
  * @example
  * ```ts
  * const assets = createAssets({
- *   logo:  { path: './logo.png',   audio: 0,   fullScreen: false, duration: 3000 },
- *   intro: { path: './intro.mp4',  audio: 1.0, fullScreen: true  },
+ *   logo:  { path: './logo.png',  audio: 0,   fullScreen: false },
+ *   intro: { path: './intro.mp4', audio: 1.0, fullScreen: true },
  * })
  *
- * await assets.logo          // shows logo for 3 s, then auto-hides
- * await page.goto('/dashboard')
- * assets.intro.show()        // start video overlay (non-blocking for caller)
- * await assets.intro.hide()  // hide video overlay manually
+ * video('Product demo', async ({ page }) => {
+ *   await assets.logo.start()
+ *   await page.goto('/dashboard')
+ *   await assets.intro.start()
+ * })
  * ```
  */
 export function createAssets<
   const T extends Record<string, AssetConfig>,
->(assetsMap: { [K in keyof T]: AssetConfigFor<T[K]['path']> }): Assets<T> {
+>(assetsMap: { [K in keyof T]: T[K] }): Assets<T> {
   const result = {} as Assets<T>
 
   for (const name in assetsMap) {
@@ -145,43 +122,19 @@ function createAssetController(
   name: string,
   config: AssetConfig
 ): AssetController {
-  let autoHideTimer: ReturnType<typeof setTimeout> | null = null
-
-  const controller: AssetController = {
-    show(): Promise<void> {
+  return {
+    start(): Promise<void> {
       if (activeRecorder === null) return Promise.resolve()
+      sleepFn(2 * ONE_FRAME_MS)
       activeRecorder.addAssetStart(
         name,
         config.path,
         config.audio,
         config.fullScreen
       )
-      if ('duration' in config && typeof config.duration === 'number') {
-        return new Promise<void>((resolve) => {
-          autoHideTimer = setTimeout(() => {
-            autoHideTimer = null
-            activeRecorder?.addAssetEnd(name)
-            resolve()
-          }, config.duration)
-        })
-      }
-      return Promise.resolve()
-    },
-    hide(): Promise<void> {
-      if (autoHideTimer !== null) {
-        clearTimeout(autoHideTimer)
-        autoHideTimer = null
-      }
-      if (activeRecorder === null) return Promise.resolve()
+      sleepFn(2 * ONE_FRAME_MS)
       activeRecorder.addAssetEnd(name)
       return Promise.resolve()
     },
-    then<T>(
-      onfulfilled?: ((value: void) => T | PromiseLike<T>) | null,
-      onrejected?: ((reason: unknown) => T | PromiseLike<T>) | null
-    ): PromiseLike<T> {
-      return controller.show().then(onfulfilled, onrejected)
-    },
   }
-  return controller
 }

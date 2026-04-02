@@ -15,19 +15,6 @@ import { dirname, resolve } from 'path'
 // One frame at 24fps — ensures at least one rendered frame captures each caption state.
 export const ONE_FRAME_MS = 1000 / 24
 
-/** A percentage string, e.g. `'50%'` or `'100%'`. */
-export type Percentage = `${number}%`
-
-function parsePercentage(percent: Percentage): number {
-  const value = parseFloat(percent)
-  if (!isFinite(value) || value < 0 || value > 100) {
-    throw new Error(
-      `Invalid percentage: "${percent}". Must be a finite number between 0 and 100 followed by %.`
-    )
-  }
-  return value
-}
-
 // Blocking sleep — spin until the elapsed time has passed
 let sleepFn = (ms: number): void => {
   const end = performance.now() + ms
@@ -133,16 +120,6 @@ function captionWaitEnd(): void {
   sleepFn(2 * ONE_FRAME_MS)
 }
 
-function captionWaitUntil(percent: Percentage): void {
-  if (activeRecorder === null) return
-  if (isInsideHide())
-    throw new Error('Cannot call caption.waitUntil inside hide()')
-  if (!captionStarted) throw new Error('No caption has been started')
-  const percentage = parsePercentage(percent)
-  activeRecorder.addCaptionUntil(percentage)
-  sleepFn(2 * ONE_FRAME_MS)
-}
-
 export interface CaptionController {
   /**
    * Begins voiceover audio and shows the caption overlay.
@@ -155,23 +132,6 @@ export interface CaptionController {
    * ```
    */
   start(): Promise<void>
-  /**
-   * Pauses execution until the voiceover audio reaches the given playback position.
-   *
-   * Use this to time a page interaction to a specific moment in the narration —
-   * for example, clicking a button right as the voiceover mentions it.
-   *
-   * @param progress - Playback position as a percentage string, e.g. `'50%'`.
-   *
-   * @example
-   * ```ts
-   * await captions.intro.start()
-   * await captions.intro.waitUntil('70%')  // wait until 70% of audio has played
-   * await page.locator('#cta').click()     // then click
-   * await captions.intro.end()
-   * ```
-   */
-  waitUntil(progress: string): Promise<void>
   /**
    * Hides the caption overlay and stops voiceover playback.
    * Always call this after every `start()`.
@@ -227,8 +187,8 @@ type MultiLangMap<L extends Lang, T extends Record<string, CaptionMapValue>> = {
 /**
  * Creates a set of typed caption controllers, one per key in the map.
  *
- * Each controller has `start()`, `waitUntil(percent)`, and `end()`.
- * At render time screenci sends the caption text to ElevenLabs, generates
+ * Each controller has `start()` and `end()`.
+ * At render time screenci generates
  * a voiceover, and syncs the audio to the recording. You write text; the
  * voice is handled for you.
  *
@@ -330,9 +290,6 @@ function buildMultiLangCaptions<
             videoTranslations
           )
         },
-        async waitUntil(progress: string) {
-          captionWaitUntil(progress as Percentage)
-        },
         async end() {
           captionWaitEnd()
         },
@@ -361,9 +318,6 @@ function buildMultiLangCaptions<
             undefined,
             textTranslations
           )
-        },
-        async waitUntil(progress: string) {
-          captionWaitUntil(progress as Percentage)
         },
         async end() {
           captionWaitEnd()
@@ -489,9 +443,6 @@ function buildSingleLangVideoCaptions<
         sleepFn(2 * ONE_FRAME_MS)
         activeRecorder.addVideoCaptionStart(key, assetPath, subtitle)
       },
-      async waitUntil(progress: string) {
-        captionWaitUntil(progress as Percentage)
-      },
       async end() {
         captionWaitEnd()
       },
@@ -537,9 +488,6 @@ function buildMultiLangVideoCaptions<
           undefined,
           translations
         )
-      },
-      async waitUntil(progress: string) {
-        captionWaitUntil(progress as Percentage)
       },
       async end() {
         captionWaitEnd()

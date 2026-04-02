@@ -35,7 +35,6 @@ export type {
   MouseHideEvent,
   MouseWaitEvent,
   CaptionStartEvent,
-  CaptionUntilEvent,
   CaptionEndEvent,
   VideoCaptionStartEvent,
   HideStartEvent,

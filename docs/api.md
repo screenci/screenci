@@ -356,7 +356,7 @@ Pass `click` as a named option on the method:
 
 ```ts
 await page.locator('input').fill('Jane', { click: { moveDuration: 500 } })
-await page.locator('#submit').check({ click: { moveDuration: 500 } })
+await page.locator('#checkbox').check({ click: { moveDuration: 500 } })
 ```
 
 **`position` is always at the top level** (not inside `click`), matching Playwright's own convention:

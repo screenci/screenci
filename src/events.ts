@@ -130,12 +130,6 @@ export type CaptionStartEvent = {
   translations?: Record<string, CaptionTranslation>
 }
 
-export type CaptionUntilEvent = {
-  type: 'captionUntil'
-  timeMs: number
-  percentage: number
-}
-
 export type CaptionEndEvent = {
   type: 'captionEnd'
   timeMs: number
@@ -144,6 +138,7 @@ export type CaptionEndEvent = {
 /** File-based video caption translation — uses a pre-recorded asset. */
 export type VideoCaptionTranslationFile = {
   assetPath: string
+  fileHash?: string
   subtitle?: string
 }
 /** TTS-based video caption translation — generates audio via text-to-speech. */
@@ -161,6 +156,7 @@ export type VideoCaptionStartEvent = {
   name: string
   /** Single-language API: absolute path to the pre-recorded audio/video file. */
   assetPath?: string
+  fileHash?: string
   /** Optional subtitle text. Words are spread with equal timing at render time. */
   subtitle?: string
   /** Multi-language API — per-language asset paths keyed by language code. */
@@ -172,6 +168,7 @@ export type AssetStartEvent = {
   timeMs: number
   name: string
   path: string
+  fileHash?: string
   audio: number
   fullScreen: boolean
 }
@@ -213,7 +210,6 @@ export type RecordingEvent =
   | VideoStartEvent
   | InputEvent
   | CaptionStartEvent
-  | CaptionUntilEvent
   | CaptionEndEvent
   | VideoCaptionStartEvent
   | AssetStartEvent
@@ -254,7 +250,6 @@ export interface IEventRecorder {
     captionConfig?: CaptionConfig,
     translations?: Record<string, CaptionTranslation>
   ): void
-  addCaptionUntil(percentage: number): void
   addCaptionEnd(): void
   addVideoCaptionStart(
     name: string,
@@ -355,12 +350,6 @@ export class EventRecorder implements IEventRecorder {
       ...(captionConfig !== undefined && { captionConfig }),
       ...(translations !== undefined && { translations }),
     })
-  }
-
-  addCaptionUntil(percentage: number): void {
-    if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
-    this.events.push({ type: 'captionUntil', timeMs, percentage })
   }
 
   addCaptionEnd(): void {

@@ -173,12 +173,6 @@ export type AssetStartEvent = {
   fullScreen: boolean
 }
 
-export type AssetEndEvent = {
-  type: 'assetEnd'
-  timeMs: number
-  name: string
-}
-
 export type HideStartEvent = {
   type: 'hideStart'
   timeMs: number
@@ -213,7 +207,6 @@ export type RecordingEvent =
   | CaptionEndEvent
   | VideoCaptionStartEvent
   | AssetStartEvent
-  | AssetEndEvent
   | HideStartEvent
   | HideEndEvent
   | AutoZoomStartEvent
@@ -263,7 +256,6 @@ export interface IEventRecorder {
     audio: number,
     fullScreen: boolean
   ): void
-  addAssetEnd(name: string): void
   addHideStart(): void
   addHideEnd(): void
   addAutoZoomStart(options?: AutoZoomOptions): void
@@ -392,12 +384,6 @@ export class EventRecorder implements IEventRecorder {
       audio,
       fullScreen,
     })
-  }
-
-  addAssetEnd(name: string): void {
-    if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
-    this.events.push({ type: 'assetEnd', timeMs, name })
   }
 
   addHideStart(): void {

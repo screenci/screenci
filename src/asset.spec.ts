@@ -1,9 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import {
-  createAssets,
-  setActiveAssetRecorder,
-  setAssetSleepFn,
-} from './asset.js'
+import { createAssets, setActiveAssetRecorder } from './asset.js'
 import type { IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
 
@@ -14,7 +10,6 @@ function createMockRecorder(): IEventRecorder {
     addCaptionStart: vi.fn(),
     addCaptionEnd: vi.fn(),
     addAssetStart: vi.fn(),
-    addAssetEnd: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),
     addAutoZoomStart: vi.fn(),
@@ -32,15 +27,10 @@ describe('createAssets', () => {
   beforeEach(() => {
     recorder = createMockRecorder()
     setActiveAssetRecorder(recorder)
-    setAssetSleepFn(() => {})
   })
 
   afterEach(() => {
     setActiveAssetRecorder(null)
-    setAssetSleepFn((ms) => {
-      const end = performance.now() + ms
-      while (performance.now() < end) {}
-    })
   })
 
   it('creates a controller for each key in the map', () => {
@@ -72,18 +62,6 @@ describe('createAssets', () => {
       )
     })
 
-    it('calls addAssetEnd after addAssetStart', async () => {
-      const assets = createAssets({
-        logo: { path: './logo.png', audio: 0, fullScreen: false },
-      })
-
-      await assets.logo.start()
-
-      expect(recorder.addAssetStart).toHaveBeenCalledOnce()
-      expect(recorder.addAssetEnd).toHaveBeenCalledOnce()
-      expect(recorder.addAssetEnd).toHaveBeenCalledWith('logo')
-    })
-
     it('passes fullScreen: true correctly', async () => {
       const assets = createAssets({
         intro: { path: './intro.mp4', audio: 0.5, fullScreen: true },
@@ -112,21 +90,6 @@ describe('createAssets', () => {
         0.8,
         false
       )
-    })
-
-    it('sleeps before addAssetStart and before addAssetEnd', async () => {
-      const sleepCalls: number[] = []
-      setAssetSleepFn((ms) => sleepCalls.push(ms))
-
-      const assets = createAssets({
-        logo: { path: './logo.png', audio: 0, fullScreen: false },
-      })
-
-      await assets.logo.start()
-
-      expect(sleepCalls).toHaveLength(2)
-      expect(recorder.addAssetStart).toHaveBeenCalledOnce()
-      expect(recorder.addAssetEnd).toHaveBeenCalledOnce()
     })
 
     it('resolves immediately', async () => {
@@ -174,7 +137,6 @@ describe('createAssets', () => {
 
       await expect(assets.logo.start()).resolves.toBeUndefined()
       expect(recorder.addAssetStart).not.toHaveBeenCalled()
-      expect(recorder.addAssetEnd).not.toHaveBeenCalled()
     })
   })
 })

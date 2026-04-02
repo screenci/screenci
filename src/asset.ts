@@ -1,23 +1,11 @@
 import type { IEventRecorder } from './events.js'
 import { access } from 'fs/promises'
 import { dirname, resolve } from 'path'
-import { ONE_FRAME_MS } from './caption.js'
 
 export type AssetConfig = {
   path: string
   audio: number
   fullScreen: boolean
-}
-
-let sleepFn = (ms: number): void => {
-  const end = performance.now() + ms
-  while (performance.now() < end) {
-    /* spin */
-  }
-}
-
-export function setAssetSleepFn(fn: (ms: number) => void): void {
-  sleepFn = fn
 }
 
 let activeRecorder: IEventRecorder | null = null
@@ -125,15 +113,12 @@ function createAssetController(
   return {
     start(): Promise<void> {
       if (activeRecorder === null) return Promise.resolve()
-      sleepFn(2 * ONE_FRAME_MS)
       activeRecorder.addAssetStart(
         name,
         config.path,
         config.audio,
         config.fullScreen
       )
-      sleepFn(2 * ONE_FRAME_MS)
-      activeRecorder.addAssetEnd(name)
       return Promise.resolve()
     },
   }

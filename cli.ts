@@ -626,6 +626,12 @@ function annotateRecordingDataWithAssetHashes(
   }
 }
 
+function hint401(status: number, secret: string): string {
+  if (status !== 401 || !secret) return ''
+  const frontendUrl = getDevFrontendUrl()
+  return `\nThe secret may have been deleted or belongs to a different organisation. Check your secrets at ${frontendUrl}/secrets`
+}
+
 async function uploadAssets(
   assets: PreparedUploadAsset[],
   apiUrl: string,
@@ -655,7 +661,7 @@ async function uploadAssets(
       if (!checkRes.ok) {
         const text = await checkRes.text()
         logger.warn(
-          `Failed to check asset ${asset.path}: ${checkRes.status} ${text}`
+          `Failed to check asset ${asset.path}: ${checkRes.status} ${text}${hint401(checkRes.status, secret)}`
         )
         continue
       }
@@ -694,7 +700,7 @@ async function uploadAssets(
           logger.info(`Asset already exists: ${asset.path}`)
         } else {
           logger.warn(
-            `Failed to upload asset ${asset.path}: ${res.status} ${text}`
+            `Failed to upload asset ${asset.path}: ${res.status} ${text}${hint401(res.status, secret)}`
           )
         }
       } else {
@@ -762,7 +768,7 @@ async function uploadRecordings(
         const text = await startResponse.text()
         process.stdout.write('\n')
         logger.warn(
-          `Failed to start upload for "${videoName}": ${startResponse.status} ${text}`
+          `Failed to start upload for "${videoName}": ${startResponse.status} ${text}${hint401(startResponse.status, secret)}`
         )
         continue
       }
@@ -801,7 +807,7 @@ async function uploadRecordings(
           const text = await recordingResponse.text()
           process.stdout.write('\n')
           logger.warn(
-            `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}`
+            `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}${hint401(recordingResponse.status, secret)}`
           )
           continue
         }

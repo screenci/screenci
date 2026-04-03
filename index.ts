@@ -73,6 +73,7 @@ export type {
 export type {
   CaptionTranslation,
   VideoCaptionTranslation,
+  VideoCaptionTranslationFile,
 } from './src/events.js'
 export { hide } from './src/hide.js'
 export { autoZoom } from './src/autoZoom.js'

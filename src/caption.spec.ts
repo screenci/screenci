@@ -174,7 +174,7 @@ describe('createCaptions', () => {
     it('allows custom voice refs before validation and resolves them at start()', async () => {
       const customVoice = {
         path: './olli-sample.mp3',
-      } as CustomVoiceRef & { id?: string }
+      } as CustomVoiceRef & { assetHash?: string }
       const captions = createCaptions({
         en: {
           voice: voices.en.Jude,
@@ -186,7 +186,7 @@ describe('createCaptions', () => {
         },
       })
 
-      customVoice.id = 'voice-hash'
+      customVoice.assetHash = 'voice-hash'
       await captions.intro.start()
 
       expect(recorder.addCaptionStart).toHaveBeenCalledWith(
@@ -197,7 +197,7 @@ describe('createCaptions', () => {
           en: { text: 'Hello world', voice: voices.en.Jude },
           fi: {
             text: 'Hei maailma',
-            voice: { id: 'voice-hash', path: './olli-sample.mp3' },
+            voice: { assetHash: 'voice-hash', assetPath: './olli-sample.mp3' },
           },
         }
       )

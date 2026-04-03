@@ -18,7 +18,12 @@ import { dirname, relative as pathRelative, resolve } from 'path'
 import { createInterface } from 'readline/promises'
 import { fileURLToPath } from 'url'
 import { logger } from './src/logger.js'
-import type { RecordingData } from './src/events.js'
+import type {
+  RecordingCustomVoiceRef,
+  RecordingData,
+  VideoCaptionTranslationFile,
+} from './src/events.js'
+import type { VoiceKey } from './src/voices.js'
 import type { ScreenCIConfig } from './src/types.js'
 
 function resolveRecordingFileCandidates(
@@ -62,7 +67,7 @@ function contentTypeForPath(filePath: string): string {
   return contentTypeMap[ext] ?? 'application/octet-stream'
 }
 
-type CustomVoiceRefLike = { id: string; path: string }
+type CustomVoiceRefLike = { assetHash: string; assetPath: string }
 
 type PreparedUploadAsset = {
   fileHash: string
@@ -387,12 +392,13 @@ async function prepareCustomVoiceAssets(
         if (
           typeof translation.voice === 'object' &&
           translation.voice !== null &&
-          'path' in translation.voice &&
-          typeof translation.voice.path === 'string'
+          'assetPath' in translation.voice &&
+          typeof translation.voice.assetPath === 'string'
         ) {
-          const refs = customVoiceRefsByPath.get(translation.voice.path) ?? []
-          refs.push(translation.voice)
-          customVoiceRefsByPath.set(translation.voice.path, refs)
+          const voiceRef = translation.voice as CustomVoiceRefLike
+          const refs = customVoiceRefsByPath.get(voiceRef.assetPath) ?? []
+          refs.push(voiceRef)
+          customVoiceRefsByPath.set(voiceRef.assetPath, refs)
         }
       }
     }
@@ -403,12 +409,13 @@ async function prepareCustomVoiceAssets(
           'text' in translation &&
           typeof translation.voice === 'object' &&
           translation.voice !== null &&
-          'path' in translation.voice &&
-          typeof translation.voice.path === 'string'
+          'assetPath' in translation.voice &&
+          typeof translation.voice.assetPath === 'string'
         ) {
-          const refs = customVoiceRefsByPath.get(translation.voice.path) ?? []
-          refs.push(translation.voice)
-          customVoiceRefsByPath.set(translation.voice.path, refs)
+          const voiceRef = translation.voice as CustomVoiceRefLike
+          const refs = customVoiceRefsByPath.get(voiceRef.assetPath) ?? []
+          refs.push(voiceRef)
+          customVoiceRefsByPath.set(voiceRef.assetPath, refs)
         }
       }
     }
@@ -419,20 +426,22 @@ async function prepareCustomVoiceAssets(
   for (const [voicePath, refs] of customVoiceRefsByPath) {
     const resolvedFile = await readRecordingFile(voicePath, configDir)
     if (resolvedFile === null) {
-      const existingId = refs.find((ref) => typeof ref.id === 'string')?.id
-      if (!existingId) {
+      const existingHash = refs.find(
+        (ref) => typeof ref.assetHash === 'string'
+      )?.assetHash
+      if (!existingHash) {
         throw new Error(
-          `Custom voice file not found and no cached id available: ${voicePath}`
+          `Custom voice file not found and no cached assetHash available: ${voicePath}`
         )
       }
       logger.warn(
         `Custom voice file not found locally, assuming previously uploaded recording asset is valid: ${voicePath}`
       )
       for (const ref of refs) {
-        ref.id = existingId
+        ref.assetHash = existingHash
       }
       preparedAssets.push({
-        fileHash: existingId,
+        fileHash: existingHash,
         path: voicePath,
         size: 0,
         contentType: contentTypeForPath(voicePath),
@@ -441,13 +450,13 @@ async function prepareCustomVoiceAssets(
     }
 
     const { buffer: fileBuffer, resolvedPath } = resolvedFile
-    const id = createHash('sha256').update(fileBuffer).digest('hex')
+    const assetHash = createHash('sha256').update(fileBuffer).digest('hex')
     const contentType = contentTypeForPath(resolvedPath)
     for (const ref of refs) {
-      ref.id = id
+      ref.assetHash = assetHash
     }
     preparedAssets.push({
-      fileHash: id,
+      fileHash: assetHash,
       path: voicePath,
       size: fileBuffer.byteLength,
       fileBuffer,
@@ -485,57 +494,51 @@ async function collectUploadAssets(
     }
 
     if (event.type === 'videoCaptionStart') {
-      if (typeof event.assetPath === 'string') {
-        const key = `path:${event.assetPath}`
-        if (!assets.has(key)) {
-          const resolvedFile = await readRecordingFile(
-            event.assetPath,
-            configDir
-          )
-          if (resolvedFile === null) {
-            logger.warn(
-              `Video caption asset file not found, skipping upload: ${event.assetPath}`
-            )
-          } else {
-            const { buffer: fileBuffer, resolvedPath } = resolvedFile
-            assets.set(key, {
-              fileHash: createHash('sha256').update(fileBuffer).digest('hex'),
-              path: event.assetPath,
-              size: fileBuffer.byteLength,
-              fileBuffer,
-              contentType: contentTypeForPath(resolvedPath),
-            })
-          }
-        }
+      // Single-language: hash already computed during recording, use assetPath to read file
+      if (
+        typeof event.assetHash === 'string' &&
+        !assets.has(`hash:${event.assetHash}`)
+      ) {
+        const resolvedFile =
+          typeof event.assetPath === 'string'
+            ? await readRecordingFile(event.assetPath, configDir)
+            : null
+        assets.set(`hash:${event.assetHash}`, {
+          fileHash: event.assetHash,
+          path: event.assetPath ?? event.assetHash,
+          size: resolvedFile?.buffer.byteLength ?? 0,
+          ...(resolvedFile !== null && {
+            fileBuffer: resolvedFile.buffer,
+            contentType: contentTypeForPath(resolvedFile.resolvedPath),
+          }),
+        })
       }
 
+      // Multi-language: each translation carries its own hash
       if (event.translations) {
         for (const translation of Object.values(event.translations)) {
           if (
             typeof translation === 'object' &&
             translation !== null &&
-            'assetPath' in translation &&
-            typeof translation.assetPath === 'string'
+            'assetHash' in translation &&
+            typeof translation.assetHash === 'string' &&
+            !assets.has(`hash:${translation.assetHash}`)
           ) {
-            const key = `path:${translation.assetPath}`
-            if (assets.has(key)) continue
-            const resolvedFile = await readRecordingFile(
-              translation.assetPath,
-              configDir
-            )
-            if (resolvedFile === null) {
-              logger.warn(
-                `Video caption asset file not found, skipping upload: ${translation.assetPath}`
-              )
-              continue
-            }
-            const { buffer: fileBuffer, resolvedPath } = resolvedFile
-            assets.set(key, {
-              fileHash: createHash('sha256').update(fileBuffer).digest('hex'),
-              path: translation.assetPath,
-              size: fileBuffer.byteLength,
-              fileBuffer,
-              contentType: contentTypeForPath(resolvedPath),
+            const resolvedFile =
+              'assetPath' in translation &&
+              typeof translation.assetPath === 'string'
+                ? await readRecordingFile(translation.assetPath, configDir)
+                : null
+            assets.set(`hash:${translation.assetHash}`, {
+              fileHash: translation.assetHash,
+              path:
+                (translation as { assetPath?: string }).assetPath ??
+                translation.assetHash,
+              size: resolvedFile?.buffer.byteLength ?? 0,
+              ...(resolvedFile !== null && {
+                fileBuffer: resolvedFile.buffer,
+                contentType: contentTypeForPath(resolvedFile.resolvedPath),
+              }),
             })
           }
         }
@@ -550,41 +553,60 @@ async function collectUploadAssets(
   return [...assets.values()]
 }
 
+function stripVoicePath(
+  voice: VoiceKey | RecordingCustomVoiceRef
+): VoiceKey | RecordingCustomVoiceRef {
+  if (typeof voice !== 'string') {
+    return { assetHash: voice.assetHash }
+  }
+  return voice
+}
+
 function annotateRecordingDataWithAssetHashes(
   data: RecordingData,
   assets: PreparedUploadAsset[]
 ): RecordingData {
   const byName = new Map<string, string>()
-  const byPath = new Map<string, string>()
-
   for (const asset of assets) {
     if (typeof asset.name === 'string') byName.set(asset.name, asset.fileHash)
-    byPath.set(asset.path, asset.fileHash)
   }
 
   return {
     ...data,
     events: data.events.map((event) => {
       if (event.type === 'assetStart') {
-        const fileHash = byName.get(event.name) ?? byPath.get(event.path)
+        const fileHash = byName.get(event.name)
         return fileHash ? { ...event, fileHash } : event
+      }
+
+      if (event.type === 'captionStart' && event.translations) {
+        const translations = Object.fromEntries(
+          Object.entries(event.translations).map(([language, translation]) => [
+            language,
+            { ...translation, voice: stripVoicePath(translation.voice) },
+          ])
+        )
+        return { ...event, translations }
       }
 
       if (event.type !== 'videoCaptionStart') return event
 
+      // Strip assetPath from translations — hash was already computed during recording
       if (event.translations) {
         const translations = Object.fromEntries(
           Object.entries(event.translations).map(([language, translation]) => {
-            if (
-              typeof translation === 'object' &&
-              translation !== null &&
-              'assetPath' in translation &&
-              typeof translation.assetPath === 'string'
-            ) {
-              const fileHash = byPath.get(translation.assetPath)
+            if ('assetHash' in translation) {
+              const { assetPath: _removed, ...rest } =
+                translation as VideoCaptionTranslationFile
+              return [language, rest]
+            }
+            if ('voice' in translation) {
               return [
                 language,
-                fileHash ? { ...translation, fileHash } : translation,
+                {
+                  ...translation,
+                  voice: stripVoicePath(translation.voice),
+                },
               ]
             }
             return [language, translation]
@@ -593,9 +615,10 @@ function annotateRecordingDataWithAssetHashes(
         return { ...event, translations }
       }
 
-      if (typeof event.assetPath === 'string') {
-        const fileHash = byPath.get(event.assetPath)
-        return fileHash ? { ...event, fileHash } : event
+      // Single-language: strip assetPath, keep assetHash
+      if (typeof event.assetHash === 'string') {
+        const { assetPath: _removed, ...rest } = event
+        return rest
       }
 
       return event

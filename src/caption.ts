@@ -30,7 +30,8 @@ export function setSleepFn(fn: (ms: number) => void): void {
 let activeRecorder: IEventRecorder | null = null
 let captionStarted = false
 const registeredCustomVoiceRefs = new Set<CustomVoiceRef>()
-const registeredVideoCaptionAssetPaths = new Set<string>()
+/** Maps local asset path → SHA-256 hash, populated during validateCustomVoiceRefs. */
+const videoCaptionFileHashes = new Map<string, string>()
 
 export function setActiveCaptionRecorder(
   recorder: IEventRecorder | null
@@ -44,7 +45,7 @@ export function resetCaptionChain(): void {
 
 export function resetRegisteredCustomVoiceRefs(): void {
   registeredCustomVoiceRefs.clear()
-  registeredVideoCaptionAssetPaths.clear()
+  videoCaptionFileHashes.clear()
 }
 
 export async function validateCustomVoiceRefs(
@@ -70,28 +71,34 @@ export async function validateCustomVoiceRefs(
       throw new Error(`Custom voice file not found: ${ref.path}`)
     }
 
-    ;(ref as CustomVoiceRef & { id: string }).id = createHash('sha256')
+    ;(ref as CustomVoiceRef & { assetHash: string }).assetHash = createHash(
+      'sha256'
+    )
       .update(fileBuffer)
       .digest('hex')
   }
 
-  for (const assetPath of registeredVideoCaptionAssetPaths) {
+  for (const assetPath of videoCaptionFileHashes.keys()) {
     const candidates = [assetPath, resolve(testDir, assetPath)]
-    let exists = false
+    let fileBuffer: Buffer | null = null
 
     for (const candidate of candidates) {
       try {
-        await access(candidate)
-        exists = true
+        fileBuffer = await readFile(candidate)
         break
       } catch {
         // try next candidate
       }
     }
 
-    if (!exists) {
+    if (fileBuffer === null) {
       throw new Error(`Video caption asset file not found: ${assetPath}`)
     }
+
+    videoCaptionFileHashes.set(
+      assetPath,
+      createHash('sha256').update(fileBuffer).digest('hex')
+    )
   }
 }
 
@@ -100,14 +107,15 @@ function toRecordedVoice(
 ): VoiceKey | RecordingCustomVoiceRef {
   if (!isCustomVoiceRef(voice)) return voice
   if (
-    !('id' in voice) ||
-    typeof (voice as CustomVoiceRef & { id?: string }).id !== 'string'
+    !('assetHash' in voice) ||
+    typeof (voice as CustomVoiceRef & { assetHash?: string }).assetHash !==
+      'string'
   ) {
-    throw new Error(`Custom voice id missing for path: ${voice.path}`)
+    throw new Error(`Custom voice assetHash missing for path: ${voice.path}`)
   }
   return {
-    id: (voice as CustomVoiceRef & { id: string }).id,
-    path: voice.path,
+    assetHash: (voice as CustomVoiceRef & { assetHash: string }).assetHash,
+    assetPath: voice.path,
   }
 }
 
@@ -252,10 +260,14 @@ function buildMultiLangCaptions<
     // Determine if any language uses a file-based value for this key.
     // If so, use videoCaptionStart with mixed translations (file or TTS per lang).
     // Otherwise use captionStart with text translations (existing behaviour).
-    const hasFileEntry = langs.some((lang) => {
+    let hasFileEntry = false
+    for (const lang of langs) {
       const val = languagesMap[lang].captions[keyStr]
-      return val !== undefined && typeof val !== 'string'
-    })
+      if (val !== undefined && typeof val !== 'string') {
+        hasFileEntry = true
+        videoCaptionFileHashes.set(val.path, '')
+      }
+    }
 
     if (hasFileEntry) {
       result[key as keyof T] = {
@@ -273,16 +285,14 @@ function buildMultiLangCaptions<
                 voice: toRecordedVoice(languagesMap[lang].voice),
               }
             } else {
-              videoTranslations[lang] = {
-                assetPath: val.path,
-                ...(val.subtitle !== undefined && { subtitle: val.subtitle }),
-              } satisfies VideoCaptionTranslationFile
+              videoTranslations[lang] = entryToVideoTranslation(val)
             }
           }
           captionStarted = true
           sleepFn(2 * ONE_FRAME_MS)
           activeRecorder.addVideoCaptionStart(
             keyStr,
+            undefined,
             undefined,
             undefined,
             videoTranslations
@@ -348,11 +358,16 @@ type RequireAllSameVideoKeys<
 
 function entryToVideoTranslation(
   entry: VideoCaptionEntry
-): VideoCaptionTranslation {
-  if (typeof entry === 'string') return { assetPath: entry }
+): VideoCaptionTranslationFile {
+  const path = typeof entry === 'string' ? entry : entry.path
+  const subtitle = typeof entry === 'string' ? undefined : entry.subtitle
+  const assetHash = videoCaptionFileHashes.get(path)
+  if (!assetHash)
+    throw new Error(`Video caption asset hash missing for path: ${path}`)
   return {
-    assetPath: entry.path,
-    ...(entry.subtitle !== undefined && { subtitle: entry.subtitle }),
+    assetHash,
+    assetPath: path,
+    ...(subtitle !== undefined && { subtitle }),
   }
 }
 
@@ -430,16 +445,21 @@ function buildSingleLangVideoCaptions<
     if (entry === undefined) continue
     const assetPath = typeof entry === 'string' ? entry : entry.path
     const subtitle = typeof entry === 'string' ? undefined : entry.subtitle
-    registeredVideoCaptionAssetPaths.add(assetPath)
+    videoCaptionFileHashes.set(assetPath, '')
 
     result[key] = {
       async start() {
         if (activeRecorder === null) return
         if (isInsideHide())
           throw new Error('Cannot call videoCaption.start inside hide()')
+        const assetHash = videoCaptionFileHashes.get(assetPath)
+        if (!assetHash)
+          throw new Error(
+            `Video caption asset hash missing for path: ${assetPath}`
+          )
         captionStarted = true
         sleepFn(2 * ONE_FRAME_MS)
-        activeRecorder.addVideoCaptionStart(key, assetPath, subtitle)
+        activeRecorder.addVideoCaptionStart(key, assetPath, assetHash, subtitle)
       },
       async end() {
         captionWaitEnd()
@@ -468,7 +488,7 @@ function buildMultiLangVideoCaptions<
       const entry = languagesMap[lang].captions[keyStr]
       if (entry !== undefined) {
         const assetPath = typeof entry === 'string' ? entry : entry.path
-        registeredVideoCaptionAssetPaths.add(assetPath)
+        videoCaptionFileHashes.set(assetPath, '')
         translations[lang] = entryToVideoTranslation(entry)
       }
     }
@@ -482,6 +502,7 @@ function buildMultiLangVideoCaptions<
         sleepFn(2 * ONE_FRAME_MS)
         activeRecorder.addVideoCaptionStart(
           keyStr,
+          undefined,
           undefined,
           undefined,
           translations

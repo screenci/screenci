@@ -111,8 +111,9 @@ export type InputEvent = {
 }
 
 export type RecordingCustomVoiceRef = {
-  id: string
-  path: string
+  assetHash: string
+  /** Present only in recording phase (for CLI upload); stripped from submitted data. */
+  assetPath?: string
 }
 
 export type CaptionTranslation = {
@@ -136,10 +137,12 @@ export type CaptionEndEvent = {
   timeMs: number
 }
 
-/** File-based video caption translation — uses a pre-recorded asset. */
+/** File-based video caption translation. assetPath is present only in the local
+ *  recording phase (for CLI upload) and is stripped before submitting to the backend. */
 export type VideoCaptionTranslationFile = {
-  assetPath: string
-  fileHash?: string
+  assetHash: string
+  /** Local file path — present only during recording; stripped from submitted data. */
+  assetPath?: string
   subtitle?: string
 }
 /** TTS-based video caption translation — generates audio via text-to-speech. */
@@ -155,12 +158,13 @@ export type VideoCaptionStartEvent = {
   type: 'videoCaptionStart'
   timeMs: number
   name: string
-  /** Single-language API: absolute path to the pre-recorded audio/video file. */
+  /** Single-language API: SHA-256 hash of the pre-recorded asset. */
+  assetHash?: string
+  /** Single-language API: local file path — present only during recording; stripped from submitted data. */
   assetPath?: string
-  fileHash?: string
   /** Optional subtitle text. Words are spread with equal timing at render time. */
   subtitle?: string
-  /** Multi-language API — per-language asset paths keyed by language code. */
+  /** Multi-language API — per-language translations keyed by language code. */
   translations?: Record<string, VideoCaptionTranslation>
 }
 
@@ -248,6 +252,7 @@ export interface IEventRecorder {
   addVideoCaptionStart(
     name: string,
     assetPath: string | undefined,
+    assetHash: string | undefined,
     subtitle?: string,
     translations?: Record<string, VideoCaptionTranslation>
   ): void
@@ -354,6 +359,7 @@ export class EventRecorder implements IEventRecorder {
   addVideoCaptionStart(
     name: string,
     assetPath: string | undefined,
+    assetHash: string | undefined,
     subtitle?: string,
     translations?: Record<string, VideoCaptionTranslation>
   ): void {
@@ -363,6 +369,7 @@ export class EventRecorder implements IEventRecorder {
       type: 'videoCaptionStart',
       timeMs,
       name,
+      ...(assetHash !== undefined && { assetHash }),
       ...(assetPath !== undefined && { assetPath }),
       ...(subtitle !== undefined && { subtitle }),
       ...(translations !== undefined && { translations }),

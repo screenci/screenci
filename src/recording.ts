@@ -7,4 +7,4 @@ export type {
   ResolvedRenderOptions,
 } from './types.js'
 
-export type { RecordingData } from './events.js'
+export type { RecordingData } from './recordingData.js'

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
+import pc from 'picocolors'
 import { logger } from './src/logger.js'
 
 const mockSpawn = vi.fn()
@@ -17,8 +18,17 @@ const mockStat = vi.fn()
 const mockCreateReadStream = vi.fn()
 const mockWriteFile = vi.fn()
 const mockMkdir = vi.fn()
-const mockCreateInterface = vi.fn()
+const mockInput = vi.fn()
+const mockConfirm = vi.fn()
 const mockCreateHttpServer = vi.fn()
+
+const mockSpinner = {
+  start: vi.fn().mockReturnThis(),
+  succeed: vi.fn().mockReturnThis(),
+  fail: vi.fn().mockReturnThis(),
+  stop: vi.fn().mockReturnThis(),
+}
+const mockOra = vi.fn().mockReturnValue(mockSpinner)
 
 vi.mock('child_process', () => ({
   spawn: mockSpawn,
@@ -63,11 +73,13 @@ vi.mock('fs/promises', () => ({
   },
 }))
 
-vi.mock('readline/promises', () => ({
-  createInterface: mockCreateInterface,
-  default: {
-    createInterface: mockCreateInterface,
-  },
+vi.mock('@inquirer/prompts', () => ({
+  input: mockInput,
+  confirm: mockConfirm,
+}))
+
+vi.mock('ora', () => ({
+  default: mockOra,
 }))
 
 vi.mock('http', () => ({
@@ -93,24 +105,30 @@ describe('CLI', () => {
     mockMkdir.mockResolvedValue(undefined)
     // Default: podman is available (overridden per-test as needed)
     mockSpawnSync.mockReturnValue({ status: 0, error: undefined })
+    // Default inquirer responses
+    mockInput.mockResolvedValue('')
+    mockConfirm.mockResolvedValue(true)
+    // Restore ora mock return value after clearAllMocks
+    mockOra.mockReturnValue(mockSpinner)
+    mockSpinner.start.mockReturnThis()
+    mockSpinner.succeed.mockReturnThis()
+    mockSpinner.fail.mockReturnThis()
+    mockSpinner.stop.mockReturnThis()
 
     // Store original values
     originalArgv = process.argv
     originalEnv = { ...process.env }
 
     // Mock child process (unref needed for openBrowser's detached spawn)
-    mockChildProcess = Object.assign(new EventEmitter(), { unref: vi.fn() })
+    mockChildProcess = Object.assign(new EventEmitter(), {
+      unref: vi.fn(),
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+    })
     mockSpawn.mockReturnValue(mockChildProcess as unknown as ChildProcess)
 
     // Mock file system
     mockExistsSync.mockReturnValue(true)
-
-    // Default readline mock: answer 'n' to all prompts (skips install and login)
-    const defaultRl = {
-      question: vi.fn().mockResolvedValue('n'),
-      close: vi.fn(),
-    }
-    mockCreateInterface.mockReturnValue(defaultRl)
 
     // Default http server mock: does not resolve (login not triggered by default)
     mockCreateHttpServer.mockReturnValue({
@@ -595,10 +613,6 @@ describe('CLI', () => {
     it('should log build and run steps', async () => {
       process.argv = ['node', 'cli.js', 'record']
 
-      const stdoutSpy = vi
-        .spyOn(process.stdout, 'write')
-        .mockImplementation(() => true)
-
       const { main } = await import('./cli')
       const mainPromise = main()
 
@@ -613,11 +627,10 @@ describe('CLI', () => {
 
       await mainPromise
 
-      expect(stdoutSpy).toHaveBeenCalledWith(
+      expect(mockOra).toHaveBeenCalledWith(
         expect.stringContaining('Building image')
       )
-
-      stdoutSpy.mockRestore()
+      expect(mockSpinner.start).toHaveBeenCalled()
     })
 
     it('should support --config flag', async () => {
@@ -901,6 +914,46 @@ describe('CLI', () => {
 
       expect(loggerErrorSpy).toHaveBeenCalledWith('Unknown command: unknown')
       expect(processExitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('should show global help with --help', async () => {
+      process.argv = ['node', 'cli.js', '--help']
+      const stdoutSpy = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation(() => true)
+
+      const { main } = await import('./cli')
+      await expect(main()).resolves.toBeUndefined()
+
+      expect(stdoutSpy).toHaveBeenCalled()
+      expect(
+        stdoutSpy.mock.calls.some((call) =>
+          String(call[0]).includes('Usage: screenci')
+        )
+      ).toBe(true)
+      expect(mockSpawn).not.toHaveBeenCalled()
+
+      stdoutSpy.mockRestore()
+    })
+
+    it('should show command help with record --help', async () => {
+      process.argv = ['node', 'cli.js', 'record', '--help']
+      const stdoutSpy = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation(() => true)
+
+      const { main } = await import('./cli')
+      await expect(main()).resolves.toBeUndefined()
+
+      expect(stdoutSpy).toHaveBeenCalled()
+      expect(
+        stdoutSpy.mock.calls.some((call) =>
+          String(call[0]).includes('Usage: screenci record')
+        )
+      ).toBe(true)
+      expect(mockSpawn).not.toHaveBeenCalled()
+
+      stdoutSpy.mockRestore()
     })
 
     it('should exit if default config not found', async () => {
@@ -1339,20 +1392,14 @@ describe('CLI', () => {
   })
 
   describe('init command', () => {
-    function setupReadlineMock(answer: string): void {
-      const mockRl = {
-        question: vi.fn().mockResolvedValue(answer),
-        close: vi.fn(),
-      }
-      mockCreateInterface.mockReturnValue(mockRl)
-    }
-
     beforeEach(() => {
-      // npm install runs automatically in init; make spawn emit close immediately
+      // npm install runs via spawnSilent (piped); make spawn emit close immediately
       mockSpawn.mockImplementation(() => {
         process.nextTick(() => mockChildProcess.emit('close', 0))
         return mockChildProcess as unknown as ChildProcess
       })
+      // Default: confirm npm install
+      mockConfirm.mockResolvedValue(true)
     })
 
     it('should create all files inside a new directory named after the project', async () => {
@@ -1449,12 +1496,12 @@ describe('CLI', () => {
     it('should prompt for project name when not provided as arg', async () => {
       process.argv = ['node', 'cli.js', 'init']
       mockExistsSync.mockReturnValue(false)
-      setupReadlineMock('prompted-project')
+      mockInput.mockResolvedValue('prompted-project')
 
       const { main } = await import('./cli')
       await main()
 
-      expect(mockCreateInterface).toHaveBeenCalled()
+      expect(mockInput).toHaveBeenCalled()
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining('screenci.config.ts'),
         expect.stringContaining('"prompted-project"')
@@ -1464,7 +1511,7 @@ describe('CLI', () => {
     it('should exit if project name is empty after prompt', async () => {
       process.argv = ['node', 'cli.js', 'init']
       mockExistsSync.mockReturnValue(false)
-      setupReadlineMock('')
+      mockInput.mockResolvedValue('')
 
       const { main } = await import('./cli')
       await expect(main()).rejects.toThrow('process.exit called')
@@ -1496,7 +1543,9 @@ describe('CLI', () => {
       await main()
 
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        'Initialized screenci project "Test Project" in test-project/'
+        expect.stringContaining(
+          'Initialized screenci project "Test Project" in '
+        )
       )
     })
 
@@ -1607,9 +1656,10 @@ describe('CLI', () => {
       expect(mockSpawnSync).toHaveBeenCalledTimes(1)
     })
 
-    it('should automatically run npm install', async () => {
+    it('should run npm install when confirmed', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
+      mockConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(true)
 
       const { main } = await import('./cli')
       await main()
@@ -1617,7 +1667,169 @@ describe('CLI', () => {
       expect(mockSpawn).toHaveBeenCalledWith(
         'npm',
         expect.arrayContaining(['install']),
-        expect.objectContaining({ stdio: 'inherit' })
+        expect.objectContaining({ stdio: 'pipe' })
+      )
+    })
+
+    it('should skip npm install when declined', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+      mockConfirm.mockResolvedValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).not.toHaveBeenCalledWith(
+        'npm',
+        expect.arrayContaining(['install']),
+        expect.any(Object)
+      )
+    })
+
+    it('should run Chromium install when confirmed after npm install', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+      mockConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(true)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        ['playwright', 'install', 'chromium', '--with-deps'],
+        expect.objectContaining({
+          cwd: expect.stringContaining('my-project'),
+          stdio: 'inherit',
+        })
+      )
+    })
+
+    it('should skip Chromium prompt when Playwright reports Chromium already installed', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+      mockConfirm.mockResolvedValueOnce(true)
+
+      const createChild = () =>
+        Object.assign(new EventEmitter(), {
+          unref: vi.fn(),
+          stdout: new EventEmitter(),
+          stderr: new EventEmitter(),
+        }) as unknown as ChildProcess & {
+          stdout: EventEmitter
+          stderr: EventEmitter
+        }
+
+      mockSpawn.mockImplementationOnce(() => {
+        const child = createChild()
+        process.nextTick(() => child.emit('close', 0))
+        return child
+      })
+      mockSpawn.mockImplementationOnce(() => {
+        const child = createChild()
+        process.nextTick(() => {
+          child.stdout.emit(
+            'data',
+            '/home/test/.cache/ms-playwright/chromium-1200\n'
+          )
+          child.emit('close', 0)
+        })
+        return child
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockConfirm).toHaveBeenCalledTimes(1)
+      expect(mockSpawn).not.toHaveBeenCalledWith(
+        'npx',
+        ['playwright', 'install', 'chromium', '--with-deps'],
+        expect.any(Object)
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        `${pc.green('✔')} Skipping Chromium installation, version 1200 already installed.`
+      )
+      expect(loggerInfoSpy).not.toHaveBeenCalledWith(
+        'Local development requires Chromium for Playwright.'
+      )
+    })
+
+    it('should show Chromium check output and result with init --verbose', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project', '--verbose']
+      mockExistsSync.mockReturnValue(false)
+      mockConfirm.mockResolvedValueOnce(true)
+
+      const createChild = () =>
+        Object.assign(new EventEmitter(), {
+          unref: vi.fn(),
+          stdout: new EventEmitter(),
+          stderr: new EventEmitter(),
+        }) as unknown as ChildProcess & {
+          stdout: EventEmitter
+          stderr: EventEmitter
+        }
+
+      mockSpawn.mockImplementationOnce(() => {
+        const child = createChild()
+        process.nextTick(() => child.emit('close', 0))
+        return child
+      })
+      mockSpawn.mockImplementationOnce(() => {
+        const child = createChild()
+        process.nextTick(() => {
+          child.stdout.emit(
+            'data',
+            '/home/test/.cache/ms-playwright/chromium-1200\n'
+          )
+          child.emit('close', 0)
+        })
+        return child
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        'Checking Playwright Chromium install with: npx playwright install --list'
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        '/home/test/.cache/ms-playwright/chromium-1200'
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        'Chromium check result: Chromium found in Playwright install list (version 1200)'
+      )
+    })
+
+    it('should show npm install output with init --verbose', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project', '--verbose']
+      mockExistsSync.mockReturnValue(false)
+      mockConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith("Running 'npm install'...")
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npm',
+        ['install'],
+        expect.objectContaining({
+          cwd: expect.stringContaining('my-project'),
+          stdio: 'inherit',
+        })
+      )
+    })
+
+    it('should skip Chromium install when declined after npm install', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+      mockConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).not.toHaveBeenCalledWith(
+        'npx',
+        ['playwright', 'install', 'chromium', '--with-deps'],
+        expect.any(Object)
       )
     })
 
@@ -1646,25 +1858,74 @@ describe('CLI', () => {
       }
     })
 
-    it('should log npm install running message', async () => {
+    it('should show spinner during npm install', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
+      mockConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(true)
 
       const { main } = await import('./cli')
       await main()
 
-      expect(loggerInfoSpy).toHaveBeenCalledWith('Running npm install...')
+      expect(mockOra).toHaveBeenCalledWith(
+        expect.stringContaining('npm install')
+      )
+      expect(mockSpinner.start).toHaveBeenCalled()
+      expect(mockSpinner.succeed).toHaveBeenCalled()
     })
 
-    it('should not include npm install in next steps since it runs automatically', async () => {
+    it('should mention Chromium requirement for local development', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
+      mockConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        'Local development requires Chromium for Playwright.'
+      )
+    })
+
+    it('should not include install steps in next steps when both are confirmed', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+      mockConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(true)
 
       const { main } = await import('./cli')
       await main()
 
       const allInfoCalls = loggerInfoSpy.mock.calls.map((c: unknown[]) => c[0])
       expect(allInfoCalls).not.toContain('  npm install')
+      expect(allInfoCalls).not.toContain(
+        '  npx playwright install chromium --with-deps'
+      )
+    })
+
+    it('should include npm install in next steps when declined', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+      mockConfirm.mockResolvedValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith('  npm install')
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        '  npx playwright install chromium --with-deps'
+      )
+    })
+
+    it('should include Chromium install in next steps when declined after npm install', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+      mockConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        '  npx playwright install chromium --with-deps'
+      )
     })
   })
 

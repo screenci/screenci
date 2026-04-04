@@ -1,6 +1,7 @@
 #!/usr/bin/env -S npx tsx
 
 import { spawn, spawnSync } from 'child_process'
+import type { ChildProcess } from 'child_process'
 import { createReadStream } from 'fs'
 import {
   existsSync,
@@ -15,8 +16,11 @@ import { createServer } from 'http'
 import type { AddressInfo } from 'net'
 import { mkdir, readdir, readFile, stat, writeFile } from 'fs/promises'
 import { dirname, relative as pathRelative, resolve } from 'path'
-import { createInterface } from 'readline/promises'
 import { fileURLToPath } from 'url'
+import { Command, CommanderError } from 'commander'
+import { input, confirm } from '@inquirer/prompts'
+import ora from 'ora'
+import pc from 'picocolors'
 import { logger } from './src/logger.js'
 import type {
   RecordingCustomVoiceRef,
@@ -78,14 +82,6 @@ type PreparedUploadAsset = {
   contentType?: string
 }
 
-function writeInline(msg: string): void {
-  process.stdout.write(msg)
-}
-
-function completeInline(msg: string): void {
-  process.stdout.write(`\r\x1b[K${msg}\n`)
-}
-
 function parseDockerfileVersion(dockerfilePath: string): string {
   let content: string
   try {
@@ -103,6 +99,10 @@ function parseDockerfileVersion(dockerfilePath: string): string {
 
 const CONTAINER_RUNTIME_DOCS_URL =
   'https://screenci.com/guides/getting-started/#prerequisites'
+
+function prerequisitesMessage(): string {
+  return `See prerequisites: ${pc.blue(CONTAINER_RUNTIME_DOCS_URL)}`
+}
 
 const MIN_CONTAINER_RUNTIME_MAJOR_VERSION = {
   podman: 5,
@@ -155,7 +155,7 @@ function getPreferredContainerRuntime(): ContainerRuntimeCheckResult | null {
 function exitContainerRuntimeNotFound(runtime: ContainerRuntimeName): never {
   logger.error(`Error: ${runtime} not found.`)
   logger.error(`Install ${runtime} or remove the --${runtime} flag.`)
-  logger.error(`See prerequisites: ${CONTAINER_RUNTIME_DOCS_URL}`)
+  logger.error(prerequisitesMessage())
   process.exit(1)
 }
 
@@ -170,15 +170,15 @@ function warnIfContainerRuntimeVersionIsOld(
     runtimeCheck.majorVersion < minimumVersion
   ) {
     logger.warn(
-      `Warning: ${runtimeCheck.runtime} ${minimumVersion}+ recommended (detected: ${runtimeCheck.version})`
+      `${runtimeCheck.runtime} ${minimumVersion}+ recommended (detected: ${runtimeCheck.version}). Most likely this still works, continuing.`
     )
-    logger.warn(`See prerequisites: ${CONTAINER_RUNTIME_DOCS_URL}`)
+    logger.warn(prerequisitesMessage())
   }
 }
 
-function spawnSilent(cmd: string, args: string[]): Promise<void> {
+function spawnSilent(cmd: string, args: string[], cwd?: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: 'pipe' })
+    const child = spawn(cmd, args, { stdio: 'pipe', ...(cwd ? { cwd } : {}) })
     child.on('close', (code) => {
       if (code === 0) {
         resolve()
@@ -188,6 +188,104 @@ function spawnSilent(cmd: string, args: string[]): Promise<void> {
     })
     child.on('error', reject)
   })
+}
+
+function spawnCaptured(
+  cmd: string,
+  args: string[],
+  cwd?: string
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: 'pipe', ...(cwd ? { cwd } : {}) })
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout?.on('data', (chunk: Buffer | string) => {
+      stdout += chunk.toString()
+    })
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      stderr += chunk.toString()
+    })
+
+    child.on('close', (code) => {
+      resolve({ code, stdout, stderr })
+    })
+    child.on('error', reject)
+  })
+}
+
+function forwardChildSignals(
+  child: ChildProcess,
+  activityLabel: string
+): () => void {
+  const forwardSignal = (signal: NodeJS.Signals) => {
+    logger.info(`Received ${signal}, stopping ${activityLabel}...`)
+    if (!child.killed) {
+      child.kill(signal)
+    }
+    const forceKill = setTimeout(() => {
+      if (child.exitCode === null) {
+        logger.info(`Forcing ${activityLabel} to stop after timeout...`)
+        child.kill('SIGKILL')
+      }
+    }, 3000)
+    forceKill.unref()
+  }
+
+  process.on('SIGINT', forwardSignal)
+  process.on('SIGTERM', forwardSignal)
+
+  return () => {
+    process.off('SIGINT', forwardSignal)
+    process.off('SIGTERM', forwardSignal)
+  }
+}
+
+async function getPlaywrightChromiumInstallStatus(
+  projectDir: string,
+  verbose = false
+): Promise<{ needed: boolean; version: string | null }> {
+  try {
+    if (verbose) {
+      logger.info(
+        'Checking Playwright Chromium install with: npx playwright install --list'
+      )
+    }
+    const list = await spawnCaptured(
+      'npx',
+      ['playwright', 'install', '--list'],
+      projectDir
+    )
+    if (verbose) {
+      if (list.stdout.trim() !== '') logger.info(list.stdout.trimEnd())
+      if (list.stderr.trim() !== '') logger.info(list.stderr.trimEnd())
+      logger.info(`Check result: exit code ${list.code ?? 'null'}`)
+    }
+    const output = `${list.stdout}\n${list.stderr}`
+    const versionMatch = output.match(/\bchromium-(\d+)\b/i)
+    if (list.code === 0 && versionMatch) {
+      if (verbose) {
+        logger.info(
+          `Chromium check result: Chromium found in Playwright install list (version ${versionMatch[1]})`
+        )
+      }
+      return { needed: false, version: versionMatch[1] ?? null }
+    }
+    if (verbose) {
+      logger.info(
+        'Chromium check result: Chromium not found in Playwright install list'
+      )
+    }
+  } catch {
+    // If the probe fails, default to asking.
+  }
+
+  if (verbose) {
+    logger.info(
+      'Chromium check result: unable to verify, install still recommended'
+    )
+  }
+  return { needed: true, version: null }
 }
 
 const CONTAINER_LOG_FILTER = [
@@ -206,6 +304,7 @@ const CONTAINER_LOG_FILTER = [
 function spawnContainerRecording(cmd: string, args: string[]): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ['inherit', 'pipe', 'pipe'] })
+    const cleanupSignalHandlers = forwardChildSignals(child, 'screenci record')
 
     function forwardFiltered(chunk: Buffer, out: NodeJS.WriteStream): void {
       const lines = chunk.toString().split('\n')
@@ -225,6 +324,7 @@ function spawnContainerRecording(cmd: string, args: string[]): Promise<void> {
     )
 
     child.on('close', (code) => {
+      cleanupSignalHandlers()
       if (code === 0) {
         resolve()
       } else {
@@ -232,7 +332,10 @@ function spawnContainerRecording(cmd: string, args: string[]): Promise<void> {
       }
     })
 
-    child.on('error', reject)
+    child.on('error', (err) => {
+      cleanupSignalHandlers()
+      reject(err)
+    })
   })
 }
 
@@ -276,80 +379,6 @@ function findRepoRoot(startDir: string): string | null {
     const parent = resolve(current, '..')
     if (parent === current) return null
     current = parent
-  }
-}
-
-function parseArgs(args: string[]): {
-  command: string
-  configPath: string | undefined
-  noContainer: boolean
-  imageTag: string | undefined
-  verbose: boolean
-  forcedRuntime: ContainerRuntimeName | undefined
-  otherArgs: string[]
-} {
-  const command = args[0]
-  if (command === undefined) {
-    logger.error('Error: No command provided')
-    logger.error('Available commands: record, dev, upload-latest, init')
-    process.exit(1)
-  }
-  let configPath: string | undefined
-  let noContainer = false
-  let imageTag: string | undefined
-  let verbose = false
-  let forcedRuntime: ContainerRuntimeName | undefined
-  const otherArgs: string[] = []
-
-  for (let i = 1; i < args.length; i++) {
-    const arg = args[i]
-    if (arg === '--config' || arg === '-c') {
-      const nextArg = args[i + 1]
-      if (nextArg !== undefined) {
-        configPath = nextArg
-        i++ // skip next arg
-      } else {
-        logger.error('Error: --config requires a path argument')
-        process.exit(1)
-      }
-    } else if (arg === '--no-container') {
-      noContainer = true
-    } else if (arg === '--verbose' || arg === '-v') {
-      verbose = true
-    } else if (arg === '--podman') {
-      if (forcedRuntime === 'docker') {
-        logger.error('Error: --podman and --docker cannot be used together')
-        process.exit(1)
-      }
-      forcedRuntime = 'podman'
-    } else if (arg === '--docker') {
-      if (forcedRuntime === 'podman') {
-        logger.error('Error: --podman and --docker cannot be used together')
-        process.exit(1)
-      }
-      forcedRuntime = 'docker'
-    } else if (arg === '--tag') {
-      const nextArg = args[i + 1]
-      if (nextArg !== undefined) {
-        imageTag = nextArg
-        i++ // skip next arg
-      } else {
-        logger.error('Error: --tag requires a tag argument')
-        process.exit(1)
-      }
-    } else if (arg !== undefined) {
-      otherArgs.push(arg)
-    }
-  }
-
-  return {
-    command,
-    configPath,
-    noContainer,
-    imageTag,
-    verbose,
-    forcedRuntime,
-    otherArgs,
   }
 }
 
@@ -753,7 +782,7 @@ async function uploadRecordings(
     )
     data = annotateRecordingDataWithAssetHashes(data, preparedUploadAssets)
 
-    writeInline(`Uploading "${videoName}"...`)
+    const uploadSpinner = ora(`Uploading "${videoName}"`).start()
     try {
       // Step 1: register upload and get recordingId
       const startResponse = await fetch(`${apiUrl}/cli/upload/start`, {
@@ -766,7 +795,7 @@ async function uploadRecordings(
       })
       if (!startResponse.ok) {
         const text = await startResponse.text()
-        process.stdout.write('\n')
+        uploadSpinner.fail(`Failed to upload "${videoName}"`)
         logger.warn(
           `Failed to start upload for "${videoName}": ${startResponse.status} ${text}${hint401(startResponse.status, secret)}`
         )
@@ -805,7 +834,7 @@ async function uploadRecordings(
         )
         if (!recordingResponse.ok) {
           const text = await recordingResponse.text()
-          process.stdout.write('\n')
+          uploadSpinner.fail(`Failed to upload "${videoName}"`)
           logger.warn(
             `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}${hint401(recordingResponse.status, secret)}`
           )
@@ -813,9 +842,9 @@ async function uploadRecordings(
         }
       }
 
-      completeInline(`Uploading "${videoName}" ✓`)
+      uploadSpinner.succeed(`Uploaded "${videoName}"`)
     } catch (err) {
-      process.stdout.write('\n')
+      uploadSpinner.fail(`Error uploading "${videoName}"`)
       logger.warn(`Network error uploading "${videoName}":`, err)
     }
   }
@@ -900,7 +929,7 @@ async function uploadLatest(configPath: string | undefined): Promise<void> {
   if (projectId !== null) {
     logger.info('')
     logger.info('Recording finished, results available at:')
-    logger.info(`${appUrl}/project/${projectId}`)
+    logger.info(pc.cyan(`${appUrl}/project/${projectId}`))
   }
 }
 
@@ -1067,7 +1096,7 @@ async function performBrowserLogin(appUrl: string): Promise<string> {
       const loginUrl = `${appUrl}/cli-auth?callback=${encodeURIComponent(callbackUrl)}`
 
       logger.info(`If the browser does not open automatically, visit:`)
-      logger.info(loginUrl)
+      logger.info(pc.cyan(loginUrl))
       logger.info('')
 
       openBrowser(loginUrl)
@@ -1095,21 +1124,8 @@ video('Example video', async ({ page }) => {
 `
 }
 
-async function promptLine(question: string): Promise<string> {
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  })
-  try {
-    const answer = await rl.question(question)
-    return answer.trim()
-  } finally {
-    rl.close()
-  }
-}
-
 async function promptProjectName(): Promise<string> {
-  return promptLine('Project name: ')
+  return input({ message: 'Project name:' })
 }
 
 function toKebabCase(name: string): string {
@@ -1149,7 +1165,8 @@ function checkNodeVersion(): void {
 
 async function runInit(
   projectNameArg?: string,
-  localPackagePath?: string
+  localPackagePath?: string,
+  verbose = false
 ): Promise<void> {
   checkNodeVersion()
   checkContainerRuntimeForInit()
@@ -1194,7 +1211,7 @@ async function runInit(
     generateGithubAction()
   )
 
-  logger.info(`Initialized screenci project "${projectName}" in ${dirName}/`)
+  logger.info(`Initialized screenci project "${projectName}" in ${projectDir}/`)
   logger.info('Files created:')
   logger.info('  screenci.config.ts')
   logger.info('  package.json')
@@ -1203,41 +1220,109 @@ async function runInit(
   logger.info('  videos/example.video.ts')
   logger.info('  .github/workflows/record.yml')
   logger.info('')
+  logger.info('screenci requires dependencies to be installed.')
 
-  logger.info('Running npm install...')
-  await spawnInherited('npm', ['install', '--prefix', projectDir])
+  const shouldInstall = await confirm({
+    message: "Run 'npm install' now?",
+    default: true,
+  })
+  let chromiumReady = false
+
+  if (shouldInstall) {
+    if (verbose) {
+      logger.info("Running 'npm install'...")
+      await spawnInherited('npm', ['install'], projectDir, 'screenci init')
+    } else {
+      const spinner = ora('Running npm install...').start()
+      try {
+        await spawnSilent('npm', ['install', '--prefix', projectDir])
+        spinner.succeed('npm install complete')
+      } catch (err) {
+        spinner.fail('npm install failed')
+        throw err
+      }
+    }
+
+    const chromiumInstallStatus = await getPlaywrightChromiumInstallStatus(
+      projectDir,
+      verbose
+    )
+
+    if (!chromiumInstallStatus.needed) {
+      chromiumReady = true
+      const versionText = chromiumInstallStatus.version
+        ? `, version ${chromiumInstallStatus.version} already installed.`
+        : ' because it is already installed.'
+      logger.info(
+        `${pc.green('✔')} Skipping Chromium installation${versionText}`
+      )
+    } else {
+      logger.info('Local development requires Chromium for Playwright.')
+      const shouldInstallChromium = await confirm({
+        message: "Run 'npx playwright install chromium --with-deps' now?",
+        default: true,
+      })
+
+      if (shouldInstallChromium) {
+        logger.info("Running 'npx playwright install chromium --with-deps'...")
+        await spawnInherited(
+          'npx',
+          ['playwright', 'install', 'chromium', '--with-deps'],
+          projectDir,
+          'screenci init'
+        )
+        chromiumReady = true
+      }
+    }
+  }
 
   logger.info('')
   logger.info('Next steps:')
   logger.info(`  cd ${dirName}`)
-  logger.info('  screenci record')
+  if (!shouldInstall) {
+    logger.info('  npm install')
+  }
+  if (!shouldInstall || !chromiumReady) {
+    logger.info('  npx playwright install chromium --with-deps')
+  }
+  logger.info('  npm run record')
 }
 
 export async function main() {
-  const args = process.argv.slice(2)
-  const {
-    command,
-    configPath,
-    noContainer,
-    imageTag,
-    verbose,
-    forcedRuntime,
-    otherArgs,
-  } = parseArgs(args)
+  if (process.argv.length <= 2) {
+    logger.error('Error: No command provided')
+    logger.error('Available commands: record, dev, upload-latest, init')
+    process.exit(1)
+  }
 
-  switch (command) {
-    case 'record': {
+  const program = new Command()
+  program.name('screenci')
+  program.exitOverride()
+
+  // record command — playwright args pass through as-is
+  program
+    .command('record [playwrightArgs...]')
+    .description('Record videos using Playwright')
+    .allowUnknownOption(true)
+    .action(async () => {
+      const parsed = parseRecordCliArgs(getSubcommandArgv('record'))
+
+      if (parsed.forcedRuntime === 'both') {
+        logger.error('Error: --podman and --docker cannot be used together')
+        process.exit(1)
+      }
+
       const useContainer =
-        !noContainer && process.env.SCREENCI_IN_CONTAINER !== 'true'
+        !parsed.noContainer && process.env.SCREENCI_IN_CONTAINER !== 'true'
 
       // Validate early so we don't build the container unnecessarily
       if (useContainer) {
-        validateArgs(otherArgs)
+        validateArgs(parsed.otherArgs)
       }
 
       // On the host, acquire secret before recording if missing
       if (process.env.SCREENCI_IN_CONTAINER !== 'true') {
-        const resolvedConfigForSecret = findScreenCIConfig(configPath)
+        const resolvedConfigForSecret = findScreenCIConfig(parsed.configPath)
         if (resolvedConfigForSecret) {
           let envFilePath: string | null = null
           try {
@@ -1282,21 +1367,21 @@ export async function main() {
 
       if (useContainer) {
         await runWithContainer(
-          otherArgs,
-          configPath,
-          imageTag,
-          verbose,
-          forcedRuntime
+          parsed.otherArgs,
+          parsed.configPath,
+          parsed.imageTag,
+          parsed.verbose,
+          parsed.forcedRuntime
         )
       } else {
-        await run(command, otherArgs, configPath)
+        await run('record', parsed.otherArgs, parsed.configPath)
       }
 
       // Upload only from the host, not from inside the container
-      if (process.env.SCREENCI_IN_CONTAINER === 'true') break
+      if (process.env.SCREENCI_IN_CONTAINER === 'true') return
 
       // After recording, upload results to API if configured
-      const resolvedConfigPath = findScreenCIConfig(configPath)
+      const resolvedConfigPath = findScreenCIConfig(parsed.configPath)
       if (resolvedConfigPath) {
         try {
           const configModule = await import(resolvedConfigPath)
@@ -1319,7 +1404,7 @@ export async function main() {
             logger.info(
               'No secret configured, skipping upload. Set SCREENCI_SECRET in your .env file.'
             )
-            break
+            return
           }
           const configDir = dirname(resolvedConfigPath)
           const screenciDir = resolve(configDir, '.screenci')
@@ -1332,44 +1417,183 @@ export async function main() {
           if (projectId !== null) {
             logger.info('')
             logger.info('Recording finished, results available at:')
-            logger.info(`${appUrl}/project/${projectId}`)
+            logger.info(pc.cyan(`${appUrl}/project/${projectId}`))
           }
         } catch (err) {
           logger.warn('Failed to load config for upload:', err)
         }
       }
-      break
-    }
-    case 'dev':
-      await run(command, otherArgs, configPath)
-      break
-    case 'upload-latest':
-      await uploadLatest(configPath)
-      break
-    case 'init': {
-      if (otherArgs[0] === 'auth') {
-        await runInitAuth()
-      } else {
-        const localFlagIndex = otherArgs.indexOf('--local')
-        let localPackagePath: string | undefined
-        let initArgs = otherArgs
-        if (localFlagIndex !== -1) {
-          const cliDir = dirname(fileURLToPath(import.meta.url))
-          // cli.ts is at package root; dist/cli.js is one level down
-          localPackagePath = existsSync(resolve(cliDir, 'package.json'))
-            ? cliDir
-            : resolve(cliDir, '..')
-          initArgs = otherArgs.filter((_, i) => i !== localFlagIndex)
+    })
+
+  // dev command — playwright args pass through as-is
+  program
+    .command('dev [playwrightArgs...]')
+    .description('Run Playwright in dev/UI mode')
+    .allowUnknownOption(true)
+    .action(async () => {
+      const parsed = parseDevCliArgs(getSubcommandArgv('dev'))
+      await run('dev', parsed.otherArgs, parsed.configPath)
+    })
+
+  // upload-latest command
+  program
+    .command('upload-latest')
+    .description('Upload the latest recording')
+    .option('-c, --config <path>', 'path to screenci.config.ts')
+    .action(async (options: Record<string, unknown>) => {
+      await uploadLatest(options['config'] as string | undefined)
+    })
+
+  // init command
+  program
+    .command('init [name]')
+    .description('Initialize a new screenci project')
+    .option('--local', 'use local package path (for development)')
+    .option('-v, --verbose', 'verbose output')
+    .action(
+      async (name: string | undefined, options: Record<string, unknown>) => {
+        if (name === 'auth') {
+          await runInitAuth()
+        } else {
+          let localPackagePath: string | undefined
+          if (options['local']) {
+            const cliDir = dirname(fileURLToPath(import.meta.url))
+            // cli.ts is at package root; dist/cli.js is one level down
+            localPackagePath = existsSync(resolve(cliDir, 'package.json'))
+              ? cliDir
+              : resolve(cliDir, '..')
+          }
+          await runInit(
+            name,
+            localPackagePath,
+            (options['verbose'] as boolean | undefined) ?? false
+          )
         }
-        await runInit(initArgs[0], localPackagePath)
       }
-      break
-    }
-    default:
-      logger.error(`Unknown command: ${command}`)
-      logger.error('Available commands: record, dev, upload-latest, init')
+    )
+
+  try {
+    await program.parseAsync(process.argv)
+  } catch (err) {
+    if (err instanceof CommanderError) {
+      if (err.code === 'commander.unknownCommand') {
+        const unknownCmd = process.argv[2] ?? ''
+        logger.error(`Unknown command: ${unknownCmd}`)
+        process.exit(1)
+      }
+      if (err.code === 'commander.optionMissingArgument') {
+        if (
+          err.message.includes('--config') ||
+          err.message.includes('-c, --config') ||
+          err.message.includes("'-c'")
+        ) {
+          logger.error('Error: --config requires a path argument')
+          process.exit(1)
+        }
+        logger.error(`Error: ${err.message}`)
+        process.exit(1)
+      }
+      if (
+        err.code === 'commander.help' ||
+        err.code === 'commander.helpDisplayed'
+      ) {
+        return
+      }
+      logger.error(`Error: ${err.message}`)
       process.exit(1)
+      return
+    }
+    throw err
   }
+}
+
+function getSubcommandArgv(command: string): string[] {
+  const argv = process.argv.slice(2)
+  const commandIndex = argv.indexOf(command)
+  return commandIndex === -1 ? [] : argv.slice(commandIndex + 1)
+}
+
+function parseRecordCliArgs(args: string[]): {
+  configPath: string | undefined
+  noContainer: boolean
+  imageTag: string | undefined
+  verbose: boolean
+  forcedRuntime: ContainerRuntimeName | 'both' | undefined
+  otherArgs: string[]
+} {
+  let configPath: string | undefined
+  let noContainer = false
+  let imageTag: string | undefined
+  let verbose = false
+  let forcedRuntime: ContainerRuntimeName | 'both' | undefined
+  const otherArgs: string[] = []
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (arg === undefined) continue
+    if (arg === '--config' || arg === '-c') {
+      const nextArg = args[i + 1]
+      if (nextArg === undefined) {
+        logger.error('Error: --config requires a path argument')
+        process.exit(1)
+      }
+      configPath = nextArg
+      i++
+    } else if (arg === '--no-container') {
+      noContainer = true
+    } else if (arg === '--verbose' || arg === '-v') {
+      verbose = true
+    } else if (arg === '--podman') {
+      forcedRuntime = forcedRuntime === 'docker' ? 'both' : 'podman'
+    } else if (arg === '--docker') {
+      forcedRuntime = forcedRuntime === 'podman' ? 'both' : 'docker'
+    } else if (arg === '--tag') {
+      const nextArg = args[i + 1]
+      if (nextArg === undefined) {
+        logger.error('Error: --tag requires a tag argument')
+        process.exit(1)
+      }
+      imageTag = nextArg
+      i++
+    } else {
+      otherArgs.push(arg)
+    }
+  }
+
+  return {
+    configPath,
+    noContainer,
+    imageTag,
+    verbose,
+    forcedRuntime,
+    otherArgs,
+  }
+}
+
+function parseDevCliArgs(args: string[]): {
+  configPath: string | undefined
+  otherArgs: string[]
+} {
+  let configPath: string | undefined
+  const otherArgs: string[] = []
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (arg === undefined) continue
+    if (arg === '--config' || arg === '-c') {
+      const nextArg = args[i + 1]
+      if (nextArg === undefined) {
+        logger.error('Error: --config requires a path argument')
+        process.exit(1)
+      }
+      configPath = nextArg
+      i++
+    } else {
+      otherArgs.push(arg)
+    }
+  }
+
+  return { configPath, otherArgs }
 }
 
 function validateArgs(args: string[]): void {
@@ -1400,30 +1624,18 @@ function validateArgs(args: string[]): void {
   }
 }
 
-function spawnInherited(cmd: string, args: string[]): Promise<void> {
-  const child = spawn(cmd, args, { stdio: 'inherit' })
-
-  const forwardSignal = (signal: NodeJS.Signals) => {
-    logger.info(`Received ${signal}, stopping...`)
-    if (!child.killed) {
-      child.kill(signal)
-    }
-    const forceKill = setTimeout(() => {
-      if (child.exitCode === null) {
-        logger.info('Forcing kill after timeout...')
-        child.kill('SIGKILL')
-      }
-    }, 3000)
-    forceKill.unref()
-  }
-
-  process.on('SIGINT', forwardSignal)
-  process.on('SIGTERM', forwardSignal)
+function spawnInherited(
+  cmd: string,
+  args: string[],
+  cwd?: string,
+  activityLabel = cmd
+): Promise<void> {
+  const child = spawn(cmd, args, { stdio: 'inherit', ...(cwd ? { cwd } : {}) })
+  const cleanupSignalHandlers = forwardChildSignals(child, activityLabel)
 
   return new Promise<void>((resolve, reject) => {
     child.on('close', (code) => {
-      process.off('SIGINT', forwardSignal)
-      process.off('SIGTERM', forwardSignal)
+      cleanupSignalHandlers()
       if (code === 0) {
         resolve()
       } else {
@@ -1432,8 +1644,7 @@ function spawnInherited(cmd: string, args: string[]): Promise<void> {
     })
 
     child.on('error', (err) => {
-      process.off('SIGINT', forwardSignal)
-      process.off('SIGTERM', forwardSignal)
+      cleanupSignalHandlers()
       reject(err)
     })
   })
@@ -1459,7 +1670,7 @@ export function detectContainerRuntime(
   logger.error(
     'Please install podman (recommended) or docker to use screenci record.'
   )
-  logger.error(`See prerequisites: ${CONTAINER_RUNTIME_DOCS_URL}`)
+  logger.error(prerequisitesMessage())
   process.exit(1)
 }
 
@@ -1468,9 +1679,9 @@ function checkContainerRuntimeForInit(): void {
 
   if (!runtimeCheck) {
     logger.warn(
-      'Warning: Neither podman nor docker found. Install one before running screenci record.'
+      'Neither podman nor docker found. Install one before running screenci record.'
     )
-    logger.warn(`See prerequisites: ${CONTAINER_RUNTIME_DOCS_URL}`)
+    logger.warn(prerequisitesMessage())
     return
   }
 
@@ -1487,12 +1698,12 @@ async function buildImage(
     await spawnInherited(cmd, args)
     return
   }
-  writeInline(`${label}...`)
+  const spinner = ora(label).start()
   try {
     await spawnSilent(cmd, args)
-    completeInline(`${label} ✓`)
+    spinner.succeed(label)
   } catch (err) {
-    process.stdout.write('\n')
+    spinner.fail(label)
     const msg = err instanceof Error ? err.message : String(err)
     logger.error(msg)
     logger.error('Run again with --verbose to see the full build output')
@@ -1564,7 +1775,9 @@ async function runWithContainer(
     await spawnSilent(containerRuntime, ['tag', remoteImage, ghcrImage])
   } else {
     const cliDir = dirname(fileURLToPath(import.meta.url))
-    const screenciPackageRoot = resolve(cliDir, '..')
+    const screenciPackageRoot = existsSync(resolve(cliDir, 'package.json'))
+      ? cliDir
+      : resolve(cliDir, '..')
     const screenciDockerfilePath = resolve(cliDir, 'Dockerfile')
 
     if (verbose) {
@@ -1585,7 +1798,7 @@ async function runWithContainer(
         configDir,
       ])
     } else {
-      writeInline('Building image...')
+      const spinner = ora('Building image').start()
       try {
         await spawnSilent(containerRuntime, [
           'build',
@@ -1603,9 +1816,9 @@ async function runWithContainer(
           'screenci',
           configDir,
         ])
-        completeInline('Building image ✓')
+        spinner.succeed('Building image')
       } catch (err) {
-        process.stdout.write('\n')
+        spinner.fail('Building image')
         const msg = err instanceof Error ? err.message : String(err)
         logger.error(msg)
         logger.error('Run again with --verbose to see the full build output')
@@ -1702,32 +1915,14 @@ async function run(
       ...(command === 'record' ? { SCREENCI_RECORD: 'true' } : {}),
     },
   })
-
-  const forwardSignal = (signal: NodeJS.Signals) => {
-    logger.info(`Received ${signal}, stopping recording...`)
-    if (!child.killed) {
-      child.kill(signal)
-    }
-    // Force-kill after 3 s if the child hasn't actually exited yet.
-    // child.killed becomes true as soon as we send the signal, so we check
-    // child.exitCode instead — it stays null until the process truly exits.
-    // unref() so the timer doesn't keep the process alive on its own.
-    const forceKill = setTimeout(() => {
-      if (child.exitCode === null) {
-        logger.info('Forcing kill after timeout...')
-        child.kill('SIGKILL')
-      }
-    }, 3000)
-    forceKill.unref()
-  }
-
-  process.on('SIGINT', forwardSignal)
-  process.on('SIGTERM', forwardSignal)
+  const cleanupSignalHandlers = forwardChildSignals(
+    child,
+    `screenci ${command}`
+  )
 
   return new Promise<void>((resolve, reject) => {
     child.on('close', (code) => {
-      process.off('SIGINT', forwardSignal)
-      process.off('SIGTERM', forwardSignal)
+      cleanupSignalHandlers()
       if (code === 0) {
         resolve()
       } else {
@@ -1736,6 +1931,7 @@ async function run(
     })
 
     child.on('error', (err) => {
+      cleanupSignalHandlers()
       reject(err)
     })
   })

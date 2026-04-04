@@ -481,7 +481,7 @@ const _videoBase = base.extend<VideoFixtureOptions>({
       recorder.start()
     } else {
       logger.warn(
-        'Warning: Screen recording failed to start. Test will continue without recording.'
+        'Screen recording failed to start. Test will continue without recording.'
       )
       logger.warn(
         `Note: Recording at ${dimensions.width}x${dimensions.height} requires a display of at least that size.`

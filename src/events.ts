@@ -511,7 +511,11 @@ export class EventRecorder implements IEventRecorder {
             languageSet.add(lang)
           }
         } else if (event.captionConfig?.voice !== undefined) {
-          const lang = event.captionConfig.voice.split('.')[0]
+          const lang =
+            event.captionConfig.voice.includes('.') &&
+            !event.captionConfig.voice.startsWith('elevenlabs:')
+              ? event.captionConfig.voice.split('.')[0]
+              : undefined
           if (lang) languageSet.add(lang)
         }
       }

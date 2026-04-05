@@ -206,8 +206,8 @@ type MultiLangMap<L extends Lang, T extends Record<string, CaptionMapValue>> = {
  * @example
  * ```ts
  * const captions = createCaptions({
- *   en: { voice: voices.en.Jude, captions: { intro: 'Welcome.' } },
- *   fi: { voice: voices.fi.Martti, captions: { intro: 'Tervetuloa.' } },
+ *   en: { voice: voices.Ava, captions: { intro: 'Welcome.' } },
+ *   fi: { voice: voices.Ava, captions: { intro: 'Tervetuloa.' } },
  * })
  * ```
  */

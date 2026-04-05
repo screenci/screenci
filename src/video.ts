@@ -282,20 +282,25 @@ process.on('exit', () => {
   }
 })
 
-// Forward SIGTERM/SIGINT: kill ffmpeg and Xvfb, then let the process exit.
+// Forward SIGTERM/SIGINT: clean up recorder processes, then re-raise the
+// original signal so parent processes treat the worker as interrupted.
 const handleTermSignal = (signal: NodeJS.Signals) => {
-  logger.info(`Worker received ${signal}, killing ffmpeg and Xvfb...`)
   killActiveFFmpegProcesses()
   if (currentXvfb) {
     try {
       currentXvfb.process.kill('SIGTERM')
     } catch {}
   }
-  process.exit(0)
+  process.off('SIGTERM', handleSigterm)
+  process.off('SIGINT', handleSigint)
+  process.kill(process.pid, signal)
 }
 
-process.on('SIGTERM', handleTermSignal)
-process.on('SIGINT', handleTermSignal)
+const handleSigterm = () => handleTermSignal('SIGTERM')
+const handleSigint = () => handleTermSignal('SIGINT')
+
+process.on('SIGTERM', handleSigterm)
+process.on('SIGINT', handleSigint)
 
 const _videoBase = base.extend<VideoFixtureOptions>({
   recordOptions: [DEFAULT_VIDEO_OPTIONS, { option: true }],

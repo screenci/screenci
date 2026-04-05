@@ -27,7 +27,7 @@ function createMockRecorder(): IEventRecorder {
 
 const singleLangMap = {
   en: {
-    voice: voices.en.Jude,
+    voice: voices.Ava,
     captions: { intro: 'Hello world', outro: 'Goodbye' },
   },
 }
@@ -135,11 +135,11 @@ describe('createCaptions', () => {
   describe('with multi-language map', () => {
     const langMap = {
       en: {
-        voice: voices.en.Jude,
+        voice: voices.Ava,
         captions: { intro: 'Hello world', outro: 'Goodbye' },
       },
       fi: {
-        voice: voices.fi.Martti,
+        voice: voices.Ava,
         captions: { intro: 'Hei maailma', outro: 'Näkemiin' },
       },
     }
@@ -159,8 +159,8 @@ describe('createCaptions', () => {
         'intro',
         undefined,
         {
-          en: { text: 'Hello world', voice: voices.en.Jude },
-          fi: { text: 'Hei maailma', voice: voices.fi.Martti },
+          en: { text: 'Hello world', voice: voices.Ava },
+          fi: { text: 'Hei maailma', voice: voices.Ava },
         }
       )
     })
@@ -177,7 +177,7 @@ describe('createCaptions', () => {
       } as CustomVoiceRef & { assetHash?: string }
       const captions = createCaptions({
         en: {
-          voice: voices.en.Jude,
+          voice: voices.Ava,
           captions: { intro: 'Hello world' },
         },
         fi: {
@@ -194,7 +194,7 @@ describe('createCaptions', () => {
         'intro',
         undefined,
         {
-          en: { text: 'Hello world', voice: voices.en.Jude },
+          en: { text: 'Hello world', voice: voices.Ava },
           fi: {
             text: 'Hei maailma',
             voice: { assetHash: 'voice-hash', assetPath: './olli-sample.mp3' },

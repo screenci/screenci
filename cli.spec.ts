@@ -628,7 +628,7 @@ describe('CLI', () => {
       await mainPromise
 
       expect(mockOra).toHaveBeenCalledWith(
-        expect.stringContaining('Building image')
+        expect.stringContaining('Building screenci image')
       )
       expect(mockSpinner.start).toHaveBeenCalled()
     })
@@ -1388,6 +1388,54 @@ describe('CLI', () => {
       const { getDevFrontendUrl } = await import('./cli')
 
       expect(getDevFrontendUrl()).toBe('http://localhost:5173')
+    })
+  })
+
+  describe('upload annotation helpers', () => {
+    it('should allow missing voice entries when annotating caption translations', async () => {
+      const { annotateRecordingDataWithAssetHashes, stripVoicePath } =
+        await import('./cli')
+
+      expect(stripVoicePath('fi.Selma')).toBe('fi.Selma')
+      expect(
+        stripVoicePath({
+          assetHash: 'abc123',
+          assetPath: '../assets/custom-voice.mp3',
+        })
+      ).toEqual({ assetHash: 'abc123' })
+
+      expect(
+        annotateRecordingDataWithAssetHashes(
+          {
+            events: [
+              {
+                type: 'captionStart',
+                timeMs: 0,
+                name: 'intro',
+                translations: {
+                  fi: {
+                    text: 'Hei',
+                  },
+                },
+              },
+            ],
+          },
+          []
+        )
+      ).toEqual({
+        events: [
+          {
+            type: 'captionStart',
+            timeMs: 0,
+            name: 'intro',
+            translations: {
+              fi: {
+                text: 'Hei',
+              },
+            },
+          },
+        ],
+      })
     })
   })
 

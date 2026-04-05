@@ -135,11 +135,11 @@ import { createCaptions, voices } from 'screenci'
 
 const captions = createCaptions({
   en: {
-    voice: voices.en.Jude,
+    voice: voices.Zephyr,
     captions: { intro: 'Welcome.', save: 'Hit save.' },
   },
   fi: {
-    voice: voices.fi.Martti,
+    voice: voices.Zephyr,
     captions: { intro: 'Tervetuloa.', save: 'Tallenna.' },
   },
 })

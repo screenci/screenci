@@ -452,23 +452,23 @@ describe('EventRecorder', () => {
 
     it('collects language from single-language captionConfig.voice into metadata', async () => {
       recorder.start()
-      recorder.addCaptionStart('Hello', 'greeting', { voice: voices.en.Jude })
+      recorder.addCaptionStart('Hello', 'greeting', { voice: voices.Ava })
       await recorder.writeToFile(tmpDir, 'Test Video')
 
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed: RecordingData = JSON.parse(content)
-      expect(parsed.metadata?.languages).toEqual(['en'])
+      expect(parsed.metadata?.languages).toBeUndefined()
     })
 
     it('collects language codes from multi-language captions into metadata', async () => {
       recorder.start()
       recorder.addCaptionStart('', 'greeting', undefined, {
-        en: { text: 'Hello', voice: voices.en.Jude },
-        fi: { text: 'Hei', voice: voices.fi.Martti },
+        en: { text: 'Hello', voice: voices.Ava },
+        fi: { text: 'Hei', voice: voices.Ava },
       })
       recorder.addCaptionStart('', 'farewell', undefined, {
-        en: { text: 'Goodbye', voice: voices.en.Jude },
-        fi: { text: 'Näkemiin', voice: voices.fi.Martti },
+        en: { text: 'Goodbye', voice: voices.Ava },
+        fi: { text: 'Näkemiin', voice: voices.Ava },
       })
       await recorder.writeToFile(tmpDir, 'Test Video')
 
@@ -480,10 +480,10 @@ describe('EventRecorder', () => {
     it('deduplicates language codes across multiple captions', async () => {
       recorder.start()
       recorder.addCaptionStart('', 'a', undefined, {
-        en: { text: 'A', voice: voices.en.Jude },
+        en: { text: 'A', voice: voices.Ava },
       })
       recorder.addCaptionStart('', 'b', undefined, {
-        en: { text: 'B', voice: voices.en.Jude },
+        en: { text: 'B', voice: voices.Ava },
       })
       await recorder.writeToFile(tmpDir, 'Test Video')
 

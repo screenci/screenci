@@ -82,6 +82,75 @@ type PreparedUploadAsset = {
   contentType?: string
 }
 
+class UploadCancelledError extends Error {
+  constructor(message = 'Upload cancelled') {
+    super(message)
+    this.name = 'UploadCancelledError'
+  }
+}
+
+function isUploadCancelledError(err: unknown): boolean {
+  return (
+    err instanceof UploadCancelledError ||
+    (err instanceof Error &&
+      (err.name === 'AbortError' || err.name === 'UploadCancelledError'))
+  )
+}
+
+function createUploadAbortController(activityLabel: string): {
+  signal: AbortSignal
+  throwIfAborted: () => void
+  cleanup: () => void
+} {
+  const controller = new AbortController()
+  let cleanedUp = false
+
+  const cleanup = () => {
+    if (cleanedUp) return
+    cleanedUp = true
+    process.off('SIGINT', handleSigint)
+    process.off('SIGTERM', handleSigterm)
+    process.stdin.off('data', handleStdinData)
+  }
+
+  const abortUpload = (signal: NodeJS.Signals) => {
+    if (controller.signal.aborted) return
+    logger.info(`Received ${signal}, stopping ${activityLabel}...`)
+    cleanup()
+    controller.abort(new UploadCancelledError(`${activityLabel} cancelled`))
+    process.kill(process.pid, signal)
+  }
+
+  const handleStdinData = (chunk: Buffer | string) => {
+    const bytes =
+      typeof chunk === 'string'
+        ? Buffer.from(chunk, 'utf8')
+        : Buffer.from(chunk)
+    if (bytes.includes(0x03)) {
+      abortUpload('SIGINT')
+    }
+  }
+
+  const handleSigint = () => abortUpload('SIGINT')
+  const handleSigterm = () => abortUpload('SIGTERM')
+
+  process.on('SIGINT', handleSigint)
+  process.on('SIGTERM', handleSigterm)
+  process.stdin.on('data', handleStdinData)
+
+  return {
+    signal: controller.signal,
+    throwIfAborted: () => {
+      if (controller.signal.aborted) {
+        throw controller.signal.reason instanceof Error
+          ? controller.signal.reason
+          : new UploadCancelledError(`${activityLabel} cancelled`)
+      }
+    },
+    cleanup,
+  }
+}
+
 function parseDockerfileVersion(dockerfilePath: string): string {
   let content: string
   try {
@@ -179,14 +248,27 @@ function warnIfContainerRuntimeVersionIsOld(
 function spawnSilent(cmd: string, args: string[], cwd?: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: 'pipe', ...(cwd ? { cwd } : {}) })
-    child.on('close', (code) => {
-      if (code === 0) {
+    const childSignals = forwardChildSignals(child, cmd)
+    child.on('close', (code, signal) => {
+      const forwardedSignal = childSignals.getForwardedSignal()
+      childSignals.cleanup()
+      if (forwardedSignal) {
+        process.kill(process.pid, forwardedSignal)
+        return
+      }
+      if (signal) {
+        process.kill(process.pid, signal)
+        return
+      } else if (code === 0) {
         resolve()
       } else {
         reject(new Error(`${cmd} exited with code ${code}`))
       }
     })
-    child.on('error', reject)
+    child.on('error', (err) => {
+      childSignals.cleanup()
+      reject(err)
+    })
   })
 }
 
@@ -197,6 +279,7 @@ function spawnCaptured(
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: 'pipe', ...(cwd ? { cwd } : {}) })
+    const childSignals = forwardChildSignals(child, cmd)
     let stdout = ''
     let stderr = ''
 
@@ -207,37 +290,68 @@ function spawnCaptured(
       stderr += chunk.toString()
     })
 
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
+      const forwardedSignal = childSignals.getForwardedSignal()
+      childSignals.cleanup()
+      if (forwardedSignal) {
+        process.kill(process.pid, forwardedSignal)
+        return
+      }
+      if (signal) {
+        process.kill(process.pid, signal)
+        return
+      }
       resolve({ code, stdout, stderr })
     })
-    child.on('error', reject)
+    child.on('error', (err) => {
+      childSignals.cleanup()
+      reject(err)
+    })
   })
 }
 
 function forwardChildSignals(
   child: ChildProcess,
   activityLabel: string
-): () => void {
+): { cleanup: () => void; getForwardedSignal: () => NodeJS.Signals | null } {
+  let forwardedSignal: NodeJS.Signals | null = null
+  let forceKillTimer: NodeJS.Timeout | null = null
+
   const forwardSignal = (signal: NodeJS.Signals) => {
-    logger.info(`Received ${signal}, stopping ${activityLabel}...`)
+    if (forwardedSignal !== null) return
+    forwardedSignal = signal
+    if (process.env.SCREENCI_SIGNAL_LOGGING !== 'silent') {
+      logger.info(`Received ${signal}, stopping ${activityLabel}...`)
+    }
     if (!child.killed) {
       child.kill(signal)
     }
-    const forceKill = setTimeout(() => {
+    forceKillTimer = setTimeout(() => {
       if (child.exitCode === null) {
-        logger.info(`Forcing ${activityLabel} to stop after timeout...`)
+        if (process.env.SCREENCI_SIGNAL_LOGGING !== 'silent') {
+          logger.info(`Forcing ${activityLabel} to stop after timeout...`)
+        }
         child.kill('SIGKILL')
       }
     }, 3000)
-    forceKill.unref()
+    forceKillTimer.unref()
   }
 
-  process.on('SIGINT', forwardSignal)
-  process.on('SIGTERM', forwardSignal)
+  const handleSigint = () => forwardSignal('SIGINT')
+  const handleSigterm = () => forwardSignal('SIGTERM')
 
-  return () => {
-    process.off('SIGINT', forwardSignal)
-    process.off('SIGTERM', forwardSignal)
+  process.on('SIGINT', handleSigint)
+  process.on('SIGTERM', handleSigterm)
+
+  return {
+    cleanup: () => {
+      if (forceKillTimer !== null) {
+        clearTimeout(forceKillTimer)
+      }
+      process.off('SIGINT', handleSigint)
+      process.off('SIGTERM', handleSigterm)
+    },
+    getForwardedSignal: () => forwardedSignal,
   }
 }
 
@@ -304,7 +418,7 @@ const CONTAINER_LOG_FILTER = [
 function spawnContainerRecording(cmd: string, args: string[]): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ['inherit', 'pipe', 'pipe'] })
-    const cleanupSignalHandlers = forwardChildSignals(child, 'screenci record')
+    const childSignals = forwardChildSignals(child, 'screenci record')
 
     function forwardFiltered(chunk: Buffer, out: NodeJS.WriteStream): void {
       const lines = chunk.toString().split('\n')
@@ -323,9 +437,17 @@ function spawnContainerRecording(cmd: string, args: string[]): Promise<void> {
       forwardFiltered(chunk, process.stderr)
     )
 
-    child.on('close', (code) => {
-      cleanupSignalHandlers()
-      if (code === 0) {
+    child.on('close', (code, signal) => {
+      const forwardedSignal = childSignals.getForwardedSignal()
+      childSignals.cleanup()
+      if (forwardedSignal) {
+        process.kill(process.pid, forwardedSignal)
+        return
+      }
+      if (signal) {
+        process.kill(process.pid, signal)
+        return
+      } else if (code === 0) {
         resolve()
       } else {
         reject(new Error(`${cmd} exited with code ${code}`))
@@ -333,7 +455,7 @@ function spawnContainerRecording(cmd: string, args: string[]): Promise<void> {
     })
 
     child.on('error', (err) => {
-      cleanupSignalHandlers()
+      childSignals.cleanup()
       reject(err)
     })
   })
@@ -582,7 +704,7 @@ async function collectUploadAssets(
   return [...assets.values()]
 }
 
-function stripVoicePath(
+export function stripVoicePath(
   voice: VoiceKey | RecordingCustomVoiceRef
 ): VoiceKey | RecordingCustomVoiceRef {
   if (typeof voice !== 'string') {
@@ -591,7 +713,7 @@ function stripVoicePath(
   return voice
 }
 
-function annotateRecordingDataWithAssetHashes(
+export function annotateRecordingDataWithAssetHashes(
   data: RecordingData,
   assets: PreparedUploadAsset[]
 ): RecordingData {
@@ -610,10 +732,18 @@ function annotateRecordingDataWithAssetHashes(
 
       if (event.type === 'captionStart' && event.translations) {
         const translations = Object.fromEntries(
-          Object.entries(event.translations).map(([language, translation]) => [
-            language,
-            { ...translation, voice: stripVoicePath(translation.voice) },
-          ])
+          Object.entries(event.translations).map(([language, translation]) => {
+            if (translation.voice === undefined) {
+              return [language, translation]
+            }
+            return [
+              language,
+              {
+                ...translation,
+                voice: stripVoicePath(translation.voice),
+              } as typeof translation,
+            ]
+          })
         )
         return { ...event, translations }
       }
@@ -634,7 +764,9 @@ function annotateRecordingDataWithAssetHashes(
                 language,
                 {
                   ...translation,
-                  voice: stripVoicePath(translation.voice),
+                  ...(translation.voice !== undefined
+                    ? { voice: stripVoicePath(translation.voice) }
+                    : {}),
                 },
               ]
             }
@@ -665,9 +797,12 @@ async function uploadAssets(
   assets: PreparedUploadAsset[],
   apiUrl: string,
   secret: string,
-  recordingId: string
+  recordingId: string,
+  signal: AbortSignal,
+  throwIfAborted: () => void
 ): Promise<void> {
   for (const asset of assets) {
+    throwIfAborted()
     try {
       const checkRes = await fetch(
         `${apiUrl}/cli/upload/${recordingId}/asset/check`,
@@ -684,6 +819,7 @@ async function uploadAssets(
             path: asset.path,
             ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
           }),
+          signal,
         }
       )
 
@@ -708,6 +844,8 @@ async function uploadAssets(
         continue
       }
 
+      throwIfAborted()
+
       const res = await fetch(`${apiUrl}/cli/upload/${recordingId}/asset`, {
         method: 'PUT',
         headers: {
@@ -722,6 +860,7 @@ async function uploadAssets(
           path: asset.path,
           ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
         }),
+        signal,
       })
       if (!res.ok) {
         const text = await res.text()
@@ -736,6 +875,9 @@ async function uploadAssets(
         logger.info(`Asset uploaded: ${asset.path}`)
       }
     } catch (err) {
+      if (isUploadCancelledError(err)) {
+        throw err
+      }
       logger.warn(`Network error uploading asset ${asset.path}:`, err)
     }
   }
@@ -748,6 +890,7 @@ async function uploadRecordings(
   secret: string,
   specificEntry?: string
 ): Promise<string | null> {
+  const uploadAbort = createUploadAbortController('upload')
   let entries: string[]
   try {
     entries = await readdir(screenciDir)
@@ -762,94 +905,126 @@ async function uploadRecordings(
 
   let firstProjectId: string | null = null
 
-  for (const entry of entries) {
-    const dataJsonPath = resolve(screenciDir, entry, 'data.json')
-    if (!existsSync(dataJsonPath)) continue
+  try {
+    for (const entry of entries) {
+      uploadAbort.throwIfAborted()
+      const dataJsonPath = resolve(screenciDir, entry, 'data.json')
+      if (!existsSync(dataJsonPath)) continue
 
-    let data: RecordingData
-    try {
-      const raw = await readFile(dataJsonPath, 'utf-8')
-      data = JSON.parse(raw) as RecordingData
-    } catch {
-      logger.warn(`Failed to read ${dataJsonPath}, skipping`)
-      continue
-    }
-
-    const videoName = data.metadata?.videoName ?? entry
-    const preparedUploadAssets = await collectUploadAssets(
-      data,
-      resolve(screenciDir, '..')
-    )
-    data = annotateRecordingDataWithAssetHashes(data, preparedUploadAssets)
-
-    const uploadSpinner = ora(`Uploading "${videoName}"`).start()
-    try {
-      // Step 1: register upload and get recordingId
-      const startResponse = await fetch(`${apiUrl}/cli/upload/start`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-ScreenCI-Secret': secret,
-        },
-        body: JSON.stringify({ projectName, videoName, data }),
-      })
-      if (!startResponse.ok) {
-        const text = await startResponse.text()
-        uploadSpinner.fail(`Failed to upload "${videoName}"`)
-        logger.warn(
-          `Failed to start upload for "${videoName}": ${startResponse.status} ${text}${hint401(startResponse.status, secret)}`
-        )
+      let data: RecordingData
+      try {
+        const raw = await readFile(dataJsonPath, 'utf-8')
+        data = JSON.parse(raw) as RecordingData
+      } catch {
+        logger.warn(`Failed to read ${dataJsonPath}, skipping`)
         continue
       }
-      const { recordingId, projectId } = (await startResponse.json()) as {
-        recordingId: string
-        projectId: string
-      }
 
-      if (firstProjectId === null) {
-        firstProjectId = projectId
-      }
+      const videoName = data.metadata?.videoName ?? entry
+      const preparedUploadAssets = await collectUploadAssets(
+        data,
+        resolve(screenciDir, '..')
+      )
+      data = annotateRecordingDataWithAssetHashes(data, preparedUploadAssets)
 
-      // Step 1b: upload all referenced files via the shared asset flow
-      await uploadAssets(preparedUploadAssets, apiUrl, secret, recordingId)
-
-      // Step 2: stream the recording video file (if it exists)
-      const recordingPath = resolve(screenciDir, entry, 'recording.mp4')
-      if (existsSync(recordingPath)) {
-        const fileStat = await stat(recordingPath)
-        const stream = createReadStream(recordingPath)
-        const recordingResponse = await fetch(
-          `${apiUrl}/cli/upload/${recordingId}/recording`,
-          {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'video/mp4',
-              'Content-Length': String(fileStat.size),
-              'X-ScreenCI-Secret': secret,
-            },
-            body: stream as unknown as BodyInit,
-            // @ts-expect-error Node.js fetch supports duplex for streaming
-            duplex: 'half',
-          }
-        )
-        if (!recordingResponse.ok) {
-          const text = await recordingResponse.text()
+      const uploadSpinner = ora(`Uploading "${videoName}"`).start()
+      try {
+        uploadAbort.throwIfAborted()
+        // Step 1: register upload and get recordingId
+        const startResponse = await fetch(`${apiUrl}/cli/upload/start`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-ScreenCI-Secret': secret,
+          },
+          body: JSON.stringify({ projectName, videoName, data }),
+          signal: uploadAbort.signal,
+        })
+        if (!startResponse.ok) {
+          const text = await startResponse.text()
           uploadSpinner.fail(`Failed to upload "${videoName}"`)
           logger.warn(
-            `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}${hint401(recordingResponse.status, secret)}`
+            `Failed to start upload for "${videoName}": ${startResponse.status} ${text}${hint401(startResponse.status, secret)}`
           )
           continue
         }
+        const { recordingId, projectId } = (await startResponse.json()) as {
+          recordingId: string
+          projectId: string
+        }
+
+        if (firstProjectId === null) {
+          firstProjectId = projectId
+        }
+
+        // Step 1b: upload all referenced files via the shared asset flow
+        await uploadAssets(
+          preparedUploadAssets,
+          apiUrl,
+          secret,
+          recordingId,
+          uploadAbort.signal,
+          uploadAbort.throwIfAborted
+        )
+
+        // Step 2: stream the recording video file (if it exists)
+        const recordingPath = resolve(screenciDir, entry, 'recording.mp4')
+        if (existsSync(recordingPath)) {
+          uploadAbort.throwIfAborted()
+          const fileStat = await stat(recordingPath)
+          const stream = createReadStream(recordingPath)
+          const abortStream = () => {
+            stream.destroy(
+              new UploadCancelledError(`Upload cancelled for "${videoName}"`)
+            )
+          }
+          uploadAbort.signal.addEventListener('abort', abortStream, {
+            once: true,
+          })
+          try {
+            const recordingResponse = await fetch(
+              `${apiUrl}/cli/upload/${recordingId}/recording`,
+              {
+                method: 'PUT',
+                headers: {
+                  'Content-Type': 'video/mp4',
+                  'Content-Length': String(fileStat.size),
+                  'X-ScreenCI-Secret': secret,
+                },
+                body: stream as unknown as BodyInit,
+                signal: uploadAbort.signal,
+                // @ts-expect-error Node.js fetch supports duplex for streaming
+                duplex: 'half',
+              }
+            )
+            if (!recordingResponse.ok) {
+              const text = await recordingResponse.text()
+              uploadSpinner.fail(`Failed to upload "${videoName}"`)
+              logger.warn(
+                `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}${hint401(recordingResponse.status, secret)}`
+              )
+              continue
+            }
+          } finally {
+            uploadAbort.signal.removeEventListener('abort', abortStream)
+          }
+        }
+
+        uploadSpinner.succeed(`Uploaded "${videoName}"`)
+      } catch (err) {
+        if (isUploadCancelledError(err)) {
+          uploadSpinner.fail(`Cancelled "${videoName}"`)
+          throw err
+        }
+        uploadSpinner.fail(`Error uploading "${videoName}"`)
+        logger.warn(`Network error uploading "${videoName}":`, err)
       }
-
-      uploadSpinner.succeed(`Uploaded "${videoName}"`)
-    } catch (err) {
-      uploadSpinner.fail(`Error uploading "${videoName}"`)
-      logger.warn(`Network error uploading "${videoName}":`, err)
     }
-  }
 
-  return firstProjectId
+    return firstProjectId
+  } finally {
+    uploadAbort.cleanup()
+  }
 }
 
 export function getDevBackendUrl(): string {
@@ -919,13 +1094,21 @@ async function uploadLatest(configPath: string | undefined): Promise<void> {
   const appUrl = getDevFrontendUrl()
 
   logger.info(`Uploading latest recording: "${latestEntry}"`)
-  const projectId = await uploadRecordings(
-    screenciDir,
-    screenciConfig.projectName,
-    apiUrl,
-    secret,
-    latestEntry
-  )
+  let projectId: string | null = null
+  try {
+    projectId = await uploadRecordings(
+      screenciDir,
+      screenciConfig.projectName,
+      apiUrl,
+      secret,
+      latestEntry
+    )
+  } catch (err) {
+    if (isUploadCancelledError(err)) {
+      process.exit(130)
+    }
+    throw err
+  }
   if (projectId !== null) {
     logger.info('')
     logger.info('Recording finished, results available at:')
@@ -1408,12 +1591,20 @@ export async function main() {
           }
           const configDir = dirname(resolvedConfigPath)
           const screenciDir = resolve(configDir, '.screenci')
-          const projectId = await uploadRecordings(
-            screenciDir,
-            screenciConfig.projectName,
-            apiUrl,
-            secret
-          )
+          let projectId: string | null = null
+          try {
+            projectId = await uploadRecordings(
+              screenciDir,
+              screenciConfig.projectName,
+              apiUrl,
+              secret
+            )
+          } catch (err) {
+            if (isUploadCancelledError(err)) {
+              process.exit(130)
+            }
+            throw err
+          }
           if (projectId !== null) {
             logger.info('')
             logger.info('Recording finished, results available at:')
@@ -1631,12 +1822,20 @@ function spawnInherited(
   activityLabel = cmd
 ): Promise<void> {
   const child = spawn(cmd, args, { stdio: 'inherit', ...(cwd ? { cwd } : {}) })
-  const cleanupSignalHandlers = forwardChildSignals(child, activityLabel)
+  const childSignals = forwardChildSignals(child, activityLabel)
 
   return new Promise<void>((resolve, reject) => {
-    child.on('close', (code) => {
-      cleanupSignalHandlers()
-      if (code === 0) {
+    child.on('close', (code, signal) => {
+      const forwardedSignal = childSignals.getForwardedSignal()
+      childSignals.cleanup()
+      if (forwardedSignal) {
+        process.kill(process.pid, forwardedSignal)
+        return
+      }
+      if (signal) {
+        process.kill(process.pid, signal)
+        return
+      } else if (code === 0) {
         resolve()
       } else {
         reject(new Error(`${cmd} exited with code ${code}`))
@@ -1644,7 +1843,7 @@ function spawnInherited(
     })
 
     child.on('error', (err) => {
-      cleanupSignalHandlers()
+      childSignals.cleanup()
       reject(err)
     })
   })
@@ -1768,7 +1967,7 @@ async function runWithContainer(
       await buildImage(
         containerRuntime,
         ['pull', remoteImage],
-        'Pulling image',
+        'Pulling screenci image',
         verbose
       )
     }
@@ -1781,24 +1980,27 @@ async function runWithContainer(
     const screenciDockerfilePath = resolve(cliDir, 'Dockerfile')
 
     if (verbose) {
-      await spawnInherited(containerRuntime, [
-        'build',
-        '-f',
-        screenciDockerfilePath,
-        '-t',
-        ghcrImage,
-        screenciPackageRoot,
-      ])
-      await spawnInherited(containerRuntime, [
-        'build',
-        '-f',
-        dockerfilePath,
-        '-t',
-        'screenci',
-        configDir,
-      ])
+      await spawnInherited(
+        containerRuntime,
+        [
+          'build',
+          '-f',
+          screenciDockerfilePath,
+          '-t',
+          ghcrImage,
+          screenciPackageRoot,
+        ],
+        undefined,
+        'building screenci image'
+      )
+      await spawnInherited(
+        containerRuntime,
+        ['build', '-f', dockerfilePath, '-t', 'screenci', configDir],
+        undefined,
+        'building project image'
+      )
     } else {
-      const spinner = ora('Building image').start()
+      const spinner = ora('Building screenci image').start()
       try {
         await spawnSilent(containerRuntime, [
           'build',
@@ -1816,9 +2018,9 @@ async function runWithContainer(
           'screenci',
           configDir,
         ])
-        spinner.succeed('Building image')
+        spinner.succeed('Building screenci image')
       } catch (err) {
-        spinner.fail('Building image')
+        spinner.fail('Building screenci image')
         const msg = err instanceof Error ? err.message : String(err)
         logger.error(msg)
         logger.error('Run again with --verbose to see the full build output')
@@ -1831,7 +2033,7 @@ async function runWithContainer(
     await buildImage(
       containerRuntime,
       ['build', '-f', dockerfilePath, '-t', 'screenci', configDir],
-      'Building image',
+      'Building project image',
       verbose
     )
   }
@@ -1852,6 +2054,8 @@ async function runWithContainer(
     'SCREENCI_RECORD=true',
     '-e',
     `SCREENCI_SECRET=${secret}`,
+    '-e',
+    'SCREENCI_SIGNAL_LOGGING=silent',
     '-v',
     `${configDir}/.screenci:/app/.screenci`,
     '-v',
@@ -1915,14 +2119,20 @@ async function run(
       ...(command === 'record' ? { SCREENCI_RECORD: 'true' } : {}),
     },
   })
-  const cleanupSignalHandlers = forwardChildSignals(
-    child,
-    `screenci ${command}`
-  )
+  const childSignals = forwardChildSignals(child, `screenci ${command}`)
 
   return new Promise<void>((resolve, reject) => {
-    child.on('close', (code) => {
-      cleanupSignalHandlers()
+    child.on('close', (code, signal) => {
+      const forwardedSignal = childSignals.getForwardedSignal()
+      childSignals.cleanup()
+      if (forwardedSignal) {
+        process.kill(process.pid, forwardedSignal)
+        return
+      }
+      if (signal) {
+        process.kill(process.pid, signal)
+        return
+      }
       if (code === 0) {
         resolve()
       } else {
@@ -1931,7 +2141,7 @@ async function run(
     })
 
     child.on('error', (err) => {
-      cleanupSignalHandlers()
+      childSignals.cleanup()
       reject(err)
     })
   })

@@ -113,7 +113,7 @@ video('Dashboard walkthrough', async ({ page }) => {
 import { createCaptions, voices } from 'screenci'
 
 const captions = createCaptions(
-  { voice: voices.en.Jude },
+  { voice: voices.Ava },
   {
     intro: 'Welcome to the dashboard.',
     addButton: 'Click here to create a new project.',
@@ -130,14 +130,14 @@ import { createCaptions, voices } from 'screenci'
 
 const captions = createCaptions({
   en: {
-    voice: voices.en.Jude,
+    voice: voices.Ava,
     captions: {
       intro: 'Welcome to the dashboard.',
       addButton: 'Click here to create a new project.',
     },
   },
   fi: {
-    voice: voices.fi.Martti,
+    voice: voices.Ava,
     captions: {
       intro: 'Tervetuloa hallintapaneeliin.',
       addButton: 'Klikkaa tästä luodaksesi uuden projektin.',
@@ -191,14 +191,14 @@ video('Profile settings', async ({ page }) => {
 
 ## API
 
-| Export           | What it does                                         |
-| ---------------- | ---------------------------------------------------- |
-| `defineConfig`   | Wraps Playwright config with screenci defaults       |
-| `video`          | Declares a video recording test                      |
-| `createCaptions` | Creates typed caption controllers with AI voiceovers |
-| `hide`           | Cuts a section from the final video                  |
-| `autoZoom`       | Smooth camera pan that follows interactions          |
-| `voices`         | Available voice constants (`voices.en.Jude`, etc.)   |
+| Export           | What it does                                                       |
+| ---------------- | ------------------------------------------------------------------ |
+| `defineConfig`   | Wraps Playwright config with screenci defaults                     |
+| `video`          | Declares a video recording test                                    |
+| `createCaptions` | Creates typed caption controllers with AI voiceovers               |
+| `hide`           | Cuts a section from the final video                                |
+| `autoZoom`       | Smooth camera pan that follows interactions                        |
+| `voices`         | Available voice constants (`voices.Ava`, `voices.elevenlabs(...)`) |
 
 The `page` fixture inside `video()` is a `ScreenCIPage` — a Playwright `Page` with animated cursor support wired in on all locator methods.
 

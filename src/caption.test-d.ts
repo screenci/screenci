@@ -7,11 +7,11 @@ describe('createCaptions type constraints', () => {
   it('accepts matching keys across all languages', () => {
     createCaptions({
       en: {
-        voice: voices.en.Jude,
+        voice: voices.Ava,
         captions: { intro: 'Hello', outro: 'Bye' },
       },
       fi: {
-        voice: voices.fi.Martti,
+        voice: voices.Ava,
         captions: { intro: 'Hei', outro: 'Näkemiin' },
       },
     })
@@ -20,14 +20,14 @@ describe('createCaptions type constraints', () => {
   it('accepts mixed value types (string vs file object) for the same key', () => {
     createCaptions({
       en: {
-        voice: voices.en.Jude,
+        voice: voices.Ava,
         captions: {
           intro: 'Hello',
           clip: { path: '/clip.mp4', subtitle: 'Watch' },
         },
       },
       fi: {
-        voice: voices.fi.Martti,
+        voice: voices.elevenlabs({ voiceId: 'voice-fi' }),
         captions: { intro: 'Hei', clip: 'Katso' },
       },
     })
@@ -36,19 +36,18 @@ describe('createCaptions type constraints', () => {
   it('rejects a language with a missing caption key', () => {
     createCaptions({
       en: {
-        voice: voices.en.Jude,
+        voice: voices.Ava,
         captions: { intro: 'Hello', outro: 'Bye' },
       },
       fi: {
-        voice: voices.fi.Martti,
+        voice: voices.Ava,
         // @ts-expect-error — 'outro' is missing
         captions: { intro: 'Hei' },
       },
     })
   })
 
-  it('rejects a wrong-language voice', () => {
-    // @ts-expect-error — fi voice is not assignable to VoiceForLang<'en'>
-    assertType<VoiceForLang<'en'>>(voices.fi.Martti)
+  it('accepts explicit provider voice ids for any supported language', () => {
+    assertType<VoiceForLang<'en'>>(voices.elevenlabs({ voiceId: 'voice-en' }))
   })
 })

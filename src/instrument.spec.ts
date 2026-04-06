@@ -365,7 +365,10 @@ describe('instrumentLocator', () => {
     const locator = makeLocatorMock(undefined, page)
     instrumentLocator(locator)
 
-    await locator.fill('hi', { hideMouse: true })
+    await Promise.all([
+      locator.fill('hi', { hideMouse: true }),
+      vi.runAllTimersAsync(),
+    ])
 
     expect(recordedInputEvents).toHaveLength(1)
     const pressSeq = recordedInputEvents[0]!

@@ -85,6 +85,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 const CLICK_DURATION_MS = 200
+const POST_ACTION_SLEEP = 250
 
 function assertDurationOrSpeed(
   duration: number | undefined,
@@ -361,7 +362,9 @@ async function animateMouseMove(
 
 type ClickActionResult = {
   elementRect: ElementRect
-  innerEvents: Array<MouseMoveEvent | MouseDownEvent | MouseUpEvent>
+  innerEvents: Array<
+    MouseMoveEvent | MouseDownEvent | MouseUpEvent | MouseWaitEvent
+  >
 }
 
 /**
@@ -631,7 +634,9 @@ async function performSimpleAction(
   clickOpt?: ClickBeforeFillOption,
   position?: { x: number; y: number }
 ): Promise<void> {
-  let innerEvents: Array<MouseMoveEvent | MouseDownEvent | MouseUpEvent> = []
+  let innerEvents: Array<
+    MouseMoveEvent | MouseDownEvent | MouseUpEvent | MouseWaitEvent
+  > = []
   let elementRect: ElementRect | undefined
 
   if (clickOpt !== undefined) {
@@ -714,6 +719,15 @@ async function performSimpleAction(
     elementRect = locatorRect
   }
 
+  const simpleWaitStart = Date.now()
+  await sleep(POST_ACTION_SLEEP)
+  const simpleWaitEnd = Date.now()
+  innerEvents.push({
+    type: 'mouseWait',
+    startMs: simpleWaitStart,
+    endMs: simpleWaitEnd,
+  })
+
   if (activeClickRecorder && innerEvents.length > 0) {
     activeClickRecorder.addInput(subType, elementRect, innerEvents)
   }
@@ -743,7 +757,15 @@ async function recordedClick(
     postClickPause,
     postClickMove
   )
+  const clickWaitStart = Date.now()
+  await sleep(POST_ACTION_SLEEP)
+  const clickWaitEnd = Date.now()
   if (activeClickRecorder && result) {
+    result.innerEvents.push({
+      type: 'mouseWait',
+      startMs: clickWaitStart,
+      endMs: clickWaitEnd,
+    })
     activeClickRecorder.addInput(
       'click',
       result.elementRect,
@@ -852,7 +874,11 @@ export function instrumentLocator(locator: Locator): Locator {
     options?: PressSequentiallyOptions
   ): Promise<void> => {
     const innerEvents: Array<
-      MouseMoveEvent | MouseDownEvent | MouseUpEvent | MouseHideEvent
+      | MouseMoveEvent
+      | MouseDownEvent
+      | MouseUpEvent
+      | MouseHideEvent
+      | MouseWaitEvent
     > = []
     let elementRect: ElementRect | undefined
 
@@ -947,6 +973,10 @@ export function instrumentLocator(locator: Locator): Locator {
     )
     const typingEnd = Date.now()
 
+    const pressWaitStart = Date.now()
+    await sleep(POST_ACTION_SLEEP)
+    const pressWaitEnd = Date.now()
+
     if (activeClickRecorder) {
       // addInput requires at least one inner event; use typing start/end as a
       // fallback span when no other inner events (click, mouseHide) were collected.
@@ -957,6 +987,11 @@ export function instrumentLocator(locator: Locator): Locator {
               { type: 'mouseDown', startMs: typingStart, endMs: typingStart },
               { type: 'mouseUp', startMs: typingStart, endMs: typingEnd },
             ]
+      eventsToRecord.push({
+        type: 'mouseWait',
+        startMs: pressWaitStart,
+        endMs: pressWaitEnd,
+      })
       activeClickRecorder.addInput(
         'pressSequentially',
         elementRect,
@@ -1308,8 +1343,9 @@ export function instrumentLocator(locator: Locator): Locator {
         }
       : undefined
 
-    const innerEvents: Array<MouseMoveEvent | MouseDownEvent | MouseUpEvent> =
-      []
+    const innerEvents: Array<
+      MouseMoveEvent | MouseDownEvent | MouseUpEvent | MouseWaitEvent
+    > = []
 
     const sourcePos =
       sourcePosition ??
@@ -1394,6 +1430,15 @@ export function instrumentLocator(locator: Locator): Locator {
       startMs: mouseUpStart,
       endMs: Date.now(),
       easing: 'ease-in-out',
+    })
+
+    const dragWaitStart = Date.now()
+    await sleep(POST_ACTION_SLEEP)
+    const dragWaitEnd = Date.now()
+    innerEvents.push({
+      type: 'mouseWait',
+      startMs: dragWaitStart,
+      endMs: dragWaitEnd,
     })
 
     if (activeClickRecorder && innerEvents.length > 0) {

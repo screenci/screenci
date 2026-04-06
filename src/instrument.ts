@@ -85,6 +85,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 const CLICK_DURATION_MS = 200
+const PRE_ACTION_SLEEP = 50
 const POST_ACTION_SLEEP = 250
 
 function assertDurationOrSpeed(
@@ -634,6 +635,7 @@ async function performSimpleAction(
   clickOpt?: ClickBeforeFillOption,
   position?: { x: number; y: number }
 ): Promise<void> {
+  await sleep(PRE_ACTION_SLEEP)
   let innerEvents: Array<
     MouseMoveEvent | MouseDownEvent | MouseUpEvent | MouseWaitEvent
   > = []
@@ -745,6 +747,7 @@ async function recordedClick(
   postClickPause = CLICK_DURATION_MS / 2,
   postClickMove?: PostClickMove
 ): Promise<void> {
+  await sleep(PRE_ACTION_SLEEP)
   const result = await performClickActions(
     locator,
     doClick,
@@ -873,6 +876,7 @@ export function instrumentLocator(locator: Locator): Locator {
     text: string,
     options?: PressSequentiallyOptions
   ): Promise<void> => {
+    await sleep(PRE_ACTION_SLEEP)
     const innerEvents: Array<
       | MouseMoveEvent
       | MouseDownEvent
@@ -1325,6 +1329,8 @@ export function instrumentLocator(locator: Locator): Locator {
 
     assertDurationOrSpeed(moveDuration, moveSpeed, 'dragTo move')
     assertDurationOrSpeed(dragDuration, dragSpeed, 'dragTo drag')
+
+    await sleep(PRE_ACTION_SLEEP)
 
     const page = locator.page()
     const mouseMoveInternal =

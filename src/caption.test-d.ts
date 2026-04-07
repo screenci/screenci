@@ -6,43 +6,79 @@ import type { VoiceForLang } from './voices.js'
 describe('createCaptions type constraints', () => {
   it('accepts matching keys across all languages', () => {
     createCaptions({
-      en: {
-        voice: voices.Ava,
-        captions: { intro: 'Hello', outro: 'Bye' },
+      voice: { name: voices.Ava },
+      languages: {
+        en: {
+          captions: { intro: 'Hello', outro: 'Bye' },
+        },
+        fi: {
+          captions: { intro: 'Hei', outro: 'Näkemiin' },
+        },
       },
-      fi: {
-        voice: voices.Ava,
-        captions: { intro: 'Hei', outro: 'Näkemiin' },
+    })
+  })
+
+  it('accepts top-level style', () => {
+    createCaptions({
+      voice: { name: voices.Ava, style: 'Clear and friendly' },
+      languages: {
+        en: { captions: { intro: 'Hello' } },
+      },
+    })
+  })
+
+  it('accepts per-language voice override with seed', () => {
+    createCaptions({
+      voice: { name: voices.Ava },
+      languages: {
+        en: { captions: { intro: 'Hello' } },
+        fi: {
+          voice: { name: voices.Nora, style: 'Selkeä', seed: 42 },
+          captions: { intro: 'Hei' },
+        },
       },
     })
   })
 
   it('accepts mixed value types (string vs file object) for the same key', () => {
     createCaptions({
-      en: {
-        voice: voices.Ava,
-        captions: {
-          intro: 'Hello',
-          clip: { path: '/clip.mp4', subtitle: 'Watch' },
+      voice: { name: voices.Ava },
+      languages: {
+        en: {
+          captions: {
+            intro: 'Hello',
+            clip: { path: '/clip.mp4', subtitle: 'Watch' },
+          },
         },
-      },
-      fi: {
-        voice: voices.elevenlabs({ voiceId: 'voice-fi' }),
-        captions: { intro: 'Hei', clip: 'Katso' },
+        fi: {
+          voice: { name: voices.elevenlabs({ voiceId: 'voice-fi' }) },
+          captions: { intro: 'Hei', clip: 'Katso' },
+        },
       },
     })
   })
 
   it('rejects a language with a missing caption key', () => {
     createCaptions({
-      en: {
-        voice: voices.Ava,
-        captions: { intro: 'Hello', outro: 'Bye' },
+      voice: { name: voices.Ava },
+      languages: {
+        en: {
+          captions: { intro: 'Hello', outro: 'Bye' },
+        },
+        fi: {
+          // @ts-expect-error — 'outro' is missing
+          captions: { intro: 'Hei' },
+        },
       },
-      fi: {
-        voice: voices.Ava,
-        // @ts-expect-error — 'outro' is missing
-        captions: { intro: 'Hei' },
+    })
+  })
+
+  it('rejects seed at the top-level voice', () => {
+    createCaptions({
+      // @ts-expect-error — seed is not allowed at the top-level voice
+      voice: { name: voices.Ava, seed: 42 },
+      languages: {
+        en: { captions: { intro: 'Hello' } },
       },
     })
   })

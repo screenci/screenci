@@ -74,11 +74,15 @@ export type {
   Captions,
   VideoCaptionEntry,
   VideoCaptions,
+  TopLevelVoiceConfig,
+  LangVoiceOverride,
+  CaptionMapValue,
 } from './src/caption.js'
 export type {
   CaptionTranslation,
   VideoCaptionTranslation,
   VideoCaptionTranslationFile,
+  VoiceLanguageMeta,
 } from './src/events.js'
 export { hide } from './src/hide.js'
 export { autoZoom } from './src/autoZoom.js'

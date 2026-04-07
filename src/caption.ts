@@ -4,6 +4,7 @@ import type {
   RecordingCustomVoiceRef,
   VideoCaptionTranslation,
   VideoCaptionTranslationFile,
+  VoiceLanguageMeta,
 } from './events.js'
 import type { VoiceKey, VoiceForLang, Lang, CustomVoiceRef } from './voices.js'
 import { isCustomVoiceRef } from './voices.js'
@@ -160,6 +161,25 @@ export type VideoCaptions<T extends Record<string, VideoCaptionEntry>> = {
   [K in keyof T]: CaptionController
 }
 
+/**
+ * Top-level voice configuration shared across all languages.
+ * `seed` is not allowed here — use per-language `voice` overrides instead.
+ */
+export type TopLevelVoiceConfig = {
+  name: VoiceKey | CustomVoiceRef
+  style?: string
+}
+
+/**
+ * Per-language voice override. Can override the top-level voice name, style,
+ * and optionally set a `seed` for deterministic synthesis.
+ */
+export type LangVoiceOverride = {
+  name: VoiceKey | CustomVoiceRef
+  style?: string
+  seed?: number
+}
+
 /** Converts a union type to an intersection: `A | B` → `A & B` */
 type UnionToIntersection<U> = (
   U extends unknown ? (x: U) => void : never
@@ -185,10 +205,20 @@ type AllCaptions<
 > &
   Record<string, CaptionMapValue>
 
-type MultiLangMap<L extends Lang, T extends Record<string, CaptionMapValue>> = {
-  [K in L]: {
-    voice: VoiceForLang<K> | CustomVoiceRef
-    captions: T
+type LangVoiceOverrideForLang<L extends string> = {
+  name: (L extends Lang ? VoiceForLang<L> : VoiceKey) | CustomVoiceRef
+  style?: string
+  seed?: number
+}
+
+type LanguagesMap<
+  M extends Partial<
+    Record<Lang, { captions: Record<string, CaptionMapValue> }>
+  >,
+> = M & {
+  [L in keyof M]: {
+    voice?: L extends string ? LangVoiceOverrideForLang<L> : never
+    captions: AllCaptions<M>
   }
 }
 
@@ -196,9 +226,12 @@ type MultiLangMap<L extends Lang, T extends Record<string, CaptionMapValue>> = {
  * Creates a set of typed caption controllers, one per key in the map.
  *
  * Each controller has `start()` and `end()`.
- * At render time screenci generates
- * a voiceover, and syncs the audio to the recording. You write text; the
- * voice is handled for you.
+ * At render time screenci generates a voiceover, and syncs the audio to the
+ * recording. You write text; the voice is handled for you.
+ *
+ * The top-level `voice` applies to all languages. Override it per-language via
+ * the `voice` field inside each language entry. Only language-level overrides
+ * may set `seed`.
  *
  * TypeScript enforces that every language has the same caption keys.
  * Forget a translation key → compile error.
@@ -206,8 +239,14 @@ type MultiLangMap<L extends Lang, T extends Record<string, CaptionMapValue>> = {
  * @example
  * ```ts
  * const captions = createCaptions({
- *   en: { voice: voices.Ava, captions: { intro: 'Welcome.' } },
- *   fi: { voice: voices.Ava, captions: { intro: 'Tervetuloa.' } },
+ *   voice: { name: voices.Ava, style: 'Clear and friendly' },
+ *   languages: {
+ *     en: { captions: { intro: 'Welcome.' } },
+ *     fi: {
+ *       voice: { name: voices.Nora, style: 'Selkeä opastus', seed: 42 },
+ *       captions: { intro: 'Tervetuloa.' },
+ *     },
+ *   },
  * })
  * ```
  */
@@ -215,54 +254,81 @@ export function createCaptions<
   M extends Partial<
     Record<
       Lang,
-      {
-        voice: VoiceKey | CustomVoiceRef
-        captions: Record<string, CaptionMapValue>
-      }
+      { voice?: LangVoiceOverride; captions: Record<string, CaptionMapValue> }
     >
   >,
->(
-  languagesMap: M & {
-    [L in keyof M]: {
-      voice: VoiceForLang<L & string> | CustomVoiceRef
-      captions: AllCaptions<M>
-    }
-  }
-): Captions<AllCaptions<M>> {
-  return buildMultiLangCaptions(
-    languagesMap as unknown as MultiLangMap<
-      Lang,
-      Record<string, CaptionMapValue>
+>(input: {
+  voice: TopLevelVoiceConfig
+  languages: LanguagesMap<M>
+}): Captions<AllCaptions<M>> {
+  return buildCaptionsFromInput(
+    input.voice,
+    input.languages as Partial<
+      Record<
+        Lang,
+        { voice?: LangVoiceOverride; captions: Record<string, CaptionMapValue> }
+      >
     >
   ) as Captions<AllCaptions<M>>
 }
 
-function buildMultiLangCaptions<
-  L extends Lang,
-  T extends Record<string, CaptionMapValue>,
->(languagesMap: MultiLangMap<L, T>): Captions<T> {
-  const langs = Object.keys(languagesMap) as L[]
-  const firstLang = langs[0]
-  if (firstLang === undefined) return {} as Captions<T>
+function voiceToKeyString(voice: VoiceKey | CustomVoiceRef): string {
+  if (isCustomVoiceRef(voice)) return `custom:${voice.path}`
+  return voice
+}
 
-  for (const lang of langs) {
-    const voice = languagesMap[lang].voice
-    if (isCustomVoiceRef(voice)) {
-      registeredCustomVoiceRefs.add(voice)
-    }
+function buildCaptionsFromInput(
+  topVoice: TopLevelVoiceConfig,
+  languages: Partial<
+    Record<
+      Lang,
+      { voice?: LangVoiceOverride; captions: Record<string, CaptionMapValue> }
+    >
+  >
+): Captions<Record<string, CaptionMapValue>> {
+  const langs = Object.keys(languages) as Lang[]
+  const firstLang = langs[0]
+  if (firstLang === undefined) {
+    throw new Error(
+      'createCaptions requires at least one language in "languages"'
+    )
   }
 
-  const result = {} as Captions<T>
+  // Resolve effective voice and metadata per language
+  const resolvedVoices = new Map<string, VoiceKey | CustomVoiceRef>()
+  const resolvedVoiceMeta = new Map<string, VoiceLanguageMeta>()
 
-  for (const key in languagesMap[firstLang].captions) {
-    const keyStr = key as string
+  for (const lang of langs) {
+    const entry = languages[lang]
+    const langOverride = entry?.voice
+    const effectiveVoiceName = langOverride?.name ?? topVoice.name
+    const effectiveStyle = langOverride?.style ?? topVoice.style
+    const effectiveSeed = langOverride?.seed
+
+    if (isCustomVoiceRef(effectiveVoiceName)) {
+      registeredCustomVoiceRefs.add(effectiveVoiceName)
+    }
+
+    resolvedVoices.set(lang, effectiveVoiceName)
+    resolvedVoiceMeta.set(lang, {
+      name: voiceToKeyString(effectiveVoiceName),
+      ...(effectiveStyle !== undefined && { style: effectiveStyle }),
+      ...(effectiveSeed !== undefined && { seed: effectiveSeed }),
+    })
+  }
+
+  const firstEntry = languages[firstLang]
+  if (!firstEntry) return {}
+
+  const result: Captions<Record<string, CaptionMapValue>> = {}
+
+  for (const key in firstEntry.captions) {
+    const keyStr = key
 
     // Determine if any language uses a file-based value for this key.
-    // If so, use videoCaptionStart with mixed translations (file or TTS per lang).
-    // Otherwise use captionStart with text translations (existing behaviour).
     let hasFileEntry = false
     for (const lang of langs) {
-      const val = languagesMap[lang].captions[keyStr]
+      const val = languages[lang]?.captions[keyStr]
       if (val !== undefined && typeof val !== 'string') {
         hasFileEntry = true
         videoCaptionFileHashes.set(val.path, '')
@@ -270,19 +336,26 @@ function buildMultiLangCaptions<
     }
 
     if (hasFileEntry) {
-      result[key as keyof T] = {
+      result[keyStr] = {
         async start() {
           if (activeRecorder === null) return
           if (isInsideHide())
             throw new Error('Cannot call caption.start inside hide()')
+          for (const lang of langs) {
+            activeRecorder.registerVoiceForLang(
+              lang,
+              resolvedVoiceMeta.get(lang)!
+            )
+          }
           const videoTranslations: Record<string, VideoCaptionTranslation> = {}
           for (const lang of langs) {
-            const val = languagesMap[lang].captions[keyStr]
+            const val = languages[lang]?.captions[keyStr]
             if (val === undefined) continue
+            const voice = resolvedVoices.get(lang)!
             if (typeof val === 'string') {
               videoTranslations[lang] = {
                 text: val,
-                voice: toRecordedVoice(languagesMap[lang].voice),
+                voice: toRecordedVoice(voice),
               }
             } else {
               videoTranslations[lang] = entryToVideoTranslation(val)
@@ -303,18 +376,25 @@ function buildMultiLangCaptions<
         },
       }
     } else {
-      result[key as keyof T] = {
+      result[keyStr] = {
         async start() {
           if (activeRecorder === null) return
           if (isInsideHide())
             throw new Error('Cannot call caption.start inside hide()')
+          for (const lang of langs) {
+            activeRecorder.registerVoiceForLang(
+              lang,
+              resolvedVoiceMeta.get(lang)!
+            )
+          }
           const textTranslations: Record<string, CaptionTranslation> = {}
           for (const lang of langs) {
-            const val = languagesMap[lang].captions[keyStr]
+            const val = languages[lang]?.captions[keyStr]
             if (val !== undefined && typeof val === 'string') {
+              const voice = resolvedVoices.get(lang)!
               textTranslations[lang] = {
                 text: val,
-                voice: toRecordedVoice(languagesMap[lang].voice),
+                voice: toRecordedVoice(voice),
               }
             }
           }

@@ -121,6 +121,10 @@ export type CaptionTranslation = {
   voice: VoiceKey | RecordingCustomVoiceRef
   /** BCP-47 region code, e.g. 'en-US'. Overrides the base language for TTS synthesis. */
   region?: string
+  /** TTS model type — 'expressive' (Gemini) or 'consistent' (Chirp 3 HD). Defaults to 'consistent'. */
+  modelType?: string
+  /** Speaking style prompt for Gemini TTS (only used with 'expressive' model). */
+  style?: string
 }
 
 export type CaptionStartEvent = {
@@ -153,6 +157,10 @@ export type VideoCaptionTranslationTTS = {
   voice: VoiceKey | RecordingCustomVoiceRef
   /** BCP-47 region code, e.g. 'en-US'. Overrides the base language for TTS synthesis. */
   region?: string
+  /** TTS model type — 'expressive' (Gemini) or 'consistent' (Chirp 3 HD). Defaults to 'consistent'. */
+  modelType?: string
+  /** Speaking style prompt for Gemini TTS (only used with 'expressive' model). */
+  style?: string
 }
 export type VideoCaptionTranslation =
   | VideoCaptionTranslationFile
@@ -227,6 +235,10 @@ export type VoiceLanguageMeta = {
   seed?: number
   /** BCP-47 region code, e.g. 'en-US'. Overrides the base language for TTS synthesis. */
   region?: string
+  /** TTS model type — 'expressive' (Gemini) or 'consistent' (Chirp 3 HD). Defaults to 'consistent'. */
+  modelType?: string
+  /** Speaking style prompt for Gemini TTS (only used with 'expressive' model). */
+  style?: string
 }
 
 export type RecordingMetadata = {

@@ -6,7 +6,13 @@ import type {
   VideoCaptionTranslationFile,
   VoiceLanguageMeta,
 } from './events.js'
-import type { VoiceKey, VoiceForLang, Lang, CustomVoiceRef } from './voices.js'
+import type {
+  VoiceKey,
+  VoiceForLang,
+  Lang,
+  CustomVoiceRef,
+  ModelType,
+} from './voices.js'
 import { isCustomVoiceRef } from './voices.js'
 import { isInsideHide } from './hide.js'
 import { access, readFile } from 'fs/promises'
@@ -164,19 +170,48 @@ export type VideoCaptions<T extends Record<string, VideoCaptionEntry>> = {
 /**
  * Top-level voice configuration shared across all languages.
  * `seed` is not allowed here — use per-language `voice` overrides instead.
+ *
+ * Use `style` for expressive Gemini synthesis, or `modelType` for an explicit
+ * model choice. `style` and `modelType` are mutually exclusive.
  */
-export type TopLevelVoiceConfig = {
-  name: VoiceKey | CustomVoiceRef
-}
+export type TopLevelVoiceConfig =
+  | {
+      name: VoiceKey | CustomVoiceRef
+      /** Speaking style prompt for Gemini TTS. Implies `expressive` model type. */
+      style: string
+      /** Can be omitted when `style` is set — `expressive` is implied. */
+      modelType?: 'expressive'
+    }
+  | {
+      name: VoiceKey | CustomVoiceRef
+      style?: never
+      /** TTS model type — `modelTypes.expressive` (Gemini) or `modelTypes.consistent` (Chirp 3 HD). Defaults to `consistent`. */
+      modelType?: ModelType
+    }
 
 /**
  * Per-language voice override. Can override the top-level voice name and
  * optionally set a `seed` for deterministic synthesis.
+ *
+ * Use `style` for expressive Gemini synthesis, or `modelType` for an explicit
+ * model choice. `style` and `modelType` are mutually exclusive.
  */
-export type LangVoiceOverride = {
-  name: VoiceKey | CustomVoiceRef
-  seed?: number
-}
+export type LangVoiceOverride =
+  | {
+      name: VoiceKey | CustomVoiceRef
+      seed?: number
+      /** Speaking style prompt for Gemini TTS. Implies `expressive` model type. */
+      style: string
+      /** Can be omitted when `style` is set — `expressive` is implied. */
+      modelType?: 'expressive'
+    }
+  | {
+      name: VoiceKey | CustomVoiceRef
+      seed?: number
+      style?: never
+      /** TTS model type — `modelTypes.expressive` (Gemini) or `modelTypes.consistent` (Chirp 3 HD). Defaults to `consistent`. */
+      modelType?: ModelType
+    }
 
 /** Converts a union type to an intersection: `A | B` → `A & B` */
 type UnionToIntersection<U> = (
@@ -203,10 +238,19 @@ type AllCaptions<
 > &
   Record<string, CaptionMapValue>
 
-type LangVoiceOverrideForLang<L extends string> = {
-  name: (L extends Lang ? VoiceForLang<L> : VoiceKey) | CustomVoiceRef
-  seed?: number
-}
+type LangVoiceOverrideForLang<L extends string> =
+  | {
+      name: (L extends Lang ? VoiceForLang<L> : VoiceKey) | CustomVoiceRef
+      seed?: number
+      style: string
+      modelType?: 'expressive'
+    }
+  | {
+      name: (L extends Lang ? VoiceForLang<L> : VoiceKey) | CustomVoiceRef
+      seed?: number
+      style?: never
+      modelType?: ModelType
+    }
 
 type LanguagesMap<
   M extends Partial<
@@ -315,6 +359,18 @@ function buildCaptionsFromInput(
     const effectiveVoiceName = langOverride?.name ?? topVoice.name
     const effectiveSeed = langOverride?.seed
     const effectiveRegion = entry?.region
+    // If a lang override exists it owns the style entirely — no inheritance from the top-level
+    // voice. This prevents a top-level `style` from forcing `expressive` on a lang that
+    // explicitly sets `modelType: 'consistent'`.
+    const effectiveStyle =
+      langOverride !== undefined
+        ? langOverride?.style
+        : 'style' in topVoice
+          ? (topVoice as { style: string }).style
+          : undefined
+    const effectiveModelType = effectiveStyle
+      ? 'expressive'
+      : (langOverride?.modelType ?? topVoice.modelType)
 
     if (isCustomVoiceRef(effectiveVoiceName)) {
       registeredCustomVoiceRefs.add(effectiveVoiceName)
@@ -325,6 +381,10 @@ function buildCaptionsFromInput(
       name: voiceToKeyString(effectiveVoiceName),
       ...(effectiveSeed !== undefined && { seed: effectiveSeed }),
       ...(effectiveRegion !== undefined && { region: effectiveRegion }),
+      ...(effectiveModelType !== undefined && {
+        modelType: effectiveModelType,
+      }),
+      ...(effectiveStyle !== undefined && { style: effectiveStyle }),
     })
   }
 
@@ -364,11 +424,16 @@ function buildCaptionsFromInput(
             if (val === undefined) continue
             const voice = resolvedVoices.get(lang)!
             const region = languages[lang]?.region
+            const meta = resolvedVoiceMeta.get(lang)
+            const modelType = meta?.modelType
+            const style = meta?.style
             if (typeof val === 'string') {
               videoTranslations[lang] = {
                 text: val,
                 voice: toRecordedVoice(voice),
                 ...(region !== undefined && { region }),
+                ...(modelType !== undefined && { modelType }),
+                ...(style !== undefined && { style }),
               }
             } else {
               videoTranslations[lang] = entryToVideoTranslation(val)
@@ -406,10 +471,15 @@ function buildCaptionsFromInput(
             if (val !== undefined && typeof val === 'string') {
               const voice = resolvedVoices.get(lang)!
               const region = languages[lang]?.region
+              const meta = resolvedVoiceMeta.get(lang)
+              const modelType = meta?.modelType
+              const style = meta?.style
               textTranslations[lang] = {
                 text: val,
                 voice: toRecordedVoice(voice),
                 ...(region !== undefined && { region }),
+                ...(modelType !== undefined && { modelType }),
+                ...(style !== undefined && { style }),
               }
             }
           }

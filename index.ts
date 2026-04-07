@@ -18,12 +18,18 @@ export type {
 export { RENDER_OPTIONS_DEFAULTS } from './src/types.js'
 
 // Re-export voices
-export { voices, isCustomVoiceRef } from './src/voices.js'
+export {
+  voices,
+  modelTypes,
+  languageRegions,
+  isCustomVoiceRef,
+} from './src/voices.js'
 export type {
   VoiceKey,
   VoiceName,
   VoiceForLang,
   CustomVoiceRef,
+  ModelType,
 } from './src/voices.js'
 
 // Re-export recording event types

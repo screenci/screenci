@@ -1,4 +1,25 @@
 /**
+ * TTS model types for use with `createCaptions`.
+ *
+ * - `expressive`: Gemini TTS — more expressive, natural-sounding speech.
+ * - `consistent`: Chirp 3 HD — consistent, high-quality synthesis.
+ *
+ * @example
+ * ```ts
+ * createCaptions({
+ *   voice: { name: voices.Ava, modelType: modelTypes.expressive },
+ *   languages: { en: { captions: { intro: 'Hello' } } },
+ * })
+ * ```
+ */
+export const modelTypes = {
+  expressive: 'expressive',
+  consistent: 'consistent',
+} as const
+
+export type ModelType = (typeof modelTypes)[keyof typeof modelTypes]
+
+/**
  * BCP-47 language regions for use with `createCaptions`.
  *
  * Pass a region as `region` inside a language entry to select the

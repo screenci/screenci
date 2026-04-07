@@ -167,16 +167,14 @@ export type VideoCaptions<T extends Record<string, VideoCaptionEntry>> = {
  */
 export type TopLevelVoiceConfig = {
   name: VoiceKey | CustomVoiceRef
-  style?: string
 }
 
 /**
- * Per-language voice override. Can override the top-level voice name, style,
- * and optionally set a `seed` for deterministic synthesis.
+ * Per-language voice override. Can override the top-level voice name and
+ * optionally set a `seed` for deterministic synthesis.
  */
 export type LangVoiceOverride = {
   name: VoiceKey | CustomVoiceRef
-  style?: string
   seed?: number
 }
 
@@ -207,7 +205,6 @@ type AllCaptions<
 
 type LangVoiceOverrideForLang<L extends string> = {
   name: (L extends Lang ? VoiceForLang<L> : VoiceKey) | CustomVoiceRef
-  style?: string
   seed?: number
 }
 
@@ -218,6 +215,8 @@ type LanguagesMap<
 > = M & {
   [L in keyof M]: {
     voice?: L extends string ? LangVoiceOverrideForLang<L> : never
+    /** BCP-47 region code for TTS synthesis, e.g. `languageRegions.en.US`. */
+    region?: string
     captions: AllCaptions<M>
   }
 }
@@ -254,7 +253,11 @@ export function createCaptions<
   M extends Partial<
     Record<
       Lang,
-      { voice?: LangVoiceOverride; captions: Record<string, CaptionMapValue> }
+      {
+        voice?: LangVoiceOverride
+        region?: string
+        captions: Record<string, CaptionMapValue>
+      }
     >
   >,
 >(input: {
@@ -266,7 +269,11 @@ export function createCaptions<
     input.languages as Partial<
       Record<
         Lang,
-        { voice?: LangVoiceOverride; captions: Record<string, CaptionMapValue> }
+        {
+          voice?: LangVoiceOverride
+          region?: string
+          captions: Record<string, CaptionMapValue>
+        }
       >
     >
   ) as Captions<AllCaptions<M>>
@@ -282,7 +289,11 @@ function buildCaptionsFromInput(
   languages: Partial<
     Record<
       Lang,
-      { voice?: LangVoiceOverride; captions: Record<string, CaptionMapValue> }
+      {
+        voice?: LangVoiceOverride
+        region?: string
+        captions: Record<string, CaptionMapValue>
+      }
     >
   >
 ): Captions<Record<string, CaptionMapValue>> {
@@ -302,8 +313,8 @@ function buildCaptionsFromInput(
     const entry = languages[lang]
     const langOverride = entry?.voice
     const effectiveVoiceName = langOverride?.name ?? topVoice.name
-    const effectiveStyle = langOverride?.style ?? topVoice.style
     const effectiveSeed = langOverride?.seed
+    const effectiveRegion = entry?.region
 
     if (isCustomVoiceRef(effectiveVoiceName)) {
       registeredCustomVoiceRefs.add(effectiveVoiceName)
@@ -312,8 +323,8 @@ function buildCaptionsFromInput(
     resolvedVoices.set(lang, effectiveVoiceName)
     resolvedVoiceMeta.set(lang, {
       name: voiceToKeyString(effectiveVoiceName),
-      ...(effectiveStyle !== undefined && { style: effectiveStyle }),
       ...(effectiveSeed !== undefined && { seed: effectiveSeed }),
+      ...(effectiveRegion !== undefined && { region: effectiveRegion }),
     })
   }
 
@@ -352,10 +363,12 @@ function buildCaptionsFromInput(
             const val = languages[lang]?.captions[keyStr]
             if (val === undefined) continue
             const voice = resolvedVoices.get(lang)!
+            const region = languages[lang]?.region
             if (typeof val === 'string') {
               videoTranslations[lang] = {
                 text: val,
                 voice: toRecordedVoice(voice),
+                ...(region !== undefined && { region }),
               }
             } else {
               videoTranslations[lang] = entryToVideoTranslation(val)
@@ -392,9 +405,11 @@ function buildCaptionsFromInput(
             const val = languages[lang]?.captions[keyStr]
             if (val !== undefined && typeof val === 'string') {
               const voice = resolvedVoices.get(lang)!
+              const region = languages[lang]?.region
               textTranslations[lang] = {
                 text: val,
                 voice: toRecordedVoice(voice),
+                ...(region !== undefined && { region }),
               }
             }
           }

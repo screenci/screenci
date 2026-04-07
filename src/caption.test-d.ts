@@ -18,24 +18,24 @@ describe('createCaptions type constraints', () => {
     })
   })
 
-  it('accepts top-level style', () => {
-    createCaptions({
-      voice: { name: voices.Ava, style: 'Clear and friendly' },
-      languages: {
-        en: { captions: { intro: 'Hello' } },
-      },
-    })
-  })
-
   it('accepts per-language voice override with seed', () => {
     createCaptions({
       voice: { name: voices.Ava },
       languages: {
         en: { captions: { intro: 'Hello' } },
         fi: {
-          voice: { name: voices.Nora, style: 'Selkeä', seed: 42 },
+          voice: { name: voices.Nora, seed: 42 },
           captions: { intro: 'Hei' },
         },
+      },
+    })
+  })
+
+  it('accepts per-language region', () => {
+    createCaptions({
+      voice: { name: voices.Ava },
+      languages: {
+        en: { region: 'en-US', captions: { intro: 'Hello' } },
       },
     })
   })

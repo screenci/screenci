@@ -119,6 +119,8 @@ export type RecordingCustomVoiceRef = {
 export type CaptionTranslation = {
   text: string
   voice: VoiceKey | RecordingCustomVoiceRef
+  /** BCP-47 region code, e.g. 'en-US'. Overrides the base language for TTS synthesis. */
+  region?: string
 }
 
 export type CaptionStartEvent = {
@@ -149,6 +151,8 @@ export type VideoCaptionTranslationFile = {
 export type VideoCaptionTranslationTTS = {
   text: string
   voice: VoiceKey | RecordingCustomVoiceRef
+  /** BCP-47 region code, e.g. 'en-US'. Overrides the base language for TTS synthesis. */
+  region?: string
 }
 export type VideoCaptionTranslation =
   | VideoCaptionTranslationFile
@@ -220,8 +224,9 @@ export type RecordingEvent =
 export type VoiceLanguageMeta = {
   /** Voice key string: a built-in voice name, `elevenlabs:{voiceId}`, or `custom:{path}`. */
   name: string
-  style?: string
   seed?: number
+  /** BCP-47 region code, e.g. 'en-US'. Overrides the base language for TTS synthesis. */
+  region?: string
 }
 
 export type RecordingMetadata = {

@@ -249,7 +249,7 @@ describe('createCaptions', () => {
   describe('voice metadata registration', () => {
     it('registers voice meta via recorder on start()', async () => {
       const captions = createCaptions({
-        voice: { name: voices.Ava, style: 'Clear and friendly' },
+        voice: { name: voices.Ava },
         languages: {
           en: { captions: { intro: 'Hello' } },
         },
@@ -258,17 +258,16 @@ describe('createCaptions', () => {
 
       expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('en', {
         name: 'Ava',
-        style: 'Clear and friendly',
       })
     })
 
-    it('per-language override style and seed are registered', async () => {
+    it('per-language override seed is registered', async () => {
       const captions = createCaptions({
-        voice: { name: voices.Ava, style: 'Default style' },
+        voice: { name: voices.Ava },
         languages: {
           en: { captions: { intro: 'Hello' } },
           fi: {
-            voice: { name: voices.Nora, style: 'Selkeä', seed: 42 },
+            voice: { name: voices.Nora, seed: 42 },
             captions: { intro: 'Hei' },
           },
         },
@@ -277,39 +276,29 @@ describe('createCaptions', () => {
 
       expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('en', {
         name: 'Ava',
-        style: 'Default style',
       })
       expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('fi', {
         name: 'Nora',
-        style: 'Selkeä',
         seed: 42,
       })
     })
 
-    it('top-level style is inherited by language without voice override', async () => {
+    it('per-language region is registered', async () => {
       const captions = createCaptions({
-        voice: { name: voices.Ava, style: 'Top style' },
+        voice: { name: voices.Ava },
         languages: {
-          en: { captions: { intro: 'Hello' } },
-          fi: {
-            voice: { name: voices.Nora },
-            captions: { intro: 'Hei' },
-          },
+          en: { region: 'en-US', captions: { intro: 'Hello' } },
         },
       })
       await captions.intro.start()
 
       expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('en', {
         name: 'Ava',
-        style: 'Top style',
-      })
-      expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('fi', {
-        name: 'Nora',
-        style: 'Top style',
+        region: 'en-US',
       })
     })
 
-    it('omits style when not set', async () => {
+    it('omits region when not set', async () => {
       const captions = createCaptions({
         voice: { name: voices.Ava },
         languages: { en: { captions: { intro: 'Hello' } } },

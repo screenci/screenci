@@ -1,4 +1,86 @@
 /**
+ * BCP-47 language regions for use with `createCaptions`.
+ *
+ * Pass a region as `region` inside a language entry to select the
+ * specific locale variant used for speech synthesis.
+ *
+ * @example
+ * ```ts
+ * createCaptions({
+ *   voice: { name: voices.Ava },
+ *   languages: {
+ *     en: { region: languageRegions.en.US, captions: { intro: 'Hello' } },
+ *     fr: { region: languageRegions.fr.FR, captions: { intro: 'Bonjour' } },
+ *   },
+ * })
+ * ```
+ */
+export const languageRegions = {
+  ar: { SA: 'ar-SA', AE: 'ar-AE', EG: 'ar-EG' },
+  az: { AZ: 'az-AZ' },
+  bn: { BD: 'bn-BD', IN: 'bn-IN' },
+  bg: { BG: 'bg-BG' },
+  ca: { ES: 'ca-ES' },
+  cs: { CZ: 'cs-CZ' },
+  da: { DK: 'da-DK' },
+  de: { DE: 'de-DE', AT: 'de-AT', CH: 'de-CH' },
+  el: { GR: 'el-GR' },
+  en: { US: 'en-US', GB: 'en-GB', AU: 'en-AU', IN: 'en-IN' },
+  es: { ES: 'es-ES', MX: 'es-MX', US: 'es-US', AR: 'es-AR' },
+  et: { EE: 'et-EE' },
+  eu: { ES: 'eu-ES' },
+  fa: { IR: 'fa-IR' },
+  fi: { FI: 'fi-FI' },
+  fil: { PH: 'fil-PH' },
+  fr: { FR: 'fr-FR', CA: 'fr-CA', BE: 'fr-BE', CH: 'fr-CH' },
+  gl: { ES: 'gl-ES' },
+  gu: { IN: 'gu-IN' },
+  he: { IL: 'he-IL' },
+  hi: { IN: 'hi-IN' },
+  hr: { HR: 'hr-HR' },
+  hu: { HU: 'hu-HU' },
+  hy: { AM: 'hy-AM' },
+  id: { ID: 'id-ID' },
+  is: { IS: 'is-IS' },
+  it: { IT: 'it-IT' },
+  ja: { JP: 'ja-JP' },
+  ka: { GE: 'ka-GE' },
+  kn: { IN: 'kn-IN' },
+  ko: { KR: 'ko-KR' },
+  lt: { LT: 'lt-LT' },
+  lv: { LV: 'lv-LV' },
+  mk: { MK: 'mk-MK' },
+  ml: { IN: 'ml-IN' },
+  mn: { MN: 'mn-MN' },
+  mr: { IN: 'mr-IN' },
+  ms: { MY: 'ms-MY' },
+  my: { MM: 'my-MM' },
+  nb: { NO: 'nb-NO' },
+  ne: { NP: 'ne-NP' },
+  nl: { NL: 'nl-NL', BE: 'nl-BE' },
+  pa: { IN: 'pa-IN' },
+  pl: { PL: 'pl-PL' },
+  pt: { BR: 'pt-BR', PT: 'pt-PT' },
+  ro: { RO: 'ro-RO' },
+  ru: { RU: 'ru-RU' },
+  si: { LK: 'si-LK' },
+  sk: { SK: 'sk-SK' },
+  sl: { SI: 'sl-SI' },
+  sq: { AL: 'sq-AL' },
+  sr: { RS: 'sr-RS' },
+  sv: { SE: 'sv-SE' },
+  sw: { KE: 'sw-KE', TZ: 'sw-TZ' },
+  ta: { IN: 'ta-IN', LK: 'ta-LK' },
+  te: { IN: 'te-IN' },
+  th: { TH: 'th-TH' },
+  tr: { TR: 'tr-TR' },
+  uk: { UA: 'uk-UA' },
+  ur: { PK: 'ur-PK' },
+  vi: { VN: 'vi-VN' },
+  zh: { CN: 'zh-CN', TW: 'zh-TW', HK: 'zh-HK' },
+} as const
+
+/**
  * Named voices available for use with `createCaptions`.
  *
  * Built-in voices are language-agnostic at the call site:

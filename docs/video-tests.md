@@ -87,60 +87,69 @@ All chaining methods (`locator()`, `getByRole()`, `filter()`, `first()`, `last()
 
 ---
 
-## Captions
+## Voiceovers
 
-`createCaptions()` defines typed voiceover text. At render time ScreenCI generates an AI voiceover (via ElevenLabs) for each caption and syncs it to the recording.
+`createVoiceOvers()` defines typed voiceover text. At render time ScreenCI generates an AI voiceover for each entry and syncs it to the recording.
 
 ```ts
-import { video, createCaptions } from 'screenci'
+import { video, createVoiceOvers, voices } from 'screenci'
 
-const captions = createCaptions({
-  intro: "Let's walk through the settings page.",
-  save: 'Hit save to apply your changes.',
+const voiceOvers = createVoiceOvers({
+  voice: { name: voices.Aria },
+  languages: {
+    en: {
+      captions: {
+        intro: "Let's walk through the settings page.",
+        save: 'Hit save to apply your changes.',
+      },
+    },
+  },
 })
 
 video('Settings walkthrough', async ({ page }) => {
   await page.goto('/settings')
 
-  await captions.intro.start()
+  await voiceOvers.intro.start()
   await page.waitForTimeout(2000)
-  await captions.intro.end()
+  await voiceOvers.intro.end()
 
   await page.locator('#save').click()
-  await captions.save.start()
-  await captions.save.end()
+  await voiceOvers.save.start()
+  await voiceOvers.save.end()
 })
 ```
 
 ### `.start()` — display and move on
 
-Resolves after all words have appeared (0.5 s per word). The caption stays visible until `.end()` is called. Use this when you want captions to run in parallel with page interactions:
+Resolves after all words have appeared (0.5 s per word). The caption stays visible until `.end()` is called. Use this when you want voiceovers to run in parallel with page interactions:
 
 ```ts
-await captions.intro.start()
+await voiceOvers.intro.start()
 await page.goto('https://example.com/signup')
-await captions.intro.end()
+await voiceOvers.intro.end()
 ```
 
-### `.end()` — end the caption
+### `.end()` — end the voiceover
 
-Call it after every `.start()`. Calling it when no caption is active is a no-op.
+Call it after every `.start()`. Calling it when no voiceover is active is a no-op.
 
-### Multi-language captions
+### Multi-language voiceovers
 
 Pass a language map and TypeScript will enforce that every language has the same keys:
 
 ```ts
-import { createCaptions, voices } from 'screenci'
+import { createVoiceOvers, voices } from 'screenci'
 
-const captions = createCaptions({
-  en: {
-    voice: voices.Zephyr,
-    captions: { intro: 'Welcome.', save: 'Hit save.' },
-  },
-  fi: {
-    voice: voices.Zephyr,
-    captions: { intro: 'Tervetuloa.', save: 'Tallenna.' },
+const voiceOvers = createVoiceOvers({
+  voice: { name: voices.Aria },
+  languages: {
+    en: {
+      captions: { intro: 'Welcome.', save: 'Hit save.' },
+    },
+    fi: {
+      voice: { name: voices.Nora },
+      captions: { intro: 'Tervetuloa.', save: 'Tallenna.' },
+    },
   },
 })
 ```

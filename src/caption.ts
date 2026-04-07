@@ -181,10 +181,23 @@ export type TopLevelVoiceConfig =
       style: string
       /** Can be omitted when `style` is set — `expressive` is implied. */
       modelType?: 'expressive'
+      /**
+       * Accent description for Gemini TTS. Only used with `expressive` model type.
+       * The more specific, the better — e.g. `'Southern American English'` or `'Received Pronunciation British'`.
+       * Omitted from the prompt when not set — the voice uses its natural default.
+       */
+      accent?: string
+      /**
+       * Pacing description for Gemini TTS. Only used with `expressive` model type.
+       * Describes the overall speed and tempo — e.g. `'Measured and deliberate'` or `'Brisk and energetic'`.
+       */
+      pacing?: string
     }
   | {
       name: VoiceKey | CustomVoiceRef
       style?: never
+      accent?: never
+      pacing?: never
       /** TTS model type — `modelTypes.expressive` (Gemini) or `modelTypes.consistent` (Chirp 3 HD). Defaults to `consistent`. */
       modelType?: ModelType
     }
@@ -204,11 +217,24 @@ export type LangVoiceOverride =
       style: string
       /** Can be omitted when `style` is set — `expressive` is implied. */
       modelType?: 'expressive'
+      /**
+       * Accent description for Gemini TTS. Only used with `expressive` model type.
+       * The more specific, the better — e.g. `'Southern American English'` or `'Received Pronunciation British'`.
+       * Omitted from the prompt when not set — the voice uses its natural default.
+       */
+      accent?: string
+      /**
+       * Pacing description for Gemini TTS. Only used with `expressive` model type.
+       * Describes the overall speed and tempo — e.g. `'Measured and deliberate'` or `'Brisk and energetic'`.
+       */
+      pacing?: string
     }
   | {
       name: VoiceKey | CustomVoiceRef
       seed?: number
       style?: never
+      accent?: never
+      pacing?: never
       /** TTS model type — `modelTypes.expressive` (Gemini) or `modelTypes.consistent` (Chirp 3 HD). Defaults to `consistent`. */
       modelType?: ModelType
     }
@@ -244,11 +270,15 @@ type LangVoiceOverrideForLang<L extends string> =
       seed?: number
       style: string
       modelType?: 'expressive'
+      accent?: string
+      pacing?: string
     }
   | {
       name: (L extends Lang ? VoiceForLang<L> : VoiceKey) | CustomVoiceRef
       seed?: number
       style?: never
+      accent?: never
+      pacing?: never
       modelType?: ModelType
     }
 
@@ -266,7 +296,7 @@ type LanguagesMap<
 }
 
 /**
- * Creates a set of typed caption controllers, one per key in the map.
+ * Creates a set of typed voiceover controllers, one per key in the map.
  *
  * Each controller has `start()` and `end()`.
  * At render time screenci generates a voiceover, and syncs the audio to the
@@ -281,7 +311,7 @@ type LanguagesMap<
  *
  * @example
  * ```ts
- * const captions = createCaptions({
+ * const voiceOvers = createVoiceOvers({
  *   voice: { name: voices.Ava, style: 'Clear and friendly' },
  *   languages: {
  *     en: { captions: { intro: 'Welcome.' } },
@@ -293,7 +323,7 @@ type LanguagesMap<
  * })
  * ```
  */
-export function createCaptions<
+export function createVoiceOvers<
   M extends Partial<
     Record<
       Lang,
@@ -345,7 +375,7 @@ function buildCaptionsFromInput(
   const firstLang = langs[0]
   if (firstLang === undefined) {
     throw new Error(
-      'createCaptions requires at least one language in "languages"'
+      'createVoiceOvers requires at least one language in "languages"'
     )
   }
 
@@ -359,14 +389,26 @@ function buildCaptionsFromInput(
     const effectiveVoiceName = langOverride?.name ?? topVoice.name
     const effectiveSeed = langOverride?.seed
     const effectiveRegion = entry?.region
-    // If a lang override exists it owns the style entirely — no inheritance from the top-level
-    // voice. This prevents a top-level `style` from forcing `expressive` on a lang that
-    // explicitly sets `modelType: 'consistent'`.
+    // If a lang override exists it owns style/accent/pacing entirely — no inheritance from the
+    // top-level voice. This prevents a top-level `style` from forcing `expressive` on a lang
+    // that explicitly sets `modelType: 'consistent'`.
     const effectiveStyle =
       langOverride !== undefined
         ? langOverride?.style
         : 'style' in topVoice
           ? (topVoice as { style: string }).style
+          : undefined
+    const effectiveAccent =
+      langOverride !== undefined
+        ? langOverride?.accent
+        : 'accent' in topVoice
+          ? (topVoice as { accent?: string }).accent
+          : undefined
+    const effectivePacing =
+      langOverride !== undefined
+        ? langOverride?.pacing
+        : 'pacing' in topVoice
+          ? (topVoice as { pacing?: string }).pacing
           : undefined
     const effectiveModelType = effectiveStyle
       ? 'expressive'
@@ -385,6 +427,8 @@ function buildCaptionsFromInput(
         modelType: effectiveModelType,
       }),
       ...(effectiveStyle !== undefined && { style: effectiveStyle }),
+      ...(effectiveAccent !== undefined && { accent: effectiveAccent }),
+      ...(effectivePacing !== undefined && { pacing: effectivePacing }),
     })
   }
 
@@ -427,6 +471,8 @@ function buildCaptionsFromInput(
             const meta = resolvedVoiceMeta.get(lang)
             const modelType = meta?.modelType
             const style = meta?.style
+            const accent = meta?.accent
+            const pacing = meta?.pacing
             if (typeof val === 'string') {
               videoTranslations[lang] = {
                 text: val,
@@ -434,6 +480,8 @@ function buildCaptionsFromInput(
                 ...(region !== undefined && { region }),
                 ...(modelType !== undefined && { modelType }),
                 ...(style !== undefined && { style }),
+                ...(accent !== undefined && { accent }),
+                ...(pacing !== undefined && { pacing }),
               }
             } else {
               videoTranslations[lang] = entryToVideoTranslation(val)
@@ -474,12 +522,16 @@ function buildCaptionsFromInput(
               const meta = resolvedVoiceMeta.get(lang)
               const modelType = meta?.modelType
               const style = meta?.style
+              const accent = meta?.accent
+              const pacing = meta?.pacing
               textTranslations[lang] = {
                 text: val,
                 voice: toRecordedVoice(voice),
                 ...(region !== undefined && { region }),
                 ...(modelType !== undefined && { modelType }),
                 ...(style !== undefined && { style }),
+                ...(accent !== undefined && { accent }),
+                ...(pacing !== undefined && { pacing }),
               }
             }
           }
@@ -545,7 +597,7 @@ function entryToVideoTranslation(
  * If `subtitle` is provided, words are spread with equal timing across the
  * audio duration (no word-level TTS data available).
  *
- * Same constraints as `createCaptions`: cannot overlap with other captions,
+ * Same constraints as `createVoiceOvers`: cannot overlap with other captions,
  * and cannot fall inside input events.
  *
  * Two overloads:

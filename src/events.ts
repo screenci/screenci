@@ -125,6 +125,10 @@ export type CaptionTranslation = {
   modelType?: string
   /** Speaking style prompt for Gemini TTS (only used with 'expressive' model). */
   style?: string
+  /** Accent description for Gemini TTS (only used with 'expressive' model). Omitted from the prompt when not set. */
+  accent?: string
+  /** Pacing description for Gemini TTS (only used with 'expressive' model). */
+  pacing?: string
 }
 
 export type CaptionStartEvent = {
@@ -161,6 +165,10 @@ export type VideoCaptionTranslationTTS = {
   modelType?: string
   /** Speaking style prompt for Gemini TTS (only used with 'expressive' model). */
   style?: string
+  /** Accent description for Gemini TTS (only used with 'expressive' model). Omitted from the prompt when not set. */
+  accent?: string
+  /** Pacing description for Gemini TTS (only used with 'expressive' model). */
+  pacing?: string
 }
 export type VideoCaptionTranslation =
   | VideoCaptionTranslationFile
@@ -239,13 +247,17 @@ export type VoiceLanguageMeta = {
   modelType?: string
   /** Speaking style prompt for Gemini TTS (only used with 'expressive' model). */
   style?: string
+  /** Accent description for Gemini TTS (only used with 'expressive' model). Omitted from the prompt when not set. */
+  accent?: string
+  /** Pacing description for Gemini TTS (only used with 'expressive' model). */
+  pacing?: string
 }
 
 export type RecordingMetadata = {
   videoName: string
   /** Language codes present in multi-language captions, e.g. `['en', 'de']`. Omitted when no multi-language captions are used. */
   languages?: string[]
-  /** Per-language voice configuration resolved from `createCaptions`. */
+  /** Per-language voice configuration resolved from `createVoiceOvers`. */
   voices?: Record<string, VoiceLanguageMeta>
 }
 
@@ -295,7 +307,7 @@ export interface IEventRecorder {
   /**
    * Registers the voice used for a given language in this recording.
    * Throws if a different voice has already been registered for the same language
-   * in this recording (multiple `createCaptions` calls with conflicting voices).
+   * in this recording (multiple `createVoiceOvers` calls with conflicting voices).
    */
   registerVoiceForLang(lang: string, meta: VoiceLanguageMeta): void
   getEvents(): RecordingEvent[]

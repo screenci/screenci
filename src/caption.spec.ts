@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
-  createCaptions,
+  createVoiceOvers,
   setActiveCaptionRecorder,
   resetCaptionChain,
   setSleepFn,
@@ -35,7 +35,7 @@ const singleLangInput = {
   },
 }
 
-describe('createCaptions', () => {
+describe('createVoiceOvers', () => {
   let recorder: IEventRecorder
   let order: string[]
 
@@ -66,7 +66,7 @@ describe('createCaptions', () => {
   })
 
   it('creates caption controllers for each key', () => {
-    const captions = createCaptions(singleLangInput)
+    const captions = createVoiceOvers(singleLangInput)
 
     expect(captions.intro).toBeDefined()
     expect(captions.outro).toBeDefined()
@@ -75,14 +75,14 @@ describe('createCaptions', () => {
   })
 
   it('captions.key.start(): sleep → captionStart(multilang)', async () => {
-    const captions = createCaptions(singleLangInput)
+    const captions = createVoiceOvers(singleLangInput)
 
     await captions.intro.start()
     expect(order).toEqual(['sleep', 'captionStart(multilang)'])
   })
 
   it('captions.key.end(): captionEnd → sleep', async () => {
-    const captions = createCaptions(singleLangInput)
+    const captions = createVoiceOvers(singleLangInput)
 
     await captions.intro.start()
     order = []
@@ -92,7 +92,7 @@ describe('createCaptions', () => {
   })
 
   it('throws when calling end() without start()', async () => {
-    const captions = createCaptions(singleLangInput)
+    const captions = createVoiceOvers(singleLangInput)
 
     await expect(captions.intro.end()).rejects.toThrow(
       'No caption has been started'
@@ -101,19 +101,19 @@ describe('createCaptions', () => {
 
   it('throws when languages is empty', () => {
     expect(() =>
-      createCaptions({
+      createVoiceOvers({
         voice: { name: voices.Ava },
         // @ts-expect-error — empty languages should still throw at runtime
         languages: {},
       })
-    ).toThrow('createCaptions requires at least one language in "languages"')
+    ).toThrow('createVoiceOvers requires at least one language in "languages"')
   })
 
   describe('without recorder', () => {
     beforeEach(() => setActiveCaptionRecorder(null))
 
     it('operations are no-ops', async () => {
-      const captions = createCaptions(singleLangInput)
+      const captions = createVoiceOvers(singleLangInput)
 
       await captions.intro.start()
       await captions.intro.end()
@@ -124,7 +124,7 @@ describe('createCaptions', () => {
 
   describe('inside hide()', () => {
     it('throws when calling start() inside hide()', async () => {
-      const captions = createCaptions(singleLangInput)
+      const captions = createVoiceOvers(singleLangInput)
 
       await expect(
         hide(async () => {
@@ -134,7 +134,7 @@ describe('createCaptions', () => {
     })
 
     it('throws when calling end() inside hide()', async () => {
-      const captions = createCaptions(singleLangInput)
+      const captions = createVoiceOvers(singleLangInput)
       await captions.intro.start()
 
       await expect(
@@ -159,13 +159,13 @@ describe('createCaptions', () => {
     }
 
     it('creates caption controllers for each key', () => {
-      const captions = createCaptions(langInput)
+      const captions = createVoiceOvers(langInput)
       expect(captions.intro).toBeDefined()
       expect(captions.outro).toBeDefined()
     })
 
     it('start() passes translations to addCaptionStart', async () => {
-      const captions = createCaptions(langInput)
+      const captions = createVoiceOvers(langInput)
       await captions.intro.start()
 
       expect(recorder.addCaptionStart).toHaveBeenCalledWith(
@@ -180,13 +180,13 @@ describe('createCaptions', () => {
     })
 
     it('start() emits sleep → captionStart(multilang) sequence', async () => {
-      const captions = createCaptions(langInput)
+      const captions = createVoiceOvers(langInput)
       await captions.intro.start()
       expect(order).toEqual(['sleep', 'captionStart(multilang)'])
     })
 
     it('per-language voice override is used in translations', async () => {
-      const captions = createCaptions({
+      const captions = createVoiceOvers({
         voice: { name: voices.Ava },
         languages: {
           en: {
@@ -215,7 +215,7 @@ describe('createCaptions', () => {
       const customVoice = {
         path: './olli-sample.mp3',
       } as CustomVoiceRef & { assetHash?: string }
-      const captions = createCaptions({
+      const captions = createVoiceOvers({
         voice: { name: voices.Ava },
         languages: {
           en: {
@@ -248,7 +248,7 @@ describe('createCaptions', () => {
 
   describe('voice metadata registration', () => {
     it('registers voice meta via recorder on start()', async () => {
-      const captions = createCaptions({
+      const captions = createVoiceOvers({
         voice: { name: voices.Ava },
         languages: {
           en: { captions: { intro: 'Hello' } },
@@ -262,7 +262,7 @@ describe('createCaptions', () => {
     })
 
     it('per-language override seed is registered', async () => {
-      const captions = createCaptions({
+      const captions = createVoiceOvers({
         voice: { name: voices.Ava },
         languages: {
           en: { captions: { intro: 'Hello' } },
@@ -284,7 +284,7 @@ describe('createCaptions', () => {
     })
 
     it('per-language region is registered', async () => {
-      const captions = createCaptions({
+      const captions = createVoiceOvers({
         voice: { name: voices.Ava },
         languages: {
           en: { region: 'en-US', captions: { intro: 'Hello' } },
@@ -299,7 +299,7 @@ describe('createCaptions', () => {
     })
 
     it('omits region when not set', async () => {
-      const captions = createCaptions({
+      const captions = createVoiceOvers({
         voice: { name: voices.Ava },
         languages: { en: { captions: { intro: 'Hello' } } },
       })
@@ -312,12 +312,12 @@ describe('createCaptions', () => {
   })
 
   describe('runtime voice conflict validation (via recorder)', () => {
-    it('throws when two createCaptions calls use different voices for the same language', async () => {
-      const captions1 = createCaptions({
+    it('throws when two createVoiceOvers calls use different voices for the same language', async () => {
+      const captions1 = createVoiceOvers({
         voice: { name: voices.Ava },
         languages: { en: { captions: { intro: 'Hello' } } },
       })
-      const captions2 = createCaptions({
+      const captions2 = createVoiceOvers({
         voice: { name: voices.Aria },
         languages: { en: { captions: { other: 'World' } } },
       })
@@ -340,12 +340,12 @@ describe('createCaptions', () => {
       )
     })
 
-    it('does not throw when two createCaptions calls use the same voice for a language', async () => {
-      const captions1 = createCaptions({
+    it('does not throw when two createVoiceOvers calls use the same voice for a language', async () => {
+      const captions1 = createVoiceOvers({
         voice: { name: voices.Ava },
         languages: { en: { captions: { intro: 'Hello' } } },
       })
-      const captions2 = createCaptions({
+      const captions2 = createVoiceOvers({
         voice: { name: voices.Ava },
         languages: { en: { captions: { other: 'World' } } },
       })

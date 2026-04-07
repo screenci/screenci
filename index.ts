@@ -74,7 +74,7 @@ export { defineConfig } from './src/config.js'
 // Re-export video fixture and caption
 export { video } from './src/video.js'
 export type { ScreenCIPage, ScreenCILocator } from './src/types.js'
-export { createCaptions, createVideoCaptions } from './src/caption.js'
+export { createVoiceOvers, createVideoCaptions } from './src/caption.js'
 export type {
   CaptionController,
   Captions,

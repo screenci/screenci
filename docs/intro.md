@@ -25,6 +25,6 @@ npx screenci init
 Then follow the guides:
 
 - [Getting started](/guides/getting-started) — install, init, first recording
-- [Recording flows](/guides/recording) — `hide()`, `autoZoom()`, `createCaptions()`
+- [Recording flows](/guides/recording) — `hide()`, `autoZoom()`, `createVoiceOvers()`
 - [Automating with CI/CD](/guides/automation)
 - [Localization & Voiceovers](/guides/localization)

@@ -1,12 +1,12 @@
 /**
- * TTS model types for use with `createCaptions`.
+ * TTS model types for use with `createVoiceOvers`.
  *
  * - `expressive`: Gemini TTS — more expressive, natural-sounding speech.
  * - `consistent`: Chirp 3 HD — consistent, high-quality synthesis.
  *
  * @example
  * ```ts
- * createCaptions({
+ * createVoiceOvers({
  *   voice: { name: voices.Ava, modelType: modelTypes.expressive },
  *   languages: { en: { captions: { intro: 'Hello' } } },
  * })
@@ -20,14 +20,14 @@ export const modelTypes = {
 export type ModelType = (typeof modelTypes)[keyof typeof modelTypes]
 
 /**
- * BCP-47 language regions for use with `createCaptions`.
+ * BCP-47 language regions for use with `createVoiceOvers`.
  *
  * Pass a region as `region` inside a language entry to select the
  * specific locale variant used for speech synthesis.
  *
  * @example
  * ```ts
- * createCaptions({
+ * createVoiceOvers({
  *   voice: { name: voices.Ava },
  *   languages: {
  *     en: { region: languageRegions.en.US, captions: { intro: 'Hello' } },
@@ -102,12 +102,12 @@ export const languageRegions = {
 } as const
 
 /**
- * Named voices available for use with `createCaptions`.
+ * Named voices available for use with `createVoiceOvers`.
  *
  * Built-in voices are language-agnostic at the call site:
  *
  * ```ts
- * createCaptions({
+ * createVoiceOvers({
  *   en: { voice: voices.Aria, captions: { intro: 'Hello' } },
  *   fi: { voice: voices.Aria, captions: { intro: 'Hei' } },
  * })
@@ -116,7 +116,7 @@ export const languageRegions = {
  * ElevenLabs voices are passed explicitly by provider voice id:
  *
  * ```ts
- * createCaptions({
+ * createVoiceOvers({
  *   en: {
  *     voice: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }),
  *     captions: { intro: 'Hello' },
@@ -318,11 +318,11 @@ export type VoiceForLang<L extends string> = L extends Lang ? VoiceKey : never
 
 /**
  * A reference to a local audio or video file for ElevenLabs Instant Voice Cloning.
- * Pass as the `voice` in `createCaptions` to clone a voice from the file at `path`.
+ * Pass as the `voice` in `createVoiceOvers` to clone a voice from the file at `path`.
  *
  * @example
  * ```ts
- * createCaptions({
+ * createVoiceOvers({
  *   en: { voice: { path: './my-voice.mp3' }, captions: { intro: 'Hello.' } },
  * })
  * ```

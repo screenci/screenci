@@ -82,65 +82,60 @@ export default defineConfig({
 
 screenci enforces `workers: 1`, `retries: 0`, and `fullyParallel: false` — FFmpeg records one screen at a time. Don't fight it.
 
-## Captions & AI voiceovers
+## AI voiceovers
 
-`createCaptions()` maps caption keys to text. At render time screenci sends the text through ElevenLabs and lines up the audio with your recording.
+`createVoiceOvers()` maps keys to text (or audio files). At render time screenci generates voiceover audio and syncs it to your recording.
 
 ```ts
-import { video, createCaptions } from 'screenci'
+import { video, createVoiceOvers, voices } from 'screenci'
 
-const captions = createCaptions({
-  intro: 'Welcome to the dashboard.',
-  addButton: 'Click here to create a new project.',
+const voiceOvers = createVoiceOvers({
+  voice: { name: voices.Aria },
+  languages: {
+    en: {
+      captions: {
+        intro: 'Welcome to the dashboard.',
+        addButton: 'Click here to create a new project.',
+      },
+    },
+  },
 })
 
 video('Dashboard walkthrough', async ({ page }) => {
   await page.goto('/dashboard')
 
-  await captions.intro.start()
+  await voiceOvers.intro.start()
   // ...anything you do here plays over the voiceover...
-  await captions.intro.end()
+  await voiceOvers.intro.end()
 
   await page.locator('#new-project').click()
-  await captions.addButton.start()
-  await captions.addButton.end()
+  await voiceOvers.addButton.start()
+  await voiceOvers.addButton.end()
 })
-```
-
-### With a voice
-
-```ts
-import { createCaptions, voices } from 'screenci'
-
-const captions = createCaptions(
-  { voice: voices.Ava },
-  {
-    intro: 'Welcome to the dashboard.',
-    addButton: 'Click here to create a new project.',
-  }
-)
 ```
 
 ### Multi-language (type-safe)
 
-TypeScript will yell at you if any language is missing a key. That's a feature.
+TypeScript enforces that every language has the same keys. Missing a translation is a compile error.
 
 ```ts
-import { createCaptions, voices } from 'screenci'
+import { createVoiceOvers, voices } from 'screenci'
 
-const captions = createCaptions({
-  en: {
-    voice: voices.Ava,
-    captions: {
-      intro: 'Welcome to the dashboard.',
-      addButton: 'Click here to create a new project.',
+const voiceOvers = createVoiceOvers({
+  voice: { name: voices.Ava },
+  languages: {
+    en: {
+      captions: {
+        intro: 'Welcome to the dashboard.',
+        addButton: 'Click here to create a new project.',
+      },
     },
-  },
-  fi: {
-    voice: voices.Ava,
-    captions: {
-      intro: 'Tervetuloa hallintapaneeliin.',
-      addButton: 'Klikkaa tästä luodaksesi uuden projektin.',
+    fi: {
+      voice: { name: voices.Nora },
+      captions: {
+        intro: 'Tervetuloa hallintapaneeliin.',
+        addButton: 'Klikkaa tästä luodaksesi uuden projektin.',
+      },
     },
   },
 })
@@ -191,14 +186,14 @@ video('Profile settings', async ({ page }) => {
 
 ## API
 
-| Export           | What it does                                                       |
-| ---------------- | ------------------------------------------------------------------ |
-| `defineConfig`   | Wraps Playwright config with screenci defaults                     |
-| `video`          | Declares a video recording test                                    |
-| `createCaptions` | Creates typed caption controllers with AI voiceovers               |
-| `hide`           | Cuts a section from the final video                                |
-| `autoZoom`       | Smooth camera pan that follows interactions                        |
-| `voices`         | Available voice constants (`voices.Ava`, `voices.elevenlabs(...)`) |
+| Export             | What it does                                                       |
+| ------------------ | ------------------------------------------------------------------ |
+| `defineConfig`     | Wraps Playwright config with screenci defaults                     |
+| `video`            | Declares a video recording test                                    |
+| `createVoiceOvers` | Creates typed voiceover controllers with AI-generated audio        |
+| `hide`             | Cuts a section from the final video                                |
+| `autoZoom`         | Smooth camera pan that follows interactions                        |
+| `voices`           | Available voice constants (`voices.Ava`, `voices.elevenlabs(...)`) |
 
 The `page` fixture inside `video()` is a `ScreenCIPage` — a Playwright `Page` with animated cursor support wired in on all locator methods.
 

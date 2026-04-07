@@ -52,12 +52,12 @@ The `page` fixture inside `video()` is a `ScreenCIPage` — a wrapper whose `.lo
 
 On top of that, screenci adds:
 
-| API                | What it does                                                        |
-| ------------------ | ------------------------------------------------------------------- |
-| `hide(fn)`         | Cuts the section from the final video (logins, page loads, setup)   |
-| `autoZoom(fn)`     | Smooth camera zoom that follows clicks and fills                    |
-| `createCaptions()` | Typed voiceover markers — text becomes AI-generated audio at render |
-| `createAssets()`   | Image or video overlays shown during the recording                  |
+| API                  | What it does                                                        |
+| -------------------- | ------------------------------------------------------------------- |
+| `hide(fn)`           | Cuts the section from the final video (logins, page loads, setup)   |
+| `autoZoom(fn)`       | Smooth camera zoom that follows clicks and fills                    |
+| `createVoiceOvers()` | Typed voiceover markers — text becomes AI-generated audio at render |
+| `createAssets()`     | Image or video overlays shown during the recording                  |
 
 All of these are composable with normal [Playwright](https://playwright.dev/docs/api/class-page) code. No rewrites required.
 
@@ -119,6 +119,6 @@ Set `apiUrl` in your config (or `SCREENCI_URL` env var) to point at the API.
 
 ## Next steps
 
-- [Writing video tests](/reference/video-tests) — `hide()`, `autoZoom()`, `createCaptions()`
+- [Writing video tests](/reference/video-tests) — `hide()`, `autoZoom()`, `createVoiceOvers()`
 - [Configuration reference](/reference/configuration) — all config options
 - [API reference](/reference/api-overview) — full function signatures

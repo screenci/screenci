@@ -91,7 +91,7 @@ Everything in [Playwright's `page` API](https://playwright.dev/docs/api/class-pa
 | Typed character input | `fill()` types character-by-character so the viewer sees keystrokes |
 | `hide(fn)`            | Cuts a section from the final video (logins, page loads, setup)     |
 | `autoZoom(fn)`        | Smooth camera pan that follows interactions inside the callback     |
-| `createCaptions()`    | AI voiceover markers that sync to the recording at render time      |
+| `createVoiceOvers()`  | AI voiceover markers that sync to the recording at render time      |
 | `createAssets()`      | Image or video overlays shown during the recording                  |
 
 These are composable. You can combine `hide`, `autoZoom`, and captions around any Playwright code.
@@ -101,11 +101,18 @@ These are composable. You can combine `hide`, `autoZoom`, and captions around an
 ## A complete example
 
 ```ts
-import { video, hide, autoZoom, createCaptions } from 'screenci'
+import { video, hide, autoZoom, createVoiceOvers, voices } from 'screenci'
 
-const captions = createCaptions({
-  openForm: "Let's add a new team member.",
-  submit: "One click and they're in.",
+const voiceOvers = createVoiceOvers({
+  voice: { name: voices.Aria },
+  languages: {
+    en: {
+      captions: {
+        openForm: "Let's add a new team member.",
+        submit: "One click and they're in.",
+      },
+    },
+  },
 })
 
 video('Invite a team member', async ({ page }) => {
@@ -119,7 +126,7 @@ video('Invite a team member', async ({ page }) => {
   })
 
   // Camera follows the invite form
-  await captions.openForm.start()
+  await voiceOvers.openForm.start()
   await autoZoom(
     async () => {
       await page.locator('#invite').click()
@@ -127,9 +134,9 @@ video('Invite a team member', async ({ page }) => {
     },
     { duration: 400, easing: 'ease-in-out', amount: 0.4 }
   )
-  await captions.openForm.end()
+  await voiceOvers.openForm.end()
 
-  await captions.submit.start()
+  await voiceOvers.submit.start()
   await autoZoom(
     async () => {
       await page.locator('button[type="submit"]').click()
@@ -137,7 +144,7 @@ video('Invite a team member', async ({ page }) => {
     },
     { duration: 400, easing: 'ease-in-out', amount: 0.4 }
   )
-  await captions.submit.end()
+  await voiceOvers.submit.end()
 })
 ```
 

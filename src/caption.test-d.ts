@@ -1,11 +1,11 @@
 import { describe, it, assertType } from 'vitest'
-import { createCaptions } from './caption.js'
+import { createVoiceOvers } from './caption.js'
 import { voices } from './voices.js'
 import type { VoiceForLang } from './voices.js'
 
-describe('createCaptions type constraints', () => {
+describe('createVoiceOvers type constraints', () => {
   it('accepts matching keys across all languages', () => {
-    createCaptions({
+    createVoiceOvers({
       voice: { name: voices.Ava },
       languages: {
         en: {
@@ -19,7 +19,7 @@ describe('createCaptions type constraints', () => {
   })
 
   it('accepts per-language voice override with seed', () => {
-    createCaptions({
+    createVoiceOvers({
       voice: { name: voices.Ava },
       languages: {
         en: { captions: { intro: 'Hello' } },
@@ -32,7 +32,7 @@ describe('createCaptions type constraints', () => {
   })
 
   it('accepts per-language region', () => {
-    createCaptions({
+    createVoiceOvers({
       voice: { name: voices.Ava },
       languages: {
         en: { region: 'en-US', captions: { intro: 'Hello' } },
@@ -41,7 +41,7 @@ describe('createCaptions type constraints', () => {
   })
 
   it('accepts mixed value types (string vs file object) for the same key', () => {
-    createCaptions({
+    createVoiceOvers({
       voice: { name: voices.Ava },
       languages: {
         en: {
@@ -59,7 +59,7 @@ describe('createCaptions type constraints', () => {
   })
 
   it('rejects a language with a missing caption key', () => {
-    createCaptions({
+    createVoiceOvers({
       voice: { name: voices.Ava },
       languages: {
         en: {
@@ -74,7 +74,7 @@ describe('createCaptions type constraints', () => {
   })
 
   it('rejects seed at the top-level voice', () => {
-    createCaptions({
+    createVoiceOvers({
       // @ts-expect-error — seed is not allowed at the top-level voice
       voice: { name: voices.Ava, seed: 42 },
       languages: {

@@ -2049,7 +2049,17 @@ describe('CLI', () => {
 
       expect(mockSpawn).toHaveBeenCalledWith(
         'npx',
-        ['--yes', 'skills', 'add', 'screenci/screenci'],
+        [
+          '--yes',
+          'skills',
+          'add',
+          'screenci/screenci',
+          '--skill',
+          'screenci',
+          '--skill',
+          'playwright-cli',
+          '-y',
+        ],
         expect.objectContaining({ stdio: 'pipe' })
       )
     })
@@ -2066,7 +2076,7 @@ describe('CLI', () => {
       await main()
 
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        '  npx --yes skills add screenci/screenci'
+        '  npx --yes skills add screenci/screenci --skill screenci --skill playwright-cli -y'
       )
     })
   })

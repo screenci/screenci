@@ -1418,16 +1418,28 @@ async function runInit(
 
   const shouldInstallSkills = await confirm({
     message:
-      "Add ScreenCI skills now with 'npx --yes skills add screenci/screenci'?",
+      "Add ScreenCI skills now with 'npx --yes skills add screenci/screenci --skill screenci --skill playwright-cli -y'?",
     default: true,
   })
 
   if (shouldInstallSkills) {
     if (verbose) {
-      logger.info("Running 'npx --yes skills add screenci/screenci'...")
+      logger.info(
+        "Running 'npx --yes skills add screenci/screenci --skill screenci --skill playwright-cli -y'..."
+      )
       await spawnInherited(
         'npx',
-        ['--yes', 'skills', 'add', 'screenci/screenci'],
+        [
+          '--yes',
+          'skills',
+          'add',
+          'screenci/screenci',
+          '--skill',
+          'screenci',
+          '--skill',
+          'playwright-cli',
+          '-y',
+        ],
         projectDir,
         'screenci init'
       )
@@ -1436,7 +1448,17 @@ async function runInit(
       try {
         await spawnSilent(
           'npx',
-          ['--yes', 'skills', 'add', 'screenci/screenci'],
+          [
+            '--yes',
+            'skills',
+            'add',
+            'screenci/screenci',
+            '--skill',
+            'screenci',
+            '--skill',
+            'playwright-cli',
+            '-y',
+          ],
           projectDir
         )
         spinner.succeed('ScreenCI skills added')
@@ -1505,7 +1527,9 @@ async function runInit(
   logger.info('Next steps:')
   logger.info(`  cd ${dirName}`)
   if (!shouldInstallSkills) {
-    logger.info('  npx --yes skills add screenci/screenci')
+    logger.info(
+      '  npx --yes skills add screenci/screenci --skill screenci --skill playwright-cli -y'
+    )
   }
   if (!shouldInstall) {
     logger.info('  npm install')

@@ -111,6 +111,7 @@ export type CaptionStartEvent = {
 export type CaptionEndEvent = {
   type: 'captionEnd'
   timeMs: number
+  reason?: 'auto' | 'waitEnd'
 }
 
 export type VideoCaptionTranslationFile = {

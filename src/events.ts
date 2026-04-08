@@ -145,6 +145,7 @@ export type CaptionStartEvent = {
 export type CaptionEndEvent = {
   type: 'captionEnd'
   timeMs: number
+  reason?: 'auto' | 'waitEnd'
 }
 
 /** File-based video caption translation. assetPath is present only in the local
@@ -286,7 +287,7 @@ export interface IEventRecorder {
     captionConfig?: CaptionConfig,
     translations?: Record<string, CaptionTranslation>
   ): void
-  addCaptionEnd(): void
+  addCaptionEnd(reason?: 'auto' | 'waitEnd'): void
   addVideoCaptionStart(
     name: string,
     assetPath: string | undefined,
@@ -405,10 +406,14 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addCaptionEnd(): void {
+  addCaptionEnd(reason?: 'auto' | 'waitEnd'): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
-    this.events.push({ type: 'captionEnd', timeMs })
+    this.events.push({
+      type: 'captionEnd',
+      timeMs,
+      ...(reason !== undefined && { reason }),
+    })
   }
 
   addVideoCaptionStart(

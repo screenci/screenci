@@ -132,7 +132,7 @@ function toRecordedVoice(
  */
 function captionAutoEnd(): void {
   if (!captionStarted || activeRecorder === null) return
-  activeRecorder.addCaptionEnd()
+  activeRecorder.addCaptionEnd('auto')
   sleepFn(2 * ONE_FRAME_MS)
   captionStarted = false
 }
@@ -140,7 +140,7 @@ function captionAutoEnd(): void {
 async function doWaitEnd(): Promise<void> {
   if (activeRecorder === null || !captionStarted) return
   if (isInsideHide()) throw new Error('Cannot call waitEnd inside hide()')
-  activeRecorder.addCaptionEnd()
+  activeRecorder.addCaptionEnd('waitEnd')
   sleepFn(2 * ONE_FRAME_MS)
   captionStarted = false
 }

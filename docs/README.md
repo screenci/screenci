@@ -52,6 +52,7 @@ docker --version # alternatively: use this if Podman is missing; Docker 28+ reco
 | [Localization & Voiceovers](./localization.md)   | Multi-language narration and localized UI videos                  |
 | [Assets](./assets.md)                            | Image and video overlays with `createAssets`                      |
 | [Public URLs](./public-urls.md)                  | Publish stable public video, thumbnail, and subtitle URLs         |
+| [CLI Commands](./cli.md)                         | Complete command reference for `screenci`                         |
 | [Prerequisites: macOS](./prerequisites-mac.md)   | macOS setup steps for Node.js and Podman                          |
 | [Prerequisites: Windows](./prerequisites-win.md) | Windows setup steps for Node.js and Podman                        |
 | [Prerequisites: Linux](./prerequisites-linux.md) | Linux setup steps for Node.js and Podman                          |

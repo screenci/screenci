@@ -40,7 +40,7 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 - `screenci init` scaffolds a project with `screenci.config.ts`, a starter `videos/example.video.ts`, `Dockerfile`, and `package.json`.
 - `screenci record` runs the recording flow. By default it uses Podman or Docker unless `--no-container` is used.
 - `screenci dev` runs Playwright in UI mode for fast iteration without screen capture.
-- `screenci upload-latest` uploads the latest `.screenci` output when API configuration is available.
+- `screenci retry` uploads the latest `.screenci` output when API configuration is available.
 
 ## Recording Workflow
 

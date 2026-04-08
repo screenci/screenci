@@ -84,6 +84,14 @@ Runs in a container (Docker/podman), starts a virtual display, launches a headle
     data.json
 ```
 
+## Test without recording
+
+```bash
+npx screenci test
+```
+
+This forwards to `playwright test` with your `screenci.config.ts`. Use it when you want ordinary Playwright execution without recording.
+
 ## Configure
 
 Edit `screenci.config.ts` to set your target URL, aspect ratio, and quality:
@@ -110,10 +118,25 @@ export default defineConfig({
 Once you have a recording you're happy with, upload it to screenci.com for rendering, voiceover generation, and your permanent embed link:
 
 ```bash
-npm run upload-latest
+npm run retry
 ```
 
 Set `apiUrl` in your config (or `SCREENCI_URL` env var) to point at the API.
+
+## Inspect project info and public URLs
+
+With `SCREENCI_SECRET` configured, you can inspect the remote project linked to your local `projectName`:
+
+```bash
+npx screenci info
+```
+
+Make a video public or private with its `id` from that JSON:
+
+```bash
+npx screenci make-public video_123
+npx screenci make-private video_123
+```
 
 ---
 
@@ -122,3 +145,4 @@ Set `apiUrl` in your config (or `SCREENCI_URL` env var) to point at the API.
 - [Writing video tests](/reference/video-tests) — `hide()`, `autoZoom()`, `createVoiceOvers()`
 - [Configuration reference](/reference/configuration) — all config options
 - [API reference](/reference/api-overview) — full function signatures
+- [CLI command reference](/reference/cli) — all CLI commands and options

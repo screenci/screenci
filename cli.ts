@@ -30,6 +30,20 @@ import type {
 import type { VoiceKey } from './src/voices.js'
 import type { ScreenCIConfig } from './src/types.js'
 
+type ProjectInfoVideo = {
+  name: string
+  id: string
+  isPublic: boolean
+  videoURL?: string
+  thumbnailURL?: string
+  subtitlesURL?: string
+}
+
+type ProjectInfoResponse = {
+  projectName: string
+  videos: ProjectInfoVideo[]
+}
+
 function resolveRecordingFileCandidates(
   filePath: string,
   configDir: string
@@ -1042,35 +1056,8 @@ export function getDevFrontendUrl(): string {
 }
 
 async function uploadLatest(configPath: string | undefined): Promise<void> {
-  const resolvedConfigPath = findScreenCIConfig(configPath)
-  if (!resolvedConfigPath) {
-    const errorMsg = configPath
-      ? `Error: Config file not found: ${configPath}`
-      : 'Error: screenci.config.ts not found in current directory'
-    logger.error(errorMsg)
-    process.exit(1)
-  }
-
-  let screenciConfig: ScreenCIConfig
-  try {
-    const configModule = await import(resolvedConfigPath)
-    screenciConfig = configModule.default as ScreenCIConfig
-  } catch (err) {
-    logger.error('Failed to load config:', err)
-    process.exit(1)
-  }
-
-  if (screenciConfig.envFile) {
-    const envFilePath = resolve(
-      dirname(resolvedConfigPath),
-      screenciConfig.envFile
-    )
-    try {
-      process.loadEnvFile(envFilePath)
-    } catch (err) {
-      logger.warn(`Failed to load env file ${envFilePath}:`, err)
-    }
-  }
+  const { resolvedConfigPath, screenciConfig } =
+    await loadScreenCIConfigAndEnv(configPath)
 
   const apiUrl = getDevBackendUrl()
 
@@ -1114,6 +1101,120 @@ async function uploadLatest(configPath: string | undefined): Promise<void> {
     logger.info('Recording finished, results available at:')
     logger.info(pc.cyan(`${appUrl}/project/${projectId}`))
   }
+}
+
+async function loadScreenCIConfigAndEnv(configPath?: string): Promise<{
+  resolvedConfigPath: string
+  screenciConfig: ScreenCIConfig
+}> {
+  const resolvedConfigPath = findScreenCIConfig(configPath)
+  if (!resolvedConfigPath) {
+    const errorMsg = configPath
+      ? `Error: Config file not found: ${configPath}`
+      : 'Error: screenci.config.ts not found in current directory'
+    logger.error(errorMsg)
+    process.exit(1)
+  }
+
+  let screenciConfig: ScreenCIConfig
+  try {
+    const configModule = await import(resolvedConfigPath)
+    screenciConfig = configModule.default as ScreenCIConfig
+  } catch (err) {
+    logger.error('Failed to load config:', err)
+    process.exit(1)
+  }
+
+  if (screenciConfig.envFile) {
+    const envFilePath = resolve(
+      dirname(resolvedConfigPath),
+      screenciConfig.envFile
+    )
+    try {
+      process.loadEnvFile(envFilePath)
+    } catch (err) {
+      logger.warn(`Failed to load env file ${envFilePath}:`, err)
+    }
+  }
+
+  return { resolvedConfigPath, screenciConfig }
+}
+
+async function requireScreenCISecret(configPath?: string): Promise<{
+  resolvedConfigPath: string
+  screenciConfig: ScreenCIConfig
+  secret: string
+  apiUrl: string
+}> {
+  const { resolvedConfigPath, screenciConfig } =
+    await loadScreenCIConfigAndEnv(configPath)
+  const secret = process.env.SCREENCI_SECRET
+  if (!secret) {
+    logger.error(
+      'No secret configured. Set SCREENCI_SECRET in your .env file (get it from the API Key page in the dashboard).'
+    )
+    process.exit(1)
+  }
+
+  return {
+    resolvedConfigPath,
+    screenciConfig,
+    secret,
+    apiUrl: getDevBackendUrl(),
+  }
+}
+
+async function fetchProjectInfo(
+  configPath?: string
+): Promise<ProjectInfoResponse> {
+  const { screenciConfig, secret, apiUrl } =
+    await requireScreenCISecret(configPath)
+  const url = new URL(`${apiUrl}/cli/project-info`)
+  url.searchParams.set('projectName', screenciConfig.projectName)
+
+  const res = await fetch(url.toString(), {
+    headers: {
+      'X-ScreenCI-Secret': secret,
+    },
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(
+      `Failed to fetch project info: ${res.status} ${text}${hint401(res.status, secret)}`
+    )
+  }
+
+  return (await res.json()) as ProjectInfoResponse
+}
+
+async function printProjectInfo(configPath?: string): Promise<void> {
+  const info = await fetchProjectInfo(configPath)
+  process.stdout.write(`${JSON.stringify(info, null, 2)}\n`)
+}
+
+async function updateVideoVisibility(
+  videoId: string,
+  isPublic: boolean,
+  configPath?: string
+): Promise<void> {
+  const { secret, apiUrl } = await requireScreenCISecret(configPath)
+  const method = isPublic ? 'PUT' : 'DELETE'
+  const res = await fetch(`${apiUrl}/cli/public-video/${videoId}`, {
+    method,
+    headers: {
+      'X-ScreenCI-Secret': secret,
+    },
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(
+      `Failed to ${isPublic ? 'make public' : 'make private'}: ${res.status} ${text}${hint401(res.status, secret)}`
+    )
+  }
+
+  logger.info(`${isPublic ? 'Made public' : 'Made private'}: ${videoId}`)
 }
 
 function generateConfig(projectName: string): string {
@@ -1168,7 +1269,7 @@ function generatePackageJson(
         type: 'module',
         scripts: {
           record: 'screenci record',
-          'upload-latest': 'screenci upload-latest',
+          retry: 'screenci retry',
           dev: 'screenci dev',
         },
         dependencies: {
@@ -1316,13 +1417,8 @@ async function promptProjectName(): Promise<string> {
   return input({ message: 'Project name:' })
 }
 
-function toKebabCase(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
+function getProjectDirName(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, '-')
 }
 
 async function runInitAuth(): Promise<void> {
@@ -1370,7 +1466,7 @@ async function runInit(
     process.exit(1)
   }
 
-  const dirName = toKebabCase(projectName)
+  const dirName = getProjectDirName(projectName)
   const projectDir = resolve(process.cwd(), dirName)
 
   if (existsSync(projectDir)) {
@@ -1543,7 +1639,9 @@ async function runInit(
 export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
-    logger.error('Available commands: record, dev, upload-latest, init')
+    logger.error(
+      'Available commands: record, dev, test, info, make-public, make-private, retry, init'
+    )
     process.exit(1)
   }
 
@@ -1695,10 +1793,55 @@ export async function main() {
       await run('dev', parsed.otherArgs, parsed.configPath)
     })
 
-  // upload-latest command
   program
-    .command('upload-latest')
-    .description('Upload the latest recording')
+    .command('test [playwrightArgs...]')
+    .description('Run Playwright test with screenci.config.ts')
+    .allowUnknownOption(true)
+    .action(async () => {
+      const parsed = parseDevCliArgs(getSubcommandArgv('test'))
+      await run('test', parsed.otherArgs, parsed.configPath)
+    })
+
+  program
+    .command('info')
+    .description('Print remote project info as JSON')
+    .option('-c, --config <path>', 'path to screenci.config.ts')
+    .action(async (options: Record<string, unknown>) => {
+      await printProjectInfo(options['config'] as string | undefined)
+    })
+
+  program
+    .command('make-public <id>')
+    .description(
+      'Enable public URLs for a video; get the id from screenci info'
+    )
+    .option('-c, --config <path>', 'path to screenci.config.ts')
+    .action(async (id: string, options: Record<string, unknown>) => {
+      await updateVideoVisibility(
+        id,
+        true,
+        options['config'] as string | undefined
+      )
+    })
+
+  program
+    .command('make-private <id>')
+    .description(
+      'Disable public URLs for a video; get the id from screenci info'
+    )
+    .option('-c, --config <path>', 'path to screenci.config.ts')
+    .action(async (id: string, options: Record<string, unknown>) => {
+      await updateVideoVisibility(
+        id,
+        false,
+        options['config'] as string | undefined
+      )
+    })
+
+  // retry command
+  program
+    .command('retry')
+    .description('Retry the latest recording upload')
     .option('-c, --config <path>', 'path to screenci.config.ts')
     .action(async (options: Record<string, unknown>) => {
       await uploadLatest(options['config'] as string | undefined)
@@ -2165,7 +2308,13 @@ async function run(
   const shouldUseUI = command === 'dev' && !isHeaded
 
   const mode =
-    command === 'dev' ? (isHeaded ? 'headed mode' : 'UI mode') : 'recorder'
+    command === 'dev'
+      ? isHeaded
+        ? 'headed mode'
+        : 'UI mode'
+      : command === 'test'
+        ? 'tests'
+        : 'recorder'
   if (process.env.SCREENCI_IN_CONTAINER !== 'true') {
     logger.info(`Running ScreenCI ${mode} with npx...`)
     logger.info(`Using config: ${configPath}`)

@@ -209,5 +209,5 @@ The `page` fixture inside `video()` is a `ScreenCIPage` — a Playwright `Page` 
 Upload to screenci.com for rendering, voiceover generation, and the permanent embed link:
 
 ```bash
-npm run upload-latest
+npm run retry
 ```

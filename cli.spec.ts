@@ -21,6 +21,7 @@ const mockMkdir = vi.fn()
 const mockInput = vi.fn()
 const mockConfirm = vi.fn()
 const mockCreateHttpServer = vi.fn()
+const mockFetch = vi.fn()
 
 const mockSpinner = {
   start: vi.fn().mockReturnThis(),
@@ -95,6 +96,7 @@ describe('CLI', () => {
   let processExitSpy: ReturnType<typeof vi.spyOn>
   let originalArgv: string[]
   let originalEnv: NodeJS.ProcessEnv
+  let originalFetch: typeof global.fetch
 
   beforeEach(() => {
     // Reset all mocks (clearAllMocks only clears call history, not Once queues;
@@ -118,6 +120,7 @@ describe('CLI', () => {
     // Store original values
     originalArgv = process.argv
     originalEnv = { ...process.env }
+    originalFetch = global.fetch
 
     // Mock child process (unref needed for openBrowser's detached spawn)
     mockChildProcess = Object.assign(new EventEmitter(), {
@@ -147,12 +150,21 @@ describe('CLI', () => {
     processExitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
       throw new Error('process.exit called')
     }) as unknown as (code?: string | number | null | undefined) => never)
+
+    global.fetch = mockFetch as typeof global.fetch
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({}),
+      text: vi.fn().mockResolvedValue(''),
+    })
   })
 
   afterEach(() => {
     // Restore original values
     process.argv = originalArgv
     process.env = originalEnv
+    global.fetch = originalFetch
 
     // Restore spies
     loggerErrorSpy?.mockRestore()
@@ -1336,40 +1348,195 @@ describe('CLI', () => {
     })
   })
 
-  describe('upload-latest command', () => {
-    it('should recognize upload-latest command (not unknown)', async () => {
-      process.argv = ['node', 'cli.js', 'upload-latest']
+  describe('test command', () => {
+    it('should spawn playwright test with default config path', async () => {
+      process.argv = ['node', 'cli.js', 'test', '--project=chromium']
+
+      const { main } = await import('./cli')
+      const mainPromise = main()
+
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      mockChildProcess.emit('close', 0)
+
+      await mainPromise
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        expect.arrayContaining([
+          'playwright',
+          'test',
+          '--config',
+          expect.stringContaining('screenci.config.ts'),
+          '--project=chromium',
+        ]),
+        expect.objectContaining({
+          stdio: 'inherit',
+          env: expect.not.objectContaining({
+            SCREENCI_RECORD: 'true',
+          }),
+        })
+      )
+    })
+
+    it('should support custom config path', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'test',
+        '--config',
+        'custom.config.ts',
+        '--grep',
+        'demo',
+      ]
+
+      const { main } = await import('./cli')
+      const mainPromise = main()
+
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      mockChildProcess.emit('close', 0)
+
+      await mainPromise
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        expect.arrayContaining([
+          'playwright',
+          'test',
+          '--config',
+          expect.stringContaining('custom.config.ts'),
+          '--grep',
+          'demo',
+        ]),
+        expect.objectContaining({ stdio: 'inherit' })
+      )
+    })
+  })
+
+  describe('project info commands', () => {
+    it('should print project info JSON for info', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'info',
+        '--config',
+        'test-fixtures/screenci.config.ts',
+      ]
+      process.env.SCREENCI_SECRET = 'test-secret'
+      const stdoutSpy = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation(() => true)
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({
+          projectName: 'Test Project',
+          videos: [{ id: 'video_123', name: 'Demo', isPublic: false }],
+        }),
+        text: vi.fn().mockResolvedValue(''),
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/cli/project-info?projectName=Test+Project'),
+        expect.objectContaining({
+          headers: { 'X-ScreenCI-Secret': 'test-secret' },
+        })
+      )
+      expect(stdoutSpy).toHaveBeenCalledWith(
+        `${JSON.stringify(
+          {
+            projectName: 'Test Project',
+            videos: [{ id: 'video_123', name: 'Demo', isPublic: false }],
+          },
+          null,
+          2
+        )}\n`
+      )
+
+      stdoutSpy.mockRestore()
+    })
+  })
+
+  describe('video visibility commands', () => {
+    it('should make a video public', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'make-public',
+        'video_123',
+        '--config',
+        'test-fixtures/screenci.config.ts',
+      ]
+      process.env.SCREENCI_SECRET = 'test-secret'
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/cli/public-video/video_123'),
+        expect.objectContaining({
+          method: 'PUT',
+          headers: { 'X-ScreenCI-Secret': 'test-secret' },
+        })
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith('Made public: video_123')
+    })
+
+    it('should make a video private', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'make-private',
+        'video_123',
+        '--config',
+        'test-fixtures/screenci.config.ts',
+      ]
+      process.env.SCREENCI_SECRET = 'test-secret'
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/cli/public-video/video_123'),
+        expect.objectContaining({
+          method: 'DELETE',
+          headers: { 'X-ScreenCI-Secret': 'test-secret' },
+        })
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith('Made private: video_123')
+    })
+  })
+
+  describe('retry command', () => {
+    it('should recognize retry command (not unknown)', async () => {
+      process.argv = ['node', 'cli.js', 'retry']
 
       const { main } = await import('./cli')
       // Will exit due to missing config, not an unknown command error
       await expect(main()).rejects.toThrow('process.exit called')
-      expect(loggerErrorSpy).not.toHaveBeenCalledWith(
-        'Unknown command: upload-latest'
-      )
+      expect(loggerErrorSpy).not.toHaveBeenCalledWith('Unknown command: retry')
     })
 
     it('should warn when no recordings found', async () => {
-      process.argv = ['node', 'cli.js', 'upload-latest']
+      process.argv = ['node', 'cli.js', 'retry']
       mockReaddir.mockResolvedValue([])
 
       const { main } = await import('./cli')
       // Will exit because config mock isn't set up — just ensure command is recognized
       await expect(main()).rejects.toThrow('process.exit called')
       // exit is called due to missing config, not unknown command
-      expect(loggerErrorSpy).not.toHaveBeenCalledWith(
-        'Unknown command: upload-latest'
-      )
+      expect(loggerErrorSpy).not.toHaveBeenCalledWith('Unknown command: retry')
     })
 
     it('should error when no API URL is configured', async () => {
-      process.argv = ['node', 'cli.js', 'upload-latest']
+      process.argv = ['node', 'cli.js', 'retry']
       mockExistsSync.mockReturnValue(true)
 
       const { main } = await import('./cli')
       await expect(main()).rejects.toThrow('process.exit called')
-      expect(loggerErrorSpy).not.toHaveBeenCalledWith(
-        'Unknown command: upload-latest'
-      )
+      expect(loggerErrorSpy).not.toHaveBeenCalledWith('Unknown command: retry')
     })
   })
 
@@ -1544,7 +1711,7 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain('exit 1')
     })
 
-    it('should use kebab-case lowercase for directory name', async () => {
+    it('should replace spaces with dashes for directory name', async () => {
       process.argv = ['node', 'cli.js', 'init', 'My Cool Project']
       mockExistsSync.mockReturnValue(false)
 
@@ -1557,7 +1724,20 @@ describe('CLI', () => {
       )
     })
 
-    it('should use original project name in config, kebab-case in package.json', async () => {
+    it('should preserve non-space characters in directory name', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'My @Cool# Project!']
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockMkdir).toHaveBeenCalledWith(
+        expect.stringContaining('my-@cool#-project!'),
+        { recursive: true }
+      )
+    })
+
+    it('should use original project name in config, npm-safe name in package.json', async () => {
       process.argv = ['node', 'cli.js', 'init', 'My Cool Project']
       mockExistsSync.mockReturnValue(false)
 

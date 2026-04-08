@@ -109,29 +109,36 @@ const voiceOvers = createVoiceOvers({
 video('Settings walkthrough', async ({ page }) => {
   await page.goto('/settings')
 
-  await voiceOvers.intro.start()
+  await voiceOvers.intro
   await page.waitForTimeout(2000)
-  await voiceOvers.intro.end()
+  await voiceOvers.waitEnd()
 
   await page.locator('#save').click()
-  await voiceOvers.save.start()
-  await voiceOvers.save.end()
+  await voiceOvers.save
 })
 ```
 
-### `.start()` — display and move on
+### Awaiting a voiceOver — display and move on
 
-Resolves after all words have appeared (0.5 s per word). The caption stays visible until `.end()` is called. Use this when you want voiceovers to run in parallel with page interactions:
+`await voiceOvers.key` starts the voiceover and resolves immediately. The caption stays visible and audio plays while subsequent actions run. Consecutive voiceOvers sequence automatically — each one ends the previous before starting:
 
 ```ts
-await voiceOvers.intro.start()
+await voiceOvers.intro
 await page.goto('https://example.com/signup')
-await voiceOvers.intro.end()
+
+await voiceOvers.nextStep // auto-ends intro, then starts nextStep
+await page.locator('#save').click()
 ```
 
-### `.end()` — end the voiceover
+### `waitEnd()` — wait for audio to finish
 
-Call it after every `.start()`. Calling it when no voiceover is active is a no-op.
+Call `await voiceOvers.waitEnd()` when an action must happen _after_ the current voiceover has finished playing. Only needed in those cases — consecutive voiceOvers already sequence automatically.
+
+```ts
+await voiceOvers.intro
+await voiceOvers.waitEnd() // wait for intro audio to finish
+await page.click('#start') // this runs after the audio ends
+```
 
 ### Multi-language voiceovers
 
@@ -171,13 +178,15 @@ const assets = createAssets({
 })
 
 video('Product demo', async ({ page }) => {
-  await assets.logo.start()
+  await assets.intro
   await page.goto('/dashboard')
-  await assets.intro.start()
+  await assets.logo
 })
 ```
 
-`start()` marks the asset in the recording timeline and returns immediately. The renderer places the asset at that point in the video and plays it for its natural duration — no timing config required.
+Awaiting an asset marks it in the recording timeline. The asset always plays fully before anything that follows in the output video.
+
+See the [Assets guide](/guides/assets/) for the full reference.
 
 ---
 

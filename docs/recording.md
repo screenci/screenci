@@ -126,7 +126,7 @@ video('Invite a team member', async ({ page }) => {
   })
 
   // Camera follows the invite form
-  await voiceOvers.openForm.start()
+  await voiceOvers.openForm
   await autoZoom(
     async () => {
       await page.locator('#invite').click()
@@ -134,9 +134,8 @@ video('Invite a team member', async ({ page }) => {
     },
     { duration: 400, easing: 'ease-in-out', amount: 0.4 }
   )
-  await voiceOvers.openForm.end()
 
-  await voiceOvers.submit.start()
+  await voiceOvers.submit
   await autoZoom(
     async () => {
       await page.locator('button[type="submit"]').click()
@@ -144,7 +143,6 @@ video('Invite a team member', async ({ page }) => {
     },
     { duration: 400, easing: 'ease-in-out', amount: 0.4 }
   )
-  await voiceOvers.submit.end()
 })
 ```
 

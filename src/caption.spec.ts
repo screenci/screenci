@@ -14,10 +14,15 @@ import { voices } from './voices.js'
 function createMockRecorder(): IEventRecorder {
   return {
     start: vi.fn(),
-    addClick: vi.fn(),
-    addMouseMove: vi.fn(),
+    addInput: vi.fn(),
     addCaptionStart: vi.fn(),
     addCaptionEnd: vi.fn(),
+    addVideoCaptionStart: vi.fn(),
+    addAssetStart: vi.fn(),
+    addHideStart: vi.fn(),
+    addHideEnd: vi.fn(),
+    addAutoZoomStart: vi.fn(),
+    addAutoZoomEnd: vi.fn(),
     registerVoiceForLang: vi.fn(),
     getEvents: vi.fn<[], RecordingEvent[]>().mockReturnValue([]),
     writeToFile: vi
@@ -65,38 +70,65 @@ describe('createVoiceOvers', () => {
     })
   })
 
-  it('creates caption controllers for each key', () => {
+  it('creates thenable caption controllers for each key', () => {
     const captions = createVoiceOvers(singleLangInput)
 
     expect(captions.intro).toBeDefined()
     expect(captions.outro).toBeDefined()
-    expect(typeof captions.intro.start).toBe('function')
-    expect(typeof captions.intro.end).toBe('function')
+    expect(typeof captions.intro.then).toBe('function')
+    expect(typeof captions.outro.then).toBe('function')
   })
 
-  it('captions.key.start(): sleep → captionStart(multilang)', async () => {
+  it('exposes waitEnd() on the result', () => {
+    const captions = createVoiceOvers(singleLangInput)
+    expect(typeof captions.waitEnd).toBe('function')
+  })
+
+  it('await voiceOvers.key: sleep → captionStart(multilang)', async () => {
     const captions = createVoiceOvers(singleLangInput)
 
-    await captions.intro.start()
+    await captions.intro
     expect(order).toEqual(['sleep', 'captionStart(multilang)'])
   })
 
-  it('captions.key.end(): captionEnd → sleep', async () => {
+  it('waitEnd(): captionEnd → sleep', async () => {
     const captions = createVoiceOvers(singleLangInput)
 
-    await captions.intro.start()
+    await captions.intro
     order = []
 
-    await captions.intro.end()
+    await captions.waitEnd()
     expect(order).toEqual(['captionEnd', 'sleep'])
   })
 
-  it('throws when calling end() without start()', async () => {
+  it('waitEnd() is a no-op when no caption is active', async () => {
+    const captions = createVoiceOvers(singleLangInput)
+    await captions.waitEnd()
+    expect(order).toEqual([])
+  })
+
+  it('consecutive voiceOvers auto-end the previous: sleep → captionStart → captionEnd → sleep → captionStart', async () => {
     const captions = createVoiceOvers(singleLangInput)
 
-    await expect(captions.intro.end()).rejects.toThrow(
-      'No caption has been started'
-    )
+    await captions.intro
+    order = []
+
+    await captions.outro
+    expect(order).toEqual([
+      'captionEnd',
+      'sleep',
+      'sleep',
+      'captionStart(multilang)',
+    ])
+  })
+
+  it('waitEnd() after waitEnd() is a no-op', async () => {
+    const captions = createVoiceOvers(singleLangInput)
+    await captions.intro
+    await captions.waitEnd()
+    order = []
+    await captions.waitEnd()
+    expect(order).toEqual([])
   })
 
   it('throws when languages is empty', () => {
@@ -115,33 +147,33 @@ describe('createVoiceOvers', () => {
     it('operations are no-ops', async () => {
       const captions = createVoiceOvers(singleLangInput)
 
-      await captions.intro.start()
-      await captions.intro.end()
+      await captions.intro
+      await captions.waitEnd()
 
       expect(order).toEqual([])
     })
   })
 
   describe('inside hide()', () => {
-    it('throws when calling start() inside hide()', async () => {
+    it('throws when starting a voiceOver inside hide()', async () => {
       const captions = createVoiceOvers(singleLangInput)
 
       await expect(
         hide(async () => {
-          await captions.intro.start()
+          await captions.intro
         })
-      ).rejects.toThrow('Cannot call caption.start inside hide()')
+      ).rejects.toThrow('Cannot start a voiceOver inside hide()')
     })
 
-    it('throws when calling end() inside hide()', async () => {
+    it('throws when calling waitEnd() inside hide()', async () => {
       const captions = createVoiceOvers(singleLangInput)
-      await captions.intro.start()
+      await captions.intro
 
       await expect(
         hide(async () => {
-          await captions.intro.end()
+          await captions.waitEnd()
         })
-      ).rejects.toThrow('Cannot call caption.waitEnd inside hide()')
+      ).rejects.toThrow('Cannot call waitEnd inside hide()')
     })
   })
 
@@ -158,15 +190,15 @@ describe('createVoiceOvers', () => {
       },
     }
 
-    it('creates caption controllers for each key', () => {
+    it('creates thenable controllers for each key', () => {
       const captions = createVoiceOvers(langInput)
-      expect(captions.intro).toBeDefined()
-      expect(captions.outro).toBeDefined()
+      expect(typeof captions.intro.then).toBe('function')
+      expect(typeof captions.outro.then).toBe('function')
     })
 
-    it('start() passes translations to addCaptionStart', async () => {
+    it('await passes translations to addCaptionStart', async () => {
       const captions = createVoiceOvers(langInput)
-      await captions.intro.start()
+      await captions.intro
 
       expect(recorder.addCaptionStart).toHaveBeenCalledWith(
         '',
@@ -179,9 +211,9 @@ describe('createVoiceOvers', () => {
       )
     })
 
-    it('start() emits sleep → captionStart(multilang) sequence', async () => {
+    it('await emits sleep → captionStart(multilang) sequence', async () => {
       const captions = createVoiceOvers(langInput)
-      await captions.intro.start()
+      await captions.intro
       expect(order).toEqual(['sleep', 'captionStart(multilang)'])
     })
 
@@ -198,7 +230,7 @@ describe('createVoiceOvers', () => {
           },
         },
       })
-      await captions.intro.start()
+      await captions.intro
 
       expect(recorder.addCaptionStart).toHaveBeenCalledWith(
         '',
@@ -211,7 +243,7 @@ describe('createVoiceOvers', () => {
       )
     })
 
-    it('allows custom voice refs before validation and resolves them at start()', async () => {
+    it('allows custom voice refs before validation and resolves them at start', async () => {
       const customVoice = {
         path: './olli-sample.mp3',
       } as CustomVoiceRef & { assetHash?: string }
@@ -229,7 +261,7 @@ describe('createVoiceOvers', () => {
       })
 
       customVoice.assetHash = 'voice-hash'
-      await captions.intro.start()
+      await captions.intro
 
       expect(recorder.addCaptionStart).toHaveBeenCalledWith(
         '',
@@ -247,14 +279,14 @@ describe('createVoiceOvers', () => {
   })
 
   describe('voice metadata registration', () => {
-    it('registers voice meta via recorder on start()', async () => {
+    it('registers voice meta via recorder on await', async () => {
       const captions = createVoiceOvers({
         voice: { name: voices.Ava },
         languages: {
           en: { captions: { intro: 'Hello' } },
         },
       })
-      await captions.intro.start()
+      await captions.intro
 
       expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('en', {
         name: 'Ava',
@@ -272,7 +304,7 @@ describe('createVoiceOvers', () => {
           },
         },
       })
-      await captions.intro.start()
+      await captions.intro
 
       expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('en', {
         name: 'Ava',
@@ -290,7 +322,7 @@ describe('createVoiceOvers', () => {
           en: { region: 'en-US', captions: { intro: 'Hello' } },
         },
       })
-      await captions.intro.start()
+      await captions.intro
 
       expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('en', {
         name: 'Ava',
@@ -303,7 +335,7 @@ describe('createVoiceOvers', () => {
         voice: { name: voices.Ava },
         languages: { en: { captions: { intro: 'Hello' } } },
       })
-      await captions.intro.start()
+      await captions.intro
 
       expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('en', {
         name: 'Ava',
@@ -334,8 +366,8 @@ describe('createVoiceOvers', () => {
           )
         })
 
-      await captions1.intro.start()
-      await expect(captions2.other.start()).rejects.toThrow(
+      await captions1.intro
+      await expect(captions2.other).rejects.toThrow(
         'Multiple voice names registered for language "en": "Ava" and "Aria"'
       )
     })
@@ -350,8 +382,8 @@ describe('createVoiceOvers', () => {
         languages: { en: { captions: { other: 'World' } } },
       })
 
-      await expect(captions1.intro.start()).resolves.toBeUndefined()
-      await expect(captions2.other.start()).resolves.toBeUndefined()
+      await expect(captions1.intro).resolves.toBeUndefined()
+      await expect(captions2.other).resolves.toBeUndefined()
     })
   })
 })

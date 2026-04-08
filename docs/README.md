@@ -50,6 +50,7 @@ docker --version # alternatively: use this if Podman is missing; Docker 28+ reco
 | [Editing by Typing](./editing.md)                | Update scripts and narration without full reshoots                |
 | [AI-Supported Editing](./ai-editing.md)          | AI-facing docs access, llms.txt, and MCP workflows                |
 | [Localization & Voiceovers](./localization.md)   | Multi-language narration and localized UI videos                  |
+| [Assets](./assets.md)                            | Image and video overlays with `createAssets`                      |
 | [Prerequisites: macOS](./prerequisites-mac.md)   | macOS setup steps for Node.js and Podman                          |
 | [Prerequisites: Windows](./prerequisites-win.md) | Windows setup steps for Node.js and Podman                        |
 | [Prerequisites: Linux](./prerequisites-linux.md) | Linux setup steps for Node.js and Podman                          |

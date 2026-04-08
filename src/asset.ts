@@ -44,28 +44,20 @@ export async function validateRegisteredAssetPaths(
   }
 }
 
-export interface AssetController {
-  /**
-   * Marks the asset in the recording timeline. Resolves immediately after
-   * recording the start and end events.
-   *
-   * The renderer places the asset at this point in the video and plays it
-   * for its natural duration — no timing config required.
-   *
-   * @example
-   * ```ts
-   * const assets = createAssets({
-   *   logo:  { path: './logo.png',  audio: 0,   fullScreen: false },
-   *   intro: { path: './intro.mp4', audio: 1.0, fullScreen: true },
-   * })
-   *
-   * await assets.logo.start()
-   * await page.goto('/dashboard')
-   * await assets.intro.start()
-   * ```
-   */
-  start(): Promise<void>
-}
+/**
+ * An asset controller. Awaiting it marks the asset in the recording timeline.
+ *
+ * The renderer places the asset at this point in the video and plays it for
+ * its natural duration — no timing config required.
+ *
+ * @example
+ * ```ts
+ * await assets.intro
+ * await page.goto('/dashboard')
+ * await assets.logo
+ * ```
+ */
+export type AssetController = PromiseLike<void>
 
 export type Assets<T extends Record<string, AssetConfig>> = {
   [K in keyof T]: AssetController
@@ -74,9 +66,8 @@ export type Assets<T extends Record<string, AssetConfig>> = {
 /**
  * Creates a set of typed asset controllers, one per key in the map.
  *
- * Each controller exposes a single `start()` method that marks the asset
- * in the recording timeline. The renderer places the asset at that point
- * and plays it for its natural duration.
+ * Awaiting a controller marks the asset in the recording timeline.
+ * The renderer places the asset at that point and plays it for its natural duration.
  *
  * @example
  * ```ts
@@ -86,9 +77,9 @@ export type Assets<T extends Record<string, AssetConfig>> = {
  * })
  *
  * video('Product demo', async ({ page }) => {
- *   await assets.logo.start()
+ *   await assets.intro
  *   await page.goto('/dashboard')
- *   await assets.intro.start()
+ *   await assets.logo
  * })
  * ```
  */
@@ -110,16 +101,19 @@ function createAssetController(
   name: string,
   config: AssetConfig
 ): AssetController {
+  const startFn = (): Promise<void> => {
+    if (activeRecorder === null) return Promise.resolve()
+    activeRecorder.addAssetStart(
+      name,
+      config.path,
+      config.audio,
+      config.fullScreen
+    )
+    return Promise.resolve()
+  }
   return {
-    start(): Promise<void> {
-      if (activeRecorder === null) return Promise.resolve()
-      activeRecorder.addAssetStart(
-        name,
-        config.path,
-        config.audio,
-        config.fullScreen
-      )
-      return Promise.resolve()
+    then(resolve, reject) {
+      return startFn().then(resolve, reject)
     },
   }
 }

@@ -1145,12 +1145,20 @@ export default defineConfig({
 
 function generatePackageJson(
   projectName: string,
-  localPackagePath?: string
+  localPackagePath?: string,
+  includePlaywrightCli = false
 ): string {
   const npmName = projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-')
   const screenciVersion = localPackagePath
     ? `file:${localPackagePath}`
     : 'latest'
+  const devDependencies: Record<string, string> = {
+    '@types/node': '^25.0.0',
+    tsx: '^4.21.0',
+  }
+  if (includePlaywrightCli) {
+    devDependencies['@playwright/cli'] = 'latest'
+  }
   return (
     JSON.stringify(
       {
@@ -1166,10 +1174,7 @@ function generatePackageJson(
         dependencies: {
           screenci: screenciVersion,
         },
-        devDependencies: {
-          '@types/node': '^25.0.0',
-          tsx: '^4.21.0',
-        },
+        devDependencies,
       },
       null,
       2
@@ -1373,6 +1378,12 @@ async function runInit(
     process.exit(1)
   }
 
+  const shouldAddPlaywrightCli = await confirm({
+    message:
+      'Do you want to write videos with an AI agent based on a URL? playwright-cli is recommended and will be added as a dev dependency.',
+    default: true,
+  })
+
   await mkdir(resolve(projectDir, 'videos'), { recursive: true })
   await mkdir(resolve(projectDir, '.github', 'workflows'), { recursive: true })
   await writeFile(
@@ -1381,7 +1392,7 @@ async function runInit(
   )
   await writeFile(
     resolve(projectDir, 'package.json'),
-    generatePackageJson(dirName, localPackagePath)
+    generatePackageJson(dirName, localPackagePath, shouldAddPlaywrightCli)
   )
   await writeFile(resolve(projectDir, 'Dockerfile'), generateDockerfile())
   await writeFile(resolve(projectDir, '.gitignore'), generateGitignore())
@@ -1404,6 +1415,37 @@ async function runInit(
   logger.info('  .github/workflows/record.yml')
   logger.info('')
   logger.info('screenci requires dependencies to be installed.')
+
+  const shouldInstallSkills = await confirm({
+    message:
+      "Add ScreenCI skills now with 'npx --yes skills add screenci/screenci'?",
+    default: true,
+  })
+
+  if (shouldInstallSkills) {
+    if (verbose) {
+      logger.info("Running 'npx --yes skills add screenci/screenci'...")
+      await spawnInherited(
+        'npx',
+        ['--yes', 'skills', 'add', 'screenci/screenci'],
+        projectDir,
+        'screenci init'
+      )
+    } else {
+      const spinner = ora('Adding ScreenCI skills...').start()
+      try {
+        await spawnSilent(
+          'npx',
+          ['--yes', 'skills', 'add', 'screenci/screenci'],
+          projectDir
+        )
+        spinner.succeed('ScreenCI skills added')
+      } catch (err) {
+        spinner.fail('ScreenCI skills install failed')
+        throw err
+      }
+    }
+  }
 
   const shouldInstall = await confirm({
     message: "Run 'npm install' now?",
@@ -1462,13 +1504,16 @@ async function runInit(
   logger.info('')
   logger.info('Next steps:')
   logger.info(`  cd ${dirName}`)
+  if (!shouldInstallSkills) {
+    logger.info('  npx --yes skills add screenci/screenci')
+  }
   if (!shouldInstall) {
     logger.info('  npm install')
   }
   if (!shouldInstall || !chromiumReady) {
     logger.info('  npx playwright install chromium --with-deps')
   }
-  logger.info('  npm run record')
+  logger.info('  npx screenci record')
 }
 
 export async function main() {

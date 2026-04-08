@@ -5,7 +5,7 @@ description: Complete guide to createVoiceOvers — voices, languages, regions, 
 
 # Voiceovers & Localization
 
-`createVoiceOvers()` is how you add narration to a ScreenCI video. You write the text; ScreenCI synthesizes the audio and syncs it to the recording at render time. Each key becomes a typed controller with `start()` and `end()`.
+`createVoiceOvers()` is how you add narration to a ScreenCI video. You write the text; ScreenCI synthesizes the audio and syncs it to the recording at render time. Each key becomes a typed controller that you await directly to start it.
 
 ```ts
 import { createVoiceOvers, voices } from 'screenci'
@@ -420,26 +420,4 @@ You can mix file-based and synthesized entries within the same `createVoiceOvers
 
 ---
 
-## Multi-language type safety
-
-TypeScript enforces that every language in the map has exactly the same set of caption keys. A missing key in any language is a compile error — not a runtime surprise.
-
-```ts
-const voiceOvers = createVoiceOvers({
-  voice: { name: voices.Ava },
-  languages: {
-    en: {
-      captions: { intro: 'Welcome.', save: 'Save changes.' },
-    },
-    fi: {
-      voice: { name: voices.Nora },
-      captions: {
-        intro: 'Tervetuloa.',
-        // save: 'Tallenna.',  ← TypeScript error if this line is missing
-      },
-    },
-  },
-})
-```
-
-Only one voice per language is allowed across the entire video file. If two `createVoiceOvers()` calls in the same file specify different voices for the same language code, ScreenCI throws at runtime when `start()` is first called.
+Only one voice per language is allowed across the entire video file. If two `createVoiceOvers()` calls in the same file specify different voices for the same language code, ScreenCI throws at runtime when the first voiceOver is awaited.

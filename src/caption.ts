@@ -126,45 +126,70 @@ function toRecordedVoice(
   }
 }
 
-function captionWaitEnd(): void {
-  if (activeRecorder === null) return
-  if (isInsideHide())
-    throw new Error('Cannot call caption.waitEnd inside hide()')
-  if (!captionStarted) throw new Error('No caption has been started')
+/**
+ * Auto-ends any currently active caption before starting a new one.
+ * Called internally at the start of every voiceOver controller.
+ */
+function captionAutoEnd(): void {
+  if (!captionStarted || activeRecorder === null) return
   activeRecorder.addCaptionEnd()
   sleepFn(2 * ONE_FRAME_MS)
+  captionStarted = false
 }
 
-export interface CaptionController {
-  /**
-   * Begins voiceover audio and shows the caption overlay.
-   *
-   * @example
-   * ```ts
-   * await captions.intro.start()
-   * await page.goto('/dashboard')
-   * await captions.intro.end()
-   * ```
-   */
-  start(): Promise<void>
-  /**
-   * Hides the caption overlay and stops voiceover playback.
-   * Always call this after every `start()`.
-   */
-  end(): Promise<void>
+async function doWaitEnd(): Promise<void> {
+  if (activeRecorder === null || !captionStarted) return
+  if (isInsideHide()) throw new Error('Cannot call waitEnd inside hide()')
+  activeRecorder.addCaptionEnd()
+  sleepFn(2 * ONE_FRAME_MS)
+  captionStarted = false
 }
+
+/**
+ * A voiceOver controller. Awaiting it starts the voiceover.
+ *
+ * @example
+ * ```ts
+ * await voiceOvers.intro
+ * await page.goto('/dashboard')
+ * await voiceOvers.nextStep
+ * ```
+ */
+export type CaptionController = PromiseLike<void>
 
 /** A single caption value in a multi-language map: either TTS text or a file-based entry. */
 export type CaptionMapValue = string | { path: string; subtitle?: string }
 
 export type Captions<T extends Record<string, CaptionMapValue>> = {
   [K in keyof T]: CaptionController
+} & {
+  /**
+   * Waits for the current voiceOver to finish before the next action.
+   *
+   * Only needed when an action must happen _after_ a voiceOver ends.
+   * Consecutive `await voiceOvers.x` calls sequence automatically — each
+   * one ends the previous before starting.
+   *
+   * @example
+   * ```ts
+   * await voiceOvers.intro
+   * await voiceOvers.waitEnd() // wait for intro audio to finish
+   * await page.click('#next')  // click happens after intro ends
+   * ```
+   */
+  waitEnd(): Promise<void>
 }
 
 export type VideoCaptionEntry = string | { path: string; subtitle?: string }
 
 export type VideoCaptions<T extends Record<string, VideoCaptionEntry>> = {
   [K in keyof T]: CaptionController
+} & {
+  /**
+   * Waits for the current voiceOver to finish before the next action.
+   * @see {@link Captions.waitEnd}
+   */
+  waitEnd(): Promise<void>
 }
 
 /**
@@ -314,13 +339,26 @@ type LanguagesMap<
  * const voiceOvers = createVoiceOvers({
  *   voice: { name: voices.Ava, style: 'Clear and friendly' },
  *   languages: {
- *     en: { captions: { intro: 'Welcome.' } },
+ *     en: { captions: { intro: 'Welcome.', next: 'Click here.' } },
  *     fi: {
  *       voice: { name: voices.Nora, style: 'Selkeä opastus', seed: 42 },
- *       captions: { intro: 'Tervetuloa.' },
+ *       captions: { intro: 'Tervetuloa.', next: 'Napsauta tästä.' },
  *     },
  *   },
  * })
+ *
+ * // Await a voiceOver directly to start it:
+ * await voiceOvers.intro
+ * await page.goto('/dashboard')
+ *
+ * // Consecutive voiceOvers sequence automatically:
+ * await voiceOvers.intro
+ * await voiceOvers.next  // ends intro, then starts next
+ *
+ * // Wait for audio to finish before an action:
+ * await voiceOvers.intro
+ * await voiceOvers.waitEnd()
+ * await page.click('#start')
  * ```
  */
 export function createVoiceOvers<
@@ -433,9 +471,9 @@ function buildCaptionsFromInput(
   }
 
   const firstEntry = languages[firstLang]
-  if (!firstEntry) return {}
+  if (!firstEntry) return {} as Captions<Record<string, CaptionMapValue>>
 
-  const result: Captions<Record<string, CaptionMapValue>> = {}
+  const result = {} as Captions<Record<string, CaptionMapValue>>
 
   for (const key in firstEntry.captions) {
     const keyStr = key
@@ -451,21 +489,73 @@ function buildCaptionsFromInput(
     }
 
     if (hasFileEntry) {
-      result[keyStr] = {
-        async start() {
-          if (activeRecorder === null) return
-          if (isInsideHide())
-            throw new Error('Cannot call caption.start inside hide()')
-          for (const lang of langs) {
-            activeRecorder.registerVoiceForLang(
-              lang,
-              resolvedVoiceMeta.get(lang)!
-            )
+      const fileStartFn = async (): Promise<void> => {
+        if (isInsideHide())
+          throw new Error('Cannot start a voiceOver inside hide()')
+        if (activeRecorder === null) return
+        captionAutoEnd()
+        for (const lang of langs) {
+          activeRecorder.registerVoiceForLang(
+            lang,
+            resolvedVoiceMeta.get(lang)!
+          )
+        }
+        const videoTranslations: Record<string, VideoCaptionTranslation> = {}
+        for (const lang of langs) {
+          const val = languages[lang]?.captions[keyStr]
+          if (val === undefined) continue
+          const voice = resolvedVoices.get(lang)!
+          const region = languages[lang]?.region
+          const meta = resolvedVoiceMeta.get(lang)
+          const modelType = meta?.modelType
+          const style = meta?.style
+          const accent = meta?.accent
+          const pacing = meta?.pacing
+          if (typeof val === 'string') {
+            videoTranslations[lang] = {
+              text: val,
+              voice: toRecordedVoice(voice),
+              ...(region !== undefined && { region }),
+              ...(modelType !== undefined && { modelType }),
+              ...(style !== undefined && { style }),
+              ...(accent !== undefined && { accent }),
+              ...(pacing !== undefined && { pacing }),
+            }
+          } else {
+            videoTranslations[lang] = entryToVideoTranslation(val)
           }
-          const videoTranslations: Record<string, VideoCaptionTranslation> = {}
-          for (const lang of langs) {
-            const val = languages[lang]?.captions[keyStr]
-            if (val === undefined) continue
+        }
+        captionStarted = true
+        sleepFn(2 * ONE_FRAME_MS)
+        activeRecorder.addVideoCaptionStart(
+          keyStr,
+          undefined,
+          undefined,
+          undefined,
+          videoTranslations
+        )
+      }
+      result[keyStr] = {
+        then(resolve, reject) {
+          return fileStartFn().then(resolve, reject)
+        },
+      }
+    } else {
+      const textStartFn = async (): Promise<void> => {
+        if (isInsideHide())
+          throw new Error('Cannot start a voiceOver inside hide()')
+        if (activeRecorder === null) return
+        captionAutoEnd()
+        for (const lang of langs) {
+          activeRecorder.registerVoiceForLang(
+            lang,
+            resolvedVoiceMeta.get(lang)!
+          )
+        }
+        const textTranslations: Record<string, CaptionTranslation> = {}
+        for (const lang of langs) {
+          const val = languages[lang]?.captions[keyStr]
+          if (val !== undefined && typeof val === 'string') {
             const voice = resolvedVoices.get(lang)!
             const region = languages[lang]?.region
             const meta = resolvedVoiceMeta.get(lang)
@@ -473,84 +563,30 @@ function buildCaptionsFromInput(
             const style = meta?.style
             const accent = meta?.accent
             const pacing = meta?.pacing
-            if (typeof val === 'string') {
-              videoTranslations[lang] = {
-                text: val,
-                voice: toRecordedVoice(voice),
-                ...(region !== undefined && { region }),
-                ...(modelType !== undefined && { modelType }),
-                ...(style !== undefined && { style }),
-                ...(accent !== undefined && { accent }),
-                ...(pacing !== undefined && { pacing }),
-              }
-            } else {
-              videoTranslations[lang] = entryToVideoTranslation(val)
+            textTranslations[lang] = {
+              text: val,
+              voice: toRecordedVoice(voice),
+              ...(region !== undefined && { region }),
+              ...(modelType !== undefined && { modelType }),
+              ...(style !== undefined && { style }),
+              ...(accent !== undefined && { accent }),
+              ...(pacing !== undefined && { pacing }),
             }
           }
-          captionStarted = true
-          sleepFn(2 * ONE_FRAME_MS)
-          activeRecorder.addVideoCaptionStart(
-            keyStr,
-            undefined,
-            undefined,
-            undefined,
-            videoTranslations
-          )
-        },
-        async end() {
-          captionWaitEnd()
-        },
+        }
+        captionStarted = true
+        sleepFn(2 * ONE_FRAME_MS)
+        activeRecorder.addCaptionStart('', keyStr, undefined, textTranslations)
       }
-    } else {
       result[keyStr] = {
-        async start() {
-          if (activeRecorder === null) return
-          if (isInsideHide())
-            throw new Error('Cannot call caption.start inside hide()')
-          for (const lang of langs) {
-            activeRecorder.registerVoiceForLang(
-              lang,
-              resolvedVoiceMeta.get(lang)!
-            )
-          }
-          const textTranslations: Record<string, CaptionTranslation> = {}
-          for (const lang of langs) {
-            const val = languages[lang]?.captions[keyStr]
-            if (val !== undefined && typeof val === 'string') {
-              const voice = resolvedVoices.get(lang)!
-              const region = languages[lang]?.region
-              const meta = resolvedVoiceMeta.get(lang)
-              const modelType = meta?.modelType
-              const style = meta?.style
-              const accent = meta?.accent
-              const pacing = meta?.pacing
-              textTranslations[lang] = {
-                text: val,
-                voice: toRecordedVoice(voice),
-                ...(region !== undefined && { region }),
-                ...(modelType !== undefined && { modelType }),
-                ...(style !== undefined && { style }),
-                ...(accent !== undefined && { accent }),
-                ...(pacing !== undefined && { pacing }),
-              }
-            }
-          }
-          captionStarted = true
-          sleepFn(2 * ONE_FRAME_MS)
-          activeRecorder.addCaptionStart(
-            '',
-            keyStr,
-            undefined,
-            textTranslations
-          )
-        },
-        async end() {
-          captionWaitEnd()
+        then(resolve, reject) {
+          return textStartFn().then(resolve, reject)
         },
       }
     }
   }
 
+  ;(result as unknown as { waitEnd: () => Promise<void> }).waitEnd = doWaitEnd
   return result
 }
 
@@ -664,26 +700,28 @@ function buildSingleLangVideoCaptions<
     const subtitle = typeof entry === 'string' ? undefined : entry.subtitle
     videoCaptionFileHashes.set(assetPath, '')
 
-    result[key] = {
-      async start() {
-        if (activeRecorder === null) return
-        if (isInsideHide())
-          throw new Error('Cannot call videoCaption.start inside hide()')
-        const assetHash = videoCaptionFileHashes.get(assetPath)
-        if (!assetHash)
-          throw new Error(
-            `Video caption asset hash missing for path: ${assetPath}`
-          )
-        captionStarted = true
-        sleepFn(2 * ONE_FRAME_MS)
-        activeRecorder.addVideoCaptionStart(key, assetPath, assetHash, subtitle)
-      },
-      async end() {
-        captionWaitEnd()
+    const startFn = async (): Promise<void> => {
+      if (isInsideHide())
+        throw new Error('Cannot start a voiceOver inside hide()')
+      if (activeRecorder === null) return
+      captionAutoEnd()
+      const assetHash = videoCaptionFileHashes.get(assetPath)
+      if (!assetHash)
+        throw new Error(
+          `Video caption asset hash missing for path: ${assetPath}`
+        )
+      captionStarted = true
+      sleepFn(2 * ONE_FRAME_MS)
+      activeRecorder.addVideoCaptionStart(key, assetPath, assetHash, subtitle)
+    }
+    ;(result as unknown as Record<string, CaptionController>)[key] = {
+      then(resolve, reject) {
+        return startFn().then(resolve, reject)
       },
     }
   }
 
+  ;(result as unknown as { waitEnd: () => Promise<void> }).waitEnd = doWaitEnd
   return result
 }
 
@@ -693,7 +731,11 @@ function buildMultiLangVideoCaptions<
 >(languagesMap: MultiLangVideoCaptionMap<L, T>): VideoCaptions<T> {
   const langs = Object.keys(languagesMap) as L[]
   const firstLang = langs[0]
-  if (firstLang === undefined) return {} as VideoCaptions<T>
+  if (firstLang === undefined) {
+    const empty = {} as VideoCaptions<T>
+    ;(empty as unknown as { waitEnd: () => Promise<void> }).waitEnd = doWaitEnd
+    return empty
+  }
 
   const result = {} as VideoCaptions<T>
 
@@ -710,26 +752,28 @@ function buildMultiLangVideoCaptions<
       }
     }
 
-    result[key as keyof T] = {
-      async start() {
-        if (activeRecorder === null) return
-        if (isInsideHide())
-          throw new Error('Cannot call videoCaption.start inside hide()')
-        captionStarted = true
-        sleepFn(2 * ONE_FRAME_MS)
-        activeRecorder.addVideoCaptionStart(
-          keyStr,
-          undefined,
-          undefined,
-          undefined,
-          translations
-        )
-      },
-      async end() {
-        captionWaitEnd()
+    const startFn = async (): Promise<void> => {
+      if (isInsideHide())
+        throw new Error('Cannot start a voiceOver inside hide()')
+      if (activeRecorder === null) return
+      captionAutoEnd()
+      captionStarted = true
+      sleepFn(2 * ONE_FRAME_MS)
+      activeRecorder.addVideoCaptionStart(
+        keyStr,
+        undefined,
+        undefined,
+        undefined,
+        translations
+      )
+    }
+    ;(result as unknown as Record<string, CaptionController>)[key] = {
+      then(resolve, reject) {
+        return startFn().then(resolve, reject)
       },
     }
   }
 
+  ;(result as unknown as { waitEnd: () => Promise<void> }).waitEnd = doWaitEnd
   return result
 }

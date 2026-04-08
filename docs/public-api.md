@@ -1,11 +1,13 @@
 ---
 title: Public Video API
-description: HTTP endpoints for accessing published videos, subtitles, and metadata without authentication.
+description: HTTP endpoints for accessing published videos, thumbnails, subtitles, and metadata without authentication.
 ---
 
 # Public Video API
 
 ScreenCI exposes a small set of unauthenticated HTTP endpoints for serving published videos. Once a video is published, these URLs can be embedded in websites, shared with users, or consumed by downstream tools.
+
+For the full publishing workflow, selection model, and embed guidance, see [Public URLs](./public-urls.md).
 
 All endpoints are served under `/public/:id/`.
 
@@ -67,6 +69,32 @@ When the language is not found, the response includes the list of available lang
 
 ---
 
+## `GET /public/:id/:language/thumbnail`
+
+Serves the thumbnail image for a specific language variant.
+
+### Query parameters
+
+| Parameter  | Type     | Description                                                                  |
+| ---------- | -------- | ---------------------------------------------------------------------------- |
+| `filename` | `string` | Filename used in the `Content-Disposition` header (default: `thumbnail.jpg`) |
+| `download` | `1`      | When set to `1`, adds `Content-Disposition: attachment`                      |
+
+### Response headers
+
+```
+Content-Type: image/jpeg
+Content-Length: <bytes>
+```
+
+### Error responses
+
+| Status | Condition                                                                                      |
+| ------ | ---------------------------------------------------------------------------------------------- |
+| `404`  | No public URL configured, the requested language is not available, or the thumbnail is missing |
+
+---
+
 ## `GET /public/:id/:language/subtitle`
 
 Serves the WebVTT subtitle file for a specific language variant.
@@ -99,7 +127,11 @@ Access-Control-Allow-Origin: *
 Replace `YOUR_VIDEO_ID` with the ID of your published video.
 
 ```html
-<video controls>
+<video
+  controls
+  crossorigin="anonymous"
+  poster="https://api.screenci.com/public/YOUR_VIDEO_ID/en/thumbnail"
+>
   <source
     src="https://api.screenci.com/public/YOUR_VIDEO_ID/en/video"
     type="video/mp4"

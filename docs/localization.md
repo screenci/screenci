@@ -420,4 +420,4 @@ You can mix file-based and synthesized entries within the same `createVoiceOvers
 
 ---
 
-Only one voice per language is allowed across the entire video file. If two `createVoiceOvers()` calls in the same file specify different voices for the same language code, ScreenCI throws at runtime when the first voiceOver is awaited.
+Voice settings are stored per caption entry, not per language for the whole file. You can use different speakers, `modelType` values, and expressive settings for different captions even when they share the same language code.

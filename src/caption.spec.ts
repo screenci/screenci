@@ -6,7 +6,7 @@ import {
   setSleepFn,
 } from './caption.js'
 import { hide, setActiveHideRecorder } from './hide.js'
-import type { IEventRecorder, VoiceLanguageMeta } from './events.js'
+import type { IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
 import type { CustomVoiceRef } from './voices.js'
 import { voices } from './voices.js'
@@ -343,8 +343,8 @@ describe('createVoiceOvers', () => {
     })
   })
 
-  describe('runtime voice conflict validation (via recorder)', () => {
-    it('throws when two createVoiceOvers calls use different voices for the same language', async () => {
+  describe('runtime voice registration (via recorder)', () => {
+    it('allows different voices for the same language across captions', async () => {
       const captions1 = createVoiceOvers({
         voice: { name: voices.Ava },
         languages: { en: { captions: { intro: 'Hello' } } },
@@ -354,22 +354,8 @@ describe('createVoiceOvers', () => {
         languages: { en: { captions: { other: 'World' } } },
       })
 
-      // Simulate what EventRecorder.registerVoiceForLang does
-      ;(recorder.registerVoiceForLang as ReturnType<typeof vi.fn>)
-        .mockImplementationOnce((_lang: string, _meta: VoiceLanguageMeta) => {
-          // First call: en=Ava, no conflict
-        })
-        .mockImplementationOnce((_lang: string, meta: VoiceLanguageMeta) => {
-          // Second call: en=Aria, recorder throws conflict
-          throw new Error(
-            `Multiple voice names registered for language "en": "Ava" and "${meta.name}". Only one voice per language per video is allowed.`
-          )
-        })
-
       await captions1.intro
-      await expect(captions2.other).rejects.toThrow(
-        'Multiple voice names registered for language "en": "Ava" and "Aria"'
-      )
+      await expect(captions2.other).resolves.toBeUndefined()
     })
 
     it('does not throw when two createVoiceOvers calls use the same voice for a language', async () => {

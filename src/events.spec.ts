@@ -491,5 +491,22 @@ describe('EventRecorder', () => {
       const parsed: RecordingData = JSON.parse(content)
       expect(parsed.metadata?.languages).toEqual(['en'])
     })
+
+    it('does not write metadata.voices even when voices are registered', async () => {
+      recorder.start()
+      recorder.registerVoiceForLang('en', { name: 'Ava' })
+      recorder.registerVoiceForLang('en', {
+        name: 'Nora',
+        modelType: 'expressive',
+      })
+      recorder.addCaptionStart('', 'greeting', undefined, {
+        en: { text: 'Hello', voice: voices.Ava, modelType: 'consistent' },
+      })
+      await recorder.writeToFile(tmpDir, 'Test Video')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed = JSON.parse(content) as { metadata?: { voices?: unknown } }
+      expect(parsed.metadata?.voices).toBeUndefined()
+    })
   })
 })

@@ -258,8 +258,6 @@ export type RecordingMetadata = {
   videoName: string
   /** Language codes present in multi-language captions, e.g. `['en', 'de']`. Omitted when no multi-language captions are used. */
   languages?: string[]
-  /** Per-language voice configuration resolved from `createVoiceOvers`. */
-  voices?: Record<string, VoiceLanguageMeta>
 }
 
 export type RecordingData = {
@@ -306,9 +304,8 @@ export interface IEventRecorder {
   addAutoZoomStart(options?: AutoZoomOptions): void
   addAutoZoomEnd(options?: AutoZoomOptions): void
   /**
-   * Registers the voice used for a given language in this recording.
-   * Throws if a different voice has already been registered for the same language
-   * in this recording (multiple `createVoiceOvers` calls with conflicting voices).
+   * Registers voice metadata seen during recording.
+   * Kept for API compatibility; voice settings are stored per caption event.
    */
   registerVoiceForLang(lang: string, meta: VoiceLanguageMeta): void
   getEvents(): RecordingEvent[]
@@ -320,22 +317,13 @@ export class EventRecorder implements IEventRecorder {
   private startTime: number | null = null
   private readonly recordOptions: RecordOptions | undefined
   private readonly renderOptions: RenderOptions | undefined
-  private readonly voiceMetaByLang = new Map<string, VoiceLanguageMeta>()
 
   constructor(renderOptions?: RenderOptions, recordOptions?: RecordOptions) {
     this.recordOptions = recordOptions
     this.renderOptions = renderOptions
   }
 
-  registerVoiceForLang(lang: string, meta: VoiceLanguageMeta): void {
-    const existing = this.voiceMetaByLang.get(lang)
-    if (existing !== undefined && existing.name !== meta.name) {
-      throw new Error(
-        `Multiple voice names registered for language "${lang}": "${existing.name}" and "${meta.name}". Only one voice per language per video is allowed.`
-      )
-    }
-    this.voiceMetaByLang.set(lang, meta)
-  }
+  registerVoiceForLang(_lang: string, _meta: VoiceLanguageMeta): void {}
 
   start(): void {
     this.startTime = Date.now()
@@ -582,11 +570,6 @@ export class EventRecorder implements IEventRecorder {
     }
     const languages = languageSet.size > 0 ? [...languageSet].sort() : undefined
 
-    const voicesMeta =
-      this.voiceMetaByLang.size > 0
-        ? Object.fromEntries(this.voiceMetaByLang)
-        : undefined
-
     const data: RecordingData = {
       events: this.events,
       renderOptions: resolved,
@@ -596,7 +579,6 @@ export class EventRecorder implements IEventRecorder {
       metadata: {
         videoName,
         ...(languages !== undefined && { languages }),
-        ...(voicesMeta !== undefined && { voices: voicesMeta }),
       },
     }
     await writeFile(filePath, JSON.stringify(data, null, 2))

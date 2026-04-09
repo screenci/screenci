@@ -3,6 +3,8 @@ import type { ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
 import pc from 'picocolors'
 import { logger } from './src/logger.js'
+import type { VoiceKey } from './src/voices.js'
+import type { RecordingData } from './src/recording.js'
 
 const mockSpawn = vi.fn()
 const mockSpawnSync = vi.fn()
@@ -1563,7 +1565,7 @@ describe('CLI', () => {
       const { annotateRecordingDataWithAssetHashes, stripVoicePath } =
         await import('./cli')
 
-      expect(stripVoicePath('fi.Selma')).toBe('fi.Selma')
+      expect(stripVoicePath('fi.Selma' as VoiceKey)).toBe('fi.Selma')
       expect(
         stripVoicePath({
           assetHash: 'abc123',
@@ -1579,14 +1581,13 @@ describe('CLI', () => {
                 type: 'captionStart',
                 timeMs: 0,
                 name: 'intro',
+                // intentionally missing `voice` to test runtime handling of partial data
                 translations: {
-                  fi: {
-                    text: 'Hei',
-                  },
+                  fi: { text: 'Hei' },
                 },
               },
             ],
-          },
+          } as unknown as RecordingData,
           []
         )
       ).toEqual({

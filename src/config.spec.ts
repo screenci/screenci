@@ -60,7 +60,7 @@ describe('defineConfig', () => {
       forbidOnly: true,
       reporter: 'html',
       use: {
-        trace: 'on-first-retry',
+        trace: 'retain-on-failure',
       },
       projects: [
         {

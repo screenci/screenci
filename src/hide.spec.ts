@@ -5,17 +5,16 @@ import type { IEventRecorder } from './events.js'
 function makeRecorder(): IEventRecorder {
   return {
     start: vi.fn(),
-    addClick: vi.fn(),
-    addMouseMove: vi.fn(),
-    addMouseShow: vi.fn(),
-    addMouseHide: vi.fn(),
+    addInput: vi.fn(),
     addCaptionStart: vi.fn(),
     addCaptionEnd: vi.fn(),
+    addVideoCaptionStart: vi.fn(),
+    addAssetStart: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),
     addAutoZoomStart: vi.fn(),
     addAutoZoomEnd: vi.fn(),
-    addInput: vi.fn(),
+    registerVoiceForLang: vi.fn(),
     getEvents: vi.fn(() => []),
     writeToFile: vi.fn(),
   }

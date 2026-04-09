@@ -11,15 +11,16 @@ import type { IEventRecorder } from './events.js'
 function makeRecorder(): IEventRecorder {
   return {
     start: vi.fn(),
-    addClick: vi.fn(),
-    addMouseMove: vi.fn(),
+    addInput: vi.fn(),
     addCaptionStart: vi.fn(),
     addCaptionEnd: vi.fn(),
+    addVideoCaptionStart: vi.fn(),
+    addAssetStart: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),
     addAutoZoomStart: vi.fn(),
     addAutoZoomEnd: vi.fn(),
-    addInput: vi.fn(),
+    registerVoiceForLang: vi.fn(),
     getEvents: vi.fn(() => []),
     writeToFile: vi.fn(),
   }
@@ -211,7 +212,7 @@ describe('autoZoom', () => {
       await vi.runAllTimersAsync()
       await p
       expect(locDuringFn).not.toBeNull()
-      expect(locDuringFn?.x).toBe(50)
+      expect(locDuringFn!.x).toBe(50)
       expect(getLastZoomLocation()).toBeNull() // reset after
     })
   })

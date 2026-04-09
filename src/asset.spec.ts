@@ -9,15 +9,16 @@ function createMockRecorder(): IEventRecorder {
     addInput: vi.fn(),
     addCaptionStart: vi.fn(),
     addCaptionEnd: vi.fn(),
+    addVideoCaptionStart: vi.fn(),
     addAssetStart: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),
     addAutoZoomStart: vi.fn(),
     addAutoZoomEnd: vi.fn(),
     registerVoiceForLang: vi.fn(),
-    getEvents: vi.fn<[], RecordingEvent[]>().mockReturnValue([]),
+    getEvents: vi.fn<() => RecordingEvent[]>().mockReturnValue([]),
     writeToFile: vi
-      .fn<[string, string], Promise<void>>()
+      .fn<(dir: string, videoName: string) => Promise<void>>()
       .mockResolvedValue(undefined),
   }
 }

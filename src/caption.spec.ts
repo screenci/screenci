@@ -24,9 +24,9 @@ function createMockRecorder(): IEventRecorder {
     addAutoZoomStart: vi.fn(),
     addAutoZoomEnd: vi.fn(),
     registerVoiceForLang: vi.fn(),
-    getEvents: vi.fn<[], RecordingEvent[]>().mockReturnValue([]),
+    getEvents: vi.fn<() => RecordingEvent[]>().mockReturnValue([]),
     writeToFile: vi
-      .fn<[string, string], Promise<void>>()
+      .fn<(dir: string, videoName: string) => Promise<void>>()
       .mockResolvedValue(undefined),
   }
 }
@@ -135,7 +135,6 @@ describe('createVoiceOvers', () => {
     expect(() =>
       createVoiceOvers({
         voice: { name: voices.Ava },
-        // @ts-expect-error — empty languages should still throw at runtime
         languages: {},
       })
     ).toThrow('createVoiceOvers requires at least one language in "languages"')

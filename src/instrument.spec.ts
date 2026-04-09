@@ -40,6 +40,9 @@ function makeRecorder() {
     addHideEnd: vi.fn(),
     addAutoZoomStart: vi.fn(),
     addAutoZoomEnd: vi.fn(),
+    addVideoCaptionStart: vi.fn(),
+    addAssetStart: vi.fn(),
+    registerVoiceForLang: vi.fn(),
     getEvents: vi.fn(() => []),
     writeToFile: vi.fn(),
   }
@@ -366,7 +369,13 @@ describe('instrumentLocator', () => {
     instrumentLocator(locator)
 
     await Promise.all([
-      locator.fill('hi', { hideMouse: true }),
+      // hideMouse is a screenci extension; cast past Playwright's native fill type
+      (
+        locator.fill as (
+          v: string,
+          opts: { hideMouse: boolean }
+        ) => Promise<void>
+      )('hi', { hideMouse: true }),
       vi.runAllTimersAsync(),
     ])
 

@@ -17,7 +17,7 @@ function createMockSuite(tests: string[]): Suite {
   return {
     tests: tests.map(createMockTest),
     suites: [],
-  } as Suite
+  } as unknown as Suite
 }
 
 // Helper to create a mock suite with nested suites
@@ -25,7 +25,7 @@ function createNestedMockSuite(tests: string[], childSuites: Suite[]): Suite {
   return {
     tests: tests.map(createMockTest),
     suites: childSuites,
-  } as Suite
+  } as unknown as Suite
 }
 
 describe('VideoNameValidator Reporter', () => {
@@ -38,7 +38,7 @@ describe('VideoNameValidator Reporter', () => {
     loggerErrorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {})
     processExitSpy = vi
       .spyOn(process, 'exit')
-      .mockImplementation((code?: number): never => {
+      .mockImplementation((code?: number | string | null): never => {
         throw new Error(`process.exit called with code ${code}`)
       })
   })

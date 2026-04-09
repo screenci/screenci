@@ -6,6 +6,7 @@ export default defineConfig({
     environment: 'node',
     typecheck: {
       enabled: true,
+      tsconfig: './tsconfig.test.json',
     },
   },
 })

@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag (e.g. v1.2.3)'
+        required: true
+        type: string
+      release_library:
+        description: 'Publish screenci npm package'
+        required: true
+        type: boolean
+        default: true
+      release_image:
+        description: 'Build and push Docker image'
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  publish-npm:
+    runs-on: ubuntu-latest
+    if: ${{ inputs.release_library }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test:run
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+
+  publish-image:
+    if: ${{ inputs.release_image }}
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-and-push-image.yml
+    with:
+      tag: ${{ inputs.tag }}
+      latest: true

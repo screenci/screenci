@@ -545,6 +545,17 @@ async function findLatestEntry(screenciDir: string): Promise<string | null> {
   return latestEntry
 }
 
+async function hashFile(filePath: string): Promise<string> {
+  return new Promise((resolveHash, reject) => {
+    const hash = createHash('sha256')
+    const stream = createReadStream(filePath)
+
+    stream.on('data', (chunk) => hash.update(chunk))
+    stream.on('error', reject)
+    stream.on('end', () => resolveHash(hash.digest('hex')))
+  })
+}
+
 async function prepareCustomVoiceAssets(
   data: RecordingData,
   configDir: string
@@ -944,6 +955,10 @@ async function uploadRecordings(
       const uploadSpinner = ora(`Uploading "${videoName}"`).start()
       try {
         uploadAbort.throwIfAborted()
+        const recordingPath = resolve(screenciDir, entry, 'recording.mp4')
+        const recordingHash = existsSync(recordingPath)
+          ? await hashFile(recordingPath)
+          : undefined
         // Step 1: register upload and get recordingId
         const startResponse = await fetch(`${apiUrl}/cli/upload/start`, {
           method: 'POST',
@@ -951,7 +966,21 @@ async function uploadRecordings(
             'Content-Type': 'application/json',
             'X-ScreenCI-Secret': secret,
           },
-          body: JSON.stringify({ projectName, videoName, data }),
+          body: JSON.stringify({
+            projectName,
+            videoName,
+            data,
+            ...(recordingHash !== undefined ? { recordingHash } : {}),
+            expectedAssets: preparedUploadAssets.map((asset) => ({
+              fileHash: asset.fileHash,
+              size: asset.size,
+              path: asset.path,
+              ...(typeof asset.contentType === 'string'
+                ? { contentType: asset.contentType }
+                : {}),
+              ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
+            })),
+          }),
           signal: uploadAbort.signal,
         })
         if (!startResponse.ok) {
@@ -982,7 +1011,6 @@ async function uploadRecordings(
         )
 
         // Step 2: stream the recording video file (if it exists)
-        const recordingPath = resolve(screenciDir, entry, 'recording.mp4')
         if (existsSync(recordingPath)) {
           uploadAbort.throwIfAborted()
           const fileStat = await stat(recordingPath)

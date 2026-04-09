@@ -158,6 +158,21 @@ describe('EventRecorder', () => {
   })
 
   describe('autoZoom validation', () => {
+    it('clamps autoZoom centering values into the supported 0..1 range', () => {
+      recorder.start()
+      now = 1200
+
+      recorder.addAutoZoomStart({
+        centering: { cursor: 2, input: 5, click: -1 },
+      })
+
+      const event = recorder.getEvents()[1]
+      expect(event).toMatchObject({
+        type: 'autoZoomStart',
+        centering: { cursor: 1, input: 1, click: 0 },
+      })
+    })
+
     it('throws from addAutoZoomStart when timeMs is strictly inside an input event', () => {
       recorder.start() // startTime=1000
       recorder.addInput('click', undefined, [

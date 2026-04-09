@@ -325,6 +325,30 @@ export class EventRecorder implements IEventRecorder {
 
   registerVoiceForLang(_lang: string, _meta: VoiceLanguageMeta): void {}
 
+  private clampUnitInterval(value: number): number {
+    return Math.max(0, Math.min(1, value))
+  }
+
+  private normalizeCentering(
+    options: AutoZoomOptions | undefined
+  ): { cursor?: number; input?: number; click?: number } | undefined {
+    if (options?.centering === undefined) return undefined
+
+    const centering: { cursor?: number; input?: number; click?: number } = {}
+
+    if (options.centering.cursor !== undefined) {
+      centering.cursor = this.clampUnitInterval(options.centering.cursor)
+    }
+    if (options.centering.input !== undefined) {
+      centering.input = this.clampUnitInterval(options.centering.input)
+    }
+    if (options.centering.click !== undefined) {
+      centering.click = this.clampUnitInterval(options.centering.click)
+    }
+
+    return centering
+  }
+
   start(): void {
     this.startTime = Date.now()
     this.events.push({ type: 'videoStart', timeMs: 0 })
@@ -457,6 +481,7 @@ export class EventRecorder implements IEventRecorder {
   addAutoZoomStart(options?: AutoZoomOptions): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
+    const centering = this.normalizeCentering(options)
     for (const existing of this.events) {
       if (existing.type !== 'input') continue
       const existingStart = existing.events[0]!.startMs
@@ -473,8 +498,8 @@ export class EventRecorder implements IEventRecorder {
       easing: options?.easing ?? DEFAULT_ZOOM_EASING,
       duration: options?.duration ?? DEFAULT_ZOOM_DURATION,
       amount: options?.amount ?? DEFAULT_ZOOM_AMOUNT,
-      ...(options?.centering !== undefined && {
-        centering: options.centering,
+      ...(centering !== undefined && {
+        centering,
       }),
       ...(options?.allowZoomingOut !== undefined && {
         allowZoomingOut: options.allowZoomingOut,

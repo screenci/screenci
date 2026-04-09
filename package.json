@@ -23,6 +23,11 @@
       "types": "./dist/src/recording.d.ts",
       "import": "./dist/src/recording.js",
       "default": "./dist/src/recording.js"
+    },
+    "./voices": {
+      "types": "./dist/src/voices.d.ts",
+      "import": "./dist/src/voices.js",
+      "default": "./dist/src/voices.js"
     }
   },
   "files": [

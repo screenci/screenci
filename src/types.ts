@@ -57,7 +57,7 @@ export type Quality = '720p' | '1080p' | '1440p' | '2160p'
  * - `30` - Standard video, balanced quality and size
  * - `60` - Smooth motion, best for fast interactions
  *
- * @note Chrome caps recording at 60 FPS: https://stackoverflow.com/a/63972999
+ * @remarks Chrome caps recording at 60 FPS: https://stackoverflow.com/a/63972999
  */
 export type FPS = 24 | 30 | 60
 
@@ -358,6 +358,82 @@ export type PostClickMove =
       y: number
     })
 
+export type ScreenCILocatorClickOptions = Omit<
+  NonNullable<Parameters<Locator['click']>[0]>,
+  'steps'
+> &
+  CursorMoveTimingOption & {
+    beforeClickPause?: number
+    moveEasing?: Easing
+    postClickPause?: number
+    postClickMove?: PostClickMove
+  }
+
+export type ScreenCILocatorFillOptions = {
+  duration?: number
+  timeout?: number
+  click?: ClickBeforeFillOption
+  position?: { x: number; y: number }
+  hideMouse?: boolean
+}
+
+export type ScreenCILocatorPressSequentiallyOptions = Omit<
+  NonNullable<Parameters<Locator['pressSequentially']>[1]>,
+  'delay'
+> & {
+  delay?: number
+  click?: ClickBeforeFillOption
+  position?: { x: number; y: number }
+  hideMouse?: boolean
+}
+
+export type ScreenCILocatorCheckOptions = NonNullable<
+  Parameters<Locator['check']>[0]
+> & {
+  position?: { x: number; y: number }
+  click?: ClickBeforeFillOption
+}
+
+export type ScreenCILocatorHoverOptions = Omit<
+  NonNullable<Parameters<Locator['hover']>[0]>,
+  'steps'
+> &
+  CursorMoveTimingOption & {
+    easing?: Easing
+    hoverDuration?: number
+    position?: { x: number; y: number }
+  }
+
+export type ScreenCILocatorSelectTextOptions = Omit<
+  NonNullable<Parameters<Locator['selectText']>[0]>,
+  'steps'
+> &
+  CursorMoveTimingOption & {
+    easing?: Easing
+    beforeClickPause?: number
+    selectDuration?: number
+  }
+
+export type ScreenCILocatorDragToOptions = Omit<
+  NonNullable<Parameters<Locator['dragTo']>[1]>,
+  'steps'
+> &
+  CursorMoveTimingOption &
+  CursorDragTimingOption & {
+    moveEasing?: Easing
+    preDragPause?: number
+    dragEasing?: Easing
+    sourcePosition?: { x: number; y: number }
+    targetPosition?: { x: number; y: number }
+  }
+
+export type ScreenCILocatorSelectOptionOptions = NonNullable<
+  Parameters<Locator['selectOption']>[1]
+> & {
+  click?: ClickBeforeFillOption
+  position?: { x: number; y: number }
+}
+
 type LocatorReturnMethodNames =
   | 'locator'
   | 'getByAltText'
@@ -429,15 +505,7 @@ export type ScreenCILocator = Omit<
    * @param options.postClickMove - When provided, animates the cursor away from
    *   the element after the click (e.g. to simulate the cursor moving off a button).
    */
-  click(
-    options?: Parameters<Locator['click']>[0] &
-      CursorMoveTimingOption & {
-        beforeClickPause?: number
-        moveEasing?: Easing
-        postClickPause?: number
-        postClickMove?: PostClickMove
-      }
-  ): Promise<void>
+  click(options?: ScreenCILocatorClickOptions): Promise<void>
   /**
    * Types `value` character-by-character using `pressSequentially`.
    *
@@ -455,16 +523,7 @@ export type ScreenCILocator = Omit<
    * @param options.hideMouse - When `true`, the mouse cursor is hidden while
    *   typing and shown again on the next mouse move. Defaults to `false`.
    */
-  fill(
-    value: string,
-    options?: {
-      duration?: number
-      timeout?: number
-      click?: ClickBeforeFillOption
-      position?: { x: number; y: number }
-      hideMouse?: boolean
-    }
-  ): Promise<void>
+  fill(value: string, options?: ScreenCILocatorFillOptions): Promise<void>
   /**
    * Presses keys one by one as if on a physical keyboard.
    *
@@ -482,11 +541,7 @@ export type ScreenCILocator = Omit<
    */
   pressSequentially(
     text: string,
-    options?: Parameters<Locator['pressSequentially']>[1] & {
-      click?: ClickBeforeFillOption
-      position?: { x: number; y: number }
-      hideMouse?: boolean
-    }
+    options?: ScreenCILocatorPressSequentiallyOptions
   ): Promise<void>
   /**
    * Checks the checkbox or radio button.
@@ -496,11 +551,7 @@ export type ScreenCILocator = Omit<
    * @param options.click - When provided, animates the cursor to the element
    *   before checking it. The click timing data is embedded in the recorded event.
    */
-  check(
-    options?: Parameters<Locator['check']>[0] & {
-      click?: ClickBeforeFillOption
-    }
-  ): Promise<void>
+  check(options?: ScreenCILocatorCheckOptions): Promise<void>
   /**
    * Unchecks the checkbox.
    *
@@ -509,11 +560,7 @@ export type ScreenCILocator = Omit<
    * @param options.click - When provided, animates the cursor to the element
    *   before unchecking it. The click timing data is embedded in the recorded event.
    */
-  uncheck(
-    options?: Parameters<Locator['uncheck']>[0] & {
-      click?: ClickBeforeFillOption
-    }
-  ): Promise<void>
+  uncheck(options?: ScreenCILocatorCheckOptions): Promise<void>
   /**
    * Sets the checked state of a checkbox or radio element.
    * Delegates to the instrumented `check()` or `uncheck()` based on `checked`.
@@ -525,9 +572,7 @@ export type ScreenCILocator = Omit<
    */
   setChecked(
     checked: boolean,
-    options?: Parameters<Locator['check']>[0] & {
-      click?: ClickBeforeFillOption
-    }
+    options?: ScreenCILocatorCheckOptions
   ): Promise<void>
   /**
    * Taps the element (touch event).
@@ -549,13 +594,7 @@ export type ScreenCILocator = Omit<
    * @param options.position - Point relative to the element's top-left corner to hover over.
    *   Defaults to the element center.
    */
-  hover(
-    options?: Parameters<Locator['hover']>[0] &
-      CursorMoveTimingOption & {
-        easing?: Easing
-        hoverDuration?: number
-      }
-  ): Promise<void>
+  hover(options?: ScreenCILocatorHoverOptions): Promise<void>
   /**
    * Selects all text content of the element with an animated cursor move and
    * triple-click animation.
@@ -566,14 +605,7 @@ export type ScreenCILocator = Omit<
    * @param options.selectDuration - Total duration of the triple-click animation in ms (default: 600).
    *   Divided into 6 equal segments: 3 mouseDown + 3 mouseUp phases.
    */
-  selectText(
-    options?: Parameters<Locator['selectText']>[0] &
-      CursorMoveTimingOption & {
-        easing?: Easing
-        beforeClickPause?: number
-        selectDuration?: number
-      }
-  ): Promise<void>
+  selectText(options?: ScreenCILocatorSelectTextOptions): Promise<void>
   /**
    * Drags the element to the target locator with animated cursor movement.
    *
@@ -592,16 +624,7 @@ export type ScreenCILocator = Omit<
    * @param options.sourcePosition - Point relative to source element's top-left for the drag start.
    * @param options.targetPosition - Point relative to target element's top-left for the drop.
    */
-  dragTo(
-    target: Locator,
-    options?: Omit<NonNullable<Parameters<Locator['dragTo']>[1]>, 'steps'> &
-      CursorMoveTimingOption &
-      CursorDragTimingOption & {
-        moveEasing?: Easing
-        preDragPause?: number
-        dragEasing?: Easing
-      }
-  ): Promise<void>
+  dragTo(target: Locator, options?: ScreenCILocatorDragToOptions): Promise<void>
   /**
    * Selects an option in a `<select>` element.
    *
@@ -619,10 +642,7 @@ export type ScreenCILocator = Omit<
    */
   selectOption(
     values: Parameters<Locator['selectOption']>[0],
-    options?: Parameters<Locator['selectOption']>[1] & {
-      click?: ClickBeforeFillOption
-      position?: { x: number; y: number }
-    }
+    options?: ScreenCILocatorSelectOptionOptions
   ): Promise<string[]>
   page(): ScreenCIPage
   locator(...args: Parameters<Locator['locator']>): ScreenCILocator

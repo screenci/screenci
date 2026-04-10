@@ -40,7 +40,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "postbuild": "cp Dockerfile dist/ && sed -i '1s|.*|#!/usr/bin/env node|' dist/cli.js",
+    "postbuild": "cp Dockerfile dist/ && node -e \"const fs=require('fs'); const path='dist/cli.js'; const lines=fs.readFileSync(path,'utf8').split('\\n'); lines[0] = '#!/usr/bin/env node'; fs.writeFileSync(path, lines.join('\\n'));\"",
     "build:image": "podman build -t screenci .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

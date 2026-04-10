@@ -53,7 +53,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "prepare": "husky",
-    "release": "npm run test:run && npm publish"
+    "release": "npm run test:run && bash scripts/update-version.sh"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",

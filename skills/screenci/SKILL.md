@@ -33,7 +33,7 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 - `video()` declares one output video per test.
 - `hide()` removes setup and loading sections from the final recording.
 - `autoZoom()` follows a form or page section with smooth camera motion.
-- `createVoiceOvers()` creates typed narration and caption markers.
+- `createVoiceOvers()` creates typed narration and caption markers. Define the map once, then `await voiceOvers.key` where each line should begin. Use `await voiceOvers.waitEnd()` only when the next action must wait for audio to finish.
 
 ## Command Notes
 
@@ -46,6 +46,7 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 
 1. Start from a generated project or an existing package using ScreenCI.
 2. Edit `.video.ts` files like Playwright tests.
+   For narration, define `const voiceOvers = createVoiceOvers({ ... })` near the top of the file and trigger lines with `await voiceOvers.someKey` inside the test body.
 3. Run `npx screenci dev` to validate selectors and flow.
 4. Run `npx screenci record` to produce `.screenci/<video-name>/recording.mp4` and `data.json`.
 

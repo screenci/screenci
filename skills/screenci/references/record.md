@@ -39,3 +39,5 @@ npx screenci record
 - ScreenCI enforces single-worker recording behavior.
 - Use `hide()` for login and loading sections.
 - Use one `autoZoom()` block per form or page section rather than per click.
+- Use `createVoiceOvers()` by defining the caption map once, then `await voiceOvers.key` at the point where narration should start.
+- `await voiceOvers.key` resolves immediately while audio continues. Call `await voiceOvers.waitEnd()` only when the next action must happen after the spoken line ends.

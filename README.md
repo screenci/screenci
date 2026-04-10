@@ -84,7 +84,7 @@ screenci enforces `workers: 1`, `retries: 0`, and `fullyParallel: false` — FFm
 
 ## AI voiceovers
 
-`createVoiceOvers()` maps keys to text (or audio files). At render time screenci generates voiceover audio and syncs it to your recording.
+`createVoiceOvers()` maps keys to narration text (or audio files). Define it once near the top of the file, then `await voiceOvers.key` inside `video()` wherever that spoken line should begin. The audio keeps playing while your next actions run. Use `await voiceOvers.waitEnd()` only when an action must wait for the current line to finish.
 
 ```ts
 import { video, createVoiceOvers, voices } from 'screenci'
@@ -104,13 +104,27 @@ const voiceOvers = createVoiceOvers({
 video('Dashboard walkthrough', async ({ page }) => {
   await page.goto('/dashboard')
 
-  await voiceOvers.intro.start()
-  // ...anything you do here plays over the voiceover...
-  await voiceOvers.intro.end()
-
+  await voiceOvers.intro
+  await page.locator('#reports').click()
   await page.locator('#new-project').click()
-  await voiceOvers.addButton.start()
-  await voiceOvers.addButton.end()
+
+  await voiceOvers.addButton
+  await voiceOvers.waitEnd()
+})
+```
+
+Use this pattern:
+
+```ts
+const voiceOvers = createVoiceOvers({ ... })
+
+video('Example', async ({ page }) => {
+  await voiceOvers.intro // starts narration now
+  await page.click('#next') // runs while intro audio is still playing
+
+  await voiceOvers.details // auto-ends intro, then starts details
+  await voiceOvers.waitEnd() // only if the next action must wait
+  await page.click('#confirm')
 })
 ```
 

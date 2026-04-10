@@ -91,7 +91,7 @@ Everything in [Playwright's `page` API](https://playwright.dev/docs/api/class-pa
 | Typed character input | `fill()` types character-by-character so the viewer sees keystrokes |
 | `hide(fn)`            | Cuts a section from the final video (logins, page loads, setup)     |
 | `autoZoom(fn)`        | Smooth camera pan that follows interactions inside the callback     |
-| `createVoiceOvers()`  | AI voiceover markers that sync to the recording at render time      |
+| `createVoiceOvers()`  | Typed narration markers you `await` where each spoken line starts   |
 | `createAssets()`      | Image or video overlays shown during the recording                  |
 
 These are composable. You can combine `hide`, `autoZoom`, and captions around any Playwright code.
@@ -125,7 +125,7 @@ video('Invite a team member', async ({ page }) => {
     await page.waitForURL('**/dashboard')
   })
 
-  // Camera follows the invite form
+  // Start narration where that line should begin.
   await voiceOvers.openForm
   await autoZoom(
     async () => {
@@ -135,7 +135,9 @@ video('Invite a team member', async ({ page }) => {
     { duration: 400, easing: 'ease-in-out', amount: 0.4 }
   )
 
+  // Starting the next voiceOver automatically ends the previous one.
   await voiceOvers.submit
+  await voiceOvers.waitEnd()
   await autoZoom(
     async () => {
       await page.locator('button[type="submit"]').click()
@@ -145,6 +147,8 @@ video('Invite a team member', async ({ page }) => {
   )
 })
 ```
+
+The key timing rule is simple: `await voiceOvers.key` starts audio immediately and your script keeps moving. Only call `await voiceOvers.waitEnd()` when the next action must happen after the spoken line finishes.
 
 ---
 

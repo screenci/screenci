@@ -89,7 +89,7 @@ All chaining methods (`locator()`, `getByRole()`, `filter()`, `first()`, `last()
 
 ## Voiceovers
 
-`createVoiceOvers()` defines typed voiceover text. At render time ScreenCI generates an AI voiceover for each entry and syncs it to the recording.
+`createVoiceOvers()` defines typed voiceover text. Create the map once near the top of your `.video.ts` file, then `await voiceOvers.key` at the point in the script where that line should begin. At render time ScreenCI generates the audio and syncs it to the recording.
 
 ```ts
 import { video, createVoiceOvers, voices } from 'screenci'
@@ -110,11 +110,38 @@ video('Settings walkthrough', async ({ page }) => {
   await page.goto('/settings')
 
   await voiceOvers.intro
-  await page.waitForTimeout(2000)
-  await voiceOvers.waitEnd()
-
+  await page.locator('#notifications').click()
   await page.locator('#save').click()
+
   await voiceOvers.save
+  await voiceOvers.waitEnd()
+})
+```
+
+Typical usage in a `.video.ts` file:
+
+```ts
+const voiceOvers = createVoiceOvers({
+  voice: { name: voices.Aria },
+  languages: {
+    en: {
+      captions: {
+        intro: 'Open the notifications panel.',
+        save: 'Save the change.',
+      },
+    },
+  },
+})
+
+video('Example', async ({ page }) => {
+  await page.goto('/settings')
+
+  await voiceOvers.intro
+  await page.locator('#notifications').click()
+
+  await voiceOvers.save
+  await voiceOvers.waitEnd()
+  await page.locator('#save').click()
 })
 ```
 

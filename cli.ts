@@ -1517,6 +1517,17 @@ async function runInit(
       'Do you want to write videos with an AI agent based on a URL? playwright-cli is recommended and will be added as a dev dependency.',
     default: true,
   })
+  const skillsArgs = [
+    '--yes',
+    'skills',
+    'add',
+    'screenci/screenci',
+    '--skill',
+    'screenci',
+    ...(shouldAddPlaywrightCli ? ['--skill', 'playwright-cli'] : []),
+    '-y',
+  ]
+  const skillsCommand = `npx ${skillsArgs.join(' ')}`
 
   await mkdir(resolve(projectDir, 'videos'), { recursive: true })
   await mkdir(resolve(projectDir, '.github', 'workflows'), { recursive: true })
@@ -1549,126 +1560,63 @@ async function runInit(
   logger.info('  .github/workflows/record.yml')
   logger.info('')
   logger.info('screenci requires dependencies to be installed.')
-
-  const shouldInstallSkills = await confirm({
-    message:
-      "Add ScreenCI skills now with 'npx --yes skills add screenci/screenci --skill screenci --skill playwright-cli -y'?",
-    default: true,
-  })
-
-  if (shouldInstallSkills) {
-    if (verbose) {
-      logger.info(
-        "Running 'npx --yes skills add screenci/screenci --skill screenci --skill playwright-cli -y'..."
-      )
-      await spawnInherited(
-        'npx',
-        [
-          '--yes',
-          'skills',
-          'add',
-          'screenci/screenci',
-          '--skill',
-          'screenci',
-          '--skill',
-          'playwright-cli',
-          '-y',
-        ],
-        projectDir,
-        'screenci init'
-      )
-    } else {
-      const spinner = ora('Adding ScreenCI skills...').start()
-      try {
-        await spawnSilent(
-          'npx',
-          [
-            '--yes',
-            'skills',
-            'add',
-            'screenci/screenci',
-            '--skill',
-            'screenci',
-            '--skill',
-            'playwright-cli',
-            '-y',
-          ],
-          projectDir
-        )
-        spinner.succeed('ScreenCI skills added')
-      } catch (err) {
-        spinner.fail('ScreenCI skills install failed')
-        throw err
-      }
+  if (verbose) {
+    logger.info(`Running '${skillsCommand}'...`)
+    await spawnInherited('npx', skillsArgs, projectDir, 'screenci init')
+  } else {
+    const spinner = ora('Adding ScreenCI skills...').start()
+    try {
+      await spawnSilent('npx', skillsArgs, projectDir)
+      spinner.succeed('ScreenCI skills added')
+    } catch (err) {
+      spinner.fail('ScreenCI skills install failed')
+      throw err
     }
   }
 
-  const shouldInstall = await confirm({
-    message: "Run 'npm install' now?",
-    default: true,
-  })
   let chromiumReady = false
 
-  if (shouldInstall) {
-    if (verbose) {
-      logger.info("Running 'npm install'...")
-      await spawnInherited('npm', ['install'], projectDir, 'screenci init')
-    } else {
-      const spinner = ora('Running npm install...').start()
-      try {
-        await spawnSilent('npm', ['install', '--prefix', projectDir])
-        spinner.succeed('npm install complete')
-      } catch (err) {
-        spinner.fail('npm install failed')
-        throw err
-      }
+  if (verbose) {
+    logger.info("Running 'npm install'...")
+    await spawnInherited('npm', ['install'], projectDir, 'screenci init')
+  } else {
+    const spinner = ora('Running npm install...').start()
+    try {
+      await spawnSilent('npm', ['install', '--prefix', projectDir])
+      spinner.succeed('npm install complete')
+    } catch (err) {
+      spinner.fail('npm install failed')
+      throw err
     }
+  }
 
-    const chromiumInstallStatus = await getPlaywrightChromiumInstallStatus(
+  const chromiumInstallStatus = await getPlaywrightChromiumInstallStatus(
+    projectDir,
+    verbose
+  )
+
+  if (!chromiumInstallStatus.needed) {
+    chromiumReady = true
+    const versionText = chromiumInstallStatus.version
+      ? `, version ${chromiumInstallStatus.version} already installed.`
+      : ' because it is already installed.'
+    logger.info(`${pc.green('✔')} Skipping Chromium installation${versionText}`)
+  } else {
+    logger.info('Local development requires Chromium for Playwright.')
+    logger.info("Running 'npx playwright install chromium --with-deps'...")
+    await spawnInherited(
+      'npx',
+      ['playwright', 'install', 'chromium', '--with-deps'],
       projectDir,
-      verbose
+      'screenci init'
     )
-
-    if (!chromiumInstallStatus.needed) {
-      chromiumReady = true
-      const versionText = chromiumInstallStatus.version
-        ? `, version ${chromiumInstallStatus.version} already installed.`
-        : ' because it is already installed.'
-      logger.info(
-        `${pc.green('✔')} Skipping Chromium installation${versionText}`
-      )
-    } else {
-      logger.info('Local development requires Chromium for Playwright.')
-      const shouldInstallChromium = await confirm({
-        message: "Run 'npx playwright install chromium --with-deps' now?",
-        default: true,
-      })
-
-      if (shouldInstallChromium) {
-        logger.info("Running 'npx playwright install chromium --with-deps'...")
-        await spawnInherited(
-          'npx',
-          ['playwright', 'install', 'chromium', '--with-deps'],
-          projectDir,
-          'screenci init'
-        )
-        chromiumReady = true
-      }
-    }
+    chromiumReady = true
   }
 
   logger.info('')
   logger.info('Next steps:')
   logger.info(`  cd ${dirName}`)
-  if (!shouldInstallSkills) {
-    logger.info(
-      '  npx --yes skills add screenci/screenci --skill screenci --skill playwright-cli -y'
-    )
-  }
-  if (!shouldInstall) {
-    logger.info('  npm install')
-  }
-  if (!shouldInstall || !chromiumReady) {
+  if (!chromiumReady) {
     logger.info('  npx playwright install chromium --with-deps')
   }
   logger.info('  npx screenci record')

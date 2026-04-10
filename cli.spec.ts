@@ -1636,10 +1636,7 @@ describe('CLI', () => {
     it('should add playwright-cli to devDependencies when AI authoring is confirmed', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(false)
+      mockConfirm.mockResolvedValueOnce(true)
 
       const { main } = await import('./cli')
       await main()
@@ -1654,10 +1651,7 @@ describe('CLI', () => {
     it('should not add playwright-cli to devDependencies when AI authoring is declined', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(false)
+      mockConfirm.mockResolvedValueOnce(false)
 
       const { main } = await import('./cli')
       await main()
@@ -1918,7 +1912,7 @@ describe('CLI', () => {
       expect(mockSpawnSync).toHaveBeenCalledTimes(1)
     })
 
-    it('should run npm install when confirmed', async () => {
+    it('should run npm install automatically', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
 
@@ -1932,25 +1926,7 @@ describe('CLI', () => {
       )
     })
 
-    it('should skip npm install when declined', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockSpawn).not.toHaveBeenCalledWith(
-        'npm',
-        expect.arrayContaining(['install']),
-        expect.any(Object)
-      )
-    })
-
-    it('should run Chromium install when confirmed after npm install', async () => {
+    it('should run Chromium install automatically after npm install', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
 
@@ -1970,10 +1946,6 @@ describe('CLI', () => {
     it('should skip Chromium prompt when Playwright reports Chromium already installed', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(true)
 
       const createChild = () =>
         Object.assign(new EventEmitter(), {
@@ -1993,6 +1965,13 @@ describe('CLI', () => {
       mockSpawn.mockImplementationOnce(() => {
         const child = createChild()
         process.nextTick(() => {
+          child.emit('close', 0)
+        })
+        return child
+      })
+      mockSpawn.mockImplementationOnce(() => {
+        const child = createChild()
+        process.nextTick(() => {
           child.stdout.emit(
             'data',
             '/home/test/.cache/ms-playwright/chromium-1200\n'
@@ -2005,7 +1984,7 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       await main()
 
-      expect(mockConfirm).toHaveBeenCalledTimes(3)
+      expect(mockConfirm).toHaveBeenCalledTimes(1)
       expect(mockSpawn).not.toHaveBeenCalledWith(
         'npx',
         ['playwright', 'install', 'chromium', '--with-deps'],
@@ -2022,10 +2001,6 @@ describe('CLI', () => {
     it('should show Chromium check output and result with init --verbose', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project', '--verbose']
       mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(true)
 
       const createChild = () =>
         Object.assign(new EventEmitter(), {
@@ -2040,6 +2015,13 @@ describe('CLI', () => {
       mockSpawn.mockImplementationOnce(() => {
         const child = createChild()
         process.nextTick(() => child.emit('close', 0))
+        return child
+      })
+      mockSpawn.mockImplementationOnce(() => {
+        const child = createChild()
+        process.nextTick(() => {
+          child.emit('close', 0)
+        })
         return child
       })
       mockSpawn.mockImplementationOnce(() => {
@@ -2071,11 +2053,6 @@ describe('CLI', () => {
     it('should show npm install output with init --verbose', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project', '--verbose']
       mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
 
       const { main } = await import('./cli')
       await main()
@@ -2088,25 +2065,6 @@ describe('CLI', () => {
           cwd: expect.stringContaining('my-project'),
           stdio: 'inherit',
         })
-      )
-    })
-
-    it('should skip Chromium install when declined after npm install', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockSpawn).not.toHaveBeenCalledWith(
-        'npx',
-        ['playwright', 'install', 'chromium', '--with-deps'],
-        expect.any(Object)
       )
     })
 
@@ -2152,11 +2110,6 @@ describe('CLI', () => {
     it('should mention Chromium requirement for local development', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
 
       const { main } = await import('./cli')
       await main()
@@ -2166,7 +2119,7 @@ describe('CLI', () => {
       )
     })
 
-    it('should not include install steps in next steps when both are confirmed', async () => {
+    it('should not include install steps in next steps after automatic setup', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
 
@@ -2178,49 +2131,15 @@ describe('CLI', () => {
       expect(allInfoCalls).not.toContain(
         '  npx playwright install chromium --with-deps'
       )
-    })
-
-    it('should include npm install in next steps when declined', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(loggerInfoSpy).toHaveBeenCalledWith('  npm install')
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        '  npx playwright install chromium --with-deps'
+      expect(allInfoCalls).not.toContain(
+        '  npx --yes skills add screenci/screenci --skill screenci --skill playwright-cli -y'
       )
     })
 
-    it('should include Chromium install in next steps when declined after npm install', async () => {
+    it('should always run skills add with both skills when AI authoring is confirmed', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        '  npx playwright install chromium --with-deps'
-      )
-    })
-
-    it('should run skills add when confirmed', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
+      mockConfirm.mockResolvedValueOnce(true)
 
       const { main } = await import('./cli')
       await main()
@@ -2242,19 +2161,26 @@ describe('CLI', () => {
       )
     })
 
-    it('should include skills add in next steps when declined', async () => {
+    it('should always run skills add with only screenci when AI authoring is declined', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(false)
+      mockConfirm.mockResolvedValueOnce(false)
 
       const { main } = await import('./cli')
       await main()
 
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        '  npx --yes skills add screenci/screenci --skill screenci --skill playwright-cli -y'
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        [
+          '--yes',
+          'skills',
+          'add',
+          'screenci/screenci',
+          '--skill',
+          'screenci',
+          '-y',
+        ],
+        expect.objectContaining({ stdio: 'pipe' })
       )
     })
   })

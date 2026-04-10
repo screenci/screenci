@@ -24,7 +24,7 @@ Most commands look for `screenci.config.ts` in the current directory. Use `--con
 
 ## `screenci init [name]`
 
-Creates a new ScreenCI project directory with a starter config, example video, Dockerfile, and workflow files.
+Creates a new ScreenCI project directory with a starter config, example video, Dockerfile, and workflow files. Authentication happens automatically during `init`: a browser window opens so you can log in, and `SCREENCI_SECRET` is saved to `.env` in the new project. You do not need to authenticate separately before running `screenci record`.
 
 ```bash
 npx screenci init
@@ -64,7 +64,7 @@ Use this when you want normal Playwright execution without recording and without
 
 ## `screenci record [playwrightArgs...]`
 
-Records videos with ScreenCI. On the host this normally builds and runs the project inside a container, then uploads results if `SCREENCI_SECRET` is configured.
+Records videos with ScreenCI. On the host this normally builds and runs the project inside a container, then uploads results if `SCREENCI_SECRET` is set. Authentication is handled by `screenci init` — `record` does not prompt for credentials.
 
 ```bash
 npx screenci record

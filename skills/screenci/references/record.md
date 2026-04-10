@@ -34,10 +34,32 @@ npx screenci dev
 npx screenci record
 ```
 
+## Workflow
+
+Always run `npx screenci test` to verify the video works before running `npx screenci record`. Fix any failures before recording.
+
+```bash
+npx screenci test   # verify selectors, flow, and voice overs
+npx screenci record # capture the final recording
+```
+
+## Required Conventions
+
+These are not optional — every `.video.ts` file must follow all three:
+
+### 1. Voice overs on every video
+
+Always add `createVoiceOvers({ ... })` to every video file. No video should be silent. Define the full narration map up front, then place `await voiceOvers.someKey` at the exact point in the script where each line should begin. `await voiceOvers.key` resolves immediately while audio plays in the background — only use `await voiceOvers.waitEnd()` when the very next action must wait for the line to finish speaking.
+
+### 2. Hide initial setup
+
+Always wrap initial setup in `hide()`: login flows, navigation to the starting page, loading states, cookie banners, and any other boilerplate that is not part of the feature being demonstrated. If it is not the point of the video, hide it.
+
+### 3. autoZoom every logical section
+
+Wrap each distinct UI section in its own `autoZoom()` block — one block per form, dialog, list, or page area. Do not add one `autoZoom()` per individual click; group all actions within a logical section under a single `autoZoom()`.
+
 ## Constraints
 
 - ScreenCI enforces single-worker recording behavior.
-- Use `hide()` for login and loading sections.
-- Use one `autoZoom()` block per form or page section rather than per click.
-- Use `createVoiceOvers()` by defining the caption map once, then `await voiceOvers.key` at the point where narration should start.
-- `await voiceOvers.key` resolves immediately while audio continues. Call `await voiceOvers.waitEnd()` only when the next action must happen after the spoken line ends.
+- Playwright arguments can be passed through after the command.

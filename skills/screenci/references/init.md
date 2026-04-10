@@ -42,5 +42,6 @@ my-project/
 npx screenci init my-project
 cd my-project
 npm install
-npx screenci dev
+npx screenci test   # verify the video works
+npx screenci record # capture the final recording
 ```

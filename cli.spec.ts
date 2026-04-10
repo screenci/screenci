@@ -1598,6 +1598,8 @@ describe('CLI', () => {
       })
       // Default: confirm npm install
       mockConfirm.mockResolvedValue(true)
+      // Pre-set SCREENCI_SECRET so auth is skipped by default in init tests
+      process.env.SCREENCI_SECRET = 'test-secret'
     })
 
     it('should create all files inside a new directory named after the project', async () => {
@@ -1630,6 +1632,10 @@ describe('CLI', () => {
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining('example.video.ts'),
         expect.stringContaining("import { video } from 'screenci'")
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining(`my-project/.env`),
+        'SCREENCI_SECRET=test-secret\n'
       )
     })
 
@@ -1847,14 +1853,54 @@ describe('CLI', () => {
       expect(configCall?.[1]).toContain("envFile: '.env'")
     })
 
-    it('should not create an http server during init', async () => {
+    it('should not create an http server during init when SCREENCI_SECRET is already set', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
+      process.env.SCREENCI_SECRET = 'already-set-secret'
 
       const { main } = await import('./cli')
       await main()
 
       expect(mockCreateHttpServer).not.toHaveBeenCalled()
+    })
+
+    it('should trigger browser auth and write .env when SCREENCI_SECRET is missing', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+      delete process.env.SCREENCI_SECRET
+
+      // Simulate the HTTP server calling the request handler with a secret
+      mockCreateHttpServer.mockImplementation(
+        (handler: (req: unknown, res: unknown) => void) => {
+          const server = {
+            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+              cb()
+              // Simulate an incoming request with the secret
+              const req = {
+                url: '/callback?secret=auth-secret-123',
+              }
+              const res = {
+                writeHead: vi.fn(),
+                end: vi.fn(),
+              }
+              handler(req, res)
+            }),
+            close: vi.fn(),
+            address: vi.fn().mockReturnValue({ port: 12345 }),
+            on: vi.fn(),
+          }
+          return server
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockCreateHttpServer).toHaveBeenCalled()
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining('.env'),
+        'SCREENCI_SECRET=auth-secret-123\n'
+      )
     })
 
     it('should warn during init when neither podman nor docker is installed', async () => {

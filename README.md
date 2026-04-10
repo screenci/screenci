@@ -48,14 +48,38 @@ video('Onboarding flow', async ({ page }) => {
 
 Each `video()` call → one `.mp4`. The title becomes the filename.
 
+> **Full reference:** [Writing Video Tests](http://localhost:4321/reference/video-tests)
+
+### `ScreenCIPage` — animated interactions
+
+Inside `video()`, `page` is a `ScreenCIPage` — a Playwright `Page` with animated cursor and typing. You don't need to change anything; the animations happen automatically:
+
+| Method          | Behaviour                                       |
+| --------------- | ----------------------------------------------- |
+| `click()`       | Bezier-curve cursor move, then click            |
+| `fill()`        | Character-by-character typing                   |
+| `hover()`       | Animated cursor move                            |
+| `dragTo()`      | Animated move → mouseDown → drag → mouseUp      |
+| `page.mouse`    | Smooth bezier moves instead of instant teleport |
+| Everything else | Standard Playwright — unchanged                 |
+
+All standard `page` methods (`goto`, `waitForURL`, `waitForLoadState`, `waitForTimeout`, `keyboard`, `screenshot`, `expect`, …) work exactly as documented in [Playwright's API](https://playwright.dev/docs/api/class-page).
+
 ## Run it
 
 ```bash
-# Dry-run: opens Playwright UI so you can see what you're recording
-npm run dev
+# Dry-run: opens Playwright UI so you can verify selectors and pacing
+npx screenci dev
 
-# Record: actually captures the screen
-cd my-project && npm run record
+# Record: captures the screen and writes .screenci/<name>/recording.mp4
+npx screenci record
+```
+
+Or via the package scripts scaffolded by `init`:
+
+```bash
+npm run dev     # → npx screenci dev
+npm run record  # → npx screenci record
 ```
 
 Recordings land in `.screenci/<video-name>/recording.mp4` alongside a `data.json` with all the interaction events.

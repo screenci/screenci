@@ -1517,6 +1517,26 @@ async function runInit(
       'Do you want to write videos with an AI agent based on a URL? playwright-cli is recommended and will be added as a dev dependency.',
     default: true,
   })
+
+  // Authenticate before creating any files
+  let secret = process.env.SCREENCI_SECRET
+  if (!secret) {
+    logger.info(
+      'Opening browser for authentication to get your SCREENCI_SECRET...'
+    )
+    const appUrl = getDevFrontendUrl()
+    try {
+      secret = await performBrowserLogin(appUrl)
+      process.env.SCREENCI_SECRET = secret
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      logger.warn(`Authentication failed: ${msg}`)
+      logger.info(
+        'You can add SCREENCI_SECRET manually to .env later (get it from the API Key page in the dashboard).'
+      )
+    }
+  }
+
   const skillsArgs = [
     '--yes',
     'skills',
@@ -1549,6 +1569,9 @@ async function runInit(
     resolve(projectDir, '.github', 'workflows', 'record.yml'),
     generateGithubAction()
   )
+  if (secret) {
+    await writeFile(resolve(projectDir, '.env'), `SCREENCI_SECRET=${secret}\n`)
+  }
 
   logger.info(`Initialized screenci project "${projectName}" in ${projectDir}/`)
   logger.info('Files created:')
@@ -1558,6 +1581,9 @@ async function runInit(
   logger.info('  .gitignore')
   logger.info('  videos/example.video.ts')
   logger.info('  .github/workflows/record.yml')
+  if (secret) {
+    logger.info('  .env  (contains SCREENCI_SECRET)')
+  }
   logger.info('')
   logger.info('screenci requires dependencies to be installed.')
   if (verbose) {
@@ -1619,6 +1645,7 @@ async function runInit(
   if (!chromiumReady) {
     logger.info('  npx playwright install chromium --with-deps')
   }
+  logger.info('  npx screenci test')
   logger.info('  npx screenci record')
 }
 
@@ -1656,47 +1683,26 @@ export async function main() {
         validateArgs(parsed.otherArgs)
       }
 
-      // On the host, acquire secret before recording if missing
+      // On the host, load .env so SCREENCI_SECRET is available for uploads
       if (process.env.SCREENCI_IN_CONTAINER !== 'true') {
         const resolvedConfigForSecret = findScreenCIConfig(parsed.configPath)
         if (resolvedConfigForSecret) {
-          let envFilePath: string | null = null
           try {
             const configModule = await import(resolvedConfigForSecret)
             const screenciConfig = configModule.default as ScreenCIConfig
-            envFilePath = screenciConfig.envFile
-              ? resolve(
-                  dirname(resolvedConfigForSecret),
-                  screenciConfig.envFile
-                )
-              : null
-            if (envFilePath) {
+            if (screenciConfig.envFile) {
+              const envFilePath = resolve(
+                dirname(resolvedConfigForSecret),
+                screenciConfig.envFile
+              )
               try {
                 process.loadEnvFile(envFilePath)
               } catch {
                 // env file may not exist yet
               }
             }
-          } catch (err) {
-            if (!process.env.SCREENCI_SECRET) {
-              const msg = err instanceof Error ? err.message : String(err)
-              logger.error(`Failed to acquire secret: ${msg}`)
-              process.exit(1)
-            }
-            // Config import failed but SCREENCI_SECRET is already in env — continue
-          }
-
-          if (!process.env.SCREENCI_SECRET) {
-            logger.info(
-              'No SCREENCI_SECRET in .env file, opening browser for authentication...'
-            )
-            const appUrl = getDevFrontendUrl()
-            const secret = await performBrowserLogin(appUrl)
-            const savePath =
-              envFilePath ?? resolve(dirname(resolvedConfigForSecret), '.env')
-            await writeFile(savePath, `SCREENCI_SECRET=${secret}\n`)
-            process.env.SCREENCI_SECRET = secret
-            logger.info(`Successfully saved SCREENCI_SECRET to ${savePath}`)
+          } catch {
+            // Config import failed — continue with whatever is already in env
           }
         }
       }

@@ -1274,13 +1274,9 @@ export default defineConfig({
 
 function generatePackageJson(
   projectName: string,
-  localPackagePath?: string,
   includePlaywrightCli = false
 ): string {
   const npmName = projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-')
-  const screenciVersion = localPackagePath
-    ? `file:${localPackagePath}`
-    : 'latest'
   const devDependencies: Record<string, string> = {
     '@types/node': '^25.0.0',
     tsx: '^4.21.0',
@@ -1301,7 +1297,7 @@ function generatePackageJson(
           dev: 'screenci dev',
         },
         dependencies: {
-          screenci: screenciVersion,
+          screenci: 'latest',
         },
         devDependencies,
       },
@@ -1477,7 +1473,6 @@ function checkNodeVersion(): void {
 
 async function runInit(
   projectNameArg?: string,
-  localPackagePath?: string,
   verbose = false
 ): Promise<void> {
   checkNodeVersion()
@@ -1516,7 +1511,7 @@ async function runInit(
   )
   await writeFile(
     resolve(projectDir, 'package.json'),
-    generatePackageJson(dirName, localPackagePath, shouldAddPlaywrightCli)
+    generatePackageJson(dirName, shouldAddPlaywrightCli)
   )
   await writeFile(resolve(projectDir, 'Dockerfile'), generateDockerfile())
   await writeFile(resolve(projectDir, '.gitignore'), generateGitignore())
@@ -1879,24 +1874,14 @@ export async function main() {
   program
     .command('init [name]')
     .description('Initialize a new screenci project')
-    .option('--local', 'use local package path (for development)')
     .option('-v, --verbose', 'verbose output')
     .action(
       async (name: string | undefined, options: Record<string, unknown>) => {
         if (name === 'auth') {
           await runInitAuth()
         } else {
-          let localPackagePath: string | undefined
-          if (options['local']) {
-            const cliDir = dirname(fileURLToPath(import.meta.url))
-            // cli.ts is at package root; dist/cli.js is one level down
-            localPackagePath = existsSync(resolve(cliDir, 'package.json'))
-              ? cliDir
-              : resolve(cliDir, '..')
-          }
           await runInit(
             name,
-            localPackagePath,
             (options['verbose'] as boolean | undefined) ?? false
           )
         }

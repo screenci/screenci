@@ -33,7 +33,6 @@ npx screenci init my-product
 
 Options:
 
-- `--local` uses the local package path when developing ScreenCI itself
 - `-v, --verbose` prints underlying command output instead of spinners
 
 ## `screenci dev [playwrightArgs...]`

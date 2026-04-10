@@ -34,7 +34,6 @@ my-project/
 
 - If no name is passed, the command prompts for one.
 - `--verbose` shows more setup output.
-- `--local` uses the local package path for development workflows.
 - After scaffolding, run `npm install`.
 
 ## Typical Flow

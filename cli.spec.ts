@@ -1718,6 +1718,21 @@ describe('CLI', () => {
       expect(pkgCall?.[1]).toContain('my-cool-project')
     })
 
+    it('should use published screenci dependency in generated package.json', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      const pkgCall = mockWriteFile.mock.calls.find(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].endsWith('package.json')
+      )
+      expect(pkgCall?.[1]).toContain('"screenci": "latest"')
+      expect(pkgCall?.[1]).not.toContain('"screenci": "file:')
+    })
+
     it('should prompt for project name when not provided as arg', async () => {
       process.argv = ['node', 'cli.js', 'init']
       mockExistsSync.mockReturnValue(false)

@@ -1565,6 +1565,28 @@ describe('CLI', () => {
         ],
       })
     })
+
+    it('should pause stdin when removing the upload abort listener', async () => {
+      const { attachUploadAbortStdinListener } = await import('./cli')
+      const input = new EventEmitter() as EventEmitter & {
+        pause: ReturnType<typeof vi.fn>
+      }
+      input.pause = vi.fn()
+      const onAbort = vi.fn()
+
+      const cleanup = attachUploadAbortStdinListener(
+        input as unknown as Pick<NodeJS.ReadStream, 'on' | 'off' | 'pause'>,
+        onAbort
+      )
+
+      input.emit('data', Buffer.from([0x03]))
+      expect(onAbort).toHaveBeenCalledWith('SIGINT')
+
+      cleanup()
+
+      expect(input.pause).toHaveBeenCalledTimes(1)
+      expect(input.listenerCount('data')).toBe(0)
+    })
   })
 
   describe('init command', () => {

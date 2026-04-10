@@ -111,6 +111,28 @@ function isUploadCancelledError(err: unknown): boolean {
   )
 }
 
+export function attachUploadAbortStdinListener(
+  input: Pick<NodeJS.ReadStream, 'on' | 'off' | 'pause'>,
+  onAbort: (signal: NodeJS.Signals) => void
+): () => void {
+  const handleStdinData = (chunk: Buffer | string) => {
+    const bytes =
+      typeof chunk === 'string'
+        ? Buffer.from(chunk, 'utf8')
+        : Buffer.from(chunk)
+    if (bytes.includes(0x03)) {
+      onAbort('SIGINT')
+    }
+  }
+
+  input.on('data', handleStdinData)
+
+  return () => {
+    input.off('data', handleStdinData)
+    input.pause()
+  }
+}
+
 function createUploadAbortController(activityLabel: string): {
   signal: AbortSignal
   throwIfAborted: () => void
@@ -118,16 +140,20 @@ function createUploadAbortController(activityLabel: string): {
 } {
   const controller = new AbortController()
   let cleanedUp = false
+  const cleanupStdinListener = attachUploadAbortStdinListener(
+    process.stdin,
+    (signal) => abortUpload(signal)
+  )
 
   const cleanup = () => {
     if (cleanedUp) return
     cleanedUp = true
     process.off('SIGINT', handleSigint)
     process.off('SIGTERM', handleSigterm)
-    process.stdin.off('data', handleStdinData)
+    cleanupStdinListener()
   }
 
-  const abortUpload = (signal: NodeJS.Signals) => {
+  function abortUpload(signal: NodeJS.Signals) {
     if (controller.signal.aborted) return
     logger.info(`Received ${signal}, stopping ${activityLabel}...`)
     cleanup()
@@ -135,22 +161,11 @@ function createUploadAbortController(activityLabel: string): {
     process.kill(process.pid, signal)
   }
 
-  const handleStdinData = (chunk: Buffer | string) => {
-    const bytes =
-      typeof chunk === 'string'
-        ? Buffer.from(chunk, 'utf8')
-        : Buffer.from(chunk)
-    if (bytes.includes(0x03)) {
-      abortUpload('SIGINT')
-    }
-  }
-
   const handleSigint = () => abortUpload('SIGINT')
   const handleSigterm = () => abortUpload('SIGTERM')
 
   process.on('SIGINT', handleSigint)
   process.on('SIGTERM', handleSigterm)
-  process.stdin.on('data', handleStdinData)
 
   return {
     signal: controller.signal,

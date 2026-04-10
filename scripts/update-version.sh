@@ -16,8 +16,8 @@ cd "$PACKAGE_DIR"
 # Update version in package.json
 npm version "$VERSION" --no-git-tag-version
 
-# Stage package.json
-git add package.json
+# Stage package.json and package-lock.json
+git add package.json package-lock.json
 
 # Commit
 git commit -m "Release $VERSION"
@@ -27,4 +27,4 @@ git tag "v$VERSION"
 
 # Push commit and tag
 git push
-git push --tags
+git push origin "v$VERSION"

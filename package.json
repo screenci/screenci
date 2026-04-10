@@ -1,6 +1,6 @@
 {
   "name": "screenci",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "description": "ScreenCI",
   "keywords": [
     "screenci"
@@ -36,7 +36,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "postbuild": "cp Dockerfile dist/",
+    "postbuild": "cp Dockerfile dist/ && sed -i '1s|.*|#!/usr/bin/env node|' dist/cli.js",
     "build:image": "podman build -t screenci .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -62,7 +62,7 @@
     "tsx": "^4.21.0",
     "typescript": "5.9.3",
     "typescript-eslint": "^8.50.0",
-    "vitest": "^4.0.16"
+    "vitest": "~4.0.16"
   },
   "peerDependencies": {
     "@playwright/test": ">=1.57.0"

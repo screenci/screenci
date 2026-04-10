@@ -391,7 +391,9 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await new Promise((resolve) => setTimeout(resolve, 10))
+      await vi.waitFor(() => {
+        expect(mockSpawn).toHaveBeenCalled()
+      })
       mockChildProcess.emit('close', 0)
 
       await mainPromise
@@ -407,7 +409,9 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await new Promise((resolve) => setTimeout(resolve, 10))
+      await vi.waitFor(() => {
+        expect(mockSpawn).toHaveBeenCalled()
+      })
       mockChildProcess.emit('close', 0)
 
       await mainPromise
@@ -444,20 +448,26 @@ describe('CLI', () => {
         .mockReturnValueOnce(mockRunProcess as unknown as ChildProcess)
     })
 
+    async function driveContainerSpawns(
+      exitCodes: [number, number, number] = [0, 0, 0]
+    ) {
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(1))
+      mockBuildProcess.emit('close', exitCodes[0])
+      if (exitCodes[0] !== 0) return
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(2))
+      mockRecordingBuildProcess.emit('close', exitCodes[1])
+      if (exitCodes[1] !== 0) return
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(3))
+      mockRunProcess.emit('close', exitCodes[2])
+    }
+
     it('should build and run container for record command', async () => {
       process.argv = ['node', 'cli.js', 'record']
 
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRecordingBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRunProcess.emit('close', 0)
+      await driveContainerSpawns()
 
       await mainPromise
 
@@ -513,14 +523,7 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRecordingBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRunProcess.emit('close', 0)
+      await driveContainerSpawns()
 
       await mainPromise
 
@@ -547,14 +550,7 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRecordingBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRunProcess.emit('close', 0)
+      await driveContainerSpawns()
 
       await mainPromise
 
@@ -578,14 +574,7 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRecordingBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRunProcess.emit('close', 0)
+      await driveContainerSpawns()
 
       await mainPromise
 
@@ -604,14 +593,7 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRecordingBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRunProcess.emit('close', 0)
+      await driveContainerSpawns()
 
       await mainPromise
 
@@ -630,14 +612,7 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRecordingBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRunProcess.emit('close', 0)
+      await driveContainerSpawns()
 
       await mainPromise
 
@@ -659,14 +634,7 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRecordingBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRunProcess.emit('close', 0)
+      await driveContainerSpawns()
 
       await mainPromise
 
@@ -688,8 +656,7 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockBuildProcess.emit('close', 1)
+      await driveContainerSpawns([1, 0, 0])
 
       await expect(mainPromise).rejects.toThrow('process.exit called')
       expect(loggerErrorSpy).toHaveBeenCalledWith(
@@ -703,14 +670,7 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRecordingBuildProcess.emit('close', 0)
-
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      mockRunProcess.emit('close', 1)
+      await driveContainerSpawns([0, 0, 1])
 
       await expect(mainPromise).rejects.toThrow('podman exited with code 1')
     })

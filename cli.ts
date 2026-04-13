@@ -928,7 +928,8 @@ async function uploadRecordings(
   projectName: string,
   apiUrl: string,
   secret: string,
-  specificEntry?: string
+  specificEntry?: string,
+  verbose = false
 ): Promise<string | null> {
   const uploadAbort = createUploadAbortController('upload')
   let entries: string[]
@@ -949,7 +950,10 @@ async function uploadRecordings(
     for (const entry of entries) {
       uploadAbort.throwIfAborted()
       const dataJsonPath = resolve(screenciDir, entry, 'data.json')
-      if (!existsSync(dataJsonPath)) continue
+      if (!existsSync(dataJsonPath)) {
+        if (verbose) logger.info(`Skipping "${entry}": no data.json found`)
+        continue
+      }
 
       let data: RecordingData
       try {
@@ -1011,6 +1015,13 @@ async function uploadRecordings(
           projectId: string
         }
 
+        if (verbose) {
+          logger.info(`recordingId=${recordingId} projectId=${projectId}`)
+          logger.info(
+            `assets=${preparedUploadAssets.length} recordingHash=${recordingHash ?? 'none'}`
+          )
+        }
+
         if (firstProjectId === null) {
           firstProjectId = projectId
         }
@@ -1029,6 +1040,11 @@ async function uploadRecordings(
         if (existsSync(recordingPath)) {
           uploadAbort.throwIfAborted()
           const fileStat = await stat(recordingPath)
+          if (verbose) {
+            logger.info(
+              `Uploading recording.mp4 size=${(fileStat.size / 1024 / 1024).toFixed(1)}MB`
+            )
+          }
           const stream = createReadStream(recordingPath)
           const abortStream = () => {
             stream.destroy(
@@ -1098,7 +1114,10 @@ export function getDevFrontendUrl(): string {
     : 'https://app.screenci.com'
 }
 
-async function uploadLatest(configPath: string | undefined): Promise<void> {
+async function uploadLatest(
+  configPath: string | undefined,
+  verbose = false
+): Promise<void> {
   const { resolvedConfigPath, screenciConfig } =
     await loadScreenCIConfigAndEnv(configPath)
 
@@ -1115,15 +1134,13 @@ async function uploadLatest(configPath: string | undefined): Promise<void> {
   const configDir = dirname(resolvedConfigPath)
   const screenciDir = resolve(configDir, '.screenci')
 
-  const latestEntry = await findLatestEntry(screenciDir)
-  if (!latestEntry) {
-    logger.warn('No recordings found in .screenci directory')
-    return
+  if (verbose) {
+    logger.info(`screenciDir=${screenciDir}`)
+    logger.info(`apiUrl=${apiUrl}`)
   }
 
   const appUrl = getDevFrontendUrl()
 
-  logger.info(`Uploading latest recording: "${latestEntry}"`)
   let projectId: string | null = null
   try {
     projectId = await uploadRecordings(
@@ -1131,7 +1148,8 @@ async function uploadLatest(configPath: string | undefined): Promise<void> {
       screenciConfig.projectName,
       apiUrl,
       secret,
-      latestEntry
+      undefined,
+      verbose
     )
   } catch (err) {
     if (isUploadCancelledError(err)) {
@@ -1833,10 +1851,14 @@ export async function main() {
   // retry command
   program
     .command('retry')
-    .description('Retry the latest recording upload')
+    .description('Retry uploading all pending recordings')
     .option('-c, --config <path>', 'path to screenci.config.ts')
+    .option('-v, --verbose', 'verbose output')
     .action(async (options: Record<string, unknown>) => {
-      await uploadLatest(options['config'] as string | undefined)
+      await uploadLatest(
+        options['config'] as string | undefined,
+        (options['verbose'] as boolean | undefined) ?? false
+      )
     })
 
   // init command

@@ -1520,6 +1520,27 @@ describe('CLI', () => {
     })
   })
 
+  describe('config literal parsing', () => {
+    it('should extract quoted config literals', async () => {
+      const { extractConfigStringLiteral } = await import('./cli')
+      const configSource = `export default defineConfig({\n  projectName: 'Quoted Project',\n  envFile: \".env.local\",\n})`
+
+      expect(extractConfigStringLiteral(configSource, 'projectName')).toBe(
+        'Quoted Project'
+      )
+      expect(extractConfigStringLiteral(configSource, 'envFile')).toBe(
+        '.env.local'
+      )
+    })
+
+    it('should extract template literal values', async () => {
+      const { extractConfigStringLiteral } = await import('./cli')
+      const configSource = 'export default defineConfig({ envFile: `./.env` })'
+
+      expect(extractConfigStringLiteral(configSource, 'envFile')).toBe('./.env')
+    })
+  })
+
   describe('upload annotation helpers', () => {
     it('should allow missing voice entries when annotating caption translations', async () => {
       const { annotateRecordingDataWithAssetHashes, stripVoicePath } =

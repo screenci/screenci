@@ -1179,8 +1179,8 @@ async function loadScreenCIConfigAndEnv(configPath?: string): Promise<{
 
   let screenciConfig: ScreenCIConfig
   try {
-    const configModule = await import(resolvedConfigPath)
-    screenciConfig = configModule.default as ScreenCIConfig
+    screenciConfig =
+      await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
   } catch (err) {
     logger.error('Failed to load config:', err)
     process.exit(1)
@@ -1199,6 +1199,69 @@ async function loadScreenCIConfigAndEnv(configPath?: string): Promise<{
   }
 
   return { resolvedConfigPath, screenciConfig }
+}
+
+export function extractConfigStringLiteral(
+  configSource: string,
+  property: 'projectName' | 'envFile'
+): string | undefined {
+  const singleQuoteMatch = configSource.match(
+    new RegExp(property + "\\s*:\\s*'([^'\\n]+)'")
+  )
+  if (singleQuoteMatch) return singleQuoteMatch[1]
+
+  const doubleQuoteMatch = configSource.match(
+    new RegExp(property + '\\s*:\\s*"([^"\\n]+)"')
+  )
+  if (doubleQuoteMatch) return doubleQuoteMatch[1]
+
+  const templateLiteralMatch = configSource.match(
+    new RegExp(property + '\\s*:\\s*`([^`\\n]+)`')
+  )
+  return templateLiteralMatch?.[1]
+}
+
+async function tryReadConfigFromSource(
+  resolvedConfigPath: string
+): Promise<Pick<ScreenCIConfig, 'projectName'> & { envFile?: string }> {
+  const configSource = await readFile(resolvedConfigPath, 'utf-8')
+  const projectName = extractConfigStringLiteral(configSource, 'projectName')
+
+  if (!projectName) {
+    throw new Error(
+      'Could not determine projectName from screenci.config.ts without importing it.'
+    )
+  }
+
+  const envFile = extractConfigStringLiteral(configSource, 'envFile')
+
+  return {
+    projectName,
+    ...(envFile !== undefined ? { envFile } : {}),
+  }
+}
+
+async function loadRecordConfigWithoutPlaywrightCollision(
+  resolvedConfigPath: string
+): Promise<ScreenCIConfig> {
+  try {
+    const configModule = await import(resolvedConfigPath)
+    return configModule.default as ScreenCIConfig
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message.includes('Requiring @playwright/test second time')
+    ) {
+      logger.warn(
+        'Playwright was loaded from multiple module paths. Falling back to static config parsing for upload metadata.'
+      )
+      return (await tryReadConfigFromSource(
+        resolvedConfigPath
+      )) as ScreenCIConfig
+    }
+
+    throw err
+  }
 }
 
 async function requireScreenCISecret(configPath?: string): Promise<{
@@ -1706,8 +1769,10 @@ export async function main() {
         const resolvedConfigForSecret = findScreenCIConfig(parsed.configPath)
         if (resolvedConfigForSecret) {
           try {
-            const configModule = await import(resolvedConfigForSecret)
-            const screenciConfig = configModule.default as ScreenCIConfig
+            const screenciConfig =
+              await loadRecordConfigWithoutPlaywrightCollision(
+                resolvedConfigForSecret
+              )
             if (screenciConfig.envFile) {
               const envFilePath = resolve(
                 dirname(resolvedConfigForSecret),
@@ -1744,8 +1809,8 @@ export async function main() {
       const resolvedConfigPath = findScreenCIConfig(parsed.configPath)
       if (resolvedConfigPath) {
         try {
-          const configModule = await import(resolvedConfigPath)
-          const screenciConfig = configModule.default as ScreenCIConfig
+          const screenciConfig =
+            await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
           if (screenciConfig.envFile) {
             const envFilePath = resolve(
               dirname(resolvedConfigPath),

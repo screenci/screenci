@@ -196,24 +196,24 @@ export type VideoCaptions<T extends Record<string, VideoCaptionEntry>> = {
  * Top-level voice configuration shared across all languages.
  * `seed` is not allowed here — use per-language `voice` overrides instead.
  *
- * Use `style` for expressive Gemini synthesis, or `modelType` for an explicit
+ * Use `style` for expressive synthesis, or `modelType` for an explicit
  * model choice. `style` and `modelType` are mutually exclusive.
  */
 export type TopLevelVoiceConfig =
   | {
       name: VoiceKey | CustomVoiceRef
-      /** Speaking style prompt for Gemini TTS. Implies `expressive` model type. */
+      /** Speaking style prompt for expressive synthesis. Implies `expressive` model type. */
       style: string
       /** Can be omitted when `style` is set — `expressive` is implied. */
       modelType?: 'expressive'
       /**
-       * Accent description for Gemini TTS. Only used with `expressive` model type.
+       * Accent description for expressive synthesis.
        * The more specific, the better — e.g. `'Southern American English'` or `'Received Pronunciation British'`.
        * Omitted from the prompt when not set — the voice uses its natural default.
        */
       accent?: string
       /**
-       * Pacing description for Gemini TTS. Only used with `expressive` model type.
+       * Pacing description for expressive synthesis.
        * Describes the overall speed and tempo — e.g. `'Measured and deliberate'` or `'Brisk and energetic'`.
        */
       pacing?: string
@@ -223,44 +223,52 @@ export type TopLevelVoiceConfig =
       style?: never
       accent?: never
       pacing?: never
-      /** TTS model type — `modelTypes.expressive` (Gemini) or `modelTypes.consistent` (Chirp 3 HD). Defaults to `consistent`. */
+      /** TTS model type — `modelTypes.expressive` or `modelTypes.consistent`. Defaults to `consistent`. */
       modelType?: ModelType
     }
 
 /**
  * Per-language voice override. Can override the top-level voice name and
- * optionally set a `seed` for deterministic synthesis.
+ * optionally set a `seed` for TTS generation.
  *
- * Use `style` for expressive Gemini synthesis, or `modelType` for an explicit
+ * Use `style` for expressive synthesis, or `modelType` for an explicit
  * model choice. `style` and `modelType` are mutually exclusive.
  */
 export type LangVoiceOverride =
   | {
       name: VoiceKey | CustomVoiceRef
+      /**
+       * Integer seed included in the audio cache key. A different seed always forces
+       * regeneration. Consistent output is not guaranteed across all voice types.
+       */
       seed?: number
-      /** Speaking style prompt for Gemini TTS. Implies `expressive` model type. */
+      /** Speaking style prompt for expressive synthesis. Implies `expressive` model type. */
       style: string
       /** Can be omitted when `style` is set — `expressive` is implied. */
       modelType?: 'expressive'
       /**
-       * Accent description for Gemini TTS. Only used with `expressive` model type.
+       * Accent description for expressive synthesis.
        * The more specific, the better — e.g. `'Southern American English'` or `'Received Pronunciation British'`.
        * Omitted from the prompt when not set — the voice uses its natural default.
        */
       accent?: string
       /**
-       * Pacing description for Gemini TTS. Only used with `expressive` model type.
+       * Pacing description for expressive synthesis.
        * Describes the overall speed and tempo — e.g. `'Measured and deliberate'` or `'Brisk and energetic'`.
        */
       pacing?: string
     }
   | {
       name: VoiceKey | CustomVoiceRef
+      /**
+       * Integer seed included in the audio cache key. A different seed always forces
+       * regeneration. Consistent output is not guaranteed across all voice types.
+       */
       seed?: number
       style?: never
       accent?: never
       pacing?: never
-      /** TTS model type — `modelTypes.expressive` (Gemini) or `modelTypes.consistent` (Chirp 3 HD). Defaults to `consistent`. */
+      /** TTS model type — `modelTypes.expressive` or `modelTypes.consistent`. Defaults to `consistent`. */
       modelType?: ModelType
     }
 

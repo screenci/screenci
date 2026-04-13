@@ -282,13 +282,29 @@ fi: {
 },
 ```
 
-### Seed (deterministic re-renders)
+### Seed
 
-When using `modelType: 'expressive'`, the audio varies slightly on each render. If you want a per-language voice to produce the same output every time, set a `seed` integer in the language override:
+`seed` is an integer that is included in the audio cache key. Its exact effect depends on the TTS provider:
+
+| Provider                        | Effect of `seed`                                                                  |
+| ------------------------------- | --------------------------------------------------------------------------------- |
+| ElevenLabs (built-in voices)    | Same seed + same inputs → same audio every time (deterministic)                   |
+| Google TTS (Gemini, Chirp 3 HD) | Google's API does not support a seed — audio may still vary between regenerations |
+
+For all providers, **changing the seed always forces a full regeneration** — the cached audio is discarded and a new synthesis request is made. Use this to get a fresh take without changing any other settings.
 
 ```ts
 fi: {
   voice: { name: voices.Nora, seed: 42 },
+  captions: { intro: 'Tervetuloa.' },
+},
+```
+
+To regenerate, increment the seed:
+
+```ts
+fi: {
+  voice: { name: voices.Nora, seed: 43 }, // forces new synthesis
   captions: { intro: 'Tervetuloa.' },
 },
 ```

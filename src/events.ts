@@ -121,14 +121,19 @@ export type CaptionTranslation = {
   voice: VoiceKey | RecordingCustomVoiceRef
   /** BCP-47 region code, e.g. 'en-US'. Overrides the base language for TTS synthesis. */
   region?: string
-  /** TTS model type — 'expressive' (Gemini) or 'consistent' (Chirp 3 HD). Defaults to 'consistent'. */
+  /** TTS model type — `'expressive'` or `'consistent'`. Defaults to `'consistent'`. */
   modelType?: string
-  /** Speaking style prompt for Gemini TTS (only used with 'expressive' model). */
+  /** Speaking style prompt for expressive synthesis. */
   style?: string
-  /** Accent description for Gemini TTS (only used with 'expressive' model). Omitted from the prompt when not set. */
+  /** Accent description for expressive synthesis. Omitted from the prompt when not set. */
   accent?: string
-  /** Pacing description for Gemini TTS (only used with 'expressive' model). */
+  /** Pacing description for expressive synthesis. */
   pacing?: string
+  /**
+   * Integer seed included in the audio cache key. A different seed always forces
+   * regeneration. Consistent output is not guaranteed across all voice types.
+   */
+  seed?: number
 }
 
 export type CaptionStartEvent = {
@@ -162,14 +167,19 @@ export type VideoCaptionTranslationTTS = {
   voice: VoiceKey | RecordingCustomVoiceRef
   /** BCP-47 region code, e.g. 'en-US'. Overrides the base language for TTS synthesis. */
   region?: string
-  /** TTS model type — 'expressive' (Gemini) or 'consistent' (Chirp 3 HD). Defaults to 'consistent'. */
+  /** TTS model type — `'expressive'` or `'consistent'`. Defaults to `'consistent'`. */
   modelType?: string
-  /** Speaking style prompt for Gemini TTS (only used with 'expressive' model). */
+  /** Speaking style prompt for expressive synthesis. */
   style?: string
-  /** Accent description for Gemini TTS (only used with 'expressive' model). Omitted from the prompt when not set. */
+  /** Accent description for expressive synthesis. Omitted from the prompt when not set. */
   accent?: string
-  /** Pacing description for Gemini TTS (only used with 'expressive' model). */
+  /** Pacing description for expressive synthesis. */
   pacing?: string
+  /**
+   * Integer seed included in the audio cache key. A different seed always forces
+   * regeneration. Consistent output is not guaranteed across all voice types.
+   */
+  seed?: number
 }
 export type VideoCaptionTranslation =
   | VideoCaptionTranslationFile
@@ -239,18 +249,22 @@ export type RecordingEvent =
   | AutoZoomEndEvent
 
 export type VoiceLanguageMeta = {
-  /** Voice key string: a built-in voice name, `elevenlabs:{voiceId}`, or `custom:{path}`. */
+  /** Voice key string: a built-in voice name or an external voice key. */
   name: string
+  /**
+   * Integer seed included in the audio cache key. A different seed always forces
+   * regeneration. Consistent output is not guaranteed across all voice types.
+   */
   seed?: number
   /** BCP-47 region code, e.g. 'en-US'. Overrides the base language for TTS synthesis. */
   region?: string
-  /** TTS model type — 'expressive' (Gemini) or 'consistent' (Chirp 3 HD). Defaults to 'consistent'. */
+  /** TTS model type — `'expressive'` or `'consistent'`. Defaults to `'consistent'`. */
   modelType?: string
-  /** Speaking style prompt for Gemini TTS (only used with 'expressive' model). */
+  /** Speaking style prompt for expressive synthesis. */
   style?: string
-  /** Accent description for Gemini TTS (only used with 'expressive' model). Omitted from the prompt when not set. */
+  /** Accent description for expressive synthesis. Omitted from the prompt when not set. */
   accent?: string
-  /** Pacing description for Gemini TTS (only used with 'expressive' model). */
+  /** Pacing description for expressive synthesis. */
   pacing?: string
 }
 

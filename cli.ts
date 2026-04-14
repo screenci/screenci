@@ -301,44 +301,6 @@ function spawnSilent(cmd: string, args: string[], cwd?: string): Promise<void> {
   })
 }
 
-function spawnCaptured(
-  cmd: string,
-  args: string[],
-  cwd?: string
-): Promise<{ code: number | null; stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: 'pipe', ...(cwd ? { cwd } : {}) })
-    const childSignals = forwardChildSignals(child, cmd)
-    let stdout = ''
-    let stderr = ''
-
-    child.stdout?.on('data', (chunk: Buffer | string) => {
-      stdout += chunk.toString()
-    })
-    child.stderr?.on('data', (chunk: Buffer | string) => {
-      stderr += chunk.toString()
-    })
-
-    child.on('close', (code, signal) => {
-      const forwardedSignal = childSignals.getForwardedSignal()
-      childSignals.cleanup()
-      if (forwardedSignal) {
-        process.kill(process.pid, forwardedSignal)
-        return
-      }
-      if (signal) {
-        process.kill(process.pid, signal)
-        return
-      }
-      resolve({ code, stdout, stderr })
-    })
-    child.on('error', (err) => {
-      childSignals.cleanup()
-      reject(err)
-    })
-  })
-}
-
 function forwardChildSignals(
   child: ChildProcess,
   activityLabel: string
@@ -382,53 +344,6 @@ function forwardChildSignals(
     },
     getForwardedSignal: () => forwardedSignal,
   }
-}
-
-async function getPlaywrightChromiumInstallStatus(
-  projectDir: string,
-  verbose = false
-): Promise<{ needed: boolean; version: string | null }> {
-  try {
-    if (verbose) {
-      logger.info(
-        'Checking Playwright Chromium install with: npx playwright install --list'
-      )
-    }
-    const list = await spawnCaptured(
-      'npx',
-      ['playwright', 'install', '--list'],
-      projectDir
-    )
-    if (verbose) {
-      if (list.stdout.trim() !== '') logger.info(list.stdout.trimEnd())
-      if (list.stderr.trim() !== '') logger.info(list.stderr.trimEnd())
-      logger.info(`Check result: exit code ${list.code ?? 'null'}`)
-    }
-    const output = `${list.stdout}\n${list.stderr}`
-    const versionMatch = output.match(/\bchromium-(\d+)\b/i)
-    if (list.code === 0 && versionMatch) {
-      if (verbose) {
-        logger.info(
-          `Chromium check result: Chromium found in Playwright install list (version ${versionMatch[1]})`
-        )
-      }
-      return { needed: false, version: versionMatch[1] ?? null }
-    }
-    if (verbose) {
-      logger.info(
-        'Chromium check result: Chromium not found in Playwright install list'
-      )
-    }
-  } catch {
-    // If the probe fails, default to asking.
-  }
-
-  if (verbose) {
-    logger.info(
-      'Chromium check result: unable to verify, install still recommended'
-    )
-  }
-  return { needed: true, version: null }
 }
 
 const CONTAINER_LOG_FILTER = [
@@ -1681,8 +1596,6 @@ async function runInit(
     }
   }
 
-  let chromiumReady = false
-
   if (verbose) {
     logger.info("Running 'npm install'...")
     await spawnInherited('npm', ['install'], projectDir, 'screenci init')
@@ -1697,35 +1610,18 @@ async function runInit(
     }
   }
 
-  const chromiumInstallStatus = await getPlaywrightChromiumInstallStatus(
+  logger.info('Local development requires Chromium for Playwright.')
+  logger.info("Running 'npx playwright install chromium --with-deps'...")
+  await spawnInherited(
+    'npx',
+    ['playwright', 'install', 'chromium', '--with-deps'],
     projectDir,
-    verbose
+    'screenci init'
   )
-
-  if (!chromiumInstallStatus.needed) {
-    chromiumReady = true
-    const versionText = chromiumInstallStatus.version
-      ? `, version ${chromiumInstallStatus.version} already installed.`
-      : ' because it is already installed.'
-    logger.info(`${pc.green('✔')} Skipping Chromium installation${versionText}`)
-  } else {
-    logger.info('Local development requires Chromium for Playwright.')
-    logger.info("Running 'npx playwright install chromium --with-deps'...")
-    await spawnInherited(
-      'npx',
-      ['playwright', 'install', 'chromium', '--with-deps'],
-      projectDir,
-      'screenci init'
-    )
-    chromiumReady = true
-  }
 
   logger.info('')
   logger.info('Next steps:')
   logger.info(`  cd ${dirName}`)
-  if (!chromiumReady) {
-    logger.info('  npx playwright install chromium --with-deps')
-  }
   logger.info('  npx screenci test')
   logger.info('  npx screenci record')
 }

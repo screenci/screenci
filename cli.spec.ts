@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
-import pc from 'picocolors'
 import { logger } from './src/logger.js'
 import type { VoiceKey } from './src/voices.js'
 import type { RecordingData } from './src/recording.js'
@@ -2010,43 +2009,9 @@ describe('CLI', () => {
       )
     })
 
-    it('should skip Chromium prompt when Playwright reports Chromium already installed', async () => {
+    it('should not attempt Chromium detection before install', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
-
-      const createChild = () =>
-        Object.assign(new EventEmitter(), {
-          unref: vi.fn(),
-          stdout: new EventEmitter(),
-          stderr: new EventEmitter(),
-        }) as unknown as ChildProcess & {
-          stdout: EventEmitter
-          stderr: EventEmitter
-        }
-
-      mockSpawn.mockImplementationOnce(() => {
-        const child = createChild()
-        process.nextTick(() => child.emit('close', 0))
-        return child
-      })
-      mockSpawn.mockImplementationOnce(() => {
-        const child = createChild()
-        process.nextTick(() => {
-          child.emit('close', 0)
-        })
-        return child
-      })
-      mockSpawn.mockImplementationOnce(() => {
-        const child = createChild()
-        process.nextTick(() => {
-          child.stdout.emit(
-            'data',
-            '/home/test/.cache/ms-playwright/chromium-1200\n'
-          )
-          child.emit('close', 0)
-        })
-        return child
-      })
 
       const { main } = await import('./cli')
       await main()
@@ -2054,66 +2019,20 @@ describe('CLI', () => {
       expect(mockConfirm).toHaveBeenCalledTimes(1)
       expect(mockSpawn).not.toHaveBeenCalledWith(
         'npx',
-        ['playwright', 'install', 'chromium', '--with-deps'],
+        ['playwright', 'install', '--list'],
         expect.any(Object)
-      )
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        `${pc.green('✔')} Skipping Chromium installation, version 1200 already installed.`
-      )
-      expect(loggerInfoSpy).not.toHaveBeenCalledWith(
-        'Local development requires Chromium for Playwright.'
       )
     })
 
-    it('should show Chromium check output and result with init --verbose', async () => {
+    it('should show Chromium install output with init --verbose', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project', '--verbose']
       mockExistsSync.mockReturnValue(false)
-
-      const createChild = () =>
-        Object.assign(new EventEmitter(), {
-          unref: vi.fn(),
-          stdout: new EventEmitter(),
-          stderr: new EventEmitter(),
-        }) as unknown as ChildProcess & {
-          stdout: EventEmitter
-          stderr: EventEmitter
-        }
-
-      mockSpawn.mockImplementationOnce(() => {
-        const child = createChild()
-        process.nextTick(() => child.emit('close', 0))
-        return child
-      })
-      mockSpawn.mockImplementationOnce(() => {
-        const child = createChild()
-        process.nextTick(() => {
-          child.emit('close', 0)
-        })
-        return child
-      })
-      mockSpawn.mockImplementationOnce(() => {
-        const child = createChild()
-        process.nextTick(() => {
-          child.stdout.emit(
-            'data',
-            '/home/test/.cache/ms-playwright/chromium-1200\n'
-          )
-          child.emit('close', 0)
-        })
-        return child
-      })
 
       const { main } = await import('./cli')
       await main()
 
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        'Checking Playwright Chromium install with: npx playwright install --list'
-      )
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        '/home/test/.cache/ms-playwright/chromium-1200'
-      )
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        'Chromium check result: Chromium found in Playwright install list (version 1200)'
+        "Running 'npx playwright install chromium --with-deps'..."
       )
     })
 

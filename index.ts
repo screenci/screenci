@@ -9,7 +9,7 @@ export type {
   ResolvedRenderOptions,
   ScreenCIConfig,
   ExtendedScreenCIConfig,
-  CaptionConfig,
+  CueConfig,
   AutoZoomOptions,
   Easing,
   PostClickMove,
@@ -45,9 +45,9 @@ export type {
   MouseShowEvent,
   MouseHideEvent,
   MouseWaitEvent,
-  CaptionStartEvent,
-  CaptionEndEvent,
-  VideoCaptionStartEvent,
+  CueStartEvent,
+  CueEndEvent,
+  VideoCueStartEvent,
   HideStartEvent,
   HideEndEvent,
   AutoZoomStartEvent,
@@ -71,23 +71,23 @@ export { getDimensions } from './src/dimensions.js'
 // Re-export config function
 export { defineConfig } from './src/config.js'
 
-// Re-export video fixture and caption
+// Re-export video fixture and cue
 export { video } from './src/video.js'
 export type { ScreenCIPage, ScreenCILocator } from './src/types.js'
-export { createVoiceOvers, createVideoCaptions } from './src/caption.js'
+export { createNarration, createVideoCues } from './src/cue.js'
 export type {
-  CaptionController,
-  Captions,
-  VideoCaptionEntry,
-  VideoCaptions,
+  CueController,
+  Cues,
+  VideoCueEntry,
+  VideoCues,
   TopLevelVoiceConfig,
-  LangVoiceOverride,
-  CaptionMapValue,
-} from './src/caption.js'
+  LangNarrationOverride,
+  CueMapValue,
+} from './src/cue.js'
 export type {
-  CaptionTranslation,
-  VideoCaptionTranslation,
-  VideoCaptionTranslationFile,
+  CueTranslation,
+  VideoCueTranslation,
+  VideoCueTranslationFile,
   VoiceLanguageMeta,
 } from './src/events.js'
 export { hide } from './src/hide.js'

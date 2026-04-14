@@ -1,6 +1,6 @@
 ---
 title: Recording Flows
-description: How to write ScreenCI video scripts — from a blank file to a polished recording with captions, zoom, and hidden setup steps.
+description: How to write ScreenCI video scripts — from a blank file to a polished recording with cues, zoom, and hidden setup steps.
 ---
 
 ScreenCI turns Playwright scripts into product videos. If you've written a Playwright test before, you already know most of what you need.
@@ -91,23 +91,23 @@ Everything in [Playwright's `page` API](https://playwright.dev/docs/api/class-pa
 | Typed character input | `fill()` types character-by-character so the viewer sees keystrokes |
 | `hide(fn)`            | Cuts a section from the final video (logins, page loads, setup)     |
 | `autoZoom(fn)`        | Smooth camera pan that follows interactions inside the callback     |
-| `createVoiceOvers()`  | Typed narration markers you `await` where each spoken line starts   |
+| `createNarration()`   | Typed narration markers you `await` where each spoken line starts   |
 | `createAssets()`      | Image or video overlays shown during the recording                  |
 
-These are composable. You can combine `hide`, `autoZoom`, and captions around any Playwright code.
+These are composable. You can combine `hide`, `autoZoom`, and cues around any Playwright code.
 
 ---
 
 ## A complete example
 
 ```ts
-import { video, hide, autoZoom, createVoiceOvers, voices } from 'screenci'
+import { video, hide, autoZoom, createNarration, voices } from 'screenci'
 
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.Aria },
   languages: {
     en: {
-      captions: {
+      cues: {
         openForm: "Let's add a new team member.",
         submit: "One click and they're in.",
       },
@@ -126,7 +126,7 @@ video('Invite a team member', async ({ page }) => {
   })
 
   // Start narration where that line should begin.
-  await voiceOvers.openForm
+  await narration.openForm
   await autoZoom(
     async () => {
       await page.locator('#invite').click()
@@ -135,9 +135,9 @@ video('Invite a team member', async ({ page }) => {
     { duration: 400, easing: 'ease-in-out', amount: 0.4 }
   )
 
-  // Starting the next voiceOver automatically ends the previous one.
-  await voiceOvers.submit
-  await voiceOvers.waitEnd()
+  // Starting the next narration segment automatically ends the previous one.
+  await narration.submit
+  await narration.wait()
   await autoZoom(
     async () => {
       await page.locator('button[type="submit"]').click()
@@ -148,7 +148,7 @@ video('Invite a team member', async ({ page }) => {
 })
 ```
 
-The key timing rule is simple: `await voiceOvers.key` starts audio immediately and your script keeps moving. Only call `await voiceOvers.waitEnd()` when the next action must happen after the spoken line finishes.
+The key timing rule is simple: `await narration.key` starts audio immediately and your script keeps moving. Only call `await narration.wait()` when the next action must happen after the spoken line finishes.
 
 ---
 

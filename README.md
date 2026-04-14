@@ -106,18 +106,18 @@ export default defineConfig({
 
 screenci enforces `workers: 1`, `retries: 0`, and `fullyParallel: false` — FFmpeg records one screen at a time. Don't fight it.
 
-## AI voiceovers
+## AI narration
 
-`createVoiceOvers()` maps keys to narration text (or audio files). Define it once near the top of the file, then `await voiceOvers.key` inside `video()` wherever that spoken line should begin. The audio keeps playing while your next actions run. Use `await voiceOvers.waitEnd()` only when an action must wait for the current line to finish.
+`createNarration()` maps keys to narration text (or audio files). Define it once near the top of the file, then `await narration.key` inside `video()` wherever that spoken line should begin. The audio keeps playing while your next actions run. Use `await narration.wait()` only when an action must wait for the current line to finish.
 
 ```ts
-import { video, createVoiceOvers, voices } from 'screenci'
+import { video, createNarration, voices } from 'screenci'
 
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.Aria },
   languages: {
     en: {
-      captions: {
+      cues: {
         intro: 'Welcome to the dashboard.',
         addButton: 'Click here to create a new project.',
       },
@@ -128,26 +128,26 @@ const voiceOvers = createVoiceOvers({
 video('Dashboard walkthrough', async ({ page }) => {
   await page.goto('/dashboard')
 
-  await voiceOvers.intro
+  await narration.intro
   await page.locator('#reports').click()
   await page.locator('#new-project').click()
 
-  await voiceOvers.addButton
-  await voiceOvers.waitEnd()
+  await narration.addButton
+  await narration.wait()
 })
 ```
 
 Use this pattern:
 
 ```ts
-const voiceOvers = createVoiceOvers({ ... })
+const narration = createNarration({ ... })
 
 video('Example', async ({ page }) => {
-  await voiceOvers.intro // starts narration now
+  await narration.intro // starts narration now
   await page.click('#next') // runs while intro audio is still playing
 
-  await voiceOvers.details // auto-ends intro, then starts details
-  await voiceOvers.waitEnd() // only if the next action must wait
+  await narration.details // auto-ends intro, then starts details
+  await narration.wait() // only if the next action must wait
   await page.click('#confirm')
 })
 ```
@@ -157,20 +157,20 @@ video('Example', async ({ page }) => {
 TypeScript enforces that every language has the same keys. Missing a translation is a compile error.
 
 ```ts
-import { createVoiceOvers, voices } from 'screenci'
+import { createNarration, voices } from 'screenci'
 
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.Ava },
   languages: {
     en: {
-      captions: {
+      cues: {
         intro: 'Welcome to the dashboard.',
         addButton: 'Click here to create a new project.',
       },
     },
     fi: {
       voice: { name: voices.Nora },
-      captions: {
+      cues: {
         intro: 'Tervetuloa hallintapaneeliin.',
         addButton: 'Klikkaa tästä luodaksesi uuden projektin.',
       },
@@ -224,14 +224,14 @@ video('Profile settings', async ({ page }) => {
 
 ## API
 
-| Export             | What it does                                                       |
-| ------------------ | ------------------------------------------------------------------ |
-| `defineConfig`     | Wraps Playwright config with screenci defaults                     |
-| `video`            | Declares a video recording test                                    |
-| `createVoiceOvers` | Creates typed voiceover controllers with AI-generated audio        |
-| `hide`             | Cuts a section from the final video                                |
-| `autoZoom`         | Smooth camera pan that follows interactions                        |
-| `voices`           | Available voice constants (`voices.Ava`, `voices.elevenlabs(...)`) |
+| Export            | What it does                                                       |
+| ----------------- | ------------------------------------------------------------------ |
+| `defineConfig`    | Wraps Playwright config with screenci defaults                     |
+| `video`           | Declares a video recording test                                    |
+| `createNarration` | Creates typed narration controllers with AI-generated audio        |
+| `hide`            | Cuts a section from the final video                                |
+| `autoZoom`        | Smooth camera pan that follows interactions                        |
+| `voices`          | Available voice constants (`voices.Ava`, `voices.elevenlabs(...)`) |
 
 The `page` fixture inside `video()` is a `ScreenCIPage` — a Playwright `Page` with animated cursor support wired in on all locator methods.
 
@@ -241,10 +241,10 @@ The `page` fixture inside `video()` is a `ScreenCIPage` — a Playwright `Page` 
 .screenci/
   <video-name>/
     recording.mp4   ← the raw screen capture
-    data.json       ← interaction events + caption metadata
+    data.json       ← interaction events + cue metadata
 ```
 
-Upload to screenci.com for rendering, voiceover generation, and the permanent embed link:
+Upload to screenci.com for rendering, narration generation, and the permanent embed link:
 
 ```bash
 npm run retry

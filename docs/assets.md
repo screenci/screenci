@@ -104,12 +104,12 @@ const assets = createAssets({
 })
 ```
 
-The corner position, size, and padding are shared with voiceOver overlay settings and can be configured via `renderOptions`:
+The corner position, size, and padding are shared with narration overlay settings and can be configured via `renderOptions`:
 
 ```ts
 video.use({
   renderOptions: {
-    voiceOvers: {
+    narration: {
       corner: 'bottom-right',
       size: 0.15,
       padding: 0.02,
@@ -130,7 +130,7 @@ The `audio` field controls the volume of the asset's audio track relative to the
 | `0.5` | Half volume                      |
 | `1.0` | Full original volume             |
 
-Audio is mixed into the final render alongside any voiceover audio. Set `audio: 0` for silent overlays (logos, watermarks) or when you don't want the asset's audio in the output.
+Audio is mixed into the final render alongside any narration audio. Set `audio: 0` for silent overlays (logos, watermarks) or when you don't want the asset's audio in the output.
 
 ---
 

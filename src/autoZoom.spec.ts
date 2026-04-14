@@ -12,9 +12,9 @@ function makeRecorder(): IEventRecorder {
   return {
     start: vi.fn(),
     addInput: vi.fn(),
-    addCaptionStart: vi.fn(),
-    addCaptionEnd: vi.fn(),
-    addVideoCaptionStart: vi.fn(),
+    addCueStart: vi.fn(),
+    addCueEnd: vi.fn(),
+    addVideoCueStart: vi.fn(),
     addAssetStart: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),

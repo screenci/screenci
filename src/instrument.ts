@@ -1189,12 +1189,12 @@ export function instrumentLocator(locator: Locator): Locator {
     if (hoverDuration > 0) {
       await sleep(hoverDuration)
     }
-    const waitEndMs = Date.now()
+    const waitFinishMs = Date.now()
 
     innerEvents.push({
       type: 'mouseWait',
       startMs: waitStartMs,
-      endMs: waitEndMs,
+      endMs: waitFinishMs,
     })
 
     if (activeClickRecorder && innerEvents.length > 0) {
@@ -1620,7 +1620,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
         type: 'mouseMove',
         startMs,
         endMs,
-        duration: endMs - startMs,
+        duration,
         x,
         y,
         ...(duration > 0 ? { easing } : {}),

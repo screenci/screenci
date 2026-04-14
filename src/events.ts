@@ -2,7 +2,7 @@ import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import type {
   AutoZoomOptions,
-  CaptionConfig,
+  CueConfig,
   Easing,
   RecordOptions,
   RenderOptions,
@@ -82,7 +82,7 @@ export type MouseWaitEvent = {
  * A recorded user input action containing one or more inner mouse events.
  * mouseMove, mouseShow, and mouseHide subtypes each contain exactly one inner event.
  * All input events must not overlap in time; recording will throw if they do.
- * Captions are automatically prevented from falling inside any input event's time range.
+ * Cues are automatically prevented from falling inside any input event's time range.
  */
 export type InputEvent = {
   type: 'input'
@@ -116,7 +116,7 @@ export type RecordingCustomVoiceRef = {
   assetPath?: string
 }
 
-export type CaptionTranslation = {
+export type CueTranslation = {
   text: string
   voice: VoiceKey | RecordingCustomVoiceRef
   /** BCP-47 region code, e.g. 'en-US'. Overrides the base language for TTS synthesis. */
@@ -136,33 +136,33 @@ export type CaptionTranslation = {
   seed?: number
 }
 
-export type CaptionStartEvent = {
-  type: 'captionStart'
+export type CueStartEvent = {
+  type: 'cueStart'
   timeMs: number
   name: string
   /** Single-language API (backward compat) */
   text?: string
-  captionConfig?: CaptionConfig
+  cueConfig?: CueConfig
   /** Multi-language API — all language translations keyed by language code */
-  translations?: Record<string, CaptionTranslation>
+  translations?: Record<string, CueTranslation>
 }
 
-export type CaptionEndEvent = {
-  type: 'captionEnd'
+export type CueEndEvent = {
+  type: 'cueEnd'
   timeMs: number
-  reason?: 'auto' | 'waitEnd'
+  reason?: 'auto' | 'wait'
 }
 
-/** File-based video caption translation. assetPath is present only in the local
+/** File-based video cue translation. assetPath is present only in the local
  *  recording phase (for CLI upload) and is stripped before submitting to the backend. */
-export type VideoCaptionTranslationFile = {
+export type VideoCueTranslationFile = {
   assetHash: string
   /** Local file path — present only during recording; stripped from submitted data. */
   assetPath?: string
   subtitle?: string
 }
-/** TTS-based video caption translation — generates audio via text-to-speech. */
-export type VideoCaptionTranslationTTS = {
+/** TTS-based video cue translation — generates audio via text-to-speech. */
+export type VideoCueTranslationTTS = {
   text: string
   voice: VoiceKey | RecordingCustomVoiceRef
   /** BCP-47 region code, e.g. 'en-US'. Overrides the base language for TTS synthesis. */
@@ -181,12 +181,12 @@ export type VideoCaptionTranslationTTS = {
    */
   seed?: number
 }
-export type VideoCaptionTranslation =
-  | VideoCaptionTranslationFile
-  | VideoCaptionTranslationTTS
+export type VideoCueTranslation =
+  | VideoCueTranslationFile
+  | VideoCueTranslationTTS
 
-export type VideoCaptionStartEvent = {
-  type: 'videoCaptionStart'
+export type VideoCueStartEvent = {
+  type: 'videoCueStart'
   timeMs: number
   name: string
   /** Single-language API: SHA-256 hash of the pre-recorded asset. */
@@ -196,7 +196,7 @@ export type VideoCaptionStartEvent = {
   /** Optional subtitle text. Words are spread with equal timing at render time. */
   subtitle?: string
   /** Multi-language API — per-language translations keyed by language code. */
-  translations?: Record<string, VideoCaptionTranslation>
+  translations?: Record<string, VideoCueTranslation>
 }
 
 export type AssetStartEvent = {
@@ -239,9 +239,9 @@ export type AutoZoomEndEvent = {
 export type RecordingEvent =
   | VideoStartEvent
   | InputEvent
-  | CaptionStartEvent
-  | CaptionEndEvent
-  | VideoCaptionStartEvent
+  | CueStartEvent
+  | CueEndEvent
+  | VideoCueStartEvent
   | AssetStartEvent
   | HideStartEvent
   | HideEndEvent
@@ -270,7 +270,7 @@ export type VoiceLanguageMeta = {
 
 export type RecordingMetadata = {
   videoName: string
-  /** Language codes present in multi-language captions, e.g. `['en', 'de']`. Omitted when no multi-language captions are used. */
+  /** Language codes present in multi-language cues, e.g. `['en', 'de']`. Omitted when no multi-language cues are used. */
   languages?: string[]
 }
 
@@ -293,19 +293,19 @@ export interface IEventRecorder {
     elementRect: ElementRect | undefined,
     events: InputEvent['events']
   ): void
-  addCaptionStart(
+  addCueStart(
     text: string,
     name: string,
-    captionConfig?: CaptionConfig,
-    translations?: Record<string, CaptionTranslation>
+    cueConfig?: CueConfig,
+    translations?: Record<string, CueTranslation>
   ): void
-  addCaptionEnd(reason?: 'auto' | 'waitEnd'): void
-  addVideoCaptionStart(
+  addCueEnd(reason?: 'auto' | 'wait'): void
+  addVideoCueStart(
     name: string,
     assetPath: string | undefined,
     assetHash: string | undefined,
     subtitle?: string,
-    translations?: Record<string, VideoCaptionTranslation>
+    translations?: Record<string, VideoCueTranslation>
   ): void
   addAssetStart(
     name: string,
@@ -319,7 +319,7 @@ export interface IEventRecorder {
   addAutoZoomEnd(options?: AutoZoomOptions): void
   /**
    * Registers voice metadata seen during recording.
-   * Kept for API compatibility; voice settings are stored per caption event.
+   * Kept for API compatibility; voice settings are stored per cue event.
    */
   registerVoiceForLang(lang: string, meta: VoiceLanguageMeta): void
   getEvents(): RecordingEvent[]
@@ -414,45 +414,45 @@ export class EventRecorder implements IEventRecorder {
     } as InputEvent)
   }
 
-  addCaptionStart(
+  addCueStart(
     text: string,
     name: string,
-    captionConfig?: CaptionConfig,
-    translations?: Record<string, CaptionTranslation>
+    cueConfig?: CueConfig,
+    translations?: Record<string, CueTranslation>
   ): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     this.events.push({
-      type: 'captionStart',
+      type: 'cueStart',
       timeMs,
       name,
       ...(text.length > 0 && { text }),
-      ...(captionConfig !== undefined && { captionConfig }),
+      ...(cueConfig !== undefined && { cueConfig }),
       ...(translations !== undefined && { translations }),
     })
   }
 
-  addCaptionEnd(reason?: 'auto' | 'waitEnd'): void {
+  addCueEnd(reason?: 'auto' | 'wait'): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     this.events.push({
-      type: 'captionEnd',
+      type: 'cueEnd',
       timeMs,
       ...(reason !== undefined && { reason }),
     })
   }
 
-  addVideoCaptionStart(
+  addVideoCueStart(
     name: string,
     assetPath: string | undefined,
     assetHash: string | undefined,
     subtitle?: string,
-    translations?: Record<string, VideoCaptionTranslation>
+    translations?: Record<string, VideoCueTranslation>
   ): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     this.events.push({
-      type: 'videoCaptionStart',
+      type: 'videoCueStart',
       timeMs,
       name,
       ...(assetHash !== undefined && { assetHash }),
@@ -563,20 +563,19 @@ export class EventRecorder implements IEventRecorder {
           ro?.recording?.dropShadow ??
           RENDER_OPTIONS_DEFAULTS.recording.dropShadow,
       },
-      voiceOvers: {
-        size: ro?.voiceOvers?.size ?? RENDER_OPTIONS_DEFAULTS.voiceOvers.size,
+      narration: {
+        size: ro?.narration?.size ?? RENDER_OPTIONS_DEFAULTS.narration.size,
         roundness:
-          ro?.voiceOvers?.roundness ??
-          RENDER_OPTIONS_DEFAULTS.voiceOvers.roundness,
-        shape:
-          ro?.voiceOvers?.shape ?? RENDER_OPTIONS_DEFAULTS.voiceOvers.shape,
+          ro?.narration?.roundness ??
+          RENDER_OPTIONS_DEFAULTS.narration.roundness,
+        shape: ro?.narration?.shape ?? RENDER_OPTIONS_DEFAULTS.narration.shape,
         corner:
-          ro?.voiceOvers?.corner ?? RENDER_OPTIONS_DEFAULTS.voiceOvers.corner,
+          ro?.narration?.corner ?? RENDER_OPTIONS_DEFAULTS.narration.corner,
         padding:
-          ro?.voiceOvers?.padding ?? RENDER_OPTIONS_DEFAULTS.voiceOvers.padding,
+          ro?.narration?.padding ?? RENDER_OPTIONS_DEFAULTS.narration.padding,
         dropShadow:
-          ro?.voiceOvers?.dropShadow ??
-          RENDER_OPTIONS_DEFAULTS.voiceOvers.dropShadow,
+          ro?.narration?.dropShadow ??
+          RENDER_OPTIONS_DEFAULTS.narration.dropShadow,
       },
       cursor: {
         size: ro?.cursor?.size ?? RENDER_OPTIONS_DEFAULTS.cursor.size,
@@ -592,16 +591,16 @@ export class EventRecorder implements IEventRecorder {
 
     const languageSet = new Set<string>()
     for (const event of this.events) {
-      if (event.type === 'captionStart') {
+      if (event.type === 'cueStart') {
         if (event.translations !== undefined) {
           for (const lang of Object.keys(event.translations)) {
             languageSet.add(lang)
           }
-        } else if (event.captionConfig?.voice !== undefined) {
+        } else if (event.cueConfig?.voice !== undefined) {
           const lang =
-            event.captionConfig.voice.includes('.') &&
-            !event.captionConfig.voice.startsWith('elevenlabs:')
-              ? event.captionConfig.voice.split('.')[0]
+            event.cueConfig.voice.includes('.') &&
+            !event.cueConfig.voice.startsWith('elevenlabs:')
+              ? event.cueConfig.voice.split('.')[0]
               : undefined
           if (lang) languageSet.add(lang)
         }

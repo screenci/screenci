@@ -1,14 +1,14 @@
 /**
- * TTS model types for use with `createVoiceOvers`.
+ * TTS model types for use with `createNarration`.
  *
- * - `expressive`: Gemini TTS — more expressive, natural-sounding speech.
- * - `consistent`: Chirp 3 HD — consistent, high-quality synthesis.
+ * - `expressive`: expressive synthesis with natural-sounding speech.
+ * - `consistent`: consistent synthesis with stable pronunciation.
  *
  * @example
  * ```ts
- * createVoiceOvers({
+ * createNarration({
  *   voice: { name: voices.Ava, modelType: modelTypes.expressive },
- *   languages: { en: { captions: { intro: 'Hello' } } },
+ *   languages: { en: { cues: { intro: 'Hello' } } },
  * })
  * ```
  */
@@ -20,18 +20,18 @@ export const modelTypes = {
 export type ModelType = (typeof modelTypes)[keyof typeof modelTypes]
 
 /**
- * BCP-47 language regions for use with `createVoiceOvers`.
+ * BCP-47 language regions for use with `createNarration`.
  *
  * Pass a region as `region` inside a language entry to select the
  * specific locale variant used for speech synthesis.
  *
  * @example
  * ```ts
- * createVoiceOvers({
+ * createNarration({
  *   voice: { name: voices.Ava },
  *   languages: {
- *     en: { region: languageRegions.en.US, captions: { intro: 'Hello' } },
- *     fr: { region: languageRegions.fr.FR, captions: { intro: 'Bonjour' } },
+ *     en: { region: languageRegions.en.US, cues: { intro: 'Hello' } },
+ *     fr: { region: languageRegions.fr.FR, cues: { intro: 'Bonjour' } },
  *   },
  * })
  * ```
@@ -102,24 +102,24 @@ export const languageRegions = {
 } as const
 
 /**
- * Named voices available for use with `createVoiceOvers`.
+ * Named voices available for use with `createNarration`.
  *
  * Built-in voices are language-agnostic at the call site:
  *
  * ```ts
- * createVoiceOvers({
- *   en: { voice: voices.Aria, captions: { intro: 'Hello' } },
- *   fi: { voice: voices.Aria, captions: { intro: 'Hei' } },
+ * createNarration({
+ *   en: { voice: voices.Aria, cues: { intro: 'Hello' } },
+ *   fi: { voice: voices.Aria, cues: { intro: 'Hei' } },
  * })
  * ```
  *
  * ElevenLabs voices are passed explicitly by provider voice id:
  *
  * ```ts
- * createVoiceOvers({
+ * createNarration({
  *   en: {
  *     voice: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }),
- *     captions: { intro: 'Hello' },
+ *     cues: { intro: 'Hello' },
  *   },
  * })
  * ```
@@ -318,12 +318,12 @@ export type VoiceForLang<L extends string> = L extends Lang ? VoiceKey : never
 
 /**
  * A reference to a local audio or video file for ElevenLabs Instant Voice Cloning.
- * Pass as the `voice` in `createVoiceOvers` to clone a voice from the file at `path`.
+ * Pass as the `voice` in `createNarration` to clone a voice from the file at `path`.
  *
  * @example
  * ```ts
- * createVoiceOvers({
- *   en: { voice: { path: './my-voice.mp3' }, captions: { intro: 'Hello.' } },
+ * createNarration({
+ *   en: { voice: { path: './my-voice.mp3' }, cues: { intro: 'Hello.' } },
  * })
  * ```
  */

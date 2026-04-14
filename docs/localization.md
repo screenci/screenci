@@ -1,20 +1,20 @@
 ---
-title: Voiceovers & Localization
-description: Complete guide to createVoiceOvers — voices, languages, regions, model types, styles, per-language overrides, and file-based narration.
+title: Narrations & Localization
+description: Complete guide to createNarration — voices, languages, regions, model types, styles, per-language overrides, and file-based narration.
 ---
 
-# Voiceovers & Localization
+# Narrations & Localization
 
-`createVoiceOvers()` is how you add narration to a ScreenCI video. You write the text; ScreenCI synthesizes the audio and syncs it to the recording at render time. Each key becomes a typed controller that you await directly to start it.
+`createNarration()` is how you add narration to a ScreenCI video. You write the text; ScreenCI synthesizes the audio and syncs it to the recording at render time. Each key becomes a typed controller that you await directly to start it.
 
 ```ts
-import { createVoiceOvers, voices } from 'screenci'
+import { createNarration, voices } from 'screenci'
 
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.Aria },
   languages: {
     en: {
-      captions: {
+      cues: {
         intro: 'Welcome to the dashboard.',
         addButton: 'Click here to create a new project.',
       },
@@ -63,12 +63,12 @@ All built-in voices are language-agnostic — the same name works for any suppor
 | `Zoe`      | Female | Upbeat — Positive and motivating, encourages continued interaction    |
 
 ```ts
-import { createVoiceOvers, voices } from 'screenci'
+import { createNarration, voices } from 'screenci'
 
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.Nora },
   languages: {
-    en: { captions: { intro: "Let's get started." } },
+    en: { cues: { intro: "Let's get started." } },
   },
 })
 ```
@@ -77,7 +77,7 @@ const voiceOvers = createVoiceOvers({
 
 ## Available languages
 
-The `languages` map accepts any supported language code as a key. TypeScript enforces that all language entries share the same caption keys.
+The `languages` map accepts any supported language code as a key. TypeScript enforces that all language entries share the same cue keys.
 
 | Code  | Language    | Code | Language           |
 | ----- | ----------- | ---- | ------------------ |
@@ -120,14 +120,14 @@ The `languages` map accepts any supported language code as a key. TypeScript enf
 When a language has multiple regional variants (e.g. English US vs. British), use `region` together with `languageRegions` to pick the right locale for synthesis.
 
 ```ts
-import { createVoiceOvers, voices, languageRegions } from 'screenci'
+import { createNarration, voices, languageRegions } from 'screenci'
 
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.Ava },
   languages: {
     en: {
       region: languageRegions.en.US, // 'en-US'
-      captions: { intro: 'Welcome.' },
+      cues: { intro: 'Welcome.' },
     },
   },
 })
@@ -163,12 +163,12 @@ Languages not listed above have a single region variant and do not require an ex
 | `'expressive'` | More natural-sounding, dynamic delivery — slight variation per render. |
 
 ```ts
-import { createVoiceOvers, voices, modelTypes } from 'screenci'
+import { createNarration, voices, modelTypes } from 'screenci'
 
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.Ava, modelType: modelTypes.consistent },
   languages: {
-    en: { captions: { intro: 'Hello.' } },
+    en: { cues: { intro: 'Hello.' } },
   },
 })
 ```
@@ -179,23 +179,23 @@ Use `modelTypes.expressive` when you want the narration to sound more human and 
 
 ## Style, Accent, and Pacing
 
-`style`, `accent`, and `pacing` are free-text director's notes that steer how Gemini delivers the voice. They are only available with `modelType: 'expressive'` (or implied when `style` is set without `modelType`).
+`style`, `accent`, and `pacing` are free-text director's notes that steer how the expressive model delivers the voice. They are only available with `modelType: 'expressive'` (or implied when `style` is set without `modelType`).
 
-These map directly to the [Gemini TTS prompt structure](https://ai.google.dev/gemini-api/docs/speech-generation#prompt-structure).
+These map directly to the expressive synthesis prompt fields.
 
 ### Style
 
 Sets the tone and character of the speaker — personality, energy, and emotional register.
 
 ```ts
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: {
     name: voices.Nora,
     style:
       'A calm and confident product guide, speaking clearly and at a measured pace.',
   },
   languages: {
-    en: { captions: { intro: "Let's walk through the settings page." } },
+    en: { cues: { intro: "Let's walk through the settings page." } },
   },
 })
 ```
@@ -248,17 +248,17 @@ Tips:
 Set a `voice` inside any language entry to override the top-level voice for that language. This is the recommended approach for multi-language videos where different regions have different canonical voices.
 
 ```ts
-import { createVoiceOvers, voices } from 'screenci'
+import { createNarration, voices } from 'screenci'
 
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.Ava }, // default: all languages
   languages: {
     en: {
-      captions: { intro: 'Welcome.', save: 'Hit save.' },
+      cues: { intro: 'Welcome.', save: 'Hit save.' },
     },
     fi: {
       voice: { name: voices.Nora }, // overrides Ava for Finnish
-      captions: { intro: 'Tervetuloa.', save: 'Tallenna.' },
+      cues: { intro: 'Tervetuloa.', save: 'Tallenna.' },
     },
     de: {
       voice: {
@@ -266,7 +266,7 @@ const voiceOvers = createVoiceOvers({
         modelType: 'expressive',
         style: 'A friendly and energetic German speaker.',
       },
-      captions: { intro: 'Willkommen.', save: 'Speichern.' },
+      cues: { intro: 'Willkommen.', save: 'Speichern.' },
     },
   },
 })
@@ -278,7 +278,7 @@ Per-language overrides also support `region`:
 fi: {
   voice: { name: voices.Nora },
   region: languageRegions.fi.FI,
-  captions: { intro: 'Tervetuloa.' },
+  cues: { intro: 'Tervetuloa.' },
 },
 ```
 
@@ -286,17 +286,17 @@ fi: {
 
 `seed` is an integer that is included in the audio cache key. Its exact effect depends on the TTS provider:
 
-| Provider                        | Effect of `seed`                                                                  |
-| ------------------------------- | --------------------------------------------------------------------------------- |
-| ElevenLabs (built-in voices)    | Same seed + same inputs → same audio every time (deterministic)                   |
-| Google TTS (Gemini, Chirp 3 HD) | Google's API does not support a seed — audio may still vary between regenerations |
+| Provider                     | Effect of `seed`                                                                           |
+| ---------------------------- | ------------------------------------------------------------------------------------------ |
+| ElevenLabs (built-in voices) | Same seed + same inputs → same audio every time (deterministic)                            |
+| Built-in model voice         | Seed support depends on model and provider behavior — audio may vary between regenerations |
 
 For all providers, **changing the seed always forces a full regeneration** — the cached audio is discarded and a new synthesis request is made. Use this to get a fresh take without changing any other settings.
 
 ```ts
 fi: {
   voice: { name: voices.Nora, seed: 42 },
-  captions: { intro: 'Tervetuloa.' },
+  cues: { intro: 'Tervetuloa.' },
 },
 ```
 
@@ -305,7 +305,7 @@ To regenerate, increment the seed:
 ```ts
 fi: {
   voice: { name: voices.Nora, seed: 43 }, // forces new synthesis
-  captions: { intro: 'Tervetuloa.' },
+  cues: { intro: 'Tervetuloa.' },
 },
 ```
 
@@ -318,12 +318,12 @@ fi: {
 For voices not in the built-in library, pass an ElevenLabs voice ID using `voices.elevenlabs()`:
 
 ```ts
-import { createVoiceOvers, voices } from 'screenci'
+import { createNarration, voices } from 'screenci'
 
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }) },
   languages: {
-    en: { captions: { intro: 'Hello from a custom ElevenLabs voice.' } },
+    en: { cues: { intro: 'Hello from a custom ElevenLabs voice.' } },
   },
 })
 ```
@@ -331,13 +331,13 @@ const voiceOvers = createVoiceOvers({
 You can mix built-in and ElevenLabs voices across languages:
 
 ```ts
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.Aria },
   languages: {
-    en: { captions: { intro: 'Welcome.' } },
+    en: { cues: { intro: 'Welcome.' } },
     fi: {
       voice: { name: voices.elevenlabs({ voiceId: 'your-fi-voice-id' }) },
-      captions: { intro: 'Tervetuloa.' },
+      cues: { intro: 'Tervetuloa.' },
     },
   },
 })
@@ -350,14 +350,14 @@ const voiceOvers = createVoiceOvers({
 Pass a `CustomVoiceRef` — an object with a `path` to a local audio file — as the voice name to use ElevenLabs Instant Voice Cloning. ScreenCI uploads the file and synthesizes the narration using the cloned voice.
 
 ```ts
-import { createVoiceOvers, voices } from 'screenci'
+import { createNarration, voices } from 'screenci'
 
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.Ava }, // fallback for other languages
   languages: {
     en: {
       voice: { name: { path: './assets/my-voice-sample.mp3' } },
-      captions: { intro: 'Hello — this is my own voice.' },
+      cues: { intro: 'Hello — this is my own voice.' },
     },
   },
 })
@@ -369,16 +369,16 @@ The file can be an MP3, WAV, or MP4. ElevenLabs requires at least a few seconds 
 
 ## Using a pre-recorded file as narration
 
-Instead of synthesized text, you can supply a pre-recorded audio or video file for any caption key. Assign an object with a `path` instead of a plain string:
+Instead of synthesized text, you can supply a pre-recorded audio or video file for any cue key. Assign an object with a `path` instead of a plain string:
 
 ```ts
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.Aria },
   languages: {
     en: {
-      captions: {
+      cues: {
         intro: {
-          path: './assets/intro-narration.mp3',
+          media: './assets/intro-narration.mp3',
           subtitle: 'Welcome to the dashboard.',
         },
         addButton: 'Click here to create a new project.',
@@ -388,20 +388,20 @@ const voiceOvers = createVoiceOvers({
 })
 ```
 
-`subtitle` is optional. When present, it is shown as the on-screen caption text instead of being synthesized.
+`subtitle` is optional. When present, it is shown as the on-screen cue text instead of being synthesized.
 
 ### Narration video in the corner
 
-When the `path` points to an `.mp4` file, ScreenCI plays it as a picture-in-picture overlay in the corner of the video (configured via `renderOptions.voiceOvers`). This is useful for presenter-style videos where a talking-head clip accompanies the screen recording:
+When the `path` points to an `.mp4` file, ScreenCI plays it as a picture-in-picture overlay in the corner of the video (configured via `renderOptions.narration`). This is useful for presenter-style videos where a talking-head clip accompanies the screen recording:
 
 ```ts
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.Nora, modelType: 'consistent' },
   languages: {
     en: {
-      captions: {
+      cues: {
         intro: {
-          path: './assets/intro-en.mp4', // PiP video shown in the corner
+          media: './assets/intro-en.mp4', // PiP video shown in the corner
           subtitle: 'This is the introduction.',
         },
         nextStep: "Now let's look at the settings.", // synthesized TTS
@@ -420,7 +420,7 @@ video.use({
       size: 0.7,
       dropShadow: 'drop-shadow(0 8px 24px rgba(0,0,0,0.5))',
     },
-    voiceOvers: {
+    narration: {
       size: 0.3, // fraction of the output frame
       corner: 'bottom-right',
       shape: 'rounded',
@@ -432,8 +432,8 @@ video.use({
 })
 ```
 
-You can mix file-based and synthesized entries within the same `createVoiceOvers()` call and across languages.
+You can mix file-based and synthesized entries within the same `createNarration()` call and across languages.
 
 ---
 
-Voice settings are stored per caption entry, not per language for the whole file. You can use different speakers, `modelType` values, and expressive settings for different captions even when they share the same language code.
+Voice settings are stored per cue entry, not per language for the whole file. You can use different speakers, `modelType` values, and expressive settings for different cues even when they share the same language code.

@@ -354,15 +354,15 @@ describe('EventRecorder', () => {
       expect((ro.recording as Record<string, unknown>).dropShadow).toBe(
         'drop-shadow(0 8px 24px rgba(0,0,0,0.5))'
       )
-      // voiceOvers defaults
-      expect((ro.voiceOvers as Record<string, unknown>).size).toBe(0.3)
-      expect((ro.voiceOvers as Record<string, unknown>).roundness).toBe(0)
-      expect((ro.voiceOvers as Record<string, unknown>).shape).toBe('squircle')
-      expect((ro.voiceOvers as Record<string, unknown>).corner).toBe(
+      // narration defaults
+      expect((ro.narration as Record<string, unknown>).size).toBe(0.3)
+      expect((ro.narration as Record<string, unknown>).roundness).toBe(0)
+      expect((ro.narration as Record<string, unknown>).shape).toBe('squircle')
+      expect((ro.narration as Record<string, unknown>).corner).toBe(
         'bottom-right'
       )
-      expect((ro.voiceOvers as Record<string, unknown>).padding).toBe(0.04)
-      expect((ro.voiceOvers as Record<string, unknown>).dropShadow).toBe(
+      expect((ro.narration as Record<string, unknown>).padding).toBe(0.04)
+      expect((ro.narration as Record<string, unknown>).dropShadow).toBe(
         'drop-shadow(0 8px 24px rgba(0,0,0,0.5))'
       )
       // cursor default
@@ -423,7 +423,7 @@ describe('EventRecorder', () => {
       expect((ro.recording as Record<string, unknown>).dropShadow).toBe(
         'drop-shadow(0 8px 24px rgba(0,0,0,0.5))'
       )
-      expect((ro.voiceOvers as Record<string, unknown>).dropShadow).toBe(
+      expect((ro.narration as Record<string, unknown>).dropShadow).toBe(
         'drop-shadow(0 8px 24px rgba(0,0,0,0.5))'
       )
       expect((ro.output as Record<string, unknown>).background).toEqual({
@@ -435,7 +435,7 @@ describe('EventRecorder', () => {
     it('overrides dropShadow and background when explicitly provided', async () => {
       recorder = new EventRecorder({
         recording: { dropShadow: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' },
-        voiceOvers: { dropShadow: 'drop-shadow(0 1px 2px rgba(0,0,0,0.2))' },
+        narration: { dropShadow: 'drop-shadow(0 1px 2px rgba(0,0,0,0.2))' },
         output: { background: { backgroundCss: '#000' } },
       })
       recorder.start()
@@ -447,7 +447,7 @@ describe('EventRecorder', () => {
       expect((ro.recording as Record<string, unknown>).dropShadow).toBe(
         'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
       )
-      expect((ro.voiceOvers as Record<string, unknown>).dropShadow).toBe(
+      expect((ro.narration as Record<string, unknown>).dropShadow).toBe(
         'drop-shadow(0 1px 2px rgba(0,0,0,0.2))'
       )
       expect((ro.output as Record<string, unknown>).background).toEqual({
@@ -455,9 +455,9 @@ describe('EventRecorder', () => {
       })
     })
 
-    it('omits languages from metadata when no captions are used', async () => {
+    it('omits languages from metadata when no cues are used', async () => {
       recorder.start()
-      recorder.addCaptionStart('Hello', 'greeting')
+      recorder.addCueStart('Hello', 'greeting')
       await recorder.writeToFile(tmpDir, 'Test Video')
 
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
@@ -465,9 +465,9 @@ describe('EventRecorder', () => {
       expect(parsed.metadata?.languages).toBeUndefined()
     })
 
-    it('collects language from single-language captionConfig.voice into metadata', async () => {
+    it('collects language from single-language cueConfig.voice into metadata', async () => {
       recorder.start()
-      recorder.addCaptionStart('Hello', 'greeting', { voice: voices.Ava })
+      recorder.addCueStart('Hello', 'greeting', { voice: voices.Ava })
       await recorder.writeToFile(tmpDir, 'Test Video')
 
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
@@ -475,13 +475,13 @@ describe('EventRecorder', () => {
       expect(parsed.metadata?.languages).toBeUndefined()
     })
 
-    it('collects language codes from multi-language captions into metadata', async () => {
+    it('collects language codes from multi-language cues into metadata', async () => {
       recorder.start()
-      recorder.addCaptionStart('', 'greeting', undefined, {
+      recorder.addCueStart('', 'greeting', undefined, {
         en: { text: 'Hello', voice: voices.Ava },
         fi: { text: 'Hei', voice: voices.Ava },
       })
-      recorder.addCaptionStart('', 'farewell', undefined, {
+      recorder.addCueStart('', 'farewell', undefined, {
         en: { text: 'Goodbye', voice: voices.Ava },
         fi: { text: 'Näkemiin', voice: voices.Ava },
       })
@@ -492,12 +492,12 @@ describe('EventRecorder', () => {
       expect(parsed.metadata?.languages).toEqual(['en', 'fi'])
     })
 
-    it('deduplicates language codes across multiple captions', async () => {
+    it('deduplicates language codes across multiple cues', async () => {
       recorder.start()
-      recorder.addCaptionStart('', 'a', undefined, {
+      recorder.addCueStart('', 'a', undefined, {
         en: { text: 'A', voice: voices.Ava },
       })
-      recorder.addCaptionStart('', 'b', undefined, {
+      recorder.addCueStart('', 'b', undefined, {
         en: { text: 'B', voice: voices.Ava },
       })
       await recorder.writeToFile(tmpDir, 'Test Video')
@@ -514,7 +514,7 @@ describe('EventRecorder', () => {
         name: 'Nora',
         modelType: 'expressive',
       })
-      recorder.addCaptionStart('', 'greeting', undefined, {
+      recorder.addCueStart('', 'greeting', undefined, {
         en: { text: 'Hello', voice: voices.Ava, modelType: 'consistent' },
       })
       await recorder.writeToFile(tmpDir, 'Test Video')

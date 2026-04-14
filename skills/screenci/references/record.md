@@ -42,7 +42,7 @@ npx screenci record
 Always run `npx screenci test` until it passes before running `npx screenci record`. Fix failures and rerun until green.
 
 ```bash
-npx screenci test   # verify selectors, flow, and voice overs
+npx screenci test   # verify selectors, flow, and narration
 npx screenci record # capture the final recording
 ```
 
@@ -50,9 +50,9 @@ npx screenci record # capture the final recording
 
 These are not optional — every `.video.ts` file must follow all three:
 
-### 1. Voice overs on every video (required, no exceptions)
+### 1. Narration on every video (required, no exceptions)
 
-Always add `createVoiceOvers({ ... })` to every video file. Videos without voice over are not acceptable. Define the full narration map up front, then place `await voiceOvers.someKey` at the exact point in the script where each line should begin. `await voiceOvers.key` resolves immediately while audio plays in the background — only use `await voiceOvers.waitEnd()` when the very next action must wait for the line to finish speaking.
+Always add `createNarration({ ... })` to every video file. Videos without narration are not acceptable. Define the full narration map up front, then place `await narration.someKey` at the exact point in the script where each line should begin. `await narration.key` resolves immediately while audio plays in the background — only use `await narration.wait()` when the very next action must wait for the line to finish speaking.
 
 ### 2. Hide initial setup
 

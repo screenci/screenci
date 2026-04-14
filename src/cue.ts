@@ -1,9 +1,9 @@
 import type {
   IEventRecorder,
-  CaptionTranslation,
+  CueTranslation,
   RecordingCustomVoiceRef,
-  VideoCaptionTranslation,
-  VideoCaptionTranslationFile,
+  VideoCueTranslation,
+  VideoCueTranslationFile,
   VoiceLanguageMeta,
 } from './events.js'
 import type {
@@ -19,7 +19,7 @@ import { access, readFile } from 'fs/promises'
 import { createHash } from 'crypto'
 import { dirname, resolve } from 'path'
 
-// One frame at 24fps — ensures at least one rendered frame captures each caption state.
+// One frame at 24fps — ensures at least one rendered frame captures each cue state.
 export const ONE_FRAME_MS = 1000 / 24
 
 // Blocking sleep — spin until the elapsed time has passed
@@ -35,24 +35,22 @@ export function setSleepFn(fn: (ms: number) => void): void {
 }
 
 let activeRecorder: IEventRecorder | null = null
-let captionStarted = false
+let cueStarted = false
 const registeredCustomVoiceRefs = new Set<CustomVoiceRef>()
 /** Maps local asset path → SHA-256 hash, populated during validateCustomVoiceRefs. */
-const videoCaptionFileHashes = new Map<string, string>()
+const videoCueFileHashes = new Map<string, string>()
 
-export function setActiveCaptionRecorder(
-  recorder: IEventRecorder | null
-): void {
+export function setActiveCueRecorder(recorder: IEventRecorder | null): void {
   activeRecorder = recorder
 }
 
-export function resetCaptionChain(): void {
-  captionStarted = false
+export function resetCueChain(): void {
+  cueStarted = false
 }
 
 export function resetRegisteredCustomVoiceRefs(): void {
   registeredCustomVoiceRefs.clear()
-  videoCaptionFileHashes.clear()
+  videoCueFileHashes.clear()
 }
 
 export async function validateCustomVoiceRefs(
@@ -85,7 +83,7 @@ export async function validateCustomVoiceRefs(
       .digest('hex')
   }
 
-  for (const assetPath of videoCaptionFileHashes.keys()) {
+  for (const assetPath of videoCueFileHashes.keys()) {
     const candidates = [assetPath, resolve(testDir, assetPath)]
     let fileBuffer: Buffer | null = null
 
@@ -99,10 +97,10 @@ export async function validateCustomVoiceRefs(
     }
 
     if (fileBuffer === null) {
-      throw new Error(`Video caption asset file not found: ${assetPath}`)
+      throw new Error(`Video cue asset file not found: ${assetPath}`)
     }
 
-    videoCaptionFileHashes.set(
+    videoCueFileHashes.set(
       assetPath,
       createHash('sha256').update(fileBuffer).digest('hex')
     )
@@ -127,69 +125,74 @@ function toRecordedVoice(
 }
 
 /**
- * Auto-ends any currently active caption before starting a new one.
- * Called internally at the start of every voiceOver controller.
+ * Auto-ends any currently active cue before starting a new one.
+ * Called internally at the start of every narration controller.
  */
-function captionAutoEnd(): void {
-  if (!captionStarted || activeRecorder === null) return
-  activeRecorder.addCaptionEnd('auto')
+function cueAutoEnd(): void {
+  if (!cueStarted || activeRecorder === null) return
+  activeRecorder.addCueEnd('auto')
   sleepFn(2 * ONE_FRAME_MS)
-  captionStarted = false
+  cueStarted = false
 }
 
-async function doWaitEnd(): Promise<void> {
-  if (activeRecorder === null || !captionStarted) return
-  if (isInsideHide()) throw new Error('Cannot call waitEnd inside hide()')
-  activeRecorder.addCaptionEnd('waitEnd')
+async function doWait(): Promise<void> {
+  if (activeRecorder === null || !cueStarted) return
+  if (isInsideHide()) throw new Error('Cannot call wait() inside hide()')
+  activeRecorder.addCueEnd('wait')
   sleepFn(2 * ONE_FRAME_MS)
-  captionStarted = false
+  cueStarted = false
 }
 
 /**
- * A voiceOver controller. Awaiting it starts the voiceover.
+ * A narration controller. Awaiting it starts the narration segment.
  *
  * @example
  * ```ts
- * await voiceOvers.intro
+ * await narration.intro
  * await page.goto('/dashboard')
- * await voiceOvers.nextStep
+ * await narration.nextStep
  * ```
  */
-export type CaptionController = PromiseLike<void>
+export type CueController = PromiseLike<void>
 
-/** A single caption value in a multi-language map: either TTS text or a file-based entry. */
-export type CaptionMapValue = string | { path: string; subtitle?: string }
+type NarrationCueObject =
+  | { text: string }
+  | { media: string; subtitle?: string }
+  | { path: string; subtitle?: string }
 
-export type Captions<T extends Record<string, CaptionMapValue>> = {
-  [K in keyof T]: CaptionController
+/** A single narration cue value in a multi-language map. */
+export type CueMapValue = string | NarrationCueObject
+
+export type Cues<T extends Record<string, CueMapValue>> = {
+  [K in keyof T]: CueController
 } & {
   /**
-   * Waits for the current voiceOver to finish before the next action.
+   * Waits for the current narration segment to finish before the next action.
    *
-   * Only needed when an action must happen _after_ a voiceOver ends.
-   * Consecutive `await voiceOvers.x` calls sequence automatically — each
+   * Only needed when an action must happen _after_ narration ends.
+   * Consecutive `await narration.x` calls sequence automatically — each
    * one ends the previous before starting.
    *
    * @example
    * ```ts
-   * await voiceOvers.intro
-   * await voiceOvers.waitEnd() // wait for intro audio to finish
+   * await narration.intro
+   * await narration.wait() // wait for intro audio to finish
    * await page.click('#next')  // click happens after intro ends
    * ```
    */
-  waitEnd(): Promise<void>
+  wait(): Promise<void>
 }
 
-export type VideoCaptionEntry = string | { path: string; subtitle?: string }
+export type VideoCueEntry = string | { path: string; subtitle?: string }
 
-export type VideoCaptions<T extends Record<string, VideoCaptionEntry>> = {
-  [K in keyof T]: CaptionController
+export type VideoCues<T extends Record<string, VideoCueEntry>> = {
+  [K in keyof T]: CueController
 } & {
   /**
-   * Waits for the current voiceOver to finish before the next action.
-   * @see {@link Captions.waitEnd}
+   * Waits for the current narration segment to finish before the next action.
+   * @see {@link Cues.wait}
    */
-  waitEnd(): Promise<void>
+  wait(): Promise<void>
 }
 
 /**
@@ -228,13 +231,13 @@ export type TopLevelVoiceConfig =
     }
 
 /**
- * Per-language voice override. Can override the top-level voice name and
+ * Per-language narration override. Can override the top-level voice name and
  * optionally set a `seed` for TTS generation.
  *
  * Use `style` for expressive synthesis, or `modelType` for an explicit
  * model choice. `style` and `modelType` are mutually exclusive.
  */
-export type LangVoiceOverride =
+export type LangNarrationOverride =
   | {
       name: VoiceKey | CustomVoiceRef
       /**
@@ -280,24 +283,32 @@ type UnionToIntersection<U> = (
   : never
 
 /**
- * Produces a record requiring every key that appears in any language's captions.
- * Uses each language's key set with CaptionMapValue values before intersecting,
+ * Produces a record requiring every key that appears in any language's cues.
+ * Uses each language's key set with CueMapValue values before intersecting,
  * so value types don't conflict (e.g. string vs { path, subtitle } for the same key).
  */
-type AllCaptions<
+type LanguageEntryBase = {
+  voice?: LangNarrationOverride
+  region?: string
+}
+
+type LanguageCuesEntry<C extends Record<string, CueMapValue>> =
+  LanguageEntryBase & { cues: C }
+
+type AllCues<
   M extends Partial<
-    Record<Lang, { captions: Record<string, CaptionMapValue> }>
+    Record<Lang, LanguageCuesEntry<Record<string, CueMapValue>>>
   >,
 > = UnionToIntersection<
   {
-    [L in keyof M]: M[L] extends { captions: infer C }
-      ? Record<keyof C & string, CaptionMapValue>
+    [L in keyof M]: M[L] extends { cues: infer C }
+      ? Record<keyof C & string, CueMapValue>
       : never
   }[keyof M]
 > &
-  Record<string, CaptionMapValue>
+  Record<string, CueMapValue>
 
-type LangVoiceOverrideForLang<L extends string> =
+type LangNarrationOverrideForLang<L extends string> =
   | {
       name: (L extends Lang ? VoiceForLang<L> : VoiceKey) | CustomVoiceRef
       seed?: number
@@ -317,86 +328,100 @@ type LangVoiceOverrideForLang<L extends string> =
 
 type LanguagesMap<
   M extends Partial<
-    Record<Lang, { captions: Record<string, CaptionMapValue> }>
+    Record<Lang, LanguageCuesEntry<Record<string, CueMapValue>>>
   >,
 > = M & {
   [L in keyof M]: {
-    voice?: L extends string ? LangVoiceOverrideForLang<L> : never
+    voice?: L extends string ? LangNarrationOverrideForLang<L> : never
     /** BCP-47 region code for TTS synthesis, e.g. `languageRegions.en.US`. */
     region?: string
-    captions: AllCaptions<M>
-  }
+  } & { cues: AllCues<M> }
 }
 
 /**
- * Creates a set of typed voiceover controllers, one per key in the map.
+ * Creates a set of typed narration controllers, one per key in the map.
  *
  * Each controller has `start()` and `end()`.
- * At render time screenci generates a voiceover, and syncs the audio to the
+ * At render time screenci generates narration, and syncs the audio to the
  * recording. You write text; the voice is handled for you.
  *
  * The top-level `voice` applies to all languages. Override it per-language via
  * the `voice` field inside each language entry. Only language-level overrides
  * may set `seed`.
  *
- * TypeScript enforces that every language has the same caption keys.
+ * TypeScript enforces that every language has the same cue keys.
  * Forget a translation key → compile error.
  *
  * @example
  * ```ts
- * const voiceOvers = createVoiceOvers({
+ * const narration = createNarration({
  *   voice: { name: voices.Ava, style: 'Clear and friendly' },
  *   languages: {
- *     en: { captions: { intro: 'Welcome.', next: 'Click here.' } },
+ *     en: { cues: { intro: 'Welcome.', next: 'Click here.' } },
  *     fi: {
  *       voice: { name: voices.Nora, style: 'Selkeä opastus', seed: 42 },
- *       captions: { intro: 'Tervetuloa.', next: 'Napsauta tästä.' },
+ *       cues: { intro: 'Tervetuloa.', next: 'Napsauta tästä.' },
  *     },
  *   },
  * })
  *
- * // Await a voiceOver directly to start it:
- * await voiceOvers.intro
+ * // Await a narration segment directly to start it:
+ * await narration.intro
  * await page.goto('/dashboard')
  *
- * // Consecutive voiceOvers sequence automatically:
- * await voiceOvers.intro
- * await voiceOvers.next  // ends intro, then starts next
+ * // Consecutive narration segments sequence automatically:
+ * await narration.intro
+ * await narration.next  // ends intro, then starts next
  *
  * // Wait for audio to finish before an action:
- * await voiceOvers.intro
- * await voiceOvers.waitEnd()
+ * await narration.intro
+ * await narration.wait()
  * await page.click('#start')
  * ```
  */
-export function createVoiceOvers<
+export function createNarration<
   M extends Partial<
-    Record<
-      Lang,
-      {
-        voice?: LangVoiceOverride
-        region?: string
-        captions: Record<string, CaptionMapValue>
-      }
-    >
+    Record<Lang, LanguageCuesEntry<Record<string, CueMapValue>>>
   >,
 >(input: {
   voice: TopLevelVoiceConfig
   languages: LanguagesMap<M>
-}): Captions<AllCaptions<M>> {
-  return buildCaptionsFromInput(
+}): Cues<AllCues<M>> {
+  return buildCuesFromInput(
     input.voice,
     input.languages as Partial<
-      Record<
-        Lang,
-        {
-          voice?: LangVoiceOverride
-          region?: string
-          captions: Record<string, CaptionMapValue>
-        }
-      >
+      Record<Lang, LanguageCuesEntry<Record<string, CueMapValue>>>
     >
-  ) as Captions<AllCaptions<M>>
+  ) as Cues<AllCues<M>>
+}
+
+type NormalizedCueMapValue =
+  | { type: 'text'; text: string }
+  | { type: 'file'; path: string; subtitle?: string }
+
+function normalizeCueMapValue(value: CueMapValue): NormalizedCueMapValue {
+  if (typeof value === 'string') {
+    return { type: 'text', text: value }
+  }
+
+  if ('text' in value) {
+    return { type: 'text', text: value.text }
+  }
+
+  const mediaPath = 'media' in value ? value.media : value.path
+
+  return {
+    type: 'file',
+    path: mediaPath,
+    ...(value.subtitle !== undefined && { subtitle: value.subtitle }),
+  }
+}
+
+function getLanguageCues(
+  entry: LanguageCuesEntry<Record<string, CueMapValue>> | undefined
+): Record<string, CueMapValue> | undefined {
+  if (entry === undefined) return undefined
+  return entry.cues
 }
 
 function voiceToKeyString(voice: VoiceKey | CustomVoiceRef): string {
@@ -404,24 +429,17 @@ function voiceToKeyString(voice: VoiceKey | CustomVoiceRef): string {
   return voice
 }
 
-function buildCaptionsFromInput(
+function buildCuesFromInput(
   topVoice: TopLevelVoiceConfig,
   languages: Partial<
-    Record<
-      Lang,
-      {
-        voice?: LangVoiceOverride
-        region?: string
-        captions: Record<string, CaptionMapValue>
-      }
-    >
+    Record<Lang, LanguageCuesEntry<Record<string, CueMapValue>>>
   >
-): Captions<Record<string, CaptionMapValue>> {
+): Cues<Record<string, CueMapValue>> {
   const langs = Object.keys(languages) as Lang[]
   const firstLang = langs[0]
   if (firstLang === undefined) {
     throw new Error(
-      'createVoiceOvers requires at least one language in "languages"'
+      'createNarration requires at least one language in "languages"'
     )
   }
 
@@ -479,38 +497,47 @@ function buildCaptionsFromInput(
   }
 
   const firstEntry = languages[firstLang]
-  if (!firstEntry) return {} as Captions<Record<string, CaptionMapValue>>
+  if (!firstEntry) return {} as Cues<Record<string, CueMapValue>>
 
-  const result = {} as Captions<Record<string, CaptionMapValue>>
+  const result = {} as Cues<Record<string, CueMapValue>>
 
-  for (const key in firstEntry.captions) {
+  const firstCues = getLanguageCues(firstEntry)
+  if (firstCues === undefined) return {} as Cues<Record<string, CueMapValue>>
+
+  for (const key in firstCues) {
     const keyStr = key
 
-    // Determine if any language uses a file-based value for this key.
+    const normalizedByLang = new Map<Lang, NormalizedCueMapValue>()
+
+    // Normalize shorthand values and determine if any language uses a file entry for this key.
     let hasFileEntry = false
     for (const lang of langs) {
-      const val = languages[lang]?.captions[keyStr]
-      if (val !== undefined && typeof val !== 'string') {
-        hasFileEntry = true
-        videoCaptionFileHashes.set(val.path, '')
+      const val = getLanguageCues(languages[lang])?.[keyStr]
+      if (val !== undefined) {
+        const normalized = normalizeCueMapValue(val)
+        normalizedByLang.set(lang, normalized)
+        if (normalized.type === 'file') {
+          hasFileEntry = true
+          videoCueFileHashes.set(normalized.path, '')
+        }
       }
     }
 
     if (hasFileEntry) {
       const fileStartFn = async (): Promise<void> => {
         if (isInsideHide())
-          throw new Error('Cannot start a voiceOver inside hide()')
+          throw new Error('Cannot start narration inside hide()')
         if (activeRecorder === null) return
-        captionAutoEnd()
+        cueAutoEnd()
         for (const lang of langs) {
           activeRecorder.registerVoiceForLang(
             lang,
             resolvedVoiceMeta.get(lang)!
           )
         }
-        const videoTranslations: Record<string, VideoCaptionTranslation> = {}
+        const videoTranslations: Record<string, VideoCueTranslation> = {}
         for (const lang of langs) {
-          const val = languages[lang]?.captions[keyStr]
+          const val = normalizedByLang.get(lang)
           if (val === undefined) continue
           const voice = resolvedVoices.get(lang)!
           const region = languages[lang]?.region
@@ -519,9 +546,9 @@ function buildCaptionsFromInput(
           const style = meta?.style
           const accent = meta?.accent
           const pacing = meta?.pacing
-          if (typeof val === 'string') {
+          if (val.type === 'text') {
             videoTranslations[lang] = {
-              text: val,
+              text: val.text,
               voice: toRecordedVoice(voice),
               ...(region !== undefined && { region }),
               ...(modelType !== undefined && { modelType }),
@@ -530,12 +557,15 @@ function buildCaptionsFromInput(
               ...(pacing !== undefined && { pacing }),
             }
           } else {
-            videoTranslations[lang] = entryToVideoTranslation(val)
+            videoTranslations[lang] = entryToVideoTranslation({
+              path: val.path,
+              ...(val.subtitle !== undefined && { subtitle: val.subtitle }),
+            })
           }
         }
-        captionStarted = true
+        cueStarted = true
         sleepFn(2 * ONE_FRAME_MS)
-        activeRecorder.addVideoCaptionStart(
+        activeRecorder.addVideoCueStart(
           keyStr,
           undefined,
           undefined,
@@ -551,19 +581,19 @@ function buildCaptionsFromInput(
     } else {
       const textStartFn = async (): Promise<void> => {
         if (isInsideHide())
-          throw new Error('Cannot start a voiceOver inside hide()')
+          throw new Error('Cannot start narration inside hide()')
         if (activeRecorder === null) return
-        captionAutoEnd()
+        cueAutoEnd()
         for (const lang of langs) {
           activeRecorder.registerVoiceForLang(
             lang,
             resolvedVoiceMeta.get(lang)!
           )
         }
-        const textTranslations: Record<string, CaptionTranslation> = {}
+        const textTranslations: Record<string, CueTranslation> = {}
         for (const lang of langs) {
-          const val = languages[lang]?.captions[keyStr]
-          if (val !== undefined && typeof val === 'string') {
+          const val = normalizedByLang.get(lang)
+          if (val !== undefined && val.type === 'text') {
             const voice = resolvedVoices.get(lang)!
             const region = languages[lang]?.region
             const meta = resolvedVoiceMeta.get(lang)
@@ -572,7 +602,7 @@ function buildCaptionsFromInput(
             const accent = meta?.accent
             const pacing = meta?.pacing
             textTranslations[lang] = {
-              text: val,
+              text: val.text,
               voice: toRecordedVoice(voice),
               ...(region !== undefined && { region }),
               ...(modelType !== undefined && { modelType }),
@@ -582,9 +612,9 @@ function buildCaptionsFromInput(
             }
           }
         }
-        captionStarted = true
+        cueStarted = true
         sleepFn(2 * ONE_FRAME_MS)
-        activeRecorder.addCaptionStart('', keyStr, undefined, textTranslations)
+        activeRecorder.addCueStart('', keyStr, undefined, textTranslations)
       }
       result[keyStr] = {
         then(resolve, reject) {
@@ -594,37 +624,37 @@ function buildCaptionsFromInput(
     }
   }
 
-  ;(result as unknown as { waitEnd: () => Promise<void> }).waitEnd = doWaitEnd
+  ;(
+    result as unknown as {
+      wait: () => Promise<void>
+    }
+  ).wait = doWait
   return result
 }
 
-type MultiLangVideoCaptionMap<
+type MultiLangVideoCueMap<
   L extends Lang,
-  T extends Record<string, VideoCaptionEntry>,
+  T extends Record<string, VideoCueEntry>,
 > = {
-  [K in L]: { captions: T }
+  [K in L]: { cues: T }
 }
 
 type RequireAllSameVideoKeys<
-  M extends Partial<
-    Record<Lang, { captions: Record<string, VideoCaptionEntry> }>
-  >,
+  M extends Partial<Record<Lang, { cues: Record<string, VideoCueEntry> }>>,
 > = {
   [L in keyof M]: {
-    captions: UnionToIntersection<
-      M[keyof M] extends { captions: infer C } ? C : never
-    >
+    cues: UnionToIntersection<M[keyof M] extends { cues: infer C } ? C : never>
   }
 }
 
 function entryToVideoTranslation(
-  entry: VideoCaptionEntry
-): VideoCaptionTranslationFile {
+  entry: VideoCueEntry
+): VideoCueTranslationFile {
   const path = typeof entry === 'string' ? entry : entry.path
   const subtitle = typeof entry === 'string' ? undefined : entry.subtitle
-  const assetHash = videoCaptionFileHashes.get(path)
+  const assetHash = videoCueFileHashes.get(path)
   if (!assetHash)
-    throw new Error(`Video caption asset hash missing for path: ${path}`)
+    throw new Error(`Video cue asset hash missing for path: ${path}`)
   return {
     assetHash,
     assetPath: path,
@@ -633,141 +663,145 @@ function entryToVideoTranslation(
 }
 
 /**
- * Creates caption controllers backed by pre-recorded asset files instead of
+ * Creates cue controllers backed by pre-recorded asset files instead of
  * TTS-generated audio. Each entry maps a name to either an asset path string
  * or an object with `assetPath` and an optional `subtitle` text.
  *
- * At render time the asset file is used directly as the voiceover audio.
+ * At render time the asset file is used directly as narration audio.
  * If `subtitle` is provided, words are spread with equal timing across the
  * audio duration (no word-level TTS data available).
  *
- * Same constraints as `createVoiceOvers`: cannot overlap with other captions,
+ * Same constraints as `createNarration`: cannot overlap with other cues,
  * and cannot fall inside input events.
  *
  * Two overloads:
  *
  * **1. Single-language:**
  * ```ts
- * const captions = createVideoCaptions({
+ * const cues = createVideoCues({
  *   intro: '/assets/intro.mp3',
  *   demo: { assetPath: '/assets/demo.mp3', subtitle: 'Watch the demo.' },
  * })
  * ```
  *
  * **2. Multi-language (type-safe):**
- * TypeScript enforces that every language has the same caption keys.
+ * TypeScript enforces that every language has the same cue keys.
  * ```ts
- * const captions = createVideoCaptions({
- *   en: { captions: { intro: '/assets/en/intro.mp3' } },
- *   fi: { captions: { intro: '/assets/fi/intro.mp3' } },
+ * const cues = createVideoCues({
+ *   en: { cues: { intro: '/assets/en/intro.mp3' } },
+ *   fi: { cues: { intro: '/assets/fi/intro.mp3' } },
  * })
  * ```
  */
-export function createVideoCaptions<
-  T extends Record<string, VideoCaptionEntry>,
->(captionsMap: T): VideoCaptions<T>
-export function createVideoCaptions<
+export function createVideoCues<T extends Record<string, VideoCueEntry>>(
+  cuesMap: T
+): VideoCues<T>
+export function createVideoCues<
   L extends Lang,
-  T extends Record<string, VideoCaptionEntry>,
+  T extends Record<string, VideoCueEntry>,
 >(
   languagesMap: {
-    [K in L]: { captions: T }
+    [K in L]: { cues: T }
   } & RequireAllSameVideoKeys<{
-    [K in L]: { captions: Record<string, VideoCaptionEntry> }
+    [K in L]: { cues: Record<string, VideoCueEntry> }
   }>
-): VideoCaptions<T & Record<string, VideoCaptionEntry>>
-export function createVideoCaptions<
+): VideoCues<T & Record<string, VideoCueEntry>>
+export function createVideoCues<
   L extends Lang,
-  T extends Record<string, VideoCaptionEntry>,
->(firstArg: T | MultiLangVideoCaptionMap<L, T>): VideoCaptions<T> {
-  // Distinguish single-language vs multi-language by checking if any value has a `captions` key
+  T extends Record<string, VideoCueEntry>,
+>(firstArg: T | MultiLangVideoCueMap<L, T>): VideoCues<T> {
+  // Distinguish single-language vs multi-language by checking if any value has a `cues` key
   const firstValue = Object.values(firstArg)[0]
   if (
     firstValue !== undefined &&
     typeof firstValue === 'object' &&
     !Array.isArray(firstValue) &&
-    'captions' in firstValue &&
-    typeof (firstValue as Record<string, unknown>).captions === 'object'
+    'cues' in firstValue &&
+    typeof (firstValue as Record<string, unknown>).cues === 'object'
   ) {
-    return buildMultiLangVideoCaptions(
-      firstArg as MultiLangVideoCaptionMap<L, T>
-    )
+    return buildMultiLangVideoCues(firstArg as MultiLangVideoCueMap<L, T>)
   }
-  return buildSingleLangVideoCaptions(firstArg as T)
+  return buildSingleLangVideoCues(firstArg as T)
 }
 
-function buildSingleLangVideoCaptions<
-  T extends Record<string, VideoCaptionEntry>,
->(captionsMap: T): VideoCaptions<T> {
-  const result = {} as VideoCaptions<T>
+function buildSingleLangVideoCues<T extends Record<string, VideoCueEntry>>(
+  cuesMap: T
+): VideoCues<T> {
+  const result = {} as VideoCues<T>
 
-  for (const key in captionsMap) {
-    const entry = captionsMap[key]
+  for (const key in cuesMap) {
+    const entry = cuesMap[key]
     if (entry === undefined) continue
     const assetPath = typeof entry === 'string' ? entry : entry.path
     const subtitle = typeof entry === 'string' ? undefined : entry.subtitle
-    videoCaptionFileHashes.set(assetPath, '')
+    videoCueFileHashes.set(assetPath, '')
 
     const startFn = async (): Promise<void> => {
       if (isInsideHide())
-        throw new Error('Cannot start a voiceOver inside hide()')
+        throw new Error('Cannot start narration inside hide()')
       if (activeRecorder === null) return
-      captionAutoEnd()
-      const assetHash = videoCaptionFileHashes.get(assetPath)
+      cueAutoEnd()
+      const assetHash = videoCueFileHashes.get(assetPath)
       if (!assetHash)
-        throw new Error(
-          `Video caption asset hash missing for path: ${assetPath}`
-        )
-      captionStarted = true
+        throw new Error(`Video cue asset hash missing for path: ${assetPath}`)
+      cueStarted = true
       sleepFn(2 * ONE_FRAME_MS)
-      activeRecorder.addVideoCaptionStart(key, assetPath, assetHash, subtitle)
+      activeRecorder.addVideoCueStart(key, assetPath, assetHash, subtitle)
     }
-    ;(result as unknown as Record<string, CaptionController>)[key] = {
+    ;(result as unknown as Record<string, CueController>)[key] = {
       then(resolve, reject) {
         return startFn().then(resolve, reject)
       },
     }
   }
 
-  ;(result as unknown as { waitEnd: () => Promise<void> }).waitEnd = doWaitEnd
+  ;(
+    result as unknown as {
+      wait: () => Promise<void>
+    }
+  ).wait = doWait
   return result
 }
 
-function buildMultiLangVideoCaptions<
+function buildMultiLangVideoCues<
   L extends Lang,
-  T extends Record<string, VideoCaptionEntry>,
->(languagesMap: MultiLangVideoCaptionMap<L, T>): VideoCaptions<T> {
+  T extends Record<string, VideoCueEntry>,
+>(languagesMap: MultiLangVideoCueMap<L, T>): VideoCues<T> {
   const langs = Object.keys(languagesMap) as L[]
   const firstLang = langs[0]
   if (firstLang === undefined) {
-    const empty = {} as VideoCaptions<T>
-    ;(empty as unknown as { waitEnd: () => Promise<void> }).waitEnd = doWaitEnd
+    const empty = {} as VideoCues<T>
+    ;(
+      empty as unknown as {
+        wait: () => Promise<void>
+      }
+    ).wait = doWait
     return empty
   }
 
-  const result = {} as VideoCaptions<T>
+  const result = {} as VideoCues<T>
 
-  for (const key in languagesMap[firstLang].captions) {
+  for (const key in languagesMap[firstLang].cues) {
     const keyStr = key as string
 
-    const translations: Record<string, VideoCaptionTranslation> = {}
+    const translations: Record<string, VideoCueTranslation> = {}
     for (const lang of langs) {
-      const entry = languagesMap[lang].captions[keyStr]
+      const entry = languagesMap[lang].cues[keyStr]
       if (entry !== undefined) {
         const assetPath = typeof entry === 'string' ? entry : entry.path
-        videoCaptionFileHashes.set(assetPath, '')
+        videoCueFileHashes.set(assetPath, '')
         translations[lang] = entryToVideoTranslation(entry)
       }
     }
 
     const startFn = async (): Promise<void> => {
       if (isInsideHide())
-        throw new Error('Cannot start a voiceOver inside hide()')
+        throw new Error('Cannot start narration inside hide()')
       if (activeRecorder === null) return
-      captionAutoEnd()
-      captionStarted = true
+      cueAutoEnd()
+      cueStarted = true
       sleepFn(2 * ONE_FRAME_MS)
-      activeRecorder.addVideoCaptionStart(
+      activeRecorder.addVideoCueStart(
         keyStr,
         undefined,
         undefined,
@@ -775,13 +809,17 @@ function buildMultiLangVideoCaptions<
         translations
       )
     }
-    ;(result as unknown as Record<string, CaptionController>)[key] = {
+    ;(result as unknown as Record<string, CueController>)[key] = {
       then(resolve, reject) {
         return startFn().then(resolve, reject)
       },
     }
   }
 
-  ;(result as unknown as { waitEnd: () => Promise<void> }).waitEnd = doWaitEnd
+  ;(
+    result as unknown as {
+      wait: () => Promise<void>
+    }
+  ).wait = doWait
   return result
 }

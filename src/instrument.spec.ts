@@ -34,13 +34,13 @@ function makeRecorder() {
         } as InputEvent)
       }
     ),
-    addCaptionStart: vi.fn(),
-    addCaptionEnd: vi.fn(),
+    addCueStart: vi.fn(),
+    addCueEnd: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),
     addAutoZoomStart: vi.fn(),
     addAutoZoomEnd: vi.fn(),
-    addVideoCaptionStart: vi.fn(),
+    addVideoCueStart: vi.fn(),
     addAssetStart: vi.fn(),
     registerVoiceForLang: vi.fn(),
     getEvents: vi.fn(() => []),

@@ -1,5 +1,5 @@
 import type {
-  CaptionConfig,
+  CueConfig,
   Easing,
   RecordOptions,
   ResolvedRenderOptions,
@@ -94,49 +94,49 @@ export type RecordingCustomVoiceRef = {
   assetPath?: string
 }
 
-export type CaptionTranslation = {
+export type CueTranslation = {
   text: string
   voice: VoiceKey | RecordingCustomVoiceRef
 }
 
-export type CaptionStartEvent = {
-  type: 'captionStart'
+export type CueStartEvent = {
+  type: 'cueStart'
   timeMs: number
   name: string
   text?: string
-  captionConfig?: CaptionConfig
-  translations?: Record<string, CaptionTranslation>
+  cueConfig?: CueConfig
+  translations?: Record<string, CueTranslation>
 }
 
-export type CaptionEndEvent = {
-  type: 'captionEnd'
+export type CueEndEvent = {
+  type: 'cueEnd'
   timeMs: number
-  reason?: 'auto' | 'waitEnd'
+  reason?: 'auto' | 'wait'
 }
 
-export type VideoCaptionTranslationFile = {
+export type VideoCueTranslationFile = {
   assetHash: string
   assetPath?: string
   subtitle?: string
 }
 
-export type VideoCaptionTranslationTTS = {
+export type VideoCueTranslationTTS = {
   text: string
   voice: VoiceKey | RecordingCustomVoiceRef
 }
 
-export type VideoCaptionTranslation =
-  | VideoCaptionTranslationFile
-  | VideoCaptionTranslationTTS
+export type VideoCueTranslation =
+  | VideoCueTranslationFile
+  | VideoCueTranslationTTS
 
-export type VideoCaptionStartEvent = {
-  type: 'videoCaptionStart'
+export type VideoCueStartEvent = {
+  type: 'videoCueStart'
   timeMs: number
   name: string
   assetHash?: string
   assetPath?: string
   subtitle?: string
-  translations?: Record<string, VideoCaptionTranslation>
+  translations?: Record<string, VideoCueTranslation>
 }
 
 export type AssetStartEvent = {
@@ -179,9 +179,9 @@ export type AutoZoomEndEvent = {
 export type RecordingEvent =
   | VideoStartEvent
   | InputEvent
-  | CaptionStartEvent
-  | CaptionEndEvent
-  | VideoCaptionStartEvent
+  | CueStartEvent
+  | CueEndEvent
+  | VideoCueStartEvent
   | AssetStartEvent
   | HideStartEvent
   | HideEndEvent

@@ -35,13 +35,13 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 - `video()` declares one output video per test.
 - `hide()` removes setup and loading sections from the final recording.
 - `autoZoom()` follows a larger form or page area with smooth camera motion. Use it sparingly.
-- `createVoiceOvers()` is mandatory for every video: define it in every `.video.ts` file and include spoken narration throughout the demo. Define the map once, then `await voiceOvers.key` where each line should begin. Use `await voiceOvers.waitEnd()` only when the next action must wait for audio to finish.
+- `createNarration()` is mandatory for every video: define it in every `.video.ts` file and include spoken narration throughout the demo. Define the map once, then `await narration.key` where each line should begin. Use `await narration.wait()` only when the next action must wait for audio to finish.
 
 ## Required Conventions
 
 **Every video MUST follow these conventions:**
 
-1. **Voice overs on every video (required, no exceptions)** — always define `createVoiceOvers({ ... })` and add narration to every `.video.ts` file. Videos without voice over are not acceptable.
+1. **Narration on every video (required, no exceptions)** — always define `createNarration({ ... })` and add narration to every `.video.ts` file. Videos without narration are not acceptable.
 2. **Hide initial setup** — wrap authentication, navigation to the starting page, loading spinners, and any other non-demo boilerplate in `hide()` so they are cut from the final recording.
 3. **Use autoZoom sparingly on large page areas** — add `autoZoom()` only for larger sections that benefit from camera guidance (e.g. a full form, a full dialog, or a broad list area). Keep usage sparse, and make sure each `autoZoom()` block includes multiple related interactions (typing, selecting, toggling, confirming, etc.), not just a single click.
 
@@ -56,7 +56,7 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 1. Start from the existing initialized ScreenCI package.
 2. Add or edit `.video.ts` files in `videos/`.
    Remove `videos/example.video.ts` if you are creating new videos and do not need the starter video.
-   For narration, define `const voiceOvers = createVoiceOvers({ ... })` near the top of the file and trigger lines with `await voiceOvers.someKey` inside the test body.
+   For narration, define `const narration = createNarration({ ... })` near the top of the file and trigger lines with `await narration.someKey` inside the test body.
 3. Run `npx screenci dev` to validate selectors and flow.
 4. Run `npx screenci test` until it passes.
 5. Run `npx screenci record` to produce `.screenci/<video-name>/recording.mp4` and `data.json`.

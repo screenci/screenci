@@ -1,6 +1,6 @@
 ---
 title: Writing Video Tests
-description: How ScreenCI video scripts differ from Playwright tests, and how to use ScreenCIPage, captions, assets, autoZoom, and hide.
+description: How ScreenCI video scripts differ from Playwright tests, and how to use ScreenCIPage, cues, assets, autoZoom, and hide.
 ---
 
 # Writing Video Tests
@@ -87,18 +87,18 @@ All chaining methods (`locator()`, `getByRole()`, `filter()`, `first()`, `last()
 
 ---
 
-## Voiceovers
+## Narration
 
-`createVoiceOvers()` defines typed voiceover text. Create the map once near the top of your `.video.ts` file, then `await voiceOvers.key` at the point in the script where that line should begin. At render time ScreenCI generates the audio and syncs it to the recording.
+`createNarration()` defines typed narration text. Create the map once near the top of your `.video.ts` file, then `await narration.key` at the point in the script where that line should begin. At render time ScreenCI generates the audio and syncs it to the recording.
 
 ```ts
-import { video, createVoiceOvers, voices } from 'screenci'
+import { video, createNarration, voices } from 'screenci'
 
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.Aria },
   languages: {
     en: {
-      captions: {
+      cues: {
         intro: "Let's walk through the settings page.",
         save: 'Hit save to apply your changes.',
       },
@@ -109,23 +109,23 @@ const voiceOvers = createVoiceOvers({
 video('Settings walkthrough', async ({ page }) => {
   await page.goto('/settings')
 
-  await voiceOvers.intro
+  await narration.intro
   await page.locator('#notifications').click()
   await page.locator('#save').click()
 
-  await voiceOvers.save
-  await voiceOvers.waitEnd()
+  await narration.save
+  await narration.wait()
 })
 ```
 
 Typical usage in a `.video.ts` file:
 
 ```ts
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.Aria },
   languages: {
     en: {
-      captions: {
+      cues: {
         intro: 'Open the notifications panel.',
         save: 'Save the change.',
       },
@@ -136,53 +136,53 @@ const voiceOvers = createVoiceOvers({
 video('Example', async ({ page }) => {
   await page.goto('/settings')
 
-  await voiceOvers.intro
+  await narration.intro
   await page.locator('#notifications').click()
 
-  await voiceOvers.save
-  await voiceOvers.waitEnd()
+  await narration.save
+  await narration.wait()
   await page.locator('#save').click()
 })
 ```
 
-### Awaiting a voiceOver — display and move on
+### Awaiting narration — display and move on
 
-`await voiceOvers.key` starts the voiceover and resolves immediately. The caption stays visible and audio plays while subsequent actions run. Consecutive voiceOvers sequence automatically — each one ends the previous before starting:
+`await narration.key` starts the narration and resolves immediately. The cue stays visible and audio plays while subsequent actions run. Consecutive narration segments sequence automatically — each one ends the previous before starting:
 
 ```ts
-await voiceOvers.intro
+await narration.intro
 await page.goto('https://example.com/signup')
 
-await voiceOvers.nextStep // auto-ends intro, then starts nextStep
+await narration.nextStep // auto-ends intro, then starts nextStep
 await page.locator('#save').click()
 ```
 
-### `waitEnd()` — wait for audio to finish
+### `wait()` — wait for audio to finish
 
-Call `await voiceOvers.waitEnd()` when an action must happen _after_ the current voiceover has finished playing. Only needed in those cases — consecutive voiceOvers already sequence automatically.
+Call `await narration.wait()` when an action must happen _after_ the current narration has finished playing. Only needed in those cases — consecutive narration segments already sequence automatically.
 
 ```ts
-await voiceOvers.intro
-await voiceOvers.waitEnd() // wait for intro audio to finish
+await narration.intro
+await narration.wait() // wait for intro audio to finish
 await page.click('#start') // this runs after the audio ends
 ```
 
-### Multi-language voiceovers
+### Multi-language narration
 
 Pass a language map and TypeScript will enforce that every language has the same keys:
 
 ```ts
-import { createVoiceOvers, voices } from 'screenci'
+import { createNarration, voices } from 'screenci'
 
-const voiceOvers = createVoiceOvers({
+const narration = createNarration({
   voice: { name: voices.Aria },
   languages: {
     en: {
-      captions: { intro: 'Welcome.', save: 'Hit save.' },
+      cues: { intro: 'Welcome.', save: 'Hit save.' },
     },
     fi: {
       voice: { name: voices.Nora },
-      captions: { intro: 'Tervetuloa.', save: 'Tallenna.' },
+      cues: { intro: 'Tervetuloa.', save: 'Tallenna.' },
     },
   },
 })

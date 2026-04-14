@@ -5,7 +5,7 @@ description: Set up a screenci project in under five minutes.
 
 # Getting Started
 
-screenci records product videos from code. Scripts are Playwright test files — you write interactions, screenci handles the camera, captions, and voiceovers.
+screenci records product videos from code. Scripts are Playwright test files — you write interactions, screenci handles the camera, cues, and narration.
 
 ## Prerequisites
 
@@ -53,12 +53,12 @@ The `page` fixture inside `video()` is a `ScreenCIPage` — a wrapper whose `.lo
 
 On top of that, screenci adds:
 
-| API                  | What it does                                                         |
-| -------------------- | -------------------------------------------------------------------- |
-| `hide(fn)`           | Cuts the section from the final video (logins, page loads, setup)    |
-| `autoZoom(fn)`       | Smooth camera zoom that follows clicks and fills                     |
-| `createVoiceOvers()` | Typed narration markers — `await voiceOvers.key` where a line starts |
-| `createAssets()`     | Image or video overlays shown during the recording                   |
+| API                 | What it does                                                        |
+| ------------------- | ------------------------------------------------------------------- |
+| `hide(fn)`          | Cuts the section from the final video (logins, page loads, setup)   |
+| `autoZoom(fn)`      | Smooth camera zoom that follows clicks and fills                    |
+| `createNarration()` | Typed narration markers — `await narration.key` where a line starts |
+| `createAssets()`    | Image or video overlays shown during the recording                  |
 
 All of these are composable with normal [Playwright](https://playwright.dev/docs/api/class-page) code. No rewrites required.
 
@@ -116,7 +116,7 @@ export default defineConfig({
 
 ## Upload and render
 
-Once you have a recording you're happy with, upload it to screenci.com for rendering, voiceover generation, and your permanent embed link:
+Once you have a recording you're happy with, upload it to screenci.com for rendering, narration generation, and your permanent embed link:
 
 ```bash
 npm run retry
@@ -143,7 +143,7 @@ npx screenci make-private video_123
 
 ## Next steps
 
-- [Writing video tests](/reference/video-tests) — `hide()`, `autoZoom()`, `createVoiceOvers()`
+- [Writing video tests](/reference/video-tests) — `hide()`, `autoZoom()`, `createNarration()`
 - [Configuration reference](/reference/configuration) — all config options
 - [API reference](/reference/api-overview) — full function signatures
 - [CLI command reference](/reference/cli) — all CLI commands and options

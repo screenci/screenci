@@ -1542,7 +1542,7 @@ describe('CLI', () => {
   })
 
   describe('upload annotation helpers', () => {
-    it('should allow missing voice entries when annotating caption translations', async () => {
+    it('should allow missing voice entries when annotating cue translations', async () => {
       const { annotateRecordingDataWithAssetHashes, stripVoicePath } =
         await import('./cli')
 
@@ -1559,7 +1559,7 @@ describe('CLI', () => {
           {
             events: [
               {
-                type: 'captionStart',
+                type: 'cueStart',
                 timeMs: 0,
                 name: 'intro',
                 // intentionally missing `voice` to test runtime handling of partial data
@@ -1574,7 +1574,7 @@ describe('CLI', () => {
       ).toEqual({
         events: [
           {
-            type: 'captionStart',
+            type: 'cueStart',
             timeMs: 0,
             name: 'intro',
             translations: {

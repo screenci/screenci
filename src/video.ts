@@ -25,10 +25,10 @@ export { getDimensions } from './dimensions.js'
 import { getDimensions } from './dimensions.js'
 import { isHeadless, startXvfb, type XvfbInstance } from './xvfb.js'
 import {
-  setActiveCaptionRecorder,
-  resetCaptionChain,
+  setActiveCueRecorder,
+  resetCueChain,
   validateCustomVoiceRefs,
-} from './caption.js'
+} from './cue.js'
 import { setActiveHideRecorder } from './hide.js'
 import { setActiveAutoZoomRecorder } from './autoZoom.js'
 import {
@@ -372,8 +372,8 @@ const _videoBase = base.extend<VideoFixtureOptions>({
 
     if (!shouldRecord) {
       // Skip recording, just create page
-      resetCaptionChain()
-      setActiveCaptionRecorder(null)
+      resetCueChain()
+      setActiveCueRecorder(null)
       setActiveClickRecorder(null)
       setActiveHideRecorder(null)
       setActiveAutoZoomRecorder(null)
@@ -415,8 +415,8 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     )
 
     const recorder = new EventRecorder(renderOptions, recordOptions)
-    resetCaptionChain()
-    setActiveCaptionRecorder(recorder)
+    resetCueChain()
+    setActiveCueRecorder(recorder)
     setActiveClickRecorder(recorder)
     setActiveHideRecorder(recorder)
     setActiveAutoZoomRecorder(recorder)
@@ -494,7 +494,7 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     }
 
     await page.close()
-    setActiveCaptionRecorder(null)
+    setActiveCueRecorder(null)
     setActiveClickRecorder(null)
     setActiveHideRecorder(null)
     setActiveAutoZoomRecorder(null)
@@ -659,14 +659,14 @@ interface Video extends VideoCallSignatures {
  * @example
  * Basic usage:
  * ```ts
- * import { video, caption } from 'screenci'
+ * import { video, cue } from 'screenci'
  *
  * video('Tutorial', async ({ page }) => {
  *   await page.goto('https://example.com')
- *   caption('User navigates to homepage')
+ *   cue('User navigates to homepage')
  *
  *   await page.click('text=Sign up')
- *   caption('Clicks sign up button')
+ *   cue('Clicks sign up button')
  * })
  * ```
  */

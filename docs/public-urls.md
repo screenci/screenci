@@ -133,4 +133,4 @@ Public assets are cacheable. Allow a short time for caches to refresh after chan
 ## Related docs
 
 - [Public Video API](./public-api.md) for the endpoint-by-endpoint reference
-- [Localization & Voiceovers](./localization.md) for multi-language render workflows
+- [Localization & Narrations](./localization.md) for multi-language render workflows

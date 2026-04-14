@@ -1,89 +1,98 @@
 import { describe, it, assertType } from 'vitest'
-import { createVoiceOvers } from './caption.js'
+import { createNarration } from './cue.js'
 import { voices } from './voices.js'
 import type { VoiceForLang } from './voices.js'
 
-describe('createVoiceOvers type constraints', () => {
+describe('createNarration type constraints', () => {
   it('accepts matching keys across all languages', () => {
-    createVoiceOvers({
+    createNarration({
       voice: { name: voices.Ava },
       languages: {
         en: {
-          captions: { intro: 'Hello', outro: 'Bye' },
+          cues: { intro: 'Hello', outro: 'Bye' },
         },
         fi: {
-          captions: { intro: 'Hei', outro: 'Näkemiin' },
+          cues: { intro: 'Hei', outro: 'Näkemiin' },
         },
       },
     })
   })
 
-  it('accepts per-language voice override with seed', () => {
-    createVoiceOvers({
+  it('accepts per-language narration override with seed', () => {
+    createNarration({
       voice: { name: voices.Ava },
       languages: {
-        en: { captions: { intro: 'Hello' } },
+        en: { cues: { intro: 'Hello' } },
         fi: {
           voice: { name: voices.Nora, seed: 42 },
-          captions: { intro: 'Hei' },
+          cues: { intro: 'Hei' },
         },
       },
     })
   })
 
   it('accepts per-language region', () => {
-    createVoiceOvers({
+    createNarration({
       voice: { name: voices.Ava },
       languages: {
-        en: { region: 'en-US', captions: { intro: 'Hello' } },
+        en: { region: 'en-US', cues: { intro: 'Hello' } },
       },
     })
   })
 
   it('accepts mixed value types (string vs file object) for the same key', () => {
-    createVoiceOvers({
+    createNarration({
       voice: { name: voices.Ava },
       languages: {
         en: {
-          captions: {
+          cues: {
             intro: 'Hello',
-            clip: { path: '/clip.mp4', subtitle: 'Watch' },
+            clip: { media: '/clip.mp4', subtitle: 'Watch' },
           },
         },
         fi: {
           voice: { name: voices.elevenlabs({ voiceId: 'voice-fi' }) },
-          captions: { intro: 'Hei', clip: 'Katso' },
+          cues: { intro: 'Hei', clip: { text: 'Katso' } },
         },
       },
     })
   })
 
-  it('rejects a language with a missing caption key', () => {
-    createVoiceOvers({
+  it('rejects a language with a missing cue key', () => {
+    createNarration({
       voice: { name: voices.Ava },
       languages: {
         en: {
-          captions: { intro: 'Hello', outro: 'Bye' },
+          cues: { intro: 'Hello', outro: 'Bye' },
         },
         fi: {
           // @ts-expect-error — 'outro' is missing
-          captions: { intro: 'Hei' },
+          cues: { intro: 'Hei' },
         },
       },
     })
   })
 
   it('rejects seed at the top-level voice', () => {
-    createVoiceOvers({
+    createNarration({
       // @ts-expect-error — seed is not allowed at the top-level voice
       voice: { name: voices.Ava, seed: 42 },
       languages: {
-        en: { captions: { intro: 'Hello' } },
+        en: { cues: { intro: 'Hello' } },
       },
     })
   })
 
   it('accepts explicit provider voice ids for any supported language', () => {
     assertType<VoiceForLang<'en'>>(voices.elevenlabs({ voiceId: 'voice-en' }))
+  })
+
+  it('creates narration from typed cues', () => {
+    createNarration({
+      voice: { name: voices.Ava },
+      languages: {
+        en: { cues: { intro: 'Hello' } },
+      },
+    })
   })
 })

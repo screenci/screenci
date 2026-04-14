@@ -90,7 +90,7 @@ export type RenderOptions = {
     /** CSS drop-shadow filter */
     dropShadow?: string
   }
-  voiceOvers?: {
+  narration?: {
     /** 0-1: 1=mask size equals shorter side of output */
     size?: number
     /** 0-1: 0=square, 1=circle */
@@ -145,7 +145,7 @@ export const RENDER_OPTIONS_DEFAULTS = {
     shape: 'rounded' as const,
     dropShadow: 'drop-shadow(0 8px 24px rgba(0,0,0,0.5))',
   },
-  voiceOvers: {
+  narration: {
     size: 0.3,
     roundness: 0,
     shape: 'squircle' as const,
@@ -178,7 +178,7 @@ export type ResolvedRenderOptions = {
     shape: 'rounded' | 'squircle'
     dropShadow: string
   }
-  voiceOvers: {
+  narration: {
     size: number
     roundness: number
     shape: 'rounded' | 'squircle'
@@ -693,7 +693,7 @@ export type ScreenCIPage = Omit<
 
 import type { VoiceKey } from './voices.js'
 
-export type CaptionConfig = {
+export type CueConfig = {
   voice: VoiceKey
   speed?: number
   stability?: number

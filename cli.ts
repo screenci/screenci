@@ -25,7 +25,7 @@ import { logger } from './src/logger.js'
 import type {
   RecordingCustomVoiceRef,
   RecordingData,
-  VideoCaptionTranslationFile,
+  VideoCueTranslationFile,
 } from './src/events.js'
 import type { VoiceKey } from './src/voices.js'
 import type { ScreenCIConfig } from './src/types.js'
@@ -578,7 +578,7 @@ async function prepareCustomVoiceAssets(
   const customVoiceRefsByPath = new Map<string, CustomVoiceRefLike[]>()
 
   for (const event of data.events) {
-    if (event.type === 'captionStart' && event.translations) {
+    if (event.type === 'cueStart' && event.translations) {
       for (const translation of Object.values(event.translations)) {
         if (
           typeof translation.voice === 'object' &&
@@ -594,7 +594,7 @@ async function prepareCustomVoiceAssets(
       }
     }
 
-    if (event.type === 'videoCaptionStart' && event.translations) {
+    if (event.type === 'videoCueStart' && event.translations) {
       for (const translation of Object.values(event.translations)) {
         if (
           'text' in translation &&
@@ -684,7 +684,7 @@ async function collectUploadAssets(
       continue
     }
 
-    if (event.type === 'videoCaptionStart') {
+    if (event.type === 'videoCueStart') {
       // Single-language: hash already computed during recording, use assetPath to read file
       if (
         typeof event.assetHash === 'string' &&
@@ -770,7 +770,7 @@ export function annotateRecordingDataWithAssetHashes(
         return fileHash ? { ...event, fileHash } : event
       }
 
-      if (event.type === 'captionStart' && event.translations) {
+      if (event.type === 'cueStart' && event.translations) {
         const translations = Object.fromEntries(
           Object.entries(event.translations).map(([language, translation]) => {
             if (translation.voice === undefined) {
@@ -788,7 +788,7 @@ export function annotateRecordingDataWithAssetHashes(
         return { ...event, translations }
       }
 
-      if (event.type !== 'videoCaptionStart') return event
+      if (event.type !== 'videoCueStart') return event
 
       // Strip assetPath from translations — hash was already computed during recording
       if (event.translations) {
@@ -796,7 +796,7 @@ export function annotateRecordingDataWithAssetHashes(
           Object.entries(event.translations).map(([language, translation]) => {
             if ('assetHash' in translation) {
               const { assetPath: _removed, ...rest } =
-                translation as VideoCaptionTranslationFile
+                translation as VideoCueTranslationFile
               return [language, rest]
             }
             if ('voice' in translation) {

@@ -1074,6 +1074,7 @@ async function uploadLatest(
   }
   if (projectId !== null) {
     logger.info('')
+    logger.info('Upload complete, rendering continues in the background.')
     logger.info('Recording finished, results available at:')
     logger.info(pc.cyan(`${appUrl}/project/${projectId}`))
   }
@@ -1745,7 +1746,9 @@ export async function main() {
           }
           if (projectId !== null) {
             logger.info('')
-            logger.info('Recording finished, results available at:')
+            logger.info(
+              'Recording finished, rendering in progress. Results available at:'
+            )
             logger.info(pc.cyan(`${appUrl}/project/${projectId}`))
           }
         } catch (err) {

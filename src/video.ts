@@ -48,6 +48,7 @@ import {
   instrumentContext,
 } from './instrument.js'
 import { logger } from './logger.js'
+import { getChromiumLaunchOptions } from './browserLaunchOptions.js'
 
 async function setupMouseTracking(
   _page: Page,
@@ -340,22 +341,7 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     // Launch browser with kiosk mode when recording for fullscreen capture
     // Note: _xvfbSetup runs automatically before this due to auto: true
     const shouldRecord = process.env.SCREENCI_RECORD === 'true'
-    const launchOptions = shouldRecord
-      ? {
-          headless: false,
-          args: [
-            '--window-position=0,0',
-            '--kiosk',
-            '--disable-translate',
-            '--disable-spell-checking',
-            '--disable-notifications', // no permission popups
-            '--disable-save-password-bubble', // no "save password?" dialog
-            '--disable-infobars', // no "Chrome is being controlled by..." bar
-            '--no-first-run', // skip first-run UI
-            '--hide-scrollbars', // scrollbars invisible in recordings
-          ],
-        }
-      : undefined
+    const launchOptions = getChromiumLaunchOptions(shouldRecord)
 
     const browser = await playwright.chromium.launch(launchOptions)
     instrumentBrowser(browser)

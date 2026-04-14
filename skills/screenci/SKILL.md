@@ -1,6 +1,6 @@
 ---
 name: screenci
-description: Scaffold and record ScreenCI video projects. Use when creating a new screenci project, running screenci recordings, or editing screenci video scripts and config.
+description: Record ScreenCI videos in an already-initialized project by editing `.video.ts` files and running the Screenci workflow.
 allowed-tools:
   - Bash(screenci:*)
   - Bash(npx:*)
@@ -9,20 +9,22 @@ allowed-tools:
 
 # ScreenCI
 
-Use this skill when the task is about ScreenCI project setup, video recording workflows, or updating `.video.ts` files and `screenci.config.ts`.
+Use this skill when the task is about ScreenCI video recording workflows in an existing project, or updating `.video.ts` files and `screenci.config.ts`.
 
 ## Quick Start
 
-```bash
-# scaffold a new project
-npx screenci init my-project
-cd my-project
-npm install
+Assume the project is already initialized. Add or edit video scripts in `videos/`.
 
+If you are creating new videos, remove the starter `videos/example.video.ts` file.
+
+```bash
 # iterate locally without recording
 npx screenci dev
 
-# capture recordings
+# verify repeatedly until green
+npx screenci test
+
+# only record after tests pass
 npx screenci record
 ```
 
@@ -32,33 +34,33 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 
 - `video()` declares one output video per test.
 - `hide()` removes setup and loading sections from the final recording.
-- `autoZoom()` follows a form or page section with smooth camera motion.
-- `createVoiceOvers()` creates typed narration and caption markers. Define the map once, then `await voiceOvers.key` where each line should begin. Use `await voiceOvers.waitEnd()` only when the next action must wait for audio to finish.
+- `autoZoom()` follows a larger form or page area with smooth camera motion. Use it sparingly.
+- `createVoiceOvers()` is mandatory for every video: define it in every `.video.ts` file and include spoken narration throughout the demo. Define the map once, then `await voiceOvers.key` where each line should begin. Use `await voiceOvers.waitEnd()` only when the next action must wait for audio to finish.
 
 ## Required Conventions
 
 **Every video MUST follow these conventions:**
 
-1. **Voice overs on every video** — always define `createVoiceOvers({ ... })` and add narration to every `.video.ts` file. No video should be silent.
+1. **Voice overs on every video (required, no exceptions)** — always define `createVoiceOvers({ ... })` and add narration to every `.video.ts` file. Videos without voice over are not acceptable.
 2. **Hide initial setup** — wrap authentication, navigation to the starting page, loading spinners, and any other non-demo boilerplate in `hide()` so they are cut from the final recording.
-3. **autoZoom every logical section** — wrap each distinct UI section (e.g. a form, a dialog, a list interaction) in its own `autoZoom()` block. One `autoZoom()` per section, not per individual click.
+3. **Use autoZoom sparingly on large page areas** — add `autoZoom()` only for larger sections that benefit from camera guidance (e.g. a full form, a full dialog, or a broad list area). Keep usage sparse, and make sure each `autoZoom()` block includes multiple related interactions (typing, selecting, toggling, confirming, etc.), not just a single click.
 
 ## Command Notes
 
-- `screenci init` scaffolds a project with `screenci.config.ts`, a starter `videos/example.video.ts`, `Dockerfile`, and `package.json`.
 - `screenci record` runs the recording flow. By default it uses Podman or Docker unless `--no-container` is used.
 - `screenci dev` runs Playwright in UI mode for fast iteration without screen capture.
 - `screenci retry` uploads the latest `.screenci` output when API configuration is available.
 
 ## Recording Workflow
 
-1. Start from a generated project or an existing package using ScreenCI.
-2. Edit `.video.ts` files like Playwright tests.
+1. Start from the existing initialized ScreenCI package.
+2. Add or edit `.video.ts` files in `videos/`.
+   Remove `videos/example.video.ts` if you are creating new videos and do not need the starter video.
    For narration, define `const voiceOvers = createVoiceOvers({ ... })` near the top of the file and trigger lines with `await voiceOvers.someKey` inside the test body.
 3. Run `npx screenci dev` to validate selectors and flow.
-4. Run `npx screenci record` to produce `.screenci/<video-name>/recording.mp4` and `data.json`.
+4. Run `npx screenci test` until it passes.
+5. Run `npx screenci record` to produce `.screenci/<video-name>/recording.mp4` and `data.json`.
 
 ## Specific Tasks
 
-- **Project scaffolding** [references/init.md](references/init.md)
 - **Recording videos** [references/record.md](references/record.md)

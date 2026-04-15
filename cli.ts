@@ -1319,6 +1319,33 @@ function generatePackageJson(
   )
 }
 
+function generateReadme(projectName: string): string {
+  return `# ${projectName}
+
+This project uses ScreenCI + Playwright to create and upload polished product videos.
+
+## How video recording works
+
+Write video scripts in \`videos/*.video.ts\`. Each \`video(...)\` scenario opens your app, performs interactions, and ScreenCI renders the final video output.
+
+## Quick start
+
+1. Run tests in UI/dev mode:
+
+   \`npx screenci test\`
+
+2. Record and upload videos:
+
+   \`npx screenci record\`
+
+## Documentation
+
+Learn more in the ScreenCI docs:
+
+https://screenci.com/intro/
+`
+}
+
 function generateDockerfile(): string {
   return `FROM ghcr.io/screenci/record:latest
 
@@ -1556,6 +1583,7 @@ async function runInit(
     resolve(projectDir, 'package.json'),
     generatePackageJson(dirName, shouldAddPlaywrightCli)
   )
+  await writeFile(resolve(projectDir, 'README.md'), generateReadme(projectName))
   await writeFile(resolve(projectDir, 'Dockerfile'), generateDockerfile())
   await writeFile(resolve(projectDir, '.gitignore'), generateGitignore())
   await writeFile(
@@ -1574,6 +1602,7 @@ async function runInit(
   logger.info('Files created:')
   logger.info('  screenci.config.ts')
   logger.info('  package.json')
+  logger.info('  README.md')
   logger.info('  Dockerfile')
   logger.info('  .gitignore')
   logger.info('  videos/example.video.ts')
@@ -1623,6 +1652,8 @@ async function runInit(
   logger.info('')
   logger.info('Next steps:')
   logger.info(`  cd ${dirName}`)
+  logger.info('  Read README.md for setup and recording flow')
+  logger.info('  Docs: https://screenci.com/intro/')
   logger.info('  npx screenci test')
   logger.info('  npx screenci record')
 }

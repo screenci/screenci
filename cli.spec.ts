@@ -1642,6 +1642,10 @@ describe('CLI', () => {
         expect.stringContaining('my-project')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining(`my-project/README.md`),
+        expect.stringContaining('https://screenci.com/intro/')
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining(`my-project/Dockerfile`),
         expect.stringContaining('FROM ghcr.io/screenci/record:latest')
       )
@@ -1839,6 +1843,21 @@ describe('CLI', () => {
       await main()
 
       expect(loggerInfoSpy).toHaveBeenCalledWith('  cd my-project')
+    })
+
+    it('should include README and docs link in next steps', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        '  Read README.md for setup and recording flow'
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        '  Docs: https://screenci.com/intro/'
+      )
     })
 
     it('should include .gitignore with required entries', async () => {

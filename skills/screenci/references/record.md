@@ -48,7 +48,7 @@ npx screenci record # capture the final recording
 
 ## Required Conventions
 
-These are not optional — every `.video.ts` file must follow all three:
+These are not optional — every `.video.ts` file must follow all four:
 
 ### 1. Narration on every video (required, no exceptions)
 
@@ -61,6 +61,10 @@ Always wrap initial setup in `hide()`: login flows, navigation to the starting p
 ### 3. Use autoZoom sparingly on large page areas
 
 Add `autoZoom()` only for larger sections that benefit from camera guidance — for example a full form, full dialog, or broad list area. Use `autoZoom()` sparingly, and ensure each block includes multiple related interactions (typing, selecting, toggling, confirming, etc.), not just a single click.
+
+### 4. End autoZoom before page changes
+
+Let each `autoZoom()` block complete before navigation/page changes. Staying zoomed during a route transition is confusing for viewers. After the new page is ready, start a new `autoZoom()` block for that page section if needed.
 
 ## Constraints
 

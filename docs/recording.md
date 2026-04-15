@@ -195,6 +195,8 @@ await autoZoom(
 
 Wrap a full form or page section in one `autoZoom`, not one per click. The camera zooms in when you arrive and zooms back out when you leave — a single, smooth motion rather than a series of jolts.
 
+If the flow navigates to a new page/route, end the current `autoZoom` first. Staying zoomed through navigation is usually disorienting. Start a new `autoZoom` block on the new page when that section needs camera guidance.
+
 ### Test titles become filenames
 
 `video('My Feature Demo')` outputs to `.screenci/my-feature-demo/`. Keep titles unique within a project after kebab-case normalization.

@@ -251,7 +251,9 @@ video('Settings demo', async ({ page }) => {
 
 ### One `autoZoom` per section
 
-Wrap entire page sections, not individual clicks. The camera zooms in when you start a form and zooms back out when you leave — one smooth motion:
+Wrap entire page sections, not individual clicks. The camera zooms in when you start a form and zooms back out when you leave — one smooth motion.
+
+When a flow changes page/route, finish the current `autoZoom` before the navigation so viewers are not left zoomed into a stale area. On the next page, create a new `autoZoom` block for the next section:
 
 ```ts
 video('Multi-section demo', async ({ page }) => {

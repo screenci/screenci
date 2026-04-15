@@ -1,15 +1,27 @@
 ---
 name: screenci
-description: Record ScreenCI videos in an already-initialized project by editing `.video.ts` files and running the Screenci workflow.
+description: Create, show, and guide with ScreenCI videos in an already-initialized project by editing `.video.ts` files and running the Screenci workflow.
 allowed-tools:
   - Bash(screenci:*)
   - Bash(npx:*)
   - Bash(npm:*)
 ---
 
-# ScreenCI
+# ScreenCI Video and Guide Skill
 
 Use this skill when the task is about ScreenCI video recording workflows in an existing project, or updating `.video.ts` files and `screenci.config.ts`.
+
+Trigger this skill when the user asks to:
+
+- create a video
+- show a flow as a video
+- create a guide/demo video
+
+Routing rules:
+
+- If the user provides a URL, always use the `playwright-cli` skill first to inspect the real page flow and selectors before editing the ScreenCI script.
+- If the user provides source code for the target page/component, that usually means browser exploration is not required first.
+- If the request is only about application/source-code changes (not recording or `.video.ts` updates), do not use this skill.
 
 ## Quick Start
 
@@ -44,6 +56,7 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 1. **Narration on every video (required, no exceptions)** — always define `createNarration({ ... })` and add narration to every `.video.ts` file. Videos without narration are not acceptable.
 2. **Hide initial setup** — wrap authentication, navigation to the starting page, loading spinners, and any other non-demo boilerplate in `hide()` so they are cut from the final recording.
 3. **Use autoZoom sparingly on large page areas** — add `autoZoom()` only for larger sections that benefit from camera guidance (e.g. a full form, a full dialog, or a broad list area). Keep usage sparse, and make sure each `autoZoom()` block includes multiple related interactions (typing, selecting, toggling, confirming, etc.), not just a single click.
+4. **End autoZoom before page changes** — it is better to let an `autoZoom()` block finish before a navigation/page change. Staying zoomed during navigation is confusing. Start a new `autoZoom()` block on the next page/section when needed.
 
 ## Command Notes
 

@@ -181,7 +181,7 @@ const narration = createNarration({
 
 ## Hide the boring parts
 
-`hide()` cuts a section from the final video. Perfect for logins, page loads, and test setup.
+`hide()` cuts a section from the final video. Use it for logins, especially the initial page load, cookie banner dismissal, and other setup the viewer should not see.
 
 ```ts
 import { video, hide } from 'screenci'

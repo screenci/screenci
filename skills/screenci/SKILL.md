@@ -54,7 +54,7 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 **Every video MUST follow these conventions:**
 
 1. **Narration on every video (required, no exceptions)** — always define `createNarration({ ... })` and add narration to every `.video.ts` file. Videos without narration are not acceptable.
-2. **Hide initial setup** — wrap authentication, navigation to the starting page, loading spinners, and any other non-demo boilerplate in `hide()` so they are cut from the final recording.
+2. **Hide initial setup** — the initial page load should almost always be wrapped in `hide()`. Keep authentication, navigation to the starting page, loading spinners, cookie banner dismissal, and any other non-demo boilerplate inside that hidden block so they are cut from the final recording.
 3. **Use autoZoom sparingly on large page areas** — add `autoZoom()` only for larger sections that benefit from camera guidance (e.g. a full form, a full dialog, or a broad list area). Keep usage sparse, and make sure each `autoZoom()` block includes multiple related interactions (typing, selecting, toggling, confirming, etc.), not just a single click.
 4. **End autoZoom before page changes** — it is better to let an `autoZoom()` block finish before a navigation/page change. Staying zoomed during navigation is confusing. Start a new `autoZoom()` block on the next page/section when needed.
 

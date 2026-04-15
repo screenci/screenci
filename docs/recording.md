@@ -155,12 +155,13 @@ The key timing rule is simple: `await narration.key` starts audio immediately an
 
 ### Hide navigation at the start
 
-The very first thing your video does is almost always a `page.goto()`. Wrap it in `hide()` so the video jumps straight into the live, ready UI:
+The very first thing your video does is almost always a `page.goto()`. Wrap the initial page load in `hide()` so the video jumps straight into the live, ready UI. This is also a great place to dismiss cookie banners so they never show up in the final recording:
 
 ```ts
 video('CRM demo', async ({ page }) => {
   await hide(async () => {
     await page.goto('https://app.example.com/')
+    await page.getByRole('button', { name: /accept all cookies/i }).click()
     await page.waitForLoadState('networkidle')
     await page.waitForTimeout(2000)
   })

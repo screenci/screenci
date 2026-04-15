@@ -54,7 +54,7 @@ Always add `createNarration({ ... })` to every video file. Videos without narrat
 
 ### 2. Hide initial setup
 
-Always wrap initial setup in `hide()`: login flows, navigation to the starting page, loading states, cookie banners, and any other boilerplate that is not part of the feature being demonstrated. If it is not the point of the video, hide it.
+Always wrap initial setup in `hide()`, especially the initial page load: login flows, navigation to the starting page, loading states, cookie banners, and any other boilerplate that is not part of the feature being demonstrated. It is also a good place to click away cookie banners so they never appear in the final video. If it is not the point of the video, hide it.
 
 ### 3. Use autoZoom sparingly on large page areas
 

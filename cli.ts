@@ -1358,6 +1358,7 @@ COPY videos ./videos
 function generateGitignore(): string {
   return `/playwright-report/
 .screenci
+.playwright-cli/
 node_modules/
 .env
 `

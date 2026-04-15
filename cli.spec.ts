@@ -1874,6 +1874,7 @@ describe('CLI', () => {
       const content = gitignoreCall?.[1] as string
       expect(content).toContain('/playwright-report/')
       expect(content).toContain('.screenci')
+      expect(content).toContain('.playwright-cli/')
       expect(content).toContain('node_modules/')
       expect(content).toContain('.env')
     })

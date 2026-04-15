@@ -31,7 +31,7 @@ If you are creating new videos, remove the starter `videos/example.video.ts` fil
 
 ```bash
 # iterate locally without recording
-npx screenci dev
+npx screenci test --ui
 
 # verify repeatedly until green
 npx screenci test
@@ -60,8 +60,8 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 
 ## Command Notes
 
-- `screenci record` runs the recording flow. By default it uses Podman or Docker unless `--no-container` is used.
-- `screenci dev` runs Playwright in UI mode for fast iteration without screen capture.
+- `screenci record` runs the recording flow in Podman or Docker.
+- `screenci test --ui` runs Playwright in UI mode for fast iteration without screen capture.
 - `screenci retry` uploads the latest `.screenci` output when API configuration is available.
 
 ## Recording Workflow
@@ -70,7 +70,7 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 2. Add or edit `.video.ts` files in `videos/`.
    Remove `videos/example.video.ts` if you are creating new videos and do not need the starter video.
    For narration, define `const narration = createNarration({ ... })` near the top of the file and trigger lines with `await narration.someKey` inside the test body.
-3. Run `npx screenci dev` to validate selectors and flow.
+3. Run `npx screenci test --ui` to validate selectors and flow.
 4. Run `npx screenci test` until it passes.
 5. Run `npx screenci record` to produce `.screenci/<video-name>/recording.mp4` and `data.json`.
 

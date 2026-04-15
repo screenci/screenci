@@ -9,7 +9,6 @@ If you are creating new videos, remove the starter `videos/example.video.ts` fil
 
 ```bash
 npx screenci record
-npx screenci record --no-container
 npx screenci record -c screenci.config.ts
 ```
 
@@ -23,7 +22,6 @@ npx screenci record -c screenci.config.ts
 ## Runtime Behavior
 
 - By default, recording runs in Podman or Docker.
-- `--no-container` runs directly on the host.
 - Playwright arguments can be passed through after the command.
 - When API configuration and `SCREENCI_SECRET` are available, uploads may run after recording.
 
@@ -31,7 +29,7 @@ npx screenci record -c screenci.config.ts
 
 ```bash
 # first verify the flow
-npx screenci dev
+npx screenci test --ui
 
 # then record
 npx screenci record

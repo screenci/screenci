@@ -14,7 +14,6 @@ Most commands look for `screenci.config.ts` in the current directory. Use `--con
 | Command                           | What it does                                                     |
 | --------------------------------- | ---------------------------------------------------------------- |
 | `screenci init [name]`            | Scaffold a new ScreenCI project                                  |
-| `screenci dev [args...]`          | Run Playwright in UI mode for fast iteration                     |
 | `screenci test [args...]`         | Forward directly to `playwright test` using your ScreenCI config |
 | `screenci record [args...]`       | Record videos, usually in a container                            |
 | `screenci retry`                  | Upload the newest local recording in `.screenci/`                |
@@ -35,21 +34,6 @@ Options:
 
 - `-v, --verbose` prints underlying command output instead of spinners
 
-## `screenci dev [playwrightArgs...]`
-
-Runs Playwright against your ScreenCI config in local development mode. By default this starts Playwright UI mode.
-
-```bash
-npx screenci dev
-npx screenci dev --project=chromium
-npx screenci dev --headed
-```
-
-Notes:
-
-- `--headed` disables Playwright UI mode and runs headed instead
-- any additional args are forwarded to `playwright test`
-
 ## `screenci test [playwrightArgs...]`
 
 Forwards directly to `playwright test` while still resolving `screenci.config.ts`.
@@ -60,7 +44,7 @@ npx screenci test --grep "checkout"
 npx screenci test --project=chromium
 ```
 
-Use this when you want normal Playwright execution without recording and without the Playwright UI shortcut from `screenci dev`.
+Use this when you want normal Playwright execution without recording.
 
 ## `screenci record [playwrightArgs...]`
 
@@ -69,13 +53,11 @@ Records videos with ScreenCI. On the host this normally builds and runs the proj
 ```bash
 npx screenci record
 npx screenci record --project=chromium
-npx screenci record --no-container --headed
 ```
 
 Options:
 
 - `-c, --config <path>` use a custom config path
-- `--no-container` run locally instead of in Podman or Docker
 - `--podman` force Podman
 - `--docker` force Docker
 - `--tag <tag>` pull and use a specific `ghcr.io/screenci/record:<tag>` image
@@ -167,7 +149,6 @@ Requirements:
 
 These commands support `--config <path>`:
 
-- `dev`
 - `test`
 - `record`
 - `retry`

@@ -57,8 +57,7 @@ That's Playwright. screenci extends it — it does not replace it.
 ### 4. Develop without recording
 
 ```bash
-npm run dev
-# or: npx screenci dev
+npx screenci test --ui
 ```
 
 Opens the Playwright UI. Run your scripts, verify they work, fix selectors — no screen capture, no container, no FFmpeg. Just normal Playwright test execution.

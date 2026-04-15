@@ -65,7 +65,7 @@ All of these are composable with normal [Playwright](https://playwright.dev/docs
 ## Develop without recording
 
 ```bash
-npm run dev
+npm run test -- --ui
 ```
 
 Opens the Playwright UI. Run your scripts, verify selectors work, iterate fast. No screen capture, no Docker, no FFmpeg. Just Playwright.

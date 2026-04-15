@@ -1306,7 +1306,7 @@ function generatePackageJson(
         scripts: {
           record: 'screenci record',
           retry: 'screenci retry',
-          dev: 'screenci dev',
+          test: 'screenci test',
         },
         dependencies: {
           screenci: 'latest',
@@ -1330,7 +1330,7 @@ Write video scripts in \`videos/*.video.ts\`. Each \`video(...)\` scenario opens
 
 ## Quick start
 
-1. Run tests in UI/dev mode:
+1. Run tests in UI mode:
 
    \`npx screenci test\`
 
@@ -1663,7 +1663,7 @@ export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
     logger.error(
-      'Available commands: record, dev, test, info, make-public, make-private, retry, init'
+      'Available commands: record, test, info, make-public, make-private, retry, init'
     )
     process.exit(1)
   }
@@ -1685,8 +1685,7 @@ export async function main() {
         process.exit(1)
       }
 
-      const useContainer =
-        !parsed.noContainer && process.env.SCREENCI_IN_CONTAINER !== 'true'
+      const useContainer = process.env.SCREENCI_IN_CONTAINER !== 'true'
 
       // Validate early so we don't build the container unnecessarily
       if (useContainer) {
@@ -1789,22 +1788,12 @@ export async function main() {
       }
     })
 
-  // dev command — playwright args pass through as-is
-  program
-    .command('dev [playwrightArgs...]')
-    .description('Run Playwright in dev/UI mode')
-    .allowUnknownOption(true)
-    .action(async () => {
-      const parsed = parseDevCliArgs(getSubcommandArgv('dev'))
-      await run('dev', parsed.otherArgs, parsed.configPath)
-    })
-
   program
     .command('test [playwrightArgs...]')
     .description('Run Playwright test with screenci.config.ts')
     .allowUnknownOption(true)
     .action(async () => {
-      const parsed = parseDevCliArgs(getSubcommandArgv('test'))
+      const parsed = parseConfigCliArgs(getSubcommandArgv('test'))
       await run('test', parsed.otherArgs, parsed.configPath)
     })
 
@@ -1918,14 +1907,12 @@ function getSubcommandArgv(command: string): string[] {
 
 function parseRecordCliArgs(args: string[]): {
   configPath: string | undefined
-  noContainer: boolean
   imageTag: string | undefined
   verbose: boolean
   forcedRuntime: ContainerRuntimeName | 'both' | undefined
   otherArgs: string[]
 } {
   let configPath: string | undefined
-  let noContainer = false
   let imageTag: string | undefined
   let verbose = false
   let forcedRuntime: ContainerRuntimeName | 'both' | undefined
@@ -1942,8 +1929,6 @@ function parseRecordCliArgs(args: string[]): {
       }
       configPath = nextArg
       i++
-    } else if (arg === '--no-container') {
-      noContainer = true
     } else if (arg === '--verbose' || arg === '-v') {
       verbose = true
     } else if (arg === '--podman') {
@@ -1965,7 +1950,6 @@ function parseRecordCliArgs(args: string[]): {
 
   return {
     configPath,
-    noContainer,
     imageTag,
     verbose,
     forcedRuntime,
@@ -1973,7 +1957,7 @@ function parseRecordCliArgs(args: string[]): {
   }
 }
 
-function parseDevCliArgs(args: string[]): {
+function parseConfigCliArgs(args: string[]): {
   configPath: string | undefined
   otherArgs: string[]
 } {
@@ -2282,7 +2266,7 @@ async function runWithContainer(
 }
 
 async function run(
-  command: string,
+  command: 'record' | 'test',
   additionalArgs: string[],
   customConfigPath?: string
 ) {
@@ -2296,25 +2280,14 @@ async function run(
     process.exit(1)
   }
 
-  // Only validate args for record command (dev allows parallel execution)
+  // Only validate args for record command
   if (command === 'record') {
     validateArgs(additionalArgs)
     const screenciDir = resolve(dirname(configPath), '.screenci')
     clearDirectory(screenciDir)
   }
 
-  // For dev command: use --ui unless --headed is specified
-  const isHeaded = additionalArgs.includes('--headed')
-  const shouldUseUI = command === 'dev' && !isHeaded
-
-  const mode =
-    command === 'dev'
-      ? isHeaded
-        ? 'headed mode'
-        : 'UI mode'
-      : command === 'test'
-        ? 'tests'
-        : 'recorder'
+  const mode = command === 'test' ? 'tests' : 'recorder'
   if (process.env.SCREENCI_IN_CONTAINER !== 'true') {
     logger.info(`Running ScreenCI ${mode} with npx...`)
     logger.info(`Using config: ${configPath}`)
@@ -2325,7 +2298,6 @@ async function run(
     'test',
     '--config',
     configPath,
-    ...(shouldUseUI ? ['--ui'] : []),
     ...additionalArgs,
   ]
 

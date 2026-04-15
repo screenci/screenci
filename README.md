@@ -69,7 +69,7 @@ All standard `page` methods (`goto`, `waitForURL`, `waitForLoadState`, `waitForT
 
 ```bash
 # Dry-run: opens Playwright UI so you can verify selectors and pacing
-npx screenci dev
+npx screenci test --ui
 
 # Record: captures the screen and writes .screenci/<name>/recording.mp4
 npx screenci record
@@ -78,7 +78,7 @@ npx screenci record
 Or via the package scripts scaffolded by `init`:
 
 ```bash
-npm run dev     # → npx screenci dev
+npm run test    # → npx screenci test
 npm run record  # → npx screenci record
 ```
 

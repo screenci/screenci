@@ -29,6 +29,7 @@ import {
   getLastZoomLocation,
   setLastZoomLocation,
 } from './autoZoom.js'
+import { isInsideHide } from './hide.js'
 
 let activeClickRecorder: IEventRecorder | null = null
 
@@ -847,6 +848,13 @@ export function instrumentLocator(locator: Locator): Locator {
       ...clickOptions
     } = options ?? {}
 
+    if (isInsideHide()) {
+      return originalClick({
+        ...clickOptions,
+        ...(position !== undefined && { position }),
+      })
+    }
+
     assertDurationOrSpeed(moveDuration, moveSpeed, 'click move')
 
     return recordedClick(
@@ -876,6 +884,20 @@ export function instrumentLocator(locator: Locator): Locator {
     text: string,
     options?: PressSequentiallyOptions
   ): Promise<void> => {
+    const {
+      click: _click,
+      hideMouse: _hideMouse,
+      position: _position,
+      ...pressOptions
+    } = options ?? {}
+
+    if (isInsideHide()) {
+      return originalPressSequentially(
+        text,
+        pressOptions as Parameters<Locator['pressSequentially']>[1]
+      )
+    }
+
     await sleep(PRE_ACTION_SLEEP)
     const innerEvents: Array<
       | MouseMoveEvent
@@ -963,13 +985,6 @@ export function instrumentLocator(locator: Locator): Locator {
       }
     }
 
-    // Strip the click and hideMouse options before forwarding to the original Playwright method
-    const {
-      click: _click,
-      hideMouse: _hideMouse,
-      ...pressOptions
-    } = options ?? {}
-
     const typingStart = Date.now()
     await originalPressSequentially(
       text,
@@ -1004,6 +1019,7 @@ export function instrumentLocator(locator: Locator): Locator {
     }
   }
 
+  const originalFill = locator.fill.bind(locator)
   locator.fill = async (
     value: string,
     options?: {
@@ -1014,6 +1030,18 @@ export function instrumentLocator(locator: Locator): Locator {
       hideMouse?: boolean
     }
   ) => {
+    if (isInsideHide()) {
+      const {
+        duration: _duration,
+        click: _click,
+        position: _position,
+        hideMouse: _hideMouse,
+        ...fillOptions
+      } = options ?? {}
+
+      return originalFill(value, fillOptions as Parameters<Locator['fill']>[1])
+    }
+
     const duration = options?.duration ?? 1000
     const delay = value.length > 0 ? duration / value.length : 0
     const pressOptions: PressSequentiallyOptions = { delay }
@@ -1049,7 +1077,13 @@ export function instrumentLocator(locator: Locator): Locator {
     }
   ): Promise<void> => {
     const clickOpt = options?.click
-    const { click: _click, position, ...checkOpts } = options ?? {}
+    const position = options?.position
+    const { click: _click, ...checkOpts } = options ?? {}
+
+    if (isInsideHide()) {
+      return originalCheck(checkOpts as Parameters<Locator['check']>[0])
+    }
+
     return performSimpleAction(
       locator,
       (options: Parameters<Locator['check']>[0]) => originalCheck(options),
@@ -1067,7 +1101,13 @@ export function instrumentLocator(locator: Locator): Locator {
     }
   ): Promise<void> => {
     const clickOpt = options?.click
-    const { click: _click, position, ...uncheckOpts } = options ?? {}
+    const position = options?.position
+    const { click: _click, ...uncheckOpts } = options ?? {}
+
+    if (isInsideHide()) {
+      return originalUncheck(uncheckOpts as Parameters<Locator['uncheck']>[0])
+    }
+
     return performSimpleAction(
       locator,
       (options: Parameters<Locator['uncheck']>[0]) => originalUncheck(options),
@@ -1101,6 +1141,14 @@ export function instrumentLocator(locator: Locator): Locator {
   ): Promise<string[]> => {
     const clickOpt = options?.click
     const { click: _click, position, ...selectOpts } = options ?? {}
+
+    if (isInsideHide()) {
+      return originalSelectOption(
+        values,
+        selectOpts as Parameters<Locator['selectOption']>[1]
+      )
+    }
+
     let result: string[] = []
     await performSimpleAction(
       locator,

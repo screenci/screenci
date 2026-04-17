@@ -14,6 +14,7 @@ import {
 import { hide } from './hide.js'
 
 type DOMClickData = { x: number; y: number; targetRect: ElementRect }
+type ScrollLogicalPosition = 'start' | 'center' | 'end' | 'nearest'
 
 type PageMock = Page & {
   _locatorMock: Locator
@@ -190,6 +191,7 @@ function makeLocatorMock(
       .fn()
       .mockImplementation(() => makeLocatorMock())
   }
+  const scrollIntoViewCalls: ScrollLogicalPosition[] = []
   const mock = {
     click: vi.fn(),
     fill: vi.fn().mockResolvedValue(undefined),
@@ -201,8 +203,13 @@ function makeLocatorMock(
     hover: vi.fn().mockResolvedValue(undefined),
     selectText: vi.fn().mockResolvedValue(undefined),
     dragTo: vi.fn().mockResolvedValue(undefined),
-    evaluate: vi.fn().mockResolvedValue(undefined),
+    evaluate: vi.fn().mockImplementation(async (_fn: unknown, arg: unknown) => {
+      const opts = arg as { block?: ScrollLogicalPosition } | undefined
+      scrollIntoViewCalls.push(opts?.block ?? 'center')
+      return undefined
+    }),
     boundingBox: vi.fn().mockResolvedValue(bb),
+    scrollIntoViewIfNeeded: vi.fn().mockResolvedValue(undefined),
     waitFor: vi.fn().mockResolvedValue(undefined),
     all: vi.fn().mockResolvedValue([]),
     page: vi.fn().mockReturnValue(pageMock),
@@ -212,6 +219,7 @@ function makeLocatorMock(
     frameLocator: vi
       .fn()
       .mockImplementation(() => makeFrameLocatorMock(pageMock)),
+    _scrollIntoViewCalls: scrollIntoViewCalls,
     ...locatorMethods,
     ...locatorOnlyMethods,
   }
@@ -335,6 +343,57 @@ describe('instrumentLocator', () => {
     expect(fill.subType).toBe('pressSequentially')
     expect(fill.events.some((e) => e.type === 'mouseDown')).toBe(false)
     expect(fill.events.some((e) => e.type === 'mouseUp')).toBe(false)
+  })
+
+  it('uses nearest scroll for later autoZoom fills', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    const first = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    const second = makeLocatorMock(
+      { x: 100, y: 700, width: 80, height: 40 },
+      page
+    )
+    instrumentLocator(first)
+    instrumentLocator(second)
+
+    const p = autoZoom(
+      async () => {
+        await (
+          first.fill as (
+            value: string,
+            options?: { duration?: number }
+          ) => Promise<void>
+        )('Alex', {
+          duration: 0,
+        })
+        await (
+          second.fill as (
+            value: string,
+            options?: { duration?: number }
+          ) => Promise<void>
+        )('Example', {
+          duration: 0,
+        })
+      },
+      { duration: 300, postZoomInOutDelay: 0 }
+    )
+
+    await vi.runAllTimersAsync()
+    await p
+
+    expect(
+      (first as unknown as { _scrollIntoViewCalls: ScrollLogicalPosition[] })
+        ._scrollIntoViewCalls
+    ).toEqual([])
+    expect(
+      (second as unknown as { _scrollIntoViewCalls: ScrollLogicalPosition[] })
+        ._scrollIntoViewCalls
+    ).toEqual(['nearest'])
   })
 
   it('records a hover InputEvent with inner mouseMove and mouseWait', async () => {

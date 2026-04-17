@@ -274,7 +274,8 @@ export function scrollIntoViewAsync(
  * Returns undefined if the bounding box cannot be determined.
  */
 async function scrollIntoViewIfNeeded(
-  locator: Locator
+  locator: Locator,
+  block: ScrollLogicalPosition = 'center'
 ): Promise<ElementRect | undefined> {
   const page = locator.page()
   const bb = await locator.boundingBox()
@@ -288,7 +289,7 @@ async function scrollIntoViewIfNeeded(
       bb.x + bb.width <= viewportSize.width &&
       bb.y + bb.height <= viewportSize.height
     if (!isFullyInViewport) {
-      await scrollIntoViewAsync(locator)
+      await scrollIntoViewAsync(locator, { block })
       const newBb = await locator.boundingBox()
       if (newBb)
         return {
@@ -398,7 +399,10 @@ async function performClickActions(
     isInsideAutoZoom() && getLastZoomLocation() === null
 
   const moveStartTime = Date.now()
-  const locatorRect = await scrollIntoViewIfNeeded(locator)
+  const locatorRect = await scrollIntoViewIfNeeded(
+    locator,
+    isInsideAutoZoom() && getLastZoomLocation() !== null ? 'nearest' : 'center'
+  )
   const scrollElapsedMs = Date.now() - moveStartTime
   if (!locatorRect) {
     logger.warn(
@@ -632,11 +636,19 @@ async function prepareAutoZoomForLocator(
   locator: Locator,
   eventType: 'click' | 'fill'
 ): Promise<ElementRect | undefined> {
-  const locatorRect = await scrollIntoViewIfNeeded(locator)
+  const hadPreviousZoomLocation = getLastZoomLocation() !== null
+  const zoomDur = isInsideAutoZoom() ? (getZoomDuration() ?? 0) : 0
+  if (isInsideAutoZoom() && hadPreviousZoomLocation && zoomDur > 0) {
+    await sleep(zoomDur)
+  }
+
+  const locatorRect = await scrollIntoViewIfNeeded(
+    locator,
+    hadPreviousZoomLocation ? 'nearest' : 'center'
+  )
 
   if (isInsideAutoZoom() && locatorRect) {
-    const zoomDur = getZoomDuration() ?? 0
-    if (zoomDur > 0) {
+    if (!hadPreviousZoomLocation && zoomDur > 0) {
       await sleep(zoomDur)
     }
 
@@ -1171,7 +1183,12 @@ export function instrumentLocator(locator: Locator): Locator {
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
     const moveStartTime = Date.now()
-    const locatorRect = await scrollIntoViewIfNeeded(locator)
+    const locatorRect = await scrollIntoViewIfNeeded(
+      locator,
+      isInsideAutoZoom() && getLastZoomLocation() !== null
+        ? 'nearest'
+        : 'center'
+    )
     const scrollElapsedMs = Date.now() - moveStartTime
 
     const innerEvents: Array<MouseMoveEvent | MouseWaitEvent> = []
@@ -1258,7 +1275,12 @@ export function instrumentLocator(locator: Locator): Locator {
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
     const moveStartTime = Date.now()
-    const locatorRect = await scrollIntoViewIfNeeded(locator)
+    const locatorRect = await scrollIntoViewIfNeeded(
+      locator,
+      isInsideAutoZoom() && getLastZoomLocation() !== null
+        ? 'nearest'
+        : 'center'
+    )
     const scrollElapsedMs = Date.now() - moveStartTime
 
     const innerEvents: Array<MouseMoveEvent | MouseDownEvent | MouseUpEvent> =
@@ -1367,7 +1389,12 @@ export function instrumentLocator(locator: Locator): Locator {
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
     const moveStartTime = Date.now()
-    const sourceRect = await scrollIntoViewIfNeeded(locator)
+    const sourceRect = await scrollIntoViewIfNeeded(
+      locator,
+      isInsideAutoZoom() && getLastZoomLocation() !== null
+        ? 'nearest'
+        : 'center'
+    )
     const scrollElapsedMs = Date.now() - moveStartTime
     const targetBb = await target.boundingBox()
     const targetRect: ElementRect | undefined = targetBb

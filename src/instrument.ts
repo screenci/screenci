@@ -628,13 +628,37 @@ type SimpleActionOptions =
   | Parameters<Locator['uncheck']>[0]
   | Parameters<Locator['selectOption']>[1]
 
+async function prepareAutoZoomForLocator(
+  locator: Locator,
+  eventType: 'click' | 'fill'
+): Promise<ElementRect | undefined> {
+  const locatorRect = await scrollIntoViewIfNeeded(locator)
+
+  if (isInsideAutoZoom() && locatorRect) {
+    const zoomDur = getZoomDuration() ?? 0
+    if (zoomDur > 0) {
+      await sleep(zoomDur)
+    }
+
+    setLastZoomLocation({
+      x: locatorRect.x + locatorRect.width / 2,
+      y: locatorRect.y + locatorRect.height / 2,
+      elementRect: locatorRect,
+      eventType,
+    })
+  }
+
+  return locatorRect
+}
+
 async function performSimpleAction(
   locator: Locator,
   doAction: (options: SimpleActionOptions) => Promise<void>,
   options: SimpleActionOptions,
   subType: 'tap' | 'check' | 'uncheck' | 'select',
   clickOpt?: ClickBeforeFillOption,
-  position?: { x: number; y: number }
+  position?: { x: number; y: number },
+  recordMousePress = subType === 'tap'
 ): Promise<void> {
   await sleep(PRE_ACTION_SLEEP)
   let innerEvents: Array<
@@ -670,25 +694,7 @@ async function performSimpleAction(
     const isFirstAutoZoomEvent =
       isInsideAutoZoom() && getLastZoomLocation() === null
 
-    const locatorRect = await scrollIntoViewIfNeeded(locator)
-
-    if (isInsideAutoZoom() && locatorRect) {
-      const targetX = locatorRect.x + locatorRect.width / 2
-      const targetY = locatorRect.y + locatorRect.height / 2
-      const lastLoc = getLastZoomLocation()
-      if (lastLoc !== null) {
-        const zoomDur = getZoomDuration() ?? 0
-        if (zoomDur > 0) {
-          await sleep(zoomDur)
-        }
-      }
-      setLastZoomLocation({
-        x: targetX,
-        y: targetY,
-        elementRect: locatorRect,
-        eventType: 'fill',
-      })
-    }
+    const locatorRect = await prepareAutoZoomForLocator(locator, 'fill')
 
     if (isFirstAutoZoomEvent) {
       const postDelay = getPostZoomInOutDelay() ?? 0
@@ -708,18 +714,21 @@ async function performSimpleAction(
       ...(targetPosition ? { position: targetPosition } : {}),
     })
     const endTime = Date.now()
-    const midTime = (startTime + endTime) / 2
-    innerEvents.push({
-      type: 'mouseDown',
-      startMs: startTime,
-      endMs: midTime,
-    })
-    innerEvents.push({
-      type: 'mouseUp',
-      startMs: midTime,
-      endMs: endTime,
-    })
     elementRect = locatorRect
+
+    if (recordMousePress) {
+      const midTime = (startTime + endTime) / 2
+      innerEvents.push({
+        type: 'mouseDown',
+        startMs: startTime,
+        endMs: midTime,
+      })
+      innerEvents.push({
+        type: 'mouseUp',
+        startMs: midTime,
+        endMs: endTime,
+      })
+    }
   }
 
   const simpleWaitStart = Date.now()
@@ -940,26 +949,7 @@ export function instrumentLocator(locator: Locator): Locator {
       const isFirstAutoZoomEvent =
         isInsideAutoZoom() && getLastZoomLocation() === null
 
-      const locatorRect = await scrollIntoViewIfNeeded(locator)
-
-      // If inside autoZoom: await zoom duration for camera pan, then update zoom tracker
-      if (isInsideAutoZoom() && locatorRect) {
-        const targetX = locatorRect.x + locatorRect.width / 2
-        const targetY = locatorRect.y + locatorRect.height / 2
-        const lastLoc = getLastZoomLocation()
-        if (lastLoc !== null) {
-          const zoomDur = getZoomDuration() ?? 0
-          if (zoomDur > 0) {
-            await sleep(zoomDur)
-          }
-        }
-        setLastZoomLocation({
-          x: targetX,
-          y: targetY,
-          elementRect: locatorRect,
-          eventType: 'fill',
-        })
-      }
+      const locatorRect = await prepareAutoZoomForLocator(locator, 'fill')
 
       if (isFirstAutoZoomEvent) {
         const postDelay = getPostZoomInOutDelay() ?? 0
@@ -985,28 +975,17 @@ export function instrumentLocator(locator: Locator): Locator {
       }
     }
 
-    const typingStart = Date.now()
     await originalPressSequentially(
       text,
       pressOptions as Parameters<Locator['pressSequentially']>[1]
     )
-    const typingEnd = Date.now()
 
     const pressWaitStart = Date.now()
     await sleep(POST_ACTION_SLEEP)
     const pressWaitEnd = Date.now()
 
     if (activeClickRecorder) {
-      // addInput requires at least one inner event; use typing start/end as a
-      // fallback span when no other inner events (click, mouseHide) were collected.
-      const eventsToRecord: typeof innerEvents =
-        innerEvents.length > 0
-          ? innerEvents
-          : [
-              { type: 'mouseDown', startMs: typingStart, endMs: typingStart },
-              { type: 'mouseUp', startMs: typingStart, endMs: typingEnd },
-            ]
-      eventsToRecord.push({
+      innerEvents.push({
         type: 'mouseWait',
         startMs: pressWaitStart,
         endMs: pressWaitEnd,
@@ -1014,7 +993,7 @@ export function instrumentLocator(locator: Locator): Locator {
       activeClickRecorder.addInput(
         'pressSequentially',
         elementRect,
-        eventsToRecord
+        innerEvents
       )
     }
   }
@@ -1090,7 +1069,8 @@ export function instrumentLocator(locator: Locator): Locator {
       checkOpts as Parameters<Locator['check']>[0],
       'check',
       clickOpt,
-      position
+      position,
+      false
     )
   }
 
@@ -1114,7 +1094,8 @@ export function instrumentLocator(locator: Locator): Locator {
       uncheckOpts as Parameters<Locator['uncheck']>[0],
       'uncheck',
       clickOpt,
-      position
+      position,
+      false
     )
   }
 
@@ -1159,7 +1140,8 @@ export function instrumentLocator(locator: Locator): Locator {
       selectOpts as Parameters<Locator['selectOption']>[1],
       'select',
       clickOpt,
-      position
+      position,
+      false
     )
     return result
   }

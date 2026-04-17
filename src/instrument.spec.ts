@@ -6,7 +6,11 @@ import {
   instrumentLocator,
   instrumentPage,
 } from './instrument.js'
-import { setActiveAutoZoomRecorder, setLastZoomLocation } from './autoZoom.js'
+import {
+  autoZoom,
+  setActiveAutoZoomRecorder,
+  setLastZoomLocation,
+} from './autoZoom.js'
 import { hide } from './hide.js'
 
 type DOMClickData = { x: number; y: number; targetRect: ElementRect }
@@ -263,6 +267,74 @@ describe('instrumentLocator', () => {
     expect(click.events.some((e) => e.type === 'mouseMove')).toBe(true)
     expect(click.events.some((e) => e.type === 'mouseDown')).toBe(true)
     expect(click.events.some((e) => e.type === 'mouseUp')).toBe(true)
+  })
+
+  it('does not synthesize mouse presses for check without click inside autoZoom', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const bb = { x: 100, y: 200, width: 80, height: 40 }
+    const locator = makeLocatorMock(bb, page)
+    const checkMock = locator.check as ReturnType<typeof vi.fn>
+    instrumentLocator(locator)
+
+    const p = autoZoom(
+      async () => {
+        await locator.check()
+      },
+      { duration: 300, postZoomInOutDelay: 0 }
+    )
+
+    await vi.advanceTimersByTimeAsync(50)
+    expect(checkMock).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(300)
+    expect(checkMock).toHaveBeenCalledOnce()
+
+    await vi.runAllTimersAsync()
+    await p
+
+    expect(recordedInputEvents).toHaveLength(1)
+    const check = recordedInputEvents[0]!
+    expect(check.subType).toBe('check')
+    expect(check.events.some((e) => e.type === 'mouseDown')).toBe(false)
+    expect(check.events.some((e) => e.type === 'mouseUp')).toBe(false)
+  })
+
+  it('does not synthesize mouse presses for fill without click inside autoZoom', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const bb = { x: 100, y: 200, width: 80, height: 40 }
+    const locator = makeLocatorMock(bb, page)
+    instrumentLocator(locator)
+
+    const p = autoZoom(
+      async () => {
+        await (
+          locator.fill as (
+            value: string,
+            options?: { duration?: number }
+          ) => Promise<void>
+        )('hi', { duration: 100 })
+      },
+      { duration: 0, postZoomInOutDelay: 0 }
+    )
+
+    await vi.runAllTimersAsync()
+    await p
+
+    expect(recordedInputEvents).toHaveLength(1)
+    const fill = recordedInputEvents[0]!
+    expect(fill.subType).toBe('pressSequentially')
+    expect(fill.events.some((e) => e.type === 'mouseDown')).toBe(false)
+    expect(fill.events.some((e) => e.type === 'mouseUp')).toBe(false)
   })
 
   it('records a hover InputEvent with inner mouseMove and mouseWait', async () => {

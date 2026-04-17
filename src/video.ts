@@ -22,7 +22,7 @@ import type {
 } from './types.js'
 import type { Page } from '@playwright/test'
 export { getDimensions } from './dimensions.js'
-import { getDimensions } from './dimensions.js'
+import { getDimensions, getViewportCenter } from './dimensions.js'
 import { isHeadless, startXvfb, type XvfbInstance } from './xvfb.js'
 import {
   setActiveCueRecorder,
@@ -503,6 +503,8 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     if (didStart) {
       // Mark the moment the video recording actually begins
       recorder.start()
+      const viewportCenter = getViewportCenter(dimensions)
+      await page.mouse.move(viewportCenter.x, viewportCenter.y)
     } else {
       logger.warn(
         'Screen recording failed to start. Test will continue without recording.'

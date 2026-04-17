@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getDimensions } from './dimensions.js'
+import { getDimensions, getViewportCenter } from './dimensions.js'
 
 /**
  * Dimension table (shorter side = quality base, longer side from ratio):
@@ -186,6 +186,22 @@ describe('getDimensions', () => {
         width: 2160,
         height: 2700,
       })
+    })
+  })
+})
+
+describe('getViewportCenter', () => {
+  it('returns centered coordinates for even dimensions', () => {
+    expect(getViewportCenter({ width: 1280, height: 720 })).toEqual({
+      x: 640,
+      y: 360,
+    })
+  })
+
+  it('floors centered coordinates for odd dimensions', () => {
+    expect(getViewportCenter({ width: 721, height: 1281 })).toEqual({
+      x: 360,
+      y: 640,
     })
   })
 })

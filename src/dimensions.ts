@@ -51,3 +51,13 @@ export function getDimensions(
 
   return dimensions[aspectRatio]
 }
+
+export function getViewportCenter(dimensions: {
+  width: number
+  height: number
+}): { x: number; y: number } {
+  return {
+    x: Math.floor(dimensions.width / 2),
+    y: Math.floor(dimensions.height / 2),
+  }
+}

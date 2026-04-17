@@ -49,6 +49,7 @@ import {
 } from './instrument.js'
 import { logger } from './logger.js'
 import { getChromiumLaunchOptions } from './browserLaunchOptions.js'
+import { createRecordingChromiumProfile } from './chromiumProfile.js'
 
 async function setupMouseTracking(
   _page: Page,
@@ -346,14 +347,46 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     const browser = await playwright.chromium.launch(launchOptions)
     instrumentBrowser(browser)
     await use(browser)
-    await browser.close()
+    if (browser.isConnected()) {
+      await browser.close()
+    }
   },
 
-  context: async ({ browser, recordOptions }, use) => {
+  context: async ({ browser, playwright, recordOptions }, use) => {
     // Configure browser context
     const aspectRatio = recordOptions.aspectRatio ?? DEFAULT_ASPECT_RATIO
     const quality = recordOptions.quality ?? DEFAULT_QUALITY
     const dimensions = getDimensions(aspectRatio, quality)
+    const shouldRecord = process.env.SCREENCI_RECORD === 'true'
+
+    if (shouldRecord) {
+      if (browser.isConnected()) {
+        await browser.close()
+      }
+
+      const profile = await createRecordingChromiumProfile()
+      const launchOptions = getChromiumLaunchOptions(true)
+
+      const context = await playwright.chromium.launchPersistentContext(
+        profile.userDataDir,
+        {
+          ...launchOptions,
+          locale: 'en-US',
+          viewport: dimensions,
+        }
+      )
+
+      instrumentContext(context)
+
+      try {
+        await use(context)
+      } finally {
+        await context.close()
+        await profile.cleanup()
+      }
+
+      return
+    }
 
     const context = await browser.newContext({
       viewport: dimensions,

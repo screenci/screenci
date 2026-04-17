@@ -573,9 +573,10 @@ export class EventRecorder implements IEventRecorder {
           ro?.narration?.corner ?? RENDER_OPTIONS_DEFAULTS.narration.corner,
         padding:
           ro?.narration?.padding ?? RENDER_OPTIONS_DEFAULTS.narration.padding,
-        dropShadow:
-          ro?.narration?.dropShadow ??
-          RENDER_OPTIONS_DEFAULTS.narration.dropShadow,
+        dropShadow: normalizeNarrationDropShadow(
+          ro?.narration?.dropShadow,
+          RENDER_OPTIONS_DEFAULTS.narration.dropShadow
+        ),
       },
       cursor: {
         size: ro?.cursor?.size ?? RENDER_OPTIONS_DEFAULTS.cursor.size,
@@ -621,4 +622,28 @@ export class EventRecorder implements IEventRecorder {
     }
     await writeFile(filePath, JSON.stringify(data, null, 2))
   }
+}
+
+function normalizeNarrationDropShadow(
+  input: number | undefined,
+  fallback: number
+): number {
+  if (typeof input === 'number') {
+    return clamp01(input)
+  }
+
+  return fallback
+}
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0
+  }
+  if (value < 0) {
+    return 0
+  }
+  if (value > 1) {
+    return 1
+  }
+  return value
 }

@@ -86,7 +86,7 @@ export type RenderOptions = {
     size?: number
     /** 0-1: 0=sharp corners, 1=shorter side is half circle */
     roundness?: number
-    shape?: 'rounded' | 'squircle'
+    shape?: 'rounded'
     /** CSS drop-shadow filter */
     dropShadow?: string
   }
@@ -95,9 +95,13 @@ export type RenderOptions = {
     size?: number
     /** 0-1: 0=square, 1=circle */
     roundness?: number
-    shape?: 'rounded' | 'squircle'
-    /** CSS drop-shadow filter */
-    dropShadow?: string
+    shape?: 'rounded'
+    /**
+     * Narration shadow strength (0-1).
+     * - 0 disables shadow
+     * - 1 maps to maximum shadow
+     */
+    dropShadow?: number
     corner?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
     /** 0-1: 0=nothing, 1=length of shorter side of the frame */
     padding?: number
@@ -148,10 +152,10 @@ export const RENDER_OPTIONS_DEFAULTS = {
   narration: {
     size: 0.3,
     roundness: 0,
-    shape: 'squircle' as const,
+    shape: 'rounded' as const,
     corner: 'bottom-right' as const,
     padding: 0.04,
-    dropShadow: 'drop-shadow(0 8px 24px rgba(0,0,0,0.5))',
+    dropShadow: 1,
   },
   cursor: {
     size: 0.05,
@@ -175,14 +179,14 @@ export type ResolvedRenderOptions = {
   recording: {
     size: number
     roundness: number
-    shape: 'rounded' | 'squircle'
+    shape: 'rounded'
     dropShadow: string
   }
   narration: {
     size: number
     roundness: number
-    shape: 'rounded' | 'squircle'
-    dropShadow: string
+    shape: 'rounded'
+    dropShadow: number
     corner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
     padding: number
   }

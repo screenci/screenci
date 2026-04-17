@@ -357,14 +357,12 @@ describe('EventRecorder', () => {
       // narration defaults
       expect((ro.narration as Record<string, unknown>).size).toBe(0.3)
       expect((ro.narration as Record<string, unknown>).roundness).toBe(0)
-      expect((ro.narration as Record<string, unknown>).shape).toBe('squircle')
+      expect((ro.narration as Record<string, unknown>).shape).toBe('rounded')
       expect((ro.narration as Record<string, unknown>).corner).toBe(
         'bottom-right'
       )
       expect((ro.narration as Record<string, unknown>).padding).toBe(0.04)
-      expect((ro.narration as Record<string, unknown>).dropShadow).toBe(
-        'drop-shadow(0 8px 24px rgba(0,0,0,0.5))'
-      )
+      expect((ro.narration as Record<string, unknown>).dropShadow).toBe(1)
       // cursor default
       expect((ro.cursor as Record<string, unknown>).size).toBe(0.05)
     })
@@ -423,9 +421,7 @@ describe('EventRecorder', () => {
       expect((ro.recording as Record<string, unknown>).dropShadow).toBe(
         'drop-shadow(0 8px 24px rgba(0,0,0,0.5))'
       )
-      expect((ro.narration as Record<string, unknown>).dropShadow).toBe(
-        'drop-shadow(0 8px 24px rgba(0,0,0,0.5))'
-      )
+      expect((ro.narration as Record<string, unknown>).dropShadow).toBe(1)
       expect((ro.output as Record<string, unknown>).background).toEqual({
         backgroundCss:
           'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
@@ -435,7 +431,7 @@ describe('EventRecorder', () => {
     it('overrides dropShadow and background when explicitly provided', async () => {
       recorder = new EventRecorder({
         recording: { dropShadow: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' },
-        narration: { dropShadow: 'drop-shadow(0 1px 2px rgba(0,0,0,0.2))' },
+        narration: { dropShadow: 0.2 },
         output: { background: { backgroundCss: '#000' } },
       })
       recorder.start()
@@ -447,9 +443,7 @@ describe('EventRecorder', () => {
       expect((ro.recording as Record<string, unknown>).dropShadow).toBe(
         'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
       )
-      expect((ro.narration as Record<string, unknown>).dropShadow).toBe(
-        'drop-shadow(0 1px 2px rgba(0,0,0,0.2))'
-      )
+      expect((ro.narration as Record<string, unknown>).dropShadow).toBe(0.2)
       expect((ro.output as Record<string, unknown>).background).toEqual({
         backgroundCss: '#000',
       })

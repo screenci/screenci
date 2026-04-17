@@ -263,13 +263,13 @@ type RenderOptions = {
   recording?: {
     size?: number // 0-1: 1=one side touches background edge
     roundness?: number // 0-1: 0=sharp corners, 1=shorter side is half circle
-    shape?: 'rounded' | 'squircle'
+    shape?: 'rounded'
     dropShadow?: string // CSS drop-shadow filter
   }
   narration?: {
     size?: number // 0-1: 1=mask size equals shorter side of output
     roundness?: number // 0-1: 0=square, 1=circle
-    shape?: 'rounded' | 'squircle'
+    shape?: 'rounded'
     dropShadow?: string // CSS drop-shadow filter
     corner?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
     padding?: number // 0-1

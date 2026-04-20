@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { Locator, Page, FrameLocator } from '@playwright/test'
-import type { IEventRecorder, ElementRect, InputEvent } from './events.js'
+import type {
+  IEventRecorder,
+  ElementRect,
+  InputEvent,
+  MouseMoveEvent,
+} from './events.js'
 import {
   setActiveClickRecorder,
   instrumentLocator,
@@ -520,6 +525,90 @@ describe('instrumentLocator', () => {
     expect(click.events.some((e) => e.type === 'mouseMove')).toBe(true)
     expect(click.events.some((e) => e.type === 'mouseDown')).toBe(true)
     expect(click.events.some((e) => e.type === 'mouseUp')).toBe(true)
+  })
+
+  it('prefers actual DOM click coordinates and rect for recorded clicks', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const bb = { x: 100, y: 200, width: 80, height: 40 }
+    const locator = makeLocatorMock(bb, page)
+    ;(locator.click as ReturnType<typeof vi.fn>).mockImplementation(
+      async () => {
+        page._triggerDomClick({
+          x: 118,
+          y: 214,
+          targetRect: { x: 110, y: 206, width: 80, height: 40 },
+        })
+      }
+    )
+
+    instrumentLocator(locator)
+    await Promise.all([
+      (
+        locator as unknown as {
+          click(options?: {
+            moveDuration?: number
+            position?: { x: number; y: number }
+          }): Promise<void>
+        }
+      ).click({ moveDuration: 100, position: { x: 8, y: 8 } }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const click = recordedInputEvents[0]!
+    const move = click.events.find(
+      (event): event is MouseMoveEvent => event.type === 'mouseMove'
+    )
+
+    expect(click.elementRect).toEqual({ x: 110, y: 206, width: 80, height: 40 })
+    expect(move).toMatchObject({
+      x: 118,
+      y: 214,
+      elementRect: { x: 110, y: 206, width: 80, height: 40 },
+    })
+  })
+
+  it('snaps the real mouse after scroll while keeping the recorded move duration', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 900, width: 80, height: 40 },
+      page
+    )
+    ;(locator.evaluate as ReturnType<typeof vi.fn>).mockImplementation(
+      async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 600))
+      }
+    )
+
+    instrumentLocator(locator)
+    const startTime = Date.now()
+    await Promise.all([
+      (
+        locator as unknown as {
+          click(options?: { moveDuration?: number }): Promise<void>
+        }
+      ).click({ moveDuration: 1000 }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const click = recordedInputEvents[0]!
+    const move = click.events.find(
+      (event): event is MouseMoveEvent => event.type === 'mouseMove'
+    )
+
+    expect(move).toBeDefined()
+    expect(move!.startMs).toBeGreaterThanOrEqual(startTime)
+    expect(move!.startMs).toBeLessThan(move!.endMs)
+    expect(move!.duration).toBeGreaterThanOrEqual(1000)
   })
 
   it('does not synthesize mouse presses for check without click inside autoZoom', async () => {

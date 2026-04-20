@@ -47,6 +47,13 @@ type ScrollableElement = {
   getBoundingClientRect: () => ScrollRectLike
 }
 
+type ScrollWindow = Window & {
+  scrollY: number
+  scrollX: number
+  getComputedStyle: (elt: Element) => CSSStyleDeclaration
+  requestAnimationFrame?: (callback: FrameRequestCallback) => number
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
@@ -118,7 +125,7 @@ export async function scrollTo(
             }
           }
         }
-        const isScrollableElement = (
+        const isScrollElementShape = (
           node: unknown
         ): node is ScrollableElement => {
           if (
@@ -136,63 +143,112 @@ export async function scrollTo(
           }
           return true
         }
-
         const doc = element.ownerDocument
-        const win = doc.defaultView
+        const win = doc.defaultView as ScrollWindow | null
         if (!win) {
           resolve()
           return
+        }
+
+        const isActuallyScrollable = (
+          node: unknown
+        ): node is ScrollableElement => {
+          if (!isScrollElementShape(node)) {
+            return false
+          }
+
+          const style = win.getComputedStyle(node as Element)
+          const overflowY = style.overflowY
+          const overflowX = style.overflowX
+          const canScrollY =
+            (overflowY === 'auto' ||
+              overflowY === 'scroll' ||
+              overflowY === 'overlay') &&
+            node.scrollHeight > node.clientHeight
+          const canScrollX =
+            (overflowX === 'auto' ||
+              overflowX === 'scroll' ||
+              overflowX === 'overlay') &&
+            node.scrollWidth > node.clientWidth
+
+          return canScrollY || canScrollX
         }
 
         const viewportHeight =
           win.innerHeight || doc.documentElement.clientHeight
         const viewportWidth = win.innerWidth || doc.documentElement.clientWidth
 
-        let nearestScrollable: ScrollableElement | null = null
+        const scrollableAncestors: ScrollableElement[] = []
         for (let current: Element | null = element.parentElement; current; ) {
           if (
-            isScrollableElement(current) &&
+            isActuallyScrollable(current) &&
             current !== doc.documentElement &&
             current !== doc.body
           ) {
-            nearestScrollable = current
-            break
+            scrollableAncestors.push(current)
           }
           current = current.parentElement
         }
 
-        const nestedStartTop = nearestScrollable?.scrollTop ?? 0
-        const nestedStartLeft = nearestScrollable?.scrollLeft ?? 0
-        let nestedTargetTop = nestedStartTop
-        let nestedTargetLeft = nestedStartLeft
+        const ancestorScrollPlans: Array<{
+          element: ScrollableElement
+          startTop: number
+          startLeft: number
+          targetTop: number
+          targetLeft: number
+        }> = []
 
-        if (nearestScrollable) {
-          const containerRect = nearestScrollable.getBoundingClientRect()
-          const elementRect = element.getBoundingClientRect()
-          nestedTargetTop = clampValue(
-            nearestScrollable.scrollTop +
-              (elementRect.top - containerRect.top - opts.height),
+        let accumulatedNestedDeltaTop = 0
+        let accumulatedNestedDeltaLeft = 0
+        const elementRect = element.getBoundingClientRect()
+        for (const ancestor of scrollableAncestors) {
+          const containerRect = ancestor.getBoundingClientRect()
+          const projectedRectTop = elementRect.top - accumulatedNestedDeltaTop
+          const projectedRectLeft =
+            elementRect.left - accumulatedNestedDeltaLeft
+          const startTop = ancestor.scrollTop
+          const startLeft = ancestor.scrollLeft
+          const desiredTopWithinContainer = clampValue(
+            Math.min(
+              opts.height,
+              ancestor.clientHeight / 2 - elementRect.height / 2
+            ),
             0,
-            Math.max(
-              0,
-              nearestScrollable.scrollHeight - nearestScrollable.clientHeight
-            )
+            Math.max(0, ancestor.clientHeight - elementRect.height)
           )
-          nestedTargetLeft = clampValue(
-            nearestScrollable.scrollLeft +
-              (elementRect.left +
+          const targetTop = clampValue(
+            startTop +
+              (projectedRectTop -
+                containerRect.top -
+                desiredTopWithinContainer),
+            0,
+            Math.max(0, ancestor.scrollHeight - ancestor.clientHeight)
+          )
+          const targetLeft = clampValue(
+            startLeft +
+              (projectedRectLeft +
                 elementRect.width / 2 -
                 containerRect.left -
                 containerRect.width / 2),
             0,
-            Math.max(
-              0,
-              nearestScrollable.scrollWidth - nearestScrollable.clientWidth
-            )
+            Math.max(0, ancestor.scrollWidth - ancestor.clientWidth)
           )
+
+          ancestorScrollPlans.push({
+            element: ancestor,
+            startTop,
+            startLeft,
+            targetTop,
+            targetLeft,
+          })
+
+          accumulatedNestedDeltaTop += targetTop - startTop
+          accumulatedNestedDeltaLeft += targetLeft - startLeft
         }
 
         const rect = element.getBoundingClientRect()
+        const projectedRectTop = rect.top - accumulatedNestedDeltaTop
+        const projectedRectLeft = rect.left - accumulatedNestedDeltaLeft
         const scrollHeight = Math.max(
           doc.documentElement.scrollHeight,
           doc.body?.scrollHeight ?? 0
@@ -202,22 +258,24 @@ export async function scrollTo(
           doc.body?.scrollWidth ?? 0
         )
         const targetScrollY = clampValue(
-          win.scrollY + (rect.top - opts.height),
+          win.scrollY + (projectedRectTop - opts.height),
           0,
           Math.max(0, scrollHeight - viewportHeight)
         )
         const targetScrollX = clampValue(
-          win.scrollX + (rect.left + rect.width / 2 - viewportWidth / 2),
+          win.scrollX +
+            (projectedRectLeft + rect.width / 2 - viewportWidth / 2),
           0,
           Math.max(0, scrollWidth - viewportWidth)
         )
 
         const pageStartY = win.scrollY
         const pageStartX = win.scrollX
-        const needsNestedScroll =
-          nearestScrollable !== null &&
-          (nestedTargetTop !== nestedStartTop ||
-            nestedTargetLeft !== nestedStartLeft)
+        const needsNestedScroll = ancestorScrollPlans.some(
+          (plan) =>
+            plan.targetTop !== plan.startTop ||
+            plan.targetLeft !== plan.startLeft
+        )
         const needsPageScroll =
           targetScrollY !== pageStartY || targetScrollX !== pageStartX
 
@@ -229,16 +287,24 @@ export async function scrollTo(
         const steps = Math.max(1, Math.floor(opts.duration / frameMs))
         let step = 0
 
+        const scheduleNextFrame = (): void => {
+          if (typeof win.requestAnimationFrame === 'function') {
+            win.requestAnimationFrame(() => tick())
+            return
+          }
+          setTimeout(tick, frameMs)
+        }
+
         const tick = () => {
           step += 1
           const t = step / steps
           const easedT = evaluateScrollEasingAtT(t, opts.easing)
 
-          if (nearestScrollable) {
-            nearestScrollable.scrollTop =
-              nestedStartTop + (nestedTargetTop - nestedStartTop) * easedT
-            nearestScrollable.scrollLeft =
-              nestedStartLeft + (nestedTargetLeft - nestedStartLeft) * easedT
+          for (const plan of ancestorScrollPlans) {
+            plan.element.scrollTop =
+              plan.startTop + (plan.targetTop - plan.startTop) * easedT
+            plan.element.scrollLeft =
+              plan.startLeft + (plan.targetLeft - plan.startLeft) * easedT
           }
 
           win.scrollTo({
@@ -252,7 +318,7 @@ export async function scrollTo(
             return
           }
 
-          setTimeout(tick, frameMs)
+          scheduleNextFrame()
         }
 
         tick()

@@ -218,6 +218,21 @@ type DOMClickData = {
   targetRect: ElementRect
 }
 
+function canUseDirectMouseClickAfterScroll(
+  options: Parameters<Locator['click']>[0] | undefined
+): boolean {
+  if (!options) return true
+  const unsupported = [
+    'force',
+    'modifiers',
+    'noWaitAfter',
+    'timeout',
+    'trial',
+  ] as const
+
+  return unsupported.every((key) => options[key] === undefined)
+}
+
 // Per-page storage for the most recently captured DOM click event data.
 // Reset to null before each instrumented click; set by the exposeFunction callback.
 const pendingClickData = new WeakMap<object, DOMClickData | null>()
@@ -424,11 +439,6 @@ async function performClickActions(
         }
       : undefined
 
-  // No physical mouse movement happens during the scroll.  moveStartTime is
-  // captured before the scroll so the recorded event spans scroll-start →
-  // animation-end, making the cursor appear to move during the scroll in the
-  // video.  After the scroll, the remaining duration drives the physical easing
-  // animation via the shared helper.
   if (targetPos && locatorRect) {
     const targetX = locatorRect.x + targetPos.x
     const targetY = locatorRect.y + targetPos.y
@@ -438,24 +448,47 @@ async function performClickActions(
       defaultDuration: 1000,
       context: 'click move',
     })
-    const effectiveDuration = Math.max(0, resolvedDuration - scrollElapsedMs)
-    innerEvents.push(
-      await animateMouseMove(
-        page,
-        mouseMoveInternal,
-        targetX,
-        targetY,
-        effectiveDuration,
-        moveEasing,
-        moveStartTime,
-        locatorRect
+    if (scrollElapsedMs > 0) {
+      await mouseMoveInternal(targetX, targetY)
+      mousePositions.set(page, { x: targetX, y: targetY })
+
+      const remainingDuration = Math.max(0, resolvedDuration - scrollElapsedMs)
+      if (remainingDuration > 0) {
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, remainingDuration)
+        )
+      }
+
+      const moveEndTime = Date.now()
+      innerEvents.push({
+        type: 'mouseMove',
+        startMs: moveStartTime,
+        endMs: moveEndTime,
+        duration: Math.max(0, moveEndTime - moveStartTime),
+        x: targetX,
+        y: targetY,
+        easing: moveEasing,
+        elementRect: locatorRect,
+      })
+    } else {
+      innerEvents.push(
+        await animateMouseMove(
+          page,
+          mouseMoveInternal,
+          targetX,
+          targetY,
+          resolvedDuration,
+          moveEasing,
+          moveStartTime,
+          locatorRect
+        )
       )
-    )
+    }
   } else {
     assertDurationOrSpeed(moveDuration, moveSpeed, 'click move')
     const remainingMs = Math.max(
       0,
-      (moveSpeed === undefined ? (moveDuration ?? 1000) : 0) - scrollElapsedMs
+      moveSpeed === undefined ? (moveDuration ?? 1000) : 0
     )
     if (remainingMs > 0) {
       await new Promise<void>((resolve) => setTimeout(resolve, remainingMs))
@@ -480,11 +513,53 @@ async function performClickActions(
     easing: 'ease-in-out',
   })
 
-  await doClick({
-    ...clickOptions,
-    ...(targetPos ? { position: targetPos } : {}),
-  })
+  if (
+    scrollElapsedMs > 0 &&
+    targetPos &&
+    locatorRect &&
+    canUseDirectMouseClickAfterScroll(clickOptions)
+  ) {
+    const mouseClickOptions = {
+      ...(clickOptions?.button !== undefined
+        ? { button: clickOptions.button }
+        : {}),
+      ...(clickOptions?.clickCount !== undefined
+        ? { clickCount: clickOptions.clickCount }
+        : {}),
+    }
+    await page.mouse.down(mouseClickOptions)
+    if (clickOptions?.delay) {
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, clickOptions.delay)
+      )
+    }
+    await page.mouse.up(mouseClickOptions)
+  } else {
+    await doClick({
+      ...clickOptions,
+      ...(targetPos ? { position: targetPos } : {}),
+    })
+  }
   const domClickData = pendingClickData.get(page)
+
+  if (domClickData) {
+    const lastMouseMoveIndex = innerEvents.findIndex(
+      (e) => e.type === 'mouseMove'
+    )
+    if (lastMouseMoveIndex !== -1) {
+      const existingMove = innerEvents[lastMouseMoveIndex]
+      if (existingMove?.type === 'mouseMove') {
+        innerEvents[lastMouseMoveIndex] = {
+          ...existingMove,
+          x: domClickData.x,
+          y: domClickData.y,
+          elementRect: domClickData.targetRect,
+        }
+      }
+    }
+
+    mousePositions.set(page, { x: domClickData.x, y: domClickData.y })
+  }
 
   const mouseUpEnd = Date.now() + halfClickDuration
   innerEvents.push({
@@ -582,11 +657,10 @@ async function performClickActions(
   }
 
   let elementRect: ElementRect | undefined
-  if (locatorRect) {
-    elementRect = locatorRect
-  } else if (domClickData) {
-    console.warn('[screenci] using DOM click data as fallback for elementRect')
+  if (domClickData) {
     elementRect = domClickData.targetRect
+  } else if (locatorRect) {
+    elementRect = locatorRect
   }
 
   if (elementRect) {
@@ -1013,6 +1087,89 @@ export function instrumentLocator(locator: Locator): Locator {
       } = options ?? {}
 
       return originalFill(value, fillOptions as Parameters<Locator['fill']>[1])
+    }
+
+    if (options?.click !== undefined) {
+      await sleep(PRE_ACTION_SLEEP)
+
+      const clickActionResult = await performClickActions(
+        locator,
+        (clickOptions) => originalClick(clickOptions),
+        {},
+        options.position,
+        options.click.moveDuration,
+        options.click.moveSpeed,
+        options.click.beforeClickPause,
+        options.click.moveEasing,
+        options.click.postClickPause,
+        options.click.postClickMove
+      )
+
+      const innerEvents: Array<
+        | MouseMoveEvent
+        | MouseDownEvent
+        | MouseUpEvent
+        | MouseHideEvent
+        | MouseWaitEvent
+      > = [...(clickActionResult?.innerEvents ?? [])]
+      const elementRect = clickActionResult?.elementRect
+      const page = locator.page()
+
+      if (options.hideMouse === true) {
+        const cursorVisible = mouseVisibilities.get(page) ?? true
+        if (cursorVisible) {
+          mouseVisibilities.set(page, false)
+          const hideMs = Date.now()
+          innerEvents.push({
+            type: 'mouseHide',
+            startMs: hideMs,
+            endMs: hideMs,
+          })
+        }
+      }
+
+      await locator.evaluate((element) => {
+        if (
+          element instanceof HTMLInputElement ||
+          element instanceof HTMLTextAreaElement
+        ) {
+          element.focus()
+          element.select()
+          return
+        }
+
+        if (element instanceof HTMLElement && element.isContentEditable) {
+          element.focus()
+          const selection = element.ownerDocument.getSelection()
+          if (!selection) return
+          const range = element.ownerDocument.createRange()
+          range.selectNodeContents(element)
+          selection.removeAllRanges()
+          selection.addRange(range)
+        }
+      })
+
+      const duration = options.duration ?? 1000
+      const delay = value.length > 0 ? duration / value.length : 0
+      await page.keyboard.type(value, { delay })
+
+      const fillWaitStart = Date.now()
+      await sleep(POST_ACTION_SLEEP)
+      const fillWaitEnd = Date.now()
+      innerEvents.push({
+        type: 'mouseWait',
+        startMs: fillWaitStart,
+        endMs: fillWaitEnd,
+      })
+
+      if (activeClickRecorder) {
+        activeClickRecorder.addInput(
+          'pressSequentially',
+          elementRect,
+          innerEvents
+        )
+      }
+      return
     }
 
     const duration = options?.duration ?? 1000

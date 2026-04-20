@@ -165,7 +165,7 @@ export type AutoZoomStartEvent = {
   easing: string
   duration: number
   amount: number
-  centering?: { cursor?: number; input?: number; click?: number }
+  centering?: number
   allowZoomingOut?: boolean
 }
 

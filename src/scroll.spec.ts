@@ -219,6 +219,25 @@ describe('scrollTo', () => {
     expect(result?.shouldScrollBeforeMouseMove).toBe(true)
   })
 
+  it('uses the zoomed viewport and centering override to scroll less than full center', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+
+    const promise = new ZoomScrollHandler({
+      amount: 0.5,
+      centering: 0.2,
+      allowZoomingOut: false,
+    }).scroll(locator)
+
+    await vi.runAllTimersAsync()
+    const result = await promise
+
+    expect(result.locatorRect?.y).toBeCloseTo(212, 0)
+  })
+
   it('keeps later autoZoom interactions scrolling during mouse movement', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },

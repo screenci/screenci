@@ -3,8 +3,11 @@ import type { ElementRect } from './events.js'
 import type { Easing } from './types.js'
 import {
   getLastZoomLocation,
+  getAllowZoomingOut,
+  getZoomAmount,
   getZoomDuration,
   getZoomEasing,
+  getZoomCentering,
   isInsideAutoZoom,
 } from './autoZoom.js'
 
@@ -64,6 +67,11 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
+function resolveCenteringValue(centering: number | undefined): number {
+  if (centering === undefined) return 1
+  return clamp(centering, 0, 1)
+}
+
 function isScrollableElement(node: unknown): node is ScrollableElement {
   if (
     !node ||
@@ -86,14 +94,44 @@ function isScrollableElement(node: unknown): node is ScrollableElement {
  * Scrolls the nearest nested scroll container first, then the page viewport,
  * and returns the final bounding rect if it can be measured.
  */
+type ScrollToOptions = {
+  amount: number
+  centering: number
+  allowZoomingOut: boolean
+  easing?: Easing
+  duration?: number
+}
+
 export async function scrollTo(
   locator: Locator,
   height: number,
-  easing: Easing = 'ease-in-out',
-  duration = SCROLL_DURATION_MS
+  easing?: Easing,
+  duration?: number
+): Promise<ElementRect | undefined>
+export async function scrollTo(
+  locator: Locator,
+  options: ScrollToOptions
+): Promise<ElementRect | undefined>
+export async function scrollTo(
+  locator: Locator,
+  arg1: number | ScrollToOptions,
+  arg2?: Easing,
+  arg3?: number
 ): Promise<ElementRect | undefined> {
-  if (!Number.isFinite(height)) {
-    throw new Error('[screenci] scrollTo height must be a finite number.')
+  const options: ScrollToOptions & { legacyHeight?: number } =
+    typeof arg1 === 'number'
+      ? {
+          amount: 1,
+          centering: 1,
+          allowZoomingOut: true,
+          ...(arg2 !== undefined && { easing: arg2 }),
+          ...(arg3 !== undefined && { duration: arg3 }),
+          legacyHeight: arg1,
+        }
+      : arg1
+
+  if (!Number.isFinite(options.amount)) {
+    throw new Error('[screenci] scrollTo amount must be a finite number.')
   }
 
   const initialBb = await locator.boundingBox()
@@ -103,6 +141,7 @@ export async function scrollTo(
     (element, opts) =>
       new Promise<void>((resolve) => {
         const frameMs = 1000 / 60
+        const durationMs = opts.duration ?? 600
         const clampValue = (value: number, min: number, max: number): number =>
           Math.min(max, Math.max(min, value))
         const evaluateScrollEasingAtT = (t: number, easing: Easing): number => {
@@ -214,14 +253,82 @@ export async function scrollTo(
             elementRect.left - accumulatedNestedDeltaLeft
           const startTop = ancestor.scrollTop
           const startLeft = ancestor.scrollLeft
-          const desiredTopWithinContainer = clampValue(
-            Math.min(
-              opts.height,
-              ancestor.clientHeight / 2 - elementRect.height / 2
-            ),
-            0,
-            Math.max(0, ancestor.clientHeight - elementRect.height)
-          )
+          const desiredTopWithinContainer =
+            opts.legacyHeight !== undefined
+              ? clampValue(
+                  Math.min(
+                    opts.legacyHeight,
+                    ancestor.clientHeight / 2 - elementRect.height / 2
+                  ),
+                  0,
+                  Math.max(0, ancestor.clientHeight - elementRect.height)
+                )
+              : (() => {
+                  const effectiveAmount = clampValue(
+                    Math.max(
+                      opts.allowZoomingOut
+                        ? Math.max(
+                            opts.amount,
+                            elementRect.width /
+                              Math.max(1, ancestor.clientWidth),
+                            elementRect.height /
+                              Math.max(1, ancestor.clientHeight)
+                          )
+                        : opts.amount,
+                      0
+                    ),
+                    0,
+                    1
+                  )
+                  const visibleHeight = ancestor.clientHeight * effectiveAmount
+                  const cropTop = Math.max(
+                    0,
+                    (ancestor.clientHeight - visibleHeight) / 2
+                  )
+                  return clampValue(
+                    cropTop +
+                      ((visibleHeight - elementRect.height) * opts.centering) /
+                        2,
+                    0,
+                    Math.max(0, ancestor.clientHeight - elementRect.height)
+                  )
+                })()
+          const desiredLeftWithinContainer =
+            opts.legacyHeight !== undefined
+              ? clampValue(
+                  ancestor.clientWidth / 2 - elementRect.width / 2,
+                  0,
+                  Math.max(0, ancestor.clientWidth - elementRect.width)
+                )
+              : (() => {
+                  const effectiveAmount = clampValue(
+                    Math.max(
+                      opts.allowZoomingOut
+                        ? Math.max(
+                            opts.amount,
+                            elementRect.width /
+                              Math.max(1, ancestor.clientWidth),
+                            elementRect.height /
+                              Math.max(1, ancestor.clientHeight)
+                          )
+                        : opts.amount,
+                      0
+                    ),
+                    0,
+                    1
+                  )
+                  const visibleWidth = ancestor.clientWidth * effectiveAmount
+                  const cropLeft = Math.max(
+                    0,
+                    (ancestor.clientWidth - visibleWidth) / 2
+                  )
+                  return clampValue(
+                    cropLeft +
+                      ((visibleWidth - elementRect.width) * opts.centering) / 2,
+                    0,
+                    Math.max(0, ancestor.clientWidth - elementRect.width)
+                  )
+                })()
           const targetTop = clampValue(
             startTop +
               (projectedRectTop -
@@ -232,10 +339,9 @@ export async function scrollTo(
           )
           const targetLeft = clampValue(
             startLeft +
-              (projectedRectLeft +
-                elementRect.width / 2 -
+              (projectedRectLeft -
                 containerRect.left -
-                containerRect.width / 2),
+                desiredLeftWithinContainer),
             0,
             Math.max(0, ancestor.scrollWidth - ancestor.clientWidth)
           )
@@ -263,14 +369,73 @@ export async function scrollTo(
           doc.documentElement.scrollWidth,
           doc.body?.scrollWidth ?? 0
         )
+        const desiredTop =
+          opts.legacyHeight !== undefined
+            ? opts.legacyHeight
+            : (() => {
+                const effectiveAmount = clampValue(
+                  Math.max(
+                    opts.allowZoomingOut
+                      ? Math.max(
+                          opts.amount,
+                          rect.width / Math.max(1, viewportWidth),
+                          rect.height / Math.max(1, viewportHeight)
+                        )
+                      : opts.amount,
+                    0
+                  ),
+                  0,
+                  1
+                )
+                const visibleHeight = viewportHeight * effectiveAmount
+                const cropTop = Math.max(
+                  0,
+                  (viewportHeight - visibleHeight) / 2
+                )
+                return clampValue(
+                  cropTop +
+                    ((visibleHeight - rect.height) * opts.centering) / 2,
+                  0,
+                  Math.max(0, viewportHeight - rect.height)
+                )
+              })()
+        const desiredLeft =
+          opts.legacyHeight !== undefined
+            ? clampValue(
+                viewportWidth / 2 - rect.width / 2,
+                0,
+                Math.max(0, viewportWidth - rect.width)
+              )
+            : (() => {
+                const effectiveAmount = clampValue(
+                  Math.max(
+                    opts.allowZoomingOut
+                      ? Math.max(
+                          opts.amount,
+                          rect.width / Math.max(1, viewportWidth),
+                          rect.height / Math.max(1, viewportHeight)
+                        )
+                      : opts.amount,
+                    0
+                  ),
+                  0,
+                  1
+                )
+                const visibleWidth = viewportWidth * effectiveAmount
+                const cropLeft = Math.max(0, (viewportWidth - visibleWidth) / 2)
+                return clampValue(
+                  cropLeft + ((visibleWidth - rect.width) * opts.centering) / 2,
+                  0,
+                  Math.max(0, viewportWidth - rect.width)
+                )
+              })()
         const targetScrollY = clampValue(
-          win.scrollY + (projectedRectTop - opts.height),
+          win.scrollY + (projectedRectTop - desiredTop),
           0,
           Math.max(0, scrollHeight - viewportHeight)
         )
         const targetScrollX = clampValue(
-          win.scrollX +
-            (projectedRectLeft + rect.width / 2 - viewportWidth / 2),
+          win.scrollX + (projectedRectLeft - desiredLeft),
           0,
           Math.max(0, scrollWidth - viewportWidth)
         )
@@ -290,7 +455,7 @@ export async function scrollTo(
           return
         }
 
-        const steps = Math.max(1, Math.floor(opts.duration / frameMs))
+        const steps = Math.max(1, Math.floor(durationMs / frameMs))
         let step = 0
 
         const scheduleNextFrame = (): void => {
@@ -304,7 +469,10 @@ export async function scrollTo(
         const tick = () => {
           step += 1
           const t = step / steps
-          const easedT = evaluateScrollEasingAtT(t, opts.easing)
+          const easedT = evaluateScrollEasingAtT(
+            t,
+            opts.easing ?? 'ease-in-out'
+          )
 
           for (const plan of ancestorScrollPlans) {
             plan.element.scrollTop =
@@ -329,7 +497,7 @@ export async function scrollTo(
 
         tick()
       }),
-    { height, easing, duration }
+    options
   )
 
   const finalBb = await locator.boundingBox()
@@ -352,6 +520,14 @@ export type ZoomScrollResult = {
 }
 
 export class ZoomScrollHandler {
+  constructor(
+    private readonly options: {
+      amount?: number
+      centering?: number
+      allowZoomingOut?: boolean
+    } = {}
+  ) {}
+
   readonly isInsideAutoZoom = isInsideAutoZoom()
   readonly lastZoomLocation = getLastZoomLocation()
   readonly isFirstAutoZoomInteraction =
@@ -372,13 +548,43 @@ export class ZoomScrollHandler {
     }
   }
 
-  async scroll(locator: Locator): Promise<ZoomScrollResult> {
+  private resolveScrollBehavior(): {
+    amount: number
+    centering: number
+    allowZoomingOut: boolean
+  } {
+    const amount =
+      this.options.amount ??
+      getZoomAmount() ??
+      (this.isInsideAutoZoom ? 0.5 : 1)
+    const centering =
+      this.options.centering !== undefined
+        ? resolveCenteringValue(this.options.centering)
+        : (getZoomCentering() ?? (this.isInsideAutoZoom ? 1 : 1))
+    const allowZoomingOut =
+      this.options.allowZoomingOut ?? getAllowZoomingOut() ?? true
+
+    return { amount, centering, allowZoomingOut }
+  }
+
+  async scroll(
+    locator: Locator,
+    centeringOverride?: number
+  ): Promise<ZoomScrollResult> {
     const { easing, duration } = this.resolveScrollAnimationOptions()
-    const targetHeight = Math.floor(
-      (locator.page().viewportSize()?.height ?? 0) / 2
-    )
+    const { amount, centering, allowZoomingOut } = this.resolveScrollBehavior()
+    const effectiveCentering =
+      centeringOverride !== undefined
+        ? clamp(centeringOverride, 0, 1)
+        : centering
     const scrollStartMs = Date.now()
-    const locatorRect = await scrollTo(locator, targetHeight, easing, duration)
+    const locatorRect = await scrollTo(locator, {
+      amount,
+      centering: effectiveCentering,
+      allowZoomingOut,
+      ...(easing !== undefined && { easing }),
+      ...(duration !== undefined && { duration }),
+    })
     const scrollEndMs = Date.now()
 
     return {

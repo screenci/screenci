@@ -163,13 +163,13 @@ describe('EventRecorder', () => {
       now = 1200
 
       recorder.addAutoZoomStart({
-        centering: { cursor: 2, input: 5, click: -1 },
+        centering: 2,
       })
 
       const event = recorder.getEvents()[1]
       expect(event).toMatchObject({
         type: 'autoZoomStart',
-        centering: { cursor: 1, input: 1, click: 0 },
+        centering: 1,
       })
     })
 

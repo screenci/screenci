@@ -136,11 +136,11 @@ describe('autoZoom', () => {
     })
 
     it('passes centering to addAutoZoomStart', async () => {
-      const p = autoZoom(() => {}, { centering: { cursor: 0.2 } })
+      const p = autoZoom(() => {}, { centering: 0.2 })
       await vi.runAllTimersAsync()
       await p
       expect(recorder.addAutoZoomStart).toHaveBeenCalledWith(
-        expect.objectContaining({ centering: { cursor: 0.2 } })
+        expect.objectContaining({ centering: 0.2 })
       )
     })
   })

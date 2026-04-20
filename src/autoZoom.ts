@@ -17,6 +17,9 @@ let activeRecorder: IEventRecorder | null = null
 let insideAutoZoom = false
 let currentZoomDuration: number | null = null
 let currentZoomEasing: Easing | null = null
+let currentZoomAmount: number | null = null
+let currentZoomCentering: number | null = null
+let currentAllowZoomingOut: boolean | null = null
 let currentPostZoomInOutDelay: number | null = null
 let lastZoomLocation: ZoomLocation | null = null
 
@@ -38,6 +41,18 @@ export function getZoomEasing(): Easing | null {
   return currentZoomEasing
 }
 
+export function getZoomAmount(): number | null {
+  return currentZoomAmount
+}
+
+export function getZoomCentering(): number | null {
+  return currentZoomCentering
+}
+
+export function getAllowZoomingOut(): boolean | null {
+  return currentAllowZoomingOut
+}
+
 export function getPostZoomInOutDelay(): number | null {
   return currentPostZoomInOutDelay
 }
@@ -52,6 +67,13 @@ export function setLastZoomLocation(loc: ZoomLocation | null): void {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function resolveCenteringValue(
+  centering: AutoZoomOptions['centering']
+): number | undefined {
+  if (centering === undefined) return undefined
+  return centering
 }
 
 /**
@@ -92,6 +114,9 @@ export async function autoZoom(
   insideAutoZoom = true
   currentZoomDuration = options?.duration ?? DEFAULT_ZOOM_DURATION
   currentZoomEasing = (options?.easing ?? DEFAULT_ZOOM_EASING) as Easing
+  currentZoomAmount = options?.amount ?? null
+  currentZoomCentering = resolveCenteringValue(options?.centering) ?? null
+  currentAllowZoomingOut = options?.allowZoomingOut ?? null
   currentPostZoomInOutDelay =
     options?.postZoomInOutDelay ?? DEFAULT_POST_ZOOM_IN_OUT_DELAY
   try {
@@ -101,6 +126,9 @@ export async function autoZoom(
     lastZoomLocation = null
     currentZoomDuration = null
     currentZoomEasing = null
+    currentZoomAmount = null
+    currentZoomCentering = null
+    currentAllowZoomingOut = null
     currentPostZoomInOutDelay = null
   }
   const duration = options?.duration ?? DEFAULT_ZOOM_DURATION

@@ -17,6 +17,7 @@ import type {
 } from './events.js'
 import type {
   ClickBeforeFillOption,
+  AutoZoomOptions,
   Easing,
   PostClickMove,
   ScreenCIPage,
@@ -374,6 +375,7 @@ async function performClickActions(
   locator: Locator,
   doClick: (options: Parameters<Locator['click']>[0]) => Promise<void>,
   clickOptions: Parameters<Locator['click']>[0],
+  autoZoomOptions?: AutoZoomOptions,
   position?: { x: number; y: number },
   moveDuration?: number,
   moveSpeed?: number,
@@ -389,7 +391,9 @@ async function performClickActions(
     originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
   const moveStartTime = Date.now()
-  const scrollResult = await new ZoomScrollHandler().scroll(locator)
+  const scrollResult = await new ZoomScrollHandler(autoZoomOptions).scroll(
+    locator
+  )
   const { locatorRect, scrollElapsedMs } = scrollResult
   const isFirstAutoZoomEvent = scrollResult.isFirstAutoZoomInteraction
   if (!locatorRect) {
@@ -681,12 +685,13 @@ type SimpleActionOptions =
 
 async function prepareAutoZoomForLocator(
   locator: Locator,
-  eventType: 'click' | 'fill'
+  eventType: 'click' | 'fill',
+  autoZoomOptions?: AutoZoomOptions
 ): Promise<{
   locatorRect: ElementRect | undefined
   isFirstAutoZoomInteraction: boolean
 }> {
-  const scrollHandler = new ZoomScrollHandler()
+  const scrollHandler = new ZoomScrollHandler(autoZoomOptions)
   const zoomDur = scrollHandler.isInsideAutoZoom ? (getZoomDuration() ?? 0) : 0
   if (
     scrollHandler.isInsideAutoZoom &&
@@ -721,6 +726,7 @@ async function performSimpleAction(
   options: SimpleActionOptions,
   subType: 'tap' | 'check' | 'uncheck' | 'select',
   clickOpt?: ClickBeforeFillOption,
+  autoZoomOptions?: AutoZoomOptions,
   position?: { x: number; y: number },
   recordMousePress = subType === 'tap'
 ): Promise<void> {
@@ -744,6 +750,7 @@ async function performSimpleAction(
       locator,
       doAction,
       {},
+      autoZoomOptions,
       position,
       moveDuration,
       moveSpeed,
@@ -756,7 +763,7 @@ async function performSimpleAction(
     elementRect = clickActionResult?.elementRect
   } else {
     const { locatorRect, isFirstAutoZoomInteraction } =
-      await prepareAutoZoomForLocator(locator, 'fill')
+      await prepareAutoZoomForLocator(locator, 'fill', autoZoomOptions)
 
     if (isFirstAutoZoomInteraction) {
       const postDelay = getPostZoomInOutDelay() ?? 0
@@ -810,7 +817,10 @@ async function performSimpleAction(
 async function recordedClick(
   locator: Locator,
   doClick: (options: Parameters<Locator['click']>[0]) => Promise<void>,
-  clickOptions: Parameters<Locator['click']>[0],
+  clickOptions: Parameters<Locator['click']>[0] & {
+    autoZoomOptions?: AutoZoomOptions
+  },
+  autoZoomOptions?: AutoZoomOptions,
   position?: { x: number; y: number },
   moveDuration?: number,
   moveSpeed?: number,
@@ -824,6 +834,7 @@ async function recordedClick(
     locator,
     doClick,
     clickOptions,
+    autoZoomOptions,
     position,
     moveDuration,
     moveSpeed,
@@ -905,6 +916,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveEasing?: Easing
       postClickPause?: number
       postClickMove?: PostClickMove
+      autoZoomOptions?: AutoZoomOptions
     }
   ) => {
     const {
@@ -914,6 +926,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveEasing,
       postClickPause,
       postClickMove,
+      autoZoomOptions,
       position,
       steps: _steps,
       ...clickOptions
@@ -932,6 +945,7 @@ export function instrumentLocator(locator: Locator): Locator {
       locator,
       (options: Parameters<Locator['click']>[0]) => originalClick(options),
       clickOptions,
+      autoZoomOptions,
       position,
       moveDuration,
       moveSpeed,
@@ -946,6 +960,7 @@ export function instrumentLocator(locator: Locator): Locator {
     Locator['pressSequentially']
   >[1] & {
     click?: ClickBeforeFillOption
+    autoZoomOptions?: AutoZoomOptions
     hideMouse?: boolean
     position?: { x: number; y: number }
   }
@@ -957,6 +972,7 @@ export function instrumentLocator(locator: Locator): Locator {
   ): Promise<void> => {
     const {
       click: _click,
+      autoZoomOptions,
       hideMouse: _hideMouse,
       position: _position,
       ...pressOptions
@@ -997,6 +1013,7 @@ export function instrumentLocator(locator: Locator): Locator {
         locator,
         (options) => originalClick(options),
         clickOptions,
+        options.autoZoomOptions,
         position,
         moveDuration,
         moveSpeed,
@@ -1009,7 +1026,11 @@ export function instrumentLocator(locator: Locator): Locator {
       elementRect = clickActionResult?.elementRect
     } else {
       const { locatorRect, isFirstAutoZoomInteraction } =
-        await prepareAutoZoomForLocator(locator, 'fill')
+        await prepareAutoZoomForLocator(
+          locator,
+          'fill',
+          options?.autoZoomOptions
+        )
 
       if (isFirstAutoZoomInteraction) {
         const postDelay = getPostZoomInOutDelay() ?? 0
@@ -1067,6 +1088,7 @@ export function instrumentLocator(locator: Locator): Locator {
       click?: ClickBeforeFillOption
       position?: { x: number; y: number }
       hideMouse?: boolean
+      autoZoomOptions?: AutoZoomOptions
     }
   ) => {
     if (isInsideHide()) {
@@ -1075,6 +1097,7 @@ export function instrumentLocator(locator: Locator): Locator {
         click: _click,
         position: _position,
         hideMouse: _hideMouse,
+        autoZoomOptions: _autoZoomOptions,
         ...fillOptions
       } = options ?? {}
 
@@ -1088,6 +1111,7 @@ export function instrumentLocator(locator: Locator): Locator {
         locator,
         (clickOptions) => originalClick(clickOptions),
         {},
+        options.autoZoomOptions,
         options.position,
         options.click.moveDuration,
         options.click.moveSpeed,
@@ -1178,16 +1202,25 @@ export function instrumentLocator(locator: Locator): Locator {
 
   const originalTap = locator.tap.bind(locator)
   locator.tap = async (
-    options?: Parameters<Locator['tap']>[0] & { click?: ClickBeforeFillOption }
+    options?: Parameters<Locator['tap']>[0] & {
+      click?: ClickBeforeFillOption
+      autoZoomOptions?: AutoZoomOptions
+    }
   ): Promise<void> => {
     const clickOpt = options?.click
-    const { click: _click, position, ...tapOpts } = options ?? {}
+    const {
+      click: _click,
+      position,
+      autoZoomOptions,
+      ...tapOpts
+    } = options ?? {}
     return performSimpleAction(
       locator,
       (options: Parameters<Locator['tap']>[0]) => originalTap(options),
       tapOpts as Parameters<Locator['tap']>[0],
       'tap',
       clickOpt,
+      autoZoomOptions,
       position
     )
   }
@@ -1196,11 +1229,12 @@ export function instrumentLocator(locator: Locator): Locator {
   locator.check = async (
     options?: Parameters<Locator['check']>[0] & {
       click?: ClickBeforeFillOption
+      autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
     const clickOpt = options?.click
     const position = options?.position
-    const { click: _click, ...checkOpts } = options ?? {}
+    const { click: _click, autoZoomOptions, ...checkOpts } = options ?? {}
 
     if (isInsideHide()) {
       return originalCheck(checkOpts as Parameters<Locator['check']>[0])
@@ -1212,6 +1246,7 @@ export function instrumentLocator(locator: Locator): Locator {
       checkOpts as Parameters<Locator['check']>[0],
       'check',
       clickOpt,
+      autoZoomOptions,
       position,
       false
     )
@@ -1221,11 +1256,12 @@ export function instrumentLocator(locator: Locator): Locator {
   locator.uncheck = async (
     options?: Parameters<Locator['uncheck']>[0] & {
       click?: ClickBeforeFillOption
+      autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
     const clickOpt = options?.click
     const position = options?.position
-    const { click: _click, ...uncheckOpts } = options ?? {}
+    const { click: _click, autoZoomOptions, ...uncheckOpts } = options ?? {}
 
     if (isInsideHide()) {
       return originalUncheck(uncheckOpts as Parameters<Locator['uncheck']>[0])
@@ -1237,6 +1273,7 @@ export function instrumentLocator(locator: Locator): Locator {
       uncheckOpts as Parameters<Locator['uncheck']>[0],
       'uncheck',
       clickOpt,
+      autoZoomOptions,
       position,
       false
     )
@@ -1246,6 +1283,7 @@ export function instrumentLocator(locator: Locator): Locator {
     checked: boolean,
     options?: Parameters<Locator['check']>[0] & {
       click?: ClickBeforeFillOption
+      autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
     if (checked) {
@@ -1261,10 +1299,16 @@ export function instrumentLocator(locator: Locator): Locator {
     options?: Parameters<Locator['selectOption']>[1] & {
       click?: ClickBeforeFillOption
       position?: { x: number; y: number }
+      autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<string[]> => {
     const clickOpt = options?.click
-    const { click: _click, position, ...selectOpts } = options ?? {}
+    const {
+      click: _click,
+      position,
+      autoZoomOptions,
+      ...selectOpts
+    } = options ?? {}
 
     if (isInsideHide()) {
       return originalSelectOption(
@@ -1283,6 +1327,7 @@ export function instrumentLocator(locator: Locator): Locator {
       selectOpts as Parameters<Locator['selectOption']>[1],
       'select',
       clickOpt,
+      autoZoomOptions,
       position,
       false
     )

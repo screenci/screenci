@@ -257,19 +257,8 @@ export type AutoZoomOptions = {
   duration?: number
   /** 0–1: fraction of output dimensions visible in the zoomed viewport (default 0.5) */
   amount?: number
-  /** Per-locator-type centering (0–1).
-   *  1 = camera always centers on target (no dead zone).
-   *  0 = camera only moves if target exits the viewport.
-   *  0.5 = target can move freely in the center 50% without panning.
-   *  Defaults: cursor=0.5, input=1, click=0.5 */
-  centering?: {
-    /** How tightly the camera follows free cursor movements (default 0.5) */
-    cursor?: number
-    /** How tightly the camera follows input/ZoomMove targets (default 1) */
-    input?: number
-    /** How tightly the camera follows cursor moves that precede a click (default 0.5) */
-    click?: number
-  }
+  /** 0–1: camera centering inside the zoomed viewport. */
+  centering?: number
   /** When false, the camera never zooms out beyond the initial amount to fit
    *  large element rects. Defaults to true. */
   allowZoomingOut?: boolean
@@ -371,6 +360,7 @@ export type ScreenCILocatorClickOptions = Omit<
     moveEasing?: Easing
     postClickPause?: number
     postClickMove?: PostClickMove
+    autoZoomOptions?: AutoZoomOptions
   }
 
 export type ScreenCILocatorFillOptions = {
@@ -379,6 +369,7 @@ export type ScreenCILocatorFillOptions = {
   click?: ClickBeforeFillOption
   position?: { x: number; y: number }
   hideMouse?: boolean
+  autoZoomOptions?: AutoZoomOptions
 }
 
 export type ScreenCILocatorPressSequentiallyOptions = Omit<
@@ -389,6 +380,7 @@ export type ScreenCILocatorPressSequentiallyOptions = Omit<
   click?: ClickBeforeFillOption
   position?: { x: number; y: number }
   hideMouse?: boolean
+  autoZoomOptions?: AutoZoomOptions
 }
 
 export type ScreenCILocatorCheckOptions = NonNullable<
@@ -396,6 +388,7 @@ export type ScreenCILocatorCheckOptions = NonNullable<
 > & {
   position?: { x: number; y: number }
   click?: ClickBeforeFillOption
+  autoZoomOptions?: AutoZoomOptions
 }
 
 export type ScreenCILocatorHoverOptions = Omit<
@@ -436,6 +429,7 @@ export type ScreenCILocatorSelectOptionOptions = NonNullable<
 > & {
   click?: ClickBeforeFillOption
   position?: { x: number; y: number }
+  autoZoomOptions?: AutoZoomOptions
 }
 
 type LocatorReturnMethodNames =
@@ -587,6 +581,7 @@ export type ScreenCILocator = Omit<
   tap(
     options?: Parameters<Locator['tap']>[0] & {
       click?: ClickBeforeFillOption
+      autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void>
   /**

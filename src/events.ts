@@ -225,7 +225,7 @@ export type AutoZoomStartEvent = {
   easing: string
   duration: number
   amount: number
-  centering?: { cursor?: number; input?: number; click?: number }
+  centering?: number
   allowZoomingOut?: boolean
 }
 
@@ -345,22 +345,9 @@ export class EventRecorder implements IEventRecorder {
 
   private normalizeCentering(
     options: AutoZoomOptions | undefined
-  ): { cursor?: number; input?: number; click?: number } | undefined {
+  ): number | undefined {
     if (options?.centering === undefined) return undefined
-
-    const centering: { cursor?: number; input?: number; click?: number } = {}
-
-    if (options.centering.cursor !== undefined) {
-      centering.cursor = this.clampUnitInterval(options.centering.cursor)
-    }
-    if (options.centering.input !== undefined) {
-      centering.input = this.clampUnitInterval(options.centering.input)
-    }
-    if (options.centering.click !== undefined) {
-      centering.click = this.clampUnitInterval(options.centering.click)
-    }
-
-    return centering
+    return this.clampUnitInterval(options.centering)
   }
 
   start(): void {

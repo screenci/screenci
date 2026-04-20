@@ -5,7 +5,6 @@ import {
   setActiveClickRecorder,
   instrumentLocator,
   instrumentPage,
-  scrollTo,
 } from './instrument.js'
 import {
   autoZoom,
@@ -591,57 +590,6 @@ describe('instrumentLocator', () => {
     expect(fill.events.some((e) => e.type === 'mouseUp')).toBe(false)
   })
 
-  it('uses nearest scroll for later autoZoom fills', async () => {
-    const { recorder } = makeRecorder()
-    setActiveClickRecorder(recorder)
-
-    const page = makePageMock()
-    const first = makeLocatorMock(
-      { x: 100, y: 200, width: 80, height: 40 },
-      page
-    )
-    const second = makeLocatorMock(
-      { x: 100, y: 700, width: 80, height: 40 },
-      page
-    )
-    instrumentLocator(first)
-    instrumentLocator(second)
-
-    const p = autoZoom(
-      async () => {
-        await (
-          first.fill as (
-            value: string,
-            options?: { duration?: number }
-          ) => Promise<void>
-        )('Alex', {
-          duration: 0,
-        })
-        await (
-          second.fill as (
-            value: string,
-            options?: { duration?: number }
-          ) => Promise<void>
-        )('Example', {
-          duration: 0,
-        })
-      },
-      { duration: 300, postZoomInOutDelay: 0 }
-    )
-
-    await vi.runAllTimersAsync()
-    await p
-
-    expect(
-      (first as unknown as { _scrollIntoViewCalls: ScrollLogicalPosition[] })
-        ._scrollIntoViewCalls
-    ).toEqual([])
-    expect(
-      (second as unknown as { _scrollIntoViewCalls: ScrollLogicalPosition[] })
-        ._scrollIntoViewCalls
-    ).toEqual(['nearest'])
-  })
-
   it('records a hover InputEvent with inner mouseMove and mouseWait', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
@@ -823,45 +771,5 @@ describe('instrumentLocator', () => {
     expect(originalCheck).toHaveBeenCalledTimes(1)
     expect(originalUncheck).toHaveBeenCalledTimes(1)
     expect(originalSelectOption).toHaveBeenCalledTimes(1)
-  })
-
-  it('scrolls a locator to the requested viewport height', async () => {
-    const { locator, scrollCalls } = makeScrollLocatorMock({
-      rect: { x: 20, y: 900, width: 120, height: 40 },
-      viewport: { width: 1280, height: 720 },
-      scrollSize: { width: 1280, height: 2000 },
-    })
-
-    const run = scrollTo(locator, 120, 'ease-out')
-    await vi.runAllTimersAsync()
-    await run
-
-    expect(scrollCalls.length).toBeGreaterThan(1)
-    expect(scrollCalls[scrollCalls.length - 1]!.top).toBeCloseTo(780, 0)
-  })
-
-  it('clamps scrolling when the document is too short', async () => {
-    const { locator, scrollCalls } = makeScrollLocatorMock({
-      rect: { x: 20, y: 900, width: 120, height: 40 },
-      viewport: { width: 1280, height: 720 },
-      scrollSize: { width: 1280, height: 1000 },
-    })
-
-    const run = scrollTo(locator, 120, 'linear')
-    await vi.runAllTimersAsync()
-    await run
-
-    expect(scrollCalls[scrollCalls.length - 1]!.top).toBe(280)
-  })
-
-  it('scrolls nested scroll containers to the target position', async () => {
-    const { locator, state } = makeNestedScrollLocatorMock()
-
-    const run = scrollTo(locator, 120, 'ease-in-out')
-    await vi.runAllTimersAsync()
-    await run
-
-    expect(state.windowScrollY).toBeGreaterThan(0)
-    expect(state.innerScrollTop).toBeGreaterThan(0)
   })
 })

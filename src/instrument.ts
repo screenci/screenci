@@ -668,7 +668,7 @@ async function performClickActions(
   if (domClickData) {
     elementRect = domClickData.targetRect
   } else if (locatorRect) {
-    elementRect = locatorRect
+    elementRect = locatorRect ?? undefined
   }
 
   if (elementRect) {
@@ -776,13 +776,7 @@ async function performSimpleAction(
     innerEvents = clickActionResult?.innerEvents ?? []
     elementRect = clickActionResult?.elementRect
   } else {
-    const { locatorRect, isFirstAutoZoomInteraction } =
-      await prepareAutoZoomForLocator(locator, 'fill', autoZoomOptions)
-
-    if (isFirstAutoZoomInteraction) {
-      const postDelay = getPostZoomInOutDelay() ?? 0
-      if (postDelay > 0) await sleep(postDelay)
-    }
+    const locatorRect = await locator.boundingBox()
 
     if (isInsideAutoZoom() && locatorRect) {
       const focusStart = Date.now()
@@ -814,7 +808,7 @@ async function performSimpleAction(
       ...(targetPosition ? { position: targetPosition } : {}),
     })
     const endTime = Date.now()
-    elementRect = locatorRect
+    elementRect = locatorRect ?? undefined
 
     if (recordMousePress) {
       const midTime = (startTime + endTime) / 2
@@ -1235,19 +1229,8 @@ export function instrumentLocator(locator: Locator): Locator {
     > = []
     const fillOptions = options ?? {}
 
-    const { locatorRect, isFirstAutoZoomInteraction } =
-      await prepareAutoZoomForLocator(
-        locator,
-        'fill',
-        fillOptions.autoZoomOptions
-      )
-
-    if (isFirstAutoZoomInteraction) {
-      const postDelay = getPostZoomInOutDelay() ?? 0
-      if (postDelay > 0) await sleep(postDelay)
-    }
-
-    const elementRect = locatorRect
+    const locatorRect = await locator.boundingBox()
+    const elementRect = locatorRect ?? undefined
 
     if (fillOptions.hideMouse === true) {
       const cursorVisible = mouseVisibilities.get(page) ?? true

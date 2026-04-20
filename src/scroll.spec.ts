@@ -25,6 +25,12 @@ type MockWindow = {
   scrollTo: (coords: { top?: number; left?: number; behavior?: string }) => void
 }
 
+type ScrollCall = {
+  top?: number
+  left?: number
+  behavior?: string
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
 })
@@ -45,11 +51,12 @@ function makeLocatorMock(options: {
     scrollWidth: number
     scrollHeight: number
   }
-}): Locator {
+}): Locator & { __scrollToCalls: ScrollCall[] } {
   let windowScrollY = 0
   let windowScrollX = 0
   let nestedScrollTop = 0
   let nestedScrollLeft = 0
+  const scrollToCalls: ScrollCall[] = []
 
   const win: MockWindow = {
     get innerHeight() {
@@ -65,7 +72,8 @@ function makeLocatorMock(options: {
       return windowScrollX
     },
     document: undefined,
-    scrollTo: ({ top, left }) => {
+    scrollTo: ({ top, left, behavior }) => {
+      scrollToCalls.push({ top, left, behavior })
       if (top !== undefined) windowScrollY = top
       if (left !== undefined) windowScrollX = left
     },
@@ -152,7 +160,8 @@ function makeLocatorMock(options: {
       async (fn: (el: typeof element, arg: unknown) => unknown, arg: unknown) =>
         fn(element, arg)
     ),
-  } as unknown as Locator
+    __scrollToCalls: scrollToCalls,
+  } as unknown as Locator & { __scrollToCalls: ScrollCall[] }
 }
 
 describe('scrollTo', () => {
@@ -168,6 +177,47 @@ describe('scrollTo', () => {
     const rect = await promise
 
     expect(rect?.y).toBeCloseTo(120, 0)
+  })
+
+  it('animates page scrolling across multiple eased steps', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+
+    const promise = scrollTo(locator, 120, 'ease-in-out')
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(locator.__scrollToCalls.length).toBeGreaterThan(1)
+    const lastCall = locator.__scrollToCalls[locator.__scrollToCalls.length - 1]
+    expect(locator.__scrollToCalls[0]?.top).toBeLessThan(lastCall?.top ?? 0)
+  })
+
+  it('uses the provided duration to control scroll step count', async () => {
+    const slowLocator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+    const fastLocator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+
+    const slowPromise = scrollTo(slowLocator, 120, 'ease-in-out', 600)
+    await vi.runAllTimersAsync()
+    await slowPromise
+
+    const fastPromise = scrollTo(fastLocator, 120, 'ease-in-out', 100)
+    await vi.runAllTimersAsync()
+    await fastPromise
+
+    expect(slowLocator.__scrollToCalls.length).toBeGreaterThan(
+      fastLocator.__scrollToCalls.length
+    )
   })
 
   it('scrolls nested containers and then the page', async () => {

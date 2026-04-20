@@ -76,7 +76,8 @@ function isScrollableElement(node: unknown): node is ScrollableElement {
 export async function scrollTo(
   locator: Locator,
   height: number,
-  easing: Easing = 'ease-in-out'
+  easing: Easing = 'ease-in-out',
+  duration = SCROLL_DURATION_MS
 ): Promise<ElementRect | undefined> {
   if (!Number.isFinite(height)) {
     throw new Error('[screenci] scrollTo height must be a finite number.')
@@ -88,6 +89,7 @@ export async function scrollTo(
   await locator.evaluate(
     (element, opts) =>
       new Promise<void>((resolve) => {
+        const frameMs = 1000 / 60
         const clampValue = (value: number, min: number, max: number): number =>
           Math.min(max, Math.max(min, value))
         const evaluateScrollEasingAtT = (t: number, easing: Easing): number => {
@@ -159,10 +161,15 @@ export async function scrollTo(
           current = current.parentElement
         }
 
+        const nestedStartTop = nearestScrollable?.scrollTop ?? 0
+        const nestedStartLeft = nearestScrollable?.scrollLeft ?? 0
+        let nestedTargetTop = nestedStartTop
+        let nestedTargetLeft = nestedStartLeft
+
         if (nearestScrollable) {
           const containerRect = nearestScrollable.getBoundingClientRect()
           const elementRect = element.getBoundingClientRect()
-          const targetTop = clampValue(
+          nestedTargetTop = clampValue(
             nearestScrollable.scrollTop +
               (elementRect.top - containerRect.top - opts.height),
             0,
@@ -171,7 +178,7 @@ export async function scrollTo(
               nearestScrollable.scrollHeight - nearestScrollable.clientHeight
             )
           )
-          const targetLeft = clampValue(
+          nestedTargetLeft = clampValue(
             nearestScrollable.scrollLeft +
               (elementRect.left +
                 elementRect.width / 2 -
@@ -183,8 +190,6 @@ export async function scrollTo(
               nearestScrollable.scrollWidth - nearestScrollable.clientWidth
             )
           )
-          nearestScrollable.scrollTop = targetTop
-          nearestScrollable.scrollLeft = targetLeft
         }
 
         const rect = element.getBoundingClientRect()
@@ -207,14 +212,52 @@ export async function scrollTo(
           Math.max(0, scrollWidth - viewportWidth)
         )
 
-        win.scrollTo({
-          top: targetScrollY,
-          left: targetScrollX,
-          behavior: 'auto',
-        })
-        resolve()
+        const pageStartY = win.scrollY
+        const pageStartX = win.scrollX
+        const needsNestedScroll =
+          nearestScrollable !== null &&
+          (nestedTargetTop !== nestedStartTop ||
+            nestedTargetLeft !== nestedStartLeft)
+        const needsPageScroll =
+          targetScrollY !== pageStartY || targetScrollX !== pageStartX
+
+        if (!needsNestedScroll && !needsPageScroll) {
+          resolve()
+          return
+        }
+
+        const steps = Math.max(1, Math.floor(opts.duration / frameMs))
+        let step = 0
+
+        const tick = () => {
+          step += 1
+          const t = step / steps
+          const easedT = evaluateScrollEasingAtT(t, opts.easing)
+
+          if (nearestScrollable) {
+            nearestScrollable.scrollTop =
+              nestedStartTop + (nestedTargetTop - nestedStartTop) * easedT
+            nearestScrollable.scrollLeft =
+              nestedStartLeft + (nestedTargetLeft - nestedStartLeft) * easedT
+          }
+
+          win.scrollTo({
+            top: pageStartY + (targetScrollY - pageStartY) * easedT,
+            left: pageStartX + (targetScrollX - pageStartX) * easedT,
+            behavior: 'auto',
+          })
+
+          if (step >= steps) {
+            resolve()
+            return
+          }
+
+          setTimeout(tick, frameMs)
+        }
+
+        tick()
       }),
-    { height, easing }
+    { height, easing, duration }
   )
 
   const finalBb = await locator.boundingBox()

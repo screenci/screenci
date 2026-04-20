@@ -1,9 +1,10 @@
 import {
   DEFAULT_ZOOM_DURATION,
+  DEFAULT_ZOOM_EASING,
   DEFAULT_POST_ZOOM_IN_OUT_DELAY,
 } from './defaults.js'
 import type { ElementRect, IEventRecorder } from './events.js'
-import type { AutoZoomOptions } from './types.js'
+import type { AutoZoomOptions, Easing } from './types.js'
 
 export type ZoomLocation = {
   x: number
@@ -15,6 +16,7 @@ export type ZoomLocation = {
 let activeRecorder: IEventRecorder | null = null
 let insideAutoZoom = false
 let currentZoomDuration: number | null = null
+let currentZoomEasing: Easing | null = null
 let currentPostZoomInOutDelay: number | null = null
 let lastZoomLocation: ZoomLocation | null = null
 
@@ -30,6 +32,10 @@ export function isInsideAutoZoom(): boolean {
 
 export function getZoomDuration(): number | null {
   return currentZoomDuration
+}
+
+export function getZoomEasing(): Easing | null {
+  return currentZoomEasing
 }
 
 export function getPostZoomInOutDelay(): number | null {
@@ -85,6 +91,7 @@ export async function autoZoom(
   const zoomStartTime = Date.now()
   insideAutoZoom = true
   currentZoomDuration = options?.duration ?? DEFAULT_ZOOM_DURATION
+  currentZoomEasing = (options?.easing ?? DEFAULT_ZOOM_EASING) as Easing
   currentPostZoomInOutDelay =
     options?.postZoomInOutDelay ?? DEFAULT_POST_ZOOM_IN_OUT_DELAY
   try {
@@ -93,6 +100,7 @@ export async function autoZoom(
     insideAutoZoom = false
     lastZoomLocation = null
     currentZoomDuration = null
+    currentZoomEasing = null
     currentPostZoomInOutDelay = null
   }
   const duration = options?.duration ?? DEFAULT_ZOOM_DURATION

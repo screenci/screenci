@@ -25,6 +25,7 @@ import { logger } from './logger.js'
 import {
   isInsideAutoZoom,
   getZoomDuration,
+  getZoomEasing,
   getPostZoomInOutDelay,
   getLastZoomLocation,
   setLastZoomLocation,
@@ -33,6 +34,20 @@ import { isInsideHide } from './hide.js'
 import { scrollTo } from './scroll.js'
 
 let activeClickRecorder: IEventRecorder | null = null
+
+function resolveScrollAnimationOptions(): {
+  easing: Easing
+  duration: number | undefined
+} {
+  if (!isInsideAutoZoom()) {
+    return { easing: 'ease-in-out', duration: undefined }
+  }
+
+  return {
+    easing: getZoomEasing() ?? 'ease-in-out',
+    duration: getZoomDuration() ?? undefined,
+  }
+}
 
 export function setActiveClickRecorder(recorder: IEventRecorder | null): void {
   activeClickRecorder = recorder
@@ -360,9 +375,12 @@ async function performClickActions(
     isInsideAutoZoom() && getLastZoomLocation() === null
 
   const moveStartTime = Date.now()
+  const scrollAnimation = resolveScrollAnimationOptions()
   const locatorRect = await scrollTo(
     locator,
-    Math.floor((locator.page().viewportSize()?.height ?? 0) / 2)
+    Math.floor((locator.page().viewportSize()?.height ?? 0) / 2),
+    scrollAnimation.easing,
+    scrollAnimation.duration
   )
   const scrollElapsedMs = Date.now() - moveStartTime
   if (!locatorRect) {
@@ -603,9 +621,12 @@ async function prepareAutoZoomForLocator(
     await sleep(zoomDur)
   }
 
+  const scrollAnimation = resolveScrollAnimationOptions()
   const locatorRect = await scrollTo(
     locator,
-    Math.floor((locator.page().viewportSize()?.height ?? 0) / 2)
+    Math.floor((locator.page().viewportSize()?.height ?? 0) / 2),
+    scrollAnimation.easing,
+    scrollAnimation.duration
   )
 
   if (isInsideAutoZoom() && locatorRect) {
@@ -1144,9 +1165,12 @@ export function instrumentLocator(locator: Locator): Locator {
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
     const moveStartTime = Date.now()
+    const scrollAnimation = resolveScrollAnimationOptions()
     const locatorRect = await scrollTo(
       locator,
-      Math.floor((locator.page().viewportSize()?.height ?? 0) / 2)
+      Math.floor((locator.page().viewportSize()?.height ?? 0) / 2),
+      scrollAnimation.easing,
+      scrollAnimation.duration
     )
     const scrollElapsedMs = Date.now() - moveStartTime
 
@@ -1234,9 +1258,12 @@ export function instrumentLocator(locator: Locator): Locator {
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
     const moveStartTime = Date.now()
+    const scrollAnimation = resolveScrollAnimationOptions()
     const locatorRect = await scrollTo(
       locator,
-      Math.floor((locator.page().viewportSize()?.height ?? 0) / 2)
+      Math.floor((locator.page().viewportSize()?.height ?? 0) / 2),
+      scrollAnimation.easing,
+      scrollAnimation.duration
     )
     const scrollElapsedMs = Date.now() - moveStartTime
 
@@ -1346,9 +1373,12 @@ export function instrumentLocator(locator: Locator): Locator {
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
     const moveStartTime = Date.now()
+    const scrollAnimation = resolveScrollAnimationOptions()
     const sourceRect = await scrollTo(
       locator,
-      Math.floor((locator.page().viewportSize()?.height ?? 0) / 2)
+      Math.floor((locator.page().viewportSize()?.height ?? 0) / 2),
+      scrollAnimation.easing,
+      scrollAnimation.duration
     )
     const scrollElapsedMs = Date.now() - moveStartTime
     const targetBb = await target.boundingBox()

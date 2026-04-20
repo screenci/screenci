@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   createNarration,
-  createNarration,
   setActiveCueRecorder,
   resetCueChain,
   setSleepFn,
 } from './cue.js'
+import * as screenci from '../index.js'
 import { hide, setActiveHideRecorder } from './hide.js'
 import type { IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
@@ -139,6 +139,12 @@ describe('createNarration', () => {
 
     expect(cues.intro).toBeDefined()
     expect(typeof cues.wait).toBe('function')
+  })
+
+  it('does not export createVideoCues from the package root', () => {
+    expect(
+      (screenci as Record<string, unknown>).createVideoCues
+    ).toBeUndefined()
   })
 
   describe('without recorder', () => {

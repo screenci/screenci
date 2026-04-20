@@ -71,15 +71,13 @@ export { getDimensions } from './src/dimensions.js'
 // Re-export config function
 export { defineConfig } from './src/config.js'
 
-// Re-export video fixture and cue
+// Re-export video fixture and narration cue
 export { video } from './src/video.js'
 export type { ScreenCIPage, ScreenCILocator } from './src/types.js'
-export { createNarration, createVideoCues } from './src/cue.js'
+export { createNarration } from './src/cue.js'
 export type {
   CueController,
   Cues,
-  VideoCueEntry,
-  VideoCues,
   TopLevelVoiceConfig,
   LangNarrationOverride,
   CueMapValue,

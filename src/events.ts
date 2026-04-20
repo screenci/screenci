@@ -37,6 +37,7 @@ export type FocusChangeEvent = {
   x: number
   y: number
   easing?: Easing
+  focusOnly?: boolean
   /** Bounding rect of the element the cursor moved to — used for zoom centering hints. */
   elementRect?: ElementRect
 }

@@ -126,6 +126,9 @@ function makePageMock(): PageMock {
       down: vi.fn().mockResolvedValue(undefined),
       up: vi.fn().mockResolvedValue(undefined),
     },
+    keyboard: {
+      type: vi.fn().mockResolvedValue(undefined),
+    },
     on: vi.fn((event: string, cb: (page: Page) => void) => {
       if (event === 'popup') popupListeners.push(cb)
     }),
@@ -728,10 +731,9 @@ describe('instrumentLocator', () => {
     await vi.advanceTimersByTimeAsync(50)
     expect(checkMock).not.toHaveBeenCalled()
 
-    await vi.advanceTimersByTimeAsync(300)
+    await vi.runAllTimersAsync()
     expect(checkMock).toHaveBeenCalledOnce()
 
-    await vi.runAllTimersAsync()
     await p
 
     expect(recordedInputEvents).toHaveLength(1)
@@ -752,6 +754,10 @@ describe('instrumentLocator', () => {
     const locator = makeLocatorMock(bb, page)
     instrumentLocator(locator)
 
+    const keyboardType = (
+      page as unknown as { keyboard: { type: ReturnType<typeof vi.fn> } }
+    ).keyboard.type
+
     const p = autoZoom(
       async () => {
         await (
@@ -767,11 +773,62 @@ describe('instrumentLocator', () => {
     await vi.runAllTimersAsync()
     await p
 
+    expect(keyboardType).toHaveBeenCalledOnce()
+
     expect(recordedInputEvents).toHaveLength(1)
     const fill = recordedInputEvents[0]!
     expect(fill.subType).toBe('pressSequentially')
     expect(fill.events.some((e) => e.type === 'mouseDown')).toBe(false)
     expect(fill.events.some((e) => e.type === 'mouseUp')).toBe(false)
+  })
+
+  it('waits for the autoZoom duration before typing after a fill click', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    instrumentLocator(locator)
+
+    const keyboardType = (
+      page as unknown as { keyboard: { type: ReturnType<typeof vi.fn> } }
+    ).keyboard.type
+
+    const p = autoZoom(
+      async () => {
+        await (
+          locator.fill as (
+            value: string,
+            options?: {
+              duration?: number
+              click?: {
+                moveDuration?: number
+                beforeClickPause?: number
+                postClickPause?: number
+              }
+            }
+          ) => Promise<void>
+        )('hi', {
+          duration: 100,
+          click: { moveDuration: 0, beforeClickPause: 0, postClickPause: 0 },
+        })
+      },
+      { duration: 300, postZoomInOutDelay: 0 }
+    )
+
+    await vi.advanceTimersByTimeAsync(449)
+    expect(keyboardType).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(1)
+    await vi.runAllTimersAsync()
+    await p
+
+    expect(keyboardType).toHaveBeenCalledOnce()
   })
 
   it('records a hover InputEvent with inner focusChange and mouseWait', async () => {

@@ -27,6 +27,7 @@ import { logger } from './logger.js'
 import {
   isInsideAutoZoom,
   getZoomDuration,
+  getZoomEasing,
   getPostZoomInOutDelay,
   getLastZoomLocation,
   setLastZoomLocation,
@@ -471,6 +472,7 @@ async function performClickActions(
         x: targetX,
         y: targetY,
         easing: moveEasing,
+        focusOnly: false,
         elementRect: locatorRect,
       })
     } else {
@@ -498,9 +500,11 @@ async function performClickActions(
     }
   }
 
+  const zoomDur =
+    isInsideAutoZoom() && locatorRect ? (getZoomDuration() ?? 0) : 0
   const effectiveBeforeClickPause = isFirstAutoZoomEvent
-    ? Math.max(beforeClickPause, getPostZoomInOutDelay() ?? 0)
-    : beforeClickPause
+    ? Math.max(beforeClickPause, getPostZoomInOutDelay() ?? 0, zoomDur)
+    : Math.max(beforeClickPause, zoomDur)
   await new Promise<void>((resolve) =>
     setTimeout(resolve, effectiveBeforeClickPause)
   )
@@ -780,6 +784,23 @@ async function performSimpleAction(
       if (postDelay > 0) await sleep(postDelay)
     }
 
+    if (isInsideAutoZoom() && locatorRect) {
+      const focusStart = Date.now()
+      const zoomDur = getZoomDuration() ?? 0
+      if (zoomDur > 0) await sleep(zoomDur)
+      const focusEnd = Date.now()
+      innerEvents.push({
+        type: 'focusChange',
+        startMs: focusStart,
+        endMs: focusEnd,
+        x: locatorRect.x + locatorRect.width / 2,
+        y: locatorRect.y + locatorRect.height / 2,
+        easing: getZoomEasing() ?? 'ease-in-out',
+        focusOnly: true,
+        elementRect: locatorRect,
+      })
+    }
+
     const targetPosition = locatorRect
       ? {
           x: locatorRect.width / 2,
@@ -1049,6 +1070,13 @@ export function instrumentLocator(locator: Locator): Locator {
       }
 
       elementRect = locatorRect
+
+      if (isInsideAutoZoom() && locatorRect) {
+        const zoomDur = getZoomDuration() ?? 0
+        if (zoomDur > 0) {
+          await sleep(zoomDur)
+        }
+      }
     }
 
     // Hide cursor while typing (will be shown again on next mouse move)
@@ -1200,16 +1228,103 @@ export function instrumentLocator(locator: Locator): Locator {
       return
     }
 
-    const duration = options?.duration ?? 1000
+    await sleep(PRE_ACTION_SLEEP)
+    const page = locator.page()
+    const innerEvents: Array<
+      FocusChangeEvent | MouseHideEvent | MouseWaitEvent
+    > = []
+    const fillOptions = options ?? {}
+
+    const { locatorRect, isFirstAutoZoomInteraction } =
+      await prepareAutoZoomForLocator(
+        locator,
+        'fill',
+        fillOptions.autoZoomOptions
+      )
+
+    if (isFirstAutoZoomInteraction) {
+      const postDelay = getPostZoomInOutDelay() ?? 0
+      if (postDelay > 0) await sleep(postDelay)
+    }
+
+    const elementRect = locatorRect
+
+    if (fillOptions.hideMouse === true) {
+      const cursorVisible = mouseVisibilities.get(page) ?? true
+      if (cursorVisible) {
+        mouseVisibilities.set(page, false)
+        const hideMs = Date.now()
+        innerEvents.push({
+          type: 'mouseHide',
+          startMs: hideMs,
+          endMs: hideMs,
+        })
+      }
+    }
+
+    if (isInsideAutoZoom() && locatorRect) {
+      const focusStart = Date.now()
+      const zoomDur = getZoomDuration() ?? 0
+      if (zoomDur > 0) await sleep(zoomDur)
+      const focusEnd = Date.now()
+      innerEvents.push({
+        type: 'focusChange',
+        startMs: focusStart,
+        endMs: focusEnd,
+        x: locatorRect.x + locatorRect.width / 2,
+        y: locatorRect.y + locatorRect.height / 2,
+        easing: getZoomEasing() ?? 'ease-in-out',
+        focusOnly: true,
+        elementRect: locatorRect,
+      })
+    }
+
+    await locator.evaluate((element) => {
+      if (
+        element instanceof HTMLInputElement ||
+        element instanceof HTMLTextAreaElement
+      ) {
+        element.focus()
+        element.select()
+        return
+      }
+
+      if (element instanceof HTMLElement && element.isContentEditable) {
+        element.focus()
+        const selection = element.ownerDocument.getSelection()
+        if (!selection) return
+        const range = element.ownerDocument.createRange()
+        range.selectNodeContents(element)
+        selection.removeAllRanges()
+        selection.addRange(range)
+      }
+    })
+
+    const duration = fillOptions.duration ?? 1000
     const delay = value.length > 0 ? duration / value.length : 0
-    const pressOptions: PressSequentiallyOptions = { delay }
-    if (options?.timeout !== undefined) pressOptions.timeout = options.timeout
-    if (options?.click !== undefined) pressOptions.click = options.click
-    if (options?.position !== undefined)
-      pressOptions.position = options.position
-    if (options?.hideMouse !== undefined)
-      pressOptions.hideMouse = options.hideMouse
-    return locator.pressSequentially(value, pressOptions)
+    await page.keyboard.type(value, { delay })
+
+    const fillWaitStart = Date.now()
+    await sleep(POST_ACTION_SLEEP)
+    const fillWaitEnd = Date.now()
+    innerEvents.push({
+      type: 'mouseWait',
+      startMs: fillWaitStart,
+      endMs: fillWaitEnd,
+    })
+
+    if (
+      activeClickRecorder &&
+      (isInsideAutoZoom() || fillOptions.hideMouse === true)
+    ) {
+      activeClickRecorder.addInput(
+        'pressSequentially',
+        elementRect,
+        innerEvents
+      )
+    }
+
+    return
   }
 
   const originalTap = locator.tap.bind(locator)

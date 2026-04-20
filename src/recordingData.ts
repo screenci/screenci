@@ -25,6 +25,7 @@ export type FocusChangeEvent = {
   x: number
   y: number
   easing?: Easing
+  focusOnly?: boolean
   elementRect?: ElementRect
 }
 

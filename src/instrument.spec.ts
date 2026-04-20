@@ -611,6 +611,96 @@ describe('instrumentLocator', () => {
     expect(move!.duration).toBeGreaterThanOrEqual(1000)
   })
 
+  it('starts the first autoZoom click move after scroll completes', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 900, width: 80, height: 40 },
+      page
+    )
+    ;(locator.evaluate as ReturnType<typeof vi.fn>).mockImplementation(
+      async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 600))
+      }
+    )
+
+    instrumentLocator(locator)
+    const actionStart = Date.now()
+    const p = autoZoom(
+      async () => {
+        await (
+          locator as unknown as {
+            click(options?: { moveDuration?: number }): Promise<void>
+          }
+        ).click({ moveDuration: 1000 })
+      },
+      { duration: 300, postZoomInOutDelay: 0 }
+    )
+
+    await vi.runAllTimersAsync()
+    await p
+
+    const click = recordedInputEvents[0]!
+    const move = click.events.find(
+      (event): event is MouseMoveEvent => event.type === 'mouseMove'
+    )
+
+    expect(move).toBeDefined()
+    expect(move!.startMs - actionStart).toBeGreaterThanOrEqual(600)
+  })
+
+  it('keeps later autoZoom click moves overlapping the scroll timing', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 900, width: 80, height: 40 },
+      page
+    )
+    ;(locator.evaluate as ReturnType<typeof vi.fn>).mockImplementation(
+      async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 600))
+      }
+    )
+
+    instrumentLocator(locator)
+    const actionStart = Date.now()
+    const p = autoZoom(
+      async () => {
+        setLastZoomLocation({
+          x: 120,
+          y: 140,
+          eventType: 'click',
+          elementRect: { x: 100, y: 120, width: 80, height: 40 },
+        })
+        await (
+          locator as unknown as {
+            click(options?: { moveDuration?: number }): Promise<void>
+          }
+        ).click({ moveDuration: 1000 })
+      },
+      { duration: 300, postZoomInOutDelay: 0 }
+    )
+
+    await vi.runAllTimersAsync()
+    await p
+
+    const click = recordedInputEvents[0]!
+    const move = click.events.find(
+      (event): event is MouseMoveEvent => event.type === 'mouseMove'
+    )
+
+    expect(move).toBeDefined()
+    expect(move!.startMs - actionStart).toBeLessThan(600)
+  })
+
   it('does not synthesize mouse presses for check without click inside autoZoom', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)

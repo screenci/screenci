@@ -25,29 +25,14 @@ import { logger } from './logger.js'
 import {
   isInsideAutoZoom,
   getZoomDuration,
-  getZoomEasing,
   getPostZoomInOutDelay,
   getLastZoomLocation,
   setLastZoomLocation,
 } from './autoZoom.js'
 import { isInsideHide } from './hide.js'
-import { scrollTo } from './scroll.js'
+import { ZoomScrollHandler, type ZoomScrollResult } from './scroll.js'
 
 let activeClickRecorder: IEventRecorder | null = null
-
-function resolveScrollAnimationOptions(): {
-  easing: Easing
-  duration: number | undefined
-} {
-  if (!isInsideAutoZoom()) {
-    return { easing: 'ease-in-out', duration: undefined }
-  }
-
-  return {
-    easing: getZoomEasing() ?? 'ease-in-out',
-    duration: getZoomDuration() ?? undefined,
-  }
-}
 
 export function setActiveClickRecorder(recorder: IEventRecorder | null): void {
   activeClickRecorder = recorder
@@ -361,6 +346,24 @@ type ClickActionResult = {
   >
 }
 
+function resolveMoveStartMs(
+  scrollResult: ZoomScrollResult,
+  fallbackStartMs: number
+): number {
+  return scrollResult.shouldScrollBeforeMouseMove
+    ? scrollResult.scrollEndMs
+    : fallbackStartMs
+}
+
+function resolveMoveDuration(
+  scrollResult: ZoomScrollResult,
+  resolvedDuration: number
+): number {
+  return scrollResult.shouldScrollBeforeMouseMove
+    ? resolvedDuration
+    : Math.max(0, resolvedDuration - scrollResult.scrollElapsedMs)
+}
+
 /**
  * Performs all click mechanics (scroll-check, zoom handling, cursor animation,
  * click, post-click move) and returns the collected timing/position data.
@@ -385,19 +388,10 @@ async function performClickActions(
   const mouseMoveInternal =
     originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
-  // Capture before any setLastZoomLocation call changes the state.
-  const isFirstAutoZoomEvent =
-    isInsideAutoZoom() && getLastZoomLocation() === null
-
   const moveStartTime = Date.now()
-  const scrollAnimation = resolveScrollAnimationOptions()
-  const locatorRect = await scrollTo(
-    locator,
-    Math.floor((locator.page().viewportSize()?.height ?? 0) / 2),
-    scrollAnimation.easing,
-    scrollAnimation.duration
-  )
-  const scrollElapsedMs = Date.now() - moveStartTime
+  const scrollResult = await new ZoomScrollHandler().scroll(locator)
+  const { locatorRect, scrollElapsedMs } = scrollResult
+  const isFirstAutoZoomEvent = scrollResult.isFirstAutoZoomInteraction
   if (!locatorRect) {
     logger.warn(
       '[screenci] Unable to get locator bounding box; skipping auto-scroll check.'
@@ -448,7 +442,7 @@ async function performClickActions(
       defaultDuration: 1000,
       context: 'click move',
     })
-    if (scrollElapsedMs > 0) {
+    if (scrollElapsedMs > 0 && !scrollResult.shouldScrollBeforeMouseMove) {
       await mouseMoveInternal(targetX, targetY)
       mousePositions.set(page, { x: targetX, y: targetY })
 
@@ -477,9 +471,9 @@ async function performClickActions(
           mouseMoveInternal,
           targetX,
           targetY,
-          resolvedDuration,
+          resolveMoveDuration(scrollResult, resolvedDuration),
           moveEasing,
-          moveStartTime,
+          resolveMoveStartMs(scrollResult, moveStartTime),
           locatorRect
         )
       )
@@ -688,23 +682,25 @@ type SimpleActionOptions =
 async function prepareAutoZoomForLocator(
   locator: Locator,
   eventType: 'click' | 'fill'
-): Promise<ElementRect | undefined> {
-  const hadPreviousZoomLocation = getLastZoomLocation() !== null
-  const zoomDur = isInsideAutoZoom() ? (getZoomDuration() ?? 0) : 0
-  if (isInsideAutoZoom() && hadPreviousZoomLocation && zoomDur > 0) {
+): Promise<{
+  locatorRect: ElementRect | undefined
+  isFirstAutoZoomInteraction: boolean
+}> {
+  const scrollHandler = new ZoomScrollHandler()
+  const zoomDur = scrollHandler.isInsideAutoZoom ? (getZoomDuration() ?? 0) : 0
+  if (
+    scrollHandler.isInsideAutoZoom &&
+    scrollHandler.hadPreviousZoomLocation &&
+    zoomDur > 0
+  ) {
     await sleep(zoomDur)
   }
 
-  const scrollAnimation = resolveScrollAnimationOptions()
-  const locatorRect = await scrollTo(
-    locator,
-    Math.floor((locator.page().viewportSize()?.height ?? 0) / 2),
-    scrollAnimation.easing,
-    scrollAnimation.duration
-  )
+  const { locatorRect, isFirstAutoZoomInteraction } =
+    await scrollHandler.scroll(locator)
 
-  if (isInsideAutoZoom() && locatorRect) {
-    if (!hadPreviousZoomLocation && zoomDur > 0) {
+  if (scrollHandler.isInsideAutoZoom && locatorRect) {
+    if (isFirstAutoZoomInteraction && zoomDur > 0) {
       await sleep(zoomDur)
     }
 
@@ -716,7 +712,7 @@ async function prepareAutoZoomForLocator(
     })
   }
 
-  return locatorRect
+  return { locatorRect, isFirstAutoZoomInteraction }
 }
 
 async function performSimpleAction(
@@ -759,12 +755,10 @@ async function performSimpleAction(
     innerEvents = clickActionResult?.innerEvents ?? []
     elementRect = clickActionResult?.elementRect
   } else {
-    const isFirstAutoZoomEvent =
-      isInsideAutoZoom() && getLastZoomLocation() === null
+    const { locatorRect, isFirstAutoZoomInteraction } =
+      await prepareAutoZoomForLocator(locator, 'fill')
 
-    const locatorRect = await prepareAutoZoomForLocator(locator, 'fill')
-
-    if (isFirstAutoZoomEvent) {
+    if (isFirstAutoZoomInteraction) {
       const postDelay = getPostZoomInOutDelay() ?? 0
       if (postDelay > 0) await sleep(postDelay)
     }
@@ -1014,12 +1008,10 @@ export function instrumentLocator(locator: Locator): Locator {
       innerEvents.push(...(clickActionResult?.innerEvents ?? []))
       elementRect = clickActionResult?.elementRect
     } else {
-      const isFirstAutoZoomEvent =
-        isInsideAutoZoom() && getLastZoomLocation() === null
+      const { locatorRect, isFirstAutoZoomInteraction } =
+        await prepareAutoZoomForLocator(locator, 'fill')
 
-      const locatorRect = await prepareAutoZoomForLocator(locator, 'fill')
-
-      if (isFirstAutoZoomEvent) {
+      if (isFirstAutoZoomInteraction) {
         const postDelay = getPostZoomInOutDelay() ?? 0
         if (postDelay > 0) await sleep(postDelay)
       }
@@ -1322,14 +1314,8 @@ export function instrumentLocator(locator: Locator): Locator {
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
     const moveStartTime = Date.now()
-    const scrollAnimation = resolveScrollAnimationOptions()
-    const locatorRect = await scrollTo(
-      locator,
-      Math.floor((locator.page().viewportSize()?.height ?? 0) / 2),
-      scrollAnimation.easing,
-      scrollAnimation.duration
-    )
-    const scrollElapsedMs = Date.now() - moveStartTime
+    const scrollResult = await new ZoomScrollHandler().scroll(locator)
+    const { locatorRect } = scrollResult
 
     const innerEvents: Array<MouseMoveEvent | MouseWaitEvent> = []
 
@@ -1353,16 +1339,15 @@ export function instrumentLocator(locator: Locator): Locator {
           context: 'hover move',
         }
       )
-      const effectiveDuration = Math.max(0, resolvedDuration - scrollElapsedMs)
       innerEvents.push(
         await animateMouseMove(
           page,
           mouseMoveInternal,
           targetX,
           targetY,
-          effectiveDuration,
+          resolveMoveDuration(scrollResult, resolvedDuration),
           moveEasing,
-          moveStartTime,
+          resolveMoveStartMs(scrollResult, moveStartTime),
           locatorRect
         )
       )
@@ -1415,14 +1400,8 @@ export function instrumentLocator(locator: Locator): Locator {
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
     const moveStartTime = Date.now()
-    const scrollAnimation = resolveScrollAnimationOptions()
-    const locatorRect = await scrollTo(
-      locator,
-      Math.floor((locator.page().viewportSize()?.height ?? 0) / 2),
-      scrollAnimation.easing,
-      scrollAnimation.duration
-    )
-    const scrollElapsedMs = Date.now() - moveStartTime
+    const scrollResult = await new ZoomScrollHandler().scroll(locator)
+    const { locatorRect } = scrollResult
 
     const innerEvents: Array<MouseMoveEvent | MouseDownEvent | MouseUpEvent> =
       []
@@ -1445,16 +1424,15 @@ export function instrumentLocator(locator: Locator): Locator {
           context: 'selectText move',
         }
       )
-      const effectiveDuration = Math.max(0, resolvedDuration - scrollElapsedMs)
       innerEvents.push(
         await animateMouseMove(
           page,
           mouseMoveInternal,
           targetX,
           targetY,
-          effectiveDuration,
+          resolveMoveDuration(scrollResult, resolvedDuration),
           moveEasing,
-          moveStartTime,
+          resolveMoveStartMs(scrollResult, moveStartTime),
           locatorRect
         )
       )
@@ -1530,14 +1508,8 @@ export function instrumentLocator(locator: Locator): Locator {
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
     const moveStartTime = Date.now()
-    const scrollAnimation = resolveScrollAnimationOptions()
-    const sourceRect = await scrollTo(
-      locator,
-      Math.floor((locator.page().viewportSize()?.height ?? 0) / 2),
-      scrollAnimation.easing,
-      scrollAnimation.duration
-    )
-    const scrollElapsedMs = Date.now() - moveStartTime
+    const scrollResult = await new ZoomScrollHandler().scroll(locator)
+    const { locatorRect: sourceRect } = scrollResult
     const targetBb = await target.boundingBox()
     const targetRect: ElementRect | undefined = targetBb
       ? {
@@ -1574,16 +1546,15 @@ export function instrumentLocator(locator: Locator): Locator {
         defaultDuration: 1000,
         context: 'dragTo move',
       })
-      const effectiveDuration = Math.max(0, resolvedDuration - scrollElapsedMs)
       innerEvents.push(
         await animateMouseMove(
           page,
           mouseMoveInternal,
           toX,
           toY,
-          effectiveDuration,
+          resolveMoveDuration(scrollResult, resolvedDuration),
           moveEasing,
-          moveStartTime,
+          resolveMoveStartMs(scrollResult, moveStartTime),
           sourceRect
         )
       )

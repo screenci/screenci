@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Locator } from '@playwright/test'
-import { scrollTo } from './scroll.js'
+import { autoZoom, setLastZoomLocation } from './autoZoom.js'
+import { scrollTo, ZoomScrollHandler } from './scroll.js'
 
 type MockDoc = {
   defaultView: MockWindow
@@ -174,6 +175,12 @@ function makeLocatorMock(options: {
       async (fn: (el: typeof element, arg: unknown) => unknown, arg: unknown) =>
         fn(element, arg)
     ),
+    page: vi.fn().mockReturnValue({
+      viewportSize: () => ({
+        width: options.viewport.width,
+        height: options.viewport.height,
+      }),
+    }),
     __scrollToCalls: scrollToCalls,
   } as unknown as Locator & { __scrollToCalls: ScrollCall[] }
 }
@@ -191,6 +198,50 @@ describe('scrollTo', () => {
     const rect = await promise
 
     expect(rect?.y).toBeCloseTo(120, 0)
+  })
+
+  it('marks the first autoZoom interaction to scroll before mouse movement', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+
+    let result: Awaited<ReturnType<ZoomScrollHandler['scroll']>> | undefined
+    const promise = autoZoom(async () => {
+      result = await new ZoomScrollHandler().scroll(locator)
+    })
+
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(result?.isFirstAutoZoomInteraction).toBe(true)
+    expect(result?.shouldScrollBeforeMouseMove).toBe(true)
+  })
+
+  it('keeps later autoZoom interactions scrolling during mouse movement', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+
+    let result: Awaited<ReturnType<ZoomScrollHandler['scroll']>> | undefined
+    const promise = autoZoom(async () => {
+      setLastZoomLocation({
+        x: 100,
+        y: 120,
+        eventType: 'click',
+        elementRect: { x: 80, y: 100, width: 120, height: 40 },
+      })
+      result = await new ZoomScrollHandler().scroll(locator)
+    })
+
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(result?.isFirstAutoZoomInteraction).toBe(false)
+    expect(result?.shouldScrollBeforeMouseMove).toBe(false)
   })
 
   it('animates page scrolling across multiple eased steps', async () => {

@@ -1,6 +1,12 @@
 import type { Locator } from '@playwright/test'
 import type { ElementRect } from './events.js'
 import type { Easing } from './types.js'
+import {
+  getLastZoomLocation,
+  getZoomDuration,
+  getZoomEasing,
+  isInsideAutoZoom,
+} from './autoZoom.js'
 
 const SCROLL_DURATION_MS = 600
 
@@ -333,5 +339,55 @@ export async function scrollTo(
     y: finalBb.y,
     width: finalBb.width,
     height: finalBb.height,
+  }
+}
+
+export type ZoomScrollResult = {
+  locatorRect: ElementRect | undefined
+  scrollStartMs: number
+  scrollEndMs: number
+  scrollElapsedMs: number
+  isFirstAutoZoomInteraction: boolean
+  shouldScrollBeforeMouseMove: boolean
+}
+
+export class ZoomScrollHandler {
+  readonly isInsideAutoZoom = isInsideAutoZoom()
+  readonly lastZoomLocation = getLastZoomLocation()
+  readonly isFirstAutoZoomInteraction =
+    this.isInsideAutoZoom && this.lastZoomLocation === null
+  readonly hadPreviousZoomLocation = this.lastZoomLocation !== null
+
+  private resolveScrollAnimationOptions(): {
+    easing: Easing
+    duration: number | undefined
+  } {
+    if (!this.isInsideAutoZoom || this.isFirstAutoZoomInteraction) {
+      return { easing: 'ease-in-out', duration: undefined }
+    }
+
+    return {
+      easing: getZoomEasing() ?? 'ease-in-out',
+      duration: getZoomDuration() ?? undefined,
+    }
+  }
+
+  async scroll(locator: Locator): Promise<ZoomScrollResult> {
+    const { easing, duration } = this.resolveScrollAnimationOptions()
+    const targetHeight = Math.floor(
+      (locator.page().viewportSize()?.height ?? 0) / 2
+    )
+    const scrollStartMs = Date.now()
+    const locatorRect = await scrollTo(locator, targetHeight, easing, duration)
+    const scrollEndMs = Date.now()
+
+    return {
+      locatorRect,
+      scrollStartMs,
+      scrollEndMs,
+      scrollElapsedMs: Math.max(0, scrollEndMs - scrollStartMs),
+      isFirstAutoZoomInteraction: this.isFirstAutoZoomInteraction,
+      shouldScrollBeforeMouseMove: this.isFirstAutoZoomInteraction,
+    }
   }
 }

@@ -30,6 +30,21 @@ export type ElementRect = {
 
 // ─── Inner event types (nested inside InputEvent.events) ──────────────────────
 
+export type FocusChangeEvent = {
+  type: 'focusChange'
+  startMs: number
+  endMs: number
+  x: number
+  y: number
+  easing?: Easing
+  /** Bounding rect of the element the cursor moved to — used for zoom centering hints. */
+  elementRect?: ElementRect
+}
+
+/**
+ * Legacy alias kept for older recordings. New recordings should use
+ * `focusChange` instead of `mouseMove`.
+ */
 export type MouseMoveEvent = {
   type: 'mouseMove'
   startMs: number
@@ -80,7 +95,7 @@ export type MouseWaitEvent = {
 
 /**
  * A recorded user input action containing one or more inner mouse events.
- * mouseMove, mouseShow, and mouseHide subtypes each contain exactly one inner event.
+ * focusChange/mouseMove, mouseShow, and mouseHide subtypes each contain exactly one inner event.
  * All input events must not overlap in time; recording will throw if they do.
  * Cues are automatically prevented from falling inside any input event's time range.
  */
@@ -93,6 +108,7 @@ export type InputEvent = {
     | 'check'
     | 'uncheck'
     | 'select'
+    | 'focusChange'
     | 'mouseMove'
     | 'mouseShow'
     | 'mouseHide'
@@ -101,6 +117,7 @@ export type InputEvent = {
     | 'dragTo'
   elementRect?: ElementRect
   events: Array<
+    | FocusChangeEvent
     | MouseMoveEvent
     | MouseDownEvent
     | MouseUpEvent

@@ -18,6 +18,17 @@ export type ElementRect = {
   height: number
 }
 
+export type FocusChangeEvent = {
+  type: 'focusChange'
+  startMs: number
+  endMs: number
+  x: number
+  y: number
+  easing?: Easing
+  elementRect?: ElementRect
+}
+
+/** Legacy alias for older recordings. New recordings should use focusChange. */
 export type MouseMoveEvent = {
   type: 'mouseMove'
   startMs: number
@@ -72,6 +83,7 @@ export type InputEvent = {
     | 'check'
     | 'uncheck'
     | 'select'
+    | 'focusChange'
     | 'mouseMove'
     | 'mouseShow'
     | 'mouseHide'
@@ -80,6 +92,7 @@ export type InputEvent = {
     | 'dragTo'
   elementRect?: ElementRect
   events: Array<
+    | FocusChangeEvent
     | MouseMoveEvent
     | MouseDownEvent
     | MouseUpEvent

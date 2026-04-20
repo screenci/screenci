@@ -32,12 +32,11 @@ describe('EventRecorder', () => {
 
   describe('addInput', () => {
     it('does nothing before start is called', () => {
-      recorder.addInput('mouseMove', undefined, [
+      recorder.addInput('focusChange', undefined, [
         {
-          type: 'mouseMove',
+          type: 'focusChange',
           startMs: 1200,
           endMs: 1300,
-          duration: 100,
           x: 100,
           y: 200,
         },
@@ -49,10 +48,9 @@ describe('EventRecorder', () => {
       recorder.start() // startTime = 1000
       recorder.addInput('click', undefined, [
         {
-          type: 'mouseMove',
+          type: 'focusChange',
           startMs: 1200,
           endMs: 1300,
-          duration: 100,
           x: 100,
           y: 200,
         },
@@ -70,10 +68,9 @@ describe('EventRecorder', () => {
       expect(click.type).toBe('input')
       expect(click.subType).toBe('click')
       expect(click.events[0]).toEqual({
-        type: 'mouseMove',
+        type: 'focusChange',
         startMs: 200,
         endMs: 300,
-        duration: 100,
         x: 100,
         y: 200,
       })
@@ -89,14 +86,13 @@ describe('EventRecorder', () => {
       })
     })
 
-    it('records a mouseMove InputEvent with one inner event', () => {
+    it('records a focusChange InputEvent with one inner event', () => {
       recorder.start() // startTime = 1000
-      recorder.addInput('mouseMove', undefined, [
+      recorder.addInput('focusChange', undefined, [
         {
-          type: 'mouseMove',
+          type: 'focusChange',
           startMs: 1200,
           endMs: 1300,
-          duration: 100,
           x: 100,
           y: 200,
         },
@@ -104,12 +100,11 @@ describe('EventRecorder', () => {
       const events = recorder.getEvents()
       expect(events).toHaveLength(2)
       const move = events[1] as InputEvent
-      expect(move.subType).toBe('mouseMove')
+      expect(move.subType).toBe('focusChange')
       expect(move.events[0]).toMatchObject({
-        type: 'mouseMove',
+        type: 'focusChange',
         startMs: 200,
         endMs: 300,
-        duration: 100,
         x: 100,
         y: 200,
       })
@@ -141,10 +136,9 @@ describe('EventRecorder', () => {
       const rect = { x: 10, y: 20, width: 100, height: 40 }
       recorder.addInput('click', rect, [
         {
-          type: 'mouseMove',
+          type: 'focusChange',
           startMs: 1100,
           endMs: 1200,
-          duration: 100,
           x: 50,
           y: 60,
         },
@@ -177,10 +171,9 @@ describe('EventRecorder', () => {
       recorder.start() // startTime=1000
       recorder.addInput('click', undefined, [
         {
-          type: 'mouseMove',
+          type: 'focusChange',
           startMs: 1100,
           endMs: 1200,
-          duration: 100,
           x: 100,
           y: 100,
         },
@@ -205,19 +198,18 @@ describe('EventRecorder', () => {
 
     it('throws from addAutoZoomEnd when timeMs is strictly inside an input event', () => {
       recorder.start()
-      recorder.addInput('mouseMove', undefined, [
+      recorder.addInput('focusChange', undefined, [
         {
-          type: 'mouseMove',
+          type: 'focusChange',
           startMs: 1100,
           endMs: 1500,
-          duration: 400,
           x: 0,
           y: 0,
         },
       ]) // stored as [100ms, 500ms]
       now = 1300 // relative: 300ms — inside [100, 500]
       expect(() => recorder.addAutoZoomEnd()).toThrow(
-        /autoZoomEnd at 300ms falls inside input 'mouseMove' event/
+        /autoZoomEnd at 300ms falls inside input 'focusChange' event/
       )
     })
 
@@ -251,12 +243,11 @@ describe('EventRecorder', () => {
   describe('overlap validation', () => {
     it('throws when two input events overlap', () => {
       recorder.start() // startTime = 1000
-      recorder.addInput('mouseMove', undefined, [
+      recorder.addInput('focusChange', undefined, [
         {
-          type: 'mouseMove',
+          type: 'focusChange',
           startMs: 1100,
           endMs: 1300,
-          duration: 200,
           x: 100,
           y: 100,
         },
@@ -270,12 +261,11 @@ describe('EventRecorder', () => {
 
     it('allows events that are adjacent (not overlapping)', () => {
       recorder.start()
-      recorder.addInput('mouseMove', undefined, [
+      recorder.addInput('focusChange', undefined, [
         {
-          type: 'mouseMove',
+          type: 'focusChange',
           startMs: 1100,
           endMs: 1200,
-          duration: 100,
           x: 100,
           y: 100,
         },

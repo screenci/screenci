@@ -8,6 +8,7 @@ import type {
 import type {
   IEventRecorder,
   ElementRect,
+  FocusChangeEvent,
   MouseMoveEvent,
   MouseDownEvent,
   MouseUpEvent,
@@ -289,7 +290,7 @@ const CURSOR_STEP_MS = 1000 / 60
 
 /**
  * Physically moves the mouse from its current tracked position to (targetX,
- * targetY) over `duration` ms using `easing`, then returns a MouseMoveEvent
+ * targetY) over `duration` ms using `easing`, then returns a FocusChangeEvent
  * whose startMs is `eventStartMs` (which may predate this call, e.g. when a
  * scroll consumed part of moveDuration).  When duration ≤ 0 the cursor is
  * snapped directly to the target with a single move call.
@@ -304,7 +305,7 @@ async function animateMouseMove(
   easing: Easing,
   eventStartMs: number,
   elementRect?: ElementRect
-): Promise<MouseMoveEvent> {
+): Promise<FocusChangeEvent> {
   if (duration > 0) {
     const startPos = mousePositions.get(page) ?? { x: 0, y: 0 }
     const steps = Math.max(1, Math.floor(duration / CURSOR_STEP_MS))
@@ -329,10 +330,9 @@ async function animateMouseMove(
   const endMs = Date.now()
 
   return {
-    type: 'mouseMove',
+    type: 'focusChange',
     startMs: eventStartMs,
     endMs,
-    duration: Math.max(0, endMs - eventStartMs),
     x: targetX,
     y: targetY,
     easing,
@@ -343,7 +343,11 @@ async function animateMouseMove(
 type ClickActionResult = {
   elementRect: ElementRect
   innerEvents: Array<
-    MouseMoveEvent | MouseDownEvent | MouseUpEvent | MouseWaitEvent
+    | FocusChangeEvent
+    | MouseMoveEvent
+    | MouseDownEvent
+    | MouseUpEvent
+    | MouseWaitEvent
   >
 }
 
@@ -402,7 +406,9 @@ async function performClickActions(
     )
   }
 
-  const innerEvents: Array<MouseMoveEvent | MouseDownEvent | MouseUpEvent> = []
+  const innerEvents: Array<
+    FocusChangeEvent | MouseMoveEvent | MouseDownEvent | MouseUpEvent
+  > = []
 
   // If inside autoZoom: optionally await zoom duration for camera pan then
   // update the zoom location tracker.
@@ -459,10 +465,9 @@ async function performClickActions(
 
       const moveEndTime = Date.now()
       innerEvents.push({
-        type: 'mouseMove',
+        type: 'focusChange',
         startMs: moveStartTime,
         endMs: moveEndTime,
-        duration: Math.max(0, moveEndTime - moveStartTime),
         x: targetX,
         y: targetY,
         easing: moveEasing,
@@ -542,11 +547,14 @@ async function performClickActions(
 
   if (domClickData) {
     const lastMouseMoveIndex = innerEvents.findIndex(
-      (e) => e.type === 'mouseMove'
+      (e) => e.type === 'focusChange' || e.type === 'mouseMove'
     )
     if (lastMouseMoveIndex !== -1) {
       const existingMove = innerEvents[lastMouseMoveIndex]
-      if (existingMove?.type === 'mouseMove') {
+      if (
+        existingMove?.type === 'focusChange' ||
+        existingMove?.type === 'mouseMove'
+      ) {
         innerEvents[lastMouseMoveIndex] = {
           ...existingMove,
           x: domClickData.x,
@@ -641,14 +649,12 @@ async function performClickActions(
 
       const postClickMoveEndMs = Date.now()
       innerEvents.push({
-        type: 'mouseMove',
+        type: 'focusChange',
         startMs: postClickMoveStartMs,
         endMs: postClickMoveEndMs,
-        duration: Math.max(0, postClickMoveEndMs - postClickMoveStartMs),
         x: targetX,
         y: targetY,
         easing,
-        zoomFollow: false,
       })
       mousePositions.set(page, { x: targetX, y: targetY })
     }
@@ -732,7 +738,11 @@ async function performSimpleAction(
 ): Promise<void> {
   await sleep(PRE_ACTION_SLEEP)
   let innerEvents: Array<
-    MouseMoveEvent | MouseDownEvent | MouseUpEvent | MouseWaitEvent
+    | FocusChangeEvent
+    | MouseMoveEvent
+    | MouseDownEvent
+    | MouseUpEvent
+    | MouseWaitEvent
   > = []
   let elementRect: ElementRect | undefined
 
@@ -987,6 +997,7 @@ export function instrumentLocator(locator: Locator): Locator {
 
     await sleep(PRE_ACTION_SLEEP)
     const innerEvents: Array<
+      | FocusChangeEvent
       | MouseMoveEvent
       | MouseDownEvent
       | MouseUpEvent
@@ -1122,6 +1133,7 @@ export function instrumentLocator(locator: Locator): Locator {
       )
 
       const innerEvents: Array<
+        | FocusChangeEvent
         | MouseMoveEvent
         | MouseDownEvent
         | MouseUpEvent
@@ -1362,7 +1374,9 @@ export function instrumentLocator(locator: Locator): Locator {
     const scrollResult = await new ZoomScrollHandler().scroll(locator)
     const { locatorRect } = scrollResult
 
-    const innerEvents: Array<MouseMoveEvent | MouseWaitEvent> = []
+    const innerEvents: Array<
+      FocusChangeEvent | MouseMoveEvent | MouseWaitEvent
+    > = []
 
     const targetPos =
       position ??
@@ -1448,8 +1462,9 @@ export function instrumentLocator(locator: Locator): Locator {
     const scrollResult = await new ZoomScrollHandler().scroll(locator)
     const { locatorRect } = scrollResult
 
-    const innerEvents: Array<MouseMoveEvent | MouseDownEvent | MouseUpEvent> =
-      []
+    const innerEvents: Array<
+      FocusChangeEvent | MouseMoveEvent | MouseDownEvent | MouseUpEvent
+    > = []
 
     const targetPos = locatorRect
       ? { x: locatorRect.width / 2, y: locatorRect.height / 2 }
@@ -1566,7 +1581,11 @@ export function instrumentLocator(locator: Locator): Locator {
       : undefined
 
     const innerEvents: Array<
-      MouseMoveEvent | MouseDownEvent | MouseUpEvent | MouseWaitEvent
+      | FocusChangeEvent
+      | MouseMoveEvent
+      | MouseDownEvent
+      | MouseUpEvent
+      | MouseWaitEvent
     > = []
 
     const sourcePos =
@@ -1831,16 +1850,15 @@ export async function instrumentPage(page: Page): Promise<Page> {
         }
         activeClickRecorder.addInput('mouseShow', undefined, [showEvent])
       }
-      const moveEvent: MouseMoveEvent = {
-        type: 'mouseMove',
+      const moveEvent: FocusChangeEvent = {
+        type: 'focusChange',
         startMs,
         endMs,
-        duration,
         x,
         y,
         ...(duration > 0 ? { easing } : {}),
       }
-      activeClickRecorder.addInput('mouseMove', undefined, [moveEvent])
+      activeClickRecorder.addInput('focusChange', undefined, [moveEvent])
     }
   }
 

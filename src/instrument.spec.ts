@@ -4,6 +4,7 @@ import type {
   IEventRecorder,
   ElementRect,
   InputEvent,
+  FocusChangeEvent,
   MouseMoveEvent,
 } from './events.js'
 import {
@@ -507,7 +508,7 @@ afterEach(() => {
 })
 
 describe('instrumentLocator', () => {
-  it('records a single click InputEvent with inner mouseMove, mouseDown, mouseUp', async () => {
+  it('records a single click InputEvent with inner focusChange, mouseDown, mouseUp', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
 
@@ -522,7 +523,7 @@ describe('instrumentLocator', () => {
     expect(recordedInputEvents).toHaveLength(1)
     const click = recordedInputEvents[0]!
     expect(click.subType).toBe('click')
-    expect(click.events.some((e) => e.type === 'mouseMove')).toBe(true)
+    expect(click.events.some((e) => e.type === 'focusChange')).toBe(true)
     expect(click.events.some((e) => e.type === 'mouseDown')).toBe(true)
     expect(click.events.some((e) => e.type === 'mouseUp')).toBe(true)
   })
@@ -561,7 +562,8 @@ describe('instrumentLocator', () => {
 
     const click = recordedInputEvents[0]!
     const move = click.events.find(
-      (event): event is MouseMoveEvent => event.type === 'mouseMove'
+      (event): event is FocusChangeEvent | MouseMoveEvent =>
+        event.type === 'focusChange' || event.type === 'mouseMove'
     )
 
     expect(click.elementRect).toEqual({ x: 110, y: 206, width: 80, height: 40 })
@@ -602,13 +604,14 @@ describe('instrumentLocator', () => {
 
     const click = recordedInputEvents[0]!
     const move = click.events.find(
-      (event): event is MouseMoveEvent => event.type === 'mouseMove'
+      (event): event is FocusChangeEvent | MouseMoveEvent =>
+        event.type === 'focusChange' || event.type === 'mouseMove'
     )
 
     expect(move).toBeDefined()
     expect(move!.startMs).toBeGreaterThanOrEqual(startTime)
     expect(move!.startMs).toBeLessThan(move!.endMs)
-    expect(move!.duration).toBeGreaterThanOrEqual(1000)
+    expect(move!.endMs - move!.startMs).toBeGreaterThanOrEqual(1000)
   })
 
   it('starts the first autoZoom click move after scroll completes', async () => {
@@ -646,7 +649,8 @@ describe('instrumentLocator', () => {
 
     const click = recordedInputEvents[0]!
     const move = click.events.find(
-      (event): event is MouseMoveEvent => event.type === 'mouseMove'
+      (event): event is FocusChangeEvent | MouseMoveEvent =>
+        event.type === 'focusChange' || event.type === 'mouseMove'
     )
 
     expect(move).toBeDefined()
@@ -694,7 +698,8 @@ describe('instrumentLocator', () => {
 
     const click = recordedInputEvents[0]!
     const move = click.events.find(
-      (event): event is MouseMoveEvent => event.type === 'mouseMove'
+      (event): event is FocusChangeEvent | MouseMoveEvent =>
+        event.type === 'focusChange' || event.type === 'mouseMove'
     )
 
     expect(move).toBeDefined()
@@ -769,7 +774,7 @@ describe('instrumentLocator', () => {
     expect(fill.events.some((e) => e.type === 'mouseUp')).toBe(false)
   })
 
-  it('records a hover InputEvent with inner mouseMove and mouseWait', async () => {
+  it('records a hover InputEvent with inner focusChange and mouseWait', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
 
@@ -794,11 +799,11 @@ describe('instrumentLocator', () => {
     expect(recordedInputEvents).toHaveLength(1)
     const hover = recordedInputEvents[0]!
     expect(hover.subType).toBe('hover')
-    expect(hover.events.some((e) => e.type === 'mouseMove')).toBe(true)
+    expect(hover.events.some((e) => e.type === 'focusChange')).toBe(true)
     expect(hover.events.some((e) => e.type === 'mouseWait')).toBe(true)
   })
 
-  it('records a selectText InputEvent with mouseMove and 3 down+up pairs', async () => {
+  it('records a selectText InputEvent with focusChange and 3 down+up pairs', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
 
@@ -823,14 +828,14 @@ describe('instrumentLocator', () => {
     expect(recordedInputEvents).toHaveLength(1)
     const ev = recordedInputEvents[0]!
     expect(ev.subType).toBe('selectText')
-    expect(ev.events.some((e) => e.type === 'mouseMove')).toBe(true)
+    expect(ev.events.some((e) => e.type === 'focusChange')).toBe(true)
     const downs = ev.events.filter((e) => e.type === 'mouseDown')
     const ups = ev.events.filter((e) => e.type === 'mouseUp')
     expect(downs).toHaveLength(3)
     expect(ups).toHaveLength(3)
   })
 
-  it('records a dragTo InputEvent with mouseMove, mouseDown, mouseMove, mouseUp', async () => {
+  it('records a dragTo InputEvent with focusChange, mouseDown, focusChange, mouseUp', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
 
@@ -857,7 +862,7 @@ describe('instrumentLocator', () => {
     expect(recordedInputEvents).toHaveLength(1)
     const ev = recordedInputEvents[0]!
     expect(ev.subType).toBe('dragTo')
-    const moves = ev.events.filter((e) => e.type === 'mouseMove')
+    const moves = ev.events.filter((e) => e.type === 'focusChange')
     expect(moves).toHaveLength(2) // move to source + drag to target
     expect(ev.events.some((e) => e.type === 'mouseDown')).toBe(true)
     expect(ev.events.some((e) => e.type === 'mouseUp')).toBe(true)

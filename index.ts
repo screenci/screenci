@@ -39,6 +39,7 @@ export type {
   ElementRect,
   VideoStartEvent,
   InputEvent,
+  FocusChangeEvent,
   MouseMoveEvent,
   MouseDownEvent,
   MouseUpEvent,

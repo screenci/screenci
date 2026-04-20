@@ -250,6 +250,43 @@
         </select>
         <p id="offscreen-cars-status" class="status">No selection</p>
       </div>
+
+      <!-- Nested scroll target -->
+      <div class="group">
+        <h2>Nested scroll target</h2>
+        <div
+          id="nested-scroll-outer"
+          style="
+            height: 240px;
+            overflow: auto;
+            border: 1px solid #999;
+            background: #fafafa;
+          "
+        >
+          <div style="height: 560px; padding: 12px">
+            <div style="height: 180px"></div>
+            <div
+              id="nested-scroll-inner"
+              style="
+                height: 160px;
+                overflow: auto;
+                margin-top: 40px;
+                border: 1px dashed #777;
+                background: #fff;
+              "
+            >
+              <div style="height: 520px; padding: 12px">
+                <div style="height: 240px"></div>
+                <button id="nested-scroll-target" type="button">
+                  Scroll me into place
+                </button>
+                <p style="margin-top: 180px">Deep nested content</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p id="nested-scroll-status" class="status">Not scrolled</p>
+      </div>
     </div>
 
     <!-- Interaction log (manual testing aid) -->

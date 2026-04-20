@@ -5,6 +5,7 @@ import {
   setActiveClickRecorder,
   instrumentLocator,
   instrumentPage,
+  scrollTo,
 } from './instrument.js'
 import {
   autoZoom,
@@ -240,6 +241,251 @@ function makeLocatorMock(
     }
   })
   return mock as unknown as Locator
+}
+
+function makeScrollLocatorMock(options: {
+  rect: { x: number; y: number; width: number; height: number }
+  viewport: { width: number; height: number }
+  scrollSize: { width: number; height: number }
+}) {
+  const scrollCalls: Array<{ top: number; left: number }> = []
+  let scrollY = 0
+  let scrollX = 0
+
+  const win = {
+    get innerHeight() {
+      return options.viewport.height
+    },
+    get innerWidth() {
+      return options.viewport.width
+    },
+    get scrollY() {
+      return scrollY
+    },
+    get scrollX() {
+      return scrollX
+    },
+    document: undefined,
+    scrollTo: vi.fn((coords: { top?: number; left?: number }) => {
+      if (coords.top !== undefined) scrollY = coords.top
+      if (coords.left !== undefined) scrollX = coords.left
+      scrollCalls.push({ top: scrollY, left: scrollX })
+    }),
+  }
+
+  const element = {
+    ownerDocument: {
+      defaultView: win,
+      documentElement: {
+        clientHeight: options.viewport.height,
+        clientWidth: options.viewport.width,
+        scrollHeight: options.scrollSize.height,
+        scrollWidth: options.scrollSize.width,
+      },
+      body: {
+        scrollHeight: options.scrollSize.height,
+        scrollWidth: options.scrollSize.width,
+      },
+    },
+    getBoundingClientRect: () => ({
+      x: options.rect.x - scrollX,
+      y: options.rect.y - scrollY,
+      top: options.rect.y - scrollY,
+      left: options.rect.x - scrollX,
+      width: options.rect.width,
+      height: options.rect.height,
+      right: options.rect.x - scrollX + options.rect.width,
+      bottom: options.rect.y - scrollY + options.rect.height,
+      toJSON: () => undefined,
+    }),
+    scrollIntoView: vi.fn(),
+  }
+
+  const locator = {
+    evaluate: vi.fn(
+      async (fn: (el: typeof element, arg: unknown) => unknown, arg: unknown) =>
+        fn(element, arg)
+    ),
+  }
+
+  return {
+    locator: locator as unknown as Locator,
+    scrollCalls,
+    win,
+  }
+}
+
+function makeNestedScrollLocatorMock() {
+  const scrollCalls: Array<{ target: string; top: number; left: number }> = []
+  let windowScrollY = 0
+  let windowScrollX = 0
+  let outerScrollTop = 0
+  let outerScrollLeft = 0
+  let innerScrollTop = 0
+  let innerScrollLeft = 0
+
+  const autoStyle = {
+    overflowY: 'auto',
+    overflowX: 'auto',
+  } as CSSStyleDeclaration
+  const visibleStyle = {
+    overflowY: 'visible',
+    overflowX: 'visible',
+  } as CSSStyleDeclaration
+
+  const win = {
+    get innerHeight() {
+      return 720
+    },
+    get innerWidth() {
+      return 1280
+    },
+    get scrollY() {
+      return windowScrollY
+    },
+    get scrollX() {
+      return windowScrollX
+    },
+    document: undefined,
+    getComputedStyle: (node: unknown) =>
+      node === outer || node === inner ? autoStyle : visibleStyle,
+    scrollTo: vi.fn((coords: { top?: number; left?: number }) => {
+      if (coords.top !== undefined) windowScrollY = coords.top
+      if (coords.left !== undefined) windowScrollX = coords.left
+      scrollCalls.push({
+        target: 'window',
+        top: windowScrollY,
+        left: windowScrollX,
+      })
+    }),
+  }
+
+  const doc = {
+    defaultView: win,
+    documentElement: {
+      clientHeight: 720,
+      clientWidth: 1280,
+      scrollHeight: 2600,
+      scrollWidth: 1280,
+    },
+    body: {
+      scrollHeight: 2600,
+      scrollWidth: 1280,
+    },
+  }
+
+  const outer = {
+    parentElement: null,
+    ownerDocument: doc,
+    clientHeight: 240,
+    clientWidth: 600,
+    scrollHeight: 560,
+    scrollWidth: 600,
+    get scrollTop() {
+      return outerScrollTop
+    },
+    set scrollTop(value: number) {
+      outerScrollTop = value
+      scrollCalls.push({
+        target: 'outer',
+        top: outerScrollTop,
+        left: outerScrollLeft,
+      })
+    },
+    get scrollLeft() {
+      return outerScrollLeft
+    },
+    set scrollLeft(value: number) {
+      outerScrollLeft = value
+    },
+    getBoundingClientRect: () => ({
+      top: 900 - windowScrollY,
+      left: 40 - windowScrollX,
+      width: 600,
+      height: 240,
+      x: 40 - windowScrollX,
+      y: 900 - windowScrollY,
+      right: 640 - windowScrollX,
+      bottom: 1140 - windowScrollY,
+      toJSON: () => undefined,
+    }),
+  }
+
+  const inner = {
+    parentElement: outer as unknown as Element,
+    ownerDocument: doc,
+    clientHeight: 160,
+    clientWidth: 500,
+    scrollHeight: 420,
+    scrollWidth: 500,
+    get scrollTop() {
+      return innerScrollTop
+    },
+    set scrollTop(value: number) {
+      innerScrollTop = value
+      scrollCalls.push({
+        target: 'inner',
+        top: innerScrollTop,
+        left: innerScrollLeft,
+      })
+    },
+    get scrollLeft() {
+      return innerScrollLeft
+    },
+    set scrollLeft(value: number) {
+      innerScrollLeft = value
+    },
+    getBoundingClientRect: () => ({
+      top: 900 - windowScrollY - outerScrollTop + 180,
+      left: 40 - windowScrollX - outerScrollLeft + 12,
+      width: 500,
+      height: 160,
+      x: 52 - windowScrollX - outerScrollLeft,
+      y: 1080 - windowScrollY - outerScrollTop,
+      right: 552 - windowScrollX - outerScrollLeft,
+      bottom: 1240 - windowScrollY - outerScrollTop,
+      toJSON: () => undefined,
+    }),
+  }
+
+  const target = {
+    parentElement: inner as unknown as Element,
+    ownerDocument: doc,
+    getBoundingClientRect: () => ({
+      top: 900 - windowScrollY - outerScrollTop - innerScrollTop + 180 + 220,
+      left: 40 - windowScrollX - outerScrollLeft - innerScrollLeft + 24,
+      width: 120,
+      height: 40,
+      x: 64 - windowScrollX - outerScrollLeft - innerScrollLeft,
+      y: 1120 - windowScrollY - outerScrollTop - innerScrollTop,
+      right: 184 - windowScrollX - outerScrollLeft - innerScrollLeft,
+      bottom: 1160 - windowScrollY - outerScrollTop - innerScrollTop,
+      toJSON: () => undefined,
+    }),
+  }
+
+  const locator = {
+    evaluate: vi.fn(
+      async (fn: (el: typeof target, arg: unknown) => unknown, arg: unknown) =>
+        fn(target, arg)
+    ),
+  }
+
+  return {
+    locator: locator as unknown as Locator,
+    state: {
+      get windowScrollY() {
+        return windowScrollY
+      },
+      get outerScrollTop() {
+        return outerScrollTop
+      },
+      get innerScrollTop() {
+        return innerScrollTop
+      },
+      scrollCalls,
+    },
+  }
 }
 
 beforeEach(() => {
@@ -577,5 +823,45 @@ describe('instrumentLocator', () => {
     expect(originalCheck).toHaveBeenCalledTimes(1)
     expect(originalUncheck).toHaveBeenCalledTimes(1)
     expect(originalSelectOption).toHaveBeenCalledTimes(1)
+  })
+
+  it('scrolls a locator to the requested viewport height', async () => {
+    const { locator, scrollCalls } = makeScrollLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+
+    const run = scrollTo(locator, 120, 'ease-out')
+    await vi.runAllTimersAsync()
+    await run
+
+    expect(scrollCalls.length).toBeGreaterThan(1)
+    expect(scrollCalls[scrollCalls.length - 1]!.top).toBeCloseTo(780, 0)
+  })
+
+  it('clamps scrolling when the document is too short', async () => {
+    const { locator, scrollCalls } = makeScrollLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 1000 },
+    })
+
+    const run = scrollTo(locator, 120, 'linear')
+    await vi.runAllTimersAsync()
+    await run
+
+    expect(scrollCalls[scrollCalls.length - 1]!.top).toBe(280)
+  })
+
+  it('scrolls nested scroll containers to the target position', async () => {
+    const { locator, state } = makeNestedScrollLocatorMock()
+
+    const run = scrollTo(locator, 120, 'ease-in-out')
+    await vi.runAllTimersAsync()
+    await run
+
+    expect(state.windowScrollY).toBeGreaterThan(0)
+    expect(state.innerScrollTop).toBeGreaterThan(0)
   })
 })

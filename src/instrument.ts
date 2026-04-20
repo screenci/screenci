@@ -88,6 +88,7 @@ function sleep(ms: number): Promise<void> {
 const CLICK_DURATION_MS = 200
 const PRE_ACTION_SLEEP = 50
 const POST_ACTION_SLEEP = 250
+const SCROLL_DURATION_MS = 600
 
 function assertDurationOrSpeed(
   duration: number | undefined,
@@ -265,6 +266,234 @@ export function scrollIntoViewAsync(
         )
       }),
     { behavior, block, timeout, postScrollTimeout }
+  )
+}
+
+/**
+ * Scrolls the locator so its top lands near the requested viewport Y position.
+ * Best effort: if the page cannot scroll far enough, the result is clamped to
+ * the available scroll range. Horizontal position is left to native nearest
+ * scrolling so width is handled opportunistically.
+ */
+export async function scrollTo(
+  locator: Locator,
+  height: number,
+  easing: Easing = 'ease-in-out'
+): Promise<void> {
+  if (!Number.isFinite(height)) {
+    throw new Error('[screenci] scrollTo height must be a finite number.')
+  }
+
+  await locator.evaluate(
+    (element, opts) =>
+      new Promise<void>((resolve) => {
+        const clampValue = (value: number, min: number, max: number): number =>
+          Math.min(max, Math.max(min, value))
+        const scrollDurationMs = 600
+        const evaluateScrollEasingAtT = (t: number, easing: Easing): number => {
+          if (t <= 0) return 0
+          if (t >= 1) return 1
+          switch (easing) {
+            case 'linear':
+              return t
+            case 'ease-in':
+              return t * t * t
+            case 'ease-out':
+              return 1 - (1 - t) * (1 - t) * (1 - t)
+            case 'ease-in-out':
+              return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+            case 'ease-in-strong':
+              return t * t * t * t
+            case 'ease-out-strong':
+              return 1 - (1 - t) * (1 - t) * (1 - t) * (1 - t)
+            case 'ease-in-out-strong':
+              return t < 0.5
+                ? 8 * t * t * t * t
+                : 1 - Math.pow(-2 * t + 2, 4) / 2
+            default: {
+              const _: never = easing
+              throw new Error(`Unknown easing: ${_}`)
+            }
+          }
+        }
+
+        const doc = element.ownerDocument
+        const win = doc.defaultView
+        if (!win) {
+          resolve()
+          return
+        }
+
+        type ScrollRectLike = {
+          top: number
+          left: number
+          width: number
+          height: number
+        }
+
+        type ScrollableElement = {
+          clientHeight: number
+          clientWidth: number
+          scrollHeight: number
+          scrollWidth: number
+          scrollTop: number
+          scrollLeft: number
+          parentElement?: Element | null
+          getBoundingClientRect: () => ScrollRectLike
+        }
+
+        const isScrollableElement = (
+          node: unknown
+        ): node is ScrollableElement => {
+          if (
+            !node ||
+            typeof node !== 'object' ||
+            !('getBoundingClientRect' in node) ||
+            !('clientHeight' in node) ||
+            !('clientWidth' in node) ||
+            !('scrollHeight' in node) ||
+            !('scrollWidth' in node) ||
+            !('scrollTop' in node) ||
+            !('scrollLeft' in node)
+          ) {
+            return false
+          }
+          const scrollableNode = node as ScrollableElement
+          const style = win.getComputedStyle(node as Element)
+          const canScrollY =
+            ['auto', 'scroll', 'overlay'].includes(style.overflowY) &&
+            scrollableNode.scrollHeight > scrollableNode.clientHeight
+          const canScrollX =
+            ['auto', 'scroll', 'overlay'].includes(style.overflowX) &&
+            scrollableNode.scrollWidth > scrollableNode.clientWidth
+          return canScrollY || canScrollX
+        }
+
+        const animate = (
+          startTop: number,
+          startLeft: number,
+          targetTop: number,
+          targetLeft: number,
+          apply: (top: number, left: number) => void
+        ): Promise<void> =>
+          new Promise<void>((done) => {
+            if (targetTop === startTop && targetLeft === startLeft) {
+              done()
+              return
+            }
+
+            const startTime = Date.now()
+            const step = (): void => {
+              const elapsed = Date.now() - startTime
+              const t = clampValue(elapsed / scrollDurationMs, 0, 1)
+              const easedT = evaluateScrollEasingAtT(t, opts.easing)
+              const top = startTop + (targetTop - startTop) * easedT
+              const left = startLeft + (targetLeft - startLeft) * easedT
+              apply(top, left)
+              if (t < 1) {
+                setTimeout(step, 16)
+              } else {
+                done()
+              }
+            }
+
+            step()
+          })
+
+        void (async () => {
+          const viewportHeight =
+            win.innerHeight || doc.documentElement.clientHeight
+          const viewportWidth =
+            win.innerWidth || doc.documentElement.clientWidth
+
+          let nearestScrollable: ScrollableElement | null = null
+          for (let current: Element | null = element.parentElement; current; ) {
+            if (
+              isScrollableElement(current) &&
+              current !== doc.documentElement &&
+              current !== doc.body
+            ) {
+              nearestScrollable = current
+              break
+            }
+            current = current.parentElement
+          }
+
+          if (nearestScrollable) {
+            const containerRect = nearestScrollable.getBoundingClientRect()
+            const elementRect = element.getBoundingClientRect()
+            const startTop = nearestScrollable.scrollTop
+            const startLeft = nearestScrollable.scrollLeft
+            const targetTop = clampValue(
+              startTop + (elementRect.top - containerRect.top - opts.height),
+              0,
+              Math.max(
+                0,
+                nearestScrollable.scrollHeight - nearestScrollable.clientHeight
+              )
+            )
+            const targetLeft = clampValue(
+              startLeft +
+                (elementRect.left +
+                  elementRect.width / 2 -
+                  containerRect.left -
+                  containerRect.width / 2),
+              0,
+              Math.max(
+                0,
+                nearestScrollable.scrollWidth - nearestScrollable.clientWidth
+              )
+            )
+            await animate(
+              startTop,
+              startLeft,
+              targetTop,
+              targetLeft,
+              (top, left) => {
+                nearestScrollable!.scrollTop = top
+                nearestScrollable!.scrollLeft = left
+              }
+            )
+          }
+
+          const rect = element.getBoundingClientRect()
+          const startScrollY = win.scrollY
+          const startScrollX = win.scrollX
+          const scrollHeight = Math.max(
+            doc.documentElement.scrollHeight,
+            doc.body?.scrollHeight ?? 0
+          )
+          const scrollWidth = Math.max(
+            doc.documentElement.scrollWidth,
+            doc.body?.scrollWidth ?? 0
+          )
+          const maxScrollY = Math.max(0, scrollHeight - viewportHeight)
+          const maxScrollX = Math.max(0, scrollWidth - viewportWidth)
+          const targetScrollY = clampValue(
+            startScrollY + (rect.top - opts.height),
+            0,
+            maxScrollY
+          )
+          const targetScrollX = clampValue(
+            startScrollX + (rect.left + rect.width / 2 - viewportWidth / 2),
+            0,
+            maxScrollX
+          )
+
+          await animate(
+            startScrollY,
+            startScrollX,
+            targetScrollY,
+            targetScrollX,
+            (top, left) => {
+              win.scrollTo({ top, left, behavior: 'auto' })
+            }
+          )
+
+          resolve()
+        })()
+      }),
+    { height, easing }
   )
 }
 

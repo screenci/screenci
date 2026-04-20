@@ -92,6 +92,7 @@ export type {
 } from './src/events.js'
 export { hide } from './src/hide.js'
 export { autoZoom } from './src/autoZoom.js'
+export { scrollTo } from './src/instrument.js'
 export { createAssets } from './src/asset.js'
 export type { AssetController, AssetConfig, Assets } from './src/asset.js'
 export type { AssetStartEvent } from './src/events.js'

@@ -2,7 +2,11 @@ import { test, expect } from '@playwright/test'
 import { readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { instrumentPage, setActiveClickRecorder } from '../src/instrument.js'
+import {
+  instrumentPage,
+  scrollTo,
+  setActiveClickRecorder,
+} from '../src/instrument.js'
 import { EventRecorder } from '../src/events.js'
 import type {
   InputEvent,
@@ -782,6 +786,41 @@ test.describe('selectOption instrumentation', () => {
 // ---------------------------------------------------------------------------
 // mouse.move
 // ---------------------------------------------------------------------------
+
+test.describe('scrollTo helper', () => {
+  test('scrolls an off-screen element near the requested viewport height', async ({
+    page,
+  }) => {
+    expect(await scrollY(page)).toBe(0)
+
+    await scrollTo(page.locator('#offscreen-click-button'), 120, 'ease-out')
+
+    const box = await page.locator('#offscreen-click-button').boundingBox()
+    expect(box).not.toBeNull()
+    expect(box!.y).toBeCloseTo(120, 0)
+    expect(await scrollY(page)).toBeGreaterThan(0)
+  })
+
+  test('scrolls nested scroll containers without scrollIntoView', async ({
+    page,
+  }) => {
+    expect(await scrollY(page)).toBe(0)
+
+    await scrollTo(page.locator('#nested-scroll-target'), 120, 'ease-in-out')
+
+    const box = await page.locator('#nested-scroll-target').boundingBox()
+    expect(box).not.toBeNull()
+    expect(box!.y).toBeGreaterThan(0)
+    expect(box!.y).toBeLessThan(800)
+    expect(await scrollY(page)).toBeGreaterThan(0)
+
+    const innerScrollTop = await page
+      .locator('#nested-scroll-inner')
+      .evaluate((el) => (el as HTMLElement).scrollTop)
+
+    expect(innerScrollTop).toBeGreaterThan(0)
+  })
+})
 
 test.describe('mouse.move instrumentation', () => {
   test('records a mouseMove event with startMs, endMs, x, y', async ({

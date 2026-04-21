@@ -1230,7 +1230,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const fillOptions = options ?? {}
 
     const locatorRect = await locator.boundingBox()
-    const elementRect = locatorRect ?? undefined
+    let elementRect = locatorRect ?? undefined
 
     if (fillOptions.hideMouse === true) {
       const cursorVisible = mouseVisibilities.get(page) ?? true
@@ -1246,42 +1246,67 @@ export function instrumentLocator(locator: Locator): Locator {
     }
 
     if (isInsideAutoZoom() && locatorRect) {
+      const correctedScrollResult = await new ZoomScrollHandler(
+        options?.autoZoomOptions
+      ).scroll(locator)
+      const correctedRect = correctedScrollResult.locatorRect ?? locatorRect
+
       const focusStart = Date.now()
-      const zoomDur = getZoomDuration() ?? 0
-      if (zoomDur > 0) await sleep(zoomDur)
+      await locator.evaluate((element) => {
+        if (
+          element instanceof HTMLInputElement ||
+          element instanceof HTMLTextAreaElement
+        ) {
+          element.focus()
+          element.select()
+          return
+        }
+
+        if (element instanceof HTMLElement && element.isContentEditable) {
+          element.focus()
+          const selection = element.ownerDocument.getSelection()
+          if (!selection) return
+          const range = element.ownerDocument.createRange()
+          range.selectNodeContents(element)
+          selection.removeAllRanges()
+          selection.addRange(range)
+        }
+      })
       const focusEnd = Date.now()
+
       innerEvents.push({
         type: 'focusChange',
         startMs: focusStart,
         endMs: focusEnd,
-        x: locatorRect.x + locatorRect.width / 2,
-        y: locatorRect.y + locatorRect.height / 2,
+        x: correctedRect.x + correctedRect.width / 2,
+        y: correctedRect.y + correctedRect.height / 2,
         easing: getZoomEasing() ?? 'ease-in-out',
         focusOnly: true,
-        elementRect: locatorRect,
+        elementRect: correctedRect,
+      })
+      elementRect = correctedRect
+    } else {
+      await locator.evaluate((element) => {
+        if (
+          element instanceof HTMLInputElement ||
+          element instanceof HTMLTextAreaElement
+        ) {
+          element.focus()
+          element.select()
+          return
+        }
+
+        if (element instanceof HTMLElement && element.isContentEditable) {
+          element.focus()
+          const selection = element.ownerDocument.getSelection()
+          if (!selection) return
+          const range = element.ownerDocument.createRange()
+          range.selectNodeContents(element)
+          selection.removeAllRanges()
+          selection.addRange(range)
+        }
       })
     }
-
-    await locator.evaluate((element) => {
-      if (
-        element instanceof HTMLInputElement ||
-        element instanceof HTMLTextAreaElement
-      ) {
-        element.focus()
-        element.select()
-        return
-      }
-
-      if (element instanceof HTMLElement && element.isContentEditable) {
-        element.focus()
-        const selection = element.ownerDocument.getSelection()
-        if (!selection) return
-        const range = element.ownerDocument.createRange()
-        range.selectNodeContents(element)
-        selection.removeAllRanges()
-        selection.addRange(range)
-      }
-    })
 
     const duration = fillOptions.duration ?? 1000
     const delay = value.length > 0 ? duration / value.length : 0

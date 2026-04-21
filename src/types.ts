@@ -257,7 +257,7 @@ export type AutoZoomOptions = {
   duration?: number
   /** 0–1: fraction of output dimensions visible in the zoomed viewport (default 0.5) */
   amount?: number
-  /** 0–1: camera centering inside the zoomed viewport. */
+  /** 0–1: visibility bias inside the zoomed viewport; 0 = barely fit, 1 = centered. */
   centering?: number
   /** When false, the camera never zooms out beyond the initial amount to fit
    *  large element rects. Defaults to true. */

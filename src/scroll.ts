@@ -93,9 +93,14 @@ function isScrollableElement(node: unknown): node is ScrollableElement {
  * Best-effort scroll helper used by instrumentation.
  * Scrolls the nearest nested scroll container first, then the page viewport,
  * and returns the final bounding rect if it can be measured.
+ *
+ * `centering` uses the same 0..1 meaning as the rendering pipeline:
+ * `0` keeps the rect just inside the visible area, while `1` lets the rect
+ * be centered as much as the chosen `amount` allows.
  */
 type ScrollToOptions = {
   amount: number
+  /** 0..1 visibility bias: 0 = barely visible, 1 = centered. */
   centering: number
   allowZoomingOut: boolean
   easing?: Easing
@@ -144,6 +149,61 @@ export async function scrollTo(
         const durationMs = opts.duration ?? 600
         const clampValue = (value: number, min: number, max: number): number =>
           Math.min(max, Math.max(min, value))
+        const resolveDesiredOffset = (params: {
+          rectSize: number
+          viewportSize: number
+          amount: number
+          centering: number
+          allowZoomingOut: boolean
+          rectWidth: number
+          rectHeight: number
+          viewportWidth: number
+          viewportHeight: number
+          legacyHeight: number | undefined
+        }): number => {
+          const {
+            rectSize,
+            viewportSize,
+            amount,
+            centering,
+            allowZoomingOut,
+            rectWidth,
+            rectHeight,
+            viewportWidth,
+            viewportHeight,
+            legacyHeight,
+          } = params
+
+          if (legacyHeight !== undefined) {
+            return clampValue(
+              Math.min(legacyHeight, viewportSize / 2 - rectSize / 2),
+              0,
+              Math.max(0, viewportSize - rectSize)
+            )
+          }
+
+          const effectiveAmount = clampValue(
+            Math.max(
+              allowZoomingOut
+                ? Math.max(
+                    amount,
+                    rectWidth / Math.max(1, viewportWidth),
+                    rectHeight / Math.max(1, viewportHeight)
+                  )
+                : amount,
+              0
+            ),
+            0,
+            1
+          )
+          const visibleSize = viewportSize * effectiveAmount
+          const cropStart = Math.max(0, (viewportSize - visibleSize) / 2)
+          return clampValue(
+            cropStart + ((visibleSize - rectSize) * centering) / 2,
+            0,
+            Math.max(0, viewportSize - rectSize)
+          )
+        }
         const evaluateScrollEasingAtT = (t: number, easing: Easing): number => {
           if (t <= 0) return 0
           if (t >= 1) return 1
@@ -253,82 +313,30 @@ export async function scrollTo(
             elementRect.left - accumulatedNestedDeltaLeft
           const startTop = ancestor.scrollTop
           const startLeft = ancestor.scrollLeft
-          const desiredTopWithinContainer =
-            opts.legacyHeight !== undefined
-              ? clampValue(
-                  Math.min(
-                    opts.legacyHeight,
-                    ancestor.clientHeight / 2 - elementRect.height / 2
-                  ),
-                  0,
-                  Math.max(0, ancestor.clientHeight - elementRect.height)
-                )
-              : (() => {
-                  const effectiveAmount = clampValue(
-                    Math.max(
-                      opts.allowZoomingOut
-                        ? Math.max(
-                            opts.amount,
-                            elementRect.width /
-                              Math.max(1, ancestor.clientWidth),
-                            elementRect.height /
-                              Math.max(1, ancestor.clientHeight)
-                          )
-                        : opts.amount,
-                      0
-                    ),
-                    0,
-                    1
-                  )
-                  const visibleHeight = ancestor.clientHeight * effectiveAmount
-                  const cropTop = Math.max(
-                    0,
-                    (ancestor.clientHeight - visibleHeight) / 2
-                  )
-                  return clampValue(
-                    cropTop +
-                      ((visibleHeight - elementRect.height) * opts.centering) /
-                        2,
-                    0,
-                    Math.max(0, ancestor.clientHeight - elementRect.height)
-                  )
-                })()
-          const desiredLeftWithinContainer =
-            opts.legacyHeight !== undefined
-              ? clampValue(
-                  ancestor.clientWidth / 2 - elementRect.width / 2,
-                  0,
-                  Math.max(0, ancestor.clientWidth - elementRect.width)
-                )
-              : (() => {
-                  const effectiveAmount = clampValue(
-                    Math.max(
-                      opts.allowZoomingOut
-                        ? Math.max(
-                            opts.amount,
-                            elementRect.width /
-                              Math.max(1, ancestor.clientWidth),
-                            elementRect.height /
-                              Math.max(1, ancestor.clientHeight)
-                          )
-                        : opts.amount,
-                      0
-                    ),
-                    0,
-                    1
-                  )
-                  const visibleWidth = ancestor.clientWidth * effectiveAmount
-                  const cropLeft = Math.max(
-                    0,
-                    (ancestor.clientWidth - visibleWidth) / 2
-                  )
-                  return clampValue(
-                    cropLeft +
-                      ((visibleWidth - elementRect.width) * opts.centering) / 2,
-                    0,
-                    Math.max(0, ancestor.clientWidth - elementRect.width)
-                  )
-                })()
+          const desiredTopWithinContainer = resolveDesiredOffset({
+            rectSize: elementRect.height,
+            viewportSize: ancestor.clientHeight,
+            amount: opts.amount,
+            centering: opts.centering,
+            allowZoomingOut: opts.allowZoomingOut,
+            rectWidth: elementRect.width,
+            rectHeight: elementRect.height,
+            viewportWidth: ancestor.clientWidth,
+            viewportHeight: ancestor.clientHeight,
+            legacyHeight: opts.legacyHeight,
+          })
+          const desiredLeftWithinContainer = resolveDesiredOffset({
+            rectSize: elementRect.width,
+            viewportSize: ancestor.clientWidth,
+            amount: opts.amount,
+            centering: opts.centering,
+            allowZoomingOut: opts.allowZoomingOut,
+            rectWidth: elementRect.width,
+            rectHeight: elementRect.height,
+            viewportWidth: ancestor.clientWidth,
+            viewportHeight: ancestor.clientHeight,
+            legacyHeight: opts.legacyHeight,
+          })
           const targetTop = clampValue(
             startTop +
               (projectedRectTop -
@@ -369,79 +377,42 @@ export async function scrollTo(
           doc.documentElement.scrollWidth,
           doc.body?.scrollWidth ?? 0
         )
-        const desiredTop =
-          opts.legacyHeight !== undefined
-            ? opts.legacyHeight
-            : (() => {
-                const effectiveAmount = clampValue(
-                  Math.max(
-                    opts.allowZoomingOut
-                      ? Math.max(
-                          opts.amount,
-                          rect.width / Math.max(1, viewportWidth),
-                          rect.height / Math.max(1, viewportHeight)
-                        )
-                      : opts.amount,
-                    0
-                  ),
-                  0,
-                  1
-                )
-                const visibleHeight = viewportHeight * effectiveAmount
-                const cropTop = Math.max(
-                  0,
-                  (viewportHeight - visibleHeight) / 2
-                )
-                return clampValue(
-                  cropTop +
-                    ((visibleHeight - rect.height) * opts.centering) / 2,
-                  0,
-                  Math.max(0, viewportHeight - rect.height)
-                )
-              })()
-        const desiredLeft =
-          opts.legacyHeight !== undefined
-            ? clampValue(
-                viewportWidth / 2 - rect.width / 2,
-                0,
-                Math.max(0, viewportWidth - rect.width)
-              )
-            : (() => {
-                const effectiveAmount = clampValue(
-                  Math.max(
-                    opts.allowZoomingOut
-                      ? Math.max(
-                          opts.amount,
-                          rect.width / Math.max(1, viewportWidth),
-                          rect.height / Math.max(1, viewportHeight)
-                        )
-                      : opts.amount,
-                    0
-                  ),
-                  0,
-                  1
-                )
-                const visibleWidth = viewportWidth * effectiveAmount
-                const cropLeft = Math.max(0, (viewportWidth - visibleWidth) / 2)
-                return clampValue(
-                  cropLeft + ((visibleWidth - rect.width) * opts.centering) / 2,
-                  0,
-                  Math.max(0, viewportWidth - rect.width)
-                )
-              })()
+        const pageStartY = win.scrollY
+        const pageStartX = win.scrollX
+        const desiredTop = resolveDesiredOffset({
+          rectSize: rect.height,
+          viewportSize: viewportHeight,
+          amount: opts.amount,
+          centering: opts.centering,
+          allowZoomingOut: opts.allowZoomingOut,
+          rectWidth: rect.width,
+          rectHeight: rect.height,
+          viewportWidth: viewportWidth,
+          viewportHeight: viewportHeight,
+          legacyHeight: opts.legacyHeight,
+        })
+        const desiredLeft = resolveDesiredOffset({
+          rectSize: rect.width,
+          viewportSize: viewportWidth,
+          amount: opts.amount,
+          centering: opts.centering,
+          allowZoomingOut: opts.allowZoomingOut,
+          rectWidth: rect.width,
+          rectHeight: rect.height,
+          viewportWidth: viewportWidth,
+          viewportHeight: viewportHeight,
+          legacyHeight: opts.legacyHeight,
+        })
         const targetScrollY = clampValue(
-          win.scrollY + (projectedRectTop - desiredTop),
+          pageStartY + (projectedRectTop - desiredTop),
           0,
           Math.max(0, scrollHeight - viewportHeight)
         )
         const targetScrollX = clampValue(
-          win.scrollX + (projectedRectLeft - desiredLeft),
+          pageStartX + (projectedRectLeft - desiredLeft),
           0,
           Math.max(0, scrollWidth - viewportWidth)
         )
-
-        const pageStartY = win.scrollY
-        const pageStartX = win.scrollX
         const needsNestedScroll = ancestorScrollPlans.some(
           (plan) =>
             plan.targetTop !== plan.startTop ||

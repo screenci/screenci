@@ -238,6 +238,76 @@ describe('scrollTo', () => {
     expect(result.locatorRect?.y).toBeCloseTo(212, 0)
   })
 
+  it('treats centering 1 as centered and centering 0 as barely visible', async () => {
+    const centeredLocator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+    const minimalLocator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+
+    const centeredPromise = new ZoomScrollHandler({
+      amount: 0.5,
+      centering: 1,
+      allowZoomingOut: false,
+    }).scroll(centeredLocator)
+    const minimalPromise = new ZoomScrollHandler({
+      amount: 0.5,
+      centering: 0,
+      allowZoomingOut: false,
+    }).scroll(minimalLocator)
+
+    await vi.runAllTimersAsync()
+    const centeredResult = await centeredPromise
+    const minimalResult = await minimalPromise
+
+    expect(centeredResult.locatorRect?.y).toBeGreaterThan(
+      minimalResult.locatorRect?.y ?? 0
+    )
+  })
+
+  it('does not scroll when centering is 0 and the rect is already visible', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 100, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+
+    const promise = new ZoomScrollHandler({
+      amount: 0.5,
+      centering: 0,
+      allowZoomingOut: false,
+    }).scroll(locator)
+
+    await vi.runAllTimersAsync()
+    const result = await promise
+
+    expect(result.locatorRect?.y).toBeCloseTo(100, 0)
+  })
+
+  it('keeps the requested padding when allowZoomingOut expands the visible area', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 1200, height: 600 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2200 },
+    })
+
+    const promise = new ZoomScrollHandler({
+      amount: 0.5,
+      centering: 0.25,
+      allowZoomingOut: true,
+    }).scroll(locator)
+
+    await vi.runAllTimersAsync()
+    const result = await promise
+
+    expect(result.locatorRect?.y).toBeCloseTo(32, 0)
+  })
+
   it('keeps later autoZoom interactions scrolling during mouse movement', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },

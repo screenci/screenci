@@ -106,7 +106,7 @@ export type RenderOptions = {
     /** 0-1: 0=nothing, 1=length of shorter side of the frame */
     padding?: number
   }
-  cursor?: {
+  mouse?: {
     /** 0-1: 0=missing, 1=height of video */
     size?: number
   }
@@ -157,7 +157,7 @@ export const RENDER_OPTIONS_DEFAULTS = {
     padding: 0.04,
     dropShadow: 1,
   },
-  cursor: {
+  mouse: {
     size: 0.05,
   },
   output: {
@@ -190,7 +190,7 @@ export type ResolvedRenderOptions = {
     corner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
     padding: number
   }
-  cursor: {
+  mouse: {
     size: number
   }
   output: {

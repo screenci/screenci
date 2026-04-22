@@ -583,8 +583,8 @@ export class EventRecorder implements IEventRecorder {
           RENDER_OPTIONS_DEFAULTS.narration.dropShadow
         ),
       },
-      cursor: {
-        size: ro?.cursor?.size ?? RENDER_OPTIONS_DEFAULTS.cursor.size,
+      mouse: {
+        size: ro?.mouse?.size ?? RENDER_OPTIONS_DEFAULTS.mouse.size,
       },
       output: {
         aspectRatio:

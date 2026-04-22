@@ -353,8 +353,8 @@ describe('EventRecorder', () => {
       )
       expect((ro.narration as Record<string, unknown>).padding).toBe(0.04)
       expect((ro.narration as Record<string, unknown>).dropShadow).toBe(1)
-      // cursor default
-      expect((ro.cursor as Record<string, unknown>).size).toBe(0.05)
+      // mouse default
+      expect((ro.mouse as Record<string, unknown>).size).toBe(0.05)
     })
 
     it('merges explicit values with defaults', async () => {

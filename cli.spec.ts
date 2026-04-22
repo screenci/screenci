@@ -1377,7 +1377,7 @@ describe('CLI', () => {
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining(`my-project/README.md`),
-        expect.stringContaining('https://screenci.com/intro/')
+        expect.stringContaining('https://screenci.com/docs/intro/')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining(`my-project/Dockerfile`),
@@ -1545,6 +1545,7 @@ describe('CLI', () => {
     it('should exit if target directory already exists', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(true)
+      process.env.SCREENCI_SECRET = 'already-set-secret'
 
       const { main } = await import('./cli')
       await expect(main()).rejects.toThrow('process.exit called')
@@ -1553,6 +1554,40 @@ describe('CLI', () => {
         'Error: Directory "my-project" already exists'
       )
       expect(processExitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('should fetch auth before checking if the target directory exists', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(true)
+      delete process.env.SCREENCI_SECRET
+
+      mockCreateHttpServer.mockImplementation(
+        (handler: (req: unknown, res: unknown) => void) => {
+          const server = {
+            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+              cb()
+              const req = { url: '/callback?secret=auth-secret-123' }
+              const res = {
+                writeHead: vi.fn(),
+                end: vi.fn(),
+              }
+              handler(req, res)
+            }),
+            close: vi.fn(),
+            address: vi.fn().mockReturnValue({ port: 12345 }),
+            on: vi.fn(),
+          }
+          return server
+        }
+      )
+
+      const { main } = await import('./cli')
+      await expect(main()).rejects.toThrow('process.exit called')
+
+      expect(mockCreateHttpServer).toHaveBeenCalled()
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        'Error: Directory "my-project" already exists'
+      )
     })
 
     it('should log success message with directory name after init', async () => {
@@ -1590,7 +1625,7 @@ describe('CLI', () => {
         '  Read README.md for setup and recording flow'
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        '  Docs: https://screenci.com/intro/'
+        '  Docs: https://screenci.com/docs/intro/'
       )
     })
 
@@ -1642,6 +1677,10 @@ describe('CLI', () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
       delete process.env.SCREENCI_SECRET
+      mockConfirm.mockImplementationOnce(async () => {
+        expect(mockCreateHttpServer).toHaveBeenCalled()
+        return true
+      })
 
       // Simulate the HTTP server calling the request handler with a secret
       mockCreateHttpServer.mockImplementation(

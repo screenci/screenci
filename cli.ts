@@ -1341,7 +1341,7 @@ Write video scripts in \`videos/*.video.ts\`. Each \`video(...)\` scenario opens
 
 Learn more in the ScreenCI docs:
 
-https://screenci.com/intro/
+https://screenci.com/docs/intro/
 `
 }
 
@@ -1531,17 +1531,6 @@ async function runInit(
   const dirName = getProjectDirName(projectName)
   const projectDir = resolve(process.cwd(), dirName)
 
-  if (existsSync(projectDir)) {
-    logger.error(`Error: Directory "${dirName}" already exists`)
-    process.exit(1)
-  }
-
-  const shouldAddPlaywrightCli = await confirm({
-    message:
-      'Do you want to write videos with an AI agent based on a URL? playwright-cli is recommended and will be added as a dev dependency.',
-    default: true,
-  })
-
   // Authenticate before creating any files
   let secret = process.env.SCREENCI_SECRET
   if (!secret) {
@@ -1560,6 +1549,17 @@ async function runInit(
       )
     }
   }
+
+  if (existsSync(projectDir)) {
+    logger.error(`Error: Directory "${dirName}" already exists`)
+    process.exit(1)
+  }
+
+  const shouldAddPlaywrightCli = await confirm({
+    message:
+      'Do you want to write videos with an AI agent based on a URL? playwright-cli is recommended and will be added as a dev dependency.',
+    default: true,
+  })
 
   const skillsArgs = [
     '--yes',
@@ -1653,7 +1653,7 @@ async function runInit(
   logger.info('Next steps:')
   logger.info(`  cd ${dirName}`)
   logger.info('  Read README.md for setup and recording flow')
-  logger.info('  Docs: https://screenci.com/intro/')
+  logger.info('  Docs: https://screenci.com/docs/intro/')
   logger.info('  npx screenci test')
   logger.info('  npx screenci record')
 }

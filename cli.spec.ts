@@ -713,7 +713,7 @@ describe('CLI', () => {
       )
       expect(loggerErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining(
-          'https://screenci.com/guides/getting-started/#prerequisites'
+          'https://screenci.com/docs/guides/getting-started/#prerequisites'
         )
       )
       expect(processExitSpy).toHaveBeenCalledWith(1)
@@ -731,20 +731,42 @@ describe('CLI', () => {
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })
 
-    it('should warn when preferred podman version is below the recommendation', async () => {
+    it('should warn when preferred podman version is below the major limit', async () => {
       mockSpawnSync.mockReturnValue({
         status: 0,
         error: undefined,
-        stdout: 'podman version 4.9.3',
+        stdout: 'podman version 2.9.9',
         stderr: '',
       })
 
       const { detectContainerRuntime } = await import('./cli')
 
       expect(detectContainerRuntime()).toBe('podman')
+      expect(loggerWarnSpy).toHaveBeenCalledTimes(1)
       expect(loggerWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('podman 5+ recommended')
+        expect.stringContaining(
+          'Your podman version (podman version 2.9.9) is quite old'
+        )
       )
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'https://screenci.com/docs/guides/getting-started/#prerequisites'
+        )
+      )
+    })
+
+    it('should not warn when podman is version 3.4.4', async () => {
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        error: undefined,
+        stdout: 'podman version 3.4.4',
+        stderr: '',
+      })
+
+      const { detectContainerRuntime } = await import('./cli')
+
+      expect(detectContainerRuntime()).toBe('podman')
+      expect(loggerWarnSpy).not.toHaveBeenCalled()
     })
 
     it('should not warn about docker when podman is available and up to date', async () => {
@@ -760,6 +782,23 @@ describe('CLI', () => {
       expect(detectContainerRuntime()).toBe('podman')
       expect(loggerWarnSpy).not.toHaveBeenCalled()
       expect(mockSpawnSync).toHaveBeenCalledTimes(1)
+    })
+
+    it('should not warn when docker is version 27.5.1', async () => {
+      mockSpawnSync
+        .mockReturnValueOnce({ status: 1, error: undefined })
+        .mockReturnValueOnce({
+          status: 0,
+          error: undefined,
+          stdout: 'Docker version 27.5.1, build abc123',
+          stderr: '',
+        })
+
+      const { detectContainerRuntime } = await import('./cli')
+
+      expect(detectContainerRuntime()).toBe('docker')
+      expect(loggerWarnSpy).not.toHaveBeenCalled()
+      expect(mockSpawnSync).toHaveBeenCalledTimes(2)
     })
 
     it('should return forced docker when docker is available', async () => {
@@ -1653,26 +1692,34 @@ describe('CLI', () => {
       )
       expect(loggerWarnSpy).toHaveBeenCalledWith(
         expect.stringContaining(
-          'https://screenci.com/guides/getting-started/#prerequisites'
+          'https://screenci.com/docs/guides/getting-started/#prerequisites'
         )
       )
     })
 
-    it('should warn during init when podman is present but below version 5', async () => {
+    it('should warn during init when podman is present but below version 3', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
       mockSpawnSync.mockReturnValue({
         status: 0,
         error: undefined,
-        stdout: 'podman version 4.9.3',
+        stdout: 'podman version 2.9.9',
         stderr: '',
       })
 
       const { main } = await import('./cli')
       await main()
 
+      expect(loggerWarnSpy).toHaveBeenCalledTimes(1)
       expect(loggerWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('podman 5+ recommended')
+        expect.stringContaining(
+          'Your podman version (podman version 2.9.9) is quite old'
+        )
+      )
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'https://screenci.com/docs/guides/getting-started/#prerequisites'
+        )
       )
     })
 
@@ -1783,7 +1830,9 @@ describe('CLI', () => {
         const { main } = await import('./cli')
         await expect(main()).rejects.toThrow('process.exit called')
         expect(loggerErrorSpy).toHaveBeenCalledWith(
-          expect.stringContaining('Node.js 18 or higher is required')
+          expect.stringContaining(
+            'Node.js 18 or higher is required (current: v16.20.0)'
+          )
         )
         expect(processExitSpy).toHaveBeenCalledWith(1)
       } finally {

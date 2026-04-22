@@ -196,15 +196,15 @@ function parseDockerfileVersion(dockerfilePath: string): string {
 }
 
 const CONTAINER_RUNTIME_DOCS_URL =
-  'https://screenci.com/guides/getting-started/#prerequisites'
+  'https://screenci.com/docs/guides/getting-started/#prerequisites'
 
 function prerequisitesMessage(): string {
   return `See prerequisites: ${pc.blue(CONTAINER_RUNTIME_DOCS_URL)}`
 }
 
 const MIN_CONTAINER_RUNTIME_MAJOR_VERSION = {
-  podman: 5,
-  docker: 28,
+  podman: 3,
+  docker: 27,
 } as const
 
 type ContainerRuntimeName = keyof typeof MIN_CONTAINER_RUNTIME_MAJOR_VERSION
@@ -268,9 +268,8 @@ function warnIfContainerRuntimeVersionIsOld(
     runtimeCheck.majorVersion < minimumVersion
   ) {
     logger.warn(
-      `${runtimeCheck.runtime} ${minimumVersion}+ recommended (detected: ${runtimeCheck.version}). Most likely this still works, continuing.`
+      `Your ${runtimeCheck.runtime} version (${runtimeCheck.version}) is quite old. We recommend updating. ${prerequisitesMessage()}`
     )
-    logger.warn(prerequisitesMessage())
   }
 }
 

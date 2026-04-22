@@ -1325,23 +1325,19 @@ This project uses ScreenCI + Playwright to create and upload polished product vi
 
 ## How video recording works
 
-Write video scripts in \`videos/*.video.ts\`. Each \`video(...)\` scenario opens your app, performs interactions, and ScreenCI renders the final video output.
+Write video scripts in \`videos/*.video.ts\` and use \`video(...)\` calls to create product videos. These are very similar to Playwright \`.test.ts\` and \`test(...)\` calls.
+
+Learn more: https://screenci.com/intro/
 
 ## Quick start
 
 1. Run tests in UI mode:
 
-   \`npx screenci test\`
+   \`npx screenci test\` or \`npx screenci test --ui\`
 
 2. Record and upload videos:
 
    \`npx screenci record\`
-
-## Documentation
-
-Learn more in the ScreenCI docs:
-
-https://screenci.com/docs/intro/
 `
 }
 

@@ -31,6 +31,8 @@ AI assistants can use this file to quickly understand ScreenCI's functionality a
 
 ScreenCI offers a Model Context Protocol server that allows AI assistants like Claude to directly interact with your ScreenCI projects.
 
+Before setting up the MCP server, run `npx screenci init` in your project and complete the browser login flow. That fetches your `SCREENCI_SECRET` and saves it to `.env` automatically.
+
 ### Features
 
 The ScreenCI MCP server provides:
@@ -42,7 +44,7 @@ The ScreenCI MCP server provides:
 
 ### Installation
 
-Install the ScreenCI MCP server using npm:
+After you have `SCREENCI_SECRET`, install the ScreenCI MCP server using npm:
 
 ```bash
 npm install -g @screenci/mcp-server
@@ -57,12 +59,14 @@ Or add it to your Claude Desktop configuration:
       "command": "npx",
       "args": ["-y", "@screenci/mcp-server"],
       "env": {
-        "SCREENCI_API_KEY": "your-api-key-here"
+        "SCREENCI_SECRET": "your-screenci-secret-here"
       }
     }
   }
 }
 ```
+
+If you already initialized a screenci project, copy the value from that project's `.env` file.
 
 ### Usage
 

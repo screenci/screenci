@@ -1513,20 +1513,6 @@ async function runInit(
   checkNodeVersion()
   checkContainerRuntimeForInit()
 
-  let projectName = projectNameArg?.trim()
-
-  if (!projectName) {
-    projectName = await promptProjectName()
-  }
-
-  if (!projectName) {
-    logger.error('Error: Project name is required')
-    process.exit(1)
-  }
-
-  const dirName = getProjectDirName(projectName)
-  const projectDir = resolve(process.cwd(), dirName)
-
   // Authenticate before creating any files
   let secret = process.env.SCREENCI_SECRET
   if (!secret) {
@@ -1545,6 +1531,20 @@ async function runInit(
       )
     }
   }
+
+  let projectName = projectNameArg?.trim()
+
+  if (!projectName) {
+    projectName = await promptProjectName()
+  }
+
+  if (!projectName) {
+    logger.error('Error: Project name is required')
+    process.exit(1)
+  }
+
+  const dirName = getProjectDirName(projectName)
+  const projectDir = resolve(process.cwd(), dirName)
 
   if (existsSync(projectDir)) {
     logger.error(`Error: Directory "${dirName}" already exists`)

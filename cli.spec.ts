@@ -1528,6 +1528,41 @@ describe('CLI', () => {
       )
     })
 
+    it('should authenticate before prompting for project name', async () => {
+      process.argv = ['node', 'cli.js', 'init']
+      mockExistsSync.mockReturnValue(false)
+      delete process.env.SCREENCI_SECRET
+      mockInput.mockResolvedValue('prompted-project')
+
+      mockCreateHttpServer.mockImplementation(
+        (handler: (req: unknown, res: unknown) => void) => {
+          expect(mockInput).not.toHaveBeenCalled()
+
+          const server = {
+            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+              cb()
+              const req = { url: '/callback?secret=auth-secret-123' }
+              const res = {
+                writeHead: vi.fn(),
+                end: vi.fn(),
+              }
+              handler(req, res)
+            }),
+            close: vi.fn(),
+            address: vi.fn().mockReturnValue({ port: 12345 }),
+            on: vi.fn(),
+          }
+          return server
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockInput).toHaveBeenCalled()
+      expect(mockCreateHttpServer).toHaveBeenCalled()
+    })
+
     it('should exit if project name is empty after prompt', async () => {
       process.argv = ['node', 'cli.js', 'init']
       mockExistsSync.mockReturnValue(false)

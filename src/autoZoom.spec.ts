@@ -274,7 +274,7 @@ describe('autoZoom', () => {
     })
   })
 
-  describe('duration sleep behaviour', () => {
+  describe('delay behaviour', () => {
     let recorder: IEventRecorder
 
     beforeEach(() => {
@@ -282,7 +282,7 @@ describe('autoZoom', () => {
       setActiveAutoZoomRecorder(recorder)
     })
 
-    it('sleeps duration ms after addAutoZoomEnd', async () => {
+    it('waits for preZoomDelay before the callback and postZoomDelay after addAutoZoomEnd', async () => {
       const order: string[] = []
       vi.mocked(recorder.addAutoZoomEnd).mockImplementation(() => {
         order.push('addAutoZoomEnd')
@@ -292,34 +292,33 @@ describe('autoZoom', () => {
         () => {
           order.push('callback')
         },
-        { duration: 500, postZoomInOutDelay: 0 }
+        { preZoomDelay: 500, postZoomDelay: 250 }
       )
 
-      // pre-end sleep (500ms) + post-end sleep (duration+postZoomInOutDelay = 500ms)
-      await vi.advanceTimersByTimeAsync(1000)
+      await vi.advanceTimersByTimeAsync(500)
+      expect(order).toEqual(['callback', 'addAutoZoomEnd'])
+
+      await vi.advanceTimersByTimeAsync(250)
       await p
 
       expect(order).toEqual(['callback', 'addAutoZoomEnd'])
     })
 
-    it('sleeps remaining time before addAutoZoomEnd when fn finishes early', async () => {
+    it('does not wait for duration before addAutoZoomEnd', async () => {
       const endTimes: number[] = []
       vi.mocked(recorder.addAutoZoomEnd).mockImplementation(() => {
         endTimes.push(Date.now())
       })
 
       const startTime = Date.now()
-      const p = autoZoom(() => {}, { duration: 300, postZoomInOutDelay: 0 })
-
-      // pre-end (300ms) + post-end (300ms)
-      await vi.advanceTimersByTimeAsync(600)
+      const p = autoZoom(() => {}, { duration: 300, postZoomDelay: 0 })
       await p
 
-      // addAutoZoomEnd should have been called at or after startTime + 300ms
-      expect(endTimes[0]).toBeGreaterThanOrEqual(startTime + 300)
+      expect(endTimes).toHaveLength(1)
+      expect(endTimes[0]).toBe(startTime)
     })
 
-    it('does not add extra pre-end sleep when fn already takes longer than duration + postZoomInOutDelay', async () => {
+    it('keeps the callback running before postZoomDelay elapses', async () => {
       const order: string[] = []
       vi.mocked(recorder.addAutoZoomEnd).mockImplementation(() => {
         order.push('addAutoZoomEnd')
@@ -328,15 +327,16 @@ describe('autoZoom', () => {
       const p = autoZoom(
         async () => {
           order.push('callback-start')
-          // fn takes 900ms; duration=300 + postZoomInOutDelay=0 = 300ms, already exceeded
           await vi.advanceTimersByTimeAsync(900)
           order.push('callback-end')
         },
-        { duration: 300, postZoomInOutDelay: 0 }
+        { preZoomDelay: 300, postZoomDelay: 0 }
       )
 
-      // post-end sleep: duration+postZoomInOutDelay = 300ms
       await vi.advanceTimersByTimeAsync(300)
+      expect(order).toEqual(['callback-start'])
+
+      await vi.advanceTimersByTimeAsync(900)
       await p
 
       expect(order).toEqual([
@@ -346,29 +346,28 @@ describe('autoZoom', () => {
       ])
     })
 
-    it('includes postZoomInOutDelay in the pre-end wait', async () => {
+    it('supports preZoomDelay and postZoomDelay together', async () => {
       const callTimes: number[] = []
       vi.mocked(recorder.addAutoZoomEnd).mockImplementation(() => {
         callTimes.push(Date.now())
       })
 
       const startTime = Date.now()
-      // duration=0, postZoomInOutDelay=400 → pre-end wait = 0+400 = 400ms
-      const p = autoZoom(() => {}, { duration: 0, postZoomInOutDelay: 400 })
+      const p = autoZoom(() => {}, { preZoomDelay: 400, postZoomDelay: 200 })
 
-      // Advance only partway — addAutoZoomEnd should not be called yet
       await vi.advanceTimersByTimeAsync(200)
       expect(callTimes).toHaveLength(0)
 
-      // Advance past the full pre-end wait (400ms) + post-end (duration+postZoomInOutDelay = 400ms)
-      await vi.advanceTimersByTimeAsync(600)
+      await vi.advanceTimersByTimeAsync(200)
+      expect(callTimes).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(200)
       await p
 
       expect(callTimes).toHaveLength(1)
       expect(callTimes[0]).toBeGreaterThanOrEqual(startTime + 400)
     })
 
-    it('skips pre-end sleep when fn already consumed duration + postZoomInOutDelay', async () => {
+    it('does not delay addAutoZoomEnd when the callback takes longer than preZoomDelay', async () => {
       const order: string[] = []
       vi.mocked(recorder.addAutoZoomEnd).mockImplementation(() => {
         order.push('addAutoZoomEnd')
@@ -377,15 +376,16 @@ describe('autoZoom', () => {
       const p = autoZoom(
         async () => {
           order.push('callback-start')
-          // fn takes 800ms; duration=200 + postZoomInOutDelay=300 = 500ms, already exceeded
           await vi.advanceTimersByTimeAsync(800)
           order.push('callback-end')
         },
-        { duration: 200, postZoomInOutDelay: 300 }
+        { preZoomDelay: 200, postZoomDelay: 0 }
       )
 
-      // post-end sleep: duration+postZoomInOutDelay = 200+300 = 500ms
-      await vi.advanceTimersByTimeAsync(500)
+      await vi.advanceTimersByTimeAsync(200)
+      expect(order).toEqual(['callback-start'])
+
+      await vi.advanceTimersByTimeAsync(800)
       await p
 
       expect(order).toEqual([

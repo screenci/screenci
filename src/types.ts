@@ -265,7 +265,10 @@ export type AutoZoomOptions = {
   /** Delay in milliseconds to hold the zoomed-in state after the zoom-in
    *  animation completes, and to hold the full view after the zoom-out
    *  animation completes. Defaults to 500. */
+  /** @deprecated Use `postZoomDelay` instead. */
   postZoomInOutDelay?: number
+  preZoomDelay?: number
+  postZoomDelay?: number
 }
 
 export type MouseMoveTimingOption =

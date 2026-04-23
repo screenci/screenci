@@ -130,7 +130,6 @@ export async function autoZoom(
   if (activeRecorder !== null) {
     activeRecorder.addAutoZoomStart(options)
   }
-  const zoomStartTime = Date.now()
   insideAutoZoom = true
   currentZoomDuration = options?.duration ?? DEFAULT_ZOOM_DURATION
   currentZoomEasing = (options?.easing ?? DEFAULT_ZOOM_EASING) as Easing
@@ -138,9 +137,21 @@ export async function autoZoom(
   currentZoomCentering = resolveCenteringValue(options?.centering) ?? null
   currentAllowZoomingOut = options?.allowZoomingOut ?? null
   currentPostZoomInOutDelay =
-    options?.postZoomInOutDelay ?? DEFAULT_POST_ZOOM_IN_OUT_DELAY
+    options?.postZoomDelay ??
+    options?.postZoomInOutDelay ??
+    DEFAULT_POST_ZOOM_IN_OUT_DELAY
+  const preZoomDelay = options?.preZoomDelay ?? 0
   try {
+    if (preZoomDelay > 0) {
+      await sleep(preZoomDelay)
+    }
     await fn()
+    if (activeRecorder !== null) {
+      activeRecorder.addAutoZoomEnd(options)
+    }
+    if (currentPostZoomInOutDelay !== null && currentPostZoomInOutDelay > 0) {
+      await sleep(currentPostZoomInOutDelay)
+    }
   } finally {
     insideAutoZoom = false
     lastZoomLocation = null
@@ -150,21 +161,5 @@ export async function autoZoom(
     currentZoomCentering = null
     currentAllowZoomingOut = null
     currentPostZoomInOutDelay = null
-  }
-  const duration = options?.duration ?? DEFAULT_ZOOM_DURATION
-  const postZoomInOutDelay =
-    options?.postZoomInOutDelay ?? DEFAULT_POST_ZOOM_IN_OUT_DELAY
-  const elapsed = Date.now() - zoomStartTime
-  const remaining = duration + postZoomInOutDelay - elapsed
-  if (remaining > 0) {
-    await sleep(remaining)
-  }
-
-  if (activeRecorder !== null) {
-    activeRecorder.addAutoZoomEnd(options)
-  }
-  const postEndDelay = duration + postZoomInOutDelay
-  if (postEndDelay > 0) {
-    await sleep(postEndDelay)
   }
 }

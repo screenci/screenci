@@ -24,14 +24,7 @@ import type {
   ScreenCIPage,
 } from './types.js'
 import { logger } from './logger.js'
-import {
-  isInsideAutoZoom,
-  getZoomDuration,
-  getZoomEasing,
-  getPostZoomInOutDelay,
-  getLastZoomLocation,
-  setLastZoomLocation,
-} from './autoZoom.js'
+import { getAutoZoomState, getPostZoomInOutDelay } from './autoZoom.js'
 import { isInsideHide } from './hide.js'
 import { scroll, type ZoomScrollResult } from './scroll.js'
 
@@ -409,28 +402,8 @@ async function performClickActions(
     FocusChangeEvent | MouseMoveEvent | MouseDownEvent | MouseUpEvent
   > = []
 
-  // If inside autoZoom: optionally await zoom duration for camera pan then
-  // update the zoom location tracker.
-  if (isInsideAutoZoom() && locatorRect) {
-    const targetX = position
-      ? locatorRect.x + position.x
-      : locatorRect.x + locatorRect.width / 2
-    const targetY = position
-      ? locatorRect.y + position.y
-      : locatorRect.y + locatorRect.height / 2
-    const lastLoc = getLastZoomLocation()
-    if (lastLoc !== null) {
-      const zoomDur = getZoomDuration() ?? 0
-      if (zoomDur > 0) {
-        await sleep(zoomDur)
-      }
-    }
-    setLastZoomLocation({
-      x: targetX,
-      y: targetY,
-      elementRect: locatorRect,
-      eventType: 'click',
-    })
+  const autoZoomState = getAutoZoomState()
+  if (autoZoomState.insideAutoZoom && locatorRect) {
   }
 
   const targetPos = position
@@ -499,7 +472,9 @@ async function performClickActions(
   }
 
   const zoomDur =
-    isInsideAutoZoom() && locatorRect ? (getZoomDuration() ?? 0) : 0
+    autoZoomState.insideAutoZoom && locatorRect
+      ? (autoZoomState.duration ?? 0)
+      : 0
   const effectiveBeforeClickPause = isFirstAutoZoomEvent
     ? Math.max(beforeClickPause, getPostZoomInOutDelay() ?? 0, zoomDur)
     : Math.max(beforeClickPause, zoomDur)
@@ -691,41 +666,6 @@ type SimpleActionOptions =
   | Parameters<Locator['uncheck']>[0]
   | Parameters<Locator['selectOption']>[1]
 
-async function prepareAutoZoomForLocator(
-  locator: Locator,
-  eventType: 'click' | 'fill',
-  autoZoomOptions?: AutoZoomOptions
-): Promise<{
-  locatorRect: ElementRect | undefined
-  isFirstAutoZoomInteraction: boolean
-}> {
-  const inAutoZoom = isInsideAutoZoom()
-  const zoomDur = inAutoZoom ? (getZoomDuration() ?? 0) : 0
-  if (inAutoZoom && getLastZoomLocation() !== null && zoomDur > 0) {
-    await sleep(zoomDur)
-  }
-
-  const { locatorRect, isFirstAutoZoomInteraction } = await scroll(
-    locator,
-    autoZoomOptions
-  )
-
-  if (inAutoZoom && locatorRect) {
-    if (isFirstAutoZoomInteraction && zoomDur > 0) {
-      await sleep(zoomDur)
-    }
-
-    setLastZoomLocation({
-      x: locatorRect.x + locatorRect.width / 2,
-      y: locatorRect.y + locatorRect.height / 2,
-      elementRect: locatorRect,
-      eventType,
-    })
-  }
-
-  return { locatorRect, isFirstAutoZoomInteraction }
-}
-
 async function performSimpleAction(
   locator: Locator,
   doAction: (options: SimpleActionOptions) => Promise<void>,
@@ -774,9 +714,10 @@ async function performSimpleAction(
   } else {
     const locatorRect = await locator.boundingBox()
 
-    if (isInsideAutoZoom() && locatorRect) {
+    const autoZoomState = getAutoZoomState()
+    if (autoZoomState.insideAutoZoom && locatorRect) {
       const focusStart = Date.now()
-      const zoomDur = getZoomDuration() ?? 0
+      const zoomDur = autoZoomState.duration ?? 0
       if (zoomDur > 0) await sleep(zoomDur)
       const focusEnd = Date.now()
       innerEvents.push({
@@ -785,7 +726,7 @@ async function performSimpleAction(
         endMs: focusEnd,
         x: locatorRect.x + locatorRect.width / 2,
         y: locatorRect.y + locatorRect.height / 2,
-        easing: getZoomEasing() ?? 'ease-in-out',
+        easing: autoZoomState.easing ?? 'ease-in-out',
         focusOnly: true,
         elementRect: locatorRect,
       })
@@ -1047,12 +988,8 @@ export function instrumentLocator(locator: Locator): Locator {
       innerEvents.push(...(clickActionResult?.innerEvents ?? []))
       elementRect = clickActionResult?.elementRect
     } else {
-      const { locatorRect, isFirstAutoZoomInteraction } =
-        await prepareAutoZoomForLocator(
-          locator,
-          'fill',
-          options?.autoZoomOptions
-        )
+      const scrollResult = await scroll(locator, options?.autoZoomOptions)
+      const { locatorRect, isFirstAutoZoomInteraction } = scrollResult
 
       if (isFirstAutoZoomInteraction) {
         const postDelay = getPostZoomInOutDelay() ?? 0
@@ -1060,13 +997,6 @@ export function instrumentLocator(locator: Locator): Locator {
       }
 
       elementRect = locatorRect
-
-      if (isInsideAutoZoom() && locatorRect) {
-        const zoomDur = getZoomDuration() ?? 0
-        if (zoomDur > 0) {
-          await sleep(zoomDur)
-        }
-      }
     }
 
     // Hide cursor while typing (will be shown again on next mouse move)
@@ -1241,7 +1171,8 @@ export function instrumentLocator(locator: Locator): Locator {
       }
     }
 
-    if (isInsideAutoZoom() && locatorRect) {
+    const autoZoomState = getAutoZoomState()
+    if (autoZoomState.insideAutoZoom && locatorRect) {
       const correctedScrollResult = await scroll(
         locator,
         options?.autoZoomOptions
@@ -1277,7 +1208,7 @@ export function instrumentLocator(locator: Locator): Locator {
         endMs: focusEnd,
         x: correctedRect.x + correctedRect.width / 2,
         y: correctedRect.y + correctedRect.height / 2,
-        easing: getZoomEasing() ?? 'ease-in-out',
+        easing: autoZoomState.easing ?? 'ease-in-out',
         focusOnly: true,
         elementRect: correctedRect,
       })
@@ -1320,7 +1251,7 @@ export function instrumentLocator(locator: Locator): Locator {
 
     if (
       activeClickRecorder &&
-      (isInsideAutoZoom() || fillOptions.hideMouse === true)
+      (getAutoZoomState().insideAutoZoom || fillOptions.hideMouse === true)
     ) {
       activeClickRecorder.addInput(
         'pressSequentially',

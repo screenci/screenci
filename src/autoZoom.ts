@@ -61,6 +61,26 @@ export function getLastZoomLocation(): ZoomLocation | null {
   return lastZoomLocation
 }
 
+export type AutoZoomState = {
+  insideAutoZoom: boolean
+  lastZoomLocation: ZoomLocation | null
+  easing: Easing | null
+  duration: number | null
+  amount: number | null
+  centering: number | null
+}
+
+export function getAutoZoomState(): AutoZoomState {
+  return {
+    insideAutoZoom: isInsideAutoZoom(),
+    lastZoomLocation: getLastZoomLocation(),
+    easing: getZoomEasing(),
+    duration: getZoomDuration(),
+    amount: getZoomAmount(),
+    centering: getZoomCentering(),
+  }
+}
+
 export function setLastZoomLocation(loc: ZoomLocation | null): void {
   lastZoomLocation = loc
 }

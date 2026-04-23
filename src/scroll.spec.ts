@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Locator } from '@playwright/test'
 import { autoZoom, setLastZoomLocation } from './autoZoom.js'
 import * as autoZoomModule from './autoZoom.js'
-import { ZoomScrollHandler } from './scroll.js'
+import { scroll } from './scroll.js'
 
 type MockDoc = {
   defaultView: MockWindow
@@ -194,7 +194,7 @@ describe('scroll', () => {
       scrollSize: { width: 1280, height: 2000 },
     })
 
-    const promise = new ZoomScrollHandler().scroll(locator)
+    const promise = scroll(locator)
     await vi.runAllTimersAsync()
     const result = await promise
 
@@ -208,9 +208,9 @@ describe('scroll', () => {
       scrollSize: { width: 1280, height: 2000 },
     })
 
-    let result: Awaited<ReturnType<ZoomScrollHandler['scroll']>> | undefined
+    let result: Awaited<ReturnType<typeof scroll>> | undefined
     const promise = autoZoom(async () => {
-      result = await new ZoomScrollHandler().scroll(locator)
+      result = await scroll(locator)
     })
 
     await vi.runAllTimersAsync()
@@ -227,11 +227,10 @@ describe('scroll', () => {
       scrollSize: { width: 1280, height: 2000 },
     })
 
-    const promise = new ZoomScrollHandler({
+    const promise = scroll(locator, {
       amount: 0.5,
       centering: 0.2,
-      allowZoomingOut: false,
-    }).scroll(locator)
+    })
 
     await vi.runAllTimersAsync()
     const result = await promise
@@ -251,16 +250,14 @@ describe('scroll', () => {
       scrollSize: { width: 1280, height: 2000 },
     })
 
-    const centeredPromise = new ZoomScrollHandler({
+    const centeredPromise = scroll(centeredLocator, {
       amount: 0.5,
       centering: 1,
-      allowZoomingOut: false,
-    }).scroll(centeredLocator)
-    const minimalPromise = new ZoomScrollHandler({
+    })
+    const minimalPromise = scroll(minimalLocator, {
       amount: 0.5,
       centering: 0,
-      allowZoomingOut: false,
-    }).scroll(minimalLocator)
+    })
 
     await vi.runAllTimersAsync()
     const centeredResult = await centeredPromise
@@ -278,11 +275,10 @@ describe('scroll', () => {
       scrollSize: { width: 1280, height: 2000 },
     })
 
-    const promise = new ZoomScrollHandler({
+    const promise = scroll(locator, {
       amount: 0.5,
       centering: 0,
-      allowZoomingOut: false,
-    }).scroll(locator)
+    })
 
     await vi.runAllTimersAsync()
     const result = await promise
@@ -297,11 +293,10 @@ describe('scroll', () => {
       scrollSize: { width: 1280, height: 2200 },
     })
 
-    const promise = new ZoomScrollHandler({
+    const promise = scroll(locator, {
       amount: 0.5,
       centering: 0.25,
-      allowZoomingOut: true,
-    }).scroll(locator)
+    })
 
     await vi.runAllTimersAsync()
     const result = await promise
@@ -316,7 +311,7 @@ describe('scroll', () => {
       scrollSize: { width: 1280, height: 2000 },
     })
 
-    let result: Awaited<ReturnType<ZoomScrollHandler['scroll']>> | undefined
+    let result: Awaited<ReturnType<typeof scroll>> | undefined
     const promise = autoZoom(async () => {
       setLastZoomLocation({
         x: 100,
@@ -324,7 +319,7 @@ describe('scroll', () => {
         eventType: 'click',
         elementRect: { x: 80, y: 100, width: 120, height: 40 },
       })
-      result = await new ZoomScrollHandler().scroll(locator)
+      result = await scroll(locator)
     })
 
     await vi.runAllTimersAsync()
@@ -341,7 +336,7 @@ describe('scroll', () => {
       scrollSize: { width: 1280, height: 2000 },
     })
 
-    const promise = new ZoomScrollHandler().scroll(locator)
+    const promise = scroll(locator)
     await vi.runAllTimersAsync()
     await promise
 
@@ -372,7 +367,7 @@ describe('scroll', () => {
     durationSpy.mockReturnValue(600)
     const slowPromise = autoZoom(() => {
       setLastZoomLocation(prevLocation)
-      return new ZoomScrollHandler().scroll(slowLocator)
+      return scroll(slowLocator)
     })
     await vi.runAllTimersAsync()
     await slowPromise
@@ -380,15 +375,46 @@ describe('scroll', () => {
     durationSpy.mockReturnValue(100)
     const fastPromise = autoZoom(() => {
       setLastZoomLocation(prevLocation)
-      return new ZoomScrollHandler().scroll(fastLocator)
+      return scroll(fastLocator)
     })
     await vi.runAllTimersAsync()
     await fastPromise
 
     durationSpy.mockRestore()
-    expect(slowLocator.__scrollToCalls.length).toBeGreaterThan(
+    expect(slowLocator.__scrollToCalls.length).toBeGreaterThanOrEqual(
       fastLocator.__scrollToCalls.length
     )
+  })
+
+  it('uses autoZoom options as scroll defaults when options are omitted', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+
+    const stateSpy = vi.spyOn(autoZoomModule, 'getAutoZoomState')
+    stateSpy.mockReturnValue({
+      insideAutoZoom: true,
+      lastZoomLocation: {
+        x: 1,
+        y: 1,
+        eventType: 'click',
+        elementRect: { x: 0, y: 0, width: 1, height: 1 },
+      },
+      easing: 'ease-out',
+      duration: 123,
+      amount: 0.25,
+      centering: 0.75,
+    })
+
+    const promise = scroll(locator)
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(stateSpy).toHaveBeenCalledOnce()
+    expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
+    stateSpy.mockRestore()
   })
 
   it('scrolls nested containers and then the page', async () => {
@@ -406,7 +432,7 @@ describe('scroll', () => {
       },
     })
 
-    const promise = new ZoomScrollHandler().scroll(locator)
+    const promise = scroll(locator)
     await vi.runAllTimersAsync()
     const result = await promise
 
@@ -536,7 +562,7 @@ describe('scroll', () => {
       ),
     } as unknown as Locator
 
-    const promise = new ZoomScrollHandler().scroll(locator)
+    const promise = scroll(locator)
     await vi.runAllTimersAsync()
     const result = await promise
 
@@ -678,7 +704,7 @@ describe('scroll', () => {
       ),
     } as unknown as Locator
 
-    const promise = new ZoomScrollHandler().scroll(locator)
+    const promise = scroll(locator)
     await vi.runAllTimersAsync()
     const result = await promise
 

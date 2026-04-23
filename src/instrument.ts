@@ -33,7 +33,7 @@ import {
   setLastZoomLocation,
 } from './autoZoom.js'
 import { isInsideHide } from './hide.js'
-import { ZoomScrollHandler, type ZoomScrollResult } from './scroll.js'
+import { scroll, type ZoomScrollResult } from './scroll.js'
 
 let activeClickRecorder: IEventRecorder | null = null
 
@@ -396,9 +396,7 @@ async function performClickActions(
     originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
   const moveStartTime = Date.now()
-  const scrollResult = await new ZoomScrollHandler(autoZoomOptions).scroll(
-    locator
-  )
+  const scrollResult = await scroll(locator, autoZoomOptions)
   const { locatorRect, scrollElapsedMs } = scrollResult
   const isFirstAutoZoomEvent = scrollResult.isFirstAutoZoomInteraction
   if (!locatorRect) {
@@ -701,20 +699,18 @@ async function prepareAutoZoomForLocator(
   locatorRect: ElementRect | undefined
   isFirstAutoZoomInteraction: boolean
 }> {
-  const scrollHandler = new ZoomScrollHandler(autoZoomOptions)
-  const zoomDur = scrollHandler.isInsideAutoZoom ? (getZoomDuration() ?? 0) : 0
-  if (
-    scrollHandler.isInsideAutoZoom &&
-    scrollHandler.hadPreviousZoomLocation &&
-    zoomDur > 0
-  ) {
+  const inAutoZoom = isInsideAutoZoom()
+  const zoomDur = inAutoZoom ? (getZoomDuration() ?? 0) : 0
+  if (inAutoZoom && getLastZoomLocation() !== null && zoomDur > 0) {
     await sleep(zoomDur)
   }
 
-  const { locatorRect, isFirstAutoZoomInteraction } =
-    await scrollHandler.scroll(locator)
+  const { locatorRect, isFirstAutoZoomInteraction } = await scroll(
+    locator,
+    autoZoomOptions
+  )
 
-  if (scrollHandler.isInsideAutoZoom && locatorRect) {
+  if (inAutoZoom && locatorRect) {
     if (isFirstAutoZoomInteraction && zoomDur > 0) {
       await sleep(zoomDur)
     }
@@ -1246,9 +1242,10 @@ export function instrumentLocator(locator: Locator): Locator {
     }
 
     if (isInsideAutoZoom() && locatorRect) {
-      const correctedScrollResult = await new ZoomScrollHandler(
+      const correctedScrollResult = await scroll(
+        locator,
         options?.autoZoomOptions
-      ).scroll(locator)
+      )
       const correctedRect = correctedScrollResult.locatorRect ?? locatorRect
 
       const focusStart = Date.now()
@@ -1494,7 +1491,7 @@ export function instrumentLocator(locator: Locator): Locator {
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
     const moveStartTime = Date.now()
-    const scrollResult = await new ZoomScrollHandler().scroll(locator)
+    const scrollResult = await scroll(locator)
     const { locatorRect } = scrollResult
 
     const innerEvents: Array<
@@ -1582,7 +1579,7 @@ export function instrumentLocator(locator: Locator): Locator {
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
     const moveStartTime = Date.now()
-    const scrollResult = await new ZoomScrollHandler().scroll(locator)
+    const scrollResult = await scroll(locator)
     const { locatorRect } = scrollResult
 
     const innerEvents: Array<
@@ -1691,7 +1688,7 @@ export function instrumentLocator(locator: Locator): Locator {
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
     const moveStartTime = Date.now()
-    const scrollResult = await new ZoomScrollHandler().scroll(locator)
+    const scrollResult = await scroll(locator)
     const { locatorRect: sourceRect } = scrollResult
     const targetBb = await target.boundingBox()
     const targetRect: ElementRect | undefined = targetBb

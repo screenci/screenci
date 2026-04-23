@@ -1,14 +1,7 @@
 import type { Locator } from '@playwright/test'
 import type { ElementRect } from './events.js'
-import type { Easing } from './types.js'
-import {
-  getLastZoomLocation,
-  getZoomAmount,
-  getZoomDuration,
-  getZoomEasing,
-  getZoomCentering,
-  isInsideAutoZoom,
-} from './autoZoom.js'
+import type { AutoZoomOptions, Easing } from './types.js'
+import { getAutoZoomState } from './autoZoom.js'
 
 type ScrollRectLike = {
   top: number
@@ -44,38 +37,15 @@ function resolveCenteringValue(centering: number | undefined): number {
   return clamp(centering, 0, 1)
 }
 
-type ScrollOpts = {
-  amount: number
-  centering: number
-  easing?: Easing
-  duration?: number
-  legacyHeight?: number
-}
-
-/**
- * Best-effort scroll helper used by instrumentation.
- * Scrolls the nearest nested scroll container first, then the page viewport,
- * and returns the final bounding rect if it can be measured.
- *
- * Pass `amount` as `getZoomAmount() ?? 1` and `centering` as
- * `getZoomCentering() ?? 0` when inside an auto-zoom session, or `1` / `0`
- * otherwise. Pass `height` to pin the element at a fixed pixel offset from
- * the viewport top instead of using the `amount`/`centering` calculation.
- */
 async function scrollTo(
   locator: Locator,
-  height: number | undefined,
-  amount: number,
-  centering: number,
-  easing?: Easing,
-  duration?: number
+  options: Pick<AutoZoomOptions, 'amount' | 'centering' | 'easing' | 'duration'>
 ): Promise<ElementRect | undefined> {
-  const opts: ScrollOpts = {
-    amount,
-    centering,
-    ...(easing !== undefined && { easing }),
-    ...(duration !== undefined && { duration }),
-    ...(height !== undefined && { legacyHeight: height }),
+  const opts = {
+    amount: options.amount ?? 1,
+    centering: options.centering ?? 0,
+    ...(options.easing !== undefined && { easing: options.easing }),
+    ...(options.duration !== undefined && { duration: options.duration }),
   }
 
   const initialBb = await locator.boundingBox()
@@ -167,13 +137,6 @@ async function scrollTo(
           containerWidth: number,
           containerHeight: number
         ): number => {
-          if (opts.legacyHeight !== undefined) {
-            return clampValue(
-              Math.min(opts.legacyHeight, containerSize / 2 - rectSize / 2),
-              0,
-              Math.max(0, containerSize - rectSize)
-            )
-          }
           const effectiveAmount = clampValue(
             Math.max(
               opts.amount,
@@ -407,73 +370,47 @@ export type ZoomScrollResult = {
   scrollElapsedMs: number
   isFirstAutoZoomInteraction: boolean
   shouldScrollBeforeMouseMove: boolean
+  isInsideAutoZoom: boolean
 }
 
-export class ZoomScrollHandler {
-  constructor(
-    private readonly options: {
-      amount?: number
-      centering?: number
-    } = {}
-  ) {}
+export async function scroll(
+  locator: Locator,
+  options: AutoZoomOptions = {}
+): Promise<ZoomScrollResult> {
+  const state = getAutoZoomState()
+  const isFirstInteraction =
+    state.insideAutoZoom && state.lastZoomLocation === null
+  const useZoomAnimation = state.insideAutoZoom && !isFirstInteraction
 
-  readonly isInsideAutoZoom = isInsideAutoZoom()
-  readonly lastZoomLocation = getLastZoomLocation()
-  readonly isFirstAutoZoomInteraction =
-    this.isInsideAutoZoom && this.lastZoomLocation === null
-  readonly hadPreviousZoomLocation = this.lastZoomLocation !== null
+  const easing =
+    options.easing ??
+    (useZoomAnimation ? (state.easing ?? 'ease-in-out') : 'ease-in-out')
+  const duration =
+    options.duration ??
+    (useZoomAnimation ? (state.duration ?? undefined) : undefined)
+  const amount =
+    options.amount ?? state.amount ?? (state.insideAutoZoom ? 0.5 : 1)
+  const centering =
+    options.centering !== undefined
+      ? resolveCenteringValue(options.centering)
+      : (state.centering ?? 1)
 
-  private resolveScrollAnimationOptions(): {
-    easing: Easing
-    duration: number | undefined
-  } {
-    if (!this.isInsideAutoZoom || this.isFirstAutoZoomInteraction) {
-      return { easing: 'ease-in-out', duration: undefined }
-    }
+  const scrollStartMs = Date.now()
+  const locatorRect = await scrollTo(locator, {
+    amount,
+    centering,
+    easing,
+    ...(duration !== undefined && { duration }),
+  })
+  const scrollEndMs = Date.now()
 
-    return {
-      easing: getZoomEasing() ?? 'ease-in-out',
-      duration: getZoomDuration() ?? undefined,
-    }
-  }
-
-  private resolveScrollBehavior(): {
-    amount: number
-    centering: number
-  } {
-    const amount =
-      this.options.amount ??
-      getZoomAmount() ??
-      (this.isInsideAutoZoom ? 0.5 : 1)
-    const centering =
-      this.options.centering !== undefined
-        ? resolveCenteringValue(this.options.centering)
-        : (getZoomCentering() ?? (this.isInsideAutoZoom ? 1 : 1))
-
-    return { amount, centering }
-  }
-
-  async scroll(locator: Locator): Promise<ZoomScrollResult> {
-    const { easing, duration } = this.resolveScrollAnimationOptions()
-    const { amount, centering } = this.resolveScrollBehavior()
-    const scrollStartMs = Date.now()
-    const locatorRect = await scrollTo(
-      locator,
-      undefined,
-      amount,
-      centering,
-      easing,
-      duration
-    )
-    const scrollEndMs = Date.now()
-
-    return {
-      locatorRect,
-      scrollStartMs,
-      scrollEndMs,
-      scrollElapsedMs: Math.max(0, scrollEndMs - scrollStartMs),
-      isFirstAutoZoomInteraction: this.isFirstAutoZoomInteraction,
-      shouldScrollBeforeMouseMove: this.isFirstAutoZoomInteraction,
-    }
+  return {
+    locatorRect,
+    scrollStartMs,
+    scrollEndMs,
+    scrollElapsedMs: Math.max(0, scrollEndMs - scrollStartMs),
+    isFirstAutoZoomInteraction: isFirstInteraction,
+    shouldScrollBeforeMouseMove: isFirstInteraction,
+    isInsideAutoZoom: state.insideAutoZoom,
   }
 }

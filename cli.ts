@@ -747,6 +747,40 @@ function hint401(status: number, secret: string): string {
   return `\nThe secret may have been deleted or belongs to a different organisation. Check your secrets at ${frontendUrl}/secrets`
 }
 
+export function formatUploadStartFailureMessage(
+  videoName: string,
+  status: number,
+  responseText: string,
+  secret: string
+): string {
+  if (responseText.trim().length > 0) {
+    return responseText
+  }
+
+  return `Failed to start upload for "${videoName}": ${status}${hint401(status, secret)}`
+}
+
+export function printUploadStartFailureMessage(
+  videoName: string,
+  status: number,
+  responseText: string,
+  secret: string
+): void {
+  const message = formatUploadStartFailureMessage(
+    videoName,
+    status,
+    responseText,
+    secret
+  )
+
+  if (responseText.trim().length > 0) {
+    process.stderr.write(`${message}\n`)
+    return
+  }
+
+  logger.warn(message)
+}
+
 async function uploadAssets(
   assets: PreparedUploadAsset[],
   apiUrl: string,
@@ -919,8 +953,11 @@ async function uploadRecordings(
         if (!startResponse.ok) {
           const text = await startResponse.text()
           uploadSpinner.fail(`Failed to upload "${videoName}"`)
-          logger.warn(
-            `Failed to start upload for "${videoName}": ${startResponse.status} ${text}${hint401(startResponse.status, secret)}`
+          printUploadStartFailureMessage(
+            videoName,
+            startResponse.status,
+            text,
+            secret
           )
           continue
         }

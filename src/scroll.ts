@@ -11,33 +11,6 @@ import {
   isInsideAutoZoom,
 } from './autoZoom.js'
 
-const SCROLL_DURATION_MS = 600
-
-function evaluateEasingAtT(t: number, easing: Easing): number {
-  if (t <= 0) return 0
-  if (t >= 1) return 1
-  switch (easing) {
-    case 'linear':
-      return t
-    case 'ease-in':
-      return t * t * t
-    case 'ease-out':
-      return 1 - (1 - t) * (1 - t) * (1 - t)
-    case 'ease-in-out':
-      return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
-    case 'ease-in-strong':
-      return t * t * t * t
-    case 'ease-out-strong':
-      return 1 - (1 - t) * (1 - t) * (1 - t) * (1 - t)
-    case 'ease-in-out-strong':
-      return t < 0.5 ? 8 * t * t * t * t : 1 - Math.pow(-2 * t + 2, 4) / 2
-    default: {
-      const _: never = easing
-      throw new Error(`Unknown easing: ${_}`)
-    }
-  }
-}
-
 type ScrollRectLike = {
   top: number
   left: number
@@ -70,23 +43,6 @@ function clamp(value: number, min: number, max: number): number {
 function resolveCenteringValue(centering: number | undefined): number {
   if (centering === undefined) return 1
   return clamp(centering, 0, 1)
-}
-
-function isScrollableElement(node: unknown): node is ScrollableElement {
-  if (
-    !node ||
-    typeof node !== 'object' ||
-    !('getBoundingClientRect' in node) ||
-    !('clientHeight' in node) ||
-    !('clientWidth' in node) ||
-    !('scrollHeight' in node) ||
-    !('scrollWidth' in node) ||
-    !('scrollTop' in node) ||
-    !('scrollLeft' in node)
-  ) {
-    return false
-  }
-  return true
 }
 
 /**
@@ -147,64 +103,13 @@ export async function scrollTo(
       new Promise<void>((resolve) => {
         const frameMs = 1000 / 60
         const durationMs = opts.duration ?? 600
+
         const clampValue = (value: number, min: number, max: number): number =>
           Math.min(max, Math.max(min, value))
-        const resolveDesiredOffset = (params: {
-          rectSize: number
-          viewportSize: number
-          amount: number
-          centering: number
-          allowZoomingOut: boolean
-          rectWidth: number
-          rectHeight: number
-          viewportWidth: number
-          viewportHeight: number
-          legacyHeight: number | undefined
-        }): number => {
-          const {
-            rectSize,
-            viewportSize,
-            amount,
-            centering,
-            allowZoomingOut,
-            rectWidth,
-            rectHeight,
-            viewportWidth,
-            viewportHeight,
-            legacyHeight,
-          } = params
 
-          if (legacyHeight !== undefined) {
-            return clampValue(
-              Math.min(legacyHeight, viewportSize / 2 - rectSize / 2),
-              0,
-              Math.max(0, viewportSize - rectSize)
-            )
-          }
-
-          const effectiveAmount = clampValue(
-            Math.max(
-              allowZoomingOut
-                ? Math.max(
-                    amount,
-                    rectWidth / Math.max(1, viewportWidth),
-                    rectHeight / Math.max(1, viewportHeight)
-                  )
-                : amount,
-              0
-            ),
-            0,
-            1
-          )
-          const visibleSize = viewportSize * effectiveAmount
-          const cropStart = Math.max(0, (viewportSize - visibleSize) / 2)
-          return clampValue(
-            cropStart + ((visibleSize - rectSize) * centering) / 2,
-            0,
-            Math.max(0, viewportSize - rectSize)
-          )
-        }
-        const evaluateScrollEasingAtT = (t: number, easing: Easing): number => {
+        // Duplicated below the serialization boundary; locator.evaluate
+        // sends the callback as a string and cannot close over outer functions.
+        const easingAtT = (t: number, easing: Easing): number => {
           if (t <= 0) return 0
           if (t >= 1) return 1
           switch (easing) {
@@ -230,9 +135,20 @@ export async function scrollTo(
             }
           }
         }
-        const isScrollElementShape = (
-          node: unknown
-        ): node is ScrollableElement => {
+
+        const doc = element.ownerDocument
+        const win = doc.defaultView as ScrollWindow | null
+        if (!win) {
+          resolve()
+          return
+        }
+
+        const viewportHeight =
+          win.innerHeight || doc.documentElement.clientHeight
+        const viewportWidth = win.innerWidth || doc.documentElement.clientWidth
+        const elementRect = element.getBoundingClientRect()
+
+        const isScrollable = (node: unknown): node is ScrollableElement => {
           if (
             !node ||
             typeof node !== 'object' ||
@@ -246,180 +162,209 @@ export async function scrollTo(
           ) {
             return false
           }
-          return true
-        }
-        const doc = element.ownerDocument
-        const win = doc.defaultView as ScrollWindow | null
-        if (!win) {
-          resolve()
-          return
-        }
-
-        const isActuallyScrollable = (
-          node: unknown
-        ): node is ScrollableElement => {
-          if (!isScrollElementShape(node)) {
-            return false
-          }
-
+          const el = node as ScrollableElement
           const style = win.getComputedStyle(node as Element)
-          const overflowY = style.overflowY
-          const overflowX = style.overflowX
-          const canScrollY =
-            (overflowY === 'auto' ||
-              overflowY === 'scroll' ||
-              overflowY === 'overlay') &&
-            node.scrollHeight > node.clientHeight
-          const canScrollX =
-            (overflowX === 'auto' ||
-              overflowX === 'scroll' ||
-              overflowX === 'overlay') &&
-            node.scrollWidth > node.clientWidth
-
-          return canScrollY || canScrollX
+          return (
+            ((style.overflowY === 'auto' ||
+              style.overflowY === 'scroll' ||
+              style.overflowY === 'overlay') &&
+              el.scrollHeight > el.clientHeight) ||
+            ((style.overflowX === 'auto' ||
+              style.overflowX === 'scroll' ||
+              style.overflowX === 'overlay') &&
+              el.scrollWidth > el.clientWidth)
+          )
         }
 
-        const viewportHeight =
-          win.innerHeight || doc.documentElement.clientHeight
-        const viewportWidth = win.innerWidth || doc.documentElement.clientWidth
-
-        const scrollableAncestors: ScrollableElement[] = []
-        for (let current: Element | null = element.parentElement; current; ) {
-          if (
-            isActuallyScrollable(current) &&
-            current !== doc.documentElement &&
-            current !== doc.body
-          ) {
-            scrollableAncestors.push(current)
+        // Returns the desired edge offset (top or left) of the element within a
+        // container, for one axis at a time. Closes over elementRect and opts.
+        const resolveDesiredOffset = (
+          rectSize: number,
+          containerSize: number,
+          containerWidth: number,
+          containerHeight: number
+        ): number => {
+          if (opts.legacyHeight !== undefined) {
+            return clampValue(
+              Math.min(opts.legacyHeight, containerSize / 2 - rectSize / 2),
+              0,
+              Math.max(0, containerSize - rectSize)
+            )
           }
-          current = current.parentElement
+          const effectiveAmount = clampValue(
+            Math.max(
+              opts.allowZoomingOut
+                ? Math.max(
+                    opts.amount,
+                    elementRect.width / Math.max(1, containerWidth),
+                    elementRect.height / Math.max(1, containerHeight)
+                  )
+                : opts.amount,
+              0
+            ),
+            0,
+            1
+          )
+          const visibleSize = containerSize * effectiveAmount
+          const cropStart = Math.max(0, (containerSize - visibleSize) / 2)
+          return clampValue(
+            cropStart + ((visibleSize - rectSize) * opts.centering) / 2,
+            0,
+            Math.max(0, containerSize - rectSize)
+          )
         }
 
-        const ancestorScrollPlans: Array<{
+        type ScrollPlan = {
           element: ScrollableElement
           startTop: number
           startLeft: number
           targetTop: number
           targetLeft: number
-        }> = []
-
-        let accumulatedNestedDeltaTop = 0
-        let accumulatedNestedDeltaLeft = 0
-        const elementRect = element.getBoundingClientRect()
-        for (const ancestor of scrollableAncestors) {
-          const containerRect = ancestor.getBoundingClientRect()
-          const projectedRectTop = elementRect.top - accumulatedNestedDeltaTop
-          const projectedRectLeft =
-            elementRect.left - accumulatedNestedDeltaLeft
-          const startTop = ancestor.scrollTop
-          const startLeft = ancestor.scrollLeft
-          const desiredTopWithinContainer = resolveDesiredOffset({
-            rectSize: elementRect.height,
-            viewportSize: ancestor.clientHeight,
-            amount: opts.amount,
-            centering: opts.centering,
-            allowZoomingOut: opts.allowZoomingOut,
-            rectWidth: elementRect.width,
-            rectHeight: elementRect.height,
-            viewportWidth: ancestor.clientWidth,
-            viewportHeight: ancestor.clientHeight,
-            legacyHeight: opts.legacyHeight,
-          })
-          const desiredLeftWithinContainer = resolveDesiredOffset({
-            rectSize: elementRect.width,
-            viewportSize: ancestor.clientWidth,
-            amount: opts.amount,
-            centering: opts.centering,
-            allowZoomingOut: opts.allowZoomingOut,
-            rectWidth: elementRect.width,
-            rectHeight: elementRect.height,
-            viewportWidth: ancestor.clientWidth,
-            viewportHeight: ancestor.clientHeight,
-            legacyHeight: opts.legacyHeight,
-          })
-          const targetTop = clampValue(
-            startTop +
-              (projectedRectTop -
-                containerRect.top -
-                desiredTopWithinContainer),
-            0,
-            Math.max(0, ancestor.scrollHeight - ancestor.clientHeight)
-          )
-          const targetLeft = clampValue(
-            startLeft +
-              (projectedRectLeft -
-                containerRect.left -
-                desiredLeftWithinContainer),
-            0,
-            Math.max(0, ancestor.scrollWidth - ancestor.clientWidth)
-          )
-
-          ancestorScrollPlans.push({
-            element: ancestor,
-            startTop,
-            startLeft,
-            targetTop,
-            targetLeft,
-          })
-
-          accumulatedNestedDeltaTop += targetTop - startTop
-          accumulatedNestedDeltaLeft += targetLeft - startLeft
         }
 
-        const rect = element.getBoundingClientRect()
-        const projectedRectTop = rect.top - accumulatedNestedDeltaTop
-        const projectedRectLeft = rect.left - accumulatedNestedDeltaLeft
-        const scrollHeight = Math.max(
-          doc.documentElement.scrollHeight,
-          doc.body?.scrollHeight ?? 0
+        // Walks up the DOM collecting scroll plans for every scrollable ancestor
+        // (excluding the document root, which is handled by planPageScroll).
+        // Returns the plans and the accumulated viewport-space delta the element
+        // will shift once all inner containers have scrolled — needed so each
+        // outer container can project where the element will actually land.
+        const buildAncestorScrollPlans = (): {
+          plans: ScrollPlan[]
+          accDeltaTop: number
+          accDeltaLeft: number
+        } => {
+          const plans: ScrollPlan[] = []
+          let accDeltaTop = 0
+          let accDeltaLeft = 0
+
+          for (
+            let current: Element | null = element.parentElement;
+            current;
+            current = current.parentElement
+          ) {
+            if (
+              !isScrollable(current) ||
+              current === doc.documentElement ||
+              current === doc.body
+            ) {
+              continue
+            }
+
+            const containerRect = current.getBoundingClientRect()
+            const projectedTop = elementRect.top - accDeltaTop
+            const projectedLeft = elementRect.left - accDeltaLeft
+            const startTop = current.scrollTop
+            const startLeft = current.scrollLeft
+
+            const targetTop = clampValue(
+              startTop +
+                (projectedTop -
+                  containerRect.top -
+                  resolveDesiredOffset(
+                    elementRect.height,
+                    current.clientHeight,
+                    current.clientWidth,
+                    current.clientHeight
+                  )),
+              0,
+              Math.max(0, current.scrollHeight - current.clientHeight)
+            )
+            const targetLeft = clampValue(
+              startLeft +
+                (projectedLeft -
+                  containerRect.left -
+                  resolveDesiredOffset(
+                    elementRect.width,
+                    current.clientWidth,
+                    current.clientWidth,
+                    current.clientHeight
+                  )),
+              0,
+              Math.max(0, current.scrollWidth - current.clientWidth)
+            )
+
+            plans.push({
+              element: current,
+              startTop,
+              startLeft,
+              targetTop,
+              targetLeft,
+            })
+            accDeltaTop += targetTop - startTop
+            accDeltaLeft += targetLeft - startLeft
+          }
+
+          return { plans, accDeltaTop, accDeltaLeft }
+        }
+
+        // Plans the window-level scroll, accounting for how far the element will
+        // have moved once all nested ancestor scrolls are applied.
+        const planPageScroll = (
+          accDeltaTop: number,
+          accDeltaLeft: number
+        ): {
+          startY: number
+          startX: number
+          targetY: number
+          targetX: number
+        } => {
+          const scrollHeight = Math.max(
+            doc.documentElement.scrollHeight,
+            doc.body?.scrollHeight ?? 0
+          )
+          const scrollWidth = Math.max(
+            doc.documentElement.scrollWidth,
+            doc.body?.scrollWidth ?? 0
+          )
+          const startY = win.scrollY
+          const startX = win.scrollX
+          const projectedTop = elementRect.top - accDeltaTop
+          const projectedLeft = elementRect.left - accDeltaLeft
+          return {
+            startY,
+            startX,
+            targetY: clampValue(
+              startY +
+                (projectedTop -
+                  resolveDesiredOffset(
+                    elementRect.height,
+                    viewportHeight,
+                    viewportWidth,
+                    viewportHeight
+                  )),
+              0,
+              Math.max(0, scrollHeight - viewportHeight)
+            ),
+            targetX: clampValue(
+              startX +
+                (projectedLeft -
+                  resolveDesiredOffset(
+                    elementRect.width,
+                    viewportWidth,
+                    viewportWidth,
+                    viewportHeight
+                  )),
+              0,
+              Math.max(0, scrollWidth - viewportWidth)
+            ),
+          }
+        }
+
+        const {
+          plans: ancestorScrollPlans,
+          accDeltaTop,
+          accDeltaLeft,
+        } = buildAncestorScrollPlans()
+        const { startY, startX, targetY, targetX } = planPageScroll(
+          accDeltaTop,
+          accDeltaLeft
         )
-        const scrollWidth = Math.max(
-          doc.documentElement.scrollWidth,
-          doc.body?.scrollWidth ?? 0
-        )
-        const pageStartY = win.scrollY
-        const pageStartX = win.scrollX
-        const desiredTop = resolveDesiredOffset({
-          rectSize: rect.height,
-          viewportSize: viewportHeight,
-          amount: opts.amount,
-          centering: opts.centering,
-          allowZoomingOut: opts.allowZoomingOut,
-          rectWidth: rect.width,
-          rectHeight: rect.height,
-          viewportWidth: viewportWidth,
-          viewportHeight: viewportHeight,
-          legacyHeight: opts.legacyHeight,
-        })
-        const desiredLeft = resolveDesiredOffset({
-          rectSize: rect.width,
-          viewportSize: viewportWidth,
-          amount: opts.amount,
-          centering: opts.centering,
-          allowZoomingOut: opts.allowZoomingOut,
-          rectWidth: rect.width,
-          rectHeight: rect.height,
-          viewportWidth: viewportWidth,
-          viewportHeight: viewportHeight,
-          legacyHeight: opts.legacyHeight,
-        })
-        const targetScrollY = clampValue(
-          pageStartY + (projectedRectTop - desiredTop),
-          0,
-          Math.max(0, scrollHeight - viewportHeight)
-        )
-        const targetScrollX = clampValue(
-          pageStartX + (projectedRectLeft - desiredLeft),
-          0,
-          Math.max(0, scrollWidth - viewportWidth)
-        )
+
         const needsNestedScroll = ancestorScrollPlans.some(
           (plan) =>
             plan.targetTop !== plan.startTop ||
             plan.targetLeft !== plan.startLeft
         )
-        const needsPageScroll =
-          targetScrollY !== pageStartY || targetScrollX !== pageStartX
+        const needsPageScroll = targetY !== startY || targetX !== startX
 
         if (!needsNestedScroll && !needsPageScroll) {
           resolve()
@@ -437,13 +382,9 @@ export async function scrollTo(
           setTimeout(tick, frameMs)
         }
 
-        const tick = () => {
+        const tick = (): void => {
           step += 1
-          const t = step / steps
-          const easedT = evaluateScrollEasingAtT(
-            t,
-            opts.easing ?? 'ease-in-out'
-          )
+          const easedT = easingAtT(step / steps, opts.easing ?? 'ease-in-out')
 
           for (const plan of ancestorScrollPlans) {
             plan.element.scrollTop =
@@ -453,8 +394,8 @@ export async function scrollTo(
           }
 
           win.scrollTo({
-            top: pageStartY + (targetScrollY - pageStartY) * easedT,
-            left: pageStartX + (targetScrollX - pageStartX) * easedT,
+            top: startY + (targetY - startY) * easedT,
+            left: startX + (targetX - startX) * easedT,
             behavior: 'auto',
           })
 

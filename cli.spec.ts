@@ -1275,6 +1275,27 @@ describe('CLI', () => {
   })
 
   describe('upload annotation helpers', () => {
+    it('should print upload start failures exactly as returned by backend', async () => {
+      const stderrWriteSpy = vi
+        .spyOn(process.stderr, 'write')
+        .mockImplementation(() => true)
+      const { printUploadStartFailureMessage } = await import('./cli')
+
+      printUploadStartFailureMessage(
+        'Demo Video',
+        400,
+        'Too old version screenci version, please update.',
+        'test-secret'
+      )
+
+      expect(stderrWriteSpy).toHaveBeenCalledWith(
+        'Too old version screenci version, please update.\n'
+      )
+      expect(loggerWarnSpy).not.toHaveBeenCalled()
+
+      stderrWriteSpy.mockRestore()
+    })
+
     it('should allow missing voice entries when annotating cue translations', async () => {
       const { annotateRecordingDataWithAssetHashes, stripVoicePath } =
         await import('./cli')

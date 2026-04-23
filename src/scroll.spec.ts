@@ -193,7 +193,7 @@ describe('scrollTo', () => {
       scrollSize: { width: 1280, height: 2000 },
     })
 
-    const promise = scrollTo(locator, 120, 'ease-out')
+    const promise = scrollTo(locator, 120, 1, 'ease-out')
     await vi.runAllTimersAsync()
     const rect = await promise
 
@@ -340,7 +340,7 @@ describe('scrollTo', () => {
       scrollSize: { width: 1280, height: 2000 },
     })
 
-    const promise = scrollTo(locator, 120, 'ease-in-out')
+    const promise = scrollTo(locator, 120, 1, 'ease-in-out')
     await vi.runAllTimersAsync()
     await promise
 
@@ -361,11 +361,11 @@ describe('scrollTo', () => {
       scrollSize: { width: 1280, height: 2000 },
     })
 
-    const slowPromise = scrollTo(slowLocator, 120, 'ease-in-out', 600)
+    const slowPromise = scrollTo(slowLocator, 120, 1, 'ease-in-out', 600)
     await vi.runAllTimersAsync()
     await slowPromise
 
-    const fastPromise = scrollTo(fastLocator, 120, 'ease-in-out', 100)
+    const fastPromise = scrollTo(fastLocator, 120, 1, 'ease-in-out', 100)
     await vi.runAllTimersAsync()
     await fastPromise
 
@@ -389,7 +389,7 @@ describe('scrollTo', () => {
       },
     })
 
-    const promise = scrollTo(locator, 120, 'ease-in-out')
+    const promise = scrollTo(locator, 120, 1, 'ease-in-out')
     await vi.runAllTimersAsync()
     const rect = await promise
 
@@ -519,7 +519,7 @@ describe('scrollTo', () => {
       ),
     } as unknown as Locator
 
-    const promise = scrollTo(locator, 120, 'ease-in-out')
+    const promise = scrollTo(locator, 120, 1, 'ease-in-out')
     await vi.runAllTimersAsync()
     const rect = await promise
 
@@ -661,7 +661,7 @@ describe('scrollTo', () => {
       ),
     } as unknown as Locator
 
-    const promise = scrollTo(locator, 120, 'ease-in-out')
+    const promise = scrollTo(locator, 120, 1, 'ease-in-out')
     await vi.runAllTimersAsync()
     const rect = await promise
 

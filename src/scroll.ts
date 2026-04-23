@@ -45,15 +45,6 @@ function resolveCenteringValue(centering: number | undefined): number {
   return clamp(centering, 0, 1)
 }
 
-/**
- * Best-effort scroll helper used by instrumentation.
- * Scrolls the nearest nested scroll container first, then the page viewport,
- * and returns the final bounding rect if it can be measured.
- *
- * `centering` uses the same 0..1 meaning as the rendering pipeline:
- * `0` keeps the rect just inside the visible area, while `1` lets the rect
- * be centered as much as the chosen `amount` allows.
- */
 type ScrollToOptions = {
   amount: number
   /** 0..1 visibility bias: 0 = barely visible, 1 = centered. */
@@ -61,40 +52,38 @@ type ScrollToOptions = {
   allowZoomingOut: boolean
   easing?: Easing
   duration?: number
+  legacyHeight?: number
 }
 
+/**
+ * Best-effort scroll helper used by instrumentation.
+ * Scrolls the nearest nested scroll container first, then the page viewport,
+ * and returns the final bounding rect if it can be measured.
+ *
+ * Pass `amount` as `getZoomAmount() ?? 1` when inside an auto-zoom session,
+ * or `1` otherwise.
+ */
 export async function scrollTo(
   locator: Locator,
   height: number,
+  amount: number,
   easing?: Easing,
   duration?: number
-): Promise<ElementRect | undefined>
-export async function scrollTo(
+): Promise<ElementRect | undefined> {
+  return scrollToWithOptions(locator, {
+    amount,
+    centering: 1,
+    allowZoomingOut: true,
+    legacyHeight: height,
+    ...(easing !== undefined && { easing }),
+    ...(duration !== undefined && { duration }),
+  })
+}
+
+async function scrollToWithOptions(
   locator: Locator,
   options: ScrollToOptions
-): Promise<ElementRect | undefined>
-export async function scrollTo(
-  locator: Locator,
-  arg1: number | ScrollToOptions,
-  arg2?: Easing,
-  arg3?: number
 ): Promise<ElementRect | undefined> {
-  const options: ScrollToOptions & { legacyHeight?: number } =
-    typeof arg1 === 'number'
-      ? {
-          amount: 1,
-          centering: 1,
-          allowZoomingOut: true,
-          ...(arg2 !== undefined && { easing: arg2 }),
-          ...(arg3 !== undefined && { duration: arg3 }),
-          legacyHeight: arg1,
-        }
-      : arg1
-
-  if (!Number.isFinite(options.amount)) {
-    throw new Error('[screenci] scrollTo amount must be a finite number.')
-  }
-
   const initialBb = await locator.boundingBox()
   if (!initialBb) return undefined
 
@@ -490,7 +479,7 @@ export class ZoomScrollHandler {
         ? clamp(centeringOverride, 0, 1)
         : centering
     const scrollStartMs = Date.now()
-    const locatorRect = await scrollTo(locator, {
+    const locatorRect = await scrollToWithOptions(locator, {
       amount,
       centering: effectiveCentering,
       allowZoomingOut,

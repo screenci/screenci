@@ -789,7 +789,7 @@ test.describe('scrollTo helper', () => {
   }) => {
     expect(await scrollY(page)).toBe(0)
 
-    await scrollTo(page.locator('#offscreen-click-button'), 120, 'ease-out')
+    await scrollTo(page.locator('#offscreen-click-button'), 120, 1, 'ease-out')
 
     const box = await page.locator('#offscreen-click-button').boundingBox()
     expect(box).not.toBeNull()
@@ -802,7 +802,7 @@ test.describe('scrollTo helper', () => {
   }) => {
     expect(await scrollY(page)).toBe(0)
 
-    await scrollTo(page.locator('#nested-scroll-target'), 120, 'ease-in-out')
+    await scrollTo(page.locator('#nested-scroll-target'), 120, 1, 'ease-in-out')
 
     const box = await page.locator('#nested-scroll-target').boundingBox()
     expect(box).not.toBeNull()

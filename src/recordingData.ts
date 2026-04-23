@@ -204,6 +204,7 @@ export type RecordingEvent =
 
 export type RecordingMetadata = {
   videoName: string
+  screenciVersion: string
   languages?: string[]
 }
 

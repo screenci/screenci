@@ -312,7 +312,16 @@ describe('EventRecorder', () => {
 
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed: RecordingData = JSON.parse(content)
+      const packageJson = JSON.parse(
+        await readFile(new URL('../package.json', import.meta.url), 'utf-8')
+      ) as {
+        version: string
+      }
       expect(parsed.events).toHaveLength(2)
+      expect(parsed.metadata).toMatchObject({
+        videoName: 'Test Video',
+        screenciVersion: packageJson.version,
+      })
       expect(parsed.events[1]).toMatchObject({
         type: 'input',
         subType: 'click',

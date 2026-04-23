@@ -1,5 +1,7 @@
+import { existsSync, readFileSync } from 'fs'
 import { writeFile } from 'fs/promises'
-import { join } from 'path'
+import { dirname, join, resolve } from 'path'
+import { fileURLToPath } from 'url'
 import type {
   AutoZoomOptions,
   CueConfig,
@@ -288,9 +290,39 @@ export type VoiceLanguageMeta = {
 
 export type RecordingMetadata = {
   videoName: string
+  screenciVersion: string
   /** Language codes present in multi-language cues, e.g. `['en', 'de']`. Omitted when no multi-language cues are used. */
   languages?: string[]
 }
+
+function readScreenciVersion(): string {
+  const currentFileDir = dirname(fileURLToPath(import.meta.url))
+  const packageJsonPaths = [
+    resolve(currentFileDir, '../package.json'),
+    resolve(currentFileDir, '../../package.json'),
+  ]
+
+  for (const packageJsonPath of packageJsonPaths) {
+    if (!existsSync(packageJsonPath)) continue
+
+    try {
+      const packageJson = JSON.parse(
+        readFileSync(packageJsonPath, 'utf-8')
+      ) as {
+        version?: unknown
+      }
+      if (typeof packageJson.version === 'string') {
+        return packageJson.version
+      }
+    } catch {
+      // Try the next candidate path.
+    }
+  }
+
+  return 'unknown'
+}
+
+const SCREENCI_VERSION = readScreenciVersion()
 
 export type RecordingData = {
   events: RecordingEvent[]
@@ -622,6 +654,7 @@ export class EventRecorder implements IEventRecorder {
       }),
       metadata: {
         videoName,
+        screenciVersion: SCREENCI_VERSION,
         ...(languages !== undefined && { languages }),
       },
     }

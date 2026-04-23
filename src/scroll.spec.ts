@@ -386,6 +386,73 @@ describe('scroll', () => {
     )
   })
 
+  it('moves the mouse alongside scrolling and waits for the slower animation', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+    const mouseMoveInternal = vi.fn().mockResolvedValue(undefined)
+
+    const promise = scroll(
+      locator,
+      { duration: 100 },
+      {
+        page: {},
+        mouseMoveInternal,
+        startPos: { x: 0, y: 0 },
+        targetPos: { x: 60, y: 20 },
+        duration: 1000,
+        easing: 'linear',
+        context: 'test move',
+      }
+    )
+
+    await vi.runAllTimersAsync()
+    const result = await promise
+
+    expect(result.mouseMoveEvent).toMatchObject({
+      startMs: result.scrollStartMs,
+      x: 80,
+      y: 360,
+      elementRect: result.locatorRect,
+    })
+    expect(result.scrollEndMs - result.scrollStartMs).toBeGreaterThanOrEqual(
+      900
+    )
+    expect(mouseMoveInternal).toHaveBeenCalled()
+  })
+
+  it('moves the mouse even when no scroll is needed', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 100, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+    const mouseMoveInternal = vi.fn().mockResolvedValue(undefined)
+
+    const promise = scroll(
+      locator,
+      {},
+      {
+        page: {},
+        mouseMoveInternal,
+        startPos: { x: 0, y: 0 },
+        targetPos: { x: 60, y: 20 },
+        duration: 100,
+        easing: 'linear',
+        context: 'test move',
+      }
+    )
+
+    await vi.runAllTimersAsync()
+    const result = await promise
+
+    expect(result.mouseMoveEvent).toBeDefined()
+    expect(result.mouseMoveEvent?.startMs).toBe(result.scrollStartMs)
+    expect(mouseMoveInternal).toHaveBeenCalled()
+  })
+
   it('uses autoZoom options as scroll defaults when options are omitted', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },

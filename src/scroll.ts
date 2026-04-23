@@ -1,5 +1,5 @@
 import type { Locator } from '@playwright/test'
-import type { ElementRect } from './events.js'
+import type { ElementRect, FocusChangeEvent } from './events.js'
 import type { AutoZoomOptions, Easing } from './types.js'
 import { getAutoZoomState } from './autoZoom.js'
 
@@ -28,6 +28,29 @@ type ScrollWindow = Window & {
   requestAnimationFrame?: (callback: FrameRequestCallback) => number
 }
 
+type MouseMoveRequest = {
+  page: object
+  mouseMoveInternal: (x: number, y: number) => Promise<void>
+  startPos: { x: number; y: number }
+  targetPos: { x: number; y: number }
+  duration?: number
+  speed?: number
+  defaultDuration?: number
+  context: string
+  easing: Easing
+  elementRect?: ElementRect
+}
+
+type MouseMovePlan = Omit<
+  MouseMoveRequest,
+  'duration' | 'speed' | 'defaultDuration' | 'context'
+> & {
+  duration: number
+  startMs: number
+}
+
+type MouseMoveResult = FocusChangeEvent
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
@@ -37,23 +60,137 @@ function resolveCenteringValue(centering: number | undefined): number {
   return clamp(centering, 0, 1)
 }
 
+function assertDurationOrSpeed(
+  duration: number | undefined,
+  speed: number | undefined,
+  context: string
+): void {
+  if (duration !== undefined && speed !== undefined) {
+    throw new Error(
+      `[screenci] ${context} accepts either duration or speed, not both.`
+    )
+  }
+  if (duration !== undefined && (!Number.isFinite(duration) || duration < 0)) {
+    throw new Error(
+      `[screenci] ${context} duration must be a finite number >= 0.`
+    )
+  }
+  if (speed !== undefined && (!Number.isFinite(speed) || speed <= 0)) {
+    throw new Error(`[screenci] ${context} speed must be a finite number > 0.`)
+  }
+}
+
+function resolveMouseMoveDuration(
+  startPos: { x: number; y: number },
+  targetX: number,
+  targetY: number,
+  options: {
+    duration: number | undefined
+    speed: number | undefined
+    defaultDuration: number | undefined
+    context: string
+  }
+): number {
+  const { duration, speed, defaultDuration, context } = options
+  assertDurationOrSpeed(duration, speed, context)
+  if (speed !== undefined) {
+    const distancePx = Math.hypot(targetX - startPos.x, targetY - startPos.y)
+    return (distancePx / speed) * 1000
+  }
+  return duration ?? defaultDuration ?? 0
+}
+
+function evaluateEasingAtT(t: number, easing: Easing): number {
+  if (t <= 0) return 0
+  if (t >= 1) return 1
+  switch (easing) {
+    case 'linear':
+      return t
+    case 'ease-in':
+      return t * t * t
+    case 'ease-out':
+      return 1 - (1 - t) * (1 - t) * (1 - t)
+    case 'ease-in-out':
+      return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+    case 'ease-in-strong':
+      return t * t * t * t
+    case 'ease-out-strong':
+      return 1 - (1 - t) * (1 - t) * (1 - t) * (1 - t)
+    case 'ease-in-out-strong':
+      return t < 0.5 ? 8 * t * t * t * t : 1 - Math.pow(-2 * t + 2, 4) / 2
+    default: {
+      const _: never = easing
+      throw new Error(`Unknown easing: ${_}`)
+    }
+  }
+}
+
+async function animateMouseMove(plan: MouseMovePlan): Promise<MouseMoveResult> {
+  const {
+    mouseMoveInternal,
+    startPos,
+    targetPos,
+    duration,
+    easing,
+    startMs,
+    elementRect,
+  } = plan
+  const targetX = targetPos.x
+  const targetY = targetPos.y
+
+  if (duration > 0) {
+    const frameMs = 1000 / 60
+    const steps = Math.max(1, Math.floor(duration / frameMs))
+    const stepMs = duration / steps
+
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps
+      const easedT = evaluateEasingAtT(t, easing)
+      const x = startPos.x + easedT * (targetX - startPos.x)
+      const y = startPos.y + easedT * (targetY - startPos.y)
+      await mouseMoveInternal(x, y)
+      if (i < steps) {
+        await new Promise<void>((resolve) => setTimeout(resolve, stepMs))
+      }
+    }
+  } else {
+    await mouseMoveInternal(targetX, targetY)
+  }
+
+  return {
+    type: 'focusChange',
+    startMs,
+    endMs: Date.now(),
+    x: targetX,
+    y: targetY,
+    ...(duration > 0 ? { easing } : {}),
+    ...(elementRect !== undefined ? { elementRect } : {}),
+  }
+}
+
 async function scrollTo(
   locator: Locator,
-  options: Pick<AutoZoomOptions, 'amount' | 'centering' | 'easing' | 'duration'>
+  options: Pick<
+    AutoZoomOptions,
+    'amount' | 'centering' | 'easing' | 'duration'
+  > & { previewOnly?: boolean }
 ): Promise<ElementRect | undefined> {
   const opts = {
     amount: options.amount ?? 1,
     centering: options.centering ?? 0,
     ...(options.easing !== undefined && { easing: options.easing }),
     ...(options.duration !== undefined && { duration: options.duration }),
+    ...(options.previewOnly !== undefined
+      ? { previewOnly: options.previewOnly }
+      : {}),
   }
 
   const initialBb = await locator.boundingBox()
   if (!initialBb) return undefined
 
-  await locator.evaluate(
+  const previewRect = await locator.evaluate(
     (element, opts) =>
-      new Promise<void>((resolve) => {
+      new Promise<ElementRect | undefined>((resolve) => {
         const frameMs = 1000 / 60
         const durationMs = opts.duration ?? 600
 
@@ -92,7 +229,7 @@ async function scrollTo(
         const doc = element.ownerDocument
         const win = doc.defaultView as ScrollWindow | null
         if (!win) {
-          resolve()
+          resolve(undefined)
           return
         }
 
@@ -307,8 +444,18 @@ async function scrollTo(
         )
         const needsPageScroll = targetY !== startY || targetX !== startX
 
+        if (opts.previewOnly) {
+          resolve({
+            x: elementRect.left - accDeltaLeft - (targetX - startX),
+            y: elementRect.top - accDeltaTop - (targetY - startY),
+            width: elementRect.width,
+            height: elementRect.height,
+          })
+          return
+        }
+
         if (!needsNestedScroll && !needsPageScroll) {
-          resolve()
+          resolve(undefined)
           return
         }
 
@@ -341,7 +488,7 @@ async function scrollTo(
           })
 
           if (step >= steps) {
-            resolve()
+            resolve(undefined)
             return
           }
 
@@ -350,8 +497,12 @@ async function scrollTo(
 
         tick()
       }),
-    opts
+    { ...opts, previewOnly: options.previewOnly }
   )
+
+  if (opts.previewOnly) {
+    return previewRect
+  }
 
   const finalBb = await locator.boundingBox()
   if (!finalBb) return initialBb
@@ -368,6 +519,7 @@ export type ZoomScrollResult = {
   scrollStartMs: number
   scrollEndMs: number
   scrollElapsedMs: number
+  mouseMoveEvent?: FocusChangeEvent
   isFirstAutoZoomInteraction: boolean
   shouldScrollBeforeMouseMove: boolean
   isInsideAutoZoom: boolean
@@ -375,7 +527,8 @@ export type ZoomScrollResult = {
 
 export async function scroll(
   locator: Locator,
-  options: AutoZoomOptions = {}
+  options: AutoZoomOptions = {},
+  mouseMove?: MouseMoveRequest
 ): Promise<ZoomScrollResult> {
   const state = getAutoZoomState()
   const isFirstInteraction =
@@ -395,20 +548,72 @@ export async function scroll(
       ? resolveCenteringValue(options.centering)
       : (state.centering ?? 1)
 
+  const previewLocatorRect = await scrollTo(locator, {
+    amount,
+    centering,
+    easing,
+    ...(duration !== undefined && { duration }),
+    previewOnly: true,
+  })
+
   const scrollStartMs = Date.now()
-  const locatorRect = await scrollTo(locator, {
+  const movePromise = mouseMove
+    ? previewLocatorRect !== undefined
+      ? (() => {
+          const targetX = previewLocatorRect.x + mouseMove.targetPos.x
+          const targetY = previewLocatorRect.y + mouseMove.targetPos.y
+          const resolvedDuration = resolveMouseMoveDuration(
+            mouseMove.startPos,
+            targetX,
+            targetY,
+            {
+              duration: mouseMove.duration,
+              speed: mouseMove.speed,
+              defaultDuration: mouseMove.defaultDuration,
+              context: mouseMove.context,
+            }
+          )
+
+          return animateMouseMove({
+            page: mouseMove.page,
+            mouseMoveInternal: mouseMove.mouseMoveInternal,
+            startPos: mouseMove.startPos,
+            targetPos: { x: targetX, y: targetY },
+            duration: resolvedDuration,
+            easing: mouseMove.easing,
+            startMs: scrollStartMs,
+            ...(mouseMove.elementRect !== undefined
+              ? { elementRect: mouseMove.elementRect }
+              : {}),
+          })
+        })()
+      : undefined
+    : undefined
+  const scrollPromise = scrollTo(locator, {
     amount,
     centering,
     easing,
     ...(duration !== undefined && { duration }),
   })
+  const [locatorRect, mouseMoveEvent] = await Promise.all([
+    scrollPromise,
+    movePromise ?? Promise.resolve(undefined),
+  ])
   const scrollEndMs = Date.now()
+  const finalLocatorRect = locatorRect ?? previewLocatorRect
+  const finalMouseMoveEvent =
+    mouseMoveEvent && finalLocatorRect
+      ? { ...mouseMoveEvent, elementRect: finalLocatorRect }
+      : mouseMoveEvent
 
   return {
-    locatorRect,
+    locatorRect: finalLocatorRect,
     scrollStartMs,
     scrollEndMs,
     scrollElapsedMs: Math.max(0, scrollEndMs - scrollStartMs),
+    ...(finalMouseMoveEvent !== undefined
+      ? { mouseMoveEvent: finalMouseMoveEvent }
+      : {}),
     isFirstAutoZoomInteraction: isFirstInteraction,
     shouldScrollBeforeMouseMove: isFirstInteraction,
     isInsideAutoZoom: state.insideAutoZoom,

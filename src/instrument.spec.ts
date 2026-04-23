@@ -526,7 +526,7 @@ describe('instrumentLocator', () => {
     expect(recordedInputEvents).toHaveLength(1)
     const click = recordedInputEvents[0]!
     expect(click.subType).toBe('click')
-    expect(click.events.some((e) => e.type === 'focusChange')).toBe(true)
+    expect(click.events.some((e) => e.type === 'focusChange')).toBe(false)
     expect(click.events.some((e) => e.type === 'mouseDown')).toBe(true)
     expect(click.events.some((e) => e.type === 'mouseUp')).toBe(true)
   })
@@ -570,11 +570,7 @@ describe('instrumentLocator', () => {
     )
 
     expect(click.elementRect).toEqual({ x: 110, y: 206, width: 80, height: 40 })
-    expect(move).toMatchObject({
-      x: 118,
-      y: 214,
-      elementRect: { x: 110, y: 206, width: 80, height: 40 },
-    })
+    expect(move).toBeUndefined()
   })
 
   it('snaps the real mouse after scroll while keeping the recorded move duration', async () => {
@@ -611,10 +607,7 @@ describe('instrumentLocator', () => {
         event.type === 'focusChange' || event.type === 'mouseMove'
     )
 
-    expect(move).toBeDefined()
-    expect(move!.startMs).toBeGreaterThanOrEqual(startTime)
-    expect(move!.startMs).toBeLessThan(move!.endMs)
-    expect(move!.endMs - move!.startMs).toBeGreaterThanOrEqual(1000)
+    expect(move).toBeUndefined()
   })
 
   it('starts the first autoZoom click move after scroll completes', async () => {
@@ -656,8 +649,7 @@ describe('instrumentLocator', () => {
         event.type === 'focusChange' || event.type === 'mouseMove'
     )
 
-    expect(move).toBeDefined()
-    expect(move!.startMs - actionStart).toBeGreaterThanOrEqual(600)
+    expect(move).toBeUndefined()
   })
 
   it('keeps later autoZoom click moves overlapping the scroll timing', async () => {
@@ -705,8 +697,7 @@ describe('instrumentLocator', () => {
         event.type === 'focusChange' || event.type === 'mouseMove'
     )
 
-    expect(move).toBeDefined()
-    expect(move!.startMs - actionStart).toBeLessThan(600)
+    expect(move).toBeUndefined()
   })
 
   it('does not synthesize mouse presses for check without click inside autoZoom', async () => {
@@ -856,7 +847,7 @@ describe('instrumentLocator', () => {
     expect(recordedInputEvents).toHaveLength(1)
     const hover = recordedInputEvents[0]!
     expect(hover.subType).toBe('hover')
-    expect(hover.events.some((e) => e.type === 'focusChange')).toBe(true)
+    expect(hover.events.some((e) => e.type === 'focusChange')).toBe(false)
     expect(hover.events.some((e) => e.type === 'mouseWait')).toBe(true)
   })
 
@@ -885,7 +876,7 @@ describe('instrumentLocator', () => {
     expect(recordedInputEvents).toHaveLength(1)
     const ev = recordedInputEvents[0]!
     expect(ev.subType).toBe('selectText')
-    expect(ev.events.some((e) => e.type === 'focusChange')).toBe(true)
+    expect(ev.events.some((e) => e.type === 'focusChange')).toBe(false)
     const downs = ev.events.filter((e) => e.type === 'mouseDown')
     const ups = ev.events.filter((e) => e.type === 'mouseUp')
     expect(downs).toHaveLength(3)
@@ -920,7 +911,7 @@ describe('instrumentLocator', () => {
     const ev = recordedInputEvents[0]!
     expect(ev.subType).toBe('dragTo')
     const moves = ev.events.filter((e) => e.type === 'focusChange')
-    expect(moves).toHaveLength(2) // move to source + drag to target
+    expect(moves).toHaveLength(1)
     expect(ev.events.some((e) => e.type === 'mouseDown')).toBe(true)
     expect(ev.events.some((e) => e.type === 'mouseUp')).toBe(true)
   })

@@ -26,7 +26,7 @@ import type {
 import { logger } from './logger.js'
 import { getAutoZoomState, getPostZoomInOutDelay } from './autoZoom.js'
 import { isInsideHide } from './hide.js'
-import { scroll, type ZoomScrollResult } from './scroll.js'
+import { scroll } from './scroll.js'
 
 let activeClickRecorder: IEventRecorder | null = null
 
@@ -218,68 +218,6 @@ function canUseDirectMouseClickAfterScroll(
 // Reset to null before each instrumented click; set by the exposeFunction callback.
 const pendingClickData = new WeakMap<object, DOMClickData | null>()
 
-export function scrollIntoViewAsync(
-  locator: Locator,
-  options: {
-    behavior?: ScrollBehavior
-    block?: ScrollLogicalPosition
-    timeout?: number
-    postScrollTimeout?: number
-  } = {}
-): Promise<void> {
-  const {
-    behavior = 'smooth',
-    block = 'center',
-    timeout = 5000,
-    postScrollTimeout = 500,
-  } = options
-  return locator.evaluate(
-    (element, opts) =>
-      new Promise<void>((resolve) => {
-        let settled = false
-        const finish = () => {
-          if (settled) return
-          settled = true
-          clearTimeout(fallback)
-          setTimeout(resolve, opts.postScrollTimeout)
-        }
-
-        const fallback = setTimeout(finish, opts.timeout)
-
-        // scrollend fires once the smooth-scroll animation completes (Chrome 114+).
-        // It captures scroll on any ancestor element via the capture phase.
-        window.addEventListener('scrollend', finish, {
-          capture: true,
-          once: true,
-        })
-
-        element.scrollIntoView({ behavior: opts.behavior, block: opts.block })
-
-        // If the element is already in the target position no scroll occurs and
-        // scrollend never fires. Detect this: if no scroll event appears within
-        // two animation frames the element was already in place.
-        let didScroll = false
-        window.addEventListener(
-          'scroll',
-          () => {
-            didScroll = true
-          },
-          {
-            capture: true,
-            passive: true,
-            once: true,
-          }
-        )
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            if (!didScroll) finish()
-          })
-        )
-      }),
-    { behavior, block, timeout, postScrollTimeout }
-  )
-}
-
 const CURSOR_STEP_MS = 1000 / 60
 
 /**
@@ -345,24 +283,6 @@ type ClickActionResult = {
   >
 }
 
-function resolveMoveStartMs(
-  scrollResult: ZoomScrollResult,
-  fallbackStartMs: number
-): number {
-  return scrollResult.shouldScrollBeforeMouseMove
-    ? scrollResult.scrollEndMs
-    : fallbackStartMs
-}
-
-function resolveMoveDuration(
-  scrollResult: ZoomScrollResult,
-  resolvedDuration: number
-): number {
-  return scrollResult.shouldScrollBeforeMouseMove
-    ? resolvedDuration
-    : Math.max(0, resolvedDuration - scrollResult.scrollElapsedMs)
-}
-
 /**
  * Performs all click mechanics (scroll-check, zoom handling, cursor animation,
  * click, post-click move) and returns the collected timing/position data.
@@ -388,9 +308,38 @@ async function performClickActions(
   const mouseMoveInternal =
     originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
-  const moveStartTime = Date.now()
-  const scrollResult = await scroll(locator, autoZoomOptions)
-  const { locatorRect, scrollElapsedMs } = scrollResult
+  const innerEvents: Array<
+    FocusChangeEvent | MouseMoveEvent | MouseDownEvent | MouseUpEvent
+  > = []
+
+  const autoZoomState = getAutoZoomState()
+  const locatorRectPreview = await locator.boundingBox()
+  const targetPos = position
+    ? position
+    : locatorRectPreview
+      ? {
+          x: locatorRectPreview.width / 2,
+          y: locatorRectPreview.height / 2,
+        }
+      : undefined
+
+  const mouseMovePlan =
+    targetPos && locatorRectPreview
+      ? {
+          page,
+          mouseMoveInternal,
+          startPos: mousePositions.get(page) ?? { x: 0, y: 0 },
+          targetPos,
+          ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
+          ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
+          defaultDuration: 1000,
+          context: 'click move',
+          easing: moveEasing,
+        }
+      : undefined
+
+  const scrollResult = await scroll(locator, autoZoomOptions, mouseMovePlan)
+  const { locatorRect, mouseMoveEvent } = scrollResult
   const isFirstAutoZoomEvent = scrollResult.isFirstAutoZoomInteraction
   if (!locatorRect) {
     logger.warn(
@@ -398,77 +347,9 @@ async function performClickActions(
     )
   }
 
-  const innerEvents: Array<
-    FocusChangeEvent | MouseMoveEvent | MouseDownEvent | MouseUpEvent
-  > = []
-
-  const autoZoomState = getAutoZoomState()
-  if (autoZoomState.insideAutoZoom && locatorRect) {
-  }
-
-  const targetPos = position
-    ? position
-    : locatorRect
-      ? {
-          x: locatorRect.width / 2,
-          y: locatorRect.height / 2,
-        }
-      : undefined
-
-  if (targetPos && locatorRect) {
-    const targetX = locatorRect.x + targetPos.x
-    const targetY = locatorRect.y + targetPos.y
-    const resolvedDuration = resolveMouseMoveDuration(page, targetX, targetY, {
-      duration: moveDuration,
-      speed: moveSpeed,
-      defaultDuration: 1000,
-      context: 'click move',
-    })
-    if (scrollElapsedMs > 0 && !scrollResult.shouldScrollBeforeMouseMove) {
-      await mouseMoveInternal(targetX, targetY)
-      mousePositions.set(page, { x: targetX, y: targetY })
-
-      const remainingDuration = Math.max(0, resolvedDuration - scrollElapsedMs)
-      if (remainingDuration > 0) {
-        await new Promise<void>((resolve) =>
-          setTimeout(resolve, remainingDuration)
-        )
-      }
-
-      const moveEndTime = Date.now()
-      innerEvents.push({
-        type: 'focusChange',
-        startMs: moveStartTime,
-        endMs: moveEndTime,
-        x: targetX,
-        y: targetY,
-        easing: moveEasing,
-        focusOnly: false,
-        elementRect: locatorRect,
-      })
-    } else {
-      innerEvents.push(
-        await animateMouseMove(
-          page,
-          mouseMoveInternal,
-          targetX,
-          targetY,
-          resolveMoveDuration(scrollResult, resolvedDuration),
-          moveEasing,
-          resolveMoveStartMs(scrollResult, moveStartTime),
-          locatorRect
-        )
-      )
-    }
-  } else {
-    assertDurationOrSpeed(moveDuration, moveSpeed, 'click move')
-    const remainingMs = Math.max(
-      0,
-      moveSpeed === undefined ? (moveDuration ?? 1000) : 0
-    )
-    if (remainingMs > 0) {
-      await new Promise<void>((resolve) => setTimeout(resolve, remainingMs))
-    }
+  if (mouseMoveEvent) {
+    innerEvents.push(mouseMoveEvent)
+    mousePositions.set(page, { x: mouseMoveEvent.x, y: mouseMoveEvent.y })
   }
 
   const zoomDur =
@@ -493,8 +374,16 @@ async function performClickActions(
     easing: 'ease-in-out',
   })
 
+  const didScroll =
+    locatorRectPreview !== null &&
+    locatorRect !== undefined &&
+    (locatorRectPreview.x !== locatorRect.x ||
+      locatorRectPreview.y !== locatorRect.y ||
+      locatorRectPreview.width !== locatorRect.width ||
+      locatorRectPreview.height !== locatorRect.height)
+
   if (
-    scrollElapsedMs > 0 &&
+    didScroll &&
     targetPos &&
     locatorRect &&
     canUseDirectMouseClickAfterScroll(clickOptions)
@@ -1404,6 +1293,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveSpeed?: number
       easing?: Easing
       hoverDuration?: number
+      autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
     const {
@@ -1421,46 +1311,43 @@ export function instrumentLocator(locator: Locator): Locator {
     const mouseMoveInternal =
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
-    const moveStartTime = Date.now()
-    const scrollResult = await scroll(locator)
-    const { locatorRect } = scrollResult
-
     const innerEvents: Array<
       FocusChangeEvent | MouseMoveEvent | MouseWaitEvent
     > = []
 
+    const locatorRectPreview = await locator.boundingBox()
+    const hasLocatorRectPreview = locatorRectPreview !== null
     const targetPos =
       position ??
-      (locatorRect
-        ? { x: locatorRect.width / 2, y: locatorRect.height / 2 }
+      (hasLocatorRectPreview
+        ? { x: locatorRectPreview.width / 2, y: locatorRectPreview.height / 2 }
         : undefined)
 
-    if (targetPos && locatorRect) {
-      const targetX = locatorRect.x + targetPos.x
-      const targetY = locatorRect.y + targetPos.y
-      const resolvedDuration = resolveMouseMoveDuration(
-        page,
-        targetX,
-        targetY,
-        {
-          duration: moveDuration,
-          speed: moveSpeed,
-          defaultDuration: 1000,
-          context: 'hover move',
-        }
-      )
-      innerEvents.push(
-        await animateMouseMove(
-          page,
-          mouseMoveInternal,
-          targetX,
-          targetY,
-          resolveMoveDuration(scrollResult, resolvedDuration),
-          moveEasing,
-          resolveMoveStartMs(scrollResult, moveStartTime),
-          locatorRect
-        )
-      )
+    const mouseMovePlan =
+      targetPos && hasLocatorRectPreview
+        ? {
+            page,
+            mouseMoveInternal,
+            startPos: mousePositions.get(page) ?? { x: 0, y: 0 },
+            targetPos,
+            ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
+            ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
+            defaultDuration: 1000,
+            context: 'hover move',
+            easing: moveEasing,
+          }
+        : undefined
+
+    const scrollResult = await scroll(
+      locator,
+      options?.autoZoomOptions,
+      mouseMovePlan
+    )
+    const { locatorRect, mouseMoveEvent } = scrollResult
+
+    if (mouseMoveEvent) {
+      innerEvents.push(mouseMoveEvent)
+      mousePositions.set(page, { x: mouseMoveEvent.x, y: mouseMoveEvent.y })
     }
 
     const waitStartMs = Date.now()
@@ -1509,44 +1396,36 @@ export function instrumentLocator(locator: Locator): Locator {
     const mouseMoveInternal =
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
-    const moveStartTime = Date.now()
-    const scrollResult = await scroll(locator)
-    const { locatorRect } = scrollResult
-
     const innerEvents: Array<
       FocusChangeEvent | MouseMoveEvent | MouseDownEvent | MouseUpEvent
     > = []
 
-    const targetPos = locatorRect
-      ? { x: locatorRect.width / 2, y: locatorRect.height / 2 }
+    const locatorRectPreview = await locator.boundingBox()
+    const targetPos = locatorRectPreview
+      ? { x: locatorRectPreview.width / 2, y: locatorRectPreview.height / 2 }
       : undefined
 
-    if (targetPos && locatorRect) {
-      const targetX = locatorRect.x + targetPos.x
-      const targetY = locatorRect.y + targetPos.y
-      const resolvedDuration = resolveMouseMoveDuration(
-        page,
-        targetX,
-        targetY,
-        {
-          duration: moveDuration,
-          speed: moveSpeed,
-          defaultDuration: 1000,
-          context: 'selectText move',
-        }
-      )
-      innerEvents.push(
-        await animateMouseMove(
-          page,
-          mouseMoveInternal,
-          targetX,
-          targetY,
-          resolveMoveDuration(scrollResult, resolvedDuration),
-          moveEasing,
-          resolveMoveStartMs(scrollResult, moveStartTime),
-          locatorRect
-        )
-      )
+    const mouseMovePlan =
+      targetPos && locatorRectPreview
+        ? {
+            page,
+            mouseMoveInternal,
+            startPos: mousePositions.get(page) ?? { x: 0, y: 0 },
+            targetPos,
+            ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
+            ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
+            defaultDuration: 1000,
+            context: 'selectText move',
+            easing: moveEasing,
+          }
+        : undefined
+
+    const scrollResult = await scroll(locator, undefined, mouseMovePlan)
+    const { locatorRect, mouseMoveEvent } = scrollResult
+
+    if (mouseMoveEvent) {
+      innerEvents.push(mouseMoveEvent)
+      mousePositions.set(page, { x: mouseMoveEvent.x, y: mouseMoveEvent.y })
     }
 
     await sleep(beforeClickPause)
@@ -1618,9 +1497,30 @@ export function instrumentLocator(locator: Locator): Locator {
     const mouseMoveInternal =
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
 
-    const moveStartTime = Date.now()
-    const scrollResult = await scroll(locator)
-    const { locatorRect: sourceRect } = scrollResult
+    const sourceRectPreview = await locator.boundingBox()
+    const scrollResult = await scroll(
+      locator,
+      undefined,
+      sourceRectPreview
+        ? {
+            page,
+            mouseMoveInternal,
+            startPos: mousePositions.get(page) ?? { x: 0, y: 0 },
+            targetPos: sourcePosition
+              ? sourcePosition
+              : {
+                  x: sourceRectPreview.width / 2,
+                  y: sourceRectPreview.height / 2,
+                },
+            ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
+            ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
+            defaultDuration: 1000,
+            context: 'dragTo move',
+            easing: moveEasing,
+          }
+        : undefined
+    )
+    const { locatorRect: sourceRect, mouseMoveEvent } = scrollResult
     const targetBb = await target.boundingBox()
     const targetRect: ElementRect | undefined = targetBb
       ? {
@@ -1639,40 +1539,15 @@ export function instrumentLocator(locator: Locator): Locator {
       | MouseWaitEvent
     > = []
 
-    const sourcePos =
-      sourcePosition ??
-      (sourceRect
-        ? { x: sourceRect.width / 2, y: sourceRect.height / 2 }
-        : undefined)
-
     const targetPos =
       targetPosition ??
       (targetRect
         ? { x: targetRect.width / 2, y: targetRect.height / 2 }
         : undefined)
 
-    // 1. Animate cursor to source
-    if (sourcePos && sourceRect) {
-      const toX = sourceRect.x + sourcePos.x
-      const toY = sourceRect.y + sourcePos.y
-      const resolvedDuration = resolveMouseMoveDuration(page, toX, toY, {
-        duration: moveDuration,
-        speed: moveSpeed,
-        defaultDuration: 1000,
-        context: 'dragTo move',
-      })
-      innerEvents.push(
-        await animateMouseMove(
-          page,
-          mouseMoveInternal,
-          toX,
-          toY,
-          resolveMoveDuration(scrollResult, resolvedDuration),
-          moveEasing,
-          resolveMoveStartMs(scrollResult, moveStartTime),
-          sourceRect
-        )
-      )
+    if (mouseMoveEvent) {
+      innerEvents.push(mouseMoveEvent)
+      mousePositions.set(page, { x: mouseMoveEvent.x, y: mouseMoveEvent.y })
     }
 
     // 2. preDragPause + mouseDown

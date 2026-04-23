@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Locator } from '@playwright/test'
 import { autoZoom, setLastZoomLocation } from './autoZoom.js'
-import { scrollTo, ZoomScrollHandler } from './scroll.js'
+import * as autoZoomModule from './autoZoom.js'
+import { ZoomScrollHandler } from './scroll.js'
 
 type MockDoc = {
   defaultView: MockWindow
@@ -185,19 +186,19 @@ function makeLocatorMock(options: {
   } as unknown as Locator & { __scrollToCalls: ScrollCall[] }
 }
 
-describe('scrollTo', () => {
-  it('scrolls the page toward the requested viewport height', async () => {
+describe('scroll', () => {
+  it('scrolls the page to bring the element into the viewport', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
       scrollSize: { width: 1280, height: 2000 },
     })
 
-    const promise = scrollTo(locator, 120, 1, 'ease-out')
+    const promise = new ZoomScrollHandler().scroll(locator)
     await vi.runAllTimersAsync()
-    const rect = await promise
+    const result = await promise
 
-    expect(rect?.y).toBeCloseTo(120, 0)
+    expect(result.locatorRect?.y).toBeCloseTo(340, 0)
   })
 
   it('marks the first autoZoom interaction to scroll before mouse movement', async () => {
@@ -340,7 +341,7 @@ describe('scrollTo', () => {
       scrollSize: { width: 1280, height: 2000 },
     })
 
-    const promise = scrollTo(locator, 120, 1, 'ease-in-out')
+    const promise = new ZoomScrollHandler().scroll(locator)
     await vi.runAllTimersAsync()
     await promise
 
@@ -349,7 +350,7 @@ describe('scrollTo', () => {
     expect(locator.__scrollToCalls[0]?.top).toBeLessThan(lastCall?.top ?? 0)
   })
 
-  it('uses the provided duration to control scroll step count', async () => {
+  it('uses the autoZoom duration to control scroll step count', async () => {
     const slowLocator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
@@ -360,15 +361,31 @@ describe('scrollTo', () => {
       viewport: { width: 1280, height: 720 },
       scrollSize: { width: 1280, height: 2000 },
     })
+    const prevLocation = {
+      x: 100,
+      y: 100,
+      eventType: 'click' as const,
+      elementRect: { x: 80, y: 80, width: 40, height: 20 },
+    }
+    const durationSpy = vi.spyOn(autoZoomModule, 'getZoomDuration')
 
-    const slowPromise = scrollTo(slowLocator, 120, 1, 'ease-in-out', 600)
+    durationSpy.mockReturnValue(600)
+    const slowPromise = autoZoom(() => {
+      setLastZoomLocation(prevLocation)
+      return new ZoomScrollHandler().scroll(slowLocator)
+    })
     await vi.runAllTimersAsync()
     await slowPromise
 
-    const fastPromise = scrollTo(fastLocator, 120, 1, 'ease-in-out', 100)
+    durationSpy.mockReturnValue(100)
+    const fastPromise = autoZoom(() => {
+      setLastZoomLocation(prevLocation)
+      return new ZoomScrollHandler().scroll(fastLocator)
+    })
     await vi.runAllTimersAsync()
     await fastPromise
 
+    durationSpy.mockRestore()
     expect(slowLocator.__scrollToCalls.length).toBeGreaterThan(
       fastLocator.__scrollToCalls.length
     )
@@ -389,11 +406,11 @@ describe('scrollTo', () => {
       },
     })
 
-    const promise = scrollTo(locator, 120, 1, 'ease-in-out')
+    const promise = new ZoomScrollHandler().scroll(locator)
     await vi.runAllTimersAsync()
-    const rect = await promise
+    const result = await promise
 
-    expect(rect?.y).toBeCloseTo(120, 0)
+    expect(result.locatorRect?.y).toBeCloseTo(340, 0)
   })
 
   it('skips non-scrollable wrappers and animates the real scroll container', async () => {
@@ -519,12 +536,12 @@ describe('scrollTo', () => {
       ),
     } as unknown as Locator
 
-    const promise = scrollTo(locator, 120, 1, 'ease-in-out')
+    const promise = new ZoomScrollHandler().scroll(locator)
     await vi.runAllTimersAsync()
-    const rect = await promise
+    const result = await promise
 
     expect(nestedScrollTops.length).toBeGreaterThan(1)
-    expect(rect?.y).toBeCloseTo(120, 0)
+    expect(result.locatorRect?.y).toBeCloseTo(340, 0)
   })
 
   it('animates multiple nested scroll containers together with page scroll', async () => {
@@ -661,12 +678,12 @@ describe('scrollTo', () => {
       ),
     } as unknown as Locator
 
-    const promise = scrollTo(locator, 120, 1, 'ease-in-out')
+    const promise = new ZoomScrollHandler().scroll(locator)
     await vi.runAllTimersAsync()
-    const rect = await promise
+    const result = await promise
 
     expect(outerScrollTops.length).toBeGreaterThan(1)
     expect(innerScrollTops.length).toBeGreaterThan(1)
-    expect(rect?.y).toBeCloseTo(120, 0)
+    expect(result.locatorRect?.y).toBeCloseTo(340, 0)
   })
 })

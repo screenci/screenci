@@ -3,7 +3,6 @@ import type { ElementRect } from './events.js'
 import type { Easing } from './types.js'
 import {
   getLastZoomLocation,
-  getAllowZoomingOut,
   getZoomAmount,
   getZoomDuration,
   getZoomEasing,
@@ -45,11 +44,9 @@ function resolveCenteringValue(centering: number | undefined): number {
   return clamp(centering, 0, 1)
 }
 
-type ScrollToOptions = {
+type ScrollOpts = {
   amount: number
-  /** 0..1 visibility bias: 0 = barely visible, 1 = centered. */
   centering: number
-  allowZoomingOut: boolean
   easing?: Easing
   duration?: number
   legacyHeight?: number
@@ -60,30 +57,27 @@ type ScrollToOptions = {
  * Scrolls the nearest nested scroll container first, then the page viewport,
  * and returns the final bounding rect if it can be measured.
  *
- * Pass `amount` as `getZoomAmount() ?? 1` when inside an auto-zoom session,
- * or `1` otherwise.
+ * Pass `amount` as `getZoomAmount() ?? 1` and `centering` as
+ * `getZoomCentering() ?? 0` when inside an auto-zoom session, or `1` / `0`
+ * otherwise. Pass `height` to pin the element at a fixed pixel offset from
+ * the viewport top instead of using the `amount`/`centering` calculation.
  */
-export async function scrollTo(
+async function scrollTo(
   locator: Locator,
-  height: number,
+  height: number | undefined,
   amount: number,
+  centering: number,
   easing?: Easing,
   duration?: number
 ): Promise<ElementRect | undefined> {
-  return scrollToWithOptions(locator, {
+  const opts: ScrollOpts = {
     amount,
-    centering: 1,
-    allowZoomingOut: true,
-    legacyHeight: height,
+    centering,
     ...(easing !== undefined && { easing }),
     ...(duration !== undefined && { duration }),
-  })
-}
+    ...(height !== undefined && { legacyHeight: height }),
+  }
 
-async function scrollToWithOptions(
-  locator: Locator,
-  options: ScrollToOptions
-): Promise<ElementRect | undefined> {
   const initialBb = await locator.boundingBox()
   if (!initialBb) return undefined
 
@@ -182,14 +176,9 @@ async function scrollToWithOptions(
           }
           const effectiveAmount = clampValue(
             Math.max(
-              opts.allowZoomingOut
-                ? Math.max(
-                    opts.amount,
-                    elementRect.width / Math.max(1, containerWidth),
-                    elementRect.height / Math.max(1, containerHeight)
-                  )
-                : opts.amount,
-              0
+              opts.amount,
+              elementRect.width / Math.max(1, containerWidth),
+              elementRect.height / Math.max(1, containerHeight)
             ),
             0,
             1
@@ -398,7 +387,7 @@ async function scrollToWithOptions(
 
         tick()
       }),
-    options
+    opts
   )
 
   const finalBb = await locator.boundingBox()
@@ -425,7 +414,6 @@ export class ZoomScrollHandler {
     private readonly options: {
       amount?: number
       centering?: number
-      allowZoomingOut?: boolean
     } = {}
   ) {}
 
@@ -452,7 +440,6 @@ export class ZoomScrollHandler {
   private resolveScrollBehavior(): {
     amount: number
     centering: number
-    allowZoomingOut: boolean
   } {
     const amount =
       this.options.amount ??
@@ -462,30 +449,22 @@ export class ZoomScrollHandler {
       this.options.centering !== undefined
         ? resolveCenteringValue(this.options.centering)
         : (getZoomCentering() ?? (this.isInsideAutoZoom ? 1 : 1))
-    const allowZoomingOut =
-      this.options.allowZoomingOut ?? getAllowZoomingOut() ?? true
 
-    return { amount, centering, allowZoomingOut }
+    return { amount, centering }
   }
 
-  async scroll(
-    locator: Locator,
-    centeringOverride?: number
-  ): Promise<ZoomScrollResult> {
+  async scroll(locator: Locator): Promise<ZoomScrollResult> {
     const { easing, duration } = this.resolveScrollAnimationOptions()
-    const { amount, centering, allowZoomingOut } = this.resolveScrollBehavior()
-    const effectiveCentering =
-      centeringOverride !== undefined
-        ? clamp(centeringOverride, 0, 1)
-        : centering
+    const { amount, centering } = this.resolveScrollBehavior()
     const scrollStartMs = Date.now()
-    const locatorRect = await scrollToWithOptions(locator, {
+    const locatorRect = await scrollTo(
+      locator,
+      undefined,
       amount,
-      centering: effectiveCentering,
-      allowZoomingOut,
-      ...(easing !== undefined && { easing }),
-      ...(duration !== undefined && { duration }),
-    })
+      centering,
+      easing,
+      duration
+    )
     const scrollEndMs = Date.now()
 
     return {

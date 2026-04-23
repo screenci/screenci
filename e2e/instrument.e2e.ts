@@ -3,7 +3,7 @@ import { readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { instrumentPage, setActiveClickRecorder } from '../src/instrument.js'
-import { scrollTo } from '../src/scroll.js'
+import { ZoomScrollHandler } from '../src/scroll.js'
 import { EventRecorder } from '../src/events.js'
 import type {
   InputEvent,
@@ -783,17 +783,18 @@ test.describe('selectOption instrumentation', () => {
 // mouse.move
 // ---------------------------------------------------------------------------
 
-test.describe('scrollTo helper', () => {
-  test('scrolls an off-screen element near the requested viewport height', async ({
-    page,
-  }) => {
+test.describe('ZoomScrollHandler', () => {
+  test('scrolls an off-screen element into the viewport', async ({ page }) => {
     expect(await scrollY(page)).toBe(0)
 
-    await scrollTo(page.locator('#offscreen-click-button'), 120, 1, 'ease-out')
+    await new ZoomScrollHandler().scroll(
+      page.locator('#offscreen-click-button')
+    )
 
     const box = await page.locator('#offscreen-click-button').boundingBox()
     expect(box).not.toBeNull()
-    expect(box!.y).toBeCloseTo(120, 0)
+    expect(box!.y).toBeGreaterThanOrEqual(0)
+    expect(box!.y).toBeLessThan(page.viewportSize()!.height)
     expect(await scrollY(page)).toBeGreaterThan(0)
   })
 
@@ -802,7 +803,7 @@ test.describe('scrollTo helper', () => {
   }) => {
     expect(await scrollY(page)).toBe(0)
 
-    await scrollTo(page.locator('#nested-scroll-target'), 120, 1, 'ease-in-out')
+    await new ZoomScrollHandler().scroll(page.locator('#nested-scroll-target'))
 
     const box = await page.locator('#nested-scroll-target').boundingBox()
     expect(box).not.toBeNull()

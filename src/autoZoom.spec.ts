@@ -2,12 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   autoZoom,
   setActiveAutoZoomRecorder,
-  getZoomDuration,
-  getZoomEasing,
+  getAutoZoomState,
   getLastZoomLocation,
   setLastZoomLocation,
 } from './autoZoom.js'
 import type { IEventRecorder } from './events.js'
+import type { Easing } from './types.js'
 
 function makeRecorder(): IEventRecorder {
   return {
@@ -160,7 +160,7 @@ describe('autoZoom', () => {
       let durationDuringFn: number | null = null
       const p = autoZoom(
         () => {
-          durationDuringFn = getZoomDuration()
+          durationDuringFn = getAutoZoomState().duration
         },
         { duration: 400 }
       )
@@ -172,7 +172,7 @@ describe('autoZoom', () => {
     it('defaults zoom duration to DEFAULT_ZOOM_DURATION when no option given', async () => {
       let durationDuringFn: number | null = null
       const p = autoZoom(() => {
-        durationDuringFn = getZoomDuration()
+        durationDuringFn = getAutoZoomState().duration
       })
       await vi.runAllTimersAsync()
       await p
@@ -180,10 +180,10 @@ describe('autoZoom', () => {
     })
 
     it('exposes zoom easing during fn execution', async () => {
-      let easingDuringFn: string | null = null
+      let easingDuringFn: Easing | null = null
       const p = autoZoom(
         () => {
-          easingDuringFn = getZoomEasing()
+          easingDuringFn = getAutoZoomState().easing
         },
         { easing: 'ease-in-out-strong' }
       )
@@ -193,9 +193,9 @@ describe('autoZoom', () => {
     })
 
     it('defaults zoom easing when no option given', async () => {
-      let easingDuringFn: string | null = null
+      let easingDuringFn: Easing | null = null
       const p = autoZoom(() => {
-        easingDuringFn = getZoomEasing()
+        easingDuringFn = getAutoZoomState().easing
       })
       await vi.runAllTimersAsync()
       await p
@@ -206,14 +206,14 @@ describe('autoZoom', () => {
       const p = autoZoom(() => {}, { duration: 300 })
       await vi.runAllTimersAsync()
       await p
-      expect(getZoomDuration()).toBeNull()
+      expect(getAutoZoomState().duration).toBeNull()
     })
 
     it('zoom easing is null after fn completes', async () => {
       const p = autoZoom(() => {}, { easing: 'linear' })
       await vi.runAllTimersAsync()
       await p
-      expect(getZoomEasing()).toBeNull()
+      expect(getAutoZoomState().easing).toBeNull()
     })
 
     it('resets lastZoomLocation to null after fn completes', async () => {

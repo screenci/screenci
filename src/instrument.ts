@@ -24,7 +24,7 @@ import type {
   ScreenCIPage,
 } from './types.js'
 import { logger } from './logger.js'
-import { getAutoZoomState, getPostZoomInOutDelay } from './autoZoom.js'
+import { getAutoZoomState } from './autoZoom.js'
 import { isInsideHide } from './hide.js'
 import { scroll } from './scroll.js'
 
@@ -444,7 +444,7 @@ async function performClickActions(
       ? (autoZoomState.duration ?? 0)
       : 0
   const effectiveBeforeClickPause = isFirstAutoZoomEvent
-    ? Math.max(beforeClickPause, getPostZoomInOutDelay() ?? 0, zoomDur)
+    ? Math.max(beforeClickPause, autoZoomState.postZoomDelay ?? 0, zoomDur)
     : Math.max(beforeClickPause, zoomDur)
   await new Promise<void>((resolve) =>
     setTimeout(resolve, effectiveBeforeClickPause)
@@ -979,7 +979,7 @@ export function instrumentLocator(locator: Locator): Locator {
       }
 
       if (isFirstAutoZoomInteraction) {
-        const postDelay = getPostZoomInOutDelay() ?? 0
+        const postDelay = getAutoZoomState().postZoomDelay ?? 0
         if (postDelay > 0) await sleep(postDelay)
       }
 

@@ -364,9 +364,12 @@ describe('scroll', () => {
       eventType: 'click' as const,
       elementRect: { x: 80, y: 80, width: 40, height: 20 },
     }
-    const durationSpy = vi.spyOn(autoZoomModule, 'getZoomDuration')
+    const stateSpy = vi.spyOn(autoZoomModule, 'getAutoZoomState')
 
-    durationSpy.mockReturnValue(600)
+    stateSpy.mockReturnValue({
+      ...autoZoomModule.getAutoZoomState(),
+      duration: 600,
+    })
     const slowPromise = autoZoom(() => {
       setLastZoomLocation(prevLocation)
       return scroll(slowLocator)
@@ -374,7 +377,10 @@ describe('scroll', () => {
     await vi.runAllTimersAsync()
     await slowPromise
 
-    durationSpy.mockReturnValue(100)
+    stateSpy.mockReturnValue({
+      ...autoZoomModule.getAutoZoomState(),
+      duration: 100,
+    })
     const fastPromise = autoZoom(() => {
       setLastZoomLocation(prevLocation)
       return scroll(fastLocator)
@@ -382,7 +388,7 @@ describe('scroll', () => {
     await vi.runAllTimersAsync()
     await fastPromise
 
-    durationSpy.mockRestore()
+    stateSpy.mockRestore()
     expect(slowLocator.__scrollToCalls.length).toBeGreaterThanOrEqual(
       fastLocator.__scrollToCalls.length
     )

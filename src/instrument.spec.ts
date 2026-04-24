@@ -644,7 +644,7 @@ describe('instrumentLocator', () => {
           }
         ).click({ moveDuration: 1000 })
       },
-      { duration: 300, postZoomInOutDelay: 0 }
+      { duration: 300, postZoomDelay: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -698,7 +698,7 @@ describe('instrumentLocator', () => {
           }
         ).click({ moveDuration: 1000 })
       },
-      { duration: 300, postZoomInOutDelay: 0 }
+      { duration: 300, postZoomDelay: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -735,7 +735,7 @@ describe('instrumentLocator', () => {
       async () => {
         await locator.check()
       },
-      { duration: 300, postZoomInOutDelay: 0 }
+      { duration: 300, postZoomDelay: 0 }
     )
 
     await vi.advanceTimersByTimeAsync(50)
@@ -777,7 +777,7 @@ describe('instrumentLocator', () => {
           ) => Promise<void>
         )('hi', { duration: 100 })
       },
-      { duration: 0, postZoomInOutDelay: 0 }
+      { duration: 0, postZoomDelay: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -828,7 +828,7 @@ describe('instrumentLocator', () => {
           click: { moveDuration: 0, beforeClickPause: 0, postClickPause: 0 },
         })
       },
-      { duration: 300, postZoomInOutDelay: 0 }
+      { duration: 300, postZoomDelay: 0 }
     )
 
     await vi.advanceTimersByTimeAsync(449)

@@ -1,5 +1,6 @@
 import type {
   AspectRatio,
+  Easing,
   FPS,
   Quality,
   Trace,
@@ -24,7 +25,7 @@ export const DEFAULT_POST_ZOOM_IN_OUT_DELAY: number = 1000
 /**
  * Default zoom transition easing function
  */
-export const DEFAULT_ZOOM_EASING: string = 'ease-out'
+export const DEFAULT_ZOOM_EASING: Easing = 'ease-out'
 
 /**
  * Default aspect ratio for recording and output

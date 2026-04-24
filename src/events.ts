@@ -260,7 +260,6 @@ export type AutoZoomStartEvent = {
   duration: number
   amount: number
   centering?: number
-  allowZoomingOut?: boolean
 }
 
 export type AutoZoomEndEvent = {
@@ -659,9 +658,6 @@ export class EventRecorder implements IEventRecorder {
       amount: options?.amount ?? DEFAULT_ZOOM_AMOUNT,
       ...(centering !== undefined && {
         centering,
-      }),
-      ...(options?.allowZoomingOut !== undefined && {
-        allowZoomingOut: options.allowZoomingOut,
       }),
     })
   }

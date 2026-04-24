@@ -199,7 +199,6 @@ export type AutoZoomStartEvent = {
   duration: number
   amount: number
   centering?: number
-  allowZoomingOut?: boolean
 }
 
 export type AutoZoomEndEvent = {

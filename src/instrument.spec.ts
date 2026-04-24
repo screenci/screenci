@@ -123,6 +123,7 @@ function makePageMock(): PageMock {
     viewportSize: vi.fn().mockReturnValue({ width: 1280, height: 720 }),
     mouse: {
       move: vi.fn().mockResolvedValue(undefined),
+      click: vi.fn().mockResolvedValue(undefined),
       down: vi.fn().mockResolvedValue(undefined),
       up: vi.fn().mockResolvedValue(undefined),
     },
@@ -201,6 +202,73 @@ function makeLocatorMock(
       .mockImplementation(() => makeLocatorMock())
   }
   const scrollIntoViewCalls: ScrollLogicalPosition[] = []
+  let scrollY = 0
+  let scrollX = 0
+  const viewport = pageMock?.viewportSize() ?? { width: 1280, height: 720 }
+  const win = {
+    get innerHeight() {
+      return viewport.height
+    },
+    get innerWidth() {
+      return viewport.width
+    },
+    get scrollY() {
+      return scrollY
+    },
+    get scrollX() {
+      return scrollX
+    },
+    document: undefined,
+    getComputedStyle: () =>
+      ({ overflowX: 'visible', overflowY: 'visible' }) as CSSStyleDeclaration,
+    scrollTo: ({ top, left }: { top?: number; left?: number }) => {
+      if (top !== undefined) scrollY = top
+      if (left !== undefined) scrollX = left
+    },
+  }
+  const doc = {
+    defaultView: win,
+    documentElement: {
+      clientHeight: viewport.height,
+      clientWidth: viewport.width,
+      scrollHeight: 4000,
+      scrollWidth: 4000,
+    },
+    body: {
+      scrollHeight: 4000,
+      scrollWidth: 4000,
+    },
+  }
+  const element = {
+    parentElement: null,
+    ownerDocument: doc,
+    getBoundingClientRect: () => {
+      if (!bb) {
+        return {
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          toJSON: () => undefined,
+        }
+      }
+      return {
+        x: bb.x - scrollX,
+        y: bb.y - scrollY,
+        width: bb.width,
+        height: bb.height,
+        top: bb.y - scrollY,
+        left: bb.x - scrollX,
+        right: bb.x - scrollX + bb.width,
+        bottom: bb.y - scrollY + bb.height,
+        toJSON: () => undefined,
+      }
+    },
+  }
   const mock = {
     click: vi.fn(),
     fill: vi.fn().mockResolvedValue(undefined),
@@ -212,9 +280,27 @@ function makeLocatorMock(
     hover: vi.fn().mockResolvedValue(undefined),
     selectText: vi.fn().mockResolvedValue(undefined),
     dragTo: vi.fn().mockResolvedValue(undefined),
-    evaluate: vi.fn().mockImplementation(async (_fn: unknown, arg: unknown) => {
+    evaluate: vi.fn().mockImplementation(async (fn: unknown, arg: unknown) => {
       const opts = arg as { block?: ScrollLogicalPosition } | undefined
       scrollIntoViewCalls.push(opts?.block ?? 'center')
+      if (typeof fn === 'function') {
+        try {
+          return (fn as (el: typeof element, arg: unknown) => unknown)(
+            element,
+            arg
+          )
+        } catch (error) {
+          if (
+            error instanceof ReferenceError &&
+            (error.message.includes('HTMLInputElement') ||
+              error.message.includes('HTMLTextAreaElement') ||
+              error.message.includes('HTMLElement'))
+          ) {
+            return undefined
+          }
+          throw error
+        }
+      }
       return undefined
     }),
     boundingBox: vi.fn().mockResolvedValue(bb),
@@ -526,7 +612,7 @@ describe('instrumentLocator', () => {
     expect(recordedInputEvents).toHaveLength(1)
     const click = recordedInputEvents[0]!
     expect(click.subType).toBe('click')
-    expect(click.events.some((e) => e.type === 'focusChange')).toBe(false)
+    expect(click.events.some((e) => e.type === 'focusChange')).toBe(true)
     expect(click.events.some((e) => e.type === 'mouseDown')).toBe(true)
     expect(click.events.some((e) => e.type === 'mouseUp')).toBe(true)
   })
@@ -570,7 +656,7 @@ describe('instrumentLocator', () => {
     )
 
     expect(click.elementRect).toBeUndefined()
-    expect(move).toBeUndefined()
+    expect(move).toBeDefined()
   })
 
   it('snaps the real mouse after scroll while keeping the recorded move duration', async () => {
@@ -584,9 +670,13 @@ describe('instrumentLocator', () => {
       { x: 100, y: 900, width: 80, height: 40 },
       page
     )
+    const originalEvaluate = (
+      locator.evaluate as ReturnType<typeof vi.fn>
+    ).getMockImplementation()!
     ;(locator.evaluate as ReturnType<typeof vi.fn>).mockImplementation(
-      async () => {
+      async (fn: unknown, arg: unknown) => {
         await new Promise<void>((resolve) => setTimeout(resolve, 600))
+        return originalEvaluate(fn, arg)
       }
     )
 
@@ -608,7 +698,6 @@ describe('instrumentLocator', () => {
 
     expect(move).toMatchObject({
       type: 'focusChange',
-      focusOnly: true,
       scroll: expect.objectContaining({
         startMs: expect.any(Number),
         endMs: expect.any(Number),
@@ -627,9 +716,13 @@ describe('instrumentLocator', () => {
       { x: 100, y: 900, width: 80, height: 40 },
       page
     )
+    const originalEvaluate = (
+      locator.evaluate as ReturnType<typeof vi.fn>
+    ).getMockImplementation()!
     ;(locator.evaluate as ReturnType<typeof vi.fn>).mockImplementation(
-      async () => {
+      async (fn: unknown, arg: unknown) => {
         await new Promise<void>((resolve) => setTimeout(resolve, 600))
+        return originalEvaluate(fn, arg)
       }
     )
 
@@ -674,9 +767,13 @@ describe('instrumentLocator', () => {
       { x: 100, y: 900, width: 80, height: 40 },
       page
     )
+    const originalEvaluate = (
+      locator.evaluate as ReturnType<typeof vi.fn>
+    ).getMockImplementation()!
     ;(locator.evaluate as ReturnType<typeof vi.fn>).mockImplementation(
-      async () => {
+      async (fn: unknown, arg: unknown) => {
         await new Promise<void>((resolve) => setTimeout(resolve, 600))
+        return originalEvaluate(fn, arg)
       }
     )
 
@@ -864,7 +961,7 @@ describe('instrumentLocator', () => {
     expect(recordedInputEvents).toHaveLength(1)
     const hover = recordedInputEvents[0]!
     expect(hover.subType).toBe('hover')
-    expect(hover.events.some((e) => e.type === 'focusChange')).toBe(false)
+    expect(hover.events.some((e) => e.type === 'focusChange')).toBe(true)
     expect(hover.events.some((e) => e.type === 'mouseWait')).toBe(true)
   })
 
@@ -893,7 +990,7 @@ describe('instrumentLocator', () => {
     expect(recordedInputEvents).toHaveLength(1)
     const ev = recordedInputEvents[0]!
     expect(ev.subType).toBe('selectText')
-    expect(ev.events.some((e) => e.type === 'focusChange')).toBe(false)
+    expect(ev.events.some((e) => e.type === 'focusChange')).toBe(true)
     const downs = ev.events.filter((e) => e.type === 'mouseDown')
     const ups = ev.events.filter((e) => e.type === 'mouseUp')
     expect(downs).toHaveLength(3)

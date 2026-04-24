@@ -259,9 +259,6 @@ export type AutoZoomOptions = {
   amount?: number
   /** 0–1: visibility bias inside the zoomed viewport; 0 = barely fit, 1 = centered. */
   centering?: number
-  /** When false, the camera never zooms out beyond the initial amount to fit
-   *  large element rects. Defaults to true. */
-  allowZoomingOut?: boolean
   /** Delay in milliseconds to hold the zoomed-in state after the zoom-in
    *  animation completes, and to hold the full view after the zoom-out
    *  animation completes. Defaults to 500. */

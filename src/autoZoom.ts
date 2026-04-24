@@ -33,7 +33,6 @@ let currentAutoZoomState: AutoZoomState = {
   duration: null,
   amount: null,
   centering: null,
-  allowZoomingOut: null,
   preZoomDelay: null,
   postZoomDelay: null,
   currentZoomViewport: null,
@@ -60,7 +59,6 @@ export type AutoZoomState = {
   duration: number | null
   amount: number | null
   centering: number | null
-  allowZoomingOut: boolean | null
   preZoomDelay: number | null
   postZoomDelay: number | null
   currentZoomViewport: CurrentZoomViewport | null
@@ -103,7 +101,6 @@ function resetAutoZoomState(): void {
     easing: null,
     amount: null,
     centering: null,
-    allowZoomingOut: null,
     preZoomDelay: null,
     postZoomDelay: null,
     currentZoomViewport: null,
@@ -154,7 +151,6 @@ export async function autoZoom(
       options?.centering !== undefined
         ? resolveCenteringValue(options.centering)
         : null,
-    allowZoomingOut: options?.allowZoomingOut ?? null,
     preZoomDelay: options?.preZoomDelay ?? 0,
     postZoomDelay: options?.postZoomDelay ?? DEFAULT_POST_ZOOM_IN_OUT_DELAY,
   })

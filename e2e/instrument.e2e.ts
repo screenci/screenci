@@ -3,7 +3,7 @@ import { readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { instrumentPage, setActiveClickRecorder } from '../src/instrument.js'
-import { scroll } from '../src/scroll.js'
+import { changeFocus } from '../src/changeFocus.js'
 import { EventRecorder } from '../src/events.js'
 import type {
   FocusChangeEvent,
@@ -805,7 +805,7 @@ test.describe('scroll', () => {
   test('scrolls an off-screen element into the viewport', async ({ page }) => {
     expect(await scrollY(page)).toBe(0)
 
-    await scroll(page.locator('#offscreen-click-button'))
+    await changeFocus(page.locator('#offscreen-click-button'))
 
     const box = await page.locator('#offscreen-click-button').boundingBox()
     expect(box).not.toBeNull()
@@ -819,7 +819,7 @@ test.describe('scroll', () => {
   }) => {
     expect(await scrollY(page)).toBe(0)
 
-    await scroll(page.locator('#nested-scroll-target'))
+    await changeFocus(page.locator('#nested-scroll-target'))
 
     const box = await page.locator('#nested-scroll-target').boundingBox()
     expect(box).not.toBeNull()

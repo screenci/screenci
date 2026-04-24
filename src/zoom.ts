@@ -10,11 +10,57 @@ export type ResolvedAutoZoomConfig = {
   duration: number
   amount: number
   centering: number
-  allowZoomingOut: boolean
 }
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
+}
+
+function resolveFixedFocusViewportSize(
+  viewport: { width: number; height: number },
+  amount: number
+): { width: number; height: number } {
+  const resolvedAmount = clamp(amount, 0, 1)
+  return {
+    width: viewport.width * resolvedAmount,
+    height: viewport.height * resolvedAmount,
+  }
+}
+
+function resolveIdealFocusOriginForAxis(params: {
+  rectStart: number
+  rectSize: number
+  focusSize: number
+  centering: number
+}): number {
+  const { rectStart, rectSize, focusSize, centering } = params
+  if (rectSize <= focusSize) {
+    const slack = focusSize - rectSize
+    const idealRectOffset = (slack * centering) / 2
+    return rectStart - idealRectOffset
+  }
+  return rectStart + rectSize / 2 - focusSize / 2
+}
+
+function resolveIdealFocusOrigin(
+  locatorRect: ElementRect,
+  focusViewport: { width: number; height: number },
+  centering: number
+): { x: number; y: number } {
+  return {
+    x: resolveIdealFocusOriginForAxis({
+      rectStart: locatorRect.x,
+      rectSize: locatorRect.width,
+      focusSize: focusViewport.width,
+      centering,
+    }),
+    y: resolveIdealFocusOriginForAxis({
+      rectStart: locatorRect.y,
+      rectSize: locatorRect.height,
+      focusSize: focusViewport.height,
+      centering,
+    }),
+  }
 }
 
 export function resolveCenteringValue(centering: number | undefined): number {
@@ -45,89 +91,87 @@ export function resolveAutoZoomConfig(
       options.centering !== undefined
         ? resolveCenteringValue(options.centering)
         : (state.centering ?? 1),
-    allowZoomingOut: options.allowZoomingOut ?? state.allowZoomingOut ?? true,
   }
 }
 
-function clampZoomViewport(
-  point: { x: number; y: number },
-  size: { widthPx: number; heightPx: number },
-  viewport: { width: number; height: number }
-): FocusChangeZoom['end'] {
+export function resolveZoomTarget(
+  locatorRect: ElementRect,
+  viewport: { width: number; height: number },
+  config: Pick<ResolvedAutoZoomConfig, 'amount' | 'centering'>
+): { end: FocusChangeZoom['end']; optimalOffset: { x: number; y: number } } {
+  const focusViewport = resolveFixedFocusViewportSize(viewport, config.amount)
   const widthPx = Math.min(
     viewport.width,
-    Math.max(1, Math.round(size.widthPx))
+    Math.max(1, Math.round(focusViewport.width))
   )
   const heightPx = Math.min(
     viewport.height,
-    Math.max(1, Math.round(size.heightPx))
+    Math.max(1, Math.round(focusViewport.height))
   )
+  const idealOrigin = resolveIdealFocusOrigin(
+    locatorRect,
+    { width: widthPx, height: heightPx },
+    config.centering
+  )
+  const actualOrigin = {
+    x: clamp(
+      Math.round(idealOrigin.x),
+      0,
+      Math.max(0, viewport.width - widthPx)
+    ),
+    y: clamp(
+      Math.round(idealOrigin.y),
+      0,
+      Math.max(0, viewport.height - heightPx)
+    ),
+  }
+
   return {
-    pointPx: {
-      x: clamp(Math.round(point.x), 0, Math.max(0, viewport.width - widthPx)),
-      y: clamp(Math.round(point.y), 0, Math.max(0, viewport.height - heightPx)),
+    end: {
+      pointPx: actualOrigin,
+      size: {
+        widthPx,
+        heightPx,
+      },
     },
-    size: {
-      widthPx,
-      heightPx,
+    optimalOffset: {
+      x: idealOrigin.x - actualOrigin.x,
+      y: idealOrigin.y - actualOrigin.y,
     },
   }
 }
 
-function computeZoomTarget(
-  locatorRect: ElementRect,
-  viewport: { width: number; height: number },
-  config: ResolvedAutoZoomConfig
-): FocusChangeZoom['end'] {
-  let widthPx = viewport.width * config.amount
-  let heightPx = viewport.height * config.amount
-
-  if (config.allowZoomingOut) {
-    widthPx = Math.max(widthPx, locatorRect.width)
-    heightPx = Math.max(heightPx, locatorRect.height)
-  }
-
-  const xBias = (widthPx - locatorRect.width) * config.centering * 0.5
-  const yBias = (heightPx - locatorRect.height) * config.centering * 0.5
-
-  return clampZoomViewport(
-    {
-      x: locatorRect.x + locatorRect.width / 2 - widthPx / 2 + xBias,
-      y: locatorRect.y + locatorRect.height / 2 - heightPx / 2 + yBias,
-    },
-    { widthPx, heightPx },
-    viewport
+function isSameZoomEnd(
+  left: FocusChangeZoom['end'] | undefined,
+  right: FocusChangeZoom['end']
+): boolean {
+  return (
+    left !== undefined &&
+    left.pointPx.x === right.pointPx.x &&
+    left.pointPx.y === right.pointPx.y &&
+    left.size.widthPx === right.size.widthPx &&
+    left.size.heightPx === right.size.heightPx
   )
 }
 
 export function buildZoomEvent(params: {
-  locatorRect: ElementRect
-  viewport: { width: number; height: number }
+  target: {
+    end: FocusChangeZoom['end']
+    optimalOffset: { x: number; y: number }
+  }
   config: ResolvedAutoZoomConfig
   startMs: number
-  isFirstInteraction: boolean
   currentZoomEnd: FocusChangeZoom['end'] | undefined
 }): FocusChangeZoom | undefined {
-  const {
-    locatorRect,
-    viewport,
-    config,
-    startMs,
-    isFirstInteraction,
-    currentZoomEnd,
-  } = params
-  if (config.amount >= 1 && !isFirstInteraction) {
-    return undefined
-  }
+  const { target, config, startMs, currentZoomEnd } = params
+  const isFullViewport =
+    target.end.pointPx.x === 0 &&
+    target.end.pointPx.y === 0 &&
+    target.end.size.widthPx >= 1 &&
+    target.end.size.heightPx >= 1 &&
+    config.amount >= 1
 
-  const end = computeZoomTarget(locatorRect, viewport, config)
-  if (
-    currentZoomEnd !== undefined &&
-    currentZoomEnd.pointPx.x === end.pointPx.x &&
-    currentZoomEnd.pointPx.y === end.pointPx.y &&
-    currentZoomEnd.size.widthPx === end.size.widthPx &&
-    currentZoomEnd.size.heightPx === end.size.heightPx
-  ) {
+  if (isSameZoomEnd(currentZoomEnd, target.end) || isFullViewport) {
     return undefined
   }
 
@@ -135,6 +179,7 @@ export function buildZoomEvent(params: {
     startMs,
     endMs: startMs + config.duration,
     ...(config.duration > 0 ? { easing: config.easing } : {}),
-    end,
+    end: target.end,
+    optimalOffset: target.optimalOffset,
   }
 }

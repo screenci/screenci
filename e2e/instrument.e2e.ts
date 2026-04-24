@@ -100,6 +100,28 @@ function selectableLocator(locator: Locator): {
 
 let recorder: EventRecorder
 
+type PointerMoveEvent = MouseMoveEvent | FocusChangeEvent
+
+function isPointerMoveEvent(
+  event: InputEvent['events'][number]
+): event is PointerMoveEvent {
+  return event.type === 'mouseMove' || event.type === 'focusChange'
+}
+
+function moveStartMs(event: PointerMoveEvent): number {
+  return event.type === 'mouseMove'
+    ? event.startMs
+    : (event.mouse?.startMs ?? 0)
+}
+
+function moveEndMs(event: PointerMoveEvent): number {
+  return event.type === 'mouseMove' ? event.endMs : (event.mouse?.endMs ?? 0)
+}
+
+function moveEventsIn(event: InputEvent): PointerMoveEvent[] {
+  return event.events.filter(isPointerMoveEvent)
+}
+
 function inputEvents(): InputEvent[] {
   return recorder.getEvents().filter((e): e is InputEvent => e.type === 'input')
 }
@@ -110,12 +132,10 @@ function clickEvents(): InputEvent[] {
     .filter((e): e is InputEvent => e.type === 'input' && e.subType === 'click')
 }
 
-function mouseMoveEvents(): MouseMoveEvent[] {
+function mouseMoveEvents(): PointerMoveEvent[] {
   return inputEvents()
-    .filter((e) => e.subType === 'mouseMove')
-    .flatMap((e) =>
-      e.events.filter((ie): ie is MouseMoveEvent => ie.type === 'mouseMove')
-    )
+    .filter((e) => e.subType === 'mouseMove' || e.subType === 'focusChange')
+    .flatMap((e) => e.events.filter(isPointerMoveEvent))
 }
 
 function mouseHideEventsIn(event: InputEvent): MouseHideEvent[] {
@@ -172,9 +192,7 @@ test.describe('click instrumentation', () => {
     const events = clickEvents()
     expect(events).toHaveLength(1)
     const [event] = events
-    const move = event!.events.find(
-      (e): e is MouseMoveEvent => e.type === 'mouseMove'
-    )!
+    const move = moveEventsIn(event!)[0]!
     const down = event!.events.find(
       (e): e is MouseDownEvent => e.type === 'mouseDown'
     )!
@@ -183,7 +201,7 @@ test.describe('click instrumentation', () => {
     )!
     expect(move.x).toBeGreaterThan(0)
     expect(move.y).toBeGreaterThan(0)
-    expect(move.endMs).toBeGreaterThanOrEqual(move.startMs)
+    expect(moveEndMs(move)).toBeGreaterThanOrEqual(moveStartMs(move))
     expect(up.endMs).toBeGreaterThanOrEqual(down.startMs)
   })
 
@@ -301,9 +319,7 @@ test.describe('fill instrumentation', () => {
     expect(events).toHaveLength(1)
     const [event] = events
     expect(event!.subType).toBe('pressSequentially')
-    const move = event!.events.find(
-      (e): e is MouseMoveEvent => e.type === 'mouseMove'
-    )!
+    const move = moveEventsIn(event!)[0]!
     const down = event!.events.find(
       (e): e is MouseDownEvent => e.type === 'mouseDown'
     )!
@@ -312,7 +328,7 @@ test.describe('fill instrumentation', () => {
     )!
     expect(move).toBeDefined()
     expect(move.x).toBeGreaterThan(0)
-    expect(move.endMs).toBeGreaterThanOrEqual(move.startMs)
+    expect(moveEndMs(move)).toBeGreaterThanOrEqual(moveStartMs(move))
     expect(up.endMs).toBeGreaterThanOrEqual(down.startMs)
   })
 
@@ -413,11 +429,9 @@ test.describe('pressSequentially instrumentation', () => {
     expect(events).toHaveLength(1)
     const [event] = events
     expect(event!.subType).toBe('pressSequentially')
-    const move = event!.events.find(
-      (e): e is MouseMoveEvent => e.type === 'mouseMove'
-    )!
+    const move = moveEventsIn(event!)[0]!
     expect(move).toBeDefined()
-    expect(move.endMs).toBeGreaterThanOrEqual(move.startMs)
+    expect(moveEndMs(move)).toBeGreaterThanOrEqual(moveStartMs(move))
   })
 
   test('hideMouse: true hides the cursor during pressSequentially', async ({
@@ -513,9 +527,7 @@ test.describe('check instrumentation', () => {
     expect(events).toHaveLength(1)
     const [event] = events
     expect(event!.subType).toBe('check')
-    const move = event!.events.find(
-      (e): e is MouseMoveEvent => e.type === 'mouseMove'
-    )!
+    const move = moveEventsIn(event!)[0]!
     const down = event!.events.find(
       (e): e is MouseDownEvent => e.type === 'mouseDown'
     )!
@@ -525,7 +537,7 @@ test.describe('check instrumentation', () => {
     expect(move).toBeDefined()
     expect(move.x).toBeGreaterThan(0)
     expect(move.y).toBeGreaterThan(0)
-    expect(move.endMs).toBeGreaterThanOrEqual(move.startMs)
+    expect(moveEndMs(move)).toBeGreaterThanOrEqual(moveStartMs(move))
     expect(up.endMs).toBeGreaterThanOrEqual(down.startMs)
   })
 
@@ -594,11 +606,9 @@ test.describe('uncheck instrumentation', () => {
     expect(events).toHaveLength(1)
     const [event] = events
     expect(event!.subType).toBe('uncheck')
-    const move = event!.events.find(
-      (e): e is MouseMoveEvent => e.type === 'mouseMove'
-    )!
+    const move = moveEventsIn(event!)[0]!
     expect(move).toBeDefined()
-    expect(move.endMs).toBeGreaterThanOrEqual(move.startMs)
+    expect(moveEndMs(move)).toBeGreaterThanOrEqual(moveStartMs(move))
   })
 
   test('with click option: actually unchecks the checkbox', async ({
@@ -673,14 +683,12 @@ test.describe('tap instrumentation', () => {
     const [event] = events
     expect(event!.subType).toBe('tap')
     // tap doesn't fire a DOM click, so click sub-events use fallback bounding box coords
-    const move = event!.events.find(
-      (e): e is MouseMoveEvent => e.type === 'mouseMove'
-    )!
+    const move = moveEventsIn(event!)[0]!
     expect(move).toBeDefined()
     expect(move.x).toBeGreaterThan(0)
     expect(move.y).toBeGreaterThan(0)
     expect(inputElementRect(event!)!.width).toBeGreaterThan(0)
-    expect(move.endMs).toBeGreaterThanOrEqual(move.startMs)
+    expect(moveEndMs(move)).toBeGreaterThanOrEqual(moveStartMs(move))
   })
 
   test('with click option: actually triggers the element interaction', async ({
@@ -755,9 +763,7 @@ test.describe('selectOption instrumentation', () => {
     expect(events).toHaveLength(1)
     const [event] = events
     expect(event!.subType).toBe('select')
-    const move = event!.events.find(
-      (e): e is MouseMoveEvent => e.type === 'mouseMove'
-    )!
+    const move = moveEventsIn(event!)[0]!
     const down = event!.events.find(
       (e): e is MouseDownEvent => e.type === 'mouseDown'
     )!
@@ -768,7 +774,7 @@ test.describe('selectOption instrumentation', () => {
     expect(move.x).toBeGreaterThan(0)
     expect(move.y).toBeGreaterThan(0)
     expect(inputElementRect(event!)!.width).toBeGreaterThan(0)
-    expect(move.endMs).toBeGreaterThanOrEqual(move.startMs)
+    expect(moveEndMs(move)).toBeGreaterThanOrEqual(moveStartMs(move))
     expect(up.endMs).toBeGreaterThanOrEqual(down.startMs)
   })
 
@@ -780,17 +786,13 @@ test.describe('selectOption instrumentation', () => {
   })
 
   test('with click option: cursor y is at select center', async ({ page }) => {
-    const selectBb = await page.locator('#cars').boundingBox()
-
     await selectableLocator(page.locator('#cars')).selectOption('audi', {
       click: { moveDuration: 100 },
     })
 
     const events = inputEvents()
     const [event] = events
-    const move = event!.events.find(
-      (e): e is MouseMoveEvent => e.type === 'mouseMove'
-    )!
+    const move = moveEventsIn(event!)[0]!
     expect(move.y).toBeGreaterThan(0)
   })
 })
@@ -842,10 +844,9 @@ test.describe('mouse.move instrumentation', () => {
     const events = mouseMoveEvents()
     expect(events).toHaveLength(1)
     const [event] = events
-    expect(event!.startMs).toBeGreaterThanOrEqual(0)
-    expect(event!.endMs).toBeGreaterThanOrEqual(event!.startMs)
-    expect(event!.endMs - event!.startMs).toBeGreaterThanOrEqual(100)
-    expect(event!.duration).toBeGreaterThanOrEqual(100)
+    expect(moveStartMs(event!)).toBeGreaterThanOrEqual(0)
+    expect(moveEndMs(event!)).toBeGreaterThanOrEqual(moveStartMs(event!))
+    expect(moveEndMs(event!) - moveStartMs(event!)).toBeGreaterThanOrEqual(100)
     expect(event!.x).toBeCloseTo(targetX, 0)
     expect(event!.y).toBeCloseTo(targetY, 0)
   })
@@ -861,8 +862,7 @@ test.describe('mouse.move instrumentation', () => {
     expect(events).toHaveLength(1)
     const [event] = events
     const expectedDuration = (Math.hypot(300, 400) / 500) * 1000
-    expect(event!.duration).toBeCloseTo(expectedDuration, -1)
-    expect(event!.endMs - event!.startMs).toBeGreaterThanOrEqual(
+    expect(moveEndMs(event!) - moveStartMs(event!)).toBeGreaterThanOrEqual(
       expectedDuration
     )
   })
@@ -875,7 +875,11 @@ test.describe('mouse.move instrumentation', () => {
 
     const events = mouseMoveEvents()
     expect(events).toHaveLength(1)
-    expect(events[0]!.easing).toBe('ease-out')
+    expect(
+      events[0]!.type === 'mouseMove'
+        ? events[0]!.easing
+        : events[0]!.mouse?.easing
+    ).toBe('ease-out')
   })
 
   test('records mouseMove without easing for instant move', async ({
@@ -887,7 +891,11 @@ test.describe('mouse.move instrumentation', () => {
     expect(events).toHaveLength(1)
     expect(events[0]!.x).toBe(100)
     expect(events[0]!.y).toBe(150)
-    expect(events[0]!.easing).toBeUndefined()
+    expect(
+      events[0]!.type === 'mouseMove'
+        ? events[0]!.easing
+        : events[0]!.mouse?.easing
+    ).toBeUndefined()
   })
 
   test('cursor ends at target position so subsequent click animates from there', async ({
@@ -908,11 +916,9 @@ test.describe('mouse.move instrumentation', () => {
     })
 
     const [click] = clickEvents()
-    const move = click!.events.find(
-      (e): e is MouseMoveEvent => e.type === 'mouseMove'
-    )!
+    const move = moveEventsIn(click!)[0]!
     // The move should be very short since cursor was already at the target
-    expect(move.endMs - move.startMs).toBeLessThan(100)
+    expect(moveEndMs(move) - moveStartMs(move)).toBeLessThan(100)
   })
 })
 
@@ -944,15 +950,13 @@ test.describe('hover instrumentation', () => {
     const events = inputEvents().filter((e) => e.subType === 'hover')
     expect(events).toHaveLength(1)
     const [event] = events
-    const move = event!.events.find(
-      (e): e is MouseMoveEvent => e.type === 'mouseMove'
-    )!
+    const move = moveEventsIn(event!)[0]!
     const wait = event!.events.find(
       (e): e is MouseWaitEvent => e.type === 'mouseWait'
     )!
     expect(move.x).toBeGreaterThan(0)
     expect(move.y).toBeGreaterThan(0)
-    expect(move.endMs).toBeGreaterThanOrEqual(move.startMs)
+    expect(moveEndMs(move)).toBeGreaterThanOrEqual(moveStartMs(move))
     expect(wait.endMs).toBeGreaterThanOrEqual(wait.startMs)
   })
 
@@ -1006,7 +1010,7 @@ test.describe('selectText instrumentation', () => {
     const events = inputEvents().filter((e) => e.subType === 'selectText')
     expect(events).toHaveLength(1)
     const [event] = events
-    expect(event!.events.some((e) => e.type === 'mouseMove')).toBe(true)
+    expect(moveEventsIn(event!)).not.toHaveLength(0)
     expect(event!.events.filter((e) => e.type === 'mouseDown')).toHaveLength(3)
     expect(event!.events.filter((e) => e.type === 'mouseUp')).toHaveLength(3)
   })
@@ -1070,7 +1074,7 @@ test.describe('dragTo instrumentation', () => {
     const events = inputEvents().filter((e) => e.subType === 'dragTo')
     expect(events).toHaveLength(1)
     const [event] = events
-    const moves = event!.events.filter((e) => e.type === 'mouseMove')
+    const moves = moveEventsIn(event!)
     expect(moves).toHaveLength(2)
     expect(event!.events.some((e) => e.type === 'mouseDown')).toBe(true)
     expect(event!.events.some((e) => e.type === 'mouseUp')).toBe(true)

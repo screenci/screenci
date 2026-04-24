@@ -591,7 +591,6 @@ describe('instrumentLocator', () => {
     )
 
     instrumentLocator(locator)
-    const startTime = Date.now()
     await Promise.all([
       (
         locator as unknown as {
@@ -635,7 +634,6 @@ describe('instrumentLocator', () => {
     )
 
     instrumentLocator(locator)
-    const actionStart = Date.now()
     const p = autoZoom(
       async () => {
         await (
@@ -683,7 +681,6 @@ describe('instrumentLocator', () => {
     )
 
     instrumentLocator(locator)
-    const actionStart = Date.now()
     const p = autoZoom(
       async () => {
         setLastZoomLocation({
@@ -738,9 +735,6 @@ describe('instrumentLocator', () => {
       { duration: 300, postZoomDelay: 0 }
     )
 
-    await vi.advanceTimersByTimeAsync(50)
-    expect(checkMock).not.toHaveBeenCalled()
-
     await vi.runAllTimersAsync()
     expect(checkMock).toHaveBeenCalledOnce()
 
@@ -792,7 +786,7 @@ describe('instrumentLocator', () => {
     expect(fill.events.some((e) => e.type === 'mouseUp')).toBe(false)
   })
 
-  it('waits for the autoZoom duration before typing after a fill click', async () => {
+  it('records fill-with-click through the shared scroll-first click path before typing', async () => {
     const { recorder } = makeRecorder()
     setActiveClickRecorder(recorder)
 
@@ -831,14 +825,18 @@ describe('instrumentLocator', () => {
       { duration: 300, postZoomDelay: 0 }
     )
 
-    await vi.advanceTimersByTimeAsync(449)
-    expect(keyboardType).not.toHaveBeenCalled()
-
-    await vi.advanceTimersByTimeAsync(1)
     await vi.runAllTimersAsync()
     await p
 
     expect(keyboardType).toHaveBeenCalledOnce()
+    expect(recorder.addInput).toHaveBeenCalledWith(
+      'pressSequentially',
+      expect.anything(),
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'mouseDown' }),
+        expect.objectContaining({ type: 'mouseUp' }),
+      ])
+    )
   })
 
   it('records a hover InputEvent with inner focusChange and mouseWait', async () => {

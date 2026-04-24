@@ -201,23 +201,31 @@ describe('scroll', () => {
     expect(result.locatorRect?.y).toBeCloseTo(340, 0)
   })
 
-  it('marks the first autoZoom interaction to scroll before mouse movement', async () => {
+  it('absorbs preZoomDelay on the first autoZoom interaction', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
       scrollSize: { width: 1280, height: 2000 },
     })
 
-    let result: Awaited<ReturnType<typeof scroll>> | undefined
-    const promise = autoZoom(async () => {
-      result = await scroll(locator)
-    })
+    let resolved = false
+    const promise = autoZoom(
+      async () => {
+        await scroll(locator)
+        resolved = true
+      },
+      { preZoomDelay: 300, postZoomDelay: 0 }
+    )
 
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(299)
+    expect(resolved).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(1)
     await vi.runAllTimersAsync()
     await promise
 
-    expect(result?.isFirstAutoZoomInteraction).toBe(true)
-    expect(result?.shouldScrollBeforeMouseMove).toBe(true)
+    expect(resolved).toBe(true)
   })
 
   it('uses the zoomed viewport and centering override to scroll less than full center', async () => {
@@ -304,29 +312,37 @@ describe('scroll', () => {
     expect(result.locatorRect?.y).toBeCloseTo(32, 0)
   })
 
-  it('keeps later autoZoom interactions scrolling during mouse movement', async () => {
+  it('absorbs intermediate autoZoom hold timing before resolving', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
       scrollSize: { width: 1280, height: 2000 },
     })
 
-    let result: Awaited<ReturnType<typeof scroll>> | undefined
-    const promise = autoZoom(async () => {
-      setLastZoomLocation({
-        x: 100,
-        y: 120,
-        eventType: 'click',
-        elementRect: { x: 80, y: 100, width: 120, height: 40 },
-      })
-      result = await scroll(locator)
-    })
+    let resolved = false
+    const promise = autoZoom(
+      async () => {
+        setLastZoomLocation({
+          x: 100,
+          y: 120,
+          eventType: 'click',
+          elementRect: { x: 80, y: 100, width: 120, height: 40 },
+        })
+        await scroll(locator)
+        resolved = true
+      },
+      { duration: 300, preZoomDelay: 200, postZoomDelay: 0 }
+    )
+
+    await vi.advanceTimersByTimeAsync(499)
+    expect(resolved).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(1)
 
     await vi.runAllTimersAsync()
     await promise
 
-    expect(result?.isFirstAutoZoomInteraction).toBe(false)
-    expect(result?.shouldScrollBeforeMouseMove).toBe(false)
+    expect(resolved).toBe(true)
   })
 
   it('animates page scrolling across multiple eased steps', async () => {
@@ -419,17 +435,23 @@ describe('scroll', () => {
     await vi.runAllTimersAsync()
     const result = await promise
 
-    expect(result.mouseMoveEvent).toMatchObject({
+    expect(result.focusChange).toMatchObject({
       x: 80,
       y: 360,
       elementRect: result.locatorRect,
       mouse: {
-        startMs: result.scrollStartMs,
+        startMs: expect.any(Number),
+      },
+      scroll: {
+        startMs: expect.any(Number),
+        endMs: expect.any(Number),
+        easing: 'ease-out',
       },
     })
-    expect(result.scrollEndMs - result.scrollStartMs).toBeGreaterThanOrEqual(
-      900
-    )
+    expect(
+      (result.focusChange?.mouse?.endMs ?? 0) -
+        (result.focusChange?.mouse?.startMs ?? 0)
+    ).toBeGreaterThanOrEqual(900)
     expect(mouseMoveInternal).toHaveBeenCalled()
   })
 
@@ -458,9 +480,48 @@ describe('scroll', () => {
     await vi.runAllTimersAsync()
     const result = await promise
 
-    expect(result.mouseMoveEvent).toBeDefined()
-    expect(result.mouseMoveEvent?.mouse?.startMs).toBe(result.scrollStartMs)
+    expect(result.focusChange).toBeDefined()
+    expect(result.focusChange?.mouse?.startMs).toBeDefined()
     expect(mouseMoveInternal).toHaveBeenCalled()
+  })
+
+  it('returns a composed focusChange with scroll and zoom timing', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+
+    let result: Awaited<ReturnType<typeof scroll>> | undefined
+    const promise = autoZoom(
+      async () => {
+        setLastZoomLocation({
+          x: 100,
+          y: 120,
+          eventType: 'click',
+          elementRect: { x: 80, y: 100, width: 120, height: 40 },
+        })
+        result = await scroll(locator, { duration: 300 })
+      },
+      { duration: 300, postZoomDelay: 0 }
+    )
+
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(result?.focusChange).toMatchObject({
+      type: 'focusChange',
+      focusOnly: true,
+      elementRect: result?.locatorRect,
+      scroll: expect.objectContaining({
+        startMs: expect.any(Number),
+        endMs: expect.any(Number),
+      }),
+      zoom: expect.objectContaining({
+        startMs: expect.any(Number),
+        endMs: expect.any(Number),
+      }),
+    })
   })
 
   it('uses autoZoom options as scroll defaults when options are omitted', async () => {
@@ -489,7 +550,7 @@ describe('scroll', () => {
     await vi.runAllTimersAsync()
     await promise
 
-    expect(stateSpy).toHaveBeenCalledOnce()
+    expect(stateSpy).toHaveBeenCalled()
     expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
     stateSpy.mockRestore()
   })
@@ -666,6 +727,9 @@ describe('scroll', () => {
           arg: unknown
         ) => fn(element, arg)
       ),
+      page: vi.fn().mockReturnValue({
+        viewportSize: () => ({ width: 1280, height: 720 }),
+      }),
     } as unknown as Locator
 
     const promise = scroll(locator)
@@ -808,6 +872,9 @@ describe('scroll', () => {
           arg: unknown
         ) => fn(element, arg)
       ),
+      page: vi.fn().mockReturnValue({
+        viewportSize: () => ({ width: 1280, height: 720 }),
+      }),
     } as unknown as Locator
 
     const promise = scroll(locator)

@@ -24,7 +24,6 @@ import type {
   ScreenCIPage,
 } from './types.js'
 import { logger } from './logger.js'
-import { getAutoZoomState } from './autoZoom.js'
 import { isInsideHide } from './hide.js'
 import { scroll } from './scroll.js'
 
@@ -83,8 +82,6 @@ function sleep(ms: number): Promise<void> {
 }
 
 const CLICK_DURATION_MS = 200
-const PRE_ACTION_SLEEP = 50
-const POST_ACTION_SLEEP = 250
 
 function assertDurationOrSpeed(
   duration: number | undefined,
@@ -274,60 +271,6 @@ async function animateMouseMove(
   }
 }
 
-function buildFocusChangeFromScrollResult(params: {
-  mouseMoveEvent: FocusChangeEvent | undefined
-  locatorRect: ElementRect | undefined
-  scrollStartMs: number
-  scrollEndMs: number
-  scrollEasing: Easing
-  zoomEvent: NonNullable<FocusChangeEvent['zoom']> | undefined
-}): FocusChangeEvent | undefined {
-  const {
-    mouseMoveEvent,
-    locatorRect,
-    scrollStartMs,
-    scrollEndMs,
-    scrollEasing,
-    zoomEvent,
-  } = params
-
-  if (!mouseMoveEvent && !zoomEvent && scrollEndMs <= scrollStartMs) {
-    return undefined
-  }
-
-  const fallbackPoint = locatorRect
-    ? {
-        x: locatorRect.x + locatorRect.width / 2,
-        y: locatorRect.y + locatorRect.height / 2,
-      }
-    : { x: 0, y: 0 }
-  const elementRect = mouseMoveEvent?.elementRect ?? locatorRect
-
-  return {
-    type: 'focusChange',
-    x: mouseMoveEvent?.x ?? fallbackPoint.x,
-    y: mouseMoveEvent?.y ?? fallbackPoint.y,
-    ...(mouseMoveEvent?.mouse !== undefined
-      ? { mouse: mouseMoveEvent.mouse }
-      : {}),
-    ...(scrollEndMs > scrollStartMs
-      ? {
-          scroll: {
-            startMs: scrollStartMs,
-            endMs: scrollEndMs,
-            easing: scrollEasing,
-          },
-        }
-      : {}),
-    ...(zoomEvent !== undefined ? { zoom: zoomEvent } : {}),
-    ...(elementRect !== undefined ? { elementRect } : {}),
-    ...(!mouseMoveEvent &&
-    (zoomEvent !== undefined || scrollEndMs > scrollStartMs)
-      ? { focusOnly: true }
-      : {}),
-  }
-}
-
 function getRecordedInnerEventEndMs(
   event:
     | FocusChangeEvent
@@ -387,7 +330,6 @@ async function performClickActions(
     FocusChangeEvent | MouseMoveEvent | MouseDownEvent | MouseUpEvent
   > = []
 
-  const autoZoomState = getAutoZoomState()
   const locatorRectPreview = await locator.boundingBox()
   const targetPos = position
     ? position
@@ -414,41 +356,22 @@ async function performClickActions(
       : undefined
 
   const scrollResult = await scroll(locator, autoZoomOptions, mouseMovePlan)
-  const { locatorRect, mouseMoveEvent, zoomEvent } = scrollResult
-  const isFirstAutoZoomEvent = scrollResult.isFirstAutoZoomInteraction
+  const { locatorRect, focusChange } = scrollResult
   if (!locatorRect) {
     logger.warn(
       '[screenci] Unable to get locator bounding box; skipping auto-scroll check.'
     )
   }
 
-  const initialFocusChange = buildFocusChangeFromScrollResult({
-    mouseMoveEvent,
-    locatorRect,
-    scrollStartMs: scrollResult.scrollStartMs,
-    scrollEndMs: scrollResult.scrollEndMs,
-    scrollEasing: scrollResult.resolvedAutoZoomConfig.easing,
-    zoomEvent,
-  })
-
-  if (initialFocusChange) {
-    innerEvents.push(initialFocusChange)
+  if (focusChange) {
+    innerEvents.push(focusChange)
     mousePositions.set(page, {
-      x: initialFocusChange.x,
-      y: initialFocusChange.y,
+      x: focusChange.x,
+      y: focusChange.y,
     })
   }
 
-  const zoomDur =
-    autoZoomState.insideAutoZoom && locatorRect
-      ? (autoZoomState.duration ?? 0)
-      : 0
-  const effectiveBeforeClickPause = isFirstAutoZoomEvent
-    ? Math.max(beforeClickPause, autoZoomState.postZoomDelay ?? 0, zoomDur)
-    : Math.max(beforeClickPause, zoomDur)
-  await new Promise<void>((resolve) =>
-    setTimeout(resolve, effectiveBeforeClickPause)
-  )
+  await sleep(beforeClickPause)
 
   await new Promise<void>((resolve) => setTimeout(resolve, halfClickDuration))
   // Note click can take some time, but better to show it before than after
@@ -654,7 +577,6 @@ async function performSimpleAction(
   position?: { x: number; y: number },
   recordMousePress = subType === 'tap'
 ): Promise<void> {
-  await sleep(PRE_ACTION_SLEEP)
   let innerEvents: Array<
     | FocusChangeEvent
     | MouseMoveEvent
@@ -689,25 +611,15 @@ async function performSimpleAction(
     )
     innerEvents = clickActionResult?.innerEvents ?? []
     elementRect = clickActionResult?.elementRect
+    if (subType === 'select') {
+      await doAction(options)
+    }
   } else {
     const scrollResult = await scroll(locator, autoZoomOptions)
-    const { locatorRect, zoomEvent } = scrollResult
+    const { locatorRect, focusChange } = scrollResult
 
-    const autoZoomState = getAutoZoomState()
-    if (autoZoomState.insideAutoZoom && locatorRect) {
-      const zoomDur = autoZoomState.duration ?? 0
-      const focusChange = buildFocusChangeFromScrollResult({
-        mouseMoveEvent: undefined,
-        locatorRect,
-        scrollStartMs: scrollResult.scrollStartMs,
-        scrollEndMs: scrollResult.scrollEndMs,
-        scrollEasing: scrollResult.resolvedAutoZoomConfig.easing,
-        zoomEvent,
-      })
-      if (focusChange) {
-        innerEvents.push(focusChange)
-      }
-      if (zoomDur > 0) await sleep(zoomDur)
+    if (focusChange) {
+      innerEvents.push(focusChange)
     }
 
     const targetPosition = locatorRect
@@ -740,15 +652,6 @@ async function performSimpleAction(
     }
   }
 
-  const simpleWaitStart = Date.now()
-  await sleep(POST_ACTION_SLEEP)
-  const simpleWaitEnd = Date.now()
-  innerEvents.push({
-    type: 'mouseWait',
-    startMs: simpleWaitStart,
-    endMs: simpleWaitEnd,
-  })
-
   if (activeClickRecorder && innerEvents.length > 0) {
     activeClickRecorder.addInput(subType, elementRect, innerEvents)
   }
@@ -769,7 +672,6 @@ async function recordedClick(
   postClickPause = CLICK_DURATION_MS / 2,
   postClickMove?: PostClickMove
 ): Promise<void> {
-  await sleep(PRE_ACTION_SLEEP)
   const result = await performClickActions(
     locator,
     doClick,
@@ -783,15 +685,7 @@ async function recordedClick(
     postClickPause,
     postClickMove
   )
-  const clickWaitStart = Date.now()
-  await sleep(POST_ACTION_SLEEP)
-  const clickWaitEnd = Date.now()
   if (activeClickRecorder && result) {
-    result.innerEvents.push({
-      type: 'mouseWait',
-      startMs: clickWaitStart,
-      endMs: clickWaitEnd,
-    })
     activeClickRecorder.addInput('click', undefined, result.innerEvents)
   }
 }
@@ -921,7 +815,6 @@ export function instrumentLocator(locator: Locator): Locator {
       )
     }
 
-    await sleep(PRE_ACTION_SLEEP)
     const innerEvents: Array<
       | FocusChangeEvent
       | MouseMoveEvent
@@ -930,7 +823,7 @@ export function instrumentLocator(locator: Locator): Locator {
       | MouseHideEvent
       | MouseWaitEvent
     > = []
-    let elementRect: ElementRect | undefined
+    let elementRect: ElementRect | undefined = undefined
 
     if (options?.click !== undefined) {
       // Click before fill: performClickActions handles scrolling and bounding box.
@@ -963,27 +856,12 @@ export function instrumentLocator(locator: Locator): Locator {
       elementRect = clickActionResult?.elementRect
     } else {
       const scrollResult = await scroll(locator, options?.autoZoomOptions)
-      const { locatorRect, isFirstAutoZoomInteraction, zoomEvent } =
-        scrollResult
-
-      const focusChange = buildFocusChangeFromScrollResult({
-        mouseMoveEvent: undefined,
-        locatorRect,
-        scrollStartMs: scrollResult.scrollStartMs,
-        scrollEndMs: scrollResult.scrollEndMs,
-        scrollEasing: scrollResult.resolvedAutoZoomConfig.easing,
-        zoomEvent,
-      })
+      const { locatorRect, focusChange } = scrollResult
       if (focusChange) {
         innerEvents.push(focusChange)
       }
 
-      if (isFirstAutoZoomInteraction) {
-        const postDelay = getAutoZoomState().postZoomDelay ?? 0
-        if (postDelay > 0) await sleep(postDelay)
-      }
-
-      elementRect = locatorRect
+      elementRect = locatorRect ?? undefined
     }
 
     // Hide cursor while typing (will be shown again on next mouse move)
@@ -1002,21 +880,19 @@ export function instrumentLocator(locator: Locator): Locator {
       }
     }
 
+    const typeStartMs = Date.now()
     await originalPressSequentially(
       text,
       pressOptions as Parameters<Locator['pressSequentially']>[1]
     )
 
-    const pressWaitStart = Date.now()
-    await sleep(POST_ACTION_SLEEP)
-    const pressWaitEnd = Date.now()
+    innerEvents.push({
+      type: 'mouseWait',
+      startMs: typeStartMs,
+      endMs: Date.now(),
+    })
 
     if (activeClickRecorder) {
-      innerEvents.push({
-        type: 'mouseWait',
-        startMs: pressWaitStart,
-        endMs: pressWaitEnd,
-      })
       activeClickRecorder.addInput('pressSequentially', innerEvents)
     }
   }
@@ -1047,8 +923,6 @@ export function instrumentLocator(locator: Locator): Locator {
     }
 
     if (options?.click !== undefined) {
-      await sleep(PRE_ACTION_SLEEP)
-
       const clickActionResult = await performClickActions(
         locator,
         (clickOptions) => originalClick(clickOptions),
@@ -1110,15 +984,12 @@ export function instrumentLocator(locator: Locator): Locator {
 
       const duration = options.duration ?? 1000
       const delay = value.length > 0 ? duration / value.length : 0
+      const typeStartMs = Date.now()
       await page.keyboard.type(value, { delay })
-
-      const fillWaitStart = Date.now()
-      await sleep(POST_ACTION_SLEEP)
-      const fillWaitEnd = Date.now()
       innerEvents.push({
         type: 'mouseWait',
-        startMs: fillWaitStart,
-        endMs: fillWaitEnd,
+        startMs: typeStartMs,
+        endMs: Date.now(),
       })
 
       if (activeClickRecorder) {
@@ -1131,15 +1002,13 @@ export function instrumentLocator(locator: Locator): Locator {
       return
     }
 
-    await sleep(PRE_ACTION_SLEEP)
     const page = locator.page()
     const innerEvents: Array<
       FocusChangeEvent | MouseHideEvent | MouseWaitEvent
     > = []
     const fillOptions = options ?? {}
 
-    const locatorRect = await locator.boundingBox()
-    let elementRect = locatorRect ?? undefined
+    let elementRect: ElementRect | undefined
 
     if (fillOptions.hideMouse === true) {
       const cursorVisible = mouseVisibilities.get(page) ?? true
@@ -1154,87 +1023,45 @@ export function instrumentLocator(locator: Locator): Locator {
       }
     }
 
-    const autoZoomState = getAutoZoomState()
-    if (autoZoomState.insideAutoZoom && locatorRect) {
-      const correctedScrollResult = await scroll(
-        locator,
-        options?.autoZoomOptions
-      )
-      const correctedRect = correctedScrollResult.locatorRect ?? locatorRect
+    const scrollResult = await scroll(locator, options?.autoZoomOptions)
+    const { locatorRect, focusChange } = scrollResult
 
-      await locator.evaluate((element) => {
-        if (
-          element instanceof HTMLInputElement ||
-          element instanceof HTMLTextAreaElement
-        ) {
-          element.focus()
-          element.select()
-          return
-        }
-
-        if (element instanceof HTMLElement && element.isContentEditable) {
-          element.focus()
-          const selection = element.ownerDocument.getSelection()
-          if (!selection) return
-          const range = element.ownerDocument.createRange()
-          range.selectNodeContents(element)
-          selection.removeAllRanges()
-          selection.addRange(range)
-        }
-      })
-
-      const focusChange = buildFocusChangeFromScrollResult({
-        mouseMoveEvent: undefined,
-        locatorRect: correctedRect,
-        scrollStartMs: correctedScrollResult.scrollStartMs,
-        scrollEndMs: correctedScrollResult.scrollEndMs,
-        scrollEasing: correctedScrollResult.resolvedAutoZoomConfig.easing,
-        zoomEvent: correctedScrollResult.zoomEvent,
-      })
-      if (focusChange) {
-        innerEvents.push(focusChange)
-      }
-      elementRect = correctedRect
-    } else {
-      await locator.evaluate((element) => {
-        if (
-          element instanceof HTMLInputElement ||
-          element instanceof HTMLTextAreaElement
-        ) {
-          element.focus()
-          element.select()
-          return
-        }
-
-        if (element instanceof HTMLElement && element.isContentEditable) {
-          element.focus()
-          const selection = element.ownerDocument.getSelection()
-          if (!selection) return
-          const range = element.ownerDocument.createRange()
-          range.selectNodeContents(element)
-          selection.removeAllRanges()
-          selection.addRange(range)
-        }
-      })
+    if (focusChange) {
+      innerEvents.push(focusChange)
     }
+
+    await locator.evaluate((element) => {
+      if (
+        element instanceof HTMLInputElement ||
+        element instanceof HTMLTextAreaElement
+      ) {
+        element.focus()
+        element.select()
+        return
+      }
+
+      if (element instanceof HTMLElement && element.isContentEditable) {
+        element.focus()
+        const selection = element.ownerDocument.getSelection()
+        if (!selection) return
+        const range = element.ownerDocument.createRange()
+        range.selectNodeContents(element)
+        selection.removeAllRanges()
+        selection.addRange(range)
+      }
+    })
 
     const duration = fillOptions.duration ?? 1000
     const delay = value.length > 0 ? duration / value.length : 0
+    const typeStartMs = Date.now()
     await page.keyboard.type(value, { delay })
-
-    const fillWaitStart = Date.now()
-    await sleep(POST_ACTION_SLEEP)
-    const fillWaitEnd = Date.now()
     innerEvents.push({
       type: 'mouseWait',
-      startMs: fillWaitStart,
-      endMs: fillWaitEnd,
+      startMs: typeStartMs,
+      endMs: Date.now(),
     })
 
-    if (
-      activeClickRecorder &&
-      (getAutoZoomState().insideAutoZoom || fillOptions.hideMouse === true)
-    ) {
+    if (activeClickRecorder && innerEvents.length > 0) {
       activeClickRecorder.addInput(
         'pressSequentially',
         elementRect,
@@ -1436,16 +1263,7 @@ export function instrumentLocator(locator: Locator): Locator {
       options?.autoZoomOptions,
       mouseMovePlan
     )
-    const { locatorRect, mouseMoveEvent, zoomEvent } = scrollResult
-
-    const hoverFocusChange = buildFocusChangeFromScrollResult({
-      mouseMoveEvent,
-      locatorRect,
-      scrollStartMs: scrollResult.scrollStartMs,
-      scrollEndMs: scrollResult.scrollEndMs,
-      scrollEasing: scrollResult.resolvedAutoZoomConfig.easing,
-      zoomEvent,
-    })
+    const { locatorRect, focusChange: hoverFocusChange } = scrollResult
 
     if (hoverFocusChange) {
       innerEvents.push(hoverFocusChange)
@@ -1523,16 +1341,7 @@ export function instrumentLocator(locator: Locator): Locator {
         : undefined
 
     const scrollResult = await scroll(locator, undefined, mouseMovePlan)
-    const { locatorRect, mouseMoveEvent, zoomEvent } = scrollResult
-
-    const selectFocusChange = buildFocusChangeFromScrollResult({
-      mouseMoveEvent,
-      locatorRect,
-      scrollStartMs: scrollResult.scrollStartMs,
-      scrollEndMs: scrollResult.scrollEndMs,
-      scrollEasing: scrollResult.resolvedAutoZoomConfig.easing,
-      zoomEvent,
-    })
+    const { locatorRect, focusChange: selectFocusChange } = scrollResult
 
     if (selectFocusChange) {
       innerEvents.push(selectFocusChange)
@@ -1607,8 +1416,6 @@ export function instrumentLocator(locator: Locator): Locator {
     assertDurationOrSpeed(moveDuration, moveSpeed, 'dragTo move')
     assertDurationOrSpeed(dragDuration, dragSpeed, 'dragTo drag')
 
-    await sleep(PRE_ACTION_SLEEP)
-
     const page = locator.page()
     const mouseMoveInternal =
       originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
@@ -1636,7 +1443,8 @@ export function instrumentLocator(locator: Locator): Locator {
           }
         : undefined
     )
-    const { locatorRect: sourceRect, mouseMoveEvent, zoomEvent } = scrollResult
+    const { locatorRect: sourceRect, focusChange: dragStartFocusChange } =
+      scrollResult
     const targetBb = await target.boundingBox()
     const targetRect: ElementRect | undefined = targetBb
       ? {
@@ -1660,15 +1468,6 @@ export function instrumentLocator(locator: Locator): Locator {
       (targetRect
         ? { x: targetRect.width / 2, y: targetRect.height / 2 }
         : undefined)
-
-    const dragStartFocusChange = buildFocusChangeFromScrollResult({
-      mouseMoveEvent,
-      locatorRect: sourceRect,
-      scrollStartMs: scrollResult.scrollStartMs,
-      scrollEndMs: scrollResult.scrollEndMs,
-      scrollEasing: scrollResult.resolvedAutoZoomConfig.easing,
-      zoomEvent,
-    })
 
     if (dragStartFocusChange) {
       innerEvents.push(dragStartFocusChange)
@@ -1724,15 +1523,6 @@ export function instrumentLocator(locator: Locator): Locator {
       startMs: mouseUpStart,
       endMs: Date.now(),
       easing: 'ease-in-out',
-    })
-
-    const dragWaitStart = Date.now()
-    await sleep(POST_ACTION_SLEEP)
-    const dragWaitEnd = Date.now()
-    innerEvents.push({
-      type: 'mouseWait',
-      startMs: dragWaitStart,
-      endMs: dragWaitEnd,
     })
 
     if (activeClickRecorder && innerEvents.length > 0) {

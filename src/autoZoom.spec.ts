@@ -4,6 +4,7 @@ import {
   setActiveAutoZoomRecorder,
   getAutoZoomState,
   getLastZoomLocation,
+  setCurrentZoomViewport,
   setLastZoomLocation,
 } from './autoZoom.js'
 import type { IEventRecorder } from './events.js'
@@ -31,6 +32,7 @@ describe('autoZoom', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => {
     setActiveAutoZoomRecorder(null)
+    setCurrentZoomViewport(null)
     setLastZoomLocation(null)
     vi.useRealTimers()
   })
@@ -282,7 +284,7 @@ describe('autoZoom', () => {
       setActiveAutoZoomRecorder(recorder)
     })
 
-    it('waits for preZoomDelay before the callback and postZoomDelay after addAutoZoomEnd', async () => {
+    it('does not delay the callback for preZoomDelay and still waits postZoomDelay after addAutoZoomEnd', async () => {
       const order: string[] = []
       vi.mocked(recorder.addAutoZoomEnd).mockImplementation(() => {
         order.push('addAutoZoomEnd')
@@ -295,7 +297,7 @@ describe('autoZoom', () => {
         { preZoomDelay: 500, postZoomDelay: 250 }
       )
 
-      await vi.advanceTimersByTimeAsync(500)
+      await Promise.resolve()
       expect(order).toEqual(['callback', 'addAutoZoomEnd'])
 
       await vi.advanceTimersByTimeAsync(250)
@@ -312,6 +314,7 @@ describe('autoZoom', () => {
 
       const startTime = Date.now()
       const p = autoZoom(() => {}, { duration: 300, postZoomDelay: 0 })
+      await Promise.resolve()
       await p
 
       expect(endTimes).toHaveLength(1)
@@ -333,7 +336,7 @@ describe('autoZoom', () => {
         { preZoomDelay: 300, postZoomDelay: 0 }
       )
 
-      await vi.advanceTimersByTimeAsync(300)
+      await Promise.resolve()
       expect(order).toEqual(['callback-start'])
 
       await vi.advanceTimersByTimeAsync(900)
@@ -346,7 +349,7 @@ describe('autoZoom', () => {
       ])
     })
 
-    it('supports preZoomDelay and postZoomDelay together', async () => {
+    it('does not let preZoomDelay delay addAutoZoomEnd when postZoomDelay is also set', async () => {
       const callTimes: number[] = []
       vi.mocked(recorder.addAutoZoomEnd).mockImplementation(() => {
         callTimes.push(Date.now())
@@ -355,16 +358,46 @@ describe('autoZoom', () => {
       const startTime = Date.now()
       const p = autoZoom(() => {}, { preZoomDelay: 400, postZoomDelay: 200 })
 
-      await vi.advanceTimersByTimeAsync(200)
-      expect(callTimes).toHaveLength(0)
-
-      await vi.advanceTimersByTimeAsync(200)
+      await Promise.resolve()
       expect(callTimes).toHaveLength(1)
+
       await vi.advanceTimersByTimeAsync(200)
       await p
 
       expect(callTimes).toHaveLength(1)
-      expect(callTimes[0]).toBeGreaterThanOrEqual(startTime + 400)
+      expect(callTimes[0]).toBe(startTime)
+    })
+
+    it('records a final zoom-out focusChange when the zoom viewport is active', async () => {
+      setCurrentZoomViewport({
+        focusPoint: { x: 120, y: 180 },
+        elementRect: { x: 100, y: 160, width: 80, height: 40 },
+        end: {
+          pointPx: { x: 10, y: 20 },
+          size: { widthPx: 640, heightPx: 360 },
+        },
+        viewportSize: { width: 1280, height: 720 },
+      })
+
+      const p = autoZoom(() => {}, { duration: 300, postZoomDelay: 0 })
+      await vi.runAllTimersAsync()
+      await p
+
+      expect(recorder.addInput).toHaveBeenCalledWith('focusChange', undefined, [
+        expect.objectContaining({
+          type: 'focusChange',
+          x: 120,
+          y: 180,
+          focusOnly: true,
+          zoom: expect.objectContaining({
+            endMs: expect.any(Number),
+            end: {
+              pointPx: { x: 0, y: 0 },
+              size: { widthPx: 1280, heightPx: 720 },
+            },
+          }),
+        }),
+      ])
     })
 
     it('does not delay addAutoZoomEnd when the callback takes longer than preZoomDelay', async () => {
@@ -382,7 +415,7 @@ describe('autoZoom', () => {
         { preZoomDelay: 200, postZoomDelay: 0 }
       )
 
-      await vi.advanceTimersByTimeAsync(200)
+      await Promise.resolve()
       expect(order).toEqual(['callback-start'])
 
       await vi.advanceTimersByTimeAsync(800)

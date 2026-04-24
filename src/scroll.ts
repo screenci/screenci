@@ -6,6 +6,7 @@ import {
   setCurrentZoomViewport,
   setLastZoomLocation,
 } from './autoZoom.js'
+import { buildZoomEvent, resolveAutoZoomConfig } from './zoom.js'
 
 type ScrollRectLike = {
   top: number
@@ -55,23 +56,8 @@ type MouseMovePlan = Omit<
 
 type MouseMoveResult = FocusChangeEvent
 
-type FocusChangeZoom = NonNullable<FocusChangeEvent['zoom']>
-
-type ResolvedAutoZoomConfig = {
-  easing: Easing
-  duration: number
-  amount: number
-  centering: number
-  allowZoomingOut: boolean
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
-}
-
-function resolveCenteringValue(centering: number | undefined): number {
-  if (centering === undefined) return 1
-  return clamp(centering, 0, 1)
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function assertDurationOrSpeed(
@@ -190,125 +176,6 @@ function getViewportSize(locator: Locator): { width: number; height: number } {
   throw new Error(
     '[screenci] Unable to resolve page viewport size for auto zoom.'
   )
-}
-
-function resolveAutoZoomConfig(
-  state: ReturnType<typeof getAutoZoomState>,
-  options: AutoZoomOptions
-): ResolvedAutoZoomConfig {
-  const useZoomAnimation =
-    state.insideAutoZoom && state.lastZoomLocation !== null
-
-  return {
-    easing:
-      options.easing ??
-      (useZoomAnimation ? (state.easing ?? 'ease-in-out') : 'ease-in-out'),
-    duration:
-      options.duration ?? (useZoomAnimation ? (state.duration ?? 0) : 0),
-    amount: options.amount ?? state.amount ?? (state.insideAutoZoom ? 0.5 : 1),
-    centering:
-      options.centering !== undefined
-        ? resolveCenteringValue(options.centering)
-        : (state.centering ?? 1),
-    allowZoomingOut: options.allowZoomingOut ?? state.allowZoomingOut ?? true,
-  }
-}
-
-function clampZoomViewport(
-  point: { x: number; y: number },
-  size: { widthPx: number; heightPx: number },
-  viewport: { width: number; height: number }
-): FocusChangeZoom['end'] {
-  const widthPx = Math.min(
-    viewport.width,
-    Math.max(1, Math.round(size.widthPx))
-  )
-  const heightPx = Math.min(
-    viewport.height,
-    Math.max(1, Math.round(size.heightPx))
-  )
-  return {
-    pointPx: {
-      x: clamp(Math.round(point.x), 0, Math.max(0, viewport.width - widthPx)),
-      y: clamp(Math.round(point.y), 0, Math.max(0, viewport.height - heightPx)),
-    },
-    size: {
-      widthPx,
-      heightPx,
-    },
-  }
-}
-
-function computeZoomTarget(
-  locatorRect: ElementRect,
-  viewport: { width: number; height: number },
-  config: ResolvedAutoZoomConfig
-): FocusChangeZoom['end'] {
-  const targetRect = {
-    x: locatorRect.x,
-    y: locatorRect.y,
-    width: locatorRect.width,
-    height: locatorRect.height,
-  }
-
-  let widthPx = viewport.width * config.amount
-  let heightPx = viewport.height * config.amount
-
-  if (config.allowZoomingOut) {
-    widthPx = Math.max(widthPx, targetRect.width)
-    heightPx = Math.max(heightPx, targetRect.height)
-  }
-
-  const xBias = (widthPx - targetRect.width) * config.centering * 0.5
-  const yBias = (heightPx - targetRect.height) * config.centering * 0.5
-
-  return clampZoomViewport(
-    {
-      x: targetRect.x + targetRect.width / 2 - widthPx / 2 + xBias,
-      y: targetRect.y + targetRect.height / 2 - heightPx / 2 + yBias,
-    },
-    { widthPx, heightPx },
-    viewport
-  )
-}
-
-function buildZoomEvent(params: {
-  locatorRect: ElementRect
-  viewport: { width: number; height: number }
-  config: ResolvedAutoZoomConfig
-  startMs: number
-  isFirstInteraction: boolean
-  currentZoomEnd: FocusChangeZoom['end'] | undefined
-}): FocusChangeZoom | undefined {
-  const {
-    locatorRect,
-    viewport,
-    config,
-    startMs,
-    isFirstInteraction,
-    currentZoomEnd,
-  } = params
-  if (config.amount >= 1 && !isFirstInteraction) {
-    return undefined
-  }
-
-  const end = computeZoomTarget(locatorRect, viewport, config)
-  if (
-    currentZoomEnd !== undefined &&
-    currentZoomEnd.pointPx.x === end.pointPx.x &&
-    currentZoomEnd.pointPx.y === end.pointPx.y &&
-    currentZoomEnd.size.widthPx === end.size.widthPx &&
-    currentZoomEnd.size.heightPx === end.size.heightPx
-  ) {
-    return undefined
-  }
-
-  return {
-    startMs,
-    endMs: startMs + config.duration,
-    ...(config.duration > 0 ? { easing: config.easing } : {}),
-    end,
-  }
 }
 
 async function scrollTo(
@@ -638,15 +505,7 @@ async function scrollTo(
 
 export type ZoomScrollResult = {
   locatorRect: ElementRect | undefined
-  scrollStartMs: number
-  scrollEndMs: number
-  scrollElapsedMs: number
-  mouseMoveEvent?: FocusChangeEvent
-  zoomEvent?: FocusChangeZoom
-  resolvedAutoZoomConfig: ResolvedAutoZoomConfig
-  isFirstAutoZoomInteraction: boolean
-  shouldScrollBeforeMouseMove: boolean
-  isInsideAutoZoom: boolean
+  focusChange?: FocusChangeEvent
 }
 
 export async function scroll(
@@ -658,6 +517,10 @@ export async function scroll(
   const isFirstInteraction =
     state.insideAutoZoom && state.lastZoomLocation === null
   const resolvedAutoZoomConfig = resolveAutoZoomConfig(state, options)
+
+  if (isFirstInteraction && (state.preZoomDelay ?? 0) > 0) {
+    await sleep(state.preZoomDelay ?? 0)
+  }
 
   const previewLocatorRect = await scrollTo(locator, {
     amount: resolvedAutoZoomConfig.amount,
@@ -745,6 +608,44 @@ export async function scroll(
           currentZoomEnd: state.currentZoomViewport?.end,
         })
       : undefined
+  const focusChange =
+    !finalMouseMoveEvent && !zoomEvent && scrollEndMs <= scrollStartMs
+      ? undefined
+      : {
+          type: 'focusChange' as const,
+          x:
+            finalMouseMoveEvent?.x ??
+            (finalLocatorRect
+              ? finalLocatorRect.x + finalLocatorRect.width / 2
+              : 0),
+          y:
+            finalMouseMoveEvent?.y ??
+            (finalLocatorRect
+              ? finalLocatorRect.y + finalLocatorRect.height / 2
+              : 0),
+          ...(finalMouseMoveEvent?.mouse !== undefined
+            ? { mouse: finalMouseMoveEvent.mouse }
+            : {}),
+          ...(scrollEndMs > scrollStartMs
+            ? {
+                scroll: {
+                  startMs: scrollStartMs,
+                  endMs: scrollEndMs,
+                  easing: resolvedAutoZoomConfig.easing,
+                },
+              }
+            : {}),
+          ...(zoomEvent !== undefined ? { zoom: zoomEvent } : {}),
+          ...(finalMouseMoveEvent?.elementRect !== undefined
+            ? { elementRect: finalMouseMoveEvent.elementRect }
+            : finalLocatorRect !== undefined
+              ? { elementRect: finalLocatorRect }
+              : {}),
+          ...(!finalMouseMoveEvent &&
+          (zoomEvent !== undefined || scrollEndMs > scrollStartMs)
+            ? { focusOnly: true }
+            : {}),
+        }
 
   if (state.insideAutoZoom && finalLocatorRect) {
     setLastZoomLocation({
@@ -770,18 +671,21 @@ export async function scroll(
     }
   }
 
+  const remainingZoomAnimationMs = Math.max(
+    0,
+    zoomEvent?.endMs !== undefined ? zoomEvent.endMs - Date.now() : 0
+  )
+  const trailingZoomHoldMs =
+    remainingZoomAnimationMs +
+    (state.insideAutoZoom && !isFirstInteraction
+      ? (state.preZoomDelay ?? 0)
+      : 0)
+  if (trailingZoomHoldMs > 0) {
+    await sleep(trailingZoomHoldMs)
+  }
+
   return {
     locatorRect: finalLocatorRect,
-    scrollStartMs,
-    scrollEndMs,
-    scrollElapsedMs: Math.max(0, scrollEndMs - scrollStartMs),
-    ...(finalMouseMoveEvent !== undefined
-      ? { mouseMoveEvent: finalMouseMoveEvent }
-      : {}),
-    ...(zoomEvent !== undefined ? { zoomEvent } : {}),
-    resolvedAutoZoomConfig,
-    isFirstAutoZoomInteraction: isFirstInteraction,
-    shouldScrollBeforeMouseMove: isFirstInteraction,
-    isInsideAutoZoom: state.insideAutoZoom,
+    ...(focusChange !== undefined ? { focusChange } : {}),
   }
 }

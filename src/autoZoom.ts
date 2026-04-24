@@ -5,6 +5,7 @@ import {
 } from './defaults.js'
 import type { ElementRect, IEventRecorder } from './events.js'
 import type { AutoZoomOptions, Easing } from './types.js'
+import { resolveCenteringValue } from './zoom.js'
 
 export type ZoomLocation = {
   x: number
@@ -93,11 +94,20 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function resolveCenteringValue(
-  centering: AutoZoomOptions['centering']
-): number | undefined {
-  if (centering === undefined) return undefined
-  return centering
+function resetAutoZoomState(): void {
+  setAutoZoomState({
+    ...currentAutoZoomState,
+    insideAutoZoom: false,
+    lastZoomLocation: null,
+    duration: null,
+    easing: null,
+    amount: null,
+    centering: null,
+    allowZoomingOut: null,
+    preZoomDelay: null,
+    postZoomDelay: null,
+    currentZoomViewport: null,
+  })
 }
 
 /**
@@ -140,18 +150,15 @@ export async function autoZoom(
     duration: options?.duration ?? DEFAULT_ZOOM_DURATION,
     easing: (options?.easing ?? DEFAULT_ZOOM_EASING) as Easing,
     amount: options?.amount ?? null,
-    centering: resolveCenteringValue(options?.centering) ?? null,
+    centering:
+      options?.centering !== undefined
+        ? resolveCenteringValue(options.centering)
+        : null,
     allowZoomingOut: options?.allowZoomingOut ?? null,
     preZoomDelay: options?.preZoomDelay ?? 0,
     postZoomDelay: options?.postZoomDelay ?? DEFAULT_POST_ZOOM_IN_OUT_DELAY,
   })
   try {
-    if (
-      currentAutoZoomState.preZoomDelay !== null &&
-      currentAutoZoomState.preZoomDelay > 0
-    ) {
-      await sleep(currentAutoZoomState.preZoomDelay)
-    }
     await fn()
     if (activeRecorder !== null) {
       activeRecorder.addAutoZoomEnd(options)
@@ -189,25 +196,10 @@ export async function autoZoom(
         ])
       }
     }
-    if (
-      currentAutoZoomState.postZoomDelay !== null &&
-      currentAutoZoomState.postZoomDelay > 0
-    ) {
-      await sleep(currentAutoZoomState.postZoomDelay)
+    if ((currentAutoZoomState.postZoomDelay ?? 0) > 0) {
+      await sleep(currentAutoZoomState.postZoomDelay ?? 0)
     }
   } finally {
-    setAutoZoomState({
-      ...currentAutoZoomState,
-      insideAutoZoom: false,
-      lastZoomLocation: null,
-      duration: null,
-      easing: null,
-      amount: null,
-      centering: null,
-      allowZoomingOut: null,
-      preZoomDelay: null,
-      postZoomDelay: null,
-      currentZoomViewport: null,
-    })
+    resetAutoZoomState()
   }
 }

@@ -321,6 +321,7 @@ async function scrollTo(
   const opts = {
     amount: options.amount ?? 1,
     centering: options.centering ?? 0,
+    evaluateEasingAtTSource: evaluateEasingAtT.toString(),
     ...(options.easing !== undefined && { easing: options.easing }),
     ...(options.duration !== undefined && { duration: options.duration }),
     ...(options.previewOnly !== undefined
@@ -340,34 +341,9 @@ async function scrollTo(
         const clampValue = (value: number, min: number, max: number): number =>
           Math.min(max, Math.max(min, value))
 
-        // Duplicated below the serialization boundary; locator.evaluate
-        // sends the callback as a string and cannot close over outer functions.
-        const easingAtT = (t: number, easing: Easing): number => {
-          if (t <= 0) return 0
-          if (t >= 1) return 1
-          switch (easing) {
-            case 'linear':
-              return t
-            case 'ease-in':
-              return t * t * t
-            case 'ease-out':
-              return 1 - (1 - t) * (1 - t) * (1 - t)
-            case 'ease-in-out':
-              return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
-            case 'ease-in-strong':
-              return t * t * t * t
-            case 'ease-out-strong':
-              return 1 - (1 - t) * (1 - t) * (1 - t) * (1 - t)
-            case 'ease-in-out-strong':
-              return t < 0.5
-                ? 8 * t * t * t * t
-                : 1 - Math.pow(-2 * t + 2, 4) / 2
-            default: {
-              const _: never = easing
-              throw new Error(`Unknown easing: ${_}`)
-            }
-          }
-        }
+        const evaluateEasingAtT = Function(
+          `return (${opts.evaluateEasingAtTSource})`
+        )() as (t: number, easing: Easing) => number
 
         const doc = element.ownerDocument
         const win = doc.defaultView as ScrollWindow | null
@@ -615,7 +591,10 @@ async function scrollTo(
 
         const tick = (): void => {
           step += 1
-          const easedT = easingAtT(step / steps, opts.easing ?? 'ease-in-out')
+          const easedT = evaluateEasingAtT(
+            step / steps,
+            opts.easing ?? 'ease-in-out'
+          )
 
           for (const plan of ancestorScrollPlans) {
             plan.element.scrollTop =

@@ -488,6 +488,35 @@ describe('scroll', () => {
     stateSpy.mockRestore()
   })
 
+  it('reuses non-linear easing for evaluated scroll animation', async () => {
+    const easeOutLocator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+    const linearLocator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+
+    const easeOutPromise = scroll(easeOutLocator, {
+      duration: 100,
+      easing: 'ease-out',
+    })
+    const linearPromise = scroll(linearLocator, {
+      duration: 100,
+      easing: 'linear',
+    })
+
+    await vi.runAllTimersAsync()
+    await Promise.all([easeOutPromise, linearPromise])
+
+    expect(easeOutLocator.__scrollToCalls[0]?.top).toBeGreaterThan(
+      linearLocator.__scrollToCalls[0]?.top ?? 0
+    )
+  })
+
   it('scrolls nested containers and then the page', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },

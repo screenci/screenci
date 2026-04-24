@@ -263,13 +263,88 @@ async function animateMouseMove(
 
   return {
     type: 'focusChange',
-    startMs: eventStartMs,
-    endMs,
     x: targetX,
     y: targetY,
-    easing,
+    mouse: {
+      startMs: eventStartMs,
+      endMs,
+      easing,
+    },
     ...(elementRect !== undefined ? { elementRect } : {}),
   }
+}
+
+function buildFocusChangeFromScrollResult(params: {
+  mouseMoveEvent: FocusChangeEvent | undefined
+  locatorRect: ElementRect | undefined
+  scrollStartMs: number
+  scrollEndMs: number
+  scrollEasing: Easing
+  zoomEvent: NonNullable<FocusChangeEvent['zoom']> | undefined
+}): FocusChangeEvent | undefined {
+  const {
+    mouseMoveEvent,
+    locatorRect,
+    scrollStartMs,
+    scrollEndMs,
+    scrollEasing,
+    zoomEvent,
+  } = params
+
+  if (!mouseMoveEvent && !zoomEvent && scrollEndMs <= scrollStartMs) {
+    return undefined
+  }
+
+  const fallbackPoint = locatorRect
+    ? {
+        x: locatorRect.x + locatorRect.width / 2,
+        y: locatorRect.y + locatorRect.height / 2,
+      }
+    : { x: 0, y: 0 }
+  const elementRect = mouseMoveEvent?.elementRect ?? locatorRect
+
+  return {
+    type: 'focusChange',
+    x: mouseMoveEvent?.x ?? fallbackPoint.x,
+    y: mouseMoveEvent?.y ?? fallbackPoint.y,
+    ...(mouseMoveEvent?.mouse !== undefined
+      ? { mouse: mouseMoveEvent.mouse }
+      : {}),
+    ...(scrollEndMs > scrollStartMs
+      ? {
+          scroll: {
+            startMs: scrollStartMs,
+            endMs: scrollEndMs,
+            easing: scrollEasing,
+          },
+        }
+      : {}),
+    ...(zoomEvent !== undefined ? { zoom: zoomEvent } : {}),
+    ...(elementRect !== undefined ? { elementRect } : {}),
+    ...(!mouseMoveEvent &&
+    (zoomEvent !== undefined || scrollEndMs > scrollStartMs)
+      ? { focusOnly: true }
+      : {}),
+  }
+}
+
+function getRecordedInnerEventEndMs(
+  event:
+    | FocusChangeEvent
+    | MouseMoveEvent
+    | MouseDownEvent
+    | MouseUpEvent
+    | MouseHideEvent
+    | MouseWaitEvent
+): number {
+  if (event.type === 'focusChange') {
+    return Math.max(
+      ...(event.mouse ? [event.mouse.endMs] : []),
+      ...(event.scroll ? [event.scroll.endMs] : []),
+      ...(event.zoom ? [event.zoom.endMs] : [])
+    )
+  }
+  return event.endMs
 }
 
 type ClickActionResult = {
@@ -339,7 +414,7 @@ async function performClickActions(
       : undefined
 
   const scrollResult = await scroll(locator, autoZoomOptions, mouseMovePlan)
-  const { locatorRect, mouseMoveEvent } = scrollResult
+  const { locatorRect, mouseMoveEvent, zoomEvent } = scrollResult
   const isFirstAutoZoomEvent = scrollResult.isFirstAutoZoomInteraction
   if (!locatorRect) {
     logger.warn(
@@ -347,9 +422,21 @@ async function performClickActions(
     )
   }
 
-  if (mouseMoveEvent) {
-    innerEvents.push(mouseMoveEvent)
-    mousePositions.set(page, { x: mouseMoveEvent.x, y: mouseMoveEvent.y })
+  const initialFocusChange = buildFocusChangeFromScrollResult({
+    mouseMoveEvent,
+    locatorRect,
+    scrollStartMs: scrollResult.scrollStartMs,
+    scrollEndMs: scrollResult.scrollEndMs,
+    scrollEasing: scrollResult.resolvedAutoZoomConfig.easing,
+    zoomEvent,
+  })
+
+  if (initialFocusChange) {
+    innerEvents.push(initialFocusChange)
+    mousePositions.set(page, {
+      x: initialFocusChange.x,
+      y: initialFocusChange.y,
+    })
   }
 
   const zoomDur =
@@ -516,11 +603,13 @@ async function performClickActions(
       const postClickMoveEndMs = Date.now()
       innerEvents.push({
         type: 'focusChange',
-        startMs: postClickMoveStartMs,
-        endMs: postClickMoveEndMs,
         x: targetX,
         y: targetY,
-        easing,
+        mouse: {
+          startMs: postClickMoveStartMs,
+          endMs: postClickMoveEndMs,
+          easing,
+        },
       })
       mousePositions.set(page, { x: targetX, y: targetY })
     }
@@ -601,24 +690,24 @@ async function performSimpleAction(
     innerEvents = clickActionResult?.innerEvents ?? []
     elementRect = clickActionResult?.elementRect
   } else {
-    const locatorRect = await locator.boundingBox()
+    const scrollResult = await scroll(locator, autoZoomOptions)
+    const { locatorRect, zoomEvent } = scrollResult
 
     const autoZoomState = getAutoZoomState()
     if (autoZoomState.insideAutoZoom && locatorRect) {
-      const focusStart = Date.now()
       const zoomDur = autoZoomState.duration ?? 0
-      if (zoomDur > 0) await sleep(zoomDur)
-      const focusEnd = Date.now()
-      innerEvents.push({
-        type: 'focusChange',
-        startMs: focusStart,
-        endMs: focusEnd,
-        x: locatorRect.x + locatorRect.width / 2,
-        y: locatorRect.y + locatorRect.height / 2,
-        easing: autoZoomState.easing ?? 'ease-in-out',
-        focusOnly: true,
-        elementRect: locatorRect,
+      const focusChange = buildFocusChangeFromScrollResult({
+        mouseMoveEvent: undefined,
+        locatorRect,
+        scrollStartMs: scrollResult.scrollStartMs,
+        scrollEndMs: scrollResult.scrollEndMs,
+        scrollEasing: scrollResult.resolvedAutoZoomConfig.easing,
+        zoomEvent,
       })
+      if (focusChange) {
+        innerEvents.push(focusChange)
+      }
+      if (zoomDur > 0) await sleep(zoomDur)
     }
 
     const targetPosition = locatorRect
@@ -703,11 +792,7 @@ async function recordedClick(
       startMs: clickWaitStart,
       endMs: clickWaitEnd,
     })
-    activeClickRecorder.addInput(
-      'click',
-      result.elementRect,
-      result.innerEvents
-    )
+    activeClickRecorder.addInput('click', undefined, result.innerEvents)
   }
 }
 
@@ -878,7 +963,20 @@ export function instrumentLocator(locator: Locator): Locator {
       elementRect = clickActionResult?.elementRect
     } else {
       const scrollResult = await scroll(locator, options?.autoZoomOptions)
-      const { locatorRect, isFirstAutoZoomInteraction } = scrollResult
+      const { locatorRect, isFirstAutoZoomInteraction, zoomEvent } =
+        scrollResult
+
+      const focusChange = buildFocusChangeFromScrollResult({
+        mouseMoveEvent: undefined,
+        locatorRect,
+        scrollStartMs: scrollResult.scrollStartMs,
+        scrollEndMs: scrollResult.scrollEndMs,
+        scrollEasing: scrollResult.resolvedAutoZoomConfig.easing,
+        zoomEvent,
+      })
+      if (focusChange) {
+        innerEvents.push(focusChange)
+      }
 
       if (isFirstAutoZoomInteraction) {
         const postDelay = getPostZoomInOutDelay() ?? 0
@@ -919,11 +1017,7 @@ export function instrumentLocator(locator: Locator): Locator {
         startMs: pressWaitStart,
         endMs: pressWaitEnd,
       })
-      activeClickRecorder.addInput(
-        'pressSequentially',
-        elementRect,
-        innerEvents
-      )
+      activeClickRecorder.addInput('pressSequentially', innerEvents)
     }
   }
 
@@ -1068,7 +1162,6 @@ export function instrumentLocator(locator: Locator): Locator {
       )
       const correctedRect = correctedScrollResult.locatorRect ?? locatorRect
 
-      const focusStart = Date.now()
       await locator.evaluate((element) => {
         if (
           element instanceof HTMLInputElement ||
@@ -1089,18 +1182,18 @@ export function instrumentLocator(locator: Locator): Locator {
           selection.addRange(range)
         }
       })
-      const focusEnd = Date.now()
 
-      innerEvents.push({
-        type: 'focusChange',
-        startMs: focusStart,
-        endMs: focusEnd,
-        x: correctedRect.x + correctedRect.width / 2,
-        y: correctedRect.y + correctedRect.height / 2,
-        easing: autoZoomState.easing ?? 'ease-in-out',
-        focusOnly: true,
-        elementRect: correctedRect,
+      const focusChange = buildFocusChangeFromScrollResult({
+        mouseMoveEvent: undefined,
+        locatorRect: correctedRect,
+        scrollStartMs: correctedScrollResult.scrollStartMs,
+        scrollEndMs: correctedScrollResult.scrollEndMs,
+        scrollEasing: correctedScrollResult.resolvedAutoZoomConfig.easing,
+        zoomEvent: correctedScrollResult.zoomEvent,
       })
+      if (focusChange) {
+        innerEvents.push(focusChange)
+      }
       elementRect = correctedRect
     } else {
       await locator.evaluate((element) => {
@@ -1343,11 +1436,20 @@ export function instrumentLocator(locator: Locator): Locator {
       options?.autoZoomOptions,
       mouseMovePlan
     )
-    const { locatorRect, mouseMoveEvent } = scrollResult
+    const { locatorRect, mouseMoveEvent, zoomEvent } = scrollResult
 
-    if (mouseMoveEvent) {
-      innerEvents.push(mouseMoveEvent)
-      mousePositions.set(page, { x: mouseMoveEvent.x, y: mouseMoveEvent.y })
+    const hoverFocusChange = buildFocusChangeFromScrollResult({
+      mouseMoveEvent,
+      locatorRect,
+      scrollStartMs: scrollResult.scrollStartMs,
+      scrollEndMs: scrollResult.scrollEndMs,
+      scrollEasing: scrollResult.resolvedAutoZoomConfig.easing,
+      zoomEvent,
+    })
+
+    if (hoverFocusChange) {
+      innerEvents.push(hoverFocusChange)
+      mousePositions.set(page, { x: hoverFocusChange.x, y: hoverFocusChange.y })
     }
 
     const waitStartMs = Date.now()
@@ -1421,11 +1523,23 @@ export function instrumentLocator(locator: Locator): Locator {
         : undefined
 
     const scrollResult = await scroll(locator, undefined, mouseMovePlan)
-    const { locatorRect, mouseMoveEvent } = scrollResult
+    const { locatorRect, mouseMoveEvent, zoomEvent } = scrollResult
 
-    if (mouseMoveEvent) {
-      innerEvents.push(mouseMoveEvent)
-      mousePositions.set(page, { x: mouseMoveEvent.x, y: mouseMoveEvent.y })
+    const selectFocusChange = buildFocusChangeFromScrollResult({
+      mouseMoveEvent,
+      locatorRect,
+      scrollStartMs: scrollResult.scrollStartMs,
+      scrollEndMs: scrollResult.scrollEndMs,
+      scrollEasing: scrollResult.resolvedAutoZoomConfig.easing,
+      zoomEvent,
+    })
+
+    if (selectFocusChange) {
+      innerEvents.push(selectFocusChange)
+      mousePositions.set(page, {
+        x: selectFocusChange.x,
+        y: selectFocusChange.y,
+      })
     }
 
     await sleep(beforeClickPause)
@@ -1437,7 +1551,9 @@ export function instrumentLocator(locator: Locator): Locator {
     // pre-click pause in the recording, which is acceptable).
     // All timestamps use a single base + integer * segmentMs to avoid FP drift.
     const selectEndMs = Date.now()
-    const lastEventEndMs = innerEvents.at(-1)?.endMs ?? 0
+    const lastEventEndMs = innerEvents.at(-1)
+      ? getRecordedInnerEventEndMs(innerEvents.at(-1)!)
+      : 0
     const tripleClickStartMs = Math.max(
       lastEventEndMs,
       selectEndMs - selectDuration
@@ -1520,7 +1636,7 @@ export function instrumentLocator(locator: Locator): Locator {
           }
         : undefined
     )
-    const { locatorRect: sourceRect, mouseMoveEvent } = scrollResult
+    const { locatorRect: sourceRect, mouseMoveEvent, zoomEvent } = scrollResult
     const targetBb = await target.boundingBox()
     const targetRect: ElementRect | undefined = targetBb
       ? {
@@ -1545,9 +1661,21 @@ export function instrumentLocator(locator: Locator): Locator {
         ? { x: targetRect.width / 2, y: targetRect.height / 2 }
         : undefined)
 
-    if (mouseMoveEvent) {
-      innerEvents.push(mouseMoveEvent)
-      mousePositions.set(page, { x: mouseMoveEvent.x, y: mouseMoveEvent.y })
+    const dragStartFocusChange = buildFocusChangeFromScrollResult({
+      mouseMoveEvent,
+      locatorRect: sourceRect,
+      scrollStartMs: scrollResult.scrollStartMs,
+      scrollEndMs: scrollResult.scrollEndMs,
+      scrollEasing: scrollResult.resolvedAutoZoomConfig.easing,
+      zoomEvent,
+    })
+
+    if (dragStartFocusChange) {
+      innerEvents.push(dragStartFocusChange)
+      mousePositions.set(page, {
+        x: dragStartFocusChange.x,
+        y: dragStartFocusChange.y,
+      })
     }
 
     // 2. preDragPause + mouseDown
@@ -1778,11 +1906,13 @@ export async function instrumentPage(page: Page): Promise<Page> {
       }
       const moveEvent: FocusChangeEvent = {
         type: 'focusChange',
-        startMs,
-        endMs,
         x,
         y,
-        ...(duration > 0 ? { easing } : {}),
+        mouse: {
+          startMs,
+          endMs,
+          ...(duration > 0 ? { easing } : {}),
+        },
       }
       activeClickRecorder.addInput('focusChange', undefined, [moveEvent])
     }

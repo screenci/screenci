@@ -20,11 +20,31 @@ export type ElementRect = {
 
 export type FocusChangeEvent = {
   type: 'focusChange'
-  startMs: number
-  endMs: number
   x: number
   y: number
-  easing?: Easing
+  mouse?: {
+    startMs: number
+    endMs: number
+    easing?: Easing
+  }
+  scroll?: {
+    startMs: number
+    endMs: number
+    easing?: Easing
+  }
+  zoom?: {
+    startMs: number
+    endMs: number
+    easing?: Easing
+    end: {
+      pointPx: { x: number; y: number }
+      size: { widthPx: number; heightPx: number }
+    }
+    optimalOffset?: {
+      x: number
+      y: number
+    }
+  }
   focusOnly?: boolean
   elementRect?: ElementRect
 }
@@ -91,7 +111,6 @@ export type InputEvent = {
     | 'hover'
     | 'selectText'
     | 'dragTo'
-  elementRect?: ElementRect
   events: Array<
     | FocusChangeEvent
     | MouseMoveEvent

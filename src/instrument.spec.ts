@@ -569,7 +569,7 @@ describe('instrumentLocator', () => {
         event.type === 'focusChange' || event.type === 'mouseMove'
     )
 
-    expect(click.elementRect).toEqual({ x: 110, y: 206, width: 80, height: 40 })
+    expect(click.elementRect).toBeUndefined()
     expect(move).toBeUndefined()
   })
 
@@ -607,7 +607,14 @@ describe('instrumentLocator', () => {
         event.type === 'focusChange' || event.type === 'mouseMove'
     )
 
-    expect(move).toBeUndefined()
+    expect(move).toMatchObject({
+      type: 'focusChange',
+      focusOnly: true,
+      scroll: expect.objectContaining({
+        startMs: expect.any(Number),
+        endMs: expect.any(Number),
+      }),
+    })
   })
 
   it('starts the first autoZoom click move after scroll completes', async () => {
@@ -649,7 +656,13 @@ describe('instrumentLocator', () => {
         event.type === 'focusChange' || event.type === 'mouseMove'
     )
 
-    expect(move).toBeUndefined()
+    expect(move).toMatchObject({
+      type: 'focusChange',
+      zoom: expect.objectContaining({
+        startMs: expect.any(Number),
+        endMs: expect.any(Number),
+      }),
+    })
   })
 
   it('keeps later autoZoom click moves overlapping the scroll timing', async () => {
@@ -697,7 +710,13 @@ describe('instrumentLocator', () => {
         event.type === 'focusChange' || event.type === 'mouseMove'
     )
 
-    expect(move).toBeUndefined()
+    expect(move).toMatchObject({
+      type: 'focusChange',
+      zoom: expect.objectContaining({
+        startMs: expect.any(Number),
+        endMs: expect.any(Number),
+      }),
+    })
   })
 
   it('does not synthesize mouse presses for check without click inside autoZoom', async () => {

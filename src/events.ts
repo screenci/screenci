@@ -34,13 +34,32 @@ export type ElementRect = {
 
 export type FocusChangeEvent = {
   type: 'focusChange'
-  startMs: number
-  endMs: number
   x: number
   y: number
-  easing?: Easing
+  mouse?: {
+    startMs: number
+    endMs: number
+    easing?: Easing
+  }
+  scroll?: {
+    startMs: number
+    endMs: number
+    easing?: Easing
+  }
+  zoom?: {
+    startMs: number
+    endMs: number
+    easing?: Easing
+    end: {
+      pointPx: { x: number; y: number }
+      size: { widthPx: number; heightPx: number }
+    }
+    optimalOffset?: {
+      x: number
+      y: number
+    }
+  }
   focusOnly?: boolean
-  /** Bounding rect of the element the cursor moved to — used for zoom centering hints. */
   elementRect?: ElementRect
 }
 
@@ -118,7 +137,6 @@ export type InputEvent = {
     | 'hover'
     | 'selectText'
     | 'dragTo'
-  elementRect?: ElementRect
   events: Array<
     | FocusChangeEvent
     | MouseMoveEvent
@@ -343,6 +361,7 @@ export interface IEventRecorder {
     elementRect: ElementRect | undefined,
     events: InputEvent['events']
   ): void
+  addInput(subType: InputEvent['subType'], events: InputEvent['events']): void
   addCueStart(
     text: string,
     name: string,
@@ -405,21 +424,108 @@ export class EventRecorder implements IEventRecorder {
     this.events.push({ type: 'videoStart', timeMs: 0 })
   }
 
+  private getFocusChangeBounds(event: FocusChangeEvent): {
+    startMs: number
+    endMs: number
+  } {
+    const spans = [event.mouse, event.scroll, event.zoom].filter(
+      (value): value is NonNullable<typeof value> => value !== undefined
+    )
+
+    if (spans.length === 0) {
+      throw new Error(
+        '[screenci] focusChange must include mouse, scroll, or zoom timing.'
+      )
+    }
+
+    return {
+      startMs: Math.min(...spans.map((span) => span.startMs)),
+      endMs: Math.max(...spans.map((span) => span.endMs)),
+    }
+  }
+
+  private getInnerEventBounds(event: InputEvent['events'][number]): {
+    startMs: number
+    endMs: number
+  } {
+    if (event.type === 'focusChange') {
+      return this.getFocusChangeBounds(event)
+    }
+
+    return {
+      startMs: event.startMs,
+      endMs: event.endMs,
+    }
+  }
+
+  private getInputEventBounds(events: InputEvent['events']): {
+    startMs: number
+    endMs: number
+  } {
+    const bounds = events.map((event) => this.getInnerEventBounds(event))
+    return {
+      startMs: Math.min(...bounds.map((bound) => bound.startMs)),
+      endMs: Math.max(...bounds.map((bound) => bound.endMs)),
+    }
+  }
+
+  private relativizeFocusChangeEvent(
+    event: FocusChangeEvent,
+    startTime: number
+  ): FocusChangeEvent {
+    return {
+      ...event,
+      ...(event.mouse !== undefined
+        ? {
+            mouse: {
+              ...event.mouse,
+              startMs: event.mouse.startMs - startTime,
+              endMs: event.mouse.endMs - startTime,
+            },
+          }
+        : {}),
+      ...(event.scroll !== undefined
+        ? {
+            scroll: {
+              ...event.scroll,
+              startMs: event.scroll.startMs - startTime,
+              endMs: event.scroll.endMs - startTime,
+            },
+          }
+        : {}),
+      ...(event.zoom !== undefined
+        ? {
+            zoom: {
+              ...event.zoom,
+              startMs: event.zoom.startMs - startTime,
+              endMs: event.zoom.endMs - startTime,
+            },
+          }
+        : {}),
+    }
+  }
+
   addInput(
     subType: InputEvent['subType'],
-    elementRect: ElementRect | undefined,
-    events: InputEvent['events']
+    elementRectOrEvents: ElementRect | InputEvent['events'] | undefined,
+    maybeEvents?: InputEvent['events']
   ): void {
     if (this.startTime === null) return
+    const events = Array.isArray(elementRectOrEvents)
+      ? elementRectOrEvents
+      : maybeEvents
+    if (events === undefined) return
     if (events.length === 0) return
     const st = this.startTime
-    const relStart = events[0]!.startMs - st
-    const relEnd = events[events.length - 1]!.endMs - st
+    const inputBounds = this.getInputEventBounds(events)
+    const relStart = inputBounds.startMs - st
+    const relEnd = inputBounds.endMs - st
 
     for (const existing of this.events) {
       if (existing.type === 'input') {
-        const existingStart = existing.events[0]!.startMs
-        const existingEnd = existing.events[existing.events.length - 1]!.endMs
+        const existingBounds = this.getInputEventBounds(existing.events)
+        const existingStart = existingBounds.startMs
+        const existingEnd = existingBounds.endMs
         if (relStart < existingEnd && relEnd > existingStart) {
           throw new Error(
             `Input event '${subType}' [${relStart}ms, ${relEnd}ms] overlaps with existing '${existing.subType}' event [${existingStart}ms, ${existingEnd}ms]`
@@ -437,16 +543,21 @@ export class EventRecorder implements IEventRecorder {
       }
     }
 
-    const relativeEvents = events.map((e) => ({
-      ...e,
-      startMs: e.startMs - st,
-      endMs: e.endMs - st,
-    }))
+    const relativeEvents = events.map((event) => {
+      if (event.type === 'focusChange') {
+        return this.relativizeFocusChangeEvent(event, st)
+      }
+
+      return {
+        ...event,
+        startMs: event.startMs - st,
+        endMs: event.endMs - st,
+      }
+    })
 
     this.events.push({
       type: 'input',
       subType,
-      ...(elementRect !== undefined && { elementRect }),
       events: relativeEvents,
     } as InputEvent)
   }
@@ -535,8 +646,9 @@ export class EventRecorder implements IEventRecorder {
     const centering = this.normalizeCentering(options)
     for (const existing of this.events) {
       if (existing.type !== 'input') continue
-      const existingStart = existing.events[0]!.startMs
-      const existingEnd = existing.events[existing.events.length - 1]!.endMs
+      const existingBounds = this.getInputEventBounds(existing.events)
+      const existingStart = existingBounds.startMs
+      const existingEnd = existingBounds.endMs
       if (timeMs > existingStart && timeMs < existingEnd) {
         throw new Error(
           `autoZoomStart at ${timeMs}ms falls inside input '${existing.subType}' event [${existingStart}ms, ${existingEnd}ms]`
@@ -563,8 +675,9 @@ export class EventRecorder implements IEventRecorder {
     const timeMs = Date.now() - this.startTime
     for (const existing of this.events) {
       if (existing.type !== 'input') continue
-      const existingStart = existing.events[0]!.startMs
-      const existingEnd = existing.events[existing.events.length - 1]!.endMs
+      const existingBounds = this.getInputEventBounds(existing.events)
+      const existingStart = existingBounds.startMs
+      const existingEnd = existingBounds.endMs
       if (timeMs > existingStart && timeMs < existingEnd) {
         throw new Error(
           `autoZoomEnd at ${timeMs}ms falls inside input '${existing.subType}' event [${existingStart}ms, ${existingEnd}ms]`

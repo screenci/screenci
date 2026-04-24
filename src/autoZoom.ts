@@ -13,6 +13,17 @@ export type ZoomLocation = {
   eventType: 'click' | 'fill'
 }
 
+export type CurrentZoomViewport = {
+  focusPoint: { x: number; y: number }
+  elementRect?: ElementRect
+  end: {
+    pointPx: { x: number; y: number }
+    size: { widthPx: number; heightPx: number }
+  }
+  optimalOffset?: { x: number; y: number }
+  viewportSize: { width: number; height: number }
+}
+
 let activeRecorder: IEventRecorder | null = null
 let insideAutoZoom = false
 let currentZoomDuration: number | null = null
@@ -22,6 +33,7 @@ let currentZoomCentering: number | null = null
 let currentAllowZoomingOut: boolean | null = null
 let currentPostZoomInOutDelay: number | null = null
 let lastZoomLocation: ZoomLocation | null = null
+let currentZoomViewport: CurrentZoomViewport | null = null
 
 export function setActiveAutoZoomRecorder(
   recorder: IEventRecorder | null
@@ -61,6 +73,10 @@ export function getLastZoomLocation(): ZoomLocation | null {
   return lastZoomLocation
 }
 
+export function getCurrentZoomViewport(): typeof currentZoomViewport {
+  return currentZoomViewport
+}
+
 export type AutoZoomState = {
   insideAutoZoom: boolean
   lastZoomLocation: ZoomLocation | null
@@ -68,6 +84,8 @@ export type AutoZoomState = {
   duration: number | null
   amount: number | null
   centering: number | null
+  allowZoomingOut: boolean | null
+  currentZoomViewport: CurrentZoomViewport | null
 }
 
 export function getAutoZoomState(): AutoZoomState {
@@ -78,11 +96,19 @@ export function getAutoZoomState(): AutoZoomState {
     duration: getZoomDuration(),
     amount: getZoomAmount(),
     centering: getZoomCentering(),
+    allowZoomingOut: getAllowZoomingOut(),
+    currentZoomViewport: getCurrentZoomViewport(),
   }
 }
 
 export function setLastZoomLocation(loc: ZoomLocation | null): void {
   lastZoomLocation = loc
+}
+
+export function setCurrentZoomViewport(
+  viewport: CurrentZoomViewport | null
+): void {
+  currentZoomViewport = viewport
 }
 
 function sleep(ms: number): Promise<void> {
@@ -148,6 +174,32 @@ export async function autoZoom(
     await fn()
     if (activeRecorder !== null) {
       activeRecorder.addAutoZoomEnd(options)
+      if (currentZoomViewport !== null) {
+        const zoomOutStartMs = Date.now()
+        activeRecorder.addInput('focusChange', undefined, [
+          {
+            type: 'focusChange',
+            x: currentZoomViewport.focusPoint.x,
+            y: currentZoomViewport.focusPoint.y,
+            ...(currentZoomViewport.elementRect !== undefined
+              ? { elementRect: currentZoomViewport.elementRect }
+              : {}),
+            focusOnly: true,
+            zoom: {
+              startMs: zoomOutStartMs,
+              endMs: zoomOutStartMs + (currentZoomDuration ?? 0),
+              easing: currentZoomEasing ?? DEFAULT_ZOOM_EASING,
+              end: {
+                pointPx: { x: 0, y: 0 },
+                size: {
+                  widthPx: currentZoomViewport.viewportSize.width,
+                  heightPx: currentZoomViewport.viewportSize.height,
+                },
+              },
+            },
+          },
+        ])
+      }
     }
     if (currentPostZoomInOutDelay !== null && currentPostZoomInOutDelay > 0) {
       await sleep(currentPostZoomInOutDelay)
@@ -161,5 +213,6 @@ export async function autoZoom(
     currentZoomCentering = null
     currentAllowZoomingOut = null
     currentPostZoomInOutDelay = null
+    currentZoomViewport = null
   }
 }

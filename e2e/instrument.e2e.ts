@@ -6,6 +6,7 @@ import { instrumentPage, setActiveClickRecorder } from '../src/instrument.js'
 import { scroll } from '../src/scroll.js'
 import { EventRecorder } from '../src/events.js'
 import type {
+  FocusChangeEvent,
   InputEvent,
   MouseMoveEvent,
   MouseDownEvent,
@@ -121,6 +122,14 @@ function mouseHideEventsIn(event: InputEvent): MouseHideEvent[] {
   return event.events.filter((e): e is MouseHideEvent => e.type === 'mouseHide')
 }
 
+function inputElementRect(event: InputEvent) {
+  return event.events.find(
+    (inner): inner is MouseMoveEvent | FocusChangeEvent =>
+      (inner.type === 'mouseMove' || inner.type === 'focusChange') &&
+      inner.elementRect !== undefined
+  )?.elementRect
+}
+
 type InstrumentedMouse = {
   move(
     x: number,
@@ -192,9 +201,10 @@ test.describe('click instrumentation', () => {
 
     const events = clickEvents()
     const [event] = events
-    expect(event!.elementRect).toBeDefined()
-    expect(event!.elementRect!.width).toBeGreaterThan(0)
-    expect(event!.elementRect!.height).toBeGreaterThan(0)
+    const rect = inputElementRect(event!)
+    expect(rect).toBeDefined()
+    expect(rect!.width).toBeGreaterThan(0)
+    expect(rect!.height).toBeGreaterThan(0)
   })
 
   test('scrolls into view before clicking off-screen element', async ({
@@ -253,9 +263,10 @@ test.describe('fill instrumentation', () => {
 
     const events = inputEvents()
     const [event] = events
-    expect(event!.elementRect).toBeDefined()
-    expect(event!.elementRect!.width).toBeGreaterThan(0)
-    expect(event!.elementRect!.height).toBeGreaterThan(0)
+    const rect = inputElementRect(event!)
+    expect(rect).toBeDefined()
+    expect(rect!.width).toBeGreaterThan(0)
+    expect(rect!.height).toBeGreaterThan(0)
   })
 
   test('scrolls into view before filling off-screen input', async ({
@@ -366,8 +377,9 @@ test.describe('pressSequentially instrumentation', () => {
 
     const events = inputEvents()
     const [event] = events
-    expect(event!.elementRect).toBeDefined()
-    expect(event!.elementRect!.width).toBeGreaterThan(0)
+    const rect = inputElementRect(event!)
+    expect(rect).toBeDefined()
+    expect(rect!.width).toBeGreaterThan(0)
   })
 
   test('scrolls into view before typing in off-screen input', async ({
@@ -467,9 +479,10 @@ test.describe('check instrumentation', () => {
 
     const events = inputEvents()
     const [event] = events
-    expect(event!.elementRect).toBeDefined()
-    expect(event!.elementRect!.width).toBeGreaterThan(0)
-    expect(event!.elementRect!.height).toBeGreaterThan(0)
+    const rect = inputElementRect(event!)
+    expect(rect).toBeDefined()
+    expect(rect!.width).toBeGreaterThan(0)
+    expect(rect!.height).toBeGreaterThan(0)
   })
 
   test('scrolls into view before checking off-screen checkbox', async ({
@@ -548,8 +561,9 @@ test.describe('uncheck instrumentation', () => {
 
     const events = inputEvents()
     const [event] = events
-    expect(event!.elementRect).toBeDefined()
-    expect(event!.elementRect!.width).toBeGreaterThan(0)
+    const rect = inputElementRect(event!)
+    expect(rect).toBeDefined()
+    expect(rect!.width).toBeGreaterThan(0)
   })
 
   test('scrolls into view before unchecking off-screen checkbox', async ({
@@ -622,9 +636,10 @@ test.describe('tap instrumentation', () => {
 
     const events = inputEvents()
     const [event] = events
-    expect(event!.elementRect).toBeDefined()
-    expect(event!.elementRect!.width).toBeGreaterThan(0)
-    expect(event!.elementRect!.height).toBeGreaterThan(0)
+    const rect = inputElementRect(event!)
+    expect(rect).toBeDefined()
+    expect(rect!.width).toBeGreaterThan(0)
+    expect(rect!.height).toBeGreaterThan(0)
   })
 
   test('scrolls into view before tapping off-screen element', async ({
@@ -664,7 +679,7 @@ test.describe('tap instrumentation', () => {
     expect(move).toBeDefined()
     expect(move.x).toBeGreaterThan(0)
     expect(move.y).toBeGreaterThan(0)
-    expect(event!.elementRect!.width).toBeGreaterThan(0)
+    expect(inputElementRect(event!)!.width).toBeGreaterThan(0)
     expect(move.endMs).toBeGreaterThanOrEqual(move.startMs)
   })
 
@@ -702,9 +717,10 @@ test.describe('selectOption instrumentation', () => {
 
     const events = inputEvents()
     const [event] = events
-    expect(event!.elementRect).toBeDefined()
-    expect(event!.elementRect!.width).toBeGreaterThan(0)
-    expect(event!.elementRect!.height).toBeGreaterThan(0)
+    const rect = inputElementRect(event!)
+    expect(rect).toBeDefined()
+    expect(rect!.width).toBeGreaterThan(0)
+    expect(rect!.height).toBeGreaterThan(0)
   })
 
   test('scrolls into view before selecting off-screen option', async ({
@@ -751,7 +767,7 @@ test.describe('selectOption instrumentation', () => {
     expect(move).toBeDefined()
     expect(move.x).toBeGreaterThan(0)
     expect(move.y).toBeGreaterThan(0)
-    expect(event!.elementRect!.width).toBeGreaterThan(0)
+    expect(inputElementRect(event!)!.width).toBeGreaterThan(0)
     expect(move.endMs).toBeGreaterThanOrEqual(move.startMs)
     expect(up.endMs).toBeGreaterThanOrEqual(down.startMs)
   })
@@ -954,9 +970,10 @@ test.describe('hover instrumentation', () => {
 
     const events = inputEvents().filter((e) => e.subType === 'hover')
     const [event] = events
-    expect(event!.elementRect).toBeDefined()
-    expect(event!.elementRect!.width).toBeGreaterThan(0)
-    expect(event!.elementRect!.height).toBeGreaterThan(0)
+    const rect = inputElementRect(event!)
+    expect(rect).toBeDefined()
+    expect(rect!.width).toBeGreaterThan(0)
+    expect(rect!.height).toBeGreaterThan(0)
   })
 })
 
@@ -1010,9 +1027,10 @@ test.describe('selectText instrumentation', () => {
 
     const events = inputEvents().filter((e) => e.subType === 'selectText')
     const [event] = events
-    expect(event!.elementRect).toBeDefined()
-    expect(event!.elementRect!.width).toBeGreaterThan(0)
-    expect(event!.elementRect!.height).toBeGreaterThan(0)
+    const rect = inputElementRect(event!)
+    expect(rect).toBeDefined()
+    expect(rect!.width).toBeGreaterThan(0)
+    expect(rect!.height).toBeGreaterThan(0)
   })
 })
 
@@ -1074,8 +1092,9 @@ test.describe('dragTo instrumentation', () => {
 
     const events = inputEvents().filter((e) => e.subType === 'dragTo')
     const [event] = events
-    expect(event!.elementRect).toBeDefined()
-    expect(event!.elementRect!.width).toBeGreaterThan(0)
-    expect(event!.elementRect!.height).toBeGreaterThan(0)
+    const rect = inputElementRect(event!)
+    expect(rect).toBeDefined()
+    expect(rect!.width).toBeGreaterThan(0)
+    expect(rect!.height).toBeGreaterThan(0)
   })
 })

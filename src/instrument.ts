@@ -23,6 +23,7 @@ import type {
   PostClickMove,
   ScreenCIPage,
 } from './types.js'
+import { evaluateEasingAtT } from './easing.js'
 import { logger } from './logger.js'
 import { isInsideHide } from './hide.js'
 import { scroll } from './scroll.js'
@@ -31,35 +32,6 @@ let activeClickRecorder: IEventRecorder | null = null
 
 export function setActiveClickRecorder(recorder: IEventRecorder | null): void {
   activeClickRecorder = recorder
-}
-
-/**
- * Evaluate a polynomial easing function at normalized time t ∈ [0, 1].
- * Returns the eased progress value (0–1).
- */
-function evaluateEasingAtT(t: number, easing: Easing): number {
-  if (t <= 0) return 0
-  if (t >= 1) return 1
-  switch (easing) {
-    case 'linear':
-      return t
-    case 'ease-in':
-      return t * t * t
-    case 'ease-out':
-      return 1 - (1 - t) * (1 - t) * (1 - t)
-    case 'ease-in-out':
-      return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
-    case 'ease-in-strong':
-      return t * t * t * t
-    case 'ease-out-strong':
-      return 1 - (1 - t) * (1 - t) * (1 - t) * (1 - t)
-    case 'ease-in-out-strong':
-      return t < 0.5 ? 8 * t * t * t * t : 1 - Math.pow(-2 * t + 2, 4) / 2
-    default: {
-      const _: never = easing
-      throw new Error(`Unknown easing: ${_}`)
-    }
-  }
 }
 
 /** Tracked cursor position per page, updated after each animated move. */

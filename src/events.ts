@@ -63,10 +63,6 @@ export type FocusChangeEvent = {
   elementRect?: ElementRect
 }
 
-/**
- * Legacy alias kept for older recordings. New recordings should use
- * `focusChange` instead of `mouseMove`.
- */
 export type MouseMoveEvent = {
   type: 'mouseMove'
   startMs: number

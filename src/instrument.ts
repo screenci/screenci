@@ -23,10 +23,38 @@ import type {
   PostClickMove,
   ScreenCIPage,
 } from './types.js'
-import { evaluateEasingAtT } from './easing.js'
 import { logger } from './logger.js'
 import { isInsideHide } from './hide.js'
 import { scroll } from './scroll.js'
+import {
+  CLICK_DURATION_MS,
+  assertDurationOrSpeed,
+  buildMouseDownEvent,
+  buildMouseUpEvent,
+  getOriginalMouseClick,
+  getOriginalMouseDown,
+  getOriginalMouseHide,
+  getMousePosition,
+  getOriginalMouseMove,
+  getOriginalMouseShow,
+  getOriginalMouseUp,
+  isMouseVisible,
+  performMouseClick,
+  performMouseDown,
+  performMouseHide,
+  performMouseMove,
+  performMouseShow,
+  performMouseUp,
+  resolveMouseMoveDuration,
+  setMousePosition,
+  setMouseVisible,
+  setOriginalMouseClick,
+  setOriginalMouseDown,
+  setOriginalMouseHide,
+  setOriginalMouseMove,
+  setOriginalMouseShow,
+  setOriginalMouseUp,
+} from './mouse.js'
 
 let activeClickRecorder: IEventRecorder | null = null
 
@@ -34,66 +62,10 @@ export function setActiveClickRecorder(recorder: IEventRecorder | null): void {
   activeClickRecorder = recorder
 }
 
-/** Tracked cursor position per page, updated after each animated move. */
-const mousePositions = new WeakMap<object, { x: number; y: number }>()
-
-/** Tracks cursor visibility per page (true = visible). Defaults to true. */
-const mouseVisibilities = new WeakMap<object, boolean>()
-
-/** Stores the original (un-instrumented) mouse.move per page so internal
- *  cursor animations don't emit addInput recorder events. */
-const originalMouseMoves = new WeakMap<
-  object,
-  (x: number, y: number, options?: { steps?: number }) => Promise<void>
->()
-
 const instrumented = new WeakSet<object>()
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-const CLICK_DURATION_MS = 200
-
-function assertDurationOrSpeed(
-  duration: number | undefined,
-  speed: number | undefined,
-  context: string
-): void {
-  if (duration !== undefined && speed !== undefined) {
-    throw new Error(
-      `[screenci] ${context} accepts either duration or speed, not both.`
-    )
-  }
-  if (duration !== undefined && (!Number.isFinite(duration) || duration < 0)) {
-    throw new Error(
-      `[screenci] ${context} duration must be a finite number >= 0.`
-    )
-  }
-  if (speed !== undefined && (!Number.isFinite(speed) || speed <= 0)) {
-    throw new Error(`[screenci] ${context} speed must be a finite number > 0.`)
-  }
-}
-
-function resolveMouseMoveDuration(
-  page: object,
-  targetX: number,
-  targetY: number,
-  options: {
-    duration: number | undefined
-    speed: number | undefined
-    defaultDuration: number | undefined
-    context: string
-  }
-): number {
-  const { duration, speed, defaultDuration, context } = options
-  assertDurationOrSpeed(duration, speed, context)
-  if (speed !== undefined) {
-    const startPos = mousePositions.get(page) ?? { x: 0, y: 0 }
-    const distancePx = Math.hypot(targetX - startPos.x, targetY - startPos.y)
-    return (distancePx / speed) * 1000
-  }
-  return duration ?? defaultDuration ?? 0
 }
 
 const LOCATOR_RETURN_METHODS = [
@@ -187,62 +159,6 @@ function canUseDirectMouseClickAfterScroll(
 // Reset to null before each instrumented click; set by the exposeFunction callback.
 const pendingClickData = new WeakMap<object, DOMClickData | null>()
 
-const CURSOR_STEP_MS = 1000 / 60
-
-/**
- * Physically moves the mouse from its current tracked position to (targetX,
- * targetY) over `duration` ms using `easing`, then returns a FocusChangeEvent
- * whose startMs is `eventStartMs` (which may predate this call, e.g. when a
- * scroll consumed part of moveDuration).  When duration ≤ 0 the cursor is
- * snapped directly to the target with a single move call.
- * Always updates the internal mousePositions tracker.
- */
-async function animateMouseMove(
-  page: object,
-  mouseMoveInternal: (x: number, y: number) => Promise<void>,
-  targetX: number,
-  targetY: number,
-  duration: number,
-  easing: Easing,
-  eventStartMs: number,
-  elementRect?: ElementRect
-): Promise<FocusChangeEvent> {
-  if (duration > 0) {
-    const startPos = mousePositions.get(page) ?? { x: 0, y: 0 }
-    const steps = Math.max(1, Math.floor(duration / CURSOR_STEP_MS))
-    const stepMs = duration / steps
-
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps
-      const easedT = evaluateEasingAtT(t, easing)
-      const x = startPos.x + easedT * (targetX - startPos.x)
-      const y = startPos.y + easedT * (targetY - startPos.y)
-      await mouseMoveInternal(x, y)
-      if (i < steps) {
-        await new Promise<void>((resolve) => setTimeout(resolve, stepMs))
-      }
-    }
-  } else {
-    await mouseMoveInternal(targetX, targetY)
-  }
-
-  mousePositions.set(page, { x: targetX, y: targetY })
-
-  const endMs = Date.now()
-
-  return {
-    type: 'focusChange',
-    x: targetX,
-    y: targetY,
-    mouse: {
-      startMs: eventStartMs,
-      endMs,
-      easing,
-    },
-    ...(elementRect !== undefined ? { elementRect } : {}),
-  }
-}
-
 function getRecordedInnerEventEndMs(
   event:
     | FocusChangeEvent
@@ -295,8 +211,10 @@ async function performClickActions(
   const page = locator.page()
   pendingClickData.set(page, null)
   const halfClickDuration = CLICK_DURATION_MS / 2
-  const mouseMoveInternal =
-    originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
+  const mouseMoveInternal = getOriginalMouseMove(
+    page,
+    page.mouse.move.bind(page.mouse)
+  )
 
   const innerEvents: Array<
     FocusChangeEvent | MouseMoveEvent | MouseDownEvent | MouseUpEvent
@@ -317,7 +235,7 @@ async function performClickActions(
       ? {
           page,
           mouseMoveInternal,
-          startPos: mousePositions.get(page) ?? { x: 0, y: 0 },
+          startPos: getMousePosition(page) ?? { x: 0, y: 0 },
           targetPos,
           ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
           ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
@@ -337,7 +255,7 @@ async function performClickActions(
 
   if (focusChange) {
     innerEvents.push(focusChange)
-    mousePositions.set(page, {
+    setMousePosition(page, {
       x: focusChange.x,
       y: focusChange.y,
     })
@@ -346,15 +264,7 @@ async function performClickActions(
   await sleep(beforeClickPause)
 
   await new Promise<void>((resolve) => setTimeout(resolve, halfClickDuration))
-  // Note click can take some time, but better to show it before than after
   const clickTime = Date.now()
-  const mouseDownStart = clickTime - halfClickDuration
-  innerEvents.push({
-    type: 'mouseDown',
-    startMs: mouseDownStart,
-    endMs: clickTime,
-    easing: 'ease-in-out',
-  })
 
   const didScroll =
     locatorRectPreview !== null &&
@@ -377,19 +287,41 @@ async function performClickActions(
       ...(clickOptions?.clickCount !== undefined
         ? { clickCount: clickOptions.clickCount }
         : {}),
+      ...(clickOptions?.delay !== undefined
+        ? { delay: clickOptions.delay }
+        : {}),
     }
-    await page.mouse.down(mouseClickOptions)
-    if (clickOptions?.delay) {
-      await new Promise<void>((resolve) =>
-        setTimeout(resolve, clickOptions.delay)
-      )
-    }
-    await page.mouse.up(mouseClickOptions)
+    const [mouseDownEvent, mouseUpEvent] = await performMouseClick({
+      page,
+      mouseClickInternal: getOriginalMouseClick(
+        page,
+        page.mouse.click.bind(page.mouse)
+      ),
+      x: locatorRect.x + targetPos.x,
+      y: locatorRect.y + targetPos.y,
+      clickOptions: mouseClickOptions,
+    })
+    innerEvents.push(mouseDownEvent)
+    innerEvents.push(mouseUpEvent)
   } else {
+    innerEvents.push(
+      buildMouseDownEvent({
+        startMs: clickTime - halfClickDuration,
+        endMs: clickTime,
+        easing: 'ease-in-out',
+      })
+    )
     await doClick({
       ...clickOptions,
       ...(targetPos ? { position: targetPos } : {}),
     })
+    innerEvents.push(
+      buildMouseUpEvent({
+        startMs: clickTime,
+        endMs: clickTime + halfClickDuration,
+        easing: 'ease-in-out',
+      })
+    )
   }
   const domClickData = pendingClickData.get(page)
 
@@ -412,17 +344,8 @@ async function performClickActions(
       }
     }
 
-    mousePositions.set(page, { x: domClickData.x, y: domClickData.y })
+    setMousePosition(page, { x: domClickData.x, y: domClickData.y })
   }
-
-  const mouseUpEnd = Date.now() + halfClickDuration
-  innerEvents.push({
-    type: 'mouseUp',
-    startMs: clickTime,
-    endMs: mouseUpEnd,
-    easing: 'ease-in-out',
-  })
-
   await new Promise<void>((resolve) => setTimeout(resolve, halfClickDuration))
 
   await new Promise<void>((resolve) => setTimeout(resolve, postClickPause))
@@ -430,7 +353,7 @@ async function performClickActions(
   // Animate mouse cursor in the specified direction after the click completes,
   // capturing start/end times and final position for the recorded event.
   if (postClickMove !== undefined) {
-    const currentPos = mousePositions.get(page) ?? { x: 0, y: 0 }
+    const currentPos = getMousePosition(page) ?? { x: 0, y: 0 }
     let targetX: number | undefined
     let targetY: number | undefined
 
@@ -477,36 +400,25 @@ async function performClickActions(
         defaultDuration: undefined,
         context: 'postClickMove',
       })
-      const steps = Math.max(1, Math.floor(duration / CURSOR_STEP_MS))
-      const stepMs = duration / steps
-
-      const postClickMoveStartMs = Date.now()
-
-      const startPos = { ...currentPos }
-
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps
-        const easedT = evaluateEasingAtT(t, easing)
-        const x = startPos.x + easedT * (targetX - startPos.x)
-        const y = startPos.y + easedT * (targetY - startPos.y)
-        await mouseMoveInternal(x, y)
-        if (i < steps) {
-          await new Promise<void>((resolve) => setTimeout(resolve, stepMs))
-        }
-      }
-
-      const postClickMoveEndMs = Date.now()
+      const startMs = Date.now()
+      await performMouseMove({
+        page,
+        mouseMoveInternal,
+        targetX,
+        targetY,
+        duration,
+        easing,
+      })
       innerEvents.push({
         type: 'focusChange',
         x: targetX,
         y: targetY,
         mouse: {
-          startMs: postClickMoveStartMs,
-          endMs: postClickMoveEndMs,
-          easing,
+          startMs,
+          endMs: Date.now(),
+          ...(duration > 0 ? { easing } : {}),
         },
       })
-      mousePositions.set(page, { x: targetX, y: targetY })
     }
   }
 
@@ -611,16 +523,10 @@ async function performSimpleAction(
 
     if (recordMousePress) {
       const midTime = (startTime + endTime) / 2
-      innerEvents.push({
-        type: 'mouseDown',
-        startMs: startTime,
-        endMs: midTime,
-      })
-      innerEvents.push({
-        type: 'mouseUp',
-        startMs: midTime,
-        endMs: endTime,
-      })
+      innerEvents.push(
+        buildMouseDownEvent({ startMs: startTime, endMs: midTime })
+      )
+      innerEvents.push(buildMouseUpEvent({ startMs: midTime, endMs: endTime }))
     }
   }
 
@@ -840,9 +746,9 @@ export function instrumentLocator(locator: Locator): Locator {
     const page = locator.page()
     const shouldHideMouse = options?.hideMouse === true
     if (shouldHideMouse) {
-      const cursorVisible = mouseVisibilities.get(page) ?? true
+      const cursorVisible = isMouseVisible(page)
       if (cursorVisible) {
-        mouseVisibilities.set(page, false)
+        setMouseVisible(page, false)
         const hideMs = Date.now()
         innerEvents.push({
           type: 'mouseHide',
@@ -921,9 +827,9 @@ export function instrumentLocator(locator: Locator): Locator {
       const page = locator.page()
 
       if (options.hideMouse === true) {
-        const cursorVisible = mouseVisibilities.get(page) ?? true
+        const cursorVisible = isMouseVisible(page)
         if (cursorVisible) {
-          mouseVisibilities.set(page, false)
+          setMouseVisible(page, false)
           const hideMs = Date.now()
           innerEvents.push({
             type: 'mouseHide',
@@ -983,9 +889,9 @@ export function instrumentLocator(locator: Locator): Locator {
     let elementRect: ElementRect | undefined
 
     if (fillOptions.hideMouse === true) {
-      const cursorVisible = mouseVisibilities.get(page) ?? true
+      const cursorVisible = isMouseVisible(page)
       if (cursorVisible) {
-        mouseVisibilities.set(page, false)
+        setMouseVisible(page, false)
         const hideMs = Date.now()
         innerEvents.push({
           type: 'mouseHide',
@@ -1200,8 +1106,10 @@ export function instrumentLocator(locator: Locator): Locator {
     assertDurationOrSpeed(moveDuration, moveSpeed, 'hover move')
 
     const page = locator.page()
-    const mouseMoveInternal =
-      originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
+    const mouseMoveInternal = getOriginalMouseMove(
+      page,
+      page.mouse.move.bind(page.mouse)
+    )
 
     const innerEvents: Array<
       FocusChangeEvent | MouseMoveEvent | MouseWaitEvent
@@ -1220,7 +1128,7 @@ export function instrumentLocator(locator: Locator): Locator {
         ? {
             page,
             mouseMoveInternal,
-            startPos: mousePositions.get(page) ?? { x: 0, y: 0 },
+            startPos: getMousePosition(page) ?? { x: 0, y: 0 },
             targetPos,
             ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
             ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
@@ -1239,7 +1147,10 @@ export function instrumentLocator(locator: Locator): Locator {
 
     if (hoverFocusChange) {
       innerEvents.push(hoverFocusChange)
-      mousePositions.set(page, { x: hoverFocusChange.x, y: hoverFocusChange.y })
+      setMousePosition(page, {
+        x: hoverFocusChange.x,
+        y: hoverFocusChange.y,
+      })
     }
 
     const waitStartMs = Date.now()
@@ -1285,8 +1196,10 @@ export function instrumentLocator(locator: Locator): Locator {
     assertDurationOrSpeed(moveDuration, moveSpeed, 'selectText move')
 
     const page = locator.page()
-    const mouseMoveInternal =
-      originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
+    const mouseMoveInternal = getOriginalMouseMove(
+      page,
+      page.mouse.move.bind(page.mouse)
+    )
 
     const innerEvents: Array<
       FocusChangeEvent | MouseMoveEvent | MouseDownEvent | MouseUpEvent
@@ -1302,7 +1215,7 @@ export function instrumentLocator(locator: Locator): Locator {
         ? {
             page,
             mouseMoveInternal,
-            startPos: mousePositions.get(page) ?? { x: 0, y: 0 },
+            startPos: getMousePosition(page) ?? { x: 0, y: 0 },
             targetPos,
             ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
             ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
@@ -1317,7 +1230,7 @@ export function instrumentLocator(locator: Locator): Locator {
 
     if (selectFocusChange) {
       innerEvents.push(selectFocusChange)
-      mousePositions.set(page, {
+      setMousePosition(page, {
         x: selectFocusChange.x,
         y: selectFocusChange.y,
       })
@@ -1342,18 +1255,20 @@ export function instrumentLocator(locator: Locator): Locator {
     const segmentMs = selectDuration / 6
     for (let i = 0; i < 3; i++) {
       const seg = i * 2
-      innerEvents.push({
-        type: 'mouseDown',
-        startMs: tripleClickStartMs + seg * segmentMs,
-        endMs: tripleClickStartMs + (seg + 1) * segmentMs,
-        easing: 'ease-in-out',
-      })
-      innerEvents.push({
-        type: 'mouseUp',
-        startMs: tripleClickStartMs + (seg + 1) * segmentMs,
-        endMs: tripleClickStartMs + (seg + 2) * segmentMs,
-        easing: 'ease-in-out',
-      })
+      innerEvents.push(
+        buildMouseDownEvent({
+          startMs: tripleClickStartMs + seg * segmentMs,
+          endMs: tripleClickStartMs + (seg + 1) * segmentMs,
+          easing: 'ease-in-out',
+        })
+      )
+      innerEvents.push(
+        buildMouseUpEvent({
+          startMs: tripleClickStartMs + (seg + 1) * segmentMs,
+          endMs: tripleClickStartMs + (seg + 2) * segmentMs,
+          easing: 'ease-in-out',
+        })
+      )
     }
 
     if (activeClickRecorder && innerEvents.length > 0) {
@@ -1389,34 +1304,13 @@ export function instrumentLocator(locator: Locator): Locator {
     assertDurationOrSpeed(dragDuration, dragSpeed, 'dragTo drag')
 
     const page = locator.page()
-    const mouseMoveInternal =
-      originalMouseMoves.get(page) ?? page.mouse.move.bind(page.mouse)
+    const mouseMoveInternal = getOriginalMouseMove(
+      page,
+      page.mouse.move.bind(page.mouse)
+    )
 
     const sourceRectPreview = await locator.boundingBox()
-    const scrollResult = await scroll(
-      locator,
-      undefined,
-      sourceRectPreview
-        ? {
-            page,
-            mouseMoveInternal,
-            startPos: mousePositions.get(page) ?? { x: 0, y: 0 },
-            targetPos: sourcePosition
-              ? sourcePosition
-              : {
-                  x: sourceRectPreview.width / 2,
-                  y: sourceRectPreview.height / 2,
-                },
-            ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
-            ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
-            defaultDuration: 1000,
-            context: 'dragTo move',
-            easing: moveEasing,
-          }
-        : undefined
-    )
-    const { locatorRect: sourceRect, focusChange: dragStartFocusChange } =
-      scrollResult
+    const { locatorRect: sourceRect } = await scroll(locator)
     const targetBb = await target.boundingBox()
     const targetRect: ElementRect | undefined = targetBb
       ? {
@@ -1441,25 +1335,61 @@ export function instrumentLocator(locator: Locator): Locator {
         ? { x: targetRect.width / 2, y: targetRect.height / 2 }
         : undefined)
 
-    if (dragStartFocusChange) {
-      innerEvents.push(dragStartFocusChange)
-      mousePositions.set(page, {
-        x: dragStartFocusChange.x,
-        y: dragStartFocusChange.y,
+    if (sourceRect) {
+      const sourceTargetPos = sourcePosition
+        ? sourcePosition
+        : { x: sourceRect.width / 2, y: sourceRect.height / 2 }
+      const sourceX = sourceRect.x + sourceTargetPos.x
+      const sourceY = sourceRect.y + sourceTargetPos.y
+      const resolvedDuration = resolveMouseMoveDuration(
+        page,
+        sourceX,
+        sourceY,
+        {
+          duration: moveDuration,
+          speed: moveSpeed,
+          defaultDuration: 1000,
+          context: 'dragTo move',
+        }
+      )
+      const startMs = Date.now()
+      await performMouseMove({
+        page,
+        mouseMoveInternal,
+        targetX: sourceX,
+        targetY: sourceY,
+        duration: resolvedDuration,
+        easing: moveEasing,
+      })
+
+      innerEvents.push({
+        type: 'mouseMove',
+        startMs,
+        endMs: Date.now(),
+        duration: Date.now() - startMs,
+        x: sourceX,
+        y: sourceY,
+        ...(resolvedDuration > 0 ? { easing: moveEasing } : {}),
       })
     }
 
     // 2. preDragPause + mouseDown
     await sleep(preDragPause)
     const mouseDownStart = Date.now()
-    await page.mouse.down()
-    await sleep(CLICK_DURATION_MS / 2)
-    innerEvents.push({
-      type: 'mouseDown',
-      startMs: mouseDownStart,
-      endMs: Date.now(),
-      easing: 'ease-in-out',
+    await performMouseDown({
+      mouseDownInternal: getOriginalMouseDown(
+        page,
+        page.mouse.down.bind(page.mouse)
+      ),
     })
+    await sleep(CLICK_DURATION_MS / 2)
+    innerEvents.push(
+      buildMouseDownEvent({
+        startMs: mouseDownStart,
+        endMs: Date.now(),
+        easing: 'ease-in-out',
+      })
+    )
 
     // 3. Drag: animate cursor from source to target
     const dragStartTime = Date.now()
@@ -1472,30 +1402,39 @@ export function instrumentLocator(locator: Locator): Locator {
         defaultDuration: 1000,
         context: 'dragTo drag',
       })
-      innerEvents.push(
-        await animateMouseMove(
-          page,
-          mouseMoveInternal,
-          toX,
-          toY,
-          resolvedDuration,
-          dragEasing,
-          dragStartTime,
-          targetRect
-        )
-      )
+      await performMouseMove({
+        page,
+        mouseMoveInternal,
+        targetX: toX,
+        targetY: toY,
+        duration: resolvedDuration,
+        easing: dragEasing,
+      })
+      innerEvents.push({
+        type: 'mouseMove',
+        startMs: dragStartTime,
+        endMs: Date.now(),
+        duration: Date.now() - dragStartTime,
+        x: toX,
+        y: toY,
+        ...(resolvedDuration > 0 ? { easing: dragEasing } : {}),
+        elementRect: targetRect,
+      })
     }
 
     // 4. mouseUp at target
     const mouseUpStart = Date.now()
-    await page.mouse.up()
-    await sleep(CLICK_DURATION_MS / 2)
-    innerEvents.push({
-      type: 'mouseUp',
-      startMs: mouseUpStart,
-      endMs: Date.now(),
-      easing: 'ease-in-out',
+    await performMouseUp({
+      mouseUpInternal: getOriginalMouseUp(page, page.mouse.up.bind(page.mouse)),
     })
+    await sleep(CLICK_DURATION_MS / 2)
+    innerEvents.push(
+      buildMouseUpEvent({
+        startMs: mouseUpStart,
+        endMs: Date.now(),
+        easing: 'ease-in-out',
+      })
+    )
 
     if (activeClickRecorder && innerEvents.length > 0) {
       activeClickRecorder.addInput('dragTo', sourceRect, innerEvents)
@@ -1599,7 +1538,59 @@ export async function instrumentPage(page: Page): Promise<Page> {
   // Instrument page.mouse to record mouse moves and visibility toggles.
   const originalMouse = page.mouse
   const originalMove = originalMouse.move.bind(originalMouse)
-  originalMouseMoves.set(page, originalMove)
+  const originalDown = originalMouse.down.bind(originalMouse)
+  const originalUp = originalMouse.up.bind(originalMouse)
+  const originalClickMethod = (
+    originalMouse as unknown as {
+      click?: (
+        x: number,
+        y: number,
+        options?: {
+          button?: 'left' | 'right' | 'middle'
+          clickCount?: number
+          delay?: number
+        }
+      ) => Promise<void>
+    }
+  ).click
+  const originalClick =
+    typeof originalClickMethod === 'function'
+      ? originalClickMethod.bind(originalMouse)
+      : async (
+          x: number,
+          y: number,
+          options?: {
+            button?: 'left' | 'right' | 'middle'
+            clickCount?: number
+            delay?: number
+          }
+        ) => {
+          await originalMove(x, y)
+          await originalDown(options)
+          if (options?.delay) {
+            await sleep(options.delay)
+          }
+          await originalUp(options)
+        }
+  const originalShowMethod = (originalMouse as unknown as { show?: () => void })
+    .show
+  const originalHideMethod = (originalMouse as unknown as { hide?: () => void })
+    .hide
+  const originalShow =
+    typeof originalShowMethod === 'function'
+      ? originalShowMethod.bind(originalMouse)
+      : () => {}
+  const originalHide =
+    typeof originalHideMethod === 'function'
+      ? originalHideMethod.bind(originalMouse)
+      : () => {}
+
+  setOriginalMouseMove(page, originalMove)
+  setOriginalMouseClick(page, originalClick)
+  setOriginalMouseDown(page, originalDown)
+  setOriginalMouseUp(page, originalUp)
+  setOriginalMouseShow(page, originalShow)
+  setOriginalMouseHide(page, originalHide)
   ;(
     originalMouse as unknown as {
       move: (
@@ -1631,33 +1622,29 @@ export async function instrumentPage(page: Page): Promise<Page> {
     })
     const easing = options?.easing ?? 'ease-in-out'
     const startMs = Date.now()
-
-    if (duration > 0) {
-      const startPos = mousePositions.get(page) ?? { x: 0, y: 0 }
-      const steps = Math.max(1, Math.floor(duration / CURSOR_STEP_MS))
-      const stepMs = duration / steps
-
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps
-        const easedT = evaluateEasingAtT(t, easing)
-        const cx = startPos.x + easedT * (x - startPos.x)
-        const cy = startPos.y + easedT * (y - startPos.y)
-        await originalMove(cx, cy)
-        if (i < steps) {
-          await new Promise<void>((resolve) => setTimeout(resolve, stepMs))
-        }
-      }
-    } else {
-      await originalMove(x, y)
+    await performMouseMove({
+      page,
+      mouseMoveInternal: originalMove,
+      targetX: x,
+      targetY: y,
+      duration,
+      easing,
+    })
+    const moveEvent: FocusChangeEvent = {
+      type: 'focusChange',
+      x,
+      y,
+      mouse: {
+        startMs,
+        endMs: Date.now(),
+        ...(duration > 0 ? { easing } : {}),
+      },
     }
-
-    mousePositions.set(page, { x, y })
-    const endMs = Date.now()
 
     if (activeClickRecorder) {
       // Auto-show cursor when moving after a typing auto-hide
-      if (!(mouseVisibilities.get(page) ?? true)) {
-        mouseVisibilities.set(page, true)
+      if (!isMouseVisible(page)) {
+        setMouseVisible(page, true)
         const showMs = startMs
         const showEvent: MouseShowEvent = {
           type: 'mouseShow',
@@ -1666,24 +1653,17 @@ export async function instrumentPage(page: Page): Promise<Page> {
         }
         activeClickRecorder.addInput('mouseShow', undefined, [showEvent])
       }
-      const moveEvent: FocusChangeEvent = {
-        type: 'focusChange',
-        x,
-        y,
-        mouse: {
-          startMs,
-          endMs,
-          ...(duration > 0 ? { easing } : {}),
-        },
-      }
       activeClickRecorder.addInput('focusChange', undefined, [moveEvent])
     }
   }
 
-  mouseVisibilities.set(page, true)
+  setMouseVisible(page, true)
   ;(originalMouse as unknown as { show: () => void }).show = () => {
-    if (!(mouseVisibilities.get(page) ?? true)) {
-      mouseVisibilities.set(page, true)
+    if (!isMouseVisible(page)) {
+      performMouseShow({
+        mouseShowInternal: getOriginalMouseShow(page, originalShow),
+        page,
+      })
       if (activeClickRecorder) {
         const timeMs = Date.now()
         const showEvent: MouseShowEvent = {
@@ -1696,8 +1676,11 @@ export async function instrumentPage(page: Page): Promise<Page> {
     }
   }
   ;(originalMouse as unknown as { hide: () => void }).hide = () => {
-    if (mouseVisibilities.get(page) ?? true) {
-      mouseVisibilities.set(page, false)
+    if (isMouseVisible(page)) {
+      performMouseHide({
+        mouseHideInternal: getOriginalMouseHide(page, originalHide),
+        page,
+      })
       if (activeClickRecorder) {
         const timeMs = Date.now()
         const hideEvent: MouseHideEvent = {

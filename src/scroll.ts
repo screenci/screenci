@@ -2,6 +2,7 @@ import type { Locator } from '@playwright/test'
 import type { ElementRect, FocusChangeEvent } from './events.js'
 import { evaluateEasingAtT } from './easing.js'
 import type { AutoZoomOptions, Easing } from './types.js'
+import { performMouseMove, resolveMouseMoveDuration } from './mouse.js'
 import {
   getAutoZoomState,
   setCurrentZoomViewport,
@@ -47,103 +48,8 @@ type MouseMoveRequest = {
   elementRect?: ElementRect
 }
 
-type MouseMovePlan = Omit<
-  MouseMoveRequest,
-  'duration' | 'speed' | 'defaultDuration' | 'context'
-> & {
-  duration: number
-  startMs: number
-}
-
-type MouseMoveResult = FocusChangeEvent
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function assertDurationOrSpeed(
-  duration: number | undefined,
-  speed: number | undefined,
-  context: string
-): void {
-  if (duration !== undefined && speed !== undefined) {
-    throw new Error(
-      `[screenci] ${context} accepts either duration or speed, not both.`
-    )
-  }
-  if (duration !== undefined && (!Number.isFinite(duration) || duration < 0)) {
-    throw new Error(
-      `[screenci] ${context} duration must be a finite number >= 0.`
-    )
-  }
-  if (speed !== undefined && (!Number.isFinite(speed) || speed <= 0)) {
-    throw new Error(`[screenci] ${context} speed must be a finite number > 0.`)
-  }
-}
-
-function resolveMouseMoveDuration(
-  startPos: { x: number; y: number },
-  targetX: number,
-  targetY: number,
-  options: {
-    duration: number | undefined
-    speed: number | undefined
-    defaultDuration: number | undefined
-    context: string
-  }
-): number {
-  const { duration, speed, defaultDuration, context } = options
-  assertDurationOrSpeed(duration, speed, context)
-  if (speed !== undefined) {
-    const distancePx = Math.hypot(targetX - startPos.x, targetY - startPos.y)
-    return (distancePx / speed) * 1000
-  }
-  return duration ?? defaultDuration ?? 0
-}
-
-async function animateMouseMove(plan: MouseMovePlan): Promise<MouseMoveResult> {
-  const {
-    mouseMoveInternal,
-    startPos,
-    targetPos,
-    duration,
-    easing,
-    startMs,
-    elementRect,
-  } = plan
-  const targetX = targetPos.x
-  const targetY = targetPos.y
-
-  if (duration > 0) {
-    const frameMs = 1000 / 60
-    const steps = Math.max(1, Math.floor(duration / frameMs))
-    const stepMs = duration / steps
-
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps
-      const easedT = evaluateEasingAtT(t, easing)
-      const x = startPos.x + easedT * (targetX - startPos.x)
-      const y = startPos.y + easedT * (targetY - startPos.y)
-      await mouseMoveInternal(x, y)
-      if (i < steps) {
-        await new Promise<void>((resolve) => setTimeout(resolve, stepMs))
-      }
-    }
-  } else {
-    await mouseMoveInternal(targetX, targetY)
-  }
-
-  return {
-    type: 'focusChange',
-    x: targetX,
-    y: targetY,
-    mouse: {
-      startMs,
-      endMs: Date.now(),
-      ...(duration > 0 ? { easing } : {}),
-    },
-    ...(elementRect !== undefined ? { elementRect } : {}),
-  }
 }
 
 function getViewportSize(locator: Locator): { width: number; height: number } {
@@ -511,11 +417,11 @@ export async function scroll(
   const scrollStartMs = Date.now()
   const movePromise = mouseMove
     ? previewLocatorRect !== undefined
-      ? (() => {
+      ? (async () => {
           const targetX = previewLocatorRect.x + mouseMove.targetPos.x
           const targetY = previewLocatorRect.y + mouseMove.targetPos.y
           const resolvedDuration = resolveMouseMoveDuration(
-            mouseMove.startPos,
+            mouseMove.page,
             targetX,
             targetY,
             {
@@ -526,18 +432,28 @@ export async function scroll(
             }
           )
 
-          return animateMouseMove({
+          await performMouseMove({
             page: mouseMove.page,
             mouseMoveInternal: mouseMove.mouseMoveInternal,
-            startPos: mouseMove.startPos,
-            targetPos: { x: targetX, y: targetY },
+            targetX,
+            targetY,
             duration: resolvedDuration,
             easing: mouseMove.easing,
-            startMs: scrollStartMs,
+          })
+
+          return {
+            type: 'focusChange' as const,
+            x: targetX,
+            y: targetY,
+            mouse: {
+              startMs: scrollStartMs,
+              endMs: Date.now(),
+              ...(resolvedDuration > 0 ? { easing: mouseMove.easing } : {}),
+            },
             ...(mouseMove.elementRect !== undefined
               ? { elementRect: mouseMove.elementRect }
               : {}),
-          })
+          }
         })()
       : undefined
     : undefined

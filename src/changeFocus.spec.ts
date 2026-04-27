@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Locator } from '@playwright/test'
 import { autoZoom, setCurrentZoomViewport } from './autoZoom.js'
 import {
+  buildAncestorScrollPlans,
   changeFocus,
   resolveFixedFocusViewportSize,
   resolveIdealFocusOriginForAxis,
+  resolveTargetRectPosition,
 } from './changeFocus.js'
 import { resolveZoomTarget } from './zoom.js'
 
@@ -232,12 +234,84 @@ describe('changeFocus helpers', () => {
     ).toBe(1020)
   })
 
+  it('resolves the target rect position inside the target viewport', () => {
+    expect(
+      resolveTargetRectPosition({
+        containerSize: { width: 1280, height: 720 },
+        rect: { x: 0, y: 0, width: 120, height: 40 },
+        amount: 0.5,
+        centering: 1,
+      })
+    ).toEqual({ x: 580, y: 340 })
+
+    expect(
+      resolveTargetRectPosition({
+        containerSize: { width: 1280, height: 720 },
+        rect: { x: 300, y: 220, width: 120, height: 40 },
+        amount: 0.5,
+        centering: 1,
+      })
+    ).toEqual({ x: 580, y: 340 })
+  })
+
+  it('scrolls ancestors past bare visibility only when page and zoom still need it', () => {
+    const snapshot = {
+      locatorRect: { x: 20, y: 1400, width: 120, height: 40 },
+      viewportSize: { width: 1280, height: 720 },
+      page: {
+        scrollY: 0,
+        scrollX: 0,
+        scrollHeight: 1000,
+        scrollWidth: 1280,
+      },
+      ancestors: [
+        {
+          clientHeight: 240,
+          clientWidth: 600,
+          scrollHeight: 1200,
+          scrollWidth: 600,
+          scrollTop: 0,
+          scrollLeft: 0,
+          rect: {
+            top: 850,
+            left: 40,
+            width: 600,
+            height: 240,
+          },
+        },
+      ],
+    }
+
+    const result = buildAncestorScrollPlans({
+      snapshot,
+      projectedRectRangeX: { min: 0, max: 1280 },
+      projectedRectRangeY: { min: 340, max: 980 },
+    })
+
+    expect(result.plans[0]?.targetTop).toBe(420)
+    expect(result.projectedRect.y).toBe(980)
+  })
+
   it('keeps optimalOffset at zero when framing is achieved', () => {
     expect(
       resolveZoomTarget(
         { x: 320, y: 160, width: 120, height: 40 },
         { width: 1280, height: 720 },
-        { amount: 0.5, centering: 1 }
+        {
+          targetViewport: resolveFixedFocusViewportSize(
+            { width: 1280, height: 720 },
+            0.5
+          ),
+          targetRectPositionInZoomViewport: resolveTargetRectPosition({
+            containerSize: resolveFixedFocusViewportSize(
+              { width: 1280, height: 720 },
+              0.5
+            ),
+            rect: { x: 320, y: 160, width: 120, height: 40 },
+            amount: 1,
+            centering: 1,
+          }),
+        }
       ).optimalOffset
     ).toEqual({ x: 0, y: 0 })
   })
@@ -246,7 +320,21 @@ describe('changeFocus helpers', () => {
     const optimalOffset = resolveZoomTarget(
       { x: 10, y: 10, width: 120, height: 40 },
       { width: 1280, height: 720 },
-      { amount: 0.5, centering: 1 }
+      {
+        targetViewport: resolveFixedFocusViewportSize(
+          { width: 1280, height: 720 },
+          0.5
+        ),
+        targetRectPositionInZoomViewport: resolveTargetRectPosition({
+          containerSize: resolveFixedFocusViewportSize(
+            { width: 1280, height: 720 },
+            0.5
+          ),
+          rect: { x: 10, y: 10, width: 120, height: 40 },
+          amount: 1,
+          centering: 1,
+        }),
+      }
     ).optimalOffset
 
     expect(optimalOffset.x).not.toBe(0)
@@ -314,8 +402,19 @@ describe('changeFocus', () => {
         result.locatorRect!,
         { width: 1280, height: 720 },
         {
-          amount: 0.5,
-          centering: 1,
+          targetViewport: resolveFixedFocusViewportSize(
+            { width: 1280, height: 720 },
+            0.5
+          ),
+          targetRectPositionInZoomViewport: resolveTargetRectPosition({
+            containerSize: resolveFixedFocusViewportSize(
+              { width: 1280, height: 720 },
+              0.5
+            ),
+            rect: result.locatorRect!,
+            amount: 1,
+            centering: 1,
+          }),
         }
       ).optimalOffset.y
     ).toBeGreaterThanOrEqual(0)
@@ -442,7 +541,7 @@ describe('changeFocus', () => {
 
   it('scrolls nested containers when ancestor clipping requires it', async () => {
     const locator = makeLocatorMock({
-      rect: { x: 20, y: 900, width: 120, height: 40 },
+      rect: { x: 20, y: 980, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
       scrollSize: { width: 1280, height: 2200 },
       nested: {
@@ -462,6 +561,29 @@ describe('changeFocus', () => {
     expect(locator.__nestedScrollTops.length).toBeGreaterThan(0)
     expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
     expect(result.locatorRect?.y).toBeCloseTo(340, 0)
+  })
+
+  it('does not scroll nested containers when the locator is already visible', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 760, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2200 },
+      nested: {
+        x: 40,
+        y: 700,
+        width: 600,
+        height: 240,
+        scrollWidth: 600,
+        scrollHeight: 800,
+      },
+    })
+
+    const promise = changeFocus(locator)
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(locator.__nestedScrollTops).toHaveLength(0)
+    expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
   })
 
   it('starts mouse movement at the same focus start as scroll and zoom', async () => {

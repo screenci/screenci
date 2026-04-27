@@ -26,52 +26,6 @@ function assertAutoZoomUnitIntervalOption(
   }
 }
 
-function resolveFixedFocusViewportSize(
-  viewport: { width: number; height: number },
-  amount: number
-): { width: number; height: number } {
-  return {
-    width: viewport.width * amount,
-    height: viewport.height * amount,
-  }
-}
-
-function resolveIdealFocusOriginForAxis(params: {
-  rectStart: number
-  rectSize: number
-  focusSize: number
-  centering: number
-}): number {
-  const { rectStart, rectSize, focusSize, centering } = params
-  if (rectSize <= focusSize) {
-    const slack = focusSize - rectSize
-    const idealRectOffset = (slack * centering) / 2
-    return rectStart - idealRectOffset
-  }
-  return rectStart + rectSize / 2 - focusSize / 2
-}
-
-function resolveIdealFocusOrigin(
-  locatorRect: ElementRect,
-  focusViewport: { width: number; height: number },
-  centering: number
-): { x: number; y: number } {
-  return {
-    x: resolveIdealFocusOriginForAxis({
-      rectStart: locatorRect.x,
-      rectSize: locatorRect.width,
-      focusSize: focusViewport.width,
-      centering,
-    }),
-    y: resolveIdealFocusOriginForAxis({
-      rectStart: locatorRect.y,
-      rectSize: locatorRect.height,
-      focusSize: focusViewport.height,
-      centering,
-    }),
-  }
-}
-
 export function resolveAutoZoomOptions(
   state: AutoZoomState,
   options: AutoZoomOptions
@@ -91,22 +45,23 @@ export function resolveAutoZoomOptions(
 export function resolveZoomTarget(
   locatorRect: ElementRect,
   viewport: { width: number; height: number },
-  config: Pick<ResolvedAutoZoomOptions, 'amount' | 'centering'>
+  target: {
+    targetViewport: { width: number; height: number }
+    targetRectPositionInZoomViewport: { x: number; y: number }
+  }
 ): { end: FocusChangeZoom['end']; optimalOffset: { x: number; y: number } } {
-  const focusViewport = resolveFixedFocusViewportSize(viewport, config.amount)
   const widthPx = Math.min(
     viewport.width,
-    Math.max(1, Math.round(focusViewport.width))
+    Math.max(1, Math.round(target.targetViewport.width))
   )
   const heightPx = Math.min(
     viewport.height,
-    Math.max(1, Math.round(focusViewport.height))
+    Math.max(1, Math.round(target.targetViewport.height))
   )
-  const idealOrigin = resolveIdealFocusOrigin(
-    locatorRect,
-    { width: widthPx, height: heightPx },
-    config.centering
-  )
+  const idealOrigin = {
+    x: locatorRect.x - target.targetRectPositionInZoomViewport.x,
+    y: locatorRect.y - target.targetRectPositionInZoomViewport.y,
+  }
   const actualOrigin = {
     x: clamp(
       Math.round(idealOrigin.x),

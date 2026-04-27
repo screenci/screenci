@@ -85,6 +85,11 @@ type PageScrollPlan = {
   targetX: number
 }
 
+type AxisRange = {
+  min: number
+  max: number
+}
+
 type UnifiedFocusPlan = {
   previewLocatorRect: ElementRect
   finalLocatorRect: ElementRect
@@ -106,12 +111,12 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
-function isEffectivelyZero(value: number): boolean {
-  return Math.abs(value) <= POSITION_EPSILON_PX
-}
-
 function positionsDiffer(start: number, target: number): boolean {
   return Math.abs(target - start) > POSITION_EPSILON_PX
+}
+
+function clampToRange(value: number, range: AxisRange): number {
+  return clamp(value, range.min, range.max)
 }
 
 function shiftRect(
@@ -189,7 +194,7 @@ export function resolveOptimalOffset(ideal: Point, actual: Point): Point {
   }
 }
 
-function resolveDesiredRectStartForAxis(params: {
+function resolveTargetRectStartForAxis(params: {
   containerSize: number
   rectSize: number
   focusSize: number
@@ -203,6 +208,31 @@ function resolveDesiredRectStartForAxis(params: {
   }
 
   return focusWindowStart + focusSize / 2 - rectSize / 2
+}
+
+export function resolveTargetRectPosition(params: {
+  containerSize: ViewportSize
+  rect: ElementRect
+  amount: number
+  centering: number
+}): Point {
+  const { containerSize, rect, amount, centering } = params
+  const targetViewport = resolveFixedFocusViewportSize(containerSize, amount)
+
+  return {
+    x: resolveTargetRectStartForAxis({
+      containerSize: containerSize.width,
+      rectSize: rect.width,
+      focusSize: targetViewport.width,
+      centering,
+    }),
+    y: resolveTargetRectStartForAxis({
+      containerSize: containerSize.height,
+      rectSize: rect.height,
+      focusSize: targetViewport.height,
+      centering,
+    }),
+  }
 }
 
 async function captureFocusSnapshot(locator: Locator): Promise<FocusSnapshot> {
@@ -307,53 +337,251 @@ async function captureFocusSnapshot(locator: Locator): Promise<FocusSnapshot> {
   })
 }
 
-export function buildAncestorScrollPlans(
+function resolveMinimalVisibleScrollTargetForAxis(params: {
+  scrollStart: number
+  rectStart: number
+  rectSize: number
+  containerSize: number
+  scrollSize: number
+}): number {
+  const { scrollStart, rectStart, rectSize, containerSize, scrollSize } = params
+  const maxScroll = Math.max(0, scrollSize - containerSize)
+  const rectEnd = rectStart + rectSize
+
+  if (rectSize <= containerSize) {
+    if (rectStart < 0) {
+      return clamp(scrollStart + rectStart, 0, maxScroll)
+    }
+    if (rectEnd > containerSize) {
+      return clamp(scrollStart + (rectEnd - containerSize), 0, maxScroll)
+    }
+    return scrollStart
+  }
+
+  if (rectStart > 0) {
+    return clamp(scrollStart + rectStart, 0, maxScroll)
+  }
+  if (rectEnd < containerSize) {
+    return clamp(scrollStart + (rectEnd - containerSize), 0, maxScroll)
+  }
+
+  return scrollStart
+}
+
+function resolveVisibleScrollTargetRangeForAxis(params: {
+  scrollStart: number
+  rectStart: number
+  rectSize: number
+  containerSize: number
+  scrollSize: number
+}): AxisRange {
+  const { scrollStart, rectStart, rectSize, containerSize, scrollSize } = params
+  const maxScroll = Math.max(0, scrollSize - containerSize)
+  const deltaAtStartEdge = rectStart
+  const deltaAtEndEdge = rectStart + rectSize - containerSize
+
+  return {
+    min: clamp(
+      scrollStart + Math.min(deltaAtStartEdge, deltaAtEndEdge),
+      0,
+      maxScroll
+    ),
+    max: clamp(
+      scrollStart + Math.max(deltaAtStartEdge, deltaAtEndEdge),
+      0,
+      maxScroll
+    ),
+  }
+}
+
+function projectRectFromAncestorPlans(
   snapshot: FocusSnapshot,
-  focusViewport: ViewportSize,
-  centering: number
-): {
+  plans: ScrollPlan[]
+): ElementRect {
+  const accumulatedDelta = plans.reduce(
+    (delta, plan, index) => ({
+      x: delta.x + (plan.targetLeft - snapshot.ancestors[index]!.scrollLeft),
+      y: delta.y + (plan.targetTop - snapshot.ancestors[index]!.scrollTop),
+    }),
+    { x: 0, y: 0 }
+  )
+
+  return shiftRect(
+    snapshot.locatorRect,
+    -accumulatedDelta.x,
+    -accumulatedDelta.y
+  )
+}
+
+function resolveProjectedRectAcceptableRangeForAxis(params: {
+  pageScrollStart: number
+  pageScrollMax: number
+  viewportSize: number
+  targetViewportSize: number
+  targetRectStartInViewport: number
+}): AxisRange {
+  const {
+    pageScrollStart,
+    pageScrollMax,
+    viewportSize,
+    targetViewportSize,
+    targetRectStartInViewport,
+  } = params
+  const maxZoomOrigin = Math.max(0, viewportSize - targetViewportSize)
+
+  return {
+    min: targetRectStartInViewport - pageScrollStart,
+    max:
+      targetRectStartInViewport +
+      maxZoomOrigin +
+      (pageScrollMax - pageScrollStart),
+  }
+}
+
+function refineAncestorPlansForProjectedRectRange(params: {
+  snapshot: FocusSnapshot
+  plans: ScrollPlan[]
+  projectedRectRangeX: AxisRange
+  projectedRectRangeY: AxisRange
+}): ScrollPlan[] {
+  const nextPlans = params.plans.map((plan) => ({ ...plan }))
+
+  for (let sweep = 0; sweep < params.snapshot.ancestors.length; sweep += 1) {
+    const projectedRect = projectRectFromAncestorPlans(params.snapshot, nextPlans)
+    let remainingScrollLeft =
+      projectedRect.x -
+      clampToRange(projectedRect.x, params.projectedRectRangeX)
+    let remainingScrollTop =
+      projectedRect.y -
+      clampToRange(projectedRect.y, params.projectedRectRangeY)
+
+    if (
+      Math.round(remainingScrollLeft) === 0 &&
+      Math.round(remainingScrollTop) === 0
+    ) {
+      break
+    }
+
+    let changed = false
+
+    for (
+      let index = params.snapshot.ancestors.length - 1;
+      index >= 0;
+      index -= 1
+    ) {
+      const ancestor = params.snapshot.ancestors[index]!
+      const accumulatedDeltaBeforeAncestor = nextPlans.slice(0, index).reduce(
+        (delta, plan, planIndex) => ({
+          x:
+            delta.x +
+            (plan.targetLeft -
+              params.snapshot.ancestors[planIndex]!.scrollLeft),
+          y:
+            delta.y +
+            (plan.targetTop - params.snapshot.ancestors[planIndex]!.scrollTop),
+        }),
+        { x: 0, y: 0 }
+      )
+      const targetRectBeforeAncestorScroll = shiftRect(
+        params.snapshot.locatorRect,
+        -accumulatedDeltaBeforeAncestor.x,
+        -accumulatedDeltaBeforeAncestor.y
+      )
+      const targetRectInAncestor: ElementRect = {
+        x: targetRectBeforeAncestorScroll.x - ancestor.rect.left,
+        y: targetRectBeforeAncestorScroll.y - ancestor.rect.top,
+        width: targetRectBeforeAncestorScroll.width,
+        height: targetRectBeforeAncestorScroll.height,
+      }
+      const targetLeftRange = resolveVisibleScrollTargetRangeForAxis({
+        scrollStart: ancestor.scrollLeft,
+        rectStart: targetRectInAncestor.x,
+        rectSize: targetRectInAncestor.width,
+        containerSize: ancestor.clientWidth,
+        scrollSize: ancestor.scrollWidth,
+      })
+      const targetTopRange = resolveVisibleScrollTargetRangeForAxis({
+        scrollStart: ancestor.scrollTop,
+        rectStart: targetRectInAncestor.y,
+        rectSize: targetRectInAncestor.height,
+        containerSize: ancestor.clientHeight,
+        scrollSize: ancestor.scrollHeight,
+      })
+      const plan = nextPlans[index]!
+      const nextTargetLeft = clamp(
+        plan.targetLeft + remainingScrollLeft,
+        targetLeftRange.min,
+        targetLeftRange.max
+      )
+      const nextTargetTop = clamp(
+        plan.targetTop + remainingScrollTop,
+        targetTopRange.min,
+        targetTopRange.max
+      )
+      const appliedScrollLeft = nextTargetLeft - plan.targetLeft
+      const appliedScrollTop = nextTargetTop - plan.targetTop
+
+      if (
+        !positionsDiffer(plan.targetLeft, nextTargetLeft) &&
+        !positionsDiffer(plan.targetTop, nextTargetTop)
+      ) {
+        continue
+      }
+
+      plan.targetLeft = nextTargetLeft
+      plan.targetTop = nextTargetTop
+      remainingScrollLeft -= appliedScrollLeft
+      remainingScrollTop -= appliedScrollTop
+      changed = true
+    }
+
+    if (!changed) {
+      break
+    }
+  }
+
+  return nextPlans
+}
+
+export function buildAncestorScrollPlans(params: {
+  snapshot: FocusSnapshot
+  projectedRectRangeX: AxisRange
+  projectedRectRangeY: AxisRange
+}): {
   plans: ScrollPlan[]
   accumulatedDelta: Point
   projectedRect: ElementRect
 } {
+  const { snapshot, projectedRectRangeX, projectedRectRangeY } = params
   const plans: ScrollPlan[] = []
   let accumulatedDelta = { x: 0, y: 0 }
 
   for (const ancestor of snapshot.ancestors) {
-    const projectedRect = shiftRect(
+    const targetRectBeforeAncestorScroll = shiftRect(
       snapshot.locatorRect,
       -accumulatedDelta.x,
       -accumulatedDelta.y
     )
-    const containerRelativeRect: ElementRect = {
-      x: projectedRect.x - ancestor.rect.left,
-      y: projectedRect.y - ancestor.rect.top,
-      width: projectedRect.width,
-      height: projectedRect.height,
+    const targetRectInAncestor: ElementRect = {
+      x: targetRectBeforeAncestorScroll.x - ancestor.rect.left,
+      y: targetRectBeforeAncestorScroll.y - ancestor.rect.top,
+      width: targetRectBeforeAncestorScroll.width,
+      height: targetRectBeforeAncestorScroll.height,
     }
-    const desiredTop = resolveDesiredRectStartForAxis({
+    const targetTop = resolveMinimalVisibleScrollTargetForAxis({
+      scrollStart: ancestor.scrollTop,
+      rectStart: targetRectInAncestor.y,
+      rectSize: targetRectInAncestor.height,
       containerSize: ancestor.clientHeight,
-      rectSize: containerRelativeRect.height,
-      focusSize: focusViewport.height,
-      centering,
+      scrollSize: ancestor.scrollHeight,
     })
-    const desiredLeft = resolveDesiredRectStartForAxis({
+    const targetLeft = resolveMinimalVisibleScrollTargetForAxis({
+      scrollStart: ancestor.scrollLeft,
+      rectStart: targetRectInAncestor.x,
+      rectSize: targetRectInAncestor.width,
       containerSize: ancestor.clientWidth,
-      rectSize: containerRelativeRect.width,
-      focusSize: focusViewport.width,
-      centering,
+      scrollSize: ancestor.scrollWidth,
     })
-
-    const targetTop = clamp(
-      ancestor.scrollTop + (containerRelativeRect.y - desiredTop),
-      0,
-      Math.max(0, ancestor.scrollHeight - ancestor.clientHeight)
-    )
-    const targetLeft = clamp(
-      ancestor.scrollLeft + (containerRelativeRect.x - desiredLeft),
-      0,
-      Math.max(0, ancestor.scrollWidth - ancestor.clientWidth)
-    )
 
     plans.push({
       startTop: ancestor.scrollTop,
@@ -368,23 +596,30 @@ export function buildAncestorScrollPlans(
     }
   }
 
-  return {
+  const refinedPlans = refineAncestorPlansForProjectedRectRange({
+    snapshot,
     plans,
-    accumulatedDelta,
-    projectedRect: shiftRect(
-      snapshot.locatorRect,
-      -accumulatedDelta.x,
-      -accumulatedDelta.y
-    ),
+    projectedRectRangeX,
+    projectedRectRangeY,
+  })
+  const projectedRect = projectRectFromAncestorPlans(snapshot, refinedPlans)
+  const refinedAccumulatedDelta = {
+    x: snapshot.locatorRect.x - projectedRect.x,
+    y: snapshot.locatorRect.y - projectedRect.y,
+  }
+
+  return {
+    plans: refinedPlans,
+    accumulatedDelta: refinedAccumulatedDelta,
+    projectedRect,
   }
 }
 
 export function buildPageScrollPlan(
   snapshot: FocusSnapshot,
-  focusViewport: ViewportSize,
-  centering: number,
   ancestorProjection: { accumulatedDelta: Point; projectedRect: ElementRect },
-  options?: {
+  options: {
+    targetRectPositionInViewport: Point
     residualOnly?: {
       x: number
       y: number
@@ -392,7 +627,7 @@ export function buildPageScrollPlan(
   }
 ): { plan: PageScrollPlan; finalLocatorRect: ElementRect } {
   const targetY =
-    options?.residualOnly !== undefined
+    options.residualOnly !== undefined
       ? clamp(
           snapshot.page.scrollY + options.residualOnly.y,
           0,
@@ -401,17 +636,12 @@ export function buildPageScrollPlan(
       : clamp(
           snapshot.page.scrollY +
             (ancestorProjection.projectedRect.y -
-              resolveDesiredRectStartForAxis({
-                containerSize: snapshot.viewportSize.height,
-                rectSize: ancestorProjection.projectedRect.height,
-                focusSize: focusViewport.height,
-                centering,
-              })),
+              options.targetRectPositionInViewport.y),
           0,
           Math.max(0, snapshot.page.scrollHeight - snapshot.viewportSize.height)
         )
   const targetX =
-    options?.residualOnly !== undefined
+    options.residualOnly !== undefined
       ? clamp(
           snapshot.page.scrollX + options.residualOnly.x,
           0,
@@ -420,12 +650,7 @@ export function buildPageScrollPlan(
       : clamp(
           snapshot.page.scrollX +
             (ancestorProjection.projectedRect.x -
-              resolveDesiredRectStartForAxis({
-                containerSize: snapshot.viewportSize.width,
-                rectSize: ancestorProjection.projectedRect.width,
-                focusSize: focusViewport.width,
-                centering,
-              })),
+              options.targetRectPositionInViewport.x),
           0,
           Math.max(0, snapshot.page.scrollWidth - snapshot.viewportSize.width)
         )
@@ -453,41 +678,81 @@ export function combineFocusPlan(params: {
   currentZoomEnd: NonNullable<FocusChangeEvent['zoom']>['end'] | undefined
   insideAutoZoom: boolean
 }): UnifiedFocusPlan {
-  const focusViewport = resolveFixedFocusViewportSize(
+  const targetViewport = resolveFixedFocusViewportSize(
     params.snapshot.viewportSize,
     params.amount
   )
-  const ancestorResult = buildAncestorScrollPlans(
-    params.snapshot,
-    focusViewport,
-    params.centering
-  )
+  // Resolve the desired zoom viewport and where the visible locator rect should sit inside it.
+  const initialTargetRectPositionInViewport = resolveTargetRectPosition({
+    containerSize: params.snapshot.viewportSize,
+    rect: params.snapshot.locatorRect,
+    amount: params.amount,
+    centering: params.centering,
+  })
+  // Reveal the locator through nested scroll containers using minimal scrolling,
+  // plus only the extra needed when page scroll and zoom would otherwise be unable to frame it.
+  const ancestorResult = buildAncestorScrollPlans({
+    snapshot: params.snapshot,
+    projectedRectRangeX: resolveProjectedRectAcceptableRangeForAxis({
+      pageScrollStart: params.snapshot.page.scrollX,
+      pageScrollMax: Math.max(
+        0,
+        params.snapshot.page.scrollWidth - params.snapshot.viewportSize.width
+      ),
+      viewportSize: params.snapshot.viewportSize.width,
+      targetViewportSize: targetViewport.width,
+      targetRectStartInViewport: initialTargetRectPositionInViewport.x,
+    }),
+    projectedRectRangeY: resolveProjectedRectAcceptableRangeForAxis({
+      pageScrollStart: params.snapshot.page.scrollY,
+      pageScrollMax: Math.max(
+        0,
+        params.snapshot.page.scrollHeight - params.snapshot.viewportSize.height
+      ),
+      viewportSize: params.snapshot.viewportSize.height,
+      targetViewportSize: targetViewport.height,
+      targetRectStartInViewport: initialTargetRectPositionInViewport.y,
+    }),
+  })
+  const targetRectPositionInViewport = resolveTargetRectPosition({
+    containerSize: params.snapshot.viewportSize,
+    rect: ancestorResult.projectedRect,
+    amount: params.amount,
+    centering: params.centering,
+  })
+  // Resolve where the locator rect should sit inside the zoom viewport itself.
+  const targetRectPositionInZoomViewport = resolveTargetRectPosition({
+    containerSize: targetViewport,
+    rect: ancestorResult.projectedRect,
+    amount: 1,
+    centering: params.centering,
+  })
+  // Let zoom do the primary framing work before considering any page scroll.
   const zoomTargetWithoutPageScroll = resolveZoomTarget(
     ancestorResult.projectedRect,
     params.snapshot.viewportSize,
     {
-      amount: params.amount,
-      centering: params.centering,
+      targetViewport,
+      targetRectPositionInZoomViewport,
     }
   )
   const pageScrollCanBeSkipped =
     params.insideAutoZoom &&
-    isEffectivelyZero(zoomTargetWithoutPageScroll.optimalOffset.x) &&
-    isEffectivelyZero(zoomTargetWithoutPageScroll.optimalOffset.y)
-  const pageResult = buildPageScrollPlan(
-    params.snapshot,
-    focusViewport,
-    params.centering,
-    ancestorResult,
-    params.insideAutoZoom
+    Math.round(zoomTargetWithoutPageScroll.optimalOffset.x) === 0 &&
+    Math.round(zoomTargetWithoutPageScroll.optimalOffset.y) === 0
+  // Use page scroll only for the framing residual that zoom cannot absorb.
+  const pageResult = buildPageScrollPlan(params.snapshot, ancestorResult, {
+    targetRectPositionInViewport,
+    ...(params.insideAutoZoom
       ? {
           residualOnly: {
             x: zoomTargetWithoutPageScroll.optimalOffset.x,
             y: zoomTargetWithoutPageScroll.optimalOffset.y,
           },
         }
-      : undefined
-  )
+      : {}),
+  })
+  // When zoom can fully absorb the framing, keep the page fixed.
   const resolvedPageResult = pageScrollCanBeSkipped
     ? {
         plan: {
@@ -514,12 +779,13 @@ export function combineFocusPlan(params: {
       resolvedPageResult.plan.targetX
     )
 
+  // Recompute the final zoom target after any page scroll has been applied.
   const zoomTarget = resolveZoomTarget(
     resolvedPageResult.finalLocatorRect,
     params.snapshot.viewportSize,
     {
-      amount: params.amount,
-      centering: params.centering,
+      targetViewport,
+      targetRectPositionInZoomViewport,
     }
   )
   const zoomNeeded =
@@ -646,6 +912,12 @@ async function executeScrollPlan(params: {
           for (const [index, plan] of args.ancestorScrollPlans.entries()) {
             const ancestor = ancestors[index]
             if (!ancestor) continue
+            if (
+              !positionsDiffer(plan.startTop, plan.targetTop) &&
+              !positionsDiffer(plan.startLeft, plan.targetLeft)
+            ) {
+              continue
+            }
             ancestor.scrollTop =
               plan.startTop + (plan.targetTop - plan.startTop) * easedT
             ancestor.scrollLeft =
@@ -784,8 +1056,19 @@ export async function changeFocus(
   const zoomTarget =
     state.insideAutoZoom && viewport !== undefined
       ? resolveZoomTarget(plan.finalLocatorRect, viewport, {
-          amount: resolvedAutoZoomOptions.amount,
-          centering: resolvedAutoZoomOptions.centering,
+          targetViewport: resolveFixedFocusViewportSize(
+            viewport,
+            resolvedAutoZoomOptions.amount
+          ),
+          targetRectPositionInZoomViewport: resolveTargetRectPosition({
+            containerSize: resolveFixedFocusViewportSize(
+              viewport,
+              resolvedAutoZoomOptions.amount
+            ),
+            rect: plan.finalLocatorRect,
+            amount: 1,
+            centering: resolvedAutoZoomOptions.centering,
+          }),
         })
       : undefined
   const zoomEvent =

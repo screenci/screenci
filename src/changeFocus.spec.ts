@@ -650,7 +650,7 @@ describe('changeFocus', () => {
     expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
   })
 
-  it('starts mouse movement at the same focus start as scroll and zoom', async () => {
+  it('uses the same duration and easing for mouse, scroll, and zoom', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
@@ -672,7 +672,7 @@ describe('changeFocus', () => {
         })
         result = await changeFocus(
           locator,
-          { duration: 300 },
+          { duration: 300, easing: 'ease-in' },
           {
             page: {},
             mouseMoveInternal,
@@ -692,6 +692,11 @@ describe('changeFocus', () => {
 
     expect(result?.mouse?.startMs).toBe(result?.scroll?.startMs)
     expect(result?.mouse?.startMs).toBe(result?.zoom?.startMs)
+    expect(result?.mouse?.endMs).toBeGreaterThan(result?.scroll?.endMs ?? 0)
+    expect(result?.mouse?.endMs).toBeGreaterThan(result?.zoom?.endMs ?? 0)
+    expect(result?.mouse?.easing).toBe('ease-in')
+    expect(result?.scroll?.easing).toBe('ease-in')
+    expect(result?.zoom?.easing).toBe('ease-in')
   })
 
   it('uses the same start for scroll and zoom while allowing measured scroll end', async () => {

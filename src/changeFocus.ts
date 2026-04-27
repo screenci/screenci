@@ -3,7 +3,7 @@ import type { ElementRect, FocusChangeEvent } from './events.js'
 import { evaluateEasingAtT } from './easing.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import type { AutoZoomOptions, Easing } from './types.js'
-import { performMouseMove, resolveMouseMoveDuration } from './mouse.js'
+import { performMouseMove } from './mouse.js'
 import { getAutoZoomState, setCurrentZoomViewport } from './autoZoom.js'
 import {
   buildZoomEvent,
@@ -1051,24 +1051,11 @@ async function executeScrollAndZoomPlan(params: {
 function resolveMouseMovePlan(params: {
   mouseMove: MouseMoveRequest | undefined
   mouseTarget: Point
-  defaultDuration: number
-}): { mouseTarget: Point; mouseDuration: number } | undefined {
-  const { mouseMove, mouseTarget, defaultDuration } = params
+}): { mouseTarget: Point } | undefined {
+  const { mouseMove, mouseTarget } = params
   if (mouseMove === undefined) return undefined
 
-  const mouseDuration = resolveMouseMoveDuration(
-    mouseMove.page,
-    mouseTarget.x,
-    mouseTarget.y,
-    {
-      duration: mouseMove.duration,
-      speed: mouseMove.speed,
-      defaultDuration: mouseMove.defaultDuration ?? defaultDuration,
-      context: mouseMove.context,
-    }
-  )
-
-  return { mouseTarget, mouseDuration }
+  return { mouseTarget }
 }
 
 function resolveFocusOptions(params: {
@@ -1079,7 +1066,10 @@ function resolveFocusOptions(params: {
 }): {
   focusOptions: ReturnType<typeof resolveAutoZoomOptions>
   currentZoomEnd: NonNullable<FocusChangeEvent['zoom']>['end']
-  duration: number
+  timing: {
+    duration: number
+    easing: Easing
+  }
 } {
   const resolvedAutoZoomOptions = resolveAutoZoomOptions(
     params.state,
@@ -1112,16 +1102,13 @@ function resolveFocusOptions(params: {
     focusOptions.centering = 1
   }
 
-  const mouseMoveDuration = resolveMouseMovePlan({
-    mouseMove: params.mouseMove,
-    mouseTarget: { x: 0, y: 0 },
-    defaultDuration: focusOptions.duration,
-  })?.mouseDuration
-
   return {
     focusOptions,
     currentZoomEnd,
-    duration: Math.max(focusOptions.duration, mouseMoveDuration ?? 0),
+    timing: {
+      duration: focusOptions.duration,
+      easing: focusOptions.easing,
+    },
   }
 }
 
@@ -1132,7 +1119,7 @@ export async function changeFocus(
 ): Promise<FocusChangeEvent> {
   const state = getAutoZoomState()
   const snapshot = await captureFocusSnapshot(locator)
-  const { focusOptions, currentZoomEnd } = resolveFocusOptions(
+  const { focusOptions, currentZoomEnd, timing } = resolveFocusOptions(
     mouseMove !== undefined
       ? {
           state,
@@ -1160,7 +1147,6 @@ export async function changeFocus(
       x: plan.finalLocatorRect.x + (mouseMove?.targetPosInElement.x ?? 0),
       y: plan.finalLocatorRect.y + (mouseMove?.targetPosInElement.y ?? 0),
     },
-    defaultDuration: focusOptions.duration,
   })
 
   const focusChangeStartMs = Date.now()
@@ -1175,8 +1161,8 @@ export async function changeFocus(
           mouseMoveInternal: mouseMove!.mouseMoveInternal,
           targetX: mouseMovePlan.mouseTarget.x,
           targetY: mouseMovePlan.mouseTarget.y,
-          duration: mouseMovePlan.mouseDuration,
-          easing: mouseMove!.easing,
+          duration: timing.duration,
+          easing: timing.easing,
         })
       : Promise.resolve(undefined)
 
@@ -1185,8 +1171,8 @@ export async function changeFocus(
     ancestorScrollPlans: plan.ancestorScrollPlans,
     pageScrollPlan: plan.pageScrollPlan,
     zoomNeeded: plan.zoomNeeded,
-    duration: focusOptions.duration,
-    easing: focusOptions.easing,
+    duration: timing.duration,
+    easing: timing.easing,
   })
 
   const [mouseMoveResult, scrollAndZoomResult] = await Promise.all([
@@ -1223,9 +1209,7 @@ export async function changeFocus(
       ? {
           startMs: mouseMoveResult.startMs,
           endMs: mouseMoveResult.endMs,
-          ...(mouseMovePlan.mouseDuration > 0
-            ? { easing: mouseMove!.easing }
-            : {}),
+          ...(timing.duration > 0 ? { easing: timing.easing } : {}),
         }
       : undefined
   if (focusOptions.postZoomDelay > 0) {

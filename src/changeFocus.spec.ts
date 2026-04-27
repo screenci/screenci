@@ -531,7 +531,8 @@ describe('changeFocus', () => {
 
     expect(locator.__scrollToCalls).toHaveLength(0)
     expect(result?.scroll).toBeUndefined()
-    expect(result?.zoom?.optimalOffset).toEqual({ x: -0.25, y: 0 })
+    expect(result?.zoom?.optimalOffset?.x).toBeCloseTo(0)
+    expect(result?.zoom?.optimalOffset?.y).toBe(0)
   })
 
   it('forces centering to 1 when the current zoom already fills the viewport', async () => {

@@ -67,8 +67,8 @@ export function resolveZoomTarget(params: {
       size: placement.size,
     },
     optimalOffset: {
-      x: placement.idealOrigin.x - placement.actualOrigin.x,
-      y: placement.idealOrigin.y - placement.actualOrigin.y,
+      x: Math.round(placement.idealOrigin.x - placement.actualOrigin.x),
+      y: Math.round(placement.idealOrigin.y - placement.actualOrigin.y),
     },
   }
 }

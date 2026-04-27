@@ -9,7 +9,7 @@ import type {
 
 export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
   easing: 'ease-out',
-  duration: 500,
+  duration: 1000,
   amount: 0.5,
   centering: 1,
   preZoomDelay: 0,

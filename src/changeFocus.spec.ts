@@ -523,7 +523,7 @@ describe('changeFocus', () => {
         })
         result = await changeFocus(locator, { amount: 0.5, centering: 1 })
       },
-      { amount: 0.5, centering: 1, duration: 500, postZoomDelay: 0 }
+      { amount: 0.5, centering: 1, duration: 1000, postZoomDelay: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -590,7 +590,7 @@ describe('changeFocus', () => {
         })
         result = await changeFocus(locator, { amount: 0.5, centering: 1 })
       },
-      { amount: 0.5, centering: 1, duration: 500, postZoomDelay: 0 }
+      { amount: 0.5, centering: 1, duration: 1000, postZoomDelay: 0 }
     )
 
     await vi.runAllTimersAsync()

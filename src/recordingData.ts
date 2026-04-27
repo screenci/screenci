@@ -20,6 +20,8 @@ export type ElementRect = {
 
 export type FocusChangeEvent = {
   type: 'focusChange'
+  startMs: number
+  endMs: number
   x: number
   y: number
   mouse?: {

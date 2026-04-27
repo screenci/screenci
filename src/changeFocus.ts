@@ -875,16 +875,32 @@ export function combineFocusPlan(params: {
   }
 }
 
-async function executeScrollPlan(params: {
+async function executeScrollAndZoomPlan(params: {
   locator: Locator
   ancestorScrollPlans: ScrollPlan[]
   pageScrollPlan: PageScrollPlan
+  zoomNeeded: boolean
   duration: number
   easing: Easing
-}): Promise<void> {
-  const { locator, ancestorScrollPlans, pageScrollPlan, duration, easing } =
-    params
-  const needsScroll =
+}): Promise<
+  | {
+      scroll?: NonNullable<FocusChangeEvent['scroll']>
+      zoom?: Pick<
+        NonNullable<FocusChangeEvent['zoom']>,
+        'startMs' | 'endMs' | 'easing'
+      >
+    }
+  | undefined
+> {
+  const {
+    locator,
+    ancestorScrollPlans,
+    pageScrollPlan,
+    zoomNeeded,
+    duration,
+    easing,
+  } = params
+  const scrolled =
     ancestorScrollPlans.some(
       (plan) =>
         positionsDiffer(plan.startTop, plan.targetTop) ||
@@ -892,128 +908,156 @@ async function executeScrollPlan(params: {
     ) ||
     positionsDiffer(pageScrollPlan.startY, pageScrollPlan.targetY) ||
     positionsDiffer(pageScrollPlan.startX, pageScrollPlan.targetX)
+  const zoomed = zoomNeeded
 
-  if (!needsScroll) return
+  if (!scrolled && !zoomed) return undefined
 
-  await locator.evaluate(
-    (element, args) =>
-      new Promise<void>((resolve) => {
-        const frameMs = 1000 / 60
-        const evaluateEasingAtT = Function(
-          `return (${args.evaluateEasingAtTSource})`
-        )() as (t: number, easing: Easing) => number
-        const doc = element.ownerDocument
-        const win = doc.defaultView as ScrollWindow | null
-        if (!win) {
-          resolve()
-          return
-        }
+  const startMs = Date.now()
 
-        const isScrollable = (node: unknown): node is ScrollableElement => {
-          if (
-            !node ||
-            typeof node !== 'object' ||
-            !('getBoundingClientRect' in node) ||
-            !('clientHeight' in node) ||
-            !('clientWidth' in node) ||
-            !('scrollHeight' in node) ||
-            !('scrollWidth' in node) ||
-            !('scrollTop' in node) ||
-            !('scrollLeft' in node)
-          ) {
-            return false
-          }
-
-          const el = node as ScrollableElement
-          const style = win.getComputedStyle(node as Element)
-          return (
-            ((style.overflowY === 'auto' ||
-              style.overflowY === 'scroll' ||
-              style.overflowY === 'overlay') &&
-              el.scrollHeight > el.clientHeight) ||
-            ((style.overflowX === 'auto' ||
-              style.overflowX === 'scroll' ||
-              style.overflowX === 'overlay') &&
-              el.scrollWidth > el.clientWidth)
-          )
-        }
-
-        const ancestors: ScrollableElement[] = []
-        for (
-          let current: Element | null = element.parentElement;
-          current;
-          current = current.parentElement
-        ) {
-          if (
-            !isScrollable(current) ||
-            current === doc.documentElement ||
-            current === doc.body
-          ) {
-            continue
-          }
-          ancestors.push(current)
-        }
-
-        const steps = Math.max(1, Math.floor(args.duration / frameMs))
-        let step = 0
-
-        const scheduleNextFrame = (): void => {
-          if (typeof win.requestAnimationFrame === 'function') {
-            win.requestAnimationFrame(() => tick())
-            return
-          }
-          setTimeout(tick, frameMs)
-        }
-
-        const tick = (): void => {
-          step += 1
-          const easedT = evaluateEasingAtT(step / steps, args.easing)
-
-          for (const [index, plan] of args.ancestorScrollPlans.entries()) {
-            const ancestor = ancestors[index]
-            if (!ancestor) continue
-            if (
-              !positionsDiffer(plan.startTop, plan.targetTop) &&
-              !positionsDiffer(plan.startLeft, plan.targetLeft)
-            ) {
-              continue
-            }
-            ancestor.scrollTop =
-              plan.startTop + (plan.targetTop - plan.startTop) * easedT
-            ancestor.scrollLeft =
-              plan.startLeft + (plan.targetLeft - plan.startLeft) * easedT
-          }
-
-          win.scrollTo({
-            top:
-              args.pageScrollPlan.startY +
-              (args.pageScrollPlan.targetY - args.pageScrollPlan.startY) *
-                easedT,
-            left:
-              args.pageScrollPlan.startX +
-              (args.pageScrollPlan.targetX - args.pageScrollPlan.startX) *
-                easedT,
-            behavior: 'auto',
-          })
-
-          if (step >= steps) {
+  if (scrolled) {
+    await locator.evaluate(
+      (element, args) =>
+        new Promise<void>((resolve) => {
+          const frameMs = 1000 / 60
+          const evaluateEasingAtT = Function(
+            `return (${args.evaluateEasingAtTSource})`
+          )() as (t: number, easing: Easing) => number
+          const doc = element.ownerDocument
+          const win = doc.defaultView as ScrollWindow | null
+          if (!win) {
             resolve()
             return
           }
 
-          scheduleNextFrame()
-        }
+          const isScrollable = (node: unknown): node is ScrollableElement => {
+            if (
+              !node ||
+              typeof node !== 'object' ||
+              !('getBoundingClientRect' in node) ||
+              !('clientHeight' in node) ||
+              !('clientWidth' in node) ||
+              !('scrollHeight' in node) ||
+              !('scrollWidth' in node) ||
+              !('scrollTop' in node) ||
+              !('scrollLeft' in node)
+            ) {
+              return false
+            }
 
-        tick()
-      }),
-    {
-      ancestorScrollPlans,
-      pageScrollPlan,
-      duration,
-      easing,
-      evaluateEasingAtTSource: evaluateEasingAtT.toString(),
-    }
-  )
+            const el = node as ScrollableElement
+            const style = win.getComputedStyle(node as Element)
+            return (
+              ((style.overflowY === 'auto' ||
+                style.overflowY === 'scroll' ||
+                style.overflowY === 'overlay') &&
+                el.scrollHeight > el.clientHeight) ||
+              ((style.overflowX === 'auto' ||
+                style.overflowX === 'scroll' ||
+                style.overflowX === 'overlay') &&
+                el.scrollWidth > el.clientWidth)
+            )
+          }
+
+          const ancestors: ScrollableElement[] = []
+          for (
+            let current: Element | null = element.parentElement;
+            current;
+            current = current.parentElement
+          ) {
+            if (
+              !isScrollable(current) ||
+              current === doc.documentElement ||
+              current === doc.body
+            ) {
+              continue
+            }
+            ancestors.push(current)
+          }
+
+          const steps = Math.max(1, Math.floor(args.duration / frameMs))
+          let step = 0
+
+          const scheduleNextFrame = (): void => {
+            if (typeof win.requestAnimationFrame === 'function') {
+              win.requestAnimationFrame(() => tick())
+              return
+            }
+            setTimeout(tick, frameMs)
+          }
+
+          const tick = (): void => {
+            step += 1
+            const easedT = evaluateEasingAtT(step / steps, args.easing)
+
+            for (const [index, plan] of args.ancestorScrollPlans.entries()) {
+              const ancestor = ancestors[index]
+              if (!ancestor) continue
+              if (
+                !positionsDiffer(plan.startTop, plan.targetTop) &&
+                !positionsDiffer(plan.startLeft, plan.targetLeft)
+              ) {
+                continue
+              }
+              ancestor.scrollTop =
+                plan.startTop + (plan.targetTop - plan.startTop) * easedT
+              ancestor.scrollLeft =
+                plan.startLeft + (plan.targetLeft - plan.startLeft) * easedT
+            }
+
+            win.scrollTo({
+              top:
+                args.pageScrollPlan.startY +
+                (args.pageScrollPlan.targetY - args.pageScrollPlan.startY) *
+                  easedT,
+              left:
+                args.pageScrollPlan.startX +
+                (args.pageScrollPlan.targetX - args.pageScrollPlan.startX) *
+                  easedT,
+              behavior: 'auto',
+            })
+
+            if (step >= steps) {
+              resolve()
+              return
+            }
+
+            scheduleNextFrame()
+          }
+
+          tick()
+        }),
+      {
+        ancestorScrollPlans,
+        pageScrollPlan,
+        duration,
+        easing,
+        evaluateEasingAtTSource: evaluateEasingAtT.toString(),
+      }
+    )
+  } else if (zoomed && duration > 0) {
+    await sleep(duration)
+  }
+
+  return {
+    ...(scrolled
+      ? {
+          scroll: {
+            startMs,
+            endMs: Date.now(),
+            ...(duration > 0 ? { easing } : {}),
+          },
+        }
+      : {}),
+    ...(zoomed
+      ? {
+          zoom: {
+            startMs,
+            endMs: Date.now(),
+            ...(duration > 0 ? { easing } : {}),
+          },
+        }
+      : {}),
+  }
 }
 
 function resolveMouseMovePlan(params: {
@@ -1100,12 +1144,10 @@ export async function changeFocus(
     defaultDuration: focusOptions.duration,
   })
 
+  const focusChangeStartMs = Date.now()
   if (focusOptions.preZoomDelay > 0) {
     await sleep(focusOptions.preZoomDelay)
   }
-
-  const focusStartMs = Date.now()
-  const focusEndMs = focusStartMs + focusOptions.duration
 
   const mousePromise =
     mouseMovePlan !== undefined
@@ -1119,27 +1161,19 @@ export async function changeFocus(
         })
       : Promise.resolve(undefined)
 
-  const scrollPromise = executeScrollPlan({
+  const scrollAndZoomPromise = executeScrollAndZoomPlan({
     locator,
     ancestorScrollPlans: plan.ancestorScrollPlans,
     pageScrollPlan: plan.pageScrollPlan,
+    zoomNeeded: plan.zoomNeeded,
     duration: focusOptions.duration,
     easing: focusOptions.easing,
   })
-  const zoomWindowPromise =
-    plan.zoomNeeded && !plan.scrollNeeded
-      ? sleep(focusOptions.duration)
-      : Promise.resolve()
 
-  const [mouseMoveResult] = await Promise.all([
+  const [mouseMoveResult, scrollAndZoomResult] = await Promise.all([
     mousePromise,
-    scrollPromise,
-    zoomWindowPromise,
+    scrollAndZoomPromise,
   ])
-
-  if (focusOptions.postZoomDelay > 0) {
-    await sleep(focusOptions.postZoomDelay)
-  }
 
   const viewport = resolveViewportSize(locator)
   const zoomTarget = resolveZoomTarget({
@@ -1162,36 +1196,33 @@ export async function changeFocus(
   })
   const zoomEvent = buildZoomEvent({
     target: zoomTarget,
-    config: focusOptions,
-    startMs: focusStartMs,
     currentZoomEnd,
+    zoomTiming: scrollAndZoomResult?.zoom,
   })
   const focusPoint = mouseMovePlan?.mouseTarget ?? plan.finalFocusPoint
   const mouseChange =
     mouseMovePlan !== undefined && mouseMoveResult !== undefined
       ? {
-          startMs: focusStartMs,
+          startMs: mouseMoveResult.startMs,
           endMs: mouseMoveResult.endMs,
           ...(mouseMovePlan.mouseDuration > 0
             ? { easing: mouseMove!.easing }
             : {}),
         }
       : undefined
+  if (focusOptions.postZoomDelay > 0) {
+    await sleep(focusOptions.postZoomDelay)
+  }
+  const focusChangeEndMs = Date.now()
   const focusChange = {
     type: 'focusChange' as const,
+    startMs: focusChangeStartMs,
+    endMs: focusChangeEndMs,
     x: focusPoint.x,
     y: focusPoint.y,
     ...(mouseChange !== undefined ? { mouse: mouseChange } : {}),
-    ...(plan.scrollNeeded
-      ? {
-          scroll: {
-            startMs: focusStartMs,
-            endMs: focusEndMs,
-            ...(focusOptions.duration > 0
-              ? { easing: focusOptions.easing }
-              : {}),
-          },
-        }
+    ...(scrollAndZoomResult?.scroll !== undefined
+      ? { scroll: scrollAndZoomResult.scroll }
       : {}),
     ...(zoomEvent !== undefined ? { zoom: zoomEvent } : {}),
     elementRect: plan.finalLocatorRect,

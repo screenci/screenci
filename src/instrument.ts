@@ -412,13 +412,16 @@ async function performClickActions(
         duration,
         easing,
       })
+      const endMs = Date.now()
       innerEvents.push({
         type: 'focusChange',
         x: targetX,
         y: targetY,
+        startMs,
+        endMs,
         mouse: {
           startMs,
-          endMs: Date.now(),
+          endMs,
           ...(duration > 0 ? { easing } : {}),
         },
       })
@@ -1634,6 +1637,8 @@ export async function instrumentPage(page: Page): Promise<Page> {
     })
     const moveEvent: FocusChangeEvent = {
       type: 'focusChange',
+      startMs,
+      endMs: Date.now(),
       x,
       y,
       mouse: {

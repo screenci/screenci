@@ -1364,7 +1364,7 @@ This project uses ScreenCI + Playwright to create and upload polished product vi
 
 Write video scripts in \`videos/*.video.ts\` and use \`video(...)\` calls to create product videos. These are very similar to Playwright \`.test.ts\` and \`test(...)\` calls.
 
-Learn more: https://screenci.com/intro/
+Learn more: https://screenci.com/docs/intro/
 
 ## Quick start
 

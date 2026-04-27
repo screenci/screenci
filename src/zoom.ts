@@ -145,20 +145,28 @@ export function buildZoomEvent(params: {
         optimalOffset: { x: number; y: number }
       }
     | undefined
-  config: ResolvedAutoZoomOptions
-  startMs: number
+  zoomTiming:
+    | Pick<
+        NonNullable<FocusChangeEvent['zoom']>,
+        'startMs' | 'endMs' | 'easing'
+      >
+    | undefined
   currentZoomEnd: FocusChangeZoom['end'] | undefined
 }): FocusChangeZoom | undefined {
-  const { target, config, startMs, currentZoomEnd } = params
+  const { target, zoomTiming, currentZoomEnd } = params
 
-  if (target === undefined || isSameZoomEnd(currentZoomEnd, target.end)) {
+  if (
+    target === undefined ||
+    zoomTiming === undefined ||
+    isSameZoomEnd(currentZoomEnd, target.end)
+  ) {
     return undefined
   }
 
   return {
-    startMs,
-    endMs: startMs + config.duration,
-    ...(config.duration > 0 ? { easing: config.easing } : {}),
+    startMs: zoomTiming.startMs,
+    endMs: zoomTiming.endMs,
+    ...(zoomTiming.easing !== undefined ? { easing: zoomTiming.easing } : {}),
     end: target.end,
     optimalOffset: target.optimalOffset,
   }

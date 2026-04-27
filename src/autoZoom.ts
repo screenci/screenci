@@ -143,6 +143,11 @@ export async function autoZoom(
         activeRecorder.addInput('focusChange', undefined, [
           {
             type: 'focusChange',
+            startMs: zoomOutStartMs,
+            endMs:
+              zoomOutStartMs +
+              (currentAutoZoomState.options.duration ??
+                DEFAULT_ZOOM_OPTIONS.duration),
             x: currentAutoZoomState.currentZoomViewport.focusPoint.x,
             y: currentAutoZoomState.currentZoomViewport.focusPoint.y,
             ...(currentAutoZoomState.currentZoomViewport.elementRect !==

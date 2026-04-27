@@ -626,7 +626,7 @@ describe('changeFocus', () => {
     expect(result?.mouse?.startMs).toBe(result?.zoom?.startMs)
   })
 
-  it('uses the exact same start and end for scroll and zoom', async () => {
+  it('uses the same start for scroll and zoom while allowing measured scroll end', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
@@ -653,10 +653,8 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     await promise
 
-    expect(result?.scroll).toMatchObject({
-      startMs: result?.zoom?.startMs,
-      endMs: result?.zoom?.endMs,
-    })
+    expect(result?.scroll?.startMs).toBe(result?.zoom?.startMs)
+    expect(result?.scroll?.endMs).toBeLessThanOrEqual(result?.zoom?.endMs ?? 0)
   })
 
   it('applies pre and post delays even when no focus change is needed', async () => {

@@ -1398,7 +1398,7 @@ describe('CLI', () => {
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining(`my-project/README.md`),
-        expect.stringContaining('https://screenci.com/intro/')
+        expect.stringContaining('https://screenci.com/docs/intro/')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining(`my-project/Dockerfile`),

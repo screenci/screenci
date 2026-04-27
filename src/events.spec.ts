@@ -35,6 +35,8 @@ describe('EventRecorder', () => {
       recorder.addInput('focusChange', undefined, [
         {
           type: 'focusChange',
+          startMs: 1200,
+          endMs: 1300,
           x: 100,
           y: 200,
           mouse: {
@@ -51,6 +53,8 @@ describe('EventRecorder', () => {
       recorder.addInput('click', undefined, [
         {
           type: 'focusChange',
+          startMs: 1200,
+          endMs: 1300,
           x: 100,
           y: 200,
           mouse: {
@@ -73,6 +77,8 @@ describe('EventRecorder', () => {
       expect(click.subType).toBe('click')
       expect(click.events[0]).toEqual({
         type: 'focusChange',
+        startMs: 200,
+        endMs: 300,
         x: 100,
         y: 200,
         mouse: {
@@ -97,6 +103,8 @@ describe('EventRecorder', () => {
       recorder.addInput('focusChange', undefined, [
         {
           type: 'focusChange',
+          startMs: 1200,
+          endMs: 1300,
           x: 100,
           y: 200,
           mouse: {
@@ -111,6 +119,8 @@ describe('EventRecorder', () => {
       expect(move.subType).toBe('focusChange')
       expect(move.events[0]).toMatchObject({
         type: 'focusChange',
+        startMs: 200,
+        endMs: 300,
         x: 100,
         y: 200,
         mouse: {
@@ -147,6 +157,8 @@ describe('EventRecorder', () => {
       recorder.addInput('click', rect, [
         {
           type: 'focusChange',
+          startMs: 1100,
+          endMs: 1200,
           x: 50,
           y: 60,
           mouse: {
@@ -197,6 +209,8 @@ describe('EventRecorder', () => {
       recorder.addInput('click', undefined, [
         {
           type: 'focusChange',
+          startMs: 1100,
+          endMs: 1200,
           x: 100,
           y: 100,
           mouse: {
@@ -228,6 +242,8 @@ describe('EventRecorder', () => {
       recorder.addInput('focusChange', undefined, [
         {
           type: 'focusChange',
+          startMs: 1100,
+          endMs: 1500,
           x: 0,
           y: 0,
           mouse: {
@@ -275,6 +291,8 @@ describe('EventRecorder', () => {
       recorder.addInput('focusChange', undefined, [
         {
           type: 'focusChange',
+          startMs: 1100,
+          endMs: 1300,
           x: 100,
           y: 100,
           mouse: {
@@ -295,6 +313,8 @@ describe('EventRecorder', () => {
       recorder.addInput('focusChange', undefined, [
         {
           type: 'focusChange',
+          startMs: 1100,
+          endMs: 1200,
           x: 100,
           y: 100,
           mouse: {

@@ -80,7 +80,9 @@ describe('mouse helpers', () => {
     const result = await promise
     expect(mouseMoveInternal).toHaveBeenCalled()
     expect(getMousePosition(page)).toEqual({ x: 30, y: 40 })
+    expect(result.startMs).toBeTypeOf('number')
     expect(result.endMs).toBeTypeOf('number')
+    expect(result.endMs).toBeGreaterThanOrEqual(result.startMs)
   })
 
   it('performs instant mouse movement', async () => {
@@ -98,7 +100,9 @@ describe('mouse helpers', () => {
     const result = await promise
     expect(mouseMoveInternal).toHaveBeenCalledWith(120, 90)
     expect(getMousePosition(page)).toEqual({ x: 120, y: 90 })
+    expect(result.startMs).toBeTypeOf('number')
     expect(result.endMs).toBeTypeOf('number')
+    expect(result.endMs).toBeGreaterThanOrEqual(result.startMs)
   })
 
   it('clicks the real mouse and returns press events', async () => {

@@ -45,6 +45,8 @@ export type ElementRect = {
 
 export type FocusChangeEvent = {
   type: 'focusChange'
+  startMs: number
+  endMs: number
   x: number
   y: number
   mouse?: {
@@ -426,32 +428,15 @@ export class EventRecorder implements IEventRecorder {
     this.events.push({ type: 'videoStart', timeMs: 0 })
   }
 
-  private getFocusChangeBounds(event: FocusChangeEvent): {
-    startMs: number
-    endMs: number
-  } {
-    const spans = [event.mouse, event.scroll, event.zoom].filter(
-      (value): value is NonNullable<typeof value> => value !== undefined
-    )
-
-    if (spans.length === 0) {
-      throw new Error(
-        '[screenci] focusChange must include mouse, scroll, or zoom timing.'
-      )
-    }
-
-    return {
-      startMs: Math.min(...spans.map((span) => span.startMs)),
-      endMs: Math.max(...spans.map((span) => span.endMs)),
-    }
-  }
-
   private getInnerEventBounds(event: InputEvent['events'][number]): {
     startMs: number
     endMs: number
   } {
     if (event.type === 'focusChange') {
-      return this.getFocusChangeBounds(event)
+      return {
+        startMs: event.startMs,
+        endMs: event.endMs,
+      }
     }
 
     return {
@@ -477,6 +462,8 @@ export class EventRecorder implements IEventRecorder {
   ): FocusChangeEvent {
     return {
       ...event,
+      startMs: event.startMs - startTime,
+      endMs: event.endMs - startTime,
       ...(event.mouse !== undefined
         ? {
             mouse: {

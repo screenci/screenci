@@ -235,8 +235,8 @@ async function performClickActions(
       ? {
           page,
           mouseMoveInternal,
-          startPos: getMousePosition(page) ?? { x: 0, y: 0 },
-          targetPos,
+          startViewportPos: getMousePosition(page) ?? { x: 0, y: 0 },
+          targetPosInElement: targetPos,
           ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
           ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
           defaultDuration: 1000,
@@ -1132,8 +1132,8 @@ export function instrumentLocator(locator: Locator): Locator {
         ? {
             page,
             mouseMoveInternal,
-            startPos: getMousePosition(page) ?? { x: 0, y: 0 },
-            targetPos,
+            startViewportPos: getMousePosition(page) ?? { x: 0, y: 0 },
+            targetPosInElement: targetPos,
             ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
             ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
             defaultDuration: 1000,
@@ -1219,8 +1219,8 @@ export function instrumentLocator(locator: Locator): Locator {
         ? {
             page,
             mouseMoveInternal,
-            startPos: getMousePosition(page) ?? { x: 0, y: 0 },
-            targetPos,
+            startViewportPos: getMousePosition(page) ?? { x: 0, y: 0 },
+            targetPosInElement: targetPos,
             ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
             ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
             defaultDuration: 1000,

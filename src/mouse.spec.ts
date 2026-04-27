@@ -77,9 +77,10 @@ describe('mouse helpers', () => {
     })
 
     await vi.runAllTimersAsync()
-    await promise
+    const result = await promise
     expect(mouseMoveInternal).toHaveBeenCalled()
     expect(getMousePosition(page)).toEqual({ x: 30, y: 40 })
+    expect(result.endMs).toBeTypeOf('number')
   })
 
   it('performs instant mouse movement', async () => {
@@ -94,9 +95,10 @@ describe('mouse helpers', () => {
       easing: 'ease-out',
     })
 
-    await promise
+    const result = await promise
     expect(mouseMoveInternal).toHaveBeenCalledWith(120, 90)
     expect(getMousePosition(page)).toEqual({ x: 120, y: 90 })
+    expect(result.endMs).toBeTypeOf('number')
   })
 
   it('clicks the real mouse and returns press events', async () => {

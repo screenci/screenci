@@ -39,8 +39,8 @@ type ScrollWindow = Window & {
 type MouseMoveRequest = {
   page: object
   mouseMoveInternal: (x: number, y: number) => Promise<void>
-  startPos: { x: number; y: number }
-  targetPos: { x: number; y: number }
+  startViewportPos: { x: number; y: number }
+  targetPosInElement: { x: number; y: number }
   duration?: number
   speed?: number
   defaultDuration?: number
@@ -994,6 +994,33 @@ async function executeScrollPlan(params: {
   )
 }
 
+function resolveMouseMovePlan(params: {
+  mouseMove: MouseMoveRequest | undefined
+  finalLocatorRect: ElementRect
+  defaultDuration: number
+}): { mouseTarget: Point; mouseDuration: number } | undefined {
+  const { mouseMove, finalLocatorRect, defaultDuration } = params
+  if (mouseMove === undefined) return undefined
+
+  const mouseTarget = {
+    x: finalLocatorRect.x + mouseMove.targetPosInElement.x,
+    y: finalLocatorRect.y + mouseMove.targetPosInElement.y,
+  }
+  const mouseDuration = resolveMouseMoveDuration(
+    mouseMove.page,
+    mouseTarget.x,
+    mouseTarget.y,
+    {
+      duration: mouseMove.duration,
+      speed: mouseMove.speed,
+      defaultDuration: mouseMove.defaultDuration ?? defaultDuration,
+      context: mouseMove.context,
+    }
+  )
+
+  return { mouseTarget, mouseDuration }
+}
+
 export type ChangeFocusResult = {
   locatorRect: ElementRect | undefined
   focusChange?: FocusChangeEvent
@@ -1016,27 +1043,11 @@ export async function changeFocus(
     insideAutoZoom: state.insideAutoZoom,
   })
 
-  const mouseTarget =
-    mouseMove !== undefined
-      ? {
-          x: plan.finalLocatorRect.x + mouseMove.targetPos.x,
-          y: plan.finalLocatorRect.y + mouseMove.targetPos.y,
-        }
-      : undefined
-  const mouseDuration =
-    mouseTarget !== undefined
-      ? resolveMouseMoveDuration(
-          mouseMove!.page,
-          mouseTarget.x,
-          mouseTarget.y,
-          {
-            duration: mouseMove!.duration,
-            speed: mouseMove!.speed,
-            defaultDuration: mouseMove!.defaultDuration,
-            context: mouseMove!.context,
-          }
-        )
-      : undefined
+  const mouseMovePlan = resolveMouseMovePlan({
+    mouseMove,
+    finalLocatorRect: plan.finalLocatorRect,
+    defaultDuration: resolvedAutoZoomOptions.duration,
+  })
 
   if (resolvedAutoZoomOptions.preZoomDelay > 0) {
     await sleep(resolvedAutoZoomOptions.preZoomDelay)
@@ -1046,24 +1057,15 @@ export async function changeFocus(
   const focusEndMs = focusStartMs + resolvedAutoZoomOptions.duration
 
   const mousePromise =
-    mouseTarget !== undefined && mouseDuration !== undefined
+    mouseMovePlan !== undefined
       ? performMouseMove({
           page: mouseMove!.page,
           mouseMoveInternal: mouseMove!.mouseMoveInternal,
-          targetX: mouseTarget.x,
-          targetY: mouseTarget.y,
-          duration: mouseDuration,
+          targetX: mouseMovePlan.mouseTarget.x,
+          targetY: mouseMovePlan.mouseTarget.y,
+          duration: mouseMovePlan.mouseDuration,
           easing: mouseMove!.easing,
-        }).then(() => ({
-          type: 'focusChange' as const,
-          x: mouseTarget.x,
-          y: mouseTarget.y,
-          mouse: {
-            startMs: focusStartMs,
-            endMs: Date.now(),
-            ...(mouseDuration > 0 ? { easing: mouseMove!.easing } : {}),
-          },
-        }))
+        })
       : Promise.resolve(undefined)
 
   const scrollPromise = executeScrollPlan({
@@ -1078,7 +1080,7 @@ export async function changeFocus(
       ? sleep(resolvedAutoZoomOptions.duration)
       : Promise.resolve()
 
-  const [mouseMoveEvent] = await Promise.all([
+  const [mouseMoveResult] = await Promise.all([
     mousePromise,
     scrollPromise,
     zoomWindowPromise,
@@ -1120,7 +1122,22 @@ export async function changeFocus(
           currentZoomEnd: state.currentZoomViewport?.end,
         })
       : undefined
-  const focusPoint = mouseTarget ?? plan.finalFocusPoint
+  const mouseMoveEvent =
+    mouseMovePlan !== undefined && mouseMoveResult !== undefined
+      ? {
+          type: 'focusChange' as const,
+          x: mouseMovePlan.mouseTarget.x,
+          y: mouseMovePlan.mouseTarget.y,
+          mouse: {
+            startMs: focusStartMs,
+            endMs: mouseMoveResult.endMs,
+            ...(mouseMovePlan.mouseDuration > 0
+              ? { easing: mouseMove!.easing }
+              : {}),
+          },
+        }
+      : undefined
+  const focusPoint = mouseMovePlan?.mouseTarget ?? plan.finalFocusPoint
   const focusChange =
     mouseMoveEvent === undefined &&
     !plan.scrollNeeded &&

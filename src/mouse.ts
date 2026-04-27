@@ -188,7 +188,7 @@ export async function performMouseMove(options: {
   targetY: number
   duration: number
   easing: Easing
-}): Promise<void> {
+}): Promise<{ endMs: number }> {
   const { page, mouseMoveInternal, targetX, targetY, duration, easing } =
     options
   const startPos = getMousePosition(page) ?? { x: 0, y: 0 }
@@ -212,6 +212,8 @@ export async function performMouseMove(options: {
   }
 
   setMousePosition(page, { x: targetX, y: targetY })
+
+  return { endMs: Date.now() }
 }
 
 export function buildMouseDownEvent(options: {

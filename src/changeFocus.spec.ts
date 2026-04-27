@@ -606,8 +606,8 @@ describe('changeFocus', () => {
           {
             page: {},
             mouseMoveInternal,
-            startPos: { x: 0, y: 0 },
-            targetPos: { x: 60, y: 20 },
+            startViewportPos: { x: 0, y: 0 },
+            targetPosInElement: { x: 60, y: 20 },
             duration: 100,
             easing: 'linear',
             context: 'test move',

@@ -42,25 +42,53 @@ export function resolveAutoZoomOptions(
   return mergedOptions
 }
 
-export function resolveZoomTarget(
-  locatorRect: ElementRect,
-  viewport: { width: number; height: number },
-  target: {
-    targetViewport: { width: number; height: number }
-    targetRectPositionInZoomViewport: { x: number; y: number }
+export function resolveZoomTarget(params: {
+  locatorRect: ElementRect
+  viewport: { width: number; height: number }
+  targetViewport: { width: number; height: number }
+  targetRectPositionInZoomViewport: { x: number; y: number }
+}): { end: FocusChangeZoom['end']; optimalOffset: { x: number; y: number } } {
+  const placement = resolveZoomViewportPlacement(params)
+
+  return {
+    end: {
+      pointPx: placement.actualOrigin,
+      size: placement.size,
+    },
+    optimalOffset: {
+      x: placement.idealOrigin.x - placement.actualOrigin.x,
+      y: placement.idealOrigin.y - placement.actualOrigin.y,
+    },
   }
-): { end: FocusChangeZoom['end']; optimalOffset: { x: number; y: number } } {
+}
+
+export function resolveZoomViewportPlacement(params: {
+  locatorRect: ElementRect
+  viewport: { width: number; height: number }
+  targetViewport: { width: number; height: number }
+  targetRectPositionInZoomViewport: { x: number; y: number }
+}): {
+  idealOrigin: { x: number; y: number }
+  actualOrigin: { x: number; y: number }
+  size: { widthPx: number; heightPx: number }
+} {
+  const {
+    locatorRect,
+    viewport,
+    targetViewport,
+    targetRectPositionInZoomViewport,
+  } = params
   const widthPx = Math.min(
     viewport.width,
-    Math.max(1, Math.round(target.targetViewport.width))
+    Math.max(1, Math.round(targetViewport.width))
   )
   const heightPx = Math.min(
     viewport.height,
-    Math.max(1, Math.round(target.targetViewport.height))
+    Math.max(1, Math.round(targetViewport.height))
   )
   const idealOrigin = {
-    x: locatorRect.x - target.targetRectPositionInZoomViewport.x,
-    y: locatorRect.y - target.targetRectPositionInZoomViewport.y,
+    x: locatorRect.x - targetRectPositionInZoomViewport.x,
+    y: locatorRect.y - targetRectPositionInZoomViewport.y,
   }
   const actualOrigin = {
     x: clamp(
@@ -76,16 +104,11 @@ export function resolveZoomTarget(
   }
 
   return {
-    end: {
-      pointPx: actualOrigin,
-      size: {
-        widthPx,
-        heightPx,
-      },
-    },
-    optimalOffset: {
-      x: idealOrigin.x - actualOrigin.x,
-      y: idealOrigin.y - actualOrigin.y,
+    idealOrigin,
+    actualOrigin,
+    size: {
+      widthPx,
+      heightPx,
     },
   }
 }

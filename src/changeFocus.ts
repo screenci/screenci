@@ -6,6 +6,7 @@ import { performMouseMove, resolveMouseMoveDuration } from './mouse.js'
 import { getAutoZoomState, setCurrentZoomViewport } from './autoZoom.js'
 import {
   buildZoomEvent,
+  resolveZoomViewportPlacement,
   resolveAutoZoomOptions,
   resolveZoomTarget,
 } from './zoom.js'
@@ -91,7 +92,6 @@ type AxisRange = {
 }
 
 type UnifiedFocusPlan = {
-  previewLocatorRect: ElementRect
   finalLocatorRect: ElementRect
   ancestorScrollPlans: ScrollPlan[]
   pageScrollPlan: PageScrollPlan
@@ -447,7 +447,10 @@ function refineAncestorPlansForProjectedRectRange(params: {
   const nextPlans = params.plans.map((plan) => ({ ...plan }))
 
   for (let sweep = 0; sweep < params.snapshot.ancestors.length; sweep += 1) {
-    const projectedRect = projectRectFromAncestorPlans(params.snapshot, nextPlans)
+    const projectedRect = projectRectFromAncestorPlans(
+      params.snapshot,
+      nextPlans
+    )
     let remainingScrollLeft =
       projectedRect.x -
       clampToRange(projectedRect.x, params.projectedRectRangeX)
@@ -671,6 +674,86 @@ export function buildPageScrollPlan(
   }
 }
 
+function resolvePagePlan(params: {
+  snapshot: FocusSnapshot
+  ancestorResult: {
+    plans: ScrollPlan[]
+    accumulatedDelta: Point
+    projectedRect: ElementRect
+  }
+  targetRectPositionInViewport: Point
+  targetViewport: ViewportSize
+  targetRectPositionInZoomViewport: Point
+  insideAutoZoom: boolean
+}): {
+  plan: PageScrollPlan
+  finalLocatorRect: ElementRect
+  scrollNeeded: boolean
+} {
+  const zoomPlacementWithoutPageScroll = resolveZoomViewportPlacement({
+    locatorRect: params.ancestorResult.projectedRect,
+    viewport: params.snapshot.viewportSize,
+    targetViewport: params.targetViewport,
+    targetRectPositionInZoomViewport: params.targetRectPositionInZoomViewport,
+  })
+  const zoomOptimalOffsetWithoutPageScroll = {
+    x:
+      zoomPlacementWithoutPageScroll.idealOrigin.x -
+      zoomPlacementWithoutPageScroll.actualOrigin.x,
+    y:
+      zoomPlacementWithoutPageScroll.idealOrigin.y -
+      zoomPlacementWithoutPageScroll.actualOrigin.y,
+  }
+  const pageScrollCanBeSkipped =
+    params.insideAutoZoom &&
+    Math.round(zoomOptimalOffsetWithoutPageScroll.x) === 0 &&
+    Math.round(zoomOptimalOffsetWithoutPageScroll.y) === 0
+  const pageResult = buildPageScrollPlan(
+    params.snapshot,
+    params.ancestorResult,
+    {
+      targetRectPositionInViewport: params.targetRectPositionInViewport,
+      ...(params.insideAutoZoom
+        ? {
+            residualOnly: {
+              x: zoomOptimalOffsetWithoutPageScroll.x,
+              y: zoomOptimalOffsetWithoutPageScroll.y,
+            },
+          }
+        : {}),
+    }
+  )
+  const resolvedPageResult = pageScrollCanBeSkipped
+    ? {
+        plan: {
+          startY: params.snapshot.page.scrollY,
+          startX: params.snapshot.page.scrollX,
+          targetY: params.snapshot.page.scrollY,
+          targetX: params.snapshot.page.scrollX,
+        },
+        finalLocatorRect: params.ancestorResult.projectedRect,
+      }
+    : pageResult
+
+  return {
+    ...resolvedPageResult,
+    scrollNeeded:
+      params.ancestorResult.plans.some(
+        (plan) =>
+          positionsDiffer(plan.startTop, plan.targetTop) ||
+          positionsDiffer(plan.startLeft, plan.targetLeft)
+      ) ||
+      positionsDiffer(
+        resolvedPageResult.plan.startY,
+        resolvedPageResult.plan.targetY
+      ) ||
+      positionsDiffer(
+        resolvedPageResult.plan.startX,
+        resolvedPageResult.plan.targetX
+      ),
+  }
+}
+
 export function combineFocusPlan(params: {
   snapshot: FocusSnapshot
   amount: number
@@ -727,67 +810,23 @@ export function combineFocusPlan(params: {
     amount: 1,
     centering: params.centering,
   })
-  // Let zoom do the primary framing work before considering any page scroll.
-  const zoomTargetWithoutPageScroll = resolveZoomTarget(
-    ancestorResult.projectedRect,
-    params.snapshot.viewportSize,
-    {
-      targetViewport,
-      targetRectPositionInZoomViewport,
-    }
-  )
-  const pageScrollCanBeSkipped =
-    params.insideAutoZoom &&
-    Math.round(zoomTargetWithoutPageScroll.optimalOffset.x) === 0 &&
-    Math.round(zoomTargetWithoutPageScroll.optimalOffset.y) === 0
   // Use page scroll only for the framing residual that zoom cannot absorb.
-  const pageResult = buildPageScrollPlan(params.snapshot, ancestorResult, {
+  const resolvedPageResult = resolvePagePlan({
+    snapshot: params.snapshot,
+    ancestorResult,
     targetRectPositionInViewport,
-    ...(params.insideAutoZoom
-      ? {
-          residualOnly: {
-            x: zoomTargetWithoutPageScroll.optimalOffset.x,
-            y: zoomTargetWithoutPageScroll.optimalOffset.y,
-          },
-        }
-      : {}),
+    targetViewport,
+    targetRectPositionInZoomViewport,
+    insideAutoZoom: params.insideAutoZoom,
   })
-  // When zoom can fully absorb the framing, keep the page fixed.
-  const resolvedPageResult = pageScrollCanBeSkipped
-    ? {
-        plan: {
-          startY: params.snapshot.page.scrollY,
-          startX: params.snapshot.page.scrollX,
-          targetY: params.snapshot.page.scrollY,
-          targetX: params.snapshot.page.scrollX,
-        },
-        finalLocatorRect: ancestorResult.projectedRect,
-      }
-    : pageResult
-  const scrollNeeded =
-    ancestorResult.plans.some(
-      (plan) =>
-        positionsDiffer(plan.startTop, plan.targetTop) ||
-        positionsDiffer(plan.startLeft, plan.targetLeft)
-    ) ||
-    positionsDiffer(
-      resolvedPageResult.plan.startY,
-      resolvedPageResult.plan.targetY
-    ) ||
-    positionsDiffer(
-      resolvedPageResult.plan.startX,
-      resolvedPageResult.plan.targetX
-    )
 
   // Recompute the final zoom target after any page scroll has been applied.
-  const zoomTarget = resolveZoomTarget(
-    resolvedPageResult.finalLocatorRect,
-    params.snapshot.viewportSize,
-    {
-      targetViewport,
-      targetRectPositionInZoomViewport,
-    }
-  )
+  const zoomTarget = resolveZoomTarget({
+    locatorRect: resolvedPageResult.finalLocatorRect,
+    viewport: params.snapshot.viewportSize,
+    targetViewport,
+    targetRectPositionInZoomViewport,
+  })
   const zoomNeeded =
     params.insideAutoZoom &&
     (params.currentZoomEnd === undefined ||
@@ -797,11 +836,10 @@ export function combineFocusPlan(params: {
       params.currentZoomEnd.size.heightPx !== zoomTarget.end.size.heightPx)
 
   return {
-    previewLocatorRect: resolvedPageResult.finalLocatorRect,
     finalLocatorRect: resolvedPageResult.finalLocatorRect,
     ancestorScrollPlans: ancestorResult.plans,
     pageScrollPlan: resolvedPageResult.plan,
-    scrollNeeded,
+    scrollNeeded: resolvedPageResult.scrollNeeded,
     zoomNeeded,
     finalFocusPoint: {
       x:
@@ -1055,7 +1093,9 @@ export async function changeFocus(
     : undefined
   const zoomTarget =
     state.insideAutoZoom && viewport !== undefined
-      ? resolveZoomTarget(plan.finalLocatorRect, viewport, {
+      ? resolveZoomTarget({
+          locatorRect: plan.finalLocatorRect,
+          viewport,
           targetViewport: resolveFixedFocusViewportSize(
             viewport,
             resolvedAutoZoomOptions.amount

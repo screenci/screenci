@@ -294,33 +294,9 @@ describe('changeFocus helpers', () => {
 
   it('keeps optimalOffset at zero when framing is achieved', () => {
     expect(
-      resolveZoomTarget(
-        { x: 320, y: 160, width: 120, height: 40 },
-        { width: 1280, height: 720 },
-        {
-          targetViewport: resolveFixedFocusViewportSize(
-            { width: 1280, height: 720 },
-            0.5
-          ),
-          targetRectPositionInZoomViewport: resolveTargetRectPosition({
-            containerSize: resolveFixedFocusViewportSize(
-              { width: 1280, height: 720 },
-              0.5
-            ),
-            rect: { x: 320, y: 160, width: 120, height: 40 },
-            amount: 1,
-            centering: 1,
-          }),
-        }
-      ).optimalOffset
-    ).toEqual({ x: 0, y: 0 })
-  })
-
-  it('uses non-zero optimalOffset when bounds prevent the target framing', () => {
-    const optimalOffset = resolveZoomTarget(
-      { x: 10, y: 10, width: 120, height: 40 },
-      { width: 1280, height: 720 },
-      {
+      resolveZoomTarget({
+        locatorRect: { x: 320, y: 160, width: 120, height: 40 },
+        viewport: { width: 1280, height: 720 },
         targetViewport: resolveFixedFocusViewportSize(
           { width: 1280, height: 720 },
           0.5
@@ -330,12 +306,32 @@ describe('changeFocus helpers', () => {
             { width: 1280, height: 720 },
             0.5
           ),
-          rect: { x: 10, y: 10, width: 120, height: 40 },
+          rect: { x: 320, y: 160, width: 120, height: 40 },
           amount: 1,
           centering: 1,
         }),
-      }
-    ).optimalOffset
+      }).optimalOffset
+    ).toEqual({ x: 0, y: 0 })
+  })
+
+  it('uses non-zero optimalOffset when bounds prevent the target framing', () => {
+    const optimalOffset = resolveZoomTarget({
+      locatorRect: { x: 10, y: 10, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      targetViewport: resolveFixedFocusViewportSize(
+        { width: 1280, height: 720 },
+        0.5
+      ),
+      targetRectPositionInZoomViewport: resolveTargetRectPosition({
+        containerSize: resolveFixedFocusViewportSize(
+          { width: 1280, height: 720 },
+          0.5
+        ),
+        rect: { x: 10, y: 10, width: 120, height: 40 },
+        amount: 1,
+        centering: 1,
+      }),
+    }).optimalOffset
 
     expect(optimalOffset.x).not.toBe(0)
     expect(optimalOffset.y).not.toBe(0)
@@ -398,25 +394,23 @@ describe('changeFocus', () => {
 
     expect(result.locatorRect?.y).toBeLessThan(240)
     expect(
-      resolveZoomTarget(
-        result.locatorRect!,
-        { width: 1280, height: 720 },
-        {
-          targetViewport: resolveFixedFocusViewportSize(
+      resolveZoomTarget({
+        locatorRect: result.locatorRect!,
+        viewport: { width: 1280, height: 720 },
+        targetViewport: resolveFixedFocusViewportSize(
+          { width: 1280, height: 720 },
+          0.5
+        ),
+        targetRectPositionInZoomViewport: resolveTargetRectPosition({
+          containerSize: resolveFixedFocusViewportSize(
             { width: 1280, height: 720 },
             0.5
           ),
-          targetRectPositionInZoomViewport: resolveTargetRectPosition({
-            containerSize: resolveFixedFocusViewportSize(
-              { width: 1280, height: 720 },
-              0.5
-            ),
-            rect: result.locatorRect!,
-            amount: 1,
-            centering: 1,
-          }),
-        }
-      ).optimalOffset.y
+          rect: result.locatorRect!,
+          amount: 1,
+          centering: 1,
+        }),
+      }).optimalOffset.y
     ).toBeGreaterThanOrEqual(0)
   })
 

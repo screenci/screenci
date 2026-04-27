@@ -250,20 +250,19 @@ async function performClickActions(
     autoZoomOptions,
     mouseMovePlan
   )
-  const { locatorRect, focusChange } = scrollResult
+  const focusChange = scrollResult
+  const locatorRect = focusChange.elementRect
   if (!locatorRect) {
     logger.warn(
       '[screenci] Unable to get locator bounding box; skipping auto-scroll check.'
     )
   }
 
-  if (focusChange) {
-    innerEvents.push(focusChange)
-    setMousePosition(page, {
-      x: focusChange.x,
-      y: focusChange.y,
-    })
-  }
+  innerEvents.push(focusChange)
+  setMousePosition(page, {
+    x: focusChange.x,
+    y: focusChange.y,
+  })
 
   await sleep(beforeClickPause)
 
@@ -503,12 +502,9 @@ async function performSimpleAction(
       await doAction(options)
     }
   } else {
-    const scrollResult = await changeFocus(locator, autoZoomOptions)
-    const { locatorRect, focusChange } = scrollResult
-
-    if (focusChange) {
-      innerEvents.push(focusChange)
-    }
+    const focusChange = await changeFocus(locator, autoZoomOptions)
+    const locatorRect = focusChange.elementRect
+    innerEvents.push(focusChange)
 
     const targetPosition = locatorRect
       ? {
@@ -738,7 +734,8 @@ export function instrumentLocator(locator: Locator): Locator {
       elementRect = clickActionResult?.elementRect
     } else {
       const scrollResult = await changeFocus(locator, options?.autoZoomOptions)
-      const { locatorRect, focusChange } = scrollResult
+      const locatorRect = scrollResult.elementRect
+      const focusChange = scrollResult
       if (focusChange) {
         innerEvents.push(focusChange)
       }
@@ -906,7 +903,8 @@ export function instrumentLocator(locator: Locator): Locator {
     }
 
     const scrollResult = await changeFocus(locator, options?.autoZoomOptions)
-    const { locatorRect, focusChange } = scrollResult
+    const locatorRect = scrollResult.elementRect
+    const focusChange = scrollResult
 
     if (focusChange) {
       innerEvents.push(focusChange)
@@ -1142,20 +1140,18 @@ export function instrumentLocator(locator: Locator): Locator {
           }
         : undefined
 
-    const scrollResult = await changeFocus(
+    const hoverFocusChange = await changeFocus(
       locator,
       options?.autoZoomOptions,
       mouseMovePlan
     )
-    const { locatorRect, focusChange: hoverFocusChange } = scrollResult
+    const locatorRect = hoverFocusChange.elementRect
 
-    if (hoverFocusChange) {
-      innerEvents.push(hoverFocusChange)
-      setMousePosition(page, {
-        x: hoverFocusChange.x,
-        y: hoverFocusChange.y,
-      })
-    }
+    innerEvents.push(hoverFocusChange)
+    setMousePosition(page, {
+      x: hoverFocusChange.x,
+      y: hoverFocusChange.y,
+    })
 
     const waitStartMs = Date.now()
     await originalHover({
@@ -1229,16 +1225,18 @@ export function instrumentLocator(locator: Locator): Locator {
           }
         : undefined
 
-    const scrollResult = await changeFocus(locator, undefined, mouseMovePlan)
-    const { locatorRect, focusChange: selectFocusChange } = scrollResult
+    const selectFocusChange = await changeFocus(
+      locator,
+      undefined,
+      mouseMovePlan
+    )
+    const locatorRect = selectFocusChange.elementRect
 
-    if (selectFocusChange) {
-      innerEvents.push(selectFocusChange)
-      setMousePosition(page, {
-        x: selectFocusChange.x,
-        y: selectFocusChange.y,
-      })
-    }
+    innerEvents.push(selectFocusChange)
+    setMousePosition(page, {
+      x: selectFocusChange.x,
+      y: selectFocusChange.y,
+    })
 
     await sleep(beforeClickPause)
 
@@ -1314,7 +1312,7 @@ export function instrumentLocator(locator: Locator): Locator {
     )
 
     const sourceRectPreview = await locator.boundingBox()
-    const { locatorRect: sourceRect } = await changeFocus(locator)
+    const sourceRect = (await changeFocus(locator)).elementRect
     const targetBb = await target.boundingBox()
     const targetRect: ElementRect | undefined = targetBb
       ? {

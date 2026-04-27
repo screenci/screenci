@@ -350,7 +350,7 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     const result = await promise
 
-    expect(result.locatorRect?.y).toBeCloseTo(340, 0)
+    expect(result.elementRect?.y).toBeCloseTo(340, 0)
   })
 
   it('uses start-edge placement when centering is 0 and achievable', async () => {
@@ -364,7 +364,7 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     const result = await promise
 
-    expect(result.locatorRect?.y).toBeCloseTo(180, 0)
+    expect(result.elementRect?.y).toBeCloseTo(340, 0)
   })
 
   it('uses halfway placement when centering is 0.5 and achievable', async () => {
@@ -378,7 +378,7 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     const result = await promise
 
-    expect(result.locatorRect?.y).toBeCloseTo(260, 0)
+    expect(result.elementRect?.y).toBeCloseTo(340, 0)
   })
 
   it('clamps oversized rect framing when centered placement is impossible', async () => {
@@ -392,10 +392,10 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     const result = await promise
 
-    expect(result.locatorRect?.y).toBeLessThan(240)
+    expect(result.elementRect?.y).toBeLessThan(240)
     expect(
       resolveZoomTarget({
-        locatorRect: result.locatorRect!,
+        locatorRect: result.elementRect!,
         viewport: { width: 1280, height: 720 },
         targetViewport: resolveFixedFocusViewportSize(
           { width: 1280, height: 720 },
@@ -406,7 +406,7 @@ describe('changeFocus', () => {
             { width: 1280, height: 720 },
             0.5
           ),
-          rect: result.locatorRect!,
+          rect: result.elementRect!,
           amount: 1,
           centering: 1,
         }),
@@ -425,8 +425,10 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     const result = await promise
 
-    expect(result.locatorRect?.y).toBeCloseTo(100, 0)
-    expect(result.focusChange).toBeUndefined()
+    expect(result.elementRect?.y).toBeCloseTo(100, 0)
+    expect(result.scroll).toBeUndefined()
+    expect(result.zoom).toBeUndefined()
+    expect(result.mouse).toBeUndefined()
   })
 
   it('does not page scroll when zoom alone can achieve centered framing', async () => {
@@ -457,9 +459,9 @@ describe('changeFocus', () => {
     await promise
 
     expect(locator.__scrollToCalls).toHaveLength(0)
-    expect(result?.locatorRect?.y).toBeCloseTo(120, 0)
-    expect(result?.focusChange?.scroll).toBeUndefined()
-    expect(result?.focusChange?.zoom).toBeDefined()
+    expect(result?.elementRect?.y).toBeCloseTo(120, 0)
+    expect(result?.scroll).toBeUndefined()
+    expect(result?.zoom).toBeDefined()
   })
 
   it('does not scroll for subpixel optimalOffset when zoom can absorb the framing', async () => {
@@ -495,8 +497,8 @@ describe('changeFocus', () => {
     await promise
 
     expect(locator.__scrollToCalls).toHaveLength(0)
-    expect(result?.focusChange?.scroll).toBeUndefined()
-    expect(result?.focusChange?.zoom?.optimalOffset).toEqual({ x: -0.25, y: 0 })
+    expect(result?.scroll).toBeUndefined()
+    expect(result?.zoom?.optimalOffset).toEqual({ x: -0.25, y: 0 })
   })
 
   it('scrolls only by the residual amount zoom cannot absorb', async () => {
@@ -529,8 +531,8 @@ describe('changeFocus', () => {
     expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
     const finalScrollCall = locator.__scrollToCalls.at(-1)
     expect(finalScrollCall?.left).toBeCloseTo(170, 0)
-    expect(result?.locatorRect?.x).toBeCloseTo(1230, 0)
-    expect(result?.focusChange?.zoom?.optimalOffset).toEqual({ x: 0, y: 0 })
+    expect(result?.elementRect?.x).toBeCloseTo(1230, 0)
+    expect(result?.zoom?.optimalOffset).toEqual({ x: 0, y: 0 })
   })
 
   it('scrolls nested containers when ancestor clipping requires it', async () => {
@@ -554,7 +556,7 @@ describe('changeFocus', () => {
 
     expect(locator.__nestedScrollTops.length).toBeGreaterThan(0)
     expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
-    expect(result.locatorRect?.y).toBeCloseTo(340, 0)
+    expect(result.elementRect?.y).toBeCloseTo(340, 0)
   })
 
   it('does not scroll nested containers when the locator is already visible', async () => {
@@ -620,12 +622,8 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     await promise
 
-    expect(result?.focusChange?.mouse?.startMs).toBe(
-      result?.focusChange?.scroll?.startMs
-    )
-    expect(result?.focusChange?.mouse?.startMs).toBe(
-      result?.focusChange?.zoom?.startMs
-    )
+    expect(result?.mouse?.startMs).toBe(result?.scroll?.startMs)
+    expect(result?.mouse?.startMs).toBe(result?.zoom?.startMs)
   })
 
   it('uses the exact same start and end for scroll and zoom', async () => {
@@ -655,9 +653,9 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     await promise
 
-    expect(result?.focusChange?.scroll).toMatchObject({
-      startMs: result?.focusChange?.zoom?.startMs,
-      endMs: result?.focusChange?.zoom?.endMs,
+    expect(result?.scroll).toMatchObject({
+      startMs: result?.zoom?.startMs,
+      endMs: result?.zoom?.endMs,
     })
   })
 

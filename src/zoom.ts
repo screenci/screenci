@@ -47,8 +47,19 @@ export function resolveZoomTarget(params: {
   viewport: { width: number; height: number }
   targetViewport: { width: number; height: number }
   targetRectPositionInZoomViewport: { x: number; y: number }
-}): { end: FocusChangeZoom['end']; optimalOffset: { x: number; y: number } } {
+  currentZoomEnd?: FocusChangeZoom['end']
+}):
+  | { end: FocusChangeZoom['end']; optimalOffset: { x: number; y: number } }
+  | undefined {
   const placement = resolveZoomViewportPlacement(params)
+  const isFullViewport =
+    placement.actualOrigin.x === 0 &&
+    placement.actualOrigin.y === 0 &&
+    placement.size.widthPx >= params.viewport.width &&
+    placement.size.heightPx >= params.viewport.height &&
+    params.currentZoomEnd === undefined
+
+  if (isFullViewport) return undefined
 
   return {
     end: {
@@ -115,10 +126,11 @@ export function resolveZoomViewportPlacement(params: {
 
 function isSameZoomEnd(
   left: FocusChangeZoom['end'] | undefined,
-  right: FocusChangeZoom['end']
+  right: FocusChangeZoom['end'] | undefined
 ): boolean {
   return (
     left !== undefined &&
+    right !== undefined &&
     left.pointPx.x === right.pointPx.x &&
     left.pointPx.y === right.pointPx.y &&
     left.size.widthPx === right.size.widthPx &&
@@ -127,23 +139,19 @@ function isSameZoomEnd(
 }
 
 export function buildZoomEvent(params: {
-  target: {
-    end: FocusChangeZoom['end']
-    optimalOffset: { x: number; y: number }
-  }
+  target:
+    | {
+        end: FocusChangeZoom['end']
+        optimalOffset: { x: number; y: number }
+      }
+    | undefined
   config: ResolvedAutoZoomOptions
   startMs: number
   currentZoomEnd: FocusChangeZoom['end'] | undefined
 }): FocusChangeZoom | undefined {
   const { target, config, startMs, currentZoomEnd } = params
-  const isFullViewport =
-    target.end.pointPx.x === 0 &&
-    target.end.pointPx.y === 0 &&
-    target.end.size.widthPx >= 1 &&
-    target.end.size.heightPx >= 1 &&
-    config.amount >= 1
 
-  if (isSameZoomEnd(currentZoomEnd, target.end) || isFullViewport) {
+  if (target === undefined || isSameZoomEnd(currentZoomEnd, target.end)) {
     return undefined
   }
 

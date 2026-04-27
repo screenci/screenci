@@ -1,12 +1,12 @@
 import type { Locator } from '@playwright/test'
 import type { ElementRect, FocusChangeEvent } from './events.js'
 import { evaluateEasingAtT } from './easing.js'
+import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import type { AutoZoomOptions, Easing } from './types.js'
 import { performMouseMove, resolveMouseMoveDuration } from './mouse.js'
 import { getAutoZoomState, setCurrentZoomViewport } from './autoZoom.js'
 import {
   buildZoomEvent,
-  resolveZoomViewportPlacement,
   resolveAutoZoomOptions,
   resolveZoomTarget,
 } from './zoom.js'
@@ -684,28 +684,33 @@ function resolvePagePlan(params: {
   targetRectPositionInViewport: Point
   targetViewport: ViewportSize
   targetRectPositionInZoomViewport: Point
-  insideAutoZoom: boolean
+  currentZoomEnd?: NonNullable<FocusChangeEvent['zoom']>['end']
 }): {
   plan: PageScrollPlan
   finalLocatorRect: ElementRect
   scrollNeeded: boolean
 } {
-  const zoomPlacementWithoutPageScroll = resolveZoomViewportPlacement({
-    locatorRect: params.ancestorResult.projectedRect,
-    viewport: params.snapshot.viewportSize,
-    targetViewport: params.targetViewport,
-    targetRectPositionInZoomViewport: params.targetRectPositionInZoomViewport,
-  })
-  const zoomOptimalOffsetWithoutPageScroll = {
-    x:
-      zoomPlacementWithoutPageScroll.idealOrigin.x -
-      zoomPlacementWithoutPageScroll.actualOrigin.x,
-    y:
-      zoomPlacementWithoutPageScroll.idealOrigin.y -
-      zoomPlacementWithoutPageScroll.actualOrigin.y,
-  }
+  const zoomTargetWithoutPageScroll =
+    params.currentZoomEnd !== undefined
+      ? resolveZoomTarget({
+          locatorRect: params.ancestorResult.projectedRect,
+          viewport: params.snapshot.viewportSize,
+          targetViewport: params.targetViewport,
+          targetRectPositionInZoomViewport:
+            params.targetRectPositionInZoomViewport,
+          currentZoomEnd: params.currentZoomEnd,
+        })
+      : resolveZoomTarget({
+          locatorRect: params.ancestorResult.projectedRect,
+          viewport: params.snapshot.viewportSize,
+          targetViewport: params.targetViewport,
+          targetRectPositionInZoomViewport:
+            params.targetRectPositionInZoomViewport,
+        })
+  const zoomOptimalOffsetWithoutPageScroll =
+    zoomTargetWithoutPageScroll?.optimalOffset
   const pageScrollCanBeSkipped =
-    params.insideAutoZoom &&
+    zoomOptimalOffsetWithoutPageScroll !== undefined &&
     Math.round(zoomOptimalOffsetWithoutPageScroll.x) === 0 &&
     Math.round(zoomOptimalOffsetWithoutPageScroll.y) === 0
   const pageResult = buildPageScrollPlan(
@@ -713,7 +718,7 @@ function resolvePagePlan(params: {
     params.ancestorResult,
     {
       targetRectPositionInViewport: params.targetRectPositionInViewport,
-      ...(params.insideAutoZoom
+      ...(zoomOptimalOffsetWithoutPageScroll !== undefined
         ? {
             residualOnly: {
               x: zoomOptimalOffsetWithoutPageScroll.x,
@@ -758,8 +763,7 @@ export function combineFocusPlan(params: {
   snapshot: FocusSnapshot
   amount: number
   centering: number
-  currentZoomEnd: NonNullable<FocusChangeEvent['zoom']>['end'] | undefined
-  insideAutoZoom: boolean
+  currentZoomEnd?: NonNullable<FocusChangeEvent['zoom']>['end']
 }): UnifiedFocusPlan {
   const targetViewport = resolveFixedFocusViewportSize(
     params.snapshot.viewportSize,
@@ -811,24 +815,42 @@ export function combineFocusPlan(params: {
     centering: params.centering,
   })
   // Use page scroll only for the framing residual that zoom cannot absorb.
-  const resolvedPageResult = resolvePagePlan({
-    snapshot: params.snapshot,
-    ancestorResult,
-    targetRectPositionInViewport,
-    targetViewport,
-    targetRectPositionInZoomViewport,
-    insideAutoZoom: params.insideAutoZoom,
-  })
+  const resolvedPageResult =
+    params.currentZoomEnd !== undefined
+      ? resolvePagePlan({
+          snapshot: params.snapshot,
+          ancestorResult,
+          targetRectPositionInViewport,
+          targetViewport,
+          targetRectPositionInZoomViewport,
+          currentZoomEnd: params.currentZoomEnd,
+        })
+      : resolvePagePlan({
+          snapshot: params.snapshot,
+          ancestorResult,
+          targetRectPositionInViewport,
+          targetViewport,
+          targetRectPositionInZoomViewport,
+        })
 
   // Recompute the final zoom target after any page scroll has been applied.
-  const zoomTarget = resolveZoomTarget({
-    locatorRect: resolvedPageResult.finalLocatorRect,
-    viewport: params.snapshot.viewportSize,
-    targetViewport,
-    targetRectPositionInZoomViewport,
-  })
+  const zoomTarget =
+    params.currentZoomEnd !== undefined
+      ? resolveZoomTarget({
+          locatorRect: resolvedPageResult.finalLocatorRect,
+          viewport: params.snapshot.viewportSize,
+          targetViewport,
+          targetRectPositionInZoomViewport,
+          currentZoomEnd: params.currentZoomEnd,
+        })
+      : resolveZoomTarget({
+          locatorRect: resolvedPageResult.finalLocatorRect,
+          viewport: params.snapshot.viewportSize,
+          targetViewport,
+          targetRectPositionInZoomViewport,
+        })
   const zoomNeeded =
-    params.insideAutoZoom &&
+    zoomTarget !== undefined &&
     (params.currentZoomEnd === undefined ||
       params.currentZoomEnd.pointPx.x !== zoomTarget.end.pointPx.x ||
       params.currentZoomEnd.pointPx.y !== zoomTarget.end.pointPx.y ||
@@ -849,7 +871,7 @@ export function combineFocusPlan(params: {
         resolvedPageResult.finalLocatorRect.y +
         resolvedPageResult.finalLocatorRect.height / 2,
     },
-    optimalOffset: zoomTarget.optimalOffset,
+    optimalOffset: zoomTarget?.optimalOffset ?? { x: 0, y: 0 },
   }
 }
 
@@ -1021,40 +1043,69 @@ function resolveMouseMovePlan(params: {
   return { mouseTarget, mouseDuration }
 }
 
-export type ChangeFocusResult = {
-  locatorRect: ElementRect | undefined
-  focusChange?: FocusChangeEvent
+function resolveFocusOptions(params: {
+  state: ReturnType<typeof getAutoZoomState>
+  options: AutoZoomOptions
+  viewportSize: ViewportSize
+}): {
+  focusOptions: ReturnType<typeof resolveAutoZoomOptions>
+  currentZoomEnd: NonNullable<FocusChangeEvent['zoom']>['end']
+} {
+  const resolvedAutoZoomOptions = resolveAutoZoomOptions(
+    params.state,
+    params.options
+  )
+
+  return {
+    focusOptions: params.state.insideAutoZoom
+      ? resolvedAutoZoomOptions
+      : {
+          ...resolvedAutoZoomOptions,
+          amount: 1,
+          centering: DEFAULT_ZOOM_OPTIONS.centering,
+        },
+    currentZoomEnd: params.state.currentZoomViewport?.end ?? {
+      pointPx: { x: 0, y: 0 },
+      size: {
+        widthPx: params.viewportSize.width,
+        heightPx: params.viewportSize.height,
+      },
+    },
+  }
 }
 
 export async function changeFocus(
   locator: Locator,
   options: AutoZoomOptions = {},
   mouseMove?: MouseMoveRequest
-): Promise<ChangeFocusResult> {
+): Promise<FocusChangeEvent> {
   const state = getAutoZoomState()
-  const resolvedAutoZoomOptions = resolveAutoZoomOptions(state, options)
   const snapshot = await captureFocusSnapshot(locator)
+  const { focusOptions, currentZoomEnd } = resolveFocusOptions({
+    state,
+    options,
+    viewportSize: snapshot.viewportSize,
+  })
 
   const plan = combineFocusPlan({
     snapshot,
-    amount: resolvedAutoZoomOptions.amount,
-    centering: resolvedAutoZoomOptions.centering,
-    currentZoomEnd: state.currentZoomViewport?.end,
-    insideAutoZoom: state.insideAutoZoom,
+    amount: focusOptions.amount,
+    centering: focusOptions.centering,
+    ...(currentZoomEnd !== undefined ? { currentZoomEnd } : {}),
   })
 
   const mouseMovePlan = resolveMouseMovePlan({
     mouseMove,
     finalLocatorRect: plan.finalLocatorRect,
-    defaultDuration: resolvedAutoZoomOptions.duration,
+    defaultDuration: focusOptions.duration,
   })
 
-  if (resolvedAutoZoomOptions.preZoomDelay > 0) {
-    await sleep(resolvedAutoZoomOptions.preZoomDelay)
+  if (focusOptions.preZoomDelay > 0) {
+    await sleep(focusOptions.preZoomDelay)
   }
 
   const focusStartMs = Date.now()
-  const focusEndMs = focusStartMs + resolvedAutoZoomOptions.duration
+  const focusEndMs = focusStartMs + focusOptions.duration
 
   const mousePromise =
     mouseMovePlan !== undefined
@@ -1072,12 +1123,12 @@ export async function changeFocus(
     locator,
     ancestorScrollPlans: plan.ancestorScrollPlans,
     pageScrollPlan: plan.pageScrollPlan,
-    duration: resolvedAutoZoomOptions.duration,
-    easing: resolvedAutoZoomOptions.easing,
+    duration: focusOptions.duration,
+    easing: focusOptions.easing,
   })
   const zoomWindowPromise =
-    state.insideAutoZoom && plan.zoomNeeded && !plan.scrollNeeded
-      ? sleep(resolvedAutoZoomOptions.duration)
+    plan.zoomNeeded && !plan.scrollNeeded
+      ? sleep(focusOptions.duration)
       : Promise.resolve()
 
   const [mouseMoveResult] = await Promise.all([
@@ -1086,102 +1137,82 @@ export async function changeFocus(
     zoomWindowPromise,
   ])
 
-  if (resolvedAutoZoomOptions.postZoomDelay > 0) {
-    await sleep(resolvedAutoZoomOptions.postZoomDelay)
+  if (focusOptions.postZoomDelay > 0) {
+    await sleep(focusOptions.postZoomDelay)
   }
 
-  const viewport = state.insideAutoZoom
-    ? resolveViewportSize(locator)
-    : undefined
-  const zoomTarget =
-    state.insideAutoZoom && viewport !== undefined
-      ? resolveZoomTarget({
-          locatorRect: plan.finalLocatorRect,
-          viewport,
-          targetViewport: resolveFixedFocusViewportSize(
-            viewport,
-            resolvedAutoZoomOptions.amount
-          ),
-          targetRectPositionInZoomViewport: resolveTargetRectPosition({
-            containerSize: resolveFixedFocusViewportSize(
-              viewport,
-              resolvedAutoZoomOptions.amount
-            ),
-            rect: plan.finalLocatorRect,
-            amount: 1,
-            centering: resolvedAutoZoomOptions.centering,
-          }),
-        })
-      : undefined
-  const zoomEvent =
-    state.insideAutoZoom && viewport !== undefined && zoomTarget !== undefined
-      ? buildZoomEvent({
-          target: zoomTarget,
-          config: resolvedAutoZoomOptions,
-          startMs: focusStartMs,
-          currentZoomEnd: state.currentZoomViewport?.end,
-        })
-      : undefined
-  const mouseMoveEvent =
+  const viewport = resolveViewportSize(locator)
+  const zoomTarget = resolveZoomTarget({
+    locatorRect: plan.finalLocatorRect,
+    viewport,
+    targetViewport: resolveFixedFocusViewportSize(
+      viewport,
+      focusOptions.amount
+    ),
+    targetRectPositionInZoomViewport: resolveTargetRectPosition({
+      containerSize: resolveFixedFocusViewportSize(
+        viewport,
+        focusOptions.amount
+      ),
+      rect: plan.finalLocatorRect,
+      amount: 1,
+      centering: focusOptions.centering,
+    }),
+    ...(currentZoomEnd !== undefined ? { currentZoomEnd } : {}),
+  })
+  const zoomEvent = buildZoomEvent({
+    target: zoomTarget,
+    config: focusOptions,
+    startMs: focusStartMs,
+    currentZoomEnd,
+  })
+  const focusPoint = mouseMovePlan?.mouseTarget ?? plan.finalFocusPoint
+  const mouseChange =
     mouseMovePlan !== undefined && mouseMoveResult !== undefined
       ? {
-          type: 'focusChange' as const,
-          x: mouseMovePlan.mouseTarget.x,
-          y: mouseMovePlan.mouseTarget.y,
-          mouse: {
+          startMs: focusStartMs,
+          endMs: mouseMoveResult.endMs,
+          ...(mouseMovePlan.mouseDuration > 0
+            ? { easing: mouseMove!.easing }
+            : {}),
+        }
+      : undefined
+  const focusChange = {
+    type: 'focusChange' as const,
+    x: focusPoint.x,
+    y: focusPoint.y,
+    ...(mouseChange !== undefined ? { mouse: mouseChange } : {}),
+    ...(plan.scrollNeeded
+      ? {
+          scroll: {
             startMs: focusStartMs,
-            endMs: mouseMoveResult.endMs,
-            ...(mouseMovePlan.mouseDuration > 0
-              ? { easing: mouseMove!.easing }
+            endMs: focusEndMs,
+            ...(focusOptions.duration > 0
+              ? { easing: focusOptions.easing }
               : {}),
           },
         }
-      : undefined
-  const focusPoint = mouseMovePlan?.mouseTarget ?? plan.finalFocusPoint
-  const focusChange =
-    mouseMoveEvent === undefined &&
-    !plan.scrollNeeded &&
-    zoomEvent === undefined
-      ? undefined
-      : {
-          type: 'focusChange' as const,
-          x: focusPoint.x,
-          y: focusPoint.y,
-          ...(mouseMoveEvent?.mouse !== undefined
-            ? { mouse: mouseMoveEvent.mouse }
-            : {}),
-          ...(plan.scrollNeeded
-            ? {
-                scroll: {
-                  startMs: focusStartMs,
-                  endMs: focusEndMs,
-                  ...(resolvedAutoZoomOptions.duration > 0
-                    ? { easing: resolvedAutoZoomOptions.easing }
-                    : {}),
-                },
-              }
-            : {}),
-          ...(zoomEvent !== undefined ? { zoom: zoomEvent } : {}),
-          elementRect: plan.finalLocatorRect,
-          ...(!mouseMoveEvent && (plan.scrollNeeded || zoomEvent !== undefined)
-            ? { focusOnly: true }
-            : {}),
-        }
-
-  if (state.insideAutoZoom) {
-    if (viewport !== undefined && zoomTarget !== undefined) {
-      setCurrentZoomViewport({
-        focusPoint,
-        elementRect: plan.finalLocatorRect,
-        end: zoomTarget.end,
-        viewportSize: viewport,
-        optimalOffset: zoomTarget.optimalOffset,
-      })
-    }
+      : {}),
+    ...(zoomEvent !== undefined ? { zoom: zoomEvent } : {}),
+    elementRect: plan.finalLocatorRect,
+    ...(!mouseChange && (plan.scrollNeeded || zoomEvent !== undefined)
+      ? { focusOnly: true }
+      : {}),
   }
 
-  return {
-    locatorRect: plan.finalLocatorRect,
-    ...(focusChange !== undefined ? { focusChange } : {}),
-  }
+  setCurrentZoomViewport({
+    focusPoint,
+    elementRect: plan.finalLocatorRect,
+    end: zoomTarget?.end ?? {
+      pointPx: { x: 0, y: 0 },
+      size: {
+        widthPx: viewport.width,
+        heightPx: viewport.height,
+      },
+    },
+    viewportSize: viewport,
+    optimalOffset: zoomTarget?.optimalOffset ?? { x: 0, y: 0 },
+  })
+
+  return focusChange
 }

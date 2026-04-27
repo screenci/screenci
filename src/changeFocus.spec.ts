@@ -254,6 +254,17 @@ describe('changeFocus helpers', () => {
     ).toEqual({ x: 580, y: 340 })
   })
 
+  it('keeps a smaller rect near the edge when centering is 0', () => {
+    expect(
+      resolveTargetRectPosition({
+        containerSize: { width: 1280, height: 720 },
+        rect: { x: 20, y: 900, width: 120, height: 40 },
+        amount: 0.5,
+        centering: 0,
+      })
+    ).toEqual({ x: 320, y: 180 })
+  })
+
   it('scrolls ancestors past bare visibility only when page and zoom still need it', () => {
     const snapshot = {
       locatorRect: { x: 20, y: 1400, width: 120, height: 40 },
@@ -335,6 +346,28 @@ describe('changeFocus helpers', () => {
 
     expect(optimalOffset.x).not.toBe(0)
     expect(optimalOffset.y).not.toBe(0)
+  })
+
+  it('prefers the nearest valid zoom origin instead of snapping to the top-left', () => {
+    const target = resolveZoomTarget({
+      locatorRect: { x: 20, y: 20, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      targetViewport: resolveFixedFocusViewportSize(
+        { width: 1280, height: 720 },
+        0.5
+      ),
+      targetRectPositionInZoomViewport: resolveTargetRectPosition({
+        containerSize: resolveFixedFocusViewportSize(
+          { width: 1280, height: 720 },
+          0.5
+        ),
+        rect: { x: 20, y: 20, width: 120, height: 40 },
+        amount: 1,
+        centering: 1,
+      }),
+    })
+
+    expect(target?.end.pointPx).toEqual({ x: 0, y: 0 })
   })
 })
 

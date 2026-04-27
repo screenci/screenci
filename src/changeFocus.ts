@@ -196,7 +196,10 @@ function resolveTargetRectStartForAxis(params: {
   const focusWindowStart = Math.max(0, (containerSize - focusSize) / 2)
 
   if (rectSize <= focusSize) {
-    return focusWindowStart + ((focusSize - rectSize) * centering) / 2
+    // centering = 0 keeps the rect edge-aligned; centering = 1 centers it.
+    const edgeAlignedStart = focusWindowStart
+    const centeredStart = focusWindowStart + (focusSize - rectSize) / 2
+    return edgeAlignedStart + (centeredStart - edgeAlignedStart) * centering
   }
 
   return focusWindowStart + focusSize / 2 - rectSize / 2

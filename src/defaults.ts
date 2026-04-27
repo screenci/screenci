@@ -1,31 +1,20 @@
 import type {
   AspectRatio,
-  Easing,
+  AutoZoomOptions,
   FPS,
   Quality,
   Trace,
   RecordOptions,
 } from './types.js'
 
-/**
- * Default zoom amount (fraction of output dimensions for the zoomed viewport)
- */
-export const DEFAULT_ZOOM_AMOUNT: number = 0.5
-
-/**
- * Default zoom transition duration in milliseconds
- */
-export const DEFAULT_ZOOM_DURATION: number = 500
-
-/**
- * Default delay in milliseconds after zoom-in and zoom-out animations
- */
-export const DEFAULT_POST_ZOOM_IN_OUT_DELAY: number = 1000
-
-/**
- * Default zoom transition easing function
- */
-export const DEFAULT_ZOOM_EASING: Easing = 'ease-out'
+export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
+  easing: 'ease-out',
+  duration: 500,
+  amount: 0.5,
+  centering: 1,
+  preZoomDelay: 0,
+  postZoomDelay: 1000,
+}
 
 /**
  * Default aspect ratio for recording and output

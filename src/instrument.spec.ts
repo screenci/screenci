@@ -15,7 +15,7 @@ import {
 import {
   autoZoom,
   setActiveAutoZoomRecorder,
-  setLastZoomLocation,
+  setCurrentZoomViewport,
 } from './autoZoom.js'
 import { hide } from './hide.js'
 
@@ -585,14 +585,14 @@ function makeNestedScrollLocatorMock() {
 beforeEach(() => {
   setActiveClickRecorder(null)
   setActiveAutoZoomRecorder(null)
-  setLastZoomLocation(null)
+  setCurrentZoomViewport(null)
   vi.useFakeTimers()
 })
 
 afterEach(() => {
   setActiveClickRecorder(null)
   setActiveAutoZoomRecorder(null)
-  setLastZoomLocation(null)
+  setCurrentZoomViewport(null)
   vi.useRealTimers()
 })
 
@@ -780,11 +780,14 @@ describe('instrumentLocator', () => {
     instrumentLocator(locator)
     const p = autoZoom(
       async () => {
-        setLastZoomLocation({
-          x: 120,
-          y: 140,
-          eventType: 'click',
+        setCurrentZoomViewport({
+          focusPoint: { x: 120, y: 140 },
           elementRect: { x: 100, y: 120, width: 80, height: 40 },
+          end: {
+            pointPx: { x: 10, y: 20 },
+            size: { widthPx: 640, heightPx: 360 },
+          },
+          viewportSize: { width: 1280, height: 720 },
         })
         await (
           locator as unknown as {

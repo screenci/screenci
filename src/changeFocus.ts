@@ -3,14 +3,10 @@ import type { ElementRect, FocusChangeEvent } from './events.js'
 import { evaluateEasingAtT } from './easing.js'
 import type { AutoZoomOptions, Easing } from './types.js'
 import { performMouseMove, resolveMouseMoveDuration } from './mouse.js'
-import {
-  getAutoZoomState,
-  setCurrentZoomViewport,
-  setLastZoomLocation,
-} from './autoZoom.js'
+import { getAutoZoomState, setCurrentZoomViewport } from './autoZoom.js'
 import {
   buildZoomEvent,
-  resolveAutoZoomConfig,
+  resolveAutoZoomOptions,
   resolveZoomTarget,
 } from './zoom.js'
 
@@ -143,10 +139,9 @@ export function resolveFixedFocusViewportSize(
   viewport: ViewportSize,
   amount: number
 ): ViewportSize {
-  const resolvedAmount = clamp(amount, 0, 1)
   return {
-    width: viewport.width * resolvedAmount,
-    height: viewport.height * resolvedAmount,
+    width: viewport.width * amount,
+    height: viewport.height * amount,
   }
 }
 
@@ -210,13 +205,15 @@ function resolveDesiredRectStartForAxis(params: {
   return focusWindowStart + focusSize / 2 - rectSize / 2
 }
 
-async function captureFocusSnapshot(
-  locator: Locator
-): Promise<FocusSnapshot | undefined> {
+async function captureFocusSnapshot(locator: Locator): Promise<FocusSnapshot> {
   return locator.evaluate((element) => {
     const doc = element.ownerDocument
     const win = doc.defaultView as ScrollWindow | null
-    if (!win) return undefined
+    if (!win) {
+      throw new Error(
+        '[screenci] Unable to resolve window while capturing focus snapshot.'
+      )
+    }
 
     const isScrollable = (node: unknown): node is ScrollableElement => {
       if (
@@ -698,31 +695,16 @@ export async function changeFocus(
   mouseMove?: MouseMoveRequest
 ): Promise<ChangeFocusResult> {
   const state = getAutoZoomState()
-  const resolvedAutoZoomConfig = resolveAutoZoomConfig(state, options)
-  const preDelayMs = state.insideAutoZoom ? (state.preZoomDelay ?? 0) : 0
-  const postDelayMs = state.insideAutoZoom ? (state.postZoomDelay ?? 0) : 0
-
-  if (preDelayMs > 0) {
-    await sleep(preDelayMs)
-  }
-
+  const resolvedAutoZoomOptions = resolveAutoZoomOptions(state, options)
   const snapshot = await captureFocusSnapshot(locator)
-  if (!snapshot) {
-    if (postDelayMs > 0) {
-      await sleep(postDelayMs)
-    }
-    return { locatorRect: undefined }
-  }
 
   const plan = combineFocusPlan({
     snapshot,
-    amount: resolvedAutoZoomConfig.amount,
-    centering: resolvedAutoZoomConfig.centering,
+    amount: resolvedAutoZoomOptions.amount,
+    centering: resolvedAutoZoomOptions.centering,
     currentZoomEnd: state.currentZoomViewport?.end,
     insideAutoZoom: state.insideAutoZoom,
   })
-  const focusStartMs = Date.now()
-  const focusEndMs = focusStartMs + resolvedAutoZoomConfig.duration
 
   const mouseTarget =
     mouseMove !== undefined
@@ -745,6 +727,13 @@ export async function changeFocus(
           }
         )
       : undefined
+
+  if (resolvedAutoZoomOptions.preZoomDelay > 0) {
+    await sleep(resolvedAutoZoomOptions.preZoomDelay)
+  }
+
+  const focusStartMs = Date.now()
+  const focusEndMs = focusStartMs + resolvedAutoZoomOptions.duration
 
   const mousePromise =
     mouseTarget !== undefined && mouseDuration !== undefined
@@ -771,12 +760,12 @@ export async function changeFocus(
     locator,
     ancestorScrollPlans: plan.ancestorScrollPlans,
     pageScrollPlan: plan.pageScrollPlan,
-    duration: resolvedAutoZoomConfig.duration,
-    easing: resolvedAutoZoomConfig.easing,
+    duration: resolvedAutoZoomOptions.duration,
+    easing: resolvedAutoZoomOptions.easing,
   })
   const zoomWindowPromise =
     state.insideAutoZoom && plan.zoomNeeded && !plan.scrollNeeded
-      ? sleep(resolvedAutoZoomConfig.duration)
+      ? sleep(resolvedAutoZoomOptions.duration)
       : Promise.resolve()
 
   const [mouseMoveEvent] = await Promise.all([
@@ -785,21 +774,25 @@ export async function changeFocus(
     zoomWindowPromise,
   ])
 
+  if (resolvedAutoZoomOptions.postZoomDelay > 0) {
+    await sleep(resolvedAutoZoomOptions.postZoomDelay)
+  }
+
   const viewport = state.insideAutoZoom
     ? resolveViewportSize(locator)
     : undefined
   const zoomTarget =
     state.insideAutoZoom && viewport !== undefined
       ? resolveZoomTarget(plan.finalLocatorRect, viewport, {
-          amount: resolvedAutoZoomConfig.amount,
-          centering: resolvedAutoZoomConfig.centering,
+          amount: resolvedAutoZoomOptions.amount,
+          centering: resolvedAutoZoomOptions.centering,
         })
       : undefined
   const zoomEvent =
     state.insideAutoZoom && viewport !== undefined && zoomTarget !== undefined
       ? buildZoomEvent({
           target: zoomTarget,
-          config: resolvedAutoZoomConfig,
+          config: resolvedAutoZoomOptions,
           startMs: focusStartMs,
           currentZoomEnd: state.currentZoomViewport?.end,
         })
@@ -822,8 +815,8 @@ export async function changeFocus(
                 scroll: {
                   startMs: focusStartMs,
                   endMs: focusEndMs,
-                  ...(resolvedAutoZoomConfig.duration > 0
-                    ? { easing: resolvedAutoZoomConfig.easing }
+                  ...(resolvedAutoZoomOptions.duration > 0
+                    ? { easing: resolvedAutoZoomOptions.easing }
                     : {}),
                 },
               }
@@ -836,13 +829,6 @@ export async function changeFocus(
         }
 
   if (state.insideAutoZoom) {
-    setLastZoomLocation({
-      x: focusPoint.x,
-      y: focusPoint.y,
-      elementRect: plan.finalLocatorRect,
-      eventType: 'click',
-    })
-
     if (viewport !== undefined && zoomTarget !== undefined) {
       setCurrentZoomViewport({
         focusPoint,
@@ -852,10 +838,6 @@ export async function changeFocus(
         optimalOffset: zoomTarget.optimalOffset,
       })
     }
-  }
-
-  if (postDelayMs > 0) {
-    await sleep(postDelayMs)
   }
 
   return {

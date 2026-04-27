@@ -1,17 +1,19 @@
-import {
-  DEFAULT_ZOOM_DURATION,
-  DEFAULT_ZOOM_EASING,
-  DEFAULT_POST_ZOOM_IN_OUT_DELAY,
-} from './defaults.js'
+import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
+import { invalidOptionError, ScreenciError } from './errors.js'
 import type { ElementRect, IEventRecorder } from './events.js'
 import type { AutoZoomOptions, Easing } from './types.js'
-import { resolveCenteringValue } from './zoom.js'
-
-export type ZoomLocation = {
-  x: number
-  y: number
-  elementRect: ElementRect
-  eventType: 'click' | 'fill'
+function assertAutoZoomUnitIntervalOption(
+  value: number,
+  name: 'amount' | 'centering'
+): void {
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw invalidOptionError({
+      api: 'autoZoom',
+      option: name,
+      expectation: 'must be between 0 and 1',
+      value,
+    })
+  }
 }
 
 export type CurrentZoomViewport = {
@@ -28,13 +30,7 @@ export type CurrentZoomViewport = {
 let activeRecorder: IEventRecorder | null = null
 let currentAutoZoomState: AutoZoomState = {
   insideAutoZoom: false,
-  lastZoomLocation: null,
-  easing: null,
-  duration: null,
-  amount: null,
-  centering: null,
-  preZoomDelay: null,
-  postZoomDelay: null,
+  options: {},
   currentZoomViewport: null,
 }
 
@@ -44,23 +40,13 @@ export function setActiveAutoZoomRecorder(
   activeRecorder = recorder
 }
 
-export function getLastZoomLocation(): ZoomLocation | null {
-  return currentAutoZoomState.lastZoomLocation
-}
-
 export function getCurrentZoomViewport(): CurrentZoomViewport | null {
   return currentAutoZoomState.currentZoomViewport
 }
 
 export type AutoZoomState = {
   insideAutoZoom: boolean
-  lastZoomLocation: ZoomLocation | null
-  easing: Easing | null
-  duration: number | null
-  amount: number | null
-  centering: number | null
-  preZoomDelay: number | null
-  postZoomDelay: number | null
+  options: AutoZoomOptions
   currentZoomViewport: CurrentZoomViewport | null
 }
 
@@ -70,13 +56,6 @@ export function getAutoZoomState(): AutoZoomState {
 
 export function setAutoZoomState(state: AutoZoomState): void {
   currentAutoZoomState = state
-}
-
-export function setLastZoomLocation(loc: ZoomLocation | null): void {
-  setAutoZoomState({
-    ...currentAutoZoomState,
-    lastZoomLocation: loc,
-  })
 }
 
 export function setCurrentZoomViewport(
@@ -96,13 +75,7 @@ function resetAutoZoomState(): void {
   setAutoZoomState({
     ...currentAutoZoomState,
     insideAutoZoom: false,
-    lastZoomLocation: null,
-    duration: null,
-    easing: null,
-    amount: null,
-    centering: null,
-    preZoomDelay: null,
-    postZoomDelay: null,
+    options: {},
     currentZoomViewport: null,
   })
 }
@@ -136,23 +109,30 @@ export async function autoZoom(
   options?: AutoZoomOptions
 ): Promise<void> {
   if (currentAutoZoomState.insideAutoZoom) {
-    throw new Error('Cannot nest autoZoom() calls')
+    throw new ScreenciError('Cannot nest autoZoom() calls')
   }
   if (activeRecorder !== null) {
     activeRecorder.addAutoZoomStart(options)
   }
+  const resolvedOptions = {
+    ...DEFAULT_ZOOM_OPTIONS,
+    ...(options ?? {}),
+  }
+  assertAutoZoomUnitIntervalOption(resolvedOptions.amount, 'amount')
+  assertAutoZoomUnitIntervalOption(resolvedOptions.centering, 'centering')
   setAutoZoomState({
     ...currentAutoZoomState,
     insideAutoZoom: true,
-    duration: options?.duration ?? DEFAULT_ZOOM_DURATION,
-    easing: (options?.easing ?? DEFAULT_ZOOM_EASING) as Easing,
-    amount: options?.amount ?? null,
-    centering:
-      options?.centering !== undefined
-        ? resolveCenteringValue(options.centering)
-        : null,
-    preZoomDelay: options?.preZoomDelay ?? 0,
-    postZoomDelay: options?.postZoomDelay ?? DEFAULT_POST_ZOOM_IN_OUT_DELAY,
+    options: {
+      duration: resolvedOptions.duration,
+      easing: resolvedOptions.easing as Easing,
+      amount: resolvedOptions.amount,
+      ...(options?.centering !== undefined
+        ? { centering: options.centering }
+        : {}),
+      preZoomDelay: resolvedOptions.preZoomDelay,
+      postZoomDelay: resolvedOptions.postZoomDelay,
+    },
   })
   try {
     await fn()
@@ -175,8 +155,13 @@ export async function autoZoom(
             focusOnly: true,
             zoom: {
               startMs: zoomOutStartMs,
-              endMs: zoomOutStartMs + (currentAutoZoomState.duration ?? 0),
-              easing: currentAutoZoomState.easing ?? DEFAULT_ZOOM_EASING,
+              endMs:
+                zoomOutStartMs +
+                (currentAutoZoomState.options.duration ??
+                  DEFAULT_ZOOM_OPTIONS.duration),
+              easing:
+                currentAutoZoomState.options.easing ??
+                DEFAULT_ZOOM_OPTIONS.easing,
               end: {
                 pointPx: { x: 0, y: 0 },
                 size: {
@@ -192,8 +177,8 @@ export async function autoZoom(
         ])
       }
     }
-    if ((currentAutoZoomState.postZoomDelay ?? 0) > 0) {
-      await sleep(currentAutoZoomState.postZoomDelay ?? 0)
+    if ((currentAutoZoomState.options.postZoomDelay ?? 0) > 0) {
+      await sleep(currentAutoZoomState.options.postZoomDelay ?? 0)
     }
   } finally {
     resetAutoZoomState()

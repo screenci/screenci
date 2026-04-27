@@ -166,19 +166,30 @@ describe('EventRecorder', () => {
   })
 
   describe('autoZoom validation', () => {
-    it('clamps autoZoom centering values into the supported 0..1 range', () => {
+    it('throws when autoZoom centering exceeds the supported 0..1 range', () => {
       recorder.start()
       now = 1200
 
-      recorder.addAutoZoomStart({
-        centering: 2,
-      })
+      expect(() =>
+        recorder.addAutoZoomStart({
+          centering: 2,
+        })
+      ).toThrow(
+        /Invalid autoZoom option 'centering': must be between 0 and 1; received 2/
+      )
+    })
 
-      const event = recorder.getEvents()[1]
-      expect(event).toMatchObject({
-        type: 'autoZoomStart',
-        centering: 1,
-      })
+    it('throws when autoZoom amount exceeds the supported 0..1 range', () => {
+      recorder.start()
+      now = 1200
+
+      expect(() =>
+        recorder.addAutoZoomStart({
+          amount: 2,
+        })
+      ).toThrow(
+        /Invalid autoZoom option 'amount': must be between 0 and 1; received 2/
+      )
     })
 
     it('throws from addAutoZoomStart when timeMs is strictly inside an input event', () => {

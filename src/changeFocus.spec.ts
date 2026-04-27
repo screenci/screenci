@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Locator } from '@playwright/test'
-import { autoZoom, setLastZoomLocation } from './autoZoom.js'
+import { autoZoom, setCurrentZoomViewport } from './autoZoom.js'
 import {
   changeFocus,
   resolveFixedFocusViewportSize,
@@ -346,11 +346,14 @@ describe('changeFocus', () => {
 
     const promise = autoZoom(
       async () => {
-        setLastZoomLocation({
-          x: 100,
-          y: 120,
-          eventType: 'click',
+        setCurrentZoomViewport({
+          focusPoint: { x: 100, y: 120 },
           elementRect: { x: 80, y: 100, width: 120, height: 40 },
+          end: {
+            pointPx: { x: 0, y: 0 },
+            size: { widthPx: 1280, heightPx: 720 },
+          },
+          viewportSize: { width: 1280, height: 720 },
         })
         result = await changeFocus(locator, { amount: 0.5, centering: 1 })
       },
@@ -376,16 +379,19 @@ describe('changeFocus', () => {
 
     const promise = autoZoom(
       async () => {
-        setLastZoomLocation({
-          x: 867.28125,
-          y: 440.96875,
-          eventType: 'click',
+        setCurrentZoomViewport({
+          focusPoint: { x: 867.28125, y: 440.96875 },
           elementRect: {
             x: 719.0625,
             y: 415.46875,
             width: 296.4375,
             height: 51,
           },
+          end: {
+            pointPx: { x: 387, y: 171 },
+            size: { widthPx: 960, heightPx: 540 },
+          },
+          viewportSize: { width: 1920, height: 1080 },
         })
         result = await changeFocus(locator, { amount: 0.5, centering: 1 })
       },
@@ -410,11 +416,14 @@ describe('changeFocus', () => {
 
     const promise = autoZoom(
       async () => {
-        setLastZoomLocation({
-          x: 1610,
-          y: 560,
-          eventType: 'click',
+        setCurrentZoomViewport({
+          focusPoint: { x: 1610, y: 560 },
           elementRect: { x: 1400, y: 520, width: 420, height: 80 },
+          end: {
+            pointPx: { x: 960, y: 270 },
+            size: { widthPx: 960, heightPx: 540 },
+          },
+          viewportSize: { width: 1920, height: 1080 },
         })
         result = await changeFocus(locator, { amount: 0.5, centering: 1 })
       },
@@ -466,11 +475,14 @@ describe('changeFocus', () => {
 
     const promise = autoZoom(
       async () => {
-        setLastZoomLocation({
-          x: 100,
-          y: 120,
-          eventType: 'click',
+        setCurrentZoomViewport({
+          focusPoint: { x: 100, y: 120 },
           elementRect: { x: 80, y: 100, width: 120, height: 40 },
+          end: {
+            pointPx: { x: 0, y: 0 },
+            size: { widthPx: 1280, heightPx: 720 },
+          },
+          viewportSize: { width: 1280, height: 720 },
         })
         result = await changeFocus(
           locator,
@@ -510,11 +522,14 @@ describe('changeFocus', () => {
 
     const promise = autoZoom(
       async () => {
-        setLastZoomLocation({
-          x: 100,
-          y: 120,
-          eventType: 'click',
+        setCurrentZoomViewport({
+          focusPoint: { x: 100, y: 120 },
           elementRect: { x: 80, y: 100, width: 120, height: 40 },
+          end: {
+            pointPx: { x: 0, y: 0 },
+            size: { widthPx: 1280, heightPx: 720 },
+          },
+          viewportSize: { width: 1280, height: 720 },
         })
         result = await changeFocus(locator, { duration: 300 })
       },

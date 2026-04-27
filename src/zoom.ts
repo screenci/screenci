@@ -1,29 +1,38 @@
-import { DEFAULT_ZOOM_AMOUNT, DEFAULT_ZOOM_EASING } from './defaults.js'
+import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import type { ElementRect, FocusChangeEvent } from './events.js'
-import type { AutoZoomOptions, Easing } from './types.js'
+import { invalidOptionError } from './errors.js'
+import type { AutoZoomOptions } from './types.js'
 import type { AutoZoomState } from './autoZoom.js'
 
 type FocusChangeZoom = NonNullable<FocusChangeEvent['zoom']>
 
-export type ResolvedAutoZoomConfig = {
-  easing: Easing
-  duration: number
-  amount: number
-  centering: number
-}
+export type ResolvedAutoZoomOptions = Required<AutoZoomOptions>
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
+}
+
+function assertAutoZoomUnitIntervalOption(
+  value: number,
+  name: 'amount' | 'centering'
+): void {
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw invalidOptionError({
+      api: 'autoZoom',
+      option: name,
+      expectation: 'must be between 0 and 1',
+      value,
+    })
+  }
 }
 
 function resolveFixedFocusViewportSize(
   viewport: { width: number; height: number },
   amount: number
 ): { width: number; height: number } {
-  const resolvedAmount = clamp(amount, 0, 1)
   return {
-    width: viewport.width * resolvedAmount,
-    height: viewport.height * resolvedAmount,
+    width: viewport.width * amount,
+    height: viewport.height * amount,
   }
 }
 
@@ -63,41 +72,26 @@ function resolveIdealFocusOrigin(
   }
 }
 
-export function resolveCenteringValue(centering: number | undefined): number {
-  if (centering === undefined) return 1
-  return clamp(centering, 0, 1)
-}
-
-export function resolveAutoZoomConfig(
+export function resolveAutoZoomOptions(
   state: AutoZoomState,
   options: AutoZoomOptions
-): ResolvedAutoZoomConfig {
-  const useZoomAnimation =
-    state.insideAutoZoom && state.lastZoomLocation !== null
-
-  return {
-    easing:
-      options.easing ??
-      (useZoomAnimation
-        ? (state.easing ?? DEFAULT_ZOOM_EASING)
-        : DEFAULT_ZOOM_EASING),
-    duration:
-      options.duration ?? (useZoomAnimation ? (state.duration ?? 0) : 0),
-    amount:
-      options.amount ??
-      state.amount ??
-      (state.insideAutoZoom ? DEFAULT_ZOOM_AMOUNT : 1),
-    centering:
-      options.centering !== undefined
-        ? resolveCenteringValue(options.centering)
-        : (state.centering ?? 1),
+): ResolvedAutoZoomOptions {
+  const mergedOptions = {
+    ...DEFAULT_ZOOM_OPTIONS,
+    ...state.options,
+    ...options,
   }
+
+  assertAutoZoomUnitIntervalOption(mergedOptions.amount, 'amount')
+  assertAutoZoomUnitIntervalOption(mergedOptions.centering, 'centering')
+
+  return mergedOptions
 }
 
 export function resolveZoomTarget(
   locatorRect: ElementRect,
   viewport: { width: number; height: number },
-  config: Pick<ResolvedAutoZoomConfig, 'amount' | 'centering'>
+  config: Pick<ResolvedAutoZoomOptions, 'amount' | 'centering'>
 ): { end: FocusChangeZoom['end']; optimalOffset: { x: number; y: number } } {
   const focusViewport = resolveFixedFocusViewportSize(viewport, config.amount)
   const widthPx = Math.min(
@@ -159,7 +153,7 @@ export function buildZoomEvent(params: {
     end: FocusChangeZoom['end']
     optimalOffset: { x: number; y: number }
   }
-  config: ResolvedAutoZoomConfig
+  config: ResolvedAutoZoomOptions
   startMs: number
   currentZoomEnd: FocusChangeZoom['end'] | undefined
 }): FocusChangeZoom | undefined {

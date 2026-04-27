@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'fs'
 import { writeFile } from 'fs/promises'
 import { dirname, join, resolve } from 'path'
 import { fileURLToPath } from 'url'
+import { invalidOptionError, ScreenciError } from './errors.js'
 import type {
   AutoZoomOptions,
   CueConfig,
@@ -12,11 +13,21 @@ import type {
 } from './types.js'
 import { RENDER_OPTIONS_DEFAULTS } from './types.js'
 import type { VoiceKey } from './voices.js'
-import {
-  DEFAULT_ZOOM_AMOUNT,
-  DEFAULT_ZOOM_DURATION,
-  DEFAULT_ZOOM_EASING,
-} from './defaults.js'
+import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
+
+function assertAutoZoomUnitIntervalOption(
+  value: number,
+  name: 'amount' | 'centering'
+): void {
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw invalidOptionError({
+      api: 'autoZoom',
+      option: name,
+      expectation: 'must be between 0 and 1',
+      value,
+    })
+  }
+}
 
 export type VideoStartEvent = {
   type: 'videoStart'
@@ -403,15 +414,12 @@ export class EventRecorder implements IEventRecorder {
 
   registerVoiceForLang(_lang: string, _meta: VoiceLanguageMeta): void {}
 
-  private clampUnitInterval(value: number): number {
-    return Math.max(0, Math.min(1, value))
-  }
-
   private normalizeCentering(
     options: AutoZoomOptions | undefined
   ): number | undefined {
     if (options?.centering === undefined) return undefined
-    return this.clampUnitInterval(options.centering)
+    assertAutoZoomUnitIntervalOption(options.centering, 'centering')
+    return options.centering
   }
 
   start(): void {
@@ -645,17 +653,22 @@ export class EventRecorder implements IEventRecorder {
       const existingStart = existingBounds.startMs
       const existingEnd = existingBounds.endMs
       if (timeMs > existingStart && timeMs < existingEnd) {
-        throw new Error(
+        throw new ScreenciError(
           `autoZoomStart at ${timeMs}ms falls inside input '${existing.subType}' event [${existingStart}ms, ${existingEnd}ms]`
         )
       }
     }
+    const resolvedOptions = {
+      ...DEFAULT_ZOOM_OPTIONS,
+      ...(options ?? {}),
+    }
+    assertAutoZoomUnitIntervalOption(resolvedOptions.amount, 'amount')
     this.events.push({
       type: 'autoZoomStart',
       timeMs,
-      easing: options?.easing ?? DEFAULT_ZOOM_EASING,
-      duration: options?.duration ?? DEFAULT_ZOOM_DURATION,
-      amount: options?.amount ?? DEFAULT_ZOOM_AMOUNT,
+      easing: resolvedOptions.easing,
+      duration: resolvedOptions.duration,
+      amount: resolvedOptions.amount,
       ...(centering !== undefined && {
         centering,
       }),
@@ -671,16 +684,20 @@ export class EventRecorder implements IEventRecorder {
       const existingStart = existingBounds.startMs
       const existingEnd = existingBounds.endMs
       if (timeMs > existingStart && timeMs < existingEnd) {
-        throw new Error(
+        throw new ScreenciError(
           `autoZoomEnd at ${timeMs}ms falls inside input '${existing.subType}' event [${existingStart}ms, ${existingEnd}ms]`
         )
       }
     }
+    const resolvedOptions = {
+      ...DEFAULT_ZOOM_OPTIONS,
+      ...(options ?? {}),
+    }
     this.events.push({
       type: 'autoZoomEnd',
       timeMs,
-      easing: options?.easing ?? DEFAULT_ZOOM_EASING,
-      duration: options?.duration ?? DEFAULT_ZOOM_DURATION,
+      easing: resolvedOptions.easing,
+      duration: resolvedOptions.duration,
     })
   }
 

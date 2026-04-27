@@ -1090,6 +1090,24 @@ function resolveFocusOptions(params: {
         amount: 1,
         centering: DEFAULT_ZOOM_OPTIONS.centering,
       }
+  const currentZoomViewport = params.state.currentZoomViewport
+  const currentZoomEnd = currentZoomViewport?.end ?? {
+    pointPx: { x: 0, y: 0 },
+    size: {
+      widthPx: params.viewportSize.width,
+      heightPx: params.viewportSize.height,
+    },
+  }
+
+  if (
+    currentZoomViewport !== undefined &&
+    currentZoomEnd.pointPx.x === 0 &&
+    currentZoomEnd.pointPx.y === 0 &&
+    currentZoomEnd.size.widthPx === params.viewportSize.width &&
+    currentZoomEnd.size.heightPx === params.viewportSize.height
+  ) {
+    focusOptions.centering = 1
+  }
 
   const mouseMoveDuration = resolveMouseMovePlan({
     mouseMove: params.mouseMove,
@@ -1099,13 +1117,7 @@ function resolveFocusOptions(params: {
 
   return {
     focusOptions,
-    currentZoomEnd: params.state.currentZoomViewport?.end ?? {
-      pointPx: { x: 0, y: 0 },
-      size: {
-        widthPx: params.viewportSize.width,
-        heightPx: params.viewportSize.height,
-      },
-    },
+    currentZoomEnd,
     duration: Math.max(focusOptions.duration, mouseMoveDuration ?? 0),
   }
 }

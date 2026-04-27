@@ -501,6 +501,40 @@ describe('changeFocus', () => {
     expect(result?.zoom?.optimalOffset).toEqual({ x: -0.25, y: 0 })
   })
 
+  it('forces centering to 1 when the current zoom already fills the viewport', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+    let result: Awaited<ReturnType<typeof changeFocus>> | undefined
+
+    const promise = autoZoom(
+      async () => {
+        setCurrentZoomViewport({
+          focusPoint: { x: 0, y: 0 },
+          elementRect: { x: 0, y: 0, width: 1280, height: 720 },
+          end: {
+            pointPx: { x: 0, y: 0 },
+            size: { widthPx: 1280, heightPx: 720 },
+          },
+          viewportSize: { width: 1280, height: 720 },
+          optimalOffset: { x: 0, y: 0 },
+        })
+        result = await changeFocus(locator, { amount: 0.5, centering: 0 })
+      },
+      { amount: 0.5, centering: 0, duration: 300, postZoomDelay: 0 }
+    )
+
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(result?.zoom?.end).toEqual({
+      pointPx: { x: 0, y: 360 },
+      size: { widthPx: 640, heightPx: 360 },
+    })
+  })
+
   it('scrolls only by the residual amount zoom cannot absorb', async () => {
     const locator = makeLocatorMock({
       rect: { x: 1400, y: 520, width: 420, height: 80 },

@@ -152,7 +152,6 @@ export async function autoZoom(
                     currentAutoZoomState.currentZoomViewport.elementRect,
                 }
               : {}),
-            focusOnly: true,
             zoom: {
               startMs: zoomOutStartMs,
               endMs:

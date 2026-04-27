@@ -45,7 +45,6 @@ export type FocusChangeEvent = {
       y: number
     }
   }
-  focusOnly?: boolean
   elementRect?: ElementRect
 }
 

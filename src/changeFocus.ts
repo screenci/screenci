@@ -1195,9 +1195,6 @@ export async function changeFocus(
       : {}),
     ...(zoomEvent !== undefined ? { zoom: zoomEvent } : {}),
     elementRect: plan.finalLocatorRect,
-    ...(!mouseChange && (plan.scrollNeeded || zoomEvent !== undefined)
-      ? { focusOnly: true }
-      : {}),
   }
 
   setCurrentZoomViewport({

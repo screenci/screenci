@@ -356,7 +356,6 @@ describe('autoZoom', () => {
           type: 'focusChange',
           x: 120,
           y: 180,
-          focusOnly: true,
           zoom: expect.objectContaining({
             endMs: expect.any(Number),
             end: {

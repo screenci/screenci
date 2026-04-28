@@ -52,6 +52,8 @@ type MouseMoveRequest = {
 type ViewportSize = { width: number; height: number }
 type Point = { x: number; y: number }
 
+type ViewportSide = 'left' | 'right' | 'top' | 'bottom'
+
 type FocusSnapshot = {
   locatorRect: ElementRect
   viewportSize: ViewportSize
@@ -101,7 +103,14 @@ type UnifiedFocusPlan = {
   optimalOffset: Point
 }
 
+type ScrollAndZoomTimingPlan = {
+  startDelay: number
+  duration: number
+}
+
 const POSITION_EPSILON_PX = 0.5
+const CURSOR_TRIGGER_EDGE_THRESHOLD = 0.3
+const CURSOR_TRIGGER_MAX_PROGRESS = 0.6
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -183,6 +192,130 @@ export function resolveOptimalOffset(ideal: Point, actual: Point): Point {
   return {
     x: ideal.x - actual.x,
     y: ideal.y - actual.y,
+  }
+}
+
+function resolveNearestViewportSide(
+  point: Point,
+  viewportSize: ViewportSize
+): ViewportSide {
+  const distances = [
+    { side: 'left' as const, distance: point.x },
+    { side: 'right' as const, distance: viewportSize.width - point.x },
+    { side: 'top' as const, distance: point.y },
+    { side: 'bottom' as const, distance: viewportSize.height - point.y },
+  ]
+
+  return distances.reduce((nearest, current) =>
+    current.distance < nearest.distance ? current : nearest
+  ).side
+}
+
+function resolveCursorTriggerCoordinate(params: {
+  side: ViewportSide
+  viewportSize: ViewportSize
+  target: Point
+  threshold: number
+}): number {
+  const { side, viewportSize, target, threshold } = params
+
+  switch (side) {
+    case 'left':
+      return Math.max(target.x, viewportSize.width * threshold)
+    case 'right':
+      return Math.min(target.x, viewportSize.width * (1 - threshold))
+    case 'top':
+      return Math.max(target.y, viewportSize.height * threshold)
+    case 'bottom':
+      return Math.min(target.y, viewportSize.height * (1 - threshold))
+  }
+}
+
+function hasReachedCursorTrigger(params: {
+  side: ViewportSide
+  point: Point
+  triggerCoordinate: number
+}): boolean {
+  const { side, point, triggerCoordinate } = params
+
+  switch (side) {
+    case 'left':
+      return point.x <= triggerCoordinate
+    case 'right':
+      return point.x >= triggerCoordinate
+    case 'top':
+      return point.y <= triggerCoordinate
+    case 'bottom':
+      return point.y >= triggerCoordinate
+  }
+}
+
+export function resolveScrollAndZoomTimingPlan(params: {
+  viewportSize: ViewportSize
+  target: Point
+  startViewportPos: Point
+  duration: number
+  easing: Easing
+  cursorTriggerEdgeThreshold: number
+  cursorTriggerMaxProgress: number
+}): ScrollAndZoomTimingPlan {
+  const {
+    viewportSize,
+    target,
+    startViewportPos,
+    duration,
+    easing,
+    cursorTriggerEdgeThreshold,
+    cursorTriggerMaxProgress,
+  } = params
+
+  if (duration <= 0) {
+    return { startDelay: 0, duration: Math.max(0, duration) }
+  }
+
+  const latestStartDelay = duration * cursorTriggerMaxProgress
+
+  const side = resolveNearestViewportSide(target, viewportSize)
+  const triggerCoordinate = resolveCursorTriggerCoordinate({
+    side,
+    viewportSize,
+    target,
+    threshold: cursorTriggerEdgeThreshold,
+  })
+
+  if (
+    hasReachedCursorTrigger({
+      side,
+      point: startViewportPos,
+      triggerCoordinate,
+    })
+  ) {
+    return { startDelay: 0, duration }
+  }
+
+  const frameMs = 1000 / 60
+  const steps = Math.max(1, Math.floor(duration / frameMs))
+
+  for (let step = 1; step <= steps; step += 1) {
+    const t = step / steps
+    const easedT = evaluateEasingAtT(t, easing)
+    const point = {
+      x: startViewportPos.x + (target.x - startViewportPos.x) * easedT,
+      y: startViewportPos.y + (target.y - startViewportPos.y) * easedT,
+    }
+
+    if (hasReachedCursorTrigger({ side, point, triggerCoordinate })) {
+      const startDelay = Math.min(duration * t, latestStartDelay)
+      return {
+        startDelay,
+        duration: Math.max(0, duration - startDelay),
+      }
+    }
+  }
+
+  return {
+    startDelay: latestStartDelay,
+    duration: Math.max(0, duration - latestStartDelay),
   }
 }
 
@@ -1051,11 +1184,29 @@ async function executeScrollAndZoomPlan(params: {
 function resolveMouseMovePlan(params: {
   mouseMove: MouseMoveRequest | undefined
   mouseTarget: Point
-}): { mouseTarget: Point } | undefined {
+  viewportSize: ViewportSize
+  duration: number
+  easing: Easing
+  cursorTriggerEdgeThreshold: number
+  cursorTriggerMaxProgress: number
+}):
+  | { mouseTarget: Point; scrollAndZoomTiming: ScrollAndZoomTimingPlan }
+  | undefined {
   const { mouseMove, mouseTarget } = params
   if (mouseMove === undefined) return undefined
 
-  return { mouseTarget }
+  return {
+    mouseTarget,
+    scrollAndZoomTiming: resolveScrollAndZoomTimingPlan({
+      viewportSize: params.viewportSize,
+      target: mouseTarget,
+      startViewportPos: mouseMove.startViewportPos,
+      duration: params.duration,
+      easing: params.easing,
+      cursorTriggerEdgeThreshold: params.cursorTriggerEdgeThreshold,
+      cursorTriggerMaxProgress: params.cursorTriggerMaxProgress,
+    }),
+  }
 }
 
 function resolveFocusOptions(params: {
@@ -1143,6 +1294,11 @@ export async function changeFocus(
 
   const mouseMovePlan = resolveMouseMovePlan({
     mouseMove,
+    viewportSize: snapshot.viewportSize,
+    duration: timing.duration,
+    easing: timing.easing,
+    cursorTriggerEdgeThreshold: CURSOR_TRIGGER_EDGE_THRESHOLD,
+    cursorTriggerMaxProgress: CURSOR_TRIGGER_MAX_PROGRESS,
     mouseTarget: {
       x: plan.finalLocatorRect.x + (mouseMove?.targetPosInElement.x ?? 0),
       y: plan.finalLocatorRect.y + (mouseMove?.targetPosInElement.y ?? 0),
@@ -1166,14 +1322,28 @@ export async function changeFocus(
         })
       : Promise.resolve(undefined)
 
-  const scrollAndZoomPromise = executeScrollAndZoomPlan({
-    locator,
-    ancestorScrollPlans: plan.ancestorScrollPlans,
-    pageScrollPlan: plan.pageScrollPlan,
-    zoomNeeded: plan.zoomNeeded,
-    duration: timing.duration,
-    easing: timing.easing,
-  })
+  const scrollAndZoomPromise =
+    mouseMovePlan?.scrollAndZoomTiming.startDelay !== undefined &&
+    mouseMovePlan.scrollAndZoomTiming.startDelay > 0
+      ? sleep(mouseMovePlan.scrollAndZoomTiming.startDelay).then(() =>
+          executeScrollAndZoomPlan({
+            locator,
+            ancestorScrollPlans: plan.ancestorScrollPlans,
+            pageScrollPlan: plan.pageScrollPlan,
+            zoomNeeded: plan.zoomNeeded,
+            duration: mouseMovePlan.scrollAndZoomTiming.duration,
+            easing: timing.easing,
+          })
+        )
+      : executeScrollAndZoomPlan({
+          locator,
+          ancestorScrollPlans: plan.ancestorScrollPlans,
+          pageScrollPlan: plan.pageScrollPlan,
+          zoomNeeded: plan.zoomNeeded,
+          duration:
+            mouseMovePlan?.scrollAndZoomTiming.duration ?? timing.duration,
+          easing: timing.easing,
+        })
 
   const [mouseMoveResult, scrollAndZoomResult] = await Promise.all([
     mousePromise,

@@ -6,6 +6,7 @@ import {
   changeFocus,
   resolveFixedFocusViewportSize,
   resolveIdealFocusOriginForAxis,
+  resolveScrollAndZoomTimingPlan,
   resolveTargetRectPosition,
 } from './changeFocus.js'
 import { resolveZoomTarget } from './zoom.js'
@@ -234,6 +235,48 @@ describe('changeFocus helpers', () => {
     ).toBe(1020)
   })
 
+  it('delays scroll and zoom until the cursor reaches the configured side threshold', () => {
+    expect(
+      resolveScrollAndZoomTimingPlan({
+        viewportSize: { width: 1280, height: 720 },
+        target: { x: 1160, y: 300 },
+        startViewportPos: { x: -200, y: 300 },
+        duration: 1000,
+        easing: 'linear',
+        cursorTriggerEdgeThreshold: 0.25,
+        cursorTriggerMaxProgress: 1,
+      })
+    ).toEqual({ startDelay: 864.406779661017, duration: 135.59322033898297 })
+  })
+
+  it('starts scroll and zoom immediately when the cursor is already close enough offscreen', () => {
+    expect(
+      resolveScrollAndZoomTimingPlan({
+        viewportSize: { width: 1280, height: 720 },
+        target: { x: 1160, y: 300 },
+        startViewportPos: { x: 1400, y: 300 },
+        duration: 1000,
+        easing: 'linear',
+        cursorTriggerEdgeThreshold: 0.25,
+        cursorTriggerMaxProgress: 1,
+      })
+    ).toEqual({ startDelay: 0, duration: 1000 })
+  })
+
+  it('starts scroll and zoom no later than the configured mouse progress fallback', () => {
+    expect(
+      resolveScrollAndZoomTimingPlan({
+        viewportSize: { width: 1280, height: 720 },
+        target: { x: 1160, y: 300 },
+        startViewportPos: { x: -200, y: 300 },
+        duration: 1000,
+        easing: 'linear',
+        cursorTriggerEdgeThreshold: 0.25,
+        cursorTriggerMaxProgress: 0.5,
+      })
+    ).toEqual({ startDelay: 500, duration: 500 })
+  })
+
   it('resolves the target rect position inside the target viewport', () => {
     expect(
       resolveTargetRectPosition({
@@ -304,29 +347,30 @@ describe('changeFocus helpers', () => {
   })
 
   it('keeps optimalOffset at zero when framing is achieved', () => {
-    expect(
-      resolveZoomTarget({
-        locatorRect: { x: 320, y: 160, width: 120, height: 40 },
-        viewport: { width: 1280, height: 720 },
-        targetViewport: resolveFixedFocusViewportSize(
+    const target = resolveZoomTarget({
+      locatorRect: { x: 320, y: 160, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      targetViewport: resolveFixedFocusViewportSize(
+        { width: 1280, height: 720 },
+        0.5
+      ),
+      targetRectPositionInZoomViewport: resolveTargetRectPosition({
+        containerSize: resolveFixedFocusViewportSize(
           { width: 1280, height: 720 },
           0.5
         ),
-        targetRectPositionInZoomViewport: resolveTargetRectPosition({
-          containerSize: resolveFixedFocusViewportSize(
-            { width: 1280, height: 720 },
-            0.5
-          ),
-          rect: { x: 320, y: 160, width: 120, height: 40 },
-          amount: 1,
-          centering: 1,
-        }),
-      }).optimalOffset
-    ).toEqual({ x: 0, y: 0 })
+        rect: { x: 320, y: 160, width: 120, height: 40 },
+        amount: 1,
+        centering: 1,
+      }),
+    })
+
+    expect(target).toBeDefined()
+    expect(target?.optimalOffset).toEqual({ x: 0, y: 0 })
   })
 
   it('uses non-zero optimalOffset when bounds prevent the target framing', () => {
-    const optimalOffset = resolveZoomTarget({
+    const target = resolveZoomTarget({
       locatorRect: { x: 10, y: 10, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
       targetViewport: resolveFixedFocusViewportSize(
@@ -342,10 +386,11 @@ describe('changeFocus helpers', () => {
         amount: 1,
         centering: 1,
       }),
-    }).optimalOffset
+    })
 
-    expect(optimalOffset.x).not.toBe(0)
-    expect(optimalOffset.y).not.toBe(0)
+    expect(target).toBeDefined()
+    expect(target?.optimalOffset.x).not.toBe(0)
+    expect(target?.optimalOffset.y).not.toBe(0)
   })
 
   it('prefers the nearest valid zoom origin instead of snapping to the top-left', () => {
@@ -426,25 +471,26 @@ describe('changeFocus', () => {
     const result = await promise
 
     expect(result.elementRect?.y).toBeLessThan(240)
-    expect(
-      resolveZoomTarget({
-        locatorRect: result.elementRect!,
-        viewport: { width: 1280, height: 720 },
-        targetViewport: resolveFixedFocusViewportSize(
+    const target = resolveZoomTarget({
+      locatorRect: result.elementRect!,
+      viewport: { width: 1280, height: 720 },
+      targetViewport: resolveFixedFocusViewportSize(
+        { width: 1280, height: 720 },
+        0.5
+      ),
+      targetRectPositionInZoomViewport: resolveTargetRectPosition({
+        containerSize: resolveFixedFocusViewportSize(
           { width: 1280, height: 720 },
           0.5
         ),
-        targetRectPositionInZoomViewport: resolveTargetRectPosition({
-          containerSize: resolveFixedFocusViewportSize(
-            { width: 1280, height: 720 },
-            0.5
-          ),
-          rect: result.elementRect!,
-          amount: 1,
-          centering: 1,
-        }),
-      }).optimalOffset.y
-    ).toBeGreaterThanOrEqual(0)
+        rect: result.elementRect!,
+        amount: 1,
+        centering: 1,
+      }),
+    })
+
+    expect(target).toBeDefined()
+    expect(target?.optimalOffset.y).toBeGreaterThanOrEqual(0)
   })
 
   it('does not scroll just to improve framing when the requested framing is already met', async () => {
@@ -728,6 +774,59 @@ describe('changeFocus', () => {
 
     expect(result?.scroll?.startMs).toBe(result?.zoom?.startMs)
     expect(result?.scroll?.endMs).toBeLessThanOrEqual(result?.zoom?.endMs ?? 0)
+  })
+
+  it('delays scroll and zoom until the cursor reaches the configured threshold', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 1100, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+    const mouseMoveInternal = vi.fn().mockResolvedValue(undefined)
+    let result: Awaited<ReturnType<typeof changeFocus>> | undefined
+
+    const promise = autoZoom(
+      async () => {
+        setCurrentZoomViewport({
+          focusPoint: { x: 100, y: 120 },
+          elementRect: { x: 80, y: 100, width: 120, height: 40 },
+          end: {
+            pointPx: { x: 0, y: 0 },
+            size: { widthPx: 1280, heightPx: 720 },
+          },
+          viewportSize: { width: 1280, height: 720 },
+        })
+        result = await changeFocus(
+          locator,
+          { duration: 1000, easing: 'linear' },
+          {
+            page: {},
+            mouseMoveInternal,
+            startViewportPos: { x: -200, y: 300 },
+            targetPosInElement: { x: 60, y: 20 },
+            duration: 100,
+            easing: 'linear',
+            context: 'test move',
+          }
+        )
+      },
+      { duration: 1000, postZoomDelay: 0 }
+    )
+
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(result?.mouse?.startMs).toBeGreaterThanOrEqual(0)
+    expect(
+      (result?.scroll?.endMs ?? 0) - (result?.scroll?.startMs ?? 0)
+    ).toBeGreaterThanOrEqual(16)
+    expect(
+      (result?.zoom?.endMs ?? 0) - (result?.zoom?.startMs ?? 0)
+    ).toBeGreaterThanOrEqual(16)
+    expect(result?.scroll?.startMs).toBeLessThan(
+      result?.mouse?.endMs ?? Infinity
+    )
+    expect(result?.zoom?.startMs).toBeLessThan(result?.mouse?.endMs ?? Infinity)
   })
 
   it('applies pre and post delays even when no focus change is needed', async () => {

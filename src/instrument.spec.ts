@@ -859,15 +859,14 @@ describe('instrumentLocator', () => {
     )
 
     await vi.runAllTimersAsync()
-    expect(checkMock).toHaveBeenCalledTimes(2)
+    expect(checkMock).toHaveBeenCalledTimes(1)
 
     await p
 
     expect(recordedInputEvents).toHaveLength(1)
     const check = recordedInputEvents[0]!
     expect(check.subType).toBe('check')
-    expect(check.events.some((e) => e.type === 'mouseDown')).toBe(true)
-    expect(check.events.some((e) => e.type === 'mouseUp')).toBe(true)
+    expect(check.events.some((e) => e.type === 'focusChange')).toBe(true)
   })
 
   it('does not synthesize mouse presses for fill without click inside autoZoom', async () => {

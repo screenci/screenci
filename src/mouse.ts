@@ -60,10 +60,18 @@ type PerformMouseClickActionOptions = {
   supportsTrial: boolean
   targetX: number
   targetY: number
-  shouldHideMouse?: boolean
   clickOptions?: LocatorMouseActionOptions
   easing?: Easing
-}
+} & (
+  | {
+      mode: 'singleBefore' | 'tripleBefore'
+      shouldHideMouse?: boolean
+    }
+  | {
+      mode: 'singleDuring'
+      shouldHideMouse?: never
+    }
+)
 
 export type MouseClickActionResult = {
   elementRect?: ElementRect
@@ -380,6 +388,12 @@ function sleep(ms: number): Promise<void> {
 export async function performMouseClickAction(
   options: PerformMouseClickActionOptions
 ): Promise<MouseClickActionResult> {
+  const page = options.locator.page()
+  const halfClickDuration = CLICK_DURATION_MS / 2
+  const easing = options.easing ?? 'ease-in-out'
+  const events: Array<MouseDownEvent | MouseHideEvent | MouseUpEvent> = []
+  const mode = options.mode ?? 'singleDuring'
+
   if (options.supportsTrial) {
     await options.doClick({
       ...options.clickOptions,
@@ -387,27 +401,92 @@ export async function performMouseClickAction(
     })
   }
 
-  const page = options.locator.page()
-  const halfClickDuration = CLICK_DURATION_MS / 2
-  const startMs = Date.now()
-  await sleep(halfClickDuration)
+  if (mode === 'tripleBefore') {
+    for (let i = 0; i < 3; i++) {
+      const startMs = Date.now()
+      await sleep(CLICK_DURATION_MS)
 
-  let mouseHideEvent: MouseHideEvent | undefined
-  if (options.shouldHideMouse && isMouseVisible(page)) {
-    setMouseVisible(page, false)
-    const hideMs = Date.now()
-    mouseHideEvent = {
-      type: 'mouseHide',
-      startMs: hideMs,
-      endMs: hideMs,
+      const endMs = Date.now()
+      const clickTimeMs = startMs + (endMs - startMs) / 2
+
+      events.push(
+        buildMouseDownEvent({
+          startMs,
+          endMs: clickTimeMs,
+          easing,
+        }),
+        buildMouseUpEvent({
+          startMs: clickTimeMs,
+          endMs,
+          easing,
+        })
+      )
     }
+
+    if (options.shouldHideMouse && isMouseVisible(page)) {
+      setMouseVisible(page, false)
+      const hideMs = Date.now()
+      events.push({
+        type: 'mouseHide',
+        startMs: hideMs,
+        endMs: hideMs,
+      })
+    }
+
+    await options.doClick(options.clickOptions)
+  } else if (mode === 'singleBefore') {
+    const startMs = Date.now()
+    await sleep(CLICK_DURATION_MS)
+    const endMs = Date.now()
+    const clickTimeMs = startMs + (endMs - startMs) / 2
+
+    events.push(
+      buildMouseDownEvent({
+        startMs,
+        endMs: clickTimeMs,
+        easing,
+      }),
+      buildMouseUpEvent({
+        startMs: clickTimeMs,
+        endMs,
+        easing,
+      })
+    )
+
+    if (options.shouldHideMouse && isMouseVisible(page)) {
+      setMouseVisible(page, false)
+      const hideMs = Date.now()
+      events.push({
+        type: 'mouseHide',
+        startMs: hideMs,
+        endMs: hideMs,
+      })
+    }
+
+    await options.doClick(options.clickOptions)
+  } else {
+    const startMs = Date.now()
+    await sleep(halfClickDuration)
+
+    await options.doClick(options.clickOptions)
+    await sleep(halfClickDuration)
+    const endMs = Date.now()
+    const clickTimeMs = startMs + (endMs - startMs) / 2
+
+    events.push(
+      buildMouseDownEvent({
+        startMs,
+        endMs: clickTimeMs,
+        easing,
+      }),
+      buildMouseUpEvent({
+        startMs: clickTimeMs,
+        endMs,
+        easing,
+      })
+    )
   }
 
-  await options.doClick(options.clickOptions)
-  await sleep(halfClickDuration)
-  const endMs = startMs + CLICK_DURATION_MS
-  const easing = options.easing ?? 'ease-in-out'
-  const clickTimeMs = startMs + halfClickDuration
   const elementRect = await options.locator.boundingBox()
   if (!elementRect) {
     logger.warn('[screenci] Unable to resolve locator bounds after action.')
@@ -417,19 +496,7 @@ export async function performMouseClickAction(
 
   return {
     ...(elementRect ? { elementRect } : {}),
-    events: [
-      buildMouseDownEvent({
-        startMs,
-        endMs: clickTimeMs,
-        easing,
-      }),
-      ...(mouseHideEvent ? [mouseHideEvent] : []),
-      buildMouseUpEvent({
-        startMs: clickTimeMs,
-        endMs,
-        easing,
-      }),
-    ],
+    events,
   }
 }
 

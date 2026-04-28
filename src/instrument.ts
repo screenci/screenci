@@ -1009,6 +1009,36 @@ export function instrumentLocator(locator: Locator): Locator {
     }
   }
 
+  const originalScrollIntoViewIfNeeded =
+    locator.scrollIntoViewIfNeeded.bind(locator)
+  locator.scrollIntoViewIfNeeded = async (
+    options?: Parameters<Locator['scrollIntoViewIfNeeded']>[0] & {
+      easing?: Easing
+      duration?: number
+      /** 0–1: fraction of output dimensions visible in the zoomed viewport (default 0.5) */
+      amount?: number
+      /** 0–1: visibility bias inside the zoomed viewport; 0 = barely fit, 1 = centered. */
+      centering?: number
+    }
+  ): Promise<void> => {
+    if (isInsideHide()) {
+      return originalScrollIntoViewIfNeeded(options)
+    }
+
+    const {
+      easing = 'ease-in-out',
+      duration,
+      amount,
+      centering,
+    } = options ?? {}
+    await changeFocus(locator, {
+      easing,
+      ...(duration !== undefined ? { duration } : {}),
+      ...(amount !== undefined ? { amount } : {}),
+      ...(centering !== undefined ? { centering } : {}),
+    })
+  }
+
   const originalSelectText = locator.selectText.bind(locator)
   locator.selectText = async (
     options?: Parameters<Locator['selectText']>[0] & {

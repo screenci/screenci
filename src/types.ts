@@ -259,10 +259,9 @@ export type AutoZoomOptions = {
   amount?: number
   /** 0–1: visibility bias inside the zoomed viewport; 0 = barely fit, 1 = centered. */
   centering?: number
-  /** Delay in milliseconds to hold the zoomed-in state after the zoom-in
-   *  animation completes, and to hold the full view after the zoom-out
-   *  animation completes. Defaults to 500. */
+  /** Delay in milliseconds to hold the zoomed-in state after the zoom-in animation completes. */
   preZoomDelay?: number
+  /** Delay in milliseconds to hold the full view after the zoom-out animation completes. */
   postZoomDelay?: number
 }
 

@@ -682,6 +682,19 @@ describe('instrumentLocator', () => {
     expect(getMousePosition(page)).toEqual({ x: 108, y: 208 })
   })
 
+  it('defaults locator clicks to the element center when no position is provided', async () => {
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const bb = { x: 100, y: 200, width: 80, height: 40 }
+    const locator = makeLocatorMock(bb, page)
+    instrumentLocator(locator)
+
+    await Promise.all([locator.click(), vi.runAllTimersAsync()])
+
+    expect(getMousePosition(page)).toEqual({ x: 140, y: 220 })
+  })
+
   it('snaps the real mouse after scroll while keeping the recorded move duration', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)

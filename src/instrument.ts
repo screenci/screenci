@@ -466,7 +466,7 @@ export function instrumentLocator(locator: Locator): Locator {
 
     const result = await performAction(
       {
-        targetPosInElement: position ?? { x: 0, y: 0 },
+        ...(position !== undefined ? { targetPosInElement: position } : {}),
         ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
         ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
         easing: moveEasing ?? 'ease-in-out',
@@ -1031,12 +1031,16 @@ export function instrumentLocator(locator: Locator): Locator {
       amount,
       centering,
     } = options ?? {}
-    await changeFocus(locator, {
+    const result = await changeFocus(locator, {
       easing,
       ...(duration !== undefined ? { duration } : {}),
       ...(amount !== undefined ? { amount } : {}),
       ...(centering !== undefined ? { centering } : {}),
     })
+
+    if (activeClickRecorder) {
+      activeClickRecorder.addInput('focusChange', result.elementRect, [result])
+    }
   }
 
   const originalSelectText = locator.selectText.bind(locator)

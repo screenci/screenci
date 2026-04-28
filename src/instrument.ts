@@ -239,7 +239,6 @@ async function performClickActions(
   const mouseMovePlan =
     targetPos && locatorRectPreview
       ? {
-          startViewportPos: getMousePosition(page) ?? { x: 0, y: 0 },
           targetPosInElement: targetPos,
           ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
           ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
@@ -1190,7 +1189,6 @@ export function instrumentLocator(locator: Locator): Locator {
     const mouseMovePlan =
       targetPos && hasLocatorRectPreview
         ? {
-            startViewportPos: getMousePosition(page) ?? { x: 0, y: 0 },
             targetPosInElement: targetPos,
             ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
             ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
@@ -1271,7 +1269,6 @@ export function instrumentLocator(locator: Locator): Locator {
     const mouseMovePlan =
       targetPos && locatorRectPreview
         ? {
-            startViewportPos: getMousePosition(page) ?? { x: 0, y: 0 },
             targetPosInElement: targetPos,
             ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
             ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),

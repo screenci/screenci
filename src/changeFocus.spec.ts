@@ -9,7 +9,7 @@ import {
   resolveScrollAndZoomTimingPlan,
   resolveTargetRectPosition,
 } from './changeFocus.js'
-import { setOriginalMouseMove } from './mouse.js'
+import { setMousePosition, setOriginalMouseMove } from './mouse.js'
 import { resolveZoomTarget } from './zoom.js'
 
 type MockDoc = {
@@ -524,6 +524,7 @@ describe('changeFocus', () => {
 
     const promise = autoZoom(
       async () => {
+        setMousePosition(locator.page(), { x: 0, y: 0 })
         setCurrentZoomViewport({
           focusPoint: { x: 100, y: 120 },
           elementRect: { x: 80, y: 100, width: 120, height: 40 },
@@ -712,6 +713,7 @@ describe('changeFocus', () => {
 
     const promise = autoZoom(
       async () => {
+        setMousePosition(locator.page(), { x: 0, y: 0 })
         setCurrentZoomViewport({
           focusPoint: { x: 100, y: 120 },
           elementRect: { x: 80, y: 100, width: 120, height: 40 },
@@ -725,7 +727,6 @@ describe('changeFocus', () => {
           locator,
           { duration: 300, easing: 'ease-in' },
           {
-            startViewportPos: { x: 0, y: 0 },
             targetPosInElement: { x: 60, y: 20 },
             duration: 100,
             easing: 'linear',
@@ -790,6 +791,7 @@ describe('changeFocus', () => {
 
     const promise = autoZoom(
       async () => {
+        setMousePosition(locator.page(), { x: -200, y: 300 })
         setCurrentZoomViewport({
           focusPoint: { x: 100, y: 120 },
           elementRect: { x: 80, y: 100, width: 120, height: 40 },
@@ -803,7 +805,6 @@ describe('changeFocus', () => {
           locator,
           { duration: 1000, easing: 'linear' },
           {
-            startViewportPos: { x: -200, y: 300 },
             targetPosInElement: { x: 60, y: 20 },
             duration: 100,
             easing: 'linear',
@@ -827,6 +828,48 @@ describe('changeFocus', () => {
       result?.mouse?.endMs ?? Infinity
     )
     expect(result?.zoom?.startMs).toBeLessThan(result?.mouse?.endMs ?? Infinity)
+  })
+
+  it('defaults mouse start position to the snapshot viewport center before 0,0', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 1100, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+    const mouseMoveInternal = vi.fn().mockResolvedValue(undefined)
+    setOriginalMouseMove(locator.page(), mouseMoveInternal)
+    let result: Awaited<ReturnType<typeof changeFocus>> | undefined
+
+    const promise = autoZoom(
+      async () => {
+        setCurrentZoomViewport({
+          focusPoint: { x: 100, y: 120 },
+          elementRect: { x: 80, y: 100, width: 120, height: 40 },
+          end: {
+            pointPx: { x: 0, y: 0 },
+            size: { widthPx: 1280, heightPx: 720 },
+          },
+          viewportSize: { width: 1280, height: 720 },
+        })
+        result = await changeFocus(
+          locator,
+          { duration: 1000, easing: 'linear' },
+          {
+            targetPosInElement: { x: 60, y: 20 },
+            duration: 100,
+            easing: 'linear',
+          }
+        )
+      },
+      { duration: 1000, postZoomDelay: 0 }
+    )
+
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(
+      (result?.scroll?.endMs ?? 0) - (result?.scroll?.startMs ?? 0)
+    ).toBeGreaterThan(400)
   })
 
   it('applies pre and post delays even when no focus change is needed', async () => {

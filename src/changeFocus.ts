@@ -3,7 +3,11 @@ import type { ElementRect, FocusChangeEvent } from './events.js'
 import { evaluateEasingAtT } from './easing.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import type { AutoZoomOptions, Easing } from './types.js'
-import { getOriginalMouseMove, performMouseMove } from './mouse.js'
+import {
+  getMousePosition,
+  getOriginalMouseMove,
+  performMouseMove,
+} from './mouse.js'
 import { getAutoZoomState, setCurrentZoomViewport } from './autoZoom.js'
 import {
   buildZoomEvent,
@@ -37,7 +41,6 @@ type ScrollWindow = Window & {
 }
 
 export type MouseMoveRequest = {
-  startViewportPos: { x: number; y: number }
   targetPosInElement: { x: number; y: number }
   duration?: number
   speed?: number
@@ -1178,6 +1181,7 @@ async function executeScrollAndZoomPlan(params: {
 
 function resolveMouseMovePlan(params: {
   mouseMove: MouseMoveRequest | undefined
+  startViewportPos: Point
   mouseTarget: Point
   viewportSize: ViewportSize
   duration: number
@@ -1195,7 +1199,7 @@ function resolveMouseMovePlan(params: {
     scrollAndZoomTiming: resolveScrollAndZoomTimingPlan({
       viewportSize: params.viewportSize,
       target: mouseTarget,
-      startViewportPos: mouseMove.startViewportPos,
+      startViewportPos: params.startViewportPos,
       duration: params.duration,
       easing: params.easing,
       cursorTriggerEdgeThreshold: params.cursorTriggerEdgeThreshold,
@@ -1266,6 +1270,10 @@ export async function changeFocus(
   const page = locator.page()
   const state = getAutoZoomState()
   const snapshot = await captureFocusSnapshot(locator)
+  const startViewportPos = getMousePosition(page) ?? {
+    x: snapshot.viewportSize.width / 2,
+    y: snapshot.viewportSize.height / 2,
+  }
   const { focusOptions, currentZoomEnd, timing } = resolveFocusOptions(
     mouseMove !== undefined
       ? {
@@ -1290,6 +1298,7 @@ export async function changeFocus(
 
   const mouseMovePlan = resolveMouseMovePlan({
     mouseMove,
+    startViewportPos,
     viewportSize: snapshot.viewportSize,
     duration: timing.duration,
     easing: timing.easing,

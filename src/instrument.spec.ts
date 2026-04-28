@@ -18,6 +18,7 @@ import {
   setCurrentZoomViewport,
 } from './autoZoom.js'
 import { hide } from './hide.js'
+import { CLICK_DURATION_MS } from './mouse.js'
 
 type DOMClickData = { x: number; y: number; targetRect: ElementRect }
 type ScrollLogicalPosition = 'start' | 'center' | 'end' | 'nearest'
@@ -816,7 +817,7 @@ describe('instrumentLocator', () => {
     })
   })
 
-  it('does not synthesize mouse presses for check without click inside autoZoom', async () => {
+  it('records click timing for check without click inside autoZoom', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
 
@@ -836,15 +837,15 @@ describe('instrumentLocator', () => {
     )
 
     await vi.runAllTimersAsync()
-    expect(checkMock).toHaveBeenCalledOnce()
+    expect(checkMock).toHaveBeenCalledTimes(2)
 
     await p
 
     expect(recordedInputEvents).toHaveLength(1)
     const check = recordedInputEvents[0]!
     expect(check.subType).toBe('check')
-    expect(check.events.some((e) => e.type === 'mouseDown')).toBe(false)
-    expect(check.events.some((e) => e.type === 'mouseUp')).toBe(false)
+    expect(check.events.some((e) => e.type === 'mouseDown')).toBe(true)
+    expect(check.events.some((e) => e.type === 'mouseUp')).toBe(true)
   })
 
   it('does not synthesize mouse presses for fill without click inside autoZoom', async () => {
@@ -937,6 +938,57 @@ describe('instrumentLocator', () => {
         expect.objectContaining({ type: 'mouseUp' }),
       ])
     )
+  })
+
+  it('records fixed click timing for check-with-click after scrolling', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 1200, width: 18, height: 18 },
+      page
+    )
+    const checkMock = locator.check as ReturnType<typeof vi.fn>
+    instrumentLocator(locator)
+
+    await Promise.all([
+      (
+        locator.check as (options?: {
+          click?: {
+            moveDuration?: number
+            beforeClickPause?: number
+            postClickPause?: number
+          }
+        }) => Promise<void>
+      )({
+        click: { moveDuration: 0, beforeClickPause: 0, postClickPause: 0 },
+      }),
+      vi.runAllTimersAsync(),
+    ])
+
+    expect(recordedInputEvents).toHaveLength(1)
+    const check = recordedInputEvents[0]!
+    expect(check.subType).toBe('check')
+    expect(checkMock).toHaveBeenCalledWith({
+      position: { x: 9, y: 9 },
+      trial: true,
+    })
+    expect(checkMock).toHaveBeenCalledWith({ position: { x: 9, y: 9 } })
+
+    const down = check.events.find((e) => e.type === 'mouseDown')
+    const up = check.events.find((e) => e.type === 'mouseUp')
+    expect(down).toBeDefined()
+    expect(up).toBeDefined()
+    if (down?.type !== 'mouseDown' || up?.type !== 'mouseUp') {
+      throw new Error('Expected mouseDown and mouseUp events')
+    }
+
+    expect(down.endMs - down.startMs).toBe(CLICK_DURATION_MS / 2)
+    expect(up.endMs - up.startMs).toBe(CLICK_DURATION_MS / 2)
+    expect(up.endMs - down.startMs).toBe(CLICK_DURATION_MS)
   })
 
   it('records a hover InputEvent with inner focusChange and mouseWait', async () => {

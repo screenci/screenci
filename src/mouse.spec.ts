@@ -1,5 +1,7 @@
+import type { Locator } from '@playwright/test'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  CLICK_DURATION_MS,
   assertDurationOrSpeed,
   getMousePosition,
   getOriginalMouseClick,
@@ -9,13 +11,15 @@ import {
   getOriginalMouseShow,
   getOriginalMouseUp,
   isMouseVisible,
-  performMouseClick,
+  performMouseClickAction,
   performMouseDown,
   performMouseHide,
   performMouseMove,
   performMouseShow,
   performMouseUp,
   resolveMouseMoveDuration,
+  setOriginalLocatorCheck,
+  setOriginalLocatorClick,
   setOriginalMouseClick,
   setOriginalMouseDown,
   setOriginalMouseHide,
@@ -107,31 +111,91 @@ describe('mouse helpers', () => {
 
   it('clicks the real mouse and returns press events', async () => {
     const page = {}
+    const locator = {
+      page: vi.fn().mockReturnValue(page),
+      boundingBox: vi
+        .fn()
+        .mockResolvedValue({ x: 10, y: 20, width: 30, height: 40 }),
+    } as unknown as Locator
     const mouseClickInternal = vi.fn().mockImplementation(async () => {
       await new Promise<void>((resolve) => setTimeout(resolve, 50))
     })
+    setOriginalLocatorClick(
+      locator,
+      mouseClickInternal as unknown as (options?: {
+        button?: 'left' | 'right' | 'middle'
+        clickCount?: number
+        delay?: number
+        position?: { x: number; y: number }
+        trial?: boolean
+      }) => Promise<void>
+    )
 
-    const promise = performMouseClick({
-      page,
-      mouseClickInternal,
-      x: 12,
-      y: 34,
+    const promise = performMouseClickAction({
+      locator,
+      interactionType: 'click',
+      targetX: 12,
+      targetY: 34,
       clickOptions: { clickCount: 2, delay: 20 },
     })
 
     await vi.runAllTimersAsync()
-    const [down, up] = await promise
+    const result = await promise
+    const { mouseDownEvent: down, mouseUpEvent: up } = result
 
-    expect(mouseClickInternal).toHaveBeenCalledWith(12, 34, {
+    expect(mouseClickInternal).toHaveBeenCalledWith({
       clickCount: 2,
       delay: 20,
     })
+    expect(result.elementRect).toEqual({ x: 10, y: 20, width: 30, height: 40 })
     expect(down.type).toBe('mouseDown')
     expect(up.type).toBe('mouseUp')
     expect(down.startMs).toBeLessThanOrEqual(down.endMs)
     expect(up.startMs).toBeLessThanOrEqual(up.endMs)
     expect(up.startMs).toBe(down.endMs)
+    expect(down.endMs - down.startMs).toBe(CLICK_DURATION_MS / 2)
+    expect(up.endMs - up.startMs).toBe(CLICK_DURATION_MS / 2)
+    expect(up.endMs - down.startMs).toBe(CLICK_DURATION_MS)
     expect(getMousePosition(page)).toEqual({ x: 12, y: 34 })
+  })
+
+  it('waits for clickability before the rendered click timing starts', async () => {
+    const page = {}
+    const locator = {
+      page: vi.fn().mockReturnValue(page),
+      boundingBox: vi
+        .fn()
+        .mockResolvedValue({ x: 10, y: 20, width: 30, height: 40 }),
+    } as unknown as Locator
+    const calls: string[] = []
+    const doClick = vi
+      .fn()
+      .mockImplementation(async (options?: { trial?: boolean }) => {
+        calls.push(options?.trial ? 'trialClickInternal' : 'mouseClickInternal')
+      })
+    setOriginalLocatorCheck(
+      locator,
+      doClick as unknown as (options?: {
+        button?: 'left' | 'right' | 'middle'
+        clickCount?: number
+        delay?: number
+        position?: { x: number; y: number }
+        trial?: boolean
+      }) => Promise<void>
+    )
+
+    const promise = performMouseClickAction({
+      locator,
+      interactionType: 'check',
+      targetX: 12,
+      targetY: 34,
+    })
+
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(doClick).toHaveBeenCalledTimes(2)
+    expect(calls).toEqual(['trialClickInternal', 'mouseClickInternal'])
   })
 
   it('stores mouse state through accessors', () => {

@@ -3,7 +3,7 @@ import type { ElementRect, FocusChangeEvent } from './events.js'
 import { evaluateEasingAtT } from './easing.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import type { AutoZoomOptions, Easing } from './types.js'
-import { performMouseMove } from './mouse.js'
+import { getOriginalMouseMove, performMouseMove } from './mouse.js'
 import { getAutoZoomState, setCurrentZoomViewport } from './autoZoom.js'
 import {
   buildZoomEvent,
@@ -36,17 +36,12 @@ type ScrollWindow = Window & {
   requestAnimationFrame?: (callback: FrameRequestCallback) => number
 }
 
-type MouseMoveRequest = {
-  page: object
-  mouseMoveInternal: (x: number, y: number) => Promise<void>
+export type MouseMoveRequest = {
   startViewportPos: { x: number; y: number }
   targetPosInElement: { x: number; y: number }
   duration?: number
   speed?: number
-  defaultDuration?: number
-  context: string
   easing: Easing
-  elementRect?: ElementRect
 }
 
 type ViewportSize = { width: number; height: number }
@@ -1268,6 +1263,7 @@ export async function changeFocus(
   options: AutoZoomOptions = {},
   mouseMove?: MouseMoveRequest
 ): Promise<FocusChangeEvent> {
+  const page = locator.page()
   const state = getAutoZoomState()
   const snapshot = await captureFocusSnapshot(locator)
   const { focusOptions, currentZoomEnd, timing } = resolveFocusOptions(
@@ -1313,8 +1309,11 @@ export async function changeFocus(
   const mousePromise =
     mouseMovePlan !== undefined
       ? performMouseMove({
-          page: mouseMove!.page,
-          mouseMoveInternal: mouseMove!.mouseMoveInternal,
+          page,
+          mouseMoveInternal: getOriginalMouseMove(
+            page,
+            page.mouse.move.bind(page.mouse)
+          ),
           targetX: mouseMovePlan.mouseTarget.x,
           targetY: mouseMovePlan.mouseTarget.y,
           duration: timing.duration,

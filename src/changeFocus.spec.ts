@@ -9,6 +9,7 @@ import {
   resolveScrollAndZoomTimingPlan,
   resolveTargetRectPosition,
 } from './changeFocus.js'
+import { setOriginalMouseMove } from './mouse.js'
 import { resolveZoomTarget } from './zoom.js'
 
 type MockDoc = {
@@ -181,6 +182,9 @@ function makeLocatorMock(options: {
         width: options.viewport.width,
         height: options.viewport.height,
       }),
+      mouse: {
+        move: vi.fn().mockResolvedValue(undefined),
+      },
     }),
     __scrollToCalls: scrollToCalls,
     __nestedScrollTops: nestedScrollTops,
@@ -703,6 +707,7 @@ describe('changeFocus', () => {
       scrollSize: { width: 1280, height: 2000 },
     })
     const mouseMoveInternal = vi.fn().mockResolvedValue(undefined)
+    setOriginalMouseMove(locator.page(), mouseMoveInternal)
     let result: Awaited<ReturnType<typeof changeFocus>> | undefined
 
     const promise = autoZoom(
@@ -720,13 +725,10 @@ describe('changeFocus', () => {
           locator,
           { duration: 300, easing: 'ease-in' },
           {
-            page: {},
-            mouseMoveInternal,
             startViewportPos: { x: 0, y: 0 },
             targetPosInElement: { x: 60, y: 20 },
             duration: 100,
             easing: 'linear',
-            context: 'test move',
           }
         )
       },
@@ -783,6 +785,7 @@ describe('changeFocus', () => {
       scrollSize: { width: 1280, height: 2000 },
     })
     const mouseMoveInternal = vi.fn().mockResolvedValue(undefined)
+    setOriginalMouseMove(locator.page(), mouseMoveInternal)
     let result: Awaited<ReturnType<typeof changeFocus>> | undefined
 
     const promise = autoZoom(
@@ -800,13 +803,10 @@ describe('changeFocus', () => {
           locator,
           { duration: 1000, easing: 'linear' },
           {
-            page: {},
-            mouseMoveInternal,
             startViewportPos: { x: -200, y: 300 },
             targetPosInElement: { x: 60, y: 20 },
             duration: 100,
             easing: 'linear',
-            context: 'test move',
           }
         )
       },

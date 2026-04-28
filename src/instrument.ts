@@ -31,7 +31,6 @@ import {
   assertDurationOrSpeed,
   buildMouseDownEvent,
   buildMouseUpEvent,
-  getOriginalMouseClick,
   getOriginalMouseDown,
   getOriginalMouseHide,
   getMousePosition,
@@ -39,13 +38,19 @@ import {
   getOriginalMouseShow,
   getOriginalMouseUp,
   isMouseVisible,
-  performMouseClick,
+  type MouseClickInteractionType,
+  performMouseClickAction,
   performMouseDown,
   performMouseHide,
   performMouseMove,
   performMouseShow,
   performMouseUp,
   resolveMouseMoveDuration,
+  setOriginalLocatorCheck,
+  setOriginalLocatorClick,
+  setOriginalLocatorSelect,
+  setOriginalLocatorTap,
+  setOriginalLocatorUncheck,
   setMousePosition,
   setMouseVisible,
   setOriginalMouseClick,
@@ -206,7 +211,8 @@ async function performClickActions(
   beforeClickPause = CLICK_DURATION_MS / 2,
   moveEasing: Easing = 'ease-in-out',
   postClickPause = CLICK_DURATION_MS / 2,
-  postClickMove?: PostClickMove
+  postClickMove?: PostClickMove,
+  interactionType: MouseClickInteractionType = 'click'
 ): Promise<ClickActionResult | null> {
   const page = locator.page()
   pendingClickData.set(page, null)
@@ -233,14 +239,10 @@ async function performClickActions(
   const mouseMovePlan =
     targetPos && locatorRectPreview
       ? {
-          page,
-          mouseMoveInternal,
           startViewportPos: getMousePosition(page) ?? { x: 0, y: 0 },
           targetPosInElement: targetPos,
           ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
           ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
-          defaultDuration: 1000,
-          context: 'click move',
           easing: moveEasing,
         }
       : undefined
@@ -266,9 +268,6 @@ async function performClickActions(
 
   await sleep(beforeClickPause)
 
-  await new Promise<void>((resolve) => setTimeout(resolve, halfClickDuration))
-  const clickTime = Date.now()
-
   const didScroll =
     locatorRectPreview !== null &&
     locatorRect !== undefined &&
@@ -284,6 +283,7 @@ async function performClickActions(
     canUseDirectMouseClickAfterScroll(clickOptions)
   ) {
     const mouseClickOptions = {
+      position: targetPos,
       ...(clickOptions?.button !== undefined
         ? { button: clickOptions.button }
         : {}),
@@ -294,19 +294,18 @@ async function performClickActions(
         ? { delay: clickOptions.delay }
         : {}),
     }
-    const [mouseDownEvent, mouseUpEvent] = await performMouseClick({
-      page,
-      mouseClickInternal: getOriginalMouseClick(
-        page,
-        page.mouse.click.bind(page.mouse)
-      ),
-      x: locatorRect.x + targetPos.x,
-      y: locatorRect.y + targetPos.y,
+    const { mouseDownEvent, mouseUpEvent } = await performMouseClickAction({
+      locator,
+      interactionType,
+      targetX: locatorRect.x + targetPos.x,
+      targetY: locatorRect.y + targetPos.y,
       clickOptions: mouseClickOptions,
     })
     innerEvents.push(mouseDownEvent)
     innerEvents.push(mouseUpEvent)
   } else {
+    const halfClickDuration = CLICK_DURATION_MS / 2
+    const clickTime = Date.now()
     innerEvents.push(
       buildMouseDownEvent({
         startMs: clickTime - halfClickDuration,
@@ -497,7 +496,8 @@ async function performSimpleAction(
       beforeClickPause,
       moveEasing,
       postClickPause,
-      postClickMove
+      postClickMove,
+      subType
     )
     innerEvents = clickActionResult?.innerEvents ?? []
     elementRect = clickActionResult?.elementRect
@@ -516,20 +516,46 @@ async function performSimpleAction(
         }
       : undefined
 
-    const startTime = Date.now()
-    await doAction({
-      ...options,
-      ...(targetPosition ? { position: targetPosition } : {}),
-    })
-    const endTime = Date.now()
-    elementRect = locatorRect ?? undefined
+    if (subType === 'select') {
+      await doAction({
+        ...options,
+        ...(targetPosition ? { position: targetPosition } : {}),
+      })
+      elementRect = locatorRect ?? undefined
+    } else if (targetPosition && locatorRect) {
+      const {
+        mouseDownEvent,
+        mouseUpEvent,
+        elementRect: actionElementRect,
+      } = await performMouseClickAction({
+        locator,
+        interactionType: subType,
+        targetX: locatorRect.x + targetPosition.x,
+        targetY: locatorRect.y + targetPosition.y,
+        clickOptions: { position: targetPosition },
+      })
 
-    if (recordMousePress) {
-      const midTime = (startTime + endTime) / 2
-      innerEvents.push(
-        buildMouseDownEvent({ startMs: startTime, endMs: midTime })
-      )
-      innerEvents.push(buildMouseUpEvent({ startMs: midTime, endMs: endTime }))
+      innerEvents.push(mouseDownEvent)
+      innerEvents.push(mouseUpEvent)
+      elementRect = actionElementRect ?? locatorRect
+    } else {
+      const startTime = Date.now()
+      await doAction({
+        ...options,
+        ...(targetPosition ? { position: targetPosition } : {}),
+      })
+      const endTime = Date.now()
+      elementRect = locatorRect ?? undefined
+
+      if (recordMousePress) {
+        const midTime = (startTime + endTime) / 2
+        innerEvents.push(
+          buildMouseDownEvent({ startMs: startTime, endMs: midTime })
+        )
+        innerEvents.push(
+          buildMouseUpEvent({ startMs: midTime, endMs: endTime })
+        )
+      }
     }
   }
 
@@ -619,6 +645,7 @@ export function instrumentLocator(locator: Locator): Locator {
   instrumented.add(locator)
 
   const originalClick = locator.click.bind(locator)
+  setOriginalLocatorClick(locator, originalClick)
   locator.click = async (
     options?: Parameters<Locator['click']>[0] & {
       moveDuration?: number
@@ -731,7 +758,8 @@ export function instrumentLocator(locator: Locator): Locator {
         beforeClickPause,
         moveEasing,
         postClickPause,
-        postClickMove
+        postClickMove,
+        'click'
       )
       innerEvents.push(...(clickActionResult?.innerEvents ?? []))
       elementRect = clickActionResult?.elementRect
@@ -816,7 +844,8 @@ export function instrumentLocator(locator: Locator): Locator {
         options.click.beforeClickPause,
         options.click.moveEasing,
         options.click.postClickPause,
-        options.click.postClickMove
+        options.click.postClickMove,
+        'click'
       )
 
       const innerEvents: Array<
@@ -956,6 +985,13 @@ export function instrumentLocator(locator: Locator): Locator {
   }
 
   const originalTap = locator.tap.bind(locator)
+  setOriginalLocatorTap(
+    locator,
+    originalTap as unknown as (options?: {
+      position?: { x: number; y: number }
+      trial?: boolean
+    }) => Promise<void>
+  )
   locator.tap = async (
     options?: Parameters<Locator['tap']>[0] & {
       click?: ClickBeforeFillOption
@@ -981,6 +1017,13 @@ export function instrumentLocator(locator: Locator): Locator {
   }
 
   const originalCheck = locator.check.bind(locator)
+  setOriginalLocatorCheck(
+    locator,
+    originalCheck as unknown as (options?: {
+      position?: { x: number; y: number }
+      trial?: boolean
+    }) => Promise<void>
+  )
   locator.check = async (
     options?: Parameters<Locator['check']>[0] & {
       click?: ClickBeforeFillOption
@@ -1008,6 +1051,13 @@ export function instrumentLocator(locator: Locator): Locator {
   }
 
   const originalUncheck = locator.uncheck.bind(locator)
+  setOriginalLocatorUncheck(
+    locator,
+    originalUncheck as unknown as (options?: {
+      position?: { x: number; y: number }
+      trial?: boolean
+    }) => Promise<void>
+  )
   locator.uncheck = async (
     options?: Parameters<Locator['uncheck']>[0] & {
       click?: ClickBeforeFillOption
@@ -1049,6 +1099,15 @@ export function instrumentLocator(locator: Locator): Locator {
   }
 
   const originalSelectOption = locator.selectOption.bind(locator)
+  setOriginalLocatorSelect(locator, ((options?: {
+    position?: { x: number; y: number }
+  }) => originalClick(options)) as unknown as (options?: {
+    button?: 'left' | 'right' | 'middle'
+    clickCount?: number
+    delay?: number
+    position?: { x: number; y: number }
+    trial?: boolean
+  }) => Promise<void>)
   locator.selectOption = async (
     values: Parameters<Locator['selectOption']>[0],
     options?: Parameters<Locator['selectOption']>[1] & {
@@ -1131,14 +1190,10 @@ export function instrumentLocator(locator: Locator): Locator {
     const mouseMovePlan =
       targetPos && hasLocatorRectPreview
         ? {
-            page,
-            mouseMoveInternal,
             startViewportPos: getMousePosition(page) ?? { x: 0, y: 0 },
             targetPosInElement: targetPos,
             ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
             ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
-            defaultDuration: 1000,
-            context: 'hover move',
             easing: moveEasing,
           }
         : undefined
@@ -1216,14 +1271,10 @@ export function instrumentLocator(locator: Locator): Locator {
     const mouseMovePlan =
       targetPos && locatorRectPreview
         ? {
-            page,
-            mouseMoveInternal,
             startViewportPos: getMousePosition(page) ?? { x: 0, y: 0 },
             targetPosInElement: targetPos,
             ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
             ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
-            defaultDuration: 1000,
-            context: 'selectText move',
             easing: moveEasing,
           }
         : undefined

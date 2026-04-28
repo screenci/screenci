@@ -1,6 +1,8 @@
-import type { MouseDownEvent, MouseUpEvent } from './events.js'
+import type { Locator } from '@playwright/test'
+import type { ElementRect, MouseDownEvent, MouseUpEvent } from './events.js'
 import type { Easing } from './types.js'
 import { evaluateEasingAtT } from './easing.js'
+import { logger } from './logger.js'
 
 type MousePosition = { x: number; y: number }
 
@@ -22,6 +24,37 @@ type MouseClickInternal = (
   options?: MouseClickOptions
 ) => Promise<void>
 
+type LocatorMouseActionOptions = MouseClickOptions & {
+  position?: { x: number; y: number }
+  trial?: boolean
+}
+
+type LocatorMouseActionInternal = (
+  options?: LocatorMouseActionOptions
+) => Promise<void>
+
+export type MouseClickInteractionType =
+  | 'click'
+  | 'tap'
+  | 'check'
+  | 'uncheck'
+  | 'select'
+
+type PerformMouseClickActionOptions = {
+  locator: Locator
+  interactionType: MouseClickInteractionType
+  targetX: number
+  targetY: number
+  clickOptions?: LocatorMouseActionOptions
+  easing?: Easing
+}
+
+export type MouseClickActionResult = {
+  elementRect?: ElementRect
+  mouseDownEvent: MouseDownEvent
+  mouseUpEvent: MouseUpEvent
+}
+
 type MouseDownUpOptions = {
   button?: 'left' | 'right' | 'middle'
   clickCount?: number
@@ -39,6 +72,14 @@ const originalMouseDowns = new WeakMap<object, MouseDownInternal>()
 const originalMouseUps = new WeakMap<object, MouseUpInternal>()
 const originalMouseShows = new WeakMap<object, MouseVisibilityInternal>()
 const originalMouseHides = new WeakMap<object, MouseVisibilityInternal>()
+const originalLocatorClicks = new WeakMap<object, LocatorMouseActionInternal>()
+const originalLocatorTaps = new WeakMap<object, LocatorMouseActionInternal>()
+const originalLocatorChecks = new WeakMap<object, LocatorMouseActionInternal>()
+const originalLocatorUnchecks = new WeakMap<
+  object,
+  LocatorMouseActionInternal
+>()
+const originalLocatorSelects = new WeakMap<object, LocatorMouseActionInternal>()
 
 export const CLICK_DURATION_MS = 200
 export const CURSOR_FRAME_INTERVAL_MS = 1000 / 60
@@ -138,6 +179,87 @@ export function setOriginalMouseHide(
   hide: MouseVisibilityInternal
 ): void {
   originalMouseHides.set(page, hide)
+}
+
+export function setOriginalLocatorClick(
+  locator: object,
+  action: LocatorMouseActionInternal
+): void {
+  originalLocatorClicks.set(locator, action)
+}
+
+export function setOriginalLocatorTap(
+  locator: object,
+  action: LocatorMouseActionInternal
+): void {
+  originalLocatorTaps.set(locator, action)
+}
+
+export function setOriginalLocatorCheck(
+  locator: object,
+  action: LocatorMouseActionInternal
+): void {
+  originalLocatorChecks.set(locator, action)
+}
+
+export function setOriginalLocatorUncheck(
+  locator: object,
+  action: LocatorMouseActionInternal
+): void {
+  originalLocatorUnchecks.set(locator, action)
+}
+
+export function setOriginalLocatorSelect(
+  locator: object,
+  action: LocatorMouseActionInternal
+): void {
+  originalLocatorSelects.set(locator, action)
+}
+
+type ResolvedLocatorMouseAction = {
+  doClick: LocatorMouseActionInternal
+  supportsTrial: boolean
+}
+
+function resolveLocatorMouseAction(
+  locator: Locator,
+  interactionType: MouseClickInteractionType
+): ResolvedLocatorMouseAction {
+  switch (interactionType) {
+    case 'click': {
+      const action = originalLocatorClicks.get(locator)
+      if (action) return { doClick: action, supportsTrial: true }
+      break
+    }
+    case 'tap': {
+      const action = originalLocatorTaps.get(locator)
+      if (action) return { doClick: action, supportsTrial: true }
+      break
+    }
+    case 'check': {
+      const action = originalLocatorChecks.get(locator)
+      if (action) return { doClick: action, supportsTrial: true }
+      break
+    }
+    case 'uncheck': {
+      const action = originalLocatorUnchecks.get(locator)
+      if (action) return { doClick: action, supportsTrial: true }
+      break
+    }
+    case 'select': {
+      const action = originalLocatorSelects.get(locator)
+      if (action) return { doClick: action, supportsTrial: false }
+      break
+    }
+    default: {
+      const _: never = interactionType
+      throw new Error(`Unknown mouse click interaction type: ${_}`)
+    }
+  }
+
+  throw new Error(
+    `[screenci] Missing original locator action for '${interactionType}'.`
+  )
 }
 
 export function assertDurationOrSpeed(
@@ -243,34 +365,56 @@ export function buildMouseUpEvent(options: {
   }
 }
 
-export async function performMouseClick(options: {
-  page: object
-  mouseClickInternal: MouseClickInternal
-  x: number
-  y: number
-  clickOptions?: MouseClickOptions
-  easing?: Easing
-}): Promise<[MouseDownEvent, MouseUpEvent]> {
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+export async function performMouseClickAction(
+  options: PerformMouseClickActionOptions
+): Promise<MouseClickActionResult> {
+  const { doClick, supportsTrial } = resolveLocatorMouseAction(
+    options.locator,
+    options.interactionType
+  )
+
+  if (supportsTrial) {
+    await doClick({
+      ...options.clickOptions,
+      trial: true,
+    })
+  }
+
+  const page = options.locator.page()
+  const halfClickDuration = CLICK_DURATION_MS / 2
   const startMs = Date.now()
-  await options.mouseClickInternal(options.x, options.y, options.clickOptions)
-  const endMs = Date.now()
+  await sleep(halfClickDuration)
+  await doClick(options.clickOptions)
+  await sleep(halfClickDuration)
+  const endMs = startMs + CLICK_DURATION_MS
   const easing = options.easing ?? 'ease-in-out'
-  const clickTimeMs = (startMs + endMs) / 2
+  const clickTimeMs = startMs + halfClickDuration
+  const elementRect = await options.locator.boundingBox()
+  if (!elementRect) {
+    logger.warn(
+      `[screenci] Unable to resolve locator bounds after ${options.interactionType}.`
+    )
+  }
 
-  setMousePosition(options.page, { x: options.x, y: options.y })
+  setMousePosition(page, { x: options.targetX, y: options.targetY })
 
-  return [
-    buildMouseDownEvent({
+  return {
+    ...(elementRect ? { elementRect } : {}),
+    mouseDownEvent: buildMouseDownEvent({
       startMs,
       endMs: clickTimeMs,
       easing,
     }),
-    buildMouseUpEvent({
+    mouseUpEvent: buildMouseUpEvent({
       startMs: clickTimeMs,
       endMs,
       easing,
     }),
-  ]
+  }
 }
 
 export async function performMouseDown(options: {

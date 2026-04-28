@@ -935,29 +935,16 @@ export function instrumentLocator(locator: Locator): Locator {
 
     assertDurationOrSpeed(moveDuration, moveSpeed, 'hover move')
 
-    const page = locator.page()
-
     const innerEvents: Array<
       FocusChangeEvent | MouseMoveEvent | MouseWaitEvent
     > = []
 
-    const locatorRectPreview = await locator.boundingBox()
-    const hasLocatorRectPreview = locatorRectPreview !== null
-    const targetPos =
-      position ??
-      (hasLocatorRectPreview
-        ? { x: locatorRectPreview.width / 2, y: locatorRectPreview.height / 2 }
-        : undefined)
-
-    const mouseMovePlan =
-      targetPos && hasLocatorRectPreview
-        ? {
-            targetPosInElement: targetPos,
-            ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
-            ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
-            easing: moveEasing,
-          }
-        : undefined
+    const mouseMovePlan = {
+      targetPosInElement: position,
+      ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
+      ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
+      easing: moveEasing,
+    }
 
     const hoverFocusChange = await changeFocus(
       locator,
@@ -967,15 +954,11 @@ export function instrumentLocator(locator: Locator): Locator {
     const locatorRect = hoverFocusChange.elementRect
 
     innerEvents.push(hoverFocusChange)
-    setMousePosition(page, {
-      x: hoverFocusChange.x,
-      y: hoverFocusChange.y,
-    })
 
     const waitStartMs = Date.now()
     await originalHover({
       ...hoverOptions,
-      ...(targetPos ? { position: targetPos } : {}),
+      ...(position ? { position } : {}),
     })
     if (hoverDuration > 0) {
       await sleep(hoverDuration)

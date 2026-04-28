@@ -159,10 +159,6 @@ function canUseDirectMouseClickAfterScroll(
   return unsupported.every((key) => options[key] === undefined)
 }
 
-// Per-page storage for the most recently captured DOM click event data.
-// Reset to null before each instrumented click; set by the exposeFunction callback.
-const pendingClickData = new WeakMap<object, DOMClickData | null>()
-
 function getRecordedInnerEventEndMs(
   event:
     | FocusChangeEvent
@@ -214,7 +210,6 @@ async function performClickActions(
   interactionType: MouseClickInteractionType = 'click'
 ): Promise<ClickActionResult | null> {
   const page = locator.page()
-  pendingClickData.set(page, null)
   const halfClickDuration = CLICK_DURATION_MS / 2
 
   const innerEvents: Array<
@@ -319,29 +314,6 @@ async function performClickActions(
       })
     )
   }
-  const domClickData = pendingClickData.get(page)
-
-  if (domClickData) {
-    const lastMouseMoveIndex = innerEvents.findIndex(
-      (e) => e.type === 'focusChange' || e.type === 'mouseMove'
-    )
-    if (lastMouseMoveIndex !== -1) {
-      const existingMove = innerEvents[lastMouseMoveIndex]
-      if (
-        existingMove?.type === 'focusChange' ||
-        existingMove?.type === 'mouseMove'
-      ) {
-        innerEvents[lastMouseMoveIndex] = {
-          ...existingMove,
-          x: domClickData.x,
-          y: domClickData.y,
-          elementRect: domClickData.targetRect,
-        }
-      }
-    }
-
-    setMousePosition(page, { x: domClickData.x, y: domClickData.y })
-  }
   await new Promise<void>((resolve) => setTimeout(resolve, halfClickDuration))
 
   await new Promise<void>((resolve) => setTimeout(resolve, postClickPause))
@@ -421,9 +393,7 @@ async function performClickActions(
   }
 
   let elementRect: ElementRect | undefined
-  if (domClickData) {
-    elementRect = domClickData.targetRect
-  } else if (locatorRect) {
+  if (locatorRect) {
     elementRect = locatorRect ?? undefined
   }
 
@@ -1515,34 +1485,6 @@ export function instrumentLocator(locator: Locator): Locator {
 export async function instrumentPage(page: Page): Promise<Page> {
   if (instrumented.has(page)) return page
   instrumented.add(page)
-
-  // Expose a Node.js function to the browser that captures DOM click event data.
-  // Called synchronously from the click handler before any navigation can occur.
-  await page.exposeFunction('__screenciOnClick', (data: DOMClickData): void => {
-    pendingClickData.set(page, data)
-  })
-
-  // Inject a capture listener on every page load (including after navigation).
-  await page.addInitScript(() => {
-    document.addEventListener(
-      'click',
-      (e: MouseEvent) => {
-        const target = e.target as Element
-        const r = target.getBoundingClientRect()
-        ;(
-          window as unknown as {
-            __screenciOnClick: (data: unknown) => void
-          }
-        ).__screenciOnClick({
-          x: e.clientX,
-          y: e.clientY,
-          targetRect: { x: r.x, y: r.y, width: r.width, height: r.height },
-        })
-      },
-      { capture: true }
-    )
-  })
-
   instrumentLocatorMethods(page)
 
   const originalPageFrameLocator = (

@@ -18,7 +18,7 @@ import {
   setCurrentZoomViewport,
 } from './autoZoom.js'
 import { hide } from './hide.js'
-import { CLICK_DURATION_MS } from './mouse.js'
+import { CLICK_DURATION_MS, getMousePosition } from './mouse.js'
 
 type DOMClickData = { x: number; y: number; targetRect: ElementRect }
 type ScrollLogicalPosition = 'start' | 'center' | 'end' | 'nearest'
@@ -658,6 +658,28 @@ describe('instrumentLocator', () => {
 
     expect(click.elementRect).toBeUndefined()
     expect(move).toBeDefined()
+  })
+
+  it('tracks locator position clicks in viewport coordinates', async () => {
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const bb = { x: 100, y: 200, width: 80, height: 40 }
+    const locator = makeLocatorMock(bb, page)
+    instrumentLocator(locator)
+
+    await Promise.all([
+      (
+        locator as unknown as {
+          click(options?: {
+            position?: { x: number; y: number }
+          }): Promise<void>
+        }
+      ).click({ position: { x: 8, y: 8 } }),
+      vi.runAllTimersAsync(),
+    ])
+
+    expect(getMousePosition(page)).toEqual({ x: 108, y: 208 })
   })
 
   it('snaps the real mouse after scroll while keeping the recorded move duration', async () => {

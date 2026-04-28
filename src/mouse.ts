@@ -4,7 +4,9 @@ import type { Easing } from './types.js'
 import { evaluateEasingAtT } from './easing.js'
 import { logger } from './logger.js'
 
-type MousePosition = { x: number; y: number }
+// Stored mouse coordinates are always viewport coordinates, even when a
+// locator action receives an element-relative `position` option.
+type ViewportMousePosition = { x: number; y: number }
 
 type MouseMoveInternal = (
   x: number,
@@ -64,7 +66,7 @@ type MouseDownInternal = (options?: MouseDownUpOptions) => Promise<void>
 type MouseUpInternal = (options?: MouseDownUpOptions) => Promise<void>
 type MouseVisibilityInternal = () => void
 
-const mousePositions = new WeakMap<object, MousePosition>()
+const mousePositions = new WeakMap<object, ViewportMousePosition>()
 const mouseVisibilities = new WeakMap<object, boolean>()
 const originalMouseMoves = new WeakMap<object, MouseMoveInternal>()
 const originalMouseClicks = new WeakMap<object, MouseClickInternal>()
@@ -84,11 +86,16 @@ const originalLocatorSelects = new WeakMap<object, LocatorMouseActionInternal>()
 export const CLICK_DURATION_MS = 200
 export const CURSOR_FRAME_INTERVAL_MS = 1000 / 60
 
-export function getMousePosition(page: object): MousePosition | undefined {
+export function getMousePosition(
+  page: object
+): ViewportMousePosition | undefined {
   return mousePositions.get(page)
 }
 
-export function setMousePosition(page: object, pos: MousePosition): void {
+export function setMousePosition(
+  page: object,
+  pos: ViewportMousePosition
+): void {
   mousePositions.set(page, pos)
 }
 

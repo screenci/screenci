@@ -1098,7 +1098,6 @@ export function instrumentLocator(locator: Locator): Locator {
     const page = locator.page()
 
     const sourceRectPreview = await locator.boundingBox()
-    const sourceRect = (await changeFocus(locator)).elementRect
     const targetBb = await target.boundingBox()
     const targetRect: ElementRect | undefined = targetBb
       ? {
@@ -1123,41 +1122,15 @@ export function instrumentLocator(locator: Locator): Locator {
         ? { x: targetRect.width / 2, y: targetRect.height / 2 }
         : undefined)
 
-    if (sourceRect) {
-      const sourceTargetPos = sourcePosition
-        ? sourcePosition
-        : { x: sourceRect.width / 2, y: sourceRect.height / 2 }
-      const sourceX = sourceRect.x + sourceTargetPos.x
-      const sourceY = sourceRect.y + sourceTargetPos.y
-      const resolvedDuration = resolveMouseMoveDuration(
-        page,
-        sourceX,
-        sourceY,
-        {
-          duration: moveDuration,
-          speed: moveSpeed,
-          defaultDuration: 1000,
-          context: 'dragTo move',
-        }
-      )
-      const startMs = Date.now()
-      await performMouseMove({
-        page,
-        targetX: sourceX,
-        targetY: sourceY,
-        duration: resolvedDuration,
-        easing: moveEasing,
-      })
+    const sourceFocusChange = await changeFocus(locator, undefined, {
+      targetPosInElement: sourcePosition,
+      ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
+      ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
+      easing: moveEasing,
+    })
 
-      innerEvents.push({
-        type: 'mouseMove',
-        startMs,
-        endMs: Date.now(),
-        duration: Date.now() - startMs,
-        x: sourceX,
-        y: sourceY,
-        ...(resolvedDuration > 0 ? { easing: moveEasing } : {}),
-      })
+    if (sourceFocusChange.elementRect) {
+      innerEvents.push(sourceFocusChange)
     }
 
     // 2. preDragPause + mouseDown
@@ -1200,7 +1173,6 @@ export function instrumentLocator(locator: Locator): Locator {
         type: 'mouseMove',
         startMs: dragStartTime,
         endMs: Date.now(),
-        duration: Date.now() - dragStartTime,
         x: toX,
         y: toY,
         ...(resolvedDuration > 0 ? { easing: dragEasing } : {}),
@@ -1223,7 +1195,11 @@ export function instrumentLocator(locator: Locator): Locator {
     )
 
     if (activeClickRecorder && innerEvents.length > 0) {
-      activeClickRecorder.addInput('dragTo', sourceRect, innerEvents)
+      activeClickRecorder.addInput(
+        'dragTo',
+        sourceFocusChange.elementRect,
+        innerEvents
+      )
     }
   }
 

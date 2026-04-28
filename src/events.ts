@@ -79,7 +79,6 @@ export type MouseMoveEvent = {
   type: 'mouseMove'
   startMs: number
   endMs: number
-  duration: number
   x: number
   y: number
   easing?: Easing

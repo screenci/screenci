@@ -1073,7 +1073,7 @@ describe('instrumentLocator', () => {
     expect(ups).toHaveLength(3)
   })
 
-  it('records a dragTo InputEvent with mouseMove, mouseDown, mouseMove, mouseUp', async () => {
+  it('records a dragTo InputEvent with mouseMove, mouseDown, mouseUp', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
 
@@ -1103,8 +1103,8 @@ describe('instrumentLocator', () => {
     const moves = ev.events.filter(
       (e): e is MouseMoveEvent => e.type === 'mouseMove'
     )
-    expect(moves).toHaveLength(2)
-    expect(moves[1]?.elementRect).toEqual(targetBb)
+    expect(moves).toHaveLength(1)
+    expect(moves[0]?.elementRect).toEqual(targetBb)
     expect(ev.events.some((e) => e.type === 'mouseDown')).toBe(true)
     expect(ev.events.some((e) => e.type === 'mouseUp')).toBe(true)
   })

@@ -35,6 +35,13 @@ type LocatorMouseActionInternal = (
   options?: LocatorMouseActionOptions
 ) => Promise<void>
 
+type LocatorSelectActionValues = Parameters<Locator['selectOption']>[0]
+type LocatorSelectActionOptions = Parameters<Locator['selectOption']>[1]
+type LocatorSelectActionInternal = (
+  values: LocatorSelectActionValues,
+  options?: LocatorSelectActionOptions
+) => Promise<string[]>
+
 export type MouseClickInteractionType =
   | 'click'
   | 'tap'
@@ -81,7 +88,10 @@ const originalLocatorUnchecks = new WeakMap<
   object,
   LocatorMouseActionInternal
 >()
-const originalLocatorSelects = new WeakMap<object, LocatorMouseActionInternal>()
+const originalLocatorSelects = new WeakMap<
+  object,
+  LocatorSelectActionInternal
+>()
 
 export const CLICK_DURATION_MS = 200
 export const CURSOR_FRAME_INTERVAL_MS = 1000 / 60
@@ -218,7 +228,7 @@ export function setOriginalLocatorUncheck(
 
 export function setOriginalLocatorSelect(
   locator: object,
-  action: LocatorMouseActionInternal
+  action: LocatorSelectActionInternal
 ): void {
   originalLocatorSelects.set(locator, action)
 }
@@ -255,7 +265,13 @@ function resolveLocatorMouseAction(
     }
     case 'select': {
       const action = originalLocatorSelects.get(locator)
-      if (action) return { doClick: action, supportsTrial: false }
+      if (action) {
+        return {
+          doClick: (options?: LocatorMouseActionOptions) =>
+            action(null, options as LocatorSelectActionOptions).then(() => {}),
+          supportsTrial: false,
+        }
+      }
       break
     }
     default: {

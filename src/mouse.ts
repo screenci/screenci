@@ -305,14 +305,15 @@ export function resolveMouseMoveDuration(
 
 export async function performMouseMove(options: {
   page: object
-  mouseMoveInternal: (x: number, y: number) => Promise<void>
   targetX: number
   targetY: number
   duration: number
   easing: Easing
 }): Promise<{ startMs: number; endMs: number }> {
-  const { page, mouseMoveInternal, targetX, targetY, duration, easing } =
-    options
+  const { page, targetX, targetY, duration, easing } = options
+  const mouseMoveInternal = getOriginalMouseMove(page, async () => {
+    throw new Error('[screenci] Missing original mouse move for page.')
+  })
   const startPos = getMousePosition(page) ?? { x: 0, y: 0 }
   const startMs = Date.now()
 

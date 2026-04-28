@@ -34,7 +34,6 @@ import {
   getOriginalMouseDown,
   getOriginalMouseHide,
   getMousePosition,
-  getOriginalMouseMove,
   getOriginalMouseShow,
   getOriginalMouseUp,
   isMouseVisible,
@@ -217,10 +216,6 @@ async function performClickActions(
   const page = locator.page()
   pendingClickData.set(page, null)
   const halfClickDuration = CLICK_DURATION_MS / 2
-  const mouseMoveInternal = getOriginalMouseMove(
-    page,
-    page.mouse.move.bind(page.mouse)
-  )
 
   const innerEvents: Array<
     FocusChangeEvent | MouseMoveEvent | MouseDownEvent | MouseUpEvent
@@ -404,7 +399,6 @@ async function performClickActions(
       const startMs = Date.now()
       await performMouseMove({
         page,
-        mouseMoveInternal,
         targetX,
         targetY,
         duration,
@@ -1169,10 +1163,6 @@ export function instrumentLocator(locator: Locator): Locator {
     assertDurationOrSpeed(moveDuration, moveSpeed, 'hover move')
 
     const page = locator.page()
-    const mouseMoveInternal = getOriginalMouseMove(
-      page,
-      page.mouse.move.bind(page.mouse)
-    )
 
     const innerEvents: Array<
       FocusChangeEvent | MouseMoveEvent | MouseWaitEvent
@@ -1252,10 +1242,6 @@ export function instrumentLocator(locator: Locator): Locator {
     assertDurationOrSpeed(moveDuration, moveSpeed, 'selectText move')
 
     const page = locator.page()
-    const mouseMoveInternal = getOriginalMouseMove(
-      page,
-      page.mouse.move.bind(page.mouse)
-    )
 
     const innerEvents: Array<
       FocusChangeEvent | MouseMoveEvent | MouseDownEvent | MouseUpEvent
@@ -1357,10 +1343,6 @@ export function instrumentLocator(locator: Locator): Locator {
     assertDurationOrSpeed(dragDuration, dragSpeed, 'dragTo drag')
 
     const page = locator.page()
-    const mouseMoveInternal = getOriginalMouseMove(
-      page,
-      page.mouse.move.bind(page.mouse)
-    )
 
     const sourceRectPreview = await locator.boundingBox()
     const sourceRect = (await changeFocus(locator)).elementRect
@@ -1408,7 +1390,6 @@ export function instrumentLocator(locator: Locator): Locator {
       const startMs = Date.now()
       await performMouseMove({
         page,
-        mouseMoveInternal,
         targetX: sourceX,
         targetY: sourceY,
         duration: resolvedDuration,
@@ -1457,7 +1438,6 @@ export function instrumentLocator(locator: Locator): Locator {
       })
       await performMouseMove({
         page,
-        mouseMoveInternal,
         targetX: toX,
         targetY: toY,
         duration: resolvedDuration,
@@ -1677,7 +1657,6 @@ export async function instrumentPage(page: Page): Promise<Page> {
     const startMs = Date.now()
     await performMouseMove({
       page,
-      mouseMoveInternal: originalMove,
       targetX: x,
       targetY: y,
       duration,

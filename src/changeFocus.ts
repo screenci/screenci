@@ -3,11 +3,7 @@ import type { ElementRect, FocusChangeEvent } from './events.js'
 import { evaluateEasingAtT } from './easing.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import type { AutoZoomOptions, Easing } from './types.js'
-import {
-  getMousePosition,
-  getOriginalMouseMove,
-  performMouseMove,
-} from './mouse.js'
+import { getMousePosition, performMouseMove } from './mouse.js'
 import { getAutoZoomState, setCurrentZoomViewport } from './autoZoom.js'
 import {
   buildZoomEvent,
@@ -1319,10 +1315,6 @@ export async function changeFocus(
     mouseMovePlan !== undefined
       ? performMouseMove({
           page,
-          mouseMoveInternal: getOriginalMouseMove(
-            page,
-            page.mouse.move.bind(page.mouse)
-          ),
           targetX: mouseMovePlan.mouseTarget.x,
           targetY: mouseMovePlan.mouseTarget.y,
           duration: timing.duration,

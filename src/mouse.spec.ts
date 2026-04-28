@@ -71,9 +71,9 @@ describe('mouse helpers', () => {
   it('performs mouse movement and updates tracked position', async () => {
     const page = {}
     const mouseMoveInternal = vi.fn().mockResolvedValue(undefined)
+    setOriginalMouseMove(page, mouseMoveInternal)
     const promise = performMouseMove({
       page,
-      mouseMoveInternal,
       targetX: 30,
       targetY: 40,
       duration: 100,
@@ -92,9 +92,9 @@ describe('mouse helpers', () => {
   it('performs instant mouse movement', async () => {
     const page = {}
     const mouseMoveInternal = vi.fn().mockResolvedValue(undefined)
+    setOriginalMouseMove(page, mouseMoveInternal)
     const promise = performMouseMove({
       page,
-      mouseMoveInternal,
       targetX: 120,
       targetY: 90,
       duration: 0,

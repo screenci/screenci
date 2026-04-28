@@ -1,5 +1,10 @@
 import type { Locator } from '@playwright/test'
-import type { ElementRect, MouseDownEvent, MouseUpEvent } from './events.js'
+import type {
+  ElementRect,
+  MouseDownEvent,
+  MouseHideEvent,
+  MouseUpEvent,
+} from './events.js'
 import type { Easing } from './types.js'
 import { evaluateEasingAtT } from './easing.js'
 import { logger } from './logger.js'
@@ -51,17 +56,18 @@ export type MouseClickInteractionType =
 
 type PerformMouseClickActionOptions = {
   locator: Locator
-  interactionType: MouseClickInteractionType
+  doClick: LocatorMouseActionInternal
+  supportsTrial: boolean
   targetX: number
   targetY: number
+  shouldHideMouse?: boolean
   clickOptions?: LocatorMouseActionOptions
   easing?: Easing
 }
 
 export type MouseClickActionResult = {
   elementRect?: ElementRect
-  mouseDownEvent: MouseDownEvent
-  mouseUpEvent: MouseUpEvent
+  events: Array<MouseDownEvent | MouseHideEvent | MouseUpEvent>
 }
 
 type MouseDownUpOptions = {
@@ -205,11 +211,23 @@ export function setOriginalLocatorClick(
   originalLocatorClicks.set(locator, action)
 }
 
+export function getOriginalLocatorClick(
+  locator: object
+): LocatorMouseActionInternal | undefined {
+  return originalLocatorClicks.get(locator)
+}
+
 export function setOriginalLocatorTap(
   locator: object,
   action: LocatorMouseActionInternal
 ): void {
   originalLocatorTaps.set(locator, action)
+}
+
+export function getOriginalLocatorTap(
+  locator: object
+): LocatorMouseActionInternal | undefined {
+  return originalLocatorTaps.get(locator)
 }
 
 export function setOriginalLocatorCheck(
@@ -219,11 +237,23 @@ export function setOriginalLocatorCheck(
   originalLocatorChecks.set(locator, action)
 }
 
+export function getOriginalLocatorCheck(
+  locator: object
+): LocatorMouseActionInternal | undefined {
+  return originalLocatorChecks.get(locator)
+}
+
 export function setOriginalLocatorUncheck(
   locator: object,
   action: LocatorMouseActionInternal
 ): void {
   originalLocatorUnchecks.set(locator, action)
+}
+
+export function getOriginalLocatorUncheck(
+  locator: object
+): LocatorMouseActionInternal | undefined {
+  return originalLocatorUnchecks.get(locator)
 }
 
 export function setOriginalLocatorSelect(
@@ -233,56 +263,10 @@ export function setOriginalLocatorSelect(
   originalLocatorSelects.set(locator, action)
 }
 
-type ResolvedLocatorMouseAction = {
-  doClick: LocatorMouseActionInternal
-  supportsTrial: boolean
-}
-
-function resolveLocatorMouseAction(
-  locator: Locator,
-  interactionType: MouseClickInteractionType
-): ResolvedLocatorMouseAction {
-  switch (interactionType) {
-    case 'click': {
-      const action = originalLocatorClicks.get(locator)
-      if (action) return { doClick: action, supportsTrial: true }
-      break
-    }
-    case 'tap': {
-      const action = originalLocatorTaps.get(locator)
-      if (action) return { doClick: action, supportsTrial: true }
-      break
-    }
-    case 'check': {
-      const action = originalLocatorChecks.get(locator)
-      if (action) return { doClick: action, supportsTrial: true }
-      break
-    }
-    case 'uncheck': {
-      const action = originalLocatorUnchecks.get(locator)
-      if (action) return { doClick: action, supportsTrial: true }
-      break
-    }
-    case 'select': {
-      const action = originalLocatorSelects.get(locator)
-      if (action) {
-        return {
-          doClick: (options?: LocatorMouseActionOptions) =>
-            action(null, options as LocatorSelectActionOptions).then(() => {}),
-          supportsTrial: false,
-        }
-      }
-      break
-    }
-    default: {
-      const _: never = interactionType
-      throw new Error(`Unknown mouse click interaction type: ${_}`)
-    }
-  }
-
-  throw new Error(
-    `[screenci] Missing original locator action for '${interactionType}'.`
-  )
+export function getOriginalLocatorSelect(
+  locator: object
+): LocatorSelectActionInternal | undefined {
+  return originalLocatorSelects.get(locator)
 }
 
 export function assertDurationOrSpeed(
@@ -396,13 +380,8 @@ function sleep(ms: number): Promise<void> {
 export async function performMouseClickAction(
   options: PerformMouseClickActionOptions
 ): Promise<MouseClickActionResult> {
-  const { doClick, supportsTrial } = resolveLocatorMouseAction(
-    options.locator,
-    options.interactionType
-  )
-
-  if (supportsTrial) {
-    await doClick({
+  if (options.supportsTrial) {
+    await options.doClick({
       ...options.clickOptions,
       trial: true,
     })
@@ -412,32 +391,45 @@ export async function performMouseClickAction(
   const halfClickDuration = CLICK_DURATION_MS / 2
   const startMs = Date.now()
   await sleep(halfClickDuration)
-  await doClick(options.clickOptions)
+
+  let mouseHideEvent: MouseHideEvent | undefined
+  if (options.shouldHideMouse && isMouseVisible(page)) {
+    setMouseVisible(page, false)
+    const hideMs = Date.now()
+    mouseHideEvent = {
+      type: 'mouseHide',
+      startMs: hideMs,
+      endMs: hideMs,
+    }
+  }
+
+  await options.doClick(options.clickOptions)
   await sleep(halfClickDuration)
   const endMs = startMs + CLICK_DURATION_MS
   const easing = options.easing ?? 'ease-in-out'
   const clickTimeMs = startMs + halfClickDuration
   const elementRect = await options.locator.boundingBox()
   if (!elementRect) {
-    logger.warn(
-      `[screenci] Unable to resolve locator bounds after ${options.interactionType}.`
-    )
+    logger.warn('[screenci] Unable to resolve locator bounds after action.')
   }
 
   setMousePosition(page, { x: options.targetX, y: options.targetY })
 
   return {
     ...(elementRect ? { elementRect } : {}),
-    mouseDownEvent: buildMouseDownEvent({
-      startMs,
-      endMs: clickTimeMs,
-      easing,
-    }),
-    mouseUpEvent: buildMouseUpEvent({
-      startMs: clickTimeMs,
-      endMs,
-      easing,
-    }),
+    events: [
+      buildMouseDownEvent({
+        startMs,
+        endMs: clickTimeMs,
+        easing,
+      }),
+      ...(mouseHideEvent ? [mouseHideEvent] : []),
+      buildMouseUpEvent({
+        startMs: clickTimeMs,
+        endMs,
+        easing,
+      }),
+    ],
   }
 }
 

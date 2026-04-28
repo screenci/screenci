@@ -23,7 +23,6 @@ import type {
   PostClickMove,
   ScreenCIPage,
 } from './types.js'
-import { logger } from './logger.js'
 import { isInsideHide } from './hide.js'
 import { changeFocus, type MouseMoveRequest } from './changeFocus.js'
 import {
@@ -31,6 +30,11 @@ import {
   assertDurationOrSpeed,
   buildMouseDownEvent,
   buildMouseUpEvent,
+  getOriginalLocatorCheck,
+  getOriginalLocatorClick,
+  getOriginalLocatorSelect,
+  getOriginalLocatorTap,
+  getOriginalLocatorUncheck,
   getOriginalMouseDown,
   getOriginalMouseHide,
   getMousePosition,
@@ -138,21 +142,6 @@ type FrameLocatorSelfReturnMethodsRecord = Record<
   (...args: unknown[]) => FrameLocator
 >
 
-function canUseDirectMouseClickAfterScroll(
-  options: Parameters<Locator['click']>[0] | undefined
-): boolean {
-  if (!options) return true
-  const unsupported = [
-    'force',
-    'modifiers',
-    'noWaitAfter',
-    'timeout',
-    'trial',
-  ] as const
-
-  return unsupported.every((key) => options[key] === undefined)
-}
-
 function getRecordedInnerEventEndMs(
   event:
     | FocusChangeEvent
@@ -180,243 +169,76 @@ type ClickActionResult = {
     | MouseDownEvent
     | MouseUpEvent
     | MouseWaitEvent
+    | MouseHideEvent
   >
 }
 
-/**
- * Performs all click mechanics (scroll-check, zoom handling, cursor animation,
- * click, post-click move) and returns the collected timing/position data.
- * Returns null if coordinates could not be determined (no DOM event and no
- * locator bounding box).
- */
-async function performClickActions(
-  locator: Locator,
-  doClick: (options: Parameters<Locator['click']>[0]) => Promise<void>,
-  clickOptions: Parameters<Locator['click']>[0],
-  autoZoomOptions?: AutoZoomOptions,
-  position?: { x: number; y: number },
-  moveDuration?: number,
-  moveSpeed?: number,
-  beforeClickPause = CLICK_DURATION_MS / 2,
-  moveEasing: Easing = 'ease-in-out',
-  postClickPause = CLICK_DURATION_MS / 2,
-  postClickMove?: PostClickMove,
-  interactionType: MouseClickInteractionType = 'click'
-): Promise<ClickActionResult | null> {
-  const page = locator.page()
-  const halfClickDuration = CLICK_DURATION_MS / 2
-
-  const innerEvents: Array<
-    FocusChangeEvent | MouseMoveEvent | MouseDownEvent | MouseUpEvent
-  > = []
-
-  const locatorRectPreview = await locator.boundingBox()
-  const targetPos = position
-    ? position
-    : locatorRectPreview
-      ? {
-          x: locatorRectPreview.width / 2,
-          y: locatorRectPreview.height / 2,
-        }
-      : undefined
-
-  const mouseMovePlan =
-    targetPos && locatorRectPreview
-      ? {
-          targetPosInElement: targetPos,
-          ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
-          ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
-          easing: moveEasing,
-        }
-      : undefined
-
-  const scrollResult = await changeFocus(
-    locator,
-    autoZoomOptions,
-    mouseMovePlan
-  )
-  const focusChange = scrollResult
-  const locatorRect = focusChange.elementRect
-  if (!locatorRect) {
-    logger.warn(
-      '[screenci] Unable to get locator bounding box; skipping auto-scroll check.'
-    )
-  }
-
-  innerEvents.push(focusChange)
-  setMousePosition(page, {
-    x: focusChange.x,
-    y: focusChange.y,
-  })
-
-  await sleep(beforeClickPause)
-
-  const didScroll =
-    locatorRectPreview !== null &&
-    locatorRect !== undefined &&
-    (locatorRectPreview.x !== locatorRect.x ||
-      locatorRectPreview.y !== locatorRect.y ||
-      locatorRectPreview.width !== locatorRect.width ||
-      locatorRectPreview.height !== locatorRect.height)
-
-  if (
-    didScroll &&
-    targetPos &&
-    locatorRect &&
-    canUseDirectMouseClickAfterScroll(clickOptions)
-  ) {
-    const mouseClickOptions = {
-      position: targetPos,
-      ...(clickOptions?.button !== undefined
-        ? { button: clickOptions.button }
-        : {}),
-      ...(clickOptions?.clickCount !== undefined
-        ? { clickCount: clickOptions.clickCount }
-        : {}),
-      ...(clickOptions?.delay !== undefined
-        ? { delay: clickOptions.delay }
-        : {}),
-    }
-    const { mouseDownEvent, mouseUpEvent } = await performMouseClickAction({
-      locator,
-      interactionType,
-      targetX: locatorRect.x + targetPos.x,
-      targetY: locatorRect.y + targetPos.y,
-      clickOptions: mouseClickOptions,
-    })
-    innerEvents.push(mouseDownEvent)
-    innerEvents.push(mouseUpEvent)
-  } else {
-    const halfClickDuration = CLICK_DURATION_MS / 2
-    const clickTime = Date.now()
-    innerEvents.push(
-      buildMouseDownEvent({
-        startMs: clickTime - halfClickDuration,
-        endMs: clickTime,
-        easing: 'ease-in-out',
-      })
-    )
-    await doClick({
-      ...clickOptions,
-      ...(targetPos ? { position: targetPos } : {}),
-    })
-    innerEvents.push(
-      buildMouseUpEvent({
-        startMs: clickTime,
-        endMs: clickTime + halfClickDuration,
-        easing: 'ease-in-out',
-      })
-    )
-  }
-  await new Promise<void>((resolve) => setTimeout(resolve, halfClickDuration))
-
-  await new Promise<void>((resolve) => setTimeout(resolve, postClickPause))
-
-  // Animate mouse cursor in the specified direction after the click completes,
-  // capturing start/end times and final position for the recorded event.
-  if (postClickMove !== undefined) {
-    const currentPos = getMousePosition(page) ?? { x: 0, y: 0 }
-    let targetX: number | undefined
-    let targetY: number | undefined
-
-    if ('direction' in postClickMove) {
-      if (locatorRect === undefined) {
-        logger.warn(
-          '[screenci] postClickMove with direction requires a locator rect; skipping mouse move.'
-        )
-      } else {
-        const padding = postClickMove.padding ?? 0
-        switch (postClickMove.direction) {
-          case 'up':
-            targetX = currentPos.x
-            targetY = locatorRect.y - padding
-            break
-          case 'down':
-            targetX = currentPos.x
-            targetY = locatorRect.y + locatorRect.height + padding
-            break
-          case 'left':
-            targetX = locatorRect.x - padding
-            targetY = currentPos.y
-            break
-          case 'right':
-            targetX = locatorRect.x + locatorRect.width + padding
-            targetY = currentPos.y
-            break
-          default: {
-            const _: never = postClickMove.direction
-            throw new Error(`Unknown postClickMove direction: ${_}`)
-          }
-        }
-      }
-    } else {
-      targetX = currentPos.x + postClickMove.x
-      targetY = currentPos.y + postClickMove.y
-    }
-
-    if (targetX !== undefined && targetY !== undefined) {
-      const easing = postClickMove.easing ?? 'ease-in-out'
-      const duration = resolveMouseMoveDuration(page, targetX, targetY, {
-        duration: postClickMove.duration,
-        speed: postClickMove.speed,
-        defaultDuration: undefined,
-        context: 'postClickMove',
-      })
-      const { startMs, endMs } = await performMouseMove({
-        page,
-        targetX,
-        targetY,
-        duration,
-        easing,
-      })
-      innerEvents.push({
-        type: 'mouseMove',
-        x: targetX,
-        y: targetY,
-        startMs,
-        endMs,
-        duration: endMs - startMs,
-        ...(duration > 0 ? { easing } : {}),
-      })
-    }
-  }
-
-  let elementRect: ElementRect | undefined
-  if (locatorRect) {
-    elementRect = locatorRect ?? undefined
-  }
-
-  if (elementRect) {
-    return {
-      elementRect,
-      innerEvents,
-    }
-  } else {
-    logger.warn(
-      '[screenci] Failed to capture click coordinates from both DOM event and locator bounding box.'
-    )
-    return null
-  }
+type ResolvedLocatorMouseAction = {
+  doClick: Parameters<typeof performMouseClickAction>[0]['doClick']
+  supportsTrial: boolean
 }
 
-/**
- * Shared implementation for tap, check, uncheck, and select instrumentation.
- */
-type SimpleActionOptions =
-  | Parameters<Locator['tap']>[0]
-  | Parameters<Locator['check']>[0]
-  | Parameters<Locator['uncheck']>[0]
-  | Parameters<Locator['selectOption']>[1]
+function resolveLocatorMouseAction(
+  locator: Locator,
+  interactionType: MouseClickInteractionType
+): ResolvedLocatorMouseAction {
+  switch (interactionType) {
+    case 'click': {
+      const action = getOriginalLocatorClick(locator)
+      if (action) return { doClick: action, supportsTrial: true }
+      break
+    }
+    case 'tap': {
+      const action = getOriginalLocatorTap(locator)
+      if (action) return { doClick: action, supportsTrial: true }
+      break
+    }
+    case 'check': {
+      const action = getOriginalLocatorCheck(locator)
+      if (action) return { doClick: action, supportsTrial: true }
+      break
+    }
+    case 'uncheck': {
+      const action = getOriginalLocatorUncheck(locator)
+      if (action) return { doClick: action, supportsTrial: true }
+      break
+    }
+    case 'select': {
+      const action = getOriginalLocatorSelect(locator)
+      if (action) {
+        return {
+          doClick: (options) =>
+            action(
+              null,
+              options as Parameters<Locator['selectOption']>[1]
+            ).then(() => {}),
+          supportsTrial: false,
+        }
+      }
+      break
+    }
+    default: {
+      const _: never = interactionType
+      throw new Error(`Unknown mouse click interaction type: ${_}`)
+    }
+  }
+
+  throw new Error(
+    `[screenci] Missing original locator action for '${interactionType}'.`
+  )
+}
 
 async function performAction(
   mouseMoveRequest: MouseMoveRequest | undefined,
   locator: Locator,
-  subType: 'click' | 'tap' | 'check' | 'uncheck' | 'select',
+  doClick: Parameters<typeof performMouseClickAction>[0]['doClick'],
+  supportsTrial: boolean,
   autoZoomOptions?: AutoZoomOptions,
   position?: { x: number; y: number },
   beforeClickPause = 0,
   postClickPause = 0,
-  postClickMove?: PostClickMove
+  postClickMove?: PostClickMove,
+  shouldHideMouse = false
 ): Promise<ClickActionResult | null> {
   const page = locator.page()
   const focusChange = await changeFocus(
@@ -443,20 +265,18 @@ async function performAction(
 
   await sleep(beforeClickPause)
 
-  const {
-    mouseDownEvent,
-    mouseUpEvent,
-    elementRect: actionElementRect,
-  } = await performMouseClickAction({
-    locator,
-    interactionType: subType,
-    targetX: elementRect.x + targetPosition.x,
-    targetY: elementRect.y + targetPosition.y,
-    clickOptions: { position: targetPosition },
-  })
+  const { events, elementRect: actionElementRect } =
+    await performMouseClickAction({
+      locator,
+      doClick,
+      supportsTrial,
+      targetX: elementRect.x + targetPosition.x,
+      targetY: elementRect.y + targetPosition.y,
+      shouldHideMouse,
+      clickOptions: { position: targetPosition },
+    })
 
-  innerEvents.push(mouseDownEvent)
-  innerEvents.push(mouseUpEvent)
+  innerEvents.push(...events)
 
   await sleep(postClickPause)
 
@@ -614,6 +434,11 @@ export function instrumentLocator(locator: Locator): Locator {
 
     assertDurationOrSpeed(moveDuration, moveSpeed, 'click move')
 
+    const { doClick, supportsTrial } = resolveLocatorMouseAction(
+      locator,
+      'click'
+    )
+
     const result = await performAction(
       {
         targetPosInElement: position ?? { x: 0, y: 0 },
@@ -622,7 +447,8 @@ export function instrumentLocator(locator: Locator): Locator {
         easing: moveEasing ?? 'ease-in-out',
       },
       locator,
-      'click',
+      doClick,
+      supportsTrial,
       autoZoomOptions,
       position,
       beforeClickPause,
@@ -649,6 +475,7 @@ export function instrumentLocator(locator: Locator): Locator {
     text: string,
     options?: PressSequentiallyOptions
   ): Promise<void> => {
+    const clickOpt: ClickBeforeFillOption = options?.click ?? {}
     const {
       click: _click,
       autoZoomOptions,
@@ -674,77 +501,45 @@ export function instrumentLocator(locator: Locator): Locator {
     > = []
     let elementRect: ElementRect | undefined = undefined
 
-    if (options?.click !== undefined) {
-      // Click before fill: performClickActions handles scrolling and bounding box.
-      const clickOpt = options.click
-      const position = options.position
-      const {
-        moveDuration,
-        moveSpeed,
-        beforeClickPause,
-        moveEasing,
-        postClickPause,
-        postClickMove,
-        ...clickOptions
-      } = clickOpt
+    const {
+      moveDuration,
+      moveSpeed,
+      beforeClickPause,
+      moveEasing = 'ease-in-out',
+      postClickPause,
+      postClickMove,
+    } = clickOpt
 
-      const clickActionResult = await performClickActions(
-        locator,
-        (options) => originalClick(options),
-        clickOptions,
-        options.autoZoomOptions,
-        position,
-        moveDuration,
-        moveSpeed,
-        beforeClickPause,
-        moveEasing,
-        postClickPause,
-        postClickMove,
-        'click'
-      )
-      innerEvents.push(...(clickActionResult?.innerEvents ?? []))
-      elementRect = clickActionResult?.elementRect
-    } else {
-      const scrollResult = await changeFocus(locator, options?.autoZoomOptions)
-      const locatorRect = scrollResult.elementRect
-      const focusChange = scrollResult
-      if (focusChange) {
-        innerEvents.push(focusChange)
-      }
-
-      elementRect = locatorRect ?? undefined
-    }
-
-    // Hide cursor while typing (will be shown again on next mouse move)
-    const page = locator.page()
-    const shouldHideMouse = options?.hideMouse === true
-    if (shouldHideMouse) {
-      const cursorVisible = isMouseVisible(page)
-      if (cursorVisible) {
-        setMouseVisible(page, false)
-        const hideMs = Date.now()
-        innerEvents.push({
-          type: 'mouseHide',
-          startMs: hideMs,
-          endMs: hideMs,
-        })
-      }
-    }
-
-    const typeStartMs = Date.now()
-    await originalPressSequentially(
-      text,
-      pressOptions as Parameters<Locator['pressSequentially']>[1]
+    const clickActionResult = await performAction(
+      {
+        targetPosInElement: options?.position ?? { x: 0, y: 0 },
+        ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
+        ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
+        easing: moveEasing,
+      },
+      locator,
+      async () =>
+        originalPressSequentially(
+          text,
+          pressOptions as Parameters<Locator['pressSequentially']>[1]
+        ),
+      false,
+      autoZoomOptions,
+      options?.position,
+      beforeClickPause ?? CLICK_DURATION_MS / 2,
+      postClickPause ?? CLICK_DURATION_MS / 2,
+      postClickMove,
+      options?.hideMouse === true
     )
-
-    innerEvents.push({
-      type: 'mouseWait',
-      startMs: typeStartMs,
-      endMs: Date.now(),
-    })
+    innerEvents.push(...(clickActionResult?.innerEvents ?? []))
+    elementRect = clickActionResult?.elementRect
 
     if (activeClickRecorder) {
-      activeClickRecorder.addInput('pressSequentially', innerEvents)
+      activeClickRecorder.addInput(
+        'pressSequentially',
+        elementRect,
+        innerEvents
+      )
     }
   }
 
@@ -773,156 +568,81 @@ export function instrumentLocator(locator: Locator): Locator {
       return originalFill(value, fillOptions as Parameters<Locator['fill']>[1])
     }
 
-    if (options?.click !== undefined) {
-      const clickActionResult = await performClickActions(
-        locator,
-        (clickOptions) => originalClick(clickOptions),
-        {},
-        options.autoZoomOptions,
-        options.position,
-        options.click.moveDuration,
-        options.click.moveSpeed,
-        options.click.beforeClickPause,
-        options.click.moveEasing,
-        options.click.postClickPause,
-        options.click.postClickMove,
-        'click'
-      )
-
-      const innerEvents: Array<
-        | FocusChangeEvent
-        | MouseMoveEvent
-        | MouseDownEvent
-        | MouseUpEvent
-        | MouseHideEvent
-        | MouseWaitEvent
-      > = [...(clickActionResult?.innerEvents ?? [])]
-      const elementRect = clickActionResult?.elementRect
-      const page = locator.page()
-
-      if (options.hideMouse === true) {
-        const cursorVisible = isMouseVisible(page)
-        if (cursorVisible) {
-          setMouseVisible(page, false)
-          const hideMs = Date.now()
-          innerEvents.push({
-            type: 'mouseHide',
-            startMs: hideMs,
-            endMs: hideMs,
-          })
-        }
-      }
-
-      await locator.evaluate((element) => {
-        if (
-          element instanceof HTMLInputElement ||
-          element instanceof HTMLTextAreaElement
-        ) {
-          element.focus()
-          element.select()
-          return
-        }
-
-        if (element instanceof HTMLElement && element.isContentEditable) {
-          element.focus()
-          const selection = element.ownerDocument.getSelection()
-          if (!selection) return
-          const range = element.ownerDocument.createRange()
-          range.selectNodeContents(element)
-          selection.removeAllRanges()
-          selection.addRange(range)
-        }
-      })
-
-      const duration = options.duration ?? 1000
-      const delay = value.length > 0 ? duration / value.length : 0
-      const typeStartMs = Date.now()
-      await page.keyboard.type(value, { delay })
-      innerEvents.push({
-        type: 'mouseWait',
-        startMs: typeStartMs,
-        endMs: Date.now(),
-      })
-
-      if (activeClickRecorder) {
-        activeClickRecorder.addInput(
-          'pressSequentially',
-          elementRect,
-          innerEvents
-        )
-      }
-      return
-    }
-
-    const page = locator.page()
+    const clickOpt: ClickBeforeFillOption = options?.click ?? {}
     const innerEvents: Array<
-      FocusChangeEvent | MouseHideEvent | MouseWaitEvent
+      | FocusChangeEvent
+      | MouseMoveEvent
+      | MouseDownEvent
+      | MouseUpEvent
+      | MouseHideEvent
+      | MouseWaitEvent
     > = []
-    const fillOptions = options ?? {}
+    let elementRect: ElementRect | undefined = undefined
 
-    let elementRect: ElementRect | undefined
+    const {
+      moveDuration,
+      moveSpeed,
+      beforeClickPause,
+      moveEasing = 'ease-in-out',
+      postClickPause,
+      postClickMove,
+    } = clickOpt
 
-    if (fillOptions.hideMouse === true) {
-      const cursorVisible = isMouseVisible(page)
-      if (cursorVisible) {
-        setMouseVisible(page, false)
-        const hideMs = Date.now()
-        innerEvents.push({
-          type: 'mouseHide',
-          startMs: hideMs,
-          endMs: hideMs,
+    const clickActionResult = await performAction(
+      {
+        targetPosInElement: options?.position ?? { x: 0, y: 0 },
+        ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
+        ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
+        easing: moveEasing,
+      },
+      locator,
+      async (clickOptions) => {
+        if (options?.click !== undefined) {
+          await originalClick(clickOptions)
+        }
+        await locator.evaluate((element) => {
+          if (
+            element instanceof HTMLInputElement ||
+            element instanceof HTMLTextAreaElement
+          ) {
+            element.focus()
+            element.select()
+            return
+          }
+
+          if (element instanceof HTMLElement && element.isContentEditable) {
+            element.focus()
+            const selection = element.ownerDocument.getSelection()
+            if (!selection) return
+            const range = element.ownerDocument.createRange()
+            range.selectNodeContents(element)
+            selection.removeAllRanges()
+            selection.addRange(range)
+          }
         })
-      }
-    }
 
-    const scrollResult = await changeFocus(locator, options?.autoZoomOptions)
-    const locatorRect = scrollResult.elementRect
-    const focusChange = scrollResult
+        const duration = options?.duration ?? 1000
+        const delay = value.length > 0 ? duration / value.length : 0
+        await locator.page().keyboard.type(value, { delay })
+      },
+      false,
+      options?.autoZoomOptions,
+      options?.position,
+      beforeClickPause ?? CLICK_DURATION_MS / 2,
+      postClickPause ?? CLICK_DURATION_MS / 2,
+      postClickMove,
+      options?.hideMouse === true
+    )
+    innerEvents.push(...(clickActionResult?.innerEvents ?? []))
+    elementRect = clickActionResult?.elementRect
 
-    if (focusChange) {
-      innerEvents.push(focusChange)
-    }
-
-    await locator.evaluate((element) => {
-      if (
-        element instanceof HTMLInputElement ||
-        element instanceof HTMLTextAreaElement
-      ) {
-        element.focus()
-        element.select()
-        return
-      }
-
-      if (element instanceof HTMLElement && element.isContentEditable) {
-        element.focus()
-        const selection = element.ownerDocument.getSelection()
-        if (!selection) return
-        const range = element.ownerDocument.createRange()
-        range.selectNodeContents(element)
-        selection.removeAllRanges()
-        selection.addRange(range)
-      }
-    })
-
-    const duration = fillOptions.duration ?? 1000
-    const delay = value.length > 0 ? duration / value.length : 0
-    const typeStartMs = Date.now()
-    await page.keyboard.type(value, { delay })
-    innerEvents.push({
-      type: 'mouseWait',
-      startMs: typeStartMs,
-      endMs: Date.now(),
-    })
-
-    if (activeClickRecorder && innerEvents.length > 0) {
+    if (activeClickRecorder) {
       activeClickRecorder.addInput(
         'pressSequentially',
         elementRect,
         innerEvents
       )
     }
-
-    return
   }
 
   const originalTap = locator.tap.bind(locator)
@@ -951,6 +671,8 @@ export function instrumentLocator(locator: Locator): Locator {
       return originalTap(tapOpts as Parameters<Locator['tap']>[0])
     }
 
+    const { doClick, supportsTrial } = resolveLocatorMouseAction(locator, 'tap')
+
     const result = await performAction(
       clickOpt
         ? {
@@ -965,7 +687,8 @@ export function instrumentLocator(locator: Locator): Locator {
           }
         : undefined,
       locator,
-      'tap',
+      doClick,
+      supportsTrial,
       autoZoomOptions,
       position,
       clickOpt?.beforeClickPause,
@@ -1004,6 +727,11 @@ export function instrumentLocator(locator: Locator): Locator {
       return originalCheck(checkOpts as Parameters<Locator['check']>[0])
     }
 
+    const { doClick, supportsTrial } = resolveLocatorMouseAction(
+      locator,
+      'check'
+    )
+
     const result = await performAction(
       clickOpt
         ? {
@@ -1018,7 +746,8 @@ export function instrumentLocator(locator: Locator): Locator {
           }
         : undefined,
       locator,
-      'check',
+      doClick,
+      supportsTrial,
       autoZoomOptions,
       position,
       clickOpt?.beforeClickPause,
@@ -1057,6 +786,11 @@ export function instrumentLocator(locator: Locator): Locator {
       return originalUncheck(uncheckOpts as Parameters<Locator['uncheck']>[0])
     }
 
+    const { doClick, supportsTrial } = resolveLocatorMouseAction(
+      locator,
+      'uncheck'
+    )
+
     const result = await performAction(
       clickOpt
         ? {
@@ -1071,7 +805,8 @@ export function instrumentLocator(locator: Locator): Locator {
           }
         : undefined,
       locator,
-      'uncheck',
+      doClick,
+      supportsTrial,
       autoZoomOptions,
       position,
       clickOpt?.beforeClickPause,
@@ -1141,6 +876,10 @@ export function instrumentLocator(locator: Locator): Locator {
     currentSelectValues = values
     currentSelectOptions = selectOpts as Parameters<Locator['selectOption']>[1]
     currentSelectResult = []
+    const { doClick, supportsTrial } = resolveLocatorMouseAction(
+      locator,
+      'select'
+    )
     const actionResult = await performAction(
       clickOpt
         ? {
@@ -1155,7 +894,8 @@ export function instrumentLocator(locator: Locator): Locator {
           }
         : undefined,
       locator,
-      'select',
+      doClick,
+      supportsTrial,
       autoZoomOptions,
       position,
       clickOpt?.beforeClickPause,

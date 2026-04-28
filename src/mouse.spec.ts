@@ -133,7 +133,8 @@ describe('mouse helpers', () => {
 
     const promise = performMouseClickAction({
       locator,
-      interactionType: 'click',
+      doClick: mouseClickInternal,
+      supportsTrial: false,
       targetX: 12,
       targetY: 34,
       clickOptions: { clickCount: 2, delay: 20 },
@@ -141,7 +142,7 @@ describe('mouse helpers', () => {
 
     await vi.runAllTimersAsync()
     const result = await promise
-    const { mouseDownEvent: down, mouseUpEvent: up } = result
+    const [down, up] = result.events
 
     expect(mouseClickInternal).toHaveBeenCalledWith({
       clickCount: 2,
@@ -186,7 +187,8 @@ describe('mouse helpers', () => {
 
     const promise = performMouseClickAction({
       locator,
-      interactionType: 'check',
+      doClick,
+      supportsTrial: true,
       targetX: 12,
       targetY: 34,
     })

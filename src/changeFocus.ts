@@ -37,7 +37,7 @@ type ScrollWindow = Window & {
 }
 
 export type MouseMoveRequest = {
-  targetPosInElement: { x: number; y: number }
+  targetPosInElement?: { x: number; y: number } | undefined
   duration?: number
   speed?: number
   easing: Easing
@@ -1292,6 +1292,16 @@ export async function changeFocus(
     currentZoomEnd,
   })
 
+  const mouseTarget: Point = mouseMove?.targetPosInElement
+    ? {
+        x: plan.finalLocatorRect.x + mouseMove.targetPosInElement.x,
+        y: plan.finalLocatorRect.y + mouseMove.targetPosInElement.y,
+      }
+    : {
+        x: plan.finalLocatorRect.x + plan.finalLocatorRect.width / 2,
+        y: plan.finalLocatorRect.y + plan.finalLocatorRect.height / 2,
+      }
+
   const mouseMovePlan = resolveMouseMovePlan({
     mouseMove,
     startViewportPos,
@@ -1300,10 +1310,7 @@ export async function changeFocus(
     easing: timing.easing,
     cursorTriggerEdgeThreshold: CURSOR_TRIGGER_EDGE_THRESHOLD,
     cursorTriggerMaxProgress: CURSOR_TRIGGER_MAX_PROGRESS,
-    mouseTarget: {
-      x: plan.finalLocatorRect.x + (mouseMove?.targetPosInElement.x ?? 0),
-      y: plan.finalLocatorRect.y + (mouseMove?.targetPosInElement.y ?? 0),
-    },
+    mouseTarget,
   })
 
   const focusChangeStartMs = Date.now()

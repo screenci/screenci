@@ -905,8 +905,8 @@ describe('instrumentLocator', () => {
     expect(recordedInputEvents).toHaveLength(1)
     const fill = recordedInputEvents[0]!
     expect(fill.subType).toBe('pressSequentially')
-    expect(fill.events.some((e) => e.type === 'mouseDown')).toBe(false)
-    expect(fill.events.some((e) => e.type === 'mouseUp')).toBe(false)
+    expect(fill.events.some((e) => e.type === 'mouseDown')).toBe(true)
+    expect(fill.events.some((e) => e.type === 'mouseUp')).toBe(true)
   })
 
   it('records fill-with-click through the shared scroll-first click path before typing', async () => {

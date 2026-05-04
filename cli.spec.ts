@@ -792,9 +792,7 @@ describe('CLI', () => {
       await main()
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining(
-          '/api/cli/project-info?projectName=Test+Project'
-        ),
+        expect.stringContaining('/cli/project-info?projectName=Test+Project'),
         expect.objectContaining({
           headers: { 'X-ScreenCI-Secret': 'test-secret' },
         })
@@ -830,7 +828,7 @@ describe('CLI', () => {
       await main()
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/cli/public-video/video_123'),
+        expect.stringContaining('/cli/public-video/video_123'),
         expect.objectContaining({
           method: 'PUT',
           headers: { 'X-ScreenCI-Secret': 'test-secret' },
@@ -854,7 +852,7 @@ describe('CLI', () => {
       await main()
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/cli/public-video/video_123'),
+        expect.stringContaining('/cli/public-video/video_123'),
         expect.objectContaining({
           method: 'DELETE',
           headers: { 'X-ScreenCI-Secret': 'test-secret' },

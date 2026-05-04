@@ -19,7 +19,7 @@ You need **Node.js** and **Podman** (or Docker) installed. Node.js runs screenci
 npx screenci init
 ```
 
-You'll be prompted for a project name. screenci then opens a browser window to authenticate you and fetch your `SCREENCI_SECRET`, which is saved to `.env` automatically. After that it creates the directory, scaffolds the project, and prints what to do next.
+You'll be prompted for a project name. screenci then creates the directory, scaffolds the project, and prints what to do next. If you do not already have `SCREENCI_SECRET`, `screenci record` will open a browser window to authenticate you before the first recording.
 
 ```
 my-project/
@@ -29,7 +29,7 @@ my-project/
   Dockerfile             ← for CI recording in a container
   package.json
   .gitignore
-  .env                   ← contains SCREENCI_SECRET (gitignored)
+  .env                   ← optional local secret file (gitignored)
 ```
 
 ## Write a video

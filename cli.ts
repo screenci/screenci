@@ -1517,10 +1517,42 @@ function getProjectDirName(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-')
 }
 
+function getInitProjectRoot(): string {
+  return process.env['SCREENCI_INIT_CWD'] ?? process.cwd()
+}
+
+function buildChildEnv(): NodeJS.ProcessEnv {
+  const { PATH, HOME, USER, LOGNAME, TMPDIR, TEMP, TMP } = process.env
+  return {
+    PATH,
+    HOME,
+    USER,
+    LOGNAME,
+    TMPDIR,
+    TEMP,
+    TMP,
+    SCREENCI_SECRET: process.env.SCREENCI_SECRET,
+    SCREENCI_INIT_CWD: process.env.SCREENCI_INIT_CWD,
+    DEV_FRONTEND_PORT: process.env.DEV_FRONTEND_PORT,
+    DEV_BACKEND_PORT: process.env.DEV_BACKEND_PORT,
+    SCREENCI_LOCAL_IMAGE: process.env.SCREENCI_LOCAL_IMAGE,
+    SCREENCI_IN_CONTAINER: process.env.SCREENCI_IN_CONTAINER,
+    SCREENCI_RECORD: process.env.SCREENCI_RECORD,
+    SCREENCI_SIGNAL_LOGGING: process.env.SCREENCI_SIGNAL_LOGGING,
+  }
+}
+
+function requireContainerRuntime(): ContainerRuntimeName {
+  const runtime = detectContainerRuntime()
+  if (runtime === 'podman' || runtime === 'docker') return runtime
+  throw new Error('No container runtime available')
+}
+
 async function runInitAuth(): Promise<void> {
   const appUrl = getDevFrontendUrl()
   try {
     const secret = await performBrowserLogin(appUrl)
+    process.env.SCREENCI_SECRET = secret
     const savePath = resolve(process.cwd(), '.env')
     await writeFile(savePath, `SCREENCI_SECRET=${secret}\n`)
     logger.info(`Successfully saved SCREENCI_SECRET to ${savePath}`)
@@ -1530,6 +1562,32 @@ async function runInitAuth(): Promise<void> {
     logger.info(
       'You can add SCREENCI_SECRET manually to .env later (get it from the API Key page in the dashboard).'
     )
+  }
+}
+
+async function ensureScreenciSecret(): Promise<string | undefined> {
+  const existingSecret = process.env.SCREENCI_SECRET
+  if (existingSecret) return existingSecret
+
+  logger.info(
+    'Opening browser for authentication to get your SCREENCI_SECRET...'
+  )
+
+  const appUrl = getDevFrontendUrl()
+  try {
+    const secret = await performBrowserLogin(appUrl)
+    process.env.SCREENCI_SECRET = secret
+    const savePath = resolve(process.cwd(), '.env')
+    await writeFile(savePath, `SCREENCI_SECRET=${secret}\n`)
+    logger.info(`Successfully saved SCREENCI_SECRET to ${savePath}`)
+    return secret
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.warn(`Authentication failed: ${msg}`)
+    logger.info(
+      'You can add SCREENCI_SECRET manually to .env later (get it from the API Key page in the dashboard).'
+    )
+    return undefined
   }
 }
 
@@ -1549,25 +1607,7 @@ async function runInit(
 ): Promise<void> {
   checkNodeVersion()
   checkContainerRuntimeForInit()
-
-  // Authenticate before creating any files
-  let secret = process.env.SCREENCI_SECRET
-  if (!secret) {
-    logger.info(
-      'Opening browser for authentication to get your SCREENCI_SECRET...'
-    )
-    const appUrl = getDevFrontendUrl()
-    try {
-      secret = await performBrowserLogin(appUrl)
-      process.env.SCREENCI_SECRET = secret
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      logger.warn(`Authentication failed: ${msg}`)
-      logger.info(
-        'You can add SCREENCI_SECRET manually to .env later (get it from the API Key page in the dashboard).'
-      )
-    }
-  }
+  const initCwd = getInitProjectRoot()
 
   let projectName = projectNameArg?.trim()
 
@@ -1581,7 +1621,7 @@ async function runInit(
   }
 
   const dirName = getProjectDirName(projectName)
-  const projectDir = resolve(process.cwd(), dirName)
+  const projectDir = resolve(initCwd, dirName)
 
   if (existsSync(projectDir)) {
     logger.error(`Error: Directory "${dirName}" already exists`)
@@ -1590,7 +1630,7 @@ async function runInit(
 
   const shouldAddPlaywrightCli = await confirm({
     message:
-      'Do you want to write videos with an AI agent based on a URL? playwright-cli is recommended and will be added as a dev dependency.',
+      'Do you want to write videos with an AI agent based on a URL and not just source code? If yes, playwright-cli will be also installed.',
     default: true,
   })
 
@@ -1627,9 +1667,7 @@ async function runInit(
     resolve(projectDir, '.github', 'workflows', 'record.yml'),
     generateGithubAction()
   )
-  if (secret) {
-    await writeFile(resolve(projectDir, '.env'), `SCREENCI_SECRET=${secret}\n`)
-  }
+  await writeFile(resolve(projectDir, '.env'), '')
 
   logger.info(`Initialized screenci project "${projectName}" in ${projectDir}/`)
   logger.info('Files created:')
@@ -1640,9 +1678,7 @@ async function runInit(
   logger.info('  .gitignore')
   logger.info('  videos/example.video.ts')
   logger.info('  .github/workflows/record.yml')
-  if (secret) {
-    logger.info('  .env  (contains SCREENCI_SECRET)')
-  }
+  logger.info('  .env  (empty placeholder)')
   logger.info('')
   logger.info('screenci requires dependencies to be installed.')
   if (verbose) {
@@ -1680,6 +1716,16 @@ async function runInit(
     ['playwright', 'install', 'chromium', '--with-deps'],
     projectDir,
     'screenci init'
+  )
+
+  logger.info('Warming the container image for faster first record...')
+  const cliDir = dirname(fileURLToPath(import.meta.url))
+  await buildRecordImages(
+    requireContainerRuntime(),
+    cliDir,
+    resolve(projectDir, 'Dockerfile'),
+    projectDir,
+    verbose
   )
 
   logger.info('')
@@ -2079,7 +2125,7 @@ function spawnInherited(
 
 export function detectContainerRuntime(
   forcedRuntime?: ContainerRuntimeName
-): string {
+): ContainerRuntimeName {
   const runtimeCheck = forcedRuntime
     ? checkContainerRuntime(forcedRuntime)
     : getPreferredContainerRuntime()
@@ -2115,22 +2161,124 @@ function checkContainerRuntimeForInit(): void {
   warnIfContainerRuntimeVersionIsOld(runtimeCheck)
 }
 
-async function buildImage(
-  cmd: string,
-  args: string[],
-  label: string,
+async function buildProjectImage(
+  containerRuntime: ContainerRuntimeName,
+  dockerfilePath: string,
+  configDir: string,
   verbose: boolean
 ): Promise<void> {
   if (verbose) {
-    await spawnInherited(cmd, args)
+    await spawnInherited(
+      containerRuntime,
+      ['build', '-f', dockerfilePath, '-t', 'screenci', configDir],
+      undefined,
+      'Building project image'
+    )
     return
   }
-  const spinner = ora(label).start()
+
+  await spawnSilent(containerRuntime, [
+    'build',
+    '-f',
+    dockerfilePath,
+    '-t',
+    'screenci',
+    configDir,
+  ])
+}
+
+async function buildScreenciImage(
+  containerRuntime: ContainerRuntimeName,
+  cliDir: string,
+  verbose: boolean
+): Promise<void> {
+  const screenciPackageRoot = existsSync(resolve(cliDir, 'package.json'))
+    ? cliDir
+    : resolve(cliDir, '..')
+  const screenciDockerfilePath = resolve(cliDir, 'Dockerfile')
+
+  if (verbose) {
+    await spawnInherited(
+      containerRuntime,
+      [
+        'build',
+        '-f',
+        screenciDockerfilePath,
+        '-t',
+        'ghcr.io/screenci/record:latest',
+        screenciPackageRoot,
+      ],
+      undefined,
+      'Building screenci image'
+    )
+    return
+  }
+
+  await spawnSilent(containerRuntime, [
+    'build',
+    '-f',
+    screenciDockerfilePath,
+    '-t',
+    'ghcr.io/screenci/record:latest',
+    screenciPackageRoot,
+  ])
+}
+
+async function buildRecordImages(
+  containerRuntime: ContainerRuntimeName,
+  cliDir: string,
+  dockerfilePath: string,
+  configDir: string,
+  verbose: boolean
+): Promise<void> {
+  if (verbose) {
+    await spawnInherited(
+      containerRuntime,
+      [
+        'build',
+        '-f',
+        resolve(cliDir, 'Dockerfile'),
+        '-t',
+        'ghcr.io/screenci/record:latest',
+        existsSync(resolve(cliDir, 'package.json'))
+          ? cliDir
+          : resolve(cliDir, '..'),
+      ],
+      undefined,
+      'Building screenci image'
+    )
+    await spawnInherited(
+      containerRuntime,
+      ['build', '-f', dockerfilePath, '-t', 'screenci', configDir],
+      undefined,
+      'Building project image'
+    )
+    return
+  }
+
+  const spinner = ora('Building screenci image').start()
   try {
-    await spawnSilent(cmd, args)
-    spinner.succeed(label)
+    await spawnSilent(containerRuntime, [
+      'build',
+      '-f',
+      resolve(cliDir, 'Dockerfile'),
+      '-t',
+      'ghcr.io/screenci/record:latest',
+      existsSync(resolve(cliDir, 'package.json'))
+        ? cliDir
+        : resolve(cliDir, '..'),
+    ])
+    await spawnSilent(containerRuntime, [
+      'build',
+      '-f',
+      dockerfilePath,
+      '-t',
+      'screenci',
+      configDir,
+    ])
+    spinner.succeed('Building screenci image')
   } catch (err) {
-    spinner.fail(label)
+    spinner.fail('Building screenci image')
     const msg = err instanceof Error ? err.message : String(err)
     logger.error(msg)
     logger.error('Run again with --verbose to see the full build output')
@@ -2176,8 +2324,6 @@ async function runWithContainer(
 
   const containerRuntime = detectContainerRuntime(forcedRuntime)
 
-  const ghcrImage = 'ghcr.io/screenci/record:latest'
-
   const dockerfileVersion = parseDockerfileVersion(dockerfilePath)
 
   if (process.env['SCREENCI_LOCAL_IMAGE']) {
@@ -2192,76 +2338,23 @@ async function runWithContainer(
       `Using image tag ${imageTag} instead of the version ${dockerfileVersion} from Dockerfile`
     )
     if (!imageExists) {
-      await buildImage(
-        containerRuntime,
-        ['pull', remoteImage],
-        'Pulling screenci image',
-        verbose
-      )
-    }
-    await spawnSilent(containerRuntime, ['tag', remoteImage, ghcrImage])
-  } else {
-    const cliDir = dirname(fileURLToPath(import.meta.url))
-    const screenciPackageRoot = existsSync(resolve(cliDir, 'package.json'))
-      ? cliDir
-      : resolve(cliDir, '..')
-    const screenciDockerfilePath = resolve(cliDir, 'Dockerfile')
-
-    if (verbose) {
-      await spawnInherited(
-        containerRuntime,
-        [
-          'build',
-          '-f',
-          screenciDockerfilePath,
-          '-t',
-          ghcrImage,
-          screenciPackageRoot,
-        ],
-        undefined,
-        'building screenci image'
-      )
-      await spawnInherited(
-        containerRuntime,
-        ['build', '-f', dockerfilePath, '-t', 'screenci', configDir],
-        undefined,
-        'building project image'
-      )
-    } else {
-      const spinner = ora('Building screenci image').start()
-      try {
-        await spawnSilent(containerRuntime, [
-          'build',
-          '-f',
-          screenciDockerfilePath,
-          '-t',
-          ghcrImage,
-          screenciPackageRoot,
-        ])
-        await spawnSilent(containerRuntime, [
-          'build',
-          '-f',
-          dockerfilePath,
-          '-t',
-          'screenci',
-          configDir,
-        ])
-        spinner.succeed('Building screenci image')
-      } catch (err) {
-        spinner.fail('Building screenci image')
-        const msg = err instanceof Error ? err.message : String(err)
-        logger.error(msg)
-        logger.error('Run again with --verbose to see the full build output')
-        process.exit(1)
+      if (verbose) {
+        await spawnInherited(containerRuntime, ['pull', remoteImage])
+      } else {
+        await spawnSilent(containerRuntime, ['pull', remoteImage])
       }
     }
-  }
-
-  if (imageTag !== undefined || process.env['SCREENCI_LOCAL_IMAGE']) {
-    await buildImage(
+    await spawnSilent(containerRuntime, [
+      'tag',
+      remoteImage,
+      'ghcr.io/screenci/record:latest',
+    ])
+  } else {
+    await buildRecordImages(
       containerRuntime,
-      ['build', '-f', dockerfilePath, '-t', 'screenci', configDir],
-      'Building project image',
+      dirname(fileURLToPath(import.meta.url)),
+      dockerfilePath,
+      configDir,
       verbose
     )
   }
@@ -2312,6 +2405,8 @@ async function run(
     process.exit(1)
   }
 
+  await ensureScreenciSecret()
+
   // Only validate args for record command
   if (command === 'record') {
     validateArgs(additionalArgs)
@@ -2336,7 +2431,7 @@ async function run(
   const child = spawn('npx', playwrightArgs, {
     stdio: 'inherit',
     env: {
-      ...process.env,
+      ...buildChildEnv(),
       // Enable recording only for record command
       ...(command === 'record' ? { SCREENCI_RECORD: 'true' } : {}),
     },

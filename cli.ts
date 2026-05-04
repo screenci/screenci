@@ -793,7 +793,7 @@ async function uploadAssets(
     throwIfAborted()
     try {
       const checkRes = await fetch(
-        `${apiUrl}/cli/upload/${recordingId}/asset/check`,
+        `${apiUrl}/api/cli/upload/${recordingId}/asset/check`,
         {
           method: 'POST',
           headers: {
@@ -834,7 +834,7 @@ async function uploadAssets(
 
       throwIfAborted()
 
-      const res = await fetch(`${apiUrl}/cli/upload/${recordingId}/asset`, {
+      const res = await fetch(`${apiUrl}/api/cli/upload/${recordingId}/asset`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -927,7 +927,7 @@ async function uploadRecordings(
           ? await hashFile(recordingPath)
           : undefined
         // Step 1: register upload and get recordingId
-        const startResponse = await fetch(`${apiUrl}/cli/upload/start`, {
+        const startResponse = await fetch(`${apiUrl}/api/cli/upload/start`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1007,7 +1007,7 @@ async function uploadRecordings(
           })
           try {
             const recordingResponse = await fetch(
-              `${apiUrl}/cli/upload/${recordingId}/recording`,
+              `${apiUrl}/api/cli/upload/${recordingId}/recording`,
               {
                 method: 'PUT',
                 headers: {
@@ -1245,7 +1245,7 @@ async function fetchProjectInfo(
 ): Promise<ProjectInfoResponse> {
   const { screenciConfig, secret, apiUrl } =
     await requireScreenCISecret(configPath)
-  const url = new URL(`${apiUrl}/cli/project-info`)
+  const url = new URL(`${apiUrl}/api/cli/project-info`)
   url.searchParams.set('projectName', screenciConfig.projectName)
 
   const res = await fetch(url.toString(), {
@@ -1276,7 +1276,7 @@ async function updateVideoVisibility(
 ): Promise<void> {
   const { secret, apiUrl } = await requireScreenCISecret(configPath)
   const method = isPublic ? 'PUT' : 'DELETE'
-  const res = await fetch(`${apiUrl}/cli/public-video/${videoId}`, {
+  const res = await fetch(`${apiUrl}/api/cli/public-video/${videoId}`, {
     method,
     headers: {
       'X-ScreenCI-Secret': secret,

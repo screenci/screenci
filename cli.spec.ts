@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
+import pc from 'picocolors'
 import { logger } from './src/logger.js'
 import type { VoiceKey } from './src/voices.js'
 import type { RecordingData } from './src/recording.js'
@@ -222,7 +223,114 @@ describe('CLI', () => {
     })
 
     it('should trigger auth when record starts without SCREENCI_SECRET', async () => {
-      expect(true).toBe(true)
+      process.argv = ['node', 'cli.js', 'record']
+      delete process.env.SCREENCI_SECRET
+
+      mockSpawn.mockReset()
+      const authOpenProcess = {
+        unref: vi.fn(),
+      } as unknown as ChildProcess
+      const buildProcess = new EventEmitter()
+      const projectBuildProcess = new EventEmitter()
+      const runProcess = new EventEmitter()
+      const containerProcesses = [buildProcess, projectBuildProcess, runProcess]
+
+      mockSpawn.mockImplementation((command: string) => {
+        if (command === 'xdg-open') {
+          return authOpenProcess
+        }
+
+        if (command === 'podman') {
+          const nextProcess = containerProcesses.shift()
+          if (!nextProcess) {
+            throw new Error('Unexpected extra podman spawn')
+          }
+          return nextProcess as unknown as ChildProcess
+        }
+
+        throw new Error(`Unexpected spawn command: ${command}`)
+      })
+      mockCreateHttpServer.mockImplementation(
+        (handler: (req: unknown, res: unknown) => void) => {
+          const server = {
+            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+              expect(
+                mockSpawn.mock.calls.some(([command]) => command === 'podman')
+              ).toBe(false)
+              cb()
+              const req = { url: '/callback?secret=auth-secret-123' }
+              const res = {
+                writeHead: vi.fn(),
+                end: vi.fn(),
+              }
+              handler(req, res)
+            }),
+            close: vi.fn(),
+            address: vi.fn().mockReturnValue({ port: 12345 }),
+            on: vi.fn(),
+          }
+          return server
+        }
+      )
+
+      const { main } = await import('./cli')
+      const mainPromise = main()
+
+      await vi.waitFor(() =>
+        expect(mockSpawn).toHaveBeenCalledWith(
+          'xdg-open',
+          [expect.stringContaining('/cli-auth?callback=')],
+          expect.objectContaining({ detached: true, stdio: 'ignore' })
+        )
+      )
+      await vi.waitFor(() =>
+        expect(
+          mockSpawn.mock.calls.filter(([command]) => command === 'podman')
+        ).toHaveLength(1)
+      )
+      buildProcess.emit('close', 0)
+      await vi.waitFor(() =>
+        expect(
+          mockSpawn.mock.calls.filter(([command]) => command === 'podman')
+        ).toHaveLength(2)
+      )
+      projectBuildProcess.emit('close', 0)
+      await vi.waitFor(() =>
+        expect(
+          mockSpawn.mock.calls.filter(([command]) => command === 'podman')
+        ).toHaveLength(3)
+      )
+      runProcess.emit('close', 0)
+
+      await mainPromise
+
+      expect(mockCreateHttpServer).toHaveBeenCalledTimes(1)
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining('.env'),
+        'SCREENCI_SECRET=auth-secret-123\n'
+      )
+    })
+
+    it('should not trigger auth when test starts without SCREENCI_SECRET', async () => {
+      process.env.SCREENCI_IN_CONTAINER = 'true'
+      process.argv = ['node', 'cli.js', 'test']
+      delete process.env.SCREENCI_SECRET
+
+      mockSpawn.mockReset()
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockCreateHttpServer).not.toHaveBeenCalled()
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        expect.arrayContaining(['playwright', 'test']),
+        expect.objectContaining({ stdio: 'inherit' })
+      )
     })
 
     it('should mount config, .screenci, and videos volumes', async () => {
@@ -1482,6 +1590,18 @@ describe('CLI', () => {
 
       expect(loggerInfoSpy).toHaveBeenCalledWith(
         "Running 'npx playwright install chromium --with-deps'..."
+      )
+    })
+
+    it('should show a green Playwright success message after install', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project', '--verbose']
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        pc.green('✓ Playwright installed successfully')
       )
     })
 

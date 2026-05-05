@@ -1455,7 +1455,7 @@ async function performBrowserLogin(appUrl: string): Promise<string> {
         if (secret) {
           res.writeHead(200, { 'Content-Type': 'text/html' })
           res.end(
-            '<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p style="font-size:1.2rem">Authentication successful! You can close this tab.</p></body></html>'
+            '<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p style="font-size:1.2rem">Setup complete! You can close this tab.</p></body></html>'
           )
           server.close()
           resolve(secret)
@@ -1492,7 +1492,7 @@ async function performBrowserLogin(appUrl: string): Promise<string> {
         server.close()
         reject(new Error('Authentication timed out after 5 minutes'))
       },
-      5 * 60 * 1000
+      15 * 60 * 1000
     )
 
     server.on('close', () => clearTimeout(timeout))
@@ -1717,8 +1717,7 @@ async function runInit(
     projectDir,
     'screenci init'
   )
-
-  logger.info('Warming the container image for faster first record...')
+  logger.info(pc.green('✓ Playwright installed successfully'))
   const cliDir = dirname(fileURLToPath(import.meta.url))
   await buildRecordImages(
     requireContainerRuntime(),
@@ -1794,6 +1793,10 @@ export async function main() {
             // Config import failed — continue with whatever is already in env
           }
         }
+      }
+
+      if (useContainer) {
+        await ensureScreenciSecret()
       }
 
       if (useContainer) {
@@ -2405,10 +2408,9 @@ async function run(
     process.exit(1)
   }
 
-  await ensureScreenciSecret()
-
   // Only validate args for record command
   if (command === 'record') {
+    await ensureScreenciSecret()
     validateArgs(additionalArgs)
     const screenciDir = resolve(dirname(configPath), '.screenci')
     clearDirectory(screenciDir)

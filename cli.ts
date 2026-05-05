@@ -754,6 +754,15 @@ export function formatUploadStartFailureMessage(
   secret: string
 ): string {
   if (responseText.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(responseText) as { error?: unknown }
+      if (typeof parsed.error === 'string' && parsed.error.trim().length > 0) {
+        return `${parsed.error}${hint401(status, secret)}`
+      }
+    } catch {
+      // fall back to raw response text
+    }
+
     return responseText
   }
 
@@ -1717,7 +1726,7 @@ async function runInit(
     projectDir,
     'screenci init'
   )
-  logger.info(pc.green('✓ Playwright installed successfully'))
+  logger.info(`${pc.green('ok')} Playwright installed successfully`)
   const cliDir = dirname(fileURLToPath(import.meta.url))
   await buildRecordImages(
     requireContainerRuntime(),

@@ -722,6 +722,24 @@ describe('CLI', () => {
   })
 
   describe('error handling', () => {
+    it('should print JSON upload start errors as plain messages', async () => {
+      const { formatUploadStartFailureMessage } = await import('./cli')
+
+      expect(
+        formatUploadStartFailureMessage(
+          'Example video',
+          400,
+          JSON.stringify({
+            error:
+              'Your free tier allows up to 1 active videos. You already have 1 active video. 1 new active video were requested.',
+          }),
+          'test-secret'
+        )
+      ).toBe(
+        'Your free tier allows up to 1 active videos. You already have 1 active video. 1 new active video were requested.'
+      )
+    })
+
     it('should exit if no command provided', async () => {
       process.argv = ['node', 'cli.js']
 
@@ -1601,7 +1619,7 @@ describe('CLI', () => {
       await main()
 
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        pc.green('✓ Playwright installed successfully')
+        `${pc.green('ok')} Playwright installed successfully`
       )
     })
 

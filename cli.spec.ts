@@ -942,12 +942,12 @@ describe('CLI', () => {
       printUploadStartFailureMessage(
         'Demo Video',
         400,
-        'Too old version screenci version, please update.',
+        'Please update screenci to version 0.0.23 or later.',
         'test-secret'
       )
 
       expect(stderrWriteSpy).toHaveBeenCalledWith(
-        'Too old version screenci version, please update.\n'
+        'Please update screenci to version 0.0.23 or later.\n'
       )
       expect(loggerWarnSpy).not.toHaveBeenCalled()
 

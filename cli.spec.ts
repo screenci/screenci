@@ -333,6 +333,44 @@ describe('CLI', () => {
       )
     })
 
+    it('should show a record hint after a successful local test run', async () => {
+      delete process.env.SCREENCI_IN_CONTAINER
+      process.argv = ['node', 'cli.js', 'test']
+
+      mockSpawn.mockReset()
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        'Tests passed. Run `npx screenci record` to render the videos.'
+      )
+      expect(mockConfirm).not.toHaveBeenCalled()
+      expect(mockSpawn).toHaveBeenCalledTimes(1)
+    })
+
+    it('should not show the record hint inside the container', async () => {
+      process.env.SCREENCI_IN_CONTAINER = 'true'
+      process.argv = ['node', 'cli.js', 'test']
+
+      mockSpawn.mockReset()
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerInfoSpy).not.toHaveBeenCalledWith(
+        'Tests passed. Run `npx screenci record` to render the videos.'
+      )
+    })
+
     it('should mount config, .screenci, and videos volumes', async () => {
       process.argv = ['node', 'cli.js', 'record']
 
@@ -1577,7 +1615,17 @@ describe('CLI', () => {
     })
 
     it('should run Chromium install automatically after npm install', async () => {
-      expect(true).toBe(true)
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        ['playwright', 'install', 'chromium', '--with-deps'],
+        expect.objectContaining({ stdio: 'pipe' })
+      )
     })
 
     it('should warm the container image during init', async () => {
@@ -1620,6 +1668,19 @@ describe('CLI', () => {
 
       expect(loggerInfoSpy).toHaveBeenCalledWith(
         `${pc.green('ok')} Playwright installed successfully`
+      )
+    })
+
+    it('should show spinner success for Playwright install', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockOra).toHaveBeenCalledWith('Installing Playwright Chromium...')
+      expect(mockSpinner.succeed).toHaveBeenCalledWith(
+        'Playwright installed successfully'
       )
     })
 

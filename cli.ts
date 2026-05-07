@@ -1723,14 +1723,29 @@ async function runInit(
   }
 
   logger.info('Local development requires Chromium for Playwright.')
-  logger.info("Running 'npx playwright install chromium --with-deps'...")
-  await spawnInherited(
-    'npx',
-    ['playwright', 'install', 'chromium', '--with-deps'],
-    projectDir,
-    'screenci init'
-  )
-  logger.info(`${pc.green('ok')} Playwright installed successfully`)
+  if (verbose) {
+    logger.info("Running 'npx playwright install chromium --with-deps'...")
+    await spawnInherited(
+      'npx',
+      ['playwright', 'install', 'chromium', '--with-deps'],
+      projectDir,
+      'screenci init'
+    )
+    logger.info(`${pc.green('ok')} Playwright installed successfully`)
+  } else {
+    const spinner = ora('Installing Playwright Chromium...').start()
+    try {
+      await spawnSilent(
+        'npx',
+        ['playwright', 'install', 'chromium', '--with-deps'],
+        projectDir
+      )
+      spinner.succeed('Playwright installed successfully')
+    } catch (err) {
+      spinner.fail('Playwright install failed')
+      throw err
+    }
+  }
   const cliDir = dirname(fileURLToPath(import.meta.url))
   await buildRecordImages(
     requireContainerRuntime(),
@@ -1889,6 +1904,12 @@ export async function main() {
     .action(async () => {
       const parsed = parseConfigCliArgs(getSubcommandArgv('test'))
       await run('test', parsed.otherArgs, parsed.configPath)
+
+      if (process.env.SCREENCI_IN_CONTAINER === 'true') return
+
+      logger.info(
+        'Tests passed. Run `npx screenci record` to render the videos.'
+      )
     })
 
   program

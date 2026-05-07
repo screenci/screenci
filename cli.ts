@@ -1377,13 +1377,17 @@ Learn more: https://screenci.com/docs/intro/
 
 ## Quick start
 
-1. Run tests in UI mode:
+1. Create your own videos in \`videos/*.video.ts\`, either manually or with an AI agent using your source code or a URL.
 
-   \`npx screenci test\` or \`npx screenci test --ui\`
+2. Run videos locally to test the script working:
 
-2. Record and upload videos:
+   \`npx screenci test\` or with UI mode: \`npx screenci test --ui\`
+
+3. Record videos:
 
    \`npx screenci record\`
+
+4. View results on screenci.com and optionally enable a public URL to embed the video on your site.
 `
 }
 

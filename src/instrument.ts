@@ -25,6 +25,7 @@ import type {
 } from './types.js'
 import { isInsideHide } from './hide.js'
 import { changeFocus, type MouseMoveRequest } from './changeFocus.js'
+import { DEFAULT_MOUSE_MOVE_SPEED } from './defaults.js'
 import {
   CLICK_DURATION_MS,
   assertDurationOrSpeed,
@@ -345,6 +346,7 @@ async function performAction(
         duration: postClickMove.duration,
         speed: postClickMove.speed,
         defaultDuration: undefined,
+        defaultSpeed: DEFAULT_MOUSE_MOVE_SPEED,
         context: 'postClickMove',
       })
       const startMs = Date.now()
@@ -1193,7 +1195,8 @@ export function instrumentLocator(locator: Locator): Locator {
       const resolvedDuration = resolveMouseMoveDuration(page, toX, toY, {
         duration: dragDuration,
         speed: dragSpeed,
-        defaultDuration: 1000,
+        defaultDuration: undefined,
+        defaultSpeed: DEFAULT_MOUSE_MOVE_SPEED,
         context: 'dragTo drag',
       })
       await performMouseMove({
@@ -1385,7 +1388,8 @@ export async function instrumentPage(page: Page): Promise<Page> {
     const duration = resolveMouseMoveDuration(page, x, y, {
       duration: options?.duration,
       speed: options?.speed,
-      defaultDuration: 0,
+      defaultDuration: undefined,
+      defaultSpeed: DEFAULT_MOUSE_MOVE_SPEED,
       context: 'page.mouse.move',
     })
     const easing = options?.easing ?? 'ease-in-out'

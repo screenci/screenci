@@ -1,9 +1,13 @@
 import type { Locator } from '@playwright/test'
 import type { ElementRect, FocusChangeEvent } from './events.js'
 import { evaluateEasingAtT } from './easing.js'
-import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
+import { DEFAULT_MOUSE_MOVE_SPEED, DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import type { AutoZoomOptions, Easing } from './types.js'
-import { getMousePosition, performMouseMove } from './mouse.js'
+import {
+  getMousePosition,
+  performMouseMove,
+  resolveMouseMoveDuration,
+} from './mouse.js'
 import { getAutoZoomState, setCurrentZoomViewport } from './autoZoom.js'
 import {
   buildZoomEvent,
@@ -1270,7 +1274,11 @@ export async function changeFocus(
     x: snapshot.viewportSize.width / 2,
     y: snapshot.viewportSize.height / 2,
   }
-  const { focusOptions, currentZoomEnd, timing } = resolveFocusOptions(
+  const {
+    focusOptions,
+    currentZoomEnd,
+    timing: focusTiming,
+  } = resolveFocusOptions(
     mouseMove !== undefined
       ? {
           state,
@@ -1301,6 +1309,25 @@ export async function changeFocus(
         x: plan.finalLocatorRect.x + plan.finalLocatorRect.width / 2,
         y: plan.finalLocatorRect.y + plan.finalLocatorRect.height / 2,
       }
+
+  const timing =
+    mouseMove !== undefined
+      ? {
+          duration: resolveMouseMoveDuration(
+            page,
+            mouseTarget.x,
+            mouseTarget.y,
+            {
+              duration: mouseMove.duration,
+              speed: mouseMove.speed,
+              defaultDuration: undefined,
+              defaultSpeed: DEFAULT_MOUSE_MOVE_SPEED,
+              context: 'focus move',
+            }
+          ),
+          easing: mouseMove.easing,
+        }
+      : focusTiming
 
   const mouseMovePlan = resolveMouseMovePlan({
     mouseMove,

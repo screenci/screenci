@@ -305,17 +305,25 @@ export function resolveMouseMoveDuration(
     duration: number | undefined
     speed: number | undefined
     defaultDuration: number | undefined
+    defaultSpeed?: number | undefined
     context: string
   }
 ): number {
-  const { duration, speed, defaultDuration, context } = options
+  const { duration, speed, defaultDuration, defaultSpeed, context } = options
   assertDurationOrSpeed(duration, speed, context)
   if (speed !== undefined) {
     const startPos = getMousePosition(page) ?? { x: 0, y: 0 }
     const distancePx = Math.hypot(targetX - startPos.x, targetY - startPos.y)
     return (distancePx / speed) * 1000
   }
-  return duration ?? defaultDuration ?? 0
+  if (duration !== undefined) return duration
+  if (defaultDuration !== undefined) return defaultDuration
+  if (defaultSpeed !== undefined) {
+    const startPos = getMousePosition(page) ?? { x: 0, y: 0 }
+    const distancePx = Math.hypot(targetX - startPos.x, targetY - startPos.y)
+    return (distancePx / defaultSpeed) * 1000
+  }
+  return 0
 }
 
 export async function performMouseMove(options: {

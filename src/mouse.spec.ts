@@ -68,6 +68,36 @@ describe('mouse helpers', () => {
     ).toBe(1000)
   })
 
+  it('resolves move duration from default speed when no timing is provided', () => {
+    const page = {}
+    setMousePosition(page, { x: 0, y: 0 })
+
+    expect(
+      resolveMouseMoveDuration(page, 300, 400, {
+        duration: undefined,
+        speed: undefined,
+        defaultDuration: undefined,
+        defaultSpeed: 1000,
+        context: 'test move',
+      })
+    ).toBe(500)
+  })
+
+  it('keeps explicit zero-duration moves instant when default speed is set', () => {
+    const page = {}
+    setMousePosition(page, { x: 0, y: 0 })
+
+    expect(
+      resolveMouseMoveDuration(page, 300, 400, {
+        duration: 0,
+        speed: undefined,
+        defaultDuration: undefined,
+        defaultSpeed: 1000,
+        context: 'test move',
+      })
+    ).toBe(0)
+  })
+
   it('performs mouse movement and updates tracked position', async () => {
     const page = {}
     const mouseMoveInternal = vi.fn().mockResolvedValue(undefined)

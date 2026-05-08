@@ -17,6 +17,11 @@ export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
 }
 
 /**
+ * Default cursor speed for bare page.mouse.move calls, in pixels per second.
+ */
+export const DEFAULT_MOUSE_MOVE_SPEED: number = 600
+
+/**
  * Default aspect ratio for recording and output
  */
 export const DEFAULT_ASPECT_RATIO: AspectRatio = '16:9'

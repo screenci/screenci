@@ -597,6 +597,36 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+describe('instrumentPage', () => {
+  it('records bare page.mouse.move with default speed', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    const originalMove = page.mouse.move as ReturnType<typeof vi.fn>
+    await instrumentPage(page)
+
+    const movePromise = page.mouse.move(300, 400)
+    await vi.runAllTimersAsync()
+    await movePromise
+
+    expect(recordedInputEvents).toHaveLength(1)
+    const moveInput = recordedInputEvents[0]!
+    const move = moveInput.events[0] as FocusChangeEvent | undefined
+
+    expect(moveInput.subType).toBe('focusChange')
+    expect(move).toBeDefined()
+    expect(move).toMatchObject({
+      type: 'focusChange',
+      x: 300,
+      y: 400,
+      mouse: expect.objectContaining({ easing: 'ease-in-out' }),
+    })
+    expect(move!.endMs - move!.startMs).toBeGreaterThan(0)
+    expect(originalMove.mock.calls.length).toBeGreaterThan(1)
+  })
+})
+
 describe('instrumentLocator', () => {
   it('records a single click InputEvent with inner focusChange, mouseDown, mouseUp', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()

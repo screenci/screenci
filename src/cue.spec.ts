@@ -1,16 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { fileURLToPath } from 'url'
 import {
   createNarration,
   setActiveCueRecorder,
   resetCueChain,
   setSleepFn,
+  validateCustomVoiceRefs,
 } from './cue.js'
 import * as screenci from '../index.js'
 import { hide, setActiveHideRecorder } from './hide.js'
 import type { IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
 import type { CustomVoiceRef } from './voices.js'
-import { voices } from './voices.js'
+import { modelTypes, voices } from './voices.js'
 
 function createMockRecorder(): IEventRecorder {
   return {
@@ -114,6 +116,47 @@ describe('createNarration', () => {
 
     await cues.outro
     expect(order).toEqual(['cueEnd', 'sleep', 'sleep', 'cueStart(multilang)'])
+  })
+
+  it('throws when a cue name is reused in one recording', async () => {
+    const first = createNarration({
+      voice: { name: voices.Ava },
+      languages: {
+        en: { cues: { intro: 'First intro' } },
+      },
+    })
+    const second = createNarration({
+      voice: { name: voices.Ava },
+      languages: {
+        en: { cues: { intro: 'Second intro' } },
+      },
+    })
+
+    await first.intro
+    await expect(Promise.resolve(second.intro)).rejects.toThrow(
+      'Duplicate cue name "intro" in one video recording'
+    )
+  })
+
+  it('throws when a video cue name is reused in one recording', async () => {
+    const first = createNarration({
+      voice: { name: voices.Ava },
+      languages: {
+        en: { cues: { clip: { media: 'cue.ts' } } },
+      },
+    })
+    const second = createNarration({
+      voice: { name: voices.Ava },
+      languages: {
+        en: { cues: { clip: { media: 'events.ts' } } },
+      },
+    })
+    await validateCustomVoiceRefs(fileURLToPath(import.meta.url))
+
+    await first.clip
+    await expect(Promise.resolve(second.clip)).rejects.toThrow(
+      'Duplicate cue name "clip" in one video recording'
+    )
   })
 
   it('wait() after wait() is a no-op', async () => {
@@ -245,6 +288,36 @@ describe('createNarration', () => {
         {
           en: { text: 'Hello world', voice: voices.Ava },
           fi: { text: 'Hei maailma', voice: voices.Nora },
+        }
+      )
+    })
+
+    it('includes numeric pacing for consistent narration translations', async () => {
+      const cues = createNarration({
+        voice: {
+          name: voices.Ava,
+          modelType: modelTypes.consistent,
+          pacing: 1.25,
+        },
+        languages: {
+          en: {
+            cues: { intro: 'Hello world' },
+          },
+        },
+      })
+      await cues.intro
+
+      expect(recorder.addCueStart).toHaveBeenCalledWith(
+        '',
+        'intro',
+        undefined,
+        {
+          en: {
+            text: 'Hello world',
+            voice: voices.Ava,
+            modelType: modelTypes.consistent,
+            pacing: 1.25,
+          },
         }
       )
     })

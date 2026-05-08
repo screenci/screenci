@@ -1,6 +1,6 @@
 import { describe, it, assertType } from 'vitest'
 import { createNarration } from './cue.js'
-import { voices } from './voices.js'
+import { modelTypes, voices } from './voices.js'
 import type { VoiceForLang } from './voices.js'
 
 describe('createNarration type constraints', () => {
@@ -90,6 +90,33 @@ describe('createNarration type constraints', () => {
   it('creates narration from typed cues', () => {
     createNarration({
       voice: { name: voices.Ava },
+      languages: {
+        en: { cues: { intro: 'Hello' } },
+      },
+    })
+  })
+
+  it('accepts numeric pacing for consistent narration', () => {
+    createNarration({
+      voice: {
+        name: voices.Ava,
+        modelType: modelTypes.consistent,
+        pacing: 1.25,
+      },
+      languages: {
+        en: { cues: { intro: 'Hello' } },
+      },
+    })
+  })
+
+  it('rejects text pacing for consistent narration', () => {
+    createNarration({
+      // @ts-expect-error — consistent pacing must be a numeric speaking rate
+      voice: {
+        name: voices.Ava,
+        modelType: modelTypes.consistent,
+        pacing: 'Measured',
+      },
       languages: {
         en: { cues: { intro: 'Hello' } },
       },

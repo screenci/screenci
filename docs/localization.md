@@ -166,7 +166,7 @@ Languages not listed above have a single region variant and do not require an ex
 import { createNarration, voices, modelTypes } from 'screenci'
 
 const narration = createNarration({
-  voice: { name: voices.Ava, modelType: modelTypes.consistent },
+  voice: { name: voices.Ava, modelType: modelTypes.consistent, pacing: 0.9 },
   languages: {
     en: { cues: { intro: 'Hello.' } },
   },
@@ -179,9 +179,11 @@ Use `modelTypes.expressive` when you want the narration to sound more human and 
 
 ## Style, Accent, and Pacing
 
-`style`, `accent`, and `pacing` are free-text director's notes that steer how the expressive model delivers the voice. They are only available with `modelType: 'expressive'` (or implied when `style` is set without `modelType`).
+`style`, `accent`, and `pacing` steer how narration is delivered.
 
-These map directly to the expressive synthesis prompt fields.
+- With `modelTypes.consistent`, `pacing` is a numeric speaking rate from `0.25` to `2`. Use `1` for the default speed, values below `1` for slower speech, and values above `1` for faster speech.
+- With `modelTypes.expressive`, `pacing` is a free-text director's note, such as `'Measured and deliberate'` or `'Brisk and energetic'`.
+- `style` and `accent` are only available with `modelTypes.expressive`, or implied when `style` is set without `modelType`.
 
 ### Style
 
@@ -226,11 +228,22 @@ Tips:
 
 ### Pacing
 
-Describes the overall speed and tempo of the delivery. Controls how fast or slow the voice speaks and any rhythm patterns.
+For consistent narration, set a numeric speaking rate.
 
 ```ts
 voice: {
   name: voices.Nora,
+  modelType: modelTypes.consistent,
+  pacing: 1.15,
+}
+```
+
+For expressive narration, describe the overall speed, tempo, and rhythm of the delivery.
+
+```ts
+voice: {
+  name: voices.Nora,
+  modelType: modelTypes.expressive,
   style: 'A calm and confident product guide.',
   pacing: 'Measured and deliberate, with brief pauses between key points.',
 }
@@ -240,6 +253,43 @@ Tips:
 
 - Describe tempo and rhythm together: `'Brisk and energetic, with punchy delivery'`.
 - For product demos, `'Steady and clear'` works well. For promos, try `'Upbeat with a bouncing cadence'`.
+
+---
+
+## Inline pronunciation and pauses
+
+Use inline tags when a word needs a different pronunciation or a pause should be inserted into the generated narration.
+
+- `[pronounce: screen see eye]` tells ScreenCI to speak the previous word as `screen see eye`.
+- `[short pause]` inserts a brief pause.
+- `[medium pause]` inserts a longer pause.
+- `[long pause]` inserts a dramatic pause.
+
+The tags are stripped from subtitles and timing text. ScreenCI keeps the written word on screen while using the tag only to guide narration.
+
+```ts
+const narration = createNarration({
+  voice: { name: voices.Ava },
+  languages: {
+    en: {
+      cues: {
+        intro:
+          "Welcome to ScreenCI [pronounce: screen see eye]. [short pause] Now let's begin.",
+      },
+    },
+  },
+})
+```
+
+For the example above:
+
+```ts
+{
+  displayText: "Welcome to ScreenCI. Now let's begin.",
+  timingText: "Welcome to ScreenCI. Now let's begin.",
+  narration: 'Welcome to "ScreenCI" spoken as "screen see eye", then a short pause before "Now let\'s begin."',
+}
+```
 
 ---
 

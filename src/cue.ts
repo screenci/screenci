@@ -36,16 +36,19 @@ export function setSleepFn(fn: (ms: number) => void): void {
 
 let activeRecorder: IEventRecorder | null = null
 let cueStarted = false
+const usedCueNames = new Set<string>()
 const registeredCustomVoiceRefs = new Set<CustomVoiceRef>()
 /** Maps local asset path → SHA-256 hash, populated during validateCustomVoiceRefs. */
 const videoCueFileHashes = new Map<string, string>()
 
 export function setActiveCueRecorder(recorder: IEventRecorder | null): void {
   activeRecorder = recorder
+  usedCueNames.clear()
 }
 
 export function resetCueChain(): void {
   cueStarted = false
+  usedCueNames.clear()
 }
 
 export function resetRegisteredCustomVoiceRefs(): void {
@@ -135,6 +138,15 @@ function cueAutoEnd(): void {
   cueStarted = false
 }
 
+function assertUniqueCueName(name: string): void {
+  if (usedCueNames.has(name)) {
+    throw new Error(
+      `Duplicate cue name "${name}" in one video recording. Cue names must be unique.`
+    )
+  }
+  usedCueNames.add(name)
+}
+
 async function doWait(): Promise<void> {
   if (activeRecorder === null || !cueStarted) return
   if (isInsideHide()) throw new Error('Cannot call wait() inside hide()')
@@ -213,9 +225,10 @@ export type TopLevelVoiceConfig =
       name: VoiceKey | CustomVoiceRef
       style?: never
       accent?: never
-      pacing?: never
+      /** Speaking rate for consistent synthesis. Valid range: 0.25 to 2. */
+      pacing?: number
       /** TTS model type — `modelTypes.expressive` or `modelTypes.consistent`. Defaults to `consistent`. */
-      modelType?: ModelType
+      modelType?: Exclude<ModelType, 'expressive'> | undefined
     }
 
 /**
@@ -258,9 +271,10 @@ export type LangNarrationOverride =
       seed?: number
       style?: never
       accent?: never
-      pacing?: never
+      /** Speaking rate for consistent synthesis. Valid range: 0.25 to 2. */
+      pacing?: number
       /** TTS model type — `modelTypes.expressive` or `modelTypes.consistent`. Defaults to `consistent`. */
-      modelType?: ModelType
+      modelType?: Exclude<ModelType, 'expressive'> | undefined
     }
 
 /** Converts a union type to an intersection: `A | B` → `A & B` */
@@ -310,8 +324,8 @@ type LangNarrationOverrideForLang<L extends string> =
       seed?: number
       style?: never
       accent?: never
-      pacing?: never
-      modelType?: ModelType
+      pacing?: number
+      modelType?: Exclude<ModelType, 'expressive'> | undefined
     }
 
 type LanguagesMap<
@@ -460,7 +474,7 @@ function buildCuesFromInput(
       langOverride !== undefined
         ? langOverride?.pacing
         : 'pacing' in topVoice
-          ? (topVoice as { pacing?: string }).pacing
+          ? (topVoice as { pacing?: string | number }).pacing
           : undefined
     const effectiveModelType = effectiveStyle
       ? 'expressive'
@@ -516,6 +530,7 @@ function buildCuesFromInput(
         if (isInsideHide())
           throw new Error('Cannot start narration inside hide()')
         if (activeRecorder === null) return
+        assertUniqueCueName(keyStr)
         cueAutoEnd()
         for (const lang of langs) {
           activeRecorder.registerVoiceForLang(
@@ -571,6 +586,7 @@ function buildCuesFromInput(
         if (isInsideHide())
           throw new Error('Cannot start narration inside hide()')
         if (activeRecorder === null) return
+        assertUniqueCueName(keyStr)
         cueAutoEnd()
         for (const lang of langs) {
           activeRecorder.registerVoiceForLang(

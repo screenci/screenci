@@ -172,8 +172,8 @@ export type CueTranslation = {
   style?: string
   /** Accent description for expressive synthesis. Omitted from the prompt when not set. */
   accent?: string
-  /** Pacing description for expressive synthesis. */
-  pacing?: string
+  /** Pacing description for expressive synthesis, or speaking rate for consistent synthesis. */
+  pacing?: string | number
   /**
    * Integer seed included in the audio cache key. A different seed always forces
    * regeneration. Consistent output is not guaranteed across all voice types.
@@ -218,8 +218,8 @@ export type VideoCueTranslationTTS = {
   style?: string
   /** Accent description for expressive synthesis. Omitted from the prompt when not set. */
   accent?: string
-  /** Pacing description for expressive synthesis. */
-  pacing?: string
+  /** Pacing description for expressive synthesis, or speaking rate for consistent synthesis. */
+  pacing?: string | number
   /**
    * Integer seed included in the audio cache key. A different seed always forces
    * regeneration. Consistent output is not guaranteed across all voice types.
@@ -308,8 +308,8 @@ export type VoiceLanguageMeta = {
   style?: string
   /** Accent description for expressive synthesis. Omitted from the prompt when not set. */
   accent?: string
-  /** Pacing description for expressive synthesis. */
-  pacing?: string
+  /** Pacing description for expressive synthesis, or speaking rate for consistent synthesis. */
+  pacing?: string | number
 }
 
 export type RecordingMetadata = {

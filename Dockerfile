@@ -10,15 +10,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Dependency layer (cached until package.json changes) ──────────────────────
-# Install screenci as a workspace package so npm creates the bin link.
+# Install through a workspace to keep dependency resolution unchanged, then
+# replace the workspace symlink with a real package under node_modules. Playwright
+# skips transforms for node_modules packages, but follows workspace symlinks to
+# /app/screenci and can rewrite compiled ESM as CJS while loading TS configs.
 COPY package.json ./screenci/
-RUN printf '{"private":true,"workspaces":["screenci"]}' > package.json && npm install
+RUN printf '{"private":true,"workspaces":["screenci"]}' > package.json && \
+    npm install && \
+    rm /app/node_modules/screenci && \
+    mkdir -p /app/node_modules/screenci
 
 # Playwright browser download: only re-runs when the playwright version changes.
 RUN npx playwright install chromium --with-deps
 
 # ── screenci build output ─────────────────────────────────────────────────────
 COPY dist ./screenci/dist/
+COPY package.json ./node_modules/screenci/package.json
+COPY dist ./node_modules/screenci/dist/
 
 # Explicit bin wrapper — no npm bin-linking magic needed.
 RUN printf '#!/bin/sh\nexec node /app/screenci/dist/cli.js "$@"\n' > /app/node_modules/.bin/screenci && \

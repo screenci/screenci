@@ -54,7 +54,7 @@ Use this when you want normal Playwright execution without recording.
 
 ## `screenci record [playwrightArgs...]`
 
-Records videos with ScreenCI. On the host this normally pulls and uses `ghcr.io/screenci/record:latest` unless you override it with `--tag`, then builds the small project image and uploads results if `SCREENCI_SECRET` is set. If the secret is missing, `record` prompts for login before the recording begins.
+Records videos with ScreenCI. On the host this pulls and uses `ghcr.io/screenci/record:latest`, then uploads results if `SCREENCI_SECRET` is set. If the secret is missing, `record` prompts for login before the recording begins.
 
 ```bash
 npx screenci record
@@ -66,8 +66,7 @@ Options:
 - `-c, --config <path>` use a custom config path
 - `--podman` force Podman
 - `--docker` force Docker
-- `--tag <tag>` pull and use a specific `ghcr.io/screenci/record:<tag>` image
-- `-v, --verbose` show full build output
+- `-v, --verbose` show full container runtime output
 
 Restrictions:
 

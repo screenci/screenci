@@ -1461,7 +1461,7 @@ jobs:
       - name: Record
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
-        run: npm run record -- --tag latest
+        run: npm run record
 `
 }
 
@@ -1949,15 +1949,6 @@ async function runInit(
     logger.info('  npm install --include=dev')
     logger.info('  npx playwright install chromium --with-deps')
   }
-  const cliDir = dirname(fileURLToPath(import.meta.url))
-  await buildRecordImages(
-    requireContainerRuntime(),
-    cliDir,
-    resolve(projectDir, 'Dockerfile'),
-    projectDir,
-    verbose
-  )
-
   logger.info('')
   logger.info('Next steps:')
   logger.info(`  cd ${dirName}`)
@@ -2034,7 +2025,6 @@ export async function main() {
         await runWithContainer(
           parsed.otherArgs,
           parsed.configPath,
-          parsed.imageTag,
           parsed.verbose,
           parsed.forcedRuntime
         )
@@ -2237,13 +2227,11 @@ function getSubcommandArgv(command: string): string[] {
 
 function parseRecordCliArgs(args: string[]): {
   configPath: string | undefined
-  imageTag: string | undefined
   verbose: boolean
   forcedRuntime: ContainerRuntimeName | 'both' | undefined
   otherArgs: string[]
 } {
   let configPath: string | undefined
-  let imageTag: string | undefined
   let verbose = false
   let forcedRuntime: ContainerRuntimeName | 'both' | undefined
   const otherArgs: string[] = []
@@ -2265,14 +2253,6 @@ function parseRecordCliArgs(args: string[]): {
       forcedRuntime = forcedRuntime === 'docker' ? 'both' : 'podman'
     } else if (arg === '--docker') {
       forcedRuntime = forcedRuntime === 'podman' ? 'both' : 'docker'
-    } else if (arg === '--tag') {
-      const nextArg = args[i + 1]
-      if (nextArg === undefined) {
-        logger.error('Error: --tag requires a tag argument')
-        process.exit(1)
-      }
-      imageTag = nextArg
-      i++
     } else {
       otherArgs.push(arg)
     }
@@ -2280,7 +2260,6 @@ function parseRecordCliArgs(args: string[]): {
 
   return {
     configPath,
-    imageTag,
     verbose,
     forcedRuntime,
     otherArgs,
@@ -2439,109 +2418,9 @@ async function buildProjectImage(
   ])
 }
 
-async function buildScreenciImage(
-  containerRuntime: ContainerRuntimeName,
-  cliDir: string,
-  verbose: boolean
-): Promise<void> {
-  const screenciPackageRoot = existsSync(resolve(cliDir, 'package.json'))
-    ? cliDir
-    : resolve(cliDir, '..')
-  const screenciDockerfilePath = resolve(cliDir, 'Dockerfile')
-
-  if (verbose) {
-    await spawnInherited(
-      containerRuntime,
-      [
-        'build',
-        '-f',
-        screenciDockerfilePath,
-        '-t',
-        'ghcr.io/screenci/record:latest',
-        screenciPackageRoot,
-      ],
-      undefined,
-      'Building screenci image'
-    )
-    return
-  }
-
-  await spawnSilent(containerRuntime, [
-    'build',
-    '-f',
-    screenciDockerfilePath,
-    '-t',
-    'ghcr.io/screenci/record:latest',
-    screenciPackageRoot,
-  ])
-}
-
-async function buildRecordImages(
-  containerRuntime: ContainerRuntimeName,
-  cliDir: string,
-  dockerfilePath: string,
-  configDir: string,
-  verbose: boolean
-): Promise<void> {
-  if (verbose) {
-    await spawnInherited(
-      containerRuntime,
-      [
-        'build',
-        '-f',
-        resolve(cliDir, 'Dockerfile'),
-        '-t',
-        'ghcr.io/screenci/record:latest',
-        existsSync(resolve(cliDir, 'package.json'))
-          ? cliDir
-          : resolve(cliDir, '..'),
-      ],
-      undefined,
-      'Building screenci image'
-    )
-    await spawnInherited(
-      containerRuntime,
-      ['build', '-f', dockerfilePath, '-t', 'screenci', configDir],
-      undefined,
-      'Building project image'
-    )
-    return
-  }
-
-  const spinner = ora('Building screenci image').start()
-  try {
-    await spawnSilent(containerRuntime, [
-      'build',
-      '-f',
-      resolve(cliDir, 'Dockerfile'),
-      '-t',
-      'ghcr.io/screenci/record:latest',
-      existsSync(resolve(cliDir, 'package.json'))
-        ? cliDir
-        : resolve(cliDir, '..'),
-    ])
-    await spawnSilent(containerRuntime, [
-      'build',
-      '-f',
-      dockerfilePath,
-      '-t',
-      'screenci',
-      configDir,
-    ])
-    spinner.succeed('Building screenci image')
-  } catch (err) {
-    spinner.fail('Building screenci image')
-    const msg = err instanceof Error ? err.message : String(err)
-    logger.error(msg)
-    logger.error('Run again with --verbose to see the full build output')
-    process.exit(1)
-  }
-}
-
 async function runWithContainer(
   additionalArgs: string[],
   customConfigPath?: string,
-  imageTag?: string,
   verbose = false,
   forcedRuntime?: ContainerRuntimeName
 ) {
@@ -2556,16 +2435,6 @@ async function runWithContainer(
   }
 
   const configDir = dirname(configPath)
-  const dockerfilePath = resolve(configDir, 'Dockerfile')
-
-  if (!existsSync(dockerfilePath)) {
-    logger.error(`Error: Dockerfile not found at ${dockerfilePath}`)
-    logger.error(
-      'Container mode requires a Dockerfile next to screenci.config.ts'
-    )
-    process.exit(1)
-  }
-
   const repoRoot = findRepoRoot(configDir)
   if (!repoRoot) {
     logger.error(
@@ -2575,41 +2444,24 @@ async function runWithContainer(
   }
 
   const containerRuntime = detectContainerRuntime(forcedRuntime)
-
-  const dockerfileVersion = parseDockerfileVersion(dockerfilePath)
-  const effectiveImageTag = imageTag ?? 'latest'
+  const imageName = process.env['SCREENCI_LOCAL_IMAGE']
+    ? 'screenci'
+    : 'ghcr.io/screenci/record:latest'
 
   if (process.env['SCREENCI_LOCAL_IMAGE']) {
     logger.info('SCREENCI_LOCAL_IMAGE set — skipping screenci image build')
-  } else if (effectiveImageTag !== undefined) {
-    const remoteImage = `ghcr.io/screenci/record:${effectiveImageTag}`
+  } else {
     const imageExists =
-      spawnSync(containerRuntime, ['image', 'exists', remoteImage], {
+      spawnSync(containerRuntime, ['image', 'exists', imageName], {
         stdio: 'ignore',
       }).status === 0
-    logger.info(
-      `Using image tag ${effectiveImageTag} instead of the version ${dockerfileVersion} from Dockerfile`
-    )
     if (!imageExists) {
       if (verbose) {
-        await spawnInherited(containerRuntime, ['pull', remoteImage])
+        await spawnInherited(containerRuntime, ['pull', imageName])
       } else {
-        await spawnSilent(containerRuntime, ['pull', remoteImage])
+        await spawnSilent(containerRuntime, ['pull', imageName])
       }
     }
-    await spawnSilent(containerRuntime, [
-      'tag',
-      remoteImage,
-      'ghcr.io/screenci/record:latest',
-    ])
-  } else {
-    await buildRecordImages(
-      containerRuntime,
-      dirname(fileURLToPath(import.meta.url)),
-      dockerfilePath,
-      configDir,
-      verbose
-    )
   }
 
   clearDirectory(resolve(configDir, '.screenci'))
@@ -2637,7 +2489,7 @@ async function runWithContainer(
     `${configPath}:/app/screenci.config.ts`,
     '-v',
     `${configDir}/videos:/app/videos`,
-    'screenci',
+    imageName,
     'screenci',
     'record',
     ...additionalArgs,

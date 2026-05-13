@@ -182,7 +182,6 @@ describe('CLI', () => {
   })
 
   describe('container workflow', () => {
-    let mockImageProcess: EventEmitter
     let mockRunProcess: EventEmitter
 
     beforeEach(() => {
@@ -193,19 +192,13 @@ describe('CLI', () => {
       // Default: podman is available
       mockSpawnSync.mockReturnValue({ status: 0, error: undefined })
 
-      mockImageProcess = new EventEmitter()
       mockRunProcess = new EventEmitter()
-      mockSpawn
-        .mockReturnValueOnce(mockImageProcess as unknown as ChildProcess)
-        .mockReturnValueOnce(mockRunProcess as unknown as ChildProcess)
+      mockSpawn.mockReturnValueOnce(mockRunProcess as unknown as ChildProcess)
     })
 
-    async function driveContainerSpawns(exitCodes: [number, number] = [0, 0]) {
+    async function driveContainerSpawns(exitCode = 0) {
       await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(1))
-      mockImageProcess.emit('close', exitCodes[0])
-      if (exitCodes[0] !== 0) return
-      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(2))
-      mockRunProcess.emit('close', exitCodes[1])
+      mockRunProcess.emit('close', exitCode)
     }
 
     it('should build and run container for record command', async () => {
@@ -220,9 +213,8 @@ describe('CLI', () => {
       const authOpenProcess = {
         unref: vi.fn(),
       } as unknown as ChildProcess
-      const imageProcess = new EventEmitter()
       const runProcess = new EventEmitter()
-      const containerProcesses = [imageProcess, runProcess]
+      const containerProcesses = [runProcess]
 
       mockSpawn.mockImplementation((command: string) => {
         if (command === 'xdg-open') {
@@ -276,12 +268,6 @@ describe('CLI', () => {
         expect(
           mockSpawn.mock.calls.filter(([command]) => command === 'podman')
         ).toHaveLength(1)
-      )
-      imageProcess.emit('close', 0)
-      await vi.waitFor(() =>
-        expect(
-          mockSpawn.mock.calls.filter(([command]) => command === 'podman')
-        ).toHaveLength(2)
       )
       runProcess.emit('close', 0)
 
@@ -431,7 +417,7 @@ describe('CLI', () => {
 
       await mainPromise
 
-      const runArgs = mockSpawn.mock.calls[1][1] as string[]
+      const runArgs = mockSpawn.mock.calls[0][1] as string[]
 
       // Find volume mounts
       const vIndices = runArgs.reduce<number[]>((acc, arg, i) => {
@@ -459,7 +445,7 @@ describe('CLI', () => {
 
       await mainPromise
 
-      const runArgs = mockSpawn.mock.calls[1][1] as string[]
+      const runArgs = mockSpawn.mock.calls[0][1] as string[]
 
       expect(runArgs).toContain('CI=true')
     })
@@ -468,12 +454,9 @@ describe('CLI', () => {
       process.argv = ['node', 'cli.js', 'record']
       mockSpawnSync.mockReturnValueOnce({ status: 0, error: undefined })
 
-      const tagProcess = new EventEmitter()
       const runProcess = new EventEmitter()
       mockSpawn.mockReset()
-      mockSpawn
-        .mockReturnValueOnce(tagProcess as unknown as ChildProcess)
-        .mockReturnValueOnce(runProcess as unknown as ChildProcess)
+      mockSpawn.mockReturnValueOnce(runProcess as unknown as ChildProcess)
 
       const { main } = await import('./cli')
       const mainPromise = main()
@@ -482,31 +465,12 @@ describe('CLI', () => {
       expect(mockSpawn).toHaveBeenNthCalledWith(
         1,
         'podman',
-        [
-          'tag',
-          'ghcr.io/screenci/record:latest',
-          'ghcr.io/screenci/record:latest',
-        ],
-        expect.objectContaining({ stdio: 'pipe' })
-      )
-      tagProcess.emit('close', 0)
-
-      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(2))
-      expect(mockSpawn).toHaveBeenNthCalledWith(
-        2,
-        'podman',
         expect.arrayContaining(['run', '--rm']),
         expect.objectContaining({ stdio: ['inherit', 'pipe', 'pipe'] })
       )
       runProcess.emit('close', 0)
 
       await mainPromise
-
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'Using image tag latest instead of the version '
-        )
-      )
     })
 
     it('should pull the latest ScreenCI image when missing locally', async () => {
@@ -517,11 +481,9 @@ describe('CLI', () => {
 
       mockSpawn.mockReset()
       const pullProcess = new EventEmitter()
-      const tagProcess = new EventEmitter()
       const runProcess = new EventEmitter()
       mockSpawn
         .mockReturnValueOnce(pullProcess as unknown as ChildProcess)
-        .mockReturnValueOnce(tagProcess as unknown as ChildProcess)
         .mockReturnValueOnce(runProcess as unknown as ChildProcess)
 
       const { main } = await import('./cli')
@@ -537,19 +499,6 @@ describe('CLI', () => {
       pullProcess.emit('close', 0)
 
       await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(2))
-      expect(mockSpawn).toHaveBeenNthCalledWith(
-        2,
-        'podman',
-        [
-          'tag',
-          'ghcr.io/screenci/record:latest',
-          'ghcr.io/screenci/record:latest',
-        ],
-        expect.objectContaining({ stdio: 'pipe' })
-      )
-      tagProcess.emit('close', 0)
-
-      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(3))
       runProcess.emit('close', 0)
 
       await mainPromise
@@ -566,9 +515,14 @@ describe('CLI', () => {
       await mainPromise
 
       expect(mockSpawn).toHaveBeenNthCalledWith(
-        2,
+        1,
         'podman',
-        expect.arrayContaining(['screenci', 'record', '--project=chromium']),
+        expect.arrayContaining([
+          'ghcr.io/screenci/record:latest',
+          'screenci',
+          'record',
+          '--project=chromium',
+        ]),
         expect.objectContaining({ stdio: ['inherit', 'pipe', 'pipe'] })
       )
     })
@@ -589,16 +543,6 @@ describe('CLI', () => {
 
       await mainPromise
 
-      expect(mockSpawn).toHaveBeenNthCalledWith(
-        1,
-        'docker',
-        [
-          'tag',
-          'ghcr.io/screenci/record:latest',
-          'ghcr.io/screenci/record:latest',
-        ],
-        expect.objectContaining({ stdio: 'pipe' })
-      )
       expect(mockSpawnSync).toHaveBeenCalledTimes(2)
     })
 
@@ -631,11 +575,6 @@ describe('CLI', () => {
 
       await mainPromise
 
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'Using image tag latest instead of the version '
-        )
-      )
       expect(mockOra).not.toHaveBeenCalledWith(
         expect.stringContaining('Building screenci image')
       )
@@ -658,7 +597,7 @@ describe('CLI', () => {
       await mainPromise
 
       // Custom config should be mounted into the container
-      const runArgs = mockSpawn.mock.calls[1][1] as string[]
+      const runArgs = mockSpawn.mock.calls[0][1] as string[]
       expect(
         runArgs.some(
           (arg) =>
@@ -669,13 +608,21 @@ describe('CLI', () => {
       ).toBe(true)
     })
 
-    it('should reject when image preparation fails', async () => {
+    it('should reject when pulling the remote image fails', async () => {
       process.argv = ['node', 'cli.js', 'record']
+      mockSpawnSync
+        .mockReturnValueOnce({ status: 0, error: undefined })
+        .mockReturnValueOnce({ status: 1, error: undefined })
+
+      mockSpawn.mockReset()
+      const pullProcess = new EventEmitter()
+      mockSpawn.mockReturnValueOnce(pullProcess as unknown as ChildProcess)
 
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await driveContainerSpawns([1, 0])
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(1))
+      pullProcess.emit('close', 1)
 
       await expect(mainPromise).rejects.toThrow('podman exited with code 1')
     })
@@ -686,28 +633,9 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await driveContainerSpawns([0, 1])
+      await driveContainerSpawns(1)
 
       await expect(mainPromise).rejects.toThrow('podman exited with code 1')
-    })
-
-    it('should exit if Dockerfile not found', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-      mockExistsSync.mockImplementation((path: unknown) => {
-        if (typeof path === 'string' && path.endsWith('Dockerfile')) {
-          return false
-        }
-        return true
-      })
-
-      const { main } = await import('./cli')
-
-      await expect(main()).rejects.toThrow('process.exit called')
-
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Dockerfile not found')
-      )
-      expect(processExitSpy).toHaveBeenCalledWith(1)
     })
 
     it('should exit if config not found in container mode', async () => {
@@ -1561,7 +1489,9 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain('node-version: latest')
       expect(workflowCall?.[1]).toContain('npm install')
       expect(workflowCall?.[1]).not.toContain('npm install --include=dev')
-      expect(workflowCall?.[1]).toContain('npm run record -- --tag latest')
+      expect(workflowCall?.[1]).toContain('npm run record')
+      expect(workflowCall?.[1]).not.toContain('--tag')
+      expect(workflowCall?.[1]).not.toContain('--make')
       expect(workflowCall?.[1]).not.toContain('SCREENCI_LOCAL_IMAGE')
       expect(workflowCall?.[1]).not.toContain('docker build')
       expect(workflowCall?.[1]).not.toContain('docker run')
@@ -1921,12 +1851,6 @@ describe('CLI', () => {
       )
     })
 
-    it('should warm the container image during init', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      expect(true).toBe(true)
-    })
-
     it('should warn during init when neither podman nor docker is installed', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
@@ -2046,10 +1970,6 @@ describe('CLI', () => {
         ['playwright', 'install', 'chromium', '--with-deps'],
         expect.objectContaining({ stdio: 'inherit' })
       )
-    })
-
-    it('should warm the container image during init', async () => {
-      expect(true).toBe(true)
     })
 
     it('should not attempt Chromium detection before install', async () => {

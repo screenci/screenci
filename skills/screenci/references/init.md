@@ -35,6 +35,7 @@ my-project/
 - If no name is passed, the command prompts for one.
 - `--verbose` shows more setup output.
 - After scaffolding, run `npm install`.
+- The image is fetched on demand when you run `record` or `test`.
 
 ## Typical Flow
 

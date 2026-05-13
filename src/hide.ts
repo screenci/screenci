@@ -37,10 +37,10 @@ export async function hide(fn: () => Promise<void> | void): Promise<void> {
   if (insideHide) {
     throw new Error('Cannot nest hide() calls')
   }
+  insideHide = true
   if (activeRecorder !== null) {
     activeRecorder.addHideStart()
   }
-  insideHide = true
   try {
     await fn()
   } finally {

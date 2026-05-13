@@ -47,6 +47,19 @@ describe('hide', () => {
       expect(order[1]).toBe('callback')
     })
 
+    it('sets insideHide before emitting hideStart', async () => {
+      const states: boolean[] = []
+      vi.mocked(recorder.addHideStart).mockImplementation(() => {
+        states.push(true)
+      })
+
+      await hide(() => {
+        states.push(true)
+      })
+
+      expect(states).toEqual([true, true])
+    })
+
     it('adds hideEnd after executing the callback', async () => {
       const order: string[] = []
       vi.mocked(recorder.addHideEnd).mockImplementation(() => {

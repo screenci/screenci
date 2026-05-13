@@ -1364,6 +1364,21 @@ export async function instrumentPage(page: Page): Promise<Page> {
   setOriginalMouseHide(page, originalHide)
   ;(
     originalMouse as unknown as {
+      _move: typeof originalMove
+      move: (
+        x: number,
+        y: number,
+        options?: {
+          steps?: number
+          duration?: number
+          speed?: number
+          easing?: Easing
+        }
+      ) => Promise<void>
+    }
+  )._move = originalMove
+  ;(
+    originalMouse as unknown as {
       move: (
         x: number,
         y: number,

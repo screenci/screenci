@@ -205,3 +205,12 @@ describe('getViewportCenter', () => {
     })
   })
 })
+
+describe('startup mouse positioning', () => {
+  it('uses the viewport center as the initial mouse position target', () => {
+    expect(getViewportCenter(getDimensions('16:9', '720p'))).toEqual({
+      x: 640,
+      y: 360,
+    })
+  })
+})

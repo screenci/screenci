@@ -501,10 +501,14 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     const didStart = await started
 
     if (didStart) {
-      // Mark the moment the video recording actually begins
-      recorder.start()
       const viewportCenter = getViewportCenter(dimensions)
-      await page.mouse.move(viewportCenter.x, viewportCenter.y)
+      await (
+        page.mouse as typeof page.mouse & {
+          _move: (x: number, y: number) => Promise<void>
+        }
+      )._move(viewportCenter.x, viewportCenter.y)
+      // Mark the moment the video recording actually begins after the cursor is positioned.
+      recorder.start()
     } else {
       logger.warn(
         'Screen recording failed to start. Test will continue without recording.'

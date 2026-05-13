@@ -628,7 +628,7 @@ describe('instrumentPage', () => {
 })
 
 describe('instrumentLocator', () => {
-  it('records a single click InputEvent with inner focusChange, mouseDown, mouseUp', async () => {
+  it('records a single click InputEvent with inner focusChange, mouseDown, mouseUp, and mouseWait', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
 
@@ -646,6 +646,31 @@ describe('instrumentLocator', () => {
     expect(click.events.some((e) => e.type === 'focusChange')).toBe(true)
     expect(click.events.some((e) => e.type === 'mouseDown')).toBe(true)
     expect(click.events.some((e) => e.type === 'mouseUp')).toBe(true)
+    expect(click.events.some((e) => e.type === 'mouseWait')).toBe(true)
+  })
+
+  it('omits post-click mouseWait when click postClickPause is zero', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const bb = { x: 100, y: 200, width: 80, height: 40 }
+    const locator = makeLocatorMock(bb, page)
+    instrumentLocator(locator)
+    await Promise.all([
+      (
+        locator as unknown as {
+          click(options?: { postClickPause?: number }): Promise<void>
+        }
+      ).click({ postClickPause: 0 }),
+      vi.runAllTimersAsync(),
+    ])
+
+    expect(recordedInputEvents).toHaveLength(1)
+    const click = recordedInputEvents[0]!
+    expect(click.events.some((e) => e.type === 'mouseWait')).toBe(false)
   })
 
   it('prefers actual DOM click coordinates and rect for recorded clicks', async () => {
@@ -910,6 +935,7 @@ describe('instrumentLocator', () => {
     const check = recordedInputEvents[0]!
     expect(check.subType).toBe('check')
     expect(check.events.some((e) => e.type === 'focusChange')).toBe(true)
+    expect(check.events.some((e) => e.type === 'mouseWait')).toBe(true)
   })
 
   it('does not synthesize mouse presses for fill without click inside autoZoom', async () => {

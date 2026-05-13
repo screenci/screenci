@@ -65,6 +65,7 @@ import {
 } from './mouse.js'
 
 let activeClickRecorder: IEventRecorder | null = null
+const DEFAULT_POST_CLICK_PAUSE_MS = 500
 
 export function setActiveClickRecorder(recorder: IEventRecorder | null): void {
   activeClickRecorder = recorder
@@ -74,6 +75,20 @@ const instrumented = new WeakSet<object>()
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function appendMouseWait(
+  innerEvents: ClickActionResult['innerEvents'],
+  durationMs: number
+): Promise<void> {
+  if (durationMs <= 0) return
+  const startMs = Date.now()
+  await sleep(durationMs)
+  innerEvents.push({
+    type: 'mouseWait',
+    startMs,
+    endMs: Date.now(),
+  })
 }
 
 const LOCATOR_RETURN_METHODS = [
@@ -271,7 +286,7 @@ async function performAction(
       ...(supportsTrial ? { trial: true } : {}),
       ...(mode === 'singleDuring' ? { position: targetPosition } : {}),
     })
-    await sleep(postClickPause)
+    await appendMouseWait(innerEvents, postClickPause)
     return {
       elementRect,
       innerEvents,
@@ -304,7 +319,7 @@ async function performAction(
 
   innerEvents.push(...events)
 
-  await sleep(postClickPause)
+  await appendMouseWait(innerEvents, postClickPause)
 
   if (postClickMove !== undefined) {
     const currentPos = getMousePosition(page) ?? { x: 0, y: 0 }
@@ -480,7 +495,7 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       position,
       beforeClickPause,
-      postClickPause,
+      postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
       postClickMove,
       false
     )
@@ -721,7 +736,7 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       position,
       clickOpt?.beforeClickPause,
-      clickOpt?.postClickPause,
+      clickOpt?.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
       clickOpt?.postClickMove,
       false
     )
@@ -782,7 +797,7 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       position,
       clickOpt?.beforeClickPause,
-      clickOpt?.postClickPause,
+      clickOpt?.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
       clickOpt?.postClickMove,
       false
     )
@@ -843,7 +858,7 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       position,
       clickOpt?.beforeClickPause,
-      clickOpt?.postClickPause,
+      clickOpt?.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
       clickOpt?.postClickMove,
       false
     )
@@ -934,7 +949,7 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       position,
       clickOpt?.beforeClickPause,
-      clickOpt?.postClickPause,
+      clickOpt?.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
       clickOpt?.postClickMove
     )
 

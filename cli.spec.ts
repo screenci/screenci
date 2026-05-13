@@ -450,6 +450,27 @@ describe('CLI', () => {
       expect(runArgs).toContain('CI=true')
     })
 
+    it('should not load env file when recording on CI', async () => {
+      process.env.CI = 'true'
+      process.argv = ['node', 'cli.js', 'record']
+      const loadEnvFileSpy = vi
+        .spyOn(process, 'loadEnvFile')
+        .mockImplementation(() => {})
+
+      try {
+        const { main } = await import('./cli')
+        const mainPromise = main()
+
+        await driveContainerSpawns()
+
+        await mainPromise
+
+        expect(loadEnvFileSpy).not.toHaveBeenCalled()
+      } finally {
+        loadEnvFileSpy.mockRestore()
+      }
+    })
+
     it('should use the latest ScreenCI image by default', async () => {
       process.argv = ['node', 'cli.js', 'record']
       mockSpawnSync.mockReturnValueOnce({ status: 0, error: undefined })
@@ -578,6 +599,43 @@ describe('CLI', () => {
       expect(mockOra).not.toHaveBeenCalledWith(
         expect.stringContaining('Building screenci image')
       )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        'Preparing ScreenCI recording container...'
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        'Using podman with image ghcr.io/screenci/record:latest'
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        'Starting ScreenCI recording container...'
+      )
+    })
+
+    it('should log while pulling the remote image', async () => {
+      process.argv = ['node', 'cli.js', 'record']
+      mockSpawnSync
+        .mockReturnValueOnce({ status: 0, error: undefined })
+        .mockReturnValueOnce({ status: 1, error: undefined })
+
+      mockSpawn.mockReset()
+      const pullProcess = new EventEmitter()
+      const runProcess = new EventEmitter()
+      mockSpawn
+        .mockReturnValueOnce(pullProcess as unknown as ChildProcess)
+        .mockReturnValueOnce(runProcess as unknown as ChildProcess)
+
+      const { main } = await import('./cli')
+      const mainPromise = main()
+
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(1))
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        'Image ghcr.io/screenci/record:latest not found locally, pulling...'
+      )
+      pullProcess.emit('close', 0)
+
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(2))
+      runProcess.emit('close', 0)
+
+      await mainPromise
     })
 
     it('should support --config flag', async () => {

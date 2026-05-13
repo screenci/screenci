@@ -1152,14 +1152,22 @@ async function loadScreenCIConfigAndEnv(configPath?: string): Promise<{
       dirname(resolvedConfigPath),
       screenciConfig.envFile
     )
-    try {
-      process.loadEnvFile(envFilePath)
-    } catch (err) {
-      logger.warn(`Failed to load env file ${envFilePath}:`, err)
-    }
+    loadEnvFile(envFilePath, true)
   }
 
   return { resolvedConfigPath, screenciConfig }
+}
+
+function loadEnvFile(envFilePath: string, warnOnFailure: boolean): void {
+  if (process.env.CI) return
+
+  try {
+    process.loadEnvFile(envFilePath)
+  } catch (err) {
+    if (warnOnFailure) {
+      logger.warn(`Failed to load env file ${envFilePath}:`, err)
+    }
+  }
 }
 
 export function extractConfigStringLiteral(
@@ -1891,7 +1899,6 @@ async function runInit(
   }
 
   if (shouldInstallDependencies) {
-    logger.info('screenci requires dependencies to be installed.')
     if (verbose) {
       logger.info(`Running '${skillsCommand}'...`)
       await spawnInherited('npx', skillsArgs, projectDir, 'screenci init')
@@ -2005,11 +2012,7 @@ export async function main() {
                 dirname(resolvedConfigForSecret),
                 screenciConfig.envFile
               )
-              try {
-                process.loadEnvFile(envFilePath)
-              } catch {
-                // env file may not exist yet
-              }
+              loadEnvFile(envFilePath, false)
             }
           } catch {
             // Config import failed — continue with whatever is already in env
@@ -2046,11 +2049,7 @@ export async function main() {
               dirname(resolvedConfigPath),
               screenciConfig.envFile
             )
-            try {
-              process.loadEnvFile(envFilePath)
-            } catch (err) {
-              logger.warn(`Failed to load env file ${envFilePath}:`, err)
-            }
+            loadEnvFile(envFilePath, true)
           }
           const apiUrl = getDevBackendUrl()
           const appUrl = getDevFrontendUrl()
@@ -2443,10 +2442,12 @@ async function runWithContainer(
     process.exit(1)
   }
 
+  logger.info('Preparing ScreenCI recording container...')
   const containerRuntime = detectContainerRuntime(forcedRuntime)
   const imageName = process.env['SCREENCI_LOCAL_IMAGE']
     ? 'screenci'
     : 'ghcr.io/screenci/record:latest'
+  logger.info(`Using ${containerRuntime} with image ${imageName}`)
 
   if (process.env['SCREENCI_LOCAL_IMAGE']) {
     logger.info('SCREENCI_LOCAL_IMAGE set — skipping screenci image build')
@@ -2456,6 +2457,7 @@ async function runWithContainer(
         stdio: 'ignore',
       }).status === 0
     if (!imageExists) {
+      logger.info(`Image ${imageName} not found locally, pulling...`)
       if (verbose) {
         await spawnInherited(containerRuntime, ['pull', imageName])
       } else {
@@ -2471,6 +2473,7 @@ async function runWithContainer(
     logger.error('Error: SCREENCI_SECRET is not set')
     process.exit(1)
   }
+  logger.info('Starting ScreenCI recording container...')
   await spawnContainerRecording(containerRuntime, [
     'run',
     '--rm',

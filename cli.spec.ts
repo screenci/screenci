@@ -321,6 +321,12 @@ describe('CLI', () => {
         process.nextTick(() => mockChildProcess.emit('close', 0))
         return mockChildProcess as unknown as ChildProcess
       })
+      mockReadFile.mockResolvedValue(
+        JSON.stringify({
+          name: 'project',
+          dependencies: { screenci: 'latest' },
+        })
+      )
 
       const { main } = await import('./cli')
       await main()
@@ -351,6 +357,37 @@ describe('CLI', () => {
       )
       expect(mockConfirm).not.toHaveBeenCalled()
       expect(mockSpawn).toHaveBeenCalledTimes(1)
+    })
+
+    it('should install local screenci before tests when run through source cli', async () => {
+      delete process.env.SCREENCI_IN_CONTAINER
+      const sourceCliPath = `${process.cwd()}/cli.ts`
+      process.argv = ['node', sourceCliPath, 'test']
+
+      mockSpawn.mockReset()
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npm',
+        ['run', 'build'],
+        expect.objectContaining({ cwd: process.cwd(), stdio: 'inherit' })
+      )
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npm',
+        ['install', '--install-links'],
+        expect.objectContaining({ cwd: process.cwd(), stdio: 'inherit' })
+      )
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        expect.arrayContaining(['playwright', 'test']),
+        expect.objectContaining({ stdio: 'inherit' })
+      )
     })
 
     it('should not show the record hint inside the container', async () => {
@@ -1356,6 +1393,28 @@ describe('CLI', () => {
       expect(pkgCall?.[1]).not.toContain('"screenci": "file:')
     })
 
+    it('should use local screenci dependency when init runs through source cli', async () => {
+      const sourceCliPath = `${process.cwd()}/cli.ts`
+      process.argv = ['node', sourceCliPath, 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      const pkgCall = mockWriteFile.mock.calls.find(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].endsWith('package.json')
+      )
+      expect(pkgCall?.[1]).toContain('"screenci": "file:')
+      expect(pkgCall?.[1]).toContain('"screenci": "file:.."')
+      expect(pkgCall?.[1]).not.toContain('"screenci": "latest"')
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npm',
+        ['run', 'build'],
+        expect.objectContaining({ cwd: process.cwd(), stdio: 'inherit' })
+      )
+    })
+
     it('should prompt for project name when not provided as arg', async () => {
       process.argv = ['node', 'cli.js', 'init']
       mockExistsSync.mockReturnValue(false)
@@ -1624,7 +1683,7 @@ describe('CLI', () => {
       expect(mockSpawn).toHaveBeenCalledWith(
         'npx',
         ['playwright', 'install', 'chromium', '--with-deps'],
-        expect.objectContaining({ stdio: 'pipe' })
+        expect.objectContaining({ stdio: 'inherit' })
       )
     })
 
@@ -1647,40 +1706,49 @@ describe('CLI', () => {
       )
     })
 
-    it('should show Chromium install output with init --verbose', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project', '--verbose']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        "Running 'npx playwright install chromium --with-deps'..."
-      )
-    })
-
-    it('should show a green Playwright success message after install', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project', '--verbose']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        `${pc.green('ok')} Playwright installed successfully`
-      )
-    })
-
-    it('should show spinner success for Playwright install', async () => {
+    it('should show Chromium install output during init', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
 
       const { main } = await import('./cli')
       await main()
 
-      expect(mockOra).toHaveBeenCalledWith('Installing Playwright Chromium...')
-      expect(mockSpinner.succeed).toHaveBeenCalledWith(
-        'Playwright installed successfully'
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        "Local development requires Chromium for Playwright, running 'npx playwright install chromium --with-deps'..."
+      )
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        ['playwright', 'install', 'chromium', '--with-deps'],
+        expect.objectContaining({ stdio: 'inherit' })
+      )
+    })
+
+    it('should show a green Playwright success message after install', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        `${pc.green('✔')} Playwright installed successfully`
+      )
+    })
+
+    it('should not hide Playwright install output behind a spinner', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockOra).not.toHaveBeenCalledWith(
+        'Installing Playwright Chromium...'
+      )
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        ['playwright', 'install', 'chromium', '--with-deps'],
+        expect.objectContaining({ stdio: 'inherit' })
       )
     })
 
@@ -1751,7 +1819,7 @@ describe('CLI', () => {
       await main()
 
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        'Local development requires Chromium for Playwright.'
+        "Local development requires Chromium for Playwright, running 'npx playwright install chromium --with-deps'..."
       )
     })
 

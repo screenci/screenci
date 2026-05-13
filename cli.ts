@@ -1331,7 +1331,8 @@ export default defineConfig({
 
 function generatePackageJson(
   projectName: string,
-  includePlaywrightCli = false
+  includePlaywrightCli = false,
+  screenciDependency = 'latest'
 ): string {
   const npmName = projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-')
   const devDependencies: Record<string, string> = {
@@ -1354,7 +1355,7 @@ function generatePackageJson(
           test: 'screenci test',
         },
         dependencies: {
-          screenci: 'latest',
+          screenci: screenciDependency,
         },
         devDependencies,
       },
@@ -1534,6 +1535,65 @@ function getInitProjectRoot(): string {
   return process.env['SCREENCI_INIT_CWD'] ?? process.cwd()
 }
 
+function isSourceCliEntrypoint(entrypoint: string | undefined): boolean {
+  return (
+    entrypoint?.endsWith('/cli.ts') === true ||
+    entrypoint?.endsWith('\\cli.ts') === true
+  )
+}
+
+function getDevScreenciPackageRoot(): string | undefined {
+  const explicitRoot = process.env.SCREENCI_DEV_PACKAGE_ROOT?.trim()
+  if (explicitRoot) return resolve(explicitRoot)
+
+  if (!isSourceCliEntrypoint(process.argv[1])) return undefined
+
+  return dirname(fileURLToPath(import.meta.url))
+}
+
+function getLocalScreenciDependency(
+  packageRoot: string,
+  projectDir: string
+): string {
+  const relativePath = pathRelative(projectDir, packageRoot) || '.'
+  const normalizedPath = relativePath.replace(/\\/g, '/')
+  return `file:${normalizedPath.startsWith('.') ? normalizedPath : `./${normalizedPath}`}`
+}
+
+async function buildLocalScreenciPackage(packageRoot: string): Promise<void> {
+  logger.info(`Using local screenci package: ${packageRoot}`)
+  logger.info("Running 'npm run build' for local screenci package...")
+  await spawnInherited(
+    'npm',
+    ['run', 'build'],
+    packageRoot,
+    'screenci dev build'
+  )
+}
+
+async function installLocalScreenciPackage(
+  projectDir: string,
+  packageRoot: string
+): Promise<void> {
+  const packageJsonPath = resolve(projectDir, 'package.json')
+  const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8')) as {
+    dependencies?: Record<string, string>
+  }
+  packageJson.dependencies = {
+    ...packageJson.dependencies,
+    screenci: getLocalScreenciDependency(packageRoot, projectDir),
+  }
+  await writeFile(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`)
+
+  logger.info('Installing local screenci package into this project...')
+  await spawnInherited(
+    'npm',
+    ['install', '--install-links'],
+    projectDir,
+    'screenci dev install'
+  )
+}
+
 function buildChildEnv(): NodeJS.ProcessEnv {
   const { PATH, HOME, USER, LOGNAME, TMPDIR, TEMP, TMP } = process.env
   return {
@@ -1552,6 +1612,7 @@ function buildChildEnv(): NodeJS.ProcessEnv {
     SCREENCI_IN_CONTAINER: process.env.SCREENCI_IN_CONTAINER,
     SCREENCI_RECORD: process.env.SCREENCI_RECORD,
     SCREENCI_SIGNAL_LOGGING: process.env.SCREENCI_SIGNAL_LOGGING,
+    SCREENCI_DEV_PACKAGE_ROOT: process.env.SCREENCI_DEV_PACKAGE_ROOT,
   }
 }
 
@@ -1658,6 +1719,14 @@ async function runInit(
     '-y',
   ]
   const skillsCommand = `npx ${skillsArgs.join(' ')}`
+  const devScreenciPackageRoot = getDevScreenciPackageRoot()
+  const screenciDependency = devScreenciPackageRoot
+    ? getLocalScreenciDependency(devScreenciPackageRoot, projectDir)
+    : 'latest'
+
+  if (devScreenciPackageRoot) {
+    await buildLocalScreenciPackage(devScreenciPackageRoot)
+  }
 
   await mkdir(resolve(projectDir, 'videos'), { recursive: true })
   await mkdir(resolve(projectDir, '.github', 'workflows'), { recursive: true })
@@ -1667,7 +1736,7 @@ async function runInit(
   )
   await writeFile(
     resolve(projectDir, 'package.json'),
-    generatePackageJson(dirName, shouldAddPlaywrightCli)
+    generatePackageJson(dirName, shouldAddPlaywrightCli, screenciDependency)
   )
   await writeFile(resolve(projectDir, 'README.md'), generateReadme(projectName))
   await writeFile(resolve(projectDir, 'Dockerfile'), generateDockerfile())
@@ -1709,12 +1778,18 @@ async function runInit(
   }
 
   if (verbose) {
-    logger.info("Running 'npm install'...")
-    await spawnInherited('npm', ['install'], projectDir, 'screenci init')
+    const installArgs = devScreenciPackageRoot
+      ? ['install', '--install-links']
+      : ['install']
+    logger.info(`Running 'npm ${installArgs.join(' ')}'...`)
+    await spawnInherited('npm', installArgs, projectDir, 'screenci init')
   } else {
     const spinner = ora('Running npm install...').start()
     try {
-      await spawnSilent('npm', ['install', '--prefix', projectDir])
+      const installArgs = devScreenciPackageRoot
+        ? ['install', '--install-links', '--prefix', projectDir]
+        : ['install', '--prefix', projectDir]
+      await spawnSilent('npm', installArgs)
       spinner.succeed('npm install complete')
     } catch (err) {
       spinner.fail('npm install failed')
@@ -1722,30 +1797,16 @@ async function runInit(
     }
   }
 
-  logger.info('Local development requires Chromium for Playwright.')
-  if (verbose) {
-    logger.info("Running 'npx playwright install chromium --with-deps'...")
-    await spawnInherited(
-      'npx',
-      ['playwright', 'install', 'chromium', '--with-deps'],
-      projectDir,
-      'screenci init'
-    )
-    logger.info(`${pc.green('ok')} Playwright installed successfully`)
-  } else {
-    const spinner = ora('Installing Playwright Chromium...').start()
-    try {
-      await spawnSilent(
-        'npx',
-        ['playwright', 'install', 'chromium', '--with-deps'],
-        projectDir
-      )
-      spinner.succeed('Playwright installed successfully')
-    } catch (err) {
-      spinner.fail('Playwright install failed')
-      throw err
-    }
-  }
+  logger.info(
+    "Local development requires Chromium for Playwright, running 'npx playwright install chromium --with-deps'..."
+  )
+  await spawnInherited(
+    'npx',
+    ['playwright', 'install', 'chromium', '--with-deps'],
+    projectDir,
+    'screenci init'
+  )
+  logger.info(`${pc.green('✔')} Playwright installed successfully`)
   const cliDir = dirname(fileURLToPath(import.meta.url))
   await buildRecordImages(
     requireContainerRuntime(),
@@ -2454,6 +2515,13 @@ async function run(
   if (process.env.SCREENCI_IN_CONTAINER !== 'true') {
     logger.info(`Running ScreenCI ${mode} with npx...`)
     logger.info(`Using config: ${configPath}`)
+  }
+
+  const devScreenciPackageRoot = getDevScreenciPackageRoot()
+  if (devScreenciPackageRoot) {
+    const configDir = dirname(configPath)
+    await buildLocalScreenciPackage(devScreenciPackageRoot)
+    await installLocalScreenciPackage(configDir, devScreenciPackageRoot)
   }
 
   const playwrightArgs = [

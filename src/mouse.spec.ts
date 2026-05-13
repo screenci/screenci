@@ -190,6 +190,34 @@ describe('mouse helpers', () => {
     expect(getMousePosition(page)).toEqual({ x: 12, y: 34 })
   })
 
+  it('reads locator bounds before the real click', async () => {
+    const page = {}
+    const calls: string[] = []
+    const locator = {
+      page: vi.fn().mockReturnValue(page),
+      boundingBox: vi.fn().mockImplementation(async () => {
+        calls.push('boundingBox')
+        return { x: 10, y: 20, width: 30, height: 40 }
+      }),
+    } as unknown as Locator
+    const mouseClickInternal = vi.fn().mockImplementation(async () => {
+      calls.push('click')
+    })
+
+    const promise = performMouseClickAction({
+      locator,
+      doClick: mouseClickInternal,
+      supportsTrial: false,
+      targetX: 12,
+      targetY: 34,
+    })
+
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(calls).toEqual(['boundingBox', 'click'])
+  })
+
   it('supports tripleBefore click mode', async () => {
     const page = {}
     const locator = {

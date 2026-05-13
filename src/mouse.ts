@@ -409,6 +409,11 @@ export async function performMouseClickAction(
     })
   }
 
+  const elementRect = await options.locator.boundingBox()
+  if (!elementRect) {
+    logger.warn('[screenci] Unable to resolve locator bounds before action.')
+  }
+
   if (mode === 'tripleBefore') {
     for (let i = 0; i < 3; i++) {
       const startMs = Date.now()
@@ -493,11 +498,6 @@ export async function performMouseClickAction(
         easing,
       })
     )
-  }
-
-  const elementRect = await options.locator.boundingBox()
-  if (!elementRect) {
-    logger.warn('[screenci] Unable to resolve locator bounds after action.')
   }
 
   setMousePosition(page, { x: options.targetX, y: options.targetY })

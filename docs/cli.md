@@ -28,11 +28,17 @@ Creates a new ScreenCI project directory with a starter config, example video, D
 ```bash
 npx screenci init
 npx screenci init my-product
+npx screenci init my-product --yes
 ```
 
 Options:
 
 - `-v, --verbose` prints underlying command output instead of spinners
+- `--git` initialize a git repository without prompting
+- `--install` install ScreenCI skills, npm dependencies, and Chromium without prompting
+- `--ci` add GitHub Action CI without prompting
+- `--skill` answer yes to the AI authoring question and include `playwright-cli`
+- `-y, --yes` answer yes to all init prompts
 
 ## `screenci test [playwrightArgs...]`
 

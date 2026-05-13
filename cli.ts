@@ -1427,7 +1427,7 @@ jobs:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
         run: |
           if [ -z "$SCREENCI_SECRET" ]; then
-            echo "::error::SCREENCI_SECRET is not set. Add it under Settings → Secrets and variables → Actions."
+            echo "::error::SCREENCI_SECRET is not set. Copy it from https://app.screenci.com/secrets and add it under Settings → Secrets and variables → Actions → Repository secrets."
             exit 1
           fi
 
@@ -1555,6 +1555,36 @@ video('Navigate to AI editing documentation', async ({ page }) => {
 
 async function promptProjectName(): Promise<string> {
   return input({ message: 'Project name:' })
+}
+
+async function promptInitGitRepository(): Promise<boolean> {
+  return confirm({
+    message: 'Initialize a git repository? (Y/n)',
+    default: true,
+  })
+}
+
+async function promptInitDependencies(): Promise<boolean> {
+  return confirm({
+    message:
+      'Install dependencies now, including Chromium for Playwright? (Y/n)',
+    default: true,
+  })
+}
+
+async function promptInitAiAuthoring(): Promise<boolean> {
+  return confirm({
+    message:
+      'Do you want to write videos with an AI agent based on a URL and not just source code? If yes, playwright-cli will be also installed.',
+    default: true,
+  })
+}
+
+async function promptInitGithubActionCi(): Promise<boolean> {
+  return confirm({
+    message: 'Do you want to add Github Action CI? (Y/n)',
+    default: true,
+  })
 }
 
 function getProjectDirName(name: string): string {
@@ -1705,10 +1735,20 @@ function checkNodeVersion(): void {
   }
 }
 
+type InitOptions = {
+  verbose: boolean
+  git: boolean
+  install: boolean
+  yes: boolean
+  skill: boolean
+  ci: boolean
+}
+
 async function runInit(
-  projectNameArg?: string,
-  verbose = false
+  projectNameArg: string | undefined,
+  options: InitOptions
 ): Promise<void> {
+  const { verbose, git, install, yes, skill, ci } = options
   checkNodeVersion()
   checkContainerRuntimeForInit()
   const initCwd = getInitProjectRoot()
@@ -1732,11 +1772,26 @@ async function runInit(
     process.exit(1)
   }
 
-  const shouldAddPlaywrightCli = await confirm({
-    message:
-      'Do you want to write videos with an AI agent based on a URL and not just source code? If yes, playwright-cli will be also installed.',
-    default: true,
-  })
+  const shouldInitializeGitRepository = yes
+    ? true
+    : git
+      ? true
+      : await promptInitGitRepository()
+  const shouldInstallDependencies = yes
+    ? true
+    : install
+      ? true
+      : await promptInitDependencies()
+  const shouldAddPlaywrightCli = yes
+    ? true
+    : skill
+      ? true
+      : await promptInitAiAuthoring()
+  const shouldAddGithubActionCi = yes
+    ? true
+    : ci
+      ? true
+      : await promptInitGithubActionCi()
 
   const skillsArgs = [
     '--yes',
@@ -1759,7 +1814,11 @@ async function runInit(
   }
 
   await mkdir(resolve(projectDir, 'videos'), { recursive: true })
-  await mkdir(resolve(projectDir, '.github', 'workflows'), { recursive: true })
+  if (shouldAddGithubActionCi) {
+    await mkdir(resolve(projectDir, '.github', 'workflows'), {
+      recursive: true,
+    })
+  }
   await writeFile(
     resolve(projectDir, 'screenci.config.ts'),
     generateConfig(projectName)
@@ -1775,10 +1834,12 @@ async function runInit(
     resolve(projectDir, 'videos', 'example.video.ts'),
     generateExampleVideo()
   )
-  await writeFile(
-    resolve(projectDir, '.github', 'workflows', 'record.yml'),
-    generateGithubAction()
-  )
+  if (shouldAddGithubActionCi) {
+    await writeFile(
+      resolve(projectDir, '.github', 'workflows', 'record.yml'),
+      generateGithubAction()
+    )
+  }
   await writeFile(resolve(projectDir, '.env'), '')
 
   logger.info(`Initialized screenci project "${projectName}" in ${projectDir}/`)
@@ -1789,54 +1850,80 @@ async function runInit(
   logger.info('  Dockerfile')
   logger.info('  .gitignore')
   logger.info('  videos/example.video.ts')
-  logger.info('  .github/workflows/record.yml')
+  if (shouldAddGithubActionCi) {
+    logger.info('  .github/workflows/record.yml')
+  }
   logger.info('  .env  (empty placeholder)')
   logger.info('')
-  logger.info('screenci requires dependencies to be installed.')
-  if (verbose) {
-    logger.info(`Running '${skillsCommand}'...`)
-    await spawnInherited('npx', skillsArgs, projectDir, 'screenci init')
-  } else {
-    const spinner = ora('Adding ScreenCI skills...').start()
-    try {
-      await spawnSilent('npx', skillsArgs, projectDir)
-      spinner.succeed('ScreenCI skills added')
-    } catch (err) {
-      spinner.fail('ScreenCI skills install failed')
-      throw err
+  if (shouldInitializeGitRepository) {
+    if (verbose) {
+      logger.info("Running 'git init'...")
+      await spawnInherited('git', ['init'], projectDir, 'screenci init')
+    } else {
+      const spinner = ora('Initializing git repository...').start()
+      try {
+        await spawnSilent('git', ['init'], projectDir)
+        spinner.succeed('Git repository initialized')
+      } catch (err) {
+        spinner.fail('git init failed')
+        throw err
+      }
     }
   }
 
-  if (verbose) {
-    const installArgs = devScreenciPackageRoot
-      ? ['install', '--install-links']
-      : ['install']
-    logger.info(`Running 'npm ${installArgs.join(' ')}'...`)
-    await spawnInherited('npm', installArgs, projectDir, 'screenci init')
-  } else {
-    const spinner = ora('Running npm install...').start()
-    try {
+  if (shouldInstallDependencies) {
+    logger.info('screenci requires dependencies to be installed.')
+    if (verbose) {
+      logger.info(`Running '${skillsCommand}'...`)
+      await spawnInherited('npx', skillsArgs, projectDir, 'screenci init')
+    } else {
+      const spinner = ora('Adding ScreenCI skills...').start()
+      try {
+        await spawnSilent('npx', skillsArgs, projectDir)
+        spinner.succeed('ScreenCI skills added')
+      } catch (err) {
+        spinner.fail('ScreenCI skills install failed')
+        throw err
+      }
+    }
+
+    if (verbose) {
       const installArgs = devScreenciPackageRoot
-        ? ['install', '--install-links', '--prefix', projectDir]
-        : ['install', '--prefix', projectDir]
-      await spawnSilent('npm', installArgs)
-      spinner.succeed('npm install complete')
-    } catch (err) {
-      spinner.fail('npm install failed')
-      throw err
+        ? ['install', '--install-links']
+        : ['install']
+      logger.info(`Running 'npm ${installArgs.join(' ')}'...`)
+      await spawnInherited('npm', installArgs, projectDir, 'screenci init')
+    } else {
+      const spinner = ora('Running npm install...').start()
+      try {
+        const installArgs = devScreenciPackageRoot
+          ? ['install', '--install-links', '--prefix', projectDir]
+          : ['install', '--prefix', projectDir]
+        await spawnSilent('npm', installArgs)
+        spinner.succeed('npm install complete')
+      } catch (err) {
+        spinner.fail('npm install failed')
+        throw err
+      }
     }
-  }
 
-  logger.info(
-    "Local development requires Chromium for Playwright, running 'npx playwright install chromium --with-deps'..."
-  )
-  await spawnInherited(
-    'npx',
-    ['playwright', 'install', 'chromium', '--with-deps'],
-    projectDir,
-    'screenci init'
-  )
-  logger.info(`${pc.green('✔')} Playwright installed successfully`)
+    logger.info(
+      "Local development requires Chromium for Playwright, running 'npx playwright install chromium --with-deps'..."
+    )
+    await spawnInherited(
+      'npx',
+      ['playwright', 'install', 'chromium', '--with-deps'],
+      projectDir,
+      'screenci init'
+    )
+    logger.info(`${pc.green('✔')} Playwright installed successfully`)
+  } else {
+    logger.info('Dependencies were not installed automatically.')
+    logger.info('Run these commands when you are ready:')
+    logger.info(`  ${skillsCommand}`)
+    logger.info('  npm install')
+    logger.info('  npx playwright install chromium --with-deps')
+  }
   const cliDir = dirname(fileURLToPath(import.meta.url))
   await buildRecordImages(
     requireContainerRuntime(),
@@ -2056,16 +2143,28 @@ export async function main() {
   program
     .command('init [name]')
     .description('Initialize a new screenci project')
+    .option('--git', 'initialize a git repository without prompting')
+    .option(
+      '--install',
+      'install skills, dependencies, and Chromium without prompting'
+    )
+    .option('--ci', 'add GitHub Action CI without prompting')
+    .option('--skill', 'enable playwright-cli without prompting')
+    .option('-y, --yes', 'answer yes to all init prompts')
     .option('-v, --verbose', 'verbose output')
     .action(
       async (name: string | undefined, options: Record<string, unknown>) => {
         if (name === 'auth') {
           await runInitAuth()
         } else {
-          await runInit(
-            name,
-            (options['verbose'] as boolean | undefined) ?? false
-          )
+          await runInit(name, {
+            verbose: (options['verbose'] as boolean | undefined) ?? false,
+            git: (options['git'] as boolean | undefined) ?? false,
+            install: (options['install'] as boolean | undefined) ?? false,
+            yes: (options['yes'] as boolean | undefined) ?? false,
+            skill: (options['skill'] as boolean | undefined) ?? false,
+            ci: (options['ci'] as boolean | undefined) ?? false,
+          })
         }
       }
     )

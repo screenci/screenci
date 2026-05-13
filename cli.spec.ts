@@ -1269,7 +1269,13 @@ describe('CLI', () => {
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining('example.video.ts'),
-        expect.stringContaining("import { video } from 'screenci'")
+        expect.stringContaining(
+          "import { createNarration, hide, video, voices } from 'screenci'"
+        )
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining('example.video.ts'),
+        expect.stringContaining('Navigate to AI editing documentation')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining('my-project/.env'),

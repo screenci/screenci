@@ -1514,11 +1514,41 @@ async function performBrowserLogin(appUrl: string): Promise<string> {
 }
 
 function generateExampleVideo(): string {
-  return `import { video } from 'screenci'
+  return `import { createNarration, hide, video, voices } from 'screenci'
 
-video('Example video', async ({ page }) => {
-  await page.goto('https://example.com')
-  await page.waitForTimeout(3000)
+const narration = createNarration({
+  voice: { name: voices.Sophie, style: 'Clear, friendly product walkthrough' },
+  languages: {
+    en: {
+      cues: {
+        intro:
+          'Here is how to find instructions for starting to create your own ScreenCI [pronounce: screen see eye] videos. [short pause] Start on the homepage, then open the documentation from the hero section.',
+        docs: 'The documentation opens with the guide sidebar on the left. In the Guides group, choose AI-Supported Editing.',
+      },
+    },
+    es: {
+      cues: {
+        intro:
+          'Aqui se muestra como encontrar instrucciones para empezar a crear tus propios videos de ScreenCI [pronounce: screen see eye]. [short pause] Comienza en la pagina principal y abre la documentacion desde la seccion principal.',
+        docs: 'La documentacion se abre con la barra lateral de guias a la izquierda. En el grupo Guias, elige Edicion asistida por IA.',
+      },
+    },
+  },
+})
+
+video('Navigate to AI editing documentation', async ({ page }) => {
+  await hide(async () => {
+    await page.goto('https://screenci.com/')
+    await page.getByText('ScreenCI', { exact: true }).first().waitFor()
+  })
+
+  await narration.intro
+  await page.getByRole('link', { name: 'View Documentation' }).click()
+
+  await narration.docs
+  await page
+    .getByRole('link', { name: 'AI-Supported Editing', exact: true })
+    .click()
 })
 `
 }

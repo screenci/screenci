@@ -1364,6 +1364,25 @@ function generatePackageJson(
   )
 }
 
+function generateTsconfig(): string {
+  return `${JSON.stringify(
+    {
+      compilerOptions: {
+        module: 'ESNext',
+        moduleResolution: 'bundler',
+        target: 'ESNext',
+        types: ['node'],
+        strict: true,
+        skipLibCheck: true,
+      },
+      include: ['**/*.ts'],
+    },
+    null,
+    2
+  )}
+`
+}
+
 function generateReadme(projectName: string): string {
   return `# ${projectName}
 
@@ -1824,6 +1843,7 @@ async function runInit(
     resolve(projectDir, 'package.json'),
     generatePackageJson(dirName, shouldAddPlaywrightCli, screenciDependency)
   )
+  await writeFile(resolve(projectDir, 'tsconfig.json'), generateTsconfig())
   await writeFile(resolve(projectDir, 'README.md'), generateReadme(projectName))
   await writeFile(resolve(projectDir, 'Dockerfile'), generateDockerfile())
   await writeFile(resolve(projectDir, '.gitignore'), generateGitignore())
@@ -1843,6 +1863,7 @@ async function runInit(
   logger.info('Files created:')
   logger.info('  screenci.config.ts')
   logger.info('  package.json')
+  logger.info('  tsconfig.json')
   logger.info('  README.md')
   logger.info('  Dockerfile')
   logger.info('  .gitignore')
@@ -1886,16 +1907,22 @@ async function runInit(
 
     if (verbose) {
       const installArgs = devScreenciPackageRoot
-        ? ['install', '--install-links']
-        : ['install']
+        ? ['install', '--include=dev', '--install-links']
+        : ['install', '--include=dev']
       logger.info(`Running 'npm ${installArgs.join(' ')}'...`)
       await spawnInherited('npm', installArgs, projectDir, 'screenci init')
     } else {
       const spinner = ora('Running npm install...').start()
       try {
         const installArgs = devScreenciPackageRoot
-          ? ['install', '--install-links', '--prefix', projectDir]
-          : ['install', '--prefix', projectDir]
+          ? [
+              'install',
+              '--include=dev',
+              '--install-links',
+              '--prefix',
+              projectDir,
+            ]
+          : ['install', '--include=dev', '--prefix', projectDir]
         await spawnSilent('npm', installArgs)
         spinner.succeed('npm install complete')
       } catch (err) {
@@ -1918,7 +1945,7 @@ async function runInit(
     logger.info('Dependencies were not installed automatically.')
     logger.info('Run these commands when you are ready:')
     logger.info(`  ${skillsCommand}`)
-    logger.info('  npm install')
+    logger.info('  npm install --include=dev')
     logger.info('  npx playwright install chromium --with-deps')
   }
   const cliDir = dirname(fileURLToPath(import.meta.url))

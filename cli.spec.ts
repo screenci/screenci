@@ -1315,6 +1315,10 @@ describe('CLI', () => {
         expect.stringContaining('my-project')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining(`my-project/tsconfig.json`),
+        expect.stringContaining('"types": [')
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining(`my-project/README.md`),
         expect.stringContaining('https://screenci.com/docs/intro/')
       )
@@ -1387,6 +1391,21 @@ describe('CLI', () => {
       )
       expect(pkgCall?.[1]).not.toContain('"tsx":')
       expect(pkgCall?.[1]).toContain('"@types/node": "^25.0.0"')
+    })
+
+    it('should create tsconfig.json with node types', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      const tsconfigCall = mockWriteFile.mock.calls.find(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].endsWith('tsconfig.json')
+      )
+      expect(tsconfigCall?.[1]).toContain('"types": [')
+      expect(tsconfigCall?.[1]).toContain('"node"')
     })
 
     it('should create .github/workflows/record.yml with SCREENCI_SECRET check', async () => {
@@ -1819,7 +1838,7 @@ describe('CLI', () => {
 
       expect(mockSpawn).toHaveBeenCalledWith(
         'npm',
-        expect.arrayContaining(['install']),
+        expect.arrayContaining(['install', '--include=dev']),
         expect.objectContaining({ stdio: 'pipe' })
       )
     })
@@ -1854,7 +1873,7 @@ describe('CLI', () => {
       )
       expect(mockSpawn).toHaveBeenCalledWith(
         'npm',
-        expect.arrayContaining(['install']),
+        expect.arrayContaining(['install', '--include=dev']),
         expect.objectContaining({ stdio: 'pipe' })
       )
     })
@@ -1883,7 +1902,7 @@ describe('CLI', () => {
       expect(loggerInfoSpy).toHaveBeenCalledWith(
         'Dependencies were not installed automatically.'
       )
-      expect(loggerInfoSpy).toHaveBeenCalledWith('  npm install')
+      expect(loggerInfoSpy).toHaveBeenCalledWith('  npm install --include=dev')
       expect(loggerInfoSpy).toHaveBeenCalledWith(
         '  npx playwright install chromium --with-deps'
       )
@@ -1975,10 +1994,12 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       await main()
 
-      expect(loggerInfoSpy).toHaveBeenCalledWith("Running 'npm install'...")
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        "Running 'npm install --include=dev'..."
+      )
       expect(mockSpawn).toHaveBeenCalledWith(
         'npm',
-        ['install'],
+        ['install', '--include=dev'],
         expect.objectContaining({
           cwd: expect.stringContaining('my-project'),
           stdio: 'inherit',
@@ -2137,7 +2158,7 @@ describe('CLI', () => {
       )
       expect(mockSpawn).toHaveBeenCalledWith(
         'npm',
-        expect.arrayContaining(['install']),
+        expect.arrayContaining(['install', '--include=dev']),
         expect.objectContaining({ stdio: 'pipe' })
       )
       expect(mockWriteFile).toHaveBeenCalledWith(

@@ -18,6 +18,7 @@ const mockReaddir = vi.fn()
 const mockReadFile = vi.fn()
 const mockStat = vi.fn()
 const mockCreateReadStream = vi.fn()
+const mockAppendFile = vi.fn()
 const mockWriteFile = vi.fn()
 const mockMkdir = vi.fn()
 const mockInput = vi.fn()
@@ -62,12 +63,14 @@ vi.mock('fs', () => ({
 }))
 
 vi.mock('fs/promises', () => ({
+  appendFile: mockAppendFile,
   readdir: mockReaddir,
   readFile: mockReadFile,
   stat: mockStat,
   writeFile: mockWriteFile,
   mkdir: mockMkdir,
   default: {
+    appendFile: mockAppendFile,
     readdir: mockReaddir,
     readFile: mockReadFile,
     stat: mockStat,
@@ -105,6 +108,7 @@ describe('CLI', () => {
     // mockReset also clears return values/implementations including Once queue)
     vi.clearAllMocks()
     mockSpawn.mockReset()
+    mockAppendFile.mockResolvedValue(undefined)
     mockWriteFile.mockResolvedValue(undefined)
     mockMkdir.mockResolvedValue(undefined)
     // Default: podman is available (overridden per-test as needed)
@@ -1203,6 +1207,42 @@ describe('CLI', () => {
       await expect(main()).rejects.toThrow('process.exit called')
       expect(loggerErrorSpy).not.toHaveBeenCalledWith('Unknown command: retry')
     })
+
+    it('should write project URL to GitHub Actions output after upload', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'retry',
+        '--config',
+        'test-fixtures/screenci.config.ts',
+      ]
+      process.env.SCREENCI_SECRET = 'test-secret'
+      process.env.GITHUB_OUTPUT = '/tmp/github-output'
+      mockExistsSync.mockImplementation(
+        (path: string) => !String(path).endsWith('recording.mp4')
+      )
+      mockReaddir.mockResolvedValue(['demo'])
+      mockReadFile.mockResolvedValue(
+        JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+      )
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({
+          recordingId: 'recording_123',
+          projectId: 'project_123',
+        }),
+        text: vi.fn().mockResolvedValue(''),
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockAppendFile).toHaveBeenCalledWith(
+        '/tmp/github-output',
+        'screenci_project_url=https://app.screenci.com/project/project_123\n'
+      )
+    })
   })
 
   describe('dev URL helpers', () => {
@@ -1545,6 +1585,11 @@ describe('CLI', () => {
       )
       expect(workflowCall?.[1]).toContain('actions/setup-node@v6')
       expect(workflowCall?.[1]).toContain('node-version: latest')
+      expect(workflowCall?.[1]).toContain('environment:\n      name: screenci')
+      expect(workflowCall?.[1]).toContain(
+        'url: ${{ steps.record.outputs.screenci_project_url }}'
+      )
+      expect(workflowCall?.[1]).toContain('- id: record\n        name: Record')
       expect(workflowCall?.[1]).toContain('npm install')
       expect(workflowCall?.[1]).not.toContain('npm install --include=dev')
       expect(workflowCall?.[1]).toContain('npm run record')

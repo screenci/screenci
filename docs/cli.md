@@ -26,9 +26,9 @@ Most commands look for `screenci.config.ts` in the current directory. Use `--con
 Creates a new ScreenCI project directory with a starter config, example video, Dockerfile, and workflow files. `init` does not authenticate. If `SCREENCI_SECRET` is missing, `screenci record` will open a browser window and complete the login flow before recording starts.
 
 ```bash
-npx screenci init
-npx screenci init my-product
-npx screenci init my-product --yes
+npx screenci@latest init
+npx screenci@latest init my-product
+npx screenci@latest init my-product --yes
 ```
 
 Options:

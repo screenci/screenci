@@ -18,7 +18,7 @@ npm install screenci
 ### 2. Init a project
 
 ```bash
-npx screenci init my-project
+npx screenci@latest init my-project
 cd my-project
 npm install
 ```

@@ -31,7 +31,7 @@ AI assistants can use this file to quickly understand ScreenCI's functionality a
 
 ScreenCI offers a Model Context Protocol server that allows AI assistants like Claude to directly interact with your ScreenCI projects.
 
-Before setting up the MCP server, run `npx screenci init` in your project and complete the browser login flow. That fetches your `SCREENCI_SECRET` and saves it to `.env` automatically.
+Before setting up the MCP server, run `npx screenci@latest init` in your project and complete the browser login flow. That fetches your `SCREENCI_SECRET` and saves it to `.env` automatically.
 
 ### Features
 

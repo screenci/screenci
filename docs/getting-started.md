@@ -16,7 +16,7 @@ You need **Node.js** and **Podman** (or Docker) installed. Node.js runs screenci
 ## Init a project
 
 ```bash
-npx screenci init
+npx screenci@latest init
 ```
 
 You'll be prompted for a project name. screenci then creates the directory, scaffolds the project, and prints what to do next. If you do not already have `SCREENCI_SECRET`, `screenci record` will open a browser window to authenticate you before the first recording.

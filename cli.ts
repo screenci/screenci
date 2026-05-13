@@ -14,7 +14,14 @@ import {
 import { createHash } from 'crypto'
 import { createServer } from 'http'
 import type { AddressInfo } from 'net'
-import { mkdir, readdir, readFile, stat, writeFile } from 'fs/promises'
+import {
+  appendFile,
+  mkdir,
+  readdir,
+  readFile,
+  stat,
+  writeFile,
+} from 'fs/promises'
 import { dirname, relative as pathRelative, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { Command, CommanderError } from 'commander'
@@ -1074,6 +1081,13 @@ export function getDevFrontendUrl(): string {
     : 'https://app.screenci.com'
 }
 
+async function writeGitHubProjectOutput(projectUrl: string): Promise<void> {
+  const githubOutput = process.env.GITHUB_OUTPUT
+  if (!githubOutput) return
+
+  await appendFile(githubOutput, `screenci_project_url=${projectUrl}\n`)
+}
+
 async function uploadLatest(
   configPath: string | undefined,
   verbose = false
@@ -1118,10 +1132,12 @@ async function uploadLatest(
     throw err
   }
   if (projectId !== null) {
+    const projectUrl = `${appUrl}/project/${projectId}`
+    await writeGitHubProjectOutput(projectUrl)
     logger.info('')
     logger.info('Upload complete, rendering continues in the background.')
     logger.info('Recording finished, results available at:')
-    logger.info(pc.cyan(`${appUrl}/project/${projectId}`))
+    logger.info(pc.cyan(projectUrl))
   }
 }
 
@@ -1447,6 +1463,9 @@ on:
 jobs:
   record:
     runs-on: ubuntu-latest
+    environment:
+      name: screenci
+      url: \${{ steps.record.outputs.screenci_project_url }}
     steps:
       - name: Check SCREENCI_SECRET
         env:
@@ -1466,7 +1485,8 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Record
+      - id: record
+        name: Record
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
         run: npm run record
@@ -2077,11 +2097,13 @@ export async function main() {
             throw err
           }
           if (projectId !== null) {
+            const projectUrl = `${appUrl}/project/${projectId}`
+            await writeGitHubProjectOutput(projectUrl)
             logger.info('')
             logger.info(
               'Recording finished, rendering in progress. Results available at:'
             )
-            logger.info(pc.cyan(`${appUrl}/project/${projectId}`))
+            logger.info(pc.cyan(projectUrl))
           }
         } catch (err) {
           logger.warn('Failed to load config for upload:', err)

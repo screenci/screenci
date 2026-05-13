@@ -182,8 +182,7 @@ describe('CLI', () => {
   })
 
   describe('container workflow', () => {
-    let mockBuildProcess: EventEmitter
-    let mockRecordingBuildProcess: EventEmitter
+    let mockImageProcess: EventEmitter
     let mockRunProcess: EventEmitter
 
     beforeEach(() => {
@@ -194,28 +193,19 @@ describe('CLI', () => {
       // Default: podman is available
       mockSpawnSync.mockReturnValue({ status: 0, error: undefined })
 
-      mockBuildProcess = new EventEmitter()
-      mockRecordingBuildProcess = new EventEmitter()
+      mockImageProcess = new EventEmitter()
       mockRunProcess = new EventEmitter()
       mockSpawn
-        .mockReturnValueOnce(mockBuildProcess as unknown as ChildProcess)
-        .mockReturnValueOnce(
-          mockRecordingBuildProcess as unknown as ChildProcess
-        )
+        .mockReturnValueOnce(mockImageProcess as unknown as ChildProcess)
         .mockReturnValueOnce(mockRunProcess as unknown as ChildProcess)
     })
 
-    async function driveContainerSpawns(
-      exitCodes: [number, number, number] = [0, 0, 0]
-    ) {
+    async function driveContainerSpawns(exitCodes: [number, number] = [0, 0]) {
       await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(1))
-      mockBuildProcess.emit('close', exitCodes[0])
+      mockImageProcess.emit('close', exitCodes[0])
       if (exitCodes[0] !== 0) return
       await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(2))
-      mockRecordingBuildProcess.emit('close', exitCodes[1])
-      if (exitCodes[1] !== 0) return
-      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(3))
-      mockRunProcess.emit('close', exitCodes[2])
+      mockRunProcess.emit('close', exitCodes[1])
     }
 
     it('should build and run container for record command', async () => {
@@ -230,10 +220,9 @@ describe('CLI', () => {
       const authOpenProcess = {
         unref: vi.fn(),
       } as unknown as ChildProcess
-      const buildProcess = new EventEmitter()
-      const projectBuildProcess = new EventEmitter()
+      const imageProcess = new EventEmitter()
       const runProcess = new EventEmitter()
-      const containerProcesses = [buildProcess, projectBuildProcess, runProcess]
+      const containerProcesses = [imageProcess, runProcess]
 
       mockSpawn.mockImplementation((command: string) => {
         if (command === 'xdg-open') {
@@ -288,17 +277,11 @@ describe('CLI', () => {
           mockSpawn.mock.calls.filter(([command]) => command === 'podman')
         ).toHaveLength(1)
       )
-      buildProcess.emit('close', 0)
+      imageProcess.emit('close', 0)
       await vi.waitFor(() =>
         expect(
           mockSpawn.mock.calls.filter(([command]) => command === 'podman')
         ).toHaveLength(2)
-      )
-      projectBuildProcess.emit('close', 0)
-      await vi.waitFor(() =>
-        expect(
-          mockSpawn.mock.calls.filter(([command]) => command === 'podman')
-        ).toHaveLength(3)
       )
       runProcess.emit('close', 0)
 
@@ -408,6 +391,36 @@ describe('CLI', () => {
       )
     })
 
+    it('should pass CI to the local playwright process when defined', async () => {
+      process.env.CI = 'true'
+      process.argv = ['node', 'cli.js', 'test']
+
+      mockSpawn.mockReset()
+      mockSpawn.mockImplementation(
+        (
+          _command: string,
+          _args: string[],
+          options?: { env?: NodeJS.ProcessEnv }
+        ) => {
+          expect(options?.env?.CI).toBe('true')
+          process.nextTick(() => mockChildProcess.emit('close', 0))
+          return mockChildProcess as unknown as ChildProcess
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        expect.arrayContaining(['playwright', 'test']),
+        expect.objectContaining({
+          env: expect.objectContaining({ CI: 'true' }),
+          stdio: 'inherit',
+        })
+      )
+    })
+
     it('should mount config, .screenci, and videos volumes', async () => {
       process.argv = ['node', 'cli.js', 'record']
 
@@ -418,7 +431,7 @@ describe('CLI', () => {
 
       await mainPromise
 
-      const runArgs = mockSpawn.mock.calls[2][1] as string[]
+      const runArgs = mockSpawn.mock.calls[1][1] as string[]
 
       // Find volume mounts
       const vIndices = runArgs.reduce<number[]>((acc, arg, i) => {
@@ -435,6 +448,113 @@ describe('CLI', () => {
       expect(mounts.some((m) => m?.endsWith(':/app/videos'))).toBe(true)
     })
 
+    it('should pass CI to the container when defined', async () => {
+      process.env.CI = 'true'
+      process.argv = ['node', 'cli.js', 'record']
+
+      const { main } = await import('./cli')
+      const mainPromise = main()
+
+      await driveContainerSpawns()
+
+      await mainPromise
+
+      const runArgs = mockSpawn.mock.calls[1][1] as string[]
+
+      expect(runArgs).toContain('CI=true')
+    })
+
+    it('should use the latest ScreenCI image by default', async () => {
+      process.argv = ['node', 'cli.js', 'record']
+      mockSpawnSync.mockReturnValueOnce({ status: 0, error: undefined })
+
+      const tagProcess = new EventEmitter()
+      const runProcess = new EventEmitter()
+      mockSpawn.mockReset()
+      mockSpawn
+        .mockReturnValueOnce(tagProcess as unknown as ChildProcess)
+        .mockReturnValueOnce(runProcess as unknown as ChildProcess)
+
+      const { main } = await import('./cli')
+      const mainPromise = main()
+
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(1))
+      expect(mockSpawn).toHaveBeenNthCalledWith(
+        1,
+        'podman',
+        [
+          'tag',
+          'ghcr.io/screenci/record:latest',
+          'ghcr.io/screenci/record:latest',
+        ],
+        expect.objectContaining({ stdio: 'pipe' })
+      )
+      tagProcess.emit('close', 0)
+
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(2))
+      expect(mockSpawn).toHaveBeenNthCalledWith(
+        2,
+        'podman',
+        expect.arrayContaining(['run', '--rm']),
+        expect.objectContaining({ stdio: ['inherit', 'pipe', 'pipe'] })
+      )
+      runProcess.emit('close', 0)
+
+      await mainPromise
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Using image tag latest instead of the version '
+        )
+      )
+    })
+
+    it('should pull the latest ScreenCI image when missing locally', async () => {
+      process.argv = ['node', 'cli.js', 'record']
+      mockSpawnSync
+        .mockReturnValueOnce({ status: 0, error: undefined })
+        .mockReturnValueOnce({ status: 1, error: undefined })
+
+      mockSpawn.mockReset()
+      const pullProcess = new EventEmitter()
+      const tagProcess = new EventEmitter()
+      const runProcess = new EventEmitter()
+      mockSpawn
+        .mockReturnValueOnce(pullProcess as unknown as ChildProcess)
+        .mockReturnValueOnce(tagProcess as unknown as ChildProcess)
+        .mockReturnValueOnce(runProcess as unknown as ChildProcess)
+
+      const { main } = await import('./cli')
+      const mainPromise = main()
+
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(1))
+      expect(mockSpawn).toHaveBeenNthCalledWith(
+        1,
+        'podman',
+        ['pull', 'ghcr.io/screenci/record:latest'],
+        expect.objectContaining({ stdio: 'pipe' })
+      )
+      pullProcess.emit('close', 0)
+
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(2))
+      expect(mockSpawn).toHaveBeenNthCalledWith(
+        2,
+        'podman',
+        [
+          'tag',
+          'ghcr.io/screenci/record:latest',
+          'ghcr.io/screenci/record:latest',
+        ],
+        expect.objectContaining({ stdio: 'pipe' })
+      )
+      tagProcess.emit('close', 0)
+
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(3))
+      runProcess.emit('close', 0)
+
+      await mainPromise
+    })
+
     it('should pass additional args to container record command', async () => {
       process.argv = ['node', 'cli.js', 'record', '--project=chromium']
 
@@ -446,7 +566,7 @@ describe('CLI', () => {
       await mainPromise
 
       expect(mockSpawn).toHaveBeenNthCalledWith(
-        3,
+        2,
         'podman',
         expect.arrayContaining(['screenci', 'record', '--project=chromium']),
         expect.objectContaining({ stdio: ['inherit', 'pipe', 'pipe'] })
@@ -472,10 +592,14 @@ describe('CLI', () => {
       expect(mockSpawn).toHaveBeenNthCalledWith(
         1,
         'docker',
-        expect.arrayContaining(['build']),
+        [
+          'tag',
+          'ghcr.io/screenci/record:latest',
+          'ghcr.io/screenci/record:latest',
+        ],
         expect.objectContaining({ stdio: 'pipe' })
       )
-      expect(mockSpawnSync).toHaveBeenCalledTimes(1)
+      expect(mockSpawnSync).toHaveBeenCalledTimes(2)
     })
 
     it('should clear and recreate .screenci directory before running container', async () => {
@@ -497,7 +621,7 @@ describe('CLI', () => {
       )
     })
 
-    it('should log build and run steps', async () => {
+    it('should log when using the latest ScreenCI image by default', async () => {
       process.argv = ['node', 'cli.js', 'record']
 
       const { main } = await import('./cli')
@@ -507,10 +631,14 @@ describe('CLI', () => {
 
       await mainPromise
 
-      expect(mockOra).toHaveBeenCalledWith(
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Using image tag latest instead of the version '
+        )
+      )
+      expect(mockOra).not.toHaveBeenCalledWith(
         expect.stringContaining('Building screenci image')
       )
-      expect(mockSpinner.start).toHaveBeenCalled()
     })
 
     it('should support --config flag', async () => {
@@ -530,7 +658,7 @@ describe('CLI', () => {
       await mainPromise
 
       // Custom config should be mounted into the container
-      const runArgs = mockSpawn.mock.calls[2][1] as string[]
+      const runArgs = mockSpawn.mock.calls[1][1] as string[]
       expect(
         runArgs.some(
           (arg) =>
@@ -541,18 +669,15 @@ describe('CLI', () => {
       ).toBe(true)
     })
 
-    it('should reject when podman build fails', async () => {
+    it('should reject when image preparation fails', async () => {
       process.argv = ['node', 'cli.js', 'record']
 
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await driveContainerSpawns([1, 0, 0])
+      await driveContainerSpawns([1, 0])
 
-      await expect(mainPromise).rejects.toThrow('process.exit called')
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('podman exited with code 1')
-      )
+      await expect(mainPromise).rejects.toThrow('podman exited with code 1')
     })
 
     it('should reject when podman run fails', async () => {
@@ -561,7 +686,7 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       const mainPromise = main()
 
-      await driveContainerSpawns([0, 0, 1])
+      await driveContainerSpawns([0, 1])
 
       await expect(mainPromise).rejects.toThrow('podman exited with code 1')
     })
@@ -1436,11 +1561,12 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain('node-version: latest')
       expect(workflowCall?.[1]).toContain('npm install')
       expect(workflowCall?.[1]).not.toContain('npm install --include=dev')
-      expect(workflowCall?.[1]).toContain('npm run record')
+      expect(workflowCall?.[1]).toContain('npm run record -- --tag latest')
+      expect(workflowCall?.[1]).not.toContain('SCREENCI_LOCAL_IMAGE')
       expect(workflowCall?.[1]).not.toContain('docker build')
       expect(workflowCall?.[1]).not.toContain('docker run')
       expect(workflowCall?.[1]).toContain(
-        'Copy it from https://app.screenci.com/secrets and add it under Settings → Secrets and variables → Actions → Repository secrets.'
+        'Copy it from https://app.screenci.com/secrets and add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action.'
       )
       expect(workflowCall?.[1]).toContain('exit 1')
     })

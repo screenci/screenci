@@ -1445,7 +1445,7 @@ jobs:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
         run: |
           if [ -z "$SCREENCI_SECRET" ]; then
-            echo "::error::SCREENCI_SECRET is not set. Copy it from https://app.screenci.com/secrets and add it under Settings → Secrets and variables → Actions → Repository secrets."
+            echo "::error::SCREENCI_SECRET is not set. Copy it from https://app.screenci.com/secrets and add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action."
             exit 1
           fi
 
@@ -1461,7 +1461,7 @@ jobs:
       - name: Record
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
-        run: npm run record
+        run: npm run record -- --tag latest
 `
 }
 
@@ -1671,7 +1671,7 @@ async function installLocalScreenciPackage(
 }
 
 function buildChildEnv(): NodeJS.ProcessEnv {
-  const { PATH, HOME, USER, LOGNAME, TMPDIR, TEMP, TMP } = process.env
+  const { PATH, HOME, USER, LOGNAME, TMPDIR, TEMP, TMP, CI } = process.env
   return {
     PATH,
     HOME,
@@ -1680,6 +1680,7 @@ function buildChildEnv(): NodeJS.ProcessEnv {
     TMPDIR,
     TEMP,
     TMP,
+    CI,
     SCREENCI_SECRET: process.env.SCREENCI_SECRET,
     SCREENCI_INIT_CWD: process.env.SCREENCI_INIT_CWD,
     DEV_FRONTEND_PORT: process.env.DEV_FRONTEND_PORT,
@@ -2576,17 +2577,18 @@ async function runWithContainer(
   const containerRuntime = detectContainerRuntime(forcedRuntime)
 
   const dockerfileVersion = parseDockerfileVersion(dockerfilePath)
+  const effectiveImageTag = imageTag ?? 'latest'
 
   if (process.env['SCREENCI_LOCAL_IMAGE']) {
     logger.info('SCREENCI_LOCAL_IMAGE set — skipping screenci image build')
-  } else if (imageTag !== undefined) {
-    const remoteImage = `ghcr.io/screenci/record:${imageTag}`
+  } else if (effectiveImageTag !== undefined) {
+    const remoteImage = `ghcr.io/screenci/record:${effectiveImageTag}`
     const imageExists =
       spawnSync(containerRuntime, ['image', 'exists', remoteImage], {
         stdio: 'ignore',
       }).status === 0
     logger.info(
-      `Using image tag ${imageTag} instead of the version ${dockerfileVersion} from Dockerfile`
+      `Using image tag ${effectiveImageTag} instead of the version ${dockerfileVersion} from Dockerfile`
     )
     if (!imageExists) {
       if (verbose) {
@@ -2620,6 +2622,7 @@ async function runWithContainer(
   await spawnContainerRecording(containerRuntime, [
     'run',
     '--rm',
+    ...(process.env.CI !== undefined ? ['-e', `CI=${process.env.CI}`] : []),
     '-e',
     'SCREENCI_IN_CONTAINER=true',
     '-e',

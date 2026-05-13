@@ -1374,6 +1374,21 @@ describe('CLI', () => {
       expect(pkgCall?.[1]).not.toContain('"@playwright/cli": "latest"')
     })
 
+    it('should not add tsx to devDependencies', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      const pkgCall = mockWriteFile.mock.calls.find(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].endsWith('package.json')
+      )
+      expect(pkgCall?.[1]).not.toContain('"tsx":')
+      expect(pkgCall?.[1]).toContain('"@types/node": "^25.0.0"')
+    })
+
     it('should create .github/workflows/record.yml with SCREENCI_SECRET check', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
@@ -1398,9 +1413,13 @@ describe('CLI', () => {
         (c: unknown[]) =>
           typeof c[0] === 'string' && c[0].endsWith('record.yml')
       )
-      expect(workflowCall?.[1]).toContain('docker build')
-      expect(workflowCall?.[1]).toContain('docker run')
+      expect(workflowCall?.[1]).toContain('actions/setup-node@v6')
+      expect(workflowCall?.[1]).toContain('node-version: latest')
+      expect(workflowCall?.[1]).toContain('npm install')
+      expect(workflowCall?.[1]).not.toContain('npm install --include=dev')
       expect(workflowCall?.[1]).toContain('npm run record')
+      expect(workflowCall?.[1]).not.toContain('docker build')
+      expect(workflowCall?.[1]).not.toContain('docker run')
       expect(workflowCall?.[1]).toContain(
         'Copy it from https://app.screenci.com/secrets and add it under Settings → Secrets and variables → Actions → Repository secrets.'
       )

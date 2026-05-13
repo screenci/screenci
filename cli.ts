@@ -1337,7 +1337,6 @@ function generatePackageJson(
   const npmName = projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-')
   const devDependencies: Record<string, string> = {
     '@types/node': '^25.0.0',
-    tsx: '^4.21.0',
   }
   if (includePlaywrightCli) {
     devDependencies['@playwright/cli'] = 'latest'
@@ -1433,19 +1432,17 @@ jobs:
 
       - uses: actions/checkout@v4
 
-      - name: Build Docker image
-        run: docker build -t screenci-project .
+      - uses: actions/setup-node@v6
+        with:
+          node-version: latest
+
+      - name: Install dependencies
+        run: npm install
 
       - name: Record
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
-        run: |
-          docker run --rm \\
-            -e SCREENCI_SECRET \\
-            -e SCREENCI_IN_CONTAINER=true \\
-            -e SCREENCI_RECORD=true \\
-            screenci-project \\
-            npm run record
+        run: npm run record
 `
 }
 

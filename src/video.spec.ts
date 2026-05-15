@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { getDimensions, getViewportCenter } from './dimensions.js'
+import { POST_VIDEO_PAUSE } from './video.js'
 
 /**
  * Dimension table (shorter side = quality base, longer side from ratio):
@@ -212,5 +213,11 @@ describe('startup mouse positioning', () => {
       x: 640,
       y: 360,
     })
+  })
+})
+
+describe('POST_VIDEO_PAUSE', () => {
+  it('adds a 500ms tail before stopping recording resources', () => {
+    expect(POST_VIDEO_PAUSE).toBe(500)
   })
 })

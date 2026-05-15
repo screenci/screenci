@@ -3,6 +3,12 @@ import type { IEventRecorder } from './events.js'
 let activeRecorder: IEventRecorder | null = null
 let insideHide = false
 
+export const POST_HIDE_PAUSE = 250
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 export function setActiveHideRecorder(recorder: IEventRecorder | null): void {
   activeRecorder = recorder
 }
@@ -43,6 +49,8 @@ export async function hide(fn: () => Promise<void> | void): Promise<void> {
   }
   try {
     await fn()
+    // Browser rendering/recording has a short delay.
+    await sleep(POST_HIDE_PAUSE)
   } finally {
     insideHide = false
   }

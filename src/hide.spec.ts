@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { hide, setActiveHideRecorder } from './hide.js'
+import { POST_HIDE_PAUSE, hide, setActiveHideRecorder } from './hide.js'
 import type { IEventRecorder } from './events.js'
 
 function makeRecorder(): IEventRecorder {
@@ -122,6 +122,12 @@ describe('hide', () => {
       const called = vi.fn()
       await hide(called)
       expect(called).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('POST_HIDE_PAUSE', () => {
+    it('adds a 250ms tail before revealing hidden recording', () => {
+      expect(POST_HIDE_PAUSE).toBe(250)
     })
   })
 })

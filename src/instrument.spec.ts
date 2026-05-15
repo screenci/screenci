@@ -1219,42 +1219,45 @@ describe('instrumentLocator', () => {
 
     instrumentLocator(locator)
 
-    await hide(async () => {
-      await (
-        locator.click as (options?: {
-          moveDuration?: number
-          moveSpeed?: number
-          beforeClickPause?: number
-          moveEasing?: string
-          postClickPause?: number
-        }) => Promise<void>
-      )({ moveDuration: 10 })
+    await Promise.all([
+      hide(async () => {
+        await (
+          locator.click as (options?: {
+            moveDuration?: number
+            moveSpeed?: number
+            beforeClickPause?: number
+            moveEasing?: string
+            postClickPause?: number
+          }) => Promise<void>
+        )({ moveDuration: 10 })
 
-      await (
-        locator.fill as (
-          value: string,
-          options?: { duration?: number; hideMouse?: boolean }
-        ) => Promise<void>
-      )('value', { duration: 300, hideMouse: true })
+        await (
+          locator.fill as (
+            value: string,
+            options?: { duration?: number; hideMouse?: boolean }
+          ) => Promise<void>
+        )('value', { duration: 300, hideMouse: true })
 
-      await locator.pressSequentially('value', {
-        delay: 10,
-        hideMouse: true,
-      } as unknown as Parameters<Locator['pressSequentially']>[1])
+        await locator.pressSequentially('value', {
+          delay: 10,
+          hideMouse: true,
+        } as unknown as Parameters<Locator['pressSequentially']>[1])
 
-      await (locator.check as (options?: { click?: unknown }) => Promise<void>)(
-        { click: {} }
-      )
-      await (
-        locator.uncheck as (options?: { click?: unknown }) => Promise<void>
-      )({ click: {} })
-      await (
-        locator.selectOption as (
-          values: string,
-          options?: { click?: unknown; position?: { x: number; y: number } }
-        ) => Promise<string[]>
-      )('one', { click: {}, position: { x: 1, y: 1 } })
-    })
+        await (
+          locator.check as (options?: { click?: unknown }) => Promise<void>
+        )({ click: {} })
+        await (
+          locator.uncheck as (options?: { click?: unknown }) => Promise<void>
+        )({ click: {} })
+        await (
+          locator.selectOption as (
+            values: string,
+            options?: { click?: unknown; position?: { x: number; y: number } }
+          ) => Promise<string[]>
+        )('one', { click: {}, position: { x: 1, y: 1 } })
+      }),
+      vi.runAllTimersAsync(),
+    ])
 
     expect(recordedInputEvents).toHaveLength(0)
     expect(recorder.addInput).not.toHaveBeenCalled()

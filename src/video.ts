@@ -51,6 +51,12 @@ import { logger } from './logger.js'
 import { getChromiumLaunchOptions } from './browserLaunchOptions.js'
 import { createRecordingChromiumProfile } from './chromiumProfile.js'
 
+export const POST_VIDEO_PAUSE = 500
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 async function setupMouseTracking(
   _page: Page,
   _recorder: EventRecorder
@@ -519,6 +525,9 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     }
 
     await use(page)
+
+    // Do not end video abruptly.
+    await sleep(POST_VIDEO_PAUSE)
 
     // Stop ffmpeg BEFORE closing the page to avoid a black frame at the end
     if (didStart) {

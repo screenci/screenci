@@ -122,6 +122,8 @@ Once you have a recording you're happy with, upload it to screenci.com for rende
 npm run retry
 ```
 
+Cloud rendering is limited to 30 minutes per render. If a render exceeds that wall-clock limit, ScreenCI marks it as failed.
+
 Set `apiUrl` in your config (or `SCREENCI_URL` env var) to point at the API.
 
 ## Inspect project info and public URLs

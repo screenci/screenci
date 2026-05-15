@@ -703,6 +703,7 @@ export type ScreenCIConfig = Omit<
   | 'retries'
   | 'testDir'
   | 'testMatch'
+  | 'webServer'
   | 'use'
   | 'projects'
 > & {

@@ -176,6 +176,79 @@ describe('defineConfig', () => {
     expect(config.use?.baseURL).toBe('https://app.example.com')
   })
 
+  it('should rewrite localhost baseURL inside the recording container', () => {
+    const originalContainer = process.env.SCREENCI_IN_CONTAINER
+    const originalBaseHost = process.env.SCREENCI_CONTAINER_BASE_HOST
+
+    process.env.SCREENCI_IN_CONTAINER = 'true'
+    process.env.SCREENCI_CONTAINER_BASE_HOST = 'host.docker.internal'
+
+    try {
+      const config = defineConfig({
+        projectName: 'Test',
+        use: {
+          baseURL: 'http://localhost:4321/',
+        },
+      })
+
+      expect(config.use?.baseURL).toBe('http://host.docker.internal:4321/')
+    } finally {
+      if (originalContainer === undefined) {
+        delete process.env.SCREENCI_IN_CONTAINER
+      } else {
+        process.env.SCREENCI_IN_CONTAINER = originalContainer
+      }
+
+      if (originalBaseHost === undefined) {
+        delete process.env.SCREENCI_CONTAINER_BASE_HOST
+      } else {
+        process.env.SCREENCI_CONTAINER_BASE_HOST = originalBaseHost
+      }
+    }
+  })
+
+  it('should rewrite localhost baseURL in project use inside the recording container', () => {
+    const originalContainer = process.env.SCREENCI_IN_CONTAINER
+
+    process.env.SCREENCI_IN_CONTAINER = 'true'
+
+    try {
+      const config = defineConfig({
+        projectName: 'Test',
+        projects: [
+          {
+            name: 'chromium',
+            use: {
+              baseURL: 'http://127.0.0.1:3000/',
+            },
+          },
+        ],
+      })
+
+      expect(config.projects?.[0]?.use?.baseURL).toBe(
+        'http://host.containers.internal:3000/'
+      )
+    } finally {
+      if (originalContainer === undefined) {
+        delete process.env.SCREENCI_IN_CONTAINER
+      } else {
+        process.env.SCREENCI_IN_CONTAINER = originalContainer
+      }
+    }
+  })
+
+  it('should reject webServer option', () => {
+    expect(() => {
+      defineConfig({
+        projectName: 'Test',
+        webServer: {
+          command: 'npm run dev',
+          url: 'http://localhost:3000',
+        },
+      })
+    }).toThrow('screenci does not support "webServer" option')
+  })
+
   it('should accept recordOptions in project use', () => {
     const config = defineConfig({
       projectName: 'Test',

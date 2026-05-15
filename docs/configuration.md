@@ -44,13 +44,6 @@ export default defineConfig({
     // Any other Playwright 'use' options work here
     baseURL: 'https://staging.example.com',
   },
-
-  // Playwright's webServer option works as normal
-  webServer: {
-    command: 'npm run start',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
-  },
 })
 ```
 

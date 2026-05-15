@@ -23,13 +23,64 @@ const reporterPath = existsSync(reporterPathJs)
 
 type ReporterConfig = string | ReporterDescription
 
+function rewriteLoopbackBaseUrl(
+  baseURL: string | undefined
+): string | undefined {
+  if (
+    process.env.SCREENCI_IN_CONTAINER !== 'true' ||
+    typeof baseURL !== 'string'
+  ) {
+    return baseURL
+  }
+
+  let parsedUrl: URL
+  try {
+    parsedUrl = new URL(baseURL)
+  } catch {
+    return baseURL
+  }
+
+  if (
+    parsedUrl.hostname !== 'localhost' &&
+    parsedUrl.hostname !== '127.0.0.1'
+  ) {
+    return baseURL
+  }
+
+  parsedUrl.hostname =
+    process.env.SCREENCI_CONTAINER_BASE_HOST ?? 'host.containers.internal'
+
+  return parsedUrl.toString()
+}
+
+function rewriteUseBaseUrl<T extends object>(
+  use: T | undefined
+): T | undefined {
+  if (!use) return use
+
+  const currentBaseURL = (use as { baseURL?: unknown }).baseURL
+  if (typeof currentBaseURL !== 'string') {
+    return use
+  }
+
+  const rewrittenBaseURL = rewriteLoopbackBaseUrl(currentBaseURL)
+  if (rewrittenBaseURL === currentBaseURL) {
+    return use
+  }
+
+  return {
+    ...use,
+    baseURL: rewrittenBaseURL,
+  } as T
+}
+
 /**
  * Defines a screenci configuration file.
  *
  * Extends Playwright's config with screenci-specific options and enforces
  * settings required for reliable video recording. Some Playwright options
  * are locked and cannot be set — `workers`, `fullyParallel`, `retries`,
- * `testDir`, and `testMatch`. Attempting to set them throws at startup.
+ * `testDir`, `testMatch`, and `webServer`. Attempting to set them throws at startup.
  *
  * @example
  * Minimal — all options have sensible defaults:
@@ -140,6 +191,13 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
     )
   }
 
+  if ('webServer' in config) {
+    throw new Error(
+      'screenci does not support "webServer" option. ' +
+        'Start your app separately before running screenci test or screenci record.'
+    )
+  }
+
   // Runtime check for workers
   if ('workers' in config) {
     throw new Error(
@@ -168,19 +226,28 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
   }
 
   const { videoDir, ...rest } = config
+  const normalizedUse = rewriteUseBaseUrl(rest.use)
+  const normalizedProjects = rest.projects?.map((project) => {
+    const normalizedProjectUse = rewriteUseBaseUrl(project.use)
+
+    return normalizedProjectUse
+      ? { ...project, use: normalizedProjectUse }
+      : project
+  })
 
   // Force sequential execution with single worker and no retries, map videoDir to testDir
   return {
     testDir: videoDir ?? DEFAULT_VIDEO_DIR,
     testMatch: '**/*.video.?(c|m)[jt]s?(x)',
     ...rest,
+    ...(normalizedProjects ? { projects: normalizedProjects } : {}),
     reporter: reporters as ReporterDescription[],
     use: {
-      ...rest.use,
-      trace: rest.use?.trace ?? DEFAULT_TRACE,
-      actionTimeout: rest.use?.actionTimeout ?? DEFAULT_ACTION_TIMEOUT,
+      ...normalizedUse,
+      trace: normalizedUse?.trace ?? DEFAULT_TRACE,
+      actionTimeout: normalizedUse?.actionTimeout ?? DEFAULT_ACTION_TIMEOUT,
       navigationTimeout:
-        rest.use?.navigationTimeout ?? DEFAULT_NAVIGATION_TIMEOUT,
+        normalizedUse?.navigationTimeout ?? DEFAULT_NAVIGATION_TIMEOUT,
     },
     timeout: rest.timeout ?? DEFAULT_TIMEOUT,
     fullyParallel: false,

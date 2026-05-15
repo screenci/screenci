@@ -36,7 +36,7 @@ export default defineConfig({
 })
 ```
 
-Any other valid Playwright config options (e.g. `timeout`, `reporter`, `webServer`) are passed through.
+Any other valid Playwright config options (e.g. `timeout`, `reporter`) are passed through, except options ScreenCI manages itself.
 
 ---
 

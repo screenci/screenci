@@ -56,7 +56,6 @@ type InitTargetMode = 'local' | 'public'
 type InitTarget = {
   mode: InitTargetMode
   baseURL: string
-  webServerCommand?: string
 }
 
 function resolveRecordingFileCandidates(
@@ -1339,15 +1338,6 @@ function generateConfig(projectName: string, initTarget?: InitTarget): string {
     ? `    baseURL: ${JSON.stringify(initTarget.baseURL)},
 `
     : ''
-  const webServerBlock =
-    initTarget?.mode === 'local' && initTarget.webServerCommand
-      ? `  webServer: {
-    command: ${JSON.stringify(`cd .. && ${initTarget.webServerCommand}`)},
-    url: ${JSON.stringify(initTarget.baseURL)},
-    reuseExistingServer: true,
-  },
-`
-      : ''
 
   return `import { defineConfig } from 'screenci'
 
@@ -1362,7 +1352,7 @@ ${baseURLBlock}    recordOptions: {
       fps: 30,
     },
   },
-${webServerBlock}  projects: [
+  projects: [
     {
       name: 'chromium',
     },
@@ -1476,6 +1466,7 @@ function generateDockerfile(): string {
   return `FROM ghcr.io/screenci/record:latest
 
 COPY package.json ./
+RUN npm install
 COPY screenci.config.ts ./
 COPY videos ./videos
 `
@@ -1703,13 +1694,6 @@ async function promptInitTargetUrl(mode: InitTargetMode): Promise<string> {
   })
 }
 
-async function promptInitWebServerCommand(): Promise<string> {
-  return input({
-    message: 'Command to start your development server:',
-    default: 'npm run dev',
-  })
-}
-
 function normalizeInitUrl(url: string): string {
   try {
     return new URL(url.trim()).toString()
@@ -1908,19 +1892,10 @@ async function runInit(
     : await (async (): Promise<InitTarget> => {
         const mode = await promptInitTargetMode()
         const baseURL = normalizeInitUrl(await promptInitTargetUrl(mode))
-        const webServerCommand =
-          mode === 'local' ? await promptInitWebServerCommand() : undefined
-
-        return webServerCommand
-          ? {
-              mode,
-              baseURL,
-              webServerCommand,
-            }
-          : {
-              mode,
-              baseURL,
-            }
+        return {
+          mode,
+          baseURL,
+        }
       })()
 
   const shouldInstallDependencies = yes
@@ -2587,12 +2562,21 @@ async function runWithContainer(
     process.exit(1)
   }
   logger.info('Starting ScreenCI recording container...')
+  const containerBaseHost =
+    containerRuntime === 'docker'
+      ? 'host.docker.internal'
+      : 'host.containers.internal'
   await spawnContainerRecording(containerRuntime, [
     'run',
     '--rm',
+    ...(containerRuntime === 'docker'
+      ? ['--add-host', 'host.docker.internal:host-gateway']
+      : []),
     ...(process.env.CI !== undefined ? ['-e', `CI=${process.env.CI}`] : []),
     '-e',
     'SCREENCI_IN_CONTAINER=true',
+    '-e',
+    `SCREENCI_CONTAINER_BASE_HOST=${containerBaseHost}`,
     '-e',
     'SCREENCI_RECORD=true',
     '-e',

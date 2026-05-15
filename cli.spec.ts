@@ -465,6 +465,23 @@ describe('CLI', () => {
       expect(runArgs).toContain('CI=true')
     })
 
+    it('should pass Podman host alias env to the container', async () => {
+      process.argv = ['node', 'cli.js', 'record']
+
+      const { main } = await import('./cli')
+      const mainPromise = main()
+
+      await driveContainerSpawns()
+
+      await mainPromise
+
+      const runArgs = mockSpawn.mock.calls[0][1] as string[]
+
+      expect(runArgs).toContain(
+        'SCREENCI_CONTAINER_BASE_HOST=host.containers.internal'
+      )
+    })
+
     it('should not load env file when recording on CI', async () => {
       process.env.CI = 'true'
       process.argv = ['node', 'cli.js', 'record']
@@ -580,6 +597,12 @@ describe('CLI', () => {
       await mainPromise
 
       expect(mockSpawnSync).toHaveBeenCalledTimes(2)
+      const runArgs = mockSpawn.mock.calls[0]?.[1] as string[]
+      expect(runArgs).toContain('--add-host')
+      expect(runArgs).toContain('host.docker.internal:host-gateway')
+      expect(runArgs).toContain(
+        'SCREENCI_CONTAINER_BASE_HOST=host.docker.internal'
+      )
     })
 
     it('should clear and recreate .screenci directory before running container', async () => {
@@ -1933,13 +1956,11 @@ describe('CLI', () => {
       expect(configCall?.[1]).toContain("envFile: '.env'")
     })
 
-    it('should include baseURL and webServer for a local development target', async () => {
+    it('should include baseURL for a local development target', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
       mockSelect.mockResolvedValueOnce('local')
-      mockInput
-        .mockResolvedValueOnce('http://localhost:4173')
-        .mockResolvedValueOnce('pnpm run preview')
+      mockInput.mockResolvedValueOnce('http://localhost:4173')
 
       const { main } = await import('./cli')
       await main()
@@ -1949,9 +1970,7 @@ describe('CLI', () => {
           typeof c[0] === 'string' && c[0].endsWith('screenci.config.ts')
       )
       expect(configCall?.[1]).toContain('baseURL: "http://localhost:4173/"')
-      expect(configCall?.[1]).toContain('command: "cd .. && pnpm run preview"')
-      expect(configCall?.[1]).toContain('url: "http://localhost:4173/"')
-      expect(configCall?.[1]).toContain('reuseExistingServer: true')
+      expect(configCall?.[1]).not.toContain('webServer: {')
     })
 
     it('should include only baseURL for a public target', async () => {

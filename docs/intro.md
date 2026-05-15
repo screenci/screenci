@@ -11,20 +11,10 @@ ScreenCI is the first **Deployment Automation** platform for product videos. We 
 
 Manual screen recording is brittle. Every time you change a button color or move a menu item, your documentation videos drift further out of date. ScreenCI solves this by automating the entire lifecycle:
 
-- **Write Once**: Write `.video.ts` files, almost regular Playwright e2e tests that are easy to write or AI-generate, and let ScreenCI record and render them with cues automatically on every update.
+- **Videos as Code**: Define videos as code in `.video.ts` files, using an API close to Playwright e2e tests.
 - **Re-record Whenever You Want**: Own the recording setup like your e2e tests: re-record manually or in your own CI on every update.
 - **Keep Your Code Private**: The ScreenCI service never sees your source code, only the screen recording and timing data used to render animations and add narration.
-- **Update via Text**: Change narration by simply typing. No reshoots required.
-- **Embed Permanently**: Use a single link that always points to the latest accepted version of your video.
-
-## Playwright tests vs ScreenCI videos
-
-| Topic              | Playwright                                                                                          | ScreenCI                                                                   |
-| ------------------ | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Test file + import | [`.test.ts` + `import { test } from '@playwright/test'`](https://playwright.dev/docs/writing-tests) | [`.video.ts` + `import { video } from 'screenci'`](/reference/video-tests) |
-| Project config     | `playwright.config.ts`                                                                              | [`screenci.config.ts`](/reference/configuration)                           |
-| Setup command      | `playwright init`                                                                                   | [`screenci init`](/reference/cli)                                          |
-| Run command        | `playwright test`                                                                                   | [`screenci test`](/reference/cli) + [`screenci record`](/reference/cli)    |
+- **Optional Embeds**: Use a single link that always points to the latest accepted version of your video.
 
 ## Ready to start?
 

@@ -1,6 +1,6 @@
 ---
 title: Getting Started
-description: Set up a screenci project in under five minutes.
+description: Install screenci, check prerequisites, and initialize your project.
 ---
 
 # Getting Started
@@ -13,138 +13,23 @@ You need **Node.js** and **Podman** (or Docker) installed. Node.js runs screenci
 
 <!-- OS_SPECIFIC_PREREQUISITES_HERE -->
 
-## Init a project
+## Initialize a project
 
 ```bash
 npx screenci@latest init
 ```
 
-You'll be prompted for a project name. screenci then creates the directory, scaffolds the project, and prints what to do next. If you do not already have `SCREENCI_SECRET`, `screenci record` will open a browser window to authenticate you before the first recording.
+You'll be prompted for a project name. screenci then creates the directory, scaffolds the project, and prints what to do next.
 
-```
-my-project/
-  screenci.config.ts     ← recording settings (edit this)
-  videos/
-    example.video.ts     ← starter script (edit this too)
-  Dockerfile             ← for CI recording in a container
-  package.json
-  .gitignore
-  .env                   ← optional local secret file (gitignored)
-```
+## Continue to part 2
 
-## Write a video
-
-Open `videos/example.video.ts`. You'll see:
-
-```ts
-import { video } from 'screenci'
-
-video('Example video', async ({ page }) => {
-  await page.goto('https://example.com')
-  await page.waitForTimeout(3000)
-})
-```
-
-This is a Playwright test. Everything in Playwright's `page` API works as-is. Replace `https://example.com` with your app, write the interactions, done.
-
-### What ScreenCI adds
-
-The `page` fixture inside `video()` is a `ScreenCIPage` — a wrapper whose `.locator()` and related methods return animated versions of Playwright's locators. Clicks move the cursor along a bezier curve; `fill()` types character-by-character.
-
-On top of that, screenci adds:
-
-| API                 | What it does                                                        |
-| ------------------- | ------------------------------------------------------------------- |
-| `hide(fn)`          | Cuts the section from the final video (logins, page loads, setup)   |
-| `autoZoom(fn)`      | Smooth camera zoom that follows clicks and fills                    |
-| `createNarration()` | Typed narration markers — `await narration.key` where a line starts |
-| `createAssets()`    | Image or video overlays shown during the recording                  |
-
-All of these are composable with normal [Playwright](https://playwright.dev/docs/api/class-page) code. No rewrites required.
-
-## Develop without recording
-
-```bash
-npm run test -- --ui
-```
-
-Opens the Playwright UI. Run your scripts, verify selectors work, iterate fast. No screen capture, no Docker, no FFmpeg. Just Playwright.
-
-## Record
-
-```bash
-cd my-project && npm run record
-```
-
-Runs in a container (Docker/podman), starts a virtual display, launches a headless browser, captures the screen with FFmpeg, and saves:
-
-```
-.screenci/
-  example-video/
-    recording.mp4
-    data.json
-```
-
-## Test without recording
-
-```bash
-npx screenci test
-```
-
-This forwards to `playwright test` with your `screenci.config.ts`. Use it when you want ordinary Playwright execution without recording.
-
-## Configure
-
-Edit `screenci.config.ts` to set your target URL, aspect ratio, and quality:
-
-```ts
-import { defineConfig } from 'screenci'
-
-export default defineConfig({
-  projectName: 'my-project',
-  videoDir: './videos',
-  use: {
-    baseURL: 'https://app.example.com',
-    recordOptions: {
-      aspectRatio: '16:9',
-      quality: '1080p',
-      fps: 30,
-    },
-  },
-})
-```
-
-## Upload and render
-
-Once you have a recording you're happy with, upload it to screenci.com for rendering, narration generation, and your permanent embed link:
-
-```bash
-npm run retry
-```
-
-Cloud rendering is limited to 30 minutes per render. If a render exceeds that wall-clock limit, ScreenCI marks it as failed.
-
-Set `apiUrl` in your config (or `SCREENCI_URL` env var) to point at the API.
-
-## Inspect project info and public URLs
-
-With `SCREENCI_SECRET` configured, you can inspect the remote project linked to your local `projectName`:
-
-```bash
-npx screenci info
-```
-
-Make a video public or private with its `id` from that JSON:
-
-```bash
-npx screenci make-public video_123
-npx screenci make-private video_123
-```
+- [Getting started part 2](/guides/getting-started-part-2) — write a video, record it, configure rendering, and inspect project info
 
 ---
 
 ## Next steps
 
+- [Getting started part 2](/guides/getting-started-part-2) — write a video, record it, configure rendering, and inspect project info
 - [Writing video tests](/reference/video-tests) — `hide()`, `autoZoom()`, `createNarration()`
 - [Configuration reference](/reference/configuration) — all config options
 - [API reference](/reference/api-overview) — full function signatures

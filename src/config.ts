@@ -1,4 +1,4 @@
-import type { ReporterDescription } from '@playwright/test'
+import type { ReporterDescription, Project } from '@playwright/test'
 import type { ScreenCIConfig, ExtendedScreenCIConfig } from './types.js'
 import {
   DEFAULT_VIDEO_DIR,
@@ -72,6 +72,11 @@ function rewriteUseBaseUrl<T extends object>(
     ...use,
     baseURL: rewrittenBaseURL,
   } as T
+}
+
+function rewriteProjectBaseUrl(project: Project): Project {
+  const rewrittenUse = rewriteUseBaseUrl(project.use)
+  return rewrittenUse ? { ...project, use: rewrittenUse } : project
 }
 
 /**
@@ -227,13 +232,7 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
 
   const { videoDir, ...rest } = config
   const normalizedUse = rewriteUseBaseUrl(rest.use)
-  const normalizedProjects = rest.projects?.map((project) => {
-    const normalizedProjectUse = rewriteUseBaseUrl(project.use)
-
-    return normalizedProjectUse
-      ? { ...project, use: normalizedProjectUse }
-      : project
-  })
+  const normalizedProjects = rest.projects?.map(rewriteProjectBaseUrl)
 
   // Force sequential execution with single worker and no retries, map videoDir to testDir
   return {

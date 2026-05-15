@@ -23,18 +23,21 @@ Most commands look for `screenci.config.ts` in the current directory. Use `--con
 
 ## `screenci init [name]`
 
-Creates a new ScreenCI project directory with a starter config, example video, Dockerfile, and workflow files. `init` does not authenticate. If `SCREENCI_SECRET` is missing, `screenci record` will open a browser window and complete the login flow before recording starts.
+Creates a new `screenci/` directory with a starter config, example video, Dockerfile, and optional workflow file. The optional GitHub Actions workflow is written at `.github/workflows/screenci.yaml` in the current directory. `init` does not authenticate. If `SCREENCI_SECRET` is missing, `screenci record` will open a browser window and complete the login flow before recording starts.
 
 ```bash
 npx screenci@latest init
-npx screenci@latest init my-product
-npx screenci@latest init my-product --yes
+# or: npx screenci@latest init "My Product"
+# or: npx screenci@latest init "My Product" --yes
+cd screenci
 ```
+
+The optional `[name]` is the ScreenCI project display name, not the directory name.
+Because init writes ScreenCI files into `screenci/` and the optional workflow into `.github/workflows/screenci.yaml`, it works well inside existing projects without mixing generated files into your app source.
 
 Options:
 
 - `-v, --verbose` prints underlying command output instead of spinners
-- `--git` initialize a git repository without prompting
 - `--install` install ScreenCI skills, npm dependencies, and Chromium without prompting
 - `--ci` add GitHub Action CI without prompting
 - `--skill` answer yes to the AI authoring question and include `playwright-cli`

@@ -87,7 +87,7 @@ Opens the Playwright UI. Run your scripts, verify selectors work, iterate fast. 
 ## Record
 
 ```bash
-cd my-project && npm run record
+cd screenci && npm run record
 ```
 
 Runs in a container (Docker/podman), starts a virtual display, launches a headless browser, captures the screen with FFmpeg, and saves:

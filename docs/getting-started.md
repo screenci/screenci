@@ -17,9 +17,10 @@ You need **Node.js** and **Podman** (or Docker) installed. Node.js runs screenci
 
 ```bash
 npx screenci@latest init
+cd screenci
 ```
 
-You'll be prompted for a project name. screenci then creates the directory, scaffolds the project, and prints what to do next.
+You'll be prompted for a project name. screenci then creates `screenci/`, scaffolds the project, and prints what to do next. This works well in existing projects because generated ScreenCI files stay in their own directory.
 
 ## Continue to part 2
 

@@ -1354,11 +1354,10 @@ export default defineConfig({
 }
 
 function generatePackageJson(
-  projectName: string,
+  packageName: string,
   includePlaywrightCli = false,
   screenciDependency = 'latest'
 ): string {
-  const npmName = projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-')
   const devDependencies: Record<string, string> = {
     '@types/node': '^25.0.0',
   }
@@ -1368,7 +1367,7 @@ function generatePackageJson(
   return (
     JSON.stringify(
       {
-        name: npmName,
+        name: packageName,
         version: '1.0.0',
         description: '',
         type: 'module',
@@ -1483,10 +1482,16 @@ jobs:
           node-version: latest
 
       - name: Install dependencies
-        run: npm install
+        working-directory: screenci
+        run: npm install --include=dev
+
+      - name: Install Chromium
+        working-directory: screenci
+        run: npx playwright install chromium --with-deps
 
       - id: record
         name: Record
+        working-directory: screenci
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
         run: npm run record
@@ -1601,13 +1606,6 @@ async function promptProjectName(): Promise<string> {
   return input({ message: 'Project name:' })
 }
 
-async function promptInitGitRepository(): Promise<boolean> {
-  return confirm({
-    message: 'Initialize a git repository? (Y/n)',
-    default: true,
-  })
-}
-
 async function promptInitDependencies(): Promise<boolean> {
   return confirm({
     message:
@@ -1629,10 +1627,6 @@ async function promptInitGithubActionCi(): Promise<boolean> {
     message: 'Do you want to add Github Action CI? (Y/n)',
     default: true,
   })
-}
-
-function getProjectDirName(name: string): string {
-  return name.toLowerCase().replace(/\s+/g, '-')
 }
 
 function getInitProjectRoot(): string {
@@ -1782,7 +1776,6 @@ function checkNodeVersion(): void {
 
 type InitOptions = {
   verbose: boolean
-  git: boolean
   install: boolean
   yes: boolean
   skill: boolean
@@ -1793,7 +1786,7 @@ async function runInit(
   projectNameArg: string | undefined,
   options: InitOptions
 ): Promise<void> {
-  const { verbose, git, install, yes, skill, ci } = options
+  const { verbose, install, yes, skill, ci } = options
   checkNodeVersion()
   checkContainerRuntimeForInit()
   const initCwd = getInitProjectRoot()
@@ -1809,19 +1802,17 @@ async function runInit(
     process.exit(1)
   }
 
-  const dirName = getProjectDirName(projectName)
+  const dirName = 'screenci'
   const projectDir = resolve(initCwd, dirName)
+  const githubDir = resolve(initCwd, '.github')
+  const githubWorkflowsDir = resolve(githubDir, 'workflows')
+  const githubActionPath = resolve(githubWorkflowsDir, 'screenci.yaml')
 
   if (existsSync(projectDir)) {
     logger.error(`Error: Directory "${dirName}" already exists`)
     process.exit(1)
   }
 
-  const shouldInitializeGitRepository = yes
-    ? true
-    : git
-      ? true
-      : await promptInitGitRepository()
   const shouldInstallDependencies = yes
     ? true
     : install
@@ -1837,6 +1828,13 @@ async function runInit(
     : ci
       ? true
       : await promptInitGithubActionCi()
+
+  if (shouldAddGithubActionCi && existsSync(githubActionPath)) {
+    logger.error(
+      'Error: GitHub Actions workflow ".github/workflows/screenci.yaml" already exists'
+    )
+    process.exit(1)
+  }
 
   const skillsArgs = [
     '--yes',
@@ -1860,9 +1858,12 @@ async function runInit(
 
   await mkdir(resolve(projectDir, 'videos'), { recursive: true })
   if (shouldAddGithubActionCi) {
-    await mkdir(resolve(projectDir, '.github', 'workflows'), {
-      recursive: true,
-    })
+    if (!existsSync(githubDir)) {
+      await mkdir(githubDir)
+    }
+    if (!existsSync(githubWorkflowsDir)) {
+      await mkdir(githubWorkflowsDir)
+    }
   }
   await writeFile(
     resolve(projectDir, 'screenci.config.ts'),
@@ -1881,10 +1882,7 @@ async function runInit(
     generateExampleVideo()
   )
   if (shouldAddGithubActionCi) {
-    await writeFile(
-      resolve(projectDir, '.github', 'workflows', 'record.yml'),
-      generateGithubAction()
-    )
+    await writeFile(githubActionPath, generateGithubAction())
   }
   await writeFile(resolve(projectDir, '.env'), '')
 
@@ -1898,25 +1896,10 @@ async function runInit(
   logger.info('  .gitignore')
   logger.info('  videos/example.video.ts')
   if (shouldAddGithubActionCi) {
-    logger.info('  .github/workflows/record.yml')
+    logger.info('  .github/workflows/screenci.yaml')
   }
   logger.info('  .env  (empty placeholder)')
   logger.info('')
-  if (shouldInitializeGitRepository) {
-    if (verbose) {
-      logger.info("Running 'git init'...")
-      await spawnInherited('git', ['init'], projectDir, 'screenci init')
-    } else {
-      const spinner = ora('Initializing git repository...').start()
-      try {
-        await spawnSilent('git', ['init'], projectDir)
-        spinner.succeed('Git repository initialized')
-      } catch (err) {
-        spinner.fail('git init failed')
-        throw err
-      }
-    }
-  }
 
   if (shouldInstallDependencies) {
     if (verbose) {
@@ -2179,7 +2162,6 @@ export async function main() {
   program
     .command('init [name]')
     .description('Initialize a new screenci project')
-    .option('--git', 'initialize a git repository without prompting')
     .option(
       '--install',
       'install skills, dependencies, and Chromium without prompting'
@@ -2195,7 +2177,6 @@ export async function main() {
         } else {
           await runInit(name, {
             verbose: (options['verbose'] as boolean | undefined) ?? false,
-            git: (options['git'] as boolean | undefined) ?? false,
             install: (options['install'] as boolean | undefined) ?? false,
             yes: (options['yes'] as boolean | undefined) ?? false,
             skill: (options['skill'] as boolean | undefined) ?? false,

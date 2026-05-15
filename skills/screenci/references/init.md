@@ -6,8 +6,8 @@ Use `screenci init` to scaffold a new ScreenCI project.
 
 ```bash
 npx screenci init
-npx screenci init my-project
-npx screenci init my-project --verbose
+npx screenci init "My Project"
+npx screenci init "My Project" --verbose
 ```
 
 ## What It Creates
@@ -15,14 +15,14 @@ npx screenci init my-project --verbose
 `screenci init` creates a ready-to-run project containing:
 
 ```text
-my-project/
+screenci/
   screenci.config.ts
   videos/
     example.video.ts
   Dockerfile
   package.json
   .gitignore
-  .github/workflows/record.yml
+.github/workflows/screenci.yaml (optional)
 ```
 
 ## Requirements
@@ -33,6 +33,7 @@ my-project/
 ## Notes
 
 - If no name is passed, the command prompts for one.
+- The name is used as the ScreenCI project display name. Files are always created in `screenci/`.
 - `--verbose` shows more setup output.
 - After scaffolding, run `npm install`.
 - The image is fetched on demand when you run `record` or `test`.
@@ -40,8 +41,8 @@ my-project/
 ## Typical Flow
 
 ```bash
-npx screenci init my-project
-cd my-project
+npx screenci init "My Project"
+cd screenci
 npm install
 npx screenci test   # verify the video works
 npx screenci record # capture the final recording

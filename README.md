@@ -13,15 +13,15 @@ npm install screenci
 ## Init a new project
 
 ```bash
-npx screenci init my-project
-cd my-project
+npx screenci init "My Project"
+cd screenci
 npm install
 ```
 
 This scaffolds a ready-to-run project:
 
 ```
-my-project/
+screenci/
   screenci.config.ts     ← video settings
   videos/
     example.video.ts     ← your first video script

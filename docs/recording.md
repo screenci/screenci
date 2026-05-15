@@ -18,15 +18,15 @@ npm install screenci
 ### 2. Init a project
 
 ```bash
-npx screenci@latest init my-project
-cd my-project
+npx screenci@latest init "My Project"
+cd screenci
 npm install
 ```
 
 This creates:
 
 ```
-my-project/
+screenci/
   screenci.config.ts     ← recording settings
   videos/
     example.video.ts     ← starter script
@@ -65,7 +65,7 @@ Opens the Playwright UI. Run your scripts, verify they work, fix selectors — n
 ### 5. Record
 
 ```bash
-cd my-project && npm run record
+cd screenci && npm run record
 # or: npx screenci record
 ```
 

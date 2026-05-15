@@ -1387,54 +1387,9 @@ describe('CLI', () => {
       process.env.SCREENCI_SECRET = 'test-secret'
     })
 
-    it('should prompt to initialize a git repository when --git is not given', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
+    it('should not initialize git during init', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project', '--yes']
       mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockConfirm).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: 'Initialize a git repository? (Y/n)',
-        })
-      )
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'git',
-        ['init'],
-        expect.objectContaining({
-          cwd: expect.stringContaining('my-project'),
-          stdio: 'pipe',
-        })
-      )
-    })
-
-    it('should skip the git prompt and initialize git with --git', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project', '--git']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockConfirm).not.toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: 'Initialize a git repository? (Y/n)',
-        })
-      )
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'git',
-        ['init'],
-        expect.objectContaining({
-          cwd: expect.stringContaining('my-project'),
-          stdio: 'pipe',
-        })
-      )
-    })
-
-    it('should skip git initialization when the git prompt is declined', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      mockConfirm.mockResolvedValueOnce(false)
 
       const { main } = await import('./cli')
       await main()
@@ -1446,7 +1401,7 @@ describe('CLI', () => {
       )
     })
 
-    it('should create all files inside a new directory named after the project', async () => {
+    it('should create all files inside a new screenci directory', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
 
@@ -1454,31 +1409,31 @@ describe('CLI', () => {
       await main()
 
       expect(mockMkdir).toHaveBeenCalledWith(
-        expect.stringContaining(`my-project/videos`),
+        expect.stringContaining(`screenci/videos`),
         { recursive: true }
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining(`my-project/screenci.config.ts`),
+        expect.stringContaining(`screenci/screenci.config.ts`),
         expect.stringContaining('"my-project"')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining(`my-project/package.json`),
-        expect.stringContaining('my-project')
+        expect.stringContaining(`screenci/package.json`),
+        expect.stringContaining('"name": "screenci"')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining(`my-project/tsconfig.json`),
+        expect.stringContaining(`screenci/tsconfig.json`),
         expect.stringContaining('"types": [')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining(`my-project/README.md`),
+        expect.stringContaining(`screenci/README.md`),
         expect.stringContaining('https://screenci.com/docs/intro/')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining(`my-project/Dockerfile`),
+        expect.stringContaining(`screenci/Dockerfile`),
         expect.stringContaining('FROM ghcr.io/screenci/record:latest')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining(`my-project/.gitignore`),
+        expect.stringContaining(`screenci/.gitignore`),
         expect.stringContaining('node_modules/')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
@@ -1492,7 +1447,7 @@ describe('CLI', () => {
         expect.stringContaining('Navigate to AI editing documentation')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('my-project/.env'),
+        expect.stringContaining('screenci/.env'),
         ''
       )
     })
@@ -1515,7 +1470,6 @@ describe('CLI', () => {
     it('should not add playwright-cli to devDependencies when AI authoring is declined', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
-      mockConfirm.mockResolvedValueOnce(true)
       mockConfirm.mockResolvedValueOnce(true)
       mockConfirm.mockResolvedValueOnce(false)
 
@@ -1559,7 +1513,7 @@ describe('CLI', () => {
       expect(tsconfigCall?.[1]).toContain('"node"')
     })
 
-    it('should create .github/workflows/record.yml with SCREENCI_SECRET check', async () => {
+    it('should create .github/workflows/screenci.yaml with SCREENCI_SECRET check', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
       mockConfirm
@@ -1571,17 +1525,17 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       await main()
 
+      expect(mockMkdir).toHaveBeenCalledWith(expect.stringContaining('.github'))
       expect(mockMkdir).toHaveBeenCalledWith(
-        expect.stringContaining('.github/workflows'),
-        { recursive: true }
+        expect.stringContaining('.github/workflows')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('.github/workflows/record.yml'),
+        expect.stringContaining('.github/workflows/screenci.yaml'),
         expect.stringContaining('SCREENCI_SECRET')
       )
       const workflowCall = mockWriteFile.mock.calls.find(
         (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('record.yml')
+          typeof c[0] === 'string' && c[0].endsWith('screenci.yaml')
       )
       expect(workflowCall?.[1]).toContain('actions/setup-node@v6')
       expect(workflowCall?.[1]).toContain('node-version: latest')
@@ -1590,8 +1544,11 @@ describe('CLI', () => {
         'url: ${{ steps.record.outputs.screenci_project_url }}'
       )
       expect(workflowCall?.[1]).toContain('- id: record\n        name: Record')
-      expect(workflowCall?.[1]).toContain('npm install')
-      expect(workflowCall?.[1]).not.toContain('npm install --include=dev')
+      expect(workflowCall?.[1]).toContain('working-directory: screenci')
+      expect(workflowCall?.[1]).toContain('npm install --include=dev')
+      expect(workflowCall?.[1]).toContain(
+        'npx playwright install chromium --with-deps'
+      )
       expect(workflowCall?.[1]).toContain('npm run record')
       expect(workflowCall?.[1]).not.toContain('--tag')
       expect(workflowCall?.[1]).not.toContain('--make')
@@ -1631,7 +1588,45 @@ describe('CLI', () => {
         })
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('.github/workflows/record.yml'),
+        expect.stringContaining('.github/workflows/screenci.yaml'),
+        expect.any(String)
+      )
+    })
+
+    it('should exit if the GitHub Actions workflow already exists', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project', '--ci']
+      mockExistsSync.mockImplementation((path: string) =>
+        path.endsWith('.github/workflows/screenci.yaml')
+      )
+
+      const { main } = await import('./cli')
+      await expect(main()).rejects.toThrow('process.exit called')
+
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        'Error: GitHub Actions workflow ".github/workflows/screenci.yaml" already exists'
+      )
+      expect(mockWriteFile).not.toHaveBeenCalled()
+      expect(processExitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('should reuse existing .github directories when creating workflow', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project', '--ci']
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('.github') || path.endsWith('.github/workflows')
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockMkdir).not.toHaveBeenCalledWith(
+        expect.stringContaining('.github')
+      )
+      expect(mockMkdir).not.toHaveBeenCalledWith(
+        expect.stringContaining('.github/workflows')
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining('.github/workflows/screenci.yaml'),
         expect.any(String)
       )
     })
@@ -1642,7 +1637,6 @@ describe('CLI', () => {
       mockConfirm
         .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(false)
 
       const { main } = await import('./cli')
@@ -1650,18 +1644,18 @@ describe('CLI', () => {
 
       expect(mockMkdir).not.toHaveBeenCalledWith(
         expect.stringContaining('.github/workflows'),
-        { recursive: true }
+        expect.anything()
       )
       expect(mockWriteFile).not.toHaveBeenCalledWith(
-        expect.stringContaining('.github/workflows/record.yml'),
+        expect.stringContaining('.github/workflows/screenci.yaml'),
         expect.any(String)
       )
       expect(loggerInfoSpy).not.toHaveBeenCalledWith(
-        '  .github/workflows/record.yml'
+        '  .github/workflows/screenci.yaml'
       )
     })
 
-    it('should replace spaces with dashes for directory name', async () => {
+    it('should use screenci for directory name even when project name has spaces', async () => {
       process.argv = ['node', 'cli.js', 'init', 'My Cool Project']
       mockExistsSync.mockReturnValue(false)
 
@@ -1669,12 +1663,12 @@ describe('CLI', () => {
       await main()
 
       expect(mockMkdir).toHaveBeenCalledWith(
-        expect.stringContaining('my-cool-project'),
+        expect.stringContaining('screenci'),
         { recursive: true }
       )
     })
 
-    it('should preserve non-space characters in directory name', async () => {
+    it('should use screenci for directory name even when project name has symbols', async () => {
       process.argv = ['node', 'cli.js', 'init', 'My @Cool# Project!']
       mockExistsSync.mockReturnValue(false)
 
@@ -1682,12 +1676,12 @@ describe('CLI', () => {
       await main()
 
       expect(mockMkdir).toHaveBeenCalledWith(
-        expect.stringContaining('my-@cool#-project!'),
+        expect.stringContaining('screenci'),
         { recursive: true }
       )
     })
 
-    it('should use original project name in config, npm-safe name in package.json', async () => {
+    it('should use original project name in config and screenci in package.json', async () => {
       process.argv = ['node', 'cli.js', 'init', 'My Cool Project']
       mockExistsSync.mockReturnValue(false)
 
@@ -1704,7 +1698,7 @@ describe('CLI', () => {
         (c: unknown[]) =>
           typeof c[0] === 'string' && c[0].endsWith('package.json')
       )
-      expect(pkgCall?.[1]).toContain('my-cool-project')
+      expect(pkgCall?.[1]).toContain('"name": "screenci"')
     })
 
     it('should use published screenci dependency in generated package.json', async () => {
@@ -1817,7 +1811,7 @@ describe('CLI', () => {
       await expect(main()).rejects.toThrow('process.exit called')
 
       expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Error: Directory "my-project" already exists'
+        'Error: Directory "screenci" already exists'
       )
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })
@@ -1852,7 +1846,7 @@ describe('CLI', () => {
 
       expect(mockCreateHttpServer).not.toHaveBeenCalled()
       expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Error: Directory "my-project" already exists'
+        'Error: Directory "screenci" already exists'
       )
     })
 
@@ -1877,7 +1871,7 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       await main()
 
-      expect(loggerInfoSpy).toHaveBeenCalledWith('  cd my-project')
+      expect(loggerInfoSpy).toHaveBeenCalledWith('  cd screenci')
     })
 
     it('should include README and docs link in next steps', async () => {
@@ -1949,7 +1943,7 @@ describe('CLI', () => {
 
       expect(mockCreateHttpServer).not.toHaveBeenCalled()
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('my-project/.env'),
+        expect.stringContaining('screenci/.env'),
         ''
       )
     })
@@ -2035,8 +2029,8 @@ describe('CLI', () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
       mockConfirm
-        .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(true)
 
       const { main } = await import('./cli')
@@ -2082,7 +2076,7 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       await main()
 
-      expect(mockConfirm).toHaveBeenCalledTimes(4)
+      expect(mockConfirm).toHaveBeenCalledTimes(3)
       expect(mockSpawn).not.toHaveBeenCalledWith(
         'npx',
         ['playwright', 'install', '--list'],
@@ -2150,7 +2144,7 @@ describe('CLI', () => {
         'npm',
         ['install', '--include=dev'],
         expect.objectContaining({
-          cwd: expect.stringContaining('my-project'),
+          cwd: expect.stringContaining('screenci'),
           stdio: 'inherit',
         })
       )
@@ -2254,10 +2248,7 @@ describe('CLI', () => {
     it('should always run skills add with only screenci when AI authoring is declined', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
+      mockConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
 
       const { main } = await import('./cli')
       await main()
@@ -2285,10 +2276,10 @@ describe('CLI', () => {
       await main()
 
       expect(mockConfirm).not.toHaveBeenCalled()
-      expect(mockSpawn).toHaveBeenCalledWith(
+      expect(mockSpawn).not.toHaveBeenCalledWith(
         'git',
         ['init'],
-        expect.objectContaining({ stdio: 'pipe' })
+        expect.any(Object)
       )
       expect(mockSpawn).toHaveBeenCalledWith(
         'npx',
@@ -2311,7 +2302,7 @@ describe('CLI', () => {
         expect.objectContaining({ stdio: 'pipe' })
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('.github/workflows/record.yml'),
+        expect.stringContaining('.github/workflows/screenci.yaml'),
         expect.any(String)
       )
     })

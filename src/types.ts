@@ -725,7 +725,7 @@ export type ScreenCIConfig = Omit<
    * Defaults to `'./videos'`.
    */
   videoDir?: string
-  use?: Omit<PlaywrightTestConfig['use'], 'trace'> & {
+  use?: Omit<NonNullable<PlaywrightTestConfig['use']>, 'trace'> & {
     recordOptions?: RecordOptions
     renderOptions?: RenderOptions
     /**
@@ -751,18 +751,9 @@ export type ScreenCIConfig = Omit<
      * @default 'retain-on-failure'
      */
     trace?: Trace
-    /**
-     * Whether to send recorded traces to screenci.com for viewing and analysis.
-     *
-     * When `true`, traces are uploaded and can be viewed on screenci.com.
-     * When `false`, traces are kept locally only.
-     *
-     * @default true
-     */
-    sendTraces?: boolean
   }
   projects?: (Omit<Project, 'use'> & {
-    use?: Omit<Project['use'], 'trace'> & {
+    use?: Omit<NonNullable<Project['use']>, 'trace'> & {
       recordOptions?: RecordOptions
       renderOptions?: RenderOptions
       /**
@@ -771,15 +762,6 @@ export type ScreenCIConfig = Omit<
        * @default 'retain-on-failure'
        */
       trace?: Trace
-      /**
-       * Whether to send recorded traces to screenci.com for viewing and analysis.
-       *
-       * When `true`, traces are uploaded and can be viewed on screenci.com.
-       * When `false`, traces are kept locally only.
-       *
-       * @default true
-       */
-      sendTraces?: boolean
     }
   })[]
 }

@@ -42,11 +42,6 @@ export const DEFAULT_FPS: FPS = 30
 export const DEFAULT_TRACE: Trace = 'retain-on-failure'
 
 /**
- * Default setting for sending traces to screenci.com
- */
-export const DEFAULT_SEND_TRACES: boolean = true
-
-/**
  * Default directory for video files
  */
 export const DEFAULT_VIDEO_DIR: string = './videos'

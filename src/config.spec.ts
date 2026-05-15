@@ -165,6 +165,17 @@ describe('defineConfig', () => {
     })
   })
 
+  it('should accept baseURL in use', () => {
+    const config = defineConfig({
+      projectName: 'Test',
+      use: {
+        baseURL: 'https://app.example.com',
+      },
+    })
+
+    expect(config.use?.baseURL).toBe('https://app.example.com')
+  })
+
   it('should accept recordOptions in project use', () => {
     const config = defineConfig({
       projectName: 'Test',

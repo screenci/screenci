@@ -23,6 +23,7 @@ const mockWriteFile = vi.fn()
 const mockMkdir = vi.fn()
 const mockInput = vi.fn()
 const mockConfirm = vi.fn()
+const mockSelect = vi.fn()
 const mockCreateHttpServer = vi.fn()
 const mockFetch = vi.fn()
 
@@ -82,6 +83,7 @@ vi.mock('fs/promises', () => ({
 vi.mock('@inquirer/prompts', () => ({
   input: mockInput,
   confirm: mockConfirm,
+  select: mockSelect,
 }))
 
 vi.mock('ora', () => ({
@@ -111,11 +113,20 @@ describe('CLI', () => {
     mockAppendFile.mockResolvedValue(undefined)
     mockWriteFile.mockResolvedValue(undefined)
     mockMkdir.mockResolvedValue(undefined)
+    mockReadFile.mockImplementation(async (path: string | URL) => {
+      if (String(path).endsWith('package.json')) {
+        return JSON.stringify({ version: '0.0.32' })
+      }
+      return ''
+    })
     // Default: podman is available (overridden per-test as needed)
     mockSpawnSync.mockReturnValue({ status: 0, error: undefined })
     // Default inquirer responses
-    mockInput.mockResolvedValue('')
+    mockInput.mockImplementation(
+      async (options?: { default?: string }) => options?.default ?? ''
+    )
     mockConfirm.mockResolvedValue(true)
+    mockSelect.mockResolvedValue('local')
     // Restore ora mock return value after clearAllMocks
     mockOra.mockReturnValue(mockSpinner)
     mockSpinner.start.mockReturnThis()
@@ -326,7 +337,7 @@ describe('CLI', () => {
       await main()
 
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        'Tests passed. Run `npx screenci record` to render the videos.'
+        `Tests passed. Run ${pc.cyan('npx screenci record')} to render the videos.`
       )
       expect(mockConfirm).not.toHaveBeenCalled()
       expect(mockSpawn).toHaveBeenCalledTimes(1)
@@ -377,7 +388,7 @@ describe('CLI', () => {
       await main()
 
       expect(loggerInfoSpy).not.toHaveBeenCalledWith(
-        'Tests passed. Run `npx screenci record` to render the videos.'
+        `Tests passed. Run ${pc.cyan('npx screenci record')} to render the videos.`
       )
     })
 
@@ -1439,12 +1450,12 @@ describe('CLI', () => {
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining('example.video.ts'),
         expect.stringContaining(
-          "import { createNarration, hide, video, voices } from 'screenci'"
+          "import { autoZoom, createNarration, hide, video, voices } from 'screenci'"
         )
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining('example.video.ts'),
-        expect.stringContaining('Navigate to AI editing documentation')
+        expect.stringContaining("video('See the next steps in ScreenCI docs'")
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining('screenci/.env'),
@@ -1495,7 +1506,7 @@ describe('CLI', () => {
           typeof c[0] === 'string' && c[0].endsWith('package.json')
       )
       expect(pkgCall?.[1]).not.toContain('"tsx":')
-      expect(pkgCall?.[1]).toContain('"@types/node": "^25.0.0"')
+      expect(pkgCall?.[1]).not.toContain('"@types/node":')
     })
 
     it('should create tsconfig.json with node types', async () => {
@@ -1712,7 +1723,7 @@ describe('CLI', () => {
         (c: unknown[]) =>
           typeof c[0] === 'string' && c[0].endsWith('package.json')
       )
-      expect(pkgCall?.[1]).toContain('"screenci": "latest"')
+      expect(pkgCall?.[1]).toContain('"screenci": "0.0.32"')
       expect(pkgCall?.[1]).not.toContain('"screenci": "file:')
     })
 
@@ -1741,7 +1752,7 @@ describe('CLI', () => {
     it('should prompt for project name when not provided as arg', async () => {
       process.argv = ['node', 'cli.js', 'init']
       mockExistsSync.mockReturnValue(false)
-      mockInput.mockResolvedValue('prompted-project')
+      mockInput.mockResolvedValueOnce('prompted-project')
 
       const { main } = await import('./cli')
       await main()
@@ -1757,7 +1768,7 @@ describe('CLI', () => {
       process.argv = ['node', 'cli.js', 'init']
       mockExistsSync.mockReturnValue(false)
       delete process.env.SCREENCI_SECRET
-      mockInput.mockResolvedValue('prompted-project')
+      mockInput.mockResolvedValueOnce('prompted-project')
 
       mockCreateHttpServer.mockImplementation(
         (handler: (req: unknown, res: unknown) => void) => {
@@ -1922,6 +1933,65 @@ describe('CLI', () => {
       expect(configCall?.[1]).toContain("envFile: '.env'")
     })
 
+    it('should include baseURL and webServer for a local development target', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+      mockSelect.mockResolvedValueOnce('local')
+      mockInput
+        .mockResolvedValueOnce('http://localhost:4173')
+        .mockResolvedValueOnce('pnpm run preview')
+
+      const { main } = await import('./cli')
+      await main()
+
+      const configCall = mockWriteFile.mock.calls.find(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].endsWith('screenci.config.ts')
+      )
+      expect(configCall?.[1]).toContain('baseURL: "http://localhost:4173/"')
+      expect(configCall?.[1]).toContain('command: "cd .. && pnpm run preview"')
+      expect(configCall?.[1]).toContain('url: "http://localhost:4173/"')
+      expect(configCall?.[1]).toContain('reuseExistingServer: true')
+    })
+
+    it('should include only baseURL for a public target', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+      mockSelect.mockResolvedValueOnce('public')
+      mockInput.mockResolvedValueOnce('https://app.example.com')
+
+      const { main } = await import('./cli')
+      await main()
+
+      const configCall = mockWriteFile.mock.calls.find(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].endsWith('screenci.config.ts')
+      )
+      expect(configCall?.[1]).toContain('baseURL: "https://app.example.com/"')
+      expect(configCall?.[1]).not.toContain('webServer: {')
+    })
+
+    it('should generate an example video that walks through ScreenCI docs', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      const exampleVideoCall = mockWriteFile.mock.calls.find(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].endsWith('videos/example.video.ts')
+      )
+      expect(exampleVideoCall?.[1]).toContain(
+        "import { autoZoom, createNarration, hide, video, voices } from 'screenci'"
+      )
+      expect(exampleVideoCall?.[1]).toContain("await page.goto('/')")
+      expect(exampleVideoCall?.[1]).toContain(
+        "await page.goto('https://screenci.com/')"
+      )
+      expect(exampleVideoCall?.[1]).toContain('await autoZoom(')
+    })
+
     it('should not create an http server during init when SCREENCI_SECRET is already set', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
@@ -2077,6 +2147,7 @@ describe('CLI', () => {
       await main()
 
       expect(mockConfirm).toHaveBeenCalledTimes(3)
+      expect(mockSelect).toHaveBeenCalledTimes(1)
       expect(mockSpawn).not.toHaveBeenCalledWith(
         'npx',
         ['playwright', 'install', '--list'],
@@ -2276,6 +2347,7 @@ describe('CLI', () => {
       await main()
 
       expect(mockConfirm).not.toHaveBeenCalled()
+      expect(mockSelect).not.toHaveBeenCalled()
       expect(mockSpawn).not.toHaveBeenCalledWith(
         'git',
         ['init'],

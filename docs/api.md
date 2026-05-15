@@ -32,7 +32,6 @@ export default defineConfig({
       quality: 'high', // 'low' | 'medium' | 'high'
     },
     trace: 'retain-on-failure', // 'on' | 'off' | 'retain-on-failure'
-    sendTraces: true,
   },
 })
 ```
@@ -386,7 +385,6 @@ type ScreenCIConfig = {
   use?: {
     videoOptions?: RecordOptions
     trace?: Trace
-    sendTraces?: boolean
     // ...all other Playwright use options
   }
   // ...all other Playwright config options

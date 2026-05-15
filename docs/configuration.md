@@ -41,9 +41,6 @@ export default defineConfig({
     // Playwright trace recording
     trace: 'retain-on-failure', // 'on' | 'off' | 'retain-on-failure'
 
-    // Whether to send traces to ScreenCI cloud (if applicable)
-    sendTraces: true,
-
     // Any other Playwright 'use' options work here
     baseURL: 'https://staging.example.com',
   },
@@ -104,7 +101,6 @@ video('Another 4K test', async ({ page }) => {
 | `fps`        | `30`                  |
 | `quality`    | `'high'`              |
 | `trace`      | `'retain-on-failure'` |
-| `sendTraces` | `true`                |
 
 ## What `defineConfig` enforces
 

@@ -25,7 +25,7 @@ import {
 import { dirname, relative as pathRelative, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { Command, CommanderError } from 'commander'
-import { input, confirm } from '@inquirer/prompts'
+import { input, confirm, select } from '@inquirer/prompts'
 import ora from 'ora'
 import pc from 'picocolors'
 import { logger } from './src/logger.js'
@@ -49,6 +49,14 @@ type ProjectInfoVideo = {
 type ProjectInfoResponse = {
   projectName: string
   videos: ProjectInfoVideo[]
+}
+
+type InitTargetMode = 'local' | 'public'
+
+type InitTarget = {
+  mode: InitTargetMode
+  baseURL: string
+  webServerCommand?: string
 }
 
 function resolveRecordingFileCandidates(
@@ -1326,25 +1334,35 @@ async function updateVideoVisibility(
   logger.info(`${isPublic ? 'Made public' : 'Made private'}: ${videoId}`)
 }
 
-function generateConfig(projectName: string): string {
+function generateConfig(projectName: string, initTarget?: InitTarget): string {
+  const baseURLBlock = initTarget
+    ? `    baseURL: ${JSON.stringify(initTarget.baseURL)},
+`
+    : ''
+  const webServerBlock =
+    initTarget?.mode === 'local' && initTarget.webServerCommand
+      ? `  webServer: {
+    command: ${JSON.stringify(`cd .. && ${initTarget.webServerCommand}`)},
+    url: ${JSON.stringify(initTarget.baseURL)},
+    reuseExistingServer: true,
+  },
+`
+      : ''
+
   return `import { defineConfig } from 'screenci'
 
 export default defineConfig({
   projectName: ${JSON.stringify(projectName)},
   envFile: '.env',
   videoDir: './videos',
-  forbidOnly: !!process.env.CI,
-  reporter: 'html',
   use: {
-    trace: 'retain-on-failure',
-    sendTraces: true,
-    recordOptions: {
+${baseURLBlock}    recordOptions: {
       aspectRatio: '16:9',
       quality: '1080p',
       fps: 30,
     },
   },
-  projects: [
+${webServerBlock}  projects: [
     {
       name: 'chromium',
     },
@@ -1358,9 +1376,7 @@ function generatePackageJson(
   includePlaywrightCli = false,
   screenciDependency = 'latest'
 ): string {
-  const devDependencies: Record<string, string> = {
-    '@types/node': '^25.0.0',
-  }
+  const devDependencies: Record<string, string> = {}
   if (includePlaywrightCli) {
     devDependencies['@playwright/cli'] = 'latest'
   }
@@ -1368,8 +1384,6 @@ function generatePackageJson(
     JSON.stringify(
       {
         name: packageName,
-        version: '1.0.0',
-        description: '',
         type: 'module',
         scripts: {
           record: 'screenci record',
@@ -1385,6 +1399,31 @@ function generatePackageJson(
       2
     ) + '\n'
   )
+}
+
+async function readCurrentScreenciVersion(): Promise<string> {
+  const currentFileDir = dirname(fileURLToPath(import.meta.url))
+  const packageJsonPaths = [
+    resolve(currentFileDir, 'package.json'),
+    resolve(currentFileDir, '../package.json'),
+  ]
+
+  for (const packageJsonPath of packageJsonPaths) {
+    try {
+      const packageJson = JSON.parse(
+        await readFile(packageJsonPath, 'utf-8')
+      ) as {
+        version?: unknown
+      }
+      if (typeof packageJson.version === 'string') {
+        return packageJson.version
+      }
+    } catch {
+      // Try the next candidate path.
+    }
+  }
+
+  return 'latest'
 }
 
 function generateTsconfig(): string {
@@ -1563,7 +1602,7 @@ async function performBrowserLogin(appUrl: string): Promise<string> {
 }
 
 function generateExampleVideo(): string {
-  return `import { createNarration, hide, video, voices } from 'screenci'
+  return `import { autoZoom, createNarration, hide, video, voices } from 'screenci'
 
 const narration = createNarration({
   voice: { name: voices.Sophie, style: 'Clear, friendly product walkthrough' },
@@ -1571,33 +1610,47 @@ const narration = createNarration({
     en: {
       cues: {
         intro:
-          'Here is how to find instructions for starting to create your own ScreenCI [pronounce: screen see eye] videos. [short pause] Start on the homepage, then open the documentation from the hero section.',
-        docs: 'The documentation opens with the guide sidebar on the left. In the Guides group, choose AI-Supported Editing.',
+          'This example opens your app at the configured base URL first, then uses ScreenCI [pronounce: screen see eye] to show the next steps for creating your first videos.',
+        docs: 'Use the guide sidebar to open the AI-Supported Editing guide and review the next steps for writing your own videos.',
       },
     },
     es: {
       cues: {
         intro:
-          'Aqui se muestra como encontrar instrucciones para empezar a crear tus propios videos de ScreenCI [pronounce: screen see eye]. [short pause] Comienza en la pagina principal y abre la documentacion desde la seccion principal.',
-        docs: 'La documentacion se abre con la barra lateral de guias a la izquierda. En el grupo Guias, elige Edicion asistida por IA.',
+          'Este ejemplo abre primero tu aplicacion en la URL base configurada y despues usa ScreenCI [pronounce: screen see eye] para mostrar los siguientes pasos para crear tus primeros videos.',
+        docs: 'Usa la barra lateral de guias para abrir la guia de edicion asistida por IA y revisar los siguientes pasos para escribir tus propios videos.',
       },
     },
   },
 })
 
-video('Navigate to AI editing documentation', async ({ page }) => {
+video('See the next steps in ScreenCI docs', async ({ page }) => {
+  await hide(async () => {
+    await page.goto('/')
+    await page.waitForLoadState('domcontentloaded')
+  })
+
+  await narration.intro
+  await page.waitForTimeout(1000)
+
   await hide(async () => {
     await page.goto('https://screenci.com/')
     await page.getByText('ScreenCI', { exact: true }).first().waitFor()
   })
 
-  await narration.intro
-  await page.getByRole('link', { name: 'View Documentation' }).click()
+  await autoZoom(
+    async () => {
+      await page.getByRole('link', { name: 'View Documentation' }).click()
+      await page
+        .getByRole('link', { name: 'AI-Supported Editing', exact: true })
+        .click()
+      await page.waitForTimeout(1000)
+    },
+    { duration: 400, easing: 'ease-in-out', amount: 0.4 }
+  )
 
   await narration.docs
-  await page
-    .getByRole('link', { name: 'AI-Supported Editing', exact: true })
-    .click()
+  await narration.wait()
 })
 `
 }
@@ -1627,6 +1680,43 @@ async function promptInitGithubActionCi(): Promise<boolean> {
     message: 'Do you want to add Github Action CI? (Y/n)',
     default: true,
   })
+}
+
+async function promptInitTargetMode(): Promise<InitTargetMode> {
+  return select({
+    message:
+      'Should videos run against a local development server or a public URL?',
+    choices: [
+      { name: 'Local development server', value: 'local' },
+      { name: 'Public URL', value: 'public' },
+    ],
+    default: 'local',
+  })
+}
+
+async function promptInitTargetUrl(mode: InitTargetMode): Promise<string> {
+  return input({
+    message:
+      mode === 'local' ? 'Local development server URL:' : 'Public app URL:',
+    default:
+      mode === 'local' ? 'http://localhost:3000' : 'https://screenci.com',
+  })
+}
+
+async function promptInitWebServerCommand(): Promise<string> {
+  return input({
+    message: 'Command to start your development server:',
+    default: 'npm run dev',
+  })
+}
+
+function normalizeInitUrl(url: string): string {
+  try {
+    return new URL(url.trim()).toString()
+  } catch {
+    logger.error(`Error: Invalid URL "${url}"`)
+    process.exit(1)
+  }
 }
 
 function getInitProjectRoot(): string {
@@ -1813,6 +1903,26 @@ async function runInit(
     process.exit(1)
   }
 
+  const initTarget = yes
+    ? undefined
+    : await (async (): Promise<InitTarget> => {
+        const mode = await promptInitTargetMode()
+        const baseURL = normalizeInitUrl(await promptInitTargetUrl(mode))
+        const webServerCommand =
+          mode === 'local' ? await promptInitWebServerCommand() : undefined
+
+        return webServerCommand
+          ? {
+              mode,
+              baseURL,
+              webServerCommand,
+            }
+          : {
+              mode,
+              baseURL,
+            }
+      })()
+
   const shouldInstallDependencies = yes
     ? true
     : install
@@ -1850,7 +1960,7 @@ async function runInit(
   const devScreenciPackageRoot = getDevScreenciPackageRoot()
   const screenciDependency = devScreenciPackageRoot
     ? getLocalScreenciDependency(devScreenciPackageRoot, projectDir)
-    : 'latest'
+    : await readCurrentScreenciVersion()
 
   if (devScreenciPackageRoot) {
     await buildLocalScreenciPackage(devScreenciPackageRoot)
@@ -1867,7 +1977,7 @@ async function runInit(
   }
   await writeFile(
     resolve(projectDir, 'screenci.config.ts'),
-    generateConfig(projectName)
+    generateConfig(projectName, initTarget)
   )
   await writeFile(
     resolve(projectDir, 'package.json'),
@@ -2105,7 +2215,7 @@ export async function main() {
       if (process.env.SCREENCI_IN_CONTAINER === 'true') return
 
       logger.info(
-        'Tests passed. Run `npx screenci record` to render the videos.'
+        `Tests passed. Run ${pc.cyan('npx screenci record')} to render the videos.`
       )
     })
 

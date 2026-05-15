@@ -3,7 +3,6 @@ import type { ScreenCIConfig, ExtendedScreenCIConfig } from './types.js'
 import {
   DEFAULT_VIDEO_DIR,
   DEFAULT_TRACE,
-  DEFAULT_SEND_TRACES,
   DEFAULT_TIMEOUT,
   DEFAULT_ACTION_TIMEOUT,
   DEFAULT_NAVIGATION_TIMEOUT,
@@ -55,7 +54,6 @@ type ReporterConfig = string | ReporterDescription
  *       fps: 30,              // 24 | 30 | 60
  *     },
  *     trace: 'retain-on-failure',
- *     sendTraces: true,
  *   },
  * })
  * ```
@@ -180,7 +178,6 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
     use: {
       ...rest.use,
       trace: rest.use?.trace ?? DEFAULT_TRACE,
-      sendTraces: rest.use?.sendTraces ?? DEFAULT_SEND_TRACES,
       actionTimeout: rest.use?.actionTimeout ?? DEFAULT_ACTION_TIMEOUT,
       navigationTimeout:
         rest.use?.navigationTimeout ?? DEFAULT_NAVIGATION_TIMEOUT,

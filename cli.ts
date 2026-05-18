@@ -16,7 +16,7 @@ import {
 import { dirname, relative as pathRelative, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { Command, CommanderError } from 'commander'
-import { input, confirm, select } from '@inquirer/prompts'
+import { input, confirm } from '@inquirer/prompts'
 import ora from 'ora'
 import pc from 'picocolors'
 import { logger } from './src/logger.js'
@@ -40,13 +40,6 @@ type ProjectInfoVideo = {
 type ProjectInfoResponse = {
   projectName: string
   videos: ProjectInfoVideo[]
-}
-
-type InitTargetMode = 'local' | 'public'
-
-type InitTarget = {
-  mode: InitTargetMode
-  baseURL: string
 }
 
 function resolveRecordingFileCandidates(
@@ -1032,6 +1025,25 @@ function loadEnvFile(envFilePath: string, warnOnFailure: boolean): void {
   }
 }
 
+async function loadEnvFileFromConfigSource(
+  resolvedConfigPath: string,
+  warnOnFailure: boolean
+): Promise<void> {
+  try {
+    const screenciConfig = await tryReadConfigFromSource(resolvedConfigPath)
+    if (screenciConfig.envFile) {
+      const envFilePath = resolve(
+        dirname(resolvedConfigPath),
+        screenciConfig.envFile
+      )
+      loadEnvFile(envFilePath, warnOnFailure)
+    }
+  } catch {
+    // Config import may require Playwright context or dynamic values. Continue with
+    // the existing process env; Playwright will still load the config normally.
+  }
+}
+
 export function extractConfigStringLiteral(
   configSource: string,
   property: 'projectName' | 'envFile'
@@ -1172,11 +1184,7 @@ async function updateVideoVisibility(
   logger.info(`${isPublic ? 'Made public' : 'Made private'}: ${videoId}`)
 }
 
-function generateConfig(projectName: string, initTarget?: InitTarget): string {
-  const baseURLBlock = initTarget
-    ? `    baseURL: ${JSON.stringify(initTarget.baseURL)},
-`
-    : ''
+function generateConfig(projectName: string): string {
   return `import { defineConfig } from 'screenci'
 
 export default defineConfig({
@@ -1184,7 +1192,7 @@ export default defineConfig({
   envFile: '.env',
   videoDir: './videos',
   use: {
-${baseURLBlock}    recordOptions: {
+    recordOptions: {
       aspectRatio: '16:9',
       quality: '1080p',
       fps: 30,
@@ -1220,6 +1228,7 @@ function generatePackageJson(
         },
         dependencies: {
           screenci: screenciDependency,
+          '@playwright/test': '^1.59.0',
         },
         devDependencies,
       },
@@ -1310,7 +1319,7 @@ node_modules/
 }
 
 function generateGithubAction(): string {
-  return `name: Record
+  return `name: ScreenCI
 
 on:
   push:
@@ -1341,7 +1350,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: screenci
-        run: npm install --include=dev
+        run: npm install
 
       - name: Install Chromium
         working-directory: screenci
@@ -1352,7 +1361,7 @@ jobs:
         working-directory: screenci
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
-        run: npm run record
+        run: npx screenci record
 `
 }
 
@@ -1428,15 +1437,11 @@ const narration = createNarration({
   languages: {
     en: {
       cues: {
-        intro:
-          'This example opens your app at the configured base URL first, then uses ScreenCI [pronounce: screen see eye] to show the next steps for creating your first videos.',
         docs: 'Use the guide sidebar to open the AI-Supported Editing guide and review the next steps for writing your own videos.',
       },
     },
     es: {
       cues: {
-        intro:
-          'Este ejemplo abre primero tu aplicacion en la URL base configurada y despues usa ScreenCI [pronounce: screen see eye] para mostrar los siguientes pasos para crear tus primeros videos.',
         docs: 'Usa la barra lateral de guias para abrir la guia de edicion asistida por IA y revisar los siguientes pasos para escribir tus propios videos.',
       },
     },
@@ -1444,14 +1449,6 @@ const narration = createNarration({
 })
 
 video('See the next steps in ScreenCI docs', async ({ page }) => {
-  await hide(async () => {
-    await page.goto('/')
-    await page.waitForLoadState('domcontentloaded')
-  })
-
-  await narration.intro
-  await page.waitForTimeout(1000)
-
   await hide(async () => {
     await page.goto('https://screenci.com/')
     await page.getByText('ScreenCI', { exact: true }).first().waitFor()
@@ -1501,119 +1498,8 @@ async function promptInitGithubActionCi(): Promise<boolean> {
   })
 }
 
-async function promptInitTargetMode(): Promise<InitTargetMode> {
-  return select({
-    message:
-      'Should videos run against a local development server or a public URL?',
-    choices: [
-      { name: 'Local development server', value: 'local' },
-      { name: 'Public URL', value: 'public' },
-    ],
-    default: 'local',
-  })
-}
-
-async function promptInitTargetUrl(mode: InitTargetMode): Promise<string> {
-  return input({
-    message:
-      mode === 'local' ? 'Local development server URL:' : 'Public app URL:',
-    default:
-      mode === 'local' ? 'http://localhost:3000' : 'https://screenci.com',
-  })
-}
-
-function normalizeInitUrl(url: string): string {
-  try {
-    return new URL(url.trim()).toString()
-  } catch {
-    logger.error(`Error: Invalid URL "${url}"`)
-    process.exit(1)
-  }
-}
-
 function getInitProjectRoot(): string {
   return process.env['SCREENCI_INIT_CWD'] ?? process.cwd()
-}
-
-function isSourceCliEntrypoint(entrypoint: string | undefined): boolean {
-  return (
-    entrypoint?.endsWith('/cli.ts') === true ||
-    entrypoint?.endsWith('\\cli.ts') === true
-  )
-}
-
-function getDevScreenciPackageRoot(): string | undefined {
-  const explicitRoot = process.env.SCREENCI_DEV_PACKAGE_ROOT?.trim()
-  if (explicitRoot) return resolve(explicitRoot)
-
-  if (!isSourceCliEntrypoint(process.argv[1])) return undefined
-
-  return dirname(fileURLToPath(import.meta.url))
-}
-
-function getLocalScreenciDependency(
-  packageRoot: string,
-  projectDir: string
-): string {
-  const relativePath = pathRelative(projectDir, packageRoot) || '.'
-  const normalizedPath = relativePath.replace(/\\/g, '/')
-  return `file:${normalizedPath.startsWith('.') ? normalizedPath : `./${normalizedPath}`}`
-}
-
-async function buildLocalScreenciPackage(packageRoot: string): Promise<void> {
-  logger.info(`Using local screenci package: ${packageRoot}`)
-  logger.info("Running 'npm run build' for local screenci package...")
-  await spawnInherited(
-    'npm',
-    ['run', 'build'],
-    packageRoot,
-    'screenci dev build'
-  )
-}
-
-async function installLocalScreenciPackage(
-  projectDir: string,
-  packageRoot: string
-): Promise<void> {
-  const packageJsonPath = resolve(projectDir, 'package.json')
-  const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf-8')) as {
-    dependencies?: Record<string, string>
-  }
-  packageJson.dependencies = {
-    ...packageJson.dependencies,
-    screenci: getLocalScreenciDependency(packageRoot, projectDir),
-  }
-  await writeFile(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`)
-
-  logger.info('Installing local screenci package into this project...')
-  await spawnInherited(
-    'npm',
-    ['install', '--install-links'],
-    projectDir,
-    'screenci dev install'
-  )
-}
-
-function buildChildEnv(): NodeJS.ProcessEnv {
-  const { PATH, HOME, USER, LOGNAME, TMPDIR, TEMP, TMP, CI } = process.env
-  return {
-    PATH,
-    HOME,
-    USER,
-    LOGNAME,
-    TMPDIR,
-    TEMP,
-    TMP,
-    CI,
-    NODE_OPTIONS: process.env.NODE_OPTIONS,
-    SCREENCI_SECRET: process.env.SCREENCI_SECRET,
-    SCREENCI_INIT_CWD: process.env.SCREENCI_INIT_CWD,
-    DEV_FRONTEND_PORT: process.env.DEV_FRONTEND_PORT,
-    DEV_BACKEND_PORT: process.env.DEV_BACKEND_PORT,
-    SCREENCI_RECORDING: process.env.SCREENCI_RECORDING,
-    SCREENCI_SIGNAL_LOGGING: process.env.SCREENCI_SIGNAL_LOGGING,
-    SCREENCI_DEV_PACKAGE_ROOT: process.env.SCREENCI_DEV_PACKAGE_ROOT,
-  }
 }
 
 async function runInitAuth(): Promise<void> {
@@ -1707,17 +1593,6 @@ async function runInit(
     process.exit(1)
   }
 
-  const initTarget = yes
-    ? undefined
-    : await (async (): Promise<InitTarget> => {
-        const mode = await promptInitTargetMode()
-        const baseURL = normalizeInitUrl(await promptInitTargetUrl(mode))
-        return {
-          mode,
-          baseURL,
-        }
-      })()
-
   const shouldInstallDependencies = yes
     ? true
     : install
@@ -1752,14 +1627,7 @@ async function runInit(
     '-y',
   ]
   const skillsCommand = `npx ${skillsArgs.join(' ')}`
-  const devScreenciPackageRoot = getDevScreenciPackageRoot()
-  const screenciDependency = devScreenciPackageRoot
-    ? getLocalScreenciDependency(devScreenciPackageRoot, projectDir)
-    : await readCurrentScreenciVersion()
-
-  if (devScreenciPackageRoot) {
-    await buildLocalScreenciPackage(devScreenciPackageRoot)
-  }
+  const screenciDependency = await readCurrentScreenciVersion()
 
   await mkdir(resolve(projectDir, 'videos'), { recursive: true })
   if (shouldAddGithubActionCi) {
@@ -1772,7 +1640,7 @@ async function runInit(
   }
   await writeFile(
     resolve(projectDir, 'screenci.config.ts'),
-    generateConfig(projectName, initTarget)
+    generateConfig(projectName)
   )
   await writeFile(
     resolve(projectDir, 'package.json'),
@@ -1820,23 +1688,13 @@ async function runInit(
     }
 
     if (verbose) {
-      const installArgs = devScreenciPackageRoot
-        ? ['install', '--include=dev', '--install-links']
-        : ['install', '--include=dev']
+      const installArgs = ['install', '--include=dev']
       logger.info(`Running 'npm ${installArgs.join(' ')}'...`)
       await spawnInherited('npm', installArgs, projectDir, 'screenci init')
     } else {
       const spinner = ora('Running npm install...').start()
       try {
-        const installArgs = devScreenciPackageRoot
-          ? [
-              'install',
-              '--include=dev',
-              '--install-links',
-              '--prefix',
-              projectDir,
-            ]
-          : ['install', '--include=dev', '--prefix', projectDir]
+        const installArgs = ['install', '--include=dev', '--prefix', projectDir]
         await spawnSilent('npm', installArgs)
         spinner.succeed('npm install complete')
       } catch (err) {
@@ -1892,26 +1750,6 @@ export async function main() {
     .action(async () => {
       const parsed = parseRecordCliArgs(getSubcommandArgv('record'))
 
-      if (process.env.SCREENCI_RECORDING !== 'true') {
-        const resolvedConfigForSecret = findScreenCIConfig(parsed.configPath)
-        if (resolvedConfigForSecret) {
-          try {
-            const screenciConfig = await tryReadConfigFromSource(
-              resolvedConfigForSecret
-            )
-            if (screenciConfig.envFile) {
-              const envFilePath = resolve(
-                dirname(resolvedConfigForSecret),
-                screenciConfig.envFile
-              )
-              loadEnvFile(envFilePath, false)
-            }
-          } catch {
-            // Config import failed — continue with whatever is already in env
-          }
-        }
-      }
-
       await run('record', parsed.otherArgs, parsed.configPath)
 
       if (process.env.SCREENCI_RECORDING === 'true') return
@@ -1942,6 +1780,7 @@ export async function main() {
           const screenciDir = resolve(configDir, '.screenci')
           let projectId: string | null = null
           try {
+            logger.info('')
             projectId = await uploadRecordings(
               screenciDir,
               screenciConfig.projectName,
@@ -1979,6 +1818,7 @@ export async function main() {
 
       if (process.env.SCREENCI_RECORDING === 'true') return
 
+      logger.info('')
       logger.info(
         `Tests passed. Run ${pc.cyan('npx screenci record')} to render the videos.`
       )
@@ -2239,6 +2079,10 @@ async function run(
     process.exit(1)
   }
 
+  if (process.env.SCREENCI_RECORDING !== 'true') {
+    await loadEnvFileFromConfigSource(configPath, false)
+  }
+
   // Only validate args for record command
   if (command === 'record') {
     await ensureScreenciSecret()
@@ -2247,17 +2091,8 @@ async function run(
     clearDirectory(screenciDir)
   }
 
-  const mode = command === 'test' ? 'tests' : 'recorder'
   if (process.env.SCREENCI_RECORDING !== 'true') {
-    logger.info(`Running ScreenCI ${mode} with npx...`)
     logger.info(`Using config: ${configPath}`)
-  }
-
-  const devScreenciPackageRoot = getDevScreenciPackageRoot()
-  if (devScreenciPackageRoot) {
-    const configDir = dirname(configPath)
-    await buildLocalScreenciPackage(devScreenciPackageRoot)
-    await installLocalScreenciPackage(configDir, devScreenciPackageRoot)
   }
 
   const playwrightArgs = ['test', '--config', configPath, ...additionalArgs]
@@ -2265,7 +2100,7 @@ async function run(
   const child = spawn('playwright', playwrightArgs, {
     stdio: 'inherit',
     env: {
-      ...buildChildEnv(),
+      ...process.env,
       // Enable recording only for record command
       ...(command === 'record' ? { SCREENCI_RECORDING: 'true' } : {}),
     },

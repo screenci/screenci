@@ -236,16 +236,19 @@ describe('defineConfig', () => {
     }
   })
 
-  it('should reject webServer option', () => {
-    expect(() => {
-      defineConfig({
-        projectName: 'Test',
-        webServer: {
-          command: 'npm run dev',
-          url: 'http://localhost:3000',
-        },
-      })
-    }).toThrow('screenci does not support "webServer" option')
+  it('should accept webServer option', () => {
+    const config = defineConfig({
+      projectName: 'Test',
+      webServer: {
+        command: 'npm run dev',
+        url: 'http://localhost:3000',
+      },
+    })
+
+    expect(config.webServer).toEqual({
+      command: 'npm run dev',
+      url: 'http://localhost:3000',
+    })
   })
 
   it('should accept recordOptions in project use', () => {

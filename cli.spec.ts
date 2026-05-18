@@ -98,6 +98,7 @@ describe('CLI', () => {
   let loggerInfoSpy: ReturnType<typeof vi.spyOn>
   let loggerWarnSpy: ReturnType<typeof vi.spyOn>
   let processExitSpy: ReturnType<typeof vi.spyOn>
+  let loadEnvFileSpy: ReturnType<typeof vi.spyOn>
   let originalArgv: string[]
   let originalEnv: NodeJS.ProcessEnv
   let originalFetch: typeof global.fetch
@@ -162,6 +163,13 @@ describe('CLI', () => {
     processExitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
       throw new Error('process.exit called')
     }) as unknown as (code?: string | number | null | undefined) => never)
+    loadEnvFileSpy = vi
+      .spyOn(process, 'loadEnvFile')
+      .mockImplementation((path?: string | URL) => {
+        if (String(path).endsWith('.env')) {
+          process.env.VITE_APP_BASE_URL = 'https://env-file.example.com'
+        }
+      })
 
     global.fetch = mockFetch as typeof global.fetch
     mockFetch.mockResolvedValue({
@@ -183,6 +191,7 @@ describe('CLI', () => {
     loggerInfoSpy?.mockRestore()
     loggerWarnSpy?.mockRestore()
     processExitSpy?.mockRestore()
+    loadEnvFileSpy?.mockRestore()
   })
 
   describe('record command', () => {
@@ -192,6 +201,7 @@ describe('CLI', () => {
 
     it('should run Playwright locally for record command', async () => {
       process.argv = ['node', 'cli.js', 'record']
+      process.env.VITE_APP_BASE_URL = 'https://example.com'
       mockSpawn.mockImplementation(
         (
           _command: string,
@@ -199,6 +209,7 @@ describe('CLI', () => {
           options?: { env?: NodeJS.ProcessEnv }
         ) => {
           expect(options?.env?.SCREENCI_RECORDING).toBe('true')
+          expect(options?.env?.VITE_APP_BASE_URL).toBe('https://example.com')
           process.nextTick(() => mockChildProcess.emit('close', 0))
           return mockChildProcess as unknown as ChildProcess
         }
@@ -212,9 +223,50 @@ describe('CLI', () => {
         'playwright',
         expect.arrayContaining(['test']),
         expect.objectContaining({
-          env: expect.objectContaining({ SCREENCI_RECORDING: 'true' }),
+          env: expect.objectContaining({
+            SCREENCI_RECORDING: 'true',
+            VITE_APP_BASE_URL: 'https://example.com',
+          }),
           stdio: 'inherit',
         })
+      )
+    })
+  })
+
+  describe('test command', () => {
+    it('should load envFile before spawning Playwright', async () => {
+      process.argv = ['node', 'cli.js', 'test']
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        if (String(path).endsWith('screenci.config.ts')) {
+          return `export default defineConfig({
+  projectName: 'Test Project',
+  envFile: '.env',
+})`
+        }
+        if (String(path).endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        return ''
+      })
+      mockSpawn.mockImplementation(
+        (
+          _command: string,
+          _args: string[],
+          options?: { env?: NodeJS.ProcessEnv }
+        ) => {
+          expect(options?.env?.VITE_APP_BASE_URL).toBe(
+            'https://env-file.example.com'
+          )
+          process.nextTick(() => mockChildProcess.emit('close', 0))
+          return mockChildProcess as unknown as ChildProcess
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loadEnvFileSpy).toHaveBeenCalledWith(
+        expect.stringContaining('.env')
       )
     })
   })
@@ -755,6 +807,12 @@ describe('CLI', () => {
         (c: unknown[]) =>
           typeof c[0] === 'string' && c[0].endsWith('package.json')
       )
+      const pkg = JSON.parse(String(pkgCall?.[1])) as {
+        dependencies: Record<string, string>
+        devDependencies: Record<string, string>
+      }
+      expect(pkg.dependencies['@playwright/test']).toBe('^1.59.0')
+      expect(pkg.devDependencies['@playwright/test']).toBeUndefined()
       expect(pkgCall?.[1]).toContain('"@playwright/cli": "latest"')
     })
 
@@ -771,6 +829,12 @@ describe('CLI', () => {
         (c: unknown[]) =>
           typeof c[0] === 'string' && c[0].endsWith('package.json')
       )
+      const pkg = JSON.parse(String(pkgCall?.[1])) as {
+        dependencies: Record<string, string>
+        devDependencies: Record<string, string>
+      }
+      expect(pkg.dependencies['@playwright/test']).toBe('^1.59.0')
+      expect(pkg.devDependencies['@playwright/test']).toBeUndefined()
       expect(pkgCall?.[1]).not.toContain('"@playwright/cli": "latest"')
     })
 
@@ -811,7 +875,6 @@ describe('CLI', () => {
         .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(true)
         .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(true)
 
       const { main } = await import('./cli')
       await main()
@@ -828,6 +891,7 @@ describe('CLI', () => {
         (c: unknown[]) =>
           typeof c[0] === 'string' && c[0].endsWith('screenci.yaml')
       )
+      expect(workflowCall?.[1]).toContain('name: ScreenCI')
       expect(workflowCall?.[1]).toContain('actions/setup-node@v6')
       expect(workflowCall?.[1]).toContain('node-version: latest')
       expect(workflowCall?.[1]).toContain('environment:\n      name: screenci')
@@ -836,13 +900,11 @@ describe('CLI', () => {
       )
       expect(workflowCall?.[1]).toContain('- id: record\n        name: Record')
       expect(workflowCall?.[1]).toContain('working-directory: screenci')
-      expect(workflowCall?.[1]).toContain('npm install --include=dev')
+      expect(workflowCall?.[1]).toContain('npm install')
       expect(workflowCall?.[1]).toContain(
         'npx playwright install chromium --with-deps'
       )
-      expect(workflowCall?.[1]).toContain('npm run record')
-      expect(workflowCall?.[1]).not.toContain('--tag')
-      expect(workflowCall?.[1]).not.toContain('--make')
+      expect(workflowCall?.[1]).toContain('npx screenci record')
       expect(workflowCall?.[1]).toContain(
         'Copy it from https://app.screenci.com/secrets and add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action.'
       )
@@ -1004,7 +1066,7 @@ describe('CLI', () => {
       expect(pkgCall?.[1]).not.toContain('"screenci": "file:')
     })
 
-    it('should use local screenci dependency when init runs through source cli', async () => {
+    it('should use published screenci dependency when init runs through source cli', async () => {
       const sourceCliPath = `${process.cwd()}/cli.ts`
       process.argv = ['node', sourceCliPath, 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
@@ -1016,13 +1078,12 @@ describe('CLI', () => {
         (c: unknown[]) =>
           typeof c[0] === 'string' && c[0].endsWith('package.json')
       )
-      expect(pkgCall?.[1]).toContain('"screenci": "file:')
-      expect(pkgCall?.[1]).toContain('"screenci": "file:.."')
-      expect(pkgCall?.[1]).not.toContain('"screenci": "latest"')
-      expect(mockSpawn).toHaveBeenCalledWith(
+      expect(pkgCall?.[1]).toContain('"screenci": "0.0.32"')
+      expect(pkgCall?.[1]).not.toContain('"screenci": "file:')
+      expect(mockSpawn).not.toHaveBeenCalledWith(
         'npm',
         ['run', 'build'],
-        expect.objectContaining({ cwd: process.cwd(), stdio: 'inherit' })
+        expect.anything()
       )
     })
 
@@ -1152,6 +1213,43 @@ describe('CLI', () => {
       )
     })
 
+    it('should log created files clearly after init', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'screenci-docs']
+      mockExistsSync.mockReturnValue(false)
+      mockConfirm
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true)
+
+      const { main } = await import('./cli')
+      await main()
+
+      const messages = loggerInfoSpy.mock.calls.map((call) => call[0])
+      const filesCreatedIndex = messages.indexOf('Files created:')
+
+      expect(
+        messages.some((message) =>
+          String(message).includes(
+            'Initialized screenci project "screenci-docs" in '
+          )
+        )
+      ).toBe(true)
+      expect(messages.slice(filesCreatedIndex, filesCreatedIndex + 10)).toEqual(
+        [
+          'Files created:',
+          '  screenci.config.ts',
+          '  package.json',
+          '  tsconfig.json',
+          '  README.md',
+          '  .gitignore',
+          '  videos/example.video.ts',
+          '  .github/workflows/screenci.yaml',
+          '  .env  (empty placeholder)',
+          '',
+        ]
+      )
+    })
+
     it('should include cd step in next steps', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
@@ -1210,40 +1308,6 @@ describe('CLI', () => {
       expect(configCall?.[1]).toContain("envFile: '.env'")
     })
 
-    it('should include baseURL for a local development target', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      mockSelect.mockResolvedValueOnce('local')
-      mockInput.mockResolvedValueOnce('http://localhost:4173')
-
-      const { main } = await import('./cli')
-      await main()
-
-      const configCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('screenci.config.ts')
-      )
-      expect(configCall?.[1]).toContain('baseURL: "http://localhost:4173/"')
-      expect(configCall?.[1]).not.toContain('webServer: {')
-    })
-
-    it('should include only baseURL for a public target', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      mockSelect.mockResolvedValueOnce('public')
-      mockInput.mockResolvedValueOnce('https://app.example.com')
-
-      const { main } = await import('./cli')
-      await main()
-
-      const configCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('screenci.config.ts')
-      )
-      expect(configCall?.[1]).toContain('baseURL: "https://app.example.com/"')
-      expect(configCall?.[1]).not.toContain('webServer: {')
-    })
-
     it('should generate an example video that walks through ScreenCI docs', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
@@ -1258,9 +1322,11 @@ describe('CLI', () => {
       expect(exampleVideoCall?.[1]).toContain(
         "import { autoZoom, createNarration, hide, video, voices } from 'screenci'"
       )
-      expect(exampleVideoCall?.[1]).toContain("await page.goto('/')")
       expect(exampleVideoCall?.[1]).toContain(
         "await page.goto('https://screenci.com/')"
+      )
+      expect(exampleVideoCall?.[1]).toContain(
+        "await page.getByRole('link', { name: 'View Documentation' }).click()"
       )
       expect(exampleVideoCall?.[1]).toContain('await autoZoom(')
     })
@@ -1392,7 +1458,7 @@ describe('CLI', () => {
       await main()
 
       expect(mockConfirm).toHaveBeenCalledTimes(3)
-      expect(mockSelect).toHaveBeenCalledTimes(1)
+      expect(mockSelect).not.toHaveBeenCalled()
       expect(mockSpawn).not.toHaveBeenCalledWith(
         'npx',
         ['playwright', 'install', '--list'],

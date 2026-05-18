@@ -703,7 +703,6 @@ export type ScreenCIConfig = Omit<
   | 'retries'
   | 'testDir'
   | 'testMatch'
-  | 'webServer'
   | 'use'
   | 'projects'
 > & {
@@ -726,6 +725,13 @@ export type ScreenCIConfig = Omit<
    * Defaults to `'./videos'`.
    */
   videoDir?: string
+  /**
+   * Starts and reuses a development server through Playwright before running videos.
+   *
+   * This is useful for generated ScreenCI projects that should record against the
+   * app in the parent project directory.
+   */
+  webServer?: PlaywrightTestConfig['webServer']
   use?: Omit<NonNullable<PlaywrightTestConfig['use']>, 'trace'> & {
     recordOptions?: RecordOptions
     renderOptions?: RenderOptions

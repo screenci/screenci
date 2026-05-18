@@ -126,8 +126,7 @@ async function startScreencastRecording(
   const recorder = await attachRecorder(page, {
     path: outputPath,
     autoStart: false,
-    //3840×2160
-    size: { width: 3840, height: 2160 },
+    size: { width, height },
     fps,
     jpegQuality: 100,
     ffmpegArgs: [
@@ -246,11 +245,6 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     // Video output path - always use recording.mp4
     const videoPath = join(videoDir, 'recording.mp4')
 
-    logger.info(`Recording video to: ${videoPath}`)
-    logger.info(
-      `Recording with ${aspectRatio} ${quality} (${dimensions.width}x${dimensions.height}), ${fps}fps`
-    )
-
     const recorder = new EventRecorder(renderOptions, recordOptions)
     resetCueChain()
     setActiveCueRecorder(recorder)
@@ -298,7 +292,6 @@ const _videoBase = base.extend<VideoFixtureOptions>({
       // Do not end video abruptly.
       await sleep(POST_VIDEO_PAUSE)
     } finally {
-      logger.info('Stopping recording...')
       const stopResult = await screenRecorder.stop()
       await screenRecorder.finalized
       if (!stopResult.written) {
@@ -306,7 +299,6 @@ const _videoBase = base.extend<VideoFixtureOptions>({
           'Screen recording did not write any frames. Test will continue without recording.'
         )
       }
-      logger.info(`Video saved to: ${videoPath}`)
 
       await page.close()
       setActiveCueRecorder(null)
@@ -317,7 +309,6 @@ const _videoBase = base.extend<VideoFixtureOptions>({
 
       // Write recorded events next to the video
       await recorder.writeToFile(videoDir, testInfo.title)
-      logger.info(`Events saved to: ${join(videoDir, 'data.json')}`)
     }
   },
 })

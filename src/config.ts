@@ -29,7 +29,7 @@ type ReporterConfig = string | ReporterDescription
  * Extends Playwright's config with screenci-specific options and enforces
  * settings required for reliable video recording. Some Playwright options
  * are locked and cannot be set — `workers`, `fullyParallel`, `retries`,
- * `testDir`, `testMatch`, and `webServer`. Attempting to set them throws at startup.
+ * `testDir`, and `testMatch`. Attempting to set them throws at startup.
  *
  * @example
  * Minimal — all options have sensible defaults:
@@ -137,13 +137,6 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
     throw new Error(
       'screenci does not support "testMatch" option. ' +
         'screenci automatically configures tests to only run *.video.* files.'
-    )
-  }
-
-  if ('webServer' in config) {
-    throw new Error(
-      'screenci does not support "webServer" option. ' +
-        'Start your app separately before running screenci test or screenci record.'
     )
   }
 

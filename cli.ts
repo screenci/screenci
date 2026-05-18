@@ -1,16 +1,7 @@
-#!/usr/bin/env -S npx tsx
-
-import { spawn, spawnSync } from 'child_process'
+import { spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import { createReadStream } from 'fs'
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-  rmSync,
-} from 'fs'
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'fs'
 import { createHash } from 'crypto'
 import { createServer } from 'http'
 import type { AddressInfo } from 'net'
@@ -194,99 +185,6 @@ function createUploadAbortController(activityLabel: string): {
   }
 }
 
-function parseDockerfileVersion(dockerfilePath: string): string {
-  let content: string
-  try {
-    content = readFileSync(dockerfilePath, 'utf-8')
-  } catch {
-    return 'unknown'
-  }
-  const fromLine = content
-    .split('\n')
-    .find((line) => line.trim().toUpperCase().startsWith('FROM'))
-  if (!fromLine) return 'unknown'
-  const match = fromLine.match(/:([^\s@]+)/)
-  return match?.[1] ?? 'unknown'
-}
-
-const CONTAINER_RUNTIME_DOCS_URL =
-  'https://screenci.com/docs/guides/getting-started/#prerequisites'
-
-function prerequisitesMessage(): string {
-  return `See prerequisites: ${pc.blue(CONTAINER_RUNTIME_DOCS_URL)}`
-}
-
-const MIN_CONTAINER_RUNTIME_MAJOR_VERSION = {
-  podman: 3,
-  docker: 27,
-} as const
-
-type ContainerRuntimeName = keyof typeof MIN_CONTAINER_RUNTIME_MAJOR_VERSION
-
-type ContainerRuntimeCheckResult = {
-  runtime: ContainerRuntimeName
-  version: string
-  majorVersion: number | null
-}
-
-function parseContainerRuntimeMajorVersion(
-  versionOutput: string
-): number | null {
-  const match = versionOutput.match(/(\d+)(?:\.\d+){0,2}/)
-  if (!match) return null
-
-  const majorVersion = Number.parseInt(match[1] ?? '', 10)
-  return Number.isNaN(majorVersion) ? null : majorVersion
-}
-
-function checkContainerRuntime(
-  runtime: ContainerRuntimeName
-): ContainerRuntimeCheckResult | null {
-  const result = spawnSync(runtime, ['--version'], { encoding: 'utf8' })
-
-  if (result.status !== 0 || result.error !== undefined) {
-    return null
-  }
-
-  const version = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
-
-  return {
-    runtime,
-    version,
-    majorVersion: parseContainerRuntimeMajorVersion(version),
-  }
-}
-
-function getPreferredContainerRuntime(): ContainerRuntimeCheckResult | null {
-  const podman = checkContainerRuntime('podman')
-  if (podman) return podman
-
-  return checkContainerRuntime('docker')
-}
-
-function exitContainerRuntimeNotFound(runtime: ContainerRuntimeName): never {
-  logger.error(`Error: ${runtime} not found.`)
-  logger.error(`Install ${runtime} or remove the --${runtime} flag.`)
-  logger.error(prerequisitesMessage())
-  process.exit(1)
-}
-
-function warnIfContainerRuntimeVersionIsOld(
-  runtimeCheck: ContainerRuntimeCheckResult
-): void {
-  const minimumVersion =
-    MIN_CONTAINER_RUNTIME_MAJOR_VERSION[runtimeCheck.runtime]
-
-  if (
-    runtimeCheck.majorVersion !== null &&
-    runtimeCheck.majorVersion < minimumVersion
-  ) {
-    logger.warn(
-      `Your ${runtimeCheck.runtime} version (${runtimeCheck.version}) is quite old. We recommend updating. ${prerequisitesMessage()}`
-    )
-  }
-}
-
 function spawnSilent(cmd: string, args: string[], cwd?: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: 'pipe', ...(cwd ? { cwd } : {}) })
@@ -357,65 +255,6 @@ function forwardChildSignals(
     },
     getForwardedSignal: () => forwardedSignal,
   }
-}
-
-const CONTAINER_LOG_FILTER = [
-  /^Running ScreenCI /,
-  /^Using config:/,
-  /^Starting Xvfb /,
-  /^Xvfb started /,
-  /^Recording video to:/,
-  /^Recording with /,
-  /^Stopping recording\.\.\./,
-  /^FFmpeg exited /,
-  /^Video saved to:/,
-  /^Events saved to:/,
-]
-
-function spawnContainerRecording(cmd: string, args: string[]): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ['inherit', 'pipe', 'pipe'] })
-    const childSignals = forwardChildSignals(child, 'screenci record')
-
-    function forwardFiltered(chunk: Buffer, out: NodeJS.WriteStream): void {
-      const lines = chunk.toString().split('\n')
-      for (const line of lines) {
-        if (line === '') continue
-        if (!CONTAINER_LOG_FILTER.some((re) => re.test(line.trimStart()))) {
-          out.write(line + '\n')
-        }
-      }
-    }
-
-    child.stdout?.on('data', (chunk: Buffer) =>
-      forwardFiltered(chunk, process.stdout)
-    )
-    child.stderr?.on('data', (chunk: Buffer) =>
-      forwardFiltered(chunk, process.stderr)
-    )
-
-    child.on('close', (code, signal) => {
-      const forwardedSignal = childSignals.getForwardedSignal()
-      childSignals.cleanup()
-      if (forwardedSignal) {
-        process.kill(process.pid, forwardedSignal)
-        return
-      }
-      if (signal) {
-        process.kill(process.pid, signal)
-        return
-      } else if (code === 0) {
-        resolve()
-      } else {
-        reject(new Error(`${cmd} exited with code ${code}`))
-      }
-    })
-
-    child.on('error', (err) => {
-      childSignals.cleanup()
-      reject(err)
-    })
-  })
 }
 
 function clearDirectory(dir: string): void {
@@ -1338,7 +1177,6 @@ function generateConfig(projectName: string, initTarget?: InitTarget): string {
     ? `    baseURL: ${JSON.stringify(initTarget.baseURL)},
 `
     : ''
-
   return `import { defineConfig } from 'screenci'
 
 export default defineConfig({
@@ -1459,16 +1297,6 @@ Learn more: https://screenci.com/docs/intro/
    \`npx screenci record\`
 
 4. View results on screenci.com and optionally enable a public URL to embed the video on your site.
-`
-}
-
-function generateDockerfile(): string {
-  return `FROM ghcr.io/screenci/record:latest
-
-COPY package.json ./
-RUN npm install
-COPY screenci.config.ts ./
-COPY videos ./videos
 `
 }
 
@@ -1777,22 +1605,15 @@ function buildChildEnv(): NodeJS.ProcessEnv {
     TEMP,
     TMP,
     CI,
+    NODE_OPTIONS: process.env.NODE_OPTIONS,
     SCREENCI_SECRET: process.env.SCREENCI_SECRET,
     SCREENCI_INIT_CWD: process.env.SCREENCI_INIT_CWD,
     DEV_FRONTEND_PORT: process.env.DEV_FRONTEND_PORT,
     DEV_BACKEND_PORT: process.env.DEV_BACKEND_PORT,
-    SCREENCI_LOCAL_IMAGE: process.env.SCREENCI_LOCAL_IMAGE,
-    SCREENCI_IN_CONTAINER: process.env.SCREENCI_IN_CONTAINER,
-    SCREENCI_RECORD: process.env.SCREENCI_RECORD,
+    SCREENCI_RECORDING: process.env.SCREENCI_RECORDING,
     SCREENCI_SIGNAL_LOGGING: process.env.SCREENCI_SIGNAL_LOGGING,
     SCREENCI_DEV_PACKAGE_ROOT: process.env.SCREENCI_DEV_PACKAGE_ROOT,
   }
-}
-
-function requireContainerRuntime(): ContainerRuntimeName {
-  const runtime = detectContainerRuntime()
-  if (runtime === 'podman' || runtime === 'docker') return runtime
-  throw new Error('No container runtime available')
 }
 
 async function runInitAuth(): Promise<void> {
@@ -1862,7 +1683,6 @@ async function runInit(
 ): Promise<void> {
   const { verbose, install, yes, skill, ci } = options
   checkNodeVersion()
-  checkContainerRuntimeForInit()
   const initCwd = getInitProjectRoot()
 
   let projectName = projectNameArg?.trim()
@@ -1960,7 +1780,6 @@ async function runInit(
   )
   await writeFile(resolve(projectDir, 'tsconfig.json'), generateTsconfig())
   await writeFile(resolve(projectDir, 'README.md'), generateReadme(projectName))
-  await writeFile(resolve(projectDir, 'Dockerfile'), generateDockerfile())
   await writeFile(resolve(projectDir, '.gitignore'), generateGitignore())
   await writeFile(
     resolve(projectDir, 'videos', 'example.video.ts'),
@@ -1977,7 +1796,6 @@ async function runInit(
   logger.info('  package.json')
   logger.info('  tsconfig.json')
   logger.info('  README.md')
-  logger.info('  Dockerfile')
   logger.info('  .gitignore')
   logger.info('  videos/example.video.ts')
   if (shouldAddGithubActionCi) {
@@ -2074,27 +1892,13 @@ export async function main() {
     .action(async () => {
       const parsed = parseRecordCliArgs(getSubcommandArgv('record'))
 
-      if (parsed.forcedRuntime === 'both') {
-        logger.error('Error: --podman and --docker cannot be used together')
-        process.exit(1)
-      }
-
-      const useContainer = process.env.SCREENCI_IN_CONTAINER !== 'true'
-
-      // Validate early so we don't build the container unnecessarily
-      if (useContainer) {
-        validateArgs(parsed.otherArgs)
-      }
-
-      // On the host, load .env so SCREENCI_SECRET is available for uploads
-      if (process.env.SCREENCI_IN_CONTAINER !== 'true') {
+      if (process.env.SCREENCI_RECORDING !== 'true') {
         const resolvedConfigForSecret = findScreenCIConfig(parsed.configPath)
         if (resolvedConfigForSecret) {
           try {
-            const screenciConfig =
-              await loadRecordConfigWithoutPlaywrightCollision(
-                resolvedConfigForSecret
-              )
+            const screenciConfig = await tryReadConfigFromSource(
+              resolvedConfigForSecret
+            )
             if (screenciConfig.envFile) {
               const envFilePath = resolve(
                 dirname(resolvedConfigForSecret),
@@ -2108,23 +1912,9 @@ export async function main() {
         }
       }
 
-      if (useContainer) {
-        await ensureScreenciSecret()
-      }
+      await run('record', parsed.otherArgs, parsed.configPath)
 
-      if (useContainer) {
-        await runWithContainer(
-          parsed.otherArgs,
-          parsed.configPath,
-          parsed.verbose,
-          parsed.forcedRuntime
-        )
-      } else {
-        await run('record', parsed.otherArgs, parsed.configPath)
-      }
-
-      // Upload only from the host, not from inside the container
-      if (process.env.SCREENCI_IN_CONTAINER === 'true') return
+      if (process.env.SCREENCI_RECORDING === 'true') return
 
       // After recording, upload results to API if configured
       const resolvedConfigPath = findScreenCIConfig(parsed.configPath)
@@ -2187,7 +1977,7 @@ export async function main() {
       const parsed = parseConfigCliArgs(getSubcommandArgv('test'))
       await run('test', parsed.otherArgs, parsed.configPath)
 
-      if (process.env.SCREENCI_IN_CONTAINER === 'true') return
+      if (process.env.SCREENCI_RECORDING === 'true') return
 
       logger.info(
         `Tests passed. Run ${pc.cyan('npx screenci record')} to render the videos.`
@@ -2315,12 +2105,10 @@ function getSubcommandArgv(command: string): string[] {
 function parseRecordCliArgs(args: string[]): {
   configPath: string | undefined
   verbose: boolean
-  forcedRuntime: ContainerRuntimeName | 'both' | undefined
   otherArgs: string[]
 } {
   let configPath: string | undefined
   let verbose = false
-  let forcedRuntime: ContainerRuntimeName | 'both' | undefined
   const otherArgs: string[] = []
 
   for (let i = 0; i < args.length; i++) {
@@ -2336,10 +2124,6 @@ function parseRecordCliArgs(args: string[]): {
       i++
     } else if (arg === '--verbose' || arg === '-v') {
       verbose = true
-    } else if (arg === '--podman') {
-      forcedRuntime = forcedRuntime === 'docker' ? 'both' : 'podman'
-    } else if (arg === '--docker') {
-      forcedRuntime = forcedRuntime === 'podman' ? 'both' : 'docker'
     } else {
       otherArgs.push(arg)
     }
@@ -2348,7 +2132,6 @@ function parseRecordCliArgs(args: string[]): {
   return {
     configPath,
     verbose,
-    forcedRuntime,
     otherArgs,
   }
 }
@@ -2441,161 +2224,6 @@ function spawnInherited(
   })
 }
 
-export function detectContainerRuntime(
-  forcedRuntime?: ContainerRuntimeName
-): ContainerRuntimeName {
-  const runtimeCheck = forcedRuntime
-    ? checkContainerRuntime(forcedRuntime)
-    : getPreferredContainerRuntime()
-
-  if (runtimeCheck) {
-    warnIfContainerRuntimeVersionIsOld(runtimeCheck)
-    return runtimeCheck.runtime
-  }
-
-  if (forcedRuntime) {
-    exitContainerRuntimeNotFound(forcedRuntime)
-  }
-
-  logger.error('Error: Neither podman nor docker found.')
-  logger.error(
-    'Please install podman (recommended) or docker to use screenci record.'
-  )
-  logger.error(prerequisitesMessage())
-  process.exit(1)
-}
-
-function checkContainerRuntimeForInit(): void {
-  const runtimeCheck = getPreferredContainerRuntime()
-
-  if (!runtimeCheck) {
-    logger.warn(
-      'Neither podman nor docker found. Install one before running screenci record.'
-    )
-    logger.warn(prerequisitesMessage())
-    return
-  }
-
-  warnIfContainerRuntimeVersionIsOld(runtimeCheck)
-}
-
-async function buildProjectImage(
-  containerRuntime: ContainerRuntimeName,
-  dockerfilePath: string,
-  configDir: string,
-  verbose: boolean
-): Promise<void> {
-  if (verbose) {
-    await spawnInherited(
-      containerRuntime,
-      ['build', '-f', dockerfilePath, '-t', 'screenci', configDir],
-      undefined,
-      'Building project image'
-    )
-    return
-  }
-
-  await spawnSilent(containerRuntime, [
-    'build',
-    '-f',
-    dockerfilePath,
-    '-t',
-    'screenci',
-    configDir,
-  ])
-}
-
-async function runWithContainer(
-  additionalArgs: string[],
-  customConfigPath?: string,
-  verbose = false,
-  forcedRuntime?: ContainerRuntimeName
-) {
-  const configPath = findScreenCIConfig(customConfigPath)
-
-  if (!configPath) {
-    const errorMsg = customConfigPath
-      ? `Error: Config file not found: ${customConfigPath}`
-      : 'Error: screenci.config.ts not found in current directory'
-    logger.error(errorMsg)
-    process.exit(1)
-  }
-
-  const configDir = dirname(configPath)
-  const repoRoot = findRepoRoot(configDir)
-  if (!repoRoot) {
-    logger.error(
-      'Error: Could not find repository root (.git or pnpm-workspace.yaml)'
-    )
-    process.exit(1)
-  }
-
-  logger.info('Preparing ScreenCI recording container...')
-  const containerRuntime = detectContainerRuntime(forcedRuntime)
-  const imageName = process.env['SCREENCI_LOCAL_IMAGE']
-    ? 'screenci'
-    : 'ghcr.io/screenci/record:latest'
-  logger.info(`Using ${containerRuntime} with image ${imageName}`)
-
-  if (process.env['SCREENCI_LOCAL_IMAGE']) {
-    logger.info('SCREENCI_LOCAL_IMAGE set — skipping screenci image build')
-  } else {
-    const imageExists =
-      spawnSync(containerRuntime, ['image', 'exists', imageName], {
-        stdio: 'ignore',
-      }).status === 0
-    if (!imageExists) {
-      logger.info(`Image ${imageName} not found locally, pulling...`)
-      if (verbose) {
-        await spawnInherited(containerRuntime, ['pull', imageName])
-      } else {
-        await spawnSilent(containerRuntime, ['pull', imageName])
-      }
-    }
-  }
-
-  clearDirectory(resolve(configDir, '.screenci'))
-
-  const secret = process.env['SCREENCI_SECRET']
-  if (secret === undefined) {
-    logger.error('Error: SCREENCI_SECRET is not set')
-    process.exit(1)
-  }
-  logger.info('Starting ScreenCI recording container...')
-  const containerBaseHost =
-    containerRuntime === 'docker'
-      ? 'host.docker.internal'
-      : 'host.containers.internal'
-  await spawnContainerRecording(containerRuntime, [
-    'run',
-    '--rm',
-    ...(containerRuntime === 'docker'
-      ? ['--add-host', 'host.docker.internal:host-gateway']
-      : []),
-    ...(process.env.CI !== undefined ? ['-e', `CI=${process.env.CI}`] : []),
-    '-e',
-    'SCREENCI_IN_CONTAINER=true',
-    '-e',
-    `SCREENCI_CONTAINER_BASE_HOST=${containerBaseHost}`,
-    '-e',
-    'SCREENCI_RECORD=true',
-    '-e',
-    `SCREENCI_SECRET=${secret}`,
-    '-e',
-    'SCREENCI_SIGNAL_LOGGING=silent',
-    '-v',
-    `${configDir}/.screenci:/app/.screenci`,
-    '-v',
-    `${configPath}:/app/screenci.config.ts`,
-    '-v',
-    `${configDir}/videos:/app/videos`,
-    imageName,
-    'screenci',
-    'record',
-    ...additionalArgs,
-  ])
-}
-
 async function run(
   command: 'record' | 'test',
   additionalArgs: string[],
@@ -2620,7 +2248,7 @@ async function run(
   }
 
   const mode = command === 'test' ? 'tests' : 'recorder'
-  if (process.env.SCREENCI_IN_CONTAINER !== 'true') {
+  if (process.env.SCREENCI_RECORDING !== 'true') {
     logger.info(`Running ScreenCI ${mode} with npx...`)
     logger.info(`Using config: ${configPath}`)
   }
@@ -2632,20 +2260,14 @@ async function run(
     await installLocalScreenciPackage(configDir, devScreenciPackageRoot)
   }
 
-  const playwrightArgs = [
-    'playwright',
-    'test',
-    '--config',
-    configPath,
-    ...additionalArgs,
-  ]
+  const playwrightArgs = ['test', '--config', configPath, ...additionalArgs]
 
-  const child = spawn('npx', playwrightArgs, {
+  const child = spawn('playwright', playwrightArgs, {
     stdio: 'inherit',
     env: {
       ...buildChildEnv(),
       // Enable recording only for record command
-      ...(command === 'record' ? { SCREENCI_RECORD: 'true' } : {}),
+      ...(command === 'record' ? { SCREENCI_RECORDING: 'true' } : {}),
     },
   })
   const childSignals = forwardChildSignals(child, `screenci ${command}`)
@@ -2680,10 +2302,13 @@ async function run(
 // Check if this module is the main module (handles symlinks properly)
 const currentFile = fileURLToPath(import.meta.url)
 const mainFile = process.argv[1] ? realpathSync(process.argv[1]) : null
+const currentRealFile = realpathSync(currentFile)
 
 if (
   mainFile &&
-  (currentFile === mainFile || currentFile === realpathSync(mainFile))
+  (currentFile === mainFile ||
+    currentRealFile === mainFile ||
+    currentFile === realpathSync(mainFile))
 ) {
   main().catch((error) => {
     logger.error('Error:', error.message)

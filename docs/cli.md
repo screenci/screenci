@@ -15,7 +15,7 @@ Most commands look for `screenci.config.ts` in the current directory. Use `--con
 | --------------------------------- | ---------------------------------------------------------------- |
 | `screenci init [name]`            | Scaffold a new ScreenCI project                                  |
 | `screenci test [args...]`         | Forward directly to `playwright test` using your ScreenCI config |
-| `screenci record [args...]`       | Record videos, usually in a container                            |
+| `screenci record [args...]`       | Record videos with local Playwright                              |
 | `screenci retry`                  | Upload the newest local recording in `.screenci/`                |
 | `screenci info`                   | Print remote project info as JSON                                |
 | `screenci make-public <videoId>`  | Enable public URLs for a video                                   |
@@ -23,7 +23,7 @@ Most commands look for `screenci.config.ts` in the current directory. Use `--con
 
 ## `screenci init [name]`
 
-Creates a new `screenci/` directory with a starter config, example video, Dockerfile, and optional workflow file. The optional GitHub Actions workflow is written at `.github/workflows/screenci.yaml` in the current directory. `init` does not authenticate. If `SCREENCI_SECRET` is missing, `screenci record` will open a browser window and complete the login flow before recording starts.
+Creates a new `screenci/` directory with a starter config, example video, and optional workflow file. The optional GitHub Actions workflow is written at `.github/workflows/screenci.yaml` in the current directory. `init` does not authenticate. If `SCREENCI_SECRET` is missing, `screenci record` will open a browser window and complete the login flow before recording starts.
 
 ```bash
 npx screenci@latest init
@@ -57,7 +57,7 @@ Use this when you want normal Playwright execution without recording.
 
 ## `screenci record [playwrightArgs...]`
 
-Records videos with ScreenCI. On the host this pulls and uses `ghcr.io/screenci/record:latest`, then uploads results if `SCREENCI_SECRET` is set. If the secret is missing, `record` prompts for login before the recording begins.
+Records videos with ScreenCI by running local Playwright with `SCREENCI_RECORDING=true`, then uploads results if `SCREENCI_SECRET` is set. If the secret is missing, `record` prompts for login before recording begins.
 
 ```bash
 npx screenci record
@@ -67,9 +67,7 @@ npx screenci record --project=chromium
 Options:
 
 - `-c, --config <path>` use a custom config path
-- `--podman` force Podman
-- `--docker` force Docker
-- `-v, --verbose` show full container runtime output
+- `-v, --verbose` show full command output during local development setup
 
 Restrictions:
 

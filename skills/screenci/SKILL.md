@@ -64,7 +64,7 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 
 ## Command Notes
 
-- `screenci record` runs the recording flow in Podman or Docker.
+- `screenci record` runs the recording flow with local Playwright.
 - `screenci test --ui` runs Playwright in UI mode for fast iteration without screen capture.
 - `screenci retry` uploads the latest `.screenci` output when API configuration is available.
 

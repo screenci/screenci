@@ -21,7 +21,7 @@ npx screenci record -c screenci.config.ts
 
 ## Runtime Behavior
 
-- By default, recording runs in Podman or Docker.
+- Recording runs with local Playwright.
 - Playwright arguments can be passed through after the command.
 - When API configuration and `SCREENCI_SECRET` are available, uploads may run after recording.
 

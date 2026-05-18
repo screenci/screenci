@@ -1,4 +1,4 @@
-import type { ReporterDescription, Project } from '@playwright/test'
+import type { ReporterDescription } from '@playwright/test'
 import type { ScreenCIConfig, ExtendedScreenCIConfig } from './types.js'
 import {
   DEFAULT_VIDEO_DIR,
@@ -22,62 +22,6 @@ const reporterPath = existsSync(reporterPathJs)
   : reporterPathTs
 
 type ReporterConfig = string | ReporterDescription
-
-function rewriteLoopbackBaseUrl(
-  baseURL: string | undefined
-): string | undefined {
-  if (
-    process.env.SCREENCI_IN_CONTAINER !== 'true' ||
-    typeof baseURL !== 'string'
-  ) {
-    return baseURL
-  }
-
-  let parsedUrl: URL
-  try {
-    parsedUrl = new URL(baseURL)
-  } catch {
-    return baseURL
-  }
-
-  if (
-    parsedUrl.hostname !== 'localhost' &&
-    parsedUrl.hostname !== '127.0.0.1'
-  ) {
-    return baseURL
-  }
-
-  parsedUrl.hostname =
-    process.env.SCREENCI_CONTAINER_BASE_HOST ?? 'host.containers.internal'
-
-  return parsedUrl.toString()
-}
-
-function rewriteUseBaseUrl<T extends object>(
-  use: T | undefined
-): T | undefined {
-  if (!use) return use
-
-  const currentBaseURL = (use as { baseURL?: unknown }).baseURL
-  if (typeof currentBaseURL !== 'string') {
-    return use
-  }
-
-  const rewrittenBaseURL = rewriteLoopbackBaseUrl(currentBaseURL)
-  if (rewrittenBaseURL === currentBaseURL) {
-    return use
-  }
-
-  return {
-    ...use,
-    baseURL: rewrittenBaseURL,
-  } as T
-}
-
-function rewriteProjectBaseUrl(project: Project): Project {
-  const rewrittenUse = rewriteUseBaseUrl(project.use)
-  return rewrittenUse ? { ...project, use: rewrittenUse } : project
-}
 
 /**
  * Defines a screenci configuration file.
@@ -231,23 +175,32 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
   }
 
   const { videoDir, ...rest } = config
-  const normalizedUse = rewriteUseBaseUrl(rest.use)
-  const normalizedProjects = rest.projects?.map(rewriteProjectBaseUrl)
+  const isRecording = process.env.SCREENCI_RECORDING === 'true'
+  const trace = isRecording ? 'off' : (rest.use?.trace ?? DEFAULT_TRACE)
+  const projects = isRecording
+    ? rest.projects?.map((project) => ({
+        ...project,
+        use: {
+          ...project.use,
+          trace,
+        },
+      }))
+    : rest.projects
 
   // Force sequential execution with single worker and no retries, map videoDir to testDir
   return {
     testDir: videoDir ?? DEFAULT_VIDEO_DIR,
     testMatch: '**/*.video.?(c|m)[jt]s?(x)',
     ...rest,
-    ...(normalizedProjects ? { projects: normalizedProjects } : {}),
     reporter: reporters as ReporterDescription[],
     use: {
-      ...normalizedUse,
-      trace: normalizedUse?.trace ?? DEFAULT_TRACE,
-      actionTimeout: normalizedUse?.actionTimeout ?? DEFAULT_ACTION_TIMEOUT,
+      ...rest.use,
+      trace,
+      actionTimeout: rest.use?.actionTimeout ?? DEFAULT_ACTION_TIMEOUT,
       navigationTimeout:
-        normalizedUse?.navigationTimeout ?? DEFAULT_NAVIGATION_TIMEOUT,
+        rest.use?.navigationTimeout ?? DEFAULT_NAVIGATION_TIMEOUT,
     },
+    ...(projects ? { projects } : {}),
     timeout: rest.timeout ?? DEFAULT_TIMEOUT,
     fullyParallel: false,
     workers: 1,

@@ -7,7 +7,6 @@ import type { VoiceKey } from './src/voices.js'
 import type { RecordingData } from './src/recording.js'
 
 const mockSpawn = vi.fn()
-const mockSpawnSync = vi.fn()
 const mockExec = vi.fn()
 const mockExistsSync = vi.fn()
 const mockRealpathSync = vi.fn((path: string) => path)
@@ -37,12 +36,10 @@ const mockOra = vi.fn().mockReturnValue(mockSpinner)
 
 vi.mock('child_process', () => ({
   spawn: mockSpawn,
-  spawnSync: mockSpawnSync,
   exec: mockExec,
   createReadStream: mockCreateReadStream,
   default: {
     spawn: mockSpawn,
-    spawnSync: mockSpawnSync,
     exec: mockExec,
     createReadStream: mockCreateReadStream,
   },
@@ -119,8 +116,6 @@ describe('CLI', () => {
       }
       return ''
     })
-    // Default: podman is available (overridden per-test as needed)
-    mockSpawnSync.mockReturnValue({ status: 0, error: undefined })
     // Default inquirer responses
     mockInput.mockImplementation(
       async (options?: { default?: string }) => options?.default ?? ''
@@ -190,758 +185,37 @@ describe('CLI', () => {
     processExitSpy?.mockRestore()
   })
 
-  describe('record command (inside container)', () => {
-    it('should build and run container for record command', async () => {
-      expect(true).toBe(true)
-    })
-  })
-
-  describe('container workflow', () => {
-    let mockRunProcess: EventEmitter
-
+  describe('record command', () => {
     beforeEach(() => {
-      // SCREENCI_IN_CONTAINER must NOT be set for container workflow to trigger
-      delete process.env.SCREENCI_IN_CONTAINER
       process.env.SCREENCI_SECRET = 'test-secret'
-
-      // Default: podman is available
-      mockSpawnSync.mockReturnValue({ status: 0, error: undefined })
-
-      mockRunProcess = new EventEmitter()
-      mockSpawn.mockReturnValueOnce(mockRunProcess as unknown as ChildProcess)
     })
 
-    async function driveContainerSpawns(exitCode = 0) {
-      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(1))
-      mockRunProcess.emit('close', exitCode)
-    }
-
-    it('should build and run container for record command', async () => {
-      expect(true).toBe(true)
-    })
-
-    it('should trigger auth when record starts without SCREENCI_SECRET', async () => {
+    it('should run Playwright locally for record command', async () => {
       process.argv = ['node', 'cli.js', 'record']
-      delete process.env.SCREENCI_SECRET
-
-      mockSpawn.mockReset()
-      const authOpenProcess = {
-        unref: vi.fn(),
-      } as unknown as ChildProcess
-      const runProcess = new EventEmitter()
-      const containerProcesses = [runProcess]
-
-      mockSpawn.mockImplementation((command: string) => {
-        if (command === 'xdg-open') {
-          return authOpenProcess
-        }
-
-        if (command === 'podman') {
-          const nextProcess = containerProcesses.shift()
-          if (!nextProcess) {
-            throw new Error('Unexpected extra podman spawn')
-          }
-          return nextProcess as unknown as ChildProcess
-        }
-
-        throw new Error(`Unexpected spawn command: ${command}`)
-      })
-      mockCreateHttpServer.mockImplementation(
-        (handler: (req: unknown, res: unknown) => void) => {
-          const server = {
-            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
-              expect(
-                mockSpawn.mock.calls.some(([command]) => command === 'podman')
-              ).toBe(false)
-              cb()
-              const req = { url: '/callback?secret=auth-secret-123' }
-              const res = {
-                writeHead: vi.fn(),
-                end: vi.fn(),
-              }
-              handler(req, res)
-            }),
-            close: vi.fn(),
-            address: vi.fn().mockReturnValue({ port: 12345 }),
-            on: vi.fn(),
-          }
-          return server
-        }
-      )
-
-      const { main } = await import('./cli')
-      const mainPromise = main()
-
-      await vi.waitFor(() =>
-        expect(mockSpawn).toHaveBeenCalledWith(
-          'xdg-open',
-          [expect.stringContaining('/cli-auth?callback=')],
-          expect.objectContaining({ detached: true, stdio: 'ignore' })
-        )
-      )
-      await vi.waitFor(() =>
-        expect(
-          mockSpawn.mock.calls.filter(([command]) => command === 'podman')
-        ).toHaveLength(1)
-      )
-      runProcess.emit('close', 0)
-
-      await mainPromise
-
-      expect(mockCreateHttpServer).toHaveBeenCalledTimes(1)
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('.env'),
-        'SCREENCI_SECRET=auth-secret-123\n'
-      )
-    })
-
-    it('should not trigger auth when test starts without SCREENCI_SECRET', async () => {
-      process.env.SCREENCI_IN_CONTAINER = 'true'
-      process.argv = ['node', 'cli.js', 'test']
-      delete process.env.SCREENCI_SECRET
-
-      mockSpawn.mockReset()
-      mockSpawn.mockImplementation(() => {
-        process.nextTick(() => mockChildProcess.emit('close', 0))
-        return mockChildProcess as unknown as ChildProcess
-      })
-      mockReadFile.mockResolvedValue(
-        JSON.stringify({
-          name: 'project',
-          dependencies: { screenci: 'latest' },
-        })
-      )
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockCreateHttpServer).not.toHaveBeenCalled()
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npx',
-        expect.arrayContaining(['playwright', 'test']),
-        expect.objectContaining({ stdio: 'inherit' })
-      )
-    })
-
-    it('should show a record hint after a successful local test run', async () => {
-      delete process.env.SCREENCI_IN_CONTAINER
-      process.argv = ['node', 'cli.js', 'test']
-
-      mockSpawn.mockReset()
-      mockSpawn.mockImplementation(() => {
-        process.nextTick(() => mockChildProcess.emit('close', 0))
-        return mockChildProcess as unknown as ChildProcess
-      })
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        `Tests passed. Run ${pc.cyan('npx screenci record')} to render the videos.`
-      )
-      expect(mockConfirm).not.toHaveBeenCalled()
-      expect(mockSpawn).toHaveBeenCalledTimes(1)
-    })
-
-    it('should install local screenci before tests when run through source cli', async () => {
-      delete process.env.SCREENCI_IN_CONTAINER
-      const sourceCliPath = `${process.cwd()}/cli.ts`
-      process.argv = ['node', sourceCliPath, 'test']
-
-      mockSpawn.mockReset()
-      mockSpawn.mockImplementation(() => {
-        process.nextTick(() => mockChildProcess.emit('close', 0))
-        return mockChildProcess as unknown as ChildProcess
-      })
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npm',
-        ['run', 'build'],
-        expect.objectContaining({ cwd: process.cwd(), stdio: 'inherit' })
-      )
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npm',
-        ['install', '--install-links'],
-        expect.objectContaining({ cwd: process.cwd(), stdio: 'inherit' })
-      )
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npx',
-        expect.arrayContaining(['playwright', 'test']),
-        expect.objectContaining({ stdio: 'inherit' })
-      )
-    })
-
-    it('should not show the record hint inside the container', async () => {
-      process.env.SCREENCI_IN_CONTAINER = 'true'
-      process.argv = ['node', 'cli.js', 'test']
-
-      mockSpawn.mockReset()
-      mockSpawn.mockImplementation(() => {
-        process.nextTick(() => mockChildProcess.emit('close', 0))
-        return mockChildProcess as unknown as ChildProcess
-      })
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(loggerInfoSpy).not.toHaveBeenCalledWith(
-        `Tests passed. Run ${pc.cyan('npx screenci record')} to render the videos.`
-      )
-    })
-
-    it('should pass CI to the local playwright process when defined', async () => {
-      process.env.CI = 'true'
-      process.argv = ['node', 'cli.js', 'test']
-
-      mockSpawn.mockReset()
       mockSpawn.mockImplementation(
         (
           _command: string,
           _args: string[],
           options?: { env?: NodeJS.ProcessEnv }
         ) => {
-          expect(options?.env?.CI).toBe('true')
+          expect(options?.env?.SCREENCI_RECORDING).toBe('true')
           process.nextTick(() => mockChildProcess.emit('close', 0))
           return mockChildProcess as unknown as ChildProcess
         }
       )
 
       const { main } = await import('./cli')
+
       await main()
 
       expect(mockSpawn).toHaveBeenCalledWith(
-        'npx',
-        expect.arrayContaining(['playwright', 'test']),
+        'playwright',
+        expect.arrayContaining(['test']),
         expect.objectContaining({
-          env: expect.objectContaining({ CI: 'true' }),
+          env: expect.objectContaining({ SCREENCI_RECORDING: 'true' }),
           stdio: 'inherit',
         })
       )
-    })
-
-    it('should mount config, .screenci, and videos volumes', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-
-      const { main } = await import('./cli')
-      const mainPromise = main()
-
-      await driveContainerSpawns()
-
-      await mainPromise
-
-      const runArgs = mockSpawn.mock.calls[0][1] as string[]
-
-      // Find volume mounts
-      const vIndices = runArgs.reduce<number[]>((acc, arg, i) => {
-        if (arg === '-v') acc.push(i)
-        return acc
-      }, [])
-
-      const mounts = vIndices.map((i) => runArgs[i + 1])
-
-      expect(mounts.some((m) => m?.endsWith(':/app/.screenci'))).toBe(true)
-      expect(mounts.some((m) => m?.endsWith(':/app/screenci.config.ts'))).toBe(
-        true
-      )
-      expect(mounts.some((m) => m?.endsWith(':/app/videos'))).toBe(true)
-    })
-
-    it('should pass CI to the container when defined', async () => {
-      process.env.CI = 'true'
-      process.argv = ['node', 'cli.js', 'record']
-
-      const { main } = await import('./cli')
-      const mainPromise = main()
-
-      await driveContainerSpawns()
-
-      await mainPromise
-
-      const runArgs = mockSpawn.mock.calls[0][1] as string[]
-
-      expect(runArgs).toContain('CI=true')
-    })
-
-    it('should pass Podman host alias env to the container', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-
-      const { main } = await import('./cli')
-      const mainPromise = main()
-
-      await driveContainerSpawns()
-
-      await mainPromise
-
-      const runArgs = mockSpawn.mock.calls[0][1] as string[]
-
-      expect(runArgs).toContain(
-        'SCREENCI_CONTAINER_BASE_HOST=host.containers.internal'
-      )
-    })
-
-    it('should not load env file when recording on CI', async () => {
-      process.env.CI = 'true'
-      process.argv = ['node', 'cli.js', 'record']
-      const loadEnvFileSpy = vi
-        .spyOn(process, 'loadEnvFile')
-        .mockImplementation(() => {})
-
-      try {
-        const { main } = await import('./cli')
-        const mainPromise = main()
-
-        await driveContainerSpawns()
-
-        await mainPromise
-
-        expect(loadEnvFileSpy).not.toHaveBeenCalled()
-      } finally {
-        loadEnvFileSpy.mockRestore()
-      }
-    })
-
-    it('should use the latest ScreenCI image by default', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-      mockSpawnSync.mockReturnValueOnce({ status: 0, error: undefined })
-
-      const runProcess = new EventEmitter()
-      mockSpawn.mockReset()
-      mockSpawn.mockReturnValueOnce(runProcess as unknown as ChildProcess)
-
-      const { main } = await import('./cli')
-      const mainPromise = main()
-
-      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(1))
-      expect(mockSpawn).toHaveBeenNthCalledWith(
-        1,
-        'podman',
-        expect.arrayContaining(['run', '--rm']),
-        expect.objectContaining({ stdio: ['inherit', 'pipe', 'pipe'] })
-      )
-      runProcess.emit('close', 0)
-
-      await mainPromise
-    })
-
-    it('should pull the latest ScreenCI image when missing locally', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-      mockSpawnSync
-        .mockReturnValueOnce({ status: 0, error: undefined })
-        .mockReturnValueOnce({ status: 1, error: undefined })
-
-      mockSpawn.mockReset()
-      const pullProcess = new EventEmitter()
-      const runProcess = new EventEmitter()
-      mockSpawn
-        .mockReturnValueOnce(pullProcess as unknown as ChildProcess)
-        .mockReturnValueOnce(runProcess as unknown as ChildProcess)
-
-      const { main } = await import('./cli')
-      const mainPromise = main()
-
-      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(1))
-      expect(mockSpawn).toHaveBeenNthCalledWith(
-        1,
-        'podman',
-        ['pull', 'ghcr.io/screenci/record:latest'],
-        expect.objectContaining({ stdio: 'pipe' })
-      )
-      pullProcess.emit('close', 0)
-
-      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(2))
-      runProcess.emit('close', 0)
-
-      await mainPromise
-    })
-
-    it('should pass additional args to container record command', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--project=chromium']
-
-      const { main } = await import('./cli')
-      const mainPromise = main()
-
-      await driveContainerSpawns()
-
-      await mainPromise
-
-      expect(mockSpawn).toHaveBeenNthCalledWith(
-        1,
-        'podman',
-        expect.arrayContaining([
-          'ghcr.io/screenci/record:latest',
-          'screenci',
-          'record',
-          '--project=chromium',
-        ]),
-        expect.objectContaining({ stdio: ['inherit', 'pipe', 'pipe'] })
-      )
-    })
-
-    it('should use docker when --docker is provided', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--docker']
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        error: undefined,
-        stdout: 'Docker version 28.0.1, build abc123',
-        stderr: '',
-      })
-
-      const { main } = await import('./cli')
-      const mainPromise = main()
-
-      await driveContainerSpawns()
-
-      await mainPromise
-
-      expect(mockSpawnSync).toHaveBeenCalledTimes(2)
-      const runArgs = mockSpawn.mock.calls[0]?.[1] as string[]
-      expect(runArgs).toContain('--add-host')
-      expect(runArgs).toContain('host.docker.internal:host-gateway')
-      expect(runArgs).toContain(
-        'SCREENCI_CONTAINER_BASE_HOST=host.docker.internal'
-      )
-    })
-
-    it('should clear and recreate .screenci directory before running container', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-
-      const { main } = await import('./cli')
-      const mainPromise = main()
-
-      await driveContainerSpawns()
-
-      await mainPromise
-
-      expect(mockMkdirSync).toHaveBeenCalledWith(
-        expect.stringContaining('.screenci'),
-        expect.objectContaining({ recursive: true })
-      )
-      expect(mockReaddirSync).toHaveBeenCalledWith(
-        expect.stringContaining('.screenci')
-      )
-    })
-
-    it('should log when using the latest ScreenCI image by default', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-
-      const { main } = await import('./cli')
-      const mainPromise = main()
-
-      await driveContainerSpawns()
-
-      await mainPromise
-
-      expect(mockOra).not.toHaveBeenCalledWith(
-        expect.stringContaining('Building screenci image')
-      )
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        'Preparing ScreenCI recording container...'
-      )
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        'Using podman with image ghcr.io/screenci/record:latest'
-      )
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        'Starting ScreenCI recording container...'
-      )
-    })
-
-    it('should log while pulling the remote image', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-      mockSpawnSync
-        .mockReturnValueOnce({ status: 0, error: undefined })
-        .mockReturnValueOnce({ status: 1, error: undefined })
-
-      mockSpawn.mockReset()
-      const pullProcess = new EventEmitter()
-      const runProcess = new EventEmitter()
-      mockSpawn
-        .mockReturnValueOnce(pullProcess as unknown as ChildProcess)
-        .mockReturnValueOnce(runProcess as unknown as ChildProcess)
-
-      const { main } = await import('./cli')
-      const mainPromise = main()
-
-      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(1))
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        'Image ghcr.io/screenci/record:latest not found locally, pulling...'
-      )
-      pullProcess.emit('close', 0)
-
-      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(2))
-      runProcess.emit('close', 0)
-
-      await mainPromise
-    })
-
-    it('should support --config flag', async () => {
-      process.argv = [
-        'node',
-        'cli.js',
-        'record',
-        '--config',
-        'custom.config.ts',
-      ]
-
-      const { main } = await import('./cli')
-      const mainPromise = main()
-
-      await driveContainerSpawns()
-
-      await mainPromise
-
-      // Custom config should be mounted into the container
-      const runArgs = mockSpawn.mock.calls[0][1] as string[]
-      expect(
-        runArgs.some(
-          (arg) =>
-            typeof arg === 'string' &&
-            arg.includes('custom.config.ts') &&
-            arg.endsWith(':/app/screenci.config.ts')
-        )
-      ).toBe(true)
-    })
-
-    it('should reject when pulling the remote image fails', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-      mockSpawnSync
-        .mockReturnValueOnce({ status: 0, error: undefined })
-        .mockReturnValueOnce({ status: 1, error: undefined })
-
-      mockSpawn.mockReset()
-      const pullProcess = new EventEmitter()
-      mockSpawn.mockReturnValueOnce(pullProcess as unknown as ChildProcess)
-
-      const { main } = await import('./cli')
-      const mainPromise = main()
-
-      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(1))
-      pullProcess.emit('close', 1)
-
-      await expect(mainPromise).rejects.toThrow('podman exited with code 1')
-    })
-
-    it('should reject when podman run fails', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-
-      const { main } = await import('./cli')
-      const mainPromise = main()
-
-      await driveContainerSpawns(1)
-
-      await expect(mainPromise).rejects.toThrow('podman exited with code 1')
-    })
-
-    it('should exit if config not found in container mode', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-
-      await expect(main()).rejects.toThrow('process.exit called')
-
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Error: screenci.config.ts not found in current directory'
-      )
-      expect(processExitSpy).toHaveBeenCalledWith(1)
-    })
-
-    it('should exit if repo root not found', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-      mockExistsSync.mockImplementation((path: unknown) => {
-        if (typeof path === 'string' && path.endsWith('.git')) return false
-        if (typeof path === 'string' && path.endsWith('pnpm-workspace.yaml'))
-          return false
-        if (typeof path === 'string' && path.endsWith('package-lock.json'))
-          return false
-        if (typeof path === 'string' && path.endsWith('yarn.lock')) return false
-        return true
-      })
-
-      const { main } = await import('./cli')
-
-      await expect(main()).rejects.toThrow('process.exit called')
-
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Could not find repository root')
-      )
-      expect(processExitSpy).toHaveBeenCalledWith(1)
-    })
-  })
-
-  describe('detectContainerRuntime', () => {
-    it('should return podman when available', async () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        error: undefined,
-        stdout: 'podman version 5.2.0',
-        stderr: '',
-      })
-
-      const { detectContainerRuntime } = await import('./cli')
-
-      expect(detectContainerRuntime()).toBe('podman')
-      expect(mockSpawnSync).toHaveBeenCalledWith('podman', ['--version'], {
-        encoding: 'utf8',
-      })
-    })
-
-    it('should return docker when podman is not available', async () => {
-      mockSpawnSync
-        .mockReturnValueOnce({ status: 1, error: undefined }) // podman fails
-        .mockReturnValueOnce({
-          status: 0,
-          error: undefined,
-          stdout: 'Docker version 28.0.1, build abc123',
-          stderr: '',
-        }) // docker succeeds
-
-      const { detectContainerRuntime } = await import('./cli')
-
-      expect(detectContainerRuntime()).toBe('docker')
-    })
-
-    it('should prefer podman over docker when both are available', async () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        error: undefined,
-        stdout: 'podman version 5.2.0',
-        stderr: '',
-      })
-
-      const { detectContainerRuntime } = await import('./cli')
-
-      expect(detectContainerRuntime()).toBe('podman')
-      expect(mockSpawnSync).toHaveBeenCalledTimes(1)
-    })
-
-    it('should exit when neither podman nor docker is available', async () => {
-      mockSpawnSync.mockReturnValue({ status: 1, error: undefined })
-
-      const { detectContainerRuntime } = await import('./cli')
-
-      expect(() => detectContainerRuntime()).toThrow('process.exit called')
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Neither podman nor docker found')
-      )
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'https://screenci.com/docs/guides/getting-started/#prerequisites'
-        )
-      )
-      expect(processExitSpy).toHaveBeenCalledWith(1)
-    })
-
-    it('should exit when runtime returns an error', async () => {
-      mockSpawnSync.mockReturnValue({
-        status: null,
-        error: new Error('ENOENT'),
-      })
-
-      const { detectContainerRuntime } = await import('./cli')
-
-      expect(() => detectContainerRuntime()).toThrow('process.exit called')
-      expect(processExitSpy).toHaveBeenCalledWith(1)
-    })
-
-    it('should warn when preferred podman version is below the major limit', async () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        error: undefined,
-        stdout: 'podman version 2.9.9',
-        stderr: '',
-      })
-
-      const { detectContainerRuntime } = await import('./cli')
-
-      expect(detectContainerRuntime()).toBe('podman')
-      expect(loggerWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'Your podman version (podman version 2.9.9) is quite old'
-        )
-      )
-      expect(loggerWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'https://screenci.com/docs/guides/getting-started/#prerequisites'
-        )
-      )
-    })
-
-    it('should not warn when podman is version 3.4.4', async () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        error: undefined,
-        stdout: 'podman version 3.4.4',
-        stderr: '',
-      })
-
-      const { detectContainerRuntime } = await import('./cli')
-
-      expect(detectContainerRuntime()).toBe('podman')
-      expect(loggerWarnSpy).not.toHaveBeenCalled()
-    })
-
-    it('should not warn about docker when podman is available and up to date', async () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        error: undefined,
-        stdout: 'podman version 5.2.0',
-        stderr: '',
-      })
-
-      const { detectContainerRuntime } = await import('./cli')
-
-      expect(detectContainerRuntime()).toBe('podman')
-      expect(loggerWarnSpy).not.toHaveBeenCalled()
-      expect(mockSpawnSync).toHaveBeenCalled()
-    })
-
-    it('should not warn when docker is version 27.5.1', async () => {
-      mockSpawnSync
-        .mockReturnValueOnce({ status: 1, error: undefined })
-        .mockReturnValueOnce({
-          status: 0,
-          error: undefined,
-          stdout: 'Docker version 27.5.1, build abc123',
-          stderr: '',
-        })
-
-      const { detectContainerRuntime } = await import('./cli')
-
-      expect(detectContainerRuntime()).toBe('docker')
-      expect(loggerWarnSpy).not.toHaveBeenCalled()
-      expect(mockSpawnSync).toHaveBeenCalledTimes(2)
-    })
-
-    it('should return forced docker when docker is available', async () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        error: undefined,
-        stdout: 'Docker version 28.0.1, build abc123',
-        stderr: '',
-      })
-
-      const { detectContainerRuntime } = await import('./cli')
-
-      expect(detectContainerRuntime('docker')).toBe('docker')
-      expect(mockSpawnSync).toHaveBeenCalledTimes(1)
-      expect(mockSpawnSync).toHaveBeenCalledWith('docker', ['--version'], {
-        encoding: 'utf8',
-      })
-    })
-
-    it('should exit when forced podman is unavailable', async () => {
-      mockSpawnSync.mockReturnValue({ status: 1, error: undefined })
-
-      const { detectContainerRuntime } = await import('./cli')
-
-      expect(() => detectContainerRuntime('podman')).toThrow(
-        'process.exit called'
-      )
-      expect(loggerErrorSpy).toHaveBeenCalledWith('Error: podman not found.')
-      expect(processExitSpy).toHaveBeenCalledWith(1)
     })
   })
 
@@ -1038,7 +312,7 @@ describe('CLI', () => {
     })
 
     it('should exit if default config not found', async () => {
-      process.env.SCREENCI_IN_CONTAINER = 'true'
+      process.env.SCREENCI_RECORDING = 'true'
       process.argv = ['node', 'cli.js', 'record']
       mockExistsSync.mockReturnValue(false)
 
@@ -1053,7 +327,7 @@ describe('CLI', () => {
     })
 
     it('should exit if custom config not found', async () => {
-      process.env.SCREENCI_IN_CONTAINER = 'true'
+      process.env.SCREENCI_RECORDING = 'true'
       process.argv = [
         'node',
         'cli.js',
@@ -1097,19 +371,6 @@ describe('CLI', () => {
 
       expect(loggerErrorSpy).toHaveBeenCalledWith(
         'Error: --config requires a path argument'
-      )
-      expect(processExitSpy).toHaveBeenCalledWith(1)
-    })
-
-    it('should exit if both --podman and --docker are provided', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--podman', '--docker']
-
-      const { main } = await import('./cli')
-
-      await expect(main()).rejects.toThrow('process.exit called')
-
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Error: --podman and --docker cannot be used together'
       )
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })
@@ -1463,10 +724,6 @@ describe('CLI', () => {
         expect.stringContaining('https://screenci.com/docs/intro/')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining(`screenci/Dockerfile`),
-        expect.stringContaining('FROM ghcr.io/screenci/record:latest')
-      )
-      expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining(`screenci/.gitignore`),
         expect.stringContaining('node_modules/')
       )
@@ -1586,9 +843,6 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain('npm run record')
       expect(workflowCall?.[1]).not.toContain('--tag')
       expect(workflowCall?.[1]).not.toContain('--make')
-      expect(workflowCall?.[1]).not.toContain('SCREENCI_LOCAL_IMAGE')
-      expect(workflowCall?.[1]).not.toContain('docker build')
-      expect(workflowCall?.[1]).not.toContain('docker run')
       expect(workflowCall?.[1]).toContain(
         'Copy it from https://app.screenci.com/secrets and add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action.'
       )
@@ -2037,34 +1291,6 @@ describe('CLI', () => {
       )
     })
 
-    it('should warn during init when neither podman nor docker is installed', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      mockSpawnSync
-        .mockReturnValueOnce({ status: 1, error: undefined })
-        .mockReturnValueOnce({ status: 1, error: undefined })
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(loggerWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Neither podman nor docker found')
-      )
-      expect(loggerWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'https://screenci.com/docs/guides/getting-started/#prerequisites'
-        )
-      )
-    })
-
-    it('should warn during init when podman is present but below version 3', async () => {
-      expect(true).toBe(true)
-    })
-
-    it('should not warn during init when podman is available and supported', async () => {
-      expect(true).toBe(true)
-    })
-
     it('should run npm install automatically', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
@@ -2420,6 +1646,10 @@ describe('CLI', () => {
   })
 
   describe('disallowed flags validation', () => {
+    beforeEach(() => {
+      process.env.SCREENCI_SECRET = 'test-secret'
+    })
+
     it('should throw error when --fully-parallel is provided', async () => {
       process.argv = ['node', 'cli.js', 'record', '--fully-parallel']
 
@@ -2505,7 +1735,7 @@ describe('CLI', () => {
       await expect(main()).rejects.toThrow('is not supported by screenci')
     })
 
-    it('should allow other valid flags to pass through (inside container)', async () => {
+    it('should allow other valid flags to pass through', async () => {
       expect(true).toBe(true)
     })
   })

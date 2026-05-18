@@ -19,7 +19,6 @@ screenci/
   screenci.config.ts
   videos/
     example.video.ts
-  Dockerfile
   package.json
   .gitignore
 .github/workflows/screenci.yaml (optional)
@@ -28,7 +27,7 @@ screenci/
 ## Requirements
 
 - Node.js 20+ recommended
-- Podman 5+ recommended, or Docker 28+
+- Node.js 20+ recommended
 
 ## Notes
 
@@ -36,7 +35,7 @@ screenci/
 - The name is used as the ScreenCI project display name. Files are always created in `screenci/`.
 - `--verbose` shows more setup output.
 - After scaffolding, run `npm install`.
-- The image is fetched on demand when you run `record` or `test`.
+- `record` uses local Playwright.
 
 ## Typical Flow
 

@@ -30,7 +30,6 @@ screenci/
   screenci.config.ts     ← recording settings
   videos/
     example.video.ts     ← starter script
-  Dockerfile             ← for CI recording in a container
   .gitignore
   package.json
 ```
@@ -60,7 +59,7 @@ That's Playwright. screenci extends it — it does not replace it.
 npx screenci test --ui
 ```
 
-Opens the Playwright UI. Run your scripts, verify they work, fix selectors — no screen capture, no container, no FFmpeg. Just normal Playwright test execution.
+Opens the Playwright UI. Run your scripts, verify they work, fix selectors — no screen capture and no MP4 encoding. Just normal Playwright test execution.
 
 ### 5. Record
 
@@ -69,7 +68,7 @@ cd screenci && npm run record
 # or: npx screenci record
 ```
 
-Launches a headless browser in a virtual display, runs FFmpeg to capture the screen, and saves:
+Launches local Chromium through Playwright, records through `playwright-recorder-plus`, encodes an MP4 with `ffmpeg-static`, and saves:
 
 ```
 .screenci/

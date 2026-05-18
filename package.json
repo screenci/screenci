@@ -15,7 +15,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "screenci": "./dist/cli.js"
+    "screenci": "./bin/screenci.js"
   },
   "exports": {
     ".": {
@@ -35,13 +35,12 @@
     }
   },
   "files": [
+    "bin",
     "dist",
     "skills"
   ],
   "scripts": {
     "build": "tsc",
-    "postbuild": "cp Dockerfile dist/ && node -e \"const fs=require('fs'); const path='dist/cli.js'; const lines=fs.readFileSync(path,'utf8').split('\\n'); lines[0] = '#!/usr/bin/env node'; fs.writeFileSync(path, lines.join('\\n'));\"",
-    "build:image": "podman build -t screenci .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
@@ -56,7 +55,7 @@
     "release": "npm run test:run && bash scripts/update-version.sh"
   },
   "devDependencies": {
-    "@playwright/test": "^1.57.0",
+    "@playwright/test": "^1.59.1",
     "@types/node": "25.0.3",
     "eslint": "^9.39.2",
     "eslint-plugin-unused-imports": "^4.3.0",
@@ -69,12 +68,13 @@
     "vitest": "~4.0.16"
   },
   "peerDependencies": {
-    "@playwright/test": ">=1.57.0"
+    "@playwright/test": ">=1.59.0"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.3.2",
     "commander": "^14.0.3",
     "ora": "^9.3.0",
-    "picocolors": "^1.1.1"
+    "picocolors": "^1.1.1",
+    "playwright-recorder-plus": "^0.1.3"
   }
 }

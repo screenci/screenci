@@ -10,7 +10,8 @@ import type {
 } from '@playwright/test'
 import { mkdir, rm } from 'fs/promises'
 import { join } from 'path'
-import { spawn, type ChildProcess } from 'child_process'
+import { attachRecorder } from 'playwright-recorder-plus'
+import type { Recorder } from 'playwright-recorder-plus'
 import { sanitizeVideoName } from './sanitize.js'
 import type {
   AspectRatio,
@@ -23,7 +24,6 @@ import type {
 import type { Page } from '@playwright/test'
 export { getDimensions } from './dimensions.js'
 import { getDimensions, getViewportCenter } from './dimensions.js'
-import { isHeadless, startXvfb, type XvfbInstance } from './xvfb.js'
 import {
   setActiveCueRecorder,
   resetCueChain,
@@ -49,7 +49,6 @@ import {
 } from './instrument.js'
 import { logger } from './logger.js'
 import { getChromiumLaunchOptions } from './browserLaunchOptions.js'
-import { createRecordingChromiumProfile } from './chromiumProfile.js'
 
 export const POST_VIDEO_PAUSE = 500
 
@@ -92,14 +91,6 @@ async function setupMouseTracking(
 }
 
 /**
- * Get the path to the system ffmpeg binary
- */
-function getSystemFfmpegPath(): string {
-  // Use system ffmpeg from standard locations
-  return '/usr/bin/ffmpeg'
-}
-
-/**
  * Get CRF value (encoding quality) for a given quality preset.
  *
  * Higher resolution presets use a lower CRF (better quality) because the
@@ -122,232 +113,51 @@ function getCrfForQuality(quality: Quality): number {
   }
 }
 
-/**
- * Start ffmpeg screen recording
- */
-function startScreenRecording(
+async function startScreencastRecording(
+  page: Page,
   outputPath: string,
   fps: FPS,
   quality: Quality,
   aspectRatio: AspectRatio
-): { process: ChildProcess; started: Promise<boolean> } {
+): Promise<Recorder> {
   const { width, height } = getDimensions(aspectRatio, quality)
   const crf = getCrfForQuality(quality)
-  const display = process.env.DISPLAY || ':0'
 
-  const ffmpegArgs = [
-    '-f',
-    'x11grab',
-    '-draw_mouse',
-    '0',
-    '-video_size',
-    `${width}x${height}`,
-    '-framerate',
-    `${fps}`,
-    '-i',
-    `${display}+0,0`,
-    '-c:v',
-    'libx264',
-    '-tune',
-    'zerolatency',
-    '-preset',
-    'fast',
-    '-crf',
-    `${crf}`,
-    '-pix_fmt',
-    'yuv444p',
-    '-movflags',
-    'frag_keyframe+empty_moov',
-    '-y',
-    outputPath,
-  ]
-
-  const ffmpegPath = getSystemFfmpegPath()
-  const ffmpeg = spawn(ffmpegPath, ffmpegArgs)
-
-  activeFFmpegProcesses.add(ffmpeg)
-  ffmpeg.on('close', () => activeFFmpegProcesses.delete(ffmpeg))
-
-  let hasStarted = false
-  let hasErrored = false
-
-  const startedPromise = new Promise<boolean>((resolve) => {
-    const timeout = setTimeout(() => {
-      if (!hasStarted && !hasErrored) {
-        hasStarted = true
-        resolve(true)
-      }
-    }, 1000)
-
-    ffmpeg.stderr.on('data', (data) => {
-      const output = data.toString()
-
-      // ffmpeg outputs info to stderr, check for actual errors
-      if (output.includes('frame=') || output.includes('fps=')) {
-        if (!hasStarted) {
-          hasStarted = true
-          clearTimeout(timeout)
-          resolve(true)
-        }
-      } else if (
-        output.includes('error') ||
-        output.includes('Error') ||
-        output.includes('Invalid')
-      ) {
-        if (!hasErrored) {
-          hasErrored = true
-          clearTimeout(timeout)
-          logger.error('FFmpeg error:', output)
-          resolve(false)
-        }
-      }
-    })
-
-    ffmpeg.on('error', (err) => {
-      if (!hasErrored) {
-        hasErrored = true
-        clearTimeout(timeout)
-        logger.error('Failed to start FFmpeg:', err)
-        resolve(false)
-      }
-    })
-
-    ffmpeg.on('close', (code) => {
-      clearTimeout(timeout)
-      if (code !== null && code !== 0 && code !== 255 && !hasErrored) {
-        logger.error(`FFmpeg exited with code ${code}`)
-      }
-    })
+  const recorder = await attachRecorder(page, {
+    path: outputPath,
+    autoStart: false,
+    //3840×2160
+    size: { width: 3840, height: 2160 },
+    fps,
+    jpegQuality: 100,
+    ffmpegArgs: [
+      '-c:v',
+      'libx264',
+      '-preset',
+      'fast',
+      '-crf',
+      `${crf}`,
+      '-pix_fmt',
+      'yuv444p',
+      '-movflags',
+      'frag_keyframe+empty_moov',
+    ],
   })
 
-  return { process: ffmpeg, started: startedPromise }
-}
-
-/**
- * Stop ffmpeg recording gracefully.
- *
- * SIGTERM tells ffmpeg to flush buffers and write the moov atom before exiting.
- * SIGKILL is a last resort after timeoutMs and will leave the file corrupt.
- */
-async function stopScreenRecording(
-  ffmpegProcess: ChildProcess,
-  timeoutMs = 10000
-): Promise<void> {
-  // Already exited (e.g. display closed under it) — nothing to signal
-  if (ffmpegProcess.exitCode !== null || ffmpegProcess.killed) {
-    return
-  }
-
-  return new Promise((resolve) => {
-    const sigkillTimer = setTimeout(() => {
-      logger.warn(
-        'FFmpeg did not stop gracefully, forcing SIGKILL (file may be corrupt)'
-      )
-      ffmpegProcess.kill('SIGKILL')
-      resolve()
-    }, timeoutMs)
-
-    ffmpegProcess.on('close', () => {
-      clearTimeout(sigkillTimer)
-      resolve()
-    })
-
-    ffmpegProcess.kill('SIGTERM')
-  })
+  return recorder
 }
 
 type VideoFixtureOptions = {
   recordOptions: RecordOptions
   renderOptions: RenderOptions | undefined
-  _xvfbSetup: void
 }
-
-// Internal state for xvfb management (not exposed to users)
-let currentXvfb: XvfbInstance | null = null
-let originalDisplay: string | undefined
-
-// Track active ffmpeg processes so they can be killed if the process is
-// interrupted before the fixture teardown has a chance to stop them.
-const activeFFmpegProcesses = new Set<ChildProcess>()
-
-function killActiveFFmpegProcesses(): void {
-  for (const proc of activeFFmpegProcesses) {
-    try {
-      proc.kill('SIGTERM')
-    } catch {}
-  }
-  activeFFmpegProcesses.clear()
-}
-
-// Clean up Xvfb and any active ffmpeg processes when the worker process exits
-// so lock/socket files don't persist and block the next run.
-process.on('exit', () => {
-  killActiveFFmpegProcesses()
-  if (currentXvfb) {
-    try {
-      currentXvfb.process.kill('SIGTERM')
-    } catch {}
-  }
-})
-
-// Forward SIGTERM/SIGINT: clean up recorder processes, then re-raise the
-// original signal so parent processes treat the worker as interrupted.
-const handleTermSignal = (signal: NodeJS.Signals) => {
-  killActiveFFmpegProcesses()
-  if (currentXvfb) {
-    try {
-      currentXvfb.process.kill('SIGTERM')
-    } catch {}
-  }
-  process.off('SIGTERM', handleSigterm)
-  process.off('SIGINT', handleSigint)
-  process.kill(process.pid, signal)
-}
-
-const handleSigterm = () => handleTermSignal('SIGTERM')
-const handleSigint = () => handleTermSignal('SIGINT')
-
-process.on('SIGTERM', handleSigterm)
-process.on('SIGINT', handleSigint)
 
 const _videoBase = base.extend<VideoFixtureOptions>({
   recordOptions: [DEFAULT_VIDEO_OPTIONS, { option: true }],
   renderOptions: [undefined, { option: true }],
 
-  // Internal worker fixture to manage xvfb per test
-  _xvfbSetup: [
-    async (
-      { recordOptions: _recordOptions },
-      use: (arg: void) => Promise<void>
-    ) => {
-      const shouldRecord = process.env.SCREENCI_RECORD === 'true'
-
-      if (shouldRecord && !currentXvfb && isHeadless()) {
-        // Start Xvfb once per worker at 3840×3840 — a square large enough to
-        // contain any quality/aspect-ratio combination. Per-test sizing is
-        // handled by the Playwright viewport override and the FFmpeg capture
-        // region. The framebuffer costs ~56 MB of RAM, negligible on any runner.
-        logger.info('Starting Xvfb at 3840×3840')
-        currentXvfb = await startXvfb(3840, 3840)
-        logger.info(`Xvfb started on ${currentXvfb.display}`)
-
-        if (originalDisplay === undefined) {
-          originalDisplay = process.env.DISPLAY
-        }
-        process.env.DISPLAY = currentXvfb.display
-      }
-
-      await use()
-
-      // Xvfb stays alive between tests — cleanup happens on process exit.
-    },
-    { scope: 'test', auto: true },
-  ],
-
   browser: async ({ playwright }, use) => {
-    // Launch browser with kiosk mode when recording for fullscreen capture
-    // Note: _xvfbSetup runs automatically before this due to auto: true
-    const shouldRecord = process.env.SCREENCI_RECORD === 'true'
+    const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
     const launchOptions = getChromiumLaunchOptions(shouldRecord)
 
     const browser = await playwright.chromium.launch(launchOptions)
@@ -358,29 +168,18 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     }
   },
 
-  context: async ({ browser, playwright, recordOptions }, use) => {
+  context: async ({ browser, recordOptions }, use) => {
     // Configure browser context
     const aspectRatio = recordOptions.aspectRatio ?? DEFAULT_ASPECT_RATIO
     const quality = recordOptions.quality ?? DEFAULT_QUALITY
     const dimensions = getDimensions(aspectRatio, quality)
-    const shouldRecord = process.env.SCREENCI_RECORD === 'true'
+    const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
 
     if (shouldRecord) {
-      if (browser.isConnected()) {
-        await browser.close()
-      }
-
-      const profile = await createRecordingChromiumProfile()
-      const launchOptions = getChromiumLaunchOptions(true)
-
-      const context = await playwright.chromium.launchPersistentContext(
-        profile.userDataDir,
-        {
-          ...launchOptions,
-          locale: 'en-US',
-          viewport: dimensions,
-        }
-      )
+      const context = await browser.newContext({
+        locale: 'en-US',
+        viewport: dimensions,
+      })
 
       instrumentContext(context)
 
@@ -388,7 +187,6 @@ const _videoBase = base.extend<VideoFixtureOptions>({
         await use(context)
       } finally {
         await context.close()
-        await profile.cleanup()
       }
 
       return
@@ -407,7 +205,7 @@ const _videoBase = base.extend<VideoFixtureOptions>({
 
   page: async ({ context, recordOptions, renderOptions }, use, testInfo) => {
     // Only record when explicitly enabled (record command)
-    const shouldRecord = process.env.SCREENCI_RECORD === 'true'
+    const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
 
     if (!shouldRecord) {
       // Skip recording, just create page
@@ -476,80 +274,48 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     await validateCustomVoiceRefs(testInfo.file)
     await validateRegisteredAssetPaths(testInfo.file)
 
-    // Hide browser toolbar via CDP fullscreen. --kiosk alone is not reliable on
-    // Xvfb; the CDP call triggers Chromium's internal fullscreen mode which
-    // removes all browser UI chrome. No explicit dims here — those conflict with
-    // windowState and are not needed (FFmpeg captures from +0,0 at test dims).
-    try {
-      const cdpSession = await context.newCDPSession(page)
-      const { windowId } = await cdpSession.send(
-        'Browser.getWindowForTarget',
-        {}
-      )
-      await cdpSession.send('Browser.setWindowBounds', {
-        windowId,
-        bounds: { windowState: 'fullscreen' },
-      })
-      await cdpSession.detach()
-    } catch (cdpError) {
-      logger.warn('CDP fullscreen failed, toolbar may be visible:', cdpError)
-    }
-
-    // Start ffmpeg recording after browser window is ready
-    const { process: ffmpegProcess, started } = startScreenRecording(
+    const screenRecorder = await startScreencastRecording(
+      page,
       videoPath,
       fps,
       quality,
       aspectRatio
     )
 
-    // Wait for ffmpeg to start or fail
-    const didStart = await started
-
-    if (didStart) {
-      const viewportCenter = getViewportCenter(dimensions)
-      await (
-        page.mouse as typeof page.mouse & {
-          _move: (x: number, y: number) => Promise<void>
-        }
-      )._move(viewportCenter.x, viewportCenter.y)
-      // Mark the moment the video recording actually begins after the cursor is positioned.
-      recorder.start()
-    } else {
-      logger.warn(
-        'Screen recording failed to start. Test will continue without recording.'
-      )
-      logger.warn(
-        `Note: Recording at ${dimensions.width}x${dimensions.height} requires a display of at least that size.`
-      )
-    }
-
-    await use(page)
-
-    // Do not end video abruptly.
-    await sleep(POST_VIDEO_PAUSE)
-
-    // Stop ffmpeg BEFORE closing the page to avoid a black frame at the end
-    if (didStart) {
-      logger.info('Stopping recording...')
-      await stopScreenRecording(ffmpegProcess)
-      logger.info(`Video saved to: ${videoPath}`)
-    } else {
-      // Kill the process if it's still running
-      if (!ffmpegProcess.killed) {
-        ffmpegProcess.kill('SIGKILL')
+    const viewportCenter = getViewportCenter(dimensions)
+    await (
+      page.mouse as typeof page.mouse & {
+        _move: (x: number, y: number) => Promise<void>
       }
-    }
+    )._move(viewportCenter.x, viewportCenter.y)
+    await screenRecorder.start()
+    // Mark the moment the video recording actually begins after the cursor is positioned.
+    recorder.start()
 
-    await page.close()
-    setActiveCueRecorder(null)
-    setActiveClickRecorder(null)
-    setActiveHideRecorder(null)
-    setActiveAutoZoomRecorder(null)
-    setActiveAssetRecorder(null)
+    try {
+      await use(page)
 
-    // Write recorded events next to the video
-    if (didStart) {
+      // Do not end video abruptly.
+      await sleep(POST_VIDEO_PAUSE)
+    } finally {
+      logger.info('Stopping recording...')
+      const stopResult = await screenRecorder.stop()
+      await screenRecorder.finalized
+      if (!stopResult.written) {
+        logger.warn(
+          'Screen recording did not write any frames. Test will continue without recording.'
+        )
+      }
+      logger.info(`Video saved to: ${videoPath}`)
+
+      await page.close()
+      setActiveCueRecorder(null)
+      setActiveClickRecorder(null)
+      setActiveHideRecorder(null)
+      setActiveAutoZoomRecorder(null)
+      setActiveAssetRecorder(null)
+
+      // Write recorded events next to the video
       await recorder.writeToFile(videoDir, testInfo.title)
       logger.info(`Events saved to: ${join(videoDir, 'data.json')}`)
     }

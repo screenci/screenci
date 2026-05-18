@@ -399,5 +399,5 @@ npx playwright test --config=screenci.config.ts
 With recording:
 
 ```bash
-SCREENCI_RECORD=true npx playwright test --config=screenci.config.ts
+SCREENCI_RECORDING=true npx playwright test --config=screenci.config.ts
 ```

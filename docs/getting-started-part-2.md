@@ -82,7 +82,7 @@ All of these are composable with normal [Playwright](https://playwright.dev/docs
 npm run test -- --ui
 ```
 
-Opens the Playwright UI. Run your scripts, verify selectors work, iterate fast. No screen capture, no Docker, no FFmpeg. Just Playwright.
+Opens the Playwright UI. Run your scripts, verify selectors work, iterate fast. No screen capture, no MP4 encoding. Just Playwright.
 
 ## Record
 
@@ -90,7 +90,7 @@ Opens the Playwright UI. Run your scripts, verify selectors work, iterate fast. 
 cd screenci && npm run record
 ```
 
-Runs in a container (Docker/podman), starts a virtual display, launches a headless browser, captures the screen with FFmpeg, and saves:
+Runs local Playwright, launches headless Chromium, records through `playwright-recorder-plus`, and saves:
 
 ```
 .screenci/

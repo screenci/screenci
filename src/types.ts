@@ -216,8 +216,8 @@ export type RecordOptions = {
   /**
    * Aspect ratio used when capturing the screen.
    *
-   * Together with `quality` this determines the xvfb display size,
-   * browser viewport, and ffmpeg input dimensions.
+   * Together with `quality` this determines the browser viewport and
+   * ffmpeg input dimensions.
    * See {@link AspectRatio} for all supported ratios and their pixel sizes.
    *
    * @default '16:9'
@@ -227,8 +227,8 @@ export type RecordOptions = {
   /**
    * Resolution quality preset used when capturing the screen.
    *
-   * Together with `aspectRatio` this determines the xvfb display size,
-   * browser viewport, and ffmpeg input dimensions.
+   * Together with `aspectRatio` this determines the browser viewport and
+   * ffmpeg input dimensions.
    * See {@link Quality} for the full dimension table.
    *
    * @default '1080p'

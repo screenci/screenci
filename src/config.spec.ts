@@ -75,6 +75,23 @@ describe('defineConfig', () => {
     expect(config.workers).toBe(1)
     expect(config.retries).toBe(0)
     expect(config.forbidOnly).toBe(true)
+    expect(config.use?.trace).toBe('retain-on-failure')
+  })
+
+  it('should preserve project trace outside recording', () => {
+    const config = defineConfig({
+      projectName: 'Test',
+      projects: [
+        {
+          name: 'chromium',
+          use: {
+            trace: 'on',
+          },
+        },
+      ],
+    })
+
+    expect(config.projects?.[0].use?.trace).toBe('on')
   })
 
   it('should force retries to 0', () => {
@@ -176,12 +193,8 @@ describe('defineConfig', () => {
     expect(config.use?.baseURL).toBe('https://app.example.com')
   })
 
-  it('should rewrite localhost baseURL inside the recording container', () => {
-    const originalContainer = process.env.SCREENCI_IN_CONTAINER
-    const originalBaseHost = process.env.SCREENCI_CONTAINER_BASE_HOST
-
-    process.env.SCREENCI_IN_CONTAINER = 'true'
-    process.env.SCREENCI_CONTAINER_BASE_HOST = 'host.docker.internal'
+  it('should keep localhost baseURL unchanged while recording', () => {
+    process.env.SCREENCI_RECORDING = 'true'
 
     try {
       const config = defineConfig({
@@ -191,49 +204,35 @@ describe('defineConfig', () => {
         },
       })
 
-      expect(config.use?.baseURL).toBe('http://host.docker.internal:4321/')
+      expect(config.use?.baseURL).toBe('http://localhost:4321/')
     } finally {
-      if (originalContainer === undefined) {
-        delete process.env.SCREENCI_IN_CONTAINER
-      } else {
-        process.env.SCREENCI_IN_CONTAINER = originalContainer
-      }
-
-      if (originalBaseHost === undefined) {
-        delete process.env.SCREENCI_CONTAINER_BASE_HOST
-      } else {
-        process.env.SCREENCI_CONTAINER_BASE_HOST = originalBaseHost
-      }
+      delete process.env.SCREENCI_RECORDING
     }
   })
 
-  it('should rewrite localhost baseURL in project use inside the recording container', () => {
-    const originalContainer = process.env.SCREENCI_IN_CONTAINER
-
-    process.env.SCREENCI_IN_CONTAINER = 'true'
+  it('should disable Playwright tracing while recording', () => {
+    process.env.SCREENCI_RECORDING = 'true'
 
     try {
       const config = defineConfig({
         projectName: 'Test',
+        use: {
+          trace: 'retain-on-failure',
+        },
         projects: [
           {
             name: 'chromium',
             use: {
-              baseURL: 'http://127.0.0.1:3000/',
+              trace: 'on',
             },
           },
         ],
       })
 
-      expect(config.projects?.[0]?.use?.baseURL).toBe(
-        'http://host.containers.internal:3000/'
-      )
+      expect(config.use?.trace).toBe('off')
+      expect(config.projects?.[0].use?.trace).toBe('off')
     } finally {
-      if (originalContainer === undefined) {
-        delete process.env.SCREENCI_IN_CONTAINER
-      } else {
-        process.env.SCREENCI_IN_CONTAINER = originalContainer
-      }
+      delete process.env.SCREENCI_RECORDING
     }
   })
 

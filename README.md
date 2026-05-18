@@ -25,7 +25,6 @@ screenci/
   screenci.config.ts     ← video settings
   videos/
     example.video.ts     ← your first video script
-  Dockerfile             ← container image for CI recording
   package.json
   .gitignore
 ```
@@ -104,7 +103,7 @@ export default defineConfig({
 })
 ```
 
-screenci enforces `workers: 1`, `retries: 0`, and `fullyParallel: false` — FFmpeg records one screen at a time. Don't fight it.
+screenci enforces `workers: 1`, `retries: 0`, and `fullyParallel: false` so each generated video has one deterministic timeline. Don't fight it.
 
 ## AI narration
 

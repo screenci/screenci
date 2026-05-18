@@ -9,7 +9,7 @@ describe('getChromiumLaunchOptions', () => {
   it('returns chromium flags that suppress permission prompts when recording', () => {
     const options = getChromiumLaunchOptions(true)
 
-    expect(options?.headless).toBe(false)
+    expect(options?.headless).toBe(true)
     expect(options?.args).toContain('--deny-permission-prompts')
     expect(options?.args).toContain('--disable-notifications')
   })

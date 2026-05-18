@@ -7,36 +7,30 @@ Developer documentation for the `screenci` library.
 Before using screenci you need:
 
 - **Node.js** — check the installed version; Node.js 20+ is recommended, and see the [official Node.js installation guide](https://nodejs.org/en/download) if you need to install it
-- **Podman or Docker** — Podman 5+ or Docker 28+ is recommended; on macOS, install Podman from podman.io or use the community-maintained Homebrew package if you prefer
+- **Playwright browsers** — installed by `npx playwright install chromium --with-deps`
 
 ### macOS
 
 ```bash
 node --version # Node.js 20+ recommended
-podman --version # Podman 5+ recommended
-docker --version # alternatively: use this if Podman is missing; Docker 28+ recommended
+npx playwright install chromium --with-deps
 # Node.js install guide: https://nodejs.org/en/download
-# Podman install guide: https://podman.io/docs/installation#macos
 ```
 
 ### Windows
 
 ```powershell
 node --version # Node.js 20+ recommended
-podman --version # Podman 5+ recommended
-docker --version # alternatively: use this if Podman is missing; Docker 28+ recommended
+npx playwright install chromium
 # Node.js install guide: https://nodejs.org/en/download
-# Podman install guide: https://podman.io/docs/installation#windows
 ```
 
 ### Linux/WSL2
 
 ```bash
 node --version # Node.js 20+ recommended
-podman --version # Podman 5+ recommended
-docker --version # alternatively: use this if Podman is missing; Docker 28+ recommended
+npx playwright install chromium --with-deps
 # Node.js install guide: https://nodejs.org/en/download
-# Podman install guide: https://podman.io/docs/installation#ubuntu
 ```
 
 ## Contents
@@ -54,9 +48,9 @@ docker --version # alternatively: use this if Podman is missing; Docker 28+ reco
 | [Assets](./assets.md)                                 | Image and video overlays with `createAssets`                     |
 | [Public URLs](./public-urls.md)                       | Publish stable public video, thumbnail, and subtitle URLs        |
 | [CLI Commands](./cli.md)                              | Complete command reference for `screenci`                        |
-| [Prerequisites: macOS](./prerequisites-mac.md)        | macOS setup steps for Node.js and Podman                         |
-| [Prerequisites: Windows](./prerequisites-win.md)      | Windows setup steps for Node.js and Podman                       |
-| [Prerequisites: Linux](./prerequisites-linux.md)      | Linux setup steps for Node.js and Podman                         |
+| [Prerequisites: macOS](./prerequisites-mac.md)        | macOS setup steps for Node.js and Playwright                     |
+| [Prerequisites: Windows](./prerequisites-win.md)      | Windows setup steps for Node.js and Playwright                   |
+| [Prerequisites: Linux](./prerequisites-linux.md)      | Linux setup steps for Node.js and Playwright                     |
 | [Configuration](./configuration.md)                   | `defineConfig` options, per-test overrides, defaults             |
 | [Writing Video Tests](./video-tests.md)               | How to use `video()`, `cue()`, multiple tests, auth, etc.        |
 | [API Reference](./api.md)                             | Full reference for all exported functions and types              |

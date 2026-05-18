@@ -99,9 +99,9 @@ video('Another 4K test', async ({ page }) => {
 
 These Playwright settings are set automatically and cannot be overridden — they are required for correct video recording:
 
-| Setting         | Value          | Reason                                                   |
-| --------------- | -------------- | -------------------------------------------------------- |
-| `workers`       | `1`            | FFmpeg records one display; parallel tests would overlap |
-| `fullyParallel` | `false`        | Same as above                                            |
-| `retries`       | `0`            | Retrying would overwrite the video                       |
-| `testMatch`     | `**/*.video.*` | Scopes Playwright to video test files only               |
+| Setting         | Value          | Reason                                     |
+| --------------- | -------------- | ------------------------------------------ |
+| `workers`       | `1`            | Recordings are captured sequentially       |
+| `fullyParallel` | `false`        | Same as above                              |
+| `retries`       | `0`            | Retrying would overwrite the video         |
+| `testMatch`     | `**/*.video.*` | Scopes Playwright to video test files only |

@@ -904,7 +904,7 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         'npx playwright install chromium --with-deps'
       )
-      expect(workflowCall?.[1]).toContain('npx screenci record')
+      expect(workflowCall?.[1]).toContain('npm run record')
       expect(workflowCall?.[1]).toContain(
         'Copy it from https://app.screenci.com/secrets or ./screenci/.env, add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action.'
       )

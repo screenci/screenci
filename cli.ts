@@ -1359,7 +1359,7 @@ jobs:
         working-directory: screenci
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
-        run: npx screenci record
+        run: npm run record
 `
 }
 

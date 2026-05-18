@@ -765,7 +765,7 @@ describe('CLI', () => {
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining(`screenci/package.json`),
-        expect.stringContaining('"name": "screenci"')
+        expect.stringContaining('"record": "screenci record"')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining(`screenci/tsconfig.json`),
@@ -906,7 +906,7 @@ describe('CLI', () => {
       )
       expect(workflowCall?.[1]).toContain('npx screenci record')
       expect(workflowCall?.[1]).toContain(
-        'Copy it from https://app.screenci.com/secrets and add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action.'
+        'Copy it from https://app.screenci.com/secrets or ./screenci/.env, add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action.'
       )
       expect(workflowCall?.[1]).toContain('exit 1')
     })
@@ -1031,7 +1031,7 @@ describe('CLI', () => {
       )
     })
 
-    it('should use original project name in config and screenci in package.json', async () => {
+    it('should use original project name in config and omit generated package name', async () => {
       process.argv = ['node', 'cli.js', 'init', 'My Cool Project']
       mockExistsSync.mockReturnValue(false)
 
@@ -1048,7 +1048,7 @@ describe('CLI', () => {
         (c: unknown[]) =>
           typeof c[0] === 'string' && c[0].endsWith('package.json')
       )
-      expect(pkgCall?.[1]).toContain('"name": "screenci"')
+      expect(pkgCall?.[1]).not.toContain('"name":')
     })
 
     it('should use published screenci dependency in generated package.json', async () => {

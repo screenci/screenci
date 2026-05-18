@@ -1208,7 +1208,6 @@ export default defineConfig({
 }
 
 function generatePackageJson(
-  packageName: string,
   includePlaywrightCli = false,
   screenciDependency = 'latest'
 ): string {
@@ -1219,7 +1218,6 @@ function generatePackageJson(
   return (
     JSON.stringify(
       {
-        name: packageName,
         type: 'module',
         scripts: {
           record: 'screenci record',
@@ -1338,7 +1336,7 @@ jobs:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
         run: |
           if [ -z "$SCREENCI_SECRET" ]; then
-            echo "::error::SCREENCI_SECRET is not set. Copy it from https://app.screenci.com/secrets and add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action."
+            echo "::error::SCREENCI_SECRET is not set. Copy it from https://app.screenci.com/secrets or ./screenci/.env, add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action."
             exit 1
           fi
 
@@ -1644,7 +1642,7 @@ async function runInit(
   )
   await writeFile(
     resolve(projectDir, 'package.json'),
-    generatePackageJson(dirName, shouldAddPlaywrightCli, screenciDependency)
+    generatePackageJson(shouldAddPlaywrightCli, screenciDependency)
   )
   await writeFile(resolve(projectDir, 'tsconfig.json'), generateTsconfig())
   await writeFile(resolve(projectDir, 'README.md'), generateReadme(projectName))

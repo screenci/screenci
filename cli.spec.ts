@@ -892,15 +892,24 @@ describe('CLI', () => {
           typeof c[0] === 'string' && c[0].endsWith('screenci.yaml')
       )
       expect(workflowCall?.[1]).toContain('name: ScreenCI')
-      expect(workflowCall?.[1]).toContain('actions/setup-node@v6')
-      expect(workflowCall?.[1]).toContain('node-version: latest')
+      expect(workflowCall?.[1]).toContain('actions/setup-node@v4')
+      expect(workflowCall?.[1]).toContain('node-version: 24')
+      expect(workflowCall?.[1]).toContain('cache: npm')
+      expect(workflowCall?.[1]).toContain(
+        'cache-dependency-path: screenci/package-lock.json'
+      )
       expect(workflowCall?.[1]).toContain('environment:\n      name: screenci')
       expect(workflowCall?.[1]).toContain(
         'url: ${{ steps.record.outputs.screenci_project_url }}'
       )
       expect(workflowCall?.[1]).toContain('- id: record\n        name: Record')
       expect(workflowCall?.[1]).toContain('working-directory: screenci')
-      expect(workflowCall?.[1]).toContain('npm install')
+      expect(workflowCall?.[1]).toContain('npm ci')
+      expect(workflowCall?.[1]).toContain('actions/cache@v4')
+      expect(workflowCall?.[1]).toContain('path: ~/.cache/ms-playwright')
+      expect(workflowCall?.[1]).toContain(
+        "if: steps.pw-cache.outputs.cache-hit != 'true'"
+      )
       expect(workflowCall?.[1]).toContain(
         'npx playwright install chromium --with-deps'
       )

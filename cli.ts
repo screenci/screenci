@@ -1342,15 +1342,25 @@ jobs:
 
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
-          node-version: latest
+          node-version: 24
+          cache: npm
+          cache-dependency-path: screenci/package-lock.json
 
       - name: Install dependencies
         working-directory: screenci
-        run: npm install
+        run: npm ci
+
+      - name: Cache Playwright Chromium
+        uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-\${{ runner.os }}-\${{ hashFiles('screenci/package-lock.json') }}
 
       - name: Install Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
         working-directory: screenci
         run: npx playwright install chromium --with-deps
 

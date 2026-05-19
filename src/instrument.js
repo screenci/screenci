@@ -146,6 +146,7 @@ async function performAction(
   postClickMove,
   shouldHideMouse = false
 ) {
+  const page = locator.page()
   const focusChange = await changeFocus(
     locator,
     autoZoomOptions,

@@ -332,7 +332,7 @@ export type VoiceName = keyof Omit<typeof voices, 'elevenlabs'>
 type ElevenLabsVoiceKey = `elevenlabs:${string}`
 /** Union of all valid voice keys, e.g. `'Aria' | 'elevenlabs:abc123'`. */
 export type VoiceKey = VoiceName | ElevenLabsVoiceKey
-export declare const supportedLanguageCodes: readonly [
+declare const supportedLanguageCodes: readonly [
   'ar',
   'bn',
   'nl',

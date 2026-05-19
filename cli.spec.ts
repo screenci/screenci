@@ -271,6 +271,33 @@ describe('CLI', () => {
         expect.stringContaining('.env')
       )
     })
+
+    it('should not warn when configured envFile is missing', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'test',
+        '--config',
+        'test-fixtures/env-file.config.ts',
+      ]
+      process.env.CI = 'true'
+      process.env.SCREENCI_RECORDING = 'true'
+      loadEnvFileSpy.mockImplementation(() => {
+        throw Object.assign(new Error('missing env file'), { code: 'ENOENT' })
+      })
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loadEnvFileSpy).toHaveBeenCalledWith(
+        expect.stringContaining('.env')
+      )
+      expect(loggerWarnSpy).not.toHaveBeenCalled()
+    })
   })
 
   describe('error handling', () => {
@@ -907,7 +934,7 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain('- id: record\n        name: Record')
       expect(workflowCall?.[1]).toContain('working-directory: screenci')
       expect(workflowCall?.[1]).toContain('npm ci')
-      expect(workflowCall?.[1]).toContain('actions/cache@v4')
+      expect(workflowCall?.[1]).toContain('actions/cache@v5')
       expect(workflowCall?.[1]).toContain('path: ~/.cache/ms-playwright')
       expect(workflowCall?.[1]).toContain(
         "if: steps.pw-cache.outputs.cache-hit != 'true'"

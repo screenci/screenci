@@ -1017,10 +1017,19 @@ function loadEnvFile(envFilePath: string, warnOnFailure: boolean): void {
   try {
     process.loadEnvFile(envFilePath)
   } catch (err) {
-    if (warnOnFailure) {
+    if (warnOnFailure && !isMissingFileError(err)) {
       logger.warn(`Failed to load env file ${envFilePath}:`, err)
     }
   }
+}
+
+function isMissingFileError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    err.code === 'ENOENT'
+  )
 }
 
 async function loadEnvFileFromConfigSource(
@@ -1351,7 +1360,7 @@ jobs:
         run: npm ci
 
       - name: Cache Playwright Chromium
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: pw-cache
         with:
           path: ~/.cache/ms-playwright

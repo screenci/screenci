@@ -1014,8 +1014,6 @@ async function loadScreenCIConfigAndEnv(configPath?: string): Promise<{
 }
 
 function loadEnvFile(envFilePath: string, warnOnFailure: boolean): void {
-  if (process.env.CI) return
-
   try {
     process.loadEnvFile(envFilePath)
   } catch (err) {
@@ -2105,9 +2103,11 @@ async function run(
     process.exit(1)
   }
 
-  if (process.env.SCREENCI_RECORDING !== 'true') {
+  if (command === 'test' || process.env.SCREENCI_RECORDING !== 'true') {
     await loadEnvFileFromConfigSource(configPath, false)
   }
+
+  const envForChild = { ...process.env }
 
   // Only validate args for record command
   if (command === 'record') {
@@ -2126,7 +2126,7 @@ async function run(
   const child = spawn('playwright', playwrightArgs, {
     stdio: 'inherit',
     env: {
-      ...process.env,
+      ...envForChild,
       // Enable recording only for record command
       ...(command === 'record' ? { SCREENCI_RECORDING: 'true' } : {}),
     },

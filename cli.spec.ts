@@ -236,6 +236,8 @@ describe('CLI', () => {
   describe('test command', () => {
     it('should load envFile before spawning Playwright', async () => {
       process.argv = ['node', 'cli.js', 'test']
+      process.env.CI = 'true'
+      process.env.SCREENCI_RECORDING = 'true'
       mockReadFile.mockImplementation(async (path: string | URL) => {
         if (String(path).endsWith('screenci.config.ts')) {
           return `export default defineConfig({

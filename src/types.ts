@@ -255,7 +255,7 @@ export type Easing =
 export type AutoZoomOptions = {
   easing?: Easing
   duration?: number
-  /** 0–1: fraction of output dimensions visible in the zoomed viewport (default 0.5) */
+  /** 0–1: fraction of output dimensions visible in the zoomed viewport (default 0.65) */
   amount?: number
   /** 0–1: visibility bias inside the zoomed viewport; 0 = barely fit, 1 = centered. */
   centering?: number

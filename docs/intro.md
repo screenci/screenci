@@ -1,5 +1,5 @@
 ---
-title: Introduction
+title: Welcome to ScreenCI
 description: Welcome to ScreenCI documentation
 ---
 
@@ -12,31 +12,41 @@ In practice, ScreenCI extends the Playwright E2E test library with product video
 In code, it looks something like this:
 
 ```ts
-import { createNarration, hide, video, voices } from 'screenci'
+import { autoZoom, createNarration, hide, video, voices } from 'screenci'
 
 const narration = createNarration({
-  voice: { name: voices.Aria },
+  voice: { name: voices.Sophie, style: 'Clear, friendly product walkthrough' },
   languages: {
     en: {
       cues: {
-        intro: 'Welcome to the dashboard.',
-        addButton: 'Click here to create a new project.',
+        intro: 'Welcome to ScreenCI [pronounce: screen see eye].',
+        docs: 'You can find the documentation linked right on the front page.',
       },
     },
   },
 })
 
-video('Create a project', async ({ page }) => {
+video('How to get started', async ({ page }) => {
+  // Hide initial load from the video
   await hide(async () => {
-    await page.goto('/dashboard')
+    await page.goto('https://screenci.com/')
+    await page.getByText('ScreenCI').first().waitFor()
   })
 
   await narration.intro
-  await page.getByRole('button', { name: 'New project' }).click()
+  await narration.docs
 
-  await narration.addButton
+  // Automatically zoom into clicks etc.
+  await autoZoom(async () => {
+    await page.getByRole('link', { name: 'View Documentation' }).click()
+  })
 })
 ```
+
+<video controls crossorigin="anonymous" poster="https://api.screenci.com/public/kh7dq5rk3vabtxya45w6zm1fmd871jdx/en/thumbnail" style="max-width:100%; border: 1px solid #ccc;">
+  <source src="https://api.screenci.com/public/kh7dq5rk3vabtxya45w6zm1fmd871jdx/en/video" type="video/mp4" />
+  <track kind="subtitles" src="https://api.screenci.com/public/kh7dq5rk3vabtxya45w6zm1fmd871jdx/en/subtitle" srclang="en" label="English" default />
+</video>
 
 ## Why ScreenCI?
 

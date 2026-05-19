@@ -701,6 +701,22 @@ describe('changeFocus', () => {
     expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
   })
 
+  it('uses the slower default duration for automatic scrolling', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 980, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2200 },
+    })
+
+    const promise = changeFocus(locator)
+    await vi.runAllTimersAsync()
+    const result = await promise
+
+    expect((result.scroll?.endMs ?? 0) - (result.scroll?.startMs ?? 0)).toBe(
+      1520
+    )
+  })
+
   it('uses explicit mouse move duration and easing for mouse, scroll, and zoom', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },

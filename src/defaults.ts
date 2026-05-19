@@ -9,17 +9,17 @@ import type {
 
 export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
   easing: 'ease-out',
-  duration: 1000,
-  amount: 0.5,
+  duration: 1600,
+  amount: 0.65,
   centering: 1,
   preZoomDelay: 0,
   postZoomDelay: 1000,
 }
 
 /**
- * Default cursor speed for bare page.mouse.move calls, in pixels per second.
+ * Default cursor speed for distance-based cursor movement, in pixels per second.
  */
-export const DEFAULT_MOUSE_MOVE_SPEED: number = 600
+export const DEFAULT_MOUSE_MOVE_SPEED: number = 400
 
 /**
  * Default aspect ratio for recording and output

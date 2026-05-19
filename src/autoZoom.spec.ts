@@ -175,7 +175,7 @@ describe('autoZoom', () => {
       })
       await vi.runAllTimersAsync()
       await p
-      expect(durationDuringFn).toBe(1000)
+      expect(durationDuringFn).toBe(1600)
     })
 
     it('exposes zoom easing during fn execution', async () => {
@@ -201,6 +201,16 @@ describe('autoZoom', () => {
       await vi.runAllTimersAsync()
       await p
       expect(easingDuringFn).toBe('ease-out')
+    })
+
+    it('defaults zoom amount when no option given', async () => {
+      let amountDuringFn: number | null = null
+      const p = autoZoom(() => {
+        amountDuringFn = getAutoZoomState().options.amount ?? null
+      })
+      await vi.runAllTimersAsync()
+      await p
+      expect(amountDuringFn).toBe(0.65)
     })
 
     it('zoom duration is absent after fn completes', async () => {

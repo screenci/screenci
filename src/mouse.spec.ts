@@ -1,5 +1,6 @@
 import type { Locator } from '@playwright/test'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { DEFAULT_MOUSE_MOVE_SPEED } from './defaults.js'
 import {
   CLICK_DURATION_MS,
   assertDurationOrSpeed,
@@ -77,10 +78,14 @@ describe('mouse helpers', () => {
         duration: undefined,
         speed: undefined,
         defaultDuration: undefined,
-        defaultSpeed: 1000,
+        defaultSpeed: DEFAULT_MOUSE_MOVE_SPEED,
         context: 'test move',
       })
-    ).toBe(500)
+    ).toBe(1250)
+  })
+
+  it('uses the slower default cursor speed', () => {
+    expect(DEFAULT_MOUSE_MOVE_SPEED).toBe(400)
   })
 
   it('keeps explicit zero-duration moves instant when default speed is set', () => {

@@ -1822,6 +1822,24 @@ export async function main() {
     .allowUnknownOption(true)
     .action(async () => {
       const parsed = parseConfigCliArgs(getSubcommandArgv('test'))
+
+      const resolvedConfigPath = findScreenCIConfig(parsed.configPath)
+      if (resolvedConfigPath) {
+        try {
+          const screenciConfig =
+            await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
+          if (screenciConfig.envFile) {
+            const envFilePath = resolve(
+              dirname(resolvedConfigPath),
+              screenciConfig.envFile
+            )
+            loadEnvFile(envFilePath, true)
+          }
+        } catch (err) {
+          logger.warn('Failed to load config for test env:', err)
+        }
+      }
+
       await run('test', parsed.otherArgs, parsed.configPath)
 
       if (process.env.SCREENCI_RECORDING === 'true') return

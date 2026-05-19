@@ -1,36 +1,77 @@
 ---
 title: Getting Started
-description: Install screenci, check prerequisites, and initialize your project.
+description: Install screenci, initialize your project, test the video script, and record the final video.
 ---
 
 # Getting Started
 
-screenci records product videos from code. Scripts are Playwright test files — you write interactions, screenci handles the camera, cues, and narration.
+This guide shows how to check prerequisites, initialize a ScreenCI project, test the generated video script, and record the final video with subtitles.
 
 ## Prerequisites
 
-You need **Node.js** and Playwright's Chromium browser installed. Node.js 20+ is recommended.
+You only need **Node.js** and **npm**. npm is included with the standard Node.js installer.
 
-<!-- OS_SPECIFIC_PREREQUISITES_HERE -->
+If you are unsure whether Node.js is installed, check:
+
+```bash
+node --version
+```
+
+If that command is missing or prints an old version, install Node.js from the [official Node.js installation docs](https://nodejs.org/en/download). Node.js 20+ is recommended.
 
 ## Initialize a project
 
 ```bash
 npx screenci@latest init
-cd screenci
+# Then follow the printed next steps, including the generated project directory.
 ```
 
-You'll be prompted for a project name. screenci then creates `screenci/`, scaffolds the project, and prints what to do next. This works well in existing projects because generated ScreenCI files stay in their own directory.
+You'll be prompted for a project name. screenci scaffolds the project and prints what to do next.
 
-## Continue to part 2
+`screenci init` supports both standalone ScreenCI projects and adding ScreenCI to an existing repository:
 
-- [Getting started part 2](/guides/getting-started-part-2) — write a video, record it, configure rendering, and inspect project info
+- **Standalone project** creates a new directory named after your project and optionally puts the GitHub Action inside that directory.
+- **Part of existing repository** creates `screenci/` and puts the optional GitHub Action at the repository root in `.github/workflows/screenci.yaml`.
+
+After initialization, change into the project directory that was just created. Use `cd screenci` for an existing repository setup, or `cd your-project-name` for a standalone project.
+
+## Video scripts
+
+ScreenCI automatically creates `videos/example.video.ts` during initialization. This guide continues with that generated example so you can test the script and record your first video before writing your own flow.
+
+Coming soon:
+
+- [Write your own videos](#)
+- [Create videos with an AI agent from a deployed website](#)
+- [Create videos with an AI agent from source code](#)
+
+## Test the script
+
+Inside the ScreenCI project directory, verify the starter video script works before recording:
+
+```bash
+npm run test
+```
+
+This is similar to running `playwright test`: it executes the `.video.ts` script without recording, so you can quickly check selectors, timing, and narration cues.
+
+## Record
+
+Inside the ScreenCI project directory, record the final video when the script is working:
+
+```bash
+npm run record
+```
+
+ScreenCI records the browser and sends the raw video to `app.screenci.com` for final rendering and optional deployment.
+
+If you initialized with the GitHub Action, recording can also run automatically in GitHub Actions when you push to the repository.
 
 ---
 
 ## Next steps
 
-- [Getting started part 2](/guides/getting-started-part-2) — write a video, record it, configure rendering, and inspect project info
+- [Playwright vs ScreenCI](/reference/playwright-vs-screenci) — compare Playwright tests with ScreenCI video scripts
 - [Writing video tests](/reference/video-tests) — `hide()`, `autoZoom()`, `createNarration()`
 - [Configuration reference](/reference/configuration) — all config options
 - [API reference](/reference/api-overview) — full function signatures

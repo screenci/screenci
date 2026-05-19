@@ -8,7 +8,7 @@ description: Complete guide to createNarration — voices, languages, regions, m
 `createNarration()` is how you add narration to a ScreenCI video. You write the text; ScreenCI synthesizes the audio and syncs it to the recording at render time. Each key becomes a typed controller that you await directly to start it.
 
 ```ts
-import { createNarration, voices } from 'screenci'
+import { createNarration, hide, video, voices } from 'screenci'
 
 const narration = createNarration({
   voice: { name: voices.Aria },
@@ -20,6 +20,17 @@ const narration = createNarration({
       },
     },
   },
+})
+
+video('Create a project', async ({ page }) => {
+  await hide(async () => {
+    await page.goto('/dashboard')
+  })
+
+  await narration.intro
+  await page.getByRole('button', { name: 'New project' }).click()
+
+  await narration.addButton
 })
 ```
 

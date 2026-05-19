@@ -16,7 +16,7 @@ import {
 import { dirname, relative as pathRelative, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { Command, CommanderError } from 'commander'
-import { input, confirm } from '@inquirer/prompts'
+import { input, confirm, select } from '@inquirer/prompts'
 import ora from 'ora'
 import pc from 'picocolors'
 import { logger } from './src/logger.js'
@@ -1323,7 +1323,14 @@ node_modules/
 `
 }
 
-function generateGithubAction(): string {
+function generateGithubAction(workingDirectory: string): string {
+  const packageLockPath =
+    workingDirectory === '.'
+      ? 'package-lock.json'
+      : `${workingDirectory}/package-lock.json`
+  const envFilePath =
+    workingDirectory === '.' ? './.env' : `./${workingDirectory}/.env`
+
   return `name: ScreenCI
 
 on:
@@ -1343,7 +1350,7 @@ jobs:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
         run: |
           if [ -z "$SCREENCI_SECRET" ]; then
-            echo "::error::SCREENCI_SECRET is not set. Copy it from https://app.screenci.com/secrets or ./screenci/.env, add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action."
+            echo "::error::SCREENCI_SECRET is not set. Copy it from https://app.screenci.com/secrets or ${envFilePath}, add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action."
             exit 1
           fi
 
@@ -1353,10 +1360,10 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: screenci/package-lock.json
+          cache-dependency-path: ${packageLockPath}
 
       - name: Install dependencies
-        working-directory: screenci
+        working-directory: ${workingDirectory}
         run: npm ci
 
       - name: Cache Playwright Chromium
@@ -1364,16 +1371,16 @@ jobs:
         id: pw-cache
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-\${{ runner.os }}-\${{ hashFiles('screenci/package-lock.json') }}
+          key: playwright-\${{ runner.os }}-\${{ hashFiles('${packageLockPath}') }}
 
       - name: Install Chromium
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        working-directory: screenci
+        working-directory: ${workingDirectory}
         run: npx playwright install chromium --with-deps
 
       - id: record
         name: Record
-        working-directory: screenci
+        working-directory: ${workingDirectory}
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
         run: npm run record
@@ -1513,6 +1520,33 @@ async function promptInitGithubActionCi(): Promise<boolean> {
   })
 }
 
+type InitRepositoryMode = 'standalone' | 'existing-repository'
+
+async function promptInitRepositoryMode(): Promise<InitRepositoryMode> {
+  return select({
+    message:
+      'Initialize ScreenCI as a standalone project or part of the existing repository?',
+    default: 'standalone',
+    choices: [
+      {
+        name: 'Standalone project',
+        value: 'standalone',
+        description: 'Create a project directory with its own GitHub Action.',
+      },
+      {
+        name: 'Part of existing repository',
+        value: 'existing-repository',
+        description:
+          'Create ./screenci and add the GitHub Action at the repository root.',
+      },
+    ],
+  })
+}
+
+function projectNameToDirectoryName(projectName: string): string {
+  return projectName.trim().replace(/\s+/g, '-')
+}
+
 function getInitProjectRoot(): string {
   return process.env['SCREENCI_INIT_CWD'] ?? process.cwd()
 }
@@ -1560,16 +1594,6 @@ async function ensureScreenciSecret(): Promise<string | undefined> {
   }
 }
 
-function checkNodeVersion(): void {
-  const [major] = process.versions.node.split('.').map(Number)
-  if (major === undefined || major < 18) {
-    logger.error(
-      `Error: Node.js 18 or higher is required (current: v${process.versions.node})`
-    )
-    process.exit(1)
-  }
-}
-
 type InitOptions = {
   verbose: boolean
   install: boolean
@@ -1583,8 +1607,8 @@ async function runInit(
   options: InitOptions
 ): Promise<void> {
   const { verbose, install, yes, skill, ci } = options
-  checkNodeVersion()
   const initCwd = getInitProjectRoot()
+  const existingRepositoryDetected = existsSync(resolve(initCwd, '.git'))
 
   let projectName = projectNameArg?.trim()
 
@@ -1597,11 +1621,26 @@ async function runInit(
     process.exit(1)
   }
 
-  const dirName = 'screenci'
+  if (existingRepositoryDetected) {
+    logger.info('Existing repository detected')
+  }
+
+  const repositoryMode: InitRepositoryMode = existingRepositoryDetected
+    ? yes
+      ? 'standalone'
+      : await promptInitRepositoryMode()
+    : 'standalone'
+  const isPartOfExistingRepository = repositoryMode === 'existing-repository'
+
+  const dirName = isPartOfExistingRepository
+    ? 'screenci'
+    : projectNameToDirectoryName(projectName)
   const projectDir = resolve(initCwd, dirName)
-  const githubDir = resolve(initCwd, '.github')
+  const githubRootDir = isPartOfExistingRepository ? initCwd : projectDir
+  const githubDir = resolve(githubRootDir, '.github')
   const githubWorkflowsDir = resolve(githubDir, 'workflows')
   const githubActionPath = resolve(githubWorkflowsDir, 'screenci.yaml')
+  const githubActionProjectDir = isPartOfExistingRepository ? 'screenci' : '.'
 
   if (existsSync(projectDir)) {
     logger.error(`Error: Directory "${dirName}" already exists`)
@@ -1669,7 +1708,10 @@ async function runInit(
     generateExampleVideo()
   )
   if (shouldAddGithubActionCi) {
-    await writeFile(githubActionPath, generateGithubAction())
+    await writeFile(
+      githubActionPath,
+      generateGithubAction(githubActionProjectDir)
+    )
   }
   await writeFile(resolve(projectDir, '.env'), '')
 
@@ -1682,7 +1724,10 @@ async function runInit(
   logger.info('  .gitignore')
   logger.info('  videos/example.video.ts')
   if (shouldAddGithubActionCi) {
-    logger.info('  .github/workflows/screenci.yaml')
+    const githubActionDisplayPath = isPartOfExistingRepository
+      ? '.github/workflows/screenci.yaml (outside ./screenci, at repository root)'
+      : '.github/workflows/screenci.yaml'
+    logger.info(`  ${githubActionDisplayPath}`)
   }
   logger.info('  .env  (empty placeholder)')
   logger.info('')

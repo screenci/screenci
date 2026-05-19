@@ -5,7 +5,38 @@ description: Welcome to ScreenCI documentation
 
 # Welcome to ScreenCI
 
-ScreenCI is the first **Deployment Automation** platform for product videos. We treat your product walkthroughs, documentation clips, and marketing videos as code, allowing them to be recorded, rendered, and updated whenever your UI changes.
+ScreenCI is the first **Deployment Automation** platform for product videos. We treat your product walkthroughs, documentation clips, and marketing videos as code, allowing them to be recorded, rendered, and updated whenever your UI changes, including through CI (continuous integration).
+
+In practice, ScreenCI extends the Playwright E2E test library with product video related features.
+
+In code, it looks something like this:
+
+```ts
+import { createNarration, hide, video, voices } from 'screenci'
+
+const narration = createNarration({
+  voice: { name: voices.Aria },
+  languages: {
+    en: {
+      cues: {
+        intro: 'Welcome to the dashboard.',
+        addButton: 'Click here to create a new project.',
+      },
+    },
+  },
+})
+
+video('Create a project', async ({ page }) => {
+  await hide(async () => {
+    await page.goto('/dashboard')
+  })
+
+  await narration.intro
+  await page.getByRole('button', { name: 'New project' }).click()
+
+  await narration.addButton
+})
+```
 
 ## Why ScreenCI?
 
@@ -18,13 +49,6 @@ Manual screen recording is brittle. Every time you change a button color or move
 
 ## Ready to start?
 
-```bash
-npx screenci@latest init
-```
-
-Then follow the guides:
-
 - [Getting started](/guides/getting-started) — install, init, first recording
-- [Recording flows](/guides/recording) — `hide()`, `autoZoom()`, `createNarration()`
-- [Automating with CI/CD](/guides/automation)
+- [Playwright vs ScreenCI](/reference/playwright-vs-screenci)
 - [Localization & Narrations](/guides/localization)

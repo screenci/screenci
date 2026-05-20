@@ -556,7 +556,9 @@ export function instrumentLocator(locator: Locator): Locator {
 
     const clickActionResult = await performAction(
       {
-        targetPosInElement: options?.position ?? { x: 0, y: 0 },
+        ...(options?.position !== undefined
+          ? { targetPosInElement: options.position }
+          : {}),
         ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
         ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
         easing: moveEasing,
@@ -635,7 +637,9 @@ export function instrumentLocator(locator: Locator): Locator {
 
     const clickActionResult = await performAction(
       {
-        targetPosInElement: options?.position ?? { x: 0, y: 0 },
+        ...(options?.position !== undefined
+          ? { targetPosInElement: options.position }
+          : {}),
         ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
         ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
         easing: moveEasing,
@@ -719,7 +723,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const result = await performAction(
       clickOpt
         ? {
-            targetPosInElement: position ?? { x: 0, y: 0 },
+            ...(position !== undefined ? { targetPosInElement: position } : {}),
             ...(clickOpt.moveDuration !== undefined
               ? { duration: clickOpt.moveDuration }
               : {}),
@@ -780,7 +784,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const result = await performAction(
       clickOpt
         ? {
-            targetPosInElement: position ?? { x: 0, y: 0 },
+            ...(position !== undefined ? { targetPosInElement: position } : {}),
             ...(clickOpt.moveDuration !== undefined
               ? { duration: clickOpt.moveDuration }
               : {}),
@@ -841,7 +845,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const result = await performAction(
       clickOpt
         ? {
-            targetPosInElement: position ?? { x: 0, y: 0 },
+            ...(position !== undefined ? { targetPosInElement: position } : {}),
             ...(clickOpt.moveDuration !== undefined
               ? { duration: clickOpt.moveDuration }
               : {}),
@@ -932,7 +936,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const actionResult = await performAction(
       clickOpt
         ? {
-            targetPosInElement: position ?? { x: 0, y: 0 },
+            ...(position !== undefined ? { targetPosInElement: position } : {}),
             ...(clickOpt.moveDuration !== undefined
               ? { duration: clickOpt.moveDuration }
               : {}),

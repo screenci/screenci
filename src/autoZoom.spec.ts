@@ -5,6 +5,7 @@ import {
   getAutoZoomState,
   setCurrentZoomViewport,
 } from './autoZoom.js'
+import { EventRecorder } from './events.js'
 import type { IEventRecorder } from './events.js'
 import type { Easing } from './types.js'
 
@@ -375,6 +376,69 @@ describe('autoZoom', () => {
           }),
         }),
       ])
+    })
+
+    it('waits for the final zoom-out duration before resolving', async () => {
+      setCurrentZoomViewport({
+        focusPoint: { x: 120, y: 180 },
+        elementRect: { x: 100, y: 160, width: 80, height: 40 },
+        end: {
+          pointPx: { x: 10, y: 20 },
+          size: { widthPx: 640, heightPx: 360 },
+        },
+        viewportSize: { width: 1280, height: 720 },
+      })
+
+      let resolved = false
+      const p = autoZoom(() => {}, { duration: 300, postZoomDelay: 0 }).then(
+        () => {
+          resolved = true
+        }
+      )
+
+      await Promise.resolve()
+      expect(resolved).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(299)
+      expect(resolved).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(1)
+      await p
+      expect(resolved).toBe(true)
+    })
+
+    it('allows a second autoZoom immediately after awaiting the first', async () => {
+      const realRecorder = new EventRecorder()
+      realRecorder.start()
+      setActiveAutoZoomRecorder(realRecorder)
+
+      setCurrentZoomViewport({
+        focusPoint: { x: 120, y: 180 },
+        elementRect: { x: 100, y: 160, width: 80, height: 40 },
+        end: {
+          pointPx: { x: 10, y: 20 },
+          size: { widthPx: 640, heightPx: 360 },
+        },
+        viewportSize: { width: 1280, height: 720 },
+      })
+
+      const first = autoZoom(() => {}, { duration: 300, postZoomDelay: 0 })
+      await vi.advanceTimersByTimeAsync(300)
+      await first
+
+      setCurrentZoomViewport({
+        focusPoint: { x: 240, y: 260 },
+        elementRect: { x: 200, y: 240, width: 80, height: 40 },
+        end: {
+          pointPx: { x: 20, y: 30 },
+          size: { widthPx: 640, heightPx: 360 },
+        },
+        viewportSize: { width: 1280, height: 720 },
+      })
+
+      const second = autoZoom(() => {}, { duration: 300, postZoomDelay: 0 })
+      await vi.advanceTimersByTimeAsync(300)
+      await expect(second).resolves.toBeUndefined()
     })
 
     it('does not delay addAutoZoomEnd when the callback takes longer than preZoomDelay', async () => {

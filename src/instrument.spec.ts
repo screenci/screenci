@@ -750,6 +750,29 @@ describe('instrumentLocator', () => {
     expect(getMousePosition(page)).toEqual({ x: 140, y: 220 })
   })
 
+  it('records fill clicks at the element center by default', async () => {
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const bb = { x: 100, y: 200, width: 80, height: 40 }
+    const locator = makeLocatorMock(bb, page)
+    instrumentLocator(locator)
+
+    await Promise.all([
+      (
+        locator as unknown as {
+          fill(
+            value: string,
+            options?: { click?: { postClickPause?: number } }
+          ): Promise<void>
+        }
+      ).fill('Acme Corporation', { click: { postClickPause: 0 } }),
+      vi.runAllTimersAsync(),
+    ])
+
+    expect(getMousePosition(page)).toEqual({ x: 140, y: 220 })
+  })
+
   it('snaps the real mouse after scroll while keeping the recorded move duration', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
@@ -1028,6 +1051,48 @@ describe('instrumentLocator', () => {
         expect.objectContaining({ type: 'mouseUp' }),
       ])
     )
+  })
+
+  it('records fill-with-click focusChange at the element center by default', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    instrumentLocator(locator)
+
+    await Promise.all([
+      (
+        locator.fill as (
+          value: string,
+          options?: {
+            duration?: number
+            click?: {
+              moveDuration?: number
+              beforeClickPause?: number
+              postClickPause?: number
+            }
+          }
+        ) => Promise<void>
+      )('hi', {
+        duration: 100,
+        click: { moveDuration: 0, beforeClickPause: 0, postClickPause: 0 },
+      }),
+      vi.runAllTimersAsync(),
+    ])
+
+    expect(recordedInputEvents).toHaveLength(1)
+    const fill = recordedInputEvents[0]!
+    const focusChange = fill.events.find(
+      (event): event is FocusChangeEvent => event.type === 'focusChange'
+    )
+
+    expect(focusChange).toMatchObject({ x: 140, y: 220 })
   })
 
   it('records fixed click timing for check-with-click after scrolling', async () => {

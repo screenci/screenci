@@ -140,14 +140,13 @@ export async function autoZoom(
       activeRecorder.addAutoZoomEnd(options)
       if (currentAutoZoomState.currentZoomViewport !== null) {
         const zoomOutStartMs = Date.now()
+        const zoomOutDuration =
+          currentAutoZoomState.options.duration ?? DEFAULT_ZOOM_OPTIONS.duration
         activeRecorder.addInput('focusChange', undefined, [
           {
             type: 'focusChange',
             startMs: zoomOutStartMs,
-            endMs:
-              zoomOutStartMs +
-              (currentAutoZoomState.options.duration ??
-                DEFAULT_ZOOM_OPTIONS.duration),
+            endMs: zoomOutStartMs + zoomOutDuration,
             x: currentAutoZoomState.currentZoomViewport.focusPoint.x,
             y: currentAutoZoomState.currentZoomViewport.focusPoint.y,
             ...(currentAutoZoomState.currentZoomViewport.elementRect !==
@@ -159,10 +158,7 @@ export async function autoZoom(
               : {}),
             zoom: {
               startMs: zoomOutStartMs,
-              endMs:
-                zoomOutStartMs +
-                (currentAutoZoomState.options.duration ??
-                  DEFAULT_ZOOM_OPTIONS.duration),
+              endMs: zoomOutStartMs + zoomOutDuration,
               easing:
                 currentAutoZoomState.options.easing ??
                 DEFAULT_ZOOM_OPTIONS.easing,
@@ -179,6 +175,9 @@ export async function autoZoom(
             },
           },
         ])
+        if (zoomOutDuration > 0) {
+          await sleep(zoomOutDuration)
+        }
       }
     }
     if ((currentAutoZoomState.options.postZoomDelay ?? 0) > 0) {

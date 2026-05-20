@@ -25,6 +25,7 @@ If that command is missing or prints an old version, install Node.js from the [o
 | [Localization & Narrations](./localization.md)        | Multi-language narration and localized UI videos                 |
 | [Assets](./assets.md)                                 | Image and video overlays with `createAssets`                     |
 | [Public URLs](./public-urls.md)                       | Publish stable public video, thumbnail, and subtitle URLs        |
+| [Update screenci with npm](./updating-with-npm.md)    | Update the installed `screenci` package with npm                 |
 | [CLI Commands](./cli.md)                              | Complete command reference for `screenci`                        |
 | [Configuration](./configuration.md)                   | `defineConfig` options, per-test overrides, defaults             |
 | [Writing Video Tests](./video-tests.md)               | How to use `video()`, `cue()`, multiple tests, auth, etc.        |

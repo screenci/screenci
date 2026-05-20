@@ -90,29 +90,6 @@ async function setupMouseTracking(
   */
 }
 
-/**
- * Get CRF value (encoding quality) for a given quality preset.
- *
- * Higher resolution presets use a lower CRF (better quality) because the
- * larger file size budget is expected at those resolutions.
- * - `'720p'`   → CRF 21 (medium – balanced size/quality for HD)
- * - `'1080p'`  → CRF 16 (high   – best quality for Full HD)
- * - `'1440p'`  → CRF 16 (high   – best quality for Quad HD)
- * - `'2160p'`  → CRF 16 (high   – best quality for UHD)
- */
-function getCrfForQuality(quality: Quality): number {
-  switch (quality) {
-    case '720p':
-      return 21
-    case '1080p':
-      return 16
-    case '1440p':
-      return 16
-    case '2160p':
-      return 16
-  }
-}
-
 async function startScreencastRecording(
   page: Page,
   outputPath: string,
@@ -121,7 +98,6 @@ async function startScreencastRecording(
   aspectRatio: AspectRatio
 ): Promise<Recorder> {
   const { width, height } = getDimensions(aspectRatio, quality)
-  const crf = getCrfForQuality(quality)
 
   const recorder = await attachRecorder(page, {
     path: outputPath,
@@ -133,9 +109,11 @@ async function startScreencastRecording(
       '-c:v',
       'libx264',
       '-preset',
-      'fast',
+      'slow',
+      '-tune',
+      'stillimage',
       '-crf',
-      `${crf}`,
+      '12',
       '-pix_fmt',
       'yuv444p',
       '-movflags',

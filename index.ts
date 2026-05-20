@@ -90,6 +90,8 @@ export type {
 } from './src/events.js'
 export { hide } from './src/hide.js'
 export { autoZoom } from './src/autoZoom.js'
+export { zoomTo, resetZoom } from './src/manualZoom.js'
 export { createAssets } from './src/asset.js'
 export type { AssetController, AssetConfig, Assets } from './src/asset.js'
 export type { AssetStartEvent } from './src/events.js'
+export type { ZoomTarget, ZoomTargetPoint } from './src/manualZoom.js'

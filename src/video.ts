@@ -30,7 +30,7 @@ import {
   validateCustomVoiceRefs,
 } from './cue.js'
 import { setActiveHideRecorder } from './hide.js'
-import { setActiveAutoZoomRecorder } from './autoZoom.js'
+import { setActiveAutoZoomRecorder, setActiveZoomPage } from './autoZoom.js'
 import {
   setActiveAssetRecorder,
   validateRegisteredAssetPaths,
@@ -213,10 +213,13 @@ const _videoBase = base.extend<VideoFixtureOptions>({
       setActiveClickRecorder(null)
       setActiveHideRecorder(null)
       setActiveAutoZoomRecorder(null)
+      setActiveZoomPage(null)
       setActiveAssetRecorder(null)
       const page = await context.newPage()
+      setActiveZoomPage(page)
       await use(page)
       await page.close()
+      setActiveZoomPage(null)
       return
     }
 
@@ -255,6 +258,7 @@ const _videoBase = base.extend<VideoFixtureOptions>({
 
     // Create page FIRST to ensure browser window is rendered
     const page = await context.newPage()
+    setActiveZoomPage(page)
 
     await setupMouseTracking(page, recorder)
 
@@ -305,6 +309,7 @@ const _videoBase = base.extend<VideoFixtureOptions>({
       setActiveClickRecorder(null)
       setActiveHideRecorder(null)
       setActiveAutoZoomRecorder(null)
+      setActiveZoomPage(null)
       setActiveAssetRecorder(null)
 
       // Write recorded events next to the video

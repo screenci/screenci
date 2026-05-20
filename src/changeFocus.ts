@@ -54,6 +54,7 @@ type ViewportSide = 'left' | 'right' | 'top' | 'bottom'
 
 type FocusSnapshot = {
   locatorRect: ElementRect
+  isFixedPosition: boolean
   viewportSize: ViewportSize
   page: {
     scrollY: number
@@ -401,38 +402,53 @@ async function captureFocusSnapshot(locator: Locator): Promise<FocusSnapshot> {
     }
 
     const rect = element.getBoundingClientRect()
+    const elementStyle = win.getComputedStyle(element)
+    const hasFixedAncestor = (() => {
+      for (
+        let current: Element | null = element.parentElement;
+        current;
+        current = current.parentElement
+      ) {
+        if (win.getComputedStyle(current).position === 'fixed') return true
+      }
+      return false
+    })()
+    const isFixedPosition =
+      elementStyle.position === 'fixed' || hasFixedAncestor
     const viewportHeight = win.innerHeight || doc.documentElement.clientHeight
     const viewportWidth = win.innerWidth || doc.documentElement.clientWidth
     const ancestors: FocusSnapshot['ancestors'] = []
 
-    for (
-      let current: Element | null = element.parentElement;
-      current;
-      current = current.parentElement
-    ) {
-      if (
-        !isScrollable(current) ||
-        current === doc.documentElement ||
-        current === doc.body
+    if (!isFixedPosition) {
+      for (
+        let current: Element | null = element.parentElement;
+        current;
+        current = current.parentElement
       ) {
-        continue
-      }
+        if (
+          !isScrollable(current) ||
+          current === doc.documentElement ||
+          current === doc.body
+        ) {
+          continue
+        }
 
-      const containerRect = current.getBoundingClientRect()
-      ancestors.push({
-        clientHeight: current.clientHeight,
-        clientWidth: current.clientWidth,
-        scrollHeight: current.scrollHeight,
-        scrollWidth: current.scrollWidth,
-        scrollTop: current.scrollTop,
-        scrollLeft: current.scrollLeft,
-        rect: {
-          top: containerRect.top,
-          left: containerRect.left,
-          width: containerRect.width,
-          height: containerRect.height,
-        },
-      })
+        const containerRect = current.getBoundingClientRect()
+        ancestors.push({
+          clientHeight: current.clientHeight,
+          clientWidth: current.clientWidth,
+          scrollHeight: current.scrollHeight,
+          scrollWidth: current.scrollWidth,
+          scrollTop: current.scrollTop,
+          scrollLeft: current.scrollLeft,
+          rect: {
+            top: containerRect.top,
+            left: containerRect.left,
+            width: containerRect.width,
+            height: containerRect.height,
+          },
+        })
+      }
     }
 
     return {
@@ -442,6 +458,7 @@ async function captureFocusSnapshot(locator: Locator): Promise<FocusSnapshot> {
         width: rect.width,
         height: rect.height,
       },
+      isFixedPosition,
       viewportSize: {
         width: viewportWidth,
         height: viewportHeight,
@@ -681,6 +698,14 @@ export function buildAncestorScrollPlans(params: {
   accumulatedDelta: Point
   projectedRect: ElementRect
 } {
+  if (params.snapshot.isFixedPosition) {
+    return {
+      plans: [],
+      accumulatedDelta: { x: 0, y: 0 },
+      projectedRect: params.snapshot.locatorRect,
+    }
+  }
+
   const { snapshot, projectedRectRangeX, projectedRectRangeY } = params
   const plans: ScrollPlan[] = []
   let accumulatedDelta = { x: 0, y: 0 }
@@ -816,6 +841,19 @@ function resolvePagePlan(params: {
   finalLocatorRect: ElementRect
   scrollNeeded: boolean
 } {
+  if (params.snapshot.isFixedPosition) {
+    return {
+      plan: {
+        startY: params.snapshot.page.scrollY,
+        startX: params.snapshot.page.scrollX,
+        targetY: params.snapshot.page.scrollY,
+        targetX: params.snapshot.page.scrollX,
+      },
+      finalLocatorRect: params.ancestorResult.projectedRect,
+      scrollNeeded: false,
+    }
+  }
+
   const zoomTargetWithoutPageScroll =
     params.currentZoomEnd !== undefined
       ? resolveZoomTarget({
@@ -1213,6 +1251,7 @@ function resolveFocusOptions(params: {
   options: AutoZoomOptions
   viewportSize: ViewportSize
   mouseMove?: MouseMoveRequest
+  allowStandaloneZoom?: boolean
 }): {
   focusOptions: ReturnType<typeof resolveAutoZoomOptions>
   currentZoomEnd: NonNullable<FocusChangeEvent['zoom']>['end']
@@ -1225,15 +1264,25 @@ function resolveFocusOptions(params: {
     params.state,
     params.options
   )
+  const currentZoomViewport = params.state.currentZoomViewport
 
   const focusOptions = params.state.insideAutoZoom
     ? resolvedAutoZoomOptions
-    : {
-        ...resolvedAutoZoomOptions,
-        amount: 1,
-        centering: DEFAULT_ZOOM_OPTIONS.centering,
-      }
-  const currentZoomViewport = params.state.currentZoomViewport
+    : params.state.mode === 'manual' &&
+        currentZoomViewport !== null &&
+        !params.allowStandaloneZoom
+      ? {
+          ...resolvedAutoZoomOptions,
+          amount:
+            currentZoomViewport.end.size.widthPx / params.viewportSize.width,
+        }
+      : params.allowStandaloneZoom
+        ? resolvedAutoZoomOptions
+        : {
+            ...resolvedAutoZoomOptions,
+            amount: 1,
+            centering: DEFAULT_ZOOM_OPTIONS.centering,
+          }
   const currentZoomEnd = currentZoomViewport?.end ?? {
     pointPx: { x: 0, y: 0 },
     size: {
@@ -1265,7 +1314,8 @@ function resolveFocusOptions(params: {
 export async function changeFocus(
   locator: Locator,
   options: AutoZoomOptions = {},
-  mouseMove?: MouseMoveRequest
+  mouseMove?: MouseMoveRequest,
+  allowStandaloneZoom = false
 ): Promise<FocusChangeEvent> {
   const page = locator.page()
   const state = getAutoZoomState()
@@ -1285,11 +1335,13 @@ export async function changeFocus(
           options,
           viewportSize: snapshot.viewportSize,
           mouseMove,
+          allowStandaloneZoom,
         }
       : {
           state,
           options,
           viewportSize: snapshot.viewportSize,
+          allowStandaloneZoom,
         }
   )
 
@@ -1434,19 +1486,21 @@ export async function changeFocus(
     elementRect: plan.finalLocatorRect,
   }
 
-  setCurrentZoomViewport({
-    focusPoint,
-    elementRect: plan.finalLocatorRect,
-    end: zoomTarget?.end ?? {
-      pointPx: { x: 0, y: 0 },
-      size: {
-        widthPx: snapshot.viewportSize.width,
-        heightPx: snapshot.viewportSize.height,
+  if (state.insideAutoZoom || allowStandaloneZoom || zoomEvent !== undefined) {
+    setCurrentZoomViewport({
+      focusPoint,
+      elementRect: plan.finalLocatorRect,
+      end: zoomTarget?.end ?? {
+        pointPx: { x: 0, y: 0 },
+        size: {
+          widthPx: snapshot.viewportSize.width,
+          heightPx: snapshot.viewportSize.height,
+        },
       },
-    },
-    viewportSize: snapshot.viewportSize,
-    optimalOffset: zoomTarget?.optimalOffset ?? { x: 0, y: 0 },
-  })
+      viewportSize: snapshot.viewportSize,
+      optimalOffset: zoomTarget?.optimalOffset ?? { x: 0, y: 0 },
+    })
+  }
 
   return focusChange
 }

@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { invalidOptionError, ScreenciError } from './errors.js'
 import type { ElementRect, IEventRecorder } from './events.js'
@@ -28,8 +29,10 @@ export type CurrentZoomViewport = {
 }
 
 let activeRecorder: IEventRecorder | null = null
+let activeZoomPage: Page | null = null
 let currentAutoZoomState: AutoZoomState = {
   insideAutoZoom: false,
+  mode: 'idle',
   options: {},
   currentZoomViewport: null,
 }
@@ -40,12 +43,25 @@ export function setActiveAutoZoomRecorder(
   activeRecorder = recorder
 }
 
+export function getActiveAutoZoomRecorder(): IEventRecorder | null {
+  return activeRecorder
+}
+
+export function setActiveZoomPage(page: Page | null): void {
+  activeZoomPage = page
+}
+
+export function getActiveZoomPage(): Page | null {
+  return activeZoomPage
+}
+
 export function getCurrentZoomViewport(): CurrentZoomViewport | null {
   return currentAutoZoomState.currentZoomViewport
 }
 
 export type AutoZoomState = {
   insideAutoZoom: boolean
+  mode: 'idle' | 'auto' | 'manual'
   options: AutoZoomOptions
   currentZoomViewport: CurrentZoomViewport | null
 }
@@ -56,6 +72,13 @@ export function getAutoZoomState(): AutoZoomState {
 
 export function setAutoZoomState(state: AutoZoomState): void {
   currentAutoZoomState = state
+}
+
+export function setZoomMode(mode: AutoZoomState['mode']): void {
+  setAutoZoomState({
+    ...currentAutoZoomState,
+    mode,
+  })
 }
 
 export function setCurrentZoomViewport(
@@ -75,6 +98,7 @@ function resetAutoZoomState(): void {
   setAutoZoomState({
     ...currentAutoZoomState,
     insideAutoZoom: false,
+    mode: 'idle',
     options: {},
     currentZoomViewport: null,
   })
@@ -111,6 +135,11 @@ export async function autoZoom(
   if (currentAutoZoomState.insideAutoZoom) {
     throw new ScreenciError('Cannot nest autoZoom() calls')
   }
+  if (currentAutoZoomState.mode === 'manual') {
+    throw new ScreenciError(
+      'Cannot call autoZoom() while manual zoom is active'
+    )
+  }
   if (activeRecorder !== null) {
     activeRecorder.addAutoZoomStart(options)
   }
@@ -123,6 +152,7 @@ export async function autoZoom(
   setAutoZoomState({
     ...currentAutoZoomState,
     insideAutoZoom: true,
+    mode: 'auto',
     options: {
       duration: resolvedOptions.duration,
       easing: resolvedOptions.easing as Easing,

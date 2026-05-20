@@ -1152,14 +1152,13 @@ export function instrumentLocator(locator: Locator): Locator {
 
     const page = locator.page()
 
-    const sourceRectPreview = await locator.boundingBox()
-    const targetBb = await target.boundingBox()
-    const targetRect: ElementRect | undefined = targetBb
+    const targetBbPreview = await target.boundingBox()
+    const targetRectPreview: ElementRect | undefined = targetBbPreview
       ? {
-          x: targetBb.x,
-          y: targetBb.y,
-          width: targetBb.width,
-          height: targetBb.height,
+          x: targetBbPreview.x,
+          y: targetBbPreview.y,
+          width: targetBbPreview.width,
+          height: targetBbPreview.height,
         }
       : undefined
 
@@ -1173,8 +1172,8 @@ export function instrumentLocator(locator: Locator): Locator {
 
     const targetPos =
       targetPosition ??
-      (targetRect
-        ? { x: targetRect.width / 2, y: targetRect.height / 2 }
+      (targetRectPreview
+        ? { x: targetRectPreview.width / 2, y: targetRectPreview.height / 2 }
         : undefined)
 
     const sourceFocusChange = await changeFocus(locator, undefined, {
@@ -1208,7 +1207,19 @@ export function instrumentLocator(locator: Locator): Locator {
 
     // 3. Drag: animate cursor from source to target
     const dragStartTime = Date.now()
-    if (targetPos && targetRect) {
+    if (targetPos) {
+      const targetBb = await target.boundingBox()
+      const targetRect: ElementRect | undefined = targetBb
+        ? {
+            x: targetBb.x,
+            y: targetBb.y,
+            width: targetBb.width,
+            height: targetBb.height,
+          }
+        : targetRectPreview
+      if (!targetRect) {
+        throw new Error('[screenci] dragTo target must have a bounding box.')
+      }
       const toX = targetRect.x + targetPos.x
       const toY = targetRect.y + targetPos.y
       const resolvedDuration = resolveMouseMoveDuration(page, toX, toY, {

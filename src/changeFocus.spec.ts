@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Locator } from '@playwright/test'
-import { autoZoom, setCurrentZoomViewport } from './autoZoom.js'
+import {
+  autoZoom,
+  setAutoZoomState,
+  setCurrentZoomViewport,
+} from './autoZoom.js'
 import {
   buildAncestorScrollPlans,
   changeFocus,
@@ -34,7 +38,7 @@ type MockWindow = {
   document: unknown
   getComputedStyle: (
     elt: Element
-  ) => Pick<CSSStyleDeclaration, 'overflowX' | 'overflowY'>
+  ) => Pick<CSSStyleDeclaration, 'overflowX' | 'overflowY' | 'position'>
   requestAnimationFrame?: (callback: FrameRequestCallback) => number
   scrollTo: (coords: { top?: number; left?: number; behavior?: string }) => void
 }
@@ -51,12 +55,20 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+  setAutoZoomState({
+    insideAutoZoom: false,
+    mode: 'idle',
+    options: {},
+    currentZoomViewport: null,
+  })
 })
 
 function makeLocatorMock(options: {
   rect: { x: number; y: number; width: number; height: number }
   viewport: { width: number; height: number }
   scrollSize: { width: number; height: number }
+  fixed?: boolean
+  fixedAncestor?: boolean
   nested?: {
     x: number
     y: number
@@ -91,10 +103,32 @@ function makeLocatorMock(options: {
     },
     document: undefined,
     getComputedStyle: (elt) => {
-      if (elt === nested) {
-        return { overflowX: 'auto', overflowY: 'auto' }
+      if (elt === element) {
+        return {
+          overflowX: 'visible',
+          overflowY: 'visible',
+          position: options.fixed ? 'fixed' : 'static',
+        }
       }
-      return { overflowX: 'visible', overflowY: 'visible' }
+      if (elt === nested) {
+        return {
+          overflowX: 'auto',
+          overflowY: 'auto',
+          position: 'static',
+        }
+      }
+      if (elt === fixedAncestor) {
+        return {
+          overflowX: 'visible',
+          overflowY: 'visible',
+          position: 'fixed',
+        }
+      }
+      return {
+        overflowX: 'visible',
+        overflowY: 'visible',
+        position: 'static',
+      }
     },
     requestAnimationFrame: (callback) => {
       setTimeout(() => callback(Date.now()), 1000 / 60)
@@ -121,9 +155,24 @@ function makeLocatorMock(options: {
     },
   }
 
+  const fixedAncestor = options.fixedAncestor
+    ? ({
+        parentElement: null,
+        ownerDocument: doc,
+        getBoundingClientRect: () => ({
+          x: 0,
+          y: 0,
+          width: options.viewport.width,
+          height: options.viewport.height,
+          top: 0,
+          left: 0,
+        }),
+      } as unknown as Element)
+    : null
+
   const nested = options.nested
     ? {
-        parentElement: null as unknown as Element,
+        parentElement: fixedAncestor,
         ownerDocument: doc,
         clientHeight: options.nested.height,
         clientWidth: options.nested.width,
@@ -151,7 +200,7 @@ function makeLocatorMock(options: {
           left: options.nested!.x - windowScrollX,
         }),
       }
-    : null
+    : (fixedAncestor as unknown as Element | null)
 
   const element = {
     parentElement: nested as unknown as Element | null,
@@ -928,5 +977,32 @@ describe('changeFocus', () => {
     expect(
       locator.__scrollToCalls.every((call) => call.behavior === 'auto')
     ).toBe(true)
+  })
+
+  it('does not try to scroll fixed-position targets', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 970, y: 452, width: 294, height: 212 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 3200 },
+      fixed: true,
+    })
+
+    const promise = changeFocus(
+      locator,
+      {
+        duration: 100,
+        easing: 'ease-in-out',
+        amount: 0.45,
+        centering: 1,
+      },
+      undefined,
+      true
+    )
+    await vi.runAllTimersAsync()
+    const result = await promise
+
+    expect(locator.__scrollToCalls).toHaveLength(0)
+    expect(locator.__nestedScrollTops).toHaveLength(0)
+    expect(result.scroll).toBeUndefined()
   })
 })

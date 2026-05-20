@@ -1243,6 +1243,43 @@ describe('instrumentLocator', () => {
     expect(ev.events.some((e) => e.type === 'mouseUp')).toBe(true)
   })
 
+  it('uses the post-focus target bounding box for dragTo movement', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const sourceBb = { x: 50, y: 100, width: 60, height: 30 }
+    const staleTargetBb = { x: 300, y: 800, width: 60, height: 30 }
+    const freshTargetBb = { x: 300, y: 200, width: 60, height: 30 }
+    const sourceLocator = makeLocatorMock(sourceBb, page)
+    const targetLocator = makeLocatorMock(staleTargetBb, page)
+    vi.mocked(targetLocator.boundingBox)
+      .mockResolvedValueOnce(staleTargetBb)
+      .mockResolvedValueOnce(freshTargetBb)
+    instrumentLocator(sourceLocator)
+
+    await Promise.all([
+      (
+        sourceLocator as unknown as {
+          dragTo(
+            target: typeof targetLocator,
+            opts?: { moveDuration?: number; dragDuration?: number }
+          ): Promise<void>
+        }
+      ).dragTo(targetLocator, { moveDuration: 100, dragDuration: 100 }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const ev = recordedInputEvents[0]!
+    const moves = ev.events.filter(
+      (e): e is MouseMoveEvent => e.type === 'mouseMove'
+    )
+    expect(moves[0]?.y).toBe(freshTargetBb.y + freshTargetBb.height / 2)
+    expect(moves[0]?.elementRect).toEqual(freshTargetBb)
+  })
+
   it('instruments fill to record a pressSequentially InputEvent with inner mouseHide when hideMouse: true', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)

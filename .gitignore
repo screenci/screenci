@@ -2,3 +2,7 @@ node_modules/
 dist/
 .npmrc
 test-results/
+index.js
+index.d.ts
+src/*.js
+src/*.d.ts

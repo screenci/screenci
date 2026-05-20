@@ -89,7 +89,7 @@ All chaining methods (`locator()`, `getByRole()`, `filter()`, `first()`, `last()
 
 ## Narration
 
-`createNarration()` defines typed narration text. Create the map once near the top of your `.video.ts` file, then `await narration.key` at the point in the script where that line should begin. At render time ScreenCI generates the audio and syncs it to the recording.
+`createNarration()` defines typed narration text. Create the map once near the top of your `.video.ts` file, then call `await narration.key.start()` at the point in the script where that line should begin. At render time ScreenCI generates the audio and syncs it to the recording.
 
 ```ts
 import { video, createNarration, voices } from 'screenci'
@@ -109,12 +109,11 @@ const narration = createNarration({
 video('Settings walkthrough', async ({ page }) => {
   await page.goto('/settings')
 
-  await narration.intro
+  await narration.intro.start()
   await page.locator('#notifications').click()
   await page.locator('#save').click()
 
-  await narration.save
-  await narration.wait()
+  await narration.save.finish()
 })
 ```
 
@@ -136,34 +135,33 @@ const narration = createNarration({
 video('Example', async ({ page }) => {
   await page.goto('/settings')
 
-  await narration.intro
+  await narration.intro.start()
   await page.locator('#notifications').click()
 
-  await narration.save
-  await narration.wait()
+  await narration.save.finish()
   await page.locator('#save').click()
 })
 ```
 
-### Awaiting narration — display and move on
+### `start()` — display and move on
 
-`await narration.key` starts the narration and resolves immediately. The cue stays visible and audio plays while subsequent actions run. Consecutive narration segments sequence automatically — each one ends the previous before starting:
+`await narration.key.start()` starts the narration and resolves immediately. The cue stays visible and audio plays while subsequent actions run. Consecutive narration segments sequence automatically — each one ends the previous before starting:
 
 ```ts
-await narration.intro
+await narration.intro.start()
 await page.goto('https://example.com/signup')
 
-await narration.nextStep // auto-ends intro, then starts nextStep
+await narration.nextStep.start() // auto-ends intro, then starts nextStep
 await page.locator('#save').click()
 ```
 
-### `wait()` — wait for audio to finish
+### `finish()` — wait for audio to finish
 
-Call `await narration.wait()` when an action must happen _after_ the current narration has finished playing. Only needed in those cases — consecutive narration segments already sequence automatically.
+Call `await narration.key.finish()` when an action must happen _after_ that narration has finished playing. If the cue is already active, `finish()` waits for that run. Otherwise it starts a fresh run and waits for it to complete.
 
 ```ts
-await narration.intro
-await narration.wait() // wait for intro audio to finish
+await narration.intro.start()
+await narration.intro.finish() // wait for intro audio to finish
 await page.click('#start') // this runs after the audio ends
 ```
 
@@ -217,7 +215,16 @@ See the [Assets guide](/guides/assets/) for the full reference.
 
 ---
 
-## `autoZoom`
+## Camera zooming
+
+ScreenCI supports both automatic and manual camera control:
+
+- `autoZoom()` for interaction-following sections
+- `zoomTo()` / `resetZoom()` for explicit framing and pans
+
+See the [Zooming guide](/guides/zooming/) for when to use each style.
+
+### `autoZoom`
 
 `autoZoom()` adds a camera zoom that follows interactions. The camera zooms in at the start of the callback and zooms back out when it resolves. All clicks and fills inside drive a pan that keeps the active element centred.
 
@@ -326,6 +333,41 @@ await autoZoom(
   { duration: 400, easing: 'ease-in-out', amount: 0.4 }
 )
 ```
+
+### Manual zooming
+
+Use `zoomTo()` when you want to frame a specific locator or point before any interaction happens, or when you want an intentional pan between exact targets.
+
+```ts
+import { resetZoom, video, zoomTo } from 'screenci'
+
+video('Manual zoom demo', async ({ page }) => {
+  await page.goto('/dashboard')
+
+  await zoomTo(page.locator('#summary-panel'), {
+    duration: 500,
+    easing: 'ease-in-out',
+    amount: 0.45,
+    centering: 1,
+  })
+
+  await page.waitForTimeout(800)
+
+  await zoomTo(
+    { x: 1200, y: 680 },
+    {
+      duration: 700,
+      easing: 'ease-in-out',
+      amount: 0.45,
+      centering: 1,
+    }
+  )
+
+  await resetZoom({ duration: 400, easing: 'ease-in-out' })
+})
+```
+
+Manual zoom and `autoZoom()` cannot be active at the same time.
 
 ---
 

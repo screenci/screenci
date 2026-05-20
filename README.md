@@ -107,7 +107,7 @@ screenci enforces `workers: 1`, `retries: 0`, and `fullyParallel: false` so each
 
 ## AI narration
 
-`createNarration()` maps keys to narration text (or audio files). Define it once near the top of the file, then `await narration.key` inside `video()` wherever that spoken line should begin. The audio keeps playing while your next actions run. Use `await narration.wait()` only when an action must wait for the current line to finish.
+`createNarration()` maps keys to narration text (or audio files). Define it once near the top of the file, then call `await narration.key.start()` wherever that spoken line should begin. The audio keeps playing while your next actions run. Use `await narration.key.finish()` when an action must wait for that line to finish.
 
 ```ts
 import { video, createNarration, voices } from 'screenci'
@@ -127,12 +127,11 @@ const narration = createNarration({
 video('Dashboard walkthrough', async ({ page }) => {
   await page.goto('/dashboard')
 
-  await narration.intro
+  await narration.intro.start()
   await page.locator('#reports').click()
   await page.locator('#new-project').click()
 
-  await narration.addButton
-  await narration.wait()
+  await narration.addButton.finish()
 })
 ```
 
@@ -142,11 +141,11 @@ Use this pattern:
 const narration = createNarration({ ... })
 
 video('Example', async ({ page }) => {
-  await narration.intro // starts narration now
+  await narration.intro.start() // starts narration now
   await page.click('#next') // runs while intro audio is still playing
 
-  await narration.details // auto-ends intro, then starts details
-  await narration.wait() // only if the next action must wait
+  await narration.details.start() // auto-ends intro, then starts details
+  await narration.details.finish() // only if the next action must wait
   await page.click('#confirm')
 })
 ```

@@ -1,5 +1,6 @@
 import { describe, it, assertType } from 'vitest'
 import { createNarration } from './cue.js'
+import type { NarrationCue } from './cue.js'
 import { modelTypes, voices } from './voices.js'
 import type { VoiceForLang } from './voices.js'
 
@@ -88,12 +89,16 @@ describe('createNarration type constraints', () => {
   })
 
   it('creates narration from typed cues', () => {
-    createNarration({
+    const narration = createNarration({
       voice: { name: voices.Ava },
       languages: {
         en: { cues: { intro: 'Hello' } },
       },
     })
+
+    assertType<NarrationCue>(narration.intro)
+    assertType<() => Promise<void>>(narration.intro.start)
+    assertType<() => Promise<void>>(narration.intro.finish)
   })
 
   it('accepts numeric pacing for consistent narration', () => {

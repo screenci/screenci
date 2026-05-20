@@ -76,7 +76,7 @@ export { video } from './src/video.js'
 export type { ScreenCIPage, ScreenCILocator } from './src/types.js'
 export { createNarration } from './src/cue.js'
 export type {
-  CueController,
+  NarrationCue,
   Cues,
   TopLevelVoiceConfig,
   LangNarrationOverride,

@@ -35,7 +35,11 @@ export function setSleepFn(fn: (ms: number) => void): void {
 }
 
 let activeRecorder: IEventRecorder | null = null
-let cueStarted = false
+let activeCueName: string | null = null
+let activeCueRun: {
+  finished: Promise<void>
+  resolveFinished: () => void
+} | null = null
 const usedCueNames = new Set<string>()
 const registeredCustomVoiceRefs = new Set<CustomVoiceRef>()
 /** Maps local asset path → SHA-256 hash, populated during validateCustomVoiceRefs. */
@@ -43,11 +47,14 @@ const videoCueFileHashes = new Map<string, string>()
 
 export function setActiveCueRecorder(recorder: IEventRecorder | null): void {
   activeRecorder = recorder
+  activeCueName = null
+  activeCueRun = null
   usedCueNames.clear()
 }
 
 export function resetCueChain(): void {
-  cueStarted = false
+  activeCueName = null
+  activeCueRun = null
   usedCueNames.clear()
 }
 
@@ -132,10 +139,12 @@ function toRecordedVoice(
  * Called internally at the start of every narration controller.
  */
 function cueAutoEnd(): void {
-  if (!cueStarted || activeRecorder === null) return
+  if (activeCueRun === null || activeRecorder === null) return
   activeRecorder.addCueEnd('auto')
   sleepFn(2 * ONE_FRAME_MS)
-  cueStarted = false
+  activeCueRun.resolveFinished()
+  activeCueName = null
+  activeCueRun = null
 }
 
 function assertUniqueCueName(name: string): void {
@@ -147,25 +156,55 @@ function assertUniqueCueName(name: string): void {
   usedCueNames.add(name)
 }
 
-async function doWait(): Promise<void> {
-  if (activeRecorder === null || !cueStarted) return
-  if (isInsideHide()) throw new Error('Cannot call wait() inside hide()')
+function createDeferred(): {
+  promise: Promise<void>
+  resolve: () => void
+} {
+  let resolve!: () => void
+  const promise = new Promise<void>((resolveFn) => {
+    resolve = resolveFn
+  })
+  return { promise, resolve }
+}
+
+function createActiveCueRun(): {
+  finished: Promise<void>
+  resolveFinished: () => void
+} {
+  const deferred = createDeferred()
+  return {
+    finished: deferred.promise,
+    resolveFinished: deferred.resolve,
+  }
+}
+
+async function finishActiveCue(): Promise<void> {
+  if (activeRecorder === null || activeCueRun === null) return
+  if (isInsideHide()) throw new Error('Cannot call finish() inside hide()')
+  const run = activeCueRun
   activeRecorder.addCueEnd('wait')
   sleepFn(2 * ONE_FRAME_MS)
-  cueStarted = false
+  run.resolveFinished()
+  if (activeCueRun === run) {
+    activeCueName = null
+    activeCueRun = null
+  }
 }
 
 /**
- * A narration controller. Awaiting it starts the narration segment.
+ * A narration cue controller.
  *
  * @example
  * ```ts
- * await narration.intro
+ * await narration.intro.start()
  * await page.goto('/dashboard')
- * await narration.nextStep
+ * await narration.nextStep.finish()
  * ```
  */
-export type CueController = PromiseLike<void>
+export type NarrationCue = {
+  start(): Promise<void>
+  finish(): Promise<void>
+}
 
 type NarrationCueObject =
   | { text: string }
@@ -176,23 +215,7 @@ type NarrationCueObject =
 export type CueMapValue = string | NarrationCueObject
 
 export type Cues<T extends Record<string, CueMapValue>> = {
-  [K in keyof T]: CueController
-} & {
-  /**
-   * Waits for the current narration segment to finish before the next action.
-   *
-   * Only needed when an action must happen _after_ narration ends.
-   * Consecutive `await narration.x` calls sequence automatically — each
-   * one ends the previous before starting.
-   *
-   * @example
-   * ```ts
-   * await narration.intro
-   * await narration.wait() // wait for intro audio to finish
-   * await page.click('#next')  // click happens after intro ends
-   * ```
-   */
-  wait(): Promise<void>
+  [K in keyof T]: NarrationCue
 }
 
 /**
@@ -343,7 +366,7 @@ type LanguagesMap<
 /**
  * Creates a set of typed narration controllers, one per key in the map.
  *
- * Each controller has `start()` and `end()`.
+ * Each cue has explicit `start()` and `finish()` methods.
  * At render time screenci generates narration, and syncs the audio to the
  * recording. You write text; the voice is handled for you.
  *
@@ -367,17 +390,17 @@ type LanguagesMap<
  *   },
  * })
  *
- * // Await a narration segment directly to start it:
- * await narration.intro
+ * // Start a narration segment directly:
+ * await narration.intro.start()
  * await page.goto('/dashboard')
  *
  * // Consecutive narration segments sequence automatically:
- * await narration.intro
- * await narration.next  // ends intro, then starts next
+ * await narration.intro.start()
+ * await narration.next.start()  // ends intro, then starts next
  *
  * // Wait for audio to finish before an action:
- * await narration.intro
- * await narration.wait()
+ * await narration.intro.start()
+ * await narration.intro.finish()
  * await page.click('#start')
  * ```
  */
@@ -506,6 +529,50 @@ function buildCuesFromInput(
   const firstCues = getLanguageCues(firstEntry)
   if (firstCues === undefined) return {} as Cues<Record<string, CueMapValue>>
 
+  function createCueController(
+    name: string,
+    emitStart: (recorder: IEventRecorder) => void | Promise<void>
+  ): NarrationCue {
+    let didRegisterName = false
+
+    const start = async (): Promise<void> => {
+      if (isInsideHide())
+        throw new Error('Cannot start narration inside hide()')
+      const recorder = activeRecorder
+      if (recorder === null) return
+      if (!didRegisterName) {
+        assertUniqueCueName(name)
+        didRegisterName = true
+      }
+      cueAutoEnd()
+      const run = createActiveCueRun()
+      activeCueName = name
+      activeCueRun = run
+      await emitStart(recorder)
+    }
+
+    return {
+      start,
+      async finish(): Promise<void> {
+        if (isInsideHide())
+          throw new Error('Cannot call finish() inside hide()')
+        if (activeRecorder === null) return
+
+        if (activeCueName === name && activeCueRun !== null) {
+          const run = activeCueRun
+          await finishActiveCue()
+          await run.finished
+          return
+        }
+
+        await start()
+        const run = activeCueRun
+        await finishActiveCue()
+        await run?.finished
+      },
+    }
+  }
+
   for (const key in firstCues) {
     const keyStr = key
 
@@ -526,17 +593,9 @@ function buildCuesFromInput(
     }
 
     if (hasFileEntry) {
-      const fileStartFn = async (): Promise<void> => {
-        if (isInsideHide())
-          throw new Error('Cannot start narration inside hide()')
-        if (activeRecorder === null) return
-        assertUniqueCueName(keyStr)
-        cueAutoEnd()
+      result[keyStr] = createCueController(keyStr, async (recorder) => {
         for (const lang of langs) {
-          activeRecorder.registerVoiceForLang(
-            lang,
-            resolvedVoiceMeta.get(lang)!
-          )
+          recorder.registerVoiceForLang(lang, resolvedVoiceMeta.get(lang)!)
         }
         const videoTranslations: Record<string, VideoCueTranslation> = {}
         for (const lang of langs) {
@@ -566,33 +625,19 @@ function buildCuesFromInput(
             })
           }
         }
-        cueStarted = true
         sleepFn(2 * ONE_FRAME_MS)
-        activeRecorder.addVideoCueStart(
+        recorder.addVideoCueStart(
           keyStr,
           undefined,
           undefined,
           undefined,
           videoTranslations
         )
-      }
-      result[keyStr] = {
-        then(resolve, reject) {
-          return fileStartFn().then(resolve, reject)
-        },
-      }
+      })
     } else {
-      const textStartFn = async (): Promise<void> => {
-        if (isInsideHide())
-          throw new Error('Cannot start narration inside hide()')
-        if (activeRecorder === null) return
-        assertUniqueCueName(keyStr)
-        cueAutoEnd()
+      result[keyStr] = createCueController(keyStr, async (recorder) => {
         for (const lang of langs) {
-          activeRecorder.registerVoiceForLang(
-            lang,
-            resolvedVoiceMeta.get(lang)!
-          )
+          recorder.registerVoiceForLang(lang, resolvedVoiceMeta.get(lang)!)
         }
         const textTranslations: Record<string, CueTranslation> = {}
         for (const lang of langs) {
@@ -616,23 +661,11 @@ function buildCuesFromInput(
             }
           }
         }
-        cueStarted = true
         sleepFn(2 * ONE_FRAME_MS)
-        activeRecorder.addCueStart('', keyStr, undefined, textTranslations)
-      }
-      result[keyStr] = {
-        then(resolve, reject) {
-          return textStartFn().then(resolve, reject)
-        },
-      }
+        recorder.addCueStart('', keyStr, undefined, textTranslations)
+      })
     }
   }
-
-  ;(
-    result as unknown as {
-      wait: () => Promise<void>
-    }
-  ).wait = doWait
   return result
 }
 

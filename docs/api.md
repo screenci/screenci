@@ -121,6 +121,70 @@ video('Settings demo', async ({ page }) => {
 
 ---
 
+## `zoomTo(target, options?)`
+
+→ See the [Zooming guide](/guides/zooming/) for manual zoom usage patterns.
+
+Frames a locator or an explicit point without needing a click event first.
+
+```ts
+import { video, zoomTo } from 'screenci'
+
+video('Chart demo', async ({ page }) => {
+  await page.goto('https://example.com/dashboard')
+
+  await zoomTo(page.locator('#chart'), {
+    duration: 500,
+    easing: 'ease-in-out',
+    amount: 0.45,
+    centering: 1,
+  })
+})
+```
+
+### Supported targets
+
+- `Locator`
+- `{ x: number, y: number }`
+
+### Options
+
+| Option      | Type     | Default      | Description                                             |
+| ----------- | -------- | ------------ | ------------------------------------------------------- |
+| `duration`  | `number` | `1600`       | Zoom transition duration in milliseconds                |
+| `easing`    | `string` | `'ease-out'` | Easing for the zoom transition                          |
+| `amount`    | `number` | `0.65`       | Fraction of output dimensions visible when zoomed (0–1) |
+| `centering` | `number` | `1`          | Visibility bias inside the zoomed viewport (0–1)        |
+
+Manual zoom and `autoZoom()` cannot be active at the same time.
+
+---
+
+## `resetZoom(options?)`
+
+→ See the [Zooming guide](/guides/zooming/) for examples.
+
+Returns from the current manual zoom state back to the full recording viewport.
+
+```ts
+import { resetZoom, video, zoomTo } from 'screenci'
+
+video('Manual zoom demo', async ({ page }) => {
+  await zoomTo({ x: 1200, y: 680 })
+  await page.waitForTimeout(800)
+  await resetZoom({ duration: 400, easing: 'ease-in-out' })
+})
+```
+
+### Options
+
+| Option     | Type     | Default      | Description                        |
+| ---------- | -------- | ------------ | ---------------------------------- |
+| `duration` | `number` | `1600`       | Zoom-out transition duration in ms |
+| `easing`   | `string` | `'ease-out'` | Easing for the zoom-out transition |
+
+---
+
 ## `hide(fn)`
 
 → [Full details](/reference/api/functions/hide/)

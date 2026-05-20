@@ -47,7 +47,7 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 - `video()` declares one output video per test.
 - `hide()` removes setup and loading sections from the final recording.
 - `autoZoom()` follows a larger form or page area with smooth camera motion. Use it sparingly.
-- `createNarration()` is mandatory for every video: define it in every `.video.ts` file and include spoken narration throughout the demo. The opening narration should first state the purpose of the video, then continue with the explanation or walkthrough. Define the map once, then `await narration.key` where each line should begin. Use `await narration.wait()` only when the next action must wait for audio to finish.
+- `createNarration()` is mandatory for every video: define it in every `.video.ts` file and include spoken narration throughout the demo. The opening narration should first state the purpose of the video, then continue with the explanation or walkthrough. Define the map once, then call `await narration.key.start()` where each line should begin. Use `await narration.key.finish()` only when the next action must wait for audio to finish.
 - Narration text can include inline speech-control tags such as `[pronounce: screen see eye]`, `[short pause]`, `[medium pause]`, and `[long pause]` when a word needs guided pronunciation or an intentional pause.
 
 ## Required Conventions
@@ -73,7 +73,7 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 1. Start from the existing initialized ScreenCI package.
 2. Add or edit `.video.ts` files in `videos/`.
    Remove `videos/example.video.ts` if you are creating new videos and do not need the starter video.
-   For narration, define `const narration = createNarration({ ... })` near the top of the file and trigger lines with `await narration.someKey` inside the test body. Make the first narration line state the video's purpose, then use the following lines for the explanation. Use inline tags like `[pronounce: ...]` and `[short pause]` inside cue text when needed.
+   For narration, define `const narration = createNarration({ ... })` near the top of the file and trigger lines with `await narration.someKey.start()` inside the test body. Make the first narration line state the video's purpose, then use the following lines for the explanation. Use inline tags like `[pronounce: ...]` and `[short pause]` inside cue text when needed.
 3. Run `npx screenci test --ui` to validate selectors and flow.
 4. Run `npx screenci test` until it passes.
 5. Run `npx screenci record` to produce `.screenci/<video-name>/recording.mp4` and `data.json`.

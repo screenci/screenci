@@ -71,51 +71,89 @@ describe('createNarration', () => {
     })
   })
 
-  it('creates thenable cue controllers for each key', () => {
+  it('exposes start() and finish() for each cue', () => {
     const cues = createNarration(singleLangInput)
 
     expect(cues.intro).toBeDefined()
     expect(cues.outro).toBeDefined()
-    expect(typeof cues.intro.then).toBe('function')
-    expect(typeof cues.outro.then).toBe('function')
+    expect(typeof cues.intro.start).toBe('function')
+    expect(typeof cues.intro.finish).toBe('function')
+    expect(typeof cues.outro.start).toBe('function')
+    expect(typeof cues.outro.finish).toBe('function')
   })
 
-  it('exposes wait() on the result', () => {
-    const cues = createNarration(singleLangInput)
-    expect(typeof cues.wait).toBe('function')
-  })
-
-  it('await narration.key: sleep → cueStart(multilang)', async () => {
+  it('start() emits cue start', async () => {
     const cues = createNarration(singleLangInput)
 
-    await cues.intro
+    await cues.intro.start()
     expect(order).toEqual(['sleep', 'cueStart(multilang)'])
   })
 
-  it('wait(): cueEnd → sleep', async () => {
+  it('finish() starts and waits when idle', async () => {
     const cues = createNarration(singleLangInput)
 
-    await cues.intro
+    await cues.intro.finish()
+    expect(order).toEqual(['sleep', 'cueStart(multilang)', 'cueEnd', 'sleep'])
+  })
+
+  it('start() then finish() does not replay', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro.start()
     order = []
 
-    await cues.wait()
+    await cues.intro.finish()
     expect(order).toEqual(['cueEnd', 'sleep'])
   })
 
-  it('wait() is a no-op when no cue is active', async () => {
-    const cues = createNarration(singleLangInput)
-    await cues.wait()
-    expect(order).toEqual([])
-  })
-
-  it('consecutive narration segments auto-end the previous: sleep → cueStart → cueEnd → sleep → cueStart', async () => {
+  it('consecutive finish() calls replay', async () => {
     const cues = createNarration(singleLangInput)
 
-    await cues.intro
+    await cues.intro.finish()
     order = []
 
-    await cues.outro
+    await cues.intro.finish()
+    expect(order).toEqual(['sleep', 'cueStart(multilang)', 'cueEnd', 'sleep'])
+  })
+
+  it('start() on one cue then start() on another auto-ends the first', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro.start()
+    order = []
+
+    await cues.outro.start()
     expect(order).toEqual(['cueEnd', 'sleep', 'sleep', 'cueStart(multilang)'])
+  })
+
+  it('start() on one cue then finish() on another starts the second after auto-ending the first', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro.start()
+    order = []
+
+    await cues.outro.finish()
+    expect(order).toEqual([
+      'cueEnd',
+      'sleep',
+      'sleep',
+      'cueStart(multilang)',
+      'cueEnd',
+      'sleep',
+    ])
+  })
+
+  it('finish() waits when this cue is already active, otherwise it starts a fresh run', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro.start()
+    order = []
+    await cues.intro.finish()
+    expect(order).toEqual(['cueEnd', 'sleep'])
+
+    order = []
+    await cues.intro.finish()
+    expect(order).toEqual(['sleep', 'cueStart(multilang)', 'cueEnd', 'sleep'])
   })
 
   it('throws when a cue name is reused in one recording', async () => {
@@ -132,8 +170,8 @@ describe('createNarration', () => {
       },
     })
 
-    await first.intro
-    await expect(Promise.resolve(second.intro)).rejects.toThrow(
+    await first.intro.start()
+    await expect(second.intro.start()).rejects.toThrow(
       'Duplicate cue name "intro" in one video recording'
     )
   })
@@ -153,19 +191,10 @@ describe('createNarration', () => {
     })
     await validateCustomVoiceRefs(fileURLToPath(import.meta.url))
 
-    await first.clip
-    await expect(Promise.resolve(second.clip)).rejects.toThrow(
+    await first.clip.start()
+    await expect(second.clip.start()).rejects.toThrow(
       'Duplicate cue name "clip" in one video recording'
     )
-  })
-
-  it('wait() after wait() is a no-op', async () => {
-    const cues = createNarration(singleLangInput)
-    await cues.intro
-    await cues.wait()
-    order = []
-    await cues.wait()
-    expect(order).toEqual([])
   })
 
   it('throws when languages is empty', () => {
@@ -177,11 +206,11 @@ describe('createNarration', () => {
     ).toThrow('createNarration requires at least one language in "languages"')
   })
 
-  it('keeps createNarration as a backwards-compatible alias', () => {
+  it('keeps createNarration exported', () => {
     const cues = createNarration(singleLangInput)
 
     expect(cues.intro).toBeDefined()
-    expect(typeof cues.wait).toBe('function')
+    expect(typeof cues.intro.start).toBe('function')
   })
 
   it('does not export createVideoCues from the package root', () => {
@@ -196,8 +225,8 @@ describe('createNarration', () => {
     it('operations are no-ops', async () => {
       const cues = createNarration(singleLangInput)
 
-      await cues.intro
-      await cues.wait()
+      await cues.intro.start()
+      await cues.intro.finish()
 
       expect(order).toEqual([])
     })
@@ -209,20 +238,20 @@ describe('createNarration', () => {
 
       await expect(
         hide(async () => {
-          await cues.intro
+          await cues.intro.start()
         })
       ).rejects.toThrow('Cannot start narration inside hide()')
     })
 
-    it('throws when calling wait() inside hide()', async () => {
+    it('throws when calling finish() inside hide()', async () => {
       const cues = createNarration(singleLangInput)
-      await cues.intro
+      await cues.intro.start()
 
       await expect(
         hide(async () => {
-          await cues.wait()
+          await cues.intro.finish()
         })
-      ).rejects.toThrow('Cannot call wait() inside hide()')
+      ).rejects.toThrow('Cannot call finish() inside hide()')
     })
   })
 
@@ -239,15 +268,15 @@ describe('createNarration', () => {
       },
     }
 
-    it('creates thenable controllers for each key', () => {
+    it('creates cue controllers for each key', () => {
       const cues = createNarration(langInput)
-      expect(typeof cues.intro.then).toBe('function')
-      expect(typeof cues.outro.then).toBe('function')
+      expect(typeof cues.intro.start).toBe('function')
+      expect(typeof cues.outro.finish).toBe('function')
     })
 
-    it('await passes translations to addCueStart', async () => {
+    it('start() passes translations to addCueStart', async () => {
       const cues = createNarration(langInput)
-      await cues.intro
+      await cues.intro.start()
 
       expect(recorder.addCueStart).toHaveBeenCalledWith(
         '',
@@ -260,9 +289,9 @@ describe('createNarration', () => {
       )
     })
 
-    it('await emits sleep → cueStart(multilang) sequence', async () => {
+    it('start() emits sleep → cueStart(multilang) sequence', async () => {
       const cues = createNarration(langInput)
-      await cues.intro
+      await cues.intro.start()
       expect(order).toEqual(['sleep', 'cueStart(multilang)'])
     })
 
@@ -279,7 +308,7 @@ describe('createNarration', () => {
           },
         },
       })
-      await cues.intro
+      await cues.intro.start()
 
       expect(recorder.addCueStart).toHaveBeenCalledWith(
         '',
@@ -305,7 +334,7 @@ describe('createNarration', () => {
           },
         },
       })
-      await cues.intro
+      await cues.intro.start()
 
       expect(recorder.addCueStart).toHaveBeenCalledWith(
         '',
@@ -342,7 +371,7 @@ describe('createNarration', () => {
         },
       })
 
-      await expect(cues.intro).rejects.toThrow(
+      await expect(cues.intro.start()).rejects.toThrow(
         'Video cue asset hash missing for path: /tmp/intro-en.mp4'
       )
     })
@@ -365,7 +394,7 @@ describe('createNarration', () => {
       })
 
       customVoice.assetHash = 'voice-hash'
-      await cues.intro
+      await cues.intro.start()
 
       expect(recorder.addCueStart).toHaveBeenCalledWith(
         '',
@@ -383,14 +412,14 @@ describe('createNarration', () => {
   })
 
   describe('voice metadata registration', () => {
-    it('registers voice meta via recorder on await', async () => {
+    it('registers voice meta via recorder on start()', async () => {
       const cues = createNarration({
         voice: { name: voices.Ava },
         languages: {
           en: { cues: { intro: 'Hello' } },
         },
       })
-      await cues.intro
+      await cues.intro.start()
 
       expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('en', {
         name: 'Ava',
@@ -408,7 +437,7 @@ describe('createNarration', () => {
           },
         },
       })
-      await cues.intro
+      await cues.intro.start()
 
       expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('en', {
         name: 'Ava',
@@ -426,7 +455,7 @@ describe('createNarration', () => {
           en: { region: 'en-US', cues: { intro: 'Hello' } },
         },
       })
-      await cues.intro
+      await cues.intro.start()
 
       expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('en', {
         name: 'Ava',
@@ -439,7 +468,7 @@ describe('createNarration', () => {
         voice: { name: voices.Ava },
         languages: { en: { cues: { intro: 'Hello' } } },
       })
-      await cues.intro
+      await cues.intro.start()
 
       expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('en', {
         name: 'Ava',
@@ -458,8 +487,8 @@ describe('createNarration', () => {
         languages: { en: { cues: { other: 'World' } } },
       })
 
-      await cues1.intro
-      await expect(cues2.other).resolves.toBeUndefined()
+      await cues1.intro.start()
+      await expect(cues2.other.start()).resolves.toBeUndefined()
     })
 
     it('does not throw when two createNarration calls use the same voice for a language', async () => {
@@ -472,8 +501,8 @@ describe('createNarration', () => {
         languages: { en: { cues: { other: 'World' } } },
       })
 
-      await expect(cues1.intro).resolves.toBeUndefined()
-      await expect(cues2.other).resolves.toBeUndefined()
+      await expect(cues1.intro.start()).resolves.toBeUndefined()
+      await expect(cues2.other.start()).resolves.toBeUndefined()
     })
   })
 })

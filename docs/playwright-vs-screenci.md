@@ -26,12 +26,12 @@ The `page` fixture inside `video()` is a `ScreenCIPage`: a wrapper whose `.locat
 
 On top of that, screenci adds:
 
-| API                 | What it does                                                       |
-| ------------------- | ------------------------------------------------------------------ |
-| `hide(fn)`          | Cuts the section from the final video (logins, page loads, setup)  |
-| `autoZoom(fn)`      | Smooth camera zoom that follows clicks and fills                   |
-| `createNarration()` | Typed narration markers: `await narration.key` where a line starts |
-| `createAssets()`    | Image or video overlays shown during the recording                 |
+| API                 | What it does                                                               |
+| ------------------- | -------------------------------------------------------------------------- |
+| `hide(fn)`          | Cuts the section from the final video (logins, page loads, setup)          |
+| `autoZoom(fn)`      | Smooth camera zoom that follows clicks and fills                           |
+| `createNarration()` | Typed narration markers: `await narration.key.start()` where a line starts |
+| `createAssets()`    | Image or video overlays shown during the recording                         |
 
 All of these are composable with normal [Playwright](https://playwright.dev/docs/api/class-page) code. No rewrites required.
 

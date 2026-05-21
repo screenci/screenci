@@ -1271,6 +1271,24 @@ describe('CLI', () => {
       expect(pkgCall?.[1]).not.toContain('"screenci": "file:')
     })
 
+    it('should use SCREENCI_INIT_SCREENCI_DEPENDENCY when provided', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      process.env.SCREENCI_INIT_SCREENCI_DEPENDENCY =
+        'file:../screenci-0.0.32.tgz'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      const pkgCall = mockWriteFile.mock.calls.find(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].endsWith('package.json')
+      )
+      expect(pkgCall?.[1]).toContain(
+        '"screenci": "file:../screenci-0.0.32.tgz"'
+      )
+    })
+
     it('should use published screenci dependency when init runs through source cli', async () => {
       const sourceCliPath = `${process.cwd()}/cli.ts`
       process.argv = ['node', sourceCliPath, 'init', 'my-project']

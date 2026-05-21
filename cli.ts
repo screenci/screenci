@@ -1606,6 +1606,10 @@ function getInitProjectRoot(): string {
   return process.env['SCREENCI_INIT_CWD'] ?? process.cwd()
 }
 
+function getInitScreenciDependencyOverride(): string | undefined {
+  return process.env['SCREENCI_INIT_SCREENCI_DEPENDENCY']
+}
+
 export async function ensureScreenciSecret(): Promise<string | undefined> {
   const existingSecret = process.env.SCREENCI_SECRET
   if (existingSecret) return existingSecret
@@ -1721,7 +1725,8 @@ async function runInit(
     '-y',
   ]
   const skillsCommand = `npx ${skillsArgs.join(' ')}`
-  const screenciDependency = await readCurrentScreenciVersion()
+  const screenciDependency =
+    getInitScreenciDependencyOverride() ?? (await readCurrentScreenciVersion())
 
   await mkdir(resolve(projectDir, 'videos'), { recursive: true })
   if (shouldAddGithubActionCi) {

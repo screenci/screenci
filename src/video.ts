@@ -48,6 +48,7 @@ import {
   instrumentContext,
 } from './instrument.js'
 import { logger } from './logger.js'
+import { setMousePosition } from './mouse.js'
 import { getChromiumLaunchOptions } from './browserLaunchOptions.js'
 
 export const POST_VIDEO_PAUSE = 500
@@ -88,6 +89,21 @@ async function setupMouseTracking(
     )
   })
   */
+}
+
+export async function positionMouseAtViewportCenter(
+  page: Page,
+  dimensions: { width: number; height: number }
+): Promise<{ x: number; y: number }> {
+  const viewportCenter = getViewportCenter(dimensions)
+  await (
+    page.mouse as typeof page.mouse & {
+      _move: (x: number, y: number) => Promise<void>
+    }
+  )._move(viewportCenter.x, viewportCenter.y)
+  setMousePosition(page, viewportCenter)
+
+  return viewportCenter
 }
 
 async function startScreencastRecording(
@@ -258,12 +274,7 @@ const _videoBase = base.extend<VideoFixtureOptions>({
       aspectRatio
     )
 
-    const viewportCenter = getViewportCenter(dimensions)
-    await (
-      page.mouse as typeof page.mouse & {
-        _move: (x: number, y: number) => Promise<void>
-      }
-    )._move(viewportCenter.x, viewportCenter.y)
+    await positionMouseAtViewportCenter(page, dimensions)
     await screenRecorder.start()
     // Mark the moment the video recording actually begins after the cursor is positioned.
     recorder.start()

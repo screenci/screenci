@@ -306,12 +306,15 @@ export type CursorDragTimingOption =
     }
 
 /**
- * Options for an automatic click that precedes a `fill`, `pressSequentially`,
- * `check`, `uncheck`, `setChecked`, or `selectOption`.
+ * Options for the automatic click that precedes a `fill`,
+ * `pressSequentially`, `check`, `uncheck`, `setChecked`, or `selectOption`.
  *
- * When passed as `click` to these methods, the locator is clicked first (with
- * animated cursor movement), then the action begins immediately. No extra
- * zoom-pan sleep is inserted — the cursor-move animation covers it.
+ * These methods already click the locator first (with animated cursor
+ * movement), then begin the action immediately. For `fill` and
+ * `pressSequentially`, that default pre-typing cursor move/click is skipped
+ * when the target input is already focused. Pass this as `click` when you
+ * want to customize or force that built-in click timing. No extra zoom-pan
+ * sleep is inserted — the cursor-move animation covers it.
  *
  * To control where on the element the cursor moves, pass `position` at the
  * top level of the method's options (not inside `click`).
@@ -510,10 +513,12 @@ export type ScreenCILocator = Omit<
    *   divided by the number of characters. Has no effect on empty strings.
    * @param options.timeout - Maximum time in milliseconds to wait for the
    *   element to be actionable.
-   * @param options.click - When provided, clicks the element before typing
-   *   (animated cursor move + click). No extra zoom-pan sleep is inserted.
+   * @param options.click - Customizes the built-in click before typing
+   *   (animated cursor move + click). When omitted, ScreenCI skips the
+   *   default pre-typing cursor move/click if the target input is already
+   *   focused. No extra zoom-pan sleep is inserted.
    * @param options.position - Point relative to the element's top-left corner
-   *   to click before filling. Only used when `click` is also provided.
+   *   to click before filling.
    *   Defaults to the element center.
    * @param options.hideMouse - When `true`, the mouse cursor is hidden while
    *   typing and shown again on the next mouse move. Defaults to `false`.
@@ -526,10 +531,12 @@ export type ScreenCILocator = Omit<
    * @param options.delay - Time between keystrokes in milliseconds.
    * @param options.timeout - Maximum time in milliseconds to wait for the
    *   element to be actionable.
-   * @param options.click - When provided, clicks the element before typing
-   *   (animated cursor move + click). No extra zoom-pan sleep is inserted.
+   * @param options.click - Customizes the built-in click before typing
+   *   (animated cursor move + click). When omitted, ScreenCI skips the
+   *   default pre-typing cursor move/click if the target input is already
+   *   focused. No extra zoom-pan sleep is inserted.
    * @param options.position - Point relative to the element's top-left corner
-   *   to click before typing. Only used when `click` is also provided.
+   *   to click before typing.
    *   Defaults to the element center.
    * @param options.hideMouse - When `true`, the mouse cursor is hidden while
    *   typing and shown again on the next mouse move. Defaults to `false`.
@@ -543,8 +550,8 @@ export type ScreenCILocator = Omit<
    *
    * @param options.position - Point relative to the element's top-left corner
    *   to click. Defaults to the element center.
-   * @param options.click - When provided, animates the cursor to the element
-   *   before checking it. The click timing data is embedded in the recorded event.
+   * @param options.click - Customizes the built-in click before checking.
+   *   The click timing data is embedded in the recorded event.
    */
   check(options?: ScreenCILocatorCheckOptions): Promise<void>
   /**
@@ -552,8 +559,8 @@ export type ScreenCILocator = Omit<
    *
    * @param options.position - Point relative to the element's top-left corner
    *   to click. Defaults to the element center.
-   * @param options.click - When provided, animates the cursor to the element
-   *   before unchecking it. The click timing data is embedded in the recorded event.
+   * @param options.click - Customizes the built-in click before unchecking.
+   *   The click timing data is embedded in the recorded event.
    */
   uncheck(options?: ScreenCILocatorCheckOptions): Promise<void>
   /**
@@ -562,8 +569,8 @@ export type ScreenCILocator = Omit<
    *
    * @param options.position - Point relative to the element's top-left corner
    *   to click. Defaults to the element center.
-   * @param options.click - When provided, animates the cursor to the element
-   *   before acting. The click timing data is embedded in the recorded event.
+   * @param options.click - Customizes the built-in click before acting.
+   *   The click timing data is embedded in the recorded event.
    */
   setChecked(
     checked: boolean,
@@ -572,8 +579,8 @@ export type ScreenCILocator = Omit<
   /**
    * Taps the element (touch event).
    *
-   * @param options.click - When provided, animates the cursor to the element
-   *   before tapping it. The click timing data is embedded in the recorded event.
+   * @param options.click - Customizes the built-in click before tapping.
+   *   The click timing data is embedded in the recorded event.
    */
   tap(
     options?: Parameters<Locator['tap']>[0] & {
@@ -624,17 +631,15 @@ export type ScreenCILocator = Omit<
   /**
    * Selects an option in a `<select>` element.
    *
-   * Note: the native dropdown UI is not rendered — the option is selected
-   * programmatically. If `options.click` is provided, the cursor is animated
-   * to the select element before the selection is applied, but no dropdown
-   * will appear on screen.
+   * Note: the native dropdown UI is not rendered. ScreenCI animates the
+   * cursor to the select element, clicks it, and then selects the option
+   * programmatically, but no dropdown will appear on screen.
    *
    * @param values - The option(s) to select (value, label, index, or element).
-   * @param options.click - When provided, animates the cursor to the select
-   *   element. The click timing data is embedded in the recorded event.
+   * @param options.click - Customizes the built-in click before selecting.
+   *   The click timing data is embedded in the recorded event.
    * @param options.position - Point relative to the element's top-left corner
-   *   to click before selecting. Only used when `click` is also provided.
-   *   Defaults to the element center.
+   *   to click before selecting. Defaults to the element center.
    */
   selectOption(
     values: Parameters<Locator['selectOption']>[0],

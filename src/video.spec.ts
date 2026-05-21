@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { getDimensions, getViewportCenter } from './dimensions.js'
-import { POST_VIDEO_PAUSE } from './video.js'
+import { getMousePosition } from './mouse.js'
+import { POST_VIDEO_PAUSE, positionMouseAtViewportCenter } from './video.js'
 
 /**
  * Dimension table (shorter side = quality base, longer side from ratio):
@@ -213,6 +214,24 @@ describe('startup mouse positioning', () => {
       x: 640,
       y: 360,
     })
+  })
+
+  it('tracks the centered startup mouse position after moving the real cursor', async () => {
+    const move = vi.fn().mockResolvedValue(undefined)
+    const page = {
+      mouse: {
+        _move: move,
+      },
+    } as never
+
+    const result = await positionMouseAtViewportCenter(page, {
+      width: 1280,
+      height: 720,
+    })
+
+    expect(move).toHaveBeenCalledWith(640, 360)
+    expect(result).toEqual({ x: 640, y: 360 })
+    expect(getMousePosition(page)).toEqual({ x: 640, y: 360 })
   })
 })
 

@@ -499,6 +499,29 @@ test.describe('check instrumentation', () => {
     expect(rect!.height).toBeGreaterThan(0)
   })
 
+  test('animates the cursor and records sub-events by default', async ({
+    page,
+  }) => {
+    await checkLocator(page.locator('#checkbox-unchecked')).check()
+
+    const events = inputEvents()
+    expect(events).toHaveLength(1)
+    const [event] = events
+    expect(event!.subType).toBe('check')
+    const move = moveEventsIn(event!)[0]!
+    const down = event!.events.find(
+      (e): e is MouseDownEvent => e.type === 'mouseDown'
+    )!
+    const up = event!.events.find(
+      (e): e is MouseUpEvent => e.type === 'mouseUp'
+    )!
+    expect(move).toBeDefined()
+    expect(move.x).toBeGreaterThan(0)
+    expect(move.y).toBeGreaterThan(0)
+    expect(moveEndMs(move)).toBeGreaterThanOrEqual(moveStartMs(move))
+    expect(up.endMs).toBeGreaterThanOrEqual(down.startMs)
+  })
+
   test('scrolls into view before checking off-screen checkbox', async ({
     page,
   }) => {
@@ -578,6 +601,29 @@ test.describe('uncheck instrumentation', () => {
     expect(rect!.width).toBeGreaterThan(0)
   })
 
+  test('animates the cursor and records sub-events by default', async ({
+    page,
+  }) => {
+    await uncheckLocator(page.locator('#checkbox-checked')).uncheck()
+
+    const events = inputEvents()
+    expect(events).toHaveLength(1)
+    const [event] = events
+    expect(event!.subType).toBe('uncheck')
+    const move = moveEventsIn(event!)[0]!
+    const down = event!.events.find(
+      (e): e is MouseDownEvent => e.type === 'mouseDown'
+    )!
+    const up = event!.events.find(
+      (e): e is MouseUpEvent => e.type === 'mouseUp'
+    )!
+    expect(move).toBeDefined()
+    expect(move.x).toBeGreaterThan(0)
+    expect(move.y).toBeGreaterThan(0)
+    expect(moveEndMs(move)).toBeGreaterThanOrEqual(moveStartMs(move))
+    expect(up.endMs).toBeGreaterThanOrEqual(down.startMs)
+  })
+
   test('scrolls into view before unchecking off-screen checkbox', async ({
     page,
   }) => {
@@ -650,6 +696,29 @@ test.describe('tap instrumentation', () => {
     expect(rect).toBeDefined()
     expect(rect!.width).toBeGreaterThan(0)
     expect(rect!.height).toBeGreaterThan(0)
+  })
+
+  test('animates the cursor and records sub-events by default', async ({
+    page,
+  }) => {
+    await tapLocator(page.locator('#tap-target')).tap()
+
+    const events = inputEvents()
+    expect(events).toHaveLength(1)
+    const [event] = events
+    expect(event!.subType).toBe('tap')
+    const move = moveEventsIn(event!)[0]!
+    const down = event!.events.find(
+      (e): e is MouseDownEvent => e.type === 'mouseDown'
+    )!
+    const up = event!.events.find(
+      (e): e is MouseUpEvent => e.type === 'mouseUp'
+    )!
+    expect(move).toBeDefined()
+    expect(move.x).toBeGreaterThan(0)
+    expect(move.y).toBeGreaterThan(0)
+    expect(moveEndMs(move)).toBeGreaterThanOrEqual(moveStartMs(move))
+    expect(up.endMs).toBeGreaterThanOrEqual(down.startMs)
   })
 
   test('scrolls into view before tapping off-screen element', async ({
@@ -729,6 +798,29 @@ test.describe('selectOption instrumentation', () => {
     expect(rect).toBeDefined()
     expect(rect!.width).toBeGreaterThan(0)
     expect(rect!.height).toBeGreaterThan(0)
+  })
+
+  test('animates the cursor and records sub-events by default', async ({
+    page,
+  }) => {
+    await selectableLocator(page.locator('#cars')).selectOption('audi')
+
+    const events = inputEvents()
+    expect(events).toHaveLength(1)
+    const [event] = events
+    const move = moveEventsIn(event!)[0]!
+    const down = event!.events.find(
+      (e): e is MouseDownEvent => e.type === 'mouseDown'
+    )!
+    const up = event!.events.find(
+      (e): e is MouseUpEvent => e.type === 'mouseUp'
+    )!
+    expect(move).toBeDefined()
+    expect(move.x).toBeGreaterThan(0)
+    expect(move.y).toBeGreaterThan(0)
+    expect(inputElementRect(event!)!.width).toBeGreaterThan(0)
+    expect(moveEndMs(move)).toBeGreaterThanOrEqual(moveStartMs(move))
+    expect(up.endMs).toBeGreaterThanOrEqual(down.startMs)
   })
 
   test('scrolls into view before selecting off-screen option', async ({

@@ -478,12 +478,13 @@ export async function performMouseClickAction(
 
     await options.doClick(options.clickOptions)
   } else {
-    const startMs = Date.now()
+    const wrapperStartMs = Date.now()
     await sleep(halfClickDuration)
 
     await options.doClick(options.clickOptions)
     await sleep(halfClickDuration)
     const endMs = Date.now()
+    const startMs = Math.max(wrapperStartMs, endMs - CLICK_DURATION_MS)
     const clickTimeMs = startMs + (endMs - startMs) / 2
 
     events.push(

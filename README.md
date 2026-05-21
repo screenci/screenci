@@ -64,6 +64,14 @@ Inside `video()`, `page` is a `ScreenCIPage` — a Playwright `Page` with animat
 
 All standard `page` methods (`goto`, `waitForURL`, `waitForLoadState`, `waitForTimeout`, `keyboard`, `screenshot`, `expect`, …) work exactly as documented in [Playwright's API](https://playwright.dev/docs/api/class-page).
 
+`fill()` already moves to the field, clicks it, and types, so you do not need a separate `click()` first:
+
+```ts
+const searchBox = page.getByPlaceholder('Search')
+
+await searchBox.fill('Item 1')
+```
+
 ## Run it
 
 ```bash
@@ -107,7 +115,7 @@ screenci enforces `workers: 1`, `retries: 0`, and `fullyParallel: false` so each
 
 ## AI narration
 
-`createNarration()` maps keys to narration text (or audio files). Define it once near the top of the file, then call `await narration.key.start()` wherever that spoken line should begin. The audio keeps playing while your next actions run. Use `await narration.key.finish()` when an action must wait for that line to finish.
+`createNarration()` maps keys to narration text (or audio files). Define it once near the top of the file, then call `await narration.key.start()` wherever that spoken line should begin. The audio keeps playing while your next actions run. Use `await narration.key.finish()` when a line must be fully spoken before the next action, especially before visible navigation or the first on-screen action after the intro.
 
 ```ts
 import { video, createNarration, voices } from 'screenci'
@@ -128,10 +136,12 @@ video('Dashboard walkthrough', async ({ page }) => {
   await page.goto('/dashboard')
 
   await narration.intro.start()
+  await narration.intro.finish()
   await page.locator('#reports').click()
-  await page.locator('#new-project').click()
 
+  await narration.addButton.start()
   await narration.addButton.finish()
+  await page.locator('#new-project').click()
 })
 ```
 
@@ -142,10 +152,10 @@ const narration = createNarration({ ... })
 
 video('Example', async ({ page }) => {
   await narration.intro.start() // starts narration now
-  await page.click('#next') // runs while intro audio is still playing
+  await page.click('#filters') // runs while intro audio is still playing
 
   await narration.details.start() // auto-ends intro, then starts details
-  await narration.details.finish() // only if the next action must wait
+  await narration.details.finish() // use this before navigation or the next gated action
   await page.click('#confirm')
 })
 ```

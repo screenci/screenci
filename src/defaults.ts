@@ -22,6 +22,11 @@ export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
 export const DEFAULT_MOUSE_MOVE_SPEED: number = 400
 
 /**
+ * Default cursor move duration for click-like actions, in milliseconds.
+ */
+export const DEFAULT_CLICK_MOUSE_MOVE_DURATION: number = 1000
+
+/**
  * Default aspect ratio for recording and output
  */
 export const DEFAULT_ASPECT_RATIO: AspectRatio = '16:9'

@@ -73,12 +73,20 @@ video('Settings demo', async ({ page }) => {
 })
 ```
 
-`fill()` accepts extra options:
+`fill()` already moves to the field, clicks it, and then types. You do not need a separate `await locator.click()` before `fill()`:
+
+```ts
+const searchBox = page.getByPlaceholder('Search')
+
+await searchBox.fill('Item 1')
+```
+
+Use `fill()` options when you want to customize that built-in pre-typing click or the typing animation:
 
 ```ts
 await page.locator('#email').fill('jane@example.com', {
   duration: 1500, // total typing time in ms (default: 1000)
-  click: 'before', // animate cursor to the field and click before typing
+  click: { postClickPause: 0 }, // customize the built-in click before typing
   hideMouse: true, // hide the cursor while typing
 })
 ```
@@ -89,7 +97,7 @@ All chaining methods (`locator()`, `getByRole()`, `filter()`, `first()`, `last()
 
 ## Narration
 
-`createNarration()` defines typed narration text. Create the map once near the top of your `.video.ts` file, then call `await narration.key.start()` at the point in the script where that line should begin. At render time ScreenCI generates the audio and syncs it to the recording.
+`createNarration()` defines typed narration text. Create the map once near the top of your `.video.ts` file, then call `await narration.key.start()` at the point in the script where that line should begin. At render time ScreenCI generates the audio and syncs it to the recording. Use `start()` when narration should overlap with the next actions, and `finish()` when the line must be fully spoken before the script moves on.
 
 ```ts
 import { video, createNarration, voices } from 'screenci'
@@ -110,10 +118,12 @@ video('Settings walkthrough', async ({ page }) => {
   await page.goto('/settings')
 
   await narration.intro.start()
-  await page.locator('#notifications').click()
-  await page.locator('#save').click()
+  await narration.intro.finish()
 
+  await page.locator('#notifications').click()
+  await narration.save.start()
   await narration.save.finish()
+  await page.locator('#save').click()
 })
 ```
 
@@ -136,20 +146,21 @@ video('Example', async ({ page }) => {
   await page.goto('/settings')
 
   await narration.intro.start()
-  await page.locator('#notifications').click()
+  await page.locator('#notifications').click() // safe to overlap with narration
 
-  await narration.save.finish()
+  await narration.save.start()
+  await narration.save.finish() // save click should happen after the line is spoken
   await page.locator('#save').click()
 })
 ```
 
 ### `start()` — display and move on
 
-`await narration.key.start()` starts the narration and resolves immediately. The cue stays visible and audio plays while subsequent actions run. Consecutive narration segments sequence automatically — each one ends the previous before starting:
+`await narration.key.start()` starts the narration and resolves immediately. The cue stays visible and audio plays while subsequent actions run. Consecutive narration segments sequence automatically — each one ends the previous before starting. Use this when the viewer should hear the line while the related UI action is already happening:
 
 ```ts
 await narration.intro.start()
-await page.goto('https://example.com/signup')
+await page.locator('#notifications').click()
 
 await narration.nextStep.start() // auto-ends intro, then starts nextStep
 await page.locator('#save').click()
@@ -157,12 +168,25 @@ await page.locator('#save').click()
 
 ### `finish()` — wait for audio to finish
 
-Call `await narration.key.finish()` when an action must happen _after_ that narration has finished playing. If the cue is already active, `finish()` waits for that run. Otherwise it starts a fresh run and waits for it to complete.
+Call `await narration.key.finish()` when an action must happen _after_ that narration has finished playing. If the cue is already active, `finish()` waits for that run. Otherwise it starts a fresh run and waits for it to complete. This is the right choice when the intro should be fully said before the first visible action, or when a `start()` line would otherwise run into a navigation or page transition.
 
 ```ts
 await narration.intro.start()
 await narration.intro.finish() // wait for intro audio to finish
 await page.click('#start') // this runs after the audio ends
+```
+
+Common pattern before navigation:
+
+```ts
+await narration.intro.start()
+await narration.intro.finish()
+await page.getByRole('link', { name: 'Open settings' }).click()
+await page.waitForURL('**/settings')
+
+await narration.details.start()
+await narration.details.finish()
+await page.getByLabel('Display name').fill('ScreenCI Demo')
 ```
 
 ### Multi-language narration

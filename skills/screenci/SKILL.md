@@ -47,7 +47,7 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 - `video()` declares one output video per test.
 - `hide()` removes setup and loading sections from the final recording.
 - `autoZoom()` follows a larger form or page area with smooth camera motion. Use it sparingly, and start with its default options unless the user explicitly asks for different zoom behavior or the flow clearly needs a targeted override.
-- `createNarration()` is mandatory for every video: define it in every `.video.ts` file and include spoken narration throughout the demo. The opening narration should first state the purpose of the video, then continue with the explanation or walkthrough. Define the map once, then call `await narration.key.start()` where each line should begin. Use `await narration.key.finish()` only when the next action must wait for audio to finish.
+- `createNarration()` is mandatory for every video: define it in every `.video.ts` file and include spoken narration throughout the demo. The opening narration should first state the purpose of the video, then continue with the explanation or walkthrough. Define the map once, then call `await narration.key.start()` where each line should begin. `start()` begins the line and lets the script continue while audio plays. Use `await narration.key.finish()` when the line must be fully spoken before the next action, especially before visible navigation or route changes.
 - Narration text can include inline speech-control tags such as `[pronounce: screen see eye]`, `[short pause]`, `[medium pause]`, and `[long pause]` when a word needs guided pronunciation or an intentional pause.
 
 ## Required Conventions
@@ -61,7 +61,7 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 - **Navigate visibly with clicks** — after hidden setup, move through the demo by clicking real links and buttons instead of calling `page.goto()`.
 - **Use autoZoom sparingly on large page areas** — add `autoZoom()` only for larger sections that benefit from camera guidance (e.g. a full form, a full dialog, or a broad list area). Keep usage sparse, and make sure each `autoZoom()` block includes multiple related interactions (typing, selecting, toggling, confirming, etc.), not just a single click.
 - **End autoZoom before page changes** — it is better to let an `autoZoom()` block finish before a navigation/page change. Staying zoomed during navigation is confusing. Start a new `autoZoom()` block on the next page/section when needed.
-- **Prefer default action options** — for `autoZoom()` and locator actions such as `click()`, `fill()`, `pressSequentially()`, `check()`, `uncheck()`, `selectOption()`, `selectText()`, and similar helpers, start with ScreenCI's default options. Do not add custom `zoom`, `click`, `position`, timing, or other locator-action overrides unless the user asks for them or the recording flow clearly needs a specific adjustment.
+- **Prefer default action options** — for `autoZoom()` and locator actions such as `click()`, `fill()`, `pressSequentially()`, `check()`, `uncheck()`, `selectOption()`, `selectText()`, and similar helpers, start with ScreenCI's default options. In particular, do not add a separate `locator.click()` before `locator.fill()` or `locator.pressSequentially()` just to focus the field: those actions already move to the field, click it, and then type by default. Do not add custom `zoom`, `click`, `position`, timing, or other locator-action overrides unless the user asks for them or the recording flow clearly needs a specific adjustment.
 
 ## Command Notes
 
@@ -74,7 +74,7 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 1. Start from the existing initialized ScreenCI package.
 2. Add or edit `.video.ts` files in `videos/`.
    Remove `videos/example.video.ts` if you are creating new videos and do not need the starter video.
-   For narration, define `const narration = createNarration({ ... })` near the top of the file and trigger lines with `await narration.someKey.start()` inside the test body. Make the first narration line state the video's purpose, then use the following lines for the explanation. Use inline tags like `[pronounce: ...]` and `[short pause]` inside cue text when needed.
+   For narration, define `const narration = createNarration({ ... })` near the top of the file and trigger lines with `await narration.someKey.start()` inside the test body. Make the first narration line state the video's purpose, then use the following lines for the explanation. If the intro or any other line should be completely spoken before you move forward, call `await narration.someKey.finish()` before that next action. This is especially important before visible navigation or page changes. Use inline tags like `[pronounce: ...]` and `[short pause]` inside cue text when needed.
 3. Run `npx screenci test --ui` to validate selectors and flow.
 4. Run `npx screenci test` until it passes.
 5. Run `npx screenci record` to produce `.screenci/<video-name>/recording.mp4` and `data.json`.

@@ -19,7 +19,8 @@ const narration = createNarration({
   languages: {
     en: {
       cues: {
-        intro: 'Welcome to ScreenCI [pronounce: screen see eye].',
+        intro:
+          'This video shows how to get started with ScreenCI [pronounce: screen see eye].',
         docs: 'You can find the documentation linked right on the front page.',
       },
     },
@@ -34,7 +35,9 @@ video('How to get started', async ({ page }) => {
   })
 
   await narration.intro.start()
+  await narration.intro.finish()
   await narration.docs.start()
+  await narration.docs.finish()
 
   // Automatically zoom into clicks etc.
   await autoZoom(async () => {

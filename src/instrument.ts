@@ -25,7 +25,10 @@ import type {
 } from './types.js'
 import { isInsideHide } from './hide.js'
 import { changeFocus, type MouseMoveRequest } from './changeFocus.js'
-import { DEFAULT_MOUSE_MOVE_SPEED } from './defaults.js'
+import {
+  DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+  DEFAULT_MOUSE_MOVE_SPEED,
+} from './defaults.js'
 import {
   CLICK_DURATION_MS,
   assertDurationOrSpeed,
@@ -75,6 +78,26 @@ const instrumented = new WeakSet<object>()
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function buildDefaultClickMouseMoveRequest(options?: {
+  targetPosInElement?: { x: number; y: number } | undefined
+  moveDuration?: number | undefined
+  moveSpeed?: number | undefined
+  moveEasing?: Easing | undefined
+}): MouseMoveRequest {
+  return {
+    ...(options?.targetPosInElement !== undefined
+      ? { targetPosInElement: options.targetPosInElement }
+      : {}),
+    ...(options?.moveDuration !== undefined
+      ? { duration: options.moveDuration }
+      : options?.moveSpeed === undefined
+        ? { duration: DEFAULT_CLICK_MOUSE_MOVE_DURATION }
+        : {}),
+    ...(options?.moveSpeed !== undefined ? { speed: options.moveSpeed } : {}),
+    easing: options?.moveEasing ?? 'ease-in-out',
+  }
 }
 
 async function appendMouseWait(
@@ -394,6 +417,21 @@ async function performAction(
   }
 }
 
+async function isLocatorAlreadyFocusedForTyping(
+  locator: Locator
+): Promise<boolean> {
+  return locator.evaluate((element) => {
+    const doc = element.ownerDocument
+    if (!doc || doc.activeElement !== element) return false
+
+    if ('isContentEditable' in element && element.isContentEditable)
+      return false
+
+    const tagName = element.tagName.toLowerCase()
+    return tagName === 'input' || tagName === 'textarea'
+  })
+}
+
 type LocatorReturnMethodsRecord = Record<
   LocatorReturnMethod,
   (...args: unknown[]) => Locator
@@ -482,12 +520,12 @@ export function instrumentLocator(locator: Locator): Locator {
     )
 
     const result = await performAction(
-      {
-        ...(position !== undefined ? { targetPosInElement: position } : {}),
-        ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
-        ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
-        easing: moveEasing ?? 'ease-in-out',
-      },
+      buildDefaultClickMouseMoveRequest({
+        targetPosInElement: position,
+        moveDuration,
+        moveSpeed,
+        moveEasing,
+      }),
       locator,
       doClick,
       supportsTrial,
@@ -519,6 +557,9 @@ export function instrumentLocator(locator: Locator): Locator {
     text: string,
     options?: PressSequentiallyOptions
   ): Promise<void> => {
+    const shouldSkipDefaultClickAnimation =
+      options?.click === undefined &&
+      (await isLocatorAlreadyFocusedForTyping(locator))
     const clickOpt: ClickBeforeFillOption = options?.click ?? {}
     const {
       click: _click,
@@ -555,14 +596,14 @@ export function instrumentLocator(locator: Locator): Locator {
     } = clickOpt
 
     const clickActionResult = await performAction(
-      {
-        ...(options?.position !== undefined
-          ? { targetPosInElement: options.position }
-          : {}),
-        ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
-        ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
-        easing: moveEasing,
-      },
+      shouldSkipDefaultClickAnimation
+        ? undefined
+        : buildDefaultClickMouseMoveRequest({
+            targetPosInElement: options?.position,
+            moveDuration,
+            moveSpeed,
+            moveEasing,
+          }),
       locator,
       async () =>
         originalPressSequentially(
@@ -615,6 +656,9 @@ export function instrumentLocator(locator: Locator): Locator {
       return originalFill(value, fillOptions as Parameters<Locator['fill']>[1])
     }
 
+    const shouldSkipDefaultClickAnimation =
+      options?.click === undefined &&
+      (await isLocatorAlreadyFocusedForTyping(locator))
     const clickOpt: ClickBeforeFillOption = options?.click ?? {}
     const innerEvents: Array<
       | FocusChangeEvent
@@ -636,14 +680,14 @@ export function instrumentLocator(locator: Locator): Locator {
     } = clickOpt
 
     const clickActionResult = await performAction(
-      {
-        ...(options?.position !== undefined
-          ? { targetPosInElement: options.position }
-          : {}),
-        ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
-        ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
-        easing: moveEasing,
-      },
+      shouldSkipDefaultClickAnimation
+        ? undefined
+        : buildDefaultClickMouseMoveRequest({
+            targetPosInElement: options?.position,
+            moveDuration,
+            moveSpeed,
+            moveEasing,
+          }),
       locator,
       async () => {
         await locator.evaluate((element) => {
@@ -706,7 +750,7 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
-    const clickOpt = options?.click
+    const clickOpt: ClickBeforeFillOption = options?.click ?? {}
     const {
       click: _click,
       position,
@@ -721,18 +765,12 @@ export function instrumentLocator(locator: Locator): Locator {
     const { doClick, supportsTrial } = resolveLocatorMouseAction(locator, 'tap')
 
     const result = await performAction(
-      clickOpt
-        ? {
-            ...(position !== undefined ? { targetPosInElement: position } : {}),
-            ...(clickOpt.moveDuration !== undefined
-              ? { duration: clickOpt.moveDuration }
-              : {}),
-            ...(clickOpt.moveSpeed !== undefined
-              ? { speed: clickOpt.moveSpeed }
-              : {}),
-            easing: clickOpt.moveEasing ?? 'ease-in-out',
-          }
-        : undefined,
+      buildDefaultClickMouseMoveRequest({
+        targetPosInElement: position,
+        moveDuration: clickOpt.moveDuration,
+        moveSpeed: clickOpt.moveSpeed,
+        moveEasing: clickOpt.moveEasing,
+      }),
       locator,
       doClick,
       supportsTrial,
@@ -768,7 +806,7 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
-    const clickOpt = options?.click
+    const clickOpt: ClickBeforeFillOption = options?.click ?? {}
     const position = options?.position
     const { click: _click, autoZoomOptions, ...checkOpts } = options ?? {}
 
@@ -782,18 +820,12 @@ export function instrumentLocator(locator: Locator): Locator {
     )
 
     const result = await performAction(
-      clickOpt
-        ? {
-            ...(position !== undefined ? { targetPosInElement: position } : {}),
-            ...(clickOpt.moveDuration !== undefined
-              ? { duration: clickOpt.moveDuration }
-              : {}),
-            ...(clickOpt.moveSpeed !== undefined
-              ? { speed: clickOpt.moveSpeed }
-              : {}),
-            easing: clickOpt.moveEasing ?? 'ease-in-out',
-          }
-        : undefined,
+      buildDefaultClickMouseMoveRequest({
+        targetPosInElement: position,
+        moveDuration: clickOpt.moveDuration,
+        moveSpeed: clickOpt.moveSpeed,
+        moveEasing: clickOpt.moveEasing,
+      }),
       locator,
       doClick,
       supportsTrial,
@@ -829,7 +861,7 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
-    const clickOpt = options?.click
+    const clickOpt: ClickBeforeFillOption = options?.click ?? {}
     const position = options?.position
     const { click: _click, autoZoomOptions, ...uncheckOpts } = options ?? {}
 
@@ -843,18 +875,12 @@ export function instrumentLocator(locator: Locator): Locator {
     )
 
     const result = await performAction(
-      clickOpt
-        ? {
-            ...(position !== undefined ? { targetPosInElement: position } : {}),
-            ...(clickOpt.moveDuration !== undefined
-              ? { duration: clickOpt.moveDuration }
-              : {}),
-            ...(clickOpt.moveSpeed !== undefined
-              ? { speed: clickOpt.moveSpeed }
-              : {}),
-            easing: clickOpt.moveEasing ?? 'ease-in-out',
-          }
-        : undefined,
+      buildDefaultClickMouseMoveRequest({
+        targetPosInElement: position,
+        moveDuration: clickOpt.moveDuration,
+        moveSpeed: clickOpt.moveSpeed,
+        moveEasing: clickOpt.moveEasing,
+      }),
       locator,
       doClick,
       supportsTrial,
@@ -911,7 +937,7 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<string[]> => {
-    const clickOpt = options?.click
+    const clickOpt: ClickBeforeFillOption = options?.click ?? {}
     const {
       click: _click,
       position,
@@ -934,18 +960,12 @@ export function instrumentLocator(locator: Locator): Locator {
       'select'
     )
     const actionResult = await performAction(
-      clickOpt
-        ? {
-            ...(position !== undefined ? { targetPosInElement: position } : {}),
-            ...(clickOpt.moveDuration !== undefined
-              ? { duration: clickOpt.moveDuration }
-              : {}),
-            ...(clickOpt.moveSpeed !== undefined
-              ? { speed: clickOpt.moveSpeed }
-              : {}),
-            easing: clickOpt.moveEasing ?? 'ease-in-out',
-          }
-        : undefined,
+      buildDefaultClickMouseMoveRequest({
+        targetPosInElement: position,
+        moveDuration: clickOpt.moveDuration,
+        moveSpeed: clickOpt.moveSpeed,
+        moveEasing: clickOpt.moveEasing,
+      }),
       locator,
       doClick,
       supportsTrial,
@@ -1095,12 +1115,12 @@ export function instrumentLocator(locator: Locator): Locator {
     > = []
 
     const selectActionResult = await performAction(
-      {
+      buildDefaultClickMouseMoveRequest({
         targetPosInElement: { x: 0, y: 0 },
-        ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
-        ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
-        easing: moveEasing,
-      },
+        moveDuration,
+        moveSpeed,
+        moveEasing,
+      }),
       locator,
       async () => {
         await originalSelectText(selectOpts)

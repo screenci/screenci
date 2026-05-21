@@ -50,7 +50,7 @@ These are not optional — every `.video.ts` file must follow all five:
 
 ### 1. Narration on every video (required, no exceptions)
 
-Always add `createNarration({ ... })` to every video file. Videos without narration are not acceptable. Define the full narration map up front, then place `await narration.someKey.start()` at the exact point in the script where each line should begin. `await narration.key.start()` resolves immediately while audio plays in the background. Use `await narration.key.finish()` when the very next action must wait for the line to finish speaking.
+Always add `createNarration({ ... })` to every video file. Videos without narration are not acceptable. Define the full narration map up front, then place `await narration.someKey.start()` at the exact point in the script where each line should begin. `await narration.key.start()` resolves immediately while audio plays in the background. Use `await narration.key.finish()` when the line should be fully spoken before the next action. In practice, this often means awaiting `finish()` before the next navigation
 
 ### 2. Hide initial setup
 
@@ -66,7 +66,7 @@ Let each `autoZoom()` block complete before navigation/page changes. Staying zoo
 
 ### 5. Prefer default action options
 
-Use ScreenCI's default options for `autoZoom()` and locator actions such as `click()`, `fill()`, `pressSequentially()`, `check()`, `uncheck()`, `selectOption()`, and `selectText()`. Do not add custom `zoom`, `click`, `position`, timing, or other locator-action overrides unless the user explicitly asks for different behavior or the recording flow clearly needs a specific adjustment.
+Use ScreenCI's default options for `autoZoom()` and locator actions such as `click()`, `fill()`, `pressSequentially()`, `check()`, `uncheck()`, `selectOption()`, and `selectText()`. Do not add a separate `locator.click()` before `locator.fill()` or `locator.pressSequentially()` just to focus the field: those actions already move to the field, click it, and then type by default. Do not add custom `zoom`, `click`, `position`, timing, or other locator-action overrides unless the user explicitly asks for different behavior or the recording flow clearly needs a specific adjustment.
 
 ## Constraints
 

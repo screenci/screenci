@@ -191,7 +191,7 @@ describe('mouse helpers', () => {
     expect(up.startMs).toBe(down.endMs)
     expect(down.endMs - down.startMs).toBeGreaterThan(0)
     expect(up.endMs - up.startMs).toBeGreaterThan(0)
-    expect(up.endMs - down.startMs).toBe(CLICK_DURATION_MS + 50)
+    expect(up.endMs - down.startMs).toBe(CLICK_DURATION_MS)
     expect(getMousePosition(page)).toEqual({ x: 12, y: 34 })
   })
 

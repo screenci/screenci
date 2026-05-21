@@ -607,7 +607,7 @@ afterEach(() => {
 })
 
 describe('instrumentPage', () => {
-  it('records bare page.mouse.move with default speed', async () => {
+  it('records bare page.mouse.move with default duration', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
 

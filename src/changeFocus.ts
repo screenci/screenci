@@ -1,7 +1,10 @@
 import type { Locator } from '@playwright/test'
 import type { ElementRect, FocusChangeEvent } from './events.js'
 import { evaluateEasingAtT } from './easing.js'
-import { DEFAULT_MOUSE_MOVE_SPEED, DEFAULT_ZOOM_OPTIONS } from './defaults.js'
+import {
+  DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+  DEFAULT_ZOOM_OPTIONS,
+} from './defaults.js'
 import type { AutoZoomOptions, Easing } from './types.js'
 import {
   getMousePosition,
@@ -372,7 +375,10 @@ export function resolveTargetRectPosition(params: {
   return resolveTargetRectPositionForViewport({
     containerSize: params.containerSize,
     rect: params.rect,
-    focusViewport: resolveFixedFocusViewportSize(params.containerSize, params.amount),
+    focusViewport: resolveFixedFocusViewportSize(
+      params.containerSize,
+      params.amount
+    ),
     centering: params.centering,
   })
 }
@@ -969,12 +975,13 @@ export function combineFocusPlan(params: {
   currentZoomEnd: NonNullable<FocusChangeEvent['zoom']>['end']
 }): UnifiedFocusPlan {
   // Resolve the desired zoom viewport and where the visible locator rect should sit inside it.
-  const initialTargetRectPositionInViewport = resolveTargetRectPositionForViewport({
-    containerSize: params.snapshot.viewportSize,
-    rect: params.snapshot.locatorRect,
-    focusViewport: params.targetViewport,
-    centering: params.centering,
-  })
+  const initialTargetRectPositionInViewport =
+    resolveTargetRectPositionForViewport({
+      containerSize: params.snapshot.viewportSize,
+      rect: params.snapshot.locatorRect,
+      focusViewport: params.targetViewport,
+      centering: params.centering,
+    })
   // Reveal the locator through nested scroll containers using minimal scrolling,
   // plus only the extra needed when page scroll and zoom would otherwise be unable to frame it.
   const ancestorResult = buildAncestorScrollPlans({
@@ -1007,12 +1014,14 @@ export function combineFocusPlan(params: {
     centering: params.centering,
   })
   // Resolve where the locator rect should sit inside the zoom viewport itself.
-  const targetRectPositionInZoomViewport = resolveTargetRectPositionForViewport({
-    containerSize: params.targetViewport,
-    rect: ancestorResult.projectedRect,
-    focusViewport: params.targetViewport,
-    centering: params.centering,
-  })
+  const targetRectPositionInZoomViewport = resolveTargetRectPositionForViewport(
+    {
+      containerSize: params.targetViewport,
+      rect: ancestorResult.projectedRect,
+      focusViewport: params.targetViewport,
+      centering: params.centering,
+    }
+  )
   // Use page scroll only for the framing residual that zoom cannot absorb.
   const resolvedPageResult = resolvePagePlan({
     snapshot: params.snapshot,
@@ -1427,18 +1436,17 @@ export async function changeFocus(
       }
     : combineFocusPlan({
         snapshot,
-        targetViewport:
-          shouldApplyZoom
-            ? resolveLocatorFocusViewport({
-                viewport: snapshot.viewportSize,
-                rect: snapshot.locatorRect,
-                amount: focusOptions.amount,
-                padding: focusOptions.padding,
-              })
-            : resolveFixedFocusViewportSize(
-                snapshot.viewportSize,
-                focusOptions.amount
-              ),
+        targetViewport: shouldApplyZoom
+          ? resolveLocatorFocusViewport({
+              viewport: snapshot.viewportSize,
+              rect: snapshot.locatorRect,
+              amount: focusOptions.amount,
+              padding: focusOptions.padding,
+            })
+          : resolveFixedFocusViewportSize(
+              snapshot.viewportSize,
+              focusOptions.amount
+            ),
         centering: focusOptions.centering,
         currentZoomEnd,
       })
@@ -1463,8 +1471,7 @@ export async function changeFocus(
             {
               duration: mouseMove.duration,
               speed: mouseMove.speed,
-              defaultDuration: undefined,
-              defaultSpeed: DEFAULT_MOUSE_MOVE_SPEED,
+              defaultDuration: DEFAULT_CLICK_MOUSE_MOVE_DURATION,
               context: 'focus move',
             }
           ),

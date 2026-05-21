@@ -18,11 +18,6 @@ export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
 }
 
 /**
- * Default cursor speed for distance-based cursor movement, in pixels per second.
- */
-export const DEFAULT_MOUSE_MOVE_SPEED: number = 400
-
-/**
  * Default cursor move duration for click-like actions, in milliseconds.
  */
 export const DEFAULT_CLICK_MOUSE_MOVE_DURATION: number = 1000

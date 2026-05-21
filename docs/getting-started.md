@@ -55,6 +55,22 @@ npm run test
 
 This is similar to running `playwright test`: it executes the `.video.ts` script without recording, so you can quickly check selectors, timing, and narration cues.
 
+You can also pass normal Playwright test arguments through `screenci test`, for example:
+
+```bash
+npx screenci test --grep "example"
+npx screenci test videos/example.video.ts
+```
+
+That also means you can run only some tests while iterating:
+
+```bash
+npx screenci test videos/example.video.ts
+npx screenci test --grep "intro"
+```
+
+`npx screenci test` still injects your resolved `screenci.config.ts` automatically. `--config` and `--verbose` are reserved for the `screenci` CLI itself.
+
 ## Record
 
 Inside the ScreenCI project directory, record the final video when the script is working:

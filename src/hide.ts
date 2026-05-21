@@ -3,7 +3,7 @@ import type { IEventRecorder } from './events.js'
 let activeRecorder: IEventRecorder | null = null
 let insideHide = false
 
-export const POST_HIDE_PAUSE = 250
+export const POST_HIDE_PAUSE = 350
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))

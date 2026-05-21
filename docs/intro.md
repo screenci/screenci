@@ -9,7 +9,13 @@ ScreenCI is the first **Deployment Automation** platform for product videos. We 
 
 In practice, ScreenCI extends the Playwright E2E test library with product video related features.
 
-In code, it looks something like this:
+<video controls crossorigin="anonymous" poster="https://api.screenci.com/public/kh7dq5rk3vabtxya45w6zm1fmd871jdx/en/thumbnail" style="max-width:100%; border: 1px solid #ccc;">
+  <source src="https://api.screenci.com/public/kh7dq5rk3vabtxya45w6zm1fmd871jdx/en/video" type="video/mp4" />
+  <track kind="subtitles" src="https://api.screenci.com/public/kh7dq5rk3vabtxya45w6zm1fmd871jdx/en/subtitle" srclang="en" label="English" default />
+</video>
+
+<details>
+<summary>Show code</summary>
 
 ```ts
 import { autoZoom, createNarration, hide, video, voices } from 'screenci'
@@ -44,10 +50,7 @@ video('How to get started', async ({ page }) => {
 })
 ```
 
-<video controls crossorigin="anonymous" poster="https://api.screenci.com/public/kh7dq5rk3vabtxya45w6zm1fmd871jdx/en/thumbnail" style="max-width:100%; border: 1px solid #ccc;">
-  <source src="https://api.screenci.com/public/kh7dq5rk3vabtxya45w6zm1fmd871jdx/en/video" type="video/mp4" />
-  <track kind="subtitles" src="https://api.screenci.com/public/kh7dq5rk3vabtxya45w6zm1fmd871jdx/en/subtitle" srclang="en" label="English" default />
-</video>
+</details>
 
 ## Why ScreenCI?
 

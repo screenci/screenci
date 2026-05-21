@@ -250,8 +250,4 @@ The `page` fixture inside `video()` is a `ScreenCIPage` — a Playwright `Page` 
     data.json       ← interaction events + cue metadata
 ```
 
-Upload to screenci.com for rendering, narration generation, and the permanent embed link:
-
-```bash
-npm run retry
-```
+When `SCREENCI_SECRET` is configured, `screenci record` uploads the output to screenci.com automatically for rendering, narration generation, and the permanent embed link.

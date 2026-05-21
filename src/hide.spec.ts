@@ -74,6 +74,36 @@ describe('hide', () => {
       expect(order[1]).toBe('hideEnd')
     })
 
+    it('waits for the post-hide pause before emitting hideEnd', async () => {
+      vi.useFakeTimers()
+
+      try {
+        const order: string[] = []
+        vi.mocked(recorder.addHideEnd).mockImplementation(() => {
+          order.push('hideEnd')
+        })
+
+        const hidePromise = hide(() => {
+          order.push('callback')
+        }).then(() => {
+          order.push('resolved')
+        })
+
+        await Promise.resolve()
+        expect(order).toEqual(['callback'])
+
+        await vi.advanceTimersByTimeAsync(POST_HIDE_PAUSE - 1)
+        await Promise.resolve()
+        expect(order).toEqual(['callback'])
+
+        await vi.advanceTimersByTimeAsync(1)
+        await hidePromise
+        expect(order).toEqual(['callback', 'hideEnd', 'resolved'])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('awaits async callbacks', async () => {
       const order: string[] = []
 
@@ -126,8 +156,8 @@ describe('hide', () => {
   })
 
   describe('POST_HIDE_PAUSE', () => {
-    it('adds a 250ms tail before revealing hidden recording', () => {
-      expect(POST_HIDE_PAUSE).toBe(250)
+    it('adds a 350ms tail before revealing hidden recording', () => {
+      expect(POST_HIDE_PAUSE).toBe(350)
     })
   })
 })

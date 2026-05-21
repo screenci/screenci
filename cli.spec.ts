@@ -616,70 +616,13 @@ describe('CLI', () => {
     })
   })
 
-  describe('retry command', () => {
-    it('should recognize retry command (not unknown)', async () => {
+  describe('removed retry command', () => {
+    it('should report retry as an unknown command', async () => {
       process.argv = ['node', 'cli.js', 'retry']
 
       const { main } = await import('./cli')
-      // Will exit due to missing config, not an unknown command error
       await expect(main()).rejects.toThrow('process.exit called')
-      expect(loggerErrorSpy).not.toHaveBeenCalledWith('Unknown command: retry')
-    })
-
-    it('should warn when no recordings found', async () => {
-      process.argv = ['node', 'cli.js', 'retry']
-      mockReaddir.mockResolvedValue([])
-
-      const { main } = await import('./cli')
-      // Will exit because config mock isn't set up — just ensure command is recognized
-      await expect(main()).rejects.toThrow('process.exit called')
-      // exit is called due to missing config, not unknown command
-      expect(loggerErrorSpy).not.toHaveBeenCalledWith('Unknown command: retry')
-    })
-
-    it('should error when no API URL is configured', async () => {
-      process.argv = ['node', 'cli.js', 'retry']
-      mockExistsSync.mockReturnValue(true)
-
-      const { main } = await import('./cli')
-      await expect(main()).rejects.toThrow('process.exit called')
-      expect(loggerErrorSpy).not.toHaveBeenCalledWith('Unknown command: retry')
-    })
-
-    it('should write project URL to GitHub Actions output after upload', async () => {
-      process.argv = [
-        'node',
-        'cli.js',
-        'retry',
-        '--config',
-        'test-fixtures/screenci.config.ts',
-      ]
-      process.env.SCREENCI_SECRET = 'test-secret'
-      process.env.GITHUB_OUTPUT = '/tmp/github-output'
-      mockExistsSync.mockImplementation(
-        (path: string) => !String(path).endsWith('recording.mp4')
-      )
-      mockReaddir.mockResolvedValue(['demo'])
-      mockReadFile.mockResolvedValue(
-        JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
-      )
-      mockFetch.mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: vi.fn().mockResolvedValue({
-          recordingId: 'recording_123',
-          projectId: 'project_123',
-        }),
-        text: vi.fn().mockResolvedValue(''),
-      })
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockAppendFile).toHaveBeenCalledWith(
-        '/tmp/github-output',
-        'screenci_project_url=https://app.screenci.com/project/project_123\n'
-      )
+      expect(loggerErrorSpy).toHaveBeenCalledWith('Unknown command: retry')
     })
 
     it('should launch Playwright through cmd on Windows', async () => {

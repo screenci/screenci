@@ -36,9 +36,14 @@ npx screenci test --ui
 # verify repeatedly until green
 npx screenci test
 
+# run only some tests with normal Playwright filters
+npx screenci test videos/signup.video.ts --grep "fills billing details"
+
 # only record after tests pass
 npx screenci record
 ```
+
+`npx screenci test` accepts normal `playwright test` argument syntax after `test`. ScreenCI still injects its resolved `screenci.config.ts` automatically. `--config` / `-c` and `--verbose` / `-v` are reserved for the ScreenCI CLI itself rather than being forwarded to Playwright.
 
 ## What ScreenCI Adds
 
@@ -97,7 +102,7 @@ await autoZoom(async () => {
 
 - `screenci record` runs the recording flow with local Playwright.
 - `screenci test --ui` runs Playwright in UI mode for fast iteration without screen capture.
-- `screenci retry` uploads the latest `.screenci` output when API configuration is available.
+- `screenci test <playwright args...>` forwards most Playwright test arguments unchanged, while still using `screenci.config.ts`.
 
 ## Recording Workflow
 

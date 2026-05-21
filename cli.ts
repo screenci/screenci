@@ -962,59 +962,6 @@ async function writeGitHubProjectOutput(projectUrl: string): Promise<void> {
   await appendFile(githubOutput, `screenci_project_url=${projectUrl}\n`)
 }
 
-async function uploadLatest(
-  configPath: string | undefined,
-  verbose = false
-): Promise<void> {
-  const { resolvedConfigPath, screenciConfig } =
-    await loadScreenCIConfigAndEnv(configPath)
-
-  const apiUrl = getDevBackendUrl()
-
-  const secret = process.env.SCREENCI_SECRET
-  if (!secret) {
-    logger.error(
-      'No secret configured. Set SCREENCI_SECRET in your .env file (get it from the API Key page in the dashboard).'
-    )
-    process.exit(1)
-  }
-
-  const configDir = dirname(resolvedConfigPath)
-  const screenciDir = resolve(configDir, '.screenci')
-
-  if (verbose) {
-    logger.info(`screenciDir=${screenciDir}`)
-    logger.info(`apiUrl=${apiUrl}`)
-  }
-
-  const appUrl = getDevFrontendUrl()
-
-  let projectId: string | null = null
-  try {
-    projectId = await uploadRecordings(
-      screenciDir,
-      screenciConfig.projectName,
-      apiUrl,
-      secret,
-      undefined,
-      verbose
-    )
-  } catch (err) {
-    if (isUploadCancelledError(err)) {
-      process.exit(130)
-    }
-    throw err
-  }
-  if (projectId !== null) {
-    const projectUrl = `${appUrl}/project/${projectId}`
-    await writeGitHubProjectOutput(projectUrl)
-    logger.info('')
-    logger.info('Upload complete, rendering continues in the background.')
-    logger.info('Recording finished, results available at:')
-    logger.info(pc.cyan(projectUrl))
-  }
-}
-
 async function loadScreenCIConfigAndEnv(configPath?: string): Promise<{
   resolvedConfigPath: string
   screenciConfig: ScreenCIConfig
@@ -1276,7 +1223,6 @@ function generatePackageJson(
         type: 'module',
         scripts: {
           record: 'screenci record',
-          retry: 'screenci retry',
           test: 'screenci test',
         },
         dependencies: {
@@ -1838,7 +1784,7 @@ export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
     logger.error(
-      'Available commands: record, test, info, make-public, make-private, retry, init'
+      'Available commands: record, test, info, make-public, make-private, init'
     )
     process.exit(1)
   }
@@ -1982,19 +1928,6 @@ export async function main() {
         id,
         false,
         options['config'] as string | undefined
-      )
-    })
-
-  // retry command
-  program
-    .command('retry')
-    .description('Retry uploading all pending recordings')
-    .option('-c, --config <path>', 'path to screenci.config.ts')
-    .option('-v, --verbose', 'verbose output')
-    .action(async (options: Record<string, unknown>) => {
-      await uploadLatest(
-        options['config'] as string | undefined,
-        (options['verbose'] as boolean | undefined) ?? false
       )
     })
 

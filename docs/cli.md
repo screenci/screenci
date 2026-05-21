@@ -16,7 +16,6 @@ Most commands look for `screenci.config.ts` in the current directory. Use `--con
 | `screenci init [name]`            | Scaffold a new ScreenCI project                                  |
 | `screenci test [args...]`         | Forward directly to `playwright test` using your ScreenCI config |
 | `screenci record [args...]`       | Record videos with local Playwright                              |
-| `screenci retry`                  | Upload the newest local recording in `.screenci/`                |
 | `screenci info`                   | Print remote project info as JSON                                |
 | `screenci make-public <videoId>`  | Enable public URLs for a video                                   |
 | `screenci make-private <videoId>` | Disable public URLs for a video                                  |
@@ -45,15 +44,31 @@ Options:
 
 ## `screenci test [playwrightArgs...]`
 
-Forwards directly to `playwright test` while still resolving `screenci.config.ts`.
+Forwards Playwright test arguments in normal `playwright test` syntax while still resolving `screenci.config.ts`.
 
 ```bash
 npx screenci test
 npx screenci test --grep "checkout"
 npx screenci test --project=chromium
+npx screenci test tests/onboarding.video.ts --grep "step 2"
 ```
 
 Use this when you want normal Playwright execution without recording.
+
+To run only some tests, pass the same filters you would use with `playwright test`, such as a file path or `--grep`:
+
+```bash
+npx screenci test videos/onboarding.video.ts
+npx screenci test --grep "checkout"
+npx screenci test videos/onboarding.video.ts --grep "step 2"
+```
+
+Notes:
+
+- Most arguments after `test` are passed through as-is to `playwright test`
+- `screenci` always adds `--config <resolved-path-to-screenci.config.ts>` for you
+- `--config` / `-c` are handled by `screenci` itself, so use them to point to a different `screenci.config.ts`
+- `--verbose` / `-v` are also handled by `screenci` itself for extra CLI logging, not forwarded to Playwright
 
 ## `screenci record [playwrightArgs...]`
 
@@ -72,18 +87,6 @@ Options:
 Restrictions:
 
 - `--workers`, `-j`, `--retries`, and `--fully-parallel` are rejected because ScreenCI records sequentially with one worker
-
-## `screenci retry`
-
-Uploads the newest recording from `.screenci/` to ScreenCI.
-
-```bash
-npx screenci retry
-```
-
-Requirements:
-
-- `SCREENCI_SECRET` must be available, usually via the `envFile` configured in `screenci.config.ts`
 
 ## `screenci info`
 
@@ -157,7 +160,6 @@ These commands support `--config <path>`:
 
 - `test`
 - `record`
-- `retry`
 - `info`
 - `make-public`
 - `make-private`

@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
           cache: npm
@@ -53,7 +53,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
           cache: npm
@@ -65,17 +65,21 @@ jobs:
       - name: Build package
         run: npm run build
 
-      - name: Run screenci init
-        env:
-          SCREENCI_INIT_CWD: ${{ runner.temp }}/screenci-smoke
+      - name: Pack local screenci package
+        id: pack
         run: |
-          mkdir -p "$SCREENCI_INIT_CWD"
-          node bin/screenci.js init smoke-project --yes
+          echo "tarball=$(node -p 'const pkg=require("./package.json"); `${pkg.name}-${pkg.version}.tgz`')" >> "$GITHUB_OUTPUT"
+          npm pack
 
-      - name: Install local screenci build
-        working-directory: ${{ runner.temp }}/screenci-smoke/smoke-project
-        run: npm install "${{ github.workspace }}"
+      - name: Run screenci init
+        run: node bin/screenci.js init smoke-project --yes
+
+      - name: Use local screenci tarball instead of published npm version
+        working-directory: smoke-project
+        run: |
+          npm pkg set "dependencies.screenci=file:../${{ steps.pack.outputs.tarball }}"
+          npm install
 
       - name: Run screenci test
-        working-directory: ${{ runner.temp }}/screenci-smoke/smoke-project
+        working-directory: smoke-project
         run: npx screenci test

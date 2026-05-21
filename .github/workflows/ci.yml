@@ -17,28 +17,23 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version-file: 'packages/screenci/.nvmrc'
+          node-version-file: '.nvmrc'
           cache: npm
-          cache-dependency-path: packages/screenci/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        working-directory: packages/screenci
         run: npm ci
 
       - name: Check formatting
-        working-directory: packages/screenci
         run: npm run format:check
 
       - name: Run linting
-        working-directory: packages/screenci
         run: npm run lint
 
       - name: Run type checking
-        working-directory: packages/screenci
         run: npm run type-check
 
       - name: Run unit tests
-        working-directory: packages/screenci
         run: npm run test:run
 
   smoke-test:
@@ -60,29 +55,26 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version-file: 'packages/screenci/.nvmrc'
+          node-version-file: '.nvmrc'
           cache: npm
-          cache-dependency-path: packages/screenci/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install package dependencies
-        working-directory: packages/screenci
         run: npm ci
 
       - name: Build package
-        working-directory: packages/screenci
         run: npm run build
 
       - name: Run screenci init
         env:
           SCREENCI_INIT_CWD: ${{ runner.temp }}/screenci-smoke
-        working-directory: packages/screenci
         run: |
           mkdir -p "$SCREENCI_INIT_CWD"
           node bin/screenci.js init smoke-project --yes
 
       - name: Install local screenci build
         working-directory: ${{ runner.temp }}/screenci-smoke/smoke-project
-        run: npm install "${{ github.workspace }}/packages/screenci"
+        run: npm install "${{ github.workspace }}"
 
       - name: Run screenci test
         working-directory: ${{ runner.temp }}/screenci-smoke/smoke-project

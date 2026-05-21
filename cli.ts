@@ -14,7 +14,7 @@ import {
   writeFile,
 } from 'fs/promises'
 import { dirname, relative as pathRelative, resolve } from 'path'
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 import { Command, CommanderError } from 'commander'
 import { input, confirm, select } from '@inquirer/prompts'
 import ora from 'ora'
@@ -178,9 +178,44 @@ function createUploadAbortController(activityLabel: string): {
   }
 }
 
+function quoteWindowsCommandArg(arg: string): string {
+  if (arg.length === 0) return '""'
+  if (/^[A-Za-z0-9_./:\\=-]+$/.test(arg)) return arg
+  return `"${arg.replace(/"/g, '""')}"`
+}
+
+function resolveSpawnSpec(
+  cmd: string,
+  args: string[]
+): {
+  command: string
+  args: string[]
+  shell?: boolean
+} {
+  if (process.platform !== 'win32') {
+    return { command: cmd, args }
+  }
+
+  const windowsCmdsNeedingShell = new Set(['npm', 'npx', 'playwright'])
+  if (!windowsCmdsNeedingShell.has(cmd)) {
+    return { command: cmd, args }
+  }
+
+  const commandLine = [cmd, ...args].map(quoteWindowsCommandArg).join(' ')
+  return {
+    command: 'cmd',
+    args: ['/d', '/c', commandLine],
+  }
+}
+
 function spawnSilent(cmd: string, args: string[], cwd?: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: 'pipe', ...(cwd ? { cwd } : {}) })
+    const spawnSpec = resolveSpawnSpec(cmd, args)
+    const child = spawn(spawnSpec.command, spawnSpec.args, {
+      stdio: 'pipe',
+      ...(spawnSpec.shell !== undefined ? { shell: spawnSpec.shell } : {}),
+      ...(cwd ? { cwd } : {}),
+    })
     const childSignals = forwardChildSignals(child, cmd)
     child.on('close', (code, signal) => {
       const forwardedSignal = childSignals.getForwardedSignal()
@@ -1091,11 +1126,24 @@ async function tryReadConfigFromSource(
   }
 }
 
+export function getConfigModuleSpecifier(resolvedConfigPath: string): string {
+  if (
+    process.platform === 'win32' &&
+    /^[A-Za-z]:[\\/]/.test(resolvedConfigPath)
+  ) {
+    return encodeURI(`file:///${resolvedConfigPath.replace(/\\/g, '/')}`)
+  }
+
+  return pathToFileURL(resolvedConfigPath).href
+}
+
 async function loadRecordConfigWithoutPlaywrightCollision(
   resolvedConfigPath: string
 ): Promise<ScreenCIConfig> {
   try {
-    const configModule = await import(resolvedConfigPath)
+    const configModule = await import(
+      getConfigModuleSpecifier(resolvedConfigPath)
+    )
     return configModule.default as ScreenCIConfig
   } catch (err) {
     if (
@@ -1388,13 +1436,21 @@ jobs:
 }
 
 function openBrowser(url: string): void {
-  const cmd =
-    process.platform === 'darwin'
-      ? 'open'
-      : process.platform === 'win32'
-        ? 'start'
-        : 'xdg-open'
-  spawn(cmd, [url], { detached: true, stdio: 'ignore' }).unref()
+  try {
+    if (process.platform === 'win32') {
+      spawn('cmd', ['/c', 'start', '', url], {
+        detached: true,
+        stdio: 'ignore',
+        shell: true,
+      }).unref()
+      return
+    }
+
+    const cmd = process.platform === 'darwin' ? 'open' : 'xdg-open'
+    spawn(cmd, [url], { detached: true, stdio: 'ignore' }).unref()
+  } catch (err) {
+    logger.warn('Failed to open browser automatically:', err)
+  }
 }
 
 async function performBrowserLogin(appUrl: string): Promise<string> {
@@ -1550,7 +1606,7 @@ function getInitProjectRoot(): string {
   return process.env['SCREENCI_INIT_CWD'] ?? process.cwd()
 }
 
-async function ensureScreenciSecret(): Promise<string | undefined> {
+export async function ensureScreenciSecret(): Promise<string | undefined> {
   const existingSecret = process.env.SCREENCI_SECRET
   if (existingSecret) return existingSecret
 
@@ -1582,13 +1638,14 @@ type InitOptions = {
   yes: boolean
   skill: boolean
   ci: boolean
+  agent?: string
 }
 
 async function runInit(
   projectNameArg: string | undefined,
   options: InitOptions
 ): Promise<void> {
-  const { verbose, install, yes, skill, ci } = options
+  const { verbose, install, yes, skill, ci, agent } = options
   const initCwd = getInitProjectRoot()
   const existingRepositoryDetected = existsSync(resolve(initCwd, '.git'))
 
@@ -1657,6 +1714,7 @@ async function runInit(
     'skills',
     'add',
     'screenci/screenci',
+    ...(agent ? ['--agent', agent] : []),
     '--skill',
     'screenci',
     ...(shouldAddPlaywrightCli ? ['--skill', 'playwright-cli'] : []),
@@ -1942,17 +2000,23 @@ export async function main() {
       'install skills, dependencies, and Chromium without prompting'
     )
     .option('--ci', 'add GitHub Action CI without prompting')
+    .option(
+      '--agent <name>',
+      'target agent for skills install, e.g. opencode. Supported agents: https://github.com/vercel-labs/skills#supported-agents'
+    )
     .option('--skill', 'enable playwright-cli without prompting')
     .option('-y, --yes', 'answer yes to all init prompts')
     .option('-v, --verbose', 'verbose output')
     .action(
       async (name: string | undefined, options: Record<string, unknown>) => {
+        const agent = options['agent'] as string | undefined
         await runInit(name, {
           verbose: (options['verbose'] as boolean | undefined) ?? false,
           install: (options['install'] as boolean | undefined) ?? false,
           yes: (options['yes'] as boolean | undefined) ?? false,
           skill: (options['skill'] as boolean | undefined) ?? false,
           ci: (options['ci'] as boolean | undefined) ?? false,
+          ...(agent !== undefined ? { agent } : {}),
         })
       }
     )
@@ -2092,7 +2156,12 @@ function spawnInherited(
   cwd?: string,
   activityLabel = cmd
 ): Promise<void> {
-  const child = spawn(cmd, args, { stdio: 'inherit', ...(cwd ? { cwd } : {}) })
+  const spawnSpec = resolveSpawnSpec(cmd, args)
+  const child = spawn(spawnSpec.command, spawnSpec.args, {
+    stdio: 'inherit',
+    ...(spawnSpec.shell !== undefined ? { shell: spawnSpec.shell } : {}),
+    ...(cwd ? { cwd } : {}),
+  })
   const childSignals = forwardChildSignals(child, activityLabel)
 
   return new Promise<void>((resolve, reject) => {
@@ -2155,8 +2224,10 @@ async function run(
 
   const playwrightArgs = ['test', '--config', configPath, ...additionalArgs]
 
-  const child = spawn('playwright', playwrightArgs, {
+  const spawnSpec = resolveSpawnSpec('playwright', playwrightArgs)
+  const child = spawn(spawnSpec.command, spawnSpec.args, {
     stdio: 'inherit',
+    ...(spawnSpec.shell !== undefined ? { shell: spawnSpec.shell } : {}),
     env: {
       ...envForChild,
       // Enable recording only for record command

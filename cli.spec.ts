@@ -619,6 +619,33 @@ describe('CLI', () => {
         'screenci_project_url=https://app.screenci.com/project/project_123\n'
       )
     })
+
+    it('should launch Playwright through cmd on Windows', async () => {
+      process.argv = ['node', 'cli.js', 'test']
+      const platformSpy = vi
+        .spyOn(process, 'platform', 'get')
+        .mockReturnValue('win32')
+
+      mockSpawn.mockImplementation((_command: string) => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'cmd',
+        expect.arrayContaining([
+          '/d',
+          '/c',
+          expect.stringContaining('playwright test'),
+        ]),
+        expect.objectContaining({ stdio: 'inherit' })
+      )
+
+      platformSpy.mockRestore()
+    })
   })
 
   describe('dev URL helpers', () => {
@@ -636,6 +663,96 @@ describe('CLI', () => {
       const { getDevFrontendUrl } = await import('./cli')
 
       expect(getDevFrontendUrl()).toBe('http://localhost:5173')
+    })
+
+    it('should open browser via cmd start on Windows during auth flow', async () => {
+      const platformSpy = vi
+        .spyOn(process, 'platform', 'get')
+        .mockReturnValue('win32')
+
+      mockCreateHttpServer.mockImplementation(
+        (handler: (req: unknown, res: unknown) => void) => {
+          const server = {
+            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+              cb()
+              const req = { url: '/callback?secret=auth-secret-123' }
+              const res = {
+                writeHead: vi.fn(),
+                end: vi.fn(),
+              }
+              handler(req, res)
+            }),
+            close: vi.fn(),
+            address: vi.fn().mockReturnValue({ port: 12345 }),
+            on: vi.fn(),
+          }
+          return server
+        }
+      )
+
+      const { ensureScreenciSecret } = await import('./cli')
+      await ensureScreenciSecret()
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'cmd',
+        ['/c', 'start', '', expect.stringContaining('cli-auth?callback=')],
+        expect.objectContaining({
+          detached: true,
+          stdio: 'ignore',
+          shell: true,
+        })
+      )
+
+      platformSpy.mockRestore()
+    })
+
+    it('should warn instead of throwing when browser open fails', async () => {
+      mockSpawn.mockImplementation(() => {
+        throw new Error('spawn failed')
+      })
+      mockCreateHttpServer.mockImplementation(
+        (handler: (req: unknown, res: unknown) => void) => {
+          const server = {
+            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+              cb()
+              const req = { url: '/callback?secret=auth-secret-123' }
+              const res = {
+                writeHead: vi.fn(),
+                end: vi.fn(),
+              }
+              handler(req, res)
+            }),
+            close: vi.fn(),
+            address: vi.fn().mockReturnValue({ port: 12345 }),
+            on: vi.fn(),
+          }
+          return server
+        }
+      )
+
+      const { ensureScreenciSecret } = await import('./cli')
+      await expect(ensureScreenciSecret()).resolves.toBe('auth-secret-123')
+
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        'Failed to open browser automatically:',
+        expect.any(Error)
+      )
+    })
+  })
+
+  describe('config loading', () => {
+    it('should convert Windows config paths to file URLs for dynamic import', async () => {
+      const platformSpy = vi
+        .spyOn(process, 'platform', 'get')
+        .mockReturnValue('win32')
+
+      const { getConfigModuleSpecifier } = await import('./cli')
+
+      expect(getConfigModuleSpecifier('D:\\repo\\screenci.config.ts')).toBe(
+        'file:///D:/repo/screenci.config.ts'
+      )
+
+      platformSpy.mockRestore()
     })
   })
 
@@ -1688,6 +1805,39 @@ describe('CLI', () => {
       )
     })
 
+    it('should pass --agent through to skills add', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--agent',
+        'opencode',
+      ]
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        [
+          '--yes',
+          'skills',
+          'add',
+          'screenci/screenci',
+          '--agent',
+          'opencode',
+          '--skill',
+          'screenci',
+          '--skill',
+          'playwright-cli',
+          '-y',
+        ],
+        expect.objectContaining({ stdio: 'pipe' })
+      )
+    })
+
     it('should always run skills add with only screenci when AI authoring is declined', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       mockExistsSync.mockReturnValue(false)
@@ -1756,6 +1906,40 @@ describe('CLI', () => {
       expect(loggerInfoSpy).toHaveBeenCalledWith('  cd my-project')
     })
 
+    it('should include --agent when combined with --yes', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--yes',
+        '--agent',
+        'opencode',
+      ]
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        [
+          '--yes',
+          'skills',
+          'add',
+          'screenci/screenci',
+          '--agent',
+          'opencode',
+          '--skill',
+          'screenci',
+          '--skill',
+          'playwright-cli',
+          '-y',
+        ],
+        expect.objectContaining({ stdio: 'pipe' })
+      )
+    })
+
     it('should answer yes to the skill question with --skill', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project', '--skill']
       mockExistsSync.mockReturnValue(false)
@@ -1789,6 +1973,47 @@ describe('CLI', () => {
         expect.stringContaining('"auth"')
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith('  cd auth')
+    })
+
+    it('should launch package commands through cmd on Windows', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project', '--yes']
+      mockExistsSync.mockReturnValue(false)
+      const platformSpy = vi
+        .spyOn(process, 'platform', 'get')
+        .mockReturnValue('win32')
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'cmd',
+        [
+          '/d',
+          '/c',
+          expect.stringContaining(
+            'npx --yes skills add screenci/screenci --skill screenci --skill playwright-cli -y'
+          ),
+        ],
+        expect.objectContaining({ stdio: 'pipe' })
+      )
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'cmd',
+        ['/d', '/c', expect.stringContaining('npm install --include=dev')],
+        expect.objectContaining({ stdio: 'pipe' })
+      )
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'cmd',
+        [
+          '/d',
+          '/c',
+          expect.stringContaining(
+            'npx playwright install chromium --with-deps'
+          ),
+        ],
+        expect.objectContaining({ stdio: 'inherit' })
+      )
+
+      platformSpy.mockRestore()
     })
   })
 

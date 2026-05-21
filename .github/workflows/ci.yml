@@ -37,16 +37,24 @@ jobs:
         run: npm run test:run
 
   smoke-test:
-    name: Init + Test (${{ matrix.os }})
+    name: Init + Test (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-
-    defaults:
-      run:
-        shell: bash
+        include:
+          - name: ubuntu / bash
+            os: ubuntu-latest
+            shell_name: bash
+          - name: macos / bash
+            os: macos-latest
+            shell_name: bash
+          - name: windows / powershell
+            os: windows-latest
+            shell_name: pwsh
+          - name: windows / cmd
+            os: windows-latest
+            shell_name: cmd
 
     steps:
       - name: Checkout code
@@ -66,20 +74,18 @@ jobs:
         run: npm run build
 
       - name: Pack local screenci package
-        id: pack
-        run: |
-          echo "tarball=$(node -p 'const pkg=require("./package.json"); `${pkg.name}-${pkg.version}.tgz`')" >> "$GITHUB_OUTPUT"
-          npm pack
+        run: npm pack
 
       - name: Run screenci init
-        run: node bin/screenci.js init smoke-project --yes
+        run: node scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} node bin/screenci.js init smoke-project --yes --verbose
 
-      - name: Use local screenci tarball instead of published npm version
+      - name: Point smoke project to local screenci tarball
+        run: node scripts/ci-change-to-local-screenci-build.ts
+
+      - name: Install smoke project dependencies
         working-directory: smoke-project
-        run: |
-          npm pkg set "dependencies.screenci=file:../${{ steps.pack.outputs.tarball }}"
-          npm install
+        run: npm install
 
       - name: Run screenci test
         working-directory: smoke-project
-        run: npx screenci test
+        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} npx screenci test

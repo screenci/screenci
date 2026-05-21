@@ -46,7 +46,7 @@ npx screenci record # capture the final recording
 
 ## Required Conventions
 
-These are not optional — every `.video.ts` file must follow all four:
+These are not optional — every `.video.ts` file must follow all five:
 
 ### 1. Narration on every video (required, no exceptions)
 
@@ -63,6 +63,10 @@ Add `autoZoom()` only for larger sections that benefit from camera guidance — 
 ### 4. End autoZoom before page changes
 
 Let each `autoZoom()` block complete before navigation/page changes. Staying zoomed during a route transition is confusing for viewers. After the new page is ready, start a new `autoZoom()` block for that page section if needed.
+
+### 5. Prefer default action options
+
+Use ScreenCI's default options for `autoZoom()` and locator actions such as `click()`, `fill()`, `pressSequentially()`, `check()`, `uncheck()`, `selectOption()`, and `selectText()`. Do not add custom `zoom`, `click`, `position`, timing, or other locator-action overrides unless the user explicitly asks for different behavior or the recording flow clearly needs a specific adjustment.
 
 ## Constraints
 

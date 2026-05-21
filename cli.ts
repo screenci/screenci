@@ -1550,23 +1550,6 @@ function getInitProjectRoot(): string {
   return process.env['SCREENCI_INIT_CWD'] ?? process.cwd()
 }
 
-async function runInitAuth(): Promise<void> {
-  const appUrl = getDevFrontendUrl()
-  try {
-    const secret = await performBrowserLogin(appUrl)
-    process.env.SCREENCI_SECRET = secret
-    const savePath = resolve(process.cwd(), '.env')
-    await writeFile(savePath, `SCREENCI_SECRET=${secret}\n`)
-    logger.info(`Successfully saved SCREENCI_SECRET to ${savePath}`)
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    logger.warn(`Authentication failed: ${msg}`)
-    logger.info(
-      'You can add SCREENCI_SECRET manually to .env later (get it from the API Key page in the dashboard).'
-    )
-  }
-}
-
 async function ensureScreenciSecret(): Promise<string | undefined> {
   const existingSecret = process.env.SCREENCI_SECRET
   if (existingSecret) return existingSecret
@@ -1964,17 +1947,13 @@ export async function main() {
     .option('-v, --verbose', 'verbose output')
     .action(
       async (name: string | undefined, options: Record<string, unknown>) => {
-        if (name === 'auth') {
-          await runInitAuth()
-        } else {
-          await runInit(name, {
-            verbose: (options['verbose'] as boolean | undefined) ?? false,
-            install: (options['install'] as boolean | undefined) ?? false,
-            yes: (options['yes'] as boolean | undefined) ?? false,
-            skill: (options['skill'] as boolean | undefined) ?? false,
-            ci: (options['ci'] as boolean | undefined) ?? false,
-          })
-        }
+        await runInit(name, {
+          verbose: (options['verbose'] as boolean | undefined) ?? false,
+          install: (options['install'] as boolean | undefined) ?? false,
+          yes: (options['yes'] as boolean | undefined) ?? false,
+          skill: (options['skill'] as boolean | undefined) ?? false,
+          ci: (options['ci'] as boolean | undefined) ?? false,
+        })
       }
     )
 

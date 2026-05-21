@@ -1,4 +1,4 @@
-name: ScreenCI record
+name: ScreenCI CI
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  ci:
+  quality:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,19 +17,73 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version-file: '.nvmrc'
+          node-version-file: 'packages/screenci/.nvmrc'
+          cache: npm
+          cache-dependency-path: packages/screenci/package-lock.json
 
       - name: Install dependencies
-        run: rm -f package-lock.json && npm install --include=dev
+        working-directory: packages/screenci
+        run: npm ci
 
       - name: Check formatting
+        working-directory: packages/screenci
         run: npm run format:check
 
       - name: Run linting
+        working-directory: packages/screenci
         run: npm run lint
 
       - name: Run type checking
+        working-directory: packages/screenci
         run: npm run type-check
 
       - name: Run unit tests
+        working-directory: packages/screenci
         run: npm run test:run
+
+  smoke-test:
+    name: Init + Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: 'packages/screenci/.nvmrc'
+          cache: npm
+          cache-dependency-path: packages/screenci/package-lock.json
+
+      - name: Install package dependencies
+        working-directory: packages/screenci
+        run: npm ci
+
+      - name: Build package
+        working-directory: packages/screenci
+        run: npm run build
+
+      - name: Run screenci init
+        env:
+          SCREENCI_INIT_CWD: ${{ runner.temp }}/screenci-smoke
+        working-directory: packages/screenci
+        run: |
+          mkdir -p "$SCREENCI_INIT_CWD"
+          node bin/screenci.js init smoke-project --yes
+
+      - name: Install local screenci build
+        working-directory: ${{ runner.temp }}/screenci-smoke/smoke-project
+        run: npm install "${{ github.workspace }}/packages/screenci"
+
+      - name: Run screenci test
+        working-directory: ${{ runner.temp }}/screenci-smoke/smoke-project
+        run: npx screenci test

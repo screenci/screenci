@@ -1749,6 +1749,11 @@ describe('CLI', () => {
         expect.stringContaining('.github/workflows/screenci.yaml'),
         expect.any(String)
       )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining('my-project/screenci.config.ts'),
+        expect.stringContaining('"my-project"')
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith('  cd my-project')
     })
 
     it('should answer yes to the skill question with --skill', async () => {
@@ -1769,6 +1774,21 @@ describe('CLI', () => {
           typeof c[0] === 'string' && c[0].endsWith('package.json')
       )
       expect(pkgCall?.[1]).toContain('"@playwright/cli": "latest"')
+    })
+
+    it('should allow auth as a project name', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'auth', '--yes']
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockCreateHttpServer).not.toHaveBeenCalled()
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining('auth/screenci.config.ts'),
+        expect.stringContaining('"auth"')
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith('  cd auth')
     })
   })
 

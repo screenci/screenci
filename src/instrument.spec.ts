@@ -686,7 +686,10 @@ describe('instrumentLocator', () => {
     const page = makePageMock()
     await instrumentPage(page)
 
-    const locator = makeLocatorMock({ x: 100, y: 200, width: 80, height: 40 }, page)
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
     const originalClick = locator.click as ReturnType<typeof vi.fn>
     instrumentLocator(locator)
 
@@ -701,7 +704,10 @@ describe('instrumentLocator', () => {
     const page = makePageMock()
     await instrumentPage(page)
 
-    const locator = makeLocatorMock({ x: 100, y: 200, width: 80, height: 40 }, page)
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
     const originalClick = locator.click as ReturnType<typeof vi.fn>
     instrumentLocator(locator)
 
@@ -855,14 +861,16 @@ describe('instrumentLocator', () => {
     const page = makePageMock()
     await instrumentPage(page)
 
-    const locator = makeLocatorMock({ x: 100, y: 200, width: 80, height: 40 }, page)
-    const originalSelectOption = locator.selectOption as ReturnType<typeof vi.fn>
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    const originalSelectOption = locator.selectOption as ReturnType<
+      typeof vi.fn
+    >
     instrumentLocator(locator)
 
-    await Promise.all([
-      locator.selectOption('one'),
-      vi.runAllTimersAsync(),
-    ])
+    await Promise.all([locator.selectOption('one'), vi.runAllTimersAsync()])
 
     expect(originalSelectOption).toHaveBeenCalledWith(
       'one',
@@ -963,7 +971,7 @@ describe('instrumentLocator', () => {
     expect(down.startMs - focusChange.mouse.endMs).toBe(1050)
   })
 
-  it('uses the standard default post-click pause before fill typing', async () => {
+  it('uses the shorter default post-click pause before fill typing', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
 
@@ -1003,7 +1011,7 @@ describe('instrumentLocator', () => {
     }
 
     expect(wait.startMs - up.endMs).toBe(0)
-    expect(wait.endMs - wait.startMs).toBe(500)
+    expect(wait.endMs - wait.startMs).toBe(100)
   })
 
   it('skips the default pre-typing click animation for fill when the input is already focused', async () => {
@@ -1288,10 +1296,14 @@ describe('instrumentLocator', () => {
     await vi.runAllTimersAsync()
     expect(checkMock).toHaveBeenCalledTimes(2)
     expect(checkMock).toHaveBeenCalledWith({
+      noWaitAfter: true,
       position: { x: 40, y: 20 },
       trial: true,
     })
-    expect(checkMock).toHaveBeenCalledWith({ position: { x: 40, y: 20 } })
+    expect(checkMock).toHaveBeenCalledWith({
+      noWaitAfter: true,
+      position: { x: 40, y: 20 },
+    })
 
     await p
 
@@ -1471,10 +1483,14 @@ describe('instrumentLocator', () => {
     const check = recordedInputEvents[0]!
     expect(check.subType).toBe('check')
     expect(checkMock).toHaveBeenCalledWith({
+      noWaitAfter: true,
       position: { x: 9, y: 9 },
       trial: true,
     })
-    expect(checkMock).toHaveBeenCalledWith({ position: { x: 9, y: 9 } })
+    expect(checkMock).toHaveBeenCalledWith({
+      noWaitAfter: true,
+      position: { x: 9, y: 9 },
+    })
 
     const down = check.events.find((e) => e.type === 'mouseDown')
     const up = check.events.find((e) => e.type === 'mouseUp')
@@ -1753,8 +1769,14 @@ describe('instrumentLocator', () => {
     const page = makePageMock()
     await instrumentPage(page)
 
-    const firstLocator = makeLocatorMock({ x: 100, y: 200, width: 80, height: 40 }, page)
-    const secondLocator = makeLocatorMock({ x: 100, y: 280, width: 80, height: 40 }, page)
+    const firstLocator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    const secondLocator = makeLocatorMock(
+      { x: 100, y: 280, width: 80, height: 40 },
+      page
+    )
     instrumentLocator(firstLocator)
     instrumentLocator(secondLocator)
 
@@ -1779,7 +1801,9 @@ describe('instrumentLocator', () => {
     expect(recordedInputEvents).toHaveLength(2)
     for (const event of recordedInputEvents) {
       expect(event.subType).toBe('pressSequentially')
-      expect(event.events.some((innerEvent) => innerEvent.type === 'mouseHide')).toBe(true)
+      expect(
+        event.events.some((innerEvent) => innerEvent.type === 'mouseHide')
+      ).toBe(true)
     }
   })
 

@@ -325,6 +325,7 @@ export type ClickBeforeFillOption = CursorMoveTimingOption & {
   /** Pause between cursor arrival and click in ms (default: 50). */
   beforeClickPause?: number
   moveEasing?: Easing
+  noWaitAfter?: boolean
   postClickPause?: number
   postClickMove?: PostClickMove
 }

@@ -182,6 +182,7 @@ describe('mouse helpers', () => {
     expect(mouseClickInternal).toHaveBeenCalledWith({
       clickCount: 2,
       delay: 20,
+      noWaitAfter: true,
     })
     expect(result.elementRect).toEqual({ x: 10, y: 20, width: 30, height: 40 })
     expect(down.type).toBe('mouseDown')

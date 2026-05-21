@@ -295,6 +295,7 @@ async function performAction(
   mode: 'singleBefore' | 'tripleBefore' | 'singleDuring',
   autoZoomOptions?: AutoZoomOptions,
   position?: { x: number; y: number },
+  noWaitAfter?: boolean,
   beforeClickPause = 0,
   postClickPause = 0,
   postClickMove?: PostClickMove,
@@ -326,10 +327,13 @@ async function performAction(
   await sleep(beforeClickPause)
 
   if (!mouseMoveRequest) {
-    await doClick(withDefaultNoWaitAfter({
-      ...(supportsTrial ? { trial: true } : {}),
-      ...(mode === 'singleDuring' ? { position: targetPosition } : {}),
-    }))
+    await doClick(
+      withDefaultNoWaitAfter({
+        ...(noWaitAfter !== undefined ? { noWaitAfter } : {}),
+        ...(supportsTrial ? { trial: true } : {}),
+        ...(mode === 'singleDuring' ? { position: targetPosition } : {}),
+      })
+    )
     await appendMouseWait(innerEvents, postClickPause)
     return {
       elementRect,
@@ -343,7 +347,10 @@ async function performAction(
     supportsTrial,
     targetX: elementRect.x + targetPosition.x,
     targetY: elementRect.y + targetPosition.y,
-    clickOptions: { position: targetPosition },
+    clickOptions: {
+      position: targetPosition,
+      ...(noWaitAfter !== undefined ? { noWaitAfter } : {}),
+    },
   }
 
   const clickActionOptions =
@@ -554,6 +561,7 @@ export function instrumentLocator(locator: Locator): Locator {
       'singleDuring',
       autoZoomOptions,
       position,
+      clickOptions.noWaitAfter,
       beforeClickPause,
       postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
       postClickMove,
@@ -636,6 +644,7 @@ export function instrumentLocator(locator: Locator): Locator {
       'singleBefore',
       autoZoomOptions,
       options?.position,
+      clickOpt.noWaitAfter,
       beforeClickPause ?? DEFAULT_PRE_CLICK_PAUSE_MS,
       postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
       postClickMove,
@@ -741,6 +750,7 @@ export function instrumentLocator(locator: Locator): Locator {
       'singleBefore',
       options?.autoZoomOptions,
       options?.position,
+      clickOpt.noWaitAfter,
       beforeClickPause ?? DEFAULT_PRE_CLICK_PAUSE_MS,
       postClickPause ?? CLICK_DURATION_MS / 2,
       postClickMove,
@@ -802,6 +812,7 @@ export function instrumentLocator(locator: Locator): Locator {
       'singleDuring',
       autoZoomOptions,
       position,
+      tapOpts.noWaitAfter,
       clickOpt?.beforeClickPause,
       clickOpt?.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
       clickOpt?.postClickMove,
@@ -860,6 +871,7 @@ export function instrumentLocator(locator: Locator): Locator {
       'singleDuring',
       autoZoomOptions,
       position,
+      checkOpts.noWaitAfter,
       clickOpt?.beforeClickPause,
       clickOpt?.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
       clickOpt?.postClickMove,
@@ -918,6 +930,7 @@ export function instrumentLocator(locator: Locator): Locator {
       'singleDuring',
       autoZoomOptions,
       position,
+      uncheckOpts.noWaitAfter,
       clickOpt?.beforeClickPause,
       clickOpt?.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
       clickOpt?.postClickMove,
@@ -977,13 +990,10 @@ export function instrumentLocator(locator: Locator): Locator {
     } = options ?? {}
 
     if (isInsideHide()) {
-      return originalSelectOption(
-        values,
-        {
-          ...(selectOpts as Parameters<Locator['selectOption']>[1]),
-          noWaitAfter: selectOpts.noWaitAfter ?? true,
-        }
-      )
+      return originalSelectOption(values, {
+        ...(selectOpts as Parameters<Locator['selectOption']>[1]),
+        noWaitAfter: selectOpts.noWaitAfter ?? true,
+      })
     }
 
     currentSelectValues = values
@@ -1006,6 +1016,7 @@ export function instrumentLocator(locator: Locator): Locator {
       'singleDuring',
       autoZoomOptions,
       position,
+      selectOpts.noWaitAfter,
       clickOpt?.beforeClickPause,
       clickOpt?.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
       clickOpt?.postClickMove
@@ -1161,6 +1172,7 @@ export function instrumentLocator(locator: Locator): Locator {
       },
       false,
       'tripleBefore',
+      undefined,
       undefined,
       undefined,
       beforeClickPause,

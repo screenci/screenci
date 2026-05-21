@@ -873,6 +873,44 @@ describe('instrumentLocator', () => {
     expect(getMousePosition(page)).toEqual({ x: 140, y: 220 })
   })
 
+  it('uses a reduced default pre-click pause before fill typing', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    instrumentLocator(locator)
+
+    await Promise.all([
+      (
+        locator.fill as (
+          value: string,
+          options?: { duration?: number; click?: { postClickPause?: number } }
+        ) => Promise<void>
+      )('Acme Corporation', { duration: 100, click: { postClickPause: 0 } }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const fill = recordedInputEvents[0]!
+    const focusChange = fill.events.find(
+      (event): event is FocusChangeEvent => event.type === 'focusChange'
+    )
+    const down = fill.events.find((event) => event.type === 'mouseDown')
+
+    expect(focusChange?.mouse).toBeDefined()
+    expect(down?.type).toBe('mouseDown')
+    if (!focusChange?.mouse || down?.type !== 'mouseDown') {
+      throw new Error('Expected focusChange mouse timings and mouseDown event')
+    }
+
+    expect(down.startMs - focusChange.mouse.endMs).toBe(1050)
+  })
+
   it('skips the default pre-typing click animation for fill when the input is already focused', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
@@ -1364,6 +1402,39 @@ describe('instrumentLocator', () => {
     const uncheck = recordedInputEvents[0]!
     expect(uncheck.events.some((e) => e.type === 'mouseDown')).toBe(true)
     expect(uncheck.events.some((e) => e.type === 'mouseUp')).toBe(true)
+  })
+
+  it('uses a reduced default pre-click pause before selectText', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    instrumentLocator(locator)
+
+    await Promise.all([
+      locator.selectText({ selectDuration: 60 }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const selectText = recordedInputEvents[0]!
+    const focusChange = selectText.events.find(
+      (event): event is FocusChangeEvent => event.type === 'focusChange'
+    )
+    const down = selectText.events.find((event) => event.type === 'mouseDown')
+
+    expect(focusChange?.mouse).toBeDefined()
+    expect(down?.type).toBe('mouseDown')
+    if (!focusChange?.mouse || down?.type !== 'mouseDown') {
+      throw new Error('Expected focusChange mouse timings and mouseDown event')
+    }
+
+    expect(down.startMs - focusChange.mouse.endMs).toBe(1050)
   })
 
   it('records click timing for tap by default', async () => {

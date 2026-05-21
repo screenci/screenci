@@ -50,7 +50,7 @@ These are not optional — every `.video.ts` file must follow all five:
 
 ### 1. Narration on every video (required, no exceptions)
 
-Always add `createNarration({ ... })` to every video file. Videos without narration are not acceptable. Define the full narration map up front, then place `await narration.someKey.start()` at the exact point in the script where each line should begin. `await narration.key.start()` resolves immediately while audio plays in the background. Use `await narration.key.finish()` when the line should be fully spoken before the next action. In practice, this often means awaiting `finish()` before the next navigation
+Always add `createNarration({ ... })` to every video file. Videos without narration are not acceptable. Define the full narration map up front, then place `await narration.someKey()` when the whole line should finish before moving on. Use `await narration.key.start()` only when narration should overlap with the next action, and `await narration.key.end()` only to close that same active cue later. In practice, this often means awaiting `narration.key()` or `narration.key.end()` before the next navigation.
 
 ### 2. Hide initial setup
 

@@ -320,6 +320,7 @@ export type CursorDragTimingOption =
  * top level of the method's options (not inside `click`).
  */
 export type ClickBeforeFillOption = CursorMoveTimingOption & {
+  /** Pause between cursor arrival and click in ms (default: 50). */
   beforeClickPause?: number
   moveEasing?: Easing
   postClickPause?: number
@@ -497,7 +498,7 @@ export type ScreenCILocator = Omit<
    * Clicks the element with an animated cursor move.
    *
    * @param options.moveDuration - Duration of the cursor move animation in ms (default: 1000).
-   * @param options.beforeClickPause - Pause between cursor arrival and click in ms.
+   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
    * @param options.moveEasing - Easing function for the cursor move animation.
    * @param options.postClickPause - Pause after the click completes in ms.
    * @param options.postClickMove - When provided, animates the cursor away from
@@ -604,7 +605,7 @@ export type ScreenCILocator = Omit<
    *
    * @param options.moveDuration - Duration of the cursor move animation in ms (default: 1000).
    * @param options.easing - Easing function for the cursor move animation.
-   * @param options.beforeClickPause - Pause between cursor arrival and the triple-click in ms.
+   * @param options.beforeClickPause - Pause between cursor arrival and the triple-click in ms (default: 50).
    * @param options.selectDuration - Total duration of the triple-click animation in ms (default: 600).
    *   Divided into 6 equal segments: 3 mouseDown + 3 mouseUp phases.
    */

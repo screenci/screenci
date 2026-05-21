@@ -115,7 +115,7 @@ screenci enforces `workers: 1`, `retries: 0`, and `fullyParallel: false` so each
 
 ## AI narration
 
-`createNarration()` maps keys to narration text (or audio files). Define it once near the top of the file, then call `await narration.key.start()` wherever that spoken line should begin. The audio keeps playing while your next actions run. Use `await narration.key.finish()` when a line must be fully spoken before the next action, especially before visible navigation or the first on-screen action after the intro.
+`createNarration()` maps keys to narration text (or audio files). Define it once near the top of the file, then call `await narration.key()` for the common case where the full line should run before moving on. Use `await narration.key.start()` when narration should overlap with the next actions, and `await narration.key.end()` only to close that same active cue later.
 
 ```ts
 import { video, createNarration, voices } from 'screenci'
@@ -135,12 +135,10 @@ const narration = createNarration({
 video('Dashboard walkthrough', async ({ page }) => {
   await page.goto('/dashboard')
 
-  await narration.intro.start()
-  await narration.intro.finish()
+  await narration.intro()
   await page.locator('#reports').click()
 
-  await narration.addButton.start()
-  await narration.addButton.finish()
+  await narration.addButton()
   await page.locator('#new-project').click()
 })
 ```
@@ -155,7 +153,7 @@ video('Example', async ({ page }) => {
   await page.click('#filters') // runs while intro audio is still playing
 
   await narration.details.start() // auto-ends intro, then starts details
-  await narration.details.finish() // use this before navigation or the next gated action
+  await narration.details.end() // use this before navigation or the next gated action
   await page.click('#confirm')
 })
 ```

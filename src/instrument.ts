@@ -68,6 +68,7 @@ import {
 } from './mouse.js'
 
 let activeClickRecorder: IEventRecorder | null = null
+const DEFAULT_PRE_CLICK_PAUSE_MS = 50
 const DEFAULT_POST_CLICK_PAUSE_MS = 500
 
 export function setActiveClickRecorder(recorder: IEventRecorder | null): void {
@@ -614,7 +615,7 @@ export function instrumentLocator(locator: Locator): Locator {
       'singleBefore',
       autoZoomOptions,
       options?.position,
-      beforeClickPause ?? CLICK_DURATION_MS / 2,
+      beforeClickPause ?? DEFAULT_PRE_CLICK_PAUSE_MS,
       postClickPause ?? CLICK_DURATION_MS / 2,
       postClickMove,
       true
@@ -719,7 +720,7 @@ export function instrumentLocator(locator: Locator): Locator {
       'singleBefore',
       options?.autoZoomOptions,
       options?.position,
-      beforeClickPause ?? CLICK_DURATION_MS / 2,
+      beforeClickPause ?? DEFAULT_PRE_CLICK_PAUSE_MS,
       postClickPause ?? CLICK_DURATION_MS / 2,
       postClickMove,
       true
@@ -1097,7 +1098,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       easing: moveEasing = 'ease-in-out',
-      beforeClickPause = CLICK_DURATION_MS / 2,
+      beforeClickPause = DEFAULT_PRE_CLICK_PAUSE_MS,
       ...selectOpts
     } = options ?? {}
 

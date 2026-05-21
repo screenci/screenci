@@ -1543,7 +1543,7 @@ video('See the next steps in ScreenCI docs', async ({ page }) => {
     { duration: 400, easing: 'ease-in-out', amount: 0.4 }
   )
 
-  await narration.docs.finish()
+  await narration.docs()
 })
 `
 }

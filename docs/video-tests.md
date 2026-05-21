@@ -97,7 +97,7 @@ All chaining methods (`locator()`, `getByRole()`, `filter()`, `first()`, `last()
 
 ## Narration
 
-`createNarration()` defines typed narration text. Create the map once near the top of your `.video.ts` file, then call `await narration.key.start()` at the point in the script where that line should begin. At render time ScreenCI generates the audio and syncs it to the recording. Use `start()` when narration should overlap with the next actions, and `finish()` when the line must be fully spoken before the script moves on.
+`createNarration()` defines typed narration text. Create the map once near the top of your `.video.ts` file, then call `await narration.key()` when the whole line should run before the script moves on. At render time ScreenCI generates the audio and syncs it to the recording. Use `start()` when narration should overlap with the next actions, and `end()` only to close that same active cue later.
 
 ```ts
 import { video, createNarration, voices } from 'screenci'
@@ -117,12 +117,11 @@ const narration = createNarration({
 video('Settings walkthrough', async ({ page }) => {
   await page.goto('/settings')
 
-  await narration.intro.start()
-  await narration.intro.finish()
+  await narration.intro()
 
   await page.locator('#notifications').click()
   await narration.save.start()
-  await narration.save.finish()
+  await narration.save.end()
   await page.locator('#save').click()
 })
 ```
@@ -149,7 +148,7 @@ video('Example', async ({ page }) => {
   await page.locator('#notifications').click() // safe to overlap with narration
 
   await narration.save.start()
-  await narration.save.finish() // save click should happen after the line is spoken
+  await narration.save.end() // save click should happen after the line is spoken
   await page.locator('#save').click()
 })
 ```
@@ -166,26 +165,34 @@ await narration.nextStep.start() // auto-ends intro, then starts nextStep
 await page.locator('#save').click()
 ```
 
-### `finish()` — wait for audio to finish
+### `narration.key()` — run the whole cue
 
-Call `await narration.key.finish()` when an action must happen _after_ that narration has finished playing. If the cue is already active, `finish()` waits for that run. Otherwise it starts a fresh run and waits for it to complete. This is the right choice when the intro should be fully said before the first visible action, or when a `start()` line would otherwise run into a navigation or page transition.
+Call `await narration.key()` when an action must happen _after_ that narration has finished playing. This starts the cue and ends that same run without replaying. Use it for intros, pre-navigation narration, and any other case where the full line should finish before the next visible action.
 
 ```ts
-await narration.intro.start()
-await narration.intro.finish() // wait for intro audio to finish
+await narration.intro() // wait for intro audio to finish
 await page.click('#start') // this runs after the audio ends
+```
+
+### `end()` — strictly close the current active cue
+
+Call `await narration.key.end()` only after `await narration.key.start()` for that same cue. `end()` throws if the cue was not previously started, if no cue is active anymore, or if another cue has already become active. Starting another cue auto-ends the previous one, so calling `.end()` on the previous cue afterward is invalid.
+
+```ts
+await narration.details.start()
+await page.getByLabel('Display name').fill('ScreenCI Demo')
+await narration.details.end()
 ```
 
 Common pattern before navigation:
 
 ```ts
-await narration.intro.start()
-await narration.intro.finish()
+await narration.intro()
 await page.getByRole('link', { name: 'Open settings' }).click()
 await page.waitForURL('**/settings')
 
 await narration.details.start()
-await narration.details.finish()
+await narration.details.end()
 await page.getByLabel('Display name').fill('ScreenCI Demo')
 ```
 

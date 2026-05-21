@@ -178,9 +178,9 @@ function createActiveCueRun(): {
   }
 }
 
-async function finishActiveCue(): Promise<void> {
+async function endActiveCue(): Promise<void> {
   if (activeRecorder === null || activeCueRun === null) return
-  if (isInsideHide()) throw new Error('Cannot call finish() inside hide()')
+  if (isInsideHide()) throw new Error('Cannot call end() inside hide()')
   const run = activeCueRun
   activeRecorder.addCueEnd('wait')
   sleepFn(2 * ONE_FRAME_MS)
@@ -196,14 +196,16 @@ async function finishActiveCue(): Promise<void> {
  *
  * @example
  * ```ts
- * await narration.intro.start()
+ * await narration.intro()
  * await page.goto('/dashboard')
- * await narration.nextStep.finish()
+ * await narration.nextStep.start()
+ * await narration.nextStep.end()
  * ```
  */
 export type NarrationCue = {
+  (): Promise<void>
   start(): Promise<void>
-  finish(): Promise<void>
+  end(): Promise<void>
 }
 
 type NarrationCueObject =
@@ -366,7 +368,7 @@ type LanguagesMap<
 /**
  * Creates a set of typed narration controllers, one per key in the map.
  *
- * Each cue has explicit `start()` and `finish()` methods.
+ * Each cue is callable, and also has explicit `start()` and `end()` methods.
  * At render time screenci generates narration, and syncs the audio to the
  * recording. You write text; the voice is handled for you.
  *
@@ -398,9 +400,8 @@ type LanguagesMap<
  * await narration.intro.start()
  * await narration.next.start()  // ends intro, then starts next
  *
- * // Wait for audio to finish before an action:
- * await narration.intro.start()
- * await narration.intro.finish()
+ * // Run a line completely before the next action:
+ * await narration.intro()
  * await page.click('#start')
  * ```
  */
@@ -551,26 +552,28 @@ function buildCuesFromInput(
       await emitStart(recorder)
     }
 
-    return {
-      start,
-      async finish(): Promise<void> {
-        if (isInsideHide())
-          throw new Error('Cannot call finish() inside hide()')
-        if (activeRecorder === null) return
+    const end = async (): Promise<void> => {
+      if (isInsideHide()) throw new Error('Cannot call end() inside hide()')
+      if (activeRecorder === null) return
+      if (activeCueName !== name || activeCueRun === null) {
+        throw new Error(
+          `Cannot call end() for cue "${name}" because it is not the active started cue`
+        )
+      }
 
-        if (activeCueName === name && activeCueRun !== null) {
-          const run = activeCueRun
-          await finishActiveCue()
-          await run.finished
-          return
-        }
-
-        await start()
-        const run = activeCueRun
-        await finishActiveCue()
-        await run?.finished
-      },
+      const run = activeCueRun
+      await endActiveCue()
+      await run.finished
     }
+
+    const cue = (async (): Promise<void> => {
+      await start()
+      await end()
+    }) as NarrationCue
+
+    cue.start = start
+    cue.end = end
+    return cue
   }
 
   for (const key in firstCues) {

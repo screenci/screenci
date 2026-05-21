@@ -210,94 +210,17 @@ video('Dashboard demo', async ({ page }) => {
 
 ---
 
-## `cue(content)`
+## Narration cues
 
-→ [Full details](/reference/api/functions/createcues/)
+ScreenCI does not expose a separate plain `cue()` API. Use `createNarration()` to define named narration cues and control them through the returned `narration.key` controllers.
 
-Displays a text cue on the video. Returns a `CueHandle` with methods to control timing. Only one cue can be active at a time — a second `start()`/`until()` call queues behind the first and waits for it to be ended.
+Use:
 
-Cue text appears word by word, with each word taking 0.5 seconds. Starting a cue emits a `cueStart` event; ending one emits a `cueEnd` event.
+- `await narration.key()` for the common full-cue path
+- `await narration.key.start()` to begin narration and continue immediately
+- `await narration.key.end()` only to close that same active cue later
 
-### `cue(text).start()`
-
-Resolves after all words have appeared (0.5s per word). The cue stays visible until `cue.end()` is called.
-
-```ts
-import { video, cue } from 'screenci'
-
-video('Docs walkthrough', async ({ page }) => {
-  await cue('Navigating to the docs').start()
-  await page.goto('https://example.com/docs')
-  await cue.end()
-
-  await cue('Reading the introduction').start()
-  await page.waitForTimeout(3000)
-  await cue.end()
-})
-```
-
-Awaiting is optional — if you don't need to wait for the animation to finish before continuing, just call it without `await`.
-
-### `cue(text).until(percent)`
-
-Resolves when the given percentage of the animation has elapsed. The full animation always runs to completion and the cue stays visible until `cue.end()` is called.
-
-`percent` must be a `Percentage` string (`\`${number}%\``). The editor will show a type error for anything else.
-
-```ts
-video('Feature walkthrough', async ({ page }) => {
-  // Resolves after 50% of words have appeared, then continues immediately
-  await cue('Clicking get started').until('50%')
-  await page.getByRole('link', { name: 'Get started' }).click()
-  await cue.end()
-
-  // Resolves immediately, cue animates in the background
-  cue('Loading dashboard').until('0%')
-  await page.waitForURL('**/dashboard')
-  await cue.end()
-})
-```
-
-| Value    | Resolves when                                      |
-| -------- | -------------------------------------------------- |
-| `'0%'`   | Immediately, before any word appears               |
-| `'50%'`  | After half the words have appeared                 |
-| `'100%'` | After all words have appeared (same as `.start()`) |
-
-Throws at runtime if the value is not a finite number between 0 and 100.
-
-### `cue.end()`
-
-Ends the currently active cue and emits a `cueEnd` event. Call it after every `.start()` or `.until()`.
-
-```ts
-await cue('Step one').start()
-await page.goto('https://example.com')
-await cue.end()
-```
-
-Calling `cue.end()` when no cue is active is a no-op.
-
-### Queuing
-
-A second cue call queues behind the first — its animation does not begin until the previous cue's `end()` has been called:
-
-```ts
-cue('First cue').start()   // begins immediately
-cue('Second cue').start()  // waits for first's end()
-
-// ... do some work ...
-
-await cue.end()  // ends first, second begins
-await vi.advanceTimersByTimeAsync(...)
-await cue.end()  // ends second
-```
-
-### Behavior
-
-- **One at a time**: only one cue is active at a time. A second call queues rather than interrupting.
-- **Word timing**: each word takes 0.5 seconds to appear.
-- **Awaiting is optional**: all methods return promises but do not need to be awaited.
+See [Writing Video Tests](./video-tests.md) and [Localization & Narrations](./localization.md) for the public narration API and examples.
 
 ---
 
@@ -408,7 +331,7 @@ Controls the animated cursor move that happens before `fill()`, `pressSequential
 ```ts
 type ClickBeforeFillOption = {
   moveDuration?: number // cursor move duration in ms (default: 1000)
-  beforeClickPause?: number // pause between cursor arrival and click in ms
+  beforeClickPause?: number // pause between cursor arrival and click in ms (default: 50)
   moveEasing?: Easing // easing for the cursor move (default: 'ease-in-out')
   postClickPause?: number // pause after the click in ms
   postClickMove?: PostClickMove // optional camera pan after click

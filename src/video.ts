@@ -458,14 +458,26 @@ interface Video extends VideoCallSignatures {
  * @example
  * Basic usage:
  * ```ts
- * import { video, cue } from 'screenci'
+ * import { createNarration, video, voices } from 'screenci'
+ *
+ * const narration = createNarration({
+ *   voice: { name: voices.Ava },
+ *   languages: {
+ *     en: {
+ *       cues: {
+ *         homepage: 'User navigates to homepage.',
+ *         signup: 'Clicks the sign up button.',
+ *       },
+ *     },
+ *   },
+ * })
  *
  * video('Tutorial', async ({ page }) => {
  *   await page.goto('https://example.com')
- *   cue('User navigates to homepage')
+ *   await narration.homepage()
  *
  *   await page.click('text=Sign up')
- *   cue('Clicks sign up button')
+ *   await narration.signup()
  * })
  * ```
  */

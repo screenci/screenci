@@ -34,10 +34,8 @@ video('How to get started', async ({ page }) => {
     await page.getByText('ScreenCI').first().waitFor()
   })
 
-  await narration.intro.start()
-  await narration.intro.finish()
-  await narration.docs.start()
-  await narration.docs.finish()
+  await narration.intro()
+  await narration.docs()
 
   // Automatically zoom into clicks etc.
   await autoZoom(async () => {

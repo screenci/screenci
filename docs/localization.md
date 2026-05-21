@@ -5,7 +5,7 @@ description: Complete guide to createNarration — voices, languages, regions, m
 
 # Narrations & Localization
 
-`createNarration()` is how you add narration to a ScreenCI video. You write the text; ScreenCI synthesizes the audio and syncs it to the recording at render time. Each key becomes a typed controller with explicit `start()` and `finish()` methods.
+`createNarration()` is how you add narration to a ScreenCI video. You write the text; ScreenCI synthesizes the audio and syncs it to the recording at render time.
 
 ```ts
 import { createNarration, hide, video, voices } from 'screenci'
@@ -25,14 +25,23 @@ const narration = createNarration({
 video('Create a project', async ({ page }) => {
   await hide(async () => {
     await page.goto('/dashboard')
+    await page.getByRole('button', { name: 'Accept cookies' }).click()
   })
 
-  await narration.intro.start()
-  await page.getByRole('button', { name: 'New project' }).click()
+  await narration.intro() // wait cue fully
 
-  await narration.addButton.start()
+  await narration.addButton.start() // wait cue start
+  await page.getByRole('button', { name: 'New project' }).click()
+  await narration.addButton.end() // wait end before next navigation
+
+  // ...continue
 })
 ```
+
+This example shows two narration timing modes:
+
+- `await narration.intro()` waits for the full cue to finish before the script continues.
+- `await narration.addButton.start()` begins the cue and continues immediately, then `await narration.addButton.end()` closes that same cue before the next navigation.
 
 ---
 

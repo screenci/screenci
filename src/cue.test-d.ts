@@ -97,8 +97,11 @@ describe('createNarration type constraints', () => {
     })
 
     assertType<NarrationCue>(narration.intro)
+    assertType<() => Promise<void>>(narration.intro)
     assertType<() => Promise<void>>(narration.intro.start)
-    assertType<() => Promise<void>>(narration.intro.finish)
+    assertType<() => Promise<void>>(narration.intro.end)
+    // @ts-expect-error finish() no longer exists on narration cues
+    void narration.intro.finish
   })
 
   it('accepts numeric pacing for consistent narration', () => {

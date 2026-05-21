@@ -5,7 +5,7 @@ import type { ElementRect, IEventRecorder } from './events.js'
 import type { AutoZoomOptions, Easing } from './types.js'
 function assertAutoZoomUnitIntervalOption(
   value: number,
-  name: 'amount' | 'centering'
+  name: 'amount' | 'padding' | 'centering'
 ): void {
   if (!Number.isFinite(value) || value < 0 || value > 1) {
     throw invalidOptionError({
@@ -148,6 +148,7 @@ export async function autoZoom(
     ...(options ?? {}),
   }
   assertAutoZoomUnitIntervalOption(resolvedOptions.amount, 'amount')
+  assertAutoZoomUnitIntervalOption(resolvedOptions.padding, 'padding')
   assertAutoZoomUnitIntervalOption(resolvedOptions.centering, 'centering')
   setAutoZoomState({
     ...currentAutoZoomState,
@@ -157,6 +158,7 @@ export async function autoZoom(
       duration: resolvedOptions.duration,
       easing: resolvedOptions.easing as Easing,
       amount: resolvedOptions.amount,
+      padding: resolvedOptions.padding,
       ...(options?.centering !== undefined
         ? { centering: options.centering }
         : {}),

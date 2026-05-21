@@ -14,7 +14,7 @@ function clamp(value: number, min: number, max: number): number {
 
 function assertAutoZoomUnitIntervalOption(
   value: number,
-  name: 'amount' | 'centering'
+  name: 'amount' | 'padding' | 'centering'
 ): void {
   if (!Number.isFinite(value) || value < 0 || value > 1) {
     throw invalidOptionError({
@@ -37,6 +37,7 @@ export function resolveAutoZoomOptions(
   }
 
   assertAutoZoomUnitIntervalOption(mergedOptions.amount, 'amount')
+  assertAutoZoomUnitIntervalOption(mergedOptions.padding, 'padding')
   assertAutoZoomUnitIntervalOption(mergedOptions.centering, 'centering')
 
   return mergedOptions

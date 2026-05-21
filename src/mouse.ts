@@ -34,6 +34,7 @@ type MouseClickInternal = (
 type LocatorMouseActionOptions = MouseClickOptions & {
   position?: { x: number; y: number }
   trial?: boolean
+  noWaitAfter?: boolean
 }
 
 type LocatorMouseActionInternal = (
@@ -406,6 +407,7 @@ export async function performMouseClickAction(
     await options.doClick({
       ...options.clickOptions,
       trial: true,
+      noWaitAfter: options.clickOptions?.noWaitAfter ?? true,
     })
   }
 
@@ -436,8 +438,10 @@ export async function performMouseClickAction(
       )
     }
 
-    if (options.shouldHideMouse && isMouseVisible(page)) {
-      setMouseVisible(page, false)
+    if (options.shouldHideMouse) {
+      if (isMouseVisible(page)) {
+        setMouseVisible(page, false)
+      }
       const hideMs = Date.now()
       events.push({
         type: 'mouseHide',
@@ -446,7 +450,10 @@ export async function performMouseClickAction(
       })
     }
 
-    await options.doClick(options.clickOptions)
+    await options.doClick({
+      ...options.clickOptions,
+      noWaitAfter: options.clickOptions?.noWaitAfter ?? true,
+    })
   } else if (mode === 'singleBefore') {
     const startMs = Date.now()
     await sleep(CLICK_DURATION_MS)
@@ -466,8 +473,10 @@ export async function performMouseClickAction(
       })
     )
 
-    if (options.shouldHideMouse && isMouseVisible(page)) {
-      setMouseVisible(page, false)
+    if (options.shouldHideMouse) {
+      if (isMouseVisible(page)) {
+        setMouseVisible(page, false)
+      }
       const hideMs = Date.now()
       events.push({
         type: 'mouseHide',
@@ -476,12 +485,18 @@ export async function performMouseClickAction(
       })
     }
 
-    await options.doClick(options.clickOptions)
+    await options.doClick({
+      ...options.clickOptions,
+      noWaitAfter: options.clickOptions?.noWaitAfter ?? true,
+    })
   } else {
     const wrapperStartMs = Date.now()
     await sleep(halfClickDuration)
 
-    await options.doClick(options.clickOptions)
+    await options.doClick({
+      ...options.clickOptions,
+      noWaitAfter: options.clickOptions?.noWaitAfter ?? true,
+    })
     await sleep(halfClickDuration)
     const endMs = Date.now()
     const startMs = Math.max(wrapperStartMs, endMs - CLICK_DURATION_MS)

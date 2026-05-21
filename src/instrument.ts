@@ -81,6 +81,26 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function withDefaultNoWaitAfter<T extends object>(
+  options?: T
+): T & { noWaitAfter: boolean } {
+  const optionsWithNoWaitAfter = options as
+    | (T & { noWaitAfter?: boolean })
+    | undefined
+
+  if (
+    optionsWithNoWaitAfter &&
+    typeof optionsWithNoWaitAfter.noWaitAfter === 'boolean'
+  ) {
+    return optionsWithNoWaitAfter as T & { noWaitAfter: boolean }
+  }
+
+  return {
+    ...options,
+    noWaitAfter: true,
+  } as T & { noWaitAfter: boolean }
+}
+
 function buildDefaultClickMouseMoveRequest(options?: {
   targetPosInElement?: { x: number; y: number } | undefined
   moveDuration?: number | undefined
@@ -306,10 +326,10 @@ async function performAction(
   await sleep(beforeClickPause)
 
   if (!mouseMoveRequest) {
-    await doClick({
+    await doClick(withDefaultNoWaitAfter({
       ...(supportsTrial ? { trial: true } : {}),
       ...(mode === 'singleDuring' ? { position: targetPosition } : {}),
-    })
+    }))
     await appendMouseWait(innerEvents, postClickPause)
     return {
       elementRect,
@@ -510,6 +530,7 @@ export function instrumentLocator(locator: Locator): Locator {
       return originalClick({
         ...clickOptions,
         ...(position !== undefined && { position }),
+        noWaitAfter: clickOptions.noWaitAfter ?? true,
       })
     }
 
@@ -616,7 +637,7 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       options?.position,
       beforeClickPause ?? DEFAULT_PRE_CLICK_PAUSE_MS,
-      postClickPause ?? CLICK_DURATION_MS / 2,
+      postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
       postClickMove,
       true
     )
@@ -760,7 +781,10 @@ export function instrumentLocator(locator: Locator): Locator {
     } = options ?? {}
 
     if (isInsideHide()) {
-      return originalTap(tapOpts as Parameters<Locator['tap']>[0])
+      return originalTap({
+        ...(tapOpts as Parameters<Locator['tap']>[0]),
+        noWaitAfter: tapOpts.noWaitAfter ?? true,
+      })
     }
 
     const { doClick, supportsTrial } = resolveLocatorMouseAction(locator, 'tap')
@@ -812,7 +836,10 @@ export function instrumentLocator(locator: Locator): Locator {
     const { click: _click, autoZoomOptions, ...checkOpts } = options ?? {}
 
     if (isInsideHide()) {
-      return originalCheck(checkOpts as Parameters<Locator['check']>[0])
+      return originalCheck({
+        ...(checkOpts as Parameters<Locator['check']>[0]),
+        noWaitAfter: checkOpts.noWaitAfter ?? true,
+      })
     }
 
     const { doClick, supportsTrial } = resolveLocatorMouseAction(
@@ -867,7 +894,10 @@ export function instrumentLocator(locator: Locator): Locator {
     const { click: _click, autoZoomOptions, ...uncheckOpts } = options ?? {}
 
     if (isInsideHide()) {
-      return originalUncheck(uncheckOpts as Parameters<Locator['uncheck']>[0])
+      return originalUncheck({
+        ...(uncheckOpts as Parameters<Locator['uncheck']>[0]),
+        noWaitAfter: uncheckOpts.noWaitAfter ?? true,
+      })
     }
 
     const { doClick, supportsTrial } = resolveLocatorMouseAction(
@@ -949,7 +979,10 @@ export function instrumentLocator(locator: Locator): Locator {
     if (isInsideHide()) {
       return originalSelectOption(
         values,
-        selectOpts as Parameters<Locator['selectOption']>[1]
+        {
+          ...(selectOpts as Parameters<Locator['selectOption']>[1]),
+          noWaitAfter: selectOpts.noWaitAfter ?? true,
+        }
       )
     }
 

@@ -36,7 +36,9 @@ Use `autoZoom()` when the viewer should follow a cluster of related interactions
 
 Avoid wrapping a single isolated click. `autoZoom()` works best when it covers a meaningful chunk of the flow.
 
-You can control things like zoom amount, duration, and easing. See the [API overview](/reference/api-overview/) for the full `autoZoom()` option reference.
+Locator zooms compare `amount` with a padded locator fit and keep whichever viewport is larger. The padded fit preserves the recording aspect ratio and uses the more limiting side to decide how far to zoom out, so the other side can end up with extra room instead of stretching the video. The default `padding` is `0.2`. Point framing is not affected by `padding`.
+
+You can control things like zoom amount, padding, duration, and easing. See the [API overview](/reference/api-overview/) for the full `autoZoom()` option reference.
 
 ## Manual zoom with `zoomTo()` and `resetZoom()`
 
@@ -57,6 +59,8 @@ video('Manual zoom demo', async ({ page }) => {
 
 `zoomTo()` supports either a `Locator` or an explicit point `{ x, y }` in viewport coordinates.
 
+For locator targets, `zoomTo()` also compares `amount` with the padded locator fit and keeps the larger viewport. That fit preserves the recording aspect ratio and uses the more limiting side, so the other axis may have extra room. The default `padding` is `0.2`. Explicit point zoom still uses only `amount`.
+
 ### When manual zoom is a better fit
 
 Use manual zoom when:
@@ -73,7 +77,7 @@ That makes manual zoom useful for sequences like:
 2. pan to another point while staying zoomed
 3. reset back to the full page
 
-You can control things like zoom amount, duration, and easing. See the [API overview](/reference/api-overview/) for the full `zoomTo()` and `resetZoom()` option reference.
+You can control things like zoom amount, padding, duration, and easing. See the [API overview](/reference/api-overview/) for the full `zoomTo()` and `resetZoom()` option reference.
 
 ## Choosing between them
 

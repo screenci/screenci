@@ -196,6 +196,63 @@ describe('manual zoom', () => {
     expect(focusChange?.zoom?.optimalOffset).toEqual({ x: 240, y: 160 })
   })
 
+  it('keeps point zoom sizing unchanged when padding is provided', async () => {
+    const recorder = new EventRecorder()
+    recorder.start()
+    setActiveAutoZoomRecorder(recorder)
+    setActiveZoomPage(makePageMock())
+
+    const promise = zoomTo(
+      { x: 1200, y: 700 },
+      { amount: 0.5, padding: 0.8, centering: 1, duration: 300 }
+    )
+    await vi.runAllTimersAsync()
+    await promise
+
+    const events = recorder.getEvents()
+    const focusChange =
+      events[1]?.type === 'input' && events[1].events[0]?.type === 'focusChange'
+        ? events[1].events[0]
+        : undefined
+
+    expect(focusChange?.zoom?.end.size).toEqual({
+      widthPx: 640,
+      heightPx: 360,
+    })
+  })
+
+  it('uses padded locator framing when it is larger than the requested amount', async () => {
+    const recorder = new EventRecorder()
+    recorder.start()
+    setActiveAutoZoomRecorder(recorder)
+
+    const locator = makeLocatorMock({
+      rect: { x: 900, y: 500, width: 1000, height: 100 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 2200, height: 1600 },
+    })
+
+    const promise = zoomTo(locator, {
+      amount: 0.65,
+      padding: 0.2,
+      centering: 1,
+      duration: 300,
+    })
+    await vi.runAllTimersAsync()
+    await promise
+
+    const events = recorder.getEvents()
+    const focusChange =
+      events[1]?.type === 'input' && events[1].events[0]?.type === 'focusChange'
+        ? events[1].events[0]
+        : undefined
+
+    expect(focusChange?.zoom?.end.size).toEqual({
+      widthPx: 1200,
+      heightPx: 675,
+    })
+  })
+
   it('resetZoom returns to the full viewport from an active manual zoom', async () => {
     const recorder = new EventRecorder()
     recorder.start()

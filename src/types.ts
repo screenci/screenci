@@ -257,6 +257,8 @@ export type AutoZoomOptions = {
   duration?: number
   /** 0–1: fraction of output dimensions visible in the zoomed viewport (default 0.65) */
   amount?: number
+  /** 0–1: extra locator framing applied as a uniform scale multiplier (default 0.2 = 20% larger box). */
+  padding?: number
   /** 0–1: visibility bias inside the zoomed viewport; 0 = barely fit, 1 = centered. */
   centering?: number
   /** Delay in milliseconds to hold the zoomed-in state after the zoom-in animation completes. */
@@ -497,6 +499,10 @@ export type ScreenCILocator = Omit<
   /**
    * Clicks the element with an animated cursor move.
    *
+   * ScreenCI defaults `noWaitAfter` to `true` for this action so the rendered
+   * click can complete before navigation waits. Pass `noWaitAfter: false` to
+   * keep Playwright's default waiting behavior.
+   *
    * @param options.moveDuration - Duration of the cursor move animation in ms (default: 1000).
    * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
    * @param options.moveEasing - Easing function for the cursor move animation.
@@ -517,7 +523,9 @@ export type ScreenCILocator = Omit<
    * @param options.click - Customizes the built-in click before typing
    *   (animated cursor move + click). When omitted, ScreenCI skips the
    *   default pre-typing cursor move/click if the target input is already
-   *   focused. No extra zoom-pan sleep is inserted.
+   *   focused. No extra zoom-pan sleep is inserted. That built-in click
+   *   defaults `noWaitAfter` to `true`; pass `options.click.noWaitAfter: false`
+   *   to keep Playwright's default waiting behavior.
    * @param options.position - Point relative to the element's top-left corner
    *   to click before filling.
    *   Defaults to the element center.
@@ -535,7 +543,9 @@ export type ScreenCILocator = Omit<
    * @param options.click - Customizes the built-in click before typing
    *   (animated cursor move + click). When omitted, ScreenCI skips the
    *   default pre-typing cursor move/click if the target input is already
-   *   focused. No extra zoom-pan sleep is inserted.
+   *   focused. No extra zoom-pan sleep is inserted. That built-in click
+   *   defaults `noWaitAfter` to `true`; pass `options.click.noWaitAfter: false`
+   *   to keep Playwright's default waiting behavior.
    * @param options.position - Point relative to the element's top-left corner
    *   to click before typing.
    *   Defaults to the element center.
@@ -549,6 +559,9 @@ export type ScreenCILocator = Omit<
   /**
    * Checks the checkbox or radio button.
    *
+   * ScreenCI defaults `noWaitAfter` to `true` for the underlying click.
+   * Pass `noWaitAfter: false` to keep Playwright's default waiting behavior.
+   *
    * @param options.position - Point relative to the element's top-left corner
    *   to click. Defaults to the element center.
    * @param options.click - Customizes the built-in click before checking.
@@ -557,6 +570,9 @@ export type ScreenCILocator = Omit<
   check(options?: ScreenCILocatorCheckOptions): Promise<void>
   /**
    * Unchecks the checkbox.
+   *
+   * ScreenCI defaults `noWaitAfter` to `true` for the underlying click.
+   * Pass `noWaitAfter: false` to keep Playwright's default waiting behavior.
    *
    * @param options.position - Point relative to the element's top-left corner
    *   to click. Defaults to the element center.
@@ -567,6 +583,8 @@ export type ScreenCILocator = Omit<
   /**
    * Sets the checked state of a checkbox or radio element.
    * Delegates to the instrumented `check()` or `uncheck()` based on `checked`.
+   * ScreenCI defaults `noWaitAfter` to `true` for the underlying click.
+   * Pass `noWaitAfter: false` to keep Playwright's default waiting behavior.
    *
    * @param options.position - Point relative to the element's top-left corner
    *   to click. Defaults to the element center.
@@ -579,6 +597,10 @@ export type ScreenCILocator = Omit<
   ): Promise<void>
   /**
    * Taps the element (touch event).
+   *
+   * ScreenCI defaults `noWaitAfter` to `true` for this action so the rendered
+   * tap is not delayed by later navigation waits. Pass `noWaitAfter: false`
+   * to keep Playwright's default waiting behavior.
    *
    * @param options.click - Customizes the built-in click before tapping.
    *   The click timing data is embedded in the recorded event.
@@ -635,6 +657,8 @@ export type ScreenCILocator = Omit<
    * Note: the native dropdown UI is not rendered. ScreenCI animates the
    * cursor to the select element, clicks it, and then selects the option
    * programmatically, but no dropdown will appear on screen.
+   * ScreenCI defaults `noWaitAfter` to `true` for the underlying action.
+   * Pass `noWaitAfter: false` to keep Playwright's default waiting behavior.
    *
    * @param values - The option(s) to select (value, label, index, or element).
    * @param options.click - Customizes the built-in click before selecting.
@@ -672,6 +696,13 @@ export type ScreenCIPage = Omit<
   'click' | 'mouse' | LocatorReturnMethodNames
 > & {
   mouse: ScreenCIMouse
+  /**
+   * Clicks an element matched by `selector` with an animated cursor move.
+   *
+   * ScreenCI defaults `noWaitAfter` to `true` for this action so the rendered
+   * click can complete before navigation waits. Pass `noWaitAfter: false` to
+   * keep Playwright's default waiting behavior.
+   */
   click(
     selector: string,
     options?: Parameters<Page['click']>[1] &

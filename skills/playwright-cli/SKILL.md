@@ -9,6 +9,15 @@ allowed-tools:
 
 # Browser Automation with playwright-cli
 
+## When Inspecting Pages For ScreenCI
+
+When `playwright-cli` is being used to inspect a page for a ScreenCI video flow:
+
+- After the first navigation and snapshot, explicitly check whether a cookie consent or cookie policy banner appeared.
+- Try to identify the exact accept action the video script should use inside the initial `hide()` block, preferably with a stable Playwright locator such as `getByRole('button', { name: /accept|accept all|allow all|agree|ok/i })`.
+- If multiple consent actions exist, prefer the clear accept/allow action instead of a dismiss-only or settings action.
+- Report that cookie-consent click as part of the hidden initial navigation/setup, not as a visible demo step.
+
 ## Quick start
 
 ```bash

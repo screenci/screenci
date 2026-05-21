@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Locator } from '@playwright/test'
 import {
   autoZoom,
+  getCurrentZoomViewport,
   setAutoZoomState,
   setCurrentZoomViewport,
 } from './autoZoom.js'
@@ -10,9 +11,11 @@ import {
   changeFocus,
   resolveFixedFocusViewportSize,
   resolveIdealFocusOriginForAxis,
+  resolveLocatorFocusViewport,
   resolveScrollAndZoomTimingPlan,
   resolveTargetRectPosition,
 } from './changeFocus.js'
+import { logger } from './logger.js'
 import { setMousePosition, setOriginalMouseMove } from './mouse.js'
 import { resolveZoomTarget } from './zoom.js'
 
@@ -61,6 +64,7 @@ afterEach(() => {
     options: {},
     currentZoomViewport: null,
   })
+  vi.restoreAllMocks()
 })
 
 function makeLocatorMock(options: {
@@ -248,6 +252,51 @@ describe('changeFocus helpers', () => {
     expect(
       resolveFixedFocusViewportSize({ width: 1280, height: 720 }, 0.5)
     ).toEqual({ width: 640, height: 360 })
+  })
+
+  it('keeps the requested amount viewport when it is larger than padding fit', () => {
+    expect(
+      resolveLocatorFocusViewport({
+        viewport: { width: 1280, height: 720 },
+        rect: { x: 0, y: 0, width: 120, height: 40 },
+        amount: 0.65,
+        padding: 0.2,
+      })
+    ).toEqual({ width: 832, height: 468 })
+  })
+
+  it('uses uniform padded locator sizing when it is larger than the requested amount', () => {
+    expect(
+      resolveLocatorFocusViewport({
+        viewport: { width: 1280, height: 720 },
+        rect: { x: 0, y: 0, width: 1000, height: 100 },
+        amount: 0.65,
+        padding: 0.2,
+      })
+    ).toEqual({ width: 1200, height: 675 })
+  })
+
+  it('uses uniform padded locator sizing when height is the limiting side', () => {
+    const result = resolveLocatorFocusViewport({
+      viewport: { width: 1280, height: 720 },
+      rect: { x: 0, y: 0, width: 100, height: 580 },
+      amount: 0.2,
+      padding: 0.2,
+    })
+
+    expect(result.width).toBeCloseTo(1237.3333333333335)
+    expect(result.height).toBe(696)
+  })
+
+  it('clamps padded locator sizing to the full viewport', () => {
+    expect(
+      resolveLocatorFocusViewport({
+        viewport: { width: 1280, height: 720 },
+        rect: { x: 0, y: 0, width: 2000, height: 1000 },
+        amount: 0.65,
+        padding: 0.2,
+      })
+    ).toEqual({ width: 1280, height: 720 })
   })
 
   it('resolves centering 1, 0, and 0.5 placements for smaller rects', () => {
@@ -544,6 +593,83 @@ describe('changeFocus', () => {
 
     expect(target).toBeDefined()
     expect(target?.optimalOffset.y).toBeGreaterThanOrEqual(0)
+  })
+
+  it('zooms out for large locators when padding fit exceeds the requested amount', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 1000, height: 100 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+    let result: Awaited<ReturnType<typeof changeFocus>> | undefined
+
+    const promise = autoZoom(
+      async () => {
+        result = await changeFocus(locator, {
+          amount: 0.65,
+          padding: 0.2,
+          duration: 300,
+        })
+      },
+      { amount: 0.65, padding: 0.2, duration: 300, postZoomDelay: 0 }
+    )
+
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(result?.zoom?.end.size).toEqual({ widthPx: 1200, heightPx: 675 })
+  })
+
+  it('falls back to full-screen framing when padded locator sizing exceeds the viewport', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 2000, height: 1000 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 2200, height: 2400 },
+    })
+    let result: Awaited<ReturnType<typeof changeFocus>> | undefined
+
+    const promise = autoZoom(
+      async () => {
+        result = await changeFocus(locator, {
+          amount: 0.65,
+          padding: 0.2,
+          duration: 300,
+        })
+      },
+      { amount: 0.65, padding: 0.2, duration: 300, postZoomDelay: 0 }
+    )
+
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(result?.zoom).toBeUndefined()
+  })
+
+  it('warns when locator-based zoom cannot fully frame an oversized locator', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 2000, height: 1000 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 2200, height: 2400 },
+    })
+
+    const promise = autoZoom(
+      async () => {
+        await changeFocus(locator, {
+          amount: 0.65,
+          padding: 0.2,
+          duration: 300,
+        })
+      },
+      { amount: 0.65, padding: 0.2, duration: 300, postZoomDelay: 0 }
+    )
+
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[screenci] Locator is larger than the viewport; using full-viewport framing and centering as much as possible.'
+    )
   })
 
   it('does not scroll just to improve framing when the requested framing is already met', async () => {
@@ -937,6 +1063,21 @@ describe('changeFocus', () => {
     ).toBeGreaterThan(0)
   })
 
+  it('does not emit zoom or persist zoom viewport outside autoZoom', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+
+    const promise = changeFocus(locator, { duration: 100 })
+    await vi.runAllTimersAsync()
+    const result = await promise
+
+    expect(result.zoom).toBeUndefined()
+    expect(getCurrentZoomViewport()).toBeNull()
+  })
+
   it('applies pre and post delays even when no focus change is needed', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 100, width: 120, height: 40 },
@@ -1004,5 +1145,51 @@ describe('changeFocus', () => {
     expect(locator.__scrollToCalls).toHaveLength(0)
     expect(locator.__nestedScrollTops).toHaveLength(0)
     expect(result.scroll).toBeUndefined()
+  })
+
+  it('does not auto-scroll while manual zoom remains active', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 980, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2200 },
+      nested: {
+        x: 40,
+        y: 700,
+        width: 600,
+        height: 240,
+        scrollWidth: 600,
+        scrollHeight: 800,
+      },
+    })
+
+    setAutoZoomState({
+      insideAutoZoom: false,
+      mode: 'manual',
+      options: { amount: 0.5, padding: 0.2 },
+      currentZoomViewport: {
+        focusPoint: { x: 640, y: 360 },
+        elementRect: { x: 200, y: 200, width: 120, height: 40 },
+        end: {
+          pointPx: { x: 320, y: 180 },
+          size: { widthPx: 640, heightPx: 360 },
+        },
+        viewportSize: { width: 1280, height: 720 },
+      },
+    })
+
+    const promise = changeFocus(locator)
+    await vi.runAllTimersAsync()
+    const result = await promise
+
+    expect(locator.__scrollToCalls).toHaveLength(0)
+    expect(locator.__nestedScrollTops).toHaveLength(0)
+    expect(result.scroll).toBeUndefined()
+    expect(result.zoom).toBeUndefined()
+    expect(result.elementRect).toEqual({
+      x: 20,
+      y: 980,
+      width: 120,
+      height: 40,
+    })
   })
 })

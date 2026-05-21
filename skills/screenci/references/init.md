@@ -27,7 +27,6 @@ screenci/
 ## Requirements
 
 - Node.js 20+ recommended
-- Node.js 20+ recommended
 
 ## Notes
 

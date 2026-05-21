@@ -92,6 +92,8 @@ video('4K demo', async ({ page }) => {
 
 Zooms in on each interaction inside the callback, panning to follow clicks and fills. The camera zooms back out after the callback resolves.
 
+For locator-based zooming, ScreenCI compares two framing targets and keeps the larger one: the fixed `amount` viewport and a locator-sized fit expanded by `padding`. The padded fit preserves the recording aspect ratio, using the more limiting side to decide how far to zoom out. Point targets `{ x, y }` continue to use only `amount`.
+
 Cannot be nested — calling `autoZoom()` inside another `autoZoom()` throws.
 
 ```ts
@@ -118,6 +120,7 @@ video('Settings demo', async ({ page }) => {
 | `duration` | `number` | `400`           | Zoom-in and zoom-out transition duration in milliseconds |
 | `easing`   | `string` | `'ease-in-out'` | CSS easing for the zoom transitions                      |
 | `amount`   | `number` | `0.5`           | Fraction of output dimensions visible when zoomed (0–1)  |
+| `padding`  | `number` | `0.2`           | Extra locator framing as a uniform scale-up (0–1)        |
 
 ---
 
@@ -126,6 +129,8 @@ video('Settings demo', async ({ page }) => {
 → See the [Zooming guide](/guides/zooming/) for manual zoom usage patterns.
 
 Frames a locator or an explicit point without needing a click event first.
+
+For locator targets, ScreenCI keeps the larger of the fixed `amount` viewport and the locator-sized fit expanded by `padding`. The padded fit preserves the recording aspect ratio, using the more limiting side to decide how far to zoom out. Point targets `{ x, y }` keep the existing `amount` behavior.
 
 ```ts
 import { video, zoomTo } from 'screenci'
@@ -154,6 +159,7 @@ video('Chart demo', async ({ page }) => {
 | `duration`  | `number` | `1600`       | Zoom transition duration in milliseconds                |
 | `easing`    | `string` | `'ease-out'` | Easing for the zoom transition                          |
 | `amount`    | `number` | `0.65`       | Fraction of output dimensions visible when zoomed (0–1) |
+| `padding`   | `number` | `0.2`        | Extra locator framing as a uniform scale-up (0–1)       |
 | `centering` | `number` | `1`          | Visibility bias inside the zoomed viewport (0–1)        |
 
 Manual zoom and `autoZoom()` cannot be active at the same time.

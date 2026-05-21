@@ -682,6 +682,39 @@ describe('instrumentLocator', () => {
     expect(click.events.some((e) => e.type === 'mouseWait')).toBe(false)
   })
 
+  it('defaults locator clicks to noWaitAfter true', async () => {
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock({ x: 100, y: 200, width: 80, height: 40 }, page)
+    const originalClick = locator.click as ReturnType<typeof vi.fn>
+    instrumentLocator(locator)
+
+    await Promise.all([locator.click(), vi.runAllTimersAsync()])
+
+    expect(originalClick).toHaveBeenCalledWith(
+      expect.objectContaining({ noWaitAfter: true })
+    )
+  })
+
+  it('preserves explicit noWaitAfter false for locator clicks', async () => {
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock({ x: 100, y: 200, width: 80, height: 40 }, page)
+    const originalClick = locator.click as ReturnType<typeof vi.fn>
+    instrumentLocator(locator)
+
+    await Promise.all([
+      locator.click({ noWaitAfter: false }),
+      vi.runAllTimersAsync(),
+    ])
+
+    expect(originalClick).toHaveBeenCalledWith(
+      expect.objectContaining({ noWaitAfter: false })
+    )
+  })
+
   it('prefers actual DOM click coordinates and rect for recorded clicks', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
@@ -818,6 +851,25 @@ describe('instrumentLocator', () => {
     ).toBeLessThanOrEqual(DEFAULT_CLICK_MOUSE_MOVE_DURATION)
   })
 
+  it('defaults selectOption to noWaitAfter true', async () => {
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock({ x: 100, y: 200, width: 80, height: 40 }, page)
+    const originalSelectOption = locator.selectOption as ReturnType<typeof vi.fn>
+    instrumentLocator(locator)
+
+    await Promise.all([
+      locator.selectOption('one'),
+      vi.runAllTimersAsync(),
+    ])
+
+    expect(originalSelectOption).toHaveBeenCalledWith(
+      'one',
+      expect.objectContaining({ noWaitAfter: true })
+    )
+  })
+
   it('uses the fixed default click move duration', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
@@ -909,6 +961,49 @@ describe('instrumentLocator', () => {
     }
 
     expect(down.startMs - focusChange.mouse.endMs).toBe(1050)
+  })
+
+  it('uses the standard default post-click pause before fill typing', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    instrumentLocator(locator)
+
+    await Promise.all([
+      (
+        locator.fill as (
+          value: string,
+          options?: { duration?: number; click?: { beforeClickPause?: number } }
+        ) => Promise<void>
+      )('Acme Corporation', { duration: 100, click: { beforeClickPause: 0 } }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const fill = recordedInputEvents[0]!
+    const down = fill.events.find((event) => event.type === 'mouseDown')
+    const up = fill.events.find((event) => event.type === 'mouseUp')
+    const wait = fill.events.find((event) => event.type === 'mouseWait')
+
+    expect(down?.type).toBe('mouseDown')
+    expect(up?.type).toBe('mouseUp')
+    expect(wait?.type).toBe('mouseWait')
+    if (
+      down?.type !== 'mouseDown' ||
+      up?.type !== 'mouseUp' ||
+      wait?.type !== 'mouseWait'
+    ) {
+      throw new Error('Expected mouseDown, mouseUp, and mouseWait events')
+    }
+
+    expect(wait.startMs - up.endMs).toBe(0)
+    expect(wait.endMs - wait.startMs).toBe(500)
   })
 
   it('skips the default pre-typing click animation for fill when the input is already focused', async () => {
@@ -1077,6 +1172,38 @@ describe('instrumentLocator', () => {
         endMs: expect.any(Number),
       }),
     })
+  })
+
+  it('does not add zoom to click focus changes outside autoZoom', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 900, width: 80, height: 40 },
+      page
+    )
+    instrumentLocator(locator)
+
+    await Promise.all([
+      (
+        locator as unknown as {
+          click(options?: { moveDuration?: number }): Promise<void>
+        }
+      ).click({ moveDuration: 1000 }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const click = recordedInputEvents[0]!
+    const move = click.events.find(
+      (event): event is FocusChangeEvent | MouseMoveEvent =>
+        event.type === 'focusChange' || event.type === 'mouseMove'
+    )
+
+    expect(move).toMatchObject({ type: 'focusChange' })
+    expect(move?.type === 'focusChange' ? move.zoom : undefined).toBeUndefined()
   })
 
   it('keeps later autoZoom click moves overlapping the scroll timing', async () => {
@@ -1617,6 +1744,43 @@ describe('instrumentLocator', () => {
     const pressSeq = recordedInputEvents[0]!
     expect(pressSeq.subType).toBe('pressSequentially')
     expect(pressSeq.events.some((e) => e.type === 'mouseHide')).toBe(true)
+  })
+
+  it('records mouseHide for consecutive fills on different inputs', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const firstLocator = makeLocatorMock({ x: 100, y: 200, width: 80, height: 40 }, page)
+    const secondLocator = makeLocatorMock({ x: 100, y: 280, width: 80, height: 40 }, page)
+    instrumentLocator(firstLocator)
+    instrumentLocator(secondLocator)
+
+    await Promise.all([
+      (async () => {
+        await (
+          firstLocator.fill as (
+            v: string,
+            opts: { hideMouse: boolean }
+          ) => Promise<void>
+        )('Alex', { hideMouse: true })
+        await (
+          secondLocator.fill as (
+            v: string,
+            opts: { hideMouse: boolean }
+          ) => Promise<void>
+        )('Taylor', { hideMouse: true })
+      })(),
+      vi.runAllTimersAsync(),
+    ])
+
+    expect(recordedInputEvents).toHaveLength(2)
+    for (const event of recordedInputEvents) {
+      expect(event.subType).toBe('pressSequentially')
+      expect(event.events.some((innerEvent) => innerEvent.type === 'mouseHide')).toBe(true)
+    }
   })
 
   it('uses original interactions and skips recording inside hide()', async () => {

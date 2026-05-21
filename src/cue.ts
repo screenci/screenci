@@ -15,6 +15,7 @@ import type {
 } from './voices.js'
 import { isCustomVoiceRef } from './voices.js'
 import { isInsideHide } from './hide.js'
+import { logger } from './logger.js'
 import { access, readFile } from 'fs/promises'
 import { createHash } from 'crypto'
 import { dirname, resolve } from 'path'
@@ -39,6 +40,7 @@ let activeCueName: string | null = null
 let activeCueRun: {
   finished: Promise<void>
   resolveFinished: () => void
+  startedWithExplicitStart: boolean
 } | null = null
 const usedCueNames = new Set<string>()
 const registeredCustomVoiceRefs = new Set<CustomVoiceRef>()
@@ -138,8 +140,13 @@ function toRecordedVoice(
  * Auto-ends any currently active cue before starting a new one.
  * Called internally at the start of every narration controller.
  */
-function cueAutoEnd(): void {
+function cueAutoEnd(nextCueName: string): void {
   if (activeCueRun === null || activeRecorder === null) return
+  if (activeCueRun.startedWithExplicitStart && activeCueName !== null) {
+    logger.warn(
+      `[screenci] Cue "${activeCueName}" was started with .start() and auto-ended when cue "${nextCueName}" started. Call .end() explicitly before starting the next narration cue.`
+    )
+  }
   activeRecorder.addCueEnd('auto')
   sleepFn(2 * ONE_FRAME_MS)
   activeCueRun.resolveFinished()
@@ -167,14 +174,16 @@ function createDeferred(): {
   return { promise, resolve }
 }
 
-function createActiveCueRun(): {
+function createActiveCueRun(startedWithExplicitStart: boolean): {
   finished: Promise<void>
   resolveFinished: () => void
+  startedWithExplicitStart: boolean
 } {
   const deferred = createDeferred()
   return {
     finished: deferred.promise,
     resolveFinished: deferred.resolve,
+    startedWithExplicitStart,
   }
 }
 
@@ -536,7 +545,7 @@ function buildCuesFromInput(
   ): NarrationCue {
     let didRegisterName = false
 
-    const start = async (): Promise<void> => {
+    const start = async (startedWithExplicitStart = true): Promise<void> => {
       if (isInsideHide())
         throw new Error('Cannot start narration inside hide()')
       const recorder = activeRecorder
@@ -545,8 +554,8 @@ function buildCuesFromInput(
         assertUniqueCueName(name)
         didRegisterName = true
       }
-      cueAutoEnd()
-      const run = createActiveCueRun()
+      cueAutoEnd(name)
+      const run = createActiveCueRun(startedWithExplicitStart)
       activeCueName = name
       activeCueRun = run
       await emitStart(recorder)
@@ -567,7 +576,7 @@ function buildCuesFromInput(
     }
 
     const cue = (async (): Promise<void> => {
-      await start()
+      await start(false)
       await end()
     }) as NarrationCue
 

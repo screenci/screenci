@@ -13,6 +13,7 @@ import type { IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
 import type { CustomVoiceRef } from './voices.js'
 import { modelTypes, voices } from './voices.js'
+import { logger } from './logger.js'
 
 function createMockRecorder(): IEventRecorder {
   return {
@@ -46,10 +47,12 @@ const singleLangInput = {
 describe('createNarration', () => {
   let recorder: IEventRecorder
   let order: string[]
+  let warnSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
     order = []
     recorder = createMockRecorder()
+    warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
     resetCueChain()
     ;(recorder.addCueStart as ReturnType<typeof vi.fn>).mockImplementation(
       (text: string, _name: string, _config: unknown, translations: unknown) =>
@@ -63,6 +66,7 @@ describe('createNarration', () => {
   })
 
   afterEach(() => {
+    warnSpy.mockRestore()
     setActiveCueRecorder(null)
     setActiveHideRecorder(null)
     setSleepFn((ms) => {
@@ -123,6 +127,9 @@ describe('createNarration', () => {
 
     await cues.outro.start()
     expect(order).toEqual(['cueEnd', 'sleep', 'sleep', 'cueStart(multilang)'])
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[screenci] Cue "intro" was started with .start() and auto-ended when cue "outro" started. Call .end() explicitly before starting the next narration cue.'
+    )
   })
 
   it('start() on one cue then end() on another throws', async () => {
@@ -143,6 +150,27 @@ describe('createNarration', () => {
 
     await cues.outro.start()
     expect(order).toEqual(['cueEnd', 'sleep', 'sleep', 'cueStart(multilang)'])
+  })
+
+  it('warns when a cue started with .start() is followed by a callable cue', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro.start()
+
+    await cues.outro()
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[screenci] Cue "intro" was started with .start() and auto-ended when cue "outro" started. Call .end() explicitly before starting the next narration cue.'
+    )
+  })
+
+  it('does not warn when a callable cue is followed by another cue', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro()
+    await cues.outro.start()
+
+    expect(warnSpy).not.toHaveBeenCalled()
   })
 
   it('end() throws after a callable cue run has completed', async () => {

@@ -1851,11 +1851,12 @@ export async function main() {
   program
     .command('record [playwrightArgs...]')
     .description('Record videos using Playwright')
+    .option('-v, --verbose', 'verbose output')
     .allowUnknownOption(true)
     .action(async () => {
       const parsed = parseRecordCliArgs(getSubcommandArgv('record'))
 
-      await run('record', parsed.otherArgs, parsed.configPath)
+      await run('record', parsed.otherArgs, parsed.configPath, parsed.verbose)
 
       if (process.env.SCREENCI_RECORDING === 'true') return
 
@@ -1916,6 +1917,7 @@ export async function main() {
   program
     .command('test [playwrightArgs...]')
     .description('Run Playwright test with screenci.config.ts')
+    .option('-v, --verbose', 'verbose output')
     .allowUnknownOption(true)
     .action(async () => {
       const parsed = parseConfigCliArgs(getSubcommandArgv('test'))
@@ -1937,7 +1939,7 @@ export async function main() {
         }
       }
 
-      await run('test', parsed.otherArgs, parsed.configPath)
+      await run('test', parsed.otherArgs, parsed.configPath, parsed.verbose)
 
       if (process.env.SCREENCI_RECORDING === 'true') return
 
@@ -2103,9 +2105,11 @@ function parseRecordCliArgs(args: string[]): {
 
 function parseConfigCliArgs(args: string[]): {
   configPath: string | undefined
+  verbose: boolean
   otherArgs: string[]
 } {
   let configPath: string | undefined
+  let verbose = false
   const otherArgs: string[] = []
 
   for (let i = 0; i < args.length; i++) {
@@ -2119,12 +2123,14 @@ function parseConfigCliArgs(args: string[]): {
       }
       configPath = nextArg
       i++
+    } else if (arg === '--verbose' || arg === '-v') {
+      verbose = true
     } else {
       otherArgs.push(arg)
     }
   }
 
-  return { configPath, otherArgs }
+  return { configPath, verbose, otherArgs }
 }
 
 function validateArgs(args: string[]): void {
@@ -2197,7 +2203,8 @@ function spawnInherited(
 async function run(
   command: 'record' | 'test',
   additionalArgs: string[],
-  customConfigPath?: string
+  customConfigPath?: string,
+  verbose = false
 ) {
   const configPath = findScreenCIConfig(customConfigPath)
 
@@ -2223,7 +2230,7 @@ async function run(
     clearDirectory(screenciDir)
   }
 
-  if (process.env.SCREENCI_RECORDING !== 'true') {
+  if (verbose && process.env.SCREENCI_RECORDING !== 'true') {
     logger.info(`Using config: ${configPath}`)
   }
 

@@ -231,6 +231,38 @@ describe('CLI', () => {
         })
       )
     })
+
+    it('should only log the config path in verbose mode', async () => {
+      process.argv = ['node', 'cli.js', 'record', '--verbose']
+      process.env.VITE_APP_BASE_URL = 'https://example.com'
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        if (String(path).endsWith('screenci.config.ts')) {
+          return `export default defineConfig({ projectName: 'Test Project' })`
+        }
+        if (String(path).endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        return ''
+      })
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ projectId: 'project_123' }),
+        text: vi.fn().mockResolvedValue(''),
+      })
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await main()
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Using config:')
+      )
+    })
   })
 
   describe('test command', () => {
@@ -269,6 +301,36 @@ describe('CLI', () => {
 
       expect(loadEnvFileSpy).toHaveBeenCalledWith(
         expect.stringContaining('.env')
+      )
+    })
+
+    it('should not log the config path by default', async () => {
+      process.argv = ['node', 'cli.js', 'test']
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerInfoSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('Using config:')
+      )
+    })
+
+    it('should log the config path in verbose mode', async () => {
+      process.argv = ['node', 'cli.js', 'test', '--verbose']
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Using config:')
       )
     })
 

@@ -50,6 +50,7 @@ Serves the rendered MP4 file for a specific language variant.
 Content-Type: video/mp4
 Content-Length: <bytes>
 Accept-Ranges: bytes
+Access-Control-Allow-Origin: *
 ```
 
 ### Error responses
@@ -85,6 +86,7 @@ Serves the thumbnail image for a specific language variant.
 ```
 Content-Type: image/jpeg
 Content-Length: <bytes>
+Access-Control-Allow-Origin: *
 ```
 
 ### Error responses
@@ -113,6 +115,8 @@ Content-Type: text/vtt
 Content-Length: <bytes>
 Access-Control-Allow-Origin: *
 ```
+
+All public media endpoints (`video`, `thumbnail`, and `subtitle`) are served with `Access-Control-Allow-Origin: *` so they can be embedded from other origins without credentials.
 
 ### Error responses
 

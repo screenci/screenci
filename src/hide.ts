@@ -1,4 +1,5 @@
 import type { IEventRecorder } from './events.js'
+import { resolveRecordingTimingDuration } from './runtimeMode.js'
 
 let activeRecorder: IEventRecorder | null = null
 let insideHide = false
@@ -6,7 +7,9 @@ let insideHide = false
 export const POST_HIDE_PAUSE = 350
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  return new Promise((resolve) =>
+    setTimeout(resolve, resolveRecordingTimingDuration(ms))
+  )
 }
 
 export function setActiveHideRecorder(recorder: IEventRecorder | null): void {

@@ -18,6 +18,7 @@ import {
   resolveAutoZoomOptions,
   resolveZoomTarget,
 } from './zoom.js'
+import { resolveRecordingTimingDuration } from './runtimeMode.js'
 
 type ScrollRectLike = {
   top: number
@@ -118,7 +119,9 @@ const CURSOR_TRIGGER_EDGE_THRESHOLD = 0.3
 const CURSOR_TRIGGER_MAX_PROGRESS = 0.6
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  return new Promise((resolve) =>
+    setTimeout(resolve, resolveRecordingTimingDuration(ms))
+  )
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -1351,7 +1354,7 @@ function resolveFocusOptions(params: {
     focusOptions,
     currentZoomEnd,
     timing: {
-      duration: focusOptions.duration,
+      duration: resolveRecordingTimingDuration(focusOptions.duration),
       easing: focusOptions.easing,
     },
   }

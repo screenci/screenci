@@ -20,6 +20,13 @@ import {
   resolveZoomTarget,
 } from './zoom.js'
 import type { AutoZoomOptions } from './types.js'
+import { resolveRecordingTimingDuration } from './runtimeMode.js'
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) =>
+    setTimeout(resolve, resolveRecordingTimingDuration(ms))
+  )
+}
 
 export type ZoomTargetPoint = { x: number; y: number }
 export type ZoomTarget = Locator | ZoomTargetPoint
@@ -93,23 +100,17 @@ async function zoomToPoint(
 
   const focusChangeStartMs = Date.now()
   if (resolvedOptions.preZoomDelay > 0) {
-    await new Promise((resolve) =>
-      setTimeout(resolve, resolvedOptions.preZoomDelay)
-    )
+    await sleep(resolvedOptions.preZoomDelay)
   }
 
   const zoomStartMs = Date.now()
   if (resolvedOptions.duration > 0) {
-    await new Promise((resolve) =>
-      setTimeout(resolve, resolvedOptions.duration)
-    )
+    await sleep(resolvedOptions.duration)
   }
   const zoomEndMs = Date.now()
 
   if (resolvedOptions.postZoomDelay > 0) {
-    await new Promise((resolve) =>
-      setTimeout(resolve, resolvedOptions.postZoomDelay)
-    )
+    await sleep(resolvedOptions.postZoomDelay)
   }
   const focusChangeEndMs = Date.now()
 
@@ -202,21 +203,15 @@ export async function resetZoom(options: AutoZoomOptions = {}): Promise<void> {
   }
   const focusChangeStartMs = Date.now()
   if (resolvedOptions.preZoomDelay > 0) {
-    await new Promise((resolve) =>
-      setTimeout(resolve, resolvedOptions.preZoomDelay)
-    )
+    await sleep(resolvedOptions.preZoomDelay)
   }
   const zoomStartMs = Date.now()
   if (resolvedOptions.duration > 0) {
-    await new Promise((resolve) =>
-      setTimeout(resolve, resolvedOptions.duration)
-    )
+    await sleep(resolvedOptions.duration)
   }
   const zoomEndMs = Date.now()
   if (resolvedOptions.postZoomDelay > 0) {
-    await new Promise((resolve) =>
-      setTimeout(resolve, resolvedOptions.postZoomDelay)
-    )
+    await sleep(resolvedOptions.postZoomDelay)
   }
   const focusChangeEndMs = Date.now()
 

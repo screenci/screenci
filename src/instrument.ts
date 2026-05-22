@@ -63,6 +63,7 @@ import {
   setOriginalMouseShow,
   setOriginalMouseUp,
 } from './mouse.js'
+import { resolveRecordingTimingDuration } from './runtimeMode.js'
 
 let activeClickRecorder: IEventRecorder | null = null
 const DEFAULT_PRE_CLICK_PAUSE_MS = 50
@@ -75,7 +76,9 @@ export function setActiveClickRecorder(recorder: IEventRecorder | null): void {
 const instrumented = new WeakSet<object>()
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  return new Promise((resolve) =>
+    setTimeout(resolve, resolveRecordingTimingDuration(ms))
+  )
 }
 
 function withDefaultNoWaitAfter<T extends object>(

@@ -99,6 +99,8 @@ Use the public thumbnail as the poster image and the subtitle URL as a `<track>`
 
 If a language does not have subtitles yet, omit the `<track>` element.
 
+Public video, thumbnail, and subtitle endpoints are served with CORS headers, so this embed works across origins with `crossorigin="anonymous"` and no credentials.
+
 ## Caching behavior
 
 Public assets are intended for embedding and repeated access.

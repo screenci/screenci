@@ -3,6 +3,8 @@ import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { invalidOptionError, ScreenciError } from './errors.js'
 import type { ElementRect, IEventRecorder } from './events.js'
 import type { AutoZoomOptions, Easing } from './types.js'
+import { resolveRecordingTimingDuration } from './runtimeMode.js'
+
 function assertAutoZoomUnitIntervalOption(
   value: number,
   name: 'amount' | 'padding' | 'centering'
@@ -91,7 +93,9 @@ export function setCurrentZoomViewport(
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  return new Promise((resolve) =>
+    setTimeout(resolve, resolveRecordingTimingDuration(ms))
+  )
 }
 
 function resetAutoZoomState(): void {
@@ -172,8 +176,9 @@ export async function autoZoom(
       activeRecorder.addAutoZoomEnd(options)
       if (currentAutoZoomState.currentZoomViewport !== null) {
         const zoomOutStartMs = Date.now()
-        const zoomOutDuration =
+        const zoomOutDuration = resolveRecordingTimingDuration(
           currentAutoZoomState.options.duration ?? DEFAULT_ZOOM_OPTIONS.duration
+        )
         activeRecorder.addInput('focusChange', undefined, [
           {
             type: 'focusChange',

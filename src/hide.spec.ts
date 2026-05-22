@@ -21,7 +21,14 @@ function makeRecorder(): IEventRecorder {
 }
 
 describe('hide', () => {
+  let originalEnv: NodeJS.ProcessEnv
+
+  beforeEach(() => {
+    originalEnv = { ...process.env }
+  })
+
   afterEach(() => {
+    process.env = originalEnv
     setActiveHideRecorder(null)
   })
 
@@ -98,6 +105,32 @@ describe('hide', () => {
 
         await vi.advanceTimersByTimeAsync(1)
         await hidePromise
+        expect(order).toEqual(['callback', 'hideEnd', 'resolved'])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('skips the post-hide pause when recording timings are disabled', async () => {
+      vi.useFakeTimers()
+
+      try {
+        process.env.SCREENCI_DISABLE_RECORDING_TIMINGS = 'true'
+
+        const order: string[] = []
+        vi.mocked(recorder.addHideEnd).mockImplementation(() => {
+          order.push('hideEnd')
+        })
+
+        const hidePromise = hide(() => {
+          order.push('callback')
+        }).then(() => {
+          order.push('resolved')
+        })
+
+        await vi.advanceTimersByTimeAsync(0)
+        await hidePromise
+
         expect(order).toEqual(['callback', 'hideEnd', 'resolved'])
       } finally {
         vi.useRealTimers()

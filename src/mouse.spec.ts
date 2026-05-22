@@ -32,11 +32,15 @@ import {
 } from './mouse.js'
 
 describe('mouse helpers', () => {
+  let originalEnv: NodeJS.ProcessEnv
+
   beforeEach(() => {
+    originalEnv = { ...process.env }
     vi.useFakeTimers()
   })
 
   afterEach(() => {
+    process.env = originalEnv
     vi.useRealTimers()
   })
 
@@ -95,6 +99,22 @@ describe('mouse helpers', () => {
       resolveMouseMoveDuration(page, 300, 400, {
         duration: 0,
         speed: undefined,
+        defaultDuration: DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+        context: 'test move',
+      })
+    ).toBe(0)
+  })
+
+  it('skips move duration when recording timings are disabled', () => {
+    process.env.SCREENCI_DISABLE_RECORDING_TIMINGS = 'true'
+
+    const page = {}
+    setMousePosition(page, { x: 0, y: 0 })
+
+    expect(
+      resolveMouseMoveDuration(page, 300, 400, {
+        duration: undefined,
+        speed: 500,
         defaultDuration: DEFAULT_CLICK_MOUSE_MOVE_DURATION,
         context: 'test move',
       })

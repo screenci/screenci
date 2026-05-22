@@ -55,6 +55,29 @@ npx screenci test tests/onboarding.video.ts --grep "step 2"
 
 Use this when you want normal Playwright execution without recording.
 
+By default, `screenci test` skips ScreenCI's recording-only pacing so it stays fast:
+
+- cursor moves become instant instead of animated
+- built-in sleeps for click, hide, and zoom timing are skipped
+- no screen recording is started
+
+That makes `test` the right command while you are iterating on selectors, app state, and assertions.
+
+### `--mock-record`
+
+Use `--mock-record` when you want `screenci test` to keep the same animated timing model as `screenci record` without starting the actual browser screen capture:
+
+```bash
+npx screenci test --mock-record
+npx screenci test --mock-record --grep "checkout"
+```
+
+This is mainly a troubleshooting option. Reach for it when:
+
+- `screenci test` passes, but `screenci record` fails
+- a timing issue only shows up with animated cursor moves or ScreenCI's built-in pauses
+- you want to debug recording-like pacing without paying the full cost of local recording
+
 To run only some tests, pass the same filters you would use with `playwright test`, such as a file path or `--grep`:
 
 ```bash
@@ -69,6 +92,7 @@ Notes:
 - `screenci` always adds `--config <resolved-path-to-screenci.config.ts>` for you
 - `--config` / `-c` are handled by `screenci` itself, so use them to point to a different `screenci.config.ts`
 - `--verbose` / `-v` are also handled by `screenci` itself for extra CLI logging, not forwarded to Playwright
+- `--mock-record` is handled by `screenci` itself and is not forwarded to Playwright
 
 ## `screenci record [playwrightArgs...]`
 
@@ -87,6 +111,10 @@ Options:
 Restrictions:
 
 - `--workers`, `-j`, `--retries`, and `--fully-parallel` are rejected because ScreenCI records sequentially with one worker
+
+Troubleshooting:
+
+- If `screenci test` works but `screenci record` fails, retry with `screenci test --mock-record` to reproduce recording-like timing without starting the real capture pipeline.
 
 ## `screenci info`
 

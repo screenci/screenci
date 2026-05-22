@@ -55,6 +55,12 @@ npm run test
 
 This is similar to running `playwright test`: it executes the `.video.ts` script without recording, so you can quickly check selectors, timing, and narration cues.
 
+To keep the feedback loop fast, `screenci test` skips ScreenCI's recording-only cursor animations and built-in pacing delays. If you need to debug the recording-style timing without starting a real recording, use:
+
+```bash
+npx screenci test --mock-record
+```
+
 You can also pass normal Playwright test arguments through `screenci test`, for example:
 
 ```bash

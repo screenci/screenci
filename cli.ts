@@ -25,8 +25,16 @@ import type {
   RecordingData,
   VideoCueTranslationFile,
 } from './src/events.js'
+import {
+  SCREENCI_DISABLE_RECORDING_TIMINGS_ENV,
+  SCREENCI_MOCK_RECORD_ENV,
+} from './src/runtimeMode.js'
 import type { VoiceKey } from './src/voices.js'
 import type { ScreenCIConfig } from './src/types.js'
+
+const SCREENCI_DOCS_URL = 'https://screenci.com/docs/intro/'
+const SCREENCI_MOCK_RECORD_DOCS_URL =
+  'https://docs.screenci.com/reference/cli/#screenci-test-playwrightargs'
 
 type ProjectInfoVideo = {
   name: string
@@ -1802,7 +1810,12 @@ export async function main() {
     .action(async () => {
       const parsed = parseRecordCliArgs(getSubcommandArgv('record'))
 
-      await run('record', parsed.otherArgs, parsed.configPath, parsed.verbose)
+      try {
+        await run('record', parsed.otherArgs, parsed.configPath, parsed.verbose)
+      } catch (error) {
+        logRecordFailureHint()
+        throw error
+      }
 
       if (process.env.SCREENCI_RECORDING === 'true') return
 
@@ -1863,6 +1876,10 @@ export async function main() {
   program
     .command('test [playwrightArgs...]')
     .description('Run Playwright test with screenci.config.ts')
+    .option(
+      '--mock-record',
+      'keep recording-style cursor animation and sleeps during screenci test'
+    )
     .option('-v, --verbose', 'verbose output')
     .allowUnknownOption(true)
     .action(async () => {
@@ -1885,7 +1902,13 @@ export async function main() {
         }
       }
 
-      await run('test', parsed.otherArgs, parsed.configPath, parsed.verbose)
+      await run(
+        'test',
+        parsed.otherArgs,
+        parsed.configPath,
+        parsed.verbose,
+        parsed.mockRecord
+      )
 
       if (process.env.SCREENCI_RECORDING === 'true') return
 
@@ -2039,10 +2062,12 @@ function parseRecordCliArgs(args: string[]): {
 function parseConfigCliArgs(args: string[]): {
   configPath: string | undefined
   verbose: boolean
+  mockRecord: boolean
   otherArgs: string[]
 } {
   let configPath: string | undefined
   let verbose = false
+  let mockRecord = false
   const otherArgs: string[] = []
 
   for (let i = 0; i < args.length; i++) {
@@ -2058,12 +2083,14 @@ function parseConfigCliArgs(args: string[]): {
       i++
     } else if (arg === '--verbose' || arg === '-v') {
       verbose = true
+    } else if (arg === '--mock-record') {
+      mockRecord = true
     } else {
       otherArgs.push(arg)
     }
   }
 
-  return { configPath, verbose, otherArgs }
+  return { configPath, verbose, mockRecord, otherArgs }
 }
 
 function validateArgs(args: string[]): void {
@@ -2137,7 +2164,8 @@ async function run(
   command: 'record' | 'test',
   additionalArgs: string[],
   customConfigPath?: string,
-  verbose = false
+  verbose = false,
+  mockRecord = false
 ) {
   const configPath = findScreenCIConfig(customConfigPath)
 
@@ -2177,6 +2205,12 @@ async function run(
       ...envForChild,
       // Enable recording only for record command
       ...(command === 'record' ? { SCREENCI_RECORDING: 'true' } : {}),
+      ...(command === 'test' && !mockRecord
+        ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
+        : {}),
+      ...(command === 'test' && mockRecord
+        ? { [SCREENCI_MOCK_RECORD_ENV]: 'true' }
+        : {}),
     },
   })
   const childSignals = forwardChildSignals(child, `screenci ${command}`)
@@ -2205,6 +2239,16 @@ async function run(
       reject(err)
     })
   })
+}
+
+function logRecordFailureHint(): void {
+  logger.info('')
+  logger.info(
+    `If ${pc.cyan('screenci test')} works but ${pc.cyan(
+      'screenci record'
+    )} fails, try ${pc.cyan('screenci test --mock-record')}.`
+  )
+  logger.info(`More info: ${pc.cyan(SCREENCI_MOCK_RECORD_DOCS_URL)}`)
 }
 
 // Only run if this file is being executed directly

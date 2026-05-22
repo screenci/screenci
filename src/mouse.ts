@@ -8,6 +8,10 @@ import type {
 import type { Easing } from './types.js'
 import { evaluateEasingAtT } from './easing.js'
 import { logger } from './logger.js'
+import {
+  resolveRecordingTimingDuration,
+  shouldSimulateRecordingTimings,
+} from './runtimeMode.js'
 
 // Stored mouse coordinates are always viewport coordinates, even when a
 // locator action receives an element-relative `position` option.
@@ -312,6 +316,7 @@ export function resolveMouseMoveDuration(
 ): number {
   const { duration, speed, defaultDuration, defaultSpeed, context } = options
   assertDurationOrSpeed(duration, speed, context)
+  if (!shouldSimulateRecordingTimings()) return 0
   if (speed !== undefined) {
     const startPos = getMousePosition(page) ?? { x: 0, y: 0 }
     const distancePx = Math.hypot(targetX - startPos.x, targetY - startPos.y)
@@ -391,7 +396,9 @@ export function buildMouseUpEvent(options: {
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  return new Promise((resolve) =>
+    setTimeout(resolve, resolveRecordingTimingDuration(ms))
+  )
 }
 
 export async function performMouseClickAction(

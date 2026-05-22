@@ -266,6 +266,57 @@ describe('CLI', () => {
   })
 
   describe('test command', () => {
+    it('disables recording timings for plain test runs', async () => {
+      process.argv = ['node', 'cli.js', 'test']
+      mockSpawn.mockImplementation(
+        (
+          _command: string,
+          args: string[],
+          options?: { env?: NodeJS.ProcessEnv }
+        ) => {
+          expect(args).not.toContain('--mock-record')
+          expect(options?.env?.SCREENCI_DISABLE_RECORDING_TIMINGS).toBe('true')
+          expect(options?.env?.SCREENCI_MOCK_RECORD).toBeUndefined()
+          process.nextTick(() => mockChildProcess.emit('close', 0))
+          return mockChildProcess as unknown as ChildProcess
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+    })
+
+    it('keeps recording timings when --mock-record is used', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'test',
+        '--mock-record',
+        '--grep',
+        'demo',
+      ]
+      mockSpawn.mockImplementation(
+        (
+          _command: string,
+          args: string[],
+          options?: { env?: NodeJS.ProcessEnv }
+        ) => {
+          expect(args).not.toContain('--mock-record')
+          expect(args).toContain('--grep')
+          expect(args).toContain('demo')
+          expect(
+            options?.env?.SCREENCI_DISABLE_RECORDING_TIMINGS
+          ).toBeUndefined()
+          expect(options?.env?.SCREENCI_MOCK_RECORD).toBe('true')
+          process.nextTick(() => mockChildProcess.emit('close', 0))
+          return mockChildProcess as unknown as ChildProcess
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+    })
+
     it('should load envFile before spawning Playwright', async () => {
       process.argv = ['node', 'cli.js', 'test']
       process.env.CI = 'true'
@@ -516,6 +567,28 @@ describe('CLI', () => {
         'Error: --config requires a path argument'
       )
       expect(processExitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('logs mock-record troubleshooting help when record fails', async () => {
+      process.argv = ['node', 'cli.js', 'record']
+      process.env.SCREENCI_SECRET = 'test-secret'
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 1))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow('Playwright exited with code 1')
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('screenci test --mock-record')
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'https://docs.screenci.com/reference/cli/#screenci-test-playwrightargs'
+        )
+      )
     })
   })
 

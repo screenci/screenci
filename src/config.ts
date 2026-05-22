@@ -27,9 +27,9 @@ type ReporterConfig = string | ReporterDescription
  * Defines a screenci configuration file.
  *
  * Extends Playwright's config with screenci-specific options and enforces
- * settings required for reliable video recording. Some Playwright options
- * are locked and cannot be set — `workers`, `fullyParallel`, `retries`,
- * `testDir`, and `testMatch`. Attempting to set them throws at startup.
+ * settings required for reliable video recording. `retries`, `testDir`, and
+ * `testMatch` are managed by screenci and cannot be set. Playwright
+ * parallelism options pass through unchanged.
  *
  * @example
  * Minimal — all options have sensible defaults:
@@ -59,7 +59,7 @@ type ReporterConfig = string | ReporterDescription
  * ```
  *
  * @param config - screenci configuration options
- * @returns Extended Playwright configuration with enforced sequential execution settings
+ * @returns Extended Playwright configuration with screenci-managed test discovery
  */
 export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
   // Add the video name validator reporter if not already present
@@ -140,24 +140,6 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
     )
   }
 
-  // Runtime check for workers
-  if ('workers' in config) {
-    throw new Error(
-      'screenci does not support "workers" option. ' +
-        'Tests must run sequentially to ensure proper video recording. ' +
-        'screenci automatically configures workers to 1.'
-    )
-  }
-
-  // Runtime check for fullyParallel
-  if ('fullyParallel' in config) {
-    throw new Error(
-      'screenci does not support "fullyParallel" option. ' +
-        'Tests must run sequentially to ensure proper video recording. ' +
-        'screenci automatically sets fullyParallel to false.'
-    )
-  }
-
   // Runtime check for retries
   if ('retries' in config) {
     throw new Error(
@@ -180,7 +162,7 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
       }))
     : rest.projects
 
-  // Force sequential execution with single worker and no retries, map videoDir to testDir
+  // Map videoDir to testDir and keep screenci-managed defaults in place.
   return {
     testDir: videoDir ?? DEFAULT_VIDEO_DIR,
     testMatch: '**/*.video.?(c|m)[jt]s?(x)',
@@ -195,8 +177,6 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
     },
     ...(projects ? { projects } : {}),
     timeout: rest.timeout ?? DEFAULT_TIMEOUT,
-    fullyParallel: false,
-    workers: 1,
     retries: 0,
   }
 }

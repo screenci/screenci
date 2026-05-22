@@ -16,9 +16,15 @@ import type {
 import { isCustomVoiceRef } from './voices.js'
 import { isInsideHide } from './hide.js'
 import { logger } from './logger.js'
-import { access, readFile } from 'fs/promises'
+import { readFile } from 'fs/promises'
 import { createHash } from 'crypto'
 import { dirname, resolve } from 'path'
+import {
+  getScreenCIRuntimeContext,
+  getRuntimeCueRecorder,
+  resetCueRuntimeState,
+  setRuntimeCueRecorder,
+} from './runtimeContext.js'
 
 // One frame at 24fps — ensures at least one rendered frame captures each cue state.
 export const ONE_FRAME_MS = 1000 / 24
@@ -35,103 +41,57 @@ export function setSleepFn(fn: (ms: number) => void): void {
   sleepFn = fn
 }
 
-let activeRecorder: IEventRecorder | null = null
-let activeCueName: string | null = null
-let activeCueRun: {
-  finished: Promise<void>
-  resolveFinished: () => void
-  startedWithExplicitStart: boolean
-} | null = null
-const usedCueNames = new Set<string>()
-const registeredCustomVoiceRefs = new Set<CustomVoiceRef>()
-/** Maps local asset path → SHA-256 hash, populated during validateCustomVoiceRefs. */
-const videoCueFileHashes = new Map<string, string>()
-
 export function setActiveCueRecorder(recorder: IEventRecorder | null): void {
-  activeRecorder = recorder
-  activeCueName = null
-  activeCueRun = null
-  usedCueNames.clear()
+  setRuntimeCueRecorder(recorder)
+  resetCueRuntimeState()
 }
 
 export function resetCueChain(): void {
-  activeCueName = null
-  activeCueRun = null
-  usedCueNames.clear()
+  resetCueRuntimeState()
 }
 
 export function resetRegisteredCustomVoiceRefs(): void {
-  registeredCustomVoiceRefs.clear()
-  videoCueFileHashes.clear()
+  // Voice assets are resolved lazily at cue start, so there is no shared
+  // registration state to reset anymore.
 }
 
 export async function validateCustomVoiceRefs(
-  testFilePath: string
+  _testFilePath: string
 ): Promise<void> {
-  const testDir = dirname(testFilePath)
-
-  for (const ref of registeredCustomVoiceRefs) {
-    const candidates = [ref.path, resolve(testDir, ref.path)]
-    let fileBuffer: Buffer | null = null
-
-    for (const candidate of candidates) {
-      try {
-        await access(candidate)
-        fileBuffer = await readFile(candidate)
-        break
-      } catch {
-        // try next candidate
-      }
-    }
-
-    if (fileBuffer === null) {
-      throw new Error(`Custom voice file not found: ${ref.path}`)
-    }
-
-    ;(ref as CustomVoiceRef & { assetHash: string }).assetHash = createHash(
-      'sha256'
-    )
-      .update(fileBuffer)
-      .digest('hex')
-  }
-
-  for (const assetPath of videoCueFileHashes.keys()) {
-    const candidates = [assetPath, resolve(testDir, assetPath)]
-    let fileBuffer: Buffer | null = null
-
-    for (const candidate of candidates) {
-      try {
-        fileBuffer = await readFile(candidate)
-        break
-      } catch {
-        // try next candidate
-      }
-    }
-
-    if (fileBuffer === null) {
-      throw new Error(`Video cue asset file not found: ${assetPath}`)
-    }
-
-    videoCueFileHashes.set(
-      assetPath,
-      createHash('sha256').update(fileBuffer).digest('hex')
-    )
-  }
+  // Cue and custom voice assets are now resolved lazily at cue start using the
+  // current test file path from the runtime context, so there is nothing to
+  // pre-validate here.
 }
 
-function toRecordedVoice(
-  voice: VoiceKey | CustomVoiceRef
-): VoiceKey | RecordingCustomVoiceRef {
-  if (!isCustomVoiceRef(voice)) return voice
-  if (
-    !('assetHash' in voice) ||
-    typeof (voice as CustomVoiceRef & { assetHash?: string }).assetHash !==
-      'string'
-  ) {
-    throw new Error(`Custom voice assetHash missing for path: ${voice.path}`)
+async function resolveAssetFileHash(
+  assetPath: string,
+  testFilePath: string | null
+): Promise<string> {
+  const candidates = [assetPath]
+  if (testFilePath !== null) {
+    const testDir = dirname(testFilePath)
+    candidates.push(resolve(testDir, assetPath))
   }
+
+  for (const candidate of candidates) {
+    try {
+      const fileBuffer = await readFile(candidate)
+      return createHash('sha256').update(fileBuffer).digest('hex')
+    } catch {
+      // try next candidate
+    }
+  }
+
+  throw new Error(`Asset file not found: ${assetPath}`)
+}
+
+async function toRecordedVoice(
+  voice: VoiceKey | CustomVoiceRef
+): Promise<VoiceKey | RecordingCustomVoiceRef> {
+  if (!isCustomVoiceRef(voice)) return voice
+  const testFilePath = getScreenCIRuntimeContext().testFilePath
   return {
-    assetHash: (voice as CustomVoiceRef & { assetHash: string }).assetHash,
+    assetHash: await resolveAssetFileHash(voice.path, testFilePath),
     assetPath: voice.path,
   }
 }
@@ -141,20 +101,25 @@ function toRecordedVoice(
  * Called internally at the start of every narration controller.
  */
 function cueAutoEnd(nextCueName: string): void {
-  if (activeCueRun === null || activeRecorder === null) return
-  if (activeCueRun.startedWithExplicitStart && activeCueName !== null) {
+  const context = getScreenCIRuntimeContext()
+  if (context.cue.activeCueRun === null || context.cueRecorder === null) return
+  if (
+    context.cue.activeCueRun.startedWithExplicitStart &&
+    context.cue.activeCueName !== null
+  ) {
     logger.warn(
-      `[screenci] Cue "${activeCueName}" was started with .start() and auto-ended when cue "${nextCueName}" started. Call .end() explicitly before starting the next narration cue.`
+      `[screenci] Cue "${context.cue.activeCueName}" was started with .start() and auto-ended when cue "${nextCueName}" started. Call .end() explicitly before starting the next narration cue.`
     )
   }
-  activeRecorder.addCueEnd('auto')
+  context.cueRecorder.addCueEnd('auto')
   sleepFn(2 * ONE_FRAME_MS)
-  activeCueRun.resolveFinished()
-  activeCueName = null
-  activeCueRun = null
+  context.cue.activeCueRun.resolveFinished()
+  context.cue.activeCueName = null
+  context.cue.activeCueRun = null
 }
 
 function assertUniqueCueName(name: string): void {
+  const usedCueNames = getScreenCIRuntimeContext().cue.usedCueNames
   if (usedCueNames.has(name)) {
     throw new Error(
       `Duplicate cue name "${name}" in one video recording. Cue names must be unique.`
@@ -188,15 +153,16 @@ function createActiveCueRun(startedWithExplicitStart: boolean): {
 }
 
 async function endActiveCue(): Promise<void> {
-  if (activeRecorder === null || activeCueRun === null) return
+  const context = getScreenCIRuntimeContext()
+  if (context.cueRecorder === null || context.cue.activeCueRun === null) return
   if (isInsideHide()) throw new Error('Cannot call end() inside hide()')
-  const run = activeCueRun
-  activeRecorder.addCueEnd('wait')
+  const run = context.cue.activeCueRun
+  context.cueRecorder.addCueEnd('wait')
   sleepFn(2 * ONE_FRAME_MS)
   run.resolveFinished()
-  if (activeCueRun === run) {
-    activeCueName = null
-    activeCueRun = null
+  if (context.cue.activeCueRun === run) {
+    context.cue.activeCueName = null
+    context.cue.activeCueRun = null
   }
 }
 
@@ -513,10 +479,6 @@ function buildCuesFromInput(
       ? 'expressive'
       : (langOverride?.modelType ?? topVoice.modelType)
 
-    if (isCustomVoiceRef(effectiveVoiceName)) {
-      registeredCustomVoiceRefs.add(effectiveVoiceName)
-    }
-
     resolvedVoices.set(lang, effectiveVoiceName)
     resolvedVoiceMeta.set(lang, {
       name: voiceToKeyString(effectiveVoiceName),
@@ -548,29 +510,34 @@ function buildCuesFromInput(
     const start = async (startedWithExplicitStart = true): Promise<void> => {
       if (isInsideHide())
         throw new Error('Cannot start narration inside hide()')
-      const recorder = activeRecorder
+      const recorder = getRuntimeCueRecorder()
       if (recorder === null) return
+      const context = getScreenCIRuntimeContext()
       if (!didRegisterName) {
         assertUniqueCueName(name)
         didRegisterName = true
       }
       cueAutoEnd(name)
       const run = createActiveCueRun(startedWithExplicitStart)
-      activeCueName = name
-      activeCueRun = run
+      context.cue.activeCueName = name
+      context.cue.activeCueRun = run
       await emitStart(recorder)
     }
 
     const end = async (): Promise<void> => {
       if (isInsideHide()) throw new Error('Cannot call end() inside hide()')
-      if (activeRecorder === null) return
-      if (activeCueName !== name || activeCueRun === null) {
+      const context = getScreenCIRuntimeContext()
+      if (context.cueRecorder === null) return
+      if (
+        context.cue.activeCueName !== name ||
+        context.cue.activeCueRun === null
+      ) {
         throw new Error(
           `Cannot call end() for cue "${name}" because it is not the active started cue`
         )
       }
 
-      const run = activeCueRun
+      const run = context.cue.activeCueRun
       await endActiveCue()
       await run.finished
     }
@@ -599,13 +566,13 @@ function buildCuesFromInput(
         normalizedByLang.set(lang, normalized)
         if (normalized.type === 'file') {
           hasFileEntry = true
-          videoCueFileHashes.set(normalized.path, '')
         }
       }
     }
 
     if (hasFileEntry) {
       result[keyStr] = createCueController(keyStr, async (recorder) => {
+        const testFilePath = getScreenCIRuntimeContext().testFilePath
         for (const lang of langs) {
           recorder.registerVoiceForLang(lang, resolvedVoiceMeta.get(lang)!)
         }
@@ -623,7 +590,7 @@ function buildCuesFromInput(
           if (val.type === 'text') {
             videoTranslations[lang] = {
               text: val.text,
-              voice: toRecordedVoice(voice),
+              voice: await toRecordedVoice(voice),
               ...(region !== undefined && { region }),
               ...(modelType !== undefined && { modelType }),
               ...(style !== undefined && { style }),
@@ -631,10 +598,13 @@ function buildCuesFromInput(
               ...(pacing !== undefined && { pacing }),
             }
           } else {
-            videoTranslations[lang] = entryToVideoTranslation({
-              path: val.path,
-              ...(val.subtitle !== undefined && { subtitle: val.subtitle }),
-            })
+            videoTranslations[lang] = await entryToVideoTranslation(
+              testFilePath,
+              {
+                path: val.path,
+                ...(val.subtitle !== undefined && { subtitle: val.subtitle }),
+              }
+            )
           }
         }
         sleepFn(2 * ONE_FRAME_MS)
@@ -664,7 +634,7 @@ function buildCuesFromInput(
             const pacing = meta?.pacing
             textTranslations[lang] = {
               text: val.text,
-              voice: toRecordedVoice(voice),
+              voice: await toRecordedVoice(voice),
               ...(region !== undefined && { region }),
               ...(modelType !== undefined && { modelType }),
               ...(style !== undefined && { style }),
@@ -681,16 +651,14 @@ function buildCuesFromInput(
   return result
 }
 
-function entryToVideoTranslation(
+async function entryToVideoTranslation(
+  testFilePath: string | null,
   entry: string | { path: string; subtitle?: string }
-): VideoCueTranslationFile {
+): Promise<VideoCueTranslationFile> {
   const path = typeof entry === 'string' ? entry : entry.path
   const subtitle = typeof entry === 'string' ? undefined : entry.subtitle
-  const assetHash = videoCueFileHashes.get(path)
-  if (!assetHash)
-    throw new Error(`Video cue asset hash missing for path: ${path}`)
   return {
-    assetHash,
+    assetHash: await resolveAssetFileHash(path, testFilePath),
     assetPath: path,
     ...(subtitle !== undefined && { subtitle }),
   }

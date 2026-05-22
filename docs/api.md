@@ -11,14 +11,14 @@ For full auto-generated details including all type signatures, see the [API Refe
 
 → [Full details](/reference/api/functions/defineconfig/)
 
-Defines the ScreenCI configuration. Wraps Playwright's config with ScreenCI defaults and enforces settings required for reliable video recording.
+Defines the ScreenCI configuration. Wraps Playwright's config with ScreenCI defaults and enforces the few settings ScreenCI still manages directly.
 
-**Enforced settings (cannot be overridden):**
+**Managed by ScreenCI:**
 
-- `workers: 1` — sequential execution
-- `fullyParallel: false`
 - `retries: 0`
 - `testMatch` — only `*.video.*` files
+
+`workers` and `fullyParallel` pass through to Playwright unchanged.
 
 ```ts
 import { defineConfig } from 'screenci'
@@ -36,7 +36,7 @@ export default defineConfig({
 })
 ```
 
-Any other valid Playwright config options (e.g. `timeout`, `reporter`) are passed through, except options ScreenCI manages itself.
+Any other valid Playwright config options (for example `timeout`, `reporter`, `workers`, and `fullyParallel`) are passed through, except options ScreenCI manages itself.
 
 ---
 

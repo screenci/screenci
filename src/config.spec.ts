@@ -25,32 +25,16 @@ describe('defineConfig', () => {
     }).toThrow('screenci does not support "testDir" option')
   })
 
-  it('should force fullyParallel to false', () => {
-    const config = defineConfig({ projectName: 'Test' })
+  it('should pass through workers when defined', () => {
+    const config = defineConfig({ projectName: 'Test', workers: 4 })
 
-    expect(config.fullyParallel).toBe(false)
+    expect(config.workers).toBe(4)
   })
 
-  it('should force workers to 1', () => {
-    const config = defineConfig({ projectName: 'Test' })
+  it('should pass through fullyParallel when defined', () => {
+    const config = defineConfig({ projectName: 'Test', fullyParallel: true })
 
-    expect(config.workers).toBe(1)
-  })
-
-  it('should throw error when workers is defined', () => {
-    expect(() => {
-      defineConfig({
-        workers: 1,
-      } as never)
-    }).toThrow('screenci does not support "workers" option')
-  })
-
-  it('should throw error when fullyParallel is defined', () => {
-    expect(() => {
-      defineConfig({
-        fullyParallel: true,
-      } as never)
-    }).toThrow('screenci does not support "fullyParallel" option')
+    expect(config.fullyParallel).toBe(true)
   })
 
   it('should accept all other playwright config options', () => {
@@ -71,8 +55,8 @@ describe('defineConfig', () => {
     })
 
     expect(config.testDir).toBe('./my-videos')
-    expect(config.fullyParallel).toBe(false)
-    expect(config.workers).toBe(1)
+    expect(config.fullyParallel).toBeUndefined()
+    expect(config.workers).toBeUndefined()
     expect(config.retries).toBe(0)
     expect(config.forbidOnly).toBe(true)
     expect(config.use?.trace).toBe('retain-on-failure')

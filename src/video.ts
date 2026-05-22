@@ -11,7 +11,7 @@ import type {
 import { mkdir, rm } from 'fs/promises'
 import { join } from 'path'
 import { attachRecorder } from 'playwright-recorder-plus'
-import type { Recorder } from 'playwright-recorder-plus'
+import type { Recorder, StopResult } from 'playwright-recorder-plus'
 import { sanitizeVideoName } from './sanitize.js'
 import type {
   AspectRatio,
@@ -24,17 +24,11 @@ import type {
 import type { Page } from '@playwright/test'
 export { getDimensions } from './dimensions.js'
 import { getDimensions, getViewportCenter } from './dimensions.js'
-import {
-  setActiveCueRecorder,
-  resetCueChain,
-  validateCustomVoiceRefs,
-} from './cue.js'
+import { resetCueChain } from './cue.js'
+import { setActiveCueRecorder } from './cue.js'
 import { setActiveHideRecorder } from './hide.js'
 import { setActiveAutoZoomRecorder, setActiveZoomPage } from './autoZoom.js'
-import {
-  setActiveAssetRecorder,
-  validateRegisteredAssetPaths,
-} from './asset.js'
+import { setActiveAssetRecorder } from './asset.js'
 import {
   DEFAULT_VIDEO_OPTIONS,
   DEFAULT_ASPECT_RATIO,
@@ -43,15 +37,49 @@ import {
 } from './defaults.js'
 import { EventRecorder } from './events.js'
 import {
-  setActiveClickRecorder,
+  bindClickRecorderToPage,
   instrumentBrowser,
   instrumentContext,
+  setActiveClickRecorder,
 } from './instrument.js'
 import { logger } from './logger.js'
 import { setMousePosition } from './mouse.js'
 import { getChromiumLaunchOptions } from './browserLaunchOptions.js'
+import {
+  createScreenCIRuntimeContext,
+  runWithScreenCIRuntimeContext,
+  setActiveScreenCIRuntimeContext,
+  setRuntimeAssetRecorder,
+  setRuntimeAutoZoomRecorder,
+  setRuntimeClickRecorder,
+  setRuntimeCueRecorder,
+  setRuntimeHideRecorder,
+  setRuntimePage,
+} from './runtimeContext.js'
 
 export const POST_VIDEO_PAUSE = 500
+
+type DeferredRecordingStop = {
+  recorder: Recorder
+}
+
+type WorkerFinalizationQueue = DeferredRecordingStop[]
+
+export async function finalizeDeferredRecordingStops(
+  entries: DeferredRecordingStop[]
+): Promise<void> {
+  await Promise.all(
+    entries.map(async ({ recorder }) => {
+      const stopResult = await recorder.stop()
+      if (!stopResult.written) {
+        logger.warn(
+          'Screen recording did not write any frames. Test will continue without recording.'
+        )
+      }
+      await recorder.finalized
+    })
+  )
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -117,6 +145,7 @@ async function startScreencastRecording(
 
   const recorder = await attachRecorder(page, {
     path: outputPath,
+    intermediatePath: outputPath,
     autoStart: false,
     size: { width, height },
     fps,
@@ -137,7 +166,50 @@ async function startScreencastRecording(
     ],
   })
 
+  // Keep the recorder's realtime first-pass mp4 as the final artifact.
+  // This disables the library's background second-pass transcode so shared
+  // worker teardown only needs to flush stop() after all tests have paused.
+  ;(
+    recorder as Recorder & {
+      runSecondPass?: (firstPass: StopResult) => Promise<StopResult>
+    }
+  ).runSecondPass = async (firstPass) => firstPass
+
   return recorder
+}
+
+async function withActiveRecordingContext<T>(params: {
+  runtimeContext: ReturnType<typeof createScreenCIRuntimeContext>
+  page: Page
+  recorder: EventRecorder | null
+  fn: () => Promise<T>
+}): Promise<T> {
+  const { runtimeContext, page, recorder, fn } = params
+
+  setActiveScreenCIRuntimeContext(runtimeContext)
+
+  try {
+    return await runWithScreenCIRuntimeContext(runtimeContext, async () => {
+      resetCueChain()
+      setRuntimeCueRecorder(recorder)
+      setRuntimeHideRecorder(recorder)
+      setRuntimeAutoZoomRecorder(recorder)
+      setRuntimeAssetRecorder(recorder)
+      setRuntimeClickRecorder(recorder)
+      setActiveCueRecorder(recorder)
+      setActiveHideRecorder(recorder)
+      setActiveAutoZoomRecorder(recorder)
+      setActiveZoomPage(page)
+      setActiveAssetRecorder(recorder)
+      setActiveClickRecorder(recorder)
+      bindClickRecorderToPage(page, recorder)
+      setRuntimePage(page)
+
+      return await fn()
+    })
+  } finally {
+    setActiveScreenCIRuntimeContext(null)
+  }
 }
 
 type VideoFixtureOptions = {
@@ -145,9 +217,25 @@ type VideoFixtureOptions = {
   renderOptions: RenderOptions | undefined
 }
 
-const _videoBase = base.extend<VideoFixtureOptions>({
+const _videoBase = base.extend<
+  VideoFixtureOptions,
+  { recordingFinalizationQueue: WorkerFinalizationQueue }
+>({
   recordOptions: [DEFAULT_VIDEO_OPTIONS, { option: true }],
   renderOptions: [undefined, { option: true }],
+  recordingFinalizationQueue: [
+    async ({}, use) => {
+      const queue: WorkerFinalizationQueue = []
+      await use(queue)
+
+      if (process.env.SCREENCI_RECORDING !== 'true' || queue.length === 0) {
+        return
+      }
+
+      await finalizeDeferredRecordingStops(queue)
+    },
+    { scope: 'worker' },
+  ],
 
   browser: async ({ playwright }, use) => {
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
@@ -196,24 +284,29 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     await context.close()
   },
 
-  page: async ({ context, recordOptions, renderOptions }, use, testInfo) => {
+  page: async (
+    { context, recordOptions, renderOptions, recordingFinalizationQueue },
+    use,
+    testInfo
+  ) => {
     // Only record when explicitly enabled (record command)
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
 
     if (!shouldRecord) {
-      // Skip recording, just create page
-      resetCueChain()
-      setActiveCueRecorder(null)
-      setActiveClickRecorder(null)
-      setActiveHideRecorder(null)
-      setActiveAutoZoomRecorder(null)
-      setActiveZoomPage(null)
-      setActiveAssetRecorder(null)
       const page = await context.newPage()
-      setActiveZoomPage(page)
-      await use(page)
+      const runtimeContext = createScreenCIRuntimeContext({
+        page,
+        testFilePath: testInfo.file,
+      })
+      await withActiveRecordingContext({
+        runtimeContext,
+        page,
+        recorder: null,
+        fn: async () => {
+          await use(page)
+        },
+      })
       await page.close()
-      setActiveZoomPage(null)
       return
     }
 
@@ -243,16 +336,14 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     const videoPath = join(videoDir, 'recording.mp4')
 
     const recorder = new EventRecorder(renderOptions, recordOptions)
-    resetCueChain()
-    setActiveCueRecorder(recorder)
-    setActiveClickRecorder(recorder)
-    setActiveHideRecorder(recorder)
-    setActiveAutoZoomRecorder(recorder)
-    setActiveAssetRecorder(recorder)
 
     // Create page FIRST to ensure browser window is rendered
     const page = await context.newPage()
-    setActiveZoomPage(page)
+    const runtimeContext = createScreenCIRuntimeContext({
+      recorder,
+      page,
+      testFilePath: testInfo.file,
+    })
 
     await setupMouseTracking(page, recorder)
 
@@ -262,9 +353,6 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     // Wait for browser window to be fully rendered before starting recording
     // This prevents black screen captures
     await page.waitForTimeout(1500)
-
-    await validateCustomVoiceRefs(testInfo.file)
-    await validateRegisteredAssetPaths(testInfo.file)
 
     const screenRecorder = await startScreencastRecording(
       page,
@@ -280,26 +368,29 @@ const _videoBase = base.extend<VideoFixtureOptions>({
     recorder.start()
 
     try {
-      await use(page)
+      await withActiveRecordingContext({
+        runtimeContext,
+        page,
+        recorder,
+        fn: async () => {
+          await use(page)
 
-      // Do not end video abruptly.
-      await sleep(POST_VIDEO_PAUSE)
+          // Do not end video abruptly.
+          await sleep(POST_VIDEO_PAUSE)
+        },
+      })
     } finally {
-      const stopResult = await screenRecorder.stop()
-      await screenRecorder.finalized
-      if (!stopResult.written) {
-        logger.warn(
-          'Screen recording did not write any frames. Test will continue without recording.'
-        )
-      }
-
-      await page.close()
+      await screenRecorder.pause()
+      recordingFinalizationQueue.push({ recorder: screenRecorder })
       setActiveCueRecorder(null)
-      setActiveClickRecorder(null)
       setActiveHideRecorder(null)
       setActiveAutoZoomRecorder(null)
       setActiveZoomPage(null)
       setActiveAssetRecorder(null)
+      setActiveClickRecorder(null)
+      bindClickRecorderToPage(page, null)
+
+      await page.close()
 
       // Write recorded events next to the video
       await recorder.writeToFile(videoDir, testInfo.title)

@@ -97,11 +97,11 @@ video('Another 4K test', async ({ page }) => {
 
 ## What `defineConfig` enforces
 
-These Playwright settings are set automatically and cannot be overridden — they are required for correct video recording:
+These Playwright settings are still managed automatically by ScreenCI:
 
-| Setting         | Value          | Reason                                     |
-| --------------- | -------------- | ------------------------------------------ |
-| `workers`       | `1`            | Recordings are captured sequentially       |
-| `fullyParallel` | `false`        | Same as above                              |
-| `retries`       | `0`            | Retrying would overwrite the video         |
-| `testMatch`     | `**/*.video.*` | Scopes Playwright to video test files only |
+| Setting     | Value          | Reason                                     |
+| ----------- | -------------- | ------------------------------------------ |
+| `retries`   | `0`            | Retrying would overwrite the video         |
+| `testMatch` | `**/*.video.*` | Scopes Playwright to video test files only |
+
+`workers` and `fullyParallel` now use normal Playwright behavior unless you set them yourself.

@@ -1,8 +1,11 @@
 import type { IEventRecorder } from './events.js'
 import { resolveRecordingTimingDuration } from './runtimeMode.js'
-
-let activeRecorder: IEventRecorder | null = null
-let insideHide = false
+import {
+  getRuntimeHideRecorder,
+  isRuntimeInsideHide,
+  setRuntimeInsideHide,
+  setRuntimeHideRecorder,
+} from './runtimeContext.js'
 
 export const POST_HIDE_PAUSE = 350
 
@@ -13,11 +16,11 @@ function sleep(ms: number): Promise<void> {
 }
 
 export function setActiveHideRecorder(recorder: IEventRecorder | null): void {
-  activeRecorder = recorder
+  setRuntimeHideRecorder(recorder)
 }
 
 export function isInsideHide(): boolean {
-  return insideHide
+  return isRuntimeInsideHide()
 }
 
 /**
@@ -43,10 +46,11 @@ export function isInsideHide(): boolean {
  * ```
  */
 export async function hide(fn: () => Promise<void> | void): Promise<void> {
-  if (insideHide) {
+  if (isInsideHide()) {
     throw new Error('Cannot nest hide() calls')
   }
-  insideHide = true
+  setRuntimeInsideHide(true)
+  const activeRecorder = getRuntimeHideRecorder()
   if (activeRecorder !== null) {
     activeRecorder.addHideStart()
   }
@@ -55,7 +59,7 @@ export async function hide(fn: () => Promise<void> | void): Promise<void> {
     // Browser rendering/recording has a short delay.
     await sleep(POST_HIDE_PAUSE)
   } finally {
-    insideHide = false
+    setRuntimeInsideHide(false)
   }
   if (activeRecorder !== null) {
     activeRecorder.addHideEnd()

@@ -30,8 +30,8 @@ You'll be prompted for a project name. screenci scaffolds the project and prints
 
 `screenci init` supports both standalone ScreenCI projects and adding ScreenCI to an existing repository:
 
-- **Standalone project** creates a new directory named after your project and optionally puts the GitHub Action inside that directory.
-- **Part of existing repository** creates `screenci/` and puts the optional GitHub Action at the repository root in `.github/workflows/screenci.yaml`.
+- **Standalone project** creates a new directory named after your project and optionally puts the GitHub Action that records videos inside that directory.
+- **Part of existing repository** creates `screenci/` and puts the optional GitHub Action that records videos at the repository root in `.github/workflows/screenci.yaml`.
 
 After initialization, change into the project directory that was just created. Use `cd screenci` for an existing repository setup, or `cd your-project-name` for a standalone project.
 
@@ -53,29 +53,7 @@ Inside the ScreenCI project directory, verify the starter video script works bef
 npm run test
 ```
 
-This is similar to running `playwright test`: it executes the `.video.ts` script without recording, so you can quickly check selectors, timing, and narration cues.
-
-To keep the feedback loop fast, `screenci test` skips ScreenCI's recording-only cursor animations and built-in pacing delays. If you need to debug the recording-style timing without starting a real recording, use:
-
-```bash
-npx screenci test --mock-record
-```
-
-You can also pass normal Playwright test arguments through `screenci test`, for example:
-
-```bash
-npx screenci test --grep "example"
-npx screenci test videos/example.video.ts
-```
-
-That also means you can run only some tests while iterating:
-
-```bash
-npx screenci test videos/example.video.ts
-npx screenci test --grep "intro"
-```
-
-`npx screenci test` still injects your resolved `screenci.config.ts` automatically. `--config` and `--verbose` are reserved for the `screenci` CLI itself.
+This is similar to running `playwright test`: it executes the `.video.ts` script without recording, so you can quickly check that the video script works before recording.
 
 ## Record
 

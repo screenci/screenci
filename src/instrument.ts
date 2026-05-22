@@ -64,13 +64,35 @@ import {
   setOriginalMouseUp,
 } from './mouse.js'
 import { resolveRecordingTimingDuration } from './runtimeMode.js'
+import {
+  getRuntimeClickRecorder,
+  setRuntimeClickRecorder,
+} from './runtimeContext.js'
 
-let activeClickRecorder: IEventRecorder | null = null
+let fallbackClickRecorder: IEventRecorder | null = null
+const pageClickRecorders = new WeakMap<object, IEventRecorder | null>()
+
 const DEFAULT_PRE_CLICK_PAUSE_MS = 50
 const DEFAULT_POST_CLICK_PAUSE_MS = 500
 
 export function setActiveClickRecorder(recorder: IEventRecorder | null): void {
-  activeClickRecorder = recorder
+  fallbackClickRecorder = recorder
+  setRuntimeClickRecorder(recorder)
+}
+
+export function bindClickRecorderToPage(
+  page: object,
+  recorder: IEventRecorder | null
+): void {
+  pageClickRecorders.set(page, recorder)
+}
+
+function getActiveClickRecorder(page?: object): IEventRecorder | null {
+  if (page !== undefined && pageClickRecorders.has(page)) {
+    return pageClickRecorders.get(page) ?? null
+  }
+
+  return getRuntimeClickRecorder() ?? fallbackClickRecorder
 }
 
 const instrumented = new WeakSet<object>()
@@ -567,6 +589,7 @@ export function instrumentLocator(locator: Locator): Locator {
       false
     )
 
+    const activeClickRecorder = getActiveClickRecorder(locator.page())
     if (activeClickRecorder && result) {
       activeClickRecorder.addInput('click', undefined, result.innerEvents)
     }
@@ -652,6 +675,7 @@ export function instrumentLocator(locator: Locator): Locator {
     innerEvents.push(...(clickActionResult?.innerEvents ?? []))
     elementRect = clickActionResult?.elementRect
 
+    const activeClickRecorder = getActiveClickRecorder(locator.page())
     if (activeClickRecorder) {
       activeClickRecorder.addInput(
         'pressSequentially',
@@ -758,6 +782,7 @@ export function instrumentLocator(locator: Locator): Locator {
     innerEvents.push(...(clickActionResult?.innerEvents ?? []))
     elementRect = clickActionResult?.elementRect
 
+    const activeClickRecorder = getActiveClickRecorder(locator.page())
     if (activeClickRecorder) {
       activeClickRecorder.addInput(
         'pressSequentially',
@@ -818,6 +843,7 @@ export function instrumentLocator(locator: Locator): Locator {
       false
     )
 
+    const activeClickRecorder = getActiveClickRecorder(locator.page())
     if (activeClickRecorder && result) {
       activeClickRecorder.addInput(
         'tap',
@@ -877,6 +903,7 @@ export function instrumentLocator(locator: Locator): Locator {
       false
     )
 
+    const activeClickRecorder = getActiveClickRecorder(locator.page())
     if (activeClickRecorder && result) {
       activeClickRecorder.addInput(
         'check',
@@ -936,6 +963,7 @@ export function instrumentLocator(locator: Locator): Locator {
       false
     )
 
+    const activeClickRecorder = getActiveClickRecorder(locator.page())
     if (activeClickRecorder && result) {
       activeClickRecorder.addInput(
         'uncheck',
@@ -1021,6 +1049,7 @@ export function instrumentLocator(locator: Locator): Locator {
       clickOpt?.postClickMove
     )
 
+    const activeClickRecorder = getActiveClickRecorder(locator.page())
     if (activeClickRecorder && actionResult) {
       activeClickRecorder.addInput(
         'select',
@@ -1089,6 +1118,7 @@ export function instrumentLocator(locator: Locator): Locator {
       endMs: waitFinishMs,
     })
 
+    const activeClickRecorder = getActiveClickRecorder(locator.page())
     if (activeClickRecorder && innerEvents.length > 0) {
       activeClickRecorder.addInput('hover', locatorRect, innerEvents)
     }
@@ -1123,6 +1153,7 @@ export function instrumentLocator(locator: Locator): Locator {
       ...(centering !== undefined ? { centering } : {}),
     })
 
+    const activeClickRecorder = getActiveClickRecorder(locator.page())
     if (activeClickRecorder) {
       activeClickRecorder.addInput('focusChange', result.elementRect, [result])
     }
@@ -1183,6 +1214,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const locatorRect = selectActionResult?.elementRect
     innerEvents.push(...(selectActionResult?.innerEvents ?? []))
 
+    const activeClickRecorder = getActiveClickRecorder(locator.page())
     if (activeClickRecorder && innerEvents.length > 0) {
       activeClickRecorder.addInput('selectText', locatorRect, innerEvents)
     }
@@ -1325,6 +1357,7 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     )
 
+    const activeClickRecorder = getActiveClickRecorder(locator.page())
     if (activeClickRecorder && innerEvents.length > 0) {
       activeClickRecorder.addInput(
         'dragTo',
@@ -1522,6 +1555,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
       },
     }
 
+    const activeClickRecorder = getActiveClickRecorder(page)
     if (activeClickRecorder) {
       // Auto-show cursor when moving after a typing auto-hide
       if (!isMouseVisible(page)) {
@@ -1545,6 +1579,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
         mouseShowInternal: getOriginalMouseShow(page, originalShow),
         page,
       })
+      const activeClickRecorder = getActiveClickRecorder(page)
       if (activeClickRecorder) {
         const timeMs = Date.now()
         const showEvent: MouseShowEvent = {
@@ -1562,6 +1597,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
         mouseHideInternal: getOriginalMouseHide(page, originalHide),
         page,
       })
+      const activeClickRecorder = getActiveClickRecorder(page)
       if (activeClickRecorder) {
         const timeMs = Date.now()
         const hideEvent: MouseHideEvent = {

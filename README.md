@@ -111,7 +111,7 @@ export default defineConfig({
 })
 ```
 
-screenci enforces `workers: 1`, `retries: 0`, and `fullyParallel: false` so each generated video has one deterministic timeline. Don't fight it.
+screenci still locks `retries: 0` and manages video test discovery for you. `workers` and `fullyParallel` pass through to Playwright unchanged, including concurrent recordings inside a worker.
 
 ## AI narration
 

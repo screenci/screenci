@@ -111,6 +111,7 @@ describe('CLI', () => {
     mockAppendFile.mockResolvedValue(undefined)
     mockWriteFile.mockResolvedValue(undefined)
     mockMkdir.mockResolvedValue(undefined)
+    mockReaddir.mockResolvedValue([])
     mockReadFile.mockImplementation(async (path: string | URL) => {
       if (String(path).endsWith('package.json')) {
         return JSON.stringify({ version: '0.0.32' })
@@ -2118,54 +2119,101 @@ describe('CLI', () => {
       process.env.SCREENCI_SECRET = 'test-secret'
     })
 
-    it('should throw error when --fully-parallel is provided', async () => {
+    it('should allow --fully-parallel to pass through', async () => {
       process.argv = ['node', 'cli.js', 'record', '--fully-parallel']
+      mockSpawn.mockImplementation(
+        (
+          _command: string,
+          args: string[],
+          _options?: { env?: NodeJS.ProcessEnv }
+        ) => {
+          expect(args).toContain('--fully-parallel')
+          process.nextTick(() => mockChildProcess.emit('close', 0))
+          return mockChildProcess as unknown as ChildProcess
+        }
+      )
 
       const { main } = await import('./cli')
 
-      await expect(main()).rejects.toThrow(
-        'Flag "--fully-parallel" is not supported by screenci'
-      )
+      await main()
     })
 
-    it('should throw error when --workers is provided', async () => {
+    it('should allow --workers to pass through', async () => {
       process.argv = ['node', 'cli.js', 'record', '--workers', '4']
+      mockSpawn.mockImplementation(
+        (
+          _command: string,
+          args: string[],
+          _options?: { env?: NodeJS.ProcessEnv }
+        ) => {
+          expect(args).toContain('--workers')
+          expect(args).toContain('4')
+          process.nextTick(() => mockChildProcess.emit('close', 0))
+          return mockChildProcess as unknown as ChildProcess
+        }
+      )
 
       const { main } = await import('./cli')
 
-      await expect(main()).rejects.toThrow(
-        'Flag "--workers" is not supported by screenci'
-      )
+      await main()
     })
 
-    it('should throw error when --workers=N is provided', async () => {
+    it('should allow --workers=N to pass through', async () => {
       process.argv = ['node', 'cli.js', 'record', '--workers=4']
+      mockSpawn.mockImplementation(
+        (
+          _command: string,
+          args: string[],
+          _options?: { env?: NodeJS.ProcessEnv }
+        ) => {
+          expect(args).toContain('--workers=4')
+          process.nextTick(() => mockChildProcess.emit('close', 0))
+          return mockChildProcess as unknown as ChildProcess
+        }
+      )
 
       const { main } = await import('./cli')
 
-      await expect(main()).rejects.toThrow(
-        'Flag "--workers=4" is not supported by screenci'
-      )
+      await main()
     })
 
-    it('should throw error when -j is provided', async () => {
+    it('should allow -j to pass through', async () => {
       process.argv = ['node', 'cli.js', 'record', '-j', '4']
+      mockSpawn.mockImplementation(
+        (
+          _command: string,
+          args: string[],
+          _options?: { env?: NodeJS.ProcessEnv }
+        ) => {
+          expect(args).toContain('-j')
+          expect(args).toContain('4')
+          process.nextTick(() => mockChildProcess.emit('close', 0))
+          return mockChildProcess as unknown as ChildProcess
+        }
+      )
 
       const { main } = await import('./cli')
 
-      await expect(main()).rejects.toThrow(
-        'Flag "-j" is not supported by screenci'
-      )
+      await main()
     })
 
-    it('should throw error when -j=N is provided', async () => {
+    it('should allow -j=N to pass through', async () => {
       process.argv = ['node', 'cli.js', 'record', '-j=4']
+      mockSpawn.mockImplementation(
+        (
+          _command: string,
+          args: string[],
+          _options?: { env?: NodeJS.ProcessEnv }
+        ) => {
+          expect(args).toContain('-j=4')
+          process.nextTick(() => mockChildProcess.emit('close', 0))
+          return mockChildProcess as unknown as ChildProcess
+        }
+      )
 
       const { main } = await import('./cli')
 
-      await expect(main()).rejects.toThrow(
-        'Flag "-j=4" is not supported by screenci'
-      )
+      await main()
     })
 
     it('should throw error when --retries is provided', async () => {
@@ -2188,7 +2236,7 @@ describe('CLI', () => {
       )
     })
 
-    it('should throw error when multiple disallowed flags are provided', async () => {
+    it('should reject retries even when other parallel flags are present', async () => {
       process.argv = [
         'node',
         'cli.js',
@@ -2196,15 +2244,15 @@ describe('CLI', () => {
         '--workers',
         '4',
         '--fully-parallel',
+        '--retries',
+        '2',
       ]
 
       const { main } = await import('./cli')
 
-      await expect(main()).rejects.toThrow('is not supported by screenci')
-    })
-
-    it('should allow other valid flags to pass through', async () => {
-      expect(true).toBe(true)
+      await expect(main()).rejects.toThrow(
+        'Flag "--retries" is not supported by screenci'
+      )
     })
   })
 })

@@ -1,9 +1,19 @@
 import type { Page } from '@playwright/test'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { invalidOptionError, ScreenciError } from './errors.js'
-import type { ElementRect, IEventRecorder } from './events.js'
+import type { IEventRecorder } from './events.js'
 import type { AutoZoomOptions, Easing } from './types.js'
 import { resolveRecordingTimingDuration } from './runtimeMode.js'
+import {
+  type AutoZoomState,
+  type CurrentZoomViewport,
+  getRuntimeAutoZoomState,
+  getRuntimeAutoZoomRecorder,
+  getRuntimePage,
+  setRuntimeAutoZoomState,
+  setRuntimeAutoZoomRecorder,
+  setRuntimePage,
+} from './runtimeContext.js'
 
 function assertAutoZoomUnitIntervalOption(
   value: number,
@@ -19,64 +29,38 @@ function assertAutoZoomUnitIntervalOption(
   }
 }
 
-export type CurrentZoomViewport = {
-  focusPoint: { x: number; y: number }
-  elementRect?: ElementRect
-  end: {
-    pointPx: { x: number; y: number }
-    size: { widthPx: number; heightPx: number }
-  }
-  optimalOffset?: { x: number; y: number }
-  viewportSize: { width: number; height: number }
-}
-
-let activeRecorder: IEventRecorder | null = null
-let activeZoomPage: Page | null = null
-let currentAutoZoomState: AutoZoomState = {
-  insideAutoZoom: false,
-  mode: 'idle',
-  options: {},
-  currentZoomViewport: null,
-}
-
 export function setActiveAutoZoomRecorder(
   recorder: IEventRecorder | null
 ): void {
-  activeRecorder = recorder
+  setRuntimeAutoZoomRecorder(recorder)
 }
 
 export function getActiveAutoZoomRecorder(): IEventRecorder | null {
-  return activeRecorder
+  return getRuntimeAutoZoomRecorder()
 }
 
 export function setActiveZoomPage(page: Page | null): void {
-  activeZoomPage = page
+  setRuntimePage(page)
 }
 
 export function getActiveZoomPage(): Page | null {
-  return activeZoomPage
+  return getRuntimePage()
 }
 
 export function getCurrentZoomViewport(): CurrentZoomViewport | null {
-  return currentAutoZoomState.currentZoomViewport
-}
-
-export type AutoZoomState = {
-  insideAutoZoom: boolean
-  mode: 'idle' | 'auto' | 'manual'
-  options: AutoZoomOptions
-  currentZoomViewport: CurrentZoomViewport | null
+  return getAutoZoomState().currentZoomViewport
 }
 
 export function getAutoZoomState(): AutoZoomState {
-  return currentAutoZoomState
+  return getRuntimeAutoZoomState()
 }
 
 export function setAutoZoomState(state: AutoZoomState): void {
-  currentAutoZoomState = state
+  setRuntimeAutoZoomState(state)
 }
 
 export function setZoomMode(mode: AutoZoomState['mode']): void {
+  const currentAutoZoomState = getAutoZoomState()
   setAutoZoomState({
     ...currentAutoZoomState,
     mode,
@@ -86,6 +70,7 @@ export function setZoomMode(mode: AutoZoomState['mode']): void {
 export function setCurrentZoomViewport(
   viewport: CurrentZoomViewport | null
 ): void {
+  const currentAutoZoomState = getAutoZoomState()
   setAutoZoomState({
     ...currentAutoZoomState,
     currentZoomViewport: viewport,
@@ -99,6 +84,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 function resetAutoZoomState(): void {
+  const currentAutoZoomState = getAutoZoomState()
   setAutoZoomState({
     ...currentAutoZoomState,
     insideAutoZoom: false,
@@ -136,6 +122,7 @@ export async function autoZoom(
   fn: () => Promise<void> | void,
   options?: AutoZoomOptions
 ): Promise<void> {
+  const currentAutoZoomState = getAutoZoomState()
   if (currentAutoZoomState.insideAutoZoom) {
     throw new ScreenciError('Cannot nest autoZoom() calls')
   }
@@ -144,6 +131,7 @@ export async function autoZoom(
       'Cannot call autoZoom() while manual zoom is active'
     )
   }
+  const activeRecorder = getRuntimeAutoZoomRecorder()
   if (activeRecorder !== null) {
     activeRecorder.addAutoZoomStart(options)
   }
@@ -172,6 +160,8 @@ export async function autoZoom(
   })
   try {
     await fn()
+    const activeRecorder = getRuntimeAutoZoomRecorder()
+    const currentAutoZoomState = getAutoZoomState()
     if (activeRecorder !== null) {
       activeRecorder.addAutoZoomEnd(options)
       if (currentAutoZoomState.currentZoomViewport !== null) {

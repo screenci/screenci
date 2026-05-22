@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fileURLToPath } from 'url'
+import { mkdtempSync, writeFileSync, rmSync } from 'fs'
+import { join } from 'path'
+import { tmpdir } from 'os'
 import {
   createNarration,
   setActiveCueRecorder,
@@ -14,6 +17,10 @@ import type { RecordingEvent } from './events.js'
 import type { CustomVoiceRef } from './voices.js'
 import { modelTypes, voices } from './voices.js'
 import { logger } from './logger.js'
+import {
+  createScreenCIRuntimeContext,
+  runWithScreenCIRuntimeContext,
+} from './runtimeContext.js'
 
 function createMockRecorder(): IEventRecorder {
   return {
@@ -218,10 +225,102 @@ describe('createNarration', () => {
     })
     await validateCustomVoiceRefs(fileURLToPath(import.meta.url))
 
-    await first.clip.start()
-    await expect(second.clip.start()).rejects.toThrow(
-      'Duplicate cue name "clip" in one video recording'
+    await runWithScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({
+        testFilePath: fileURLToPath(import.meta.url),
+      }),
+      async () => {
+        setActiveCueRecorder(recorder)
+        await first.clip.start()
+        await expect(second.clip.start()).rejects.toThrow(
+          'Duplicate cue name "clip" in one video recording'
+        )
+      }
     )
+  })
+
+  it('isolates active cue state across concurrent runtime contexts', async () => {
+    const recorderA = createMockRecorder()
+    const recorderB = createMockRecorder()
+    const cues = createNarration(singleLangInput)
+
+    await Promise.all([
+      runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext(),
+        async () => {
+          setActiveCueRecorder(recorderA)
+          await cues.intro.start()
+          await cues.intro.end()
+        }
+      ),
+      runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext(),
+        async () => {
+          setActiveCueRecorder(recorderB)
+          await cues.intro.start()
+          await cues.intro.end()
+        }
+      ),
+    ])
+
+    expect(recorderA.addCueStart).toHaveBeenCalledOnce()
+    expect(recorderA.addCueEnd).toHaveBeenCalledOnce()
+    expect(recorderB.addCueStart).toHaveBeenCalledOnce()
+    expect(recorderB.addCueEnd).toHaveBeenCalledOnce()
+  })
+
+  it('resolves file cue asset hashes per runtime test context', async () => {
+    const tempDirA = mkdtempSync(join(tmpdir(), 'screenci-cue-a-'))
+    const tempDirB = mkdtempSync(join(tmpdir(), 'screenci-cue-b-'))
+
+    try {
+      writeFileSync(join(tempDirA, 'clip.txt'), 'context-a')
+      writeFileSync(join(tempDirB, 'clip.txt'), 'context-b')
+
+      const recorderA = createMockRecorder()
+      const recorderB = createMockRecorder()
+      const cues = createNarration({
+        voice: { name: voices.Ava },
+        languages: {
+          en: {
+            cues: { clip: { media: './clip.txt' } },
+          },
+        },
+      })
+
+      await Promise.all([
+        runWithScreenCIRuntimeContext(
+          createScreenCIRuntimeContext({
+            testFilePath: join(tempDirA, 'test.video.ts'),
+          }),
+          async () => {
+            setActiveCueRecorder(recorderA)
+            await cues.clip.start()
+          }
+        ),
+        runWithScreenCIRuntimeContext(
+          createScreenCIRuntimeContext({
+            testFilePath: join(tempDirB, 'test.video.ts'),
+          }),
+          async () => {
+            setActiveCueRecorder(recorderB)
+            await cues.clip.start()
+          }
+        ),
+      ])
+
+      const translationsA = (
+        recorderA.addVideoCueStart as ReturnType<typeof vi.fn>
+      ).mock.calls[0]?.[4] as Record<string, { assetHash: string }>
+      const translationsB = (
+        recorderB.addVideoCueStart as ReturnType<typeof vi.fn>
+      ).mock.calls[0]?.[4] as Record<string, { assetHash: string }>
+
+      expect(translationsA.en.assetHash).not.toBe(translationsB.en.assetHash)
+    } finally {
+      rmSync(tempDirA, { recursive: true, force: true })
+      rmSync(tempDirB, { recursive: true, force: true })
+    }
   })
 
   it('throws when languages is empty', () => {
@@ -401,42 +500,60 @@ describe('createNarration', () => {
       })
 
       await expect(cues.intro.start()).rejects.toThrow(
-        'Video cue asset hash missing for path: /tmp/intro-en.mp4'
+        'Asset file not found: /tmp/intro-en.mp4'
       )
     })
 
     it('allows custom voice refs before validation and resolves them at start', async () => {
-      const customVoice = {
-        path: './olli-sample.mp3',
-      } as CustomVoiceRef & { assetHash?: string }
-      const cues = createNarration({
-        voice: { name: voices.Ava },
-        languages: {
-          en: {
-            cues: { intro: 'Hello world' },
-          },
-          fi: {
-            voice: { name: customVoice },
-            cues: { intro: 'Hei maailma' },
-          },
-        },
-      })
+      const tempDir = mkdtempSync(join(tmpdir(), 'screenci-voice-'))
 
-      customVoice.assetHash = 'voice-hash'
-      await cues.intro.start()
+      try {
+        writeFileSync(join(tempDir, 'olli-sample.mp3'), 'voice-bytes')
 
-      expect(recorder.addCueStart).toHaveBeenCalledWith(
-        '',
-        'intro',
-        undefined,
-        {
-          en: { text: 'Hello world', voice: voices.Ava },
-          fi: {
-            text: 'Hei maailma',
-            voice: { assetHash: 'voice-hash', assetPath: './olli-sample.mp3' },
+        const customVoice = {
+          path: './olli-sample.mp3',
+        } as CustomVoiceRef
+        const cues = createNarration({
+          voice: { name: voices.Ava },
+          languages: {
+            en: {
+              cues: { intro: 'Hello world' },
+            },
+            fi: {
+              voice: { name: customVoice },
+              cues: { intro: 'Hei maailma' },
+            },
           },
-        }
-      )
+        })
+
+        await runWithScreenCIRuntimeContext(
+          createScreenCIRuntimeContext({
+            testFilePath: join(tempDir, 'test.video.ts'),
+          }),
+          async () => {
+            setActiveCueRecorder(recorder)
+            await cues.intro.start()
+          }
+        )
+
+        expect(recorder.addCueStart).toHaveBeenCalledWith(
+          '',
+          'intro',
+          undefined,
+          {
+            en: { text: 'Hello world', voice: voices.Ava },
+            fi: {
+              text: 'Hei maailma',
+              voice: {
+                assetHash: expect.any(String),
+                assetPath: './olli-sample.mp3',
+              },
+            },
+          }
+        )
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true })
+      }
     })
   })
 

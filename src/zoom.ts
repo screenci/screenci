@@ -2,7 +2,7 @@ import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import type { ElementRect, FocusChangeEvent } from './events.js'
 import { invalidOptionError } from './errors.js'
 import type { AutoZoomOptions } from './types.js'
-import type { AutoZoomState } from './autoZoom.js'
+import type { AutoZoomState } from './runtimeContext.js'
 
 type FocusChangeZoom = NonNullable<FocusChangeEvent['zoom']>
 

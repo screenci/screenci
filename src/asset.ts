@@ -1,6 +1,10 @@
 import type { IEventRecorder } from './events.js'
 import { access } from 'fs/promises'
 import { dirname, resolve } from 'path'
+import {
+  getRuntimeAssetRecorder,
+  setRuntimeAssetRecorder,
+} from './runtimeContext.js'
 
 export type AssetConfig = {
   path: string
@@ -8,11 +12,10 @@ export type AssetConfig = {
   fullScreen: boolean
 }
 
-let activeRecorder: IEventRecorder | null = null
 const registeredAssetPaths = new Set<string>()
 
 export function setActiveAssetRecorder(recorder: IEventRecorder | null): void {
-  activeRecorder = recorder
+  setRuntimeAssetRecorder(recorder)
 }
 
 export function resetRegisteredAssetPaths(): void {
@@ -102,6 +105,7 @@ function createAssetController(
   config: AssetConfig
 ): AssetController {
   const startFn = (): Promise<void> => {
+    const activeRecorder = getRuntimeAssetRecorder()
     if (activeRecorder === null) return Promise.resolve()
     activeRecorder.addAssetStart(
       name,

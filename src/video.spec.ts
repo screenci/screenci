@@ -1,7 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
 import { getDimensions, getViewportCenter } from './dimensions.js'
 import { getMousePosition } from './mouse.js'
-import { POST_VIDEO_PAUSE, positionMouseAtViewportCenter } from './video.js'
+import {
+  finalizeDeferredRecordingStops,
+  POST_VIDEO_PAUSE,
+  positionMouseAtViewportCenter,
+} from './video.js'
 
 /**
  * Dimension table (shorter side = quality base, longer side from ratio):
@@ -238,5 +242,77 @@ describe('startup mouse positioning', () => {
 describe('POST_VIDEO_PAUSE', () => {
   it('adds a 500ms tail before stopping recording resources', () => {
     expect(POST_VIDEO_PAUSE).toBe(500)
+  })
+})
+
+describe('deferred recording stops', () => {
+  it('does not stop recorders until shared finalization runs', async () => {
+    const finalized = Promise.resolve({ written: true })
+    const recorder = {
+      stop: vi.fn().mockResolvedValue({ written: true }),
+      finalized,
+    }
+
+    expect(recorder.stop).not.toHaveBeenCalled()
+
+    await finalizeDeferredRecordingStops([{ recorder: recorder as never }])
+
+    expect(recorder.stop).toHaveBeenCalledOnce()
+  })
+
+  it('waits for every deferred stop to finalize', async () => {
+    let resolveFirst!: () => void
+    let resolveSecond!: () => void
+    const firstRecorder = {
+      stop: vi.fn().mockResolvedValue({ written: true }),
+      finalized: new Promise((resolve) => {
+        resolveFirst = () => resolve({ written: true })
+      }),
+    }
+    const secondRecorder = {
+      stop: vi.fn().mockResolvedValue({ written: true }),
+      finalized: new Promise((resolve) => {
+        resolveSecond = () => resolve({ written: true })
+      }),
+    }
+
+    let completed = false
+    const finalizePromise = finalizeDeferredRecordingStops([
+      { recorder: firstRecorder as never },
+      { recorder: secondRecorder as never },
+    ]).then(() => {
+      completed = true
+    })
+
+    await Promise.resolve()
+    expect(completed).toBe(false)
+
+    resolveFirst()
+    await Promise.resolve()
+    expect(completed).toBe(false)
+
+    resolveSecond()
+    await finalizePromise
+
+    expect(completed).toBe(true)
+  })
+
+  it('surfaces finalization failures from deferred stops', async () => {
+    let rejectFinalized!: (error: Error) => void
+    const finalized = new Promise((_, reject) => {
+      rejectFinalized = reject
+    })
+    finalized.catch(() => {})
+    const recorder = {
+      stop: vi.fn().mockResolvedValue({ written: true }),
+      finalized,
+    }
+
+    const finalizePromise = finalizeDeferredRecordingStops([
+      { recorder: recorder as never },
+    ])
+    rejectFinalized(new Error('finalization failed'))
+
+    await expect(finalizePromise).rejects.toThrow('finalization failed')
   })
 })

@@ -736,13 +736,7 @@ export type CueConfig = {
 
 export type ScreenCIConfig = Omit<
   PlaywrightTestConfig,
-  | 'fullyParallel'
-  | 'workers'
-  | 'retries'
-  | 'testDir'
-  | 'testMatch'
-  | 'use'
-  | 'projects'
+  'retries' | 'testDir' | 'testMatch' | 'use' | 'projects'
 > & {
   /**
    * Name of the project. Used to identify the project in screenci.com.
@@ -812,7 +806,4 @@ export type ScreenCIConfig = Omit<
 }
 
 export type ExtendedScreenCIConfig = ScreenCIConfig &
-  Pick<
-    PlaywrightTestConfig,
-    'fullyParallel' | 'workers' | 'retries' | 'testDir' | 'testMatch'
-  >
+  Pick<PlaywrightTestConfig, 'retries' | 'testDir' | 'testMatch'>

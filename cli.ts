@@ -250,10 +250,30 @@ function spawnSilent(cmd: string, args: string[], cwd?: string): Promise<void> {
 
 function forwardChildSignals(
   child: ChildProcess,
-  activityLabel: string
+  activityLabel: string,
+  options: { killTree?: boolean; exitParentOnForward?: boolean } = {}
 ): { cleanup: () => void; getForwardedSignal: () => NodeJS.Signals | null } {
   let forwardedSignal: NodeJS.Signals | null = null
   let forceKillTimer: NodeJS.Timeout | null = null
+  const killTree = options.killTree ?? false
+  const exitParentOnForward = options.exitParentOnForward ?? false
+
+  const killChild = (signal: NodeJS.Signals): void => {
+    if (child.pid === undefined) return
+
+    if (killTree && process.platform !== 'win32') {
+      try {
+        process.kill(-child.pid, signal)
+        return
+      } catch {
+        // Fall back to direct child kill below.
+      }
+    }
+
+    if (!child.killed) {
+      child.kill(signal)
+    }
+  }
 
   const forwardSignal = (signal: NodeJS.Signals) => {
     if (forwardedSignal !== null) return
@@ -261,15 +281,18 @@ function forwardChildSignals(
     if (process.env.SCREENCI_SIGNAL_LOGGING !== 'silent') {
       logger.info(`Received ${signal}, stopping ${activityLabel}...`)
     }
-    if (!child.killed) {
-      child.kill(signal)
+    killChild(signal)
+    if (exitParentOnForward) {
+      cleanup()
+      process.exit(signal === 'SIGINT' ? 130 : 143)
     }
     forceKillTimer = setTimeout(() => {
       if (child.exitCode === null) {
         if (process.env.SCREENCI_SIGNAL_LOGGING !== 'silent') {
           logger.info(`Forcing ${activityLabel} to stop after timeout...`)
         }
-        child.kill('SIGKILL')
+        killChild('SIGKILL')
+        process.exit(signal === 'SIGINT' ? 130 : 143)
       }
     }, 3000)
     forceKillTimer.unref()
@@ -277,18 +300,30 @@ function forwardChildSignals(
 
   const handleSigint = () => forwardSignal('SIGINT')
   const handleSigterm = () => forwardSignal('SIGTERM')
+  const cleanupStdinListener = attachUploadAbortStdinListener(
+    process.stdin,
+    (signal) => {
+      if (process.env.SCREENCI_SIGNAL_LOGGING !== 'silent') {
+        logger.info(`Received ${signal}, stopping ${activityLabel}...`)
+      }
+      forwardSignal(signal)
+    }
+  )
+
+  const cleanup = () => {
+    if (forceKillTimer !== null) {
+      clearTimeout(forceKillTimer)
+    }
+    process.off('SIGINT', handleSigint)
+    process.off('SIGTERM', handleSigterm)
+    cleanupStdinListener()
+  }
 
   process.on('SIGINT', handleSigint)
   process.on('SIGTERM', handleSigterm)
 
   return {
-    cleanup: () => {
-      if (forceKillTimer !== null) {
-        clearTimeout(forceKillTimer)
-      }
-      process.off('SIGINT', handleSigint)
-      process.off('SIGTERM', handleSigterm)
-    },
+    cleanup,
     getForwardedSignal: () => forwardedSignal,
   }
 }
@@ -2094,7 +2129,7 @@ function parseConfigCliArgs(args: string[]): {
 }
 
 function validateArgs(args: string[]): void {
-  const disallowedFlags = ['--fully-parallel', '--workers', '-j', '--retries']
+  const disallowedFlags = ['--retries']
 
   for (const arg of args) {
     if (arg === undefined) continue
@@ -2103,19 +2138,15 @@ function validateArgs(args: string[]): void {
     if (disallowedFlags.includes(arg)) {
       throw new Error(
         `Flag "${arg}" is not supported by screenci. ` +
-          'screenci enforces sequential test execution with a single worker and no retries for proper video recording.'
+          'screenci forces retries to 0 for proper video recording.'
       )
     }
 
-    // Check if it's a --workers=N, -j=N, or --retries=N format
-    if (
-      arg.startsWith('--workers=') ||
-      arg.startsWith('-j=') ||
-      arg.startsWith('--retries=')
-    ) {
+    // Check if it's a --retries=N format
+    if (arg.startsWith('--retries=')) {
       throw new Error(
         `Flag "${arg}" is not supported by screenci. ` +
-          'screenci enforces sequential test execution with a single worker and no retries for proper video recording.'
+          'screenci forces retries to 0 for proper video recording.'
       )
     }
   }
@@ -2200,6 +2231,7 @@ async function run(
   const spawnSpec = resolveSpawnSpec('playwright', playwrightArgs)
   const child = spawn(spawnSpec.command, spawnSpec.args, {
     stdio: 'inherit',
+    ...(process.platform !== 'win32' ? { detached: true } : {}),
     ...(spawnSpec.shell !== undefined ? { shell: spawnSpec.shell } : {}),
     env: {
       ...envForChild,
@@ -2213,25 +2245,31 @@ async function run(
         : {}),
     },
   })
-  const childSignals = forwardChildSignals(child, `screenci ${command}`)
+  const childSignals = forwardChildSignals(child, `screenci ${command}`, {
+    killTree: process.platform !== 'win32',
+    exitParentOnForward: true,
+  })
 
   return new Promise<void>((resolve, reject) => {
     child.on('close', (code, signal) => {
-      const forwardedSignal = childSignals.getForwardedSignal()
-      childSignals.cleanup()
-      if (forwardedSignal) {
-        process.kill(process.pid, forwardedSignal)
-        return
-      }
-      if (signal) {
-        process.kill(process.pid, signal)
-        return
-      }
-      if (code === 0) {
-        resolve()
-      } else {
-        reject(new Error(`Playwright exited with code ${code}`))
-      }
+      void (async () => {
+        const forwardedSignal = childSignals.getForwardedSignal()
+        childSignals.cleanup()
+
+        if (forwardedSignal) {
+          process.kill(process.pid, forwardedSignal)
+          return
+        }
+        if (signal) {
+          process.kill(process.pid, signal)
+          return
+        }
+        if (code === 0) {
+          resolve()
+        } else {
+          reject(new Error(`Playwright exited with code ${code}`))
+        }
+      })().catch(reject)
     })
 
     child.on('error', (err) => {

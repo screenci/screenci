@@ -78,7 +78,7 @@ This is mainly a troubleshooting option. Reach for it when:
 - a timing issue only shows up with animated cursor moves or ScreenCI's built-in pauses
 - you want to debug recording-like pacing without paying the full cost of local recording
 
-To run only some tests, pass the same filters you would use with `playwright test`, such as a file path or `--grep`:
+You can also pass normal Playwright test arguments through `screenci test`. That means you can run only some tests while iterating by using the same filters you would use with `playwright test`, such as a file path or `--grep`:
 
 ```bash
 npx screenci test videos/onboarding.video.ts
@@ -89,9 +89,9 @@ npx screenci test videos/onboarding.video.ts --grep "step 2"
 Notes:
 
 - Most arguments after `test` are passed through as-is to `playwright test`
-- `screenci` always adds `--config <resolved-path-to-screenci.config.ts>` for you
-- `--config` / `-c` are handled by `screenci` itself, so use them to point to a different `screenci.config.ts`
-- `--verbose` / `-v` are also handled by `screenci` itself for extra CLI logging, not forwarded to Playwright
+- `screenci test` still injects your resolved `screenci.config.ts` automatically
+- `--config` / `-c` are reserved for the `screenci` CLI itself, so use them to point to a different `screenci.config.ts`
+- `--verbose` / `-v` are reserved for the `screenci` CLI itself for extra CLI logging, not forwarded to Playwright
 - `--mock-record` is handled by `screenci` itself and is not forwarded to Playwright
 
 ## `screenci record [playwrightArgs...]`
@@ -110,7 +110,11 @@ Options:
 
 Restrictions:
 
-- `--workers`, `-j`, `--retries`, and `--fully-parallel` are rejected because ScreenCI records sequentially with one worker
+- `--retries` is rejected because ScreenCI forces retries to `0`
+
+`--workers`, `-j`, and `--fully-parallel` pass through to Playwright unchanged.
+
+During `screenci record`, ScreenCI now waits for deferred recording finalization at the end of the run and shows a `Finalizing recordings...` spinner before reporting `Recordings finalized`.
 
 Troubleshooting:
 

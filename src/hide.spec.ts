@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { POST_HIDE_PAUSE, hide, setActiveHideRecorder } from './hide.js'
-import type { IEventRecorder } from './events.js'
+import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 
 function makeRecorder(): IEventRecorder {
   return {
@@ -29,10 +29,10 @@ describe('hide', () => {
 
   afterEach(() => {
     process.env = originalEnv
-    setActiveHideRecorder(null)
+    setActiveHideRecorder(NOOP_EVENT_RECORDER)
   })
 
-  describe('with active recorder', () => {
+  describe('with configured recorder', () => {
     let recorder: IEventRecorder
 
     beforeEach(() => {
@@ -156,8 +156,9 @@ describe('hide', () => {
     })
   })
 
-  describe('without active recorder', () => {
-    it('still executes the callback when recorder is null', async () => {
+  describe('with the default no-op recorder', () => {
+    it('still executes the callback', async () => {
+      setActiveHideRecorder(NOOP_EVENT_RECORDER)
       const called = vi.fn()
       await hide(called)
       expect(called).toHaveBeenCalledOnce()

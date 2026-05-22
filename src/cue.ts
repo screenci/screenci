@@ -102,7 +102,7 @@ async function toRecordedVoice(
  */
 function cueAutoEnd(nextCueName: string): void {
   const context = getScreenCIRuntimeContext()
-  if (context.cue.activeCueRun === null || context.cueRecorder === null) return
+  if (context.cue.activeCueRun === null) return
   if (
     context.cue.activeCueRun.startedWithExplicitStart &&
     context.cue.activeCueName !== null
@@ -154,7 +154,7 @@ function createActiveCueRun(startedWithExplicitStart: boolean): {
 
 async function endActiveCue(): Promise<void> {
   const context = getScreenCIRuntimeContext()
-  if (context.cueRecorder === null || context.cue.activeCueRun === null) return
+  if (context.cue.activeCueRun === null) return
   if (isInsideHide()) throw new Error('Cannot call end() inside hide()')
   const run = context.cue.activeCueRun
   context.cueRecorder.addCueEnd('wait')
@@ -511,7 +511,6 @@ function buildCuesFromInput(
       if (isInsideHide())
         throw new Error('Cannot start narration inside hide()')
       const recorder = getRuntimeCueRecorder()
-      if (recorder === null) return
       const context = getScreenCIRuntimeContext()
       if (!didRegisterName) {
         assertUniqueCueName(name)
@@ -527,7 +526,6 @@ function buildCuesFromInput(
     const end = async (): Promise<void> => {
       if (isInsideHide()) throw new Error('Cannot call end() inside hide()')
       const context = getScreenCIRuntimeContext()
-      if (context.cueRecorder === null) return
       if (
         context.cue.activeCueName !== name ||
         context.cue.activeCueRun === null

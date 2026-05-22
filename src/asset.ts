@@ -106,7 +106,6 @@ function createAssetController(
 ): AssetController {
   const startFn = (): Promise<void> => {
     const activeRecorder = getRuntimeAssetRecorder()
-    if (activeRecorder === null) return Promise.resolve()
     activeRecorder.addAssetStart(
       name,
       config.path,

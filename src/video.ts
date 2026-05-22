@@ -181,7 +181,7 @@ async function startScreencastRecording(
 async function withActiveRecordingContext<T>(params: {
   runtimeContext: ReturnType<typeof createScreenCIRuntimeContext>
   page: Page
-  recorder: EventRecorder | null
+  recorder: EventRecorder
   fn: () => Promise<T>
 }): Promise<T> {
   const { runtimeContext, page, recorder, fn } = params
@@ -291,17 +291,21 @@ const _videoBase = base.extend<
   ) => {
     // Only record when explicitly enabled (record command)
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
+    const recorder = new EventRecorder(renderOptions, recordOptions)
 
     if (!shouldRecord) {
       const page = await context.newPage()
       const runtimeContext = createScreenCIRuntimeContext({
+        recorder,
         page,
         testFilePath: testInfo.file,
       })
+      await setupMouseTracking(page, recorder)
+      recorder.start()
       await withActiveRecordingContext({
         runtimeContext,
         page,
-        recorder: null,
+        recorder,
         fn: async () => {
           await use(page)
         },
@@ -334,8 +338,6 @@ const _videoBase = base.extend<
 
     // Video output path - always use recording.mp4
     const videoPath = join(videoDir, 'recording.mp4')
-
-    const recorder = new EventRecorder(renderOptions, recordOptions)
 
     // Create page FIRST to ensure browser window is rendered
     const page = await context.newPage()
@@ -382,13 +384,6 @@ const _videoBase = base.extend<
     } finally {
       await screenRecorder.pause()
       recordingFinalizationQueue.push({ recorder: screenRecorder })
-      setActiveCueRecorder(null)
-      setActiveHideRecorder(null)
-      setActiveAutoZoomRecorder(null)
-      setActiveZoomPage(null)
-      setActiveAssetRecorder(null)
-      setActiveClickRecorder(null)
-      bindClickRecorderToPage(page, null)
 
       await page.close()
 

@@ -7,6 +7,7 @@ import type {
   FocusChangeEvent,
   MouseMoveEvent,
 } from './events.js'
+import { NOOP_EVENT_RECORDER } from './events.js'
 import {
   setActiveClickRecorder,
   instrumentLocator,
@@ -593,15 +594,15 @@ function makeNestedScrollLocatorMock() {
 }
 
 beforeEach(() => {
-  setActiveClickRecorder(null)
-  setActiveAutoZoomRecorder(null)
+  setActiveClickRecorder(NOOP_EVENT_RECORDER)
+  setActiveAutoZoomRecorder(NOOP_EVENT_RECORDER)
   setCurrentZoomViewport(null)
   vi.useFakeTimers()
 })
 
 afterEach(() => {
-  setActiveClickRecorder(null)
-  setActiveAutoZoomRecorder(null)
+  setActiveClickRecorder(NOOP_EVENT_RECORDER)
+  setActiveAutoZoomRecorder(NOOP_EVENT_RECORDER)
   setCurrentZoomViewport(null)
   vi.useRealTimers()
 })

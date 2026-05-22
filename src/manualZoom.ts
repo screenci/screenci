@@ -171,14 +171,12 @@ export async function zoomTo(
     setZoomMode(
       result.zoom !== undefined || previousMode === 'manual' ? 'manual' : 'idle'
     )
-    if (recorder !== null) {
-      recorder.addInput('focusChange', result.elementRect, [result])
-    }
+    recorder.addInput('focusChange', result.elementRect, [result])
     return
   }
 
   const result = await zoomToPoint(target, options)
-  if (result !== undefined && recorder !== null) {
+  if (result !== undefined) {
     recorder.addInput('focusChange', undefined, [result])
   }
 }
@@ -243,7 +241,5 @@ export async function resetZoom(options: AutoZoomOptions = {}): Promise<void> {
   })
   setZoomMode('idle')
 
-  if (recorder !== null) {
-    recorder.addInput('focusChange', viewport.elementRect, [result])
-  }
+  recorder.addInput('focusChange', viewport.elementRect, [result])
 }

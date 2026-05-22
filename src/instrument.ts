@@ -16,6 +16,7 @@ import type {
   MouseHideEvent,
   MouseWaitEvent,
 } from './events.js'
+import { NOOP_EVENT_RECORDER } from './events.js'
 import type {
   ClickBeforeFillOption,
   AutoZoomOptions,
@@ -69,14 +70,12 @@ import {
   setRuntimeClickRecorder,
 } from './runtimeContext.js'
 
-let fallbackClickRecorder: IEventRecorder | null = null
-const pageClickRecorders = new WeakMap<object, IEventRecorder | null>()
+const pageClickRecorders = new WeakMap<object, IEventRecorder>()
 
 const DEFAULT_PRE_CLICK_PAUSE_MS = 50
 const DEFAULT_POST_CLICK_PAUSE_MS = 500
 
 export function setActiveClickRecorder(recorder: IEventRecorder | null): void {
-  fallbackClickRecorder = recorder
   setRuntimeClickRecorder(recorder)
 }
 
@@ -84,15 +83,15 @@ export function bindClickRecorderToPage(
   page: object,
   recorder: IEventRecorder | null
 ): void {
-  pageClickRecorders.set(page, recorder)
+  pageClickRecorders.set(page, recorder ?? NOOP_EVENT_RECORDER)
 }
 
-function getActiveClickRecorder(page?: object): IEventRecorder | null {
+function getActiveClickRecorder(page?: object): IEventRecorder {
   if (page !== undefined && pageClickRecorders.has(page)) {
-    return pageClickRecorders.get(page) ?? null
+    return pageClickRecorders.get(page)!
   }
 
-  return getRuntimeClickRecorder() ?? fallbackClickRecorder
+  return getRuntimeClickRecorder()
 }
 
 const instrumented = new WeakSet<object>()

@@ -12,7 +12,7 @@ import {
 } from './cue.js'
 import * as screenci from '../index.js'
 import { hide, setActiveHideRecorder } from './hide.js'
-import type { IEventRecorder } from './events.js'
+import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
 import type { CustomVoiceRef } from './voices.js'
 import { modelTypes, voices } from './voices.js'
@@ -74,8 +74,8 @@ describe('createNarration', () => {
 
   afterEach(() => {
     warnSpy.mockRestore()
-    setActiveCueRecorder(null)
-    setActiveHideRecorder(null)
+    setActiveCueRecorder(NOOP_EVENT_RECORDER)
+    setActiveHideRecorder(NOOP_EVENT_RECORDER)
     setSleepFn((ms) => {
       const end = performance.now() + ms
       while (performance.now() < end) {}
@@ -346,8 +346,8 @@ describe('createNarration', () => {
     ).toBeUndefined()
   })
 
-  describe('without recorder', () => {
-    beforeEach(() => setActiveCueRecorder(null))
+  describe('with the default no-op recorder', () => {
+    beforeEach(() => setActiveCueRecorder(NOOP_EVENT_RECORDER))
 
     it('operations are no-ops', async () => {
       const cues = createNarration(singleLangInput)
@@ -355,7 +355,7 @@ describe('createNarration', () => {
       await cues.intro.start()
       await cues.intro.end()
 
-      expect(order).toEqual([])
+      expect(order).toEqual(['sleep', 'sleep'])
     })
   })
 

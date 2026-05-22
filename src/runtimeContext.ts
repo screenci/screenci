@@ -1,6 +1,10 @@
 import { AsyncLocalStorage } from 'async_hooks'
 import type { Page } from '@playwright/test'
-import type { IEventRecorder, ElementRect } from './events.js'
+import {
+  NOOP_EVENT_RECORDER,
+  type IEventRecorder,
+  type ElementRect,
+} from './events.js'
 import type { AutoZoomOptions } from './types.js'
 
 export type CurrentZoomViewport = {
@@ -28,11 +32,11 @@ export type ActiveCueRun = {
 }
 
 export type ScreenCIRuntimeContext = {
-  cueRecorder: IEventRecorder | null
-  hideRecorder: IEventRecorder | null
-  autoZoomRecorder: IEventRecorder | null
-  assetRecorder: IEventRecorder | null
-  clickRecorder: IEventRecorder | null
+  cueRecorder: IEventRecorder
+  hideRecorder: IEventRecorder
+  autoZoomRecorder: IEventRecorder
+  assetRecorder: IEventRecorder
+  clickRecorder: IEventRecorder
   page: Page | null
   testFilePath: string | null
   insideHide: boolean
@@ -56,7 +60,7 @@ export function createScreenCIRuntimeContext(
     testFilePath?: string | null
   } = {}
 ): ScreenCIRuntimeContext {
-  const defaultRecorder = overrides.recorder ?? null
+  const defaultRecorder = overrides.recorder ?? NOOP_EVENT_RECORDER
   return {
     cueRecorder: defaultRecorder,
     hideRecorder: defaultRecorder,
@@ -102,44 +106,44 @@ export function setActiveScreenCIRuntimeContext(
 }
 
 export function setRuntimeCueRecorder(recorder: IEventRecorder | null): void {
-  getScreenCIRuntimeContext().cueRecorder = recorder
+  getScreenCIRuntimeContext().cueRecorder = recorder ?? NOOP_EVENT_RECORDER
 }
 
-export function getRuntimeCueRecorder(): IEventRecorder | null {
+export function getRuntimeCueRecorder(): IEventRecorder {
   return getScreenCIRuntimeContext().cueRecorder
 }
 
 export function setRuntimeHideRecorder(recorder: IEventRecorder | null): void {
-  getScreenCIRuntimeContext().hideRecorder = recorder
+  getScreenCIRuntimeContext().hideRecorder = recorder ?? NOOP_EVENT_RECORDER
 }
 
-export function getRuntimeHideRecorder(): IEventRecorder | null {
+export function getRuntimeHideRecorder(): IEventRecorder {
   return getScreenCIRuntimeContext().hideRecorder
 }
 
 export function setRuntimeAutoZoomRecorder(
   recorder: IEventRecorder | null
 ): void {
-  getScreenCIRuntimeContext().autoZoomRecorder = recorder
+  getScreenCIRuntimeContext().autoZoomRecorder = recorder ?? NOOP_EVENT_RECORDER
 }
 
-export function getRuntimeAutoZoomRecorder(): IEventRecorder | null {
+export function getRuntimeAutoZoomRecorder(): IEventRecorder {
   return getScreenCIRuntimeContext().autoZoomRecorder
 }
 
 export function setRuntimeAssetRecorder(recorder: IEventRecorder | null): void {
-  getScreenCIRuntimeContext().assetRecorder = recorder
+  getScreenCIRuntimeContext().assetRecorder = recorder ?? NOOP_EVENT_RECORDER
 }
 
-export function getRuntimeAssetRecorder(): IEventRecorder | null {
+export function getRuntimeAssetRecorder(): IEventRecorder {
   return getScreenCIRuntimeContext().assetRecorder
 }
 
 export function setRuntimeClickRecorder(recorder: IEventRecorder | null): void {
-  getScreenCIRuntimeContext().clickRecorder = recorder
+  getScreenCIRuntimeContext().clickRecorder = recorder ?? NOOP_EVENT_RECORDER
 }
 
-export function getRuntimeClickRecorder(): IEventRecorder | null {
+export function getRuntimeClickRecorder(): IEventRecorder {
   return getScreenCIRuntimeContext().clickRecorder
 }
 

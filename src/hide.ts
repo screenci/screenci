@@ -51,9 +51,7 @@ export async function hide(fn: () => Promise<void> | void): Promise<void> {
   }
   setRuntimeInsideHide(true)
   const activeRecorder = getRuntimeHideRecorder()
-  if (activeRecorder !== null) {
-    activeRecorder.addHideStart()
-  }
+  activeRecorder.addHideStart()
   try {
     await fn()
     // Browser rendering/recording has a short delay.
@@ -61,7 +59,5 @@ export async function hide(fn: () => Promise<void> | void): Promise<void> {
   } finally {
     setRuntimeInsideHide(false)
   }
-  if (activeRecorder !== null) {
-    activeRecorder.addHideEnd()
-  }
+  activeRecorder.addHideEnd()
 }

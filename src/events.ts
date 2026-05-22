@@ -401,6 +401,24 @@ export interface IEventRecorder {
   writeToFile(dir: string, videoName: string): Promise<void>
 }
 
+export const NOOP_EVENT_RECORDER: IEventRecorder = {
+  start(): void {},
+  addInput(): void {},
+  addCueStart(): void {},
+  addCueEnd(): void {},
+  addVideoCueStart(): void {},
+  addAssetStart(): void {},
+  addHideStart(): void {},
+  addHideEnd(): void {},
+  addAutoZoomStart(): void {},
+  addAutoZoomEnd(): void {},
+  registerVoiceForLang(): void {},
+  getEvents(): RecordingEvent[] {
+    return []
+  },
+  async writeToFile(): Promise<void> {},
+}
+
 export class EventRecorder implements IEventRecorder {
   private readonly events: RecordingEvent[] = []
   private startTime: number | null = null

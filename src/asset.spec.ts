@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createAssets, setActiveAssetRecorder } from './asset.js'
-import type { IEventRecorder } from './events.js'
+import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
 
 function createMockRecorder(): IEventRecorder {
@@ -32,7 +32,7 @@ describe('createAssets', () => {
   })
 
   afterEach(() => {
-    setActiveAssetRecorder(null)
+    setActiveAssetRecorder(NOOP_EVENT_RECORDER)
   })
 
   it('creates a thenable controller for each key in the map', () => {
@@ -129,8 +129,8 @@ describe('createAssets', () => {
     })
   })
 
-  describe('without active recorder', () => {
-    beforeEach(() => setActiveAssetRecorder(null))
+  describe('with the default no-op recorder', () => {
+    beforeEach(() => setActiveAssetRecorder(NOOP_EVENT_RECORDER))
 
     it('await is a no-op', async () => {
       const assets = createAssets({

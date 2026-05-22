@@ -35,7 +35,7 @@ export function setActiveAutoZoomRecorder(
   setRuntimeAutoZoomRecorder(recorder)
 }
 
-export function getActiveAutoZoomRecorder(): IEventRecorder | null {
+export function getActiveAutoZoomRecorder(): IEventRecorder {
   return getRuntimeAutoZoomRecorder()
 }
 
@@ -132,9 +132,7 @@ export async function autoZoom(
     )
   }
   const activeRecorder = getRuntimeAutoZoomRecorder()
-  if (activeRecorder !== null) {
-    activeRecorder.addAutoZoomStart(options)
-  }
+  activeRecorder.addAutoZoomStart(options)
   const resolvedOptions = {
     ...DEFAULT_ZOOM_OPTIONS,
     ...(options ?? {}),
@@ -162,49 +160,45 @@ export async function autoZoom(
     await fn()
     const activeRecorder = getRuntimeAutoZoomRecorder()
     const currentAutoZoomState = getAutoZoomState()
-    if (activeRecorder !== null) {
-      activeRecorder.addAutoZoomEnd(options)
-      if (currentAutoZoomState.currentZoomViewport !== null) {
-        const zoomOutStartMs = Date.now()
-        const zoomOutDuration = resolveRecordingTimingDuration(
-          currentAutoZoomState.options.duration ?? DEFAULT_ZOOM_OPTIONS.duration
-        )
-        activeRecorder.addInput('focusChange', undefined, [
-          {
-            type: 'focusChange',
+    activeRecorder.addAutoZoomEnd(options)
+    if (currentAutoZoomState.currentZoomViewport !== null) {
+      const zoomOutStartMs = Date.now()
+      const zoomOutDuration = resolveRecordingTimingDuration(
+        currentAutoZoomState.options.duration ?? DEFAULT_ZOOM_OPTIONS.duration
+      )
+      activeRecorder.addInput('focusChange', undefined, [
+        {
+          type: 'focusChange',
+          startMs: zoomOutStartMs,
+          endMs: zoomOutStartMs + zoomOutDuration,
+          x: currentAutoZoomState.currentZoomViewport.focusPoint.x,
+          y: currentAutoZoomState.currentZoomViewport.focusPoint.y,
+          ...(currentAutoZoomState.currentZoomViewport.elementRect !== undefined
+            ? {
+                elementRect:
+                  currentAutoZoomState.currentZoomViewport.elementRect,
+              }
+            : {}),
+          zoom: {
             startMs: zoomOutStartMs,
             endMs: zoomOutStartMs + zoomOutDuration,
-            x: currentAutoZoomState.currentZoomViewport.focusPoint.x,
-            y: currentAutoZoomState.currentZoomViewport.focusPoint.y,
-            ...(currentAutoZoomState.currentZoomViewport.elementRect !==
-            undefined
-              ? {
-                  elementRect:
-                    currentAutoZoomState.currentZoomViewport.elementRect,
-                }
-              : {}),
-            zoom: {
-              startMs: zoomOutStartMs,
-              endMs: zoomOutStartMs + zoomOutDuration,
-              easing:
-                currentAutoZoomState.options.easing ??
-                DEFAULT_ZOOM_OPTIONS.easing,
-              end: {
-                pointPx: { x: 0, y: 0 },
-                size: {
-                  widthPx:
-                    currentAutoZoomState.currentZoomViewport.viewportSize.width,
-                  heightPx:
-                    currentAutoZoomState.currentZoomViewport.viewportSize
-                      .height,
-                },
+            easing:
+              currentAutoZoomState.options.easing ??
+              DEFAULT_ZOOM_OPTIONS.easing,
+            end: {
+              pointPx: { x: 0, y: 0 },
+              size: {
+                widthPx:
+                  currentAutoZoomState.currentZoomViewport.viewportSize.width,
+                heightPx:
+                  currentAutoZoomState.currentZoomViewport.viewportSize.height,
               },
             },
           },
-        ])
-        if (zoomOutDuration > 0) {
-          await sleep(zoomOutDuration)
-        }
+        },
+      ])
+      if (zoomOutDuration > 0) {
+        await sleep(zoomOutDuration)
       }
     }
     if ((currentAutoZoomState.options.postZoomDelay ?? 0) > 0) {

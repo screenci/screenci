@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Locator, Page } from '@playwright/test'
-import { EventRecorder } from './events.js'
+import { EventRecorder, NOOP_EVENT_RECORDER } from './events.js'
 import {
   autoZoom,
   getAutoZoomState,
@@ -132,13 +132,13 @@ describe('manual zoom', () => {
       currentZoomViewport: null,
     })
     setCurrentZoomViewport(null)
-    setActiveAutoZoomRecorder(null)
+    setActiveAutoZoomRecorder(NOOP_EVENT_RECORDER)
     setActiveZoomPage(null)
   })
 
   afterEach(() => {
     vi.useRealTimers()
-    setActiveAutoZoomRecorder(null)
+    setActiveAutoZoomRecorder(NOOP_EVENT_RECORDER)
     setActiveZoomPage(null)
   })
 

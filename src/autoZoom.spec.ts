@@ -5,7 +5,7 @@ import {
   getAutoZoomState,
   setCurrentZoomViewport,
 } from './autoZoom.js'
-import { EventRecorder } from './events.js'
+import { EventRecorder, NOOP_EVENT_RECORDER } from './events.js'
 import type { IEventRecorder } from './events.js'
 import type { Easing } from './types.js'
 
@@ -30,12 +30,12 @@ function makeRecorder(): IEventRecorder {
 describe('autoZoom', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => {
-    setActiveAutoZoomRecorder(null)
+    setActiveAutoZoomRecorder(NOOP_EVENT_RECORDER)
     setCurrentZoomViewport(null)
     vi.useRealTimers()
   })
 
-  describe('with active recorder', () => {
+  describe('with configured recorder', () => {
     let recorder: IEventRecorder
 
     beforeEach(() => {
@@ -145,8 +145,9 @@ describe('autoZoom', () => {
     })
   })
 
-  describe('without active recorder', () => {
-    it('still executes the callback when recorder is null', async () => {
+  describe('with the default no-op recorder', () => {
+    it('still executes the callback', async () => {
+      setActiveAutoZoomRecorder(NOOP_EVENT_RECORDER)
       const called = vi.fn()
       const p = autoZoom(called)
       await vi.runAllTimersAsync()

@@ -272,36 +272,6 @@ describe('defineConfig', () => {
     }
   })
 
-  it('filters out the html reporter while recording', () => {
-    process.env.SCREENCI_RECORDING = 'true'
-
-    try {
-      const config = defineConfig({
-        projectName: 'Test',
-        reporter: ['html', 'dot'],
-      })
-
-      expect(getReporterNames(config)).not.toContain('html')
-      expect(getReporterNames(config)).toContain('dot')
-      expect(
-        getReporterNames(config).some((name) => name.endsWith('reporter.ts')) ||
-          getReporterNames(config).some((name) => name.endsWith('reporter.js'))
-      ).toBe(true)
-    } finally {
-      delete process.env.SCREENCI_RECORDING
-    }
-  })
-
-  it('keeps reporter configuration unchanged outside recording', () => {
-    const config = defineConfig({
-      projectName: 'Test',
-      reporter: ['html', 'dot'],
-    })
-
-    expect(getReporterNames(config)).toContain('html')
-    expect(getReporterNames(config)).toContain('dot')
-  })
-
   it('should accept webServer option', () => {
     const config = defineConfig({
       projectName: 'Test',

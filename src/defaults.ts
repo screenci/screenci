@@ -3,7 +3,7 @@ import type {
   AutoZoomOptions,
   FPS,
   Quality,
-  Trace,
+  RecordUploadPolicy,
   RecordOptions,
 } from './types.js'
 
@@ -35,17 +35,17 @@ export const DEFAULT_QUALITY: Quality = '1080p'
 /**
  * Default frames per second for video recording
  */
-export const DEFAULT_FPS: FPS = 30
-
-/**
- * Default trace recording mode
- */
-export const DEFAULT_TRACE: Trace = 'retain-on-failure'
+export const DEFAULT_FPS: FPS = 60
 
 /**
  * Default directory for video files
  */
 export const DEFAULT_VIDEO_DIR: string = './videos'
+
+/**
+ * Default upload policy for `screenci record`
+ */
+export const DEFAULT_RECORD_UPLOAD_POLICY: RecordUploadPolicy = 'passed-only'
 
 /**
  * Default test timeout in milliseconds (30 minutes)

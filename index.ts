@@ -3,6 +3,7 @@ export type {
   AspectRatio,
   FPS,
   Quality,
+  RecordUploadPolicy,
   Trace,
   RecordOptions,
   RenderOptions,
@@ -60,7 +61,6 @@ export {
   DEFAULT_ASPECT_RATIO,
   DEFAULT_FPS,
   DEFAULT_QUALITY,
-  DEFAULT_TRACE,
   DEFAULT_VIDEO_DIR,
   DEFAULT_VIDEO_OPTIONS,
 } from './src/defaults.js'

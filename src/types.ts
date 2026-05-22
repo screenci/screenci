@@ -77,6 +77,16 @@ export type FPS = 24 | 30 | 60
 export type Trace = 'on' | 'off' | 'retain-on-failure'
 
 /**
+ * Upload policy for `screenci record`.
+ *
+ * - `'passed-only'` uploads completed recordings even if other videos failed.
+ * - `'all-or-nothing'` skips all uploads when any video fails.
+ *
+ * @default 'passed-only'
+ */
+export type RecordUploadPolicy = 'passed-only' | 'all-or-nothing'
+
+/**
  * Rendering options passed as-is to `data.json`.
  * Mirrors the `renderOptions` shape consumed by the rendering pipeline.
  */
@@ -238,7 +248,7 @@ export type RecordOptions = {
   /**
    * Frames per second for video recording.
    *
-   * @default 30
+   * @default 60
    */
   fps?: FPS
 }
@@ -758,6 +768,17 @@ export type ScreenCIConfig = Omit<
    */
   videoDir?: string
   /**
+   * Options that only affect the `screenci record` command.
+   */
+  record?: {
+    /**
+     * Controls whether recordings are uploaded after partial Playwright failures.
+     *
+     * @default 'passed-only'
+     */
+    upload?: RecordUploadPolicy
+  }
+  /**
    * Starts and reuses a development server through Playwright before running videos.
    *
    * This is useful for generated ScreenCI projects that should record against the
@@ -805,5 +826,9 @@ export type ScreenCIConfig = Omit<
   })[]
 }
 
-export type ExtendedScreenCIConfig = ScreenCIConfig &
-  Pick<PlaywrightTestConfig, 'retries' | 'testDir' | 'testMatch'>
+export type ExtendedScreenCIConfig = Omit<ScreenCIConfig, 'record'> &
+  Pick<PlaywrightTestConfig, 'retries' | 'testDir' | 'testMatch'> & {
+    record: {
+      upload: RecordUploadPolicy
+    }
+  }

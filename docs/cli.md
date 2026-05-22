@@ -98,6 +98,8 @@ Notes:
 
 Records videos with ScreenCI by running local Playwright with `SCREENCI_RECORDING=true`, then uploads results if `SCREENCI_SECRET` is set. If the secret is missing, `record` prompts for login before recording begins.
 
+By default, if some recording tests fail, ScreenCI still uploads the successful recordings. To opt out, set `record.upload: 'all-or-nothing'` in `screenci.config.ts`.
+
 ```bash
 npx screenci record
 npx screenci record --project=chromium

@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { defineConfig } from './config.js'
 
+function getReporterNames(config: ReturnType<typeof defineConfig>): string[] {
+  return (config.reporter ?? []).map((reporter) => reporter[0])
+}
+
 describe('defineConfig', () => {
   it('should default videoDir to ./videos', () => {
     const config = defineConfig({ projectName: 'Test' })
@@ -62,6 +66,23 @@ describe('defineConfig', () => {
     expect(config.use?.trace).toBe('retain-on-failure')
   })
 
+  it('leaves root use.trace undefined outside recording when omitted', () => {
+    const config = defineConfig({ projectName: 'Test' })
+
+    expect(config.use?.trace).toBeUndefined()
+  })
+
+  it('preserves root use.trace outside recording when configured', () => {
+    const config = defineConfig({
+      projectName: 'Test',
+      use: {
+        trace: 'on-first-retry',
+      },
+    })
+
+    expect(config.use?.trace).toBe('on-first-retry')
+  })
+
   it('should preserve project trace outside recording', () => {
     const config = defineConfig({
       projectName: 'Test',
@@ -76,6 +97,37 @@ describe('defineConfig', () => {
     })
 
     expect(config.projects?.[0].use?.trace).toBe('on')
+  })
+
+  it('leaves project use.trace undefined outside recording when omitted', () => {
+    const config = defineConfig({
+      projectName: 'Test',
+      projects: [
+        {
+          name: 'chromium',
+          use: {},
+        },
+      ],
+    })
+
+    expect(config.projects?.[0].use?.trace).toBeUndefined()
+  })
+
+  it('defaults record.upload to passed-only', () => {
+    const config = defineConfig({ projectName: 'Test' })
+
+    expect(config.record.upload).toBe('passed-only')
+  })
+
+  it('preserves record.upload when configured', () => {
+    const config = defineConfig({
+      projectName: 'Test',
+      record: {
+        upload: 'all-or-nothing',
+      },
+    })
+
+    expect(config.record.upload).toBe('all-or-nothing')
   })
 
   it('should force retries to 0', () => {
@@ -218,6 +270,36 @@ describe('defineConfig', () => {
     } finally {
       delete process.env.SCREENCI_RECORDING
     }
+  })
+
+  it('filters out the html reporter while recording', () => {
+    process.env.SCREENCI_RECORDING = 'true'
+
+    try {
+      const config = defineConfig({
+        projectName: 'Test',
+        reporter: ['html', 'dot'],
+      })
+
+      expect(getReporterNames(config)).not.toContain('html')
+      expect(getReporterNames(config)).toContain('dot')
+      expect(
+        getReporterNames(config).some((name) => name.endsWith('reporter.ts')) ||
+          getReporterNames(config).some((name) => name.endsWith('reporter.js'))
+      ).toBe(true)
+    } finally {
+      delete process.env.SCREENCI_RECORDING
+    }
+  })
+
+  it('keeps reporter configuration unchanged outside recording', () => {
+    const config = defineConfig({
+      projectName: 'Test',
+      reporter: ['html', 'dot'],
+    })
+
+    expect(getReporterNames(config)).toContain('html')
+    expect(getReporterNames(config)).toContain('dot')
   })
 
   it('should accept webServer option', () => {

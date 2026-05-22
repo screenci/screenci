@@ -387,8 +387,9 @@ const _videoBase = base.extend<
 
       await page.close()
 
-      // Write recorded events next to the video
-      await recorder.writeToFile(videoDir, testInfo.title)
+      if (testInfo.status === 'passed') {
+        await recorder.writeToFile(videoDir, testInfo.title)
+      }
     }
   },
 })
@@ -435,7 +436,7 @@ interface VideoCallSignatures {
    * video('Product demo', async ({ page }) => {
    *   await page.goto('https://example.com')
    *   await page.click('text=Get Started')
-   *   // Video recorded at 16:9 1080p, 30fps (defaults)
+   *   // Video recorded at 16:9 1080p, 60fps (defaults)
    * })
    * ```
    *

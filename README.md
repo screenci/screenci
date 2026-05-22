@@ -105,7 +105,7 @@ export default defineConfig({
     recordOptions: {
       aspectRatio: '16:9', // '16:9' | '9:16' | '1:1' | '4:3' | ...
       quality: '1080p', // '720p' | '1080p' | '1440p' | '2160p'
-      fps: 30, // 24 | 30 | 60
+      fps: 60, // 24 | 30 | 60
     },
   },
 })

@@ -29,12 +29,13 @@ import {
   SCREENCI_DISABLE_RECORDING_TIMINGS_ENV,
   SCREENCI_MOCK_RECORD_ENV,
 } from './src/runtimeMode.js'
+import { DEFAULT_RECORD_UPLOAD_POLICY } from './src/defaults.js'
 import type { VoiceKey } from './src/voices.js'
-import type { ScreenCIConfig } from './src/types.js'
+import type { RecordUploadPolicy, ScreenCIConfig } from './src/types.js'
 
 const SCREENCI_DOCS_URL = 'https://screenci.com/docs/intro/'
 const SCREENCI_MOCK_RECORD_DOCS_URL =
-  'https://docs.screenci.com/reference/cli/#screenci-test-playwrightargs'
+  'https://screenci.com/docs/reference/cli/#--mock-record'
 
 type ProjectInfoVideo = {
   name: string
@@ -804,7 +805,7 @@ async function uploadAssets(
   }
 }
 
-async function uploadRecordings(
+export async function uploadRecordings(
   screenciDir: string,
   projectName: string,
   apiUrl: string,
@@ -984,6 +985,19 @@ async function uploadRecordings(
   }
 }
 
+async function countCompletedRecordings(screenciDir: string): Promise<number> {
+  let entries: string[]
+  try {
+    entries = await readdir(screenciDir)
+  } catch {
+    return 0
+  }
+
+  return entries.filter((entry) =>
+    existsSync(resolve(screenciDir, entry, 'data.json'))
+  ).length
+}
+
 export function getDevBackendUrl(): string {
   const devBackendPort = process.env.DEV_BACKEND_PORT
   return devBackendPort
@@ -1096,9 +1110,39 @@ export function extractConfigStringLiteral(
   return templateLiteralMatch?.[1]
 }
 
-async function tryReadConfigFromSource(
-  resolvedConfigPath: string
-): Promise<Pick<ScreenCIConfig, 'projectName'> & { envFile?: string }> {
+export function extractRecordUploadPolicyLiteral(
+  configSource: string
+): RecordUploadPolicy | undefined {
+  const singleQuoteMatch = configSource.match(
+    /record\s*:\s*\{[\s\S]*?upload\s*:\s*'(passed-only|all-or-nothing)'/
+  )
+  if (singleQuoteMatch) {
+    return singleQuoteMatch[1] as RecordUploadPolicy
+  }
+
+  const doubleQuoteMatch = configSource.match(
+    /record\s*:\s*\{[\s\S]*?upload\s*:\s*"(passed-only|all-or-nothing)"/
+  )
+  if (doubleQuoteMatch) {
+    return doubleQuoteMatch[1] as RecordUploadPolicy
+  }
+
+  const templateLiteralMatch = configSource.match(
+    /record\s*:\s*\{[\s\S]*?upload\s*:\s*`(passed-only|all-or-nothing)`/
+  )
+  return templateLiteralMatch?.[1] as RecordUploadPolicy | undefined
+}
+
+function resolveRecordUploadPolicy(config: ScreenCIConfig): RecordUploadPolicy {
+  return config.record?.upload ?? DEFAULT_RECORD_UPLOAD_POLICY
+}
+
+async function tryReadConfigFromSource(resolvedConfigPath: string): Promise<
+  Pick<ScreenCIConfig, 'projectName'> & {
+    envFile?: string
+    record?: { upload?: RecordUploadPolicy }
+  }
+> {
   const configSource = await readFile(resolvedConfigPath, 'utf-8')
   const projectName = extractConfigStringLiteral(configSource, 'projectName')
 
@@ -1109,10 +1153,12 @@ async function tryReadConfigFromSource(
   }
 
   const envFile = extractConfigStringLiteral(configSource, 'envFile')
+  const recordUpload = extractRecordUploadPolicyLiteral(configSource)
 
   return {
     projectName,
     ...(envFile !== undefined ? { envFile } : {}),
+    ...(recordUpload !== undefined ? { record: { upload: recordUpload } } : {}),
   }
 }
 
@@ -1136,16 +1182,22 @@ async function loadRecordConfigWithoutPlaywrightCollision(
     )
     return configModule.default as ScreenCIConfig
   } catch (err) {
-    if (
+    const hasPlaywrightCollision =
       err instanceof Error &&
       err.message.includes('Requiring @playwright/test second time')
-    ) {
+
+    if (hasPlaywrightCollision) {
       logger.warn(
         'Playwright was loaded from multiple module paths. Falling back to static config parsing for upload metadata.'
       )
+    }
+
+    try {
       return (await tryReadConfigFromSource(
         resolvedConfigPath
       )) as ScreenCIConfig
+    } catch {
+      // Preserve the original import error when static parsing cannot recover.
     }
 
     throw err
@@ -1240,7 +1292,7 @@ export default defineConfig({
     recordOptions: {
       aspectRatio: '16:9',
       quality: '1080p',
-      fps: 30,
+      fps: 60,
     },
   },
   projects: [
@@ -1844,12 +1896,20 @@ export async function main() {
     .allowUnknownOption(true)
     .action(async () => {
       const parsed = parseRecordCliArgs(getSubcommandArgv('record'))
+      let playwrightFailure: Error | null = null
 
       try {
         await run('record', parsed.otherArgs, parsed.configPath, parsed.verbose)
       } catch (error) {
         logRecordFailureHint()
-        throw error
+        if (
+          error instanceof Error &&
+          error.message.startsWith('Playwright exited with code ')
+        ) {
+          playwrightFailure = error
+        } else {
+          throw error
+        }
       }
 
       if (process.env.SCREENCI_RECORDING === 'true') return
@@ -1870,41 +1930,66 @@ export async function main() {
           const apiUrl = getDevBackendUrl()
           const appUrl = getDevFrontendUrl()
           const secret = process.env.SCREENCI_SECRET
-          if (!secret) {
+          const uploadPolicy = resolveRecordUploadPolicy(screenciConfig)
+          const configDir = dirname(resolvedConfigPath)
+          const screenciDir = resolve(configDir, '.screenci')
+          const completedRecordingCount =
+            await countCompletedRecordings(screenciDir)
+          if (playwrightFailure !== null && completedRecordingCount === 0) {
+            logger.info(pc.yellow('All recordings failed.'))
+          } else if (!secret) {
             logger.info(
               'No secret configured, skipping upload. Set SCREENCI_SECRET in your .env file.'
             )
-            return
-          }
-          const configDir = dirname(resolvedConfigPath)
-          const screenciDir = resolve(configDir, '.screenci')
-          let projectId: string | null = null
-          try {
-            logger.info('')
-            projectId = await uploadRecordings(
-              screenciDir,
-              screenciConfig.projectName,
-              apiUrl,
-              secret
-            )
-          } catch (err) {
-            if (isUploadCancelledError(err)) {
-              process.exit(130)
-            }
-            throw err
-          }
-          if (projectId !== null) {
-            const projectUrl = `${appUrl}/project/${projectId}`
-            await writeGitHubProjectOutput(projectUrl)
-            logger.info('')
+          } else if (
+            playwrightFailure !== null &&
+            uploadPolicy === 'all-or-nothing'
+          ) {
             logger.info(
-              'Recording finished, rendering in progress. Results available at:'
+              'Some recordings failed, skipping upload because record.upload is "all-or-nothing".'
             )
-            logger.info(pc.cyan(projectUrl))
+          } else {
+            if (playwrightFailure !== null && uploadPolicy === 'passed-only') {
+              logger.info(
+                pc.yellow(
+                  'Some recordings failed, uploading successful videos only.'
+                )
+              )
+            }
+            let projectId: string | null = null
+            try {
+              logger.info('')
+              projectId = await uploadRecordings(
+                screenciDir,
+                screenciConfig.projectName,
+                apiUrl,
+                secret
+              )
+            } catch (err) {
+              if (isUploadCancelledError(err)) {
+                process.exit(130)
+              }
+              throw err
+            }
+            if (projectId !== null) {
+              const projectUrl = `${appUrl}/project/${projectId}`
+              await writeGitHubProjectOutput(projectUrl)
+              logger.info('')
+              logger.info(
+                playwrightFailure !== null
+                  ? 'Recording partially succeeded, rendering in progress. Results available at:'
+                  : 'Recording finished, rendering in progress. Results available at:'
+              )
+              logger.info(pc.cyan(projectUrl))
+            }
           }
         } catch (err) {
           logger.warn('Failed to load config for upload:', err)
         }
+      }
+
+      if (playwrightFailure !== null) {
+        throw playwrightFailure
       }
     })
 

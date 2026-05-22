@@ -28,7 +28,7 @@ export default defineConfig({
   use: {
     videoOptions: {
       resolution: '1080p', // '720p' | '1080p' | '4k' | { width, height }
-      fps: 30, // 24 | 30 | 60
+      fps: 60, // 24 | 30 | 60
       quality: 'high', // 'low' | 'medium' | 'high'
     },
     trace: 'retain-on-failure', // 'on' | 'off' | 'retain-on-failure'
@@ -239,7 +239,7 @@ See [Writing Video Tests](./video-tests.md) and [Localization & Narrations](./lo
 ```ts
 type RecordOptions = {
   resolution?: Resolution // default: '1080p'
-  fps?: FPS // default: 30
+  fps?: FPS // default: 60
   quality?: Quality // default: 'high'
 }
 ```

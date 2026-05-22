@@ -2,7 +2,7 @@ import type { ReporterDescription } from '@playwright/test'
 import type { ScreenCIConfig, ExtendedScreenCIConfig } from './types.js'
 import {
   DEFAULT_VIDEO_DIR,
-  DEFAULT_TRACE,
+  DEFAULT_RECORD_UPLOAD_POLICY,
   DEFAULT_TIMEOUT,
   DEFAULT_ACTION_TIMEOUT,
   DEFAULT_NAVIGATION_TIMEOUT,
@@ -22,6 +22,11 @@ const reporterPath = existsSync(reporterPathJs)
   : reporterPathTs
 
 type ReporterConfig = string | ReporterDescription
+
+function isHtmlReporter(reporter: ReporterConfig): boolean {
+  const reporterName = Array.isArray(reporter) ? reporter[0] : reporter
+  return reporterName === 'html'
+}
 
 /**
  * Defines a screenci configuration file.
@@ -51,7 +56,7 @@ type ReporterConfig = string | ReporterDescription
  *     recordOptions: {
  *       aspectRatio: '16:9',  // '16:9' | '9:16' | '1:1' | '4:3' | ...
  *       quality: '1080p',     // '720p' | '1080p' | '1440p' | '2160p'
- *       fps: 30,              // 24 | 30 | 60
+ *       fps: 60,              // 24 | 30 | 60
  *     },
  *     trace: 'retain-on-failure',
  *   },
@@ -62,15 +67,20 @@ type ReporterConfig = string | ReporterDescription
  * @returns Extended Playwright configuration with screenci-managed test discovery
  */
 export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
+  const isRecording = process.env.SCREENCI_RECORDING === 'true'
+
   // Add the video name validator reporter if not already present
   const existingReporters = config.reporter
     ? Array.isArray(config.reporter)
       ? config.reporter
       : [config.reporter]
     : ['list']
+  const filteredReporters = isRecording
+    ? existingReporters.filter((reporter) => !isHtmlReporter(reporter))
+    : existingReporters
 
   // Check if our validator is already added
-  const hasValidator = existingReporters.some((r: ReporterConfig) => {
+  const hasValidator = filteredReporters.some((r: ReporterConfig) => {
     if (Array.isArray(r)) {
       return r[0] === reporterPath || r[0]?.toString().endsWith('reporter.js')
     }
@@ -78,7 +88,7 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
   })
 
   // Convert all reporters to tuple format for Playwright validation
-  const normalizedReporters = existingReporters.map((r: ReporterConfig) =>
+  const normalizedReporters = filteredReporters.map((r: ReporterConfig) =>
     Array.isArray(r) ? r : [r]
   )
 
@@ -149,32 +159,37 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
     )
   }
 
-  const { videoDir, ...rest } = config
-  const isRecording = process.env.SCREENCI_RECORDING === 'true'
-  const trace = isRecording ? 'off' : (rest.use?.trace ?? DEFAULT_TRACE)
+  const { videoDir, record, ...rest } = config
+
+  // recording does not need tracing, also it takes resources so that is why forced off
+  const trace = isRecording ? 'off' : rest.use?.trace
   const projects = isRecording
     ? rest.projects?.map((project) => ({
         ...project,
         use: {
           ...project.use,
-          trace,
+          trace: 'off' as const,
         },
       }))
     : rest.projects
+  const use = {
+    ...rest.use,
+    ...(trace !== undefined ? { trace } : {}),
+    actionTimeout: rest.use?.actionTimeout ?? DEFAULT_ACTION_TIMEOUT,
+    navigationTimeout:
+      rest.use?.navigationTimeout ?? DEFAULT_NAVIGATION_TIMEOUT,
+  }
 
   // Map videoDir to testDir and keep screenci-managed defaults in place.
   return {
     testDir: videoDir ?? DEFAULT_VIDEO_DIR,
     testMatch: '**/*.video.?(c|m)[jt]s?(x)',
     ...rest,
-    reporter: reporters as ReporterDescription[],
-    use: {
-      ...rest.use,
-      trace,
-      actionTimeout: rest.use?.actionTimeout ?? DEFAULT_ACTION_TIMEOUT,
-      navigationTimeout:
-        rest.use?.navigationTimeout ?? DEFAULT_NAVIGATION_TIMEOUT,
+    record: {
+      upload: record?.upload ?? DEFAULT_RECORD_UPLOAD_POLICY,
     },
+    reporter: reporters as ReporterDescription[],
+    use,
     ...(projects ? { projects } : {}),
     timeout: rest.timeout ?? DEFAULT_TIMEOUT,
     retries: 0,

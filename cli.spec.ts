@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
+import { Readable } from 'stream'
 import pc from 'picocolors'
 import { logger } from './src/logger.js'
 import type { VoiceKey } from './src/voices.js'
@@ -117,6 +118,15 @@ describe('CLI', () => {
         return JSON.stringify({ version: '0.0.32' })
       }
       return ''
+    })
+    mockStat.mockResolvedValue({ size: 4 })
+    mockCreateReadStream.mockImplementation(() => {
+      const stream = new Readable({ read() {} })
+      process.nextTick(() => {
+        stream.push('data')
+        stream.push(null)
+      })
+      return stream
     })
     // Default inquirer responses
     mockInput.mockImplementation(
@@ -262,6 +272,248 @@ describe('CLI', () => {
 
       expect(loggerInfoSpy).toHaveBeenCalledWith(
         expect.stringContaining('Using config:')
+      )
+    })
+
+    it('uploads completed recordings normally', async () => {
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('record-upload.config.ts')) {
+          return "export default { projectName: 'Test Project' }"
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('test-fixtures/record-upload.config.ts') ||
+          path.endsWith('data.json') ||
+          path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+
+        if (url.endsWith('/cli/upload/recording_123/recording')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { uploadRecordings } = await import('./cli')
+
+      await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(mockReaddir).toHaveBeenCalledWith('/repo/.screenci')
+      expect(mockReadFile).toHaveBeenCalledWith(
+        expect.stringContaining('/repo/.screenci/demo-video/data.json'),
+        'utf-8'
+      )
+    })
+
+    it('uploads completed recordings after partial failure with default policy, then still fails', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'record',
+        '--config',
+        'test-fixtures/record-upload.config.ts',
+      ]
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('record-upload.config.ts')) {
+          return "export default { projectName: 'Test Project' }"
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('test-fixtures/record-upload.config.ts') ||
+          path.endsWith('data.json') ||
+          path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+
+        if (url.endsWith('/cli/upload/recording_123/recording')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 1))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow('Playwright exited with code 1')
+
+      expect(mockReaddir).toHaveBeenCalledWith(
+        expect.stringContaining('.screenci')
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        'Some recordings failed, uploading successful videos only.'
+      )
+    })
+
+    it('skips upload after partial failure with all-or-nothing policy, then still fails', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'record',
+        '--config',
+        'test-fixtures/record-upload-all-or-nothing.config.ts',
+      ]
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith(
+            'test-fixtures/record-upload-all-or-nothing.config.ts'
+          ) || path.endsWith('data.json')
+      )
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 1))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow('Playwright exited with code 1')
+
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('/cli/upload/start'),
+        expect.any(Object)
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        'Some recordings failed, skipping upload because record.upload is "all-or-nothing".'
+      )
+    })
+
+    it('skips entries without data.json in passed-only upload flow', async () => {
+      mockReaddir.mockResolvedValue(['failed-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation((path: string) =>
+        path.endsWith('recording.mp4')
+      )
+
+      const { uploadRecordings } = await import('./cli')
+
+      await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
+
+    it('reports when all recordings failed', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'record',
+        '--config',
+        'test-fixtures/record-upload-all-or-nothing.config.js',
+      ]
+      mockReaddir.mockResolvedValue(['failed-video'])
+      mockExistsSync.mockImplementation((path: string) =>
+        path.endsWith('test-fixtures/record-upload-all-or-nothing.config.js')
+      )
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 1))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow('Playwright exited with code 1')
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith('All recordings failed.')
+      expect(loggerInfoSpy).not.toHaveBeenCalledWith(
+        'Some recordings failed, skipping upload because record.upload is "all-or-nothing".'
       )
     })
   })
@@ -587,7 +839,7 @@ describe('CLI', () => {
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith(
         expect.stringContaining(
-          'https://docs.screenci.com/reference/cli/#screenci-test-playwrightargs'
+          'https://screenci.com/docs/reference/cli/#--mock-record'
         )
       )
     })
@@ -853,6 +1105,20 @@ describe('CLI', () => {
       const configSource = 'export default defineConfig({ envFile: `./.env` })'
 
       expect(extractConfigStringLiteral(configSource, 'envFile')).toBe('./.env')
+    })
+
+    it('should extract record upload policy literals', async () => {
+      const { extractRecordUploadPolicyLiteral } = await import('./cli')
+      const configSource = `export default defineConfig({
+  projectName: 'Quoted Project',
+  record: {
+    upload: 'all-or-nothing',
+  },
+})`
+
+      expect(extractRecordUploadPolicyLiteral(configSource)).toBe(
+        'all-or-nothing'
+      )
     })
   })
 
@@ -1608,6 +1874,20 @@ describe('CLI', () => {
           typeof c[0] === 'string' && c[0].endsWith('screenci.config.ts')
       )
       expect(configCall?.[1]).toContain("envFile: '.env'")
+    })
+
+    it('should default generated screenci.config.ts to 60 fps', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      const configCall = mockWriteFile.mock.calls.find(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].endsWith('screenci.config.ts')
+      )
+      expect(configCall?.[1]).toContain('fps: 60')
     })
 
     it('should generate an example video that walks through ScreenCI docs', async () => {

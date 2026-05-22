@@ -12,7 +12,6 @@ import { mkdir, rm } from 'fs/promises'
 import { join } from 'path'
 import { attachRecorder } from 'playwright-recorder-plus'
 import type { Recorder, StopResult } from 'playwright-recorder-plus'
-import { sanitizeVideoName } from './sanitize.js'
 import type {
   AspectRatio,
   FPS,
@@ -56,6 +55,7 @@ import {
   setRuntimeHideRecorder,
   setRuntimePage,
 } from './runtimeContext.js'
+import { escapeFileSystemPathSegment } from './fileSystemName.js'
 
 export const POST_VIDEO_PAUSE = 500
 
@@ -320,11 +320,10 @@ const _videoBase = base.extend<
     const fps = recordOptions.fps ?? DEFAULT_FPS
     const dimensions = getDimensions(aspectRatio, quality)
 
-    // Sanitize video title to create a valid directory name
-    const sanitizedVideoName = sanitizeVideoName(testInfo.title)
+    const directoryName = escapeFileSystemPathSegment(testInfo.title)
 
-    // Create directory path: .screenci/[video-name]/
-    const videoDir = join(process.cwd(), '.screenci', sanitizedVideoName)
+    // Create directory path: .screenci/[video-title]/
+    const videoDir = join(process.cwd(), '.screenci', directoryName)
 
     // Delete old directory if it exists (start fresh)
     try {

@@ -47,12 +47,14 @@ vi.mock('child_process', () => ({
 }))
 
 vi.mock('fs', () => ({
+  createReadStream: mockCreateReadStream,
   existsSync: mockExistsSync,
   realpathSync: mockRealpathSync,
   mkdirSync: mockMkdirSync,
   rmSync: mockRmSync,
   readdirSync: mockReaddirSync,
   default: {
+    createReadStream: mockCreateReadStream,
     existsSync: mockExistsSync,
     realpathSync: mockRealpathSync,
     mkdirSync: mockMkdirSync,
@@ -333,13 +335,17 @@ describe('CLI', () => {
 
       const { uploadRecordings } = await import('./cli')
 
-      await uploadRecordings(
+      const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
         'test-secret'
       )
 
+      expect(result).toEqual({
+        projectId: 'project_123',
+        hadFailures: false,
+      })
       expect(mockReaddir).toHaveBeenCalledWith('/repo/.screenci')
       expect(mockReadFile).toHaveBeenCalledWith(
         expect.stringContaining('/repo/.screenci/demo-video/data.json'),
@@ -417,7 +423,7 @@ describe('CLI', () => {
       expect(mockReaddir).toHaveBeenCalledWith(
         expect.stringContaining('.screenci')
       )
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
         'Some recordings failed, uploading successful videos only.'
       )
     })
@@ -480,14 +486,191 @@ describe('CLI', () => {
 
       const { uploadRecordings } = await import('./cli')
 
-      await uploadRecordings(
+      const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
         'test-secret'
       )
 
+      expect(result).toEqual({ projectId: null, hadFailures: false })
       expect(mockFetch).not.toHaveBeenCalled()
+    })
+
+    it('returns failure state when some recordings do not upload', async () => {
+      mockReaddir.mockResolvedValue(['demo-video', 'failed-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          const videoName = pathString.includes('/failed-video/')
+            ? 'Failed Demo'
+            : 'Demo'
+          return JSON.stringify({ events: [], metadata: { videoName } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') || path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          const body = JSON.parse(
+            String(
+              (mockFetch.mock.calls.at(-1)?.[1] as { body?: string })?.body ??
+                '{}'
+            )
+          ) as { videoName?: string }
+          if (body.videoName === 'Failed Demo') {
+            return {
+              ok: false,
+              status: 402,
+              json: vi.fn().mockResolvedValue({}),
+              text: vi
+                .fn()
+                .mockResolvedValue('Upload limit reached for current plan.'),
+            }
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+
+        if (url.endsWith('/cli/upload/recording_123/recording')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+
+      const { uploadRecordings } = await import('./cli')
+
+      const result = await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(result).toEqual({
+        projectId: 'project_123',
+        hadFailures: true,
+      })
+    })
+
+    it('fails record command when not all uploads succeed but still prints the project url', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'record',
+        '--config',
+        'test-fixtures/record-upload.config.ts',
+      ]
+      mockReaddir.mockResolvedValue(['demo-video', 'failed-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('record-upload.config.ts')) {
+          return "export default { projectName: 'Test Project' }"
+        }
+        if (pathString.endsWith('data.json')) {
+          const videoName = pathString.includes('/failed-video/')
+            ? 'Failed Demo'
+            : 'Demo'
+          return JSON.stringify({ events: [], metadata: { videoName } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('test-fixtures/record-upload.config.ts') ||
+          path.endsWith('data.json') ||
+          path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(
+        async (input: string | URL, init?: RequestInit) => {
+          const url = String(input)
+          if (url.endsWith('/cli/upload/start')) {
+            const body = JSON.parse(String(init?.body ?? '{}')) as {
+              videoName?: string
+            }
+            if (body.videoName === 'Failed Demo') {
+              return {
+                ok: false,
+                status: 402,
+                json: vi.fn().mockResolvedValue({}),
+                text: vi
+                  .fn()
+                  .mockResolvedValue('Upload limit reached for current plan.'),
+              }
+            }
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({
+                recordingId: 'recording_123',
+                projectId: 'project_123',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+
+          if (url.endsWith('/cli/upload/recording_123/recording')) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({}),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+      )
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow(
+        'Not all recordings succeeded to upload.'
+      )
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('/project/project_123')
+      )
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        'Not all recordings succeeded to upload. Some videos may be missing from the project.'
+      )
     })
 
     it('reports when all recordings failed', async () => {
@@ -568,6 +751,39 @@ describe('CLI', () => {
 
       const { main } = await import('./cli')
       await main()
+    })
+
+    it('fails before execution when discovered titles are exact duplicates', async () => {
+      process.argv = ['node', 'cli.js', 'test']
+      let actualRunSpawned = false
+
+      mockSpawn.mockImplementation((_command: string, args: string[]) => {
+        if (args.includes('--list')) {
+          process.nextTick(() => {
+            mockChildProcess.stdout.emit(
+              'data',
+              JSON.stringify({
+                suites: [
+                  {
+                    specs: [{ title: 'My Video' }, { title: 'My Video' }],
+                  },
+                ],
+              })
+            )
+            mockChildProcess.emit('close', 0)
+          })
+          return mockChildProcess as unknown as ChildProcess
+        }
+
+        actualRunSpawned = true
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow('Duplicate test titles detected')
+      expect(actualRunSpawned).toBe(false)
     })
 
     it('should load envFile before spawning Playwright', async () => {

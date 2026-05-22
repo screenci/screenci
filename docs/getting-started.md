@@ -39,11 +39,7 @@ After initialization, change into the project directory that was just created. U
 
 ScreenCI automatically creates `videos/example.video.ts` during initialization. This guide continues with that generated example so you can test the script and record your first video before writing your own flow.
 
-Coming soon:
-
-- [Write your own videos](#)
-- [Create videos with an AI agent from a deployed website](#)
-- [Create videos with an AI agent from source code](#)
+Next, continue with [Create Videos](/guides/creating-videos) to understand the generated files, the GitHub Actions workflow, and whether to edit the script manually or with an AI agent.
 
 ## Test the script
 
@@ -72,6 +68,7 @@ If you initialized with the GitHub Action, recording can also run automatically 
 ## Next steps
 
 - [Playwright vs ScreenCI](/reference/playwright-vs-screenci) — compare Playwright tests with ScreenCI video scripts
+- [Create Videos](/guides/creating-videos) — understand the generated files and write your own videos
 - [Writing video tests](/reference/video-tests) — `hide()`, `autoZoom()`, `createNarration()`
 - [Configuration reference](/reference/configuration) — all config options
 - [API reference](/reference/api-overview) — full function signatures

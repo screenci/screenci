@@ -32,6 +32,10 @@ import {
 import { DEFAULT_RECORD_UPLOAD_POLICY } from './src/defaults.js'
 import type { VoiceKey } from './src/voices.js'
 import type { RecordUploadPolicy, ScreenCIConfig } from './src/types.js'
+import {
+  findDuplicateTitles,
+  formatDuplicateTitlesMessage,
+} from './src/titleValidation.js'
 
 const SCREENCI_DOCS_URL = 'https://screenci.com/docs/intro/'
 const SCREENCI_MOCK_RECORD_DOCS_URL =
@@ -49,6 +53,143 @@ type ProjectInfoVideo = {
 type ProjectInfoResponse = {
   projectName: string
   videos: ProjectInfoVideo[]
+}
+
+type PlaywrightListReportSuite = {
+  title?: string
+  specs?: Array<{ title: string }>
+  suites?: PlaywrightListReportSuite[]
+}
+
+type PlaywrightListReport = {
+  suites?: PlaywrightListReportSuite[]
+}
+
+export function collectPlaywrightListTitles(
+  suites: readonly PlaywrightListReportSuite[]
+): string[] {
+  const titles: string[] = []
+
+  const visitSuite = (suite: PlaywrightListReportSuite) => {
+    for (const spec of suite.specs ?? []) {
+      titles.push(spec.title)
+    }
+    for (const child of suite.suites ?? []) {
+      visitSuite(child)
+    }
+  }
+
+  for (const suite of suites) {
+    visitSuite(suite)
+  }
+
+  return titles
+}
+
+function parsePlaywrightListReport(stdout: string): PlaywrightListReport {
+  return JSON.parse(stdout) as PlaywrightListReport
+}
+
+async function collectDiscoveredTestTitles(
+  configPath: string,
+  additionalArgs: string[],
+  env: NodeJS.ProcessEnv
+): Promise<string[]> {
+  const listArgs = [
+    'test',
+    '--config',
+    configPath,
+    ...additionalArgs,
+    '--list',
+    '--reporter=json',
+  ]
+  const spawnSpec = resolveSpawnSpec('playwright', listArgs)
+
+  return await new Promise<string[]>((resolve, reject) => {
+    const child = spawn(spawnSpec.command, spawnSpec.args, {
+      stdio: ['inherit', 'pipe', 'pipe'],
+      ...(spawnSpec.shell !== undefined ? { shell: spawnSpec.shell } : {}),
+      env,
+    })
+    const childSignals = forwardChildSignals(
+      child,
+      'screenci title validation',
+      {
+        killTree: process.platform !== 'win32',
+        exitParentOnForward: true,
+      }
+    )
+
+    let stdout = ''
+    let stderr = ''
+    child.stdout?.setEncoding?.('utf8')
+    child.stderr?.setEncoding?.('utf8')
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk
+    })
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk
+    })
+
+    child.on('close', (code, signal) => {
+      const forwardedSignal = childSignals.getForwardedSignal()
+      childSignals.cleanup()
+
+      if (forwardedSignal) {
+        process.kill(process.pid, forwardedSignal)
+        return
+      }
+      if (signal) {
+        process.kill(process.pid, signal)
+        return
+      }
+      if (code !== 0) {
+        if (stderr.trim() === '' && stdout.trim() === '') {
+          resolve([])
+          return
+        }
+        reject(
+          new Error(
+            stderr.trim() || stdout.trim() || 'Playwright test discovery failed'
+          )
+        )
+        return
+      }
+
+      try {
+        if (stdout.trim() === '') {
+          resolve([])
+          return
+        }
+        const report = parsePlaywrightListReport(stdout)
+        resolve(collectPlaywrightListTitles(report.suites ?? []))
+      } catch (error) {
+        reject(error)
+      }
+    })
+
+    child.on('error', (err) => {
+      childSignals.cleanup()
+      reject(err)
+    })
+  })
+}
+
+async function validateUniqueDiscoveredTestTitles(
+  configPath: string,
+  additionalArgs: string[],
+  env: NodeJS.ProcessEnv
+): Promise<void> {
+  const titles = await collectDiscoveredTestTitles(
+    configPath,
+    additionalArgs,
+    env
+  )
+  const duplicates = findDuplicateTitles(titles)
+
+  if (duplicates.length > 0) {
+    throw new Error(formatDuplicateTitlesMessage(duplicates))
+  }
 }
 
 function resolveRecordingFileCandidates(
@@ -110,12 +251,23 @@ class UploadCancelledError extends Error {
   }
 }
 
+class PartialUploadError extends Error {
+  constructor(message = 'Not all recordings succeeded to upload.') {
+    super(message)
+    this.name = 'PartialUploadError'
+  }
+}
+
 function isUploadCancelledError(err: unknown): boolean {
   return (
     err instanceof UploadCancelledError ||
     (err instanceof Error &&
       (err.name === 'AbortError' || err.name === 'UploadCancelledError'))
   )
+}
+
+function isPartialUploadError(err: unknown): boolean {
+  return err instanceof PartialUploadError
 }
 
 export function attachUploadAbortStdinListener(
@@ -812,14 +964,14 @@ export async function uploadRecordings(
   secret: string,
   specificEntry?: string,
   verbose = false
-): Promise<string | null> {
+): Promise<{ projectId: string | null; hadFailures: boolean }> {
   const uploadAbort = createUploadAbortController('upload')
   let entries: string[]
   try {
     entries = await readdir(screenciDir)
   } catch {
     logger.warn('No .screenci directory found, skipping upload')
-    return null
+    return { projectId: null, hadFailures: false }
   }
 
   if (specificEntry !== undefined) {
@@ -827,6 +979,7 @@ export async function uploadRecordings(
   }
 
   let firstProjectId: string | null = null
+  let hadFailures = false
 
   try {
     for (const entry of entries) {
@@ -886,6 +1039,7 @@ export async function uploadRecordings(
         })
         if (!startResponse.ok) {
           const text = await startResponse.text()
+          hadFailures = true
           uploadSpinner.fail(`Failed to upload "${videoName}"`)
           printUploadStartFailureMessage(
             videoName,
@@ -957,6 +1111,7 @@ export async function uploadRecordings(
             )
             if (!recordingResponse.ok) {
               const text = await recordingResponse.text()
+              hadFailures = true
               uploadSpinner.fail(`Failed to upload "${videoName}"`)
               logger.warn(
                 `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}${hint401(recordingResponse.status, secret)}`
@@ -974,12 +1129,13 @@ export async function uploadRecordings(
           uploadSpinner.fail(`Cancelled "${videoName}"`)
           throw err
         }
+        hadFailures = true
         uploadSpinner.fail(`Error uploading "${videoName}"`)
         logger.warn(`Network error uploading "${videoName}":`, err)
       }
     }
 
-    return firstProjectId
+    return { projectId: firstProjectId, hadFailures }
   } finally {
     uploadAbort.cleanup()
   }
@@ -1950,16 +2106,20 @@ export async function main() {
             )
           } else {
             if (playwrightFailure !== null && uploadPolicy === 'passed-only') {
-              logger.info(
-                pc.yellow(
-                  'Some recordings failed, uploading successful videos only.'
-                )
+              logger.warn(
+                'Some recordings failed, uploading successful videos only.'
               )
             }
-            let projectId: string | null = null
+            let uploadResult: {
+              projectId: string | null
+              hadFailures: boolean
+            } = {
+              projectId: null,
+              hadFailures: false,
+            }
             try {
               logger.info('')
-              projectId = await uploadRecordings(
+              uploadResult = await uploadRecordings(
                 screenciDir,
                 screenciConfig.projectName,
                 apiUrl,
@@ -1971,6 +2131,7 @@ export async function main() {
               }
               throw err
             }
+            const { projectId, hadFailures } = uploadResult
             if (projectId !== null) {
               const projectUrl = `${appUrl}/project/${projectId}`
               await writeGitHubProjectOutput(projectUrl)
@@ -1982,8 +2143,19 @@ export async function main() {
               )
               logger.info(pc.cyan(projectUrl))
             }
+            if (hadFailures) {
+              logger.warn(
+                'Not all recordings succeeded to upload. Some videos may be missing from the project.'
+              )
+              if (playwrightFailure === null) {
+                throw new PartialUploadError()
+              }
+            }
           }
         } catch (err) {
+          if (isPartialUploadError(err)) {
+            throw err
+          }
           logger.warn('Failed to load config for upload:', err)
         }
       }
@@ -2307,6 +2479,17 @@ async function run(
     clearDirectory(screenciDir)
   }
 
+  await validateUniqueDiscoveredTestTitles(configPath, additionalArgs, {
+    ...envForChild,
+    ...(command === 'record' ? { SCREENCI_RECORDING: 'true' } : {}),
+    ...(command === 'test' && !mockRecord
+      ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
+      : {}),
+    ...(command === 'test' && mockRecord
+      ? { [SCREENCI_MOCK_RECORD_ENV]: 'true' }
+      : {}),
+  })
+
   if (verbose && process.env.SCREENCI_RECORDING !== 'true') {
     logger.info(`Using config: ${configPath}`)
   }
@@ -2387,6 +2570,9 @@ if (
     currentFile === realpathSync(mainFile))
 ) {
   main().catch((error) => {
+    if (isPartialUploadError(error)) {
+      process.exit(1)
+    }
     logger.error('Error:', error.message)
     process.exit(1)
   })

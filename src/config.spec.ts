@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { defineConfig } from './config.js'
 
-function getReporterNames(config: ReturnType<typeof defineConfig>): string[] {
-  return (config.reporter ?? []).map((reporter) => reporter[0])
-}
-
 describe('defineConfig', () => {
   it('should default videoDir to ./videos', () => {
     const config = defineConfig({ projectName: 'Test' })
@@ -63,6 +59,7 @@ describe('defineConfig', () => {
     expect(config.workers).toBeUndefined()
     expect(config.retries).toBe(0)
     expect(config.forbidOnly).toBe(true)
+    expect(config.reporter).toBe('html')
     expect(config.use?.trace).toBe('retain-on-failure')
   })
 
@@ -267,6 +264,21 @@ describe('defineConfig', () => {
 
       expect(config.use?.trace).toBe('off')
       expect(config.projects?.[0].use?.trace).toBe('off')
+    } finally {
+      delete process.env.SCREENCI_RECORDING
+    }
+  })
+
+  it('preserves reporter config while recording', () => {
+    process.env.SCREENCI_RECORDING = 'true'
+
+    try {
+      const config = defineConfig({
+        projectName: 'Test',
+        reporter: 'html',
+      })
+
+      expect(config.reporter).toBe('html')
     } finally {
       delete process.env.SCREENCI_RECORDING
     }

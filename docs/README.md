@@ -20,6 +20,7 @@ If that command is missing or prints an old version, install Node.js from the [o
 | ----------------------------------------------------- | --------------------------------------------------------------------- |
 | [Introduction](./intro.md)                            | Overview of ScreenCI and where to start                               |
 | [Getting Started](./getting-started.md)               | Record video and subtitles from a ScreenCI project                    |
+| [Create Videos](./creating-videos.md)                 | Understand the generated files and write your own ScreenCI videos     |
 | [Playwright vs ScreenCI](./playwright-vs-screenci.md) | Compare Playwright tests with ScreenCI video scripts                  |
 | [AI-Supported Editing](./ai-editing.md)               | AI-facing docs access, llms.txt, and MCP workflows                    |
 | [Localization & Narrations](./localization.md)        | Multi-language narration and localized UI videos                      |

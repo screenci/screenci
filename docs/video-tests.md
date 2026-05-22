@@ -17,7 +17,7 @@ This means:
 
 Everything in [Playwright's page API](https://playwright.dev/docs/api/class-page) works as-is. ScreenCI extends it — it does not replace it.
 
-A video script file must end in `.video.ts` (or `.video.js`, `.video.mts`, etc.). Each call to `video()` produces one recorded video:
+A video script file must end in `.video.ts`. Each call to `video()` produces one recorded video:
 
 ```ts
 // videos/demo.video.ts
@@ -43,7 +43,7 @@ Inside `video()`, the `page` fixture is a `ScreenCIPage`, not a standard Playwri
 | ------------------ | ------------------- | ------------------------------------------------- |
 | `page.locator()`   | Returns `Locator`   | Returns `ScreenCILocator` (animated interactions) |
 | `page.getByRole()` | Returns `Locator`   | Returns `ScreenCILocator`                         |
-| `page.mouse`       | `Mouse` (teleport)  | `ScreenCIMouse` (animated bezier-curve moves)     |
+| `page.mouse`       | `Mouse` (immediate) | `ScreenCIMouse` (animated moves)                  |
 | All other `page.*` | Standard Playwright | Same — unchanged                                  |
 
 All standard `page` methods (`goto`, `waitForURL`, `waitForLoadState`, `waitForTimeout`, `keyboard`, `screenshot`, etc.) work exactly as documented in [Playwright's API](https://playwright.dev/docs/api/class-page).

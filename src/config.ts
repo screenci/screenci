@@ -1,4 +1,3 @@
-import type { ReporterDescription } from '@playwright/test'
 import type { ScreenCIConfig, ExtendedScreenCIConfig } from './types.js'
 import {
   DEFAULT_VIDEO_DIR,
@@ -7,34 +6,13 @@ import {
   DEFAULT_ACTION_TIMEOUT,
   DEFAULT_NAVIGATION_TIMEOUT,
 } from './defaults.js'
-import { fileURLToPath } from 'url'
-import { dirname, resolve } from 'path'
-import { existsSync } from 'fs'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-
-// Resolve reporter path - try .js first (production), then .ts (development)
-const reporterPathJs = resolve(__dirname, 'reporter.js')
-const reporterPathTs = resolve(__dirname, 'reporter.ts')
-const reporterPath = existsSync(reporterPathJs)
-  ? reporterPathJs
-  : reporterPathTs
-
-type ReporterConfig = string | ReporterDescription
-
-function isHtmlReporter(reporter: ReporterConfig): boolean {
-  const reporterName = Array.isArray(reporter) ? reporter[0] : reporter
-  return reporterName === 'html'
-}
 
 /**
  * Defines a screenci configuration file.
  *
- * Extends Playwright's config with screenci-specific options and enforces
- * settings required for reliable video recording. `retries`, `testDir`, and
- * `testMatch` are managed by screenci and cannot be set. Playwright
- * parallelism options pass through unchanged.
+ * Extends Playwright's config with screenci-specific options.
+ * `retries`, `testDir`, and `testMatch` are managed by screenci
+ * and cannot be set.
  *
  * @example
  * Minimal — all options have sensible defaults:
@@ -44,7 +22,6 @@ function isHtmlReporter(reporter: ReporterConfig): boolean {
  * ```
  *
  * @example
- * Full config:
  * ```ts
  * import { defineConfig } from 'screenci'
  *
@@ -68,45 +45,6 @@ function isHtmlReporter(reporter: ReporterConfig): boolean {
  */
 export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
   const isRecording = process.env.SCREENCI_RECORDING === 'true'
-
-  // Add the video name validator reporter if not already present
-  const existingReporters = config.reporter
-    ? Array.isArray(config.reporter)
-      ? config.reporter
-      : [config.reporter]
-    : ['list']
-  const filteredReporters = isRecording
-    ? existingReporters.filter((reporter) => !isHtmlReporter(reporter))
-    : existingReporters
-
-  // Check if our validator is already added
-  const hasValidator = filteredReporters.some((r: ReporterConfig) => {
-    if (Array.isArray(r)) {
-      return r[0] === reporterPath || r[0]?.toString().endsWith('reporter.js')
-    }
-    return r === reporterPath || r?.toString().endsWith('reporter.js')
-  })
-
-  // Convert all reporters to tuple format for Playwright validation
-  const normalizedReporters = filteredReporters.map((r: ReporterConfig) =>
-    Array.isArray(r) ? r : [r]
-  )
-
-  // Check if list reporter is present for CLI output
-  const hasListReporter = normalizedReporters.some((r) => {
-    const name = Array.isArray(r) ? r[0] : r
-    return name === 'list' || name === 'line' || name === 'dot'
-  })
-
-  // Build reporters array with proper typing - all reporters must be tuples
-  // Add list reporter if no CLI reporter is present
-  const reportersWithCLI = hasListReporter
-    ? normalizedReporters
-    : ([['list'], ...normalizedReporters] as [string, unknown][])
-
-  const reporters = hasValidator
-    ? reportersWithCLI
-    : ([[reporterPath, {}], ...reportersWithCLI] as [string, unknown][])
 
   // Runtime check for viewport (check before testDir since test objects may not have testDir defined)
   if (config.use && 'viewport' in config.use) {
@@ -188,7 +126,7 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
     record: {
       upload: record?.upload ?? DEFAULT_RECORD_UPLOAD_POLICY,
     },
-    reporter: reporters as ReporterDescription[],
+    ...(rest.reporter !== undefined ? { reporter: rest.reporter } : {}),
     use,
     ...(projects ? { projects } : {}),
     timeout: rest.timeout ?? DEFAULT_TIMEOUT,

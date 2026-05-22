@@ -30,5 +30,5 @@ npx --yes skills add screenci/screenci --skill screenci --skill playwright-cli -
 After updating, verify your project still works:
 
 ```bash
-npm run test
+npx screenci test
 ```

@@ -5,7 +5,7 @@ description: Understand the files created by screenci init and the normal workfl
 
 # Create Videos
 
-After `npx screenci@latest init`, ScreenCI gives you a small ready-to-edit project. This guide explains what each generated file is for and how to go from the starter example to your own final video.
+After following [Getting Started](/guides/getting-started), ScreenCI gives you a small ready-to-edit project. This guide explains what each generated file is for and how to go from the starter example to your own final video.
 
 ## What init creates
 
@@ -24,10 +24,8 @@ screenci/
 .github/workflows/screenci.yaml (optional)
 ```
 
-## What each file does
-
 - `screenci.config.ts` defines the ScreenCI project name, where video files live, which `.env` file to read, and default recording settings like aspect ratio, quality, and FPS. See the [configuration reference](/reference/configuration).
-- `package.json` gives you the main scripts: `npm run test` runs `screenci test`, and `npm run record` runs `screenci record`.
+- `package.json` declares the ScreenCI and Playwright dependencies used by the generated project.
 - `tsconfig.json` enables strict TypeScript for your video scripts.
 - `README.md` summarizes the normal workflow for the generated project.
 - `.gitignore` keeps generated output, dependencies, and secrets out of git.
@@ -55,7 +53,7 @@ That workflow:
 - can also be started manually with `workflow_dispatch`
 - installs dependencies with `npm ci`
 - installs Chromium for Playwright when needed
-- runs `npm run record`
+- runs `npx screenci record`
 - uses `SCREENCI_SECRET` from GitHub Actions secrets so recordings can be uploaded from CI
 
 This means the same final recording command works both locally and in CI.
@@ -80,7 +78,7 @@ For manual authoring, the usual pattern is:
 Before recording, make sure the script works locally:
 
 ```bash
-npm run test
+npx screenci test
 ```
 
 This runs the video script without the full recording pipeline, so it is the fastest way to confirm selectors, timing, and navigation.
@@ -90,7 +88,7 @@ This runs the video script without the full recording pipeline, so it is the fas
 When the script looks correct, record the final result:
 
 ```bash
-npm run record
+npx screenci record
 ```
 
 This is the same command used by the optional GitHub Actions workflow.

@@ -45,6 +45,32 @@ import {
  */
 export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
   const isRecording = process.env.SCREENCI_RECORDING === 'true'
+  const normalizeReporter = (
+    reporter: NonNullable<ScreenCIConfig['reporter']>
+  ): NonNullable<ScreenCIConfig['reporter']> => {
+    if (!isRecording) return reporter
+
+    // Keep the HTML report generated, but never auto-open it while recording.
+    if (reporter === 'html') {
+      return [['html', { open: 'never' }]]
+    }
+
+    if (Array.isArray(reporter)) {
+      return reporter.map((entry) => {
+        if (
+          Array.isArray(entry) &&
+          entry[0] === 'html' &&
+          (entry[1] === undefined || typeof entry[1] === 'object')
+        ) {
+          return ['html', { ...(entry[1] ?? {}), open: 'never' }]
+        }
+
+        return entry
+      }) as NonNullable<ScreenCIConfig['reporter']>
+    }
+
+    return reporter
+  }
 
   // Runtime check for viewport (check before testDir since test objects may not have testDir defined)
   if (config.use && 'viewport' in config.use) {
@@ -98,6 +124,8 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
   }
 
   const { videoDir, record, ...rest } = config
+  const reporter =
+    rest.reporter !== undefined ? normalizeReporter(rest.reporter) : undefined
 
   // recording does not need tracing, also it takes resources so that is why forced off
   const trace = isRecording ? 'off' : rest.use?.trace
@@ -126,7 +154,7 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
     record: {
       upload: record?.upload ?? DEFAULT_RECORD_UPLOAD_POLICY,
     },
-    ...(rest.reporter !== undefined ? { reporter: rest.reporter } : {}),
+    ...(reporter !== undefined ? { reporter } : {}),
     use,
     ...(projects ? { projects } : {}),
     timeout: rest.timeout ?? DEFAULT_TIMEOUT,

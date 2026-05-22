@@ -269,7 +269,7 @@ describe('defineConfig', () => {
     }
   })
 
-  it('preserves reporter config while recording', () => {
+  it('forces html reporter to never open while recording', () => {
     process.env.SCREENCI_RECORDING = 'true'
 
     try {
@@ -278,7 +278,22 @@ describe('defineConfig', () => {
         reporter: 'html',
       })
 
-      expect(config.reporter).toBe('html')
+      expect(config.reporter).toEqual([['html', { open: 'never' }]])
+    } finally {
+      delete process.env.SCREENCI_RECORDING
+    }
+  })
+
+  it('preserves non-html reporter config while recording', () => {
+    process.env.SCREENCI_RECORDING = 'true'
+
+    try {
+      const config = defineConfig({
+        projectName: 'Test',
+        reporter: 'list',
+      })
+
+      expect(config.reporter).toBe('list')
     } finally {
       delete process.env.SCREENCI_RECORDING
     }

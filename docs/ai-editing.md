@@ -31,7 +31,7 @@ Create a ScreenCI video that shows the onboarding flow.
 Use the screenci skill.
 Look at @src/routes/onboarding, @src/components/signup-form.tsx, and @screenci/videos/.
 Start from the real UI in the source code, create or update a .video.ts file, add narration, and keep setup hidden.
-Run npm run test until the video is ready, then run npm run record to get the final video output.
+Run npx screenci test until the video is ready, then run npx screenci record to get the final video output.
 ```
 
 This flow is usually faster and more reliable than browser-only exploration because the agent can inspect routes, labels, component names, and state logic directly from source.
@@ -65,7 +65,7 @@ Create a ScreenCI video for https://www.screenci.com/ that shows how to find the
 
 First inspect the live site with playwright-cli. Figure out the cleanest visible path to the docs, including any cookie banner handling that should stay inside hide().
 Then use the screenci skill to create a narrated video script in videos/ that starts on the requested page, explains what the user is doing, and uses visible clicks for navigation.
-Run npm run test until the video is ready, then run npm run record to get the final video output.
+Run npx screenci test until the video is ready, then run npx screenci record to get the final video output.
 ```
 
 ## Recommended setup
@@ -131,7 +131,7 @@ Use the screenci skill.
 Inspect @src/routes/pricing.tsx and @src/components/pricing-selector.tsx.
 Create or update a video in @screenci/videos/.
 Explain the flow with narration, keep initial setup hidden, and use visible clicks after setup.
-Run npm run test until the video is ready, then run npm run record to get the final video output.
+Run npx screenci test until the video is ready, then run npx screenci record to get the final video output.
 ```
 
 Example prompt for a deployed-site workflow:
@@ -141,7 +141,7 @@ Use playwright-cli to inspect https://www.screenci.com/ and create a ScreenCI vi
 
 After inspection, use the screenci skill and write the final video in videos/find-docs.video.ts with clear narration.
 Keep cookie handling and initial setup inside hide().
-Use visible clicks for the demo. Run npm run test until the video is ready, then run npm run record to get the final video output.
+Use visible clicks for the demo. Run npx screenci test until the video is ready, then run npx screenci record to get the final video output.
 ```
 
 ## Docs access for agents

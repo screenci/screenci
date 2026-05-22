@@ -1472,7 +1472,7 @@ describe('CLI', () => {
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining(`my-project/package.json`),
-        expect.stringContaining('"record": "screenci record"')
+        expect.stringContaining('"@playwright/test": "^1.59.0"')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining(`my-project/tsconfig.json`),
@@ -1517,9 +1517,13 @@ describe('CLI', () => {
       const pkg = JSON.parse(String(pkgCall?.[1])) as {
         dependencies: Record<string, string>
         devDependencies: Record<string, string>
+        scripts?: Record<string, string>
       }
       expect(pkg.dependencies['@playwright/test']).toBe('^1.59.0')
       expect(pkg.devDependencies['@playwright/test']).toBeUndefined()
+      expect(pkg.scripts).toBeUndefined()
+      expect(pkgCall?.[1]).not.toContain('"test": "screenci test"')
+      expect(pkgCall?.[1]).not.toContain('"record": "screenci record"')
       expect(pkgCall?.[1]).toContain('"@playwright/cli": "latest"')
     })
 
@@ -1539,9 +1543,13 @@ describe('CLI', () => {
       const pkg = JSON.parse(String(pkgCall?.[1])) as {
         dependencies: Record<string, string>
         devDependencies: Record<string, string>
+        scripts?: Record<string, string>
       }
       expect(pkg.dependencies['@playwright/test']).toBe('^1.59.0')
       expect(pkg.devDependencies['@playwright/test']).toBeUndefined()
+      expect(pkg.scripts).toBeUndefined()
+      expect(pkgCall?.[1]).not.toContain('"test": "screenci test"')
+      expect(pkgCall?.[1]).not.toContain('"record": "screenci record"')
       expect(pkgCall?.[1]).not.toContain('"@playwright/cli": "latest"')
     })
 
@@ -1620,7 +1628,7 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         'npx playwright install chromium --with-deps'
       )
-      expect(workflowCall?.[1]).toContain('npm run record')
+      expect(workflowCall?.[1]).toContain('npx screenci record')
       expect(workflowCall?.[1]).toContain(
         'Copy it from https://app.screenci.com/secrets or ./.env, add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action.'
       )

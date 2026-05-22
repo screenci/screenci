@@ -1472,10 +1472,6 @@ function generatePackageJson(
     JSON.stringify(
       {
         type: 'module',
-        scripts: {
-          record: 'screenci record',
-          test: 'screenci test',
-        },
         dependencies: {
           screenci: screenciDependency,
           '@playwright/test': '^1.59.0',
@@ -1628,7 +1624,7 @@ jobs:
         working-directory: ${workingDirectory}
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
-        run: npm run record
+        run: npx screenci record
 `
 }
 

@@ -2,7 +2,7 @@
 
 Your UI changed. Your demo videos didn't. screenci fixes that.
 
-Record product walkthroughs as code. When the UI ships, run `screenci record` and your videos regenerate. No clicky re-recordings, no stale screenshots, no passive-aggressive Slack messages from the docs team.
+Record product walkthroughs as code. When the UI ships, run `npx screenci record` and your videos regenerate. No clicky re-recordings, no stale screenshots, no passive-aggressive Slack messages from the docs team.
 
 ## Install
 
@@ -80,13 +80,6 @@ npx screenci test --ui
 
 # Record: captures the screen and writes .screenci/<name>/recording.mp4
 npx screenci record
-```
-
-Or via the package scripts scaffolded by `init`:
-
-```bash
-npm run test    # → npx screenci test
-npm run record  # → npx screenci record
 ```
 
 Recordings land in `.screenci/<video-name>/recording.mp4` alongside a `data.json` with all the interaction events.

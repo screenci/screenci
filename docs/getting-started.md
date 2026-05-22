@@ -46,7 +46,7 @@ Next, continue with [Create Videos](/guides/creating-videos) to understand the g
 Inside the ScreenCI project directory, verify the starter video script works before recording:
 
 ```bash
-npm run test
+npx screenci test
 ```
 
 This is similar to running `playwright test`: it executes the `.video.ts` script without recording, so you can quickly check that the video script works before recording.
@@ -56,7 +56,7 @@ This is similar to running `playwright test`: it executes the `.video.ts` script
 Inside the ScreenCI project directory, record the final video when the script is working:
 
 ```bash
-npm run record
+npx screenci record
 ```
 
 ScreenCI records the browser and sends the raw video to `app.screenci.com` for final rendering and optional deployment.

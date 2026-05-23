@@ -1,194 +1,109 @@
----
-title: CLI Commands
-description: Complete reference for the screenci CLI, including recording, testing, upload, project info, and public URL commands.
----
+# CLI
 
-# CLI Commands
+The `screenci` CLI keeps the workflow small: initialize a project, iterate locally, record final output, and manage public delivery when needed. Most commands resolve `screenci.config.ts` from the current directory unless you pass `--config <path>`.
 
-The `screenci` CLI wraps the Playwright workflow used by ScreenCI projects and adds project-aware commands for uploads and public URLs.
+## Command overview
 
-Most commands look for `screenci.config.ts` in the current directory. Use `--config <path>` when your config lives elsewhere.
-
-## Commands overview
-
-| Command                           | What it does                                                     |
-| --------------------------------- | ---------------------------------------------------------------- |
-| `screenci init [name]`            | Scaffold a new ScreenCI project                                  |
-| `screenci test [args...]`         | Forward directly to `playwright test` using your ScreenCI config |
-| `screenci record [args...]`       | Record videos with local Playwright                              |
-| `screenci info`                   | Print remote project info as JSON                                |
-| `screenci make-public <videoId>`  | Enable public URLs for a video                                   |
-| `screenci make-private <videoId>` | Disable public URLs for a video                                  |
+| Command                            | Purpose                                               |
+| ---------------------------------- | ----------------------------------------------------- |
+| `screenci init [name]`             | Scaffold a ScreenCI project                           |
+| `screenci test [playwrightArgs]`   | Run `.video.ts` files locally without final recording |
+| `screenci record [playwrightArgs]` | Record videos and upload results when configured      |
+| `screenci info`                    | Print remote project info as JSON                     |
+| `screenci make-public <videoId>`   | Enable public delivery for a video                    |
+| `screenci make-private <videoId>`  | Disable public delivery for a video                   |
 
 ## `screenci init [name]`
 
-Creates a new `screenci/` directory with a starter config, example video, and optional workflow file. The optional GitHub Actions workflow is written at `.github/workflows/screenci.yaml` in the current directory. `init` does not authenticate. If `SCREENCI_SECRET` is missing, `screenci record` will open a browser window and complete the login flow before recording starts.
+Create a new ScreenCI project in the current directory:
 
 ```bash
 npx screenci@latest init
-# or: npx screenci@latest init "My Product"
-# or: npx screenci@latest init "My Product" --yes
-cd screenci
+npx screenci@latest init "My Product"
 ```
 
-The optional `[name]` is the ScreenCI project display name, not the directory name.
-Because init writes ScreenCI files into `screenci/` and the optional workflow into `.github/workflows/screenci.yaml`, it works well inside existing projects without mixing generated files into your app source.
+Common options:
 
-Options:
+- `-y, --yes` accepts all defaults
+- `--agent <name>` passes an agent name to the selected skills install command
+- `-v, --verbose` prints underlying command output
 
-- `-v, --verbose` prints underlying command output instead of spinners
-- `--install` install ScreenCI skills, npm dependencies, and Chromium without prompting
-- `--ci` add GitHub Action CI without prompting
-- `--skill` answer yes to the AI authoring question and include `playwright-cli`
-- `-y, --yes` answer yes to all init prompts
+Interactive defaults create the GitHub Actions workflow, install npm dependencies, install Chromium, skip OS dependency installation, install the ScreenCI skill, and install `playwright-cli` support.
+
+Use this command in [Installation](/docs).
 
 ## `screenci test [playwrightArgs...]`
 
-Forwards Playwright test arguments in normal `playwright test` syntax while still resolving `screenci.config.ts`.
+Run videos locally without the final recording pipeline:
 
 ```bash
 npx screenci test
-npx screenci test --grep "checkout"
-npx screenci test --project=chromium
-npx screenci test tests/onboarding.video.ts --grep "step 2"
+npx screenci test videos/onboarding.video.ts
+npx screenci test --grep "billing"
+npx screenci test --ui
 ```
 
-Use this when you want normal Playwright execution without recording.
-
-By default, `screenci test` skips ScreenCI's recording-only pacing so it stays fast:
-
-- cursor moves become instant instead of animated
-- built-in sleeps for click, hide, and zoom timing are skipped
-- no screen recording is started
-
-That makes `test` the right command while you are iterating on selectors, app state, and assertions.
+Use this during normal authoring. Most trailing arguments are forwarded to Playwright.
 
 ### `--mock-record`
 
-Use `--mock-record` when you want `screenci test` to keep the same animated timing model as `screenci record` without starting the actual browser screen capture:
-
 ```bash
 npx screenci test --mock-record
-npx screenci test --mock-record --grep "checkout"
 ```
 
-This is mainly a troubleshooting option. Reach for it when:
-
-- `screenci test` passes, but `screenci record` fails
-- a timing issue only shows up with animated cursor moves or ScreenCI's built-in pauses
-- you want to debug recording-like pacing without paying the full cost of local recording
-
-You can also pass normal Playwright test arguments through `screenci test`. That means you can run only some tests while iterating by using the same filters you would use with `playwright test`, such as a file path or `--grep`:
-
-```bash
-npx screenci test videos/onboarding.video.ts
-npx screenci test --grep "checkout"
-npx screenci test videos/onboarding.video.ts --grep "step 2"
-```
-
-Notes:
-
-- Most arguments after `test` are passed through as-is to `playwright test`
-- `screenci test` still injects your resolved `screenci.config.ts` automatically
-- `--config` / `-c` are reserved for the `screenci` CLI itself, so use them to point to a different `screenci.config.ts`
-- `--verbose` / `-v` are reserved for the `screenci` CLI itself for extra CLI logging, not forwarded to Playwright
-- `--mock-record` is handled by `screenci` itself and is not forwarded to Playwright
+This keeps recording-like pacing enabled without starting the real recording capture path. Use it when `test` passes but `record` exposes timing differences.
 
 ## `screenci record [playwrightArgs...]`
 
-Records videos with ScreenCI by running local Playwright with `SCREENCI_RECORDING=true`, then uploads results if `SCREENCI_SECRET` is set. If the secret is missing, `record` prompts for login before recording begins.
-
-By default, if some recording tests fail, ScreenCI still uploads the successful recordings. To opt out, set `record.upload: 'all-or-nothing'` in `screenci.config.ts`.
+Record final output:
 
 ```bash
 npx screenci record
 npx screenci record --project=chromium
 ```
 
-Options:
+Behavior:
 
-- `-c, --config <path>` use a custom config path
-- `-v, --verbose` show full command output during local development setup
+- enables recording timing
+- writes local output into `.screenci/`
+- uploads successful recordings when `SCREENCI_SECRET` is available
 
-Restrictions:
+Relevant options:
 
-- `--retries` is rejected because ScreenCI forces retries to `0`
+- `-c, --config <path>`
+- `-v, --verbose`
 
-`--workers`, `-j`, and `--fully-parallel` pass through to Playwright unchanged.
+Important restriction:
 
-During `screenci record`, ScreenCI now waits for deferred recording finalization at the end of the run and shows a `Finalizing recordings...` spinner before reporting `Recordings finalized`.
+- `--retries` is not supported because ScreenCI forces retries to `0`
 
-Troubleshooting:
-
-- If `screenci test` works but `screenci record` fails, retry with `screenci test --mock-record` to reproduce recording-like timing without starting the real capture pipeline.
+Use this command in [Record and Publish](/docs/record-and-publish).
 
 ## `screenci info`
-
-Fetches the current remote project info for the local `projectName` and prints it as 2-space-formatted JSON.
 
 ```bash
 npx screenci info
 ```
 
-Example output:
-
-```json
-{
-  "projectName": "my-project",
-  "videos": [
-    {
-      "name": "Onboarding",
-      "id": "video_123",
-      "isPublic": true,
-      "videoURL": "https://api.screenci.com/public/video_123/en/video",
-      "thumbnailURL": "https://api.screenci.com/public/video_123/en/thumbnail",
-      "subtitlesURL": "https://api.screenci.com/public/video_123/en/subtitle"
-    },
-    {
-      "name": "Settings",
-      "id": "video_456",
-      "isPublic": false
-    }
-  ]
-}
-```
-
-Requirements:
-
-- `SCREENCI_SECRET` must be set
-- the CLI uses your local `projectName` from `screenci.config.ts`
+Prints remote project data for the current `projectName`, including video IDs and whether public delivery is enabled.
 
 ## `screenci make-public <videoId>`
-
-Turns on public URLs for a video and publishes the currently selected versions.
 
 ```bash
 npx screenci make-public video_123
 ```
 
-Get `<videoId>` from `screenci info`.
-
-Requirements:
-
-- `SCREENCI_SECRET` must be set
-- `<videoId>` must belong to the organisation associated with that secret
+Enables public delivery for a video. Get the ID from `screenci info`.
 
 ## `screenci make-private <videoId>`
-
-Disables public URLs for a video and removes the public manifest.
 
 ```bash
 npx screenci make-private video_123
 ```
 
-Get `<videoId>` from `screenci info`.
+Disables public delivery for a video.
 
-Requirements:
-
-- `SCREENCI_SECRET` must be set
-- `<videoId>` must belong to the organisation associated with that secret
-
-## Shared `--config` option
+## Shared environment and config behavior
 
 These commands support `--config <path>`:
 
@@ -198,15 +113,10 @@ These commands support `--config <path>`:
 - `make-public`
 - `make-private`
 
-## Environment
+`SCREENCI_SECRET` is used for:
 
-### `SCREENCI_SECRET`
+- uploads
+- project info
+- public delivery changes
 
-Used for authenticated ScreenCI API actions:
-
-- upload recordings
-- fetch project info
-- make videos public
-- make videos private
-
-If your config sets `envFile`, the CLI loads it automatically before these commands run.
+If `envFile` is configured in `screenci.config.ts`, the CLI loads it automatically.

@@ -10,23 +10,20 @@ Record product walkthroughs as code. When the UI ships, run `npx screenci record
 npm install screenci
 ```
 
-## Init a new project
+## Init a project
 
 ```bash
-npx screenci init "My Project"
-cd screenci
-npm install
+npx screenci init
 ```
 
-This scaffolds a ready-to-run project:
+This scaffolds a ready-to-run project in the current directory:
 
 ```
-screenci/
-  screenci.config.ts     ← video settings
-  videos/
-    example.video.ts     ← your first video script
-  package.json
-  .gitignore
+screenci.config.ts     ← video settings
+videos/
+  example.video.ts     ← your first video script
+package.json
+.gitignore
 ```
 
 ## Write a video
@@ -47,7 +44,7 @@ video('Onboarding flow', async ({ page }) => {
 
 Each `video()` call → one `.mp4`. The title becomes the filename.
 
-> **Full reference:** [Writing Video Tests](http://localhost:4321/reference/video-tests)
+> **Full reference:** [Write Video Scripts](http://localhost:4321/docs/write-video-scripts)
 
 ### `ScreenCIPage` — animated interactions
 

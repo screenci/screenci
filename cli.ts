@@ -13,10 +13,10 @@ import {
   stat,
   writeFile,
 } from 'fs/promises'
-import { dirname, relative as pathRelative, resolve } from 'path'
+import { basename, dirname, relative as pathRelative, resolve } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { Command, CommanderError } from 'commander'
-import { input, confirm, select } from '@inquirer/prompts'
+import { input } from '@inquirer/prompts'
 import ora from 'ora'
 import pc from 'picocolors'
 import { logger } from './src/logger.js'
@@ -37,7 +37,7 @@ import {
   formatDuplicateTitlesMessage,
 } from './src/titleValidation.js'
 
-const SCREENCI_DOCS_URL = 'https://screenci.com/docs/intro/'
+const SCREENCI_DOCS_URL = 'https://screenci.com/docs'
 const SCREENCI_MOCK_RECORD_DOCS_URL =
   'https://screenci.com/docs/reference/cli/#--mock-record'
 
@@ -1537,7 +1537,7 @@ This project uses ScreenCI + Playwright to create and upload polished product vi
 
 Write video scripts in \`videos/*.video.ts\` and use \`video(...)\` calls to create product videos. These are very similar to Playwright \`.test.ts\` and \`test(...)\` calls.
 
-Learn more: https://screenci.com/docs/intro/
+Learn more: https://screenci.com/docs
 
 ## Quick start
 
@@ -1564,14 +1564,7 @@ node_modules/
 `
 }
 
-function generateGithubAction(workingDirectory: string): string {
-  const packageLockPath =
-    workingDirectory === '.'
-      ? 'package-lock.json'
-      : `${workingDirectory}/package-lock.json`
-  const envFilePath =
-    workingDirectory === '.' ? './.env' : `./${workingDirectory}/.env`
-
+function generateGithubAction(): string {
   return `name: ScreenCI
 
 on:
@@ -1591,7 +1584,7 @@ jobs:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
         run: |
           if [ -z "$SCREENCI_SECRET" ]; then
-            echo "::error::SCREENCI_SECRET is not set. Copy it from https://app.screenci.com/secrets or ${envFilePath}, add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action."
+            echo "::error::SCREENCI_SECRET is not set. Copy it from https://app.screenci.com/secrets or ./.env, add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action."
             exit 1
           fi
 
@@ -1601,10 +1594,10 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: ${packageLockPath}
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        working-directory: ${workingDirectory}
+        working-directory: .
         run: npm ci
 
       - name: Cache Playwright Chromium
@@ -1612,16 +1605,16 @@ jobs:
         id: pw-cache
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-\${{ runner.os }}-\${{ hashFiles('${packageLockPath}') }}
+          key: playwright-\${{ runner.os }}-\${{ hashFiles('package-lock.json') }}
 
       - name: Install Chromium
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        working-directory: ${workingDirectory}
-        run: npx playwright install chromium --with-deps
+        working-directory: .
+        run: npx playwright install chromium
 
       - id: record
         name: Record
-        working-directory: ${workingDirectory}
+        working-directory: .
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
         run: npx screenci record
@@ -1741,58 +1734,75 @@ video('See the next steps in ScreenCI docs', async ({ page }) => {
 `
 }
 
+function getDefaultInitProjectName(): string {
+  const directoryName = basename(getInitProjectRoot())
+  return directoryName.length > 0 ? directoryName : 'screenci-project'
+}
+
 async function promptProjectName(): Promise<string> {
-  return input({ message: 'Project name:' })
-}
-
-async function promptInitDependencies(): Promise<boolean> {
-  return confirm({
-    message:
-      'Install dependencies now, including Chromium for Playwright? (Y/n)',
-    default: true,
+  return input({
+    message: 'Project name:',
+    default: getDefaultInitProjectName(),
   })
 }
 
-async function promptInitAiAuthoring(): Promise<boolean> {
-  return confirm({
-    message:
-      'Do you want to write videos with an AI agent based on a URL and not just source code? If yes, playwright-cli will be also installed.',
-    default: true,
+async function promptYesNo(
+  message: string,
+  defaultValue: boolean
+): Promise<boolean> {
+  const answer = await input({
+    message,
+    default: defaultValue ? 'y' : 'n',
+    validate: (value) => {
+      const normalized = value.trim().toLowerCase()
+      if (
+        normalized === '' ||
+        normalized === 'y' ||
+        normalized === 'yes' ||
+        normalized === 'n' ||
+        normalized === 'no'
+      ) {
+        return true
+      }
+      return 'Enter y or n'
+    },
   })
+
+  const normalized = answer.trim().toLowerCase()
+  if (normalized === '') return defaultValue
+  return normalized === 'y' || normalized === 'yes'
 }
 
-async function promptInitGithubActionCi(): Promise<boolean> {
-  return confirm({
-    message: 'Do you want to add Github Action CI? (Y/n)',
-    default: true,
-  })
+async function promptInitGithubActionWorkflow(): Promise<boolean> {
+  return promptYesNo('Add a GitHub Actions workflow? (Y/n)', true)
 }
 
-type InitRepositoryMode = 'standalone' | 'existing-repository'
-
-async function promptInitRepositoryMode(): Promise<InitRepositoryMode> {
-  return select({
-    message:
-      'Initialize ScreenCI as a standalone project or part of the existing repository?',
-    default: 'standalone',
-    choices: [
-      {
-        name: 'Standalone project',
-        value: 'standalone',
-        description: 'Create a project directory with its own GitHub Action.',
-      },
-      {
-        name: 'Part of existing repository',
-        value: 'existing-repository',
-        description:
-          'Create ./screenci and add the GitHub Action at the repository root.',
-      },
-    ],
-  })
+async function promptInitPlaywrightBrowsers(): Promise<boolean> {
+  return promptYesNo(
+    "Install Playwright browsers (can be done manually via 'npx playwright install chromium')? (Y/n)",
+    true
+  )
 }
 
-function projectNameToDirectoryName(projectName: string): string {
-  return projectName.trim().replace(/\s+/g, '-')
+async function promptInitPlaywrightOsDependencies(): Promise<boolean> {
+  return promptYesNo(
+    "Install Playwright operating system dependencies (might require sudo / root and can be done manually via 'npx playwright install-deps chromium')? (y/N)",
+    false
+  )
+}
+
+async function promptInitScreenCISkill(): Promise<boolean> {
+  return promptYesNo(
+    "Install the ScreenCI skill for AI agents (can be done manually via 'npx -y skills add screenci/screenci --skill screenci -y')? (Y/n)",
+    true
+  )
+}
+
+async function promptInitPlaywrightCliSkill(): Promise<boolean> {
+  return promptYesNo(
+    "Install playwright-cli for URL-based browser inspection (can be done manually via 'npx -y skills add screenci/screenci --skill playwright-cli -y && npm install @playwright/cli')? (Y/n)",
+    true
+  )
 }
 
 function getInitProjectRoot(): string {
@@ -1831,10 +1841,7 @@ export async function ensureScreenciSecret(): Promise<string | undefined> {
 
 type InitOptions = {
   verbose: boolean
-  install: boolean
   yes: boolean
-  skill: boolean
-  ci: boolean
   agent?: string
 }
 
@@ -1842,14 +1849,13 @@ async function runInit(
   projectNameArg: string | undefined,
   options: InitOptions
 ): Promise<void> {
-  const { verbose, install, yes, skill, ci, agent } = options
+  const { verbose, yes, agent } = options
   const initCwd = getInitProjectRoot()
-  const existingRepositoryDetected = existsSync(resolve(initCwd, '.git'))
 
   let projectName = projectNameArg?.trim()
 
   if (!projectName) {
-    projectName = await promptProjectName()
+    projectName = yes ? getDefaultInitProjectName() : await promptProjectName()
   }
 
   if (!projectName) {
@@ -1857,78 +1863,60 @@ async function runInit(
     process.exit(1)
   }
 
-  if (existingRepositoryDetected) {
-    logger.info('Existing repository detected')
-  }
-
-  const repositoryMode: InitRepositoryMode = existingRepositoryDetected
-    ? yes
-      ? 'standalone'
-      : await promptInitRepositoryMode()
-    : 'standalone'
-  const isPartOfExistingRepository = repositoryMode === 'existing-repository'
-
-  const dirName = isPartOfExistingRepository
-    ? 'screenci'
-    : projectNameToDirectoryName(projectName)
-  const projectDir = resolve(initCwd, dirName)
-  const githubRootDir = isPartOfExistingRepository ? initCwd : projectDir
-  const githubDir = resolve(githubRootDir, '.github')
-  const githubWorkflowsDir = resolve(githubDir, 'workflows')
+  const projectDir = initCwd
+  const githubWorkflowsDir = resolve(projectDir, '.github', 'workflows')
   const githubActionPath = resolve(githubWorkflowsDir, 'screenci.yaml')
-  const githubActionProjectDir = isPartOfExistingRepository ? 'screenci' : '.'
-
-  if (existsSync(projectDir)) {
-    logger.error(`Error: Directory "${dirName}" already exists`)
-    process.exit(1)
-  }
-
-  const shouldInstallDependencies = yes
+  const shouldAddGithubActionWorkflow = yes
     ? true
-    : install
-      ? true
-      : await promptInitDependencies()
-  const shouldAddPlaywrightCli = yes
+    : await promptInitGithubActionWorkflow()
+  const shouldInstallPlaywrightBrowsers = yes
     ? true
-    : skill
-      ? true
-      : await promptInitAiAuthoring()
-  const shouldAddGithubActionCi = yes
+    : await promptInitPlaywrightBrowsers()
+  const shouldInstallPlaywrightOsDependencies = yes
+    ? false
+    : await promptInitPlaywrightOsDependencies()
+  const shouldInstallScreenCISkill = yes
     ? true
-    : ci
-      ? true
-      : await promptInitGithubActionCi()
+    : await promptInitScreenCISkill()
+  const shouldInstallPlaywrightCli = yes
+    ? true
+    : await promptInitPlaywrightCliSkill()
 
-  if (shouldAddGithubActionCi && existsSync(githubActionPath)) {
+  if (shouldAddGithubActionWorkflow && existsSync(githubActionPath)) {
     logger.error(
       'Error: GitHub Actions workflow ".github/workflows/screenci.yaml" already exists'
     )
     process.exit(1)
   }
 
-  const skillsArgs = [
-    '--yes',
-    'skills',
-    'add',
-    'screenci/screenci',
-    ...(agent ? ['--agent', agent] : []),
-    '--skill',
-    'screenci',
-    ...(shouldAddPlaywrightCli ? ['--skill', 'playwright-cli'] : []),
-    '-y',
-  ]
-  const skillsCommand = `npx ${skillsArgs.join(' ')}`
+  const skills: string[] = []
+  if (shouldInstallScreenCISkill) {
+    skills.push('screenci')
+  }
+  if (shouldInstallPlaywrightCli) {
+    skills.push('playwright-cli')
+  }
+  const skillsArgs =
+    skills.length === 0
+      ? null
+      : [
+          '-y',
+          'skills',
+          'add',
+          'screenci/screenci',
+          ...(agent ? ['--agent', agent] : []),
+          ...skills.flatMap((skillName) => ['--skill', skillName]),
+          '-y',
+        ]
+  const skillsCommand =
+    skillsArgs === null ? null : `npx ${skillsArgs.join(' ')}`
   const screenciDependency =
     getInitScreenciDependencyOverride() ?? (await readCurrentScreenciVersion())
 
+  logger.info("Initializing project in '.'")
   await mkdir(resolve(projectDir, 'videos'), { recursive: true })
-  if (shouldAddGithubActionCi) {
-    if (!existsSync(githubDir)) {
-      await mkdir(githubDir)
-    }
-    if (!existsSync(githubWorkflowsDir)) {
-      await mkdir(githubWorkflowsDir)
-    }
+  if (shouldAddGithubActionWorkflow) {
+    await mkdir(githubWorkflowsDir, { recursive: true })
   }
   await writeFile(
     resolve(projectDir, 'screenci.config.ts'),
@@ -1936,7 +1924,7 @@ async function runInit(
   )
   await writeFile(
     resolve(projectDir, 'package.json'),
-    generatePackageJson(shouldAddPlaywrightCli, screenciDependency)
+    generatePackageJson(shouldInstallPlaywrightCli, screenciDependency)
   )
   await writeFile(resolve(projectDir, 'tsconfig.json'), generateTsconfig())
   await writeFile(resolve(projectDir, 'README.md'), generateReadme(projectName))
@@ -1945,15 +1933,12 @@ async function runInit(
     resolve(projectDir, 'videos', 'example.video.ts'),
     generateExampleVideo()
   )
-  if (shouldAddGithubActionCi) {
-    await writeFile(
-      githubActionPath,
-      generateGithubAction(githubActionProjectDir)
-    )
+  if (shouldAddGithubActionWorkflow) {
+    await writeFile(githubActionPath, generateGithubAction())
   }
   await writeFile(resolve(projectDir, '.env'), '')
 
-  logger.info(`Initialized screenci project "${projectName}" in ${projectDir}/`)
+  logger.info(`Initialized screenci project "${projectName}" in .`)
   logger.info('Files created:')
   logger.info('  screenci.config.ts')
   logger.info('  package.json')
@@ -1961,68 +1946,74 @@ async function runInit(
   logger.info('  README.md')
   logger.info('  .gitignore')
   logger.info('  videos/example.video.ts')
-  if (shouldAddGithubActionCi) {
-    const githubActionDisplayPath = isPartOfExistingRepository
-      ? '.github/workflows/screenci.yaml (outside ./screenci, at repository root)'
-      : '.github/workflows/screenci.yaml'
-    logger.info(`  ${githubActionDisplayPath}`)
+  if (shouldAddGithubActionWorkflow) {
+    logger.info('  .github/workflows/screenci.yaml')
   }
   logger.info('  .env  (empty placeholder)')
   logger.info('')
 
-  if (shouldInstallDependencies) {
+  if (skillsArgs !== null) {
     if (verbose) {
       logger.info(`Running '${skillsCommand}'...`)
       await spawnInherited('npx', skillsArgs, projectDir, 'screenci init')
     } else {
-      const spinner = ora('Adding ScreenCI skills...').start()
+      const spinner = ora('Adding selected AI skills...').start()
       try {
         await spawnSilent('npx', skillsArgs, projectDir)
-        spinner.succeed('ScreenCI skills added')
+        spinner.succeed('Selected AI skills added')
       } catch (err) {
-        spinner.fail('ScreenCI skills install failed')
+        spinner.fail('AI skills install failed')
         throw err
       }
     }
+  }
 
-    if (verbose) {
-      const installArgs = ['install', '--include=dev']
-      logger.info(`Running 'npm ${installArgs.join(' ')}'...`)
-      await spawnInherited('npm', installArgs, projectDir, 'screenci init')
-    } else {
-      const spinner = ora('Running npm install...').start()
-      try {
-        const installArgs = ['install', '--include=dev', '--prefix', projectDir]
-        await spawnSilent('npm', installArgs)
-        spinner.succeed('npm install complete')
-      } catch (err) {
-        spinner.fail('npm install failed')
-        throw err
-      }
+  const installArgs = ['install', '--include=dev']
+  if (verbose) {
+    logger.info(`Running 'npm ${installArgs.join(' ')}'...`)
+    await spawnInherited('npm', installArgs, projectDir, 'screenci init')
+  } else {
+    const spinner = ora('Running npm install...').start()
+    try {
+      await spawnSilent('npm', installArgs, projectDir)
+      spinner.succeed('npm install complete')
+    } catch (err) {
+      spinner.fail('npm install failed')
+      throw err
     }
+  }
 
+  if (shouldInstallPlaywrightBrowsers) {
     logger.info(
-      "Local development requires Chromium for Playwright, running 'npx playwright install chromium --with-deps'..."
+      "Installing Playwright Chromium with 'npx playwright install chromium'..."
     )
     await spawnInherited(
       'npx',
-      ['playwright', 'install', 'chromium', '--with-deps'],
+      ['playwright', 'install', 'chromium'],
       projectDir,
       'screenci init'
     )
-    logger.info(`${pc.green('✔')} Playwright installed successfully`)
-  } else {
-    logger.info('Dependencies were not installed automatically.')
-    logger.info('Run these commands when you are ready:')
-    logger.info(`  ${skillsCommand}`)
-    logger.info('  npm install --include=dev')
-    logger.info('  npx playwright install chromium --with-deps')
+    logger.info(`${pc.green('✔')} Playwright Chromium installed successfully`)
+  }
+
+  if (shouldInstallPlaywrightOsDependencies) {
+    logger.info(
+      "Installing Playwright operating system dependencies with 'npx playwright install-deps chromium'..."
+    )
+    await spawnInherited(
+      'npx',
+      ['playwright', 'install-deps', 'chromium'],
+      projectDir,
+      'screenci init'
+    )
+    logger.info(
+      `${pc.green('✔')} Playwright operating system dependencies installed successfully`
+    )
   }
   logger.info('')
   logger.info('Next steps:')
-  logger.info(`  cd ${dirName}`)
   logger.info('  Read README.md for setup and recording flow')
-  logger.info('  Docs: https://screenci.com/docs/intro/')
+  logger.info('  Docs: https://screenci.com/docs')
   logger.info('  npx screenci test')
   logger.info('  npx screenci record')
 }
@@ -2247,26 +2238,17 @@ export async function main() {
     .command('init [name]')
     .description('Initialize a new screenci project')
     .option(
-      '--install',
-      'install skills, dependencies, and Chromium without prompting'
-    )
-    .option('--ci', 'add GitHub Action CI without prompting')
-    .option(
       '--agent <name>',
       'target agent for skills install, e.g. opencode. Supported agents: https://github.com/vercel-labs/skills#supported-agents'
     )
-    .option('--skill', 'enable playwright-cli without prompting')
-    .option('-y, --yes', 'answer yes to all init prompts')
+    .option('-y, --yes', 'accept init defaults')
     .option('-v, --verbose', 'verbose output')
     .action(
       async (name: string | undefined, options: Record<string, unknown>) => {
         const agent = options['agent'] as string | undefined
         await runInit(name, {
           verbose: (options['verbose'] as boolean | undefined) ?? false,
-          install: (options['install'] as boolean | undefined) ?? false,
           yes: (options['yes'] as boolean | undefined) ?? false,
-          skill: (options['skill'] as boolean | undefined) ?? false,
-          ci: (options['ci'] as boolean | undefined) ?? false,
           ...(agent !== undefined ? { agent } : {}),
         })
       }

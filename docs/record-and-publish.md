@@ -1,0 +1,69 @@
+# Record and Publish
+
+When the local script is stable, switch from `screenci test` to `screenci record`. This is the ScreenCI-specific step where browser automation turns into a rendered video that can be reviewed, published, and embedded elsewhere.
+
+#### You will learn
+
+- [when to use `test` and when to use `record`](#record-the-final-browser-session)
+- [what `npx screenci record` does](#record-the-final-browser-session)
+- [what gets uploaded and rendered](#what-gets-rendered)
+- [how local recording relates to CI and public delivery](#local-vs-ci-recording)
+
+## Record the final browser session
+
+Run:
+
+```bash
+npx screenci record
+```
+
+During `record`, ScreenCI:
+
+1. runs the `.video.ts` file with recording timing enabled
+2. captures the browser session locally
+3. writes the raw output into `.screenci/`
+4. uploads successful recordings when `SCREENCI_SECRET` is available
+5. finalizes the remote render
+
+## What gets rendered
+
+The final output can include:
+
+- the recorded browser video
+- subtitles
+- synthesized narration
+- zooms and framing changes
+- overlays and assets
+
+That is why `record` is the final-authoring step rather than a heavier version of `test`.
+
+## Local vs CI recording
+
+Use local recording when you are still polishing the flow. Use CI recording when you want repeatable updates from the repository workflow.
+
+Both use the same command:
+
+```bash
+npx screenci record
+```
+
+The difference is where it runs and how `SCREENCI_SECRET` is supplied.
+
+## Accepted and latest output behavior
+
+ScreenCI can keep a stable project and video identity while the underlying render changes over time.
+
+In practice:
+
+- a newly finished render can become the latest output
+- public delivery can be configured to follow the latest output automatically
+- teams can also keep manual control over what stays publicly selected
+
+See [Public URLs and Embeds](/docs/guides/public-urls-and-embeds) for the public-facing behavior.
+
+## Troubleshooting
+
+- Authentication problems: make sure `SCREENCI_SECRET` exists in `.env` or CI secrets.
+- Upload skipped: `record` can still finish locally if no secret is configured, but it will not upload.
+- Partial failures: `record.upload` controls whether successful videos still upload when another video fails.
+- `record` fails but `test` passes: retry with `npx screenci test --mock-record` to reproduce recording-like pacing.

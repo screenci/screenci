@@ -1,0 +1,100 @@
+# Write Video Scripts
+
+This page follows the same teaching job as Playwright's [Writing tests](https://playwright.dev/docs/writing-tests), but for ScreenCI videos instead of assertion-heavy tests. Video scripts are Playwright-like files with ScreenCI-specific behavior around pacing, narration, and camera direction.
+
+#### You will learn
+
+- [how to structure a `.video.ts` file](#anatomy-of-a-video-script)
+- [how to navigate and interact](#author-with-locators)
+- [how ScreenCI behavior differs from plain Playwright](#what-screenci-changes)
+- [how to control visible pacing](#control-pacing)
+
+## Minimal example
+
+```ts
+import { hide, video } from 'screenci'
+
+video('Create a project', async ({ page }) => {
+  await hide(async () => {
+    await page.goto('https://screenci.com/dashboard')
+  })
+
+  await page.getByRole('button', { name: 'New project' }).click()
+  await page.getByLabel('Name').fill('Release notes')
+  await page.getByRole('button', { name: 'Create' }).click()
+})
+```
+
+## Anatomy of a video script
+
+Most ScreenCI files have the same building blocks:
+
+- imports from `screenci`
+- one or more `video()` calls
+- Playwright-style `page` interactions
+- a hidden setup block when the visible recording should start from a ready state
+
+## Author with locators
+
+Prefer the same locator style you would use in a reliable Playwright test:
+
+```ts
+await page.getByRole('button', { name: 'Invite teammate' }).click()
+await page.getByLabel('Email').fill('jane@screenci.com')
+```
+
+Role-based and label-based locators usually age better than CSS selectors copied from transient DOM structure.
+
+## What ScreenCI changes
+
+Inside `video()`, ScreenCI wraps the normal Playwright page and locators so visible interactions look like a recording instead of a robotic test:
+
+- cursor moves are animated
+- typing is visible
+- helper APIs such as `hide()`, `autoZoom()`, `zoomTo()`, and `createNarration()` integrate with the recording timeline
+
+Most standard Playwright APIs still work as expected.
+
+## Setup vs visible sequence
+
+Keep setup out of the final video when it does not help the viewer:
+
+```ts
+await hide(async () => {
+  await page.goto('/login')
+  await page.getByLabel('Email').fill(process.env.DEMO_EMAIL!)
+  await page.getByLabel('Password').fill(process.env.DEMO_PASSWORD!)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+})
+```
+
+Then let the visible sequence begin where the viewer would want to start watching.
+
+## Control pacing
+
+Visible pacing is part of authoring quality.
+
+Prefer:
+
+- waiting for the UI the viewer should actually see
+- narration overlap when speech and motion should happen together
+- short explicit pauses only when the viewer needs breathing room
+
+Use `waitForTimeout()` deliberately, not as a substitute for state-based synchronization.
+
+## Multiple videos per project
+
+Create more than one `.video.ts` file when the flows are distinct:
+
+```text
+videos/
+  onboarding.video.ts
+  admin-billing.video.ts
+  changelog.video.ts
+```
+
+That keeps each video focused and makes iteration easier.
+
+## Relation to Playwright APIs
+
+Use ScreenCI for the viewer-facing layer and Playwright for the browser automation layer underneath. When you need a deeper method, check the standard Playwright docs first, then add ScreenCI helpers only where the recording needs them.

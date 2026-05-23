@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
 import { Readable } from 'stream'
-import pc from 'picocolors'
 import { logger } from './src/logger.js'
 import type { VoiceKey } from './src/voices.js'
 import type { RecordingData } from './src/recording.js'
@@ -22,8 +21,6 @@ const mockAppendFile = vi.fn()
 const mockWriteFile = vi.fn()
 const mockMkdir = vi.fn()
 const mockInput = vi.fn()
-const mockConfirm = vi.fn()
-const mockSelect = vi.fn()
 const mockCreateHttpServer = vi.fn()
 const mockFetch = vi.fn()
 
@@ -82,8 +79,6 @@ vi.mock('fs/promises', () => ({
 
 vi.mock('@inquirer/prompts', () => ({
   input: mockInput,
-  confirm: mockConfirm,
-  select: mockSelect,
 }))
 
 vi.mock('ora', () => ({
@@ -134,8 +129,6 @@ describe('CLI', () => {
     mockInput.mockImplementation(
       async (options?: { default?: string }) => options?.default ?? ''
     )
-    mockConfirm.mockResolvedValue(true)
-    mockSelect.mockResolvedValue('standalone')
     // Restore ora mock return value after clearAllMocks
     mockOra.mockReturnValue(mockSpinner)
     mockSpinner.start.mockReturnThis()
@@ -1430,1094 +1423,209 @@ describe('CLI', () => {
 
   describe('init command', () => {
     beforeEach(() => {
-      // npm install runs via spawnSilent (piped); make spawn emit close immediately
       mockSpawn.mockImplementation(() => {
         process.nextTick(() => mockChildProcess.emit('close', 0))
         return mockChildProcess as unknown as ChildProcess
       })
-      // Default: confirm npm install
-      mockConfirm.mockResolvedValue(true)
-      // Pre-set SCREENCI_SECRET so auth is skipped by default in init tests
       process.env.SCREENCI_SECRET = 'test-secret'
     })
 
-    it('should not initialize git during init', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project', '--yes']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockSpawn).not.toHaveBeenCalledWith(
-        'git',
-        ['init'],
-        expect.any(Object)
-      )
-    })
-
-    it('should create all files inside a new standalone project directory', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockMkdir).toHaveBeenCalledWith(
-        expect.stringContaining(`my-project/videos`),
-        { recursive: true }
-      )
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining(`my-project/screenci.config.ts`),
-        expect.stringContaining('"my-project"')
-      )
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining(`my-project/package.json`),
-        expect.stringContaining('"@playwright/test": "^1.59.0"')
-      )
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining(`my-project/tsconfig.json`),
-        expect.stringContaining('"types": [')
-      )
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining(`my-project/README.md`),
-        expect.stringContaining('https://screenci.com/docs/intro/')
-      )
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining(`my-project/.gitignore`),
-        expect.stringContaining('node_modules/')
-      )
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('example.video.ts'),
-        expect.stringContaining(
-          "import { autoZoom, createNarration, hide, video, voices } from 'screenci'"
-        )
-      )
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('example.video.ts'),
-        expect.stringContaining("video('See the next steps in ScreenCI docs'")
-      )
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('my-project/.env'),
-        ''
-      )
-    })
-
-    it('should add playwright-cli to devDependencies when AI authoring is confirmed', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      mockConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(true)
-
-      const { main } = await import('./cli')
-      await main()
-
-      const pkgCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('package.json')
-      )
-      const pkg = JSON.parse(String(pkgCall?.[1])) as {
-        dependencies: Record<string, string>
-        devDependencies: Record<string, string>
-        scripts?: Record<string, string>
-      }
-      expect(pkg.dependencies['@playwright/test']).toBe('^1.59.0')
-      expect(pkg.devDependencies['@playwright/test']).toBeUndefined()
-      expect(pkg.scripts).toBeUndefined()
-      expect(pkgCall?.[1]).not.toContain('"test": "screenci test"')
-      expect(pkgCall?.[1]).not.toContain('"record": "screenci record"')
-      expect(pkgCall?.[1]).toContain('"@playwright/cli": "latest"')
-    })
-
-    it('should not add playwright-cli to devDependencies when AI authoring is declined', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      mockConfirm.mockResolvedValueOnce(true)
-      mockConfirm.mockResolvedValueOnce(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      const pkgCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('package.json')
-      )
-      const pkg = JSON.parse(String(pkgCall?.[1])) as {
-        dependencies: Record<string, string>
-        devDependencies: Record<string, string>
-        scripts?: Record<string, string>
-      }
-      expect(pkg.dependencies['@playwright/test']).toBe('^1.59.0')
-      expect(pkg.devDependencies['@playwright/test']).toBeUndefined()
-      expect(pkg.scripts).toBeUndefined()
-      expect(pkgCall?.[1]).not.toContain('"test": "screenci test"')
-      expect(pkgCall?.[1]).not.toContain('"record": "screenci record"')
-      expect(pkgCall?.[1]).not.toContain('"@playwright/cli": "latest"')
-    })
-
-    it('should not add tsx to devDependencies', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      const pkgCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('package.json')
-      )
-      expect(pkgCall?.[1]).not.toContain('"tsx":')
-      expect(pkgCall?.[1]).not.toContain('"@types/node":')
-    })
-
-    it('should create tsconfig.json with node types', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      const tsconfigCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('tsconfig.json')
-      )
-      expect(tsconfigCall?.[1]).toContain('"types": [')
-      expect(tsconfigCall?.[1]).toContain('"node"')
-    })
-
-    it('should create .github/workflows/screenci.yaml with SCREENCI_SECRET check', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(true)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockMkdir).toHaveBeenCalledWith(expect.stringContaining('.github'))
-      expect(mockMkdir).toHaveBeenCalledWith(
-        expect.stringContaining('.github/workflows')
-      )
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('.github/workflows/screenci.yaml'),
-        expect.stringContaining('SCREENCI_SECRET')
-      )
-      const workflowCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('screenci.yaml')
-      )
-      expect(workflowCall?.[1]).toContain('name: ScreenCI')
-      expect(workflowCall?.[1]).toContain('actions/setup-node@v4')
-      expect(workflowCall?.[1]).toContain('node-version: 24')
-      expect(workflowCall?.[1]).toContain('cache: npm')
-      expect(workflowCall?.[1]).toContain(
-        'cache-dependency-path: package-lock.json'
-      )
-      expect(workflowCall?.[1]).toContain('environment:\n      name: screenci')
-      expect(workflowCall?.[1]).toContain(
-        'url: ${{ steps.record.outputs.screenci_project_url }}'
-      )
-      expect(workflowCall?.[1]).toContain('- id: record\n        name: Record')
-      expect(workflowCall?.[1]).toContain('working-directory: .')
-      expect(workflowCall?.[1]).toContain('npm ci')
-      expect(workflowCall?.[1]).toContain('actions/cache@v5')
-      expect(workflowCall?.[1]).toContain('path: ~/.cache/ms-playwright')
-      expect(workflowCall?.[1]).toContain(
-        "if: steps.pw-cache.outputs.cache-hit != 'true'"
-      )
-      expect(workflowCall?.[1]).toContain(
-        'npx playwright install chromium --with-deps'
-      )
-      expect(workflowCall?.[1]).toContain('npx screenci record')
-      expect(workflowCall?.[1]).toContain(
-        'Copy it from https://app.screenci.com/secrets or ./.env, add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action.'
-      )
-      expect(workflowCall?.[1]).toContain('exit 1')
-    })
-
-    it('should prompt to add GitHub Action CI when --ci is not given', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockConfirm).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: 'Do you want to add Github Action CI? (Y/n)',
-        })
-      )
-    })
-
-    it('should prompt for repository mode when an existing repository is detected', async () => {
+    it('writes init files directly into the current directory', async () => {
       process.argv = ['node', 'cli.js', 'init', 'My Project']
-      mockExistsSync.mockImplementation((path: string) => path.endsWith('.git'))
-      mockSelect.mockResolvedValueOnce('existing-repository')
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-app'
+      mockExistsSync.mockReturnValue(false)
 
       const { main } = await import('./cli')
       await main()
 
-      expect(loggerInfoSpy).toHaveBeenCalledWith('Existing repository detected')
-      expect(mockSelect).toHaveBeenCalledWith(
+      expect(mockMkdir).toHaveBeenCalledWith('/workspace/my-app/videos', {
+        recursive: true,
+      })
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/screenci.config.ts',
+        expect.stringContaining('"My Project"')
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith('/workspace/my-app/.env', '')
+      expect(loggerInfoSpy).toHaveBeenCalledWith("Initializing project in '.'")
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        'Initialized screenci project "My Project" in .'
+      )
+    })
+
+    it('uses the current directory basename as the default project name', async () => {
+      process.argv = ['node', 'cli.js', 'init']
+      process.env.SCREENCI_INIT_CWD = '/workspace/screenci-docs'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockInput).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Project name:',
+          default: 'screenci-docs',
+        })
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/screenci-docs/screenci.config.ts',
+        expect.stringContaining('"screenci-docs"')
+      )
+    })
+
+    it('prompts in the new order with the new wording', async () => {
+      process.argv = ['node', 'cli.js', 'init']
+      process.env.SCREENCI_INIT_CWD = '/workspace/demo-app'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockInput).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Project name:',
+          default: 'demo-app',
+        })
+      )
+      expect(mockInput.mock.calls.map((call) => call[0])).toEqual([
+        expect.objectContaining({
+          message: 'Project name:',
+          default: 'demo-app',
+        }),
+        expect.objectContaining({
+          message: 'Add a GitHub Actions workflow? (Y/n)',
+          default: 'y',
+        }),
         expect.objectContaining({
           message:
-            'Initialize ScreenCI as a standalone project or part of the existing repository?',
-          default: 'standalone',
-        })
-      )
-      expect(mockMkdir).toHaveBeenCalledWith(
-        expect.stringContaining('screenci/videos'),
-        { recursive: true }
-      )
-    })
-
-    it('should put GitHub Action outside screenci in existing repository mode', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'My Project', '--ci']
-      process.env.SCREENCI_INIT_CWD = '/workspace/repo'
-      mockExistsSync.mockImplementation((path: string) => path.endsWith('.git'))
-      mockSelect.mockResolvedValueOnce('existing-repository')
-
-      const { main } = await import('./cli')
-      await main()
-
-      const workflowCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('screenci.yaml')
-      )
-      expect(workflowCall?.[0]).toEqual(
-        expect.stringContaining('.github/workflows/screenci.yaml')
-      )
-      expect(workflowCall?.[0]).toBe(
-        '/workspace/repo/.github/workflows/screenci.yaml'
-      )
-      expect(workflowCall?.[1]).toContain('working-directory: screenci')
-      expect(workflowCall?.[1]).toContain(
-        'cache-dependency-path: screenci/package-lock.json'
-      )
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        '  .github/workflows/screenci.yaml (outside ./screenci, at repository root)'
-      )
-    })
-
-    it('should skip the CI prompt and create workflow with --ci', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project', '--ci']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockConfirm).not.toHaveBeenCalledWith(
+            "Install Playwright browsers (can be done manually via 'npx playwright install chromium')? (Y/n)",
+          default: 'y',
+        }),
         expect.objectContaining({
-          message: 'Do you want to add Github Action CI? (Y/n)',
-        })
-      )
+          message:
+            "Install Playwright operating system dependencies (might require sudo / root and can be done manually via 'npx playwright install-deps chromium')? (y/N)",
+          default: 'n',
+        }),
+        expect.objectContaining({
+          message:
+            "Install the ScreenCI skill for AI agents (can be done manually via 'npx -y skills add screenci/screenci --skill screenci -y')? (Y/n)",
+          default: 'y',
+        }),
+        expect.objectContaining({
+          message:
+            "Install playwright-cli for URL-based browser inspection (can be done manually via 'npx -y skills add screenci/screenci --skill playwright-cli -y && npm install @playwright/cli')? (Y/n)",
+          default: 'y',
+        }),
+      ])
+    })
+
+    it('uses default answers with --yes', async () => {
+      process.argv = ['node', 'cli.js', 'init', '--yes']
+      process.env.SCREENCI_INIT_CWD = '/workspace/demo-app'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockInput).not.toHaveBeenCalled()
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('.github/workflows/screenci.yaml'),
+        '/workspace/demo-app/.github/workflows/screenci.yaml',
         expect.any(String)
       )
-    })
-
-    it('should exit if the GitHub Actions workflow already exists', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project', '--ci']
-      mockExistsSync.mockImplementation((path: string) =>
-        path.endsWith('.github/workflows/screenci.yaml')
-      )
-
-      const { main } = await import('./cli')
-      await expect(main()).rejects.toThrow('process.exit called')
-
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Error: GitHub Actions workflow ".github/workflows/screenci.yaml" already exists'
-      )
-      expect(mockWriteFile).not.toHaveBeenCalled()
-      expect(processExitSpy).toHaveBeenCalledWith(1)
-    })
-
-    it('should reuse existing .github directories when creating workflow', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project', '--ci']
-      mockExistsSync.mockImplementation(
-        (path: string) =>
-          path.endsWith('.github') || path.endsWith('.github/workflows')
-      )
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockMkdir).not.toHaveBeenCalledWith(
-        expect.stringContaining('.github')
-      )
-      expect(mockMkdir).not.toHaveBeenCalledWith(
-        expect.stringContaining('.github/workflows')
-      )
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('.github/workflows/screenci.yaml'),
-        expect.any(String)
-      )
-    })
-
-    it('should not create the workflow when the CI prompt is declined', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockMkdir).not.toHaveBeenCalledWith(
-        expect.stringContaining('.github/workflows'),
-        expect.anything()
-      )
-      expect(mockWriteFile).not.toHaveBeenCalledWith(
-        expect.stringContaining('.github/workflows/screenci.yaml'),
-        expect.any(String)
-      )
-      expect(loggerInfoSpy).not.toHaveBeenCalledWith(
-        '  .github/workflows/screenci.yaml'
-      )
-    })
-
-    it('should replace spaces in standalone directory name', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'My Cool Project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockMkdir).toHaveBeenCalledWith(
-        expect.stringContaining('My-Cool-Project'),
-        { recursive: true }
-      )
-    })
-
-    it('should preserve non-space symbols in standalone directory name', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'My @Cool# Project!']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockMkdir).toHaveBeenCalledWith(
-        expect.stringContaining('My-@Cool#-Project!'),
-        { recursive: true }
-      )
-    })
-
-    it('should use original project name in config and omit generated package name', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'My Cool Project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      const configCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('screenci.config.ts')
-      )
-      expect(configCall?.[1]).toContain('"My Cool Project"')
-
-      const pkgCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('package.json')
-      )
-      expect(pkgCall?.[1]).not.toContain('"name":')
-    })
-
-    it('should use published screenci dependency in generated package.json', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      const pkgCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('package.json')
-      )
-      expect(pkgCall?.[1]).toContain('"screenci": "0.0.32"')
-      expect(pkgCall?.[1]).not.toContain('"screenci": "file:')
-    })
-
-    it('should use SCREENCI_INIT_SCREENCI_DEPENDENCY when provided', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      process.env.SCREENCI_INIT_SCREENCI_DEPENDENCY =
-        'file:../screenci-0.0.32.tgz'
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      const pkgCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('package.json')
-      )
-      expect(pkgCall?.[1]).toContain(
-        '"screenci": "file:../screenci-0.0.32.tgz"'
-      )
-    })
-
-    it('should use published screenci dependency when init runs through source cli', async () => {
-      const sourceCliPath = `${process.cwd()}/cli.ts`
-      process.argv = ['node', sourceCliPath, 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      const pkgCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('package.json')
-      )
-      expect(pkgCall?.[1]).toContain('"screenci": "0.0.32"')
-      expect(pkgCall?.[1]).not.toContain('"screenci": "file:')
-      expect(mockSpawn).not.toHaveBeenCalledWith(
-        'npm',
-        ['run', 'build'],
-        expect.anything()
-      )
-    })
-
-    it('should prompt for project name when not provided as arg', async () => {
-      process.argv = ['node', 'cli.js', 'init']
-      mockExistsSync.mockReturnValue(false)
-      mockInput.mockResolvedValueOnce('prompted-project')
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockInput).toHaveBeenCalled()
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('screenci.config.ts'),
-        expect.stringContaining('"prompted-project"')
-      )
-    })
-
-    it('should authenticate before prompting for project name', async () => {
-      process.argv = ['node', 'cli.js', 'init']
-      mockExistsSync.mockReturnValue(false)
-      delete process.env.SCREENCI_SECRET
-      mockInput.mockResolvedValueOnce('prompted-project')
-
-      mockCreateHttpServer.mockImplementation(
-        (handler: (req: unknown, res: unknown) => void) => {
-          expect(mockInput).not.toHaveBeenCalled()
-
-          const server = {
-            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
-              cb()
-              const req = { url: '/callback?secret=auth-secret-123' }
-              const res = {
-                writeHead: vi.fn(),
-                end: vi.fn(),
-              }
-              handler(req, res)
-            }),
-            close: vi.fn(),
-            address: vi.fn().mockReturnValue({ port: 12345 }),
-            on: vi.fn(),
-          }
-          return server
-        }
-      )
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockInput).toHaveBeenCalled()
-      expect(mockCreateHttpServer).not.toHaveBeenCalled()
-    })
-
-    it('should exit if project name is empty after prompt', async () => {
-      process.argv = ['node', 'cli.js', 'init']
-      mockExistsSync.mockReturnValue(false)
-      mockInput.mockResolvedValue('')
-
-      const { main } = await import('./cli')
-      await expect(main()).rejects.toThrow('process.exit called')
-
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Error: Project name is required'
-      )
-      expect(processExitSpy).toHaveBeenCalledWith(1)
-    })
-
-    it('should exit if target directory already exists', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(true)
-      process.env.SCREENCI_SECRET = 'already-set-secret'
-
-      const { main } = await import('./cli')
-      await expect(main()).rejects.toThrow('process.exit called')
-
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Error: Directory "my-project" already exists'
-      )
-      expect(processExitSpy).toHaveBeenCalledWith(1)
-    })
-
-    it('should fetch auth before checking if the target directory exists', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(true)
-      delete process.env.SCREENCI_SECRET
-
-      mockCreateHttpServer.mockImplementation(
-        (handler: (req: unknown, res: unknown) => void) => {
-          const server = {
-            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
-              cb()
-              const req = { url: '/callback?secret=auth-secret-123' }
-              const res = {
-                writeHead: vi.fn(),
-                end: vi.fn(),
-              }
-              handler(req, res)
-            }),
-            close: vi.fn(),
-            address: vi.fn().mockReturnValue({ port: 12345 }),
-            on: vi.fn(),
-          }
-          return server
-        }
-      )
-
-      const { main } = await import('./cli')
-      await expect(main()).rejects.toThrow('process.exit called')
-
-      expect(mockCreateHttpServer).not.toHaveBeenCalled()
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Error: Directory "my-project" already exists'
-      )
-    })
-
-    it('should log success message with directory name after init', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'Test Project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'Initialized screenci project "Test Project" in '
-        )
-      )
-    })
-
-    it('should log created files clearly after init', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'screenci-docs']
-      mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(true)
-
-      const { main } = await import('./cli')
-      await main()
-
-      const messages = loggerInfoSpy.mock.calls.map((call) => call[0])
-      const filesCreatedIndex = messages.indexOf('Files created:')
-
-      expect(
-        messages.some((message) =>
-          String(message).includes(
-            'Initialized screenci project "screenci-docs" in '
-          )
-        )
-      ).toBe(true)
-      expect(messages.slice(filesCreatedIndex, filesCreatedIndex + 10)).toEqual(
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
         [
-          'Files created:',
-          '  screenci.config.ts',
-          '  package.json',
-          '  tsconfig.json',
-          '  README.md',
-          '  .gitignore',
-          '  videos/example.video.ts',
-          '  .github/workflows/screenci.yaml',
-          '  .env  (empty placeholder)',
-          '',
-        ]
-      )
-    })
-
-    it('should include cd step in next steps', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(loggerInfoSpy).toHaveBeenCalledWith('  cd my-project')
-    })
-
-    it('should include README and docs link in next steps', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        '  Read README.md for setup and recording flow'
-      )
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        '  Docs: https://screenci.com/docs/intro/'
-      )
-    })
-
-    it('should include .gitignore with required entries', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      const gitignoreCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('.gitignore')
-      )
-      const content = gitignoreCall?.[1] as string
-      expect(content).toContain('/playwright-report/')
-      expect(content).toContain('.screenci')
-      expect(content).toContain('.playwright-cli/')
-      expect(content).toContain('node_modules/')
-      expect(content).toContain('.env')
-    })
-
-    it('should include envFile in generated screenci.config.ts', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      const configCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('screenci.config.ts')
-      )
-      expect(configCall?.[1]).toContain("envFile: '.env'")
-    })
-
-    it('should default generated screenci.config.ts to 60 fps', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      const configCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('screenci.config.ts')
-      )
-      expect(configCall?.[1]).toContain('fps: 60')
-    })
-
-    it('should generate an example video that walks through ScreenCI docs', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      const exampleVideoCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('videos/example.video.ts')
-      )
-      expect(exampleVideoCall?.[1]).toContain(
-        "import { autoZoom, createNarration, hide, video, voices } from 'screenci'"
-      )
-      expect(exampleVideoCall?.[1]).toContain(
-        "await page.goto('https://screenci.com/')"
-      )
-      expect(exampleVideoCall?.[1]).toContain(
-        "await page.getByRole('link', { name: 'View Documentation' }).click()"
-      )
-      expect(exampleVideoCall?.[1]).toContain('await autoZoom(')
-    })
-
-    it('should not create an http server during init when SCREENCI_SECRET is already set', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      process.env.SCREENCI_SECRET = 'already-set-secret'
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockCreateHttpServer).not.toHaveBeenCalled()
-    })
-
-    it('should not trigger browser auth during init when SCREENCI_SECRET is missing', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      delete process.env.SCREENCI_SECRET
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockCreateHttpServer).not.toHaveBeenCalled()
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('my-project/.env'),
-        ''
-      )
-    })
-
-    it('should run npm install automatically', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npm',
-        expect.arrayContaining(['install', '--include=dev']),
-        expect.objectContaining({ stdio: 'pipe' })
-      )
-    })
-
-    it('should prompt for dependency installation when --install is not given', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockConfirm).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message:
-            'Install dependencies now, including Chromium for Playwright? (Y/n)',
-        })
-      )
-    })
-
-    it('should skip the install prompt and install automatically with --install', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project', '--install']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockConfirm).not.toHaveBeenCalledWith(
-        expect.objectContaining({
-          message:
-            'Install dependencies now, including Chromium for Playwright? (Y/n)',
-        })
-      )
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npm',
-        expect.arrayContaining(['install', '--include=dev']),
-        expect.objectContaining({ stdio: 'pipe' })
-      )
-    })
-
-    it('should skip automatic installs and print manual steps when install prompt is declined', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      mockConfirm
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(true)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockSpawn).not.toHaveBeenCalledWith(
-        'npm',
-        expect.arrayContaining(['install']),
-        expect.any(Object)
-      )
-      expect(mockSpawn).not.toHaveBeenCalledWith(
-        'npx',
-        ['playwright', 'install', 'chromium', '--with-deps'],
-        expect.any(Object)
-      )
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        'Dependencies were not installed automatically.'
-      )
-      expect(loggerInfoSpy).toHaveBeenCalledWith('  npm install --include=dev')
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        '  npx playwright install chromium --with-deps'
-      )
-    })
-
-    it('should run Chromium install automatically after npm install', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npx',
-        ['playwright', 'install', 'chromium', '--with-deps'],
-        expect.objectContaining({ stdio: 'inherit' })
-      )
-    })
-
-    it('should not attempt Chromium detection before install', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockConfirm).toHaveBeenCalledTimes(3)
-      expect(mockSelect).not.toHaveBeenCalled()
-      expect(mockSpawn).not.toHaveBeenCalledWith(
-        'npx',
-        ['playwright', 'install', '--list'],
-        expect.any(Object)
-      )
-    })
-
-    it('should show Chromium install output during init', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        "Local development requires Chromium for Playwright, running 'npx playwright install chromium --with-deps'..."
-      )
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npx',
-        ['playwright', 'install', 'chromium', '--with-deps'],
-        expect.objectContaining({ stdio: 'inherit' })
-      )
-    })
-
-    it('should show a green Playwright success message after install', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        `${pc.green('✔')} Playwright installed successfully`
-      )
-    })
-
-    it('should not hide Playwright install output behind a spinner', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockOra).not.toHaveBeenCalledWith(
-        'Installing Playwright Chromium...'
-      )
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npx',
-        ['playwright', 'install', 'chromium', '--with-deps'],
-        expect.objectContaining({ stdio: 'inherit' })
-      )
-    })
-
-    it('should show npm install output with init --verbose', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project', '--verbose']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        "Running 'npm install --include=dev'..."
+          '-y',
+          'skills',
+          'add',
+          'screenci/screenci',
+          '--skill',
+          'screenci',
+          '--skill',
+          'playwright-cli',
+          '-y',
+        ],
+        expect.objectContaining({ cwd: '/workspace/demo-app', stdio: 'pipe' })
       )
       expect(mockSpawn).toHaveBeenCalledWith(
         'npm',
         ['install', '--include=dev'],
+        expect.objectContaining({ cwd: '/workspace/demo-app', stdio: 'pipe' })
+      )
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        ['playwright', 'install', 'chromium'],
         expect.objectContaining({
-          cwd: expect.stringContaining('screenci'),
+          cwd: '/workspace/demo-app',
           stdio: 'inherit',
         })
       )
-    })
-
-    it('should show spinner during npm install', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockOra).toHaveBeenCalledWith(
-        expect.stringContaining('npm install')
-      )
-      expect(mockSpinner.start).toHaveBeenCalled()
-      expect(mockSpinner.succeed).toHaveBeenCalled()
-    })
-
-    it('should mention Chromium requirement for local development', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
-        "Local development requires Chromium for Playwright, running 'npx playwright install chromium --with-deps'..."
-      )
-    })
-
-    it('should not include install steps in next steps after automatic setup', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      const allInfoCalls = loggerInfoSpy.mock.calls.map((c: unknown[]) => c[0])
-      expect(allInfoCalls).not.toContain('  npm install')
-      expect(allInfoCalls).not.toContain(
-        '  npx playwright install chromium --with-deps'
-      )
-      expect(allInfoCalls).not.toContain(
-        '  npx --yes skills add screenci/screenci --skill screenci --skill playwright-cli -y'
-      )
-    })
-
-    it('should always run skills add with both skills when AI authoring is confirmed', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      mockConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(true)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npx',
-        [
-          '--yes',
-          'skills',
-          'add',
-          'screenci/screenci',
-          '--skill',
-          'screenci',
-          '--skill',
-          'playwright-cli',
-          '-y',
-        ],
-        expect.objectContaining({ stdio: 'pipe' })
-      )
-    })
-
-    it('should pass --agent through to skills add', async () => {
-      process.argv = [
-        'node',
-        'cli.js',
-        'init',
-        'my-project',
-        '--agent',
-        'opencode',
-      ]
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npx',
-        [
-          '--yes',
-          'skills',
-          'add',
-          'screenci/screenci',
-          '--agent',
-          'opencode',
-          '--skill',
-          'screenci',
-          '--skill',
-          'playwright-cli',
-          '-y',
-        ],
-        expect.objectContaining({ stdio: 'pipe' })
-      )
-    })
-
-    it('should always run skills add with only screenci when AI authoring is declined', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
-      mockExistsSync.mockReturnValue(false)
-      mockConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npx',
-        [
-          '--yes',
-          'skills',
-          'add',
-          'screenci/screenci',
-          '--skill',
-          'screenci',
-          '-y',
-        ],
-        expect.objectContaining({ stdio: 'pipe' })
-      )
-    })
-
-    it('should answer yes to all init prompts with --yes', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project', '--yes']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockConfirm).not.toHaveBeenCalled()
-      expect(mockSelect).not.toHaveBeenCalled()
       expect(mockSpawn).not.toHaveBeenCalledWith(
-        'git',
-        ['init'],
-        expect.any(Object)
-      )
-      expect(mockSpawn).toHaveBeenCalledWith(
         'npx',
-        [
-          '--yes',
-          'skills',
-          'add',
-          'screenci/screenci',
-          '--skill',
-          'screenci',
-          '--skill',
-          'playwright-cli',
-          '-y',
-        ],
-        expect.objectContaining({ stdio: 'pipe' })
+        ['playwright', 'install-deps', 'chromium'],
+        expect.anything()
       )
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npm',
-        expect.arrayContaining(['install', '--include=dev']),
-        expect.objectContaining({ stdio: 'pipe' })
-      )
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('.github/workflows/screenci.yaml'),
-        expect.any(String)
-      )
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('my-project/screenci.config.ts'),
-        expect.stringContaining('"my-project"')
-      )
-      expect(loggerInfoSpy).toHaveBeenCalledWith('  cd my-project')
     })
 
-    it('should include --agent when combined with --yes', async () => {
-      process.argv = [
-        'node',
-        'cli.js',
-        'init',
-        'my-project',
-        '--yes',
-        '--agent',
-        'opencode',
-      ]
+    it('creates the workflow for the current-directory layout', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      const workflowCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          typeof call[0] === 'string' && call[0].endsWith('screenci.yaml')
+      )
+      expect(workflowCall?.[0]).toBe(
+        '/workspace/my-project/.github/workflows/screenci.yaml'
+      )
+      expect(workflowCall?.[1]).toContain('working-directory: .')
+      expect(workflowCall?.[1]).toContain(
+        'cache-dependency-path: package-lock.json'
+      )
+      expect(workflowCall?.[1]).toContain("hashFiles('package-lock.json')")
+      expect(workflowCall?.[1]).toContain(
+        'Copy it from https://app.screenci.com/secrets or ./.env'
+      )
+      expect(workflowCall?.[1]).toContain(
+        'run: npx playwright install chromium'
+      )
+      expect(workflowCall?.[1]).not.toContain('--with-deps')
+    })
+
+    it('adds @playwright/cli only when selected', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+      mockInput
+        .mockResolvedValueOnce('')
+        .mockResolvedValueOnce('')
+        .mockResolvedValueOnce('')
+        .mockResolvedValueOnce('')
+        .mockResolvedValueOnce('n')
+
+      const { main } = await import('./cli')
+      await main()
+
+      const pkgCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          typeof call[0] === 'string' && call[0].endsWith('package.json')
+      )
+      expect(pkgCall?.[1]).not.toContain('"@playwright/cli": "latest"')
+    })
+
+    it('keeps ScreenCI skill and playwright-cli prompts separate', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+      mockInput
+        .mockResolvedValueOnce('')
+        .mockResolvedValueOnce('')
+        .mockResolvedValueOnce('')
+        .mockResolvedValueOnce('n')
+        .mockResolvedValueOnce('y')
 
       const { main } = await import('./cli')
       await main()
@@ -2525,96 +1633,131 @@ describe('CLI', () => {
       expect(mockSpawn).toHaveBeenCalledWith(
         'npx',
         [
-          '--yes',
+          '-y',
           'skills',
           'add',
           'screenci/screenci',
-          '--agent',
-          'opencode',
-          '--skill',
-          'screenci',
           '--skill',
           'playwright-cli',
           '-y',
         ],
-        expect.objectContaining({ stdio: 'pipe' })
-      )
-    })
-
-    it('should answer yes to the skill question with --skill', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project', '--skill']
-      mockExistsSync.mockReturnValue(false)
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockConfirm).not.toHaveBeenCalledWith(
-        expect.objectContaining({
-          message:
-            'Do you want to write videos with an AI agent based on a URL and not just source code? If yes, playwright-cli will be also installed.',
-        })
+        expect.objectContaining({ cwd: '/workspace/my-project', stdio: 'pipe' })
       )
       const pkgCall = mockWriteFile.mock.calls.find(
-        (c: unknown[]) =>
-          typeof c[0] === 'string' && c[0].endsWith('package.json')
+        (call: unknown[]) =>
+          typeof call[0] === 'string' && call[0].endsWith('package.json')
       )
       expect(pkgCall?.[1]).toContain('"@playwright/cli": "latest"')
     })
 
-    it('should allow auth as a project name', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'auth', '--yes']
+    it('passes --agent through to the executed skills command', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--agent',
+        'opencode',
+      ]
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockReturnValue(false)
 
       const { main } = await import('./cli')
       await main()
 
-      expect(mockCreateHttpServer).not.toHaveBeenCalled()
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringContaining('auth/screenci.config.ts'),
-        expect.stringContaining('"auth"')
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        expect.arrayContaining(['--agent', 'opencode']),
+        expect.objectContaining({ cwd: '/workspace/my-project' })
       )
-      expect(loggerInfoSpy).toHaveBeenCalledWith('  cd auth')
     })
 
-    it('should launch package commands through cmd on Windows', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project', '--yes']
+    it('splits browser install from operating system dependencies', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockReturnValue(false)
-      const platformSpy = vi
-        .spyOn(process, 'platform', 'get')
-        .mockReturnValue('win32')
 
       const { main } = await import('./cli')
       await main()
 
       expect(mockSpawn).toHaveBeenCalledWith(
-        'cmd',
-        [
-          '/d',
-          '/c',
-          expect.stringContaining(
-            'npx --yes skills add screenci/screenci --skill screenci --skill playwright-cli -y'
-          ),
-        ],
-        expect.objectContaining({ stdio: 'pipe' })
+        'npx',
+        ['playwright', 'install', 'chromium'],
+        expect.objectContaining({
+          cwd: '/workspace/my-project',
+          stdio: 'inherit',
+        })
       )
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'cmd',
-        ['/d', '/c', expect.stringContaining('npm install --include=dev')],
-        expect.objectContaining({ stdio: 'pipe' })
+      expect(mockSpawn).not.toHaveBeenCalledWith(
+        'npx',
+        ['playwright', 'install-deps', 'chromium'],
+        expect.anything()
       )
+    })
+
+    it('runs install-deps without sudo when selected', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+      mockInput
+        .mockResolvedValueOnce('')
+        .mockResolvedValueOnce('')
+        .mockResolvedValueOnce('y')
+        .mockResolvedValueOnce('')
+        .mockResolvedValueOnce('')
+
+      const { main } = await import('./cli')
+      await main()
+
       expect(mockSpawn).toHaveBeenCalledWith(
-        'cmd',
-        [
-          '/d',
-          '/c',
-          expect.stringContaining(
-            'npx playwright install chromium --with-deps'
-          ),
-        ],
-        expect.objectContaining({ stdio: 'inherit' })
+        'npx',
+        ['playwright', 'install-deps', 'chromium'],
+        expect.objectContaining({
+          cwd: '/workspace/my-project',
+          stdio: 'inherit',
+        })
+      )
+      expect(mockSpawn).not.toHaveBeenCalledWith(
+        'sudo',
+        expect.anything(),
+        expect.anything()
+      )
+    })
+
+    it('prints next steps without any cd command', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      const messages = loggerInfoSpy.mock.calls.map((call) => String(call[0]))
+      expect(messages).toContain('Next steps:')
+      expect(messages).not.toContain('  cd my-project')
+      expect(messages.every((message) => !message.startsWith('  cd '))).toBe(
+        true
+      )
+    })
+
+    it('fails if the workflow already exists and workflow setup is selected', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path === '/workspace/my-project/.github/workflows/screenci.yaml'
       )
 
-      platformSpy.mockRestore()
+      const { main } = await import('./cli')
+      await expect(main()).rejects.toThrow('process.exit called')
+    })
+
+    it('removes the old init-only flags from the CLI', async () => {
+      process.argv = ['node', 'cli.js', 'init', '--install']
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await expect(main()).rejects.toThrow('process.exit called')
     })
   })
 

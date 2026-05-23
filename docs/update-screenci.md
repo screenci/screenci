@@ -1,0 +1,107 @@
+# Update ScreenCI
+
+Updating ScreenCI should be a small maintenance task, not a reinvention of the project. Upgrade the package, refresh Playwright when needed, and verify that your existing scripts still look right.
+
+#### You will learn
+
+- [how to update ScreenCI](#update-the-package)
+- [when to refresh Playwright too](#refresh-dependencies)
+- [what to verify after updating](#verify-the-project)
+- [how to keep the upgrade routine lightweight](#verify-the-project)
+
+## Update the package
+
+In a generated ScreenCI project:
+
+```bash
+npm install screenci@latest @playwright/test@latest
+```
+
+This is the default upgrade path. ScreenCI uses `@playwright/test` underneath, so keeping both packages current together is usually the cleanest choice.
+
+If your project manages Playwright separately and you intentionally want to hold it back for a while, you can update only ScreenCI first, but that should be the exception rather than the normal path.
+
+## Refresh dependencies
+
+After a version bump:
+
+- let the lockfile update
+- reinstall if your package manager requires it
+- refresh Chromium if Playwright asks for it
+- refresh any local AI authoring skills if you installed them earlier
+
+Common follow-up commands:
+
+```bash
+npm install
+npx playwright install chromium
+```
+
+You do not need to reinstall browsers on every upgrade, only when Playwright reports that the local browser build is missing or outdated.
+
+If you installed the ScreenCI skill during `screenci init`, refresh it after updating the package:
+
+```bash
+npx -y skills add screenci/screenci --skill screenci -y
+```
+
+If you also installed the optional `playwright-cli` skill for URL-based inspection or AI-assisted authoring, refresh both:
+
+```bash
+npx -y skills add screenci/screenci --skill screenci --skill playwright-cli -y
+```
+
+## When to update Playwright too
+
+Update Playwright along with ScreenCI when:
+
+- ScreenCI depends on newer Playwright behavior
+- you want the latest locator or browser fixes
+- the generated project template has moved to a newer Playwright baseline
+
+If the project already pins Playwright separately, avoid leaving ScreenCI updated while Playwright stays far behind for no reason.
+
+In practice, unless you have a deliberate compatibility reason not to, use the combined install command and keep them moving together.
+
+## Check the generated project shape
+
+After an upgrade, confirm that the project still matches current expectations:
+
+- `screenci.config.ts` still uses the expected option names
+- `videos/*.video.ts` still compile without deprecated imports
+- the GitHub Actions workflow still matches your package manager and lockfile
+- local `.env` loading still behaves the same way
+
+This matters most when the project was initialized a while ago and has not been touched since.
+
+## Verify the project
+
+Run the normal checks:
+
+```bash
+npx screenci test
+```
+
+Focus on behavioral verification, not only compilation:
+
+- selector stability
+- narration timing
+- camera motion
+- CI workflow still using the expected dependency cache inputs
+
+If you publish videos publicly, also verify:
+
+- public URLs still resolve to the expected outputs
+- subtitles still align with the rendered narration
+- accepted/latest behavior still matches your release workflow
+
+## Refresh AI setup if needed
+
+If your team uses AI-assisted authoring, check that the tooling still matches the current package version and docs workflow:
+
+- reinstall skills or local helpers after package upgrades when they are part of your normal setup
+- update Playwright-based inspection tooling when browser automation starts failing
+- keep prompt instructions aligned with the current docs structure
+- make sure generated scripts still target `videos/*.video.ts` and use the current ScreenCI helpers
+
+This should be the last step, not the first one. The core upgrade check here is still `npx screenci test`.

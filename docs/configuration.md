@@ -1,136 +1,114 @@
----
-title: Configuration
-description: Configure screenci with defineConfig — set defaults for video quality, FPS, trace recording, and more.
----
-
 # Configuration
 
-## `screenci.config.ts`
+`screenci.config.ts` is where project defaults live. Keep it small at first, then add settings when you have a concrete need such as a shared `baseURL`, a different video directory, or a different recording default.
 
-The config file is where you set global defaults for all your video tests. Create it at the root of your project (or wherever you run Playwright from).
-
-### Minimal config
-
-```ts
-import { defineConfig } from 'screenci'
-
-export default defineConfig({})
-```
-
-All options have sensible defaults — this is enough to get started.
-
-### Full config with all options
+## Minimal config
 
 ```ts
 import { defineConfig } from 'screenci'
 
 export default defineConfig({
+  projectName: 'my-product',
+})
+```
+
+That is enough to get started.
+
+## Common full config
+
+```ts
+import { defineConfig } from 'screenci'
+
+export default defineConfig({
+  projectName: 'my-product',
+  envFile: '.env',
   // Directory containing your *.video.ts files (default: './videos')
   videoDir: './videos',
 
-  // Control what happens after partial recording failures.
-  // 'passed-only' uploads only successful recordings (default).
-  // 'all-or-nothing' skips all uploads if any recording test fails.
   record: {
-    upload: 'passed-only', // 'passed-only' | 'all-or-nothing'
+    upload: 'passed-only',
   },
 
-  // Global timeout per test in ms (Playwright default applies if omitted)
-  timeout: 60_000,
-
   use: {
-    videoOptions: {
-      resolution: '1080p', // '720p' | '1080p' | '4k' | { width, height }
+    baseURL: 'https://staging.screenci.com',
+    recordOptions: {
+      aspectRatio: '16:9',
+      quality: '1080p',
       fps: 60, // 24 | 30 | 60
-      quality: 'high', // 'low' | 'medium' | 'high'
     },
-
-    // Playwright trace recording
-    trace: 'retain-on-failure', // 'on' | 'off' | 'retain-on-failure'
-
-    // Any other Playwright 'use' options work here
-    baseURL: 'https://staging.example.com',
+    trace: 'retain-on-failure',
   },
 })
 ```
 
-### Custom resolution
+## Config areas
 
-```ts
-import { defineConfig } from 'screenci'
+### Project identity
 
-export default defineConfig({
-  use: {
-    videoOptions: {
-      resolution: { width: 1440, height: 900 }, // Custom dimensions
-    },
-  },
-})
-```
+- `projectName` identifies the project in ScreenCI.
+- `envFile` points to the file that holds `SCREENCI_SECRET` and related variables.
 
-## Per-test overrides
+### File locations
 
-Options set via `video.use()` override the global config for all subsequent tests in that file:
+- `videoDir` controls where ScreenCI discovers `*.video.ts` files.
+
+### Recording behavior
+
+- `record.upload: 'passed-only'` uploads successful recordings even if another one failed.
+- `record.upload: 'all-or-nothing'` skips uploads when any recording fails.
+
+### Rendering defaults
+
+Set shared `recordOptions` under `use`:
+
+- `aspectRatio`
+- `quality`
+- `fps`
+
+### Playwright integration
+
+ScreenCI passes through most normal Playwright config such as:
+
+- `timeout`
+- `reporter`
+- `workers`
+- `fullyParallel`
+- `webServer`
+
+## Per-file overrides
+
+Use `video.use()` when one file needs different defaults:
 
 ```ts
 import { video } from 'screenci'
 
-// Apply 4K + 60fps to all tests in this file
 video.use({
-  videoOptions: {
-    resolution: '4k',
+  recordOptions: {
+    aspectRatio: '9:16',
+    quality: '1440p',
     fps: 60,
   },
 })
-
-video('High resolution demo', async ({ page }) => {
-  await page.goto('https://example.com')
-})
-
-video('Another 4K test', async ({ page }) => {
-  await page.goto('https://example.com/features')
-})
 ```
-
-## Upload policy for `screenci record`
-
-Use the top-level `record.upload` setting to control whether ScreenCI uploads recordings after a partial Playwright failure.
-
-```ts
-import { defineConfig } from 'screenci'
-
-export default defineConfig({
-  record: {
-    upload: 'all-or-nothing',
-  },
-})
-```
-
-Options:
-
-- `passed-only` (default): if some recording tests fail, ScreenCI still uploads the successful recordings
-- `all-or-nothing`: if any recording test fails, ScreenCI skips all uploads
-
-`record.upload` only affects the `screenci record` CLI command. It does not change how Playwright runs the tests themselves.
 
 ## Default values
 
-| Option          | Default               |
-| --------------- | --------------------- |
-| `videoDir`      | `'./videos'`          |
-| `record.upload` | `'passed-only'`       |
-| `resolution`    | `'1080p'`             |
-| `fps`           | `60`                  |
-| `quality`       | `'high'`              |
-| `trace`         | `'retain-on-failure'` |
+| Option                      | Default               |
+| --------------------------- | --------------------- |
+| `videoDir`                  | `'./videos'`          |
+| `record.upload`             | `'passed-only'`       |
+| `recordOptions.aspectRatio` | `'16:9'`              |
+| `recordOptions.quality`     | `'1080p'`             |
+| `recordOptions.fps`         | `60`                  |
+| `trace`                     | `'retain-on-failure'` |
 
-## What `defineConfig` enforces
+## ScreenCI-managed behavior
 
-These Playwright settings are still managed automatically by ScreenCI:
+ScreenCI still owns a small set of Playwright behavior:
 
 | Setting     | Value          | Reason                                     |
 | ----------- | -------------- | ------------------------------------------ |
 | `retries`   | `0`            | Retrying would overwrite the video         |
 | `testMatch` | `**/*.video.*` | Scopes Playwright to video test files only |
 
-`workers` and `fullyParallel` now use normal Playwright behavior unless you set them yourself.
+Everything else should stay problem-driven. Add config only when it helps a real workflow.

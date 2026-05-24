@@ -1,6 +1,8 @@
 # Run and Debug Videos
 
-`screenci test` is the main iteration command for ScreenCI authors. Use it the way Playwright users use `playwright test`: run the script locally, tighten the flow, then switch to `record` only when the visible sequence is ready.
+`screenci test` is the main iteration command for ScreenCI authors. Use it the
+way Playwright users use `playwright test`: run the script locally, tighten the
+flow, then switch to `record` only when the visible sequence is ready.
 
 #### You will learn
 
@@ -17,7 +19,12 @@ Use the default command first:
 npx screenci test
 ```
 
-ScreenCI resolves `screenci.config.ts`, discovers `*.video.ts` files, and runs them without starting the full local capture and upload flow.
+ScreenCI resolves `screenci.config.ts`, discovers `*.video.ts` files, and runs
+them without starting the full local capture and upload flow.
+
+It also forwards normal Playwright arguments, so the Playwright docs for
+[Running tests](https://playwright.dev/docs/running-tests) still apply to file
+filters, `--grep`, projects, and UI mode.
 
 ## `test` vs `record`
 
@@ -29,7 +36,8 @@ Use `test` when you are still changing the script:
 
 Use `record` when you want the final timing and rendered output.
 
-If you need recording-like timing without starting the real recording pipeline, use:
+If you need recording-like timing without starting the real recording pipeline,
+use:
 
 ```bash
 npx screenci test --mock-record
@@ -37,7 +45,8 @@ npx screenci test --mock-record
 
 ## Run one file or a subset
 
-`screenci test` forwards normal Playwright arguments, so you can narrow the run while iterating:
+`screenci test` forwards normal Playwright arguments, so you can narrow the run
+while iterating:
 
 ```bash
 npx screenci test videos/onboarding.video.ts
@@ -47,9 +56,13 @@ npx screenci test --ui
 
 That makes it practical to work on one video at a time in larger projects.
 
+`--ui` uses Playwright UI Mode. See
+[Playwright UI Mode](https://playwright.dev/docs/test-ui-mode).
+
 ## Debug visible pacing
 
-For ScreenCI scripts, passing tests are not enough. The visible flow also needs to look intentional.
+For ScreenCI scripts, passing tests are not enough. The visible flow also needs
+to look intentional.
 
 Check for:
 
@@ -64,19 +77,31 @@ Prefer waiting for real UI state:
 await page.getByRole('heading', { name: 'Dashboard' }).waitFor()
 ```
 
-Use `waitForTimeout()` only when you intentionally want visible breathing room between steps.
+Use `waitForTimeout()` only when you intentionally want visible breathing room
+between steps.
 
 ## Common failure modes
 
 - Bad selectors: switch to role-based or text-stable locators when possible.
-- Navigation still loading: wait for the element the viewer should actually see, not only the URL change.
-- Narration timing mismatch: use `await narration.key.start()` and `await narration.key.end()` when speech should overlap with motion.
-- Hidden setup leaking into the final output: move authentication, cookie handling, and cleanup into `hide()`.
+- Navigation still loading: wait for the element the viewer should actually
+  see, not only the URL change.
+- Narration timing mismatch: use `await narration.key.start()` and
+  `await narration.key.end()` when speech should overlap with motion.
+- Hidden setup leaking into the final output: move authentication, cookie
+  handling, and cleanup into `hide()`.
 
 ## Artifacts and traces
 
 ScreenCI keeps Playwright behavior available for local debugging:
 
 - use `--ui` when you want the Playwright UI
-- keep `trace` enabled in config when you need deeper failure investigation
+- set `use.trace` in config when you need deeper failure investigation
 - inspect the generated `.screenci/` output after recording runs
+
+When you have a trace, open it with Playwright's
+[Trace Viewer](https://playwright.dev/docs/trace-viewer).
+
+## What's next
+
+- [Record and Publish](/docs/record-and-publish) when the local flow is ready.
+- [CLI](/docs/reference/cli) for the full command reference.

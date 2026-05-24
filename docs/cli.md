@@ -1,6 +1,9 @@
 # CLI
 
-The `screenci` CLI keeps the workflow small: initialize a project, iterate locally, record final output, and manage public delivery when needed. Most commands resolve `screenci.config.ts` from the current directory unless you pass `--config <path>`.
+The `screenci` CLI keeps the workflow small: initialize a project, iterate
+locally, record final output, and manage public delivery when needed. Most
+commands resolve `screenci.config.ts` from the current directory unless you
+pass `--config <path>`.
 
 ## Command overview
 
@@ -28,7 +31,9 @@ Common options:
 - `--agent <name>` passes an agent name to the selected skills install command
 - `-v, --verbose` prints underlying command output
 
-Interactive defaults create the GitHub Actions workflow, install npm dependencies, install Chromium, skip OS dependency installation, install the ScreenCI skill, and install `playwright-cli` support.
+Interactive defaults create the GitHub Actions workflow, install npm
+dependencies, install Chromium, skip OS dependency installation, install the
+ScreenCI skill, and install optional `playwright-cli` support.
 
 Use this command in [Installation](/docs).
 
@@ -43,7 +48,16 @@ npx screenci test --grep "billing"
 npx screenci test --ui
 ```
 
-Use this during normal authoring. Most trailing arguments are forwarded to Playwright.
+Use this during normal authoring. Most trailing arguments are forwarded to
+Playwright.
+
+Common Playwright examples that also work here:
+
+```bash
+npx screenci test --project=chromium
+npx screenci test --grep "onboarding"
+npx screenci test --ui
+```
 
 ### `--mock-record`
 
@@ -51,7 +65,9 @@ Use this during normal authoring. Most trailing arguments are forwarded to Playw
 npx screenci test --mock-record
 ```
 
-This keeps recording-like pacing enabled without starting the real recording capture path. Use it when `test` passes but `record` exposes timing differences.
+This keeps recording-like pacing enabled without starting the real recording
+capture path. Use it when `test` passes but `record` exposes timing
+differences.
 
 ## `screenci record [playwrightArgs...]`
 
@@ -67,6 +83,7 @@ Behavior:
 - enables recording timing
 - writes local output into `.screenci/`
 - uploads successful recordings when `SCREENCI_SECRET` is available
+- prints a project URL after upload when rendering has been started remotely
 
 Relevant options:
 
@@ -85,7 +102,8 @@ Use this command in [Record and Publish](/docs/record-and-publish).
 npx screenci info
 ```
 
-Prints remote project data for the current `projectName`, including video IDs and whether public delivery is enabled.
+Prints remote project data for the current `projectName`, including video IDs
+and whether public delivery is enabled.
 
 ## `screenci make-public <videoId>`
 
@@ -119,4 +137,10 @@ These commands support `--config <path>`:
 - project info
 - public delivery changes
 
-If `envFile` is configured in `screenci.config.ts`, the CLI loads it automatically.
+If `envFile` is configured in `screenci.config.ts`, the CLI loads it
+automatically.
+
+## Related pages
+
+- [Run and Debug Videos](/docs/run-and-debug-videos) for the local loop.
+- [Configuration](/docs/reference/configuration) for `screenci.config.ts`.

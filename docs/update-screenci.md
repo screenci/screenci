@@ -80,6 +80,7 @@ Run the normal checks:
 
 ```bash
 npx screenci test
+npx screenci record
 ```
 
 Focus on behavioral verification, not only compilation:

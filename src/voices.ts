@@ -36,6 +36,10 @@ export type ModelType = (typeof modelTypes)[keyof typeof modelTypes]
  * })
  * ```
  */
+// DOCS_SYNC:
+// Keep docs/narration-and-localization.md in sync with this export when adding,
+// removing, or renaming region groups. `cmn` is the language key used for
+// Mandarin in createNarration; `zh` is kept as a compatibility alias.
 export const languageRegions = {
   ar: { SA: 'ar-SA', AE: 'ar-AE', EG: 'ar-EG' },
   az: { AZ: 'az-AZ' },
@@ -98,6 +102,7 @@ export const languageRegions = {
   uk: { UA: 'uk-UA' },
   ur: { PK: 'ur-PK' },
   vi: { VN: 'vi-VN' },
+  cmn: { CN: 'zh-CN', TW: 'zh-TW', HK: 'zh-HK' },
   zh: { CN: 'zh-CN', TW: 'zh-TW', HK: 'zh-HK' },
 } as const
 
@@ -124,6 +129,9 @@ export const languageRegions = {
  * })
  * ```
  */
+// DOCS_SYNC:
+// Keep the "Available voices" section in docs/narration-and-localization.md
+// in sync with this list and the voice character blurbs below.
 export const voices = {
   /** Male — Clear — Direct and structured, ideal for straightforward explanations. */
   Adrian: 'Adrian',
@@ -225,6 +233,10 @@ type ElevenLabsVoiceKey = `elevenlabs:${string}`
 /** Union of all valid voice keys, e.g. `'Aria' | 'elevenlabs:abc123'`. */
 export type VoiceKey = VoiceName | ElevenLabsVoiceKey
 
+// DOCS_SYNC:
+// Keep the "Available languages" section in docs/narration-and-localization.md
+// in sync with this source of truth. If you change this list, also review the
+// region section above.
 const supportedLanguageCodes = [
   'ar',
   'bn',

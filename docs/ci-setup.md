@@ -27,6 +27,10 @@ The generated workflow:
 - installs Chromium if the Playwright cache is cold
 - runs `npx screenci record`
 
+That is intentionally close to Playwright's own CI model. If you need deeper
+background on Playwright runners and browser installation, see
+[Playwright CI](https://playwright.dev/docs/ci).
+
 ## Required secret
 
 Add `SCREENCI_SECRET` as a repository secret in GitHub Actions.
@@ -57,3 +61,8 @@ If a flow only works when everything is timed perfectly, fix the script locally 
 ## Relation to accepted and latest renders
 
 CI uses the same ScreenCI upload and render pipeline as local recording. The main difference is that it becomes repeatable and repository-driven, which is useful when published videos should follow the shipped app.
+
+## What's next
+
+- [Record and Publish](/docs/record-and-publish) for the local-to-remote flow.
+- [Public URLs and Embeds](/docs/guides/public-urls-and-embeds) for delivery.

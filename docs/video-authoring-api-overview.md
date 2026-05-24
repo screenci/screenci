@@ -1,6 +1,8 @@
 # Video Authoring API Overview
 
-This page is the curated bridge into the full typedoc. Use it when you want a quick reminder of what the main ScreenCI authoring primitives are for, then jump into the generated API reference for the exhaustive signatures.
+This page is the curated bridge into the full typedoc. Use it when you want a
+quick reminder of what the main ScreenCI authoring primitives are for, then
+jump into the generated API reference for exhaustive signatures.
 
 ## `video()`
 
@@ -87,6 +89,7 @@ ScreenCI also exports:
 - `voices`
 - `modelTypes`
 - `languageRegions`
+- `getDimensions`
 
 These help you define narration behavior without falling back to raw strings everywhere.
 

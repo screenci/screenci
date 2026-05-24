@@ -4,7 +4,9 @@ Source docs for the ScreenCI documentation site.
 
 ## IA
 
-The docs follow a Playwright-like reader journey:
+The docs follow a Playwright-like reader journey: install, write a first
+script, iterate locally, record the final output, and then drill into guides
+and reference material as needed.
 
 ### Getting Started
 
@@ -13,8 +15,8 @@ The docs follow a Playwright-like reader journey:
 - [Generating Videos](./generating-videos.md)
 - [Run and Debug Videos](./run-and-debug-videos.md)
 - [Record and Publish](./record-and-publish.md)
-- [ScreenCI vs Playwright](./screenci-vs-playwright.md)
 - [CI Setup](./ci-setup.md)
+- [ScreenCI vs Playwright](./screenci-vs-playwright.md)
 
 ### Guides
 

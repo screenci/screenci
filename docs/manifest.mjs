@@ -62,30 +62,30 @@ export const docsManifest = [
     description:
       'Record the final browser session with screenci record, upload the results, and understand how published outputs behave.',
     prev: 'docs/run-and-debug-videos',
-    next: 'docs/screenci-vs-playwright',
-  },
-  {
-    source: 'screenci-vs-playwright.md',
-    slug: 'docs/screenci-vs-playwright',
-    section: 'Getting Started',
-    order: 6,
-    navLabel: 'ScreenCI vs Playwright',
-    title: 'ScreenCI vs Playwright',
-    description:
-      'See what stays the same from Playwright, what ScreenCI adds for polished video authoring, and when to use each tool.',
-    prev: 'docs/record-and-publish',
     next: 'docs/ci-setup',
   },
   {
     source: 'ci-setup.md',
     slug: 'docs/ci-setup',
     section: 'Getting Started',
-    order: 7,
+    order: 6,
     navLabel: 'CI setup',
     title: 'CI Setup',
     description:
       'Understand the generated GitHub Actions workflow, required secrets, and how to keep CI recordings deterministic.',
-    prev: 'docs/screenci-vs-playwright',
+    prev: 'docs/record-and-publish',
+    next: 'docs/screenci-vs-playwright',
+  },
+  {
+    source: 'screenci-vs-playwright.md',
+    slug: 'docs/screenci-vs-playwright',
+    section: 'Getting Started',
+    order: 7,
+    navLabel: 'ScreenCI vs Playwright',
+    title: 'ScreenCI vs Playwright',
+    description:
+      'See what stays the same from Playwright, what ScreenCI adds for polished video authoring, and when to use each tool.',
+    prev: 'docs/ci-setup',
     next: 'docs/guides/narration-and-localization',
   },
   {
@@ -97,14 +97,14 @@ export const docsManifest = [
     title: 'Narration and Localization',
     description:
       'Create spoken cues, overlap narration with visible UI motion, and keep multi-language variants consistent and type-safe.',
-    prev: 'docs/ci-setup',
+    prev: 'docs/screenci-vs-playwright',
     next: 'docs/guides/camera-and-zooming',
   },
   {
     source: 'camera-and-zooming.md',
     slug: 'docs/guides/camera-and-zooming',
     section: 'Guides',
-    order: 3,
+    order: 2,
     navLabel: 'Camera and zooming',
     title: 'Camera and Zooming',
     description:
@@ -116,7 +116,7 @@ export const docsManifest = [
     source: 'assets-and-overlays.md',
     slug: 'docs/guides/assets-and-overlays',
     section: 'Guides',
-    order: 4,
+    order: 3,
     navLabel: 'Assets and overlays',
     title: 'Assets and Overlays',
     description:
@@ -128,7 +128,7 @@ export const docsManifest = [
     source: 'public-urls-and-embeds.md',
     slug: 'docs/guides/public-urls-and-embeds',
     section: 'Guides',
-    order: 5,
+    order: 4,
     navLabel: 'Public URLs and embeds',
     title: 'Public URLs and Embeds',
     description:

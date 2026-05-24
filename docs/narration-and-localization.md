@@ -126,39 +126,48 @@ Pick the voice for clarity first. A polished walkthrough usually benefits more f
 
 The `languages` map accepts supported language codes as keys. ScreenCI's type system keeps all language variants aligned around the same cue keys, which is the main safeguard against translation drift inside the script.
 
-| Code  | Language    | Code | Language           |
-| ----- | ----------- | ---- | ------------------ |
-| `ar`  | Arabic      | `lt` | Lithuanian         |
-| `az`  | Azerbaijani | `lv` | Latvian            |
-| `bg`  | Bulgarian   | `mk` | Macedonian         |
-| `bn`  | Bengali     | `ml` | Malayalam          |
-| `ca`  | Catalan     | `mn` | Mongolian          |
-| `cs`  | Czech       | `mr` | Marathi            |
-| `da`  | Danish      | `ms` | Malay              |
-| `de`  | German      | `my` | Burmese            |
-| `el`  | Greek       | `nb` | Norwegian Bokmål   |
-| `en`  | English     | `ne` | Nepali             |
-| `es`  | Spanish     | `nl` | Dutch              |
-| `et`  | Estonian    | `pa` | Punjabi            |
-| `eu`  | Basque      | `pl` | Polish             |
-| `fa`  | Persian     | `pt` | Portuguese         |
-| `fi`  | Finnish     | `ro` | Romanian           |
-| `fil` | Filipino    | `ru` | Russian            |
-| `fr`  | French      | `si` | Sinhala            |
-| `gl`  | Galician    | `sk` | Slovak             |
-| `gu`  | Gujarati    | `sl` | Slovenian          |
-| `he`  | Hebrew      | `sq` | Albanian           |
-| `hi`  | Hindi       | `sr` | Serbian            |
-| `hr`  | Croatian    | `sv` | Swedish            |
-| `hu`  | Hungarian   | `sw` | Swahili            |
-| `hy`  | Armenian    | `ta` | Tamil              |
-| `id`  | Indonesian  | `te` | Telugu             |
-| `is`  | Icelandic   | `th` | Thai               |
-| `it`  | Italian     | `tr` | Turkish            |
-| `ja`  | Japanese    | `uk` | Ukrainian          |
-| `ka`  | Georgian    | `ur` | Urdu               |
-| `kn`  | Kannada     | `vi` | Vietnamese         |
-| `ko`  | Korean      | `zh` | Chinese (Mandarin) |
+| Code  | Language           | Code  | Language          |
+| ----- | ------------------ | ----- | ----------------- |
+| `af`  | Afrikaans          | `lo`  | Lao               |
+| `am`  | Amharic            | `lt`  | Lithuanian        |
+| `ar`  | Arabic             | `lv`  | Latvian           |
+| `az`  | Azerbaijani        | `mai` | Maithili          |
+| `be`  | Belarusian         | `mg`  | Malagasy          |
+| `bg`  | Bulgarian          | `mk`  | Macedonian        |
+| `bn`  | Bengali            | `ml`  | Malayalam         |
+| `ca`  | Catalan            | `mn`  | Mongolian         |
+| `ceb` | Cebuano            | `mr`  | Marathi           |
+| `cmn` | Chinese (Mandarin) | `ms`  | Malay             |
+| `cs`  | Czech              | `my`  | Burmese           |
+| `da`  | Danish             | `nb`  | Norwegian Bokmal  |
+| `de`  | German             | `ne`  | Nepali            |
+| `el`  | Greek              | `nl`  | Dutch             |
+| `en`  | English            | `nn`  | Norwegian Nynorsk |
+| `es`  | Spanish            | `or`  | Odia              |
+| `et`  | Estonian           | `pa`  | Punjabi           |
+| `eu`  | Basque             | `fa`  | Persian           |
+| `fi`  | Finnish            | `pl`  | Polish            |
+| `fil` | Filipino           | `ps`  | Pashto            |
+| `fr`  | French             | `pt`  | Portuguese        |
+| `gl`  | Galician           | `ro`  | Romanian          |
+| `gu`  | Gujarati           | `ru`  | Russian           |
+| `he`  | Hebrew             | `sd`  | Sindhi            |
+| `hi`  | Hindi              | `si`  | Sinhala           |
+| `hr`  | Croatian           | `sk`  | Slovak            |
+| `ht`  | Haitian Creole     | `sl`  | Slovenian         |
+| `hu`  | Hungarian          | `sq`  | Albanian          |
+| `hy`  | Armenian           | `sr`  | Serbian           |
+| `id`  | Indonesian         | `sv`  | Swedish           |
+| `is`  | Icelandic          | `sw`  | Swahili           |
+| `it`  | Italian            | `ta`  | Tamil             |
+| `ja`  | Japanese           | `te`  | Telugu            |
+| `jv`  | Javanese           | `th`  | Thai              |
+| `ka`  | Georgian           | `tr`  | Turkish           |
+| `kn`  | Kannada            | `uk`  | Ukrainian         |
+| `kok` | Konkani            | `ur`  | Urdu              |
+| `ko`  | Korean             | `vi`  | Vietnamese        |
+| `la`  | Latin              |       |                   |
+| `lb`  | Luxembourgish      |       |                   |
 
 ## Region selection
 
@@ -184,6 +193,7 @@ Available regions per language:
 | -------- | ---------------------------------- |
 | `ar`     | `ar-SA`, `ar-AE`, `ar-EG`          |
 | `bn`     | `bn-BD`, `bn-IN`                   |
+| `cmn`    | `zh-CN`, `zh-TW`, `zh-HK`          |
 | `de`     | `de-DE`, `de-AT`, `de-CH`          |
 | `en`     | `en-US`, `en-GB`, `en-AU`, `en-IN` |
 | `es`     | `es-ES`, `es-MX`, `es-US`, `es-AR` |
@@ -192,7 +202,10 @@ Available regions per language:
 | `pt`     | `pt-BR`, `pt-PT`                   |
 | `sw`     | `sw-KE`, `sw-TZ`                   |
 | `ta`     | `ta-IN`, `ta-LK`                   |
-| `zh`     | `zh-CN`, `zh-TW`, `zh-HK`          |
+
+For Mandarin, use the `cmn` language key. The region helper is available as
+`languageRegions.cmn.*`, and `languageRegions.zh.*` is kept as a compatibility
+alias.
 
 Languages not listed above have a single region variant and do not require an explicit `region`.
 

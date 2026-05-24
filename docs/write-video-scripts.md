@@ -1,6 +1,10 @@
 # Write Video Scripts
 
-This page follows the same teaching job as Playwright's [Writing tests](https://playwright.dev/docs/writing-tests), but for ScreenCI videos instead of assertion-heavy tests. Video scripts are Playwright-like files with ScreenCI-specific behavior around pacing, narration, and camera direction.
+This page does the same job as Playwright's
+[Writing tests](https://playwright.dev/docs/writing-tests), but for ScreenCI
+videos instead of assertion-heavy tests. Video scripts are Playwright-style
+files with ScreenCI-specific behavior around pacing, narration, and camera
+direction.
 
 #### You will learn
 
@@ -22,6 +26,7 @@ video('Create a project', async ({ page }) => {
   await page.getByRole('button', { name: 'New project' }).click()
   await page.getByLabel('Name').fill('Release notes')
   await page.getByRole('button', { name: 'Create' }).click()
+  await page.getByRole('heading', { name: 'Project created' }).waitFor()
 })
 ```
 
@@ -32,7 +37,11 @@ Most ScreenCI files have the same building blocks:
 - imports from `screenci`
 - one or more `video()` calls
 - Playwright-style `page` interactions
-- a hidden setup block when the visible recording should start from a ready state
+- a hidden setup block when the visible recording should start from a ready
+  state
+
+Each `video('Title', ...)` call becomes one output video. Keep titles stable
+unless you intentionally want a new output identity.
 
 ## Author with locators
 
@@ -43,17 +52,22 @@ await page.getByRole('button', { name: 'Invite teammate' }).click()
 await page.getByLabel('Email').fill('jane@screenci.com')
 ```
 
-Role-based and label-based locators usually age better than CSS selectors copied from transient DOM structure.
+Role-based and label-based locators usually age better than CSS selectors
+copied from transient DOM structure. If you need a refresher, use Playwright's
+[Locators](https://playwright.dev/docs/locators) guide.
 
 ## What ScreenCI changes
 
-Inside `video()`, ScreenCI wraps the normal Playwright page and locators so visible interactions look like a recording instead of a robotic test:
+Inside `video()`, ScreenCI wraps the normal Playwright page and locators so
+visible interactions look like a recording instead of a robotic test:
 
 - cursor moves are animated
 - typing is visible
-- helper APIs such as `hide()`, `autoZoom()`, `zoomTo()`, and `createNarration()` integrate with the recording timeline
+- helper APIs such as `hide()`, `autoZoom()`, `zoomTo()`, and
+  `createNarration()` integrate with the recording timeline
 
-Most standard Playwright APIs still work as expected.
+Most standard Playwright APIs still work as expected, including navigation,
+locators, waiting, keyboard input, and assertions from `@playwright/test`.
 
 ## Setup vs visible sequence
 
@@ -68,7 +82,8 @@ await hide(async () => {
 })
 ```
 
-Then let the visible sequence begin where the viewer would want to start watching.
+Then let the visible sequence begin where the viewer would want to start
+watching.
 
 ## Control pacing
 
@@ -80,7 +95,10 @@ Prefer:
 - narration overlap when speech and motion should happen together
 - short explicit pauses only when the viewer needs breathing room
 
-Use `waitForTimeout()` deliberately, not as a substitute for state-based synchronization.
+Use `waitForTimeout()` deliberately, not as a substitute for state-based
+synchronization. The same Playwright advice applies here:
+[Auto-waiting](https://playwright.dev/docs/actionability) first, explicit pause
+only when the pause is part of the video.
 
 ## Multiple videos per project
 
@@ -97,4 +115,15 @@ That keeps each video focused and makes iteration easier.
 
 ## Relation to Playwright APIs
 
-Use ScreenCI for the viewer-facing layer and Playwright for the browser automation layer underneath. When you need a deeper method, check the standard Playwright docs first, then add ScreenCI helpers only where the recording needs them.
+Use ScreenCI for the viewer-facing layer and Playwright for the browser
+automation layer underneath. When you need a deeper method, check the standard
+Playwright docs first, then add ScreenCI helpers only where the recording needs
+them.
+
+## What's next
+
+- [Generating Videos](/docs/generating-videos) if you want a first draft
+  faster.
+- [Narration and Localization](/docs/guides/narration-and-localization) for
+  spoken cues.
+- [Camera and Zooming](/docs/guides/camera-and-zooming) for framing.

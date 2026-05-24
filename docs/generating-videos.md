@@ -1,6 +1,8 @@
 # Generating Videos
 
-Use this page when you want help producing a first draft quickly, whether that draft comes from an AI agent working from source code, an AI agent working from a live URL, or Playwright codegen.
+Use this page when you want help producing a first draft quickly, whether that
+draft comes from an AI agent working from source code, an AI agent working from
+a live URL, or Playwright codegen.
 
 #### You will learn
 
@@ -10,17 +12,21 @@ Use this page when you want help producing a first draft quickly, whether that d
 
 ## AI generation based on source code
 
-This is usually the best path when the app you want to show already lives in the same repository.
+This is usually the best path when the app you want to show already lives in
+the same repository.
 
-The agent can inspect routes, labels, components, and state logic directly from source instead of guessing everything from browser behavior alone.
+The agent can inspect routes, labels, components, and state logic directly from
+source instead of guessing everything from browser behavior alone.
 
 Good setup:
 
 - initialize ScreenCI inside the existing repository
-- accept the ScreenCI skill install during `screenci init`, or run `npx -y skills add screenci/screenci --skill screenci -y` later
+- accept the ScreenCI skill install during `screenci init`, or run
+  `npx -y skills add screenci/screenci --skill screenci -y` later
 - open the repository root in the editor, not just `screenci/`
 - point the agent at the routes and components that define the flow
 - ask it to write the final `videos/*.video.ts` script directly
+- ask it to verify the result with `npx screenci test`
 
 Example prompt for a repo-based workflow:
 
@@ -33,19 +39,26 @@ Keep setup inside hide().
 Add concise narration and iterate with npx screenci test.
 ```
 
-This is usually faster and more reliable than URL-only exploration because the agent can inspect the real application structure before it writes selectors and narration.
+This is usually faster and more reliable than URL-only exploration because the
+agent can inspect the real application structure before it writes selectors and
+narration.
 
 ## AI generation based on URL with `playwright-cli`
 
-Use this path when you want to create a video from a live site and do not have the application source code in the same repo.
+Use this path when you want to create a video from a live site and do not have
+the application source code in the same repo.
 
-Here the agent should inspect the real site first, confirm the clean visible path, and only then write the ScreenCI script.
+Here the agent should inspect the real site first, confirm the clean visible
+path, and only then write the ScreenCI script.
 
 Good setup:
 
 - initialize a standalone ScreenCI project
-- accept the ScreenCI skill install during `screenci init`, or run `npx -y skills add screenci/screenci --skill screenci -y` later
-- accept the optional `playwright-cli` install during `screenci init`, or run `npx -y skills add screenci/screenci --skill playwright-cli -y` and `npm install @playwright/cli` later
+- accept the ScreenCI skill install during `screenci init`, or run
+  `npx -y skills add screenci/screenci --skill screenci -y` later
+- accept the optional `playwright-cli` install during `screenci init`, or run
+  `npx -y skills add screenci/screenci --skill playwright-cli -y` and
+  `npm install @playwright/cli` later
 - inspect the live site before writing the script
 - use `playwright-cli` to confirm selectors and visible flow
 - keep cookie handling and other setup inside `hide()`
@@ -59,11 +72,15 @@ Inspect the live site first with playwright-cli, then write the final ScreenCI s
 Keep setup hidden and use narration only where it improves the walkthrough.
 ```
 
-This works best when the prompt clearly names the URL to inspect, the output file to create, and what setup should stay hidden from the final video.
+This works best when the prompt clearly names the URL to inspect, the output
+file to create, and what setup should stay hidden from the final video.
 
 ## Playwright codegen
 
-This is the ScreenCI equivalent of Playwright's [Generating tests](https://playwright.dev/docs/codegen-intro). Use it when you want to inspect a live flow, capture the basic interactions, and harvest strong locators quickly.
+This is the ScreenCI equivalent of Playwright's
+[Generating tests](https://playwright.dev/docs/codegen). Use it when you want
+to inspect a live flow, capture the basic interactions, and harvest strong
+locators quickly.
 
 Run it with:
 
@@ -71,7 +88,8 @@ Run it with:
 npx playwright codegen https://screenci.com
 ```
 
-Codegen opens a browser window and the Playwright Inspector. As you click, type, and navigate, it generates Playwright actions for the flow.
+Codegen opens a browser window and the Playwright Inspector. As you click,
+type, and navigate, it generates Playwright actions for the flow.
 
 That is not a final ScreenCI video yet, but it is often the fastest way to get:
 
@@ -90,4 +108,12 @@ When you bring a generated flow into ScreenCI:
 5. simplify noisy steps that do not help the viewer
 6. add narration and pacing only after the interaction flow is correct
 
-The goal is a clean viewer-facing sequence, not a literal copy of every interaction codegen captured.
+The goal is a clean viewer-facing sequence, not a literal copy of every
+interaction codegen captured.
+
+## What's next
+
+- [Write Video Scripts](/docs/write-video-scripts) to turn the draft into a
+  maintainable `.video.ts` file.
+- [Run and Debug Videos](/docs/run-and-debug-videos) to tighten pacing and
+  selectors locally.

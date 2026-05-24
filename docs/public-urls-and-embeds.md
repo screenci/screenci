@@ -64,3 +64,10 @@ That lets you choose between automatic freshness and manual editorial control.
 ## Privacy and stability
 
 Only enable public URLs for videos that are meant to be accessible publicly. Once enabled, the route is stable by design, even though the selected underlying render can change later.
+
+## What's next
+
+- [Public Delivery API](/docs/reference/public-delivery-api) for endpoint-level
+  details.
+- [CLI](/docs/reference/cli) for `screenci info`, `make-public`, and
+  `make-private`.

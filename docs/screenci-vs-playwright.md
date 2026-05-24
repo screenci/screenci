@@ -21,6 +21,12 @@ If you already know Playwright, most of the scripting model transfers directly:
 
 ScreenCI builds on Playwright instead of replacing it.
 
+Useful Playwright references:
+
+- [Writing tests](https://playwright.dev/docs/writing-tests)
+- [Locators](https://playwright.dev/docs/locators)
+- [Codegen](https://playwright.dev/docs/codegen)
+
 ## What changes
 
 ScreenCI adds authoring behavior around the same interactions:

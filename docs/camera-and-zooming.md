@@ -83,3 +83,6 @@ Do not mix `autoZoom()` and manual zooming at the same time. In practice, that m
 
 - do not call `zoomTo()` or `resetZoom()` inside `autoZoom()`
 - do not start `autoZoom()` while a manual zoom is still active
+
+See also [Video Authoring API Overview](/docs/reference/video-authoring-api-overview)
+for the exported zoom helpers.

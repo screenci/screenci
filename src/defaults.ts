@@ -7,6 +7,12 @@ import type {
   RecordOptions,
 } from './types.js'
 
+// DOCS_SYNC:
+// If you change any default here, update the docs that surface user-visible
+// defaults, especially:
+// - docs/configuration.md
+// - docs/camera-and-zooming.md
+// - README.md
 export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
   easing: 'ease-out',
   duration: 1600,

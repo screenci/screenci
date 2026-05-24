@@ -71,3 +71,6 @@ Keep reusable brand assets separate from throwaway experiment files so the proje
 - Mute assets that should not compete with narration.
 - Keep intros and transitions short.
 - Prefer consistent placement and sizing across videos in the same series.
+
+See also [Video Authoring API Overview](/docs/reference/video-authoring-api-overview)
+for the exported `createAssets()` API.

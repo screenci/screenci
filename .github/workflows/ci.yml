@@ -77,7 +77,7 @@ jobs:
         run: npm pack
 
       - name: Set local screenci dependency for init
-        run: node -e "const fs=require('node:fs'); const pkg=require('./package.json'); fs.appendFileSync(process.env.GITHUB_ENV, 'SCREENCI_INIT_SCREENCI_DEPENDENCY=file:../' + pkg.name + '-' + pkg.version + '.tgz\n')"
+        run: node -e "const fs=require('node:fs'); const pkg=require('./package.json'); fs.appendFileSync(process.env.GITHUB_ENV, 'SCREENCI_INIT_SCREENCI_DEPENDENCY=file:./' + pkg.name + '-' + pkg.version + '.tgz\n')"
 
       - name: Run screenci init
         run: node scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} node bin/screenci.js init smoke-project --yes --verbose

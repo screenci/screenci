@@ -1844,7 +1844,7 @@ export async function ensureScreenciSecret(
       ? ((await resolveConfiguredEnvFilePath(resolvedConfigPath)) ??
         resolve(process.cwd(), '.env'))
       : resolve(process.cwd(), '.env')
-    await writeFile(savePath, `SCREENCI_SECRET=${secret}\n`)
+    await appendFile(savePath, `SCREENCI_SECRET=${secret}\n`)
     logger.info(`Successfully saved SCREENCI_SECRET to ${savePath}`)
     return secret
   } catch (err) {

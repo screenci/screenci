@@ -687,8 +687,9 @@ describe('CLI', () => {
 
       await expect(main()).rejects.toThrow('Playwright exited with code 1')
 
-      expect(loggerInfoSpy).toHaveBeenCalledWith('All recordings failed.')
-      expect(loggerInfoSpy).not.toHaveBeenCalledWith(
+      const messages = loggerInfoSpy.mock.calls.map((call) => String(call[0]))
+      expect(messages).toContain('All recordings failed.')
+      expect(messages).not.toContain(
         'Some recordings failed, skipping upload because record.upload is "all-or-nothing".'
       )
     })
@@ -1279,7 +1280,7 @@ describe('CLI', () => {
       )
     })
 
-    it('should save the secret to the configured envFile path', async () => {
+    it('should append the secret to the configured envFile path', async () => {
       mockReadFile.mockImplementation(async (path: string | URL) => {
         if (String(path).endsWith('screenci.config.ts')) {
           return "export default defineConfig({ projectName: 'Test Project', envFile: '../shared/.env.local' })"
@@ -1315,9 +1316,13 @@ describe('CLI', () => {
         ensureScreenciSecret('/workspace/demo/screenci.config.ts')
       ).resolves.toBe('auth-secret-123')
 
-      expect(mockWriteFile).toHaveBeenCalledWith(
+      expect(mockAppendFile).toHaveBeenCalledWith(
         '/workspace/shared/.env.local',
         'SCREENCI_SECRET=auth-secret-123\n'
+      )
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        '/workspace/shared/.env.local',
+        expect.any(String)
       )
     })
   })
@@ -1656,6 +1661,23 @@ describe('CLI', () => {
           typeof call[0] === 'string' && call[0].endsWith('package.json')
       )
       expect(pkgCall?.[1]).not.toContain('"@playwright/cli": "latest"')
+    })
+
+    it('uses the configured screenci dependency override verbatim', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      process.env.SCREENCI_INIT_SCREENCI_DEPENDENCY =
+        'file:./screenci-0.0.44.tgz'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      const pkgCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          typeof call[0] === 'string' && call[0].endsWith('package.json')
+      )
+      expect(pkgCall?.[1]).toContain('"screenci": "file:./screenci-0.0.44.tgz"')
     })
 
     it('keeps ScreenCI skill and playwright-cli prompts separate', async () => {

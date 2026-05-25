@@ -2097,7 +2097,7 @@ export async function main() {
           const completedRecordingCount =
             await countCompletedRecordings(screenciDir)
           if (playwrightFailure !== null && completedRecordingCount === 0) {
-            logger.info(pc.yellow('All recordings failed.'))
+            logger.info('All recordings failed.')
           } else if (!secret) {
             logger.info(
               'No secret configured, skipping upload. Set SCREENCI_SECRET in your .env file.'

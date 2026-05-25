@@ -76,11 +76,16 @@ jobs:
       - name: Pack local screenci package
         run: npm pack
 
+      - name: Prepare smoke project
+        run: >-
+          node -e "const fs=require('node:fs'); const path=require('node:path'); const pkg=require('./package.json'); const tarball=pkg.name + '-' + pkg.version + '.tgz'; fs.mkdirSync('smoke-project', { recursive: true }); fs.copyFileSync(path.join(process.cwd(), tarball), path.join(process.cwd(), 'smoke-project', tarball));"
+
       - name: Set local screenci dependency for init
         run: node -e "const fs=require('node:fs'); const pkg=require('./package.json'); fs.appendFileSync(process.env.GITHUB_ENV, 'SCREENCI_INIT_SCREENCI_DEPENDENCY=file:./' + pkg.name + '-' + pkg.version + '.tgz\n')"
 
       - name: Run screenci init
-        run: node scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} node bin/screenci.js init smoke-project --yes --verbose
+        working-directory: smoke-project
+        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} node ../bin/screenci.js init smoke-project --yes --verbose
 
       - name: Run screenci test
         working-directory: smoke-project

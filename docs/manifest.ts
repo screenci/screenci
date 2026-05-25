@@ -196,15 +196,15 @@ export const docsManifest = [
     prev: 'docs/reference/video-authoring-api-overview',
     next: 'docs/reference/api',
   },
-]
+] as const
 
-export const docsSections = ['Getting Started', 'Guides', 'Reference']
+export const docsSections = ['Getting Started', 'Guides', 'Reference'] as const
 
-export function getDocBySlug(slug) {
+export function getDocBySlug(slug: string) {
   return docsManifest.find((entry) => entry.slug === slug)
 }
 
-export function getOutputPathFromSlug(slug) {
+export function getOutputPathFromSlug(slug: string) {
   if (slug === 'docs') return 'index.md'
   return `${slug.replace(/^docs\//, '')}.md`
 }
@@ -216,20 +216,21 @@ export function getGeneratedDocsManifest() {
   }))
 }
 
-function slugToPath(slug) {
-  return `/${slug}`
-}
-
-function toSidebarItem(entry) {
+function toSidebarItem(entry: (typeof docsManifest)[number]) {
   return {
     label: entry.navLabel,
     slug: entry.slug,
   }
 }
 
-export function getDocsSidebarConfig(typedocSidebarGroup) {
+type DocsSidebarItem = ReturnType<typeof toSidebarItem>
+type TypedocSidebarItem = { label: string }
+
+export function getDocsSidebarConfig(
+  typedocSidebarGroup?: TypedocSidebarItem | null
+) {
   return docsSections.map((section) => {
-    const items = docsManifest
+    const items: Array<DocsSidebarItem | TypedocSidebarItem> = docsManifest
       .filter((entry) => entry.section === section)
       .sort((a, b) => a.order - b.order)
       .map(toSidebarItem)
@@ -245,7 +246,7 @@ export function getDocsSidebarConfig(typedocSidebarGroup) {
   })
 }
 
-export function getPrevNextLinkConfig(slug) {
+export function getPrevNextLinkConfig(slug: string | null) {
   if (!slug) return false
   if (slug === 'docs/reference/api') {
     return {
@@ -260,7 +261,7 @@ export function getPrevNextLinkConfig(slug) {
   }
 
   return {
-    label: entry.navLabel,
-    link: slugToPath(entry.slug),
+    label: entry.title,
+    link: `/${entry.slug}`,
   }
 }

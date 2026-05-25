@@ -39,6 +39,8 @@ Use this command in [Installation](/docs).
 
 ## `screenci test [playwrightArgs...]`
 
+<!-- screenci-doc-video:docs/reference/cli -->
+
 Run videos locally without the final recording pipeline:
 
 ```bash

@@ -12,6 +12,8 @@ a live URL, or Playwright codegen.
 
 ## AI generation based on source code
 
+<!-- screenci-doc-video:docs/generating-videos -->
+
 This is usually the best path when the app you want to show already lives in
 the same repository.
 

@@ -38,6 +38,8 @@ video('Settings', async ({ page }) => {
 
 ## Timing modes
 
+<!-- screenci-doc-video:docs/guides/narration-and-localization -->
+
 Use the cue methods intentionally:
 
 - `await narration.key()` waits for the full spoken line to finish.

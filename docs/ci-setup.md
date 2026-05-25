@@ -48,6 +48,8 @@ You can narrow the trigger later, but the generated default is intentionally eas
 
 ## Keep recordings deterministic
 
+<!-- screenci-doc-video:docs/ci-setup -->
+
 CI recordings work best when:
 
 - the target environment is stable

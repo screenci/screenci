@@ -2,7 +2,6 @@ import { describe, it, assertType } from 'vitest'
 import { createNarration } from './cue.js'
 import type { NarrationCue } from './cue.js'
 import { modelTypes, voices } from './voices.js'
-import type { VoiceForLang } from './voices.js'
 
 describe('createNarration type constraints', () => {
   it('accepts matching keys across all languages', () => {
@@ -82,10 +81,6 @@ describe('createNarration type constraints', () => {
         en: { cues: { intro: 'Hello' } },
       },
     })
-  })
-
-  it('accepts explicit provider voice ids for any supported language', () => {
-    assertType<VoiceForLang<'en'>>(voices.elevenlabs({ voiceId: 'voice-en' }))
   })
 
   it('creates narration from typed cues', () => {

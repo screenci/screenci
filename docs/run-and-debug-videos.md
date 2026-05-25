@@ -45,6 +45,8 @@ npx screenci test --mock-record
 
 ## Run one file or a subset
 
+<!-- screenci-doc-video:docs/run-and-debug-videos -->
+
 `screenci test` forwards normal Playwright arguments, so you can narrow the run
 while iterating:
 

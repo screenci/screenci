@@ -1246,6 +1246,19 @@ async function loadEnvFileFromConfigSource(
   }
 }
 
+async function resolveConfiguredEnvFilePath(
+  resolvedConfigPath: string
+): Promise<string | undefined> {
+  try {
+    const screenciConfig = await tryReadConfigFromSource(resolvedConfigPath)
+    if (!screenciConfig.envFile) return undefined
+
+    return resolve(dirname(resolvedConfigPath), screenciConfig.envFile)
+  } catch {
+    return undefined
+  }
+}
+
 export function extractConfigStringLiteral(
   configSource: string,
   property: 'projectName' | 'envFile'
@@ -1813,7 +1826,9 @@ function getInitScreenciDependencyOverride(): string | undefined {
   return process.env['SCREENCI_INIT_SCREENCI_DEPENDENCY']
 }
 
-export async function ensureScreenciSecret(): Promise<string | undefined> {
+export async function ensureScreenciSecret(
+  resolvedConfigPath?: string
+): Promise<string | undefined> {
   const existingSecret = process.env.SCREENCI_SECRET
   if (existingSecret) return existingSecret
 
@@ -1825,7 +1840,10 @@ export async function ensureScreenciSecret(): Promise<string | undefined> {
   try {
     const secret = await performBrowserLogin(appUrl)
     process.env.SCREENCI_SECRET = secret
-    const savePath = resolve(process.cwd(), '.env')
+    const savePath = resolvedConfigPath
+      ? ((await resolveConfiguredEnvFilePath(resolvedConfigPath)) ??
+        resolve(process.cwd(), '.env'))
+      : resolve(process.cwd(), '.env')
     await writeFile(savePath, `SCREENCI_SECRET=${secret}\n`)
     logger.info(`Successfully saved SCREENCI_SECRET to ${savePath}`)
     return secret
@@ -2447,15 +2465,15 @@ async function run(
     await loadEnvFileFromConfigSource(configPath, false)
   }
 
-  const envForChild = { ...process.env }
-
   // Only validate args for record command
   if (command === 'record') {
-    await ensureScreenciSecret()
+    await ensureScreenciSecret(configPath)
     validateArgs(additionalArgs)
     const screenciDir = resolve(dirname(configPath), '.screenci')
     clearDirectory(screenciDir)
   }
+
+  const envForChild = { ...process.env }
 
   await validateUniqueDiscoveredTestTitles(configPath, additionalArgs, {
     ...envForChild,

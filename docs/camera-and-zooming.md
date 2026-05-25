@@ -35,6 +35,8 @@ Use automatic zoom when the camera should react to the flow instead of following
 
 ## Manual zoom
 
+<!-- screenci-doc-video:docs/guides/camera-and-zooming -->
+
 ```ts
 import { resetZoom, video, zoomTo } from 'screenci'
 

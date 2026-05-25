@@ -6,14 +6,8 @@ import type {
   VideoCueTranslationFile,
   VoiceLanguageMeta,
 } from './events.js'
-import type {
-  VoiceKey,
-  VoiceForLang,
-  Lang,
-  CustomVoiceRef,
-  ModelType,
-} from './voices.js'
-import { isCustomVoiceRef } from './voices.js'
+import type { VoiceKey, Lang, CustomVoiceRef, ModelType } from './voices.js'
+import { isCustomVoiceRef } from './customVoiceRef.js'
 import { isInsideHide } from './hide.js'
 import { logger } from './logger.js'
 import { readFile } from 'fs/promises'
@@ -312,7 +306,7 @@ type AllCues<
 
 type LangNarrationOverrideForLang<L extends string> =
   | {
-      name: (L extends Lang ? VoiceForLang<L> : VoiceKey) | CustomVoiceRef
+      name: VoiceKey | CustomVoiceRef
       seed?: number
       style: string
       modelType?: 'expressive'
@@ -320,7 +314,7 @@ type LangNarrationOverrideForLang<L extends string> =
       pacing?: string
     }
   | {
-      name: (L extends Lang ? VoiceForLang<L> : VoiceKey) | CustomVoiceRef
+      name: VoiceKey | CustomVoiceRef
       seed?: number
       style?: never
       accent?: never

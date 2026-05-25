@@ -1278,6 +1278,48 @@ describe('CLI', () => {
         expect.any(Error)
       )
     })
+
+    it('should save the secret to the configured envFile path', async () => {
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        if (String(path).endsWith('screenci.config.ts')) {
+          return "export default defineConfig({ projectName: 'Test Project', envFile: '../shared/.env.local' })"
+        }
+        if (String(path).endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        return ''
+      })
+      mockCreateHttpServer.mockImplementation(
+        (handler: (req: unknown, res: unknown) => void) => {
+          const server = {
+            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+              cb()
+              const req = { url: '/callback?secret=auth-secret-123' }
+              const res = {
+                writeHead: vi.fn(),
+                end: vi.fn(),
+              }
+              handler(req, res)
+            }),
+            close: vi.fn(),
+            address: vi.fn().mockReturnValue({ port: 12345 }),
+            on: vi.fn(),
+          }
+          return server
+        }
+      )
+
+      const { ensureScreenciSecret } = await import('./cli')
+
+      await expect(
+        ensureScreenciSecret('/workspace/demo/screenci.config.ts')
+      ).resolves.toBe('auth-secret-123')
+
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/shared/.env.local',
+        'SCREENCI_SECRET=auth-secret-123\n'
+      )
+    })
   })
 
   describe('config loading', () => {

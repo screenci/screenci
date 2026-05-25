@@ -5,46 +5,7 @@ If you already know Playwright, the startup path should feel familiar:
 initialize a project, run the generated script locally, then record the final
 output when the visible flow looks right.
 
-<video controls crossorigin="anonymous" poster="https://api.screenci.com/public/kh7dq5rk3vabtxya45w6zm1fmd871jdx/en/thumbnail" style="max-width:100%; border: 1px solid #ccc;">
-  <source src="https://api.screenci.com/public/kh7dq5rk3vabtxya45w6zm1fmd871jdx/en/video" type="video/mp4" />
-  <track kind="subtitles" src="https://api.screenci.com/public/kh7dq5rk3vabtxya45w6zm1fmd871jdx/en/subtitle" srclang="en" label="English" default />
-</video>
-
-<details>
-<summary>Show source</summary>
-
-```ts
-import { autoZoom, createNarration, hide, video, voices } from 'screenci'
-
-const narration = createNarration({
-  voice: { name: voices.Sophie, style: 'Clear, friendly product walkthrough' },
-  languages: {
-    en: {
-      cues: {
-        intro:
-          'This video shows how to get started with ScreenCI [pronounce: screen see eye].',
-        docs: 'You can find the documentation linked right on the front page.',
-      },
-    },
-  },
-})
-
-video('How to get started', async ({ page }) => {
-  await hide(async () => {
-    await page.goto('https://screenci.com/')
-    await page.getByText('ScreenCI').first().waitFor()
-  })
-
-  await narration.intro()
-  await narration.docs()
-
-  await autoZoom(async () => {
-    await page.getByRole('link', { name: 'View Documentation' }).click()
-  })
-})
-```
-
-</details>
+<!-- screenci-doc-video:docs -->
 
 #### You will learn
 

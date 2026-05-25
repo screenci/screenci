@@ -12,6 +12,7 @@ import { mkdir, rm } from 'fs/promises'
 import { join } from 'path'
 import { attachRecorder } from 'playwright-recorder-plus'
 import type { Recorder, StopResult } from 'playwright-recorder-plus'
+import type { Page as RecorderPage } from 'playwright-core'
 import type {
   AspectRatio,
   FPS,
@@ -143,7 +144,7 @@ async function startScreencastRecording(
 ): Promise<Recorder> {
   const { width, height } = getDimensions(aspectRatio, quality)
 
-  const recorder = await attachRecorder(page, {
+  const recorder = await attachRecorder(page as unknown as RecorderPage, {
     path: outputPath,
     intermediatePath: outputPath,
     autoStart: false,

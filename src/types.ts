@@ -62,21 +62,6 @@ export type Quality = '720p' | '1080p' | '1440p' | '2160p'
 export type FPS = 24 | 30 | 60
 
 /**
- * Trace recording mode for test execution.
- *
- * Traces capture detailed information about test execution including screenshots,
- * DOM snapshots, and network activity.
- *
- * Available options (subset of Playwright's trace options):
- * - `'on'` - Record traces for all tests
- * - `'off'` - Do not record traces
- * - `'retain-on-failure'` - Record traces only for failed tests (default)
- *
- * @default 'retain-on-failure'
- */
-export type Trace = 'on' | 'off' | 'retain-on-failure'
-
-/**
  * Upload policy for `screenci record`.
  *
  * - `'passed-only'` uploads completed recordings even if other videos failed.
@@ -807,10 +792,11 @@ export type ScreenCIConfig = Omit<
     navigationTimeout?: number
     /**
      * When to record traces during test execution.
+     * Uses Playwright's native `trace` option type.
      *
      * @default 'retain-on-failure'
      */
-    trace?: Trace
+    trace?: NonNullable<NonNullable<PlaywrightTestConfig['use']>['trace']>
   }
   projects?: (Omit<Project, 'use'> & {
     use?: Omit<NonNullable<Project['use']>, 'trace'> & {
@@ -818,10 +804,11 @@ export type ScreenCIConfig = Omit<
       renderOptions?: RenderOptions
       /**
        * When to record traces during test execution.
+       * Uses Playwright's native `trace` option type.
        *
        * @default 'retain-on-failure'
        */
-      trace?: Trace
+      trace?: NonNullable<NonNullable<PlaywrightTestConfig['use']>['trace']>
     }
   })[]
 }

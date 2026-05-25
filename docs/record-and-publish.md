@@ -30,6 +30,8 @@ During `record`, ScreenCI:
 
 ## What gets rendered
 
+<!-- screenci-doc-video:docs/record-and-publish -->
+
 The final output can include:
 
 - the recorded browser video

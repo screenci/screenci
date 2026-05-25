@@ -87,6 +87,8 @@ watching.
 
 ## Control pacing
 
+<!-- screenci-doc-video:docs/write-video-scripts -->
+
 Visible pacing is part of authoring quality.
 
 Prefer:

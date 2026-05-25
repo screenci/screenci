@@ -34,6 +34,8 @@ That lets you choose between automatic freshness and manual editorial control.
 
 ## Typical embed
 
+<!-- screenci-doc-video:docs/guides/public-urls-and-embeds -->
+
 ```html
 <video
   controls

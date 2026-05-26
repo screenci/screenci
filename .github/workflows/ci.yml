@@ -93,10 +93,10 @@ jobs:
           node -e "const fs=require('node:fs'); const path=require('node:path'); const screenciPkg=require('./package.json'); const createPkg=require('./create-screenci/package.json'); const screenciTarball=screenciPkg.name + '-' + screenciPkg.version + '.tgz'; const createTarball=createPkg.name + '-' + createPkg.version + '.tgz'; for (const dir of ['smoke-direct-npm', 'smoke-direct-pnpm', 'smoke-create-npm', 'smoke-create-pnpm']) { fs.mkdirSync(dir, { recursive: true }); fs.copyFileSync(path.join(process.cwd(), screenciTarball), path.join(process.cwd(), dir, screenciTarball)); fs.copyFileSync(path.join(process.cwd(), 'create-screenci', createTarball), path.join(process.cwd(), dir, createTarball)); }"
 
       - name: Set local screenci dependency for init
-        run: node -e "const fs=require('node:fs'); const pkg=require('./package.json'); fs.appendFileSync(process.env.GITHUB_ENV, 'SCREENCI_INIT_SCREENCI_DEPENDENCY=file:./' + pkg.name + '-' + pkg.version + '.tgz\n')"
+        run: node -e "const fs=require('node:fs'); const path=require('node:path'); const pkg=require('./package.json'); const tarballPath=path.resolve(process.cwd(), pkg.name + '-' + pkg.version + '.tgz'); fs.appendFileSync(process.env.GITHUB_ENV, 'SCREENCI_INIT_SCREENCI_DEPENDENCY=file:' + tarballPath + '\n')"
 
-      - name: Set local create-screenci tarball name
-        run: node -e "const fs=require('node:fs'); const pkg=require('./create-screenci/package.json'); fs.appendFileSync(process.env.GITHUB_ENV, 'CREATE_SCREENCI_TARBALL=' + pkg.name + '-' + pkg.version + '.tgz\n')"
+      - name: Set local create-screenci dependency for smoke tests
+        run: node -e "const fs=require('node:fs'); const path=require('node:path'); const pkg=require('./create-screenci/package.json'); const tarballPath=path.resolve(process.cwd(), 'create-screenci', pkg.name + '-' + pkg.version + '.tgz'); fs.appendFileSync(process.env.GITHUB_ENV, 'CREATE_SCREENCI_DEPENDENCY=file:' + tarballPath + '\n')"
 
       - name: Run screenci init with npm
         working-directory: smoke-direct-npm
@@ -116,7 +116,7 @@ jobs:
 
       - name: Run create-screenci with npm
         working-directory: smoke-create-npm
-        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} npm exec --yes --package=file:./${{ env.CREATE_SCREENCI_TARBALL }} --package=${{ env.SCREENCI_INIT_SCREENCI_DEPENDENCY }} -- create-screenci smoke-project --package-manager npm --yes --verbose
+        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} npm exec --yes --package=${{ env.CREATE_SCREENCI_DEPENDENCY }} --package=${{ env.SCREENCI_INIT_SCREENCI_DEPENDENCY }} -- create-screenci smoke-project --package-manager npm --yes --verbose
 
       - name: Run generated screenci test with npm
         working-directory: smoke-create-npm
@@ -124,7 +124,7 @@ jobs:
 
       - name: Run create-screenci with pnpm
         working-directory: smoke-create-pnpm
-        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} pnpm dlx --package=file:./${{ env.CREATE_SCREENCI_TARBALL }} --package=${{ env.SCREENCI_INIT_SCREENCI_DEPENDENCY }} create-screenci smoke-project --package-manager pnpm --yes --verbose
+        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} pnpm dlx --package=${{ env.CREATE_SCREENCI_DEPENDENCY }} --package=${{ env.SCREENCI_INIT_SCREENCI_DEPENDENCY }} create-screenci smoke-project --package-manager pnpm --yes --verbose
 
       - name: Run generated screenci test with pnpm
         working-directory: smoke-create-pnpm

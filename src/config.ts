@@ -123,7 +123,7 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
     )
   }
 
-  const { videoDir, record, ...rest } = config
+  const { videoDir, record, test, ...rest } = config
   const reporter =
     rest.reporter !== undefined ? normalizeReporter(rest.reporter) : undefined
 
@@ -153,6 +153,9 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
     ...rest,
     record: {
       upload: record?.upload ?? DEFAULT_RECORD_UPLOAD_POLICY,
+    },
+    test: {
+      mockRecord: test?.mockRecord ?? false,
     },
     ...(reporter !== undefined ? { reporter } : {}),
     use,

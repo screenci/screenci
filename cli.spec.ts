@@ -3,6 +3,7 @@ import type { ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
 import { Readable } from 'stream'
 import { stripVTControlCharacters } from 'util'
+import pc from 'picocolors'
 import { logger } from './src/logger.js'
 import type { VoiceKey } from './src/voices.js'
 import type { RecordingData } from './src/recording.js'
@@ -65,6 +66,44 @@ function expectNpmDevInstalls(
       expectedPackages.map((pkg) => [
         'npm',
         ['install', '--save-dev', pkg],
+        expect.objectContaining({ cwd, stdio: 'pipe' }),
+      ])
+    )
+  )
+}
+
+function expectPnpmDevInstalls(
+  mockSpawn: ReturnType<typeof vi.fn>,
+  cwd: string,
+  screenciVersion = '0.0.32',
+  includePlaywrightCli = true
+) {
+  const pnpmInstallCalls = mockSpawn.mock.calls.filter(
+    (call: unknown[]) =>
+      call[0] === 'pnpm' &&
+      Array.isArray(call[1]) &&
+      call[1][0] === 'add' &&
+      call[1][1] === '--save-dev' &&
+      call[2] &&
+      typeof call[2] === 'object' &&
+      'cwd' in (call[2] as Record<string, unknown>) &&
+      (call[2] as { cwd?: string }).cwd === cwd &&
+      'stdio' in (call[2] as Record<string, unknown>) &&
+      (call[2] as { stdio?: string }).stdio === 'pipe'
+  )
+
+  const expectedPackages = [
+    `@playwright/test@^1.59.0`,
+    `screenci@${screenciVersion}`,
+    '@types/node@^25.9.1',
+    ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
+  ]
+
+  expect(pnpmInstallCalls).toEqual(
+    expect.arrayContaining(
+      expectedPackages.map((pkg) => [
+        'pnpm',
+        ['add', '--save-dev', pkg],
         expect.objectContaining({ cwd, stdio: 'pipe' }),
       ])
     )
@@ -150,6 +189,9 @@ describe('CLI', () => {
     mockMkdir.mockResolvedValue(undefined)
     mockReaddir.mockResolvedValue([])
     mockReadFile.mockImplementation(async (path: string | URL) => {
+      if (String(path).endsWith('screenci.config.ts')) {
+        return "export default defineConfig({ projectName: 'Test Project' })"
+      }
       if (String(path).endsWith('package.json')) {
         return JSON.stringify({ version: '0.0.32' })
       }
@@ -1227,6 +1269,42 @@ describe('CLI', () => {
       await main()
     })
 
+    it('keeps recording timings when config test.mockRecord is enabled', async () => {
+      process.argv = ['node', 'cli.js', 'test']
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        if (String(path).endsWith('screenci.config.ts')) {
+          return `export default defineConfig({
+  projectName: 'Test Project',
+  test: {
+    mockRecord: true,
+  },
+})`
+        }
+        if (String(path).endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        return ''
+      })
+      mockSpawn.mockImplementation(
+        (
+          _command: string,
+          args: string[],
+          options?: { env?: NodeJS.ProcessEnv }
+        ) => {
+          expect(args).not.toContain('--mock-record')
+          expect(
+            options?.env?.SCREENCI_DISABLE_RECORDING_TIMINGS
+          ).toBeUndefined()
+          expect(options?.env?.SCREENCI_MOCK_RECORD).toBe('true')
+          process.nextTick(() => mockChildProcess.emit('close', 0))
+          return mockChildProcess as unknown as ChildProcess
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+    })
+
     it('fails before execution when discovered titles are exact duplicates', async () => {
       process.argv = ['node', 'cli.js', 'test']
       let actualRunSpawned = false
@@ -2036,7 +2114,7 @@ describe('CLI', () => {
       expectNpmDevInstalls(mockSpawn, '/workspace/my-app')
       expect(loggerInfoSpy).toHaveBeenCalledWith("Initializing project in '.'")
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        'Initialized screenci project "My Project" in .'
+        `${pc.green('✔ Success!')} Created a ScreenCI project at /workspace/my-app`
       )
     })
 
@@ -2240,6 +2318,51 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).not.toContain('--with-deps')
     })
 
+    it('supports pnpm init flows end to end', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--package-manager',
+        'pnpm',
+        '--yes',
+      ]
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expectPnpmDevInstalls(mockSpawn, '/workspace/my-project')
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'pnpm',
+        ['exec', 'playwright', 'install', 'chromium'],
+        expect.objectContaining({
+          cwd: '/workspace/my-project',
+          stdio: 'inherit',
+        })
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-project/README.md',
+        expect.stringContaining('`pnpm exec screenci test`')
+      )
+      const workflowCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          typeof call[0] === 'string' && call[0].endsWith('screenci.yaml')
+      )
+      expect(workflowCall?.[1]).toContain('cache: pnpm')
+      expect(workflowCall?.[1]).toContain(
+        'cache-dependency-path: pnpm-lock.yaml'
+      )
+      expect(workflowCall?.[1]).toContain('run: pnpm install --frozen-lockfile')
+      expect(workflowCall?.[1]).toContain("hashFiles('pnpm-lock.yaml')")
+      expect(workflowCall?.[1]).toContain(
+        'run: pnpm exec playwright install chromium'
+      )
+      expect(workflowCall?.[1]).toContain('run: pnpm exec screenci record')
+    })
+
     it('adds @playwright/cli only when selected', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
@@ -2386,7 +2509,7 @@ describe('CLI', () => {
       )
     })
 
-    it('prints next steps without any cd command', async () => {
+    it('prints Playwright-style next steps without any cd command', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockReturnValue(false)
@@ -2394,11 +2517,71 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       await main()
 
-      const messages = loggerInfoSpy.mock.calls.map((call) => String(call[0]))
-      expect(messages).toContain('Next steps:')
+      const rawMessages = loggerInfoSpy.mock.calls.map((call) =>
+        String(call[0])
+      )
+      const messages = rawMessages.map((message) =>
+        stripVTControlCharacters(message)
+      )
+
+      expect(rawMessages).toContain(`  ${pc.cyan('npx screenci test')}`)
+      expect(rawMessages).toContain(
+        'Visit ' +
+          pc.cyan('https://screenci.com/docs') +
+          ' for more information.'
+      )
+      expect(messages).toContain(
+        'Inside that directory, you can run several commands:'
+      )
+      expect(messages).toContain('We suggest that you begin by typing:')
+      expect(messages).toContain('    npx screenci test')
+      expect(messages).toContain(
+        '  - ./videos/example.video.ts - Example video script'
+      )
+      expect(messages).toContain(
+        '  - ./screenci.config.ts - ScreenCI configuration'
+      )
       expect(messages).not.toContain('  cd my-project')
       expect(messages.every((message) => !message.startsWith('  cd '))).toBe(
         true
+      )
+    })
+
+    it('prints pnpm next steps when pnpm is selected', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--package-manager',
+        'pnpm',
+      ]
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      const rawMessages = loggerInfoSpy.mock.calls.map((call) =>
+        String(call[0])
+      )
+      const messages = rawMessages.map((message) =>
+        stripVTControlCharacters(message)
+      )
+
+      expect(rawMessages).toContain(`  ${pc.cyan('pnpm exec screenci test')}`)
+      expect(messages).toContain('    pnpm exec screenci test')
+      expect(mockInput.mock.calls.map((call) => call[0])).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            message:
+              "Install Playwright browsers (can be done manually via 'pnpm exec playwright install chromium')? (Y/n)",
+          }),
+          expect.objectContaining({
+            message:
+              "Install playwright-cli for URL-based browser inspection (can be done manually via 'npx -y skills add screenci/screenci --skill playwright-cli -y && pnpm add --save-dev @playwright/cli')? (Y/n)",
+          }),
+        ])
       )
     })
 

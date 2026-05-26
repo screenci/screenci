@@ -88,7 +88,8 @@ public-facing behavior.
 - Partial failures: `record.upload` controls whether successful videos still
   upload when another video fails.
 - `record` fails but `test` passes: retry with `npx screenci test --mock-record`
-  to reproduce recording-like pacing.
+  to reproduce recording-like pacing. If you need that often, set
+  `test.mockRecord: true` in `screenci.config.ts`.
 
 ## What's next
 

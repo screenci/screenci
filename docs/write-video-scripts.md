@@ -34,7 +34,7 @@ const narration = createNarration({
 video('How to get started', async ({ page }) => {
   await hide(async () => {
     await page.goto('https://screenci.com')
-    await page.getByText('ScreenCI').first().waitFor()
+    await page.waitForLoadState('networkidle')
   })
 
   await narration.intro()
@@ -61,8 +61,9 @@ Most ScreenCI files have the same building blocks:
 - a hidden setup block when the visible recording should start from a ready
   state
 
-Each `video('Title', ...)` call becomes one output video. Keep titles stable
-unless you intentionally want a new output identity.
+Each `video('Title', ...)` call defines one video, which can include multiple
+language versions. Keep titles stable unless you intentionally want a new
+video.
 
 ## Author with locators
 

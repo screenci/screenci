@@ -43,6 +43,9 @@ use:
 npx screenci test --mock-record
 ```
 
+If you want that behavior on every local run, set `test.mockRecord: true` in
+`screenci.config.ts` instead of passing the flag each time.
+
 ## Run one file or a subset
 
 <!-- screenci-doc-video:docs/run-and-debug-videos -->

@@ -27,6 +27,10 @@ export default defineConfig({
   envFile: '.env',
   videoDir: './videos',
 
+  test: {
+    mockRecord: false,
+  },
+
   record: {
     upload: 'passed-only',
   },
@@ -66,6 +70,8 @@ export default defineConfig({
 
 ### Recording behavior
 
+- `test.mockRecord: true` makes `screenci test` keep recording-like pacing by
+  default. This is the config equivalent of `screenci test --mock-record`.
 - `record.upload: 'passed-only'` uploads successful recordings even if another
   one failed.
 - `record.upload: 'all-or-nothing'` skips uploads when any recording fails.
@@ -126,6 +132,7 @@ video.use({
 
 | Option                      | Default         |
 | --------------------------- | --------------- |
+| `test.mockRecord`           | `false`         |
 | `videoDir`                  | `'./videos'`    |
 | `record.upload`             | `'passed-only'` |
 | `recordOptions.aspectRatio` | `'16:9'`        |

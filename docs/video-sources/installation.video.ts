@@ -17,7 +17,7 @@ const narration = createNarration({
 video('How to get started', async ({ page }) => {
   await hide(async () => {
     await page.goto('https://screenci.com')
-    await page.getByText('ScreenCI').first().waitFor()
+    await page.waitForLoadState('networkidle')
   })
 
   await narration.intro()

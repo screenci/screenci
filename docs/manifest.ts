@@ -5,7 +5,7 @@
 
 export const docsManifest = [
   {
-    source: 'installation.md',
+    source: 'installation.mdx',
     slug: 'docs',
     section: 'Getting Started',
     order: 1,
@@ -205,8 +205,11 @@ export function getDocBySlug(slug: string) {
 }
 
 export function getOutputPathFromSlug(slug: string) {
-  if (slug === 'docs') return 'index.md'
-  return `${slug.replace(/^docs\//, '')}.md`
+  const entry = getDocBySlug(slug)
+  const extension = entry?.source.endsWith('.mdx') ? '.mdx' : '.md'
+
+  if (slug === 'docs') return `index${extension}`
+  return `${slug.replace(/^docs\//, '')}${extension}`
 }
 
 export function getGeneratedDocsManifest() {

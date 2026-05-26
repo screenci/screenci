@@ -127,6 +127,23 @@ describe('defineConfig', () => {
     expect(config.record.upload).toBe('all-or-nothing')
   })
 
+  it('defaults test.mockRecord to false', () => {
+    const config = defineConfig({ projectName: 'Test' })
+
+    expect(config.test.mockRecord).toBe(false)
+  })
+
+  it('preserves test.mockRecord when configured', () => {
+    const config = defineConfig({
+      projectName: 'Test',
+      test: {
+        mockRecord: true,
+      },
+    })
+
+    expect(config.test.mockRecord).toBe(true)
+  })
+
   it('should force retries to 0', () => {
     const config = defineConfig({ projectName: 'Test' })
 

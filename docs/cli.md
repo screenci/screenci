@@ -71,6 +71,9 @@ This keeps recording-like pacing enabled without starting the real recording
 capture path. Use it when `test` passes but `record` exposes timing
 differences.
 
+If you want that behavior by default for a project, set
+`test.mockRecord: true` in `screenci.config.ts`.
+
 ## `screenci record [playwrightArgs...]`
 
 Record final output:

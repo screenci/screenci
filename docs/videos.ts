@@ -33,6 +33,10 @@ export const docsVideoRegistry = {
     publicId: 'kh7acwtyyfdqn0by8naxtbpjns87d4xf',
     sourcePath: 'screenci/docs/video-sources/camera-and-zooming.video.ts',
   },
+  'docs/guides/assets-and-overlays': {
+    publicId: 'kh7e6bdc95pb410tg07q0v45d587ejv9',
+    sourcePath: 'screenci/docs/video-sources/assets-and-overlays.video.ts',
+  },
   'docs/guides/public-urls-and-embeds': {
     publicId: 'kh7483thsgvsh4b5qghtw81b4587dqgj',
     sourcePath: 'screenci/docs/video-sources/public-urls-and-embeds.video.ts',

@@ -647,7 +647,7 @@ function resolveSpawnSpec(
     return { command: cmd, args }
   }
 
-  const windowsCmdsNeedingShell = new Set(['npm', 'npx', 'playwright'])
+  const windowsCmdsNeedingShell = new Set(['npm', 'npx', 'playwright', 'pnpm'])
   if (!windowsCmdsNeedingShell.has(cmd)) {
     return { command: cmd, args }
   }
@@ -1487,6 +1487,18 @@ export function extractRecordUploadPolicyLiteral(
   return templateLiteralMatch?.[1] as RecordUploadPolicy | undefined
 }
 
+export function extractMockRecordLiteral(
+  configSource: string
+): boolean | undefined {
+  const match = configSource.match(
+    /test\s*:\s*\{[\s\S]*?mockRecord\s*:\s*(true|false)/
+  )
+
+  if (!match) return undefined
+
+  return match[1] === 'true'
+}
+
 function resolveRecordUploadPolicy(config: ScreenCIConfig): RecordUploadPolicy {
   return config.record?.upload ?? DEFAULT_RECORD_UPLOAD_POLICY
 }
@@ -1495,6 +1507,7 @@ async function tryReadConfigFromSource(resolvedConfigPath: string): Promise<
   Pick<ScreenCIConfig, 'projectName'> & {
     envFile?: string
     record?: { upload?: RecordUploadPolicy }
+    test?: { mockRecord?: boolean }
   }
 > {
   const configSource = await readFile(resolvedConfigPath, 'utf-8')
@@ -1508,11 +1521,13 @@ async function tryReadConfigFromSource(resolvedConfigPath: string): Promise<
 
   const envFile = extractConfigStringLiteral(configSource, 'envFile')
   const recordUpload = extractRecordUploadPolicyLiteral(configSource)
+  const mockRecord = extractMockRecordLiteral(configSource)
 
   return {
     projectName,
     ...(envFile !== undefined ? { envFile } : {}),
     ...(recordUpload !== undefined ? { record: { upload: recordUpload } } : {}),
+    ...(mockRecord !== undefined ? { test: { mockRecord } } : {}),
   }
 }
 
@@ -1691,7 +1706,50 @@ async function readCurrentScreenciVersion(): Promise<string> {
   return 'latest'
 }
 
-function generateReadme(projectName: string): string {
+type PackageManager = 'npm' | 'pnpm'
+
+function parsePackageManager(value: string | undefined): PackageManager {
+  if (value === undefined || value === 'npm' || value === 'pnpm') {
+    return value ?? 'npm'
+  }
+
+  throw new Error('Expected package manager to be one of: npm, pnpm')
+}
+
+function getPackageManagerCommand(packageManager: PackageManager): {
+  screenciRun: string
+  playwrightRun: string
+  installCommand: string
+  installArgs: (pkg: string) => string[]
+  cacheName: PackageManager
+  lockfileName: string
+} {
+  if (packageManager === 'pnpm') {
+    return {
+      screenciRun: 'pnpm exec screenci',
+      playwrightRun: 'pnpm exec playwright',
+      installCommand: 'pnpm',
+      installArgs: (pkg) => ['add', '--save-dev', pkg],
+      cacheName: 'pnpm',
+      lockfileName: 'pnpm-lock.yaml',
+    }
+  }
+
+  return {
+    screenciRun: 'npx screenci',
+    playwrightRun: 'npx playwright',
+    installCommand: 'npm',
+    installArgs: (pkg) => ['install', '--save-dev', pkg],
+    cacheName: 'npm',
+    lockfileName: 'package-lock.json',
+  }
+}
+
+function generateReadmeForPackageManager(
+  projectName: string,
+  packageManager: PackageManager
+): string {
+  const commands = getPackageManagerCommand(packageManager)
   return `# ${projectName}
 
 This project uses ScreenCI + Playwright to create and upload polished product videos.
@@ -1708,11 +1766,11 @@ Learn more: https://screenci.com/docs
 
 2. Run videos locally to test the script working:
 
-   \`npx screenci test\` or with UI mode: \`npx screenci test --ui\`
+   \`${commands.screenciRun} test\` or with UI mode: \`${commands.screenciRun} test --ui\`
 
 3. Record videos:
 
-   \`npx screenci record\`
+   \`${commands.screenciRun} record\`
 
 4. View results on screenci.com and optionally enable a public URL to embed the video on your site.
 `
@@ -1758,45 +1816,46 @@ async function installInitDependencies(
   projectDir: string,
   verbose: boolean,
   screenciDependency: string,
-  includePlaywrightCli: boolean
+  includePlaywrightCli: boolean,
+  packageManager: PackageManager
 ): Promise<void> {
+  const commands = getPackageManagerCommand(packageManager)
   const installSteps: Array<{ message: string; args: string[] }> = [
     {
       message: 'Installing Playwright Test...',
-      args: [
-        'install',
-        '--save-dev',
-        `@playwright/test@${PLAYWRIGHT_TEST_VERSION}`,
-      ],
+      args: commands.installArgs(`@playwright/test@${PLAYWRIGHT_TEST_VERSION}`),
     },
     {
       message: 'Installing ScreenCI...',
-      args: ['install', '--save-dev', `screenci@${screenciDependency}`],
+      args: commands.installArgs(`screenci@${screenciDependency}`),
     },
     {
       message: 'Installing Node.js types...',
-      args: ['install', '--save-dev', `@types/node@${NODE_TYPES_VERSION}`],
+      args: commands.installArgs(`@types/node@${NODE_TYPES_VERSION}`),
     },
   ]
 
   if (includePlaywrightCli) {
     installSteps.push({
       message: 'Installing playwright-cli...',
-      args: [
-        'install',
-        '--save-dev',
-        `@playwright/cli@${PLAYWRIGHT_CLI_VERSION}`,
-      ],
+      args: commands.installArgs(`@playwright/cli@${PLAYWRIGHT_CLI_VERSION}`),
     })
   }
   for (const step of installSteps) {
     if (verbose) {
-      logger.info(`Running 'npm ${step.args.join(' ')}'...`)
-      await spawnInherited('npm', step.args, projectDir, 'screenci init')
+      logger.info(
+        `Running '${commands.installCommand} ${step.args.join(' ')}'...`
+      )
+      await spawnInherited(
+        commands.installCommand,
+        step.args,
+        projectDir,
+        'screenci init'
+      )
     } else {
       const spinner = ora(step.message).start()
       try {
-        await spawnSilent('npm', step.args, projectDir)
+        await spawnSilent(commands.installCommand, step.args, projectDir)
         spinner.succeed(step.message.replace(/\.\.\.$/, ' complete'))
       } catch (err) {
         spinner.fail(step.message.replace(/\.\.\.$/, ' failed'))
@@ -1806,7 +1865,50 @@ async function installInitDependencies(
   }
 }
 
-function generateGithubAction(): string {
+function printInitNextSteps(
+  projectDir: string,
+  packageManager: PackageManager
+): void {
+  const resolvedProjectDir = realpathSync(projectDir)
+  const commands = getPackageManagerCommand(packageManager)
+
+  logger.info(
+    `${pc.green('✔ Success!')} Created a ScreenCI project at ${resolvedProjectDir}`
+  )
+  logger.info('')
+  logger.info('Inside that directory, you can run several commands:')
+  logger.info('')
+  logger.info(`  ${pc.cyan(`${commands.screenciRun} test`)}`)
+  logger.info('    Runs your video scripts in Playwright.')
+  logger.info('')
+  logger.info(`  ${pc.cyan(`${commands.screenciRun} test --ui`)}`)
+  logger.info('    Starts the interactive UI mode.')
+  logger.info('')
+  logger.info(
+    `  ${pc.cyan(`${commands.screenciRun} test videos/example.video.ts`)}`
+  )
+  logger.info('    Runs the example video script.')
+  logger.info('')
+  logger.info(`  ${pc.cyan(`${commands.screenciRun} record`)}`)
+  logger.info('    Records and uploads videos.')
+  logger.info('')
+  logger.info('We suggest that you begin by typing:')
+  logger.info('')
+  logger.info(`    ${pc.cyan(`${commands.screenciRun} test`)}`)
+  logger.info('')
+  logger.info('And check out the following files:')
+  logger.info('  - ./videos/example.video.ts - Example video script')
+  logger.info('  - ./screenci.config.ts - ScreenCI configuration')
+  logger.info('')
+  logger.info(
+    `Visit ${pc.cyan('https://screenci.com/docs')} for more information.`
+  )
+  logger.info('')
+  logger.info('Happy hacking! 🎥')
+}
+
+function generateGithubAction(packageManager: PackageManager): string {
+  const commands = getPackageManagerCommand(packageManager)
   return `name: ScreenCI
 
 on:
@@ -1835,31 +1937,31 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: package-lock.json
+          cache: ${commands.cacheName}
+          cache-dependency-path: ${commands.lockfileName}
 
       - name: Install dependencies
         working-directory: .
-        run: npm ci
+        run: ${packageManager === 'pnpm' ? 'pnpm install --frozen-lockfile' : 'npm ci'}
 
       - name: Cache Playwright Chromium
         uses: actions/cache@v5
         id: pw-cache
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-\${{ runner.os }}-\${{ hashFiles('package-lock.json') }}
+          key: playwright-\${{ runner.os }}-\${{ hashFiles('${commands.lockfileName}') }}
 
       - name: Install Chromium
         if: steps.pw-cache.outputs.cache-hit != 'true'
         working-directory: .
-        run: npx playwright install chromium
+        run: ${commands.playwrightRun} install chromium
 
       - id: record
         name: Record
         working-directory: .
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
-        run: npx screenci record
+        run: ${commands.screenciRun} record
 `
 }
 
@@ -1954,7 +2056,7 @@ const narration = createNarration({
 video('How to get started', async ({ page }) => {
   await hide(async () => {
     await page.goto('https://screenci.com')
-    await page.getByText('ScreenCI').first().waitFor()
+    await page.waitForLoadState('networkidle');
   })
 
   await narration.intro()
@@ -2012,16 +2114,22 @@ async function promptInitGithubActionWorkflow(): Promise<boolean> {
   return promptYesNo('Add a GitHub Actions workflow? (Y/n)', true)
 }
 
-async function promptInitPlaywrightBrowsers(): Promise<boolean> {
+async function promptInitPlaywrightBrowsersForPackageManager(
+  packageManager: PackageManager
+): Promise<boolean> {
+  const commands = getPackageManagerCommand(packageManager)
   return promptYesNo(
-    "Install Playwright browsers (can be done manually via 'npx playwright install chromium')? (Y/n)",
+    `Install Playwright browsers (can be done manually via '${commands.playwrightRun} install chromium')? (Y/n)`,
     true
   )
 }
 
-async function promptInitPlaywrightOsDependencies(): Promise<boolean> {
+async function promptInitPlaywrightOsDependenciesForPackageManager(
+  packageManager: PackageManager
+): Promise<boolean> {
+  const commands = getPackageManagerCommand(packageManager)
   return promptYesNo(
-    "Install Playwright operating system dependencies (might require sudo / root and can be done manually via 'npx playwright install-deps chromium')? (y/N)",
+    `Install Playwright operating system dependencies (might require sudo / root and can be done manually via '${commands.playwrightRun} install-deps chromium')? (y/N)`,
     false
   )
 }
@@ -2033,9 +2141,15 @@ async function promptInitScreenCISkill(): Promise<boolean> {
   )
 }
 
-async function promptInitPlaywrightCliSkill(): Promise<boolean> {
+async function promptInitPlaywrightCliSkillForPackageManager(
+  packageManager: PackageManager
+): Promise<boolean> {
+  const installPlaywrightCli =
+    packageManager === 'pnpm'
+      ? 'pnpm add --save-dev @playwright/cli'
+      : 'npm install @playwright/cli'
   return promptYesNo(
-    "Install playwright-cli for URL-based browser inspection (can be done manually via 'npx -y skills add screenci/screenci --skill playwright-cli -y && npm install @playwright/cli')? (Y/n)",
+    `Install playwright-cli for URL-based browser inspection (can be done manually via 'npx -y skills add screenci/screenci --skill playwright-cli -y && ${installPlaywrightCli}')? (Y/n)`,
     true
   )
 }
@@ -2082,6 +2196,7 @@ export async function ensureScreenciSecret(
 type InitOptions = {
   verbose: boolean
   yes: boolean
+  packageManager: PackageManager
   agent?: string
 }
 
@@ -2089,7 +2204,8 @@ async function runInit(
   projectNameArg: string | undefined,
   options: InitOptions
 ): Promise<void> {
-  const { verbose, yes, agent } = options
+  const { verbose, yes, agent, packageManager } = options
+  const commands = getPackageManagerCommand(packageManager)
   const initCwd = getInitProjectRoot()
 
   let projectName = projectNameArg?.trim()
@@ -2111,16 +2227,16 @@ async function runInit(
     : await promptInitGithubActionWorkflow()
   const shouldInstallPlaywrightBrowsers = yes
     ? true
-    : await promptInitPlaywrightBrowsers()
+    : await promptInitPlaywrightBrowsersForPackageManager(packageManager)
   const shouldInstallPlaywrightOsDependencies = yes
     ? false
-    : await promptInitPlaywrightOsDependencies()
+    : await promptInitPlaywrightOsDependenciesForPackageManager(packageManager)
   const shouldInstallScreenCISkill = yes
     ? true
     : await promptInitScreenCISkill()
   const shouldInstallPlaywrightCli = yes
     ? true
-    : await promptInitPlaywrightCliSkill()
+    : await promptInitPlaywrightCliSkillForPackageManager(packageManager)
 
   if (shouldAddGithubActionWorkflow && existsSync(githubActionPath)) {
     logger.error(
@@ -2167,29 +2283,18 @@ async function runInit(
   if (!hasExistingPackageJson) {
     await writeFile(packageJsonPath, generateEmptyPackageJson())
   }
-  await writeFile(resolve(projectDir, 'README.md'), generateReadme(projectName))
+  await writeFile(
+    resolve(projectDir, 'README.md'),
+    generateReadmeForPackageManager(projectName, packageManager)
+  )
   await writeInitGitignore(projectDir)
   await writeFile(
     resolve(projectDir, 'videos', 'example.video.ts'),
     generateExampleVideo()
   )
   if (shouldAddGithubActionWorkflow) {
-    await writeFile(githubActionPath, generateGithubAction())
+    await writeFile(githubActionPath, generateGithubAction(packageManager))
   }
-
-  logger.info(`Initialized screenci project "${projectName}" in .`)
-  logger.info('Files created:')
-  logger.info('  screenci.config.ts')
-  if (!hasExistingPackageJson) {
-    logger.info('  package.json')
-  }
-  logger.info('  README.md')
-  logger.info('  .gitignore')
-  logger.info('  videos/example.video.ts')
-  if (shouldAddGithubActionWorkflow) {
-    logger.info('  .github/workflows/screenci.yaml')
-  }
-  logger.info('')
 
   if (skillsArgs !== null) {
     if (verbose) {
@@ -2211,16 +2316,19 @@ async function runInit(
     projectDir,
     verbose,
     screenciDependency,
-    shouldInstallPlaywrightCli
+    shouldInstallPlaywrightCli,
+    packageManager
   )
 
   if (shouldInstallPlaywrightBrowsers) {
     logger.info(
-      "Installing Playwright Chromium with 'npx playwright install chromium'..."
+      `Installing Playwright Chromium with '${commands.playwrightRun} install chromium'...`
     )
     await spawnInherited(
-      'npx',
-      ['playwright', 'install', 'chromium'],
+      packageManager === 'pnpm' ? 'pnpm' : 'npx',
+      packageManager === 'pnpm'
+        ? ['exec', 'playwright', 'install', 'chromium']
+        : ['playwright', 'install', 'chromium'],
       projectDir,
       'screenci init'
     )
@@ -2229,11 +2337,13 @@ async function runInit(
 
   if (shouldInstallPlaywrightOsDependencies) {
     logger.info(
-      "Installing Playwright operating system dependencies with 'npx playwright install-deps chromium'..."
+      `Installing Playwright operating system dependencies with '${commands.playwrightRun} install-deps chromium'...`
     )
     await spawnInherited(
-      'npx',
-      ['playwright', 'install-deps', 'chromium'],
+      packageManager === 'pnpm' ? 'pnpm' : 'npx',
+      packageManager === 'pnpm'
+        ? ['exec', 'playwright', 'install-deps', 'chromium']
+        : ['playwright', 'install-deps', 'chromium'],
       projectDir,
       'screenci init'
     )
@@ -2241,12 +2351,8 @@ async function runInit(
       `${pc.green('✔')} Playwright operating system dependencies installed successfully`
     )
   }
-  logger.info('')
-  logger.info('Next steps:')
-  logger.info('  Read README.md for setup and recording flow')
-  logger.info('  Docs: https://screenci.com/docs')
-  logger.info('  npx screenci test')
-  logger.info('  npx screenci record')
+
+  printInitNextSteps(projectDir, packageManager)
 }
 
 export async function main() {
@@ -2411,12 +2517,14 @@ export async function main() {
     .allowUnknownOption(true)
     .action(async () => {
       const parsed = parseConfigCliArgs(getSubcommandArgv('test'))
+      let configMockRecord = false
 
       const resolvedConfigPath = findScreenCIConfig(parsed.configPath)
       if (resolvedConfigPath) {
         try {
           const screenciConfig =
             await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
+          configMockRecord = screenciConfig.test?.mockRecord ?? false
           if (screenciConfig.envFile) {
             const envFilePath = resolve(
               dirname(resolvedConfigPath),
@@ -2434,7 +2542,7 @@ export async function main() {
         parsed.otherArgs,
         parsed.configPath,
         parsed.verbose,
-        parsed.mockRecord
+        parsed.mockRecord || configMockRecord
       )
 
       if (process.env.SCREENCI_RECORDING === 'true') return
@@ -2489,6 +2597,10 @@ export async function main() {
       '--agent <name>',
       'target agent for skills install, e.g. opencode. Supported agents: https://github.com/vercel-labs/skills#supported-agents'
     )
+    .option(
+      '--package-manager <manager>',
+      'package manager to use: npm or pnpm'
+    )
     .option('-y, --yes', 'accept init defaults')
     .option('-v, --verbose', 'verbose output')
     .action(
@@ -2497,6 +2609,9 @@ export async function main() {
         await runInit(name, {
           verbose: (options['verbose'] as boolean | undefined) ?? false,
           yes: (options['yes'] as boolean | undefined) ?? false,
+          packageManager: parsePackageManager(
+            options['packageManager'] as string | undefined
+          ),
           ...(agent !== undefined ? { agent } : {}),
         })
       }

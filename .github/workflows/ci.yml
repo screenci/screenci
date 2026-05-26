@@ -64,29 +64,42 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
-          cache: npm
-          cache-dependency-path: package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.8
 
       - name: Install package dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build package
-        run: npm run build
+        run: pnpm run build
 
       - name: Pack local screenci package
-        run: npm pack
+        run: pnpm pack
 
-      - name: Prepare smoke project
+      - name: Prepare smoke projects
         run: >-
-          node -e "const fs=require('node:fs'); const path=require('node:path'); const pkg=require('./package.json'); const tarball=pkg.name + '-' + pkg.version + '.tgz'; fs.mkdirSync('smoke-project', { recursive: true }); fs.copyFileSync(path.join(process.cwd(), tarball), path.join(process.cwd(), 'smoke-project', tarball));"
+          node -e "const fs=require('node:fs'); const path=require('node:path'); const pkg=require('./package.json'); const tarball=pkg.name + '-' + pkg.version + '.tgz'; for (const dir of ['smoke-project-npm', 'smoke-project-pnpm']) { fs.mkdirSync(dir, { recursive: true }); fs.copyFileSync(path.join(process.cwd(), tarball), path.join(process.cwd(), dir, tarball)); }"
 
       - name: Set local screenci dependency for init
         run: node -e "const fs=require('node:fs'); const pkg=require('./package.json'); fs.appendFileSync(process.env.GITHUB_ENV, 'SCREENCI_INIT_SCREENCI_DEPENDENCY=file:./' + pkg.name + '-' + pkg.version + '.tgz\n')"
 
-      - name: Run screenci init
-        working-directory: smoke-project
-        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} node ../bin/screenci.js init smoke-project --yes --verbose
+      - name: Run screenci init with npm
+        working-directory: smoke-project-npm
+        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} node ../bin/screenci.js init smoke-project --package-manager npm --yes --verbose
 
-      - name: Run screenci test
-        working-directory: smoke-project
+      - name: Run screenci test with npm
+        working-directory: smoke-project-npm
         run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} npx screenci test
+
+      - name: Run screenci init with pnpm
+        working-directory: smoke-project-pnpm
+        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} node ../bin/screenci.js init smoke-project --package-manager pnpm --yes --verbose
+
+      - name: Run screenci test with pnpm
+        working-directory: smoke-project-pnpm
+        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} pnpm exec screenci test

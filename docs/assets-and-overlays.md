@@ -2,6 +2,8 @@
 
 Assets let you place additional media on top of the recording timeline. Use them for intros, transitions, corner branding, or short contextual clips that would be awkward to build inside the browser automation itself.
 
+<!-- screenci-doc-video:docs/guides/assets-and-overlays -->
+
 #### You will learn
 
 - [how to define assets](#define-assets)

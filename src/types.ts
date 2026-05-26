@@ -764,6 +764,18 @@ export type ScreenCIConfig = Omit<
     upload?: RecordUploadPolicy
   }
   /**
+   * Options that only affect the `screenci test` command.
+   */
+  test?: {
+    /**
+     * Keeps recording-style timings enabled during `screenci test`.
+     * Equivalent to passing `--mock-record` on the CLI.
+     *
+     * @default false
+     */
+    mockRecord?: boolean
+  }
+  /**
    * Starts and reuses a development server through Playwright before running videos.
    *
    * This is useful for generated ScreenCI projects that should record against the
@@ -813,9 +825,12 @@ export type ScreenCIConfig = Omit<
   })[]
 }
 
-export type ExtendedScreenCIConfig = Omit<ScreenCIConfig, 'record'> &
+export type ExtendedScreenCIConfig = Omit<ScreenCIConfig, 'record' | 'test'> &
   Pick<PlaywrightTestConfig, 'retries' | 'testDir' | 'testMatch'> & {
     record: {
       upload: RecordUploadPolicy
+    }
+    test: {
+      mockRecord: boolean
     }
   }

@@ -25,6 +25,4 @@ video('How to get started', async ({ page }) => {
   await autoZoom(async () => {
     await page.getByRole('link', { name: 'View Documentation' }).click()
   })
-
-  await page.waitForURL('**/docs/installation')
 })

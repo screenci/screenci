@@ -84,16 +84,19 @@ jobs:
       - name: Pack local screenci package
         run: npm pack
 
+      - name: Set local screenci dependency for init
+        run: node -e "const fs=require('node:fs'); const path=require('node:path'); const pkg=require('./package.json'); const tarballPath=path.resolve(process.cwd(), pkg.name + '-' + pkg.version + '.tgz'); fs.appendFileSync(process.env.GITHUB_ENV, 'SCREENCI_INIT_SCREENCI_DEPENDENCY=file:' + tarballPath + '\n')"
+
       - name: Pack local create-screenci package
         working-directory: create-screenci
-        run: npm pack
+        env:
+          SCREENCI_INIT_SCREENCI_DEPENDENCY: ${{ env.SCREENCI_INIT_SCREENCI_DEPENDENCY }}
+        run: >-
+          node -e "const fs=require('node:fs'); const pkg=require('./package.json'); pkg.dependencies = { ...pkg.dependencies, screenci: process.env.SCREENCI_INIT_SCREENCI_DEPENDENCY }; fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n')" && npm pack
 
       - name: Prepare smoke projects
         run: >-
           node -e "const fs=require('node:fs'); const path=require('node:path'); const screenciPkg=require('./package.json'); const createPkg=require('./create-screenci/package.json'); const screenciTarball=screenciPkg.name + '-' + screenciPkg.version + '.tgz'; const createTarball=createPkg.name + '-' + createPkg.version + '.tgz'; for (const dir of ['smoke-direct-npm', 'smoke-direct-pnpm', 'smoke-create-npm', 'smoke-create-pnpm']) { fs.mkdirSync(dir, { recursive: true }); fs.copyFileSync(path.join(process.cwd(), screenciTarball), path.join(process.cwd(), dir, screenciTarball)); fs.copyFileSync(path.join(process.cwd(), 'create-screenci', createTarball), path.join(process.cwd(), dir, createTarball)); }"
-
-      - name: Set local screenci dependency for init
-        run: node -e "const fs=require('node:fs'); const path=require('node:path'); const pkg=require('./package.json'); const tarballPath=path.resolve(process.cwd(), pkg.name + '-' + pkg.version + '.tgz'); fs.appendFileSync(process.env.GITHUB_ENV, 'SCREENCI_INIT_SCREENCI_DEPENDENCY=file:' + tarballPath + '\n')"
 
       - name: Set local create-screenci dependency for smoke tests
         run: node -e "const fs=require('node:fs'); const path=require('node:path'); const pkg=require('./create-screenci/package.json'); const tarballPath=path.resolve(process.cwd(), 'create-screenci', pkg.name + '-' + pkg.version + '.tgz'); fs.appendFileSync(process.env.GITHUB_ENV, 'CREATE_SCREENCI_DEPENDENCY=file:' + tarballPath + '\n')"

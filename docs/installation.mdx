@@ -37,14 +37,11 @@ pnpm create screenci
 </Tabs>
 
 If that does not work, install [Node.js](https://nodejs.org/en/download),
-which comes with npm. If you use `npm init`, pass extra initializer flags after `--`, for example
-`npm init screenci@latest -- --yes`.
+which comes with npm.
 
 `init` works both in an existing repository and as a standalone setup. It
-writes a ScreenCI project into the current directory, for example in a
-`/screenci` directory if that is where you run it, installs dependencies,
-installs Playwright Chromium by default, and can also add a GitHub Actions
-workflow at `.github/workflows/screenci.yaml`.
+writes a ScreenCI project into a `/screenci` directory, installs dependencies,
+and can also add a GitHub Actions workflow at `.github/workflows/screenci.yaml`.
 
 If you already know Playwright, the closest mental model is Playwright's own
 [Getting started](https://playwright.dev/docs/intro): ScreenCI uses the same
@@ -53,11 +50,20 @@ test suite.
 
 ## What initializing creates
 
-The generated project includes the config, starter video script, and a few
-supporting files for a first usable run. If you accepted the optional GitHub
-Actions setup, it also adds a workflow file.
+ScreenCI creates the starter project scaffold below.
 
-The starter video source looks like this:
+```text
+screenci.config.ts          # ScreenCI and Playwright configuration
+package.json
+package-lock.json           # Or pnpm-lock.yaml
+videos/
+  example.video.ts          # Minimal starter video
+```
+
+If you accepted the optional GitHub Actions setup, it also adds
+`.github/workflows/screenci.yaml`.
+
+The starter video source is generated at `videos/example.video.ts` and looks like this:
 
 ```ts
 import { autoZoom, createNarration, hide, video, voices } from 'screenci'
@@ -87,18 +93,15 @@ video('How to get started', async ({ page }) => {
   await autoZoom(async () => {
     await page.getByRole('link', { name: 'View Documentation' }).click()
   })
-
-  await page.waitForURL('**/docs/installation')
 })
 ```
 
-You do not need to understand every file before the first run. The main ones
-are:
+You do not need to understand every file before the first run. The main one
+besides the example video is:
 
-- `videos/example.video.ts` for the starter video script.
-- `screenci.config.ts` for project-wide defaults.
-- `.github/workflows/screenci.yaml` for CI recording, if you accepted the
-  generated GitHub Actions workflow.
+- `screenci.config.ts` for configuring Playwright and ScreenCI.
+
+The `videos/` directory contains the starter video source.
 
 If you want the full command surface next, jump to [CLI](/docs/reference/cli).
 

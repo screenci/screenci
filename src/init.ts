@@ -49,8 +49,9 @@ function resolveSpawnSpec(
   }
 
   return {
-    command: `${cmd}.cmd`,
+    command: cmd,
     args,
+    shell: true,
   }
 }
 

@@ -1733,7 +1733,7 @@ describe('CLI', () => {
       expect(loggerErrorSpy).toHaveBeenCalledWith('Unknown command: retry')
     })
 
-    it('should launch Playwright through the Windows shim on Windows', async () => {
+    it('should launch Playwright through the Windows shell on Windows', async () => {
       process.argv = ['node', 'cli.js', 'test']
       const platformSpy = vi
         .spyOn(process, 'platform', 'get')
@@ -1748,9 +1748,9 @@ describe('CLI', () => {
       await main()
 
       expect(mockSpawn).toHaveBeenCalledWith(
-        'playwright.cmd',
+        'playwright',
         expect.arrayContaining(['test']),
-        expect.objectContaining({ stdio: 'inherit' })
+        expect.objectContaining({ stdio: 'inherit', shell: true })
       )
 
       platformSpy.mockRestore()
@@ -2686,7 +2686,7 @@ describe('CLI', () => {
       expectNpmDevInstalls(mockSpawn, '/workspace/create-app')
     })
 
-    it('uses the npm Windows shim when --package-manager npm is set on Windows', async () => {
+    it('uses npm through the Windows shell when --package-manager npm is set on Windows', async () => {
       const platformSpy = vi
         .spyOn(process, 'platform', 'get')
         .mockReturnValue('win32')
@@ -2701,9 +2701,36 @@ describe('CLI', () => {
       ])
 
       expect(mockSpawn).toHaveBeenCalledWith(
-        'npm.cmd',
+        'npm',
         ['install', '--save-dev', '@playwright/test@^1.59.0'],
-        expect.objectContaining({ cwd: '/workspace/create-app', stdio: 'pipe' })
+        expect.objectContaining({
+          cwd: '/workspace/create-app',
+          stdio: 'pipe',
+          shell: true,
+        })
+      )
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npm',
+        [
+          'exec',
+          '--yes',
+          '--package=skills',
+          '--',
+          'skills',
+          'add',
+          'screenci/screenci',
+          '--skill',
+          'screenci',
+          '--skill',
+          'playwright-cli',
+          '-y',
+        ],
+        expect.objectContaining({
+          cwd: '/workspace/create-app',
+          stdio: 'pipe',
+          shell: true,
+        })
       )
 
       platformSpy.mockRestore()

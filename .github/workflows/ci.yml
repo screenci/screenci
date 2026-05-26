@@ -73,6 +73,9 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install package dependencies
+        env:
+          HUSKY: 0
+          npm_config_strict_dep_builds: false
         run: pnpm install --frozen-lockfile
 
       - name: Build package

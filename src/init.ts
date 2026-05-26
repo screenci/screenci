@@ -437,6 +437,9 @@ jobs:
 
       - name: Install dependencies
         working-directory: .
+        env:
+          HUSKY: 0
+          npm_config_strict_dep_builds: false
         run: ${packageManager === 'pnpm' ? 'pnpm install --frozen-lockfile' : 'npm ci'}
 
       - name: Cache Playwright Chromium

@@ -104,6 +104,11 @@ async function collectDiscoveredTestTitles(
     const child = spawn(spawnSpec.command, spawnSpec.args, {
       stdio: ['inherit', 'pipe', 'pipe'],
       ...(spawnSpec.shell !== undefined ? { shell: spawnSpec.shell } : {}),
+      ...(spawnSpec.windowsVerbatimArguments !== undefined
+        ? {
+            windowsVerbatimArguments: spawnSpec.windowsVerbatimArguments,
+          }
+        : {}),
       env,
     })
     const childSignals = forwardChildSignals(
@@ -629,6 +634,7 @@ function resolveSpawnSpec(
   command: string
   args: string[]
   shell?: boolean
+  windowsVerbatimArguments?: boolean
 } {
   if (process.platform !== 'win32') {
     return { command: cmd, args }
@@ -640,10 +646,25 @@ function resolveSpawnSpec(
   }
 
   return {
-    command: cmd,
-    args,
-    shell: true,
+    command: process.env.comspec ?? 'cmd.exe',
+    args: ['/d', '/s', '/c', `"${buildWindowsBatchCommandLine(cmd, args)}"`],
+    windowsVerbatimArguments: true,
   }
+}
+
+function quoteWindowsBatchArg(arg: string): string {
+  if (arg.length === 0) {
+    return '""'
+  }
+
+  return `"${arg
+    .replace(/(\\*)"/g, '$1$1\\"')
+    .replace(/(\\+)$/g, '$1$1')
+    .replace(/%/g, '%%')}"`
+}
+
+function buildWindowsBatchCommandLine(cmd: string, args: string[]): string {
+  return [`${cmd}.cmd`, ...args].map(quoteWindowsBatchArg).join(' ')
 }
 
 function forwardChildSignals(
@@ -2157,6 +2178,11 @@ async function run(
     stdio: 'inherit',
     ...(process.platform !== 'win32' ? { detached: true } : {}),
     ...(spawnSpec.shell !== undefined ? { shell: spawnSpec.shell } : {}),
+    ...(spawnSpec.windowsVerbatimArguments !== undefined
+      ? {
+          windowsVerbatimArguments: spawnSpec.windowsVerbatimArguments,
+        }
+      : {}),
     env: {
       ...envForChild,
       // Enable recording only for record command

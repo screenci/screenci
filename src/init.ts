@@ -38,6 +38,7 @@ function resolveSpawnSpec(
   command: string
   args: string[]
   shell?: boolean
+  windowsVerbatimArguments?: boolean
 } {
   if (process.platform !== 'win32') {
     return { command: cmd, args }
@@ -49,10 +50,25 @@ function resolveSpawnSpec(
   }
 
   return {
-    command: cmd,
-    args,
-    shell: true,
+    command: process.env.comspec ?? 'cmd.exe',
+    args: ['/d', '/s', '/c', `"${buildWindowsBatchCommandLine(cmd, args)}"`],
+    windowsVerbatimArguments: true,
   }
+}
+
+function quoteWindowsBatchArg(arg: string): string {
+  if (arg.length === 0) {
+    return '""'
+  }
+
+  return `"${arg
+    .replace(/(\\*)"/g, '$1$1\\"')
+    .replace(/(\\+)$/g, '$1$1')
+    .replace(/%/g, '%%')}"`
+}
+
+function buildWindowsBatchCommandLine(cmd: string, args: string[]): string {
+  return [`${cmd}.cmd`, ...args].map(quoteWindowsBatchArg).join(' ')
 }
 
 function forwardChildSignals(
@@ -95,6 +111,11 @@ function spawnSilent(cmd: string, args: string[], cwd?: string): Promise<void> {
     const child = spawn(spawnSpec.command, spawnSpec.args, {
       stdio: 'pipe',
       ...(spawnSpec.shell !== undefined ? { shell: spawnSpec.shell } : {}),
+      ...(spawnSpec.windowsVerbatimArguments !== undefined
+        ? {
+            windowsVerbatimArguments: spawnSpec.windowsVerbatimArguments,
+          }
+        : {}),
       ...(cwd ? { cwd } : {}),
     })
     const childSignals = forwardChildSignals(child, cmd)
@@ -132,6 +153,11 @@ function spawnInherited(
   const child = spawn(spawnSpec.command, spawnSpec.args, {
     stdio: 'inherit',
     ...(spawnSpec.shell !== undefined ? { shell: spawnSpec.shell } : {}),
+    ...(spawnSpec.windowsVerbatimArguments !== undefined
+      ? {
+          windowsVerbatimArguments: spawnSpec.windowsVerbatimArguments,
+        }
+      : {}),
     ...(cwd ? { cwd } : {}),
   })
   const childSignals = forwardChildSignals(child, activityLabel)
@@ -251,7 +277,7 @@ function getPackageManagerCommand(packageManager: PackageManager): {
 }
 
 function generateEmptyPackageJson(): string {
-  return '{}\n'
+  return '{\n  "type": "module"\n}\n'
 }
 
 async function readCurrentScreenciVersion(): Promise<string> {

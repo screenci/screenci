@@ -5,7 +5,6 @@ import { Tabs, TabItem } from '@astrojs/starlight/components'
 ScreenCI is a Playwright-based workflow for producing product videos as code.
 If you already know Playwright, the startup path should feel familiar:
 initialize a project and run the generated E2E tests locally using `test` command.
-The exact same code works for ScreenCI, just use `video(...)` instead of `test(...)`.
 Then ScreenCI allows converting these tests into product videos with `record` command.
 
 #### You will learn
@@ -53,8 +52,8 @@ videos/
   screenci.yaml             # Optional GitHub Actions workflow for recording
 ```
 
-Depending on the agent tooling installed on your system, initialization may
-also add agent skills-related files. See
+Initialization may also optionally add agent skills-related files, depending on
+the agent tooling installed on your system. See
 [Vercel Skills](https://github.com/vercel-labs/skills#readme).
 
 The starter video source is generated at `videos/example.video.ts` and looks like this:
@@ -113,7 +112,7 @@ pnpm exec screenci test
 
 The `test` command is for fast video script verification. It runs the
 `.video.ts` file with ScreenCI's Playwright base but skips the final recording
-pipeline, which slows down recording to produce correct timings in mouse
+pipeline, which slows down recording to produce correct timings for mouse
 animations.
 
 `screenci test` accepts the same arguments as `playwright test`. For example,

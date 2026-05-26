@@ -1733,27 +1733,31 @@ describe('CLI', () => {
       expect(loggerErrorSpy).toHaveBeenCalledWith('Unknown command: retry')
     })
 
-    it('should launch Playwright through the Windows shell on Windows', async () => {
+    it('should launch Playwright through cmd.exe on Windows', async () => {
       process.argv = ['node', 'cli.js', 'test']
       const platformSpy = vi
         .spyOn(process, 'platform', 'get')
         .mockReturnValue('win32')
+      try {
+        mockSpawn.mockImplementation((_command: string) => {
+          process.nextTick(() => mockChildProcess.emit('close', 0))
+          return mockChildProcess as unknown as ChildProcess
+        })
 
-      mockSpawn.mockImplementation((_command: string) => {
-        process.nextTick(() => mockChildProcess.emit('close', 0))
-        return mockChildProcess as unknown as ChildProcess
-      })
+        const { main } = await import('./cli')
+        await main()
 
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'playwright',
-        expect.arrayContaining(['test']),
-        expect.objectContaining({ stdio: 'inherit', shell: true })
-      )
-
-      platformSpy.mockRestore()
+        expect(mockSpawn).toHaveBeenCalledWith(
+          'cmd.exe',
+          expect.arrayContaining(['/d', '/s', '/c']),
+          expect.objectContaining({
+            stdio: 'inherit',
+            windowsVerbatimArguments: true,
+          })
+        )
+      } finally {
+        platformSpy.mockRestore()
+      }
     })
   })
 
@@ -2086,7 +2090,7 @@ describe('CLI', () => {
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/my-app/package.json',
-        '{}\n'
+        '{\n  "type": "module"\n}\n'
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/my-app/.gitignore',
@@ -2686,54 +2690,67 @@ describe('CLI', () => {
       expectNpmDevInstalls(mockSpawn, '/workspace/create-app')
     })
 
-    it('uses npm through the Windows shell when --package-manager npm is set on Windows', async () => {
+    it('uses npm through cmd.exe when --package-manager npm is set on Windows', async () => {
       const platformSpy = vi
         .spyOn(process, 'platform', 'get')
         .mockReturnValue('win32')
-      const { runCreateScreenciCli } = await import('./src/init.js')
+      try {
+        const { runCreateScreenciCli } = await import('./src/init.js')
 
-      await runCreateScreenciCli([
-        'node',
-        'create-screenci.js',
-        '--package-manager',
-        'npm',
-        '--yes',
-      ])
-
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npm',
-        ['install', '--save-dev', '@playwright/test@^1.59.0'],
-        expect.objectContaining({
-          cwd: '/workspace/create-app',
-          stdio: 'pipe',
-          shell: true,
-        })
-      )
-
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npm',
-        [
-          'exec',
+        await runCreateScreenciCli([
+          'node',
+          'create-screenci.js',
+          '--package-manager',
+          'npm',
           '--yes',
-          '--package=skills',
-          '--',
-          'skills',
-          'add',
-          'screenci/screenci',
-          '--skill',
-          'screenci',
-          '--skill',
-          'playwright-cli',
-          '-y',
-        ],
-        expect.objectContaining({
-          cwd: '/workspace/create-app',
-          stdio: 'pipe',
-          shell: true,
-        })
-      )
+        ])
 
-      platformSpy.mockRestore()
+        const installCall = mockSpawn.mock.calls.find(
+          (call: unknown[]) =>
+            call[0] === 'cmd.exe' &&
+            Array.isArray(call[1]) &&
+            (call[1] as string[])[3] ===
+              '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0""'
+        )
+        expect(installCall).toEqual([
+          'cmd.exe',
+          [
+            '/d',
+            '/s',
+            '/c',
+            '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0""',
+          ],
+          expect.objectContaining({
+            cwd: '/workspace/create-app',
+            stdio: 'pipe',
+            windowsVerbatimArguments: true,
+          }),
+        ])
+
+        const skillsCall = mockSpawn.mock.calls.find(
+          (call: unknown[]) =>
+            call[0] === 'cmd.exe' &&
+            Array.isArray(call[1]) &&
+            (call[1] as string[])[3] ===
+              '""npm.cmd" "exec" "--yes" "--package=skills" "--" "skills" "add" "screenci/screenci" "--skill" "screenci" "--skill" "playwright-cli" "-y""'
+        )
+        expect(skillsCall).toEqual([
+          'cmd.exe',
+          [
+            '/d',
+            '/s',
+            '/c',
+            '""npm.cmd" "exec" "--yes" "--package=skills" "--" "skills" "add" "screenci/screenci" "--skill" "screenci" "--skill" "playwright-cli" "-y""',
+          ],
+          expect.objectContaining({
+            cwd: '/workspace/create-app',
+            stdio: 'pipe',
+            windowsVerbatimArguments: true,
+          }),
+        ])
+      } finally {
+        platformSpy.mockRestore()
+      }
     })
 
     it('uses pnpm installs when --package-manager pnpm is set', async () => {
@@ -2774,11 +2791,19 @@ describe('CLI', () => {
         'opencode',
       ])
 
-      expect(mockSpawn).toHaveBeenCalledWith(
+      const skillsCall = mockSpawn.mock.calls.find(
+        (call: unknown[]) =>
+          call[0] === 'npm' &&
+          Array.isArray(call[1]) &&
+          (call[1] as string[]).includes('--agent') &&
+          (call[1] as string[]).includes('opencode')
+      )
+
+      expect(skillsCall).toEqual([
         'npm',
         expect.arrayContaining(['--agent', 'opencode']),
-        expect.objectContaining({ cwd: '/workspace/create-app' })
-      )
+        expect.objectContaining({ cwd: '/workspace/create-app' }),
+      ])
     })
 
     it('prints verbose command output when --verbose is set', async () => {

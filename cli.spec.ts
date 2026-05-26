@@ -338,6 +338,8 @@ describe('CLI', () => {
       expect(result).toEqual({
         projectId: 'project_123',
         hadFailures: false,
+        failedVideoNames: [],
+        failedVideoMessages: [],
       })
       expect(mockReaddir).toHaveBeenCalledWith('/repo/.screenci')
       expect(mockReadFile).toHaveBeenCalledWith(
@@ -486,7 +488,12 @@ describe('CLI', () => {
         'test-secret'
       )
 
-      expect(result).toEqual({ projectId: null, hadFailures: false })
+      expect(result).toEqual({
+        projectId: null,
+        hadFailures: false,
+        failedVideoNames: [],
+        failedVideoMessages: [],
+      })
       expect(mockFetch).not.toHaveBeenCalled()
     })
 
@@ -568,7 +575,229 @@ describe('CLI', () => {
       expect(result).toEqual({
         projectId: 'project_123',
         hadFailures: true,
+        failedVideoNames: ['Failed Demo'],
+        failedVideoMessages: [
+          {
+            videoName: 'Failed Demo',
+            message: 'Upload limit reached for current plan.',
+          },
+        ],
       })
+    })
+
+    it('uploads recordings in parallel and reports completions as they finish in CI output', async () => {
+      mockReaddir.mockResolvedValue(['slow-video', 'fast-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          const videoName = pathString.includes('/slow-video/')
+            ? 'Slow Demo'
+            : 'Fast Demo'
+          return JSON.stringify({ events: [], metadata: { videoName } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') || path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(
+        async (input: string | URL, init?: RequestInit) => {
+          const url = String(input)
+          if (url.endsWith('/cli/upload/start')) {
+            const body = JSON.parse(String(init?.body ?? '{}')) as {
+              videoName?: string
+            }
+            if (body.videoName === 'Slow Demo') {
+              return {
+                ok: true,
+                status: 200,
+                json: vi.fn().mockResolvedValue({
+                  recordingId: 'recording_slow',
+                  projectId: 'project_123',
+                }),
+                text: vi.fn().mockResolvedValue(''),
+              }
+            }
+
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({
+                recordingId: 'recording_fast',
+                projectId: 'project_123',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+
+          if (url.endsWith('/cli/upload/recording_slow/recording')) {
+            await new Promise((resolve) => setTimeout(resolve, 20))
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({}),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+
+          if (url.endsWith('/cli/upload/recording_fast/recording')) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({}),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+      )
+      process.env.CI = 'true'
+
+      const { uploadRecordings } = await import('./cli')
+
+      const result = await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(result).toEqual({
+        projectId: 'project_123',
+        hadFailures: false,
+        failedVideoNames: [],
+        failedVideoMessages: [],
+      })
+
+      const messages = loggerInfoSpy.mock.calls.map((call) => String(call[0]))
+      expect(messages).toContain('Uploading 2 recordings in parallel...')
+      expect(messages.indexOf('✔ Uploaded "Fast Demo"')).toBeLessThan(
+        messages.indexOf('✔ Uploaded "Slow Demo"')
+      )
+    })
+
+    it('updates upload rows in place on interactive terminals', async () => {
+      const stdoutWriteSpy = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation(() => true)
+      const originalIsTTY = Object.getOwnPropertyDescriptor(
+        process.stdout,
+        'isTTY'
+      )
+      Object.defineProperty(process.stdout, 'isTTY', {
+        configurable: true,
+        value: true,
+      })
+      delete process.env.CI
+
+      mockReaddir.mockResolvedValue(['demo-video', 'second-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          const videoName = pathString.includes('/second-video/')
+            ? 'Second Demo'
+            : 'Demo'
+          return JSON.stringify({ events: [], metadata: { videoName } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') || path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(
+        async (input: string | URL, init?: RequestInit) => {
+          const url = String(input)
+          if (url.endsWith('/cli/upload/start')) {
+            const body = JSON.parse(String(init?.body ?? '{}')) as {
+              videoName?: string
+            }
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({
+                recordingId:
+                  body.videoName === 'Second Demo'
+                    ? 'recording_456'
+                    : 'recording_123',
+                projectId: 'project_123',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+
+          if (
+            url.endsWith('/cli/upload/recording_123/recording') ||
+            url.endsWith('/cli/upload/recording_456/recording')
+          ) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({}),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+      )
+
+      try {
+        const { uploadRecordings } = await import('./cli')
+
+        await uploadRecordings(
+          '/repo/.screenci',
+          'Test Project',
+          'https://api.screenci.test',
+          'test-secret'
+        )
+
+        expect(stdoutWriteSpy).toHaveBeenCalledWith(
+          expect.stringContaining(
+            '... Uploading "Demo"\n\r\u001B[2K... Uploading "Second Demo"\n'
+          )
+        )
+        expect(
+          stdoutWriteSpy.mock.calls.some(
+            (call) =>
+              String(call[0]).includes('\u001B[2A') &&
+              String(call[0]).includes('✔ Uploaded "Demo"')
+          )
+        ).toBe(true)
+        expect(
+          stdoutWriteSpy.mock.calls.some(
+            (call) =>
+              String(call[0]).includes('\u001B[2A') &&
+              String(call[0]).includes('✔ Uploaded "Second Demo"')
+          )
+        ).toBe(true)
+      } finally {
+        stdoutWriteSpy.mockRestore()
+        if (originalIsTTY) {
+          Object.defineProperty(process.stdout, 'isTTY', originalIsTTY)
+        } else {
+          delete (process.stdout as NodeJS.WriteStream & { isTTY?: boolean })
+            .isTTY
+        }
+      }
     })
 
     it('fails record command when not all uploads succeed but still prints the project url', async () => {
@@ -662,7 +891,10 @@ describe('CLI', () => {
         expect.stringContaining('/project/project_123')
       )
       expect(loggerWarnSpy).toHaveBeenCalledWith(
-        'Not all recordings succeeded to upload. Some videos may be missing from the project.'
+        'Failed Demo: Upload limit reached for current plan.'
+      )
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        'Not all recordings succeeded to upload. Failed videos: Failed Demo. Some videos may be missing from the project.'
       )
     })
 
@@ -1491,6 +1723,16 @@ describe('CLI', () => {
       expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/my-app/screenci.config.ts',
         expect.stringContaining('"My Project"')
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/videos/example.video.ts',
+        expect.stringContaining("video('How to get started'")
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/videos/example.video.ts',
+        expect.stringContaining(
+          "await page.getByRole('heading', { level: 1, name: 'Installation' }).first().waitFor()"
+        )
       )
       expect(mockWriteFile).toHaveBeenCalledWith('/workspace/my-app/.env', '')
       expect(loggerInfoSpy).toHaveBeenCalledWith("Initializing project in '.'")

@@ -244,6 +244,22 @@ type PreparedUploadAsset = {
   contentType?: string
 }
 
+type UploadCandidate = {
+  entry: string
+  videoName: string
+  data: RecordingData
+  preparedUploadAssets: PreparedUploadAsset[]
+}
+
+type UploadJobResult = {
+  projectId: string | null
+  hadFailure: boolean
+  videoName: string
+  failureMessage?: string
+}
+
+type UploadProgressStatus = 'success' | 'failure' | 'cancelled'
+
 class UploadCancelledError extends Error {
   constructor(message = 'Upload cancelled') {
     super(message)
@@ -268,6 +284,257 @@ function isUploadCancelledError(err: unknown): boolean {
 
 function isPartialUploadError(err: unknown): boolean {
   return err instanceof PartialUploadError
+}
+
+function supportsInPlaceUploadUpdates(verbose: boolean): boolean {
+  return !verbose && process.stdout.isTTY === true && !process.env.CI
+}
+
+function formatUploadProgressLine(
+  videoName: string,
+  status?: UploadProgressStatus
+): string {
+  switch (status) {
+    case undefined:
+      return `${pc.cyan('...')} Uploading "${videoName}"`
+    case 'success':
+      return `${pc.green('✔')} Uploaded "${videoName}"`
+    case 'failure':
+      return `${pc.red('✖')} Failed to upload "${videoName}"`
+    case 'cancelled':
+      return `${pc.yellow('!')} Cancelled "${videoName}"`
+    default: {
+      const exhaustiveCheck: never = status
+      return exhaustiveCheck
+    }
+  }
+}
+
+function createUploadProgressReporter(
+  videoNames: readonly string[],
+  verbose: boolean
+): { complete: (index: number, status: UploadProgressStatus) => void } {
+  const useInPlaceUpdates = supportsInPlaceUploadUpdates(verbose)
+
+  if (!useInPlaceUpdates) {
+    if (videoNames.length > 1) {
+      logger.info(`Uploading ${videoNames.length} recordings in parallel...`)
+    }
+
+    return {
+      complete(index, status) {
+        logger.info(
+          formatUploadProgressLine(videoNames[index] ?? 'unknown', status)
+        )
+      },
+    }
+  }
+
+  const statuses = new Array<UploadProgressStatus | undefined>(
+    videoNames.length
+  )
+  let hasRendered = false
+
+  const render = () => {
+    const renderedLines = videoNames.map((videoName, index) =>
+      formatUploadProgressLine(videoName, statuses[index])
+    )
+    process.stdout.write(
+      `${hasRendered && videoNames.length > 0 ? `\u001B[${videoNames.length}A` : ''}${renderedLines.map((line) => `\r\u001B[2K${line}`).join('\n')}\n`
+    )
+    hasRendered = true
+  }
+
+  render()
+
+  return {
+    complete(index, status) {
+      statuses[index] = status
+      render()
+    },
+  }
+}
+
+async function loadUploadCandidate(
+  screenciDir: string,
+  entry: string,
+  verbose: boolean
+): Promise<UploadCandidate | null> {
+  const dataJsonPath = resolve(screenciDir, entry, 'data.json')
+  if (!existsSync(dataJsonPath)) {
+    if (verbose) logger.info(`Skipping "${entry}": no data.json found`)
+    return null
+  }
+
+  let data: RecordingData
+  try {
+    const raw = await readFile(dataJsonPath, 'utf-8')
+    data = JSON.parse(raw) as RecordingData
+  } catch {
+    logger.warn(`Failed to read ${dataJsonPath}, skipping`)
+    return null
+  }
+
+  const videoName = data.metadata?.videoName ?? entry
+  const preparedUploadAssets = await collectUploadAssets(
+    data,
+    resolve(screenciDir, '..')
+  )
+
+  return {
+    entry,
+    videoName,
+    data: annotateRecordingDataWithAssetHashes(data, preparedUploadAssets),
+    preparedUploadAssets,
+  }
+}
+
+async function uploadRecordingCandidate(
+  candidate: UploadCandidate,
+  screenciDir: string,
+  projectName: string,
+  apiUrl: string,
+  secret: string,
+  verbose: boolean,
+  uploadAbort: ReturnType<typeof createUploadAbortController>,
+  progressReporter: {
+    complete: (index: number, status: UploadProgressStatus) => void
+  },
+  progressIndex: number
+): Promise<UploadJobResult> {
+  const { entry, videoName, data, preparedUploadAssets } = candidate
+
+  try {
+    uploadAbort.throwIfAborted()
+    const recordingPath = resolve(screenciDir, entry, 'recording.mp4')
+    const recordingHash = existsSync(recordingPath)
+      ? await hashFile(recordingPath)
+      : undefined
+    const startResponse = await fetch(`${apiUrl}/cli/upload/start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-ScreenCI-Secret': secret,
+      },
+      body: JSON.stringify({
+        projectName,
+        videoName,
+        data,
+        ...(recordingHash !== undefined ? { recordingHash } : {}),
+        expectedAssets: preparedUploadAssets.map((asset) => ({
+          fileHash: asset.fileHash,
+          size: asset.size,
+          path: asset.path,
+          ...(typeof asset.contentType === 'string'
+            ? { contentType: asset.contentType }
+            : {}),
+          ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
+        })),
+      }),
+      signal: uploadAbort.signal,
+    })
+
+    if (!startResponse.ok) {
+      const text = await startResponse.text()
+      progressReporter.complete(progressIndex, 'failure')
+      return {
+        projectId: null,
+        hadFailure: true,
+        videoName,
+        failureMessage: formatUploadStartFailureMessage(
+          videoName,
+          startResponse.status,
+          text,
+          secret
+        ),
+      }
+    }
+
+    const { recordingId, projectId } = (await startResponse.json()) as {
+      recordingId: string
+      projectId: string
+    }
+
+    if (verbose) {
+      logger.info(`recordingId=${recordingId} projectId=${projectId}`)
+      logger.info(
+        `assets=${preparedUploadAssets.length} recordingHash=${recordingHash ?? 'none'}`
+      )
+    }
+
+    await uploadAssets(
+      preparedUploadAssets,
+      apiUrl,
+      secret,
+      recordingId,
+      uploadAbort.signal,
+      uploadAbort.throwIfAborted
+    )
+
+    if (existsSync(recordingPath)) {
+      uploadAbort.throwIfAborted()
+      const fileStat = await stat(recordingPath)
+      if (verbose) {
+        logger.info(
+          `Uploading recording.mp4 size=${(fileStat.size / 1024 / 1024).toFixed(1)}MB`
+        )
+      }
+      const stream = createReadStream(recordingPath)
+      const abortStream = () => {
+        stream.destroy(
+          new UploadCancelledError(`Upload cancelled for "${videoName}"`)
+        )
+      }
+      uploadAbort.signal.addEventListener('abort', abortStream, {
+        once: true,
+      })
+      try {
+        const recordingResponse = await fetch(
+          `${apiUrl}/cli/upload/${recordingId}/recording`,
+          {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'video/mp4',
+              'Content-Length': String(fileStat.size),
+              'X-ScreenCI-Secret': secret,
+            },
+            body: stream as unknown as BodyInit,
+            signal: uploadAbort.signal,
+            // @ts-expect-error Node.js fetch supports duplex for streaming
+            duplex: 'half',
+          }
+        )
+        if (!recordingResponse.ok) {
+          const text = await recordingResponse.text()
+          progressReporter.complete(progressIndex, 'failure')
+          return {
+            projectId,
+            hadFailure: true,
+            videoName,
+            failureMessage: `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}${hint401(recordingResponse.status, secret)}`,
+          }
+        }
+      } finally {
+        uploadAbort.signal.removeEventListener('abort', abortStream)
+      }
+    }
+
+    progressReporter.complete(progressIndex, 'success')
+    return { projectId, hadFailure: false, videoName }
+  } catch (err) {
+    if (isUploadCancelledError(err)) {
+      progressReporter.complete(progressIndex, 'cancelled')
+      throw err
+    }
+
+    progressReporter.complete(progressIndex, 'failure')
+    return {
+      projectId: null,
+      hadFailure: true,
+      videoName,
+      failureMessage: `Network error uploading "${videoName}": ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
 }
 
 export function attachUploadAbortStdinListener(
@@ -964,14 +1231,24 @@ export async function uploadRecordings(
   secret: string,
   specificEntry?: string,
   verbose = false
-): Promise<{ projectId: string | null; hadFailures: boolean }> {
+): Promise<{
+  projectId: string | null
+  hadFailures: boolean
+  failedVideoNames: string[]
+  failedVideoMessages: Array<{ videoName: string; message: string }>
+}> {
   const uploadAbort = createUploadAbortController('upload')
   let entries: string[]
   try {
     entries = await readdir(screenciDir)
   } catch {
     logger.warn('No .screenci directory found, skipping upload')
-    return { projectId: null, hadFailures: false }
+    return {
+      projectId: null,
+      hadFailures: false,
+      failedVideoNames: [],
+      failedVideoMessages: [],
+    }
   }
 
   if (specificEntry !== undefined) {
@@ -979,163 +1256,66 @@ export async function uploadRecordings(
   }
 
   let firstProjectId: string | null = null
-  let hadFailures = false
 
   try {
-    for (const entry of entries) {
-      uploadAbort.throwIfAborted()
-      const dataJsonPath = resolve(screenciDir, entry, 'data.json')
-      if (!existsSync(dataJsonPath)) {
-        if (verbose) logger.info(`Skipping "${entry}": no data.json found`)
-        continue
-      }
-
-      let data: RecordingData
-      try {
-        const raw = await readFile(dataJsonPath, 'utf-8')
-        data = JSON.parse(raw) as RecordingData
-      } catch {
-        logger.warn(`Failed to read ${dataJsonPath}, skipping`)
-        continue
-      }
-
-      const videoName = data.metadata?.videoName ?? entry
-      const preparedUploadAssets = await collectUploadAssets(
-        data,
-        resolve(screenciDir, '..')
-      )
-      data = annotateRecordingDataWithAssetHashes(data, preparedUploadAssets)
-
-      const uploadSpinner = ora(`Uploading "${videoName}"`).start()
-      try {
-        uploadAbort.throwIfAborted()
-        const recordingPath = resolve(screenciDir, entry, 'recording.mp4')
-        const recordingHash = existsSync(recordingPath)
-          ? await hashFile(recordingPath)
-          : undefined
-        // Step 1: register upload and get recordingId
-        const startResponse = await fetch(`${apiUrl}/cli/upload/start`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-ScreenCI-Secret': secret,
-          },
-          body: JSON.stringify({
-            projectName,
-            videoName,
-            data,
-            ...(recordingHash !== undefined ? { recordingHash } : {}),
-            expectedAssets: preparedUploadAssets.map((asset) => ({
-              fileHash: asset.fileHash,
-              size: asset.size,
-              path: asset.path,
-              ...(typeof asset.contentType === 'string'
-                ? { contentType: asset.contentType }
-                : {}),
-              ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
-            })),
-          }),
-          signal: uploadAbort.signal,
-        })
-        if (!startResponse.ok) {
-          const text = await startResponse.text()
-          hadFailures = true
-          uploadSpinner.fail(`Failed to upload "${videoName}"`)
-          printUploadStartFailureMessage(
-            videoName,
-            startResponse.status,
-            text,
-            secret
-          )
-          continue
-        }
-        const { recordingId, projectId } = (await startResponse.json()) as {
-          recordingId: string
-          projectId: string
-        }
-
-        if (verbose) {
-          logger.info(`recordingId=${recordingId} projectId=${projectId}`)
-          logger.info(
-            `assets=${preparedUploadAssets.length} recordingHash=${recordingHash ?? 'none'}`
-          )
-        }
-
-        if (firstProjectId === null) {
-          firstProjectId = projectId
-        }
-
-        // Step 1b: upload all referenced files via the shared asset flow
-        await uploadAssets(
-          preparedUploadAssets,
-          apiUrl,
-          secret,
-          recordingId,
-          uploadAbort.signal,
-          uploadAbort.throwIfAborted
-        )
-
-        // Step 2: stream the recording video file (if it exists)
-        if (existsSync(recordingPath)) {
+    const candidates = (
+      await Promise.all(
+        entries.map(async (entry) => {
           uploadAbort.throwIfAborted()
-          const fileStat = await stat(recordingPath)
-          if (verbose) {
-            logger.info(
-              `Uploading recording.mp4 size=${(fileStat.size / 1024 / 1024).toFixed(1)}MB`
-            )
-          }
-          const stream = createReadStream(recordingPath)
-          const abortStream = () => {
-            stream.destroy(
-              new UploadCancelledError(`Upload cancelled for "${videoName}"`)
-            )
-          }
-          uploadAbort.signal.addEventListener('abort', abortStream, {
-            once: true,
-          })
-          try {
-            const recordingResponse = await fetch(
-              `${apiUrl}/cli/upload/${recordingId}/recording`,
-              {
-                method: 'PUT',
-                headers: {
-                  'Content-Type': 'video/mp4',
-                  'Content-Length': String(fileStat.size),
-                  'X-ScreenCI-Secret': secret,
-                },
-                body: stream as unknown as BodyInit,
-                signal: uploadAbort.signal,
-                // @ts-expect-error Node.js fetch supports duplex for streaming
-                duplex: 'half',
-              }
-            )
-            if (!recordingResponse.ok) {
-              const text = await recordingResponse.text()
-              hadFailures = true
-              uploadSpinner.fail(`Failed to upload "${videoName}"`)
-              logger.warn(
-                `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}${hint401(recordingResponse.status, secret)}`
-              )
-              continue
-            }
-          } finally {
-            uploadAbort.signal.removeEventListener('abort', abortStream)
-          }
-        }
+          return await loadUploadCandidate(screenciDir, entry, verbose)
+        })
+      )
+    ).filter((candidate): candidate is UploadCandidate => candidate !== null)
 
-        uploadSpinner.succeed(`Uploaded "${videoName}"`)
-      } catch (err) {
-        if (isUploadCancelledError(err)) {
-          uploadSpinner.fail(`Cancelled "${videoName}"`)
-          throw err
-        }
-        hadFailures = true
-        uploadSpinner.fail(`Error uploading "${videoName}"`)
-        logger.warn(`Network error uploading "${videoName}":`, err)
+    if (candidates.length === 0) {
+      return {
+        projectId: null,
+        hadFailures: false,
+        failedVideoNames: [],
+        failedVideoMessages: [],
       }
     }
 
-    return { projectId: firstProjectId, hadFailures }
+    const progressReporter = createUploadProgressReporter(
+      candidates.map((candidate) => candidate.videoName),
+      verbose
+    )
+
+    const results = await Promise.all(
+      candidates.map(
+        async (candidate, index) =>
+          await uploadRecordingCandidate(
+            candidate,
+            screenciDir,
+            projectName,
+            apiUrl,
+            secret,
+            verbose,
+            uploadAbort,
+            progressReporter,
+            index
+          )
+      )
+    )
+
+    firstProjectId =
+      results.find((result) => result.projectId !== null)?.projectId ?? null
+    const hadFailures = results.some((result) => result.hadFailure)
+    const failedVideoNames = results
+      .filter((result) => result.hadFailure)
+      .map((result) => result.videoName)
+    const failedVideoMessages = results.flatMap((result) =>
+      result.hadFailure && typeof result.failureMessage === 'string'
+        ? [{ videoName: result.videoName, message: result.failureMessage }]
+        : []
+    )
+
+    return {
+      projectId: firstProjectId,
+      hadFailures,
+      failedVideoNames,
+      failedVideoMessages,
+    }
   } finally {
     uploadAbort.cleanup()
   }
@@ -1714,35 +1894,28 @@ const narration = createNarration({
   languages: {
     en: {
       cues: {
-        docs: 'Use the guide sidebar to open the AI-Supported Editing guide and review the next steps for writing your own videos.',
-      },
-    },
-    es: {
-      cues: {
-        docs: 'Usa la barra lateral de guias para abrir la guia de edicion asistida por IA y revisar los siguientes pasos para escribir tus propios videos.',
+        intro:
+          'This video shows how to get started with ScreenCI [pronounce: screen see eye].',
+        docs: 'You can find the documentation linked right on the front page.',
       },
     },
   },
 })
 
-video('See the next steps in ScreenCI docs', async ({ page }) => {
+video('How to get started', async ({ page }) => {
   await hide(async () => {
-    await page.goto('https://screenci.com/')
-    await page.getByText('ScreenCI', { exact: true }).first().waitFor()
+    await page.goto('/')
+    await page.getByText('ScreenCI').first().waitFor()
   })
 
-  await autoZoom(
-    async () => {
-      await page.getByRole('link', { name: 'View Documentation' }).click()
-      await page
-        .getByRole('link', { name: 'AI-Supported Editing', exact: true })
-        .click()
-      await page.waitForTimeout(1000)
-    },
-    { duration: 400, easing: 'ease-in-out', amount: 0.4 }
-  )
-
+  await narration.intro()
   await narration.docs()
+
+  await autoZoom(async () => {
+    await page.getByRole('link', { name: 'View Documentation' }).click()
+  })
+
+  await page.getByRole('heading', { level: 1, name: 'Installation' }).first().waitFor()
 })
 `
 }
@@ -2118,9 +2291,13 @@ export async function main() {
             let uploadResult: {
               projectId: string | null
               hadFailures: boolean
+              failedVideoNames: string[]
+              failedVideoMessages: Array<{ videoName: string; message: string }>
             } = {
               projectId: null,
               hadFailures: false,
+              failedVideoNames: [],
+              failedVideoMessages: [],
             }
             try {
               logger.info('')
@@ -2136,7 +2313,12 @@ export async function main() {
               }
               throw err
             }
-            const { projectId, hadFailures } = uploadResult
+            const {
+              projectId,
+              hadFailures,
+              failedVideoNames,
+              failedVideoMessages,
+            } = uploadResult
             if (projectId !== null) {
               const projectUrl = `${appUrl}/project/${projectId}`
               await writeGitHubProjectOutput(projectUrl)
@@ -2149,8 +2331,11 @@ export async function main() {
               logger.info(pc.cyan(projectUrl))
             }
             if (hadFailures) {
+              for (const failedVideo of failedVideoMessages) {
+                logger.warn(`${failedVideo.videoName}: ${failedVideo.message}`)
+              }
               logger.warn(
-                'Not all recordings succeeded to upload. Some videos may be missing from the project.'
+                `Not all recordings succeeded to upload. Failed videos: ${failedVideoNames.join(', ') || 'unknown'}. Some videos may be missing from the project.`
               )
               if (playwrightFailure === null) {
                 throw new PartialUploadError()

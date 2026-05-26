@@ -5,8 +5,6 @@ If you already know Playwright, the startup path should feel familiar:
 initialize a project, run the generated script locally, then record the final
 output when the visible flow looks right.
 
-<!-- screenci-doc-video:docs -->
-
 #### You will learn
 
 - [how to install ScreenCI](#install-screenci)
@@ -16,25 +14,18 @@ output when the visible flow looks right.
 
 ## Install ScreenCI
 
-Before you start, make sure Node.js and npm are available:
-
-```bash
-node --version
-npm --version
-```
-
-If either command is missing or too old, install Node.js from the
-[official Node.js download page](https://nodejs.org/en/download). Node.js 20 or
-newer is recommended.
-
-Then initialize a new ScreenCI project:
+Initialize a new ScreenCI project:
 
 ```bash
 npx screenci@latest init
 ```
 
-`init` writes a ScreenCI project into the current directory, installs
-dependencies, and installs Playwright Chromium by default.
+If that does not work, install [Node.js](https://nodejs.org/en/download),
+which comes with npm and provides `npx`.
+
+`init` works both in an existing repository and as a standalone setup. It
+writes a ScreenCI project into the current directory, installs dependencies,
+and installs Playwright Chromium by default.
 
 If you already know Playwright, the closest mental model is Playwright's own
 [Getting started](https://playwright.dev/docs/intro): ScreenCI uses the same
@@ -55,6 +46,44 @@ README.md
 videos/
   example.video.ts
 .github/workflows/screenci.yaml
+```
+
+The starter video source looks like this:
+
+```ts
+import { autoZoom, createNarration, hide, video, voices } from 'screenci'
+
+const narration = createNarration({
+  voice: { name: voices.Sophie, style: 'Clear, friendly product walkthrough' },
+  languages: {
+    en: {
+      cues: {
+        intro:
+          'This video shows how to get started with ScreenCI [pronounce: screen see eye].',
+        docs: 'You can find the documentation linked right on the front page.',
+      },
+    },
+  },
+})
+
+video('How to get started', async ({ page }) => {
+  await hide(async () => {
+    await page.goto('/')
+    await page.getByText('ScreenCI').first().waitFor()
+  })
+
+  await narration.intro()
+  await narration.docs()
+
+  await autoZoom(async () => {
+    await page.getByRole('link', { name: 'View Documentation' }).click()
+  })
+
+  await page
+    .getByRole('heading', { level: 1, name: 'Installation' })
+    .first()
+    .waitFor()
+})
 ```
 
 You do not need to understand every file before the first run. The main ones
@@ -80,30 +109,22 @@ This is the fast authoring loop. It runs the `.video.ts` file with ScreenCI's
 Playwright base but skips the final recording pipeline so you can iterate on
 selectors, timing, and app state quickly.
 
-Useful next commands:
-
-```bash
-npx screenci test --ui
-npx screenci test --mock-record
-```
-
-- `--ui` opens Playwright UI Mode for local debugging. See
-  [Playwright UI Mode](https://playwright.dev/docs/test-ui-mode).
-- `--mock-record` keeps recording-style pacing enabled without starting the
-  final recording pipeline. See
-  [Run and Debug Videos](/docs/run-and-debug-videos).
+`npx screenci test` accepts the same arguments as `npx playwright test`. For
+example, to debug the videos visually, you could use `npx screenci test --ui`
+to open [Playwright UI Mode](https://playwright.dev/docs/test-ui-mode).
 
 ## Record the final result
 
-When the starter script behaves correctly, record it:
+When you are ready to record the videos in the `videos/` directory, run:
 
 ```bash
 npx screenci record
 ```
 
-`record` captures the browser session locally and writes artifacts into
-`.screenci/`. If `SCREENCI_SECRET` is configured, ScreenCI also uploads the
-recordings for rendering, narration, subtitles, zooms, and hosted delivery.
+This prompts you to log in to ScreenCI the first time, then records the videos,
+uploads them, and renders the final output.
+
+<!-- screenci-doc-video:docs -->
 
 ## What's next
 

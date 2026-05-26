@@ -25,18 +25,18 @@ Create a new ScreenCI project in the current directory:
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
 
-  ```bash
-  npm init screenci@latest
-  npm init screenci@latest my-product
-  ```
+```bash
+npm init screenci@latest
+npm init screenci@latest my-product
+```
 
   </TabItem>
   <TabItem label="pnpm">
 
-  ```bash
-  pnpm create screenci
-  pnpm create screenci my-product
-  ```
+```bash
+pnpm create screenci
+pnpm create screenci my-product
+```
 
   </TabItem>
 </Tabs>
@@ -68,22 +68,22 @@ Run videos locally without the final recording pipeline:
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
 
-  ```bash
-  npx screenci test
-  npx screenci test videos/onboarding.video.ts
-  npx screenci test --grep "billing"
-  npx screenci test --ui
-  ```
+```bash
+npx screenci test
+npx screenci test videos/onboarding.video.ts
+npx screenci test --grep "billing"
+npx screenci test --ui
+```
 
   </TabItem>
   <TabItem label="pnpm">
 
-  ```bash
-  pnpm exec screenci test
-  pnpm exec screenci test videos/onboarding.video.ts
-  pnpm exec screenci test --grep "billing"
-  pnpm exec screenci test --ui
-  ```
+```bash
+pnpm exec screenci test
+pnpm exec screenci test videos/onboarding.video.ts
+pnpm exec screenci test --grep "billing"
+pnpm exec screenci test --ui
+```
 
   </TabItem>
 </Tabs>
@@ -96,20 +96,20 @@ Common Playwright examples that also work here:
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
 
-  ```bash
-  npx screenci test --project=chromium
-  npx screenci test --grep "onboarding"
-  npx screenci test --ui
-  ```
+```bash
+npx screenci test --project=chromium
+npx screenci test --grep "onboarding"
+npx screenci test --ui
+```
 
   </TabItem>
   <TabItem label="pnpm">
 
-  ```bash
-  pnpm exec screenci test --project=chromium
-  pnpm exec screenci test --grep "onboarding"
-  pnpm exec screenci test --ui
-  ```
+```bash
+pnpm exec screenci test --project=chromium
+pnpm exec screenci test --grep "onboarding"
+pnpm exec screenci test --ui
+```
 
   </TabItem>
 </Tabs>
@@ -119,16 +119,16 @@ Common Playwright examples that also work here:
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
 
-  ```bash
-  npx screenci test --mock-record
-  ```
+```bash
+npx screenci test --mock-record
+```
 
   </TabItem>
   <TabItem label="pnpm">
 
-  ```bash
-  pnpm exec screenci test --mock-record
-  ```
+```bash
+pnpm exec screenci test --mock-record
+```
 
   </TabItem>
 </Tabs>
@@ -147,22 +147,22 @@ Record final output:
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
 
-  ```bash
-  npx screenci record
-  npx screenci record videos/onboarding.video.ts
-  npx screenci record --grep "billing"
-  npx screenci record --project=chromium
-  ```
+```bash
+npx screenci record
+npx screenci record videos/onboarding.video.ts
+npx screenci record --grep "billing"
+npx screenci record --project=chromium
+```
 
   </TabItem>
   <TabItem label="pnpm">
 
-  ```bash
-  pnpm exec screenci record
-  pnpm exec screenci record videos/onboarding.video.ts
-  pnpm exec screenci record --grep "billing"
-  pnpm exec screenci record --project=chromium
-  ```
+```bash
+pnpm exec screenci record
+pnpm exec screenci record videos/onboarding.video.ts
+pnpm exec screenci record --grep "billing"
+pnpm exec screenci record --project=chromium
+```
 
   </TabItem>
 </Tabs>
@@ -193,16 +193,16 @@ Use this command in [Record and Publish](/docs/record-and-publish).
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
 
-  ```bash
-  npx screenci info
-  ```
+```bash
+npx screenci info
+```
 
   </TabItem>
   <TabItem label="pnpm">
 
-  ```bash
-  pnpm exec screenci info
-  ```
+```bash
+pnpm exec screenci info
+```
 
   </TabItem>
 </Tabs>
@@ -232,16 +232,16 @@ Use this before public-delivery changes when you need the remote `videoId`:
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
 
-  ```bash
-  npx screenci make-public video_123
-  ```
+```bash
+npx screenci make-public video_123
+```
 
   </TabItem>
   <TabItem label="pnpm">
 
-  ```bash
-  pnpm exec screenci make-public video_123
-  ```
+```bash
+pnpm exec screenci make-public video_123
+```
 
   </TabItem>
 </Tabs>
@@ -262,16 +262,16 @@ URL** in the dashboard.
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
 
-  ```bash
-  npx screenci make-private video_123
-  ```
+```bash
+npx screenci make-private video_123
+```
 
   </TabItem>
   <TabItem label="pnpm">
 
-  ```bash
-  pnpm exec screenci make-private video_123
-  ```
+```bash
+pnpm exec screenci make-private video_123
+```
 
   </TabItem>
 </Tabs>

@@ -143,6 +143,18 @@ function spawnSilent(cmd: string, args: string[], cwd?: string): Promise<void> {
       ...(cwd ? { cwd } : {}),
     })
     const childSignals = forwardChildSignals(child, cmd)
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout?.setEncoding?.('utf8')
+    child.stderr?.setEncoding?.('utf8')
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk
+    })
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk
+    })
+
     child.on('close', (code, signal) => {
       const forwardedSignal = childSignals.getForwardedSignal()
       childSignals.cleanup()
@@ -158,7 +170,15 @@ function spawnSilent(cmd: string, args: string[], cwd?: string): Promise<void> {
         resolve()
         return
       }
-      reject(new Error(`${cmd} exited with code ${code}`))
+
+      const output = stderr.trim() || stdout.trim()
+      reject(
+        new Error(
+          output.length > 0
+            ? `${cmd} exited with code ${code}: ${output}`
+            : `${cmd} exited with code ${code}`
+        )
+      )
     })
     child.on('error', (err) => {
       childSignals.cleanup()
@@ -231,7 +251,6 @@ function getPackageManagerCommand(packageManager: PackageManager): {
   installArgs: (pkg: string) => string[]
   skillsCommand: string
   skillsArgs: (skills: string[], agent?: string) => string[]
-  skillsManualCommand: (skills: string[], agent?: string) => string
   cacheName: PackageManager
   lockfileName: string
 } {
@@ -251,12 +270,6 @@ function getPackageManagerCommand(packageManager: PackageManager): {
         ...skills.flatMap((skillName) => ['--skill', skillName]),
         '-y',
       ],
-      skillsManualCommand: (skills, agent) =>
-        ['pnpm', 'dlx', 'skills', 'add', 'screenci/screenci']
-          .concat(agent ? ['--agent', agent] : [])
-          .concat(skills.flatMap((skillName) => ['--skill', skillName]))
-          .concat(['-y'])
-          .join(' '),
       cacheName: 'pnpm',
       lockfileName: 'pnpm-lock.yaml',
     }
@@ -280,28 +293,62 @@ function getPackageManagerCommand(packageManager: PackageManager): {
       ...skills.flatMap((skillName) => ['--skill', skillName]),
       '-y',
     ],
-    skillsManualCommand: (skills, agent) =>
-      [
-        'npm',
-        'exec',
-        '--yes',
-        '--package=skills',
-        '--',
-        'skills',
-        'add',
-        'screenci/screenci',
-      ]
-        .concat(agent ? ['--agent', agent] : [])
-        .concat(skills.flatMap((skillName) => ['--skill', skillName]))
-        .concat(['-y'])
-        .join(' '),
     cacheName: 'npm',
     lockfileName: 'package-lock.json',
   }
 }
 
+function getSkillsManualCommand(
+  packageManager: PackageManager,
+  skills: string[],
+  agent?: string
+): string {
+  return [
+    packageManager === 'pnpm' ? 'pnpm' : 'npx',
+    ...(packageManager === 'pnpm' ? ['dlx'] : []),
+    'skills',
+    'add',
+    'screenci/screenci',
+  ]
+    .concat(agent ? ['--agent', agent] : [])
+    .concat(skills.flatMap((skillName) => ['--skill', skillName]))
+    .concat(['-y'])
+    .join(' ')
+}
+
 function generateEmptyPackageJson(): string {
   return '{\n  "type": "module"\n}\n'
+}
+
+function upsertPnpmAllowBuildsConfig(existing: string): string {
+  const normalized = existing.replace(/\r\n/g, '\n')
+  const lines = normalized === '' ? [] : normalized.split('\n')
+  const allowBuildsIndex = lines.findIndex((line) => line === 'allowBuilds:')
+
+  if (allowBuildsIndex === -1) {
+    const prefix =
+      normalized.trim().length === 0 ? '' : `${normalized.trimEnd()}\n\n`
+    return `${prefix}allowBuilds:\n  ffmpeg-static: true\n`
+  }
+
+  let blockEnd = lines.length
+  for (let i = allowBuildsIndex + 1; i < lines.length; i++) {
+    const line = lines[i] ?? ''
+    if (line !== '' && !line.startsWith(' ')) {
+      blockEnd = i
+      break
+    }
+  }
+
+  for (let i = allowBuildsIndex + 1; i < blockEnd; i++) {
+    if (/^\s{2}ffmpeg-static\s*:/.test(lines[i] ?? '')) {
+      lines[i] = '  ffmpeg-static: true'
+      return `${lines.join('\n').replace(/\n*$/, '\n')}`
+    }
+  }
+
+  lines.splice(blockEnd, 0, '  ffmpeg-static: true')
+  return `${lines.join('\n').replace(/\n*$/, '\n')}`
 }
 
 async function readCurrentScreenciVersion(): Promise<string> {
@@ -410,12 +457,24 @@ async function installInitDependencies(
       const spinner = ora(step.message).start()
       try {
         await spawnSilent(commands.installCommand, step.args, projectDir)
-        spinner.succeed(step.message.replace(/\.\.\.$/, ' complete'))
+        spinner.succeed(step.message.replace(/\.\.\.$/, ''))
       } catch (err) {
         spinner.fail(step.message.replace(/\.\.\.$/, ' failed'))
         throw err
       }
     }
+  }
+}
+
+async function configurePnpmProject(projectDir: string): Promise<void> {
+  const pnpmWorkspacePath = resolve(projectDir, 'pnpm-workspace.yaml')
+  const existing = existsSync(pnpmWorkspacePath)
+    ? await readFile(pnpmWorkspacePath, 'utf-8')
+    : ''
+  const next = upsertPnpmAllowBuildsConfig(existing)
+
+  if (next !== existing.replace(/\r\n/g, '\n')) {
+    await writeFile(pnpmWorkspacePath, next)
   }
 }
 
@@ -433,18 +492,13 @@ function printInitNextSteps(
   logger.info('Inside that directory, you can run several commands:')
   logger.info('')
   logger.info(`  ${pc.cyan(`${commands.screenciRun} test`)}`)
-  logger.info('    Runs your video scripts in Playwright.')
+  logger.info('    Tests your video scripts fast locally.')
   logger.info('')
   logger.info(`  ${pc.cyan(`${commands.screenciRun} test --ui`)}`)
-  logger.info('    Starts the interactive UI mode.')
-  logger.info('')
-  logger.info(
-    `  ${pc.cyan(`${commands.screenciRun} test videos/example.video.ts`)}`
-  )
-  logger.info('    Runs the example video script.')
+  logger.info('    Tests your video scripts in interactive UI mode.')
   logger.info('')
   logger.info(`  ${pc.cyan(`${commands.screenciRun} record`)}`)
-  logger.info('    Records and uploads videos.')
+  logger.info('    Records, uploads and renders final videos.')
   logger.info('')
   logger.info('We suggest that you begin by typing:')
   logger.info('')
@@ -623,25 +677,25 @@ async function promptInitPlaywrightOsDependenciesForPackageManager(
 }
 
 async function promptInitScreenCISkill(
-  packageManager: PackageManager
+  packageManager: PackageManager,
+  agent?: string
 ): Promise<boolean> {
-  const commands = getPackageManagerCommand(packageManager)
   return promptYesNo(
-    `Install the ScreenCI skill for AI agents (can be done manually via '${commands.skillsManualCommand(['screenci'])}')? (Y/n)`,
+    `Install the ScreenCI skill for AI agents (can be done manually via '${getSkillsManualCommand(packageManager, ['screenci'], agent)}')? (Y/n)`,
     true
   )
 }
 
 async function promptInitPlaywrightCliSkillForPackageManager(
-  packageManager: PackageManager
+  packageManager: PackageManager,
+  agent?: string
 ): Promise<boolean> {
   const installPlaywrightCli =
     packageManager === 'pnpm'
       ? 'pnpm add --save-dev @playwright/cli'
       : 'npm install @playwright/cli'
-  const commands = getPackageManagerCommand(packageManager)
   return promptYesNo(
-    `Install playwright-cli for URL-based browser inspection (can be done manually via '${commands.skillsManualCommand(['playwright-cli'])} && ${installPlaywrightCli}')? (Y/n)`,
+    `Install playwright-cli for URL-based browser inspection (can be done manually via '${getSkillsManualCommand(packageManager, ['playwright-cli'], agent)} && ${installPlaywrightCli}')? (Y/n)`,
     true
   )
 }
@@ -683,10 +737,10 @@ export async function runInit(
     : await promptInitPlaywrightOsDependenciesForPackageManager(packageManager)
   const shouldInstallScreenCISkill = yes
     ? true
-    : await promptInitScreenCISkill(packageManager)
+    : await promptInitScreenCISkill(packageManager, agent)
   const shouldInstallPlaywrightCli = yes
     ? true
-    : await promptInitPlaywrightCliSkillForPackageManager(packageManager)
+    : await promptInitPlaywrightCliSkillForPackageManager(packageManager, agent)
 
   if (shouldAddGithubActionWorkflow && existsSync(githubActionPath)) {
     logger.error(
@@ -746,12 +800,16 @@ export async function runInit(
       const spinner = ora('Adding selected AI skills...').start()
       try {
         await spawnSilent(commands.skillsCommand, skillsArgs, projectDir)
-        spinner.succeed('Selected AI skills added')
+        spinner.succeed('Installing selected AI skills')
       } catch (err) {
         spinner.fail('AI skills install failed')
         throw err
       }
     }
+  }
+
+  if (packageManager === 'pnpm') {
+    await configurePnpmProject(projectDir)
   }
 
   await installInitDependencies(

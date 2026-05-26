@@ -1946,9 +1946,13 @@ export async function main() {
 
       if (process.env.SCREENCI_RECORDING === 'true') return
 
+      const recordCommand =
+        determinePackageManager() === 'pnpm'
+          ? 'pnpm exec screenci record'
+          : 'npx screenci record'
       logger.info('')
       logger.info(
-        `Tests passed. Run ${pc.cyan('npx screenci record')} to render the videos.`
+        `Tests passed. Run ${pc.cyan(recordCommand)} to render the videos.`
       )
     })
 

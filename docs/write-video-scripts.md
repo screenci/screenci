@@ -47,20 +47,16 @@ video('How to get started', async ({ page }) => {
 })
 ```
 
-This script defines one video with `video()`, creates narration cues with
-`createNarration()`, loads the page inside `hide()` so setup is not visible in
-the recording, and uses `autoZoom()` to focus the viewer on the documentation
-link before clicking it.
-
-## Anatomy of a video script
-
-Most ScreenCI files have the same building blocks:
+This script shows the main building blocks of a ScreenCI video:
 
 - imports from `screenci`
 - one or more `video()` calls
 - Playwright-style `page` interactions
+- narration created with `createNarration()`
 - a hidden setup block when the visible recording should start from a ready
   state
+- optional helpers such as `autoZoom()` to direct attention during visible
+  interactions
 
 Each `video('Title', ...)` call defines one video, which can include multiple
 language versions. Keep titles stable unless you intentionally want a new
@@ -81,16 +77,38 @@ copied from transient DOM structure. If you need a refresher, use Playwright's
 
 ## What ScreenCI changes
 
-Inside `video()`, ScreenCI wraps the normal Playwright page and locators so
-visible interactions look like a recording instead of a robotic test:
+Unlike a regular `playwright/test` test, `video()` gives you an instrumented
+Playwright `page` so visible interactions look like a recording instead of a
+robotic test:
 
 - cursor moves are animated
 - typing is visible
-- helper APIs such as `hide()`, `autoZoom()`, `zoomTo()`, and
-  `createNarration()` integrate with the recording timeline
 
 Most standard Playwright APIs still work as expected, including navigation,
 locators, waiting, keyboard input, and assertions from `@playwright/test`.
+
+## Helper APIs
+
+### `hide()`
+
+Use `hide()` to keep setup out of the visible recording. See [Setup vs visible
+sequence](#setup-vs-visible-sequence) and [Generating
+Videos](/docs/generating-videos).
+
+### `autoZoom()`
+
+Use `autoZoom()` when the camera should follow a visible interaction
+automatically. See [Camera and Zooming](/docs/camera-and-zooming).
+
+### `zoomTo()`
+
+Use `zoomTo()` when you want exact manual framing. See [Camera and
+Zooming](/docs/camera-and-zooming).
+
+### `createNarration()`
+
+Use `createNarration()` to define narration cues and language variants. See
+[Narration and Localization](/docs/narration-and-localization).
 
 ## Setup vs visible sequence
 

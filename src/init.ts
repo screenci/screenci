@@ -2,7 +2,7 @@ import { spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import { existsSync, realpathSync } from 'fs'
 import { appendFile, mkdir, readFile, writeFile } from 'fs/promises'
-import { basename, dirname, resolve } from 'path'
+import { basename, delimiter, dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { Command, CommanderError } from 'commander'
 import { input } from '@inquirer/prompts'
@@ -74,15 +74,25 @@ function buildWindowsBatchCommandLine(cmd: string, args: string[]): string {
 }
 
 function resolveWindowsCmdShim(cmd: string): string {
+  const shimName = `${cmd}.cmd`
+  const pathEntries = process.env.PATH?.split(delimiter) ?? []
+  for (const entry of pathEntries) {
+    if (!entry) continue
+    const shimPath = resolve(entry, shimName)
+    if (existsSync(shimPath)) {
+      return shimPath
+    }
+  }
+
   const bundledShimCommands = new Set(['npm', 'npx'])
   if (bundledShimCommands.has(cmd)) {
-    const bundledShimPath = resolve(dirname(process.execPath), `${cmd}.cmd`)
+    const bundledShimPath = resolve(dirname(process.execPath), shimName)
     if (existsSync(bundledShimPath)) {
       return bundledShimPath
     }
   }
 
-  return `${cmd}.cmd`
+  return shimName
 }
 
 function forwardChildSignals(

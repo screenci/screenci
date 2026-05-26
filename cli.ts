@@ -6,7 +6,7 @@ import { createHash } from 'crypto'
 import { createServer } from 'http'
 import type { AddressInfo } from 'net'
 import { appendFile, readdir, readFile, stat } from 'fs/promises'
-import { dirname, relative as pathRelative, resolve } from 'path'
+import { delimiter, dirname, relative as pathRelative, resolve } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { Command, CommanderError } from 'commander'
 import pc from 'picocolors'
@@ -670,15 +670,25 @@ function buildWindowsBatchCommandLine(cmd: string, args: string[]): string {
 }
 
 function resolveWindowsCmdShim(cmd: string): string {
+  const shimName = `${cmd}.cmd`
+  const pathEntries = process.env.PATH?.split(delimiter) ?? []
+  for (const entry of pathEntries) {
+    if (!entry) continue
+    const shimPath = resolve(entry, shimName)
+    if (existsSync(shimPath)) {
+      return shimPath
+    }
+  }
+
   const bundledShimCommands = new Set(['npm', 'npx'])
   if (bundledShimCommands.has(cmd)) {
-    const bundledShimPath = resolve(dirname(process.execPath), `${cmd}.cmd`)
+    const bundledShimPath = resolve(dirname(process.execPath), shimName)
     if (existsSync(bundledShimPath)) {
       return bundledShimPath
     }
   }
 
-  return `${cmd}.cmd`
+  return shimName
 }
 
 function forwardChildSignals(

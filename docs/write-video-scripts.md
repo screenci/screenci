@@ -1,10 +1,6 @@
 # Write Video Scripts
 
-This page does the same job as Playwright's
-[Writing tests](https://playwright.dev/docs/writing-tests), but for ScreenCI
-videos instead of assertion-heavy tests. Video scripts are Playwright-style
-files with ScreenCI-specific behavior around pacing, narration, and camera
-direction.
+ScreenCI videos use the same syntax as Playwright tests.
 
 #### You will learn
 

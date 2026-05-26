@@ -1657,25 +1657,6 @@ async function readCurrentScreenciVersion(): Promise<string> {
   return 'latest'
 }
 
-function generateTsconfig(): string {
-  return `${JSON.stringify(
-    {
-      compilerOptions: {
-        module: 'ESNext',
-        moduleResolution: 'bundler',
-        target: 'ESNext',
-        types: ['node'],
-        strict: true,
-        skipLibCheck: true,
-      },
-      include: ['**/*.ts'],
-    },
-    null,
-    2
-  )}
-`
-}
-
 function generateReadme(projectName: string): string {
   return `# ${projectName}
 
@@ -1845,7 +1826,7 @@ function generateExampleVideo(): string {
   return `import { autoZoom, createNarration, hide, video, voices } from 'screenci'
 
 const narration = createNarration({
-  voice: { name: voices.Sophie, style: 'Clear, friendly product walkthrough' },
+  voice: { name: voices.Sophie },
   languages: {
     en: {
       cues: {
@@ -1859,7 +1840,7 @@ const narration = createNarration({
 
 video('How to get started', async ({ page }) => {
   await hide(async () => {
-    await page.goto('/')
+    await page.goto('https://screenci.com')
     await page.getByText('ScreenCI').first().waitFor()
   })
 
@@ -2072,7 +2053,6 @@ async function runInit(
     resolve(projectDir, 'package.json'),
     generatePackageJson(shouldInstallPlaywrightCli, screenciDependency)
   )
-  await writeFile(resolve(projectDir, 'tsconfig.json'), generateTsconfig())
   await writeFile(resolve(projectDir, 'README.md'), generateReadme(projectName))
   await writeFile(resolve(projectDir, '.gitignore'), generateGitignore())
   await writeFile(
@@ -2082,20 +2062,17 @@ async function runInit(
   if (shouldAddGithubActionWorkflow) {
     await writeFile(githubActionPath, generateGithubAction())
   }
-  await writeFile(resolve(projectDir, '.env'), '')
 
   logger.info(`Initialized screenci project "${projectName}" in .`)
   logger.info('Files created:')
   logger.info('  screenci.config.ts')
   logger.info('  package.json')
-  logger.info('  tsconfig.json')
   logger.info('  README.md')
   logger.info('  .gitignore')
   logger.info('  videos/example.video.ts')
   if (shouldAddGithubActionWorkflow) {
     logger.info('  .github/workflows/screenci.yaml')
   }
-  logger.info('  .env  (empty placeholder)')
   logger.info('')
 
   if (skillsArgs !== null) {

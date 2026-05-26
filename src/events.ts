@@ -166,9 +166,9 @@ export type CueTranslation = {
   voice: VoiceKey | RecordingCustomVoiceRef
   /** BCP-47 region code, e.g. 'en-US'. Overrides the base language for TTS synthesis. */
   region?: string
-  /** TTS model type — `'expressive'` or `'consistent'`. Defaults to `'consistent'`. */
+  /** TTS model type — `'expressive'` or `'consistent'`. Defaults to `'consistent'`. `'expressive'` requires the Business tier. */
   modelType?: string
-  /** Speaking style prompt for expressive synthesis. */
+  /** Speaking style prompt for expressive synthesis. Business tier only. */
   style?: string
   /** Accent description for expressive synthesis. Omitted from the prompt when not set. */
   accent?: string
@@ -212,9 +212,9 @@ export type VideoCueTranslationTTS = {
   voice: VoiceKey | RecordingCustomVoiceRef
   /** BCP-47 region code, e.g. 'en-US'. Overrides the base language for TTS synthesis. */
   region?: string
-  /** TTS model type — `'expressive'` or `'consistent'`. Defaults to `'consistent'`. */
+  /** TTS model type — `'expressive'` or `'consistent'`. Defaults to `'consistent'`. `'expressive'` requires the Business tier. */
   modelType?: string
-  /** Speaking style prompt for expressive synthesis. */
+  /** Speaking style prompt for expressive synthesis. Business tier only. */
   style?: string
   /** Accent description for expressive synthesis. Omitted from the prompt when not set. */
   accent?: string
@@ -302,9 +302,9 @@ export type VoiceLanguageMeta = {
   seed?: number
   /** BCP-47 region code, e.g. 'en-US'. Overrides the base language for TTS synthesis. */
   region?: string
-  /** TTS model type — `'expressive'` or `'consistent'`. Defaults to `'consistent'`. */
+  /** TTS model type — `'expressive'` or `'consistent'`. Defaults to `'consistent'`. `'expressive'` requires the Business tier. */
   modelType?: string
-  /** Speaking style prompt for expressive synthesis. */
+  /** Speaking style prompt for expressive synthesis. Business tier only. */
   style?: string
   /** Accent description for expressive synthesis. Omitted from the prompt when not set. */
   accent?: string

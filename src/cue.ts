@@ -194,14 +194,15 @@ export type Cues<T extends Record<string, CueMapValue>> = {
  * `seed` is not allowed here — use per-language `voice` overrides instead.
  *
  * Use `style` for expressive synthesis, or `modelType` for an explicit
- * model choice. `style` and `modelType` are mutually exclusive.
+ * model choice. `style` and `modelType` are mutually exclusive. Expressive
+ * synthesis and `style` prompts require the Business tier.
  */
 export type TopLevelVoiceConfig =
   | {
       name: VoiceKey | CustomVoiceRef
-      /** Speaking style prompt for expressive synthesis. Implies `expressive` model type. */
+      /** Speaking style prompt for expressive synthesis. Business tier only. Implies `expressive` model type. */
       style: string
-      /** Can be omitted when `style` is set — `expressive` is implied. */
+      /** Can be omitted when `style` is set — `expressive` is implied. Business tier only. */
       modelType?: 'expressive'
       /**
        * Accent description for expressive synthesis.
@@ -230,7 +231,8 @@ export type TopLevelVoiceConfig =
  * optionally set a `seed` for TTS generation.
  *
  * Use `style` for expressive synthesis, or `modelType` for an explicit
- * model choice. `style` and `modelType` are mutually exclusive.
+ * model choice. `style` and `modelType` are mutually exclusive. Expressive
+ * synthesis and `style` prompts require the Business tier.
  */
 export type LangNarrationOverride =
   | {
@@ -240,9 +242,9 @@ export type LangNarrationOverride =
        * regeneration. Consistent output is not guaranteed across all voice types.
        */
       seed?: number
-      /** Speaking style prompt for expressive synthesis. Implies `expressive` model type. */
+      /** Speaking style prompt for expressive synthesis. Business tier only. Implies `expressive` model type. */
       style: string
-      /** Can be omitted when `style` is set — `expressive` is implied. */
+      /** Can be omitted when `style` is set — `expressive` is implied. Business tier only. */
       modelType?: 'expressive'
       /**
        * Accent description for expressive synthesis.
@@ -333,11 +335,11 @@ type LanguagesMap<
  * @example
  * ```ts
  * const narration = createNarration({
- *   voice: { name: voices.Ava, style: 'Clear and friendly' },
+ *   voice: { name: voices.Ava },
  *   languages: {
  *     en: { cues: { intro: 'Welcome.', next: 'Click here.' } },
  *     fi: {
- *       voice: { name: voices.Nora, style: 'Selkeä opastus', seed: 42 },
+ *       voice: { name: voices.Nora, seed: 42 },
  *       cues: { intro: 'Tervetuloa.', next: 'Napsauta tästä.' },
  *     },
  *   },

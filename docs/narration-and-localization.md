@@ -2,6 +2,8 @@
 
 ScreenCI narration is cue-based. You define named spoken lines, then place those cues into the visible flow where speech should start, overlap, and end. This keeps the script readable and makes multi-language output easier to maintain.
 
+`style` prompts and `modelType: 'expressive'` require the Business tier. Free and Starter users should stay with the default consistent narration flow.
+
 #### You will learn
 
 - [how to define narration cues](#start-with-one-language)
@@ -253,6 +255,8 @@ const narration = createNarration({
 })
 ```
 
+The German override above is a Business-tier example because it uses expressive narration.
+
 Use the top-level `voice` as the default and override only the languages that genuinely need a different voice, region, or delivery profile.
 
 ## Model type
@@ -261,6 +265,7 @@ Use `modelType` when you need to choose between consistency and expressiveness.
 
 - `consistent` is the safer default for docs and product walkthroughs
 - `expressive` is useful when you want a more natural, less uniform delivery
+- `expressive` and `style` prompts require the Business tier
 
 In practice:
 
@@ -285,6 +290,8 @@ const narration = createNarration({
   },
 })
 ```
+
+This expressive example requires the Business tier.
 
 ```ts
 import { createNarration, voices } from 'screenci'
@@ -315,6 +322,8 @@ These controls matter once the base script is already good.
 - `style` describes the speaker's persona or delivery style
 - `accent` gives the model a more specific regional target
 - `pacing` controls how quickly lines are spoken
+
+`style` is part of the expressive voice flow, so these examples require the Business tier whenever `style` or `modelType: 'expressive'` is used.
 
 Examples:
 

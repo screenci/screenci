@@ -585,7 +585,10 @@ describe('CLI', () => {
       })
     })
 
-    it('uploads recordings in parallel and reports completions as they finish in CI output', async () => {
+    it('uploads recordings in parallel and reports completions as they finish in CI mode', async () => {
+      const stdoutWriteSpy = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation(() => true)
       mockReaddir.mockResolvedValue(['slow-video', 'fast-video'])
       mockReadFile.mockImplementation(async (path: string | URL) => {
         const pathString = String(path)
@@ -663,36 +666,41 @@ describe('CLI', () => {
       )
       process.env.CI = 'true'
 
-      const { uploadRecordings } = await import('./cli')
+      try {
+        const { uploadRecordings } = await import('./cli')
 
-      const result = await uploadRecordings(
-        '/repo/.screenci',
-        'Test Project',
-        'https://api.screenci.test',
-        'test-secret'
-      )
-
-      expect(result).toEqual({
-        projectId: 'project_123',
-        hadFailures: false,
-        failedVideoNames: [],
-        failedVideoMessages: [],
-      })
-
-      const messages = loggerInfoSpy.mock.calls.map((call) => String(call[0]))
-      expect(messages).toContain('Uploading 2 recordings in parallel...')
-      expect(
-        messages.findIndex((message) =>
-          message.includes('Uploaded "Fast Demo"')
+        const result = await uploadRecordings(
+          '/repo/.screenci',
+          'Test Project',
+          'https://api.screenci.test',
+          'test-secret'
         )
-      ).toBeLessThan(
-        messages.findIndex((message) =>
-          message.includes('Uploaded "Slow Demo"')
+
+        expect(result).toEqual({
+          projectId: 'project_123',
+          hadFailures: false,
+          failedVideoNames: [],
+          failedVideoMessages: [],
+        })
+
+        const messages = loggerInfoSpy.mock.calls.map((call) => String(call[0]))
+        expect(messages).toContain('Uploading 2 recordings in parallel...')
+        expect(
+          messages.findIndex((message) =>
+            message.includes('Uploaded "Fast Demo"')
+          )
+        ).toBeLessThan(
+          messages.findIndex((message) =>
+            message.includes('Uploaded "Slow Demo"')
+          )
         )
-      )
+        expect(stdoutWriteSpy).not.toHaveBeenCalled()
+      } finally {
+        stdoutWriteSpy.mockRestore()
+      }
     })
 
-    it('updates upload rows in place on interactive terminals', async () => {
+    it('updates upload rows in place outside CI on interactive terminals', async () => {
       const stdoutWriteSpy = vi
         .spyOn(process.stdout, 'write')
         .mockImplementation(() => true)
@@ -776,27 +784,18 @@ describe('CLI', () => {
           'test-secret'
         )
 
-        expect(
-          stdoutWriteSpy.mock.calls.some(
-            (call) =>
-              String(call[0]).includes('... Uploading "Demo"') &&
-              String(call[0]).includes('... Uploading "Second Demo"')
-          )
-        ).toBe(true)
-        expect(
-          stdoutWriteSpy.mock.calls.some(
-            (call) =>
-              String(call[0]).includes('\u001B[2A') &&
-              String(call[0]).includes('✔ Uploaded "Demo"')
-          )
-        ).toBe(true)
-        expect(
-          stdoutWriteSpy.mock.calls.some(
-            (call) =>
-              String(call[0]).includes('\u001B[2A') &&
-              String(call[0]).includes('✔ Uploaded "Second Demo"')
-          )
-        ).toBe(true)
+        const allWrites = stdoutWriteSpy.mock.calls
+          .map((call) => String(call[0]))
+          .join('')
+
+        expect(allWrites).toContain('... Uploading "Demo"')
+        expect(allWrites).toContain('... Uploading "Second Demo"')
+        expect(allWrites).toContain('\u001B[2A')
+        expect(allWrites).toContain('✔ Uploaded "Demo"')
+        expect(allWrites).toContain('✔ Uploaded "Second Demo"')
+        expect(loggerInfoSpy).not.toHaveBeenCalledWith(
+          'Uploading 2 recordings in parallel...'
+        )
       } finally {
         stdoutWriteSpy.mockRestore()
         if (originalIsTTY) {
@@ -1738,11 +1737,22 @@ describe('CLI', () => {
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/my-app/videos/example.video.ts',
+        expect.stringContaining("await page.goto('https://screenci.com')")
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/videos/example.video.ts',
         expect.stringContaining(
           "await page.getByRole('heading', { level: 1, name: 'Installation' }).first().waitFor()"
         )
       )
-      expect(mockWriteFile).toHaveBeenCalledWith('/workspace/my-app/.env', '')
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        '/workspace/my-app/tsconfig.json',
+        expect.any(String)
+      )
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        '/workspace/my-app/.env',
+        ''
+      )
       expect(loggerInfoSpy).toHaveBeenCalledWith("Initializing project in '.'")
       expect(loggerInfoSpy).toHaveBeenCalledWith(
         'Initialized screenci project "My Project" in .'

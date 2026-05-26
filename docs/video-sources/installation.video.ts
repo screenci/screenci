@@ -2,7 +2,7 @@ import { autoZoom, createNarration, hide, video, voices } from 'screenci'
 import { waitForDocHeading } from './docs-shared'
 
 const narration = createNarration({
-  voice: { name: voices.Sophie, style: 'Clear, friendly product walkthrough' },
+  voice: { name: voices.Sophie },
   languages: {
     en: {
       cues: {
@@ -16,7 +16,7 @@ const narration = createNarration({
 
 video('How to get started', async ({ page }) => {
   await hide(async () => {
-    await page.goto('/')
+    await page.goto('https://screenci.com')
     await page.getByText('ScreenCI').first().waitFor()
   })
 

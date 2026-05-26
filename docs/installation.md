@@ -2,8 +2,8 @@
 
 ScreenCI is a Playwright-based workflow for producing product videos as code.
 If you already know Playwright, the startup path should feel familiar:
-initialize a project, run the generated script locally, then record the final
-output when the visible flow looks right.
+initialize a project and run the generated E2E tests locally using `test` command.
+Then ScreenCI allows converting these tests into product videos with `record` command.
 
 #### You will learn
 
@@ -39,10 +39,8 @@ The generated project includes the files you need for a first usable run:
 ```text
 screenci.config.ts
 package.json
-tsconfig.json
 README.md
 .gitignore
-.env
 videos/
   example.video.ts
 .github/workflows/screenci.yaml
@@ -54,7 +52,7 @@ The starter video source looks like this:
 import { autoZoom, createNarration, hide, video, voices } from 'screenci'
 
 const narration = createNarration({
-  voice: { name: voices.Sophie, style: 'Clear, friendly product walkthrough' },
+  voice: { name: voices.Sophie },
   languages: {
     en: {
       cues: {
@@ -68,7 +66,7 @@ const narration = createNarration({
 
 video('How to get started', async ({ page }) => {
   await hide(async () => {
-    await page.goto('/')
+    await page.goto('https://screenci.com')
     await page.getByText('ScreenCI').first().waitFor()
   })
 
@@ -91,7 +89,6 @@ are:
 
 - `videos/example.video.ts` for the starter video script.
 - `screenci.config.ts` for project-wide defaults.
-- `.env` for `SCREENCI_SECRET` and other environment variables.
 - `.github/workflows/screenci.yaml` for CI recording, if you accepted the
   generated GitHub Actions workflow.
 

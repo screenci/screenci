@@ -14,7 +14,7 @@ import {
 } from './docs-shared'
 
 const narration = createNarration({
-  voice: { name: voices.Sophie, style: 'Clear, structured docs walkthrough' },
+  voice: { name: voices.Sophie },
   languages: {
     en: {
       cues: {

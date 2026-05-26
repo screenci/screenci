@@ -20,13 +20,13 @@ const assets = createAssets({
 })
 
 video('Overview', async ({ page }) => {
-  await assets.intro
+  await assets.intro()
   await page.goto('/dashboard')
-  await assets.logo
+  await assets.logo()
 })
 ```
 
-Each key becomes an awaitable asset controller.
+Each key becomes a callable asset controller.
 
 ## Full-screen vs overlay
 
@@ -46,7 +46,7 @@ Use `fullScreen: false` for:
 
 Asset timing is explicit in the script:
 
-- `await assets.intro` inserts the asset at that point in the timeline
+- `await assets.intro()` inserts the asset at that point in the timeline
 - full-screen assets take over the output frame
 - overlay assets stay on top of the recording while the underlying screen continues
 

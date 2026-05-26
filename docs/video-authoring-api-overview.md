@@ -78,6 +78,8 @@ Add timed media overlays:
 const assets = createAssets({
   intro: { path: './assets/intro.mp4', audio: 1, fullScreen: true },
 })
+
+await assets.intro()
 ```
 
 Use it with [Assets and Overlays](/docs/guides/assets-and-overlays).

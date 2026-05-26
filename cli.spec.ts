@@ -33,6 +33,44 @@ const mockSpinner = {
 }
 const mockOra = vi.fn().mockReturnValue(mockSpinner)
 
+function expectNpmDevInstalls(
+  mockSpawn: ReturnType<typeof vi.fn>,
+  cwd: string,
+  screenciVersion = '0.0.32',
+  includePlaywrightCli = true
+) {
+  const npmInstallCalls = mockSpawn.mock.calls.filter(
+    (call: unknown[]) =>
+      call[0] === 'npm' &&
+      Array.isArray(call[1]) &&
+      call[1][0] === 'install' &&
+      call[1][1] === '--save-dev' &&
+      call[2] &&
+      typeof call[2] === 'object' &&
+      'cwd' in (call[2] as Record<string, unknown>) &&
+      (call[2] as { cwd?: string }).cwd === cwd &&
+      'stdio' in (call[2] as Record<string, unknown>) &&
+      (call[2] as { stdio?: string }).stdio === 'pipe'
+  )
+
+  const expectedPackages = [
+    `@playwright/test@^1.59.0`,
+    `screenci@${screenciVersion}`,
+    '@types/node@^25.9.1',
+    ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
+  ]
+
+  expect(npmInstallCalls).toEqual(
+    expect.arrayContaining(
+      expectedPackages.map((pkg) => [
+        'npm',
+        ['install', '--save-dev', pkg],
+        expect.objectContaining({ cwd, stdio: 'pipe' }),
+      ])
+    )
+  )
+}
+
 vi.mock('child_process', () => ({
   spawn: mockSpawn,
   exec: mockExec,
@@ -798,6 +836,138 @@ describe('CLI', () => {
         expect(loggerInfoSpy).not.toHaveBeenCalledWith(
           'Uploading 2 recordings in parallel...'
         )
+      } finally {
+        stdoutWriteSpy.mockRestore()
+        if (originalIsTTY) {
+          Object.defineProperty(process.stdout, 'isTTY', originalIsTTY)
+        } else {
+          delete (process.stdout as NodeJS.WriteStream & { isTTY?: boolean })
+            .isTTY
+        }
+      }
+    })
+
+    it('re-renders upload rows after asset logs on interactive terminals', async () => {
+      const stdoutWriteSpy = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation(() => true)
+      const originalIsTTY = Object.getOwnPropertyDescriptor(
+        process.stdout,
+        'isTTY'
+      )
+      Object.defineProperty(process.stdout, 'isTTY', {
+        configurable: true,
+        value: true,
+      })
+      delete process.env.CI
+
+      mockReaddir.mockResolvedValue(['demo-video', 'second-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          const videoName = pathString.includes('/second-video/')
+            ? 'Second Demo'
+            : 'Demo'
+          return JSON.stringify({
+            events: [
+              {
+                type: 'assetStart',
+                name: 'logo',
+                path: 'videos/logo.png',
+              },
+            ],
+            metadata: { videoName },
+          })
+        }
+        if (pathString.endsWith('videos/logo.png')) {
+          return Buffer.from('logo-bytes')
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') ||
+          path.endsWith('recording.mp4') ||
+          path.endsWith('videos/logo.png')
+      )
+      mockFetch.mockImplementation(
+        async (input: string | URL, init?: RequestInit) => {
+          const url = String(input)
+          if (url.endsWith('/cli/upload/start')) {
+            const body = JSON.parse(String(init?.body ?? '{}')) as {
+              videoName?: string
+            }
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({
+                recordingId:
+                  body.videoName === 'Second Demo'
+                    ? 'recording_456'
+                    : 'recording_123',
+                projectId: 'project_123',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+
+          if (url.endsWith('/asset/check')) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({ exists: true }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+
+          if (
+            url.endsWith('/cli/upload/recording_123/recording') ||
+            url.endsWith('/cli/upload/recording_456/recording')
+          ) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({}),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+      )
+
+      try {
+        const { uploadRecordings } = await import('./cli')
+
+        await uploadRecordings(
+          '/repo/.screenci',
+          'Test Project',
+          'https://api.screenci.test',
+          'test-secret'
+        )
+
+        const allWrites = stdoutWriteSpy.mock.calls
+          .map((call) => String(call[0]))
+          .join('')
+        const normalizedWrites = stripVTControlCharacters(allWrites)
+        const moveUpCount = (allWrites.match(/\u001B\[2A/g) ?? []).length
+
+        expect(loggerInfoSpy).toHaveBeenCalledWith(
+          'Asset already exists: videos/logo.png'
+        )
+        expect(moveUpCount).toBeGreaterThanOrEqual(3)
+        expect(normalizedWrites).toContain('... Uploading "Demo"')
+        expect(normalizedWrites).toContain('... Uploading "Second Demo"')
+        expect(normalizedWrites).toContain('✔ Uploaded "Demo"')
+        expect(normalizedWrites).toContain('✔ Uploaded "Second Demo"')
       } finally {
         stdoutWriteSpy.mockRestore()
         if (originalIsTTY) {
@@ -1816,6 +1986,14 @@ describe('CLI', () => {
         expect.stringContaining('"My Project"')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/screenci.config.ts',
+        expect.stringContaining('workers: process.env.CI ? 1 : undefined')
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/screenci.config.ts',
+        expect.stringContaining('fullyParallel: true')
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/my-app/videos/example.video.ts',
         expect.stringContaining("video('How to get started'")
       )
@@ -1837,6 +2015,25 @@ describe('CLI', () => {
         '/workspace/my-app/.env',
         ''
       )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/package.json',
+        '{}\n'
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/.gitignore',
+        expect.stringContaining('# ScreenCI')
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/.gitignore',
+        expect.stringContaining('# Playwright')
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/.gitignore',
+        expect.stringContaining(
+          'node_modules/\n/test-results/\n/playwright-report/\n/blob-report/\n/playwright/.cache/\n/playwright/.auth/'
+        )
+      )
+      expectNpmDevInstalls(mockSpawn, '/workspace/my-app')
       expect(loggerInfoSpy).toHaveBeenCalledWith("Initializing project in '.'")
       expect(loggerInfoSpy).toHaveBeenCalledWith(
         'Initialized screenci project "My Project" in .'
@@ -1861,6 +2058,67 @@ describe('CLI', () => {
         '/workspace/screenci-docs/screenci.config.ts',
         expect.stringContaining('"screenci-docs"')
       )
+    })
+
+    it('appends to an existing .gitignore instead of overwriting it', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'My Project']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-app'
+      mockExistsSync.mockImplementation((path: string) => {
+        const pathString = String(path)
+        if (pathString === '/workspace/my-app/.gitignore') {
+          return true
+        }
+        return false
+      })
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        if (String(path).endsWith('/workspace/my-app/.gitignore')) {
+          return 'dist/'
+        }
+        if (String(path).endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        return ''
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        '/workspace/my-app/.gitignore',
+        expect.any(String)
+      )
+      expect(mockAppendFile).toHaveBeenCalledWith(
+        '/workspace/my-app/.gitignore',
+        expect.stringContaining('\n\n# ScreenCI')
+      )
+      expect(mockAppendFile).toHaveBeenCalledWith(
+        '/workspace/my-app/.gitignore',
+        expect.stringContaining(
+          '# Playwright\nnode_modules/\n/test-results/\n/playwright-report/\n/blob-report/\n/playwright/.cache/\n/playwright/.auth/'
+        )
+      )
+    })
+
+    it('does not rewrite an existing package.json and installs dependencies directly', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'My Project']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-app'
+      mockExistsSync.mockImplementation((path: string) => {
+        const pathString = String(path)
+        if (pathString === '/workspace/my-app/package.json') {
+          return true
+        }
+        return false
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        '/workspace/my-app/package.json',
+        expect.any(String)
+      )
+      expectNpmDevInstalls(mockSpawn, '/workspace/my-app')
+      expect(loggerInfoSpy).not.toHaveBeenCalledWith('  package.json')
     })
 
     it('prompts in the new order with the new wording', async () => {
@@ -1937,11 +2195,7 @@ describe('CLI', () => {
         ],
         expect.objectContaining({ cwd: '/workspace/demo-app', stdio: 'pipe' })
       )
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npm',
-        ['install', '--include=dev'],
-        expect.objectContaining({ cwd: '/workspace/demo-app', stdio: 'pipe' })
-      )
+      expectNpmDevInstalls(mockSpawn, '/workspace/demo-app')
       expect(mockSpawn).toHaveBeenCalledWith(
         'npx',
         ['playwright', 'install', 'chromium'],
@@ -2000,11 +2254,11 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       await main()
 
-      const pkgCall = mockWriteFile.mock.calls.find(
-        (call: unknown[]) =>
-          typeof call[0] === 'string' && call[0].endsWith('package.json')
+      expect(mockSpawn).not.toHaveBeenCalledWith(
+        'npm',
+        ['install', '--save-dev', '@playwright/cli@latest'],
+        expect.anything()
       )
-      expect(pkgCall?.[1]).not.toContain('"@playwright/cli": "latest"')
     })
 
     it('uses the configured screenci dependency override verbatim', async () => {
@@ -2017,11 +2271,11 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       await main()
 
-      const pkgCall = mockWriteFile.mock.calls.find(
-        (call: unknown[]) =>
-          typeof call[0] === 'string' && call[0].endsWith('package.json')
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npm',
+        ['install', '--save-dev', 'screenci@file:./screenci-0.0.44.tgz'],
+        expect.objectContaining({ cwd: '/workspace/my-project', stdio: 'pipe' })
       )
-      expect(pkgCall?.[1]).toContain('"screenci": "file:./screenci-0.0.44.tgz"')
     })
 
     it('keeps ScreenCI skill and playwright-cli prompts separate', async () => {
@@ -2051,11 +2305,11 @@ describe('CLI', () => {
         ],
         expect.objectContaining({ cwd: '/workspace/my-project', stdio: 'pipe' })
       )
-      const pkgCall = mockWriteFile.mock.calls.find(
-        (call: unknown[]) =>
-          typeof call[0] === 'string' && call[0].endsWith('package.json')
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npm',
+        ['install', '--save-dev', '@playwright/cli@latest'],
+        expect.objectContaining({ cwd: '/workspace/my-project', stdio: 'pipe' })
       )
-      expect(pkgCall?.[1]).toContain('"@playwright/cli": "latest"')
     })
 
     it('passes --agent through to the executed skills command', async () => {

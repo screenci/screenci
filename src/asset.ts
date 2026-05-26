@@ -48,19 +48,20 @@ export async function validateRegisteredAssetPaths(
 }
 
 /**
- * An asset controller. Awaiting it marks the asset in the recording timeline.
+ * An asset controller.
  *
- * The renderer places the asset at this point in the video and plays it for
- * its natural duration — no timing config required.
+ * Calling it marks the asset in the recording timeline. The renderer places
+ * the asset at this point in the video and plays it for its natural duration
+ * with no separate timing config.
  *
  * @example
  * ```ts
- * await assets.intro
+ * await assets.intro()
  * await page.goto('/dashboard')
- * await assets.logo
+ * await assets.logo()
  * ```
  */
-export type AssetController = PromiseLike<void>
+export type AssetController = () => Promise<void>
 
 export type Assets<T extends Record<string, AssetConfig>> = {
   [K in keyof T]: AssetController
@@ -69,7 +70,7 @@ export type Assets<T extends Record<string, AssetConfig>> = {
 /**
  * Creates a set of typed asset controllers, one per key in the map.
  *
- * Awaiting a controller marks the asset in the recording timeline.
+ * Calling a controller marks the asset in the recording timeline.
  * The renderer places the asset at that point and plays it for its natural duration.
  *
  * @example
@@ -80,9 +81,9 @@ export type Assets<T extends Record<string, AssetConfig>> = {
  * })
  *
  * video('Product demo', async ({ page }) => {
- *   await assets.intro
+ *   await assets.intro()
  *   await page.goto('/dashboard')
- *   await assets.logo
+ *   await assets.logo()
  * })
  * ```
  */
@@ -104,7 +105,7 @@ function createAssetController(
   name: string,
   config: AssetConfig
 ): AssetController {
-  const startFn = (): Promise<void> => {
+  return (): Promise<void> => {
     const activeRecorder = getRuntimeAssetRecorder()
     activeRecorder.addAssetStart(
       name,
@@ -113,10 +114,5 @@ function createAssetController(
       config.fullScreen
     )
     return Promise.resolve()
-  }
-  return {
-    then(resolve, reject) {
-      return startFn().then(resolve, reject)
-    },
   }
 }

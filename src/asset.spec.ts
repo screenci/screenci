@@ -35,7 +35,7 @@ describe('createAssets', () => {
     setActiveAssetRecorder(NOOP_EVENT_RECORDER)
   })
 
-  it('creates a thenable controller for each key in the map', () => {
+  it('creates a callable controller for each key in the map', () => {
     const assets = createAssets({
       logo: { path: './logo.png', audio: 0, fullScreen: false },
       intro: { path: './intro.mp4', audio: 1.0, fullScreen: true },
@@ -43,17 +43,17 @@ describe('createAssets', () => {
 
     expect(assets.logo).toBeDefined()
     expect(assets.intro).toBeDefined()
-    expect(typeof assets.logo.then).toBe('function')
-    expect(typeof assets.intro.then).toBe('function')
+    expect(typeof assets.logo).toBe('function')
+    expect(typeof assets.intro).toBe('function')
   })
 
-  describe('await asset', () => {
+  describe('calling asset controller', () => {
     it('calls addAssetStart with correct arguments', async () => {
       const assets = createAssets({
         logo: { path: './logo.png', audio: 0, fullScreen: false },
       })
 
-      await assets.logo
+      await assets.logo()
 
       expect(recorder.addAssetStart).toHaveBeenCalledOnce()
       expect(recorder.addAssetStart).toHaveBeenCalledWith(
@@ -69,7 +69,7 @@ describe('createAssets', () => {
         intro: { path: './intro.mp4', audio: 0.5, fullScreen: true },
       })
 
-      await assets.intro
+      await assets.intro()
 
       expect(recorder.addAssetStart).toHaveBeenCalledWith(
         'intro',
@@ -84,7 +84,7 @@ describe('createAssets', () => {
         audio: { path: './sound.mp4', audio: 0.8, fullScreen: false },
       })
 
-      await assets.audio
+      await assets.audio()
 
       expect(recorder.addAssetStart).toHaveBeenCalledWith(
         'audio',
@@ -99,7 +99,7 @@ describe('createAssets', () => {
         clip: { path: './clip.mp4', audio: 0, fullScreen: true },
       })
 
-      await expect(assets.clip).resolves.toBeUndefined()
+      await expect(assets.clip()).resolves.toBeUndefined()
     })
 
     it('each controller uses its own name and config', async () => {
@@ -108,8 +108,8 @@ describe('createAssets', () => {
         intro: { path: './intro.mp4', audio: 1.0, fullScreen: true },
       })
 
-      await assets.logo
-      await assets.intro
+      await assets.logo()
+      await assets.intro()
 
       expect(recorder.addAssetStart).toHaveBeenCalledTimes(2)
       expect(recorder.addAssetStart).toHaveBeenNthCalledWith(
@@ -132,12 +132,12 @@ describe('createAssets', () => {
   describe('with the default no-op recorder', () => {
     beforeEach(() => setActiveAssetRecorder(NOOP_EVENT_RECORDER))
 
-    it('await is a no-op', async () => {
+    it('calling the controller is a no-op', async () => {
       const assets = createAssets({
         logo: { path: './logo.png', audio: 0, fullScreen: false },
       })
 
-      await expect(assets.logo).resolves.toBeUndefined()
+      await expect(assets.logo()).resolves.toBeUndefined()
       expect(recorder.addAssetStart).not.toHaveBeenCalled()
     })
   })

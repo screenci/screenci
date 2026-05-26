@@ -39,6 +39,9 @@ import {
 
 const SCREENCI_MOCK_RECORD_DOCS_URL =
   'https://screenci.com/docs/reference/cli/#--mock-record'
+const PLAYWRIGHT_TEST_VERSION = '^1.59.0'
+const PLAYWRIGHT_CLI_VERSION = 'latest'
+const NODE_TYPES_VERSION = '^25.9.1'
 
 type ProjectInfoVideo = {
   name: string
@@ -312,7 +315,10 @@ function formatUploadProgressLine(
 function createUploadProgressReporter(
   videoNames: readonly string[],
   verbose: boolean
-): { complete: (index: number, status: UploadProgressStatus) => void } {
+): {
+  complete: (index: number, status: UploadProgressStatus) => void
+  info: (message: string) => void
+} {
   const useInPlaceUpdates = supportsInPlaceUploadUpdates(verbose)
 
   if (!useInPlaceUpdates) {
@@ -325,6 +331,9 @@ function createUploadProgressReporter(
         logger.info(
           formatUploadProgressLine(videoNames[index] ?? 'unknown', status)
         )
+      },
+      info(message) {
+        logger.info(message)
       },
     }
   }
@@ -344,11 +353,24 @@ function createUploadProgressReporter(
     hasRendered = true
   }
 
+  const clear = () => {
+    if (!hasRendered || videoNames.length === 0) return
+    process.stdout.write(
+      `\u001B[${videoNames.length}A${Array.from({ length: videoNames.length }, () => '\r\u001B[2K').join('\n')}\n`
+    )
+    hasRendered = false
+  }
+
   render()
 
   return {
     complete(index, status) {
       statuses[index] = status
+      render()
+    },
+    info(message) {
+      clear()
+      logger.info(message)
       render()
     },
   }
@@ -398,6 +420,7 @@ async function uploadRecordingCandidate(
   uploadAbort: ReturnType<typeof createUploadAbortController>,
   progressReporter: {
     complete: (index: number, status: UploadProgressStatus) => void
+    info: (message: string) => void
   },
   progressIndex: number
 ): Promise<UploadJobResult> {
@@ -467,7 +490,8 @@ async function uploadRecordingCandidate(
       secret,
       recordingId,
       uploadAbort.signal,
-      uploadAbort.throwIfAborted
+      uploadAbort.throwIfAborted,
+      progressReporter
     )
 
     if (existsSync(recordingPath)) {
@@ -1112,8 +1136,17 @@ async function uploadAssets(
   secret: string,
   recordingId: string,
   signal: AbortSignal,
-  throwIfAborted: () => void
+  throwIfAborted: () => void,
+  progressReporter?: { info: (message: string) => void }
 ): Promise<void> {
+  const logInfo = (message: string) => {
+    if (progressReporter) {
+      progressReporter.info(message)
+    } else {
+      logger.info(message)
+    }
+  }
+
   for (const asset of assets) {
     throwIfAborted()
     try {
@@ -1146,7 +1179,7 @@ async function uploadAssets(
 
       const checkBody = (await checkRes.json()) as { exists: boolean }
       if (checkBody.exists) {
-        logger.info(`Asset already exists: ${asset.path}`)
+        logInfo(`Asset already exists: ${asset.path}`)
         continue
       }
 
@@ -1178,14 +1211,14 @@ async function uploadAssets(
       if (!res.ok) {
         const text = await res.text()
         if (res.status === 409 && text.includes('already exists')) {
-          logger.info(`Asset already exists: ${asset.path}`)
+          logInfo(`Asset already exists: ${asset.path}`)
         } else {
           logger.warn(
             `Failed to upload asset ${asset.path}: ${res.status} ${text}${hint401(res.status, secret)}`
           )
         }
       } else {
-        logger.info(`Asset uploaded: ${asset.path}`)
+        logInfo(`Asset uploaded: ${asset.path}`)
       }
     } catch (err) {
       if (isUploadCancelledError(err)) {
@@ -1609,6 +1642,10 @@ export default defineConfig({
   projectName: ${JSON.stringify(projectName)},
   envFile: '.env',
   videoDir: './videos',
+  /* Run videos in files in parallel */
+  fullyParallel: true,
+  /* Opt out of parallel tests on CI. */
+  workers: process.env.CI ? 1 : undefined,
   use: {
     recordOptions: {
       aspectRatio: '16:9',
@@ -1625,28 +1662,8 @@ export default defineConfig({
 `
 }
 
-function generatePackageJson(
-  includePlaywrightCli = false,
-  screenciDependency = 'latest'
-): string {
-  const devDependencies: Record<string, string> = {}
-  if (includePlaywrightCli) {
-    devDependencies['@playwright/cli'] = 'latest'
-  }
-  return (
-    JSON.stringify(
-      {
-        type: 'module',
-        dependencies: {
-          screenci: screenciDependency,
-          '@playwright/test': '^1.59.0',
-        },
-        devDependencies,
-      },
-      null,
-      2
-    ) + '\n'
-  )
+function generateEmptyPackageJson(): string {
+  return '{}\n'
 }
 
 async function readCurrentScreenciVersion(): Promise<string> {
@@ -1702,12 +1719,91 @@ Learn more: https://screenci.com/docs
 }
 
 function generateGitignore(): string {
-  return `/playwright-report/
+  return `# ScreenCI
 .screenci
 .playwright-cli/
-node_modules/
 .env
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
 `
+}
+
+async function writeInitGitignore(projectDir: string): Promise<void> {
+  const gitignorePath = resolve(projectDir, '.gitignore')
+
+  if (!existsSync(gitignorePath)) {
+    await writeFile(gitignorePath, generateGitignore())
+    return
+  }
+
+  const existing = await readFile(gitignorePath, 'utf-8')
+  const separator =
+    existing.length === 0
+      ? ''
+      : existing.endsWith('\n\n')
+        ? ''
+        : existing.endsWith('\n')
+          ? '\n'
+          : '\n\n'
+  await appendFile(gitignorePath, `${separator}${generateGitignore()}`)
+}
+
+async function installInitDependencies(
+  projectDir: string,
+  verbose: boolean,
+  screenciDependency: string,
+  includePlaywrightCli: boolean
+): Promise<void> {
+  const installSteps: Array<{ message: string; args: string[] }> = [
+    {
+      message: 'Installing Playwright Test...',
+      args: [
+        'install',
+        '--save-dev',
+        `@playwright/test@${PLAYWRIGHT_TEST_VERSION}`,
+      ],
+    },
+    {
+      message: 'Installing ScreenCI...',
+      args: ['install', '--save-dev', `screenci@${screenciDependency}`],
+    },
+    {
+      message: 'Installing Node.js types...',
+      args: ['install', '--save-dev', `@types/node@${NODE_TYPES_VERSION}`],
+    },
+  ]
+
+  if (includePlaywrightCli) {
+    installSteps.push({
+      message: 'Installing playwright-cli...',
+      args: [
+        'install',
+        '--save-dev',
+        `@playwright/cli@${PLAYWRIGHT_CLI_VERSION}`,
+      ],
+    })
+  }
+  for (const step of installSteps) {
+    if (verbose) {
+      logger.info(`Running 'npm ${step.args.join(' ')}'...`)
+      await spawnInherited('npm', step.args, projectDir, 'screenci init')
+    } else {
+      const spinner = ora(step.message).start()
+      try {
+        await spawnSilent('npm', step.args, projectDir)
+        spinner.succeed(step.message.replace(/\.\.\.$/, ' complete'))
+      } catch (err) {
+        spinner.fail(step.message.replace(/\.\.\.$/, ' failed'))
+        throw err
+      }
+    }
+  }
 }
 
 function generateGithubAction(): string {
@@ -2056,6 +2152,8 @@ async function runInit(
     skillsArgs === null ? null : `npx ${skillsArgs.join(' ')}`
   const screenciDependency =
     getInitScreenciDependencyOverride() ?? (await readCurrentScreenciVersion())
+  const packageJsonPath = resolve(projectDir, 'package.json')
+  const hasExistingPackageJson = existsSync(packageJsonPath)
 
   logger.info("Initializing project in '.'")
   await mkdir(resolve(projectDir, 'videos'), { recursive: true })
@@ -2066,12 +2164,11 @@ async function runInit(
     resolve(projectDir, 'screenci.config.ts'),
     generateConfig(projectName)
   )
-  await writeFile(
-    resolve(projectDir, 'package.json'),
-    generatePackageJson(shouldInstallPlaywrightCli, screenciDependency)
-  )
+  if (!hasExistingPackageJson) {
+    await writeFile(packageJsonPath, generateEmptyPackageJson())
+  }
   await writeFile(resolve(projectDir, 'README.md'), generateReadme(projectName))
-  await writeFile(resolve(projectDir, '.gitignore'), generateGitignore())
+  await writeInitGitignore(projectDir)
   await writeFile(
     resolve(projectDir, 'videos', 'example.video.ts'),
     generateExampleVideo()
@@ -2083,7 +2180,9 @@ async function runInit(
   logger.info(`Initialized screenci project "${projectName}" in .`)
   logger.info('Files created:')
   logger.info('  screenci.config.ts')
-  logger.info('  package.json')
+  if (!hasExistingPackageJson) {
+    logger.info('  package.json')
+  }
   logger.info('  README.md')
   logger.info('  .gitignore')
   logger.info('  videos/example.video.ts')
@@ -2108,20 +2207,12 @@ async function runInit(
     }
   }
 
-  const installArgs = ['install', '--include=dev']
-  if (verbose) {
-    logger.info(`Running 'npm ${installArgs.join(' ')}'...`)
-    await spawnInherited('npm', installArgs, projectDir, 'screenci init')
-  } else {
-    const spinner = ora('Running npm install...').start()
-    try {
-      await spawnSilent('npm', installArgs, projectDir)
-      spinner.succeed('npm install complete')
-    } catch (err) {
-      spinner.fail('npm install failed')
-      throw err
-    }
-  }
+  await installInitDependencies(
+    projectDir,
+    verbose,
+    screenciDependency,
+    shouldInstallPlaywrightCli
+  )
 
   if (shouldInstallPlaywrightBrowsers) {
     logger.info(

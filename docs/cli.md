@@ -77,8 +77,13 @@ Record final output:
 
 ```bash
 npx screenci record
+npx screenci record videos/onboarding.video.ts
+npx screenci record --grep "billing"
 npx screenci record --project=chromium
 ```
+
+`record` forwards normal Playwright file filters and `--grep`, so you can limit
+recording to only some videos just like with `screenci test`.
 
 Behavior:
 
@@ -107,6 +112,23 @@ npx screenci info
 Prints remote project data for the current `projectName`, including video IDs
 and whether public delivery is enabled.
 
+Use this before public-delivery changes when you need the remote `videoId`:
+
+```json
+{
+  "projectName": "My Product",
+  "videos": [
+    {
+      "id": "video_123",
+      "name": "Onboarding",
+      "isPublic": true,
+      "language": "en",
+      "hasSubtitles": true
+    }
+  ]
+}
+```
+
 ## `screenci make-public <videoId>`
 
 ```bash
@@ -115,6 +137,15 @@ npx screenci make-public video_123
 
 Enables public delivery for a video. Get the ID from `screenci info`.
 
+When you make a video public, ScreenCI starts it in the same mode as the app:
+
+- public delivery is enabled for the video
+- auto-select latest is enabled
+- the latest finished render for each language becomes the active public output
+
+That means `make-public` is the CLI equivalent of turning on **Enable public
+URL** in the dashboard.
+
 ## `screenci make-private <videoId>`
 
 ```bash
@@ -122,6 +153,24 @@ npx screenci make-private video_123
 ```
 
 Disables public delivery for a video.
+
+This is the CLI equivalent of turning off **Enable public URL** in the
+dashboard.
+
+## What the CLI does not do
+
+The CLI currently covers:
+
+- local iteration with `test`
+- final capture and upload with `record`
+- remote inspection with `info`
+- public visibility changes with `make-public` and `make-private`
+
+Manual version pinning is currently handled in the app UI:
+
+- turn off **Auto-select latest version**
+- open a language section
+- choose the version to mark as **Selected**
 
 ## Shared environment and config behavior
 

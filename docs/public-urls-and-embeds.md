@@ -6,6 +6,8 @@ Public URLs give a ScreenCI video a stable delivery surface outside the app. Onc
 
 - [what public URLs are](#what-public-urls-look-like)
 - [how language-specific outputs behave](#latest-vs-selected-output)
+- [how to make a video public in the app](#enable-public-delivery-in-the-app)
+- [how selection works per language](#how-selection-works)
 - [where to use them](#good-use-cases)
 - [how they relate to the public delivery API](#whats-next)
 
@@ -31,6 +33,44 @@ Public delivery can either:
 - stay pinned to the selected accepted version for each language
 
 That lets you choose between automatic freshness and manual editorial control.
+
+When a video is made public, ScreenCI starts in automatic mode. The latest
+finished render for each language becomes the active public output right away.
+
+## Enable public delivery in the app
+
+Open the video in the ScreenCI app and turn on **Enable public URL**.
+
+That does three things:
+
+1. creates a stable public route for the video
+2. turns on **Auto-select latest version**
+3. selects the newest finished render for each existing language
+
+From there you have two ways to operate:
+
+- keep **Auto-select latest version** enabled if each new finished render should
+  replace the currently served one automatically
+- turn **Auto-select latest version** off if you want to review versions and
+  manually pin one per language
+
+## How selection works
+
+Public delivery is tracked separately for each language.
+
+- each language has its own current selected version
+- only finished renders with an actual video output can be selected
+- failed, still-rendering, or deleted versions are never served publicly
+
+When **Auto-select latest version** is on, ScreenCI keeps moving each language
+forward to the latest finished render.
+
+When **Auto-select latest version** is off, you must select a version manually
+for each language you want to serve. If a language has no selected version, its
+public URL exists but that language will not resolve to a video until you pick
+one.
+
+Manual selection is currently done in the app, not the CLI.
 
 ## Typical embed
 

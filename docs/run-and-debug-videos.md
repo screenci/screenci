@@ -58,6 +58,17 @@ npx screenci test --ui
 
 That makes it practical to work on one video at a time in larger projects.
 
+`screenci record` accepts the same kind of file filtering when you want to
+render only part of the suite:
+
+```bash
+npx screenci record videos/onboarding.video.ts
+npx screenci record --grep "billing"
+```
+
+That works the same way as Playwright test selection, but runs the final
+recording flow instead of the faster local test loop.
+
 `--ui` uses Playwright UI Mode. See
 [Playwright UI Mode](https://playwright.dev/docs/test-ui-mode).
 

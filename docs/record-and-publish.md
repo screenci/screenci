@@ -18,7 +18,13 @@ Run:
 
 ```bash
 npx screenci record
+npx screenci record videos/onboarding.video.ts
+npx screenci record --grep "billing"
 ```
+
+Like `screenci test`, `record` forwards normal Playwright file filters and
+`--grep` selection. Use that when you want to render only one video or a small
+subset instead of the full project.
 
 During `record`, ScreenCI:
 

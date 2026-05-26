@@ -1733,7 +1733,7 @@ describe('CLI', () => {
       expect(loggerErrorSpy).toHaveBeenCalledWith('Unknown command: retry')
     })
 
-    it('should launch Playwright through cmd on Windows', async () => {
+    it('should launch Playwright through the Windows shim on Windows', async () => {
       process.argv = ['node', 'cli.js', 'test']
       const platformSpy = vi
         .spyOn(process, 'platform', 'get')
@@ -1748,12 +1748,8 @@ describe('CLI', () => {
       await main()
 
       expect(mockSpawn).toHaveBeenCalledWith(
-        'cmd',
-        expect.arrayContaining([
-          '/d',
-          '/c',
-          expect.stringContaining('playwright test'),
-        ]),
+        'playwright.cmd',
+        expect.arrayContaining(['test']),
         expect.objectContaining({ stdio: 'inherit' })
       )
 
@@ -2341,9 +2337,9 @@ describe('CLI', () => {
           stdio: 'inherit',
         })
       )
-      expect(mockWriteFile).toHaveBeenCalledWith(
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/my-project/README.md',
-        expect.stringContaining('`pnpm exec screenci test`')
+        expect.any(String)
       )
       const workflowCall = mockWriteFile.mock.calls.find(
         (call: unknown[]) =>
@@ -2373,9 +2369,9 @@ describe('CLI', () => {
       await main()
 
       expectPnpmDevInstalls(mockSpawn, '/workspace/my-project')
-      expect(mockWriteFile).toHaveBeenCalledWith(
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/my-project/README.md',
-        expect.stringContaining('`pnpm exec screenci test`')
+        expect.any(String)
       )
     })
 
@@ -2690,6 +2686,29 @@ describe('CLI', () => {
       expectNpmDevInstalls(mockSpawn, '/workspace/create-app')
     })
 
+    it('uses the npm Windows shim when --package-manager npm is set on Windows', async () => {
+      const platformSpy = vi
+        .spyOn(process, 'platform', 'get')
+        .mockReturnValue('win32')
+      const { runCreateScreenciCli } = await import('./src/init.js')
+
+      await runCreateScreenciCli([
+        'node',
+        'create-screenci.js',
+        '--package-manager',
+        'npm',
+        '--yes',
+      ])
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npm.cmd',
+        ['install', '--save-dev', '@playwright/test@^1.59.0'],
+        expect.objectContaining({ cwd: '/workspace/create-app', stdio: 'pipe' })
+      )
+
+      platformSpy.mockRestore()
+    })
+
     it('uses pnpm installs when --package-manager pnpm is set', async () => {
       const { runCreateScreenciCli } = await import('./src/init.js')
 
@@ -2712,9 +2731,9 @@ describe('CLI', () => {
       await runCreateScreenciCli(['node', 'create-screenci.js', '--yes'])
 
       expectPnpmDevInstalls(mockSpawn, '/workspace/create-app')
-      expect(mockWriteFile).toHaveBeenCalledWith(
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/create-app/README.md',
-        expect.stringContaining('`pnpm exec screenci test`')
+        expect.any(String)
       )
     })
 

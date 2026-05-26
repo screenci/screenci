@@ -39,15 +39,6 @@ pnpm create screenci
 If that does not work, install [Node.js](https://nodejs.org/en/download),
 which comes with npm.
 
-`init` works both in an existing repository and as a standalone setup. It
-writes a ScreenCI project into a `/screenci` directory, installs dependencies,
-and can also add a GitHub Actions workflow at `.github/workflows/screenci.yaml`.
-
-If you already know Playwright, the closest mental model is Playwright's own
-[Getting started](https://playwright.dev/docs/intro): ScreenCI uses the same
-browser automation stack, but the output is a maintained video instead of a
-test suite.
-
 ## What initializing creates
 
 ScreenCI creates the starter project scaffold below.
@@ -55,13 +46,16 @@ ScreenCI creates the starter project scaffold below.
 ```text
 screenci.config.ts          # ScreenCI and Playwright configuration
 package.json
-package-lock.json           # Or pnpm-lock.yaml
+package-lock.json           # Or pnpm-lock.yaml, depending on package manager
 videos/
   example.video.ts          # Minimal starter video
+.github/workflows/
+  screenci.yaml             # Optional GitHub Actions workflow for recording
 ```
 
-If you accepted the optional GitHub Actions setup, it also adds
-`.github/workflows/screenci.yaml`.
+Depending on the agent tooling installed on your system, initialization may
+also add agent skills-related files. See
+[Vercel Skills](https://github.com/vercel-labs/skills#readme).
 
 The starter video source is generated at `videos/example.video.ts` and looks like this:
 
@@ -96,18 +90,9 @@ video('How to get started', async ({ page }) => {
 })
 ```
 
-You do not need to understand every file before the first run. The main one
-besides the example video is:
-
-- `screenci.config.ts` for configuring Playwright and ScreenCI.
-
-The `videos/` directory contains the starter video source.
-
-If you want the full command surface next, jump to [CLI](/docs/reference/cli).
-
 ## Run the example
 
-Run the starter script locally from the same directory:
+Test the starter video locally from the same directory:
 
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
@@ -126,9 +111,10 @@ pnpm exec screenci test
   </TabItem>
 </Tabs>
 
-This is the fast authoring loop. It runs the `.video.ts` file with ScreenCI's
-Playwright base but skips the final recording pipeline so you can iterate on
-selectors, timing, and app state quickly.
+The `test` command is for fast video script verification. It runs the
+`.video.ts` file with ScreenCI's Playwright base but skips the final recording
+pipeline, which slows down recording to produce correct timings in mouse
+animations.
 
 `screenci test` accepts the same arguments as `playwright test`. For example,
 to debug the videos visually, you could use:
@@ -175,6 +161,8 @@ pnpm exec screenci record
 
 This prompts you to log in to ScreenCI the first time, then records the videos,
 uploads them, and renders the final output.
+
+It should look something like this:
 
 <!-- screenci-doc-video:docs -->
 

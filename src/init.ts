@@ -31,12 +31,6 @@ export function determinePackageManager(): PackageManager {
   return 'npm'
 }
 
-function quoteWindowsCommandArg(arg: string): string {
-  if (arg.length === 0) return '""'
-  if (/^[A-Za-z0-9_./:\\=-]+$/.test(arg)) return arg
-  return `"${arg.replace(/"/g, '""')}"`
-}
-
 function resolveSpawnSpec(
   cmd: string,
   args: string[]
@@ -49,15 +43,14 @@ function resolveSpawnSpec(
     return { command: cmd, args }
   }
 
-  const windowsCmdsNeedingShell = new Set(['npm', 'npx', 'playwright', 'pnpm'])
-  if (!windowsCmdsNeedingShell.has(cmd)) {
+  const windowsCmdShims = new Set(['npm', 'npx', 'playwright', 'pnpm'])
+  if (!windowsCmdShims.has(cmd)) {
     return { command: cmd, args }
   }
 
-  const commandLine = [cmd, ...args].map(quoteWindowsCommandArg).join(' ')
   return {
-    command: 'cmd',
-    args: ['/d', '/c', commandLine],
+    command: `${cmd}.cmd`,
+    args,
   }
 }
 
@@ -283,37 +276,6 @@ async function readCurrentScreenciVersion(): Promise<string> {
   }
 
   return 'latest'
-}
-
-function generateReadmeForPackageManager(
-  projectName: string,
-  packageManager: PackageManager
-): string {
-  const commands = getPackageManagerCommand(packageManager)
-  return `# ${projectName}
-
-This project uses ScreenCI + Playwright to create and upload polished product videos.
-
-## How video recording works
-
-Write video scripts in \`videos/*.video.ts\` and use \`video(...)\` calls to create product videos. These are very similar to Playwright \`.test.ts\` and \`test(...)\` calls.
-
-Learn more: https://screenci.com/docs
-
-## Quick start
-
-1. Create your own videos in \`videos/*.video.ts\`, either manually or with an AI agent using your source code or a URL.
-
-2. Run videos locally to test the script working:
-
-   \`${commands.screenciRun} test\` or with UI mode: \`${commands.screenciRun} test --ui\`
-
-3. Record videos:
-
-   \`${commands.screenciRun} record\`
-
-4. View results on screenci.com and optionally enable a public URL to embed the video on your site.
-`
 }
 
 function generateGitignore(): string {
@@ -712,10 +674,6 @@ export async function runInit(
   if (!hasExistingPackageJson) {
     await writeFile(packageJsonPath, generateEmptyPackageJson())
   }
-  await writeFile(
-    resolve(projectDir, 'README.md'),
-    generateReadmeForPackageManager(projectName, packageManager)
-  )
   await writeInitGitignore(projectDir)
   await writeFile(
     resolve(projectDir, 'videos', 'example.video.ts'),

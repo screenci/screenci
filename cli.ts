@@ -622,12 +622,6 @@ function createUploadAbortController(activityLabel: string): {
   }
 }
 
-function quoteWindowsCommandArg(arg: string): string {
-  if (arg.length === 0) return '""'
-  if (/^[A-Za-z0-9_./:\\=-]+$/.test(arg)) return arg
-  return `"${arg.replace(/"/g, '""')}"`
-}
-
 function resolveSpawnSpec(
   cmd: string,
   args: string[]
@@ -640,48 +634,15 @@ function resolveSpawnSpec(
     return { command: cmd, args }
   }
 
-  const windowsCmdsNeedingShell = new Set(['npm', 'npx', 'playwright', 'pnpm'])
-  if (!windowsCmdsNeedingShell.has(cmd)) {
+  const windowsCmdShims = new Set(['npm', 'npx', 'playwright', 'pnpm'])
+  if (!windowsCmdShims.has(cmd)) {
     return { command: cmd, args }
   }
 
-  const commandLine = [cmd, ...args].map(quoteWindowsCommandArg).join(' ')
   return {
-    command: 'cmd',
-    args: ['/d', '/c', commandLine],
+    command: `${cmd}.cmd`,
+    args,
   }
-}
-
-function spawnSilent(cmd: string, args: string[], cwd?: string): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    const spawnSpec = resolveSpawnSpec(cmd, args)
-    const child = spawn(spawnSpec.command, spawnSpec.args, {
-      stdio: 'pipe',
-      ...(spawnSpec.shell !== undefined ? { shell: spawnSpec.shell } : {}),
-      ...(cwd ? { cwd } : {}),
-    })
-    const childSignals = forwardChildSignals(child, cmd)
-    child.on('close', (code, signal) => {
-      const forwardedSignal = childSignals.getForwardedSignal()
-      childSignals.cleanup()
-      if (forwardedSignal) {
-        process.kill(process.pid, forwardedSignal)
-        return
-      }
-      if (signal) {
-        process.kill(process.pid, signal)
-        return
-      } else if (code === 0) {
-        resolve()
-      } else {
-        reject(new Error(`${cmd} exited with code ${code}`))
-      }
-    })
-    child.on('error', (err) => {
-      childSignals.cleanup()
-      reject(err)
-    })
-  })
 }
 
 function forwardChildSignals(
@@ -2140,45 +2101,6 @@ function validateArgs(args: string[]): void {
       )
     }
   }
-}
-
-function spawnInherited(
-  cmd: string,
-  args: string[],
-  cwd?: string,
-  activityLabel = cmd
-): Promise<void> {
-  const spawnSpec = resolveSpawnSpec(cmd, args)
-  const child = spawn(spawnSpec.command, spawnSpec.args, {
-    stdio: 'inherit',
-    ...(spawnSpec.shell !== undefined ? { shell: spawnSpec.shell } : {}),
-    ...(cwd ? { cwd } : {}),
-  })
-  const childSignals = forwardChildSignals(child, activityLabel)
-
-  return new Promise<void>((resolve, reject) => {
-    child.on('close', (code, signal) => {
-      const forwardedSignal = childSignals.getForwardedSignal()
-      childSignals.cleanup()
-      if (forwardedSignal) {
-        process.kill(process.pid, forwardedSignal)
-        return
-      }
-      if (signal) {
-        process.kill(process.pid, signal)
-        return
-      } else if (code === 0) {
-        resolve()
-      } else {
-        reject(new Error(`${cmd} exited with code ${code}`))
-      }
-    })
-
-    child.on('error', (err) => {
-      childSignals.cleanup()
-      reject(err)
-    })
-  })
 }
 
 async function run(

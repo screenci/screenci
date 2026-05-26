@@ -1,5 +1,4 @@
 import { autoZoom, createNarration, hide, video, voices } from 'screenci'
-import { waitForDocHeading } from './docs-shared'
 
 const narration = createNarration({
   voice: { name: voices.Sophie },
@@ -27,5 +26,5 @@ video('How to get started', async ({ page }) => {
     await page.getByRole('link', { name: 'View Documentation' }).click()
   })
 
-  await waitForDocHeading(page, 'Installation')
+  await page.waitForURL('**/docs/installation')
 })

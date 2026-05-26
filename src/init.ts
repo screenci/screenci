@@ -13,7 +13,6 @@ import { logger } from './logger.js'
 const PLAYWRIGHT_TEST_VERSION = '^1.59.0'
 const PLAYWRIGHT_CLI_VERSION = 'latest'
 const NODE_TYPES_VERSION = '^25.9.1'
-
 export type PackageManager = 'npm' | 'pnpm'
 
 export type InitOptions = {
@@ -186,6 +185,9 @@ function getPackageManagerCommand(packageManager: PackageManager): {
   playwrightRun: string
   installCommand: string
   installArgs: (pkg: string) => string[]
+  skillsCommand: string
+  skillsArgs: (skills: string[], agent?: string) => string[]
+  skillsManualCommand: (skills: string[], agent?: string) => string
   cacheName: PackageManager
   lockfileName: string
 } {
@@ -195,6 +197,22 @@ function getPackageManagerCommand(packageManager: PackageManager): {
       playwrightRun: 'pnpm exec playwright',
       installCommand: 'pnpm',
       installArgs: (pkg) => ['add', '--save-dev', pkg],
+      skillsCommand: 'pnpm',
+      skillsArgs: (skills, agent) => [
+        'dlx',
+        'skills',
+        'add',
+        'screenci/screenci',
+        ...(agent ? ['--agent', agent] : []),
+        ...skills.flatMap((skillName) => ['--skill', skillName]),
+        '-y',
+      ],
+      skillsManualCommand: (skills, agent) =>
+        ['pnpm', 'dlx', 'skills', 'add', 'screenci/screenci']
+          .concat(agent ? ['--agent', agent] : [])
+          .concat(skills.flatMap((skillName) => ['--skill', skillName]))
+          .concat(['-y'])
+          .join(' '),
       cacheName: 'pnpm',
       lockfileName: 'pnpm-lock.yaml',
     }
@@ -205,6 +223,34 @@ function getPackageManagerCommand(packageManager: PackageManager): {
     playwrightRun: 'npx playwright',
     installCommand: 'npm',
     installArgs: (pkg) => ['install', '--save-dev', pkg],
+    skillsCommand: 'npm',
+    skillsArgs: (skills, agent) => [
+      'exec',
+      '--yes',
+      '--package=skills',
+      '--',
+      'skills',
+      'add',
+      'screenci/screenci',
+      ...(agent ? ['--agent', agent] : []),
+      ...skills.flatMap((skillName) => ['--skill', skillName]),
+      '-y',
+    ],
+    skillsManualCommand: (skills, agent) =>
+      [
+        'npm',
+        'exec',
+        '--yes',
+        '--package=skills',
+        '--',
+        'skills',
+        'add',
+        'screenci/screenci',
+      ]
+        .concat(agent ? ['--agent', agent] : [])
+        .concat(skills.flatMap((skillName) => ['--skill', skillName]))
+        .concat(['-y'])
+        .join(' '),
     cacheName: 'npm',
     lockfileName: 'package-lock.json',
   }
@@ -492,7 +538,6 @@ video('How to get started', async ({ page }) => {
     await page.getByRole('link', { name: 'View Documentation' }).click()
   })
 
-  await page.getByRole('heading', { level: 1, name: 'Installation' }).first().waitFor()
 })
 `
 }
@@ -564,9 +609,12 @@ async function promptInitPlaywrightOsDependenciesForPackageManager(
   )
 }
 
-async function promptInitScreenCISkill(): Promise<boolean> {
+async function promptInitScreenCISkill(
+  packageManager: PackageManager
+): Promise<boolean> {
+  const commands = getPackageManagerCommand(packageManager)
   return promptYesNo(
-    "Install the ScreenCI skill for AI agents (can be done manually via 'npx -y skills add screenci/screenci --skill screenci -y')? (Y/n)",
+    `Install the ScreenCI skill for AI agents (can be done manually via '${commands.skillsManualCommand(['screenci'])}')? (Y/n)`,
     true
   )
 }
@@ -578,8 +626,9 @@ async function promptInitPlaywrightCliSkillForPackageManager(
     packageManager === 'pnpm'
       ? 'pnpm add --save-dev @playwright/cli'
       : 'npm install @playwright/cli'
+  const commands = getPackageManagerCommand(packageManager)
   return promptYesNo(
-    `Install playwright-cli for URL-based browser inspection (can be done manually via 'npx -y skills add screenci/screenci --skill playwright-cli -y && ${installPlaywrightCli}')? (Y/n)`,
+    `Install playwright-cli for URL-based browser inspection (can be done manually via '${commands.skillsManualCommand(['playwright-cli'])} && ${installPlaywrightCli}')? (Y/n)`,
     true
   )
 }
@@ -621,7 +670,7 @@ export async function runInit(
     : await promptInitPlaywrightOsDependenciesForPackageManager(packageManager)
   const shouldInstallScreenCISkill = yes
     ? true
-    : await promptInitScreenCISkill()
+    : await promptInitScreenCISkill(packageManager)
   const shouldInstallPlaywrightCli = yes
     ? true
     : await promptInitPlaywrightCliSkillForPackageManager(packageManager)
@@ -641,19 +690,11 @@ export async function runInit(
     skills.push('playwright-cli')
   }
   const skillsArgs =
-    skills.length === 0
-      ? null
-      : [
-          '-y',
-          'skills',
-          'add',
-          'screenci/screenci',
-          ...(agent ? ['--agent', agent] : []),
-          ...skills.flatMap((skillName) => ['--skill', skillName]),
-          '-y',
-        ]
+    skills.length === 0 ? null : commands.skillsArgs(skills, agent)
   const skillsCommand =
-    skillsArgs === null ? null : `npx ${skillsArgs.join(' ')}`
+    skillsArgs === null
+      ? null
+      : `${commands.skillsCommand} ${skillsArgs.join(' ')}`
   const screenciDependency =
     getInitScreenciDependencyOverride() ?? (await readCurrentScreenciVersion())
   const packageJsonPath = resolve(projectDir, 'package.json')
@@ -687,11 +728,16 @@ export async function runInit(
   if (skillsArgs !== null) {
     if (verbose) {
       logger.info(`Running '${skillsCommand}'...`)
-      await spawnInherited('npx', skillsArgs, projectDir, 'screenci init')
+      await spawnInherited(
+        commands.skillsCommand,
+        skillsArgs,
+        projectDir,
+        'screenci init'
+      )
     } else {
       const spinner = ora('Adding selected AI skills...').start()
       try {
-        await spawnSilent('npx', skillsArgs, projectDir)
+        await spawnSilent(commands.skillsCommand, skillsArgs, projectDir)
         spinner.succeed('Selected AI skills added')
       } catch (err) {
         spinner.fail('AI skills install failed')

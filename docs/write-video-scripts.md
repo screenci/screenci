@@ -44,10 +44,7 @@ video('How to get started', async ({ page }) => {
     await page.getByRole('link', { name: 'View Documentation' }).click()
   })
 
-  await page
-    .getByRole('heading', { level: 1, name: 'Installation' })
-    .first()
-    .waitFor()
+  await page.waitForURL('**/docs/installation')
 })
 ```
 

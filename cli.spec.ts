@@ -2080,12 +2080,6 @@ describe('CLI', () => {
         '/workspace/my-app/videos/example.video.ts',
         expect.stringContaining("await page.goto('https://screenci.com')")
       )
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        '/workspace/my-app/videos/example.video.ts',
-        expect.stringContaining(
-          "await page.getByRole('heading', { level: 1, name: 'Installation' }).first().waitFor()"
-        )
-      )
       expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/my-app/tsconfig.json',
         expect.any(String)
@@ -2235,12 +2229,12 @@ describe('CLI', () => {
         }),
         expect.objectContaining({
           message:
-            "Install the ScreenCI skill for AI agents (can be done manually via 'npx -y skills add screenci/screenci --skill screenci -y')? (Y/n)",
+            "Install the ScreenCI skill for AI agents (can be done manually via 'npm exec --yes --package=skills -- skills add screenci/screenci --skill screenci -y')? (Y/n)",
           default: 'y',
         }),
         expect.objectContaining({
           message:
-            "Install playwright-cli for URL-based browser inspection (can be done manually via 'npx -y skills add screenci/screenci --skill playwright-cli -y && npm install @playwright/cli')? (Y/n)",
+            "Install playwright-cli for URL-based browser inspection (can be done manually via 'npm exec --yes --package=skills -- skills add screenci/screenci --skill playwright-cli -y && npm install @playwright/cli')? (Y/n)",
           default: 'y',
         }),
       ])
@@ -2260,9 +2254,12 @@ describe('CLI', () => {
         expect.any(String)
       )
       expect(mockSpawn).toHaveBeenCalledWith(
-        'npx',
+        'npm',
         [
-          '-y',
+          'exec',
+          '--yes',
+          '--package=skills',
+          '--',
           'skills',
           'add',
           'screenci/screenci',
@@ -2435,9 +2432,12 @@ describe('CLI', () => {
       await main()
 
       expect(mockSpawn).toHaveBeenCalledWith(
-        'npx',
+        'npm',
         [
-          '-y',
+          'exec',
+          '--yes',
+          '--package=skills',
+          '--',
           'skills',
           'add',
           'screenci/screenci',
@@ -2470,7 +2470,7 @@ describe('CLI', () => {
       await main()
 
       expect(mockSpawn).toHaveBeenCalledWith(
-        'npx',
+        'npm',
         expect.arrayContaining(['--agent', 'opencode']),
         expect.objectContaining({ cwd: '/workspace/my-project' })
       )
@@ -2598,7 +2598,7 @@ describe('CLI', () => {
           }),
           expect.objectContaining({
             message:
-              "Install playwright-cli for URL-based browser inspection (can be done manually via 'npx -y skills add screenci/screenci --skill playwright-cli -y && pnpm add --save-dev @playwright/cli')? (Y/n)",
+              "Install playwright-cli for URL-based browser inspection (can be done manually via 'pnpm dlx skills add screenci/screenci --skill playwright-cli -y && pnpm add --save-dev @playwright/cli')? (Y/n)",
           }),
         ])
       )
@@ -2729,7 +2729,7 @@ describe('CLI', () => {
       ])
 
       expect(mockSpawn).toHaveBeenCalledWith(
-        'npx',
+        'npm',
         expect.arrayContaining(['--agent', 'opencode']),
         expect.objectContaining({ cwd: '/workspace/create-app' })
       )
@@ -2746,7 +2746,7 @@ describe('CLI', () => {
       ])
 
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        "Running 'npx -y skills add screenci/screenci --skill screenci --skill playwright-cli -y'..."
+        "Running 'npm exec --yes --package=skills -- skills add screenci/screenci --skill screenci --skill playwright-cli -y'..."
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith(
         "Running 'npm install --save-dev @playwright/test@^1.59.0'..."

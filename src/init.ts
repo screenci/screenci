@@ -68,7 +68,21 @@ function quoteWindowsBatchArg(arg: string): string {
 }
 
 function buildWindowsBatchCommandLine(cmd: string, args: string[]): string {
-  return [`${cmd}.cmd`, ...args].map(quoteWindowsBatchArg).join(' ')
+  return [resolveWindowsCmdShim(cmd), ...args]
+    .map(quoteWindowsBatchArg)
+    .join(' ')
+}
+
+function resolveWindowsCmdShim(cmd: string): string {
+  const bundledShimCommands = new Set(['npm', 'npx'])
+  if (bundledShimCommands.has(cmd)) {
+    const bundledShimPath = resolve(dirname(process.execPath), `${cmd}.cmd`)
+    if (existsSync(bundledShimPath)) {
+      return bundledShimPath
+    }
+  }
+
+  return `${cmd}.cmd`
 }
 
 function forwardChildSignals(

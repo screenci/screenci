@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
 import { Readable } from 'stream'
+import { stripVTControlCharacters } from 'util'
 import { logger } from './src/logger.js'
 import type { VoiceKey } from './src/voices.js'
 import type { RecordingData } from './src/recording.js'
@@ -787,12 +788,13 @@ describe('CLI', () => {
         const allWrites = stdoutWriteSpy.mock.calls
           .map((call) => String(call[0]))
           .join('')
+        const normalizedWrites = stripVTControlCharacters(allWrites)
 
-        expect(allWrites).toContain('... Uploading "Demo"')
-        expect(allWrites).toContain('... Uploading "Second Demo"')
+        expect(normalizedWrites).toContain('... Uploading "Demo"')
+        expect(normalizedWrites).toContain('... Uploading "Second Demo"')
         expect(allWrites).toContain('\u001B[2A')
-        expect(allWrites).toContain('✔ Uploaded "Demo"')
-        expect(allWrites).toContain('✔ Uploaded "Second Demo"')
+        expect(normalizedWrites).toContain('✔ Uploaded "Demo"')
+        expect(normalizedWrites).toContain('✔ Uploaded "Second Demo"')
         expect(loggerInfoSpy).not.toHaveBeenCalledWith(
           'Uploading 2 recordings in parallel...'
         )

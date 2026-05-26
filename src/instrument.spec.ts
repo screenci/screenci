@@ -724,7 +724,7 @@ describe('instrumentLocator', () => {
       throw new Error('Expected focusChange mouse timings and mouseDown event')
     }
 
-    expect(down.startMs - focusChange.mouse.endMs).toBe(1050)
+    expect(down.startMs - focusChange.mouse.endMs).toBe(850)
   })
 
   it('uses the shorter default post-click pause before fill typing', async () => {
@@ -1333,7 +1333,7 @@ describe('instrumentLocator', () => {
       throw new Error('Expected focusChange mouse timings and mouseDown event')
     }
 
-    expect(down.startMs - focusChange.mouse.endMs).toBe(1050)
+    expect(down.startMs - focusChange.mouse.endMs).toBe(850)
   })
 
   it('records click timing for tap by default', async () => {

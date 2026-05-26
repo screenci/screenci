@@ -23,9 +23,9 @@ The generated workflow:
 - also supports `workflow_dispatch`
 - checks that `SCREENCI_SECRET` exists
 - checks out the repository
-- installs Node.js 24 and caches npm dependencies
+- installs Node.js 24 and caches dependencies for your package manager
 - installs Chromium if the Playwright cache is cold
-- runs `npx screenci record`
+- runs `screenci record`
 
 That is intentionally close to Playwright's own CI model. If you need deeper
 background on Playwright runners and browser installation, see

@@ -1,5 +1,7 @@
 # Record and Publish
 
+import { Tabs, TabItem } from '@astrojs/starlight/components'
+
 When the local script is stable, switch from `screenci test` to
 `screenci record`. This is the ScreenCI-specific step where browser automation
 turns into a rendered video that can be reviewed, published, and embedded
@@ -8,7 +10,7 @@ elsewhere.
 #### You will learn
 
 - [when to use `test` and when to use `record`](#record-the-final-browser-session)
-- [what `npx screenci record` does](#record-the-final-browser-session)
+- [what `screenci record` does](#record-the-final-browser-session)
 - [what gets uploaded and rendered](#what-gets-rendered)
 - [how local recording relates to CI and public delivery](#local-vs-ci-recording)
 
@@ -16,11 +18,26 @@ elsewhere.
 
 Run:
 
-```bash
-npx screenci record
-npx screenci record videos/onboarding.video.ts
-npx screenci record --grep "billing"
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npx screenci record
+  npx screenci record videos/onboarding.video.ts
+  npx screenci record --grep "billing"
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm exec screenci record
+  pnpm exec screenci record videos/onboarding.video.ts
+  pnpm exec screenci record --grep "billing"
+  ```
+
+  </TabItem>
+</Tabs>
 
 Like `screenci test`, `record` forwards normal Playwright file filters and
 `--grep` selection. Use that when you want to render only one video or a small
@@ -59,9 +76,22 @@ when you want repeatable updates from the repository workflow.
 
 Both use the same command:
 
-```bash
-npx screenci record
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npx screenci record
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm exec screenci record
+  ```
+
+  </TabItem>
+</Tabs>
 
 The difference is where it runs and how `SCREENCI_SECRET` is supplied.
 
@@ -87,7 +117,7 @@ public-facing behavior.
   configured, but it will not upload.
 - Partial failures: `record.upload` controls whether successful videos still
   upload when another video fails.
-- `record` fails but `test` passes: retry with `npx screenci test --mock-record`
+- `record` fails but `test` passes: retry with `screenci test --mock-record`
   to reproduce recording-like pacing. If you need that often, set
   `test.mockRecord: true` in `screenci.config.ts`.
 

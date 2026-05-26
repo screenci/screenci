@@ -1,0 +1,25 @@
+{
+  "name": "create-screenci",
+  "version": "0.0.45",
+  "description": "Create a ScreenCI project",
+  "keywords": [
+    "screenci",
+    "create-screenci"
+  ],
+  "license": "MIT",
+  "author": "ScreenCI Ltd",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/screenci/screenci"
+  },
+  "type": "module",
+  "bin": {
+    "create-screenci": "./bin/create-screenci.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "dependencies": {
+    "screenci": "0.0.45"
+  }
+}

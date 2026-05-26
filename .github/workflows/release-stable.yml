@@ -43,5 +43,9 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish to npm
+      - name: Publish screenci to npm
+        run: npm publish --provenance --access public
+
+      - name: Publish create-screenci to npm
+        working-directory: create-screenci
         run: npm publish --provenance --access public

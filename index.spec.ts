@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as screenci from './index.js'
+import * as initModule from './src/init.js'
 import * as recordingModule from './src/recording.js'
 import * as voicesModule from './src/voices.js'
 
@@ -31,6 +32,15 @@ describe('public api surface', () => {
       'languageRegions',
       'modelTypes',
       'voices',
+    ])
+  })
+
+  it('only exports the supported init helpers from the init entrypoint', () => {
+    expect(Object.keys(initModule).sort()).toEqual([
+      'determinePackageManager',
+      'parsePackageManager',
+      'runCreateScreenciCli',
+      'runInit',
     ])
   })
 })

@@ -11,11 +11,14 @@ product video instead of a test report.
 ## Install and scaffold
 
 ```bash
-npx screenci@latest init
+npm init screenci@latest
+pnpm create screenci
 ```
 
 `init` creates a ready-to-run project in the current directory, installs
-dependencies, and installs Chromium by default.
+dependencies, and installs Chromium by default. When using `npm init`, pass
+extra initializer flags after `--`, for example
+`npm init screenci@latest -- --yes --package-manager pnpm`.
 
 ```text
 screenci.config.ts

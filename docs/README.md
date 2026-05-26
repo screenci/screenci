@@ -10,11 +10,11 @@ and reference material as needed.
 
 ### Getting Started
 
-- [Installation](./installation.md)
+- [Installation](./installation.mdx)
 - [Write Video Scripts](./write-video-scripts.md)
-- [Generating Videos](./generating-videos.md)
-- [Run and Debug Videos](./run-and-debug-videos.md)
-- [Record and Publish](./record-and-publish.md)
+- [Generating Videos](./generating-videos.mdx)
+- [Run and Debug Videos](./run-and-debug-videos.mdx)
+- [Record and Publish](./record-and-publish.mdx)
 - [CI Setup](./ci-setup.md)
 - [ScreenCI vs Playwright](./screenci-vs-playwright.md)
 
@@ -24,11 +24,11 @@ and reference material as needed.
 - [Camera and Zooming](./camera-and-zooming.md)
 - [Assets and Overlays](./assets-and-overlays.md)
 - [Public URLs and Embeds](./public-urls-and-embeds.md)
-- [Update ScreenCI](./update-screenci.md)
+- [Update ScreenCI](./update-screenci.mdx)
 
 ### Reference
 
-- [CLI](./cli.md)
+- [CLI](./cli.mdx)
 - [Configuration](./configuration.md)
 - [Video Authoring API Overview](./video-authoring-api-overview.md)
 - [Public Delivery API](./public-delivery-api.md)

@@ -29,7 +29,7 @@ export const docsManifest = [
     next: 'docs/generating-videos',
   },
   {
-    source: 'generating-videos.md',
+    source: 'generating-videos.mdx',
     slug: 'docs/generating-videos',
     section: 'Getting Started',
     order: 3,
@@ -41,7 +41,7 @@ export const docsManifest = [
     next: 'docs/run-and-debug-videos',
   },
   {
-    source: 'run-and-debug-videos.md',
+    source: 'run-and-debug-videos.mdx',
     slug: 'docs/run-and-debug-videos',
     section: 'Getting Started',
     order: 4,
@@ -53,7 +53,7 @@ export const docsManifest = [
     next: 'docs/record-and-publish',
   },
   {
-    source: 'record-and-publish.md',
+    source: 'record-and-publish.mdx',
     slug: 'docs/record-and-publish',
     section: 'Getting Started',
     order: 5,
@@ -137,7 +137,7 @@ export const docsManifest = [
     next: 'docs/guides/update-screenci',
   },
   {
-    source: 'update-screenci.md',
+    source: 'update-screenci.mdx',
     slug: 'docs/guides/update-screenci',
     section: 'Guides',
     order: 5,
@@ -149,7 +149,7 @@ export const docsManifest = [
     next: 'docs/reference/cli',
   },
   {
-    source: 'cli.md',
+    source: 'cli.mdx',
     slug: 'docs/reference/cli',
     section: 'Reference',
     order: 1,

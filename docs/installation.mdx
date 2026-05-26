@@ -23,22 +23,22 @@ Initialize a new ScreenCI project:
   <TabItem label="npm">
 
   ```bash
-  npx screenci@latest init
+  npm init screenci@latest
   ```
 
   </TabItem>
   <TabItem label="pnpm">
 
   ```bash
-  pnpm dlx screenci@latest init
+  pnpm create screenci
   ```
 
   </TabItem>
 </Tabs>
 
 If that does not work, install [Node.js](https://nodejs.org/en/download),
-which comes with npm and provides `npx`. If you use pnpm already, `pnpm dlx`
-works as the equivalent one-off runner.
+which comes with npm. If you use `npm init`, pass extra initializer flags after `--`, for example
+`npm init screenci@latest -- --yes`.
 
 `init` works both in an existing repository and as a standalone setup. It
 writes a ScreenCI project into the current directory, for example in a

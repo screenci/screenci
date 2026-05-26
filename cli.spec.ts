@@ -221,6 +221,7 @@ describe('CLI', () => {
     originalArgv = process.argv
     originalEnv = { ...process.env }
     originalFetch = global.fetch
+    delete process.env.npm_config_user_agent
 
     // Mock child process (unref needed for openBrowser's detached spawn)
     mockChildProcess = Object.assign(new EventEmitter(), {
@@ -2363,6 +2364,22 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain('run: pnpm exec screenci record')
     })
 
+    it('defaults to pnpm when invoked from a pnpm user agent', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project', '--yes']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      process.env.npm_config_user_agent = 'pnpm/11.0.8 npm/? node/v24.0.0'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expectPnpmDevInstalls(mockSpawn, '/workspace/my-project')
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-project/README.md',
+        expect.stringContaining('`pnpm exec screenci test`')
+      )
+    })
+
     it('adds @playwright/cli only when selected', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
@@ -2603,6 +2620,151 @@ describe('CLI', () => {
 
       const { main } = await import('./cli')
       await expect(main()).rejects.toThrow('process.exit called')
+    })
+  })
+
+  describe('create-screenci wrapper', () => {
+    beforeEach(() => {
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+      process.env.SCREENCI_SECRET = 'test-secret'
+      process.env.SCREENCI_INIT_CWD = '/workspace/create-app'
+      mockExistsSync.mockReturnValue(false)
+    })
+
+    it('prompts for the project name when no args are provided', async () => {
+      const { runCreateScreenciCli } = await import('./src/init.js')
+
+      await runCreateScreenciCli(['node', 'create-screenci.js'])
+
+      expect(mockInput).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Project name:',
+          default: 'create-app',
+        })
+      )
+    })
+
+    it('accepts the project name as the first positional argument', async () => {
+      const { runCreateScreenciCli } = await import('./src/init.js')
+
+      await runCreateScreenciCli([
+        'node',
+        'create-screenci.js',
+        'Wrapper Project',
+      ])
+
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/create-app/screenci.config.ts',
+        expect.stringContaining('"Wrapper Project"')
+      )
+    })
+
+    it('supports --yes without prompting', async () => {
+      const { runCreateScreenciCli } = await import('./src/init.js')
+
+      await runCreateScreenciCli(['node', 'create-screenci.js', '--yes'])
+
+      expect(mockInput).not.toHaveBeenCalled()
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/create-app/.github/workflows/screenci.yaml',
+        expect.any(String)
+      )
+    })
+
+    it('uses npm installs when --package-manager npm is set', async () => {
+      const { runCreateScreenciCli } = await import('./src/init.js')
+
+      await runCreateScreenciCli([
+        'node',
+        'create-screenci.js',
+        '--package-manager',
+        'npm',
+        '--yes',
+      ])
+
+      expectNpmDevInstalls(mockSpawn, '/workspace/create-app')
+    })
+
+    it('uses pnpm installs when --package-manager pnpm is set', async () => {
+      const { runCreateScreenciCli } = await import('./src/init.js')
+
+      await runCreateScreenciCli([
+        'node',
+        'create-screenci.js',
+        '--package-manager',
+        'pnpm',
+        '--yes',
+      ])
+
+      expectPnpmDevInstalls(mockSpawn, '/workspace/create-app')
+    })
+
+    it('defaults to pnpm when invoked from pnpm create', async () => {
+      const { runCreateScreenciCli } = await import('./src/init.js')
+
+      process.env.npm_config_user_agent = 'pnpm/11.0.8 npm/? node/v24.0.0'
+
+      await runCreateScreenciCli(['node', 'create-screenci.js', '--yes'])
+
+      expectPnpmDevInstalls(mockSpawn, '/workspace/create-app')
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/create-app/README.md',
+        expect.stringContaining('`pnpm exec screenci test`')
+      )
+    })
+
+    it('passes --agent through to the skills command', async () => {
+      const { runCreateScreenciCli } = await import('./src/init.js')
+
+      await runCreateScreenciCli([
+        'node',
+        'create-screenci.js',
+        '--agent',
+        'opencode',
+      ])
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'npx',
+        expect.arrayContaining(['--agent', 'opencode']),
+        expect.objectContaining({ cwd: '/workspace/create-app' })
+      )
+    })
+
+    it('prints verbose command output when --verbose is set', async () => {
+      const { runCreateScreenciCli } = await import('./src/init.js')
+
+      await runCreateScreenciCli([
+        'node',
+        'create-screenci.js',
+        '--verbose',
+        '--yes',
+      ])
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        "Running 'npx -y skills add screenci/screenci --skill screenci --skill playwright-cli -y'..."
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        "Running 'npm install --save-dev @playwright/test@^1.59.0'..."
+      )
+    })
+  })
+
+  describe('package manager detection', () => {
+    it('defaults to npm without a matching user agent', async () => {
+      const { determinePackageManager } = await import('./src/init.js')
+
+      expect(determinePackageManager()).toBe('npm')
+    })
+
+    it('detects pnpm from npm_config_user_agent', async () => {
+      const { determinePackageManager } = await import('./src/init.js')
+
+      process.env.npm_config_user_agent = 'pnpm/11.0.8 npm/? node/v24.0.0'
+
+      expect(determinePackageManager()).toBe('pnpm')
     })
   })
 

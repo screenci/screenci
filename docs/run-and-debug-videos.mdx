@@ -1,5 +1,7 @@
 # Run and Debug Videos
 
+import { Tabs, TabItem } from '@astrojs/starlight/components'
+
 `screenci test` is the main iteration command for ScreenCI authors. Use it the
 way Playwright users use `playwright test`: run the script locally, tighten the
 flow, then switch to `record` only when the visible sequence is ready.
@@ -15,9 +17,22 @@ flow, then switch to `record` only when the visible sequence is ready.
 
 Use the default command first:
 
-```bash
-npx screenci test
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npx screenci test
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm exec screenci test
+  ```
+
+  </TabItem>
+</Tabs>
 
 ScreenCI resolves `screenci.config.ts`, discovers `*.video.ts` files, and runs
 them without starting the full local capture and upload flow.
@@ -39,9 +54,22 @@ Use `record` when you want the final timing and rendered output.
 If you need recording-like timing without starting the real recording pipeline,
 use:
 
-```bash
-npx screenci test --mock-record
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npx screenci test --mock-record
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm exec screenci test --mock-record
+  ```
+
+  </TabItem>
+</Tabs>
 
 If you want that behavior on every local run, set `test.mockRecord: true` in
 `screenci.config.ts` instead of passing the flag each time.
@@ -53,21 +81,50 @@ If you want that behavior on every local run, set `test.mockRecord: true` in
 `screenci test` forwards normal Playwright arguments, so you can narrow the run
 while iterating:
 
-```bash
-npx screenci test videos/onboarding.video.ts
-npx screenci test --grep "billing"
-npx screenci test --ui
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npx screenci test videos/onboarding.video.ts
+  npx screenci test --grep "billing"
+  npx screenci test --ui
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm exec screenci test videos/onboarding.video.ts
+  pnpm exec screenci test --grep "billing"
+  pnpm exec screenci test --ui
+  ```
+
+  </TabItem>
+</Tabs>
 
 That makes it practical to work on one video at a time in larger projects.
 
 `screenci record` accepts the same kind of file filtering when you want to
 render only part of the suite:
 
-```bash
-npx screenci record videos/onboarding.video.ts
-npx screenci record --grep "billing"
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npx screenci record videos/onboarding.video.ts
+  npx screenci record --grep "billing"
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm exec screenci record videos/onboarding.video.ts
+  pnpm exec screenci record --grep "billing"
+  ```
+
+  </TabItem>
+</Tabs>
 
 That works the same way as Playwright test selection, but runs the final
 recording flow instead of the faster local test loop.

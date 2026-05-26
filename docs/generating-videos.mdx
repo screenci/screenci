@@ -1,5 +1,7 @@
 # Generating Videos
 
+import { Tabs, TabItem } from '@astrojs/starlight/components'
+
 Use this page when you want help producing a first draft quickly, whether that
 draft comes from an AI agent working from source code, an AI agent working from
 a live URL, or Playwright codegen.
@@ -28,7 +30,7 @@ Good setup:
 - open the repository root in the editor, not just `screenci/`
 - point the agent at the routes and components that define the flow
 - ask it to write the final `videos/*.video.ts` script directly
-- ask it to verify the result with `npx screenci test`
+- ask it to verify the result with `screenci test`
 
 Example prompt for a repo-based workflow:
 
@@ -38,7 +40,7 @@ Create a ScreenCI video for the onboarding flow.
 Inspect @src/routes/onboarding and @src/components/signup-form.tsx.
 Write the final script in @screenci/videos/onboarding.video.ts.
 Keep setup inside hide().
-Add concise narration and iterate with npx screenci test.
+Add concise narration and iterate with screenci test.
 ```
 
 This is usually faster and more reliable than URL-only exploration because the
@@ -60,7 +62,7 @@ Good setup:
   `npx -y skills add screenci/screenci --skill screenci -y` later
 - accept the optional `playwright-cli` install during `screenci init`, or run
   `npx -y skills add screenci/screenci --skill playwright-cli -y` and
-  `npm install @playwright/cli` later
+  install `@playwright/cli` later
 - inspect the live site before writing the script
 - use `playwright-cli` to confirm selectors and visible flow
 - keep cookie handling and other setup inside `hide()`
@@ -86,9 +88,41 @@ locators quickly.
 
 Run it with:
 
-```bash
-npx playwright codegen https://screenci.com
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npx playwright codegen https://screenci.com
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm exec playwright codegen https://screenci.com
+  ```
+
+  </TabItem>
+</Tabs>
+
+If you need to add `@playwright/cli` manually later:
+
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npm install --save-dev @playwright/cli
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm add --save-dev @playwright/cli
+  ```
+
+  </TabItem>
+</Tabs>
 
 Codegen opens a browser window and the Playwright Inspector. As you click,
 type, and navigate, it generates Playwright actions for the flow.

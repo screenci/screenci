@@ -1,5 +1,7 @@
 # Update ScreenCI
 
+import { Tabs, TabItem } from '@astrojs/starlight/components'
+
 Updating ScreenCI should be a small maintenance task, not a reinvention of the project. Upgrade the package, refresh Playwright when needed, and verify that your existing scripts still look right.
 
 #### You will learn
@@ -13,9 +15,22 @@ Updating ScreenCI should be a small maintenance task, not a reinvention of the p
 
 In a generated ScreenCI project:
 
-```bash
-npm install screenci@latest @playwright/test@latest
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npm install screenci@latest @playwright/test@latest
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm add --save-dev screenci@latest @playwright/test@latest
+  ```
+
+  </TabItem>
+</Tabs>
 
 This is the default upgrade path. ScreenCI uses `@playwright/test` underneath, so keeping both packages current together is usually the cleanest choice.
 
@@ -32,10 +47,24 @@ After a version bump:
 
 Common follow-up commands:
 
-```bash
-npm install
-npx playwright install chromium
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npm install
+  npx playwright install chromium
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm install
+  pnpm exec playwright install chromium
+  ```
+
+  </TabItem>
+</Tabs>
 
 You do not need to reinstall browsers on every upgrade, only when Playwright reports that the local browser build is missing or outdated.
 
@@ -78,10 +107,24 @@ This matters most when the project was initialized a while ago and has not been 
 
 Run the normal checks:
 
-```bash
-npx screenci test
-npx screenci record
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npx screenci test
+  npx screenci record
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm exec screenci test
+  pnpm exec screenci record
+  ```
+
+  </TabItem>
+</Tabs>
 
 Focus on behavioral verification, not only compilation:
 
@@ -105,4 +148,4 @@ If your team uses AI-assisted authoring, check that the tooling still matches th
 - keep prompt instructions aligned with the current docs structure
 - make sure generated scripts still target `videos/*.video.ts` and use the current ScreenCI helpers
 
-This should be the last step, not the first one. The core upgrade check here is still `npx screenci test`.
+This should be the last step, not the first one. The core upgrade check here is still `screenci test`.

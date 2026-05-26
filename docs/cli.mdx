@@ -1,5 +1,7 @@
 # CLI
 
+import { Tabs, TabItem } from '@astrojs/starlight/components'
+
 The `screenci` CLI keeps the workflow small: initialize a project, iterate
 locally, record final output, and manage public delivery when needed. Most
 commands resolve `screenci.config.ts` from the current directory unless you
@@ -20,9 +22,29 @@ pass `--config <path>`.
 
 Create a new ScreenCI project in the current directory:
 
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npm init screenci@latest
+  npm init screenci@latest my-product
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm create screenci
+  pnpm create screenci my-product
+  ```
+
+  </TabItem>
+</Tabs>
+
+When using `npm init`, pass extra initializer flags after `--`:
+
 ```bash
-npx screenci@latest init
-npx screenci@latest init "My Product"
+npm init screenci@latest -- --yes --package-manager pnpm
 ```
 
 Common options:
@@ -43,29 +65,73 @@ Use this command in [Installation](/docs).
 
 Run videos locally without the final recording pipeline:
 
-```bash
-npx screenci test
-npx screenci test videos/onboarding.video.ts
-npx screenci test --grep "billing"
-npx screenci test --ui
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npx screenci test
+  npx screenci test videos/onboarding.video.ts
+  npx screenci test --grep "billing"
+  npx screenci test --ui
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm exec screenci test
+  pnpm exec screenci test videos/onboarding.video.ts
+  pnpm exec screenci test --grep "billing"
+  pnpm exec screenci test --ui
+  ```
+
+  </TabItem>
+</Tabs>
 
 Use this during normal authoring. Most trailing arguments are forwarded to
 Playwright.
 
 Common Playwright examples that also work here:
 
-```bash
-npx screenci test --project=chromium
-npx screenci test --grep "onboarding"
-npx screenci test --ui
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npx screenci test --project=chromium
+  npx screenci test --grep "onboarding"
+  npx screenci test --ui
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm exec screenci test --project=chromium
+  pnpm exec screenci test --grep "onboarding"
+  pnpm exec screenci test --ui
+  ```
+
+  </TabItem>
+</Tabs>
 
 ### `--mock-record`
 
-```bash
-npx screenci test --mock-record
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npx screenci test --mock-record
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm exec screenci test --mock-record
+  ```
+
+  </TabItem>
+</Tabs>
 
 This keeps recording-like pacing enabled without starting the real recording
 capture path. Use it when `test` passes but `record` exposes timing
@@ -78,12 +144,28 @@ If you want that behavior by default for a project, set
 
 Record final output:
 
-```bash
-npx screenci record
-npx screenci record videos/onboarding.video.ts
-npx screenci record --grep "billing"
-npx screenci record --project=chromium
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npx screenci record
+  npx screenci record videos/onboarding.video.ts
+  npx screenci record --grep "billing"
+  npx screenci record --project=chromium
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm exec screenci record
+  pnpm exec screenci record videos/onboarding.video.ts
+  pnpm exec screenci record --grep "billing"
+  pnpm exec screenci record --project=chromium
+  ```
+
+  </TabItem>
+</Tabs>
 
 `record` forwards normal Playwright file filters and `--grep`, so you can limit
 recording to only some videos just like with `screenci test`.
@@ -108,9 +190,22 @@ Use this command in [Record and Publish](/docs/record-and-publish).
 
 ## `screenci info`
 
-```bash
-npx screenci info
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npx screenci info
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm exec screenci info
+  ```
+
+  </TabItem>
+</Tabs>
 
 Prints remote project data for the current `projectName`, including video IDs
 and whether public delivery is enabled.
@@ -134,9 +229,22 @@ Use this before public-delivery changes when you need the remote `videoId`:
 
 ## `screenci make-public <videoId>`
 
-```bash
-npx screenci make-public video_123
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npx screenci make-public video_123
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm exec screenci make-public video_123
+  ```
+
+  </TabItem>
+</Tabs>
 
 Enables public delivery for a video. Get the ID from `screenci info`.
 
@@ -151,9 +259,22 @@ URL** in the dashboard.
 
 ## `screenci make-private <videoId>`
 
-```bash
-npx screenci make-private video_123
-```
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+  ```bash
+  npx screenci make-private video_123
+  ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+  ```bash
+  pnpm exec screenci make-private video_123
+  ```
+
+  </TabItem>
+</Tabs>
 
 Disables public delivery for a video.
 

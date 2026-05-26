@@ -23,6 +23,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./init": {
+      "types": "./dist/src/init.d.ts",
+      "import": "./dist/src/init.js",
+      "default": "./dist/src/init.js"
+    },
     "./recording": {
       "types": "./dist/src/recording.d.ts",
       "import": "./dist/src/recording.js",

@@ -10,14 +10,19 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGE_DIR="$(dirname "$SCRIPT_DIR")"
+CREATE_PACKAGE_DIR="$PACKAGE_DIR/create-screenci"
 
 cd "$PACKAGE_DIR"
 
-# Update version in package.json
+# Update the main package version.
 npm version "$VERSION" --no-git-tag-version
 
-# Stage package.json and package-lock.json
-git add package.json package-lock.json
+# Keep the wrapper package version and dependency aligned.
+npm version "$VERSION" --no-git-tag-version --prefix "$CREATE_PACKAGE_DIR"
+npm pkg set dependencies.screenci="$VERSION" --prefix "$CREATE_PACKAGE_DIR"
+
+# Stage the updated manifests.
+git add package.json package-lock.json create-screenci/package.json
 
 # Commit
 git commit -m "Release $VERSION"

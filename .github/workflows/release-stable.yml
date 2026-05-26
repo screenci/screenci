@@ -43,6 +43,10 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Validate package versions
+        run: |
+          node -e "const screenciPkg=require('./package.json'); const createPkg=require('./create-screenci/package.json'); if (screenciPkg.version !== createPkg.version) { console.error(`Version mismatch: screenci=${screenciPkg.version}, create-screenci=${createPkg.version}`); process.exit(1); } if (createPkg.dependencies?.screenci !== screenciPkg.version) { console.error(`Dependency mismatch: create-screenci depends on screenci@${createPkg.dependencies?.screenci}, expected ${screenciPkg.version}`); process.exit(1); }"
+
       - name: Publish screenci to npm
         run: npm publish --provenance --access public
 

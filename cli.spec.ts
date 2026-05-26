@@ -2107,7 +2107,6 @@ describe('CLI', () => {
         )
       )
       expectNpmDevInstalls(mockSpawn, '/workspace/my-app')
-      expect(loggerInfoSpy).toHaveBeenCalledWith("Initializing project in '.'")
       expect(loggerInfoSpy).toHaveBeenCalledWith(
         `${pc.green('✔ Success!')} Created a ScreenCI project at /workspace/my-app`
       )

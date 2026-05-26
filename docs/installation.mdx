@@ -12,7 +12,7 @@ Then ScreenCI allows converting these tests into product videos with `record` co
 - [how to install ScreenCI](#install-screenci)
 - [what initializing creates](#what-initializing-creates)
 - [how to run the starter script locally](#run-the-example)
-- [how to record the first final video](#record-the-final-result)
+- [how to record the first video](#record-the-final-result)
 
 ## Install ScreenCI
 
@@ -56,7 +56,9 @@ Initialization may also optionally add agent skills-related files, depending on
 the agent tooling installed on your system. See
 [Vercel Skills](https://github.com/vercel-labs/skills#readme).
 
-The starter video source is generated at `videos/example.video.ts` and looks like this:
+The starter video source is generated at `videos/example.video.ts` and looks
+like this. For an explanation of how it works, see [Write Video
+Scripts](/docs/write-video-scripts#generated-starter-video):
 
 ```ts
 import { autoZoom, createNarration, hide, video, voices } from 'screenci'

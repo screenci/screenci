@@ -713,7 +713,6 @@ export async function runInit(
   const packageJsonPath = resolve(projectDir, 'package.json')
   const hasExistingPackageJson = existsSync(packageJsonPath)
 
-  logger.info("Initializing project in '.'")
   await mkdir(resolve(projectDir, 'videos'), { recursive: true })
   if (shouldAddGithubActionWorkflow) {
     await mkdir(githubWorkflowsDir, { recursive: true })

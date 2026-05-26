@@ -57,6 +57,7 @@ import {
   setRuntimePage,
 } from './runtimeContext.js'
 import { escapeFileSystemPathSegment } from './fileSystemName.js'
+import { resolveRecordingTimingDuration } from './runtimeMode.js'
 
 export const POST_VIDEO_PAUSE = 500
 
@@ -83,7 +84,9 @@ export async function finalizeDeferredRecordingStops(
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  return new Promise((resolve) =>
+    setTimeout(resolve, resolveRecordingTimingDuration(ms))
+  )
 }
 
 async function setupMouseTracking(
@@ -354,7 +357,7 @@ const _videoBase = base.extend<
 
     // Wait for browser window to be fully rendered before starting recording
     // This prevents black screen captures
-    await page.waitForTimeout(1500)
+    await page.waitForTimeout(resolveRecordingTimingDuration(1500))
 
     const screenRecorder = await startScreencastRecording(
       page,

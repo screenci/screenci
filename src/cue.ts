@@ -19,6 +19,7 @@ import {
   resetCueRuntimeState,
   setRuntimeCueRecorder,
 } from './runtimeContext.js'
+import { resolveRecordingTimingDuration } from './runtimeMode.js'
 
 // One frame at 24fps — ensures at least one rendered frame captures each cue state.
 export const ONE_FRAME_MS = 1000 / 24
@@ -29,6 +30,15 @@ let sleepFn = (ms: number): void => {
   while (performance.now() < end) {
     /* spin */
   }
+}
+
+function sleepForCueFrameGap(): void {
+  const durationMs = resolveRecordingTimingDuration(2 * ONE_FRAME_MS)
+  if (durationMs <= 0) {
+    return
+  }
+
+  sleepFn(durationMs)
 }
 
 export function setSleepFn(fn: (ms: number) => void): void {
@@ -106,7 +116,7 @@ function cueAutoEnd(nextCueName: string): void {
     )
   }
   context.cueRecorder.addCueEnd('auto')
-  sleepFn(2 * ONE_FRAME_MS)
+  sleepForCueFrameGap()
   context.cue.activeCueRun.resolveFinished()
   context.cue.activeCueName = null
   context.cue.activeCueRun = null
@@ -152,7 +162,7 @@ async function endActiveCue(): Promise<void> {
   if (isInsideHide()) throw new Error('Cannot call end() inside hide()')
   const run = context.cue.activeCueRun
   context.cueRecorder.addCueEnd('wait')
-  sleepFn(2 * ONE_FRAME_MS)
+  sleepForCueFrameGap()
   run.resolveFinished()
   if (context.cue.activeCueRun === run) {
     context.cue.activeCueName = null
@@ -583,7 +593,7 @@ function buildCuesFromInput(
             )
           }
         }
-        sleepFn(2 * ONE_FRAME_MS)
+        sleepForCueFrameGap()
         recorder.addVideoCueStart(
           keyStr,
           undefined,
@@ -619,7 +629,7 @@ function buildCuesFromInput(
             }
           }
         }
-        sleepFn(2 * ONE_FRAME_MS)
+        sleepForCueFrameGap()
         recorder.addCueStart('', keyStr, undefined, textTranslations)
       })
     }

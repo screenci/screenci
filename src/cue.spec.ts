@@ -55,8 +55,10 @@ describe('createNarration', () => {
   let recorder: IEventRecorder
   let order: string[]
   let warnSpy: ReturnType<typeof vi.spyOn>
+  let originalEnv: NodeJS.ProcessEnv
 
   beforeEach(() => {
+    originalEnv = { ...process.env }
     order = []
     recorder = createMockRecorder()
     warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
@@ -73,6 +75,7 @@ describe('createNarration', () => {
   })
 
   afterEach(() => {
+    process.env = originalEnv
     warnSpy.mockRestore()
     setActiveCueRecorder(NOOP_EVENT_RECORDER)
     setActiveHideRecorder(NOOP_EVENT_RECORDER)
@@ -99,6 +102,15 @@ describe('createNarration', () => {
 
     await cues.intro.start()
     expect(order).toEqual(['sleep', 'cueStart(multilang)'])
+  })
+
+  it('skips cue frame-gap sleeps when recording timings are disabled', async () => {
+    process.env.SCREENCI_DISABLE_RECORDING_TIMINGS = 'true'
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro()
+
+    expect(order).toEqual(['cueStart(multilang)', 'cueEnd'])
   })
 
   it('calling a cue runs one start and one end for a single run', async () => {

@@ -1,6 +1,8 @@
 # Write Video Scripts
 
-ScreenCI videos use the same syntax as Playwright tests.
+ScreenCI videos use the same syntax as [Playwright tests](https://playwright.dev/docs/writing-tests),
+but replace test assertions with video-specific behavior such as narration,
+camera movement, and visible pacing.
 
 #### You will learn
 
@@ -9,7 +11,10 @@ ScreenCI videos use the same syntax as Playwright tests.
 - [how ScreenCI behavior differs from plain Playwright](#what-screenci-changes)
 - [how to control visible pacing](#control-pacing)
 
-## Minimal example
+## Generated starter video
+
+This example is generated from [Installation](/docs) at
+`videos/example.video.ts`.
 
 ```ts
 import { autoZoom, createNarration, hide, video, voices } from 'screenci'
@@ -41,6 +46,11 @@ video('How to get started', async ({ page }) => {
   })
 })
 ```
+
+This script defines one video with `video()`, creates narration cues with
+`createNarration()`, loads the page inside `hide()` so setup is not visible in
+the recording, and uses `autoZoom()` to focus the viewer on the documentation
+link before clicking it.
 
 ## Anatomy of a video script
 

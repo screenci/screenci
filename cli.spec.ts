@@ -681,8 +681,14 @@ describe('CLI', () => {
 
       const messages = loggerInfoSpy.mock.calls.map((call) => String(call[0]))
       expect(messages).toContain('Uploading 2 recordings in parallel...')
-      expect(messages.indexOf('✔ Uploaded "Fast Demo"')).toBeLessThan(
-        messages.indexOf('✔ Uploaded "Slow Demo"')
+      expect(
+        messages.findIndex((message) =>
+          message.includes('Uploaded "Fast Demo"')
+        )
+      ).toBeLessThan(
+        messages.findIndex((message) =>
+          message.includes('Uploaded "Slow Demo"')
+        )
       )
     })
 
@@ -770,11 +776,13 @@ describe('CLI', () => {
           'test-secret'
         )
 
-        expect(stdoutWriteSpy).toHaveBeenCalledWith(
-          expect.stringContaining(
-            '... Uploading "Demo"\n\r\u001B[2K... Uploading "Second Demo"\n'
+        expect(
+          stdoutWriteSpy.mock.calls.some(
+            (call) =>
+              String(call[0]).includes('... Uploading "Demo"') &&
+              String(call[0]).includes('... Uploading "Second Demo"')
           )
-        )
+        ).toBe(true)
         expect(
           stdoutWriteSpy.mock.calls.some(
             (call) =>

@@ -222,25 +222,6 @@ type FrameLocatorSelfReturnMethodsRecord = Record<
   (...args: unknown[]) => FrameLocator
 >
 
-function getRecordedInnerEventEndMs(
-  event:
-    | FocusChangeEvent
-    | MouseMoveEvent
-    | MouseDownEvent
-    | MouseUpEvent
-    | MouseHideEvent
-    | MouseWaitEvent
-): number {
-  if (event.type === 'focusChange') {
-    return Math.max(
-      ...(event.mouse ? [event.mouse.endMs] : []),
-      ...(event.scroll ? [event.scroll.endMs] : []),
-      ...(event.zoom ? [event.zoom.endMs] : [])
-    )
-  }
-  return event.endMs
-}
-
 type ClickActionResult = {
   elementRect: ElementRect
   innerEvents: Array<
@@ -1176,8 +1157,6 @@ export function instrumentLocator(locator: Locator): Locator {
     } = options ?? {}
 
     assertDurationOrSpeed(moveDuration, moveSpeed, 'selectText move')
-
-    const page = locator.page()
 
     const innerEvents: Array<
       | FocusChangeEvent

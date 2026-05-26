@@ -237,7 +237,7 @@ export type VoiceKey = VoiceName | ElevenLabsVoiceKey
 // Keep the "Available languages" section in docs/narration-and-localization.md
 // in sync with this source of truth. If you change this list, also review the
 // region section above.
-const supportedLanguageCodes = [
+const _supportedLanguageCodes = [
   'ar',
   'bn',
   'nl',
@@ -319,7 +319,7 @@ const supportedLanguageCodes = [
 ] as const
 
 /** Union of supported language codes, e.g. `'en' | 'fi'`. */
-export type Lang = (typeof supportedLanguageCodes)[number]
+export type Lang = (typeof _supportedLanguageCodes)[number]
 
 /**
  * A reference to a local audio or video file for ElevenLabs Instant Voice Cloning.

@@ -304,31 +304,13 @@ type AllCues<
 > &
   Record<string, CueMapValue>
 
-type LangNarrationOverrideForLang<L extends string> =
-  | {
-      name: VoiceKey | CustomVoiceRef
-      seed?: number
-      style: string
-      modelType?: 'expressive'
-      accent?: string
-      pacing?: string
-    }
-  | {
-      name: VoiceKey | CustomVoiceRef
-      seed?: number
-      style?: never
-      accent?: never
-      pacing?: number
-      modelType?: Exclude<ModelType, 'expressive'> | undefined
-    }
-
 type LanguagesMap<
   M extends Partial<
     Record<Lang, LanguageCuesEntry<Record<string, CueMapValue>>>
   >,
 > = M & {
   [L in keyof M]: {
-    voice?: L extends string ? LangNarrationOverrideForLang<L> : never
+    voice?: LangNarrationOverride
     /** BCP-47 region code for TTS synthesis, e.g. `languageRegions.en.US`. */
     region?: string
   } & { cues: AllCues<M> }

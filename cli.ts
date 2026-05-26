@@ -37,7 +37,6 @@ import {
   formatDuplicateTitlesMessage,
 } from './src/titleValidation.js'
 
-const SCREENCI_DOCS_URL = 'https://screenci.com/docs'
 const SCREENCI_MOCK_RECORD_DOCS_URL =
   'https://screenci.com/docs/reference/cli/#--mock-record'
 
@@ -772,50 +771,6 @@ function findScreenCIConfig(customPath?: string): string | null {
   }
 
   return null
-}
-
-function findRepoRoot(startDir: string): string | null {
-  let current = startDir
-  while (true) {
-    if (
-      existsSync(resolve(current, '.git')) ||
-      existsSync(resolve(current, 'pnpm-workspace.yaml')) ||
-      existsSync(resolve(current, 'package-lock.json')) ||
-      existsSync(resolve(current, 'yarn.lock'))
-    ) {
-      return current
-    }
-    const parent = resolve(current, '..')
-    if (parent === current) return null
-    current = parent
-  }
-}
-
-async function findLatestEntry(screenciDir: string): Promise<string | null> {
-  let entries: string[]
-  try {
-    entries = await readdir(screenciDir)
-  } catch {
-    return null
-  }
-
-  let latestEntry: string | null = null
-  let latestMtime = 0
-
-  for (const entry of entries) {
-    try {
-      const entryPath = resolve(screenciDir, entry)
-      const s = await stat(entryPath)
-      if (s.mtimeMs > latestMtime) {
-        latestMtime = s.mtimeMs
-        latestEntry = entry
-      }
-    } catch {
-      // skip unreadable entries
-    }
-  }
-
-  return latestEntry
 }
 
 async function hashFile(filePath: string): Promise<string> {

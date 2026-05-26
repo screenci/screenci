@@ -223,11 +223,19 @@ function toSidebarItem(entry: (typeof docsManifest)[number]) {
   return {
     label: entry.navLabel,
     slug: entry.slug,
+    translations: {},
+    attrs: {},
   }
 }
 
 type DocsSidebarItem = ReturnType<typeof toSidebarItem>
-type TypedocSidebarItem = { label: string }
+type TypedocSidebarItem = {
+  label: string
+  items?: unknown[]
+  collapsed?: boolean
+  translations?: Record<string, string>
+  attrs?: Record<string, unknown>
+}
 
 export function getDocsSidebarConfig(
   typedocSidebarGroup?: TypedocSidebarItem | null
@@ -244,6 +252,8 @@ export function getDocsSidebarConfig(
 
     return {
       label: section,
+      translations: {},
+      collapsed: false,
       items,
     }
   })

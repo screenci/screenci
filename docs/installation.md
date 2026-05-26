@@ -3,6 +3,7 @@
 ScreenCI is a Playwright-based workflow for producing product videos as code.
 If you already know Playwright, the startup path should feel familiar:
 initialize a project and run the generated E2E tests locally using `test` command.
+The exact same code works for ScreenCI, just use `video(...)` instead of `test(...)`.
 Then ScreenCI allows converting these tests into product videos with `record` command.
 
 #### You will learn
@@ -24,8 +25,10 @@ If that does not work, install [Node.js](https://nodejs.org/en/download),
 which comes with npm and provides `npx`.
 
 `init` works both in an existing repository and as a standalone setup. It
-writes a ScreenCI project into the current directory, installs dependencies,
-and installs Playwright Chromium by default.
+writes a ScreenCI project into the current directory, for example in a
+`/screenci` directory if that is where you run it, installs dependencies,
+installs Playwright Chromium by default, and can also add a GitHub Actions
+workflow at `.github/workflows/screenci.yaml`.
 
 If you already know Playwright, the closest mental model is Playwright's own
 [Getting started](https://playwright.dev/docs/intro): ScreenCI uses the same
@@ -43,7 +46,7 @@ README.md
 .gitignore
 videos/
   example.video.ts
-.github/workflows/screenci.yaml
+.github/workflows/screenci.yaml (optional)
 ```
 
 The starter video source looks like this:

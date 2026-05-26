@@ -1068,6 +1068,23 @@ export function formatUploadStartFailureMessage(
   return `Failed to start upload for "${videoName}": ${status}${hint401(status, secret)}`
 }
 
+const EXPRESSIVE_TIER_ERROR_PREFIX =
+  'Expressive narration and style prompts require the Business tier.'
+
+export function formatFailedVideoMessage(
+  videoName: string,
+  message: string
+): string {
+  if (message.startsWith(EXPRESSIVE_TIER_ERROR_PREFIX)) {
+    return [
+      `${videoName}: ${message}`,
+      "If you want to keep using the current tier, remove `voice.style` or `modelType: 'expressive'` from `createNarration()`.",
+    ].join('\n')
+  }
+
+  return `${videoName}: ${message}`
+}
+
 export function printUploadStartFailureMessage(
   videoName: string,
   status: number,
@@ -2264,7 +2281,12 @@ export async function main() {
             }
             if (hadFailures) {
               for (const failedVideo of failedVideoMessages) {
-                logger.warn(`${failedVideo.videoName}: ${failedVideo.message}`)
+                logger.warn(
+                  formatFailedVideoMessage(
+                    failedVideo.videoName,
+                    failedVideo.message
+                  )
+                )
               }
               logger.warn(
                 `Not all recordings succeeded to upload. Failed videos: ${failedVideoNames.join(', ') || 'unknown'}. Some videos may be missing from the project.`

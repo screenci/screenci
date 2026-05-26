@@ -907,6 +907,75 @@ describe('CLI', () => {
       )
     })
 
+    it('formats expressive narration tier failures with a fix suggestion', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'record',
+        '--config',
+        'test-fixtures/record-upload.config.ts',
+      ]
+      mockReaddir.mockResolvedValue(['failed-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('record-upload.config.ts')) {
+          return "export default { projectName: 'Test Project' }"
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({
+            events: [],
+            metadata: { videoName: 'Find ScreenCI docs and getting started' },
+          })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('test-fixtures/record-upload.config.ts') ||
+          path.endsWith('data.json') ||
+          path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: false,
+            status: 402,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi
+              .fn()
+              .mockResolvedValue(
+                'Expressive narration and style prompts require the Business tier. Upgrade your subscription tier at https://app.screenci.com/billing to continue rendering.'
+              ),
+          }
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow(
+        'Not all recordings succeeded to upload.'
+      )
+
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        "Find ScreenCI docs and getting started: Expressive narration and style prompts require the Business tier. Upgrade your subscription tier at https://app.screenci.com/billing to continue rendering.\nIf you want to keep using the current tier, remove `voice.style` or `modelType: 'expressive'` from `createNarration()`."
+      )
+    })
+
     it('reports when all recordings failed', async () => {
       process.argv = [
         'node',
@@ -1133,6 +1202,19 @@ describe('CLI', () => {
         )
       ).toBe(
         'Your free tier allows up to 1 active videos. You already have 1 active video. 1 new active video were requested.'
+      )
+    })
+
+    it('adds a fix suggestion to expressive narration tier failures', async () => {
+      const { formatFailedVideoMessage } = await import('./cli')
+
+      expect(
+        formatFailedVideoMessage(
+          'Find ScreenCI docs and getting started',
+          'Expressive narration and style prompts require the Business tier. Upgrade your subscription tier at https://app.screenci.com/billing to continue rendering.'
+        )
+      ).toBe(
+        "Find ScreenCI docs and getting started: Expressive narration and style prompts require the Business tier. Upgrade your subscription tier at https://app.screenci.com/billing to continue rendering.\nIf you want to keep using the current tier, remove `voice.style` or `modelType: 'expressive'` from `createNarration()`."
       )
     })
 

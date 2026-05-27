@@ -27,7 +27,7 @@ const narration = createNarration({
 
 video('Camera and zooming guide', async ({ page }) => {
   await hide(async () => {
-    await page.goto('/docs/guides/camera-and-zooming')
+    await page.goto('https://screenci.com/docs/guides/camera-and-zooming')
     await page.waitForLoadState('networkidle')
   })
 

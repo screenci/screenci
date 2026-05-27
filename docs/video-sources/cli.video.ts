@@ -27,7 +27,7 @@ const narration = createNarration({
 
 video('CLI reference walkthrough', async ({ page }) => {
   await hide(async () => {
-    await page.goto('/docs/reference/cli')
+    await page.goto('https://screenci.com/docs/reference/cli')
     await page.waitForLoadState('networkidle')
   })
 

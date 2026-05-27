@@ -27,7 +27,9 @@ const narration = createNarration({
 
 video('Narration and localization guide', async ({ page }) => {
   await hide(async () => {
-    await page.goto('/docs/guides/narration-and-localization')
+    await page.goto(
+      'https://screenci.com/docs/guides/narration-and-localization'
+    )
     await page.waitForLoadState('networkidle')
   })
 

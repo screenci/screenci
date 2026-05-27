@@ -8,12 +8,17 @@ const narration = createNarration({
         docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
       },
     },
+    es: {
+      cues: {
+        docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
+      },
+    },
   },
 })
 
 video('How to find docs', async ({ page }) => {
   await hide(async () => {
-    await page.goto('https://screenci.com')
+    await page.goto('https://screenci.com/')
     await page.waitForLoadState('networkidle')
   })
 

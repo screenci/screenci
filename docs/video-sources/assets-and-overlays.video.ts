@@ -32,7 +32,7 @@ const narration = createNarration({
 
 video('Assets and overlays guide', async ({ page }) => {
   await hide(async () => {
-    await page.goto('/docs/guides/assets-and-overlays')
+    await page.goto('https://screenci.com/docs/guides/assets-and-overlays')
     await page.waitForLoadState('networkidle')
   })
 

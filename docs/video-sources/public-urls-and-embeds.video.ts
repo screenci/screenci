@@ -27,7 +27,7 @@ const narration = createNarration({
 
 video('Public URLs and embeds guide', async ({ page }) => {
   await hide(async () => {
-    await page.goto('/docs/guides/public-urls-and-embeds')
+    await page.goto('https://screenci.com/docs/guides/public-urls-and-embeds')
     await page.waitForLoadState('networkidle')
   })
 

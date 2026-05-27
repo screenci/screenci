@@ -27,7 +27,7 @@ const narration = createNarration({
 
 video('Run and debug videos guide', async ({ page }) => {
   await hide(async () => {
-    await page.goto('/docs/run-and-debug-videos')
+    await page.goto('https://screenci.com/docs/run-and-debug-videos')
     await page.waitForLoadState('networkidle')
   })
 

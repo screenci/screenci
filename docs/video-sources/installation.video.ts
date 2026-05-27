@@ -13,7 +13,7 @@ const narration = createNarration({
   },
 })
 
-video('How to get started', async ({ page }) => {
+video('How to find docs', async ({ page }) => {
   await hide(async () => {
     await page.goto('https://screenci.com')
     await page.waitForLoadState('networkidle')

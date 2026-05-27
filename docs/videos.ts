@@ -13,7 +13,7 @@ export type DocVideo = PublishedDocVideo | UnpublishedDocVideo
 
 export const docsVideoRegistry = {
   docs: {
-    publicId: 'kh7dq5rk3vabtxya45w6zm1fmd871jdx',
+    publicId: 'kh7ccy03njvxjm0daef5g50zv587hrbd',
     sourcePath: 'screenci/docs/video-sources/installation.video.ts',
     showSource: false,
   },

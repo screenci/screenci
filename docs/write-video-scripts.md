@@ -25,14 +25,21 @@ const narration = createNarration({
     en: {
       cues: {
         intro:
-          'This video shows how to get started with ScreenCI [pronounce: screen see eye].',
+          'This video shows how to read more about ScreenCI [pronounce: screen see eye].',
         docs: 'You can find the documentation linked right on the front page.',
+      },
+    },
+    es: {
+      cues: {
+        intro:
+          'Este video muestra como leer mas sobre ScreenCI [pronounce: screen see eye].',
+        docs: 'Puedes encontrar la documentacion enlazada directamente en la pagina principal.',
       },
     },
   },
 })
 
-video('How to get started', async ({ page }) => {
+video('How to find docs', async ({ page }) => {
   await hide(async () => {
     await page.goto('https://screenci.com')
     await page.waitForLoadState('networkidle')
@@ -61,6 +68,12 @@ This script shows the main building blocks of a ScreenCI video:
 Each `video('Title', ...)` call defines one video, which can include multiple
 language versions. Keep titles stable unless you intentionally want a new
 video.
+
+In the starter example above, `languages.en.cues` defines the English script and
+`languages.es.cues` defines the Spanish translation. Calling
+`await narration.intro()` or `await narration.docs()` uses the matching cue text
+for whichever language version is currently being rendered, so the visible page
+flow stays the same while only the spoken and subtitle text changes.
 
 ## Author with locators
 

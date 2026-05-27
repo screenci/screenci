@@ -93,17 +93,24 @@ function expectPnpmDevInstalls(
   )
 
   const expectedPackages = [
-    `@playwright/test@^1.59.0`,
-    `screenci@${screenciVersion}`,
-    '@types/node@^25.9.1',
-    ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
+    ['add', '--save-dev', `@playwright/test@^1.59.0`],
+    [
+      'add',
+      '--save-dev',
+      '--allow-build=ffmpeg-static',
+      `screenci@${screenciVersion}`,
+    ],
+    ['add', '--save-dev', '@types/node@^25.9.1'],
+    ...(includePlaywrightCli
+      ? [['add', '--save-dev', '@playwright/cli@latest']]
+      : []),
   ]
 
   expect(pnpmInstallCalls).toEqual(
     expect.arrayContaining(
-      expectedPackages.map((pkg) => [
+      expectedPackages.map((args) => [
         'pnpm',
-        ['add', '--save-dev', pkg],
+        args,
         expect.objectContaining({ cwd, stdio: 'pipe' }),
       ])
     )
@@ -2073,7 +2080,15 @@ describe('CLI', () => {
 
   describe('init command', () => {
     beforeEach(() => {
-      mockSpawn.mockImplementation(() => {
+      mockSpawn.mockImplementation((_command: string, args: string[]) => {
+        if (Array.isArray(args) && args[0] === '--version') {
+          process.nextTick(() => {
+            mockChildProcess.stdout.emit('data', '11.0.8\n')
+            mockChildProcess.emit('close', 0)
+          })
+          return mockChildProcess as unknown as ChildProcess
+        }
+
         process.nextTick(() => mockChildProcess.emit('close', 0))
         return mockChildProcess as unknown as ChildProcess
       })
@@ -2653,6 +2668,11 @@ describe('CLI', () => {
 
       expect(rawMessages).toContain(`  ${pc.cyan('pnpm exec screenci test')}`)
       expect(messages).toContain('    pnpm exec screenci test')
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'pnpm',
+        ['--version'],
+        expect.objectContaining({ cwd: '/workspace/my-project', stdio: 'pipe' })
+      )
       expect(mockInput.mock.calls.map((call) => call[0])).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -2671,7 +2691,7 @@ describe('CLI', () => {
       )
     })
 
-    it('writes pnpm build approvals for pnpm projects', async () => {
+    it('checks pnpm version before installing screenci and uses native build approval', async () => {
       process.argv = [
         'node',
         'cli.js',
@@ -2686,13 +2706,38 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       await main()
 
-      expect(mockWriteFile).toHaveBeenCalledWith(
+      const pnpmVersionCallIndex = mockSpawn.mock.calls.findIndex(
+        (call: unknown[]) =>
+          call[0] === 'pnpm' &&
+          Array.isArray(call[1]) &&
+          call[1][0] === '--version'
+      )
+      const screenciInstallCallIndex = mockSpawn.mock.calls.findIndex(
+        (call: unknown[]) =>
+          call[0] === 'pnpm' &&
+          Array.isArray(call[1]) &&
+          call[1][0] === 'add' &&
+          call[1][2] === '--allow-build=ffmpeg-static'
+      )
+
+      expect(pnpmVersionCallIndex).toBeGreaterThanOrEqual(0)
+      expect(screenciInstallCallIndex).toBeGreaterThan(pnpmVersionCallIndex)
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'pnpm',
+        ['add', '--save-dev', '--allow-build=ffmpeg-static', 'screenci@0.0.32'],
+        expect.objectContaining({ cwd: '/workspace/my-project', stdio: 'pipe' })
+      )
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/my-project/pnpm-workspace.yaml',
-        'allowBuilds:\n  ffmpeg-static: true\n'
+        expect.any(String)
+      )
+      expect(mockReadFile).not.toHaveBeenCalledWith(
+        '/workspace/my-project/pnpm-workspace.yaml',
+        'utf-8'
       )
     })
 
-    it('merges pnpm build approvals into an existing workspace file', async () => {
+    it('fails fast when pnpm cannot be detected', async () => {
       process.argv = [
         'node',
         'cli.js',
@@ -2702,30 +2747,115 @@ describe('CLI', () => {
         'pnpm',
       ]
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
-      mockExistsSync.mockImplementation((path: string) => {
-        if (path === '/workspace/my-project/pnpm-workspace.yaml') {
-          return true
-        }
-        return false
+      mockExistsSync.mockReturnValue(false)
+      mockSpawn.mockImplementation((_command: string, args: string[]) => {
+        const child = Object.assign(new EventEmitter(), {
+          unref: vi.fn(),
+          stdout: new EventEmitter(),
+          stderr: new EventEmitter(),
+        })
+
+        process.nextTick(() => {
+          if (Array.isArray(args) && args[0] === '--version') {
+            child.emit('error', new Error('spawn pnpm ENOENT'))
+            return
+          }
+
+          child.emit('close', 0)
+        })
+
+        return child as unknown as ChildProcess
       })
-      mockReadFile.mockImplementation(async (path: string | URL) => {
-        if (
-          String(path).endsWith('/workspace/my-project/pnpm-workspace.yaml')
-        ) {
-          return 'packages:\n  - .\n'
-        }
-        if (String(path).endsWith('package.json')) {
-          return JSON.stringify({ version: '0.0.32' })
-        }
-        return ''
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow(
+        [
+          'pnpm could not be detected. ScreenCI requires pnpm 10.26.0 or newer to use pnpm native --allow-build support for ffmpeg-static.',
+          'Upgrade pnpm and rerun, or use `--package-manager npm`.',
+          'Examples:',
+          '  corepack use pnpm@latest',
+          '  pnpm create screenci',
+          '  npm init screenci@latest',
+        ].join('\n')
+      )
+      expect(mockSpawn).not.toHaveBeenCalledWith(
+        'pnpm',
+        expect.arrayContaining(['add']),
+        expect.anything()
+      )
+    })
+
+    it('fails fast when pnpm is older than 10.26.0', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--package-manager',
+        'pnpm',
+      ]
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+      mockSpawn.mockImplementation((_command: string, args: string[]) => {
+        const child = Object.assign(new EventEmitter(), {
+          unref: vi.fn(),
+          stdout: new EventEmitter(),
+          stderr: new EventEmitter(),
+        })
+
+        process.nextTick(() => {
+          if (Array.isArray(args) && args[0] === '--version') {
+            child.stdout.emit('data', '10.25.9\n')
+            child.emit('close', 0)
+            return
+          }
+
+          child.emit('close', 0)
+        })
+
+        return child as unknown as ChildProcess
       })
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow(
+        [
+          'Detected pnpm 10.25.9. ScreenCI requires pnpm 10.26.0 or newer because it relies on pnpm native --allow-build support for ffmpeg-static.',
+          'Upgrade pnpm and rerun, or use `--package-manager npm`.',
+          'Examples:',
+          '  corepack use pnpm@latest',
+          '  pnpm create screenci',
+          '  npm init screenci@latest',
+        ].join('\n')
+      )
+      expect(mockSpawn).not.toHaveBeenCalledWith(
+        'pnpm',
+        expect.arrayContaining(['add']),
+        expect.anything()
+      )
+    })
+
+    it('skips pnpm version checks when npm is explicitly selected', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--package-manager',
+        'npm',
+      ]
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      process.env.npm_config_user_agent = 'pnpm/11.0.8 npm/? node/v24.0.0'
+      mockExistsSync.mockReturnValue(false)
 
       const { main } = await import('./cli')
       await main()
 
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        '/workspace/my-project/pnpm-workspace.yaml',
-        'packages:\n  - .\n\nallowBuilds:\n  ffmpeg-static: true\n'
+      expect(mockSpawn).not.toHaveBeenCalledWith(
+        'pnpm',
+        ['--version'],
+        expect.anything()
       )
     })
 
@@ -2788,7 +2918,15 @@ describe('CLI', () => {
 
   describe('create-screenci wrapper', () => {
     beforeEach(() => {
-      mockSpawn.mockImplementation(() => {
+      mockSpawn.mockImplementation((_command: string, args: string[]) => {
+        if (Array.isArray(args) && args[0] === '--version') {
+          process.nextTick(() => {
+            mockChildProcess.stdout.emit('data', '11.0.8\n')
+            mockChildProcess.emit('close', 0)
+          })
+          return mockChildProcess as unknown as ChildProcess
+        }
+
         process.nextTick(() => mockChildProcess.emit('close', 0))
         return mockChildProcess as unknown as ChildProcess
       })

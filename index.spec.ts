@@ -40,6 +40,7 @@ describe('public api surface', () => {
       'determinePackageManager',
       'generateExampleVideo',
       'parsePackageManager',
+      'parsePnpmVersionSupport',
       'runCreateScreenciCli',
       'runInit',
     ])

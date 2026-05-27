@@ -58,7 +58,12 @@ This script shows the main building blocks of a ScreenCI video:
 - imports from `screenci`
 - one or more `video()` calls
 - Playwright-style `page` interactions
-- narration created with `createNarration()`
+- narration created with `createNarration()`: in the starter example above,
+  `languages.en.cues` defines the English script and `languages.es.cues`
+  defines the Spanish translation. Calling `await narration.docs()` uses the
+  matching cue text for whichever language version is currently being rendered,
+  so the visible page flow stays the same while only the spoken and subtitle
+  text changes.
 - a hidden setup block when the visible recording should start from a ready
   state
 - optional helpers such as `autoZoom()` to direct attention during visible
@@ -67,12 +72,6 @@ This script shows the main building blocks of a ScreenCI video:
 Each `video('Title', ...)` call defines one video, which can include multiple
 language versions. Keep titles stable unless you intentionally want a new
 video.
-
-In the starter example above, `languages.en.cues` defines the English script and
-`languages.es.cues` defines the Spanish translation. Calling
-`await narration.docs()` uses the matching cue text for whichever language
-version is currently being rendered, so the visible page flow stays the same
-while only the spoken and subtitle text changes.
 
 ## Author with locators
 

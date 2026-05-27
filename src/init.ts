@@ -22,6 +22,18 @@ export type InitOptions = {
   agent?: string
 }
 
+const MIN_SUPPORTED_PNPM_VERSION = '10.26.0'
+
+export type PnpmVersionSupport = {
+  supported: boolean
+  detectedVersion?: string
+  reason:
+    | 'supported'
+    | 'pnpm-not-found'
+    | 'malformed-version'
+    | 'version-too-old'
+}
+
 export function determinePackageManager(): PackageManager {
   const userAgent = process.env.npm_config_user_agent
   if (userAgent?.includes('pnpm')) {
@@ -187,6 +199,68 @@ function spawnSilent(cmd: string, args: string[], cwd?: string): Promise<void> {
   })
 }
 
+function spawnCaptured(
+  cmd: string,
+  args: string[],
+  cwd?: string
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const spawnSpec = resolveSpawnSpec(cmd, args)
+    const child = spawn(spawnSpec.command, spawnSpec.args, {
+      stdio: 'pipe',
+      ...(spawnSpec.shell !== undefined ? { shell: spawnSpec.shell } : {}),
+      ...(spawnSpec.windowsVerbatimArguments !== undefined
+        ? {
+            windowsVerbatimArguments: spawnSpec.windowsVerbatimArguments,
+          }
+        : {}),
+      ...(cwd ? { cwd } : {}),
+    })
+    const childSignals = forwardChildSignals(child, cmd)
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout?.setEncoding?.('utf8')
+    child.stderr?.setEncoding?.('utf8')
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk
+    })
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk
+    })
+
+    child.on('close', (code, signal) => {
+      const forwardedSignal = childSignals.getForwardedSignal()
+      childSignals.cleanup()
+      if (forwardedSignal) {
+        process.kill(process.pid, forwardedSignal)
+        return
+      }
+      if (signal) {
+        process.kill(process.pid, signal)
+        return
+      }
+      if (code === 0) {
+        resolve({ stdout, stderr })
+        return
+      }
+
+      const output = stderr.trim() || stdout.trim()
+      reject(
+        new Error(
+          output.length > 0
+            ? `${cmd} exited with code ${code}: ${output}`
+            : `${cmd} exited with code ${code}`
+        )
+      )
+    })
+    child.on('error', (err) => {
+      childSignals.cleanup()
+      reject(err)
+    })
+  })
+}
+
 function spawnInherited(
   cmd: string,
   args: string[],
@@ -320,35 +394,131 @@ function generateEmptyPackageJson(): string {
   return '{\n  "type": "module"\n}\n'
 }
 
-function upsertPnpmAllowBuildsConfig(existing: string): string {
-  const normalized = existing.replace(/\r\n/g, '\n')
-  const lines = normalized === '' ? [] : normalized.split('\n')
-  const allowBuildsIndex = lines.findIndex((line) => line === 'allowBuilds:')
-
-  if (allowBuildsIndex === -1) {
-    const prefix =
-      normalized.trim().length === 0 ? '' : `${normalized.trimEnd()}\n\n`
-    return `${prefix}allowBuilds:\n  ffmpeg-static: true\n`
+function parseSemverTriplet(version: string): [number, number, number] | null {
+  const match = version
+    .trim()
+    .match(/^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/)
+  if (!match) {
+    return null
   }
 
-  let blockEnd = lines.length
-  for (let i = allowBuildsIndex + 1; i < lines.length; i++) {
-    const line = lines[i] ?? ''
-    if (line !== '' && !line.startsWith(' ')) {
-      blockEnd = i
-      break
+  return [
+    Number.parseInt(match[1]!, 10),
+    Number.parseInt(match[2]!, 10),
+    Number.parseInt(match[3]!, 10),
+  ]
+}
+
+function compareSemverTriplets(
+  left: [number, number, number],
+  right: [number, number, number]
+): number {
+  const [leftMajor, leftMinor, leftPatch] = left
+  const [rightMajor, rightMinor, rightPatch] = right
+  if (leftMajor !== rightMajor) {
+    return leftMajor > rightMajor ? 1 : -1
+  }
+  if (leftMinor !== rightMinor) {
+    return leftMinor > rightMinor ? 1 : -1
+  }
+  if (leftPatch !== rightPatch) {
+    return leftPatch > rightPatch ? 1 : -1
+  }
+
+  return 0
+}
+
+export function parsePnpmVersionSupport(
+  versionOutput: string
+): PnpmVersionSupport {
+  const detectedVersion = versionOutput.trim()
+  const parsedDetectedVersion = parseSemverTriplet(detectedVersion)
+  if (parsedDetectedVersion === null) {
+    return {
+      supported: false,
+      ...(detectedVersion.length > 0 ? { detectedVersion } : {}),
+      reason: 'malformed-version',
     }
   }
 
-  for (let i = allowBuildsIndex + 1; i < blockEnd; i++) {
-    if (/^\s{2}ffmpeg-static\s*:/.test(lines[i] ?? '')) {
-      lines[i] = '  ffmpeg-static: true'
-      return `${lines.join('\n').replace(/\n*$/, '\n')}`
+  const minimumVersion = parseSemverTriplet(MIN_SUPPORTED_PNPM_VERSION)
+  if (minimumVersion === null) {
+    throw new Error('Invalid minimum pnpm version configuration')
+  }
+
+  if (compareSemverTriplets(parsedDetectedVersion, minimumVersion) < 0) {
+    return {
+      supported: false,
+      detectedVersion,
+      reason: 'version-too-old',
     }
   }
 
-  lines.splice(blockEnd, 0, '  ffmpeg-static: true')
-  return `${lines.join('\n').replace(/\n*$/, '\n')}`
+  return {
+    supported: true,
+    detectedVersion,
+    reason: 'supported',
+  }
+}
+
+async function detectPnpmVersionSupport(
+  cwd: string
+): Promise<PnpmVersionSupport> {
+  try {
+    const { stdout } = await spawnCaptured('pnpm', ['--version'], cwd)
+    return parsePnpmVersionSupport(stdout)
+  } catch {
+    return {
+      supported: false,
+      reason: 'pnpm-not-found',
+    }
+  }
+}
+
+function buildUnsupportedPnpmError(versionSupport: PnpmVersionSupport): Error {
+  if (versionSupport.reason === 'pnpm-not-found') {
+    return new Error(
+      [
+        `pnpm could not be detected. ScreenCI requires pnpm ${MIN_SUPPORTED_PNPM_VERSION} or newer to use pnpm native --allow-build support for ffmpeg-static.`,
+        'Upgrade pnpm and rerun, or use `--package-manager npm`.',
+        'Examples:',
+        '  corepack use pnpm@latest',
+        '  pnpm create screenci',
+        '  npm init screenci@latest',
+      ].join('\n')
+    )
+  }
+
+  if (versionSupport.reason === 'version-too-old') {
+    return new Error(
+      [
+        `Detected pnpm ${versionSupport.detectedVersion}. ScreenCI requires pnpm ${MIN_SUPPORTED_PNPM_VERSION} or newer because it relies on pnpm native --allow-build support for ffmpeg-static.`,
+        'Upgrade pnpm and rerun, or use `--package-manager npm`.',
+        'Examples:',
+        '  corepack use pnpm@latest',
+        '  pnpm create screenci',
+        '  npm init screenci@latest',
+      ].join('\n')
+    )
+  }
+
+  return new Error(
+    [
+      `Detected pnpm version output ${JSON.stringify(versionSupport.detectedVersion ?? '')}, which ScreenCI could not parse. ScreenCI requires pnpm ${MIN_SUPPORTED_PNPM_VERSION} or newer to use pnpm native --allow-build support for ffmpeg-static.`,
+      'Upgrade pnpm and rerun, or use `--package-manager npm`.',
+      'Examples:',
+      '  corepack use pnpm@latest',
+      '  pnpm create screenci',
+      '  npm init screenci@latest',
+    ].join('\n')
+  )
+}
+
+async function ensureSupportedPnpmVersion(cwd: string): Promise<void> {
+  const versionSupport = await detectPnpmVersionSupport(cwd)
+  if (!versionSupport.supported) {
+    throw buildUnsupportedPnpmError(versionSupport)
+  }
 }
 
 async function readCurrentScreenciVersion(): Promise<string> {
@@ -427,7 +597,15 @@ async function installInitDependencies(
     },
     {
       message: 'Installing ScreenCI...',
-      args: commands.installArgs(`screenci@${screenciDependency}`),
+      args:
+        packageManager === 'pnpm'
+          ? [
+              'add',
+              '--save-dev',
+              '--allow-build=ffmpeg-static',
+              `screenci@${screenciDependency}`,
+            ]
+          : commands.installArgs(`screenci@${screenciDependency}`),
     },
     {
       message: 'Installing Node.js types...',
@@ -463,18 +641,6 @@ async function installInitDependencies(
         throw err
       }
     }
-  }
-}
-
-async function configurePnpmProject(projectDir: string): Promise<void> {
-  const pnpmWorkspacePath = resolve(projectDir, 'pnpm-workspace.yaml')
-  const existing = existsSync(pnpmWorkspacePath)
-    ? await readFile(pnpmWorkspacePath, 'utf-8')
-    : ''
-  const next = upsertPnpmAllowBuildsConfig(existing)
-
-  if (next !== existing.replace(/\r\n/g, '\n')) {
-    await writeFile(pnpmWorkspacePath, next)
   }
 }
 
@@ -788,6 +954,10 @@ export async function runInit(
     await writeFile(githubActionPath, generateGithubAction(packageManager))
   }
 
+  if (packageManager === 'pnpm') {
+    await ensureSupportedPnpmVersion(projectDir)
+  }
+
   if (skillsArgs !== null) {
     if (verbose) {
       logger.info(`Running '${skillsCommand}'...`)
@@ -807,10 +977,6 @@ export async function runInit(
         throw err
       }
     }
-  }
-
-  if (packageManager === 'pnpm') {
-    await configurePnpmProject(projectDir)
   }
 
   await installInitDependencies(

@@ -5,9 +5,7 @@ const narration = createNarration({
   languages: {
     en: {
       cues: {
-        intro:
-          'This video shows how to get started with ScreenCI [pronounce: screen see eye].',
-        docs: 'You can find the documentation linked right on the front page.',
+        docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
       },
     },
   },
@@ -19,7 +17,6 @@ video('How to find docs', async ({ page }) => {
     await page.waitForLoadState('networkidle')
   })
 
-  await narration.intro()
   await narration.docs()
 
   await autoZoom(async () => {

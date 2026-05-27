@@ -7,11 +7,6 @@ import {
   voices,
   zoomTo,
 } from 'screenci'
-import {
-  clickContentLink,
-  openSourceDetails,
-  waitForDocHeading,
-} from './docs-shared'
 
 const narration = createNarration({
   voice: { name: voices.Sophie },
@@ -33,13 +28,13 @@ const narration = createNarration({
 video('Generating videos guide', async ({ page }) => {
   await hide(async () => {
     await page.goto('/docs/generating-videos')
-    await waitForDocHeading(page, 'Generating Videos')
+    await page.waitForLoadState('networkidle')
   })
 
   await narration.intro()
   await narration.source.start()
   await autoZoom(async () => {
-    await openSourceDetails(page)
+    await page.getByText('Show source').first().click()
   })
   await narration.source.end()
 
@@ -52,8 +47,12 @@ video('Generating videos guide', async ({ page }) => {
 
   await narration.next()
   await autoZoom(async () => {
-    await clickContentLink(page, 'Run and Debug Videos')
+    await page
+      .locator('.sl-markdown-content')
+      .getByRole('link', { name: 'Run and Debug Videos', exact: true })
+      .first()
+      .click()
   })
 
-  await waitForDocHeading(page, 'Run and Debug Videos')
+  await page.waitForLoadState('networkidle')
 })

@@ -8,7 +8,6 @@ import {
   voices,
   zoomTo,
 } from 'screenci'
-import { clickContentLink, waitForDocHeading } from './docs-shared'
 
 const assets = createAssets({
   intro: { path: './assets/intro.mp4', audio: 0, fullScreen: true },
@@ -34,7 +33,7 @@ const narration = createNarration({
 video('Assets and overlays guide', async ({ page }) => {
   await hide(async () => {
     await page.goto('/docs/guides/assets-and-overlays')
-    await waitForDocHeading(page, 'Assets and Overlays')
+    await page.waitForLoadState('networkidle')
   })
 
   await assets.intro()
@@ -52,8 +51,12 @@ video('Assets and overlays guide', async ({ page }) => {
 
   await narration.next()
   await autoZoom(async () => {
-    await clickContentLink(page, 'Video Authoring API Overview')
+    await page
+      .locator('.sl-markdown-content')
+      .getByRole('link', { name: 'Video Authoring API Overview', exact: true })
+      .first()
+      .click()
   })
 
-  await waitForDocHeading(page, 'Video Authoring API Overview')
+  await page.waitForLoadState('networkidle')
 })

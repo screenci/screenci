@@ -24,16 +24,12 @@ const narration = createNarration({
   languages: {
     en: {
       cues: {
-        intro:
-          'This video shows how to read more about ScreenCI [pronounce: screen see eye].',
-        docs: 'You can find the documentation linked right on the front page.',
+        docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
       },
     },
     es: {
       cues: {
-        intro:
-          'Este video muestra como leer mas sobre ScreenCI [pronounce: screen see eye].',
-        docs: 'Puedes encontrar la documentacion enlazada directamente en la pagina principal.',
+        docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
       },
     },
   },
@@ -45,7 +41,6 @@ video('How to find docs', async ({ page }) => {
     await page.waitForLoadState('networkidle')
   })
 
-  await narration.intro()
   await narration.docs()
 
   await autoZoom(async () => {
@@ -71,9 +66,9 @@ video.
 
 In the starter example above, `languages.en.cues` defines the English script and
 `languages.es.cues` defines the Spanish translation. Calling
-`await narration.intro()` or `await narration.docs()` uses the matching cue text
-for whichever language version is currently being rendered, so the visible page
-flow stays the same while only the spoken and subtitle text changes.
+`await narration.docs()` uses the matching cue text for whichever language
+version is currently being rendered, so the visible page flow stays the same
+while only the spoken and subtitle text changes.
 
 ## Author with locators
 

@@ -7,7 +7,6 @@ import {
   voices,
   zoomTo,
 } from 'screenci'
-import { openSourceDetails, waitForDocHeading } from './docs-shared'
 
 const narration = createNarration({
   voice: { name: voices.Sophie },
@@ -29,13 +28,13 @@ const narration = createNarration({
 video('Write video scripts guide', async ({ page }) => {
   await hide(async () => {
     await page.goto('/docs/write-video-scripts')
-    await waitForDocHeading(page, 'Write Video Scripts')
+    await page.waitForLoadState('networkidle')
   })
 
   await narration.intro()
   await narration.source.start()
   await autoZoom(async () => {
-    await openSourceDetails(page)
+    await page.getByText('Show source').first().click()
   })
   await narration.source.end()
 
@@ -52,5 +51,5 @@ video('Write video scripts guide', async ({ page }) => {
       .click()
   })
 
-  await waitForDocHeading(page, 'Run and Debug Videos')
+  await page.waitForLoadState('networkidle')
 })

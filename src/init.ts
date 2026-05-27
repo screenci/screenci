@@ -584,17 +584,14 @@ const narration = createNarration({
   languages: {
     en: {
       cues: {
-        intro:
-          'This video shows how to read more about ScreenCI [pronounce: screen see eye].',
-        docs: 'You can find the documentation linked right on the front page.',
+        docs:
+          'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
       },
     },
     es: {
       cues: {
-        intro:
-          'Este video muestra como leer mas sobre ScreenCI [pronounce: screen see eye].',
         docs:
-          'Puedes encontrar la documentacion enlazada directamente en la pagina principal.',
+          'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
       },
     },
   },
@@ -606,7 +603,6 @@ video('How to find docs', async ({ page }) => {
     await page.waitForLoadState('networkidle');
   })
 
-  await narration.intro()
   await narration.docs()
 
   await autoZoom(async () => {

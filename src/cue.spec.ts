@@ -117,7 +117,13 @@ describe('createNarration', () => {
     const cues = createNarration(singleLangInput)
 
     await cues.intro()
-    expect(order).toEqual(['sleep', 'cueStart(multilang)', 'cueEnd', 'sleep'])
+    expect(order).toEqual([
+      'sleep',
+      'cueStart(multilang)',
+      'sleep',
+      'cueEnd',
+      'sleep',
+    ])
   })
 
   it('start() then end() does not replay', async () => {

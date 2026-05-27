@@ -530,6 +530,7 @@ function buildCuesFromInput(
 
     const cue = (async (): Promise<void> => {
       await start(false)
+      sleepForCueFrameGap()
       await end()
     }) as NarrationCue
 

@@ -4,5 +4,5 @@ export default {
     'npm run type-check',
     `npm exec vitest related ${filenames.join(' ')} --run`,
   ],
-  '*.{json,md,yml,yaml,html}': ['prettier --write'],
+  '*.{json,md,mdx,yml,yaml,html}': ['prettier --write'],
 }

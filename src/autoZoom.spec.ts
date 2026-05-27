@@ -177,7 +177,7 @@ describe('autoZoom', () => {
       })
       await vi.runAllTimersAsync()
       await p
-      expect(durationDuringFn).toBe(1400)
+      expect(durationDuringFn).toBe(1200)
     })
 
     it('exposes zoom easing during fn execution', async () => {

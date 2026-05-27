@@ -499,7 +499,7 @@ export type ScreenCILocator = Omit<
    * click can complete before navigation waits. Pass `noWaitAfter: false` to
    * keep Playwright's default waiting behavior.
    *
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 1000).
+   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
    * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
    * @param options.moveEasing - Easing function for the cursor move animation.
    * @param options.postClickPause - Pause after the click completes in ms.
@@ -610,7 +610,7 @@ export type ScreenCILocator = Omit<
   /**
    * Hovers over the element with an animated cursor move.
    *
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 1000).
+   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
    * @param options.easing - Easing function for the cursor move animation.
    * @param options.hoverDuration - How long to hold the hover in ms (default: 1000).
    * @param options.position - Point relative to the element's top-left corner to hover over.
@@ -621,7 +621,7 @@ export type ScreenCILocator = Omit<
    * Selects all text content of the element with an animated cursor move and
    * triple-click animation.
    *
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 1000).
+   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
    * @param options.easing - Easing function for the cursor move animation.
    * @param options.beforeClickPause - Pause between cursor arrival and the triple-click in ms (default: 50).
    * @param options.selectDuration - Total duration of the triple-click animation in ms (default: 600).
@@ -638,7 +638,7 @@ export type ScreenCILocator = Omit<
    * 4. A mouseUp at the target.
    *
    * @param target - The locator of the drop target element.
-   * @param options.moveDuration - Duration of cursor move to source in ms (default: 1000).
+   * @param options.moveDuration - Duration of cursor move to source in ms (default: 900).
    * @param options.moveEasing - Easing for the cursor move (default: 'ease-in-out').
    * @param options.preDragPause - Pause after arriving at source before mouseDown in ms (default: 100).
    * @param options.dragDuration - Duration of the drag animation in ms (default: 1000).

@@ -15,7 +15,7 @@ import type {
 // - README.md
 export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
   easing: 'ease-out',
-  duration: 1400,
+  duration: 1200,
   amount: 0.65,
   padding: 0.2,
   centering: 1,
@@ -26,7 +26,7 @@ export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
 /**
  * Default cursor move duration for click-like actions, in milliseconds.
  */
-export const DEFAULT_CLICK_MOUSE_MOVE_DURATION: number = 1000
+export const DEFAULT_CLICK_MOUSE_MOVE_DURATION: number = 900
 
 /**
  * Default aspect ratio for recording and output

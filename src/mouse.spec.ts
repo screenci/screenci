@@ -84,11 +84,11 @@ describe('mouse helpers', () => {
         defaultDuration: DEFAULT_CLICK_MOUSE_MOVE_DURATION,
         context: 'test move',
       })
-    ).toBe(1000)
+    ).toBe(900)
   })
 
   it('uses the default cursor move duration', () => {
-    expect(DEFAULT_CLICK_MOUSE_MOVE_DURATION).toBe(1000)
+    expect(DEFAULT_CLICK_MOUSE_MOVE_DURATION).toBe(900)
   })
 
   it('keeps explicit zero-duration moves instant when default duration is set', () => {

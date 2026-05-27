@@ -38,6 +38,7 @@ describe('public api surface', () => {
   it('only exports the supported init helpers from the init entrypoint', () => {
     expect(Object.keys(initModule).sort()).toEqual([
       'determinePackageManager',
+      'generateExampleVideo',
       'parsePackageManager',
       'runCreateScreenciCli',
       'runInit',

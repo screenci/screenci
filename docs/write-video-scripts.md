@@ -16,6 +16,8 @@ camera movement, and visible pacing.
 This example is generated from [Installation](/docs) at
 `videos/example.video.ts`.
 
+<!-- screenci-doc-code-sample:starter-video:start -->
+
 ```ts
 import { autoZoom, createNarration, hide, video, voices } from 'screenci'
 
@@ -37,7 +39,7 @@ const narration = createNarration({
 
 video('How to find docs', async ({ page }) => {
   await hide(async () => {
-    await page.goto('https://screenci.com')
+    await page.goto('https://screenci.com/')
     await page.waitForLoadState('networkidle')
   })
 
@@ -48,6 +50,8 @@ video('How to find docs', async ({ page }) => {
   })
 })
 ```
+
+<!-- screenci-doc-code-sample:starter-video:end -->
 
 This script shows the main building blocks of a ScreenCI video:
 

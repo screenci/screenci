@@ -60,6 +60,8 @@ The starter video source is generated at `videos/example.video.ts` and looks
 like this. For an explanation of how it works, see [Write Video
 Scripts](/docs/write-video-scripts#generated-starter-video):
 
+<!-- screenci-doc-code-sample:installation:start -->
+
 ```ts
 import { autoZoom, createNarration, hide, video, voices } from 'screenci'
 
@@ -81,7 +83,7 @@ const narration = createNarration({
 
 video('How to find docs', async ({ page }) => {
   await hide(async () => {
-    await page.goto('https://screenci.com')
+    await page.goto('https://screenci.com/')
     await page.waitForLoadState('networkidle')
   })
 
@@ -92,6 +94,8 @@ video('How to find docs', async ({ page }) => {
   })
 })
 ```
+
+<!-- screenci-doc-code-sample:installation:end -->
 
 ## Run the example
 

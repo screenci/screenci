@@ -17,6 +17,13 @@ script structure and ScreenCI-specific APIs.
 
 ## ScreenCI video vs Playwright test
 
+The generated starter video keeps the same Playwright-style structure, but it
+uses a ScreenCI-instrumented page and locators so visible interactions are
+captured with the right metadata for recording. See [Page
+Instrumentation](/docs/page-instrumentation). Use it as the baseline shape for
+most ScreenCI videos, then adjust the visible flow, narration cues, and zoom
+behavior for your specific walkthrough.
+
 <!-- screenci-doc-code-sample:starter-video:start -->
 
 ```ts

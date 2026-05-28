@@ -94,41 +94,45 @@ jobs:
         run: >-
           node -e "const fs=require('node:fs'); const pkg=require('./package.json'); pkg.dependencies = { ...pkg.dependencies, screenci: process.env.SCREENCI_INIT_SCREENCI_DEPENDENCY }; fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n')" && npm pack
 
+      - name: Set smoke project directories
+        run: >-
+          node -e "const fs=require('node:fs'); const path=require('node:path'); const base=path.join(process.env.RUNNER_TEMP, 'screenci-smoke'); const entries={SMOKE_DIRECT_NPM:path.join(base,'smoke-direct-npm'),SMOKE_DIRECT_PNPM:path.join(base,'smoke-direct-pnpm'),SMOKE_CREATE_NPM:path.join(base,'smoke-create-npm'),SMOKE_CREATE_PNPM:path.join(base,'smoke-create-pnpm')}; fs.appendFileSync(process.env.GITHUB_ENV, Object.entries(entries).map(([key, value]) => key + '=' + value).join('\n') + '\n')"
+
       - name: Prepare smoke projects
         run: >-
-          node -e "const fs=require('node:fs'); const path=require('node:path'); const screenciPkg=require('./package.json'); const createPkg=require('./create-screenci/package.json'); const screenciTarball=screenciPkg.name + '-' + screenciPkg.version + '.tgz'; const createTarball=createPkg.name + '-' + createPkg.version + '.tgz'; for (const dir of ['smoke-direct-npm', 'smoke-direct-pnpm', 'smoke-create-npm', 'smoke-create-pnpm']) { fs.mkdirSync(dir, { recursive: true }); fs.copyFileSync(path.join(process.cwd(), screenciTarball), path.join(process.cwd(), dir, screenciTarball)); fs.copyFileSync(path.join(process.cwd(), 'create-screenci', createTarball), path.join(process.cwd(), dir, createTarball)); }"
+          node -e "const fs=require('node:fs'); const path=require('node:path'); const screenciPkg=require('./package.json'); const createPkg=require('./create-screenci/package.json'); const screenciTarball=screenciPkg.name + '-' + screenciPkg.version + '.tgz'; const createTarball=createPkg.name + '-' + createPkg.version + '.tgz'; for (const dir of [process.env.SMOKE_DIRECT_NPM, process.env.SMOKE_DIRECT_PNPM, process.env.SMOKE_CREATE_NPM, process.env.SMOKE_CREATE_PNPM]) { fs.mkdirSync(dir, { recursive: true }); fs.copyFileSync(path.join(process.cwd(), screenciTarball), path.join(dir, screenciTarball)); fs.copyFileSync(path.join(process.cwd(), 'create-screenci', createTarball), path.join(dir, createTarball)); }"
 
       - name: Set local create-screenci dependency for smoke tests
         run: node -e "const fs=require('node:fs'); const path=require('node:path'); const pkg=require('./create-screenci/package.json'); const tarballPath=path.resolve(process.cwd(), 'create-screenci', pkg.name + '-' + pkg.version + '.tgz'); fs.appendFileSync(process.env.GITHUB_ENV, 'CREATE_SCREENCI_DEPENDENCY=file:' + tarballPath + '\n')"
 
       - name: Run screenci init with npm
-        working-directory: smoke-direct-npm
-        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} node ../bin/screenci.js init smoke-project --package-manager npm --yes --verbose
+        working-directory: ${{ env.SMOKE_DIRECT_NPM }}
+        run: node ${{ github.workspace }}/scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} node ${{ github.workspace }}/bin/screenci.js init smoke-project --package-manager npm --yes --verbose
 
       - name: Run screenci test with npm
-        working-directory: smoke-direct-npm
-        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} npx screenci test
+        working-directory: ${{ env.SMOKE_DIRECT_NPM }}
+        run: node ${{ github.workspace }}/scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} npx screenci test
 
       - name: Run screenci init with pnpm
-        working-directory: smoke-direct-pnpm
-        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} node ../bin/screenci.js init smoke-project --package-manager pnpm --yes --verbose
+        working-directory: ${{ env.SMOKE_DIRECT_PNPM }}
+        run: node ${{ github.workspace }}/scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} node ${{ github.workspace }}/bin/screenci.js init smoke-project --package-manager pnpm --yes --verbose
 
       - name: Run screenci test with pnpm
-        working-directory: smoke-direct-pnpm
-        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} pnpm exec screenci test
+        working-directory: ${{ env.SMOKE_DIRECT_PNPM }}
+        run: node ${{ github.workspace }}/scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} pnpm exec screenci test
 
       - name: Run create-screenci with npm
-        working-directory: smoke-create-npm
-        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} npm exec --yes --package=${{ env.CREATE_SCREENCI_DEPENDENCY }} --package=${{ env.SCREENCI_INIT_SCREENCI_DEPENDENCY }} -- create-screenci smoke-project --package-manager npm --yes --verbose
+        working-directory: ${{ env.SMOKE_CREATE_NPM }}
+        run: node ${{ github.workspace }}/scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} npm exec --yes --package=${{ env.CREATE_SCREENCI_DEPENDENCY }} --package=${{ env.SCREENCI_INIT_SCREENCI_DEPENDENCY }} -- create-screenci smoke-project --package-manager npm --yes --verbose
 
       - name: Run generated screenci test with npm
-        working-directory: smoke-create-npm
-        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} npx screenci test
+        working-directory: ${{ env.SMOKE_CREATE_NPM }}
+        run: node ${{ github.workspace }}/scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} npx screenci test
 
       - name: Run create-screenci with pnpm
-        working-directory: smoke-create-pnpm
-        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} pnpm dlx --package=${{ env.CREATE_SCREENCI_DEPENDENCY }} --package=${{ env.SCREENCI_INIT_SCREENCI_DEPENDENCY }} create-screenci smoke-project --package-manager pnpm --yes --verbose
+        working-directory: ${{ env.SMOKE_CREATE_PNPM }}
+        run: node ${{ github.workspace }}/scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} pnpm dlx --package=${{ env.CREATE_SCREENCI_DEPENDENCY }} --package=${{ env.SCREENCI_INIT_SCREENCI_DEPENDENCY }} create-screenci smoke-project --package-manager pnpm --yes --verbose
 
       - name: Run generated screenci test with pnpm
-        working-directory: smoke-create-pnpm
-        run: node ../scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} pnpm exec screenci test
+        working-directory: ${{ env.SMOKE_CREATE_PNPM }}
+        run: node ${{ github.workspace }}/scripts/ci-run-in-shell.ts ${{ matrix.shell_name }} pnpm exec screenci test

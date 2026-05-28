@@ -2,9 +2,12 @@
 
 import { Tabs, TabItem } from '@astrojs/starlight/components'
 
-Use this page when you want help producing a first draft quickly, whether that
-draft comes from an AI agent working from source code, an AI agent working from
-a live URL, or Playwright codegen.
+With current AI and codegen tools, creating product videos or at least first drafts is
+usually faster then writing by hand.
+
+Once you have a draft, continue with
+[Video Script Basics](/docs/write-video-scripts) to clean up the script,
+structure the flow, and add ScreenCI narration and camera helpers.
 
 #### You will learn
 
@@ -14,46 +17,32 @@ a live URL, or Playwright codegen.
 
 ## AI generation based on source code
 
-<!-- screenci-doc-video:docs/generating-videos -->
-
-This is usually the best path when the app you want to show already lives in
-the same repository.
-
-The agent can inspect routes, labels, components, and state logic directly from
-source instead of guessing everything from browser behavior alone.
+This is often the most suitable path when the app you want to show already
+lives in the same repository, because ScreenCI handles AI-generated scripting
+especially well in that setup.
 
 Good setup:
 
 - initialize ScreenCI inside the existing repository
 - accept the ScreenCI skill install during `screenci init`, or run
   `npx -y skills add screenci/screenci --skill screenci -y` later
-- open the repository root in the editor, not just `screenci/`
 - point the agent at the routes and components that define the flow
-- ask it to write the final `videos/*.video.ts` script directly
 - ask it to verify the result with `screenci test`
 
 Example prompt for a repo-based workflow:
 
 ```text
-Create a ScreenCI video for the onboarding flow.
-
+create a screenci video for the onboarding flow in english and spanish.
 Inspect @src/routes/onboarding and @src/components/signup-form.tsx.
-Write the final script in @screenci/videos/onboarding.video.ts.
-Keep setup inside hide().
-Add concise narration and iterate with screenci test.
 ```
 
-This is usually faster and more reliable than URL-only exploration because the
-agent can inspect the real application structure before it writes selectors and
-narration.
+The agent should verify the script with `npx screenci test` and the final recording can be
+recorded via `npx screenci record`.
 
 ## AI generation based on URL with `playwright-cli`
 
-Use this path when you want to create a video from a live site and do not have
-the application source code in the same repo.
-
-Here the agent should inspect the real site first, confirm the clean visible
-path, and only then write the ScreenCI script.
+Use this path when you want to create a video from a live site and or if you do not have
+the application source code easily available. Here we guide the agent to inspect the real site and write the video script based on that.
 
 Good setup:
 
@@ -63,30 +52,24 @@ Good setup:
 - accept the optional `playwright-cli` install during `screenci init`, or run
   `npx -y skills add screenci/screenci --skill playwright-cli -y` and
   install `@playwright/cli` later
-- inspect the live site before writing the script
-- use `playwright-cli` to confirm selectors and visible flow
-- keep cookie handling and other setup inside `hide()`
 
 Example prompt for a deployed-site workflow:
 
 ```text
-Create a ScreenCI video for https://screenci.com that shows how to export a report.
-
-Inspect the live site first with playwright-cli, then write the final ScreenCI script in videos/export-report.video.ts.
-Keep setup hidden and use narration only where it improves the walkthrough.
+Create a screenci video for https://screenci.com that shows
+how to find the documentation. Use playwright-cli.
 ```
 
-This works best when the prompt clearly names the URL to inspect, the output
-file to create, and what setup should stay hidden from the final video.
+Again, the agent should verify the script with `npx screenci test` and the final recording can be
+recorded via `npx screenci record`.
 
 ## Playwright codegen
 
-This is the ScreenCI equivalent of Playwright's
-[Generating tests](https://playwright.dev/docs/codegen). Use it when you want
-to inspect a live flow, capture the basic interactions, and harvest strong
-locators quickly.
+You can also leverage Playwright's
+[test generator / codegen](https://playwright.dev/docs/codegen) tool. Use it when you want
+to manually click through the exact flow in the browser.
 
-Run it with:
+For example you could run:
 
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
@@ -105,51 +88,13 @@ pnpm exec playwright codegen https://screenci.com
   </TabItem>
 </Tabs>
 
-If you need to add `@playwright/cli` manually later:
-
-<Tabs syncKey="package-manager">
-  <TabItem label="npm">
-
-```bash
-npm install --save-dev @playwright/cli
-```
-
-  </TabItem>
-  <TabItem label="pnpm">
-
-```bash
-pnpm add --save-dev @playwright/cli
-```
-
-  </TabItem>
-</Tabs>
-
-Codegen opens a browser window and the Playwright Inspector. As you click,
+This opens a browser window and the Playwright Inspector. As you click,
 type, and navigate, it generates Playwright actions for the flow.
 
-That is not a final ScreenCI video yet, but it is often the fastest way to get:
+The output is not a final ScreenCI video yet, but to make it work with ScreenCI you should:
 
-- a first pass at navigation and interactions
-- role-based and text-based locators
-- a concrete visible path through the app
+- copy the code to some `/videos/*.video.ts` file
+- change `test` to `video`
+- add narration using `createNarration`
 
-Treat codegen output as raw material, not final authoring.
-
-When you bring a generated flow into ScreenCI:
-
-1. use Playwright codegen to inspect the real flow
-2. move the useful actions into `videos/*.video.ts`
-3. replace generic test framing with `video()`
-4. hide setup and authentication with `hide()`
-5. simplify noisy steps that do not help the viewer
-6. add narration and pacing only after the interaction flow is correct
-
-The goal is a clean viewer-facing sequence, not a literal copy of every
-interaction codegen captured.
-
-## What's next
-
-- [Write Video Scripts](/docs/write-video-scripts) to turn the draft into a
-  maintainable `.video.ts` file.
-- [Run and Debug Videos](/docs/run-and-debug-videos) to tighten pacing and
-  selectors locally.
+Then you can follow the `npx screenci test` and `npx screenci record` flow.

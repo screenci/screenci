@@ -33,7 +33,8 @@ background on Playwright runners and browser installation, see
 
 ## Required secret
 
-Add `SCREENCI_SECRET` as a repository secret in GitHub Actions.
+Add `SCREENCI_SECRET` as a repository secret in GitHub Actions. You can get it
+from [app.screenci.com/secrets](https://app.screenci.com/secrets).
 
 The generated workflow fails early if the secret is missing so you do not spend time waiting for a recording job that cannot upload anything.
 
@@ -47,8 +48,6 @@ Start simple:
 You can narrow the trigger later, but the generated default is intentionally easy to adopt.
 
 ## Keep recordings deterministic
-
-<!-- screenci-doc-video:docs/ci-setup -->
 
 CI recordings work best when:
 
@@ -66,5 +65,4 @@ CI uses the same ScreenCI upload and render pipeline as local recording. The mai
 
 ## What's next
 
-- [Record and Publish](/docs/record-and-publish) for the local-to-remote flow.
 - [Public URLs and Embeds](/docs/guides/public-urls-and-embeds) for delivery.

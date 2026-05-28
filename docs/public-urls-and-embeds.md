@@ -74,8 +74,6 @@ Manual selection is currently done in the app, not the CLI.
 
 ## Typical embed
 
-<!-- screenci-doc-video:docs/guides/public-urls-and-embeds -->
-
 ```html
 <video
   controls

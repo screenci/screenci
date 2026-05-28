@@ -1,88 +1,21 @@
-# Write Video Scripts
+# Video Script Basics
 
-ScreenCI videos use the same syntax as [Playwright tests](https://playwright.dev/docs/writing-tests),
-but replace test assertions with video-specific behavior such as narration,
-camera movement, and visible pacing.
+ScreenCI videos use the same syntax, guides, and general best practices as
+[Playwright tests](https://playwright.dev/docs/writing-tests). The main
+difference is that video scripts usually do not need assertions, and instead
+focus on viewer-facing behavior such as narration and camera movement.
+
+Need a faster way to get a first draft? Start with
+[Generating Videos](/docs/generating-videos), then come back here to refine the
+script structure and ScreenCI-specific APIs.
 
 #### You will learn
 
-- [how to structure a `.video.ts` file](#anatomy-of-a-video-script)
-- [how to navigate and interact](#author-with-locators)
-- [how ScreenCI behavior differs from plain Playwright](#what-screenci-changes)
+- [how a ScreenCI video differs from a Playwright test](#screenci-video-vs-playwright-test)
+- [how to configure ScreenCI](#configure-screenci)
+- [which core ScreenCI APIs to use](#core-screenci-apis)
 
-## Generated starter video
-
-This example is generated from [Installation](/docs) at
-`videos/example.video.ts`.
-
-<!-- screenci-doc-code-sample:starter-video:start -->
-
-```ts
-import { autoZoom, createNarration, hide, video, voices } from 'screenci'
-
-// Define narration lines, including localized variants.
-const narration = createNarration({
-  voice: { name: voices.Sophie },
-  en: {
-    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
-  },
-  es: {
-    docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
-  },
-})
-
-video('How to find docs', async ({ page }) => {
-  // Run setup without showing these actions in the final recording.
-  await hide(async () => {
-    await page.goto('https://screenci.com/')
-    await page.waitForLoadState('networkidle')
-  })
-
-  // Play the matching narration line for this step.
-  await narration.docs()
-
-  // Automatically zoom into interactions so they are easier to follow.
-  await autoZoom(async () => {
-    await page.getByRole('link', { name: 'View Documentation' }).click()
-  })
-})
-```
-
-<!-- screenci-doc-code-sample:starter-video:end -->
-
-This script shows the main building blocks of a ScreenCI video:
-
-- imports from `screenci`
-- one or more `video()` calls
-- Playwright-style `page` interactions
-- narration created with `createNarration()`: in the starter example above,
-  `en.docs` defines the English script and `es.docs` defines the Spanish
-  translation. Calling `await narration.docs()` uses the matching cue text for
-  whichever language version is currently being rendered, so the visible page
-  flow stays the same while only the spoken and subtitle text changes.
-- a hidden setup block when the visible recording should start from a ready
-  state
-- optional helpers such as `autoZoom()` to direct attention during visible
-  interactions
-
-Each `video('Title', ...)` call defines one video, which can include multiple
-language versions. Keep titles stable unless you intentionally want a new
-video.
-
-## Author with locators
-
-Prefer the same locator style you would use in a reliable Playwright test:
-
-```ts
-await page.getByRole('button', { name: 'Invite teammate' }).click()
-await page.getByLabel('Email').fill('jane@screenci.com')
-```
-
-Role-based and label-based locators usually age better than CSS selectors
-copied from transient DOM structure. If you need a refresher, use Playwright's
-[Locators](https://playwright.dev/docs/locators) guide.
-
-## What ScreenCI changes
+## ScreenCI video vs Playwright test
 
 Unlike a regular `playwright/test` test, `video()` gives you an instrumented
 Playwright `page` so visible interactions look like a recording instead of a
@@ -94,66 +27,159 @@ robotic test:
 Most standard Playwright APIs still work as expected, including navigation,
 locators, waiting, keyboard input, and assertions from `@playwright/test`.
 
-## Helper APIs
+For more on how ScreenCI animates visible page actions, see
+[Page Instrumentation](/docs/guides/page-instrumentation).
+
+```ts
+import { video } from 'screenci'
+
+video('Open billing', async ({ page }) => {
+  await page.goto('/settings')
+
+  // Clicks are animated.
+  await page.getByRole('link', { name: 'Billing' }).click()
+
+  // Typing is animated.
+  await page.getByLabel('Company name').fill('ScreenCI Labs')
+
+  // Mouse movement is animated.
+  await page.getByRole('button', { name: 'Save changes' }).hover()
+
+  // Scrolling into view is animated.
+  await page.getByTestId('invoices-table').scrollIntoViewIfNeeded()
+})
+```
+
+You can define multiple `video()` calls in the same file, or create multiple
+`.video.ts` files under `videos/`.
+
+## Configure ScreenCI
+
+Project-wide defaults such as `projectName`, `videoDir`, `baseURL`, and shared
+recording or rendering options live in `screenci.config.ts`.
+
+```ts
+import { defineConfig } from 'screenci'
+
+export default defineConfig({
+  // Used to identify this project in ScreenCI.
+  projectName: 'my-product',
+})
+```
+
+See [Configuration](/docs/reference/configuration).
+
+## Core ScreenCI APIs
 
 ### `hide()`
 
-Use `hide()` to keep setup out of the visible recording. See [Setup vs visible
-sequence](#setup-vs-visible-sequence) and [Generating
+Use `hide()` to keep setup out of the visible recording. This is useful for
+steps the viewer does not need to watch, such as navigating to the right page,
+signing in, or dismissing a cookie banner before the real flow begins. See
+[Setup vs visible sequence](#setup-vs-visible-sequence) and [Generating
 Videos](/docs/generating-videos).
+
+`hide()` takes just the function to run. It does not have separate timing or
+camera options.
+
+```ts
+await hide(async () => {
+  await page.goto('/settings')
+  await page.getByRole('button', { name: 'Accept all cookies' }).click()
+  await page.getByRole('button', { name: 'Open billing' }).click()
+})
+```
+
+API reference: [hide()](/docs/reference/api/functions/hide)
 
 ### `autoZoom()`
 
 Use `autoZoom()` when the camera should follow a visible interaction
 automatically. See [Camera and Zooming](/docs/camera-and-zooming).
 
+Common options:
+
+- `duration` to control how fast the zoom moves
+- `easing` to control motion feel
+- `amount` to control how tightly ScreenCI zooms in
+- `padding` to keep more space around the target area
+- `centering` to bias framing within the viewport
+- `preZoomDelay` and `postZoomDelay` to add breathing room before or after the
+  zoomed sequence
+
+```ts
+await autoZoom(async () => {
+  await page.getByRole('button', { name: 'Create project' }).click()
+})
+```
+
+API reference: [autoZoom()](/docs/reference/api/functions/autozoom)
+
 ### `zoomTo()`
 
-Use `zoomTo()` when you want exact manual framing. See [Camera and
+Use `zoomTo()` when you want exact manual framing, and `resetZoom()` when you
+want to return to the default view afterward. See [Camera and
 Zooming](/docs/camera-and-zooming).
+
+`zoomTo()` accepts either:
+
+- a locator, when you want framing tied to a real UI element
+- `{ x, y }`, when you want to frame an exact point manually
+
+Common options for `zoomTo()` and `resetZoom()`:
+
+- `duration`
+- `easing`
+- `amount`
+- `padding`
+- `preZoomDelay`
+- `postZoomDelay`
+
+```ts
+await zoomTo(page.getByTestId('pricing-card-pro'))
+await page.getByRole('button', { name: 'Upgrade' }).click()
+await resetZoom()
+```
+
+API reference: [zoomTo()](/docs/reference/api/functions/zoomto),
+[resetZoom()](/docs/reference/api/functions/resetzoom)
 
 ### `createNarration()`
 
 Use `createNarration()` to define narration cues and language variants. See
 [Narration and Localization](/docs/narration-and-localization).
 
-## Setup vs visible sequence
+Common options:
 
-Keep setup out of the final video when it does not help the viewer:
+- top-level `voice` for the default voice configuration
+- language keys such as `en`, `es`, or `fi`
+- per-language `voice` overrides when one language needs a different voice
+- cue entries as text or file-based entries, depending on how you want to
+  source narration
 
 ```ts
-await hide(async () => {
-  await page.goto('/login')
-  await page.getByLabel('Email').fill(process.env.DEMO_EMAIL!)
-  await page.getByLabel('Password').fill(process.env.DEMO_PASSWORD!)
-  await page.getByRole('button', { name: 'Sign in' }).click()
+const narration = createNarration({
+  // Define one cue key and provide the matching text for each language.
+  voice: { name: voices.Sophie },
+  en: {
+    intro: 'Open settings and review the billing details.',
+  },
+  es: {
+    intro: 'Abre la configuracion y revisa los detalles de facturacion.',
+  },
+})
+
+video('Billing walkthrough', async ({ page }) => {
+  // Play the full cue before continuing.
+  await narration.intro()
+
+  // Or use start/end when narration should overlap with the visible actions.
+  await narration.intro.start()
+  await page.goto('/settings')
+  await page.getByRole('button', { name: 'Open billing' }).click()
+  await narration.intro.end()
 })
 ```
 
-Then let the visible sequence begin where the viewer would want to start
-watching.
-
-## Multiple videos per project
-
-Create more than one `.video.ts` file when the flows are distinct:
-
-```text
-videos/
-  onboarding.video.ts
-  admin-billing.video.ts
-  changelog.video.ts
-```
-
-That keeps each video focused and makes iteration easier.
-
-You can also define multiple videos in the same `.video.ts` file when they
-share setup, fixtures, or helper code. Split by file when that improves
-clarity; keep them together when that reduces duplication.
-
-## What's next
-
-- [Generating Videos](/docs/generating-videos) if you want a first draft
-  faster.
-- [Narration and Localization](/docs/guides/narration-and-localization) for
-  spoken cues.
-- [Camera and Zooming](/docs/guides/camera-and-zooming) for framing.
+API reference: [createNarration()](/docs/reference/api/functions/createnarration),
+[voices](/docs/reference/api/variables/voices)

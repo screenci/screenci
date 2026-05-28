@@ -15,19 +15,6 @@ The config merges three layers:
 2. Your project-wide defaults from `screenci.config.ts`.
 3. Per-file overrides from `video.use()`.
 
-## Minimal config
-
-```ts
-import { defineConfig } from 'screenci'
-
-export default defineConfig({
-  // Used to identify this project in ScreenCI.
-  projectName: 'my-product',
-})
-```
-
-That is enough to get started.
-
 ## Common full config
 
 This example focuses on the ScreenCI-specific options you are most likely to
@@ -206,5 +193,4 @@ real workflow.
 ## Related pages
 
 - [CLI](/docs/reference/cli) for how config is discovered and loaded.
-- [Video Authoring API Overview](/docs/reference/video-authoring-api-overview)
   for the runtime helpers used inside scripts.

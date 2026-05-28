@@ -9,82 +9,58 @@ export const docsManifest = [
     slug: 'docs',
     section: 'Getting Started',
     order: 1,
-    navLabel: 'Installation',
-    title: 'Installation',
+    navLabel: 'Installation & first video',
+    title: 'Installation & First Video',
     description:
       'Install ScreenCI, initialize a project, run the starter video locally, and record your first final video.',
     prev: null,
-    next: 'docs/write-video-scripts',
-  },
-  {
-    source: 'write-video-scripts.md',
-    slug: 'docs/write-video-scripts',
-    section: 'Getting Started',
-    order: 2,
-    navLabel: 'Write video scripts',
-    title: 'Write Video Scripts',
-    description:
-      'Author .video.ts files with Playwright-like APIs, ScreenCI narration and camera helpers, and workflow-aware pacing.',
-    prev: 'docs',
     next: 'docs/generating-videos',
   },
   {
     source: 'generating-videos.mdx',
     slug: 'docs/generating-videos',
     section: 'Getting Started',
-    order: 3,
+    order: 2,
     navLabel: 'Generating videos',
     title: 'Generating Videos',
     description:
       'Use Playwright codegen and AI-assisted workflows to generate a first ScreenCI draft, then refine it into a real video script.',
-    prev: 'docs/write-video-scripts',
-    next: 'docs/run-and-debug-videos',
+    prev: 'docs',
+    next: 'docs/write-video-scripts',
   },
   {
-    source: 'run-and-debug-videos.mdx',
-    slug: 'docs/run-and-debug-videos',
+    source: 'write-video-scripts.md',
+    slug: 'docs/write-video-scripts',
     section: 'Getting Started',
-    order: 4,
-    navLabel: 'Run and debug videos',
-    title: 'Run and Debug Videos',
+    order: 3,
+    navLabel: 'Video script basics',
+    title: 'Video Script Basics',
     description:
-      'Use screenci test to iterate locally, inspect failures, and debug pacing, selectors, and visible state before recording.',
+      'Author .video.ts files with Playwright-like APIs, ScreenCI narration and camera helpers, and workflow-aware pacing.',
     prev: 'docs/generating-videos',
-    next: 'docs/record-and-publish',
-  },
-  {
-    source: 'record-and-publish.mdx',
-    slug: 'docs/record-and-publish',
-    section: 'Getting Started',
-    order: 5,
-    navLabel: 'Record and publish',
-    title: 'Record and Publish',
-    description:
-      'Record the final browser session with screenci record, upload the results, and understand how published outputs behave.',
-    prev: 'docs/run-and-debug-videos',
     next: 'docs/ci-setup',
   },
   {
     source: 'ci-setup.md',
     slug: 'docs/ci-setup',
     section: 'Getting Started',
-    order: 6,
+    order: 4,
     navLabel: 'CI setup',
     title: 'CI Setup',
     description:
       'Understand the generated GitHub Actions workflow, required secrets, and how to keep CI recordings deterministic.',
-    prev: 'docs/record-and-publish',
-    next: 'docs/screenci-vs-playwright',
+    prev: 'docs/write-video-scripts',
+    next: 'docs/guides/page-instrumentation',
   },
   {
-    source: 'screenci-vs-playwright.md',
-    slug: 'docs/screenci-vs-playwright',
-    section: 'Getting Started',
-    order: 7,
-    navLabel: 'ScreenCI vs Playwright',
-    title: 'ScreenCI vs Playwright',
+    source: 'page-instrumentation.md',
+    slug: 'docs/guides/page-instrumentation',
+    section: 'Guides',
+    order: 1,
+    navLabel: 'Page instrumentation',
+    title: 'Page Instrumentation',
     description:
-      'See what stays the same from Playwright, what ScreenCI adds for polished video authoring, and when to use each tool.',
+      'Understand how ScreenCI instruments the Playwright page so visible actions like clicks, typing, mouse movement, and scrolling are animated.',
     prev: 'docs/ci-setup',
     next: 'docs/guides/narration-and-localization',
   },
@@ -92,19 +68,19 @@ export const docsManifest = [
     source: 'narration-and-localization.md',
     slug: 'docs/guides/narration-and-localization',
     section: 'Guides',
-    order: 1,
+    order: 2,
     navLabel: 'Narration and localization',
     title: 'Narration and Localization',
     description:
       'Create spoken cues, overlap narration with visible UI motion, and keep multi-language variants consistent and type-safe.',
-    prev: 'docs/screenci-vs-playwright',
+    prev: 'docs/guides/page-instrumentation',
     next: 'docs/guides/camera-and-zooming',
   },
   {
     source: 'camera-and-zooming.md',
     slug: 'docs/guides/camera-and-zooming',
     section: 'Guides',
-    order: 2,
+    order: 3,
     navLabel: 'Camera and zooming',
     title: 'Camera and Zooming',
     description:
@@ -116,7 +92,7 @@ export const docsManifest = [
     source: 'assets-and-overlays.md',
     slug: 'docs/guides/assets-and-overlays',
     section: 'Guides',
-    order: 3,
+    order: 4,
     navLabel: 'Assets and overlays',
     title: 'Assets and Overlays',
     description:
@@ -128,7 +104,7 @@ export const docsManifest = [
     source: 'public-urls-and-embeds.md',
     slug: 'docs/guides/public-urls-and-embeds',
     section: 'Guides',
-    order: 4,
+    order: 5,
     navLabel: 'Public URLs and embeds',
     title: 'Public URLs and Embeds',
     description:
@@ -140,7 +116,7 @@ export const docsManifest = [
     source: 'update-screenci.mdx',
     slug: 'docs/guides/update-screenci',
     section: 'Guides',
-    order: 5,
+    order: 6,
     navLabel: 'Update ScreenCI',
     title: 'Update ScreenCI',
     description:
@@ -151,8 +127,8 @@ export const docsManifest = [
   {
     source: 'cli.mdx',
     slug: 'docs/reference/cli',
-    section: 'Reference',
-    order: 1,
+    section: 'Guides',
+    order: 7,
     navLabel: 'CLI',
     title: 'CLI',
     description:
@@ -163,42 +139,30 @@ export const docsManifest = [
   {
     source: 'configuration.md',
     slug: 'docs/reference/configuration',
-    section: 'Reference',
-    order: 2,
+    section: 'Guides',
+    order: 8,
     navLabel: 'Configuration',
     title: 'Configuration',
     description:
       'Configure project identity, file locations, rendering defaults, upload behavior, and Playwright integration in screenci.config.ts.',
     prev: 'docs/reference/cli',
-    next: 'docs/reference/video-authoring-api-overview',
-  },
-  {
-    source: 'video-authoring-api-overview.md',
-    slug: 'docs/reference/video-authoring-api-overview',
-    section: 'Reference',
-    order: 3,
-    navLabel: 'Video authoring API overview',
-    title: 'Video Authoring API Overview',
-    description:
-      'Human-curated reference for the main ScreenCI authoring primitives, with minimal examples and links into the full typedoc.',
-    prev: 'docs/reference/configuration',
     next: 'docs/reference/public-delivery-api',
   },
   {
     source: 'public-delivery-api.md',
     slug: 'docs/reference/public-delivery-api',
-    section: 'Reference',
-    order: 4,
+    section: 'Guides',
+    order: 9,
     navLabel: 'Public delivery API',
     title: 'Public Delivery API',
     description:
       'Technical reference for the unauthenticated endpoints that serve published videos, thumbnails, subtitles, and metadata.',
-    prev: 'docs/reference/video-authoring-api-overview',
+    prev: 'docs/reference/configuration',
     next: 'docs/reference/api',
   },
 ] as const
 
-export const docsSections = ['Getting Started', 'Guides', 'Reference'] as const
+export const docsSections = ['Getting Started', 'Guides'] as const
 
 export function getDocBySlug(slug: string) {
   return docsManifest.find((entry) => entry.slug === slug)
@@ -246,7 +210,7 @@ export function getDocsSidebarConfig(
       .sort((a, b) => a.order - b.order)
       .map(toSidebarItem)
 
-    if (section === 'Reference' && typedocSidebarGroup) {
+    if (section === 'Guides' && typedocSidebarGroup) {
       items.push(typedocSidebarGroup)
     }
 

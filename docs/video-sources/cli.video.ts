@@ -17,7 +17,7 @@ const narration = createNarration({
       'The page includes the ScreenCI source used to walk through the reference.',
     focus:
       'One of the key command sections covers screenci test and the normal local iteration loop.',
-    next: 'When the guide is done, it links back to the Record and Publish workflow.',
+    next: 'The same reference also covers the final screenci record flow.',
   },
 })
 
@@ -44,11 +44,13 @@ video('CLI reference walkthrough', async ({ page }) => {
   await narration.next()
   await autoZoom(async () => {
     await page
-      .locator('.sl-markdown-content')
-      .getByRole('link', { name: 'Record and Publish', exact: true })
-      .first()
-      .click()
+      .getByRole('heading', { name: /screenci record \[playwrightArgs/ })
+      .scrollIntoViewIfNeeded()
   })
 
-  await page.waitForLoadState('networkidle')
+  await zoomTo(
+    page.getByRole('heading', { name: /screenci record \[playwrightArgs/ })
+  )
+  await page.waitForTimeout(700)
+  await resetZoom()
 })

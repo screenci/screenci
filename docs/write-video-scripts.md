@@ -17,38 +17,40 @@ script structure and ScreenCI-specific APIs.
 
 ## ScreenCI video vs Playwright test
 
-Unlike a regular `playwright/test` test, `video()` gives you an instrumented
-Playwright `page` so visible interactions look like a recording instead of a
-robotic test:
-
-- cursor moves are animated
-- typing is visible
-
-Most standard Playwright APIs still work as expected, including navigation,
-locators, waiting, keyboard input, and assertions from `@playwright/test`.
-
-For more on how ScreenCI animates visible page actions, see
-[Page Instrumentation](/docs/guides/page-instrumentation).
+<!-- screenci-doc-code-sample:starter-video:start -->
 
 ```ts
-import { video } from 'screenci'
+import { autoZoom, createNarration, hide, video, voices } from 'screenci'
 
-video('Open billing', async ({ page }) => {
-  await page.goto('/settings')
+// Define narration lines, including localized variants.
+const narration = createNarration({
+  voice: { name: voices.Sophie },
+  en: {
+    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
+  },
+  es: {
+    docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
+  },
+})
 
-  // Clicks are animated.
-  await page.getByRole('link', { name: 'Billing' }).click()
+video('How to find docs', async ({ page }) => {
+  // Run setup without showing these actions in the final recording.
+  await hide(async () => {
+    await page.goto('https://screenci.com/')
+    await page.waitForLoadState('networkidle')
+  })
 
-  // Typing is animated.
-  await page.getByLabel('Company name').fill('ScreenCI Labs')
+  // Play the matching narration line for this step.
+  await narration.docs()
 
-  // Mouse movement is animated.
-  await page.getByRole('button', { name: 'Save changes' }).hover()
-
-  // Scrolling into view is animated.
-  await page.getByTestId('invoices-table').scrollIntoViewIfNeeded()
+  // Automatically zoom into interactions so they are easier to follow.
+  await autoZoom(async () => {
+    await page.getByRole('link', { name: 'View Documentation' }).click()
+  })
 })
 ```
+
+<!-- screenci-doc-code-sample:starter-video:end -->
 
 You can define multiple `video()` calls in the same file, or create multiple
 `.video.ts` files under `videos/`.

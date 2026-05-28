@@ -12,15 +12,13 @@ const narration = createNarration({
   voice: { name: voices.Sophie },
   languages: {
     en: {
-      cues: {
-        intro:
-          'This video introduces the Narration and Localization guide for cue based speech and multi language output.',
-        source:
-          'The source block shows how the guide video itself uses narration cues and typed source.',
-        focus:
-          'One of the most important sections explains how to overlap spoken cues with visible motion.',
-        next: 'The next guide expands from narration into camera movement and zooming.',
-      },
+      intro:
+        'This video introduces the Narration and Localization guide for cue based speech and multi language output.',
+      source:
+        'The source block shows how the guide video itself uses narration cues and typed source.',
+      focus:
+        'One of the most important sections explains how to overlap spoken cues with visible motion.',
+      next: 'The next guide expands from narration into camera movement and zooming.',
     },
   },
 })

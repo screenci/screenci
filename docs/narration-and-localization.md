@@ -20,10 +20,8 @@ const narration = createNarration({
   voice: { name: voices.Sophie },
   languages: {
     en: {
-      cues: {
-        intro: 'Open the settings page.',
-        save: 'Save the changes when you are ready.',
-      },
+      intro: 'Open the settings page.',
+      save: 'Save the changes when you are ready.',
     },
   },
 })
@@ -59,14 +57,10 @@ const narration = createNarration({
   voice: { name: voices.Sophie },
   languages: {
     en: {
-      cues: {
-        intro: 'Open the settings page.',
-      },
+      intro: 'Open the settings page.',
     },
     fi: {
-      cues: {
-        intro: 'Avaa asetussivu.',
-      },
+      intro: 'Avaa asetussivu.',
     },
   },
 })
@@ -119,7 +113,7 @@ import { createNarration, voices } from 'screenci'
 const narration = createNarration({
   voice: { name: voices.Nora },
   languages: {
-    en: { cues: { intro: "Let's get started." } },
+    en: { intro: "Let's get started." },
   },
 })
 ```
@@ -185,7 +179,7 @@ const narration = createNarration({
   languages: {
     en: {
       region: languageRegions.en.US,
-      cues: { intro: 'Welcome.' },
+      intro: 'Welcome.',
     },
   },
 })
@@ -231,15 +225,13 @@ const narration = createNarration({
   languages: {
     en: {
       region: languageRegions.en.US,
-      cues: {
-        intro: 'Welcome to the dashboard.',
-      },
+
+      intro: 'Welcome to the dashboard.',
     },
     fi: {
       voice: { name: voices.Nora, pacing: 0.95 },
-      cues: {
-        intro: 'Tervetuloa hallintapaneeliin.',
-      },
+
+      intro: 'Tervetuloa hallintapaneeliin.',
     },
     de: {
       voice: {
@@ -247,9 +239,8 @@ const narration = createNarration({
         modelType: 'expressive',
         style: 'A friendly and energetic German speaker.',
       },
-      cues: {
-        intro: 'Willkommen im Dashboard.',
-      },
+
+      intro: 'Willkommen im Dashboard.',
     },
   },
 })
@@ -283,9 +274,7 @@ const narration = createNarration({
   },
   languages: {
     en: {
-      cues: {
-        intro: 'Welcome.',
-      },
+      intro: 'Welcome.',
     },
   },
 })
@@ -305,9 +294,7 @@ const narration = createNarration({
   },
   languages: {
     en: {
-      cues: {
-        intro: 'Welcome.',
-      },
+      intro: 'Welcome.',
     },
   },
 })
@@ -355,9 +342,7 @@ const narration = createNarration({
   },
   languages: {
     en: {
-      cues: {
-        intro: "Let's walk through the settings page.",
-      },
+      intro: "Let's walk through the settings page.",
     },
   },
 })

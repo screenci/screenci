@@ -12,15 +12,13 @@ const narration = createNarration({
   voice: { name: voices.Sophie },
   languages: {
     en: {
-      cues: {
-        intro:
-          'This video shows how the Generating Videos guide covers source based, URL based, and codegen driven starting points.',
-        source:
-          'The embedded source shows the exact ScreenCI script behind this documentation walkthrough.',
-        section:
-          'One of the core sections focuses on generating videos directly from source code in the same repository.',
-        next: 'From here, the next step is learning how to run and debug the draft locally.',
-      },
+      intro:
+        'This video shows how the Generating Videos guide covers source based, URL based, and codegen driven starting points.',
+      source:
+        'The embedded source shows the exact ScreenCI script behind this documentation walkthrough.',
+      section:
+        'One of the core sections focuses on generating videos directly from source code in the same repository.',
+      next: 'From here, the next step is learning how to run and debug the draft locally.',
     },
   },
 })

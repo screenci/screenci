@@ -300,33 +300,44 @@ type LanguageEntryBase = {
   region?: string
 }
 
-type LanguageCuesEntry<C extends Record<string, CueMapValue>> =
-  LanguageEntryBase & { cues: C }
+type LanguageMetadataKey = keyof LanguageEntryBase
 
-type AllCues<
-  M extends Partial<
-    Record<Lang, LanguageCuesEntry<Record<string, CueMapValue>>>
-  >,
-> = UnionToIntersection<
-  {
-    [L in keyof M]: M[L] extends { cues: infer C }
-      ? Record<keyof C & string, CueMapValue>
-      : never
-  }[keyof M]
-> &
-  Record<string, CueMapValue>
+type NarrationLanguageInput = LanguageEntryBase & Record<string, unknown>
 
-type LanguagesMap<
-  M extends Partial<
-    Record<Lang, LanguageCuesEntry<Record<string, CueMapValue>>>
-  >,
-> = M & {
-  [L in keyof M]: {
-    voice?: LangNarrationOverride
-    /** BCP-47 region code for TTS synthesis, e.g. `languageRegions.en.US`. */
-    region?: string
-  } & { cues: AllCues<M> }
-}
+type LanguageEntry<C extends Record<string, CueMapValue>> = LanguageEntryBase &
+  C
+
+type OmitLanguageMetadata<T extends NarrationLanguageInput> = Omit<
+  T,
+  LanguageMetadataKey
+>
+
+type EnsureCueRecord<T> = T extends Record<string, CueMapValue> ? T : never
+
+type AllCues<M extends Partial<Record<Lang, NarrationLanguageInput>>> =
+  EnsureCueRecord<
+    UnionToIntersection<
+      {
+        [L in keyof M]-?: NonNullable<M[L]> extends NarrationLanguageInput
+          ? Record<
+              keyof OmitLanguageMetadata<NonNullable<M[L]>> & string,
+              CueMapValue
+            >
+          : never
+      }[keyof M]
+    >
+  >
+
+type LanguagesMap<M extends Partial<Record<Lang, NarrationLanguageInput>>> =
+  M & {
+    [L in keyof M]-?: {
+      voice?: LangNarrationOverride
+      /** BCP-47 region code for TTS synthesis, e.g. `languageRegions.en.US`. */
+      region?: string
+    } & {
+      [K in keyof OmitLanguageMetadata<NonNullable<M[L]>>]: CueMapValue
+    } & AllCues<M>
+  }
 
 /**
  * Creates a set of typed narration controllers, one per key in the map.
@@ -347,10 +358,11 @@ type LanguagesMap<
  * const narration = createNarration({
  *   voice: { name: voices.Ava },
  *   languages: {
- *     en: { cues: { intro: 'Welcome.', next: 'Click here.' } },
+ *     en: { intro: 'Welcome.', next: 'Click here.' },
  *     fi: {
  *       voice: { name: voices.Nora, seed: 42 },
- *       cues: { intro: 'Tervetuloa.', next: 'Napsauta tästä.' },
+ *       intro: 'Tervetuloa.',
+ *       next: 'Napsauta tästä.',
  *     },
  *   },
  * })
@@ -369,9 +381,7 @@ type LanguagesMap<
  * ```
  */
 export function createNarration<
-  M extends Partial<
-    Record<Lang, LanguageCuesEntry<Record<string, CueMapValue>>>
-  >,
+  M extends Partial<Record<Lang, NarrationLanguageInput>>,
 >(input: {
   voice: TopLevelVoiceConfig
   languages: LanguagesMap<M>
@@ -379,7 +389,7 @@ export function createNarration<
   return buildCuesFromInput(
     input.voice,
     input.languages as Partial<
-      Record<Lang, LanguageCuesEntry<Record<string, CueMapValue>>>
+      Record<Lang, LanguageEntry<Record<string, CueMapValue>>>
     >
   ) as Cues<AllCues<M>>
 }
@@ -387,6 +397,11 @@ export function createNarration<
 type NormalizedCueMapValue =
   | { type: 'text'; text: string }
   | { type: 'file'; path: string; subtitle?: string }
+
+const RESERVED_LANGUAGE_METADATA_KEYS = new Set<LanguageMetadataKey>([
+  'voice',
+  'region',
+])
 
 function normalizeCueMapValue(value: CueMapValue): NormalizedCueMapValue {
   if (typeof value === 'string') {
@@ -407,10 +422,22 @@ function normalizeCueMapValue(value: CueMapValue): NormalizedCueMapValue {
 }
 
 function getLanguageCues(
-  entry: LanguageCuesEntry<Record<string, CueMapValue>> | undefined
+  lang: Lang,
+  entry: LanguageEntry<Record<string, CueMapValue>> | undefined
 ): Record<string, CueMapValue> | undefined {
   if (entry === undefined) return undefined
-  return entry.cues
+  if ('cues' in entry) {
+    throw new Error(
+      `createNarration no longer supports languages.${lang}.cues. Move cue keys directly into languages.${lang} and keep only optional voice or region metadata alongside them.`
+    )
+  }
+
+  return Object.fromEntries(
+    Object.entries(entry).filter(
+      ([key]) =>
+        !RESERVED_LANGUAGE_METADATA_KEYS.has(key as LanguageMetadataKey)
+    )
+  ) as Record<string, CueMapValue>
 }
 
 function voiceToKeyString(voice: VoiceKey | CustomVoiceRef): string {
@@ -420,9 +447,7 @@ function voiceToKeyString(voice: VoiceKey | CustomVoiceRef): string {
 
 function buildCuesFromInput(
   topVoice: TopLevelVoiceConfig,
-  languages: Partial<
-    Record<Lang, LanguageCuesEntry<Record<string, CueMapValue>>>
-  >
+  languages: Partial<Record<Lang, LanguageEntry<Record<string, CueMapValue>>>>
 ): Cues<Record<string, CueMapValue>> {
   const langs = Object.keys(languages) as Lang[]
   const firstLang = langs[0]
@@ -486,7 +511,7 @@ function buildCuesFromInput(
 
   const result = {} as Cues<Record<string, CueMapValue>>
 
-  const firstCues = getLanguageCues(firstEntry)
+  const firstCues = getLanguageCues(firstLang, firstEntry)
   if (firstCues === undefined) return {} as Cues<Record<string, CueMapValue>>
 
   function createCueController(
@@ -547,7 +572,7 @@ function buildCuesFromInput(
     // Normalize shorthand values and determine if any language uses a file entry for this key.
     let hasFileEntry = false
     for (const lang of langs) {
-      const val = getLanguageCues(languages[lang])?.[keyStr]
+      const val = getLanguageCues(lang, languages[lang])?.[keyStr]
       if (val !== undefined) {
         const normalized = normalizeCueMapValue(val)
         normalizedByLang.set(lang, normalized)

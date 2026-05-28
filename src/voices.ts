@@ -8,7 +8,7 @@
  * ```ts
  * createNarration({
  *   voice: { name: voices.Ava, modelType: modelTypes.expressive },
- *   languages: { en: { cues: { intro: 'Hello' } } },
+ *   languages: { en: { intro: 'Hello' } },
  * })
  * ```
  */
@@ -30,8 +30,8 @@ export type ModelType = (typeof modelTypes)[keyof typeof modelTypes]
  * createNarration({
  *   voice: { name: voices.Ava },
  *   languages: {
- *     en: { region: languageRegions.en.US, cues: { intro: 'Hello' } },
- *     fr: { region: languageRegions.fr.FR, cues: { intro: 'Bonjour' } },
+ *     en: { region: languageRegions.en.US, intro: 'Hello' },
+ *     fr: { region: languageRegions.fr.FR, intro: 'Bonjour' },
  *   },
  * })
  * ```
@@ -113,8 +113,8 @@ export const languageRegions = {
  *
  * ```ts
  * createNarration({
- *   en: { voice: voices.Aria, cues: { intro: 'Hello' } },
- *   fi: { voice: voices.Aria, cues: { intro: 'Hei' } },
+ *   en: { voice: voices.Aria, intro: 'Hello' },
+ *   fi: { voice: voices.Aria, intro: 'Hei' },
  * })
  * ```
  *
@@ -124,7 +124,7 @@ export const languageRegions = {
  * createNarration({
  *   en: {
  *     voice: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }),
- *     cues: { intro: 'Hello' },
+ *     intro: 'Hello',
  *   },
  * })
  * ```
@@ -328,7 +328,7 @@ export type Lang = (typeof _supportedLanguageCodes)[number]
  * @example
  * ```ts
  * createNarration({
- *   en: { voice: { path: './my-voice.mp3' }, cues: { intro: 'Hello.' } },
+ *   en: { voice: { path: './my-voice.mp3' }, intro: 'Hello.' },
  * })
  * ```
  */

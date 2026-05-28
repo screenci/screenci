@@ -12,15 +12,13 @@ const narration = createNarration({
   voice: { name: voices.Sophie },
   languages: {
     en: {
-      cues: {
-        intro:
-          'This video shows how the Public URLs and Embeds guide explains stable published delivery links.',
-        source:
-          'The source details make it easy to compare the written guide with the authored walkthrough.',
-        focus:
-          'The embed example is the core section when you want to place a public ScreenCI video into another site.',
-        next: 'The page links directly to the endpoint level Public Delivery API reference.',
-      },
+      intro:
+        'This video shows how the Public URLs and Embeds guide explains stable published delivery links.',
+      source:
+        'The source details make it easy to compare the written guide with the authored walkthrough.',
+      focus:
+        'The embed example is the core section when you want to place a public ScreenCI video into another site.',
+      next: 'The page links directly to the endpoint level Public Delivery API reference.',
     },
   },
 })

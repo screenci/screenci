@@ -554,10 +554,8 @@ interface Video extends VideoCallSignatures {
  *   voice: { name: voices.Ava },
  *   languages: {
  *     en: {
- *       cues: {
- *         homepage: 'User navigates to homepage.',
- *         signup: 'Clicks the sign up button.',
- *       },
+ *       homepage: 'User navigates to homepage.',
+ *       signup: 'Clicks the sign up button.',
  *     },
  *   },
  * })

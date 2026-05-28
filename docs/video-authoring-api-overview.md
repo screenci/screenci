@@ -20,18 +20,16 @@ Full reference: [/docs/reference/api/variables/video](/docs/reference/api/variab
 
 ## `createNarration()`
 
-Define typed narration cues:
-
-```ts
-import { createNarration, voices } from 'screenci'
+Define typed narration createNarration, voices from 'screenci'
 
 const narration = createNarration({
-  voice: { name: voices.Sophie },
-  languages: {
-    en: { cues: { intro: 'Open the dashboard.' } },
-  },
+voice: { name: voices.Sophie },
+languages: {
+en: { intro: 'Open the dashboard.' },
+},
 })
-```
+
+````
 
 Use it with [Narration and Localization](/docs/guides/narration-and-localization).
 
@@ -43,7 +41,7 @@ Cut setup or cleanup out of the visible recording:
 await hide(async () => {
   await page.goto('/login')
 })
-```
+````
 
 Full reference: [/docs/reference/api/functions/hide](/docs/reference/api/functions/hide)
 

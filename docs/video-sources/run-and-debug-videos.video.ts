@@ -12,15 +12,13 @@ const narration = createNarration({
   voice: { name: voices.Sophie },
   languages: {
     en: {
-      cues: {
-        intro:
-          'This video walks through the local authoring loop in the Run and Debug Videos guide.',
-        source:
-          'As with the other docs pages, the ScreenCI source is available right on the page.',
-        focus:
-          'A key section shows how to run one file or a filtered subset while you iterate.',
-        next: 'Once the local flow looks right, the docs move on to recording and publishing.',
-      },
+      intro:
+        'This video walks through the local authoring loop in the Run and Debug Videos guide.',
+      source:
+        'As with the other docs pages, the ScreenCI source is available right on the page.',
+      focus:
+        'A key section shows how to run one file or a filtered subset while you iterate.',
+      next: 'Once the local flow looks right, the docs move on to recording and publishing.',
     },
   },
 })

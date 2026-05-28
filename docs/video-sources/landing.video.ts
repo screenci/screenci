@@ -4,14 +4,10 @@ const narration = createNarration({
   voice: { name: voices.Sophie, style: 'Clear, friendly product walkthrough' },
   languages: {
     en: {
-      cues: {
-        docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
-      },
+      docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
     },
     es: {
-      cues: {
-        docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
-      },
+      docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
     },
   },
 })

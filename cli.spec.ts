@@ -773,7 +773,7 @@ describe('CLI', () => {
         })
 
         const messages = loggerInfoSpy.mock.calls.map((call) => String(call[0]))
-        expect(messages).toContain('Uploading 2 recordings in parallel...')
+        expect(messages).not.toContain('Uploading 2 recordings in parallel...')
         expect(
           messages.findIndex((message) =>
             message.includes('Uploaded "Fast Demo"')

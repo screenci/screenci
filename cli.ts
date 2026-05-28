@@ -320,10 +320,6 @@ function createUploadProgressReporter(
   const useInPlaceUpdates = supportsInPlaceUploadUpdates(verbose)
 
   if (!useInPlaceUpdates) {
-    if (videoNames.length > 1) {
-      logger.info(`Uploading ${videoNames.length} recordings in parallel...`)
-    }
-
     return {
       complete(index, status) {
         logger.info(

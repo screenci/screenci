@@ -9,7 +9,6 @@ camera movement, and visible pacing.
 - [how to structure a `.video.ts` file](#anatomy-of-a-video-script)
 - [how to navigate and interact](#author-with-locators)
 - [how ScreenCI behavior differs from plain Playwright](#what-screenci-changes)
-- [how to control visible pacing](#control-pacing)
 
 ## Generated starter video
 
@@ -134,23 +133,6 @@ await hide(async () => {
 Then let the visible sequence begin where the viewer would want to start
 watching.
 
-## Control pacing
-
-<!-- screenci-doc-video:docs/write-video-scripts -->
-
-Visible pacing is part of authoring quality.
-
-Prefer:
-
-- waiting for the UI the viewer should actually see
-- narration overlap when speech and motion should happen together
-- short explicit pauses only when the viewer needs breathing room
-
-Use `waitForTimeout()` deliberately, not as a substitute for state-based
-synchronization. The same Playwright advice applies here:
-[Auto-waiting](https://playwright.dev/docs/actionability) first, explicit pause
-only when the pause is part of the video.
-
 ## Multiple videos per project
 
 Create more than one `.video.ts` file when the flows are distinct:
@@ -164,12 +146,9 @@ videos/
 
 That keeps each video focused and makes iteration easier.
 
-## Relation to Playwright APIs
-
-Use ScreenCI for the viewer-facing layer and Playwright for the browser
-automation layer underneath. When you need a deeper method, check the standard
-Playwright docs first, then add ScreenCI helpers only where the recording needs
-them.
+You can also define multiple videos in the same `.video.ts` file when they
+share setup, fixtures, or helper code. Split by file when that improves
+clarity; keep them together when that reduces duplication.
 
 ## What's next
 

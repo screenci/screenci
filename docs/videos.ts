@@ -17,10 +17,6 @@ export const docsVideoRegistry = {
     sourcePath: 'screenci/docs/video-sources/installation.video.ts',
     showSource: false,
   },
-  'docs/write-video-scripts': {
-    publicId: 'kh72bybz8329zbtb6ed50cxwxx87ds9x',
-    sourcePath: 'screenci/docs/video-sources/write-video-scripts.video.ts',
-  },
   'docs/generating-videos': {
     publicId: 'kh7e67grs9kzcsas7hp7m14mr187ca4d',
     sourcePath: 'screenci/docs/video-sources/generating-videos.video.ts',

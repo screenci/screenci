@@ -113,18 +113,18 @@ Playwright config still passes through.
 
 ## Authoring helpers
 
-| Export            | What it does                                             |
-| ----------------- | -------------------------------------------------------- |
-| `defineConfig`    | Wraps Playwright config with ScreenCI defaults           |
-| `video`           | Declares a video recording test                          |
-| `createNarration` | Creates typed narration controllers                      |
-| `hide`            | Cuts setup or cleanup out of the visible recording       |
-| `autoZoom`        | Smooth camera follow for an interaction block            |
-| `zoomTo`          | Manual camera framing for a locator or point             |
-| `resetZoom`       | Returns from manual framing to the full viewport         |
-| `createAssets`    | Inserts timed media overlays into the recording timeline |
-| `voices`          | Available voice constants such as `voices.Ava`           |
-| `languageRegions` | Region constants such as `languageRegions.en.US`         |
+| Export            | What it does                                              |
+| ----------------- | --------------------------------------------------------- |
+| `defineConfig`    | Wraps Playwright config with ScreenCI defaults            |
+| `video`           | Declares a video recording test                           |
+| `createNarration` | Creates typed narration controllers                       |
+| `hide`            | Cuts setup or cleanup out of the visible recording        |
+| `autoZoom`        | Smooth camera follow for an interaction block             |
+| `zoomTo`          | Manual camera framing for a locator or point              |
+| `resetZoom`       | Returns from manual framing to the full viewport          |
+| `createAssets`    | Inserts timed media overlays into the recording timeline  |
+| `voices`          | Available voice constants such as `voices.Ava`            |
+| `modelTypes`      | Narration model constants such as `modelTypes.consistent` |
 
 ## Output
 

@@ -6,7 +6,14 @@ import type {
   VideoCueTranslationFile,
   VoiceLanguageMeta,
 } from './events.js'
-import type { VoiceKey, Lang, CustomVoiceRef, ModelType } from './voices.js'
+import {
+  supportedLanguages,
+  voices,
+  type VoiceKey,
+  type Lang,
+  type CustomVoiceRef,
+  type ModelType,
+} from './voices.js'
 import { isCustomVoiceRef } from './customVoiceRef.js'
 import { isInsideHide } from './hide.js'
 import { logger } from './logger.js'
@@ -297,7 +304,6 @@ type UnionToIntersection<U> = (
  */
 type LanguageEntryBase = {
   voice?: LangNarrationOverride
-  region?: string
 }
 
 type LanguageMetadataKey = keyof LanguageEntryBase
@@ -314,30 +320,36 @@ type OmitLanguageMetadata<T extends NarrationLanguageInput> = Omit<
 
 type EnsureCueRecord<T> = T extends Record<string, CueMapValue> ? T : never
 
+type LanguageRootKeys<M> = Extract<keyof M, Lang>
+
 type AllCues<M extends Partial<Record<Lang, NarrationLanguageInput>>> =
   EnsureCueRecord<
     UnionToIntersection<
       {
-        [L in keyof M]-?: NonNullable<M[L]> extends NarrationLanguageInput
+        [L in LanguageRootKeys<M>]-?: NonNullable<
+          M[L]
+        > extends NarrationLanguageInput
           ? Record<
               keyof OmitLanguageMetadata<NonNullable<M[L]>> & string,
               CueMapValue
             >
           : never
-      }[keyof M]
+      }[LanguageRootKeys<M>]
     >
   >
 
 type LanguagesMap<M extends Partial<Record<Lang, NarrationLanguageInput>>> =
   M & {
-    [L in keyof M]-?: {
+    [L in LanguageRootKeys<M>]-?: {
       voice?: LangNarrationOverride
-      /** BCP-47 region code for TTS synthesis, e.g. `languageRegions.en.US`. */
-      region?: string
     } & {
       [K in keyof OmitLanguageMetadata<NonNullable<M[L]>>]: CueMapValue
     } & AllCues<M>
   }
+
+type NarrationInput<M extends Partial<Record<Lang, NarrationLanguageInput>>> = {
+  voice?: TopLevelVoiceConfig
+} & LanguagesMap<M>
 
 /**
  * Creates a set of typed narration controllers, one per key in the map.
@@ -357,13 +369,11 @@ type LanguagesMap<M extends Partial<Record<Lang, NarrationLanguageInput>>> =
  * ```ts
  * const narration = createNarration({
  *   voice: { name: voices.Ava },
- *   languages: {
- *     en: { intro: 'Welcome.', next: 'Click here.' },
- *     fi: {
- *       voice: { name: voices.Nora, seed: 42 },
- *       intro: 'Tervetuloa.',
- *       next: 'Napsauta tästä.',
- *     },
+ *   en: { intro: 'Welcome.', next: 'Click here.' },
+ *   fi: {
+ *     voice: { name: voices.Nora, seed: 42 },
+ *     intro: 'Tervetuloa.',
+ *     next: 'Napsauta tästä.',
  *   },
  * })
  *
@@ -382,15 +392,18 @@ type LanguagesMap<M extends Partial<Record<Lang, NarrationLanguageInput>>> =
  */
 export function createNarration<
   M extends Partial<Record<Lang, NarrationLanguageInput>>,
->(input: {
-  voice: TopLevelVoiceConfig
-  languages: LanguagesMap<M>
-}): Cues<AllCues<M>> {
+>(input: NarrationInput<M>): Cues<AllCues<M>> {
+  if ('languages' in input) {
+    throw new Error(
+      'createNarration no longer accepts a top-level "languages" wrapper. Move each language code to the top level, for example { voice, en: {...}, fi: {...} }.'
+    )
+  }
+
+  const languages = normalizeLanguagesInput(input)
+
   return buildCuesFromInput(
-    input.voice,
-    input.languages as Partial<
-      Record<Lang, LanguageEntry<Record<string, CueMapValue>>>
-    >
+    input.voice ?? { name: voices.Sophie },
+    languages
   ) as Cues<AllCues<M>>
 }
 
@@ -398,10 +411,8 @@ type NormalizedCueMapValue =
   | { type: 'text'; text: string }
   | { type: 'file'; path: string; subtitle?: string }
 
-const RESERVED_LANGUAGE_METADATA_KEYS = new Set<LanguageMetadataKey>([
-  'voice',
-  'region',
-])
+const RESERVED_LANGUAGE_METADATA_KEYS = new Set<LanguageMetadataKey>(['voice'])
+const SUPPORTED_LANGUAGE_SET = new Set<Lang>(supportedLanguages)
 
 function normalizeCueMapValue(value: CueMapValue): NormalizedCueMapValue {
   if (typeof value === 'string') {
@@ -428,7 +439,13 @@ function getLanguageCues(
   if (entry === undefined) return undefined
   if ('cues' in entry) {
     throw new Error(
-      `createNarration no longer supports languages.${lang}.cues. Move cue keys directly into languages.${lang} and keep only optional voice or region metadata alongside them.`
+      `createNarration no longer supports ${lang}.cues. Move cue keys directly into ${lang} and keep only optional voice metadata alongside them.`
+    )
+  }
+
+  if ('region' in entry) {
+    throw new Error(
+      `createNarration no longer supports ${lang}.region. Remove the region override and keep ${lang} as the top-level language key.`
     )
   }
 
@@ -445,6 +462,30 @@ function voiceToKeyString(voice: VoiceKey | CustomVoiceRef): string {
   return voice
 }
 
+function normalizeLanguagesInput(
+  input: NarrationInput<Partial<Record<Lang, NarrationLanguageInput>>>
+): Partial<Record<Lang, LanguageEntry<Record<string, CueMapValue>>>> {
+  const languages: Partial<
+    Record<Lang, LanguageEntry<Record<string, CueMapValue>>>
+  > = {}
+
+  for (const [key, value] of Object.entries(input)) {
+    if (key === 'voice') {
+      continue
+    }
+
+    if (!SUPPORTED_LANGUAGE_SET.has(key as Lang)) {
+      throw new Error(
+        `createNarration received unsupported top-level key "${key}". Use "voice" or a supported language code such as "en" or "fi".`
+      )
+    }
+
+    languages[key as Lang] = value as LanguageEntry<Record<string, CueMapValue>>
+  }
+
+  return languages
+}
+
 function buildCuesFromInput(
   topVoice: TopLevelVoiceConfig,
   languages: Partial<Record<Lang, LanguageEntry<Record<string, CueMapValue>>>>
@@ -453,11 +494,11 @@ function buildCuesFromInput(
   const firstLang = langs[0]
   if (firstLang === undefined) {
     throw new Error(
-      'createNarration requires at least one language in "languages"'
+      'createNarration requires at least one top-level language such as "en" or "fi"'
     )
   }
 
-  // Resolve effective voice and metadata per language
+  // Resolve effective voice metadata per language
   const resolvedVoices = new Map<string, VoiceKey | CustomVoiceRef>()
   const resolvedVoiceMeta = new Map<string, VoiceLanguageMeta>()
 
@@ -466,7 +507,6 @@ function buildCuesFromInput(
     const langOverride = entry?.voice
     const effectiveVoiceName = langOverride?.name ?? topVoice.name
     const effectiveSeed = langOverride?.seed
-    const effectiveRegion = entry?.region
     // If a lang override exists it owns style/accent/pacing entirely — no inheritance from the
     // top-level voice. This prevents a top-level `style` from forcing `expressive` on a lang
     // that explicitly sets `modelType: 'consistent'`.
@@ -496,7 +536,6 @@ function buildCuesFromInput(
     resolvedVoiceMeta.set(lang, {
       name: voiceToKeyString(effectiveVoiceName),
       ...(effectiveSeed !== undefined && { seed: effectiveSeed }),
-      ...(effectiveRegion !== undefined && { region: effectiveRegion }),
       ...(effectiveModelType !== undefined && {
         modelType: effectiveModelType,
       }),
@@ -593,7 +632,6 @@ function buildCuesFromInput(
           const val = normalizedByLang.get(lang)
           if (val === undefined) continue
           const voice = resolvedVoices.get(lang)!
-          const region = languages[lang]?.region
           const meta = resolvedVoiceMeta.get(lang)
           const modelType = meta?.modelType
           const style = meta?.style
@@ -603,7 +641,6 @@ function buildCuesFromInput(
             videoTranslations[lang] = {
               text: val.text,
               voice: await toRecordedVoice(voice),
-              ...(region !== undefined && { region }),
               ...(modelType !== undefined && { modelType }),
               ...(style !== undefined && { style }),
               ...(accent !== undefined && { accent }),
@@ -638,7 +675,6 @@ function buildCuesFromInput(
           const val = normalizedByLang.get(lang)
           if (val !== undefined && val.type === 'text') {
             const voice = resolvedVoices.get(lang)!
-            const region = languages[lang]?.region
             const meta = resolvedVoiceMeta.get(lang)
             const modelType = meta?.modelType
             const style = meta?.style
@@ -647,7 +683,6 @@ function buildCuesFromInput(
             textTranslations[lang] = {
               text: val.text,
               voice: await toRecordedVoice(voice),
-              ...(region !== undefined && { region }),
               ...(modelType !== undefined && { modelType }),
               ...(style !== undefined && { style }),
               ...(accent !== undefined && { accent }),

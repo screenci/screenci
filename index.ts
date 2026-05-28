@@ -15,7 +15,7 @@ export type {
 } from './src/types.js'
 
 // Re-export voices
-export { voices, modelTypes, languageRegions } from './src/voices.js'
+export { voices, modelTypes } from './src/voices.js'
 export type { VoiceKey, CustomVoiceRef, ModelType } from './src/voices.js'
 
 // Re-export config function

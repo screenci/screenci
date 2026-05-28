@@ -552,11 +552,9 @@ interface Video extends VideoCallSignatures {
  *
  * const narration = createNarration({
  *   voice: { name: voices.Ava },
- *   languages: {
- *     en: {
- *       homepage: 'User navigates to homepage.',
- *       signup: 'Clicks the sign up button.',
- *     },
+ *   en: {
+ *     homepage: 'User navigates to homepage.',
+ *     signup: 'Clicks the sign up button.',
  *   },
  * })
  *

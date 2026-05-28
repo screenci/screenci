@@ -20,16 +20,17 @@ Full reference: [/docs/reference/api/variables/video](/docs/reference/api/variab
 
 ## `createNarration()`
 
-Define typed narration createNarration, voices from 'screenci'
+Define typed narration cues and language variants:
+
+```ts
+import { createNarration, voices } from 'screenci'
 
 const narration = createNarration({
-voice: { name: voices.Sophie },
-languages: {
-en: { intro: 'Open the dashboard.' },
-},
+  voice: { name: voices.Sophie },
+  en: { intro: 'Open the dashboard.' },
+  fi: { intro: 'Avaa hallintapaneeli.' },
 })
-
-````
+```
 
 Use it with [Narration and Localization](/docs/guides/narration-and-localization).
 
@@ -41,7 +42,7 @@ Cut setup or cleanup out of the visible recording:
 await hide(async () => {
   await page.goto('/login')
 })
-````
+```
 
 Full reference: [/docs/reference/api/functions/hide](/docs/reference/api/functions/hide)
 
@@ -88,7 +89,6 @@ ScreenCI also exports:
 
 - `voices`
 - `modelTypes`
-- `languageRegions`
 - `getDimensions`
 
 These help you define narration behavior without falling back to raw strings everywhere.

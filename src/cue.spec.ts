@@ -44,11 +44,9 @@ function createMockRecorder(): IEventRecorder {
 
 const singleLangInput = {
   voice: { name: voices.Ava },
-  languages: {
-    en: {
-      intro: 'Hello world',
-      outro: 'Goodbye',
-    },
+  en: {
+    intro: 'Hello world',
+    outro: 'Goodbye',
   },
 }
 
@@ -212,15 +210,11 @@ describe('createNarration', () => {
   it('throws when a cue name is reused in one recording', async () => {
     const first = createNarration({
       voice: { name: voices.Ava },
-      languages: {
-        en: { intro: 'First intro' },
-      },
+      en: { intro: 'First intro' },
     })
     const second = createNarration({
       voice: { name: voices.Ava },
-      languages: {
-        en: { intro: 'Second intro' },
-      },
+      en: { intro: 'Second intro' },
     })
 
     await first.intro.start()
@@ -232,15 +226,11 @@ describe('createNarration', () => {
   it('throws when a video cue name is reused in one recording', async () => {
     const first = createNarration({
       voice: { name: voices.Ava },
-      languages: {
-        en: { clip: { media: 'cue.ts' } },
-      },
+      en: { clip: { media: 'cue.ts' } },
     })
     const second = createNarration({
       voice: { name: voices.Ava },
-      languages: {
-        en: { clip: { media: 'events.ts' } },
-      },
+      en: { clip: { media: 'events.ts' } },
     })
     await validateCustomVoiceRefs(fileURLToPath(import.meta.url))
 
@@ -300,10 +290,8 @@ describe('createNarration', () => {
       const recorderB = createMockRecorder()
       const cues = createNarration({
         voice: { name: voices.Ava },
-        languages: {
-          en: {
-            clip: { media: './clip.txt' },
-          },
+        en: {
+          clip: { media: './clip.txt' },
         },
       })
 
@@ -342,21 +330,22 @@ describe('createNarration', () => {
     }
   })
 
-  it('throws when languages is empty', () => {
+  it('throws when no top-level languages are provided', () => {
     expect(() =>
       createNarration({
         voice: { name: voices.Ava },
-        languages: {},
       })
-    ).toThrow('createNarration requires at least one language in "languages"')
+    ).toThrow(
+      'createNarration requires at least one top-level language such as "en" or "fi"'
+    )
   })
 
-  it('throws a migration error for legacy nested cues input', () => {
+  it('throws a migration error for the legacy languages wrapper', () => {
     const legacyInput = {
       voice: { name: voices.Ava },
       languages: {
         en: {
-          cues: { intro: 'Hello world' },
+          intro: 'Hello world',
         },
       },
     }
@@ -366,7 +355,76 @@ describe('createNarration', () => {
         legacyInput as unknown as Parameters<typeof createNarration>[0]
       )
     ).toThrow(
-      'createNarration no longer supports languages.en.cues. Move cue keys directly into languages.en and keep only optional voice or region metadata alongside them.'
+      'createNarration no longer accepts a top-level "languages" wrapper. Move each language code to the top level, for example { voice, en: {...}, fi: {...} }.'
+    )
+  })
+
+  it('throws for unsupported top-level keys at runtime', () => {
+    const invalidInput = {
+      voice: { name: voices.Ava },
+      foo: {
+        intro: 'Hello world',
+      },
+    }
+
+    expect(() =>
+      createNarration(
+        invalidInput as unknown as Parameters<typeof createNarration>[0]
+      )
+    ).toThrow(
+      'createNarration received unsupported top-level key "foo". Use "voice" or a supported language code such as "en" or "fi".'
+    )
+  })
+
+  it('throws for locale tags at runtime', () => {
+    const invalidInput = {
+      voice: { name: voices.Ava },
+      'en-US': {
+        intro: 'Hello world',
+      },
+    }
+
+    expect(() =>
+      createNarration(
+        invalidInput as unknown as Parameters<typeof createNarration>[0]
+      )
+    ).toThrow(
+      'createNarration received unsupported top-level key "en-US". Use "voice" or a supported language code such as "en" or "fi".'
+    )
+  })
+
+  it('throws a migration error for legacy nested cues input', () => {
+    const legacyInput = {
+      voice: { name: voices.Ava },
+      en: {
+        cues: { intro: 'Hello world' },
+      },
+    }
+
+    expect(() =>
+      createNarration(
+        legacyInput as unknown as Parameters<typeof createNarration>[0]
+      )
+    ).toThrow(
+      'createNarration no longer supports en.cues. Move cue keys directly into en and keep only optional voice metadata alongside them.'
+    )
+  })
+
+  it('throws a migration error for legacy region metadata', () => {
+    const legacyInput = {
+      voice: { name: voices.Ava },
+      en: {
+        region: 'en-US',
+        intro: 'Hello world',
+      },
+    }
+
+    expect(() =>
+      createNarration(
+        legacyInput as unknown as Parameters<typeof createNarration>[0]
+      )
+    ).toThrow(
+      `createNarration no longer supports en.region. Remove the region override and keep en as the top-level language key.`
     )
   })
 
@@ -423,15 +481,13 @@ describe('createNarration', () => {
   describe('with multi-language map', () => {
     const langInput = {
       voice: { name: voices.Ava },
-      languages: {
-        en: {
-          intro: 'Hello world',
-          outro: 'Goodbye',
-        },
-        fi: {
-          intro: 'Hei maailma',
-          outro: 'Näkemiin',
-        },
+      en: {
+        intro: 'Hello world',
+        outro: 'Goodbye',
+      },
+      fi: {
+        intro: 'Hei maailma',
+        outro: 'Näkemiin',
       },
     }
 
@@ -466,14 +522,12 @@ describe('createNarration', () => {
     it('uses a per-language narration override in translations', async () => {
       const cues = createNarration({
         voice: { name: voices.Ava },
-        languages: {
-          en: {
-            intro: 'Hello world',
-          },
-          fi: {
-            voice: { name: voices.Nora },
-            intro: 'Hei maailma',
-          },
+        en: {
+          intro: 'Hello world',
+        },
+        fi: {
+          voice: { name: voices.Nora },
+          intro: 'Hei maailma',
         },
       })
       await cues.intro.start()
@@ -496,10 +550,8 @@ describe('createNarration', () => {
           modelType: modelTypes.consistent,
           pacing: 1.25,
         },
-        languages: {
-          en: {
-            intro: 'Hello world',
-          },
+        en: {
+          intro: 'Hello world',
         },
       })
       await cues.intro.start()
@@ -519,19 +571,45 @@ describe('createNarration', () => {
       )
     })
 
+    it('defaults the top-level voice to Sophie when omitted', async () => {
+      const cues = createNarration({
+        en: {
+          intro: 'Hello world',
+        },
+        es: {
+          intro: 'Hola mundo',
+        },
+      })
+      await cues.intro.start()
+
+      expect(recorder.addCueStart).toHaveBeenCalledWith(
+        '',
+        'intro',
+        undefined,
+        {
+          en: { text: 'Hello world', voice: voices.Sophie },
+          es: { text: 'Hola mundo', voice: voices.Sophie },
+        }
+      )
+      expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('en', {
+        name: 'Sophie',
+      })
+      expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('es', {
+        name: 'Sophie',
+      })
+    })
+
     it('supports cue objects with text and media fields', async () => {
       const cues = createNarration({
         voice: { name: voices.Ava },
-        languages: {
-          en: {
-            intro: {
-              media: '/tmp/intro-en.mp4',
-              subtitle: 'Intro subtitle',
-            },
+        en: {
+          intro: {
+            media: '/tmp/intro-en.mp4',
+            subtitle: 'Intro subtitle',
           },
-          fi: {
-            intro: { text: 'Hei maailma' },
-          },
+        },
+        fi: {
+          intro: { text: 'Hei maailma' },
         },
       })
 
@@ -551,14 +629,12 @@ describe('createNarration', () => {
         } as CustomVoiceRef
         const cues = createNarration({
           voice: { name: voices.Ava },
-          languages: {
-            en: {
-              intro: 'Hello world',
-            },
-            fi: {
-              voice: { name: customVoice },
-              intro: 'Hei maailma',
-            },
+          en: {
+            intro: 'Hello world',
+          },
+          fi: {
+            voice: { name: customVoice },
+            intro: 'Hei maailma',
           },
         })
 
@@ -597,9 +673,7 @@ describe('createNarration', () => {
     it('registers voice meta via recorder on start()', async () => {
       const cues = createNarration({
         voice: { name: voices.Ava },
-        languages: {
-          en: { intro: 'Hello' },
-        },
+        en: { intro: 'Hello' },
       })
       await cues.intro.start()
 
@@ -611,12 +685,10 @@ describe('createNarration', () => {
     it('per-language override seed is registered', async () => {
       const cues = createNarration({
         voice: { name: voices.Ava },
-        languages: {
-          en: { intro: 'Hello' },
-          fi: {
-            voice: { name: voices.Nora, seed: 42 },
-            intro: 'Hei',
-          },
+        en: { intro: 'Hello' },
+        fi: {
+          voice: { name: voices.Nora, seed: 42 },
+          intro: 'Hei',
         },
       })
       await cues.intro.start()
@@ -630,25 +702,10 @@ describe('createNarration', () => {
       })
     })
 
-    it('per-language region is registered', async () => {
+    it('registers base language keys as-is', async () => {
       const cues = createNarration({
         voice: { name: voices.Ava },
-        languages: {
-          en: { region: 'en-US', intro: 'Hello' },
-        },
-      })
-      await cues.intro.start()
-
-      expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('en', {
-        name: 'Ava',
-        region: 'en-US',
-      })
-    })
-
-    it('omits region when not set', async () => {
-      const cues = createNarration({
-        voice: { name: voices.Ava },
-        languages: { en: { intro: 'Hello' } },
+        en: { intro: 'Hello' },
       })
       await cues.intro.start()
 
@@ -662,11 +719,11 @@ describe('createNarration', () => {
     it('allows different voices for the same language across cues', async () => {
       const cues1 = createNarration({
         voice: { name: voices.Ava },
-        languages: { en: { intro: 'Hello' } },
+        en: { intro: 'Hello' },
       })
       const cues2 = createNarration({
         voice: { name: voices.Aria },
-        languages: { en: { other: 'World' } },
+        en: { other: 'World' },
       })
 
       await cues1.intro.start()
@@ -676,11 +733,11 @@ describe('createNarration', () => {
     it('does not throw when two createNarration calls use the same voice for a language', async () => {
       const cues1 = createNarration({
         voice: { name: voices.Ava },
-        languages: { en: { intro: 'Hello' } },
+        en: { intro: 'Hello' },
       })
       const cues2 = createNarration({
         voice: { name: voices.Ava },
-        languages: { en: { other: 'World' } },
+        en: { other: 'World' },
       })
 
       await expect(cues1.intro.start()).resolves.toBeUndefined()

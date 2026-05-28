@@ -23,13 +23,11 @@ import { autoZoom, createNarration, hide, video, voices } from 'screenci'
 
 const narration = createNarration({
   voice: { name: voices.Sophie },
-  languages: {
-    en: {
-      docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
-    },
-    es: {
-      docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
-    },
+  en: {
+    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
+  },
+  es: {
+    docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
   },
 })
 
@@ -55,11 +53,10 @@ This script shows the main building blocks of a ScreenCI video:
 - one or more `video()` calls
 - Playwright-style `page` interactions
 - narration created with `createNarration()`: in the starter example above,
-  `languages.en.docs` defines the English script and `languages.es.docs`
-  defines the Spanish translation. Calling `await narration.docs()` uses the
-  matching cue text for whichever language version is currently being rendered,
-  so the visible page flow stays the same while only the spoken and subtitle
-  text changes.
+  `en.docs` defines the English script and `es.docs` defines the Spanish
+  translation. Calling `await narration.docs()` uses the matching cue text for
+  whichever language version is currently being rendered, so the visible page
+  flow stays the same while only the spoken and subtitle text changes.
 - a hidden setup block when the visible recording should start from a ready
   state
 - optional helpers such as `autoZoom()` to direct attention during visible

@@ -2,13 +2,11 @@ import { autoZoom, createNarration, hide, video, voices } from 'screenci'
 
 const narration = createNarration({
   voice: { name: voices.Sophie, style: 'Clear, friendly product walkthrough' },
-  languages: {
-    en: {
-      docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
-    },
-    es: {
-      docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
-    },
+  en: {
+    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
+  },
+  es: {
+    docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
   },
 })
 

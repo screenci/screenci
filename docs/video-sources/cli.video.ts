@@ -10,16 +10,14 @@ import {
 
 const narration = createNarration({
   voice: { name: voices.Sophie },
-  languages: {
-    en: {
-      intro:
-        'This video introduces the CLI reference and the most common ScreenCI commands.',
-      source:
-        'The page includes the ScreenCI source used to walk through the reference.',
-      focus:
-        'One of the key command sections covers screenci test and the normal local iteration loop.',
-      next: 'When the guide is done, it links back to the Record and Publish workflow.',
-    },
+  en: {
+    intro:
+      'This video introduces the CLI reference and the most common ScreenCI commands.',
+    source:
+      'The page includes the ScreenCI source used to walk through the reference.',
+    focus:
+      'One of the key command sections covers screenci test and the normal local iteration loop.',
+    next: 'When the guide is done, it links back to the Record and Publish workflow.',
   },
 })
 

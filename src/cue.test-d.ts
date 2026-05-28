@@ -7,15 +7,13 @@ describe('createNarration type constraints', () => {
   it('accepts matching flat keys across all languages', () => {
     createNarration({
       voice: { name: voices.Ava },
-      languages: {
-        en: {
-          intro: 'Hello',
-          outro: 'Bye',
-        },
-        fi: {
-          intro: 'Hei',
-          outro: 'Näkemiin',
-        },
+      en: {
+        intro: 'Hello',
+        outro: 'Bye',
+      },
+      fi: {
+        intro: 'Hei',
+        outro: 'Näkemiin',
       },
     })
   })
@@ -23,39 +21,32 @@ describe('createNarration type constraints', () => {
   it('accepts a per-language narration override on only one language', () => {
     createNarration({
       voice: { name: voices.Ava },
-      languages: {
-        en: { intro: 'Hello' },
-        fi: {
-          voice: { name: voices.Nora, seed: 42 },
-          intro: 'Hei',
-        },
+      en: { intro: 'Hello' },
+      fi: {
+        voice: { name: voices.Nora, seed: 42 },
+        intro: 'Hei',
       },
     })
   })
 
-  it('accepts a per-language region on only one language', () => {
+  it('accepts omitted top-level voice and defaults it at runtime', () => {
     createNarration({
-      voice: { name: voices.Ava },
-      languages: {
-        en: { region: 'en-US', intro: 'Hello' },
-        fi: { intro: 'Hei' },
-      },
+      en: { intro: 'Hello' },
+      es: { intro: 'Hola' },
     })
   })
 
   it('accepts mixed value types for the same key', () => {
     createNarration({
       voice: { name: voices.Ava },
-      languages: {
-        en: {
-          intro: 'Hello',
-          clip: { media: '/clip.mp4', subtitle: 'Watch' },
-        },
-        fi: {
-          voice: { name: voices.elevenlabs({ voiceId: 'voice-fi' }) },
-          intro: 'Hei',
-          clip: { text: 'Katso' },
-        },
+      en: {
+        intro: 'Hello',
+        clip: { media: '/clip.mp4', subtitle: 'Watch' },
+      },
+      fi: {
+        voice: { name: voices.elevenlabs({ voiceId: 'voice-fi' }) },
+        intro: 'Hei',
+        clip: { text: 'Katso' },
       },
     })
   })
@@ -63,15 +54,13 @@ describe('createNarration type constraints', () => {
   it('rejects a language with a missing cue key', () => {
     createNarration({
       voice: { name: voices.Ava },
-      languages: {
-        en: {
-          intro: 'Hello',
-          outro: 'Bye',
-        },
-        // @ts-expect-error — 'outro' is missing
-        fi: {
-          intro: 'Hei',
-        },
+      en: {
+        intro: 'Hello',
+        outro: 'Bye',
+      },
+      // @ts-expect-error — 'outro' is missing
+      fi: {
+        intro: 'Hei',
       },
     })
   })
@@ -79,31 +68,35 @@ describe('createNarration type constraints', () => {
   it('rejects legacy nested cues shape', () => {
     createNarration({
       voice: { name: voices.Ava },
-      languages: {
-        en: {
-          // @ts-expect-error — cue keys must be flat under each language
-          cues: { intro: 'Hello' },
-        },
+      en: {
+        // @ts-expect-error — cue keys must be flat under each language
+        cues: { intro: 'Hello' },
       },
     })
   })
 
-  it('rejects seed at the top-level voice', () => {
+  it('rejects the legacy languages wrapper at the root', () => {
     createNarration({
-      // @ts-expect-error — seed is not allowed at the top-level voice
-      voice: { name: voices.Ava, seed: 42 },
+      voice: { name: voices.Ava },
+      // @ts-expect-error — languages is no longer a valid root key
       languages: {
         en: { intro: 'Hello' },
       },
+    })
+  })
+
+  it('rejects locale tags as top-level public language keys', () => {
+    createNarration({
+      voice: { name: voices.Ava },
+      // @ts-expect-error — locale tags are not accepted in the public narration map
+      'fi-FI': { intro: 'Hei' },
     })
   })
 
   it('creates narration from typed cues', () => {
     const narration = createNarration({
       voice: { name: voices.Ava },
-      languages: {
-        en: { intro: 'Hello' },
-      },
+      en: { intro: 'Hello' },
     })
 
     assertType<NarrationCue>(narration.intro)
@@ -121,23 +114,19 @@ describe('createNarration type constraints', () => {
         modelType: modelTypes.consistent,
         pacing: 1.25,
       },
-      languages: {
-        en: { intro: 'Hello' },
-      },
+      en: { intro: 'Hello' },
     })
   })
 
   it('rejects text pacing for consistent narration', () => {
     createNarration({
-      // @ts-expect-error — consistent pacing must be a numeric speaking rate
       voice: {
         name: voices.Ava,
         modelType: modelTypes.consistent,
+        // @ts-expect-error — consistent pacing must be a numeric speaking rate
         pacing: 'Measured',
       },
-      languages: {
-        en: { intro: 'Hello' },
-      },
+      en: { intro: 'Hello' },
     })
   })
 })

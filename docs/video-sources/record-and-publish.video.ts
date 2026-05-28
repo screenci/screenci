@@ -10,16 +10,14 @@ import {
 
 const narration = createNarration({
   voice: { name: voices.Sophie },
-  languages: {
-    en: {
-      intro:
-        'This video covers the point where local test runs become final ScreenCI recordings.',
-      source:
-        'The page also exposes the underlying ScreenCI source for this walkthrough.',
-      focus:
-        'One section explains what gets rendered after a successful recording run.',
-      next: 'The next linked page covers the GitHub Actions workflow used for CI recording.',
-    },
+  en: {
+    intro:
+      'This video covers the point where local test runs become final ScreenCI recordings.',
+    source:
+      'The page also exposes the underlying ScreenCI source for this walkthrough.',
+    focus:
+      'One section explains what gets rendered after a successful recording run.',
+    next: 'The next linked page covers the GitHub Actions workflow used for CI recording.',
   },
 })
 

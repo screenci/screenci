@@ -10,16 +10,14 @@ import {
 
 const narration = createNarration({
   voice: { name: voices.Sophie },
-  languages: {
-    en: {
-      intro:
-        'This video walks through the two camera styles covered in the Camera and Zooming guide.',
-      source:
-        'The page includes the complete ScreenCI script used for this walkthrough.',
-      focus:
-        'The manual zoom section shows when to take exact control over framing instead of following the interaction automatically.',
-      next: 'The related reference page for authoring helpers is linked from the end of the guide.',
-    },
+  en: {
+    intro:
+      'This video walks through the two camera styles covered in the Camera and Zooming guide.',
+    source:
+      'The page includes the complete ScreenCI script used for this walkthrough.',
+    focus:
+      'The manual zoom section shows when to take exact control over framing instead of following the interaction automatically.',
+    next: 'The related reference page for authoring helpers is linked from the end of the guide.',
   },
 })
 

@@ -10,16 +10,14 @@ import {
 
 const narration = createNarration({
   voice: { name: voices.Sophie },
-  languages: {
-    en: {
-      intro:
-        'This video highlights the default GitHub Actions recording workflow described in the CI Setup page.',
-      source:
-        'The source details let you compare the final walkthrough with the authoring script.',
-      focus:
-        'Further down, the guide explains how to keep CI recordings deterministic and repeatable.',
-      next: 'The related publishing guide for public delivery is linked at the end of the page.',
-    },
+  en: {
+    intro:
+      'This video highlights the default GitHub Actions recording workflow described in the CI Setup page.',
+    source:
+      'The source details let you compare the final walkthrough with the authoring script.',
+    focus:
+      'Further down, the guide explains how to keep CI recordings deterministic and repeatable.',
+    next: 'The related publishing guide for public delivery is linked at the end of the page.',
   },
 })
 

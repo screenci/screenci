@@ -12,7 +12,6 @@ describe('public api surface', () => {
       'createNarration',
       'defineConfig',
       'hide',
-      'languageRegions',
       'modelTypes',
       'resetZoom',
       'video',
@@ -29,8 +28,8 @@ describe('public api surface', () => {
 
   it('only exports public runtime voice helpers from the voices entrypoint', () => {
     expect(Object.keys(voicesModule).sort()).toEqual([
-      'languageRegions',
       'modelTypes',
+      'supportedLanguages',
       'voices',
     ])
   })

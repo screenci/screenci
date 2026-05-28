@@ -15,16 +15,14 @@ const assets = createAssets({
 
 const narration = createNarration({
   voice: { name: voices.Sophie, style: 'Clear, structured docs walkthrough' },
-  languages: {
-    en: {
-      intro:
-        'This guide explains how to place intro clips and overlays directly on the ScreenCI timeline.',
-      example:
-        'The define assets section shows the same createAssets pattern used to insert the intro clip at the start of this video.',
-      focus:
-        'The full screen versus overlay section is where the guide explains when a clip should replace the frame and when it should sit on top of the recording.',
-      next: 'The API overview linked at the end summarizes the exported createAssets helper.',
-    },
+  en: {
+    intro:
+      'This guide explains how to place intro clips and overlays directly on the ScreenCI timeline.',
+    example:
+      'The define assets section shows the same createAssets pattern used to insert the intro clip at the start of this video.',
+    focus:
+      'The full screen versus overlay section is where the guide explains when a clip should replace the frame and when it should sit on top of the recording.',
+    next: 'The API overview linked at the end summarizes the exported createAssets helper.',
   },
 })
 

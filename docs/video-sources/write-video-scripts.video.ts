@@ -10,16 +10,14 @@ import {
 
 const narration = createNarration({
   voice: { name: voices.Sophie },
-  languages: {
-    en: {
-      intro:
-        'This video introduces the Write Video Scripts guide and its first working example.',
-      source:
-        'The page includes the full ScreenCI source so you can inspect the script while reading the guide.',
-      pacing:
-        'Further down, the pacing section explains how to balance waits, narration, and visible timing.',
-      next: 'The guide then points you to running and debugging videos locally.',
-    },
+  en: {
+    intro:
+      'This video introduces the Write Video Scripts guide and its first working example.',
+    source:
+      'The page includes the full ScreenCI source so you can inspect the script while reading the guide.',
+    pacing:
+      'Further down, the pacing section explains how to balance waits, narration, and visible timing.',
+    next: 'The guide then points you to running and debugging videos locally.',
   },
 })
 

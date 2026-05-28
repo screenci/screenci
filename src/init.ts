@@ -745,6 +745,7 @@ jobs:
 export function generateExampleVideo(): string {
   return `import { autoZoom, createNarration, hide, video, voices } from 'screenci'
 
+// Define narration lines, including localized variants.
 const narration = createNarration({
   voice: { name: voices.Sophie },
   en: {
@@ -756,13 +757,16 @@ const narration = createNarration({
 })
 
 video('How to find docs', async ({ page }) => {
+  // Run setup without showing these actions in the final recording.
   await hide(async () => {
     await page.goto('https://screenci.com/')
     await page.waitForLoadState('networkidle')
   })
 
+  // Play the matching narration line for this step.
   await narration.docs()
 
+  // Automatically zoom into interactions so they are easier to follow.
   await autoZoom(async () => {
     await page.getByRole('link', { name: 'View Documentation' }).click()
   })

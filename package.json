@@ -7,6 +7,9 @@
   ],
   "license": "MIT",
   "author": "ScreenCI Ltd",
+  "engines": {
+    "node": ">=18"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/screenci/screenci"
@@ -66,8 +69,8 @@
     "eslint-plugin-unused-imports": "^4.3.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
-    "prettier": "^3.7.4",
     "playwright-core": "^1.59.1",
+    "prettier": "^3.7.4",
     "tsx": "^4.21.0",
     "typescript": "5.9.3",
     "typescript-eslint": "^8.50.0",
@@ -77,9 +80,9 @@
     "@playwright/test": ">=1.59.0"
   },
   "dependencies": {
-    "@inquirer/prompts": "^8.3.2",
-    "commander": "^14.0.3",
-    "ora": "^9.3.0",
+    "@inquirer/prompts": "^7.10.1",
+    "commander": "^13.1.0",
+    "ora": "^8.2.0",
     "picocolors": "^1.1.1",
     "playwright-recorder-plus": "^0.1.3"
   }

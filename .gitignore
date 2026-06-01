@@ -7,3 +7,4 @@ index.d.ts
 src/*.js
 src/*.d.ts
 .env
+*.tgz

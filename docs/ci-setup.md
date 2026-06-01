@@ -31,6 +31,10 @@ That is intentionally close to Playwright's own CI model. If you need deeper
 background on Playwright runners and browser installation, see
 [Playwright CI](https://playwright.dev/docs/ci).
 
+ScreenCI itself requires Node.js 18 or newer. The generated recording workflow
+uses Node.js 24 by default for a current CI runtime, while this repository's
+package smoke tests separately verify the minimum supported Node.js 18 baseline.
+
 ## Required secret
 
 Add `SCREENCI_SECRET` as a repository secret in GitHub Actions. You can get it

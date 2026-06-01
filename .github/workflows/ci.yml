@@ -68,7 +68,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version-file: '.nvmrc'
+          # Smoke tests stay on the minimum supported runtime so CLI init/test flows
+          # are continuously verified against the Node.js 18 baseline.
+          node-version: 18
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 

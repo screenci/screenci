@@ -1079,27 +1079,25 @@ function generateConfig(projectName: string): string {
 export default defineConfig({
   // Used to identify this project in ScreenCI.
   projectName: ${JSON.stringify(projectName)},
-  // Load SCREENCI_SECRET and related variables from this file.
+  // Load SCREENCI_SECRET and other env vars from this file.
   envFile: '.env',
   // Look for *.video.ts files in this directory.
   videoDir: './videos',
   // Let independent video files run in parallel.
   fullyParallel: true,
-  // Keep CI deterministic by recording one file at a time there.
+  // Make sure CI recordings are smooth even if resources are constrained
+  // by limiting to 1 worker. Locally, use as many workers as possible for speed.
   workers: process.env.CI ? 1 : undefined,
   use: {
     recordOptions: {
-      // Record in landscape format by default.
       aspectRatio: '16:9',
-      // Capture at standard full HD.
       quality: '1080p',
-      // Use 60 fps for smoother cursor and animation capture.
       fps: 60,
     },
   },
   projects: [
     {
-      // Start with Chromium. Add Firefox/WebKit only if you need them.
+      // ScreenCI currently supports Chromium only
       name: 'chromium',
     },
   ],

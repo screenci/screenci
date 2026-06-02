@@ -1126,6 +1126,8 @@ async function executeScrollAndZoomPlan(params: {
           const evaluateEasingAtT = Function(
             `return (${args.evaluateEasingAtTSource})`
           )() as (t: number, easing: Easing) => number
+          const positionsDiffer = (start: number, target: number): boolean =>
+            Math.abs(target - start) > args.positionEpsilonPx
           const doc = element.ownerDocument
           const win = doc.defaultView as ScrollWindow | null
           if (!win) {
@@ -1236,6 +1238,7 @@ async function executeScrollAndZoomPlan(params: {
         duration,
         easing,
         evaluateEasingAtTSource: evaluateEasingAtT.toString(),
+        positionEpsilonPx: POSITION_EPSILON_PX,
       }
     )
   } else if (zoomed && duration > 0) {

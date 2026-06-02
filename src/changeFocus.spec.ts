@@ -1120,6 +1120,31 @@ describe('changeFocus', () => {
     ).toBe(true)
   })
 
+  it('injects browser-side helpers for animated scrolling', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2200 },
+    })
+
+    const promise = changeFocus(locator, { duration: 100 })
+    await vi.runAllTimersAsync()
+    await promise
+
+    const evaluateMock = vi.mocked(locator.evaluate)
+    const animatedScrollArgs = evaluateMock.mock.calls.at(-1)?.[1] as
+      | {
+          evaluateEasingAtTSource?: string
+          positionEpsilonPx?: number
+        }
+      | undefined
+
+    expect(animatedScrollArgs?.evaluateEasingAtTSource).toContain(
+      'function evaluateEasingAtT'
+    )
+    expect(animatedScrollArgs?.positionEpsilonPx).toBeGreaterThan(0)
+  })
+
   it('does not try to scroll fixed-position targets', async () => {
     const locator = makeLocatorMock({
       rect: { x: 970, y: 452, width: 294, height: 212 },

@@ -346,12 +346,9 @@ describe('CLI', () => {
         expect.stringContaining('Run')
       )
       expect(loggerErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('screenci login')
+        expect.stringContaining('npx screenci login')
       )
       expect(loggerErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('https://app.screenci.com/secrets')
-      )
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
         expect.stringContaining(
           'https://screenci.com/docs/reference/cli/#screenci-login'
         )
@@ -2409,6 +2406,9 @@ describe('CLI', () => {
         expect.objectContaining({
           message: 'Open this link in your browser now?',
           default: false,
+        }),
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
         })
       )
       expect(mockSpawn).not.toHaveBeenCalledWith(
@@ -2416,8 +2416,14 @@ describe('CLI', () => {
         expect.anything(),
         expect.anything()
       )
+      expect(loggerInfoSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('Browser not opened.')
+      )
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        'Browser not opened. Keep this command running and open the link manually to continue.'
+        expect.stringContaining('Open this link to log in to ScreenCI:\n')
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('\nhttps://app.screenci.com/cli-auth?callback=')
       )
     })
 

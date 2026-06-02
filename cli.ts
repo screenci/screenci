@@ -100,6 +100,12 @@ function logScreenCISecretGuide(): void {
   logger.info(`Guide: ${pc.cyan(SCREENCI_LOGIN_DOCS_URL)}`)
 }
 
+function getSuggestedScreenciCommand(command: 'login' | 'record'): string {
+  return determinePackageManager() === 'pnpm'
+    ? `pnpm exec screenci ${command}`
+    : `npx screenci ${command}`
+}
+
 async function collectDiscoveredTestTitles(
   configPath: string,
   additionalArgs: string[],
@@ -1746,9 +1752,8 @@ async function requireScreenCISecret(configPath?: string): Promise<{
   if (!secret) {
     const envFilePath = await resolveProjectEnvFilePath(resolvedConfigPath)
     logger.error(
-      `No SCREENCI_SECRET configured. Run ${pc.cyan('screenci login')} or add SCREENCI_SECRET to ${envFilePath}. You can get the secret manually from ${SCREENCI_SECRETS_URL}.`
+      `No SCREENCI_SECRET configured. Run ${pc.cyan(getSuggestedScreenciCommand('login'))} or add SCREENCI_SECRET manually to ${envFilePath} by following the guide at ${pc.cyan(SCREENCI_LOGIN_DOCS_URL)}.`
     )
-    logScreenCISecretGuide()
     process.exit(1)
   }
 
@@ -1831,11 +1836,16 @@ function openBrowser(url: string): void {
   }
 }
 
-async function promptToOpenLoginUrl(): Promise<boolean> {
-  return await confirm({
-    message: 'Open this link in your browser now?',
-    default: false,
-  })
+async function promptToOpenLoginUrlWithSignal(
+  signal: AbortSignal
+): Promise<boolean> {
+  return await confirm(
+    {
+      message: 'Open this link in your browser now?',
+      default: false,
+    },
+    { signal }
+  )
 }
 
 async function persistScreenCISecret(
@@ -1878,10 +1888,12 @@ async function performBrowserLogin(
 ): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     let settled = false
+    const promptAbort = new AbortController()
 
     const finish = (callback: () => void) => {
       if (settled) return
       settled = true
+      promptAbort.abort()
       callback()
     }
 
@@ -1918,16 +1930,22 @@ async function performBrowserLogin(
       const callbackUrl = `http://localhost:${port}/callback`
       const loginUrl = `${appUrl}/cli-auth?callback=${encodeURIComponent(callbackUrl)}`
 
-      logger.info('Open this link to log in to ScreenCI:')
-      logger.info(pc.cyan(loginUrl))
-      logger.info('')
+      logger.info(
+        `Open this link to log in to ScreenCI:\n${pc.cyan(loginUrl)}\n`
+      )
       void (async () => {
         if (options?.openBrowserImmediately) {
           openBrowser(loginUrl)
           return
         }
 
-        const shouldOpen = await promptToOpenLoginUrl()
+        if (settled) return
+
+        const shouldOpen = await promptToOpenLoginUrlWithSignal(
+          promptAbort.signal
+        )
+        if (settled) return
+
         if (shouldOpen) {
           openBrowser(loginUrl)
           return
@@ -1937,6 +1955,15 @@ async function performBrowserLogin(
           'Browser not opened. Keep this command running and open the link manually to continue.'
         )
       })().catch((err) => {
+        if (settled) return
+        if (
+          err instanceof Error &&
+          (err.name === 'AbortPromptError' ||
+            err.name === 'AbortError' ||
+            err.message === 'Prompt was canceled')
+        ) {
+          return
+        }
         server.close()
         finish(() => reject(err))
       })
@@ -2007,7 +2034,7 @@ async function runLogin(configPath?: string, open = false): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err)
     logger.warn(`Authentication failed: ${msg}`)
     logger.info(
-      `You can run ${pc.cyan('screenci login')} again or add SCREENCI_SECRET manually to ${savePath}. Get it from ${SCREENCI_SECRETS_URL}.`
+      `You can run ${pc.cyan(getSuggestedScreenciCommand('login'))} again or add SCREENCI_SECRET manually to ${savePath}. Get it from ${SCREENCI_SECRETS_URL}.`
     )
     logScreenCISecretGuide()
   }
@@ -2086,7 +2113,7 @@ export async function main() {
             logger.info('All recordings failed.')
           } else if (!secret) {
             logger.info(
-              'No SCREENCI_SECRET configured for uploads. Run screenci login or add it to the project env file.'
+              `No SCREENCI_SECRET configured for uploads. Run ${getSuggestedScreenciCommand('login')} or add it to the project env file.`
             )
           } else if (
             playwrightFailure !== null &&
@@ -2214,10 +2241,7 @@ export async function main() {
 
       if (process.env.SCREENCI_RECORDING === 'true') return
 
-      const recordCommand =
-        determinePackageManager() === 'pnpm'
-          ? 'pnpm exec screenci record'
-          : 'npx screenci record'
+      const recordCommand = getSuggestedScreenciCommand('record')
       logger.info('')
       logger.info(
         `Tests passed. Run ${pc.cyan(recordCommand)} to render the videos.`

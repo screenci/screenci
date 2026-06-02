@@ -21,7 +21,9 @@ and Starter users should stay with the default consistent narration flow.
 import { createNarration, video, voices } from 'screenci'
 
 const narration = createNarration({
+  // Default voice settings for all languages.
   voice: { name: voices.Sophie },
+  // Localized narration cues by language.
   en: {
     intro: 'Open the settings page.',
     save: 'Save the changes when you are ready.',
@@ -55,7 +57,9 @@ Add more languages by keeping the same cue keys:
 
 ```ts
 const narration = createNarration({
+  // Default voice settings for all languages.
   voice: { name: voices.Sophie },
+  // Localized narration cues by language.
   en: {
     intro: 'Open the settings page.',
   },

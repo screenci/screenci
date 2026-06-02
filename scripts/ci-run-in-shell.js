@@ -1,19 +1,17 @@
 import { spawnSync } from 'node:child_process'
 
-type ShellName = 'bash' | 'pwsh' | 'cmd'
+const VALID_SHELLS = new Set(['bash', 'pwsh', 'cmd'])
 
-const VALID_SHELLS = new Set<ShellName>(['bash', 'pwsh', 'cmd'])
-
-function parseShellName(value: string | undefined): ShellName {
-  if (value === undefined || !VALID_SHELLS.has(value as ShellName)) {
+function parseShellName(value) {
+  if (value === undefined || !VALID_SHELLS.has(value)) {
     throw new Error('Expected shell_name to be one of: bash, pwsh, cmd')
   }
-  return value as ShellName
+  return value
 }
 
-function runInShell(shellName: ShellName, command: string): void {
-  let program: string
-  let args: string[]
+function runInShell(shellName, command) {
+  let program
+  let args
 
   if (shellName === 'bash') {
     program = 'bash'
@@ -37,7 +35,7 @@ function runInShell(shellName: ShellName, command: string): void {
   }
 }
 
-function main(): void {
+function main() {
   const shellName = parseShellName(process.argv[2])
   const command = process.argv.slice(3).join(' ')
 
@@ -50,7 +48,7 @@ function main(): void {
 
 try {
   main()
-} catch (error: unknown) {
+} catch (error) {
   const message = error instanceof Error ? error.message : String(error)
   console.error(message)
   process.exit(1)

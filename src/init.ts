@@ -748,9 +748,10 @@ jobs:
 export function generateExampleVideo(): string {
   return `import { autoZoom, createNarration, hide, video, voices } from 'screenci'
 
-// Define narration lines, including localized variants.
 const narration = createNarration({
+  // Default voice settings for all languages.
   voice: { name: voices.Sophie },
+  // Localized narration cues by language.
   en: {
     docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
   },

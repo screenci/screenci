@@ -29,9 +29,10 @@ behavior for your specific walkthrough.
 ```ts
 import { autoZoom, createNarration, hide, video, voices } from 'screenci'
 
-// Define narration lines, including localized variants.
 const narration = createNarration({
+  // Default voice settings for all languages.
   voice: { name: voices.Sophie },
+  // Localized narration cues by language.
   en: {
     docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
   },
@@ -168,8 +169,9 @@ Common options:
 
 ```ts
 const narration = createNarration({
-  // Define one cue key and provide the matching text for each language.
+  // Default voice settings for all languages.
   voice: { name: voices.Sophie },
+  // Localized narration cues by language.
   en: {
     intro: 'Open settings and review the billing details.',
   },

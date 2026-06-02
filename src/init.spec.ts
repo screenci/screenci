@@ -16,6 +16,19 @@ describe('generateExampleVideo', () => {
 
     expect(generateExampleVideo()).toBe(installationVideoSource)
   })
+
+  it('keeps the shared commented narration layout', () => {
+    expect(generateExampleVideo())
+      .toContain(`const narration = createNarration({
+  // Default voice settings for all languages.
+  voice: { name: voices.Sophie },
+  // Localized narration cues by language.
+  en: {`)
+    expect(generateExampleVideo()).not
+      .toContain(`voice: { name: voices.Sophie },
+
+  en: {`)
+  })
 })
 
 describe('parsePnpmVersionSupport', () => {

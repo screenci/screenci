@@ -63,7 +63,10 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 11.0.8
+          # pnpm 11 uses syntax that Node.js 18 cannot parse. Keep smoke tests on
+          # the minimum supported pnpm release so the Node.js 18 baseline remains
+          # covered end to end.
+          version: 10.26.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v6

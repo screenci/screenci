@@ -334,7 +334,7 @@ describe('CLI', () => {
       delete process.env.SCREENCI_SECRET
       process.argv = ['node', 'cli.js', 'record']
       loadEnvFileSpy.mockImplementation((path?: string | URL) => {
-        if (String(path).endsWith('/packages/screenci/.env')) {
+        if (String(path) === `${process.cwd()}/.env`) {
           process.env.SCREENCI_SECRET = 'env-secret'
         }
       })
@@ -347,9 +347,7 @@ describe('CLI', () => {
 
       await main()
 
-      expect(loadEnvFileSpy).toHaveBeenCalledWith(
-        expect.stringMatching(/packages\/screenci\/\.env$/)
-      )
+      expect(loadEnvFileSpy).toHaveBeenCalledWith(`${process.cwd()}/.env`)
       expect(mockCreateHttpServer).not.toHaveBeenCalled()
     })
 
@@ -2379,7 +2377,7 @@ describe('CLI', () => {
       await main()
 
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringMatching(/packages\/screenci\/\.env$/),
+        `${process.cwd()}/.env`,
         'SCREENCI_SECRET=auth-secret-123\n'
       )
     })
@@ -2420,7 +2418,7 @@ describe('CLI', () => {
       await main()
 
       expect(mockWriteFile).toHaveBeenCalledWith(
-        expect.stringMatching(/packages\/screenci\/\.env$/),
+        `${process.cwd()}/.env`,
         'SCREENCI_SECRET=auth-secret-123\nFOO=bar\n'
       )
     })

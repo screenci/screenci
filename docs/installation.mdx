@@ -151,6 +151,7 @@ When you are ready to record the videos in the `videos/` directory, run:
   <TabItem label="npm">
 
 ```bash
+npx screenci login
 npx screenci record
 ```
 
@@ -158,14 +159,16 @@ npx screenci record
   <TabItem label="pnpm">
 
 ```bash
+pnpm exec screenci login
 pnpm exec screenci record
 ```
 
   </TabItem>
 </Tabs>
 
-This prompts you to log in to ScreenCI the first time, then records the videos,
-uploads them, and renders the final output.
+Run `screenci login` once first to save `SCREENCI_SECRET` into the project env
+file. After that, `screenci record` records the videos, uploads them, and
+renders the final output without starting an auth flow.
 
 It should look something like this:
 

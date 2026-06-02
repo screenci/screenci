@@ -5,9 +5,10 @@ import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'fs'
 import { createHash } from 'crypto'
 import { createServer } from 'http'
 import type { AddressInfo } from 'net'
-import { appendFile, readdir, readFile, stat } from 'fs/promises'
+import { appendFile, readdir, readFile, stat, writeFile } from 'fs/promises'
 import { delimiter, dirname, relative as pathRelative, resolve } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
+import { confirm } from '@inquirer/prompts'
 import { Command, CommanderError } from 'commander'
 import pc from 'picocolors'
 import { logger } from './src/logger.js'
@@ -35,6 +36,9 @@ import {
 
 const SCREENCI_MOCK_RECORD_DOCS_URL =
   'https://screenci.com/docs/reference/cli/#--mock-record'
+const SCREENCI_LOGIN_DOCS_URL =
+  'https://screenci.com/docs/reference/cli/#screenci-login'
+const SCREENCI_SECRETS_URL = 'https://app.screenci.com/secrets'
 
 type ProjectInfoVideo = {
   name: string
@@ -83,6 +87,10 @@ export function collectPlaywrightListTitles(
 
 function parsePlaywrightListReport(stdout: string): PlaywrightListReport {
   return JSON.parse(stdout) as PlaywrightListReport
+}
+
+function logScreenCISecretGuide(): void {
+  logger.info(`Guide: ${pc.cyan(SCREENCI_LOGIN_DOCS_URL)}`)
 }
 
 async function collectDiscoveredTestTitles(
@@ -1442,11 +1450,12 @@ async function loadScreenCIConfigAndEnv(configPath?: string): Promise<{
   }
 
   if (screenciConfig.envFile) {
-    const envFilePath = resolve(
-      dirname(resolvedConfigPath),
-      screenciConfig.envFile
+    loadEnvFile(
+      resolve(dirname(resolvedConfigPath), screenciConfig.envFile),
+      true
     )
-    loadEnvFile(envFilePath, true)
+  } else {
+    loadEnvFile(resolve(dirname(resolvedConfigPath), '.env'), false)
   }
 
   return { resolvedConfigPath, screenciConfig }
@@ -1477,13 +1486,12 @@ async function loadEnvFileFromConfigSource(
 ): Promise<void> {
   try {
     const screenciConfig = await tryReadConfigFromSource(resolvedConfigPath)
-    if (screenciConfig.envFile) {
-      const envFilePath = resolve(
-        dirname(resolvedConfigPath),
-        screenciConfig.envFile
-      )
-      loadEnvFile(envFilePath, warnOnFailure)
-    }
+    loadEnvFile(
+      screenciConfig.envFile
+        ? resolve(dirname(resolvedConfigPath), screenciConfig.envFile)
+        : resolve(dirname(resolvedConfigPath), '.env'),
+      warnOnFailure
+    )
   } catch {
     // Config import may require Playwright context or dynamic values. Continue with
     // the existing process env; Playwright will still load the config normally.
@@ -1501,6 +1509,15 @@ async function resolveConfiguredEnvFilePath(
   } catch {
     return undefined
   }
+}
+
+async function resolveProjectEnvFilePath(
+  resolvedConfigPath: string
+): Promise<string> {
+  return (
+    (await resolveConfiguredEnvFilePath(resolvedConfigPath)) ??
+    resolve(dirname(resolvedConfigPath), '.env')
+  )
 }
 
 export function extractConfigStringLiteral(
@@ -1642,9 +1659,11 @@ async function requireScreenCISecret(configPath?: string): Promise<{
     await loadScreenCIConfigAndEnv(configPath)
   const secret = process.env.SCREENCI_SECRET
   if (!secret) {
+    const envFilePath = await resolveProjectEnvFilePath(resolvedConfigPath)
     logger.error(
-      'No secret configured. Set SCREENCI_SECRET in your .env file (get it from the API Key page in the dashboard).'
+      `No SCREENCI_SECRET configured. Run ${pc.cyan('screenci login')} or add SCREENCI_SECRET to ${envFilePath}. You can get the secret manually from ${SCREENCI_SECRETS_URL}.`
     )
+    logScreenCISecretGuide()
     process.exit(1)
   }
 
@@ -1727,8 +1746,60 @@ function openBrowser(url: string): void {
   }
 }
 
-async function performBrowserLogin(appUrl: string): Promise<string> {
+async function promptToOpenLoginUrl(): Promise<boolean> {
+  return await confirm({
+    message: 'Open this link in your browser now?',
+    default: false,
+  })
+}
+
+async function persistScreenCISecret(
+  envFilePath: string,
+  secret: string
+): Promise<void> {
+  const nextLine = `SCREENCI_SECRET=${secret}`
+
+  try {
+    const existing = await readFile(envFilePath, 'utf-8')
+    const lines = existing === '' ? [] : existing.split(/\r?\n/)
+    const firstSecretIndex = lines.findIndex((line) =>
+      line.startsWith('SCREENCI_SECRET=')
+    )
+    const linesWithoutSecret = lines.filter(
+      (line) => !line.startsWith('SCREENCI_SECRET=')
+    )
+    const finalLines =
+      firstSecretIndex >= 0
+        ? [
+            ...linesWithoutSecret.slice(0, firstSecretIndex),
+            nextLine,
+            ...linesWithoutSecret.slice(firstSecretIndex),
+          ]
+        : [...linesWithoutSecret, nextLine]
+    let nextContent = finalLines.join('\n')
+    if (!nextContent.endsWith('\n')) nextContent += '\n'
+    await writeFile(envFilePath, nextContent)
+    return
+  } catch (err) {
+    if (!isMissingFileError(err)) throw err
+  }
+
+  await writeFile(envFilePath, `${nextLine}\n`)
+}
+
+async function performBrowserLogin(
+  appUrl: string,
+  options?: { openBrowserImmediately?: boolean }
+): Promise<string> {
   return new Promise<string>((resolve, reject) => {
+    let settled = false
+
+    const finish = (callback: () => void) => {
+      if (settled) return
+      settled = true
+      callback()
+    }
+
     const server = createServer((req, res) => {
       try {
         const reqUrl = new URL(req.url ?? '/', 'http://localhost')
@@ -1740,20 +1811,20 @@ async function performBrowserLogin(appUrl: string): Promise<string> {
             '<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p style="font-size:1.2rem">Setup complete! You can close this tab.</p></body></html>'
           )
           server.close()
-          resolve(secret)
+          finish(() => resolve(secret))
         } else {
           res.writeHead(400, { 'Content-Type': 'text/html' })
           res.end(
             '<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p style="color:red;font-size:1.2rem">Authentication failed: no secret received. Please try again.</p></body></html>'
           )
           server.close()
-          reject(new Error('No secret received in callback'))
+          finish(() => reject(new Error('No secret received in callback')))
         }
       } catch (err) {
         res.writeHead(500)
         res.end('Internal error')
         server.close()
-        reject(err)
+        finish(() => reject(err))
       }
     })
 
@@ -1762,17 +1833,36 @@ async function performBrowserLogin(appUrl: string): Promise<string> {
       const callbackUrl = `http://localhost:${port}/callback`
       const loginUrl = `${appUrl}/cli-auth?callback=${encodeURIComponent(callbackUrl)}`
 
-      logger.info(`If the browser does not open automatically, visit:`)
+      logger.info('Open this link to log in to ScreenCI:')
       logger.info(pc.cyan(loginUrl))
       logger.info('')
+      void (async () => {
+        if (options?.openBrowserImmediately) {
+          openBrowser(loginUrl)
+          return
+        }
 
-      openBrowser(loginUrl)
+        const shouldOpen = await promptToOpenLoginUrl()
+        if (shouldOpen) {
+          openBrowser(loginUrl)
+          return
+        }
+
+        logger.info(
+          'Browser not opened. Keep this command running and open the link manually to continue.'
+        )
+      })().catch((err) => {
+        server.close()
+        finish(() => reject(err))
+      })
     })
 
     const timeout = setTimeout(
       () => {
         server.close()
-        reject(new Error('Authentication timed out after 5 minutes'))
+        finish(() =>
+          reject(new Error('Authentication timed out after 15 minutes'))
+        )
       },
       15 * 60 * 1000
     )
@@ -1787,28 +1877,54 @@ export async function ensureScreenciSecret(
   const existingSecret = process.env.SCREENCI_SECRET
   if (existingSecret) return existingSecret
 
-  logger.info(
-    'Opening browser for authentication to get your SCREENCI_SECRET...'
-  )
-
   const appUrl = getDevFrontendUrl()
   try {
-    const secret = await performBrowserLogin(appUrl)
+    const secret = await performBrowserLogin(appUrl, {
+      openBrowserImmediately: true,
+    })
     process.env.SCREENCI_SECRET = secret
     const savePath = resolvedConfigPath
-      ? ((await resolveConfiguredEnvFilePath(resolvedConfigPath)) ??
-        resolve(process.cwd(), '.env'))
+      ? await resolveProjectEnvFilePath(resolvedConfigPath)
       : resolve(process.cwd(), '.env')
-    await appendFile(savePath, `SCREENCI_SECRET=${secret}\n`)
+    await persistScreenCISecret(savePath, secret)
     logger.info(`Successfully saved SCREENCI_SECRET to ${savePath}`)
     return secret
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     logger.warn(`Authentication failed: ${msg}`)
     logger.info(
-      'You can add SCREENCI_SECRET manually to .env later (get it from the API Key page in the dashboard).'
+      `You can add SCREENCI_SECRET manually to .env later. Get it from ${SCREENCI_SECRETS_URL}.`
     )
+    logScreenCISecretGuide()
     return undefined
+  }
+}
+
+async function runLogin(configPath?: string, open = false): Promise<void> {
+  const { resolvedConfigPath } = await loadScreenCIConfigAndEnv(configPath)
+
+  if (process.env.SCREENCI_SECRET) {
+    logger.info('SCREENCI_SECRET is already configured.')
+    return
+  }
+
+  const savePath = await resolveProjectEnvFilePath(resolvedConfigPath)
+  const appUrl = getDevFrontendUrl()
+
+  try {
+    const secret = await performBrowserLogin(appUrl, {
+      openBrowserImmediately: open,
+    })
+    process.env.SCREENCI_SECRET = secret
+    await persistScreenCISecret(savePath, secret)
+    logger.info(`Successfully saved SCREENCI_SECRET to ${savePath}`)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.warn(`Authentication failed: ${msg}`)
+    logger.info(
+      `You can run ${pc.cyan('screenci login')} again or add SCREENCI_SECRET manually to ${savePath}. Get it from ${SCREENCI_SECRETS_URL}.`
+    )
+    logScreenCISecretGuide()
   }
 }
 
@@ -1816,7 +1932,7 @@ export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
     logger.error(
-      'Available commands: record, test, info, make-public, make-private, init'
+      'Available commands: login, record, test, info, make-public, make-private, init'
     )
     process.exit(1)
   }
@@ -1825,6 +1941,15 @@ export async function main() {
   const defaultPackageManager = determinePackageManager()
   program.name('screenci')
   program.exitOverride()
+
+  program
+    .command('login')
+    .description('Authenticate and save SCREENCI_SECRET for this project')
+    .option('-c, --config <path>', 'path to screenci.config.ts')
+    .option('--open', 'open the login URL in your browser immediately')
+    .action(async (options: { config?: string; open?: boolean }) => {
+      await runLogin(options.config, options.open === true)
+    })
 
   // record command — playwright args pass through as-is
   program
@@ -1858,13 +1983,12 @@ export async function main() {
         try {
           const screenciConfig =
             await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
-          if (screenciConfig.envFile) {
-            const envFilePath = resolve(
-              dirname(resolvedConfigPath),
-              screenciConfig.envFile
-            )
-            loadEnvFile(envFilePath, true)
-          }
+          loadEnvFile(
+            screenciConfig.envFile
+              ? resolve(dirname(resolvedConfigPath), screenciConfig.envFile)
+              : resolve(dirname(resolvedConfigPath), '.env'),
+            true
+          )
           const apiUrl = getDevBackendUrl()
           const appUrl = getDevFrontendUrl()
           const secret = process.env.SCREENCI_SECRET
@@ -1877,7 +2001,7 @@ export async function main() {
             logger.info('All recordings failed.')
           } else if (!secret) {
             logger.info(
-              'No secret configured, skipping upload. Set SCREENCI_SECRET in your .env file.'
+              'No SCREENCI_SECRET configured for uploads. Run screenci login or add it to the project env file.'
             )
           } else if (
             playwrightFailure !== null &&
@@ -2235,7 +2359,9 @@ async function run(
 
   // Only validate args for record command
   if (command === 'record') {
-    await ensureScreenciSecret(configPath)
+    if (!process.env.SCREENCI_SECRET) {
+      await requireScreenCISecret(configPath)
+    }
     validateArgs(additionalArgs)
     const screenciDir = resolve(dirname(configPath), '.screenci')
     clearDirectory(screenciDir)

@@ -12,6 +12,7 @@ pass `--config <path>`.
 | Command                            | Purpose                                               |
 | ---------------------------------- | ----------------------------------------------------- |
 | `screenci init [name]`             | Scaffold a ScreenCI project                           |
+| `screenci login`                   | Authenticate and save `SCREENCI_SECRET` for a project |
 | `screenci test [playwrightArgs]`   | Run `.video.ts` files locally without final recording |
 | `screenci record [playwrightArgs]` | Record videos and upload results when configured      |
 | `screenci info`                    | Print remote project info as JSON                     |
@@ -58,6 +59,45 @@ dependencies, install Chromium, skip OS dependency installation, install the
 ScreenCI skill, and install optional `playwright-cli` support.
 
 Use this command in [Installation & First Video](/docs).
+
+## `screenci login`
+
+Authenticate ScreenCI for the current project and save `SCREENCI_SECRET` into
+the configured `envFile` or project `.env`.
+
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+```bash
+npx screenci login
+npx screenci login --open
+npx screenci login --config screenci.config.ts
+```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+pnpm exec screenci login
+pnpm exec screenci login --open
+pnpm exec screenci login --config screenci.config.ts
+```
+
+  </TabItem>
+</Tabs>
+
+Behavior:
+
+- prints the ScreenCI login URL every time
+- prompts before opening a browser by default
+- opens the browser immediately when `--open` is passed
+- saves `SCREENCI_SECRET` into the project env file after a successful callback
+- if you want to set the secret manually, get it from [app.screenci.com/secrets](https://app.screenci.com/secrets) and add `SCREENCI_SECRET=...` to the configured `envFile` or project `.env`
+
+Relevant options:
+
+- `-c, --config <path>`
+- `--open`
 
 ## `screenci test [playwrightArgs...]`
 
@@ -174,6 +214,8 @@ Behavior:
 
 - enables recording timing
 - writes local output into `.screenci/`
+- never opens a browser or starts login automatically
+- requires `SCREENCI_SECRET`; run `screenci login` first or add it to the project env file
 - uploads successful recordings when `SCREENCI_SECRET` is available
 - prints a project URL after upload when rendering has been started remotely
 
@@ -283,6 +325,7 @@ dashboard.
 
 The CLI currently covers:
 
+- project auth setup with `login`
 - local iteration with `test`
 - final capture and upload with `record`
 - remote inspection with `info`
@@ -298,6 +341,7 @@ Manual version pinning is currently handled in the app UI:
 
 These commands support `--config <path>`:
 
+- `login`
 - `test`
 - `record`
 - `info`
@@ -306,12 +350,13 @@ These commands support `--config <path>`:
 
 `SCREENCI_SECRET` is used for:
 
+- login bootstrap and persistence
 - uploads
 - project info
 - public delivery changes
 
 If `envFile` is configured in `screenci.config.ts`, the CLI loads it
-automatically.
+automatically. Otherwise it falls back to the project `.env`.
 
 ## Related pages
 

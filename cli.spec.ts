@@ -23,6 +23,7 @@ const mockAppendFile = vi.fn()
 const mockWriteFile = vi.fn()
 const mockMkdir = vi.fn()
 const mockInput = vi.fn()
+const mockConfirm = vi.fn()
 const mockCreateHttpServer = vi.fn()
 const mockFetch = vi.fn()
 
@@ -164,6 +165,7 @@ vi.mock('fs/promises', () => ({
 
 vi.mock('@inquirer/prompts', () => ({
   input: mockInput,
+  confirm: mockConfirm,
 }))
 
 vi.mock('ora', () => ({
@@ -217,6 +219,7 @@ describe('CLI', () => {
     mockInput.mockImplementation(
       async (options?: { default?: string }) => options?.default ?? ''
     )
+    mockConfirm.mockResolvedValue(false)
     // Restore ora mock return value after clearAllMocks
     mockOra.mockReturnValue(mockSpinner)
     mockSpinner.start.mockReturnThis()
@@ -261,7 +264,10 @@ describe('CLI', () => {
     loadEnvFileSpy = vi
       .spyOn(process, 'loadEnvFile')
       .mockImplementation((path?: string | URL) => {
-        if (String(path).endsWith('.env')) {
+        if (
+          String(path).endsWith('.env') &&
+          process.env.VITE_APP_BASE_URL === undefined
+        ) {
           process.env.VITE_APP_BASE_URL = 'https://env-file.example.com'
         }
       })
@@ -292,6 +298,59 @@ describe('CLI', () => {
   describe('record command', () => {
     beforeEach(() => {
       process.env.SCREENCI_SECRET = 'test-secret'
+    })
+
+    it('fails fast when SCREENCI_SECRET is missing', async () => {
+      delete process.env.SCREENCI_SECRET
+      process.argv = ['node', 'cli.js', 'record']
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow('process.exit called')
+
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Run')
+      )
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('screenci login')
+      )
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('https://app.screenci.com/secrets')
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'https://screenci.com/docs/reference/cli/#screenci-login'
+        )
+      )
+      expect(mockCreateHttpServer).not.toHaveBeenCalled()
+      expect(mockSpawn).not.toHaveBeenCalledWith(
+        expect.stringMatching(/cmd|open|xdg-open/),
+        expect.anything(),
+        expect.anything()
+      )
+    })
+
+    it('loads SCREENCI_SECRET from the project .env when envFile is not configured', async () => {
+      delete process.env.SCREENCI_SECRET
+      process.argv = ['node', 'cli.js', 'record']
+      loadEnvFileSpy.mockImplementation((path?: string | URL) => {
+        if (String(path).endsWith('/packages/screenci/.env')) {
+          process.env.SCREENCI_SECRET = 'env-secret'
+        }
+      })
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await main()
+
+      expect(loadEnvFileSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/packages\/screenci\/\.env$/)
+      )
+      expect(mockCreateHttpServer).not.toHaveBeenCalled()
     })
 
     it('should run Playwright locally for record command', async () => {
@@ -2141,7 +2200,7 @@ describe('CLI', () => {
       )
     })
 
-    it('should append the secret to the configured envFile path', async () => {
+    it('should save the secret to the configured envFile path', async () => {
       mockReadFile.mockImplementation(async (path: string | URL) => {
         if (String(path).endsWith('screenci.config.ts')) {
           return "export default defineConfig({ projectName: 'Test Project', envFile: '../shared/.env.local' })"
@@ -2177,14 +2236,276 @@ describe('CLI', () => {
         ensureScreenciSecret('/workspace/demo/screenci.config.ts')
       ).resolves.toBe('auth-secret-123')
 
-      expect(mockAppendFile).toHaveBeenCalledWith(
+      expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/shared/.env.local',
         'SCREENCI_SECRET=auth-secret-123\n'
       )
-      expect(mockWriteFile).not.toHaveBeenCalledWith(
+      expect(mockAppendFile).not.toHaveBeenCalledWith(
         '/workspace/shared/.env.local',
         expect.any(String)
       )
+    })
+  })
+
+  describe('login command', () => {
+    it('prints the login URL before opening the browser with --open', async () => {
+      process.argv = ['node', 'cli.js', 'login', '--open']
+      mockCreateHttpServer.mockImplementation(
+        (handler: (req: unknown, res: unknown) => void) => {
+          const server = {
+            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+              cb()
+              const req = { url: '/callback?secret=auth-secret-123' }
+              const res = { writeHead: vi.fn(), end: vi.fn() }
+              handler(req, res)
+            }),
+            close: vi.fn(),
+            address: vi.fn().mockReturnValue({ port: 12345 }),
+            on: vi.fn(),
+          }
+          return server
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      const urlLogOrder = loggerInfoSpy.mock.invocationCallOrder.find(
+        (_callOrder, index) =>
+          String(loggerInfoSpy.mock.calls[index]?.[0]).includes(
+            'cli-auth?callback='
+          )
+      )
+      const openOrder = mockSpawn.mock.invocationCallOrder[0]
+
+      expect(urlLogOrder).toBeTypeOf('number')
+      expect(openOrder).toBeTypeOf('number')
+      expect((urlLogOrder ?? 0) < (openOrder ?? 0)).toBe(true)
+      expect(mockConfirm).not.toHaveBeenCalled()
+    })
+
+    it('prompts instead of auto-opening by default', async () => {
+      process.argv = ['node', 'cli.js', 'login']
+      mockConfirm.mockResolvedValue(false)
+      mockCreateHttpServer.mockImplementation(
+        (handler: (req: unknown, res: unknown) => void) => {
+          const server = {
+            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+              cb()
+              const req = { url: '/callback?secret=auth-secret-123' }
+              const res = { writeHead: vi.fn(), end: vi.fn() }
+              handler(req, res)
+            }),
+            close: vi.fn(),
+            address: vi.fn().mockReturnValue({ port: 12345 }),
+            on: vi.fn(),
+          }
+          return server
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockConfirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Open this link in your browser now?',
+          default: false,
+        })
+      )
+      expect(mockSpawn).not.toHaveBeenCalledWith(
+        expect.stringMatching(/cmd|open|xdg-open/),
+        expect.anything(),
+        expect.anything()
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        'Browser not opened. Keep this command running and open the link manually to continue.'
+      )
+    })
+
+    it('opens the browser immediately with --open', async () => {
+      process.argv = ['node', 'cli.js', 'login', '--open']
+      mockCreateHttpServer.mockImplementation(
+        (handler: (req: unknown, res: unknown) => void) => {
+          const server = {
+            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+              cb()
+              const req = { url: '/callback?secret=auth-secret-123' }
+              const res = { writeHead: vi.fn(), end: vi.fn() }
+              handler(req, res)
+            }),
+            close: vi.fn(),
+            address: vi.fn().mockReturnValue({ port: 12345 }),
+            on: vi.fn(),
+          }
+          return server
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        expect.stringMatching(/open|xdg-open/),
+        [expect.stringContaining('cli-auth?callback=')],
+        expect.objectContaining({
+          detached: true,
+          stdio: 'ignore',
+        })
+      )
+      expect(mockConfirm).not.toHaveBeenCalled()
+    })
+
+    it('saves the secret to project .env when envFile is not configured', async () => {
+      process.argv = ['node', 'cli.js', 'login', '--open']
+      mockCreateHttpServer.mockImplementation(
+        (handler: (req: unknown, res: unknown) => void) => {
+          const server = {
+            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+              cb()
+              const req = { url: '/callback?secret=auth-secret-123' }
+              const res = { writeHead: vi.fn(), end: vi.fn() }
+              handler(req, res)
+            }),
+            close: vi.fn(),
+            address: vi.fn().mockReturnValue({ port: 12345 }),
+            on: vi.fn(),
+          }
+          return server
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringMatching(/packages\/screenci\/\.env$/),
+        'SCREENCI_SECRET=auth-secret-123\n'
+      )
+    })
+
+    it('replaces an existing SCREENCI_SECRET line in the target env file', async () => {
+      process.argv = ['node', 'cli.js', 'login', '--open']
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('screenci.config.ts')) {
+          return "export default defineConfig({ projectName: 'Test Project' })"
+        }
+        if (pathString.endsWith('/.env')) {
+          return 'SCREENCI_SECRET=old-secret\nFOO=bar\n'
+        }
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        return ''
+      })
+      mockCreateHttpServer.mockImplementation(
+        (handler: (req: unknown, res: unknown) => void) => {
+          const server = {
+            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+              cb()
+              const req = { url: '/callback?secret=auth-secret-123' }
+              const res = { writeHead: vi.fn(), end: vi.fn() }
+              handler(req, res)
+            }),
+            close: vi.fn(),
+            address: vi.fn().mockReturnValue({ port: 12345 }),
+            on: vi.fn(),
+          }
+          return server
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringMatching(/packages\/screenci\/\.env$/),
+        'SCREENCI_SECRET=auth-secret-123\nFOO=bar\n'
+      )
+    })
+
+    it('does not rewrite files when SCREENCI_SECRET is already configured', async () => {
+      process.argv = ['node', 'cli.js', 'login', '--open']
+      process.env.SCREENCI_SECRET = 'already-set'
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        'SCREENCI_SECRET is already configured.'
+      )
+      expect(mockCreateHttpServer).not.toHaveBeenCalled()
+      expect(mockWriteFile).not.toHaveBeenCalled()
+    })
+
+    it('reports a missing-secret callback clearly', async () => {
+      process.argv = ['node', 'cli.js', 'login', '--open']
+      mockCreateHttpServer.mockImplementation(
+        (handler: (req: unknown, res: unknown) => void) => {
+          const server = {
+            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+              cb()
+              const req = { url: '/callback' }
+              const res = { writeHead: vi.fn(), end: vi.fn() }
+              handler(req, res)
+            }),
+            close: vi.fn(),
+            address: vi.fn().mockReturnValue({ port: 12345 }),
+            on: vi.fn(),
+          }
+          return server
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        'Authentication failed: No secret received in callback'
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('https://app.screenci.com/secrets')
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'https://screenci.com/docs/reference/cli/#screenci-login'
+        )
+      )
+      expect(mockWriteFile).not.toHaveBeenCalled()
+    })
+
+    it('reports timeout clearly without writing files', async () => {
+      process.argv = ['node', 'cli.js', 'login', '--open']
+      const setTimeoutSpy = vi.spyOn(global, 'setTimeout').mockImplementation(((
+        callback: TimerHandler
+      ) => {
+        if (typeof callback === 'function') callback()
+        return 1 as unknown as ReturnType<typeof setTimeout>
+      }) as typeof setTimeout)
+      mockCreateHttpServer.mockReturnValue({
+        listen: vi.fn((_port: number, _host: string, cb: () => void) => cb()),
+        close: vi.fn(),
+        address: vi.fn().mockReturnValue({ port: 12345 }),
+        on: vi.fn(),
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        'Authentication failed: Authentication timed out after 15 minutes'
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('https://app.screenci.com/secrets')
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'https://screenci.com/docs/reference/cli/#screenci-login'
+        )
+      )
+      expect(mockWriteFile).not.toHaveBeenCalled()
+      setTimeoutSpy.mockRestore()
     })
   })
 
@@ -2870,8 +3191,12 @@ describe('CLI', () => {
       expect(messages).toContain(
         '    Tests your video scripts in interactive UI mode.'
       )
+      expect(rawMessages).toContain(`  ${pc.cyan('npx screenci login')}`)
       expect(messages).toContain(
-        '    Records, uploads and renders final videos.'
+        '    Saves SCREENCI_SECRET for uploads and remote rendering.'
+      )
+      expect(messages).toContain(
+        '    Records, uploads and renders final videos after login.'
       )
       expect(rawMessages).toContain(
         'Visit ' +

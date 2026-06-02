@@ -79,11 +79,13 @@ Playwright without starting the final recording and upload path.
 ## Record the final output
 
 ```bash
+npx screenci login
 npx screenci record
 ```
 
-`record` writes local artifacts into `.screenci/<video-name>/` and uploads them
-when `SCREENCI_SECRET` is configured.
+`login` saves `SCREENCI_SECRET` into the project env file. `record` writes local
+artifacts into `.screenci/<video-name>/` and uploads them when that secret is
+configured.
 
 ## Configure
 

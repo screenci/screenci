@@ -1,9 +1,6 @@
 import type { IEventRecorder } from './events.js'
 import { setRuntimeHideRecorder } from './runtimeContext.js'
-import {
-  getActiveHideRecorder,
-  runTimelineBlock,
-} from './timelineBlock.js'
+import { getActiveHideRecorder, runTimelineBlock } from './timelineBlock.js'
 
 export function setActiveHideRecorder(recorder: IEventRecorder | null): void {
   setRuntimeHideRecorder(recorder)

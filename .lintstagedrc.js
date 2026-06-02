@@ -1,6 +1,6 @@
 export default {
   '*.{js,ts,mjs}': ['prettier --write', 'eslint --fix'],
-  '*.{ts}': (filenames) => [
+  '*.ts': (filenames) => [
     'npm run type-check',
     `npm exec vitest related ${filenames.join(' ')} --run`,
   ],

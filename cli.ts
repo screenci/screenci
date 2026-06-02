@@ -1930,9 +1930,7 @@ async function performBrowserLogin(
       const callbackUrl = `http://localhost:${port}/callback`
       const loginUrl = `${appUrl}/cli-auth?callback=${encodeURIComponent(callbackUrl)}`
 
-      logger.info(
-        `Open this link to log in to ScreenCI:\n${pc.cyan(loginUrl)}\n`
-      )
+      logger.info(`Open this link to log in to ScreenCI:\n${loginUrl}\n`)
       void (async () => {
         if (options?.openBrowserImmediately) {
           openBrowser(loginUrl)

@@ -1,27 +1,15 @@
 import type { IEventRecorder } from './events.js'
-import { resolveRecordingTimingDuration } from './runtimeMode.js'
+import { setRuntimeHideRecorder } from './runtimeContext.js'
 import {
-  getRuntimeHideRecorder,
-  isRuntimeInsideHide,
-  setRuntimeInsideHide,
-  setRuntimeHideRecorder,
-} from './runtimeContext.js'
-
-export const POST_HIDE_PAUSE = 350
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) =>
-    setTimeout(resolve, resolveRecordingTimingDuration(ms))
-  )
-}
+  getActiveHideRecorder,
+  runTimelineBlock,
+} from './timelineBlock.js'
 
 export function setActiveHideRecorder(recorder: IEventRecorder | null): void {
   setRuntimeHideRecorder(recorder)
 }
 
-export function isInsideHide(): boolean {
-  return isRuntimeInsideHide()
-}
+export { POST_HIDE_PAUSE, isInsideHide } from './timelineBlock.js'
 
 /**
  * Runs `fn` while suppressing recording. The hidden section is cut from the
@@ -30,8 +18,6 @@ export function isInsideHide(): boolean {
  * Use it for logins, navigations, page loads, and any setup that would bore
  * a human to tears. Especially useful at the very start of a video so you
  * jump straight into the live app.
- *
- * Cannot be nested — calling `hide()` inside another `hide()` throws.
  *
  * @example
  * ```ts
@@ -46,18 +32,12 @@ export function isInsideHide(): boolean {
  * ```
  */
 export async function hide(fn: () => Promise<void> | void): Promise<void> {
-  if (isInsideHide()) {
-    throw new Error('Cannot nest hide() calls')
-  }
-  setRuntimeInsideHide(true)
-  const activeRecorder = getRuntimeHideRecorder()
-  activeRecorder.addHideStart()
-  try {
-    await fn()
-    // Browser rendering/recording has a short delay.
-    await sleep(POST_HIDE_PAUSE)
-  } finally {
-    setRuntimeInsideHide(false)
-  }
-  activeRecorder.addHideEnd()
+  const activeRecorder = getActiveHideRecorder()
+  await runTimelineBlock({
+    type: 'hide',
+    recorder: activeRecorder,
+    emitStart: (recorder) => recorder.addHideStart(),
+    emitEnd: (recorder) => recorder.addHideEnd(),
+    fn,
+  })
 }

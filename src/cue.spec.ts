@@ -12,6 +12,8 @@ import {
 } from './cue.js'
 import * as screenci from '../index.js'
 import { hide, setActiveHideRecorder } from './hide.js'
+import { speed } from './speed.js'
+import { time } from './time.js'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
 import type { CustomVoiceRef } from './voices.js'
@@ -32,6 +34,10 @@ function createMockRecorder(): IEventRecorder {
     addAssetStart: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),
+    addSpeedStart: vi.fn(),
+    addSpeedEnd: vi.fn(),
+    addTimeStart: vi.fn(),
+    addTimeEnd: vi.fn(),
     addAutoZoomStart: vi.fn(),
     addAutoZoomEnd: vi.fn(),
     registerVoiceForLang: vi.fn(),
@@ -475,6 +481,29 @@ describe('createNarration', () => {
           await cues.intro.end()
         })
       ).rejects.toThrow('Cannot call end() inside hide()')
+    })
+  })
+
+  describe('inside speed() and time()', () => {
+    it('allows starting narration inside speed()', async () => {
+      const cues = createNarration(singleLangInput)
+
+      await speed(0.5, async () => {
+        await cues.intro.start()
+      })
+
+      expect(recorder.addCueStart).toHaveBeenCalledOnce()
+    })
+
+    it('allows ending narration inside time()', async () => {
+      const cues = createNarration(singleLangInput)
+      await cues.intro.start()
+
+      await time(1000, async () => {
+        await cues.intro.end()
+      })
+
+      expect(recorder.addCueEnd).toHaveBeenCalledWith('wait')
     })
   })
 

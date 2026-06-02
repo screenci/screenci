@@ -12,6 +12,10 @@ function makeRecorder(): IEventRecorder {
     addAssetStart: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),
+    addSpeedStart: vi.fn(),
+    addSpeedEnd: vi.fn(),
+    addTimeStart: vi.fn(),
+    addTimeEnd: vi.fn(),
     addAutoZoomStart: vi.fn(),
     addAutoZoomEnd: vi.fn(),
     registerVoiceForLang: vi.fn(),
@@ -174,18 +178,17 @@ describe('hide', () => {
       ).rejects.toThrow('Cannot nest hide() calls')
     })
 
-    it('resets insideHide state after the outer hide throws', async () => {
-      // First call: nested hide causes throw, outer hide exits
+    it('resets state after nested hide throws', async () => {
       await expect(
         hide(async () => {
           await hide(async () => {})
         })
       ).rejects.toThrow('Cannot nest hide() calls')
 
-      // Should be able to call hide again without error
-      const called = vi.fn()
-      await hide(called)
-      expect(called).toHaveBeenCalledOnce()
+      const recorder = makeRecorder()
+      setActiveHideRecorder(recorder)
+      await hide(async () => {})
+      expect(recorder.addHideStart).toHaveBeenCalledOnce()
     })
   })
 

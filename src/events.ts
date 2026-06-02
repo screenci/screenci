@@ -260,6 +260,28 @@ export type HideEndEvent = {
   timeMs: number
 }
 
+export type SpeedStartEvent = {
+  type: 'speedStart'
+  timeMs: number
+  multiplier: number
+}
+
+export type SpeedEndEvent = {
+  type: 'speedEnd'
+  timeMs: number
+}
+
+export type TimeStartEvent = {
+  type: 'timeStart'
+  timeMs: number
+  durationMs: number
+}
+
+export type TimeEndEvent = {
+  type: 'timeEnd'
+  timeMs: number
+}
+
 export type AutoZoomStartEvent = {
   type: 'autoZoomStart'
   timeMs: number
@@ -285,6 +307,10 @@ export type RecordingEvent =
   | AssetStartEvent
   | HideStartEvent
   | HideEndEvent
+  | SpeedStartEvent
+  | SpeedEndEvent
+  | TimeStartEvent
+  | TimeEndEvent
   | AutoZoomStartEvent
   | AutoZoomEndEvent
 
@@ -385,6 +411,10 @@ export interface IEventRecorder {
   ): void
   addHideStart(): void
   addHideEnd(): void
+  addSpeedStart(multiplier: number): void
+  addSpeedEnd(): void
+  addTimeStart(durationMs: number): void
+  addTimeEnd(): void
   addAutoZoomStart(options?: AutoZoomOptions): void
   addAutoZoomEnd(options?: AutoZoomOptions): void
   /**
@@ -409,6 +439,10 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addAssetStart(): void {},
   addHideStart(): void {},
   addHideEnd(): void {},
+  addSpeedStart(): void {},
+  addSpeedEnd(): void {},
+  addTimeStart(): void {},
+  addTimeEnd(): void {},
   addAutoZoomStart(): void {},
   addAutoZoomEnd(): void {},
   registerVoiceForLang(): void {},
@@ -643,6 +677,30 @@ export class EventRecorder implements IEventRecorder {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     this.events.push({ type: 'hideEnd', timeMs })
+  }
+
+  addSpeedStart(multiplier: number): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({ type: 'speedStart', timeMs, multiplier })
+  }
+
+  addSpeedEnd(): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({ type: 'speedEnd', timeMs })
+  }
+
+  addTimeStart(durationMs: number): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({ type: 'timeStart', timeMs, durationMs })
+  }
+
+  addTimeEnd(): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({ type: 'timeEnd', timeMs })
   }
 
   addAutoZoomStart(options?: AutoZoomOptions): void {

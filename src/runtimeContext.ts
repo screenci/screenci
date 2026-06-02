@@ -31,6 +31,14 @@ export type ActiveCueRun = {
   startedWithExplicitStart: boolean
 }
 
+export type TimelineBlockType = 'hide' | 'speed' | 'time'
+
+export type TimelineBlockState = {
+  type: TimelineBlockType
+  multiplier?: number
+  durationMs?: number
+}
+
 export type ScreenCIRuntimeContext = {
   cueRecorder: IEventRecorder
   hideRecorder: IEventRecorder
@@ -39,7 +47,7 @@ export type ScreenCIRuntimeContext = {
   clickRecorder: IEventRecorder
   page: Page | null
   testFilePath: string | null
-  insideHide: boolean
+  timelineBlocks: TimelineBlockState[]
   cue: {
     activeCueName: string | null
     activeCueRun: ActiveCueRun | null
@@ -69,7 +77,7 @@ export function createScreenCIRuntimeContext(
     clickRecorder: defaultRecorder,
     page: overrides.page ?? null,
     testFilePath: overrides.testFilePath ?? null,
-    insideHide: false,
+    timelineBlocks: [],
     cue: {
       activeCueName: null,
       activeCueRun: null,
@@ -162,12 +170,38 @@ export function resetCueRuntimeState(): void {
   context.cue.usedCueNames.clear()
 }
 
-export function setRuntimeInsideHide(insideHide: boolean): void {
-  getScreenCIRuntimeContext().insideHide = insideHide
+export function pushRuntimeTimelineBlock(block: TimelineBlockState): void {
+  getScreenCIRuntimeContext().timelineBlocks.push(block)
+}
+
+export function popRuntimeTimelineBlock(
+  expectedType: TimelineBlockType
+): TimelineBlockState {
+  const blocks = getScreenCIRuntimeContext().timelineBlocks
+  const block = blocks.pop()
+  if (block === undefined) {
+    throw new Error(`Cannot end ${expectedType}() without an active block`)
+  }
+  if (block.type !== expectedType) {
+    throw new Error(
+      `Cannot end ${expectedType}() while ${block.type}() is the active block`
+    )
+  }
+  return block
+}
+
+export function hasRuntimeTimelineBlock(type: TimelineBlockType): boolean {
+  return getScreenCIRuntimeContext().timelineBlocks.some(
+    (block) => block.type === type
+  )
+}
+
+export function getRuntimeTimelineBlocks(): TimelineBlockState[] {
+  return [...getScreenCIRuntimeContext().timelineBlocks]
 }
 
 export function isRuntimeInsideHide(): boolean {
-  return getScreenCIRuntimeContext().insideHide
+  return hasRuntimeTimelineBlock('hide')
 }
 
 export function getRuntimeAutoZoomState(): AutoZoomState {

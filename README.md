@@ -46,7 +46,7 @@ most of the automation layer.
 
 ```ts
 // videos/onboarding.video.ts
-import { hide, video } from 'screenci'
+import { hide, speed, time, video } from 'screenci'
 
 video('Onboarding flow', async ({ page }) => {
   await hide(async () => {
@@ -55,6 +55,12 @@ video('Onboarding flow', async ({ page }) => {
 
   await page.getByLabel('Email').fill('jane@example.com')
   await page.getByRole('button', { name: 'Create account' }).click()
+  await speed(0.5, async () => {
+    await page.getByRole('button', { name: 'Open dashboard tour' }).click()
+  })
+  await time(1000, async () => {
+    await page.getByRole('button', { name: 'Skip tutorial' }).click()
+  })
   await page.getByRole('heading', { name: 'Dashboard' }).waitFor()
 })
 ```
@@ -65,6 +71,10 @@ and the remote video identity.
 Inside `video()`, `page` is a `ScreenCIPage`: a Playwright `Page` with animated
 cursor movement and visible typing layered on top of normal Playwright
 behavior.
+
+`hide()` removes setup entirely. `speed()` and `time()` keep a section visible
+but remap its rendered duration. Narration cue audio keeps its original
+playback speed.
 
 ## Run locally
 

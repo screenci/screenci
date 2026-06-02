@@ -81,22 +81,63 @@ See [Configuration](/docs/reference/configuration).
 
 ## Core ScreenCI APIs
 
-### `hide()`
+### `hide()`, `speed()`, and `time()`
 
-Use `hide()` to keep setup out of the visible recording. This is useful for
-steps the viewer does not need to watch, such as navigating to the right page,
-signing in, or dismissing a cookie banner before the real flow begins. See
-[Setup vs visible sequence](#setup-vs-visible-sequence) and [Generating
+Use these timeline helpers to decide whether a step should be removed from the
+final video or just retimed:
+
+- Use `hide()` when the viewer should not see the step at all. This is useful
+  for navigation, sign-in, waiting for app state, or dismissing a cookie
+  banner before the real flow begins.
+- Use `speed()` when the viewer should still see the step, but faster or
+  slower than real time.
+- Use `time()` when the viewer should still see the step, and you want the
+  whole visible block to occupy an exact duration in the output.
+
+See [Setup vs visible sequence](#setup-vs-visible-sequence) and [Generating
 Videos](/docs/generating-videos).
 
-`hide()` takes just the function to run. It does not have separate timing or
-camera options.
+`hide()` takes just the function to run. It removes the enclosed recording
+range from the final output.
 
 ```ts
 await hide(async () => {
   await page.goto('/settings')
   await page.getByRole('button', { name: 'Accept all cookies' }).click()
   await page.getByRole('button', { name: 'Open billing' }).click()
+})
+```
+
+Use `speed()` and `time()` when a step should stay visible but play at a
+different pace in the rendered output.
+
+- `speed(1, fn)` keeps real-time playback.
+- `speed(0.5, fn)` plays the enclosed visible content at half-speed, so it
+  takes 2x longer in the output.
+- `speed(2, fn)` plays the enclosed visible content at 2x speed, so it takes
+  half as long in the output.
+- `time(1000, fn)` makes the enclosed visible content occupy exactly `1000`
+  milliseconds in the output.
+- `hide()` may be used inside `speed()` or `time()`, but not inside another
+  `hide()`.
+- `speed()` and `time()` may not be nested inside each other or inside
+  themselves.
+- Narration cue audio is not retimed. These blocks only remap the main
+  recording timeline.
+
+```ts
+await hide(async () => {
+  await page.goto('/reports')
+  await page.getByRole('button', { name: 'Accept cookies' }).click()
+})
+
+await speed(0.5, async () => {
+  await page.getByRole('button', { name: 'Preview invoice' }).click()
+})
+
+await time(1000, async () => {
+  await page.getByRole('tab', { name: 'Analytics' }).click()
+  await page.waitForLoadState('networkidle')
 })
 ```
 

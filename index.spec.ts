@@ -14,6 +14,8 @@ describe('public api surface', () => {
       'hide',
       'modelTypes',
       'resetZoom',
+      'speed',
+      'time',
       'video',
       'voices',
       'zoomTo',

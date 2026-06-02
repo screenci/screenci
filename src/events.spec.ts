@@ -30,6 +30,34 @@ describe('EventRecorder', () => {
     })
   })
 
+  describe('timeline block events', () => {
+    it('records speed start/end with relative time', () => {
+      recorder.start()
+      now = 1200
+      recorder.addSpeedStart(0.5)
+      now = 1500
+      recorder.addSpeedEnd()
+
+      expect(recorder.getEvents().slice(1)).toEqual([
+        { type: 'speedStart', timeMs: 200, multiplier: 0.5 },
+        { type: 'speedEnd', timeMs: 500 },
+      ])
+    })
+
+    it('records time start/end with relative time', () => {
+      recorder.start()
+      now = 1100
+      recorder.addTimeStart(1000)
+      now = 1400
+      recorder.addTimeEnd()
+
+      expect(recorder.getEvents().slice(1)).toEqual([
+        { type: 'timeStart', timeMs: 100, durationMs: 1000 },
+        { type: 'timeEnd', timeMs: 400 },
+      ])
+    })
+  })
+
   describe('addInput', () => {
     it('does nothing before start is called', () => {
       recorder.addInput('focusChange', undefined, [

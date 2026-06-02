@@ -193,6 +193,28 @@ export type HideEndEvent = {
   timeMs: number
 }
 
+export type SpeedStartEvent = {
+  type: 'speedStart'
+  timeMs: number
+  multiplier: number
+}
+
+export type SpeedEndEvent = {
+  type: 'speedEnd'
+  timeMs: number
+}
+
+export type TimeStartEvent = {
+  type: 'timeStart'
+  timeMs: number
+  durationMs: number
+}
+
+export type TimeEndEvent = {
+  type: 'timeEnd'
+  timeMs: number
+}
+
 export type AutoZoomStartEvent = {
   type: 'autoZoomStart'
   timeMs: number
@@ -218,6 +240,10 @@ export type RecordingEvent =
   | AssetStartEvent
   | HideStartEvent
   | HideEndEvent
+  | SpeedStartEvent
+  | SpeedEndEvent
+  | TimeStartEvent
+  | TimeEndEvent
   | AutoZoomStartEvent
   | AutoZoomEndEvent
 

@@ -29,7 +29,7 @@ npx screenci record -c screenci.config.ts
 
 ```bash
 # first verify the flow
-npx screenci test --ui
+npx screenci test
 
 # then record
 npx screenci record

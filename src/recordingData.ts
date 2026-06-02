@@ -225,6 +225,7 @@ export type RecordingMetadata = {
   videoName: string
   screenciVersion: string
   languages?: string[]
+  sourceFilePath?: string
 }
 
 export type RecordingData = {

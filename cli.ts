@@ -194,10 +194,17 @@ async function validateUniqueDiscoveredTestTitles(
 
 function resolveRecordingFileCandidates(
   filePath: string,
-  configDir: string
+  configDir: string,
+  sourceFilePath?: string
 ): string[] {
+  const sourceFileCandidate =
+    typeof sourceFilePath === 'string'
+      ? resolve(configDir, dirname(sourceFilePath), filePath)
+      : null
+
   return [
     filePath,
+    ...(sourceFileCandidate ? [sourceFileCandidate] : []),
     resolve(configDir, 'videos', filePath),
     resolve(configDir, pathRelative('/app', filePath)),
   ]
@@ -205,9 +212,14 @@ function resolveRecordingFileCandidates(
 
 async function readRecordingFile(
   filePath: string,
-  configDir: string
+  configDir: string,
+  sourceFilePath?: string
 ): Promise<{ buffer: Buffer; resolvedPath: string } | null> {
-  for (const candidate of resolveRecordingFileCandidates(filePath, configDir)) {
+  for (const candidate of resolveRecordingFileCandidates(
+    filePath,
+    configDir,
+    sourceFilePath
+  )) {
     try {
       return { buffer: await readFile(candidate), resolvedPath: candidate }
     } catch {
@@ -260,6 +272,13 @@ type UploadJobResult = {
 
 type UploadProgressStatus = 'success' | 'failure' | 'cancelled'
 
+class UploadAssetError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'UploadAssetError'
+  }
+}
+
 class UploadCancelledError extends Error {
   constructor(message = 'Upload cancelled') {
     super(message)
@@ -284,6 +303,10 @@ function isUploadCancelledError(err: unknown): boolean {
 
 function isPartialUploadError(err: unknown): boolean {
   return err instanceof PartialUploadError
+}
+
+function isUploadAssetError(err: unknown): boolean {
+  return err instanceof UploadAssetError
 }
 
 function supportsInPlaceUploadUpdates(verbose: boolean): boolean {
@@ -419,13 +442,22 @@ async function uploadRecordingCandidate(
   progressIndex: number
 ): Promise<UploadJobResult> {
   const { entry, videoName, data, preparedUploadAssets } = candidate
+  let projectId: string | null = null
 
   try {
     uploadAbort.throwIfAborted()
     const recordingPath = resolve(screenciDir, entry, 'recording.mp4')
-    const recordingHash = existsSync(recordingPath)
-      ? await hashFile(recordingPath)
-      : undefined
+    if (!existsSync(recordingPath)) {
+      progressReporter.complete(progressIndex, 'failure')
+      return {
+        projectId: null,
+        hadFailure: true,
+        videoName,
+        failureMessage: `Missing recording.mp4 for "${videoName}"`,
+      }
+    }
+
+    const recordingHash = await hashFile(recordingPath)
     const startResponse = await fetch(`${apiUrl}/cli/upload/start`, {
       method: 'POST',
       headers: {
@@ -436,7 +468,7 @@ async function uploadRecordingCandidate(
         projectName,
         videoName,
         data,
-        ...(recordingHash !== undefined ? { recordingHash } : {}),
+        recordingHash,
         expectedAssets: preparedUploadAssets.map((asset) => ({
           fileHash: asset.fileHash,
           size: asset.size,
@@ -466,10 +498,12 @@ async function uploadRecordingCandidate(
       }
     }
 
-    const { recordingId, projectId } = (await startResponse.json()) as {
+    const startBody = (await startResponse.json()) as {
       recordingId: string
       projectId: string
     }
+    const { recordingId } = startBody
+    projectId = startBody.projectId
 
     if (verbose) {
       logger.info(`recordingId=${recordingId} projectId=${projectId}`)
@@ -488,52 +522,50 @@ async function uploadRecordingCandidate(
       progressReporter
     )
 
-    if (existsSync(recordingPath)) {
-      uploadAbort.throwIfAborted()
-      const fileStat = await stat(recordingPath)
-      if (verbose) {
-        logger.info(
-          `Uploading recording.mp4 size=${(fileStat.size / 1024 / 1024).toFixed(1)}MB`
-        )
-      }
-      const stream = createReadStream(recordingPath)
-      const abortStream = () => {
-        stream.destroy(
-          new UploadCancelledError(`Upload cancelled for "${videoName}"`)
-        )
-      }
-      uploadAbort.signal.addEventListener('abort', abortStream, {
-        once: true,
-      })
-      try {
-        const recordingResponse = await fetch(
-          `${apiUrl}/cli/upload/${recordingId}/recording`,
-          {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'video/mp4',
-              'Content-Length': String(fileStat.size),
-              'X-ScreenCI-Secret': secret,
-            },
-            body: stream as unknown as BodyInit,
-            signal: uploadAbort.signal,
-            // @ts-expect-error Node.js fetch supports duplex for streaming
-            duplex: 'half',
-          }
-        )
-        if (!recordingResponse.ok) {
-          const text = await recordingResponse.text()
-          progressReporter.complete(progressIndex, 'failure')
-          return {
-            projectId,
-            hadFailure: true,
-            videoName,
-            failureMessage: `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}${hint401(recordingResponse.status, secret)}`,
-          }
+    uploadAbort.throwIfAborted()
+    const fileStat = await stat(recordingPath)
+    if (verbose) {
+      logger.info(
+        `Uploading recording.mp4 size=${(fileStat.size / 1024 / 1024).toFixed(1)}MB`
+      )
+    }
+    const stream = createReadStream(recordingPath)
+    const abortStream = () => {
+      stream.destroy(
+        new UploadCancelledError(`Upload cancelled for "${videoName}"`)
+      )
+    }
+    uploadAbort.signal.addEventListener('abort', abortStream, {
+      once: true,
+    })
+    try {
+      const recordingResponse = await fetch(
+        `${apiUrl}/cli/upload/${recordingId}/recording`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'video/mp4',
+            'Content-Length': String(fileStat.size),
+            'X-ScreenCI-Secret': secret,
+          },
+          body: stream as unknown as BodyInit,
+          signal: uploadAbort.signal,
+          // @ts-expect-error Node.js fetch supports duplex for streaming
+          duplex: 'half',
         }
-      } finally {
-        uploadAbort.signal.removeEventListener('abort', abortStream)
+      )
+      if (!recordingResponse.ok) {
+        const text = await recordingResponse.text()
+        progressReporter.complete(progressIndex, 'failure')
+        return {
+          projectId,
+          hadFailure: true,
+          videoName,
+          failureMessage: `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}${hint401(recordingResponse.status, secret)}`,
+        }
       }
+    } finally {
+      uploadAbort.signal.removeEventListener('abort', abortStream)
     }
 
     progressReporter.complete(progressIndex, 'success')
@@ -544,9 +576,19 @@ async function uploadRecordingCandidate(
       throw err
     }
 
+    if (isUploadAssetError(err)) {
+      progressReporter.complete(progressIndex, 'failure')
+      return {
+        projectId,
+        hadFailure: true,
+        videoName,
+        failureMessage: err instanceof Error ? err.message : String(err),
+      }
+    }
+
     progressReporter.complete(progressIndex, 'failure')
     return {
-      projectId: null,
+      projectId,
       hadFailure: true,
       videoName,
       failureMessage: `Network error uploading "${videoName}": ${err instanceof Error ? err.message : String(err)}`,
@@ -808,6 +850,7 @@ async function prepareCustomVoiceAssets(
   data: RecordingData,
   configDir: string
 ): Promise<PreparedUploadAsset[]> {
+  const sourceFilePath = data.metadata?.sourceFilePath
   const customVoiceRefsByPath = new Map<string, CustomVoiceRefLike[]>()
 
   for (const event of data.events) {
@@ -848,7 +891,11 @@ async function prepareCustomVoiceAssets(
   const preparedAssets: PreparedUploadAsset[] = []
 
   for (const [voicePath, refs] of customVoiceRefsByPath) {
-    const resolvedFile = await readRecordingFile(voicePath, configDir)
+    const resolvedFile = await readRecordingFile(
+      voicePath,
+      configDir,
+      sourceFilePath
+    )
     if (resolvedFile === null) {
       const existingHash = refs.find(
         (ref) => typeof ref.assetHash === 'string'
@@ -895,12 +942,17 @@ async function collectUploadAssets(
   data: RecordingData,
   configDir: string
 ): Promise<PreparedUploadAsset[]> {
+  const sourceFilePath = data.metadata?.sourceFilePath
   const assets = new Map<string, PreparedUploadAsset>()
 
   for (const event of data.events) {
     if (event.type === 'assetStart') {
       if (assets.has(`name:${event.name}`)) continue
-      const resolvedFile = await readRecordingFile(event.path, configDir)
+      const resolvedFile = await readRecordingFile(
+        event.path,
+        configDir,
+        sourceFilePath
+      )
       if (resolvedFile === null) {
         logger.warn(`Asset file not found, skipping upload: ${event.path}`)
         continue
@@ -925,7 +977,11 @@ async function collectUploadAssets(
       ) {
         const resolvedFile =
           typeof event.assetPath === 'string'
-            ? await readRecordingFile(event.assetPath, configDir)
+            ? await readRecordingFile(
+                event.assetPath,
+                configDir,
+                sourceFilePath
+              )
             : null
         assets.set(`hash:${event.assetHash}`, {
           fileHash: event.assetHash,
@@ -951,7 +1007,11 @@ async function collectUploadAssets(
             const resolvedFile =
               'assetPath' in translation &&
               typeof translation.assetPath === 'string'
-                ? await readRecordingFile(translation.assetPath, configDir)
+                ? await readRecordingFile(
+                    translation.assetPath,
+                    configDir,
+                    sourceFilePath
+                  )
                 : null
             assets.set(`hash:${translation.assetHash}`, {
               fileHash: translation.assetHash,
@@ -1167,10 +1227,9 @@ async function uploadAssets(
 
       if (!checkRes.ok) {
         const text = await checkRes.text()
-        logger.warn(
+        throw new UploadAssetError(
           `Failed to check asset ${asset.path}: ${checkRes.status} ${text}${hint401(checkRes.status, secret)}`
         )
-        continue
       }
 
       const checkBody = (await checkRes.json()) as { exists: boolean }
@@ -1180,10 +1239,9 @@ async function uploadAssets(
       }
 
       if (!asset.fileBuffer || !asset.contentType) {
-        logger.warn(
+        throw new UploadAssetError(
           `Asset bytes not available for upload and backend does not have it yet: ${asset.path}`
         )
-        continue
       }
 
       throwIfAborted()
@@ -1209,7 +1267,7 @@ async function uploadAssets(
         if (res.status === 409 && text.includes('already exists')) {
           logInfo(`Asset already exists: ${asset.path}`)
         } else {
-          logger.warn(
+          throw new UploadAssetError(
             `Failed to upload asset ${asset.path}: ${res.status} ${text}${hint401(res.status, secret)}`
           )
         }
@@ -1220,7 +1278,12 @@ async function uploadAssets(
       if (isUploadCancelledError(err)) {
         throw err
       }
-      logger.warn(`Network error uploading asset ${asset.path}:`, err)
+      if (isUploadAssetError(err)) {
+        throw err
+      }
+      throw new UploadAssetError(
+        `Network error uploading asset ${asset.path}: ${err instanceof Error ? err.message : String(err)}`
+      )
     }
   }
 }
@@ -2182,6 +2245,7 @@ async function run(
 
   await validateUniqueDiscoveredTestTitles(configPath, additionalArgs, {
     ...envForChild,
+    SCREENCI_CONFIG_DIR: dirname(configPath),
     ...(command === 'record' ? { SCREENCI_RECORDING: 'true' } : {}),
     ...(command === 'test' && !mockRecord
       ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
@@ -2209,6 +2273,7 @@ async function run(
       : {}),
     env: {
       ...envForChild,
+      SCREENCI_CONFIG_DIR: dirname(configPath),
       // Enable recording only for record command
       ...(command === 'record' ? { SCREENCI_RECORDING: 'true' } : {}),
       ...(command === 'test' && !mockRecord

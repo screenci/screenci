@@ -311,6 +311,7 @@ export type RecordingMetadata = {
   screenciVersion: string
   /** Language codes present in multi-language cues, e.g. `['en', 'de']`. Omitted when no multi-language cues are used. */
   languages?: string[]
+  sourceFilePath?: string
 }
 
 function readScreenciVersion(): string {
@@ -392,7 +393,11 @@ export interface IEventRecorder {
    */
   registerVoiceForLang(lang: string, meta: VoiceLanguageMeta): void
   getEvents(): RecordingEvent[]
-  writeToFile(dir: string, videoName: string): Promise<void>
+  writeToFile(
+    dir: string,
+    videoName: string,
+    sourceFilePath?: string
+  ): Promise<void>
 }
 
 export const NOOP_EVENT_RECORDER: IEventRecorder = {
@@ -702,7 +707,11 @@ export class EventRecorder implements IEventRecorder {
     return [...this.events]
   }
 
-  async writeToFile(dir: string, videoName: string): Promise<void> {
+  async writeToFile(
+    dir: string,
+    videoName: string,
+    sourceFilePath?: string
+  ): Promise<void> {
     const filePath = join(dir, 'data.json')
 
     // Resolve all defaults so data.json always contains a complete set of
@@ -775,6 +784,7 @@ export class EventRecorder implements IEventRecorder {
         videoName,
         screenciVersion: SCREENCI_VERSION,
         ...(languages !== undefined && { languages }),
+        ...(sourceFilePath !== undefined && { sourceFilePath }),
       },
     }
     await writeFile(filePath, JSON.stringify(data, null, 2))

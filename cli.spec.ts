@@ -586,6 +586,257 @@ describe('CLI', () => {
       expect(mockFetch).not.toHaveBeenCalled()
     })
 
+    it('fails an upload candidate when recording.mp4 is missing', async () => {
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation((path: string) =>
+        path.endsWith('data.json')
+      )
+
+      const { uploadRecordings } = await import('./cli')
+
+      const result = await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(result).toEqual({
+        projectId: null,
+        hadFailures: true,
+        failedVideoNames: ['Demo'],
+        failedVideoMessages: [
+          {
+            videoName: 'Demo',
+            message: 'Missing recording.mp4 for "Demo"',
+          },
+        ],
+      })
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('/cli/upload/start'),
+        expect.anything()
+      )
+    })
+
+    it('fails the upload when an asset check fails', async () => {
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({
+            events: [
+              {
+                type: 'assetStart',
+                timeMs: 0,
+                name: 'logo',
+                path: 'videos/logo.png',
+                audio: 0,
+                fullScreen: false,
+              },
+            ],
+            metadata: { videoName: 'Demo' },
+          })
+        }
+        if (pathString.endsWith('videos/logo.png')) {
+          return Buffer.from('logo-bytes')
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') ||
+          path.endsWith('recording.mp4') ||
+          path.endsWith('videos/logo.png')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        if (url.endsWith('/asset/check')) {
+          return {
+            ok: false,
+            status: 500,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue('backend exploded'),
+          }
+        }
+        if (url.endsWith('/cli/upload/recording_123/recording')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+
+      const { uploadRecordings } = await import('./cli')
+
+      const result = await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(result).toEqual({
+        projectId: 'project_123',
+        hadFailures: true,
+        failedVideoNames: ['Demo'],
+        failedVideoMessages: [
+          {
+            videoName: 'Demo',
+            message:
+              'Failed to check asset videos/logo.png: 500 backend exploded',
+          },
+        ],
+      })
+      expect(
+        mockFetch.mock.calls.some(([input]) =>
+          String(input).endsWith('/cli/upload/recording_123/recording')
+        )
+      ).toBe(false)
+    })
+
+    it('resolves asset paths relative to the recording source file during upload', async () => {
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({
+            events: [
+              {
+                type: 'assetStart',
+                timeMs: 0,
+                name: 'nested-clip',
+                path: './asset.mp4',
+                audio: 0,
+                fullScreen: true,
+              },
+            ],
+            metadata: {
+              videoName: 'Demo',
+              sourceFilePath: 'videos/nested/demo.video.ts',
+            },
+          })
+        }
+        if (pathString.endsWith('videos/nested/asset.mp4')) {
+          return Buffer.from('nested-asset')
+        }
+        throw new Error(`ENOENT: ${pathString}`)
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') || path.endsWith('recording.mp4')
+      )
+
+      let startBody:
+        | {
+            expectedAssets?: Array<{
+              path: string
+              size: number
+              fileHash: string
+            }>
+          }
+        | undefined
+
+      mockFetch.mockImplementation(
+        async (input: string | URL, init?: RequestInit) => {
+          const url = String(input)
+          if (url.endsWith('/cli/upload/start')) {
+            startBody = JSON.parse(
+              String(init?.body ?? '{}')
+            ) as typeof startBody
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({
+                recordingId: 'recording_123',
+                projectId: 'project_123',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          if (url.endsWith('/asset/check')) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({ exists: true }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          if (url.endsWith('/cli/upload/recording_123/recording')) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({}),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+      )
+
+      const { uploadRecordings } = await import('./cli')
+
+      const result = await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(result).toEqual({
+        projectId: 'project_123',
+        hadFailures: false,
+        failedVideoNames: [],
+        failedVideoMessages: [],
+      })
+      expect(startBody?.expectedAssets).toEqual([
+        expect.objectContaining({
+          fileHash: expect.any(String),
+          path: './asset.mp4',
+          size: Buffer.from('nested-asset').byteLength,
+        }),
+      ])
+    })
+
     it('returns failure state when some recordings do not upload', async () => {
       mockReaddir.mockResolvedValue(['demo-video', 'failed-video'])
       mockReadFile.mockImplementation(async (path: string | URL) => {

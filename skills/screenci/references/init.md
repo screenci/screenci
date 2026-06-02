@@ -1,18 +1,18 @@
-# `screenci init`
+# `npm init screenci`
 
-Use `screenci init` to scaffold a new ScreenCI project.
+Use `npm init screenci` to scaffold a new ScreenCI project.
 
 ## Commands
 
 ```bash
-npx screenci init
-npx screenci init "My Project"
-npx screenci init "My Project" --verbose
+npm init screenci
+npm init screenci "My Project"
+npm init screenci "My Project" -- --verbose
 ```
 
 ## What It Creates
 
-`screenci init` creates a ready-to-run project in the current directory containing:
+`npm init screenci` creates a ready-to-run project in the current directory containing:
 
 ```text
 screenci.config.ts
@@ -25,7 +25,7 @@ package.json
 
 ## Requirements
 
-- Node.js 20+ recommended
+- Node.js 18+ required
 
 ## Notes
 
@@ -39,7 +39,7 @@ package.json
 ## Typical Flow
 
 ```bash
-npx screenci init "My Project"
+npm init screenci "My Project"
 npx screenci test   # verify the video works
 npx screenci record # capture the final recording
 ```

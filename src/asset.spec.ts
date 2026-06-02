@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { createAssets, setActiveAssetRecorder } from './asset.js'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
+import {
+  createScreenCIRuntimeContext,
+  runWithScreenCIRuntimeContext,
+} from './runtimeContext.js'
 
 function createMockRecorder(): IEventRecorder {
   return {
@@ -126,6 +133,54 @@ describe('createAssets', () => {
         1.0,
         true
       )
+    })
+
+    it('fails when the asset file is missing relative to the active test file', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'screenci-asset-spec-'))
+      const assets = createAssets({
+        logo: { path: './missing.png', audio: 0, fullScreen: false },
+      })
+
+      try {
+        await expect(
+          runWithScreenCIRuntimeContext(
+            createScreenCIRuntimeContext({
+              recorder,
+              testFilePath: join(tempDir, 'demo.video.ts'),
+            }),
+            () => assets.logo()
+          )
+        ).rejects.toThrow('Asset file not found: ./missing.png')
+      } finally {
+        await rm(tempDir, { recursive: true, force: true })
+      }
+    })
+
+    it('resolves asset files relative to the active test file', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'screenci-asset-spec-'))
+      await writeFile(join(tempDir, 'logo.png'), 'logo')
+      const assets = createAssets({
+        logo: { path: './logo.png', audio: 0, fullScreen: false },
+      })
+
+      try {
+        await runWithScreenCIRuntimeContext(
+          createScreenCIRuntimeContext({
+            recorder,
+            testFilePath: join(tempDir, 'demo.video.ts'),
+          }),
+          () => assets.logo()
+        )
+
+        expect(recorder.addAssetStart).toHaveBeenCalledWith(
+          'logo',
+          './logo.png',
+          0,
+          false
+        )
+      } finally {
+        await rm(tempDir, { recursive: true, force: true })
+      }
     })
   })
 

@@ -9,7 +9,7 @@ import type {
   TestInfo,
 } from '@playwright/test'
 import { mkdir, rm } from 'fs/promises'
-import { join } from 'path'
+import { join, relative } from 'path'
 import { attachRecorder } from 'playwright-recorder-plus'
 import type { Recorder, StopResult } from 'playwright-recorder-plus'
 import type { Page as RecorderPage } from 'playwright-core'
@@ -391,7 +391,12 @@ const _videoBase = base.extend<
       await page.close()
 
       if (testInfo.status === 'passed') {
-        await recorder.writeToFile(videoDir, testInfo.title)
+        const configDir = process.env.SCREENCI_CONFIG_DIR ?? process.cwd()
+        await recorder.writeToFile(
+          videoDir,
+          testInfo.title,
+          relative(configDir, testInfo.file)
+        )
       }
     }
   },

@@ -2,6 +2,7 @@ import type { IEventRecorder } from './events.js'
 import { access } from 'fs/promises'
 import { dirname, resolve } from 'path'
 import {
+  getScreenCIRuntimeContext,
   getRuntimeAssetRecorder,
   setRuntimeAssetRecorder,
 } from './runtimeContext.js'
@@ -25,26 +26,30 @@ export function resetRegisteredAssetPaths(): void {
 export async function validateRegisteredAssetPaths(
   testFilePath: string
 ): Promise<void> {
-  const testDir = dirname(testFilePath)
-
   for (const assetPath of registeredAssetPaths) {
-    const candidates = [assetPath, resolve(testDir, assetPath)]
-    let exists = false
+    await validateAssetPath(assetPath, testFilePath)
+  }
+}
 
-    for (const candidate of candidates) {
-      try {
-        await access(candidate)
-        exists = true
-        break
-      } catch {
-        // try next candidate
-      }
-    }
+async function validateAssetPath(
+  assetPath: string,
+  testFilePath: string | null
+): Promise<void> {
+  const candidates = [assetPath]
+  if (testFilePath !== null) {
+    candidates.push(resolve(dirname(testFilePath), assetPath))
+  }
 
-    if (!exists) {
-      throw new Error(`Asset file not found: ${assetPath}`)
+  for (const candidate of candidates) {
+    try {
+      await access(candidate)
+      return
+    } catch {
+      // try next candidate
     }
   }
+
+  throw new Error(`Asset file not found: ${assetPath}`)
 }
 
 /**
@@ -105,7 +110,11 @@ function createAssetController(
   name: string,
   config: AssetConfig
 ): AssetController {
-  return (): Promise<void> => {
+  return async (): Promise<void> => {
+    const testFilePath = getScreenCIRuntimeContext().testFilePath
+    if (testFilePath !== null) {
+      await validateAssetPath(config.path, testFilePath)
+    }
     const activeRecorder = getRuntimeAssetRecorder()
     activeRecorder.addAssetStart(
       name,

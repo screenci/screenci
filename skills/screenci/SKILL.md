@@ -30,9 +30,6 @@ Assume the project is already initialized. Add or edit video scripts in `videos/
 If you are creating new videos, remove the starter `videos/example.video.ts` file.
 
 ```bash
-# iterate locally without recording
-npx screenci test --ui
-
 # verify repeatedly until green
 npx screenci test
 
@@ -55,6 +52,28 @@ ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific hel
 - `zoomTo()` and `resetZoom()` are better for forms and other steady editing sections where the camera should stay fixed while the user types, selects, toggles, and confirms within one area.
 - `createNarration()` is mandatory for every video: define it in every `.video.ts` file and include spoken narration throughout the demo. The opening narration should first state the purpose of the video, then continue with the explanation or walkthrough. Define the map once, then call `await narration.key()` for the common case where the full line should run before moving on. Use `await narration.key.start()` when narration should overlap with the next action, and `await narration.key.end()` only to close that same active cue later, especially before visible navigation or route changes.
 - Narration text can include inline speech-control tags such as `[pronounce: screen see eye]`, `[short pause]`, `[medium pause]`, and `[long pause]` when a word needs guided pronunciation or an intentional pause. When narration includes a URL or domain name, add a pronunciation guide or rewrite the line so it will be spoken clearly. Example: `screenci.com [pronounce: screen see eye dot com]`.
+
+Example:
+
+```ts
+const narration = createNarration({
+  intro:
+    'This video shows how to update your billing details and save the changes.',
+  explainForm:
+    'We start on the billing page and update the company name, email, and tax ID.',
+  saving: 'Now we save the changes and wait for the confirmation message.',
+  nextPage:
+    'Next, we open the invoices section to confirm the new billing details are in use.',
+})
+
+await narration.intro()
+await narration.explainForm()
+await narration.saving.start()
+await page.getByRole('button', { name: 'Save changes' }).click()
+await narration.saving.end()
+await narration.nextPage()
+await page.getByRole('link', { name: 'Invoices' }).click()
+```
 
 ## Required Conventions
 
@@ -101,7 +120,6 @@ await autoZoom(async () => {
 ## Command Notes
 
 - `screenci record` runs the recording flow with local Playwright.
-- `screenci test --ui` runs Playwright in UI mode for fast iteration without screen capture.
 - `screenci test <playwright args...>` forwards most Playwright test arguments unchanged, while still using `screenci.config.ts`.
 
 ## Recording Workflow
@@ -110,9 +128,25 @@ await autoZoom(async () => {
 2. Add or edit `.video.ts` files in `videos/`.
    Remove `videos/example.video.ts` if you are creating new videos and do not need the starter video.
    For narration, define `const narration = createNarration({ ... })` near the top of the file and trigger lines with `await narration.someKey()` when the full line should finish before moving on. Use `await narration.someKey.start()` only when narration should overlap with the next action, and `await narration.someKey.end()` only to close that same active cue later. This is especially important before visible navigation or page changes. Use inline tags like `[pronounce: ...]` and `[short pause]` inside cue text when needed, especially for URLs and domains such as `screenci.com [pronounce: screen see eye dot com]`.
-3. Run `npx screenci test --ui` to validate selectors and flow.
-4. Run `npx screenci test` until it passes.
-5. Run `npx screenci record` to produce `.screenci/<video-name>/recording.mp4` and `data.json`.
+   Example:
+
+   ```ts
+   const narration = createNarration({
+     intro: 'This video shows how to export a monthly sales report.',
+     filters:
+       'First, we set the report range and select the sales channel filters.',
+     export: 'Then we export the report and wait for the download to start.',
+   })
+
+   await narration.intro()
+   await narration.filters()
+   await narration.export.start()
+   await page.getByRole('button', { name: 'Export CSV' }).click()
+   await narration.export.end()
+   ```
+
+3. Run `npx screenci test` until it passes.
+4. Run `npx screenci record` to produce `.screenci/<video-name>/recording.mp4` and `data.json`.
 
 ## Specific Tasks
 

@@ -15,6 +15,7 @@ const mockRealpathSync = vi.fn((path: string) => path)
 const mockMkdirSync = vi.fn()
 const mockRmSync = vi.fn()
 const mockReaddirSync = vi.fn(() => [] as string[])
+const mockReadFileSync = vi.fn()
 const mockReaddir = vi.fn()
 const mockReadFile = vi.fn()
 const mockStat = vi.fn()
@@ -136,6 +137,7 @@ vi.mock('fs', () => ({
   mkdirSync: mockMkdirSync,
   rmSync: mockRmSync,
   readdirSync: mockReaddirSync,
+  readFileSync: mockReadFileSync,
   default: {
     createReadStream: mockCreateReadStream,
     existsSync: mockExistsSync,
@@ -143,6 +145,7 @@ vi.mock('fs', () => ({
     mkdirSync: mockMkdirSync,
     rmSync: mockRmSync,
     readdirSync: mockReaddirSync,
+    readFileSync: mockReadFileSync,
   },
 }))
 
@@ -183,10 +186,11 @@ describe('CLI', () => {
   let loggerInfoSpy: ReturnType<typeof vi.spyOn>
   let loggerWarnSpy: ReturnType<typeof vi.spyOn>
   let processExitSpy: ReturnType<typeof vi.spyOn>
-  let loadEnvFileSpy: ReturnType<typeof vi.spyOn>
+  let loadEnvFileSpy: ReturnType<typeof vi.spyOn> | undefined
   let originalArgv: string[]
   let originalEnv: NodeJS.ProcessEnv
   let originalFetch: typeof global.fetch
+  let originalLoadEnvFile: ((path: string | URL) => void) | undefined
 
   beforeEach(() => {
     // Reset all mocks (clearAllMocks only clears call history, not Once queues;
@@ -197,6 +201,12 @@ describe('CLI', () => {
     mockWriteFile.mockResolvedValue(undefined)
     mockMkdir.mockResolvedValue(undefined)
     mockReaddir.mockResolvedValue([])
+    mockReadFileSync.mockImplementation(() => {
+      if (process.env.VITE_APP_BASE_URL === undefined) {
+        process.env.VITE_APP_BASE_URL = 'https://env-file.example.com'
+      }
+      return 'VITE_APP_BASE_URL=https://env-file.example.com\n'
+    })
     mockReadFile.mockImplementation(async (path: string | URL) => {
       if (String(path).endsWith('screenci.config.ts')) {
         return "export default defineConfig({ projectName: 'Test Project' })"
@@ -231,6 +241,11 @@ describe('CLI', () => {
     originalArgv = process.argv
     originalEnv = { ...process.env }
     originalFetch = global.fetch
+    originalLoadEnvFile = (
+      process as NodeJS.Process & {
+        loadEnvFile?: (path: string | URL) => void
+      }
+    ).loadEnvFile
     delete process.env.npm_config_user_agent
 
     // Mock child process (unref needed for openBrowser's detached spawn)
@@ -261,16 +276,30 @@ describe('CLI', () => {
     processExitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
       throw new Error('process.exit called')
     }) as unknown as (code?: string | number | null | undefined) => never)
-    loadEnvFileSpy = vi
-      .spyOn(process, 'loadEnvFile')
-      .mockImplementation((path?: string | URL) => {
-        if (
-          String(path).endsWith('.env') &&
-          process.env.VITE_APP_BASE_URL === undefined
-        ) {
-          process.env.VITE_APP_BASE_URL = 'https://env-file.example.com'
+    if (typeof originalLoadEnvFile === 'function') {
+      loadEnvFileSpy = vi
+        .spyOn(
+          process as NodeJS.Process & {
+            loadEnvFile?: (path: string | URL) => void
+          },
+          'loadEnvFile'
+        )
+        .mockImplementation((path?: string | URL) => {
+          if (
+            String(path).endsWith('.env') &&
+            process.env.VITE_APP_BASE_URL === undefined
+          ) {
+            process.env.VITE_APP_BASE_URL = 'https://env-file.example.com'
+          }
+        })
+    } else {
+      loadEnvFileSpy = undefined
+      ;(
+        process as NodeJS.Process & {
+          loadEnvFile?: (path: string | URL) => void
         }
-      })
+      ).loadEnvFile = undefined
+    }
 
     global.fetch = mockFetch as typeof global.fetch
     mockFetch.mockResolvedValue({
@@ -286,6 +315,11 @@ describe('CLI', () => {
     process.argv = originalArgv
     process.env = originalEnv
     global.fetch = originalFetch
+    ;(
+      process as NodeJS.Process & {
+        loadEnvFile?: (path: string | URL) => void
+      }
+    ).loadEnvFile = originalLoadEnvFile
 
     // Restore spies
     loggerErrorSpy?.mockRestore()
@@ -333,11 +367,15 @@ describe('CLI', () => {
     it('loads SCREENCI_SECRET from the project .env when envFile is not configured', async () => {
       delete process.env.SCREENCI_SECRET
       process.argv = ['node', 'cli.js', 'record']
-      loadEnvFileSpy.mockImplementation((path?: string | URL) => {
-        if (String(path) === `${process.cwd()}/.env`) {
-          process.env.SCREENCI_SECRET = 'env-secret'
-        }
-      })
+      if (loadEnvFileSpy) {
+        loadEnvFileSpy.mockImplementation((path?: string | URL) => {
+          if (String(path) === `${process.cwd()}/.env`) {
+            process.env.SCREENCI_SECRET = 'env-secret'
+          }
+        })
+      } else {
+        mockReadFileSync.mockReturnValue('SCREENCI_SECRET=env-secret\n')
+      }
       mockSpawn.mockImplementation(() => {
         process.nextTick(() => mockChildProcess.emit('close', 0))
         return mockChildProcess as unknown as ChildProcess
@@ -347,7 +385,14 @@ describe('CLI', () => {
 
       await main()
 
-      expect(loadEnvFileSpy).toHaveBeenCalledWith(`${process.cwd()}/.env`)
+      if (loadEnvFileSpy) {
+        expect(loadEnvFileSpy).toHaveBeenCalledWith(`${process.cwd()}/.env`)
+      } else {
+        expect(mockReadFileSync).toHaveBeenCalledWith(
+          `${process.cwd()}/.env`,
+          'utf8'
+        )
+      }
       expect(mockCreateHttpServer).not.toHaveBeenCalled()
     })
 
@@ -1687,9 +1732,16 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       await main()
 
-      expect(loadEnvFileSpy).toHaveBeenCalledWith(
-        expect.stringContaining('.env')
-      )
+      if (loadEnvFileSpy) {
+        expect(loadEnvFileSpy).toHaveBeenCalledWith(
+          expect.stringContaining('.env')
+        )
+      } else {
+        expect(mockReadFileSync).toHaveBeenCalledWith(
+          expect.stringContaining('.env'),
+          'utf8'
+        )
+      }
     })
 
     it('should not log the config path by default', async () => {
@@ -1763,9 +1815,15 @@ describe('CLI', () => {
       ]
       process.env.CI = 'true'
       process.env.SCREENCI_RECORDING = 'true'
-      loadEnvFileSpy.mockImplementation(() => {
-        throw Object.assign(new Error('missing env file'), { code: 'ENOENT' })
-      })
+      if (loadEnvFileSpy) {
+        loadEnvFileSpy.mockImplementation(() => {
+          throw Object.assign(new Error('missing env file'), { code: 'ENOENT' })
+        })
+      } else {
+        mockReadFileSync.mockImplementation(() => {
+          throw Object.assign(new Error('missing env file'), { code: 'ENOENT' })
+        })
+      }
       mockSpawn.mockImplementation(() => {
         process.nextTick(() => mockChildProcess.emit('close', 0))
         return mockChildProcess as unknown as ChildProcess
@@ -1774,8 +1832,50 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       await main()
 
-      expect(loadEnvFileSpy).toHaveBeenCalledWith(
-        expect.stringContaining('.env')
+      if (loadEnvFileSpy) {
+        expect(loadEnvFileSpy).toHaveBeenCalledWith(
+          expect.stringContaining('.env')
+        )
+      } else {
+        expect(mockReadFileSync).toHaveBeenCalledWith(
+          expect.stringContaining('.env'),
+          'utf8'
+        )
+      }
+      expect(loggerWarnSpy).not.toHaveBeenCalled()
+    })
+
+    it('loads env files on Node 18 when process.loadEnvFile is unavailable', async () => {
+      process.argv = ['node', 'cli.js', 'test']
+      delete process.env.VITE_APP_BASE_URL
+      ;(
+        process as NodeJS.Process & {
+          loadEnvFile?: (path: string | URL) => void
+        }
+      ).loadEnvFile = undefined
+      mockReadFileSync.mockReturnValue(
+        'export VITE_APP_BASE_URL="https://node18.example.com"\n'
+      )
+      mockSpawn.mockImplementation(
+        (
+          _command: string,
+          _args: string[],
+          options?: { env?: NodeJS.ProcessEnv }
+        ) => {
+          expect(options?.env?.VITE_APP_BASE_URL).toBe(
+            'https://node18.example.com'
+          )
+          process.nextTick(() => mockChildProcess.emit('close', 0))
+          return mockChildProcess as unknown as ChildProcess
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockReadFileSync).toHaveBeenCalledWith(
+        `${process.cwd()}/.env`,
+        'utf8'
       )
       expect(loggerWarnSpy).not.toHaveBeenCalled()
     })

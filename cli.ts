@@ -1,7 +1,14 @@
 import { spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import { createReadStream } from 'fs'
-import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+} from 'fs'
 import { createHash } from 'crypto'
 import { createServer } from 'http'
 import type { AddressInfo } from 'net'
@@ -1463,12 +1470,90 @@ async function loadScreenCIConfigAndEnv(configPath?: string): Promise<{
 
 function loadEnvFile(envFilePath: string, warnOnFailure: boolean): void {
   try {
-    process.loadEnvFile(envFilePath)
+    const loadEnvFileCompat = (
+      process as NodeJS.Process & {
+        loadEnvFile?: (path: string | URL) => void
+      }
+    ).loadEnvFile
+
+    if (typeof loadEnvFileCompat === 'function') {
+      loadEnvFileCompat(envFilePath)
+      return
+    }
+
+    loadEnvFileFallback(envFilePath)
   } catch (err) {
     if (warnOnFailure && !isMissingFileError(err)) {
       logger.warn(`Failed to load env file ${envFilePath}:`, err)
     }
   }
+}
+
+function loadEnvFileFallback(envFilePath: string): void {
+  const envSource = readFileSync(envFilePath, 'utf8')
+
+  for (const [key, value] of parseEnvFile(envSource)) {
+    if (process.env[key] === undefined) {
+      process.env[key] = value
+    }
+  }
+}
+
+function parseEnvFile(envSource: string): Map<string, string> {
+  const parsed = new Map<string, string>()
+  const lines = envSource.replace(/^\uFEFF/, '').split(/\r?\n/)
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+
+    if (line === '' || line.startsWith('#')) continue
+
+    const normalizedLine = line.startsWith('export ')
+      ? line.slice('export '.length).trimStart()
+      : line
+    const separatorIndex = normalizedLine.indexOf('=')
+
+    if (separatorIndex === -1) continue
+
+    const key = normalizedLine.slice(0, separatorIndex).trim()
+
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue
+
+    const rawValue = normalizedLine.slice(separatorIndex + 1).trim()
+    parsed.set(key, parseEnvValue(rawValue))
+  }
+
+  return parsed
+}
+
+function parseEnvValue(rawValue: string): string {
+  if (rawValue === '') return ''
+
+  if (
+    (rawValue.startsWith('"') && rawValue.endsWith('"')) ||
+    (rawValue.startsWith("'") && rawValue.endsWith("'"))
+  ) {
+    const quote = rawValue[0]
+    const quotedValue = rawValue.slice(1, -1)
+
+    if (quote === '"') {
+      return quotedValue
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '\r')
+        .replace(/\\t/g, '\t')
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, '\\')
+    }
+
+    return quotedValue
+  }
+
+  const inlineCommentIndex = rawValue.search(/\s#/)
+  if (inlineCommentIndex >= 0) {
+    return rawValue.slice(0, inlineCommentIndex).trimEnd()
+  }
+
+  return rawValue
 }
 
 function isMissingFileError(err: unknown): boolean {

@@ -82,6 +82,7 @@
   "dependencies": {
     "@inquirer/prompts": "^7.10.1",
     "commander": "^13.1.0",
+    "ffmpeg-static": "^5.3.0",
     "ora": "^8.2.0",
     "picocolors": "^1.1.1",
     "playwright-recorder-plus": "^0.1.3"

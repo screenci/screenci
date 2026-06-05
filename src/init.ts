@@ -724,17 +724,9 @@ jobs:
           npm_config_strict_dep_builds: false
         run: ${packageManager === 'pnpm' ? 'pnpm install --frozen-lockfile' : 'npm ci'}
 
-      - name: Cache Playwright Chromium
-        uses: actions/cache@v5
-        id: pw-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-\${{ runner.os }}-\${{ hashFiles('${commands.lockfileName}') }}
-
-      - name: Install Chromium
-        if: steps.pw-cache.outputs.cache-hit != 'true'
+      - name: Install Chromium Headless Shell
         working-directory: .
-        run: ${commands.playwrightRun} install chromium
+        run: ${commands.playwrightRun} install --only-shell chromium
 
       - id: record
         name: Record
@@ -830,7 +822,7 @@ async function promptInitPlaywrightBrowsersForPackageManager(
 ): Promise<boolean> {
   const commands = getPackageManagerCommand(packageManager)
   return promptYesNo(
-    `Install Playwright browsers (can be done manually via '${commands.playwrightRun} install chromium')? (Y/n)`,
+    `Install Playwright browsers (can be done manually via '${commands.playwrightRun} install --only-shell chromium')? (Y/n)`,
     true
   )
 }
@@ -991,17 +983,19 @@ export async function runInit(
 
   if (shouldInstallPlaywrightBrowsers) {
     logger.info(
-      `Installing Playwright Chromium with '${commands.playwrightRun} install chromium'...`
+      `Installing Playwright Chromium headless shell with '${commands.playwrightRun} install --only-shell chromium'...`
     )
     await spawnInherited(
       packageManager === 'pnpm' ? 'pnpm' : 'npx',
       packageManager === 'pnpm'
-        ? ['exec', 'playwright', 'install', 'chromium']
-        : ['playwright', 'install', 'chromium'],
+        ? ['exec', 'playwright', 'install', '--only-shell', 'chromium']
+        : ['playwright', 'install', '--only-shell', 'chromium'],
       projectDir,
       'screenci init'
     )
-    logger.info(`${pc.green('✔')} Playwright Chromium installed successfully`)
+    logger.info(
+      `${pc.green('✔')} Playwright Chromium headless shell installed successfully`
+    )
   }
 
   if (shouldInstallPlaywrightOsDependencies) {

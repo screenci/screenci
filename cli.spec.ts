@@ -3147,7 +3147,7 @@ describe('CLI', () => {
         }),
         expect.objectContaining({
           message:
-            "Install Playwright browsers (can be done manually via 'npx playwright install chromium')? (Y/n)",
+            "Install Playwright browsers (can be done manually via 'npx playwright install --only-shell chromium')? (Y/n)",
           default: 'y',
         }),
         expect.objectContaining({
@@ -3202,7 +3202,7 @@ describe('CLI', () => {
       expectNpmDevInstalls(mockSpawn, '/workspace/demo-app')
       expect(mockSpawn).toHaveBeenCalledWith(
         'npx',
-        ['playwright', 'install', 'chromium'],
+        ['playwright', 'install', '--only-shell', 'chromium'],
         expect.objectContaining({
           cwd: '/workspace/demo-app',
           stdio: 'inherit',
@@ -3234,12 +3234,12 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         'cache-dependency-path: package-lock.json'
       )
-      expect(workflowCall?.[1]).toContain("hashFiles('package-lock.json')")
       expect(workflowCall?.[1]).toContain(
         'Copy it from https://app.screenci.com/secrets or ./.env'
       )
+      expect(workflowCall?.[1]).not.toContain('actions/cache@v5')
       expect(workflowCall?.[1]).toContain(
-        'run: npx playwright install chromium'
+        'run: npx playwright install --only-shell chromium'
       )
       expect(workflowCall?.[1]).not.toContain('--with-deps')
     })
@@ -3263,7 +3263,7 @@ describe('CLI', () => {
       expectPnpmDevInstalls(mockSpawn, '/workspace/my-project')
       expect(mockSpawn).toHaveBeenCalledWith(
         'pnpm',
-        ['exec', 'playwright', 'install', 'chromium'],
+        ['exec', 'playwright', 'install', '--only-shell', 'chromium'],
         expect.objectContaining({
           cwd: '/workspace/my-project',
           stdio: 'inherit',
@@ -3284,9 +3284,9 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain('HUSKY: 0')
       expect(workflowCall?.[1]).toContain('npm_config_strict_dep_builds: false')
       expect(workflowCall?.[1]).toContain('run: pnpm install --frozen-lockfile')
-      expect(workflowCall?.[1]).toContain("hashFiles('pnpm-lock.yaml')")
+      expect(workflowCall?.[1]).not.toContain('actions/cache@v5')
       expect(workflowCall?.[1]).toContain(
-        'run: pnpm exec playwright install chromium'
+        'run: pnpm exec playwright install --only-shell chromium'
       )
       expect(workflowCall?.[1]).toContain('run: pnpm exec screenci record')
     })
@@ -3414,7 +3414,7 @@ describe('CLI', () => {
 
       expect(mockSpawn).toHaveBeenCalledWith(
         'npx',
-        ['playwright', 'install', 'chromium'],
+        ['playwright', 'install', '--only-shell', 'chromium'],
         expect.objectContaining({
           cwd: '/workspace/my-project',
           stdio: 'inherit',
@@ -3542,7 +3542,7 @@ describe('CLI', () => {
           }),
           expect.objectContaining({
             message:
-              "Install Playwright browsers (can be done manually via 'pnpm exec playwright install chromium')? (Y/n)",
+              "Install Playwright browsers (can be done manually via 'pnpm exec playwright install --only-shell chromium')? (Y/n)",
           }),
           expect.objectContaining({
             message:

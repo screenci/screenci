@@ -609,6 +609,10 @@ describe('CLI', () => {
       expect(loggerWarnSpy).toHaveBeenCalledWith(
         'Some recordings failed, uploading successful videos only.'
       )
+      expect(mockRmSync).toHaveBeenCalledWith(
+        expect.stringContaining('/.screenci/demo-video'),
+        { recursive: true, force: true }
+      )
     })
 
     it('skips upload after partial failure with all-or-nothing policy, then still fails', async () => {
@@ -741,8 +745,9 @@ describe('CLI', () => {
                 type: 'assetStart',
                 timeMs: 0,
                 name: 'logo',
+                kind: 'image',
                 path: 'videos/logo.png',
-                audio: 0,
+                durationMs: 1200,
                 fullScreen: false,
               },
             ],
@@ -839,6 +844,7 @@ describe('CLI', () => {
                 type: 'assetStart',
                 timeMs: 0,
                 name: 'nested-clip',
+                kind: 'video',
                 path: './asset.mp4',
                 audio: 0,
                 fullScreen: true,
@@ -1022,6 +1028,140 @@ describe('CLI', () => {
           },
         ],
       })
+    })
+
+    it('removes uploaded recording directories after successful upload', async () => {
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') || path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+
+        if (url.endsWith('/cli/upload/recording_123/recording')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+
+      const { uploadRecordings } = await import('./cli')
+
+      const result = await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(result).toEqual({
+        projectId: 'project_123',
+        hadFailures: false,
+        failedVideoNames: [],
+        failedVideoMessages: [],
+      })
+      expect(mockRmSync).toHaveBeenCalledWith('/repo/.screenci/demo-video', {
+        recursive: true,
+        force: true,
+      })
+    })
+
+    it('keeps uploaded recording directories when DEBUG=true', async () => {
+      process.env.DEBUG = 'true'
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') || path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+
+        if (url.endsWith('/cli/upload/recording_123/recording')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+
+      const { uploadRecordings } = await import('./cli')
+
+      const result = await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(result).toEqual({
+        projectId: 'project_123',
+        hadFailures: false,
+        failedVideoNames: [],
+        failedVideoMessages: [],
+      })
+      expect(mockRmSync).not.toHaveBeenCalled()
     })
 
     it('uploads recordings in parallel and reports completions as they finish in CI mode', async () => {
@@ -1276,7 +1416,10 @@ describe('CLI', () => {
               {
                 type: 'assetStart',
                 name: 'logo',
+                kind: 'image',
                 path: 'videos/logo.png',
+                durationMs: 1200,
+                fullScreen: false,
               },
             ],
             metadata: { videoName },
@@ -1361,7 +1504,7 @@ describe('CLI', () => {
         const moveUpCount = (allWrites.match(/\u001B\[2A/g) ?? []).length
 
         expect(loggerInfoSpy).toHaveBeenCalledWith(
-          'Asset already exists: videos/logo.png'
+          '✔ Asset already exists: videos/logo.png'
         )
         expect(moveUpCount).toBeGreaterThanOrEqual(3)
         expect(normalizedWrites).toContain('... Uploading "Demo"')

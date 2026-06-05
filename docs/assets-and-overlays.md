@@ -2,6 +2,8 @@
 
 Assets let you place additional media on top of the recording timeline. Use them for intros, transitions, corner branding, or short contextual clips that would be awkward to build inside the browser automation itself.
 
+Supported asset formats are limited to `.svg`, `.png`, and `.mp4`.
+
 #### You will learn
 
 - [how to define assets](#define-assets)
@@ -15,8 +17,8 @@ Assets let you place additional media on top of the recording timeline. Use them
 import { createAssets, video } from 'screenci'
 
 const assets = createAssets({
-  intro: { path: './assets/intro.mp4', audio: 1, fullScreen: true },
-  logo: { path: './assets/logo.png', audio: 0, fullScreen: false },
+  intro: { path: './assets/intro.mp4', fullScreen: true },
+  logo: { path: './assets/logo.png', durationMs: 1200, fullScreen: false },
 })
 
 video('Overview', async ({ page }) => {
@@ -27,6 +29,13 @@ video('Overview', async ({ page }) => {
 ```
 
 Each key becomes a callable asset controller.
+
+Rules:
+
+- `.svg` and `.png` assets require `durationMs`
+- `.svg` and `.png` assets do not support `audio`
+- `.mp4` assets may provide `audio`; if omitted it defaults to `1`
+- `.mp4` assets use the file's natural duration and must not provide `durationMs`
 
 ## Full-screen vs overlay
 
@@ -47,6 +56,8 @@ Use `fullScreen: false` for:
 Asset timing is explicit in the script:
 
 - `await assets.intro()` inserts the asset at that point in the timeline
+- image assets (`.svg`, `.png`) stay visible for the recorded `durationMs`
+- video assets (`.mp4`) stay visible for the media file's natural duration and play at full volume unless `audio` is specified
 - full-screen assets take over the output frame
 - overlay assets stay on top of the recording while the underlying screen continues
 
@@ -60,6 +71,7 @@ A simple structure is usually enough:
 assets/
   intro.mp4
   transition.mp4
+  badge.svg
   logo.png
 ```
 
@@ -70,6 +82,7 @@ Keep reusable brand assets separate from throwaway experiment files so the proje
 - Use overlays sparingly.
 - Mute assets that should not compete with narration.
 - Keep intros and transitions short.
+- Prefer short `durationMs` values for image overlays so they do not stall the timeline longer than needed.
 - Prefer consistent placement and sizing across videos in the same series.
 
 for the exported `createAssets()` API.

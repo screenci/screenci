@@ -21,9 +21,12 @@ import {
 import { DEFAULT_CLICK_MOUSE_MOVE_DURATION } from './defaults.js'
 import { hide } from './hide.js'
 import { CLICK_DURATION_MS, getMousePosition } from './mouse.js'
+import { SCREENCI_DISABLE_RECORDING_TIMINGS_ENV } from './runtimeMode.js'
 
 type DOMClickData = { x: number; y: number; targetRect: ElementRect }
 type ScrollLogicalPosition = 'start' | 'center' | 'end' | 'nearest'
+
+const DEFAULT_POST_TYPING_SETTLE_PAUSE_MS = CLICK_DURATION_MS / 2
 
 type PageMock = Page & {
   _locatorMock: Locator
@@ -348,7 +351,10 @@ function makeLocatorMock(
   return mock as unknown as Locator
 }
 
+let originalEnv: NodeJS.ProcessEnv
+
 beforeEach(() => {
+  originalEnv = { ...process.env }
   setActiveClickRecorder(NOOP_EVENT_RECORDER)
   setActiveAutoZoomRecorder(NOOP_EVENT_RECORDER)
   setCurrentZoomViewport(null)
@@ -356,6 +362,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  process.env = originalEnv
   setActiveClickRecorder(NOOP_EVENT_RECORDER)
   setActiveAutoZoomRecorder(NOOP_EVENT_RECORDER)
   setCurrentZoomViewport(null)
@@ -770,6 +777,45 @@ describe('instrumentLocator', () => {
     expect(wait.endMs - wait.startMs).toBe(100)
   })
 
+  it('records a trailing post-typing settle pause for fill in recording mode', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    instrumentLocator(locator)
+
+    await Promise.all([
+      (
+        locator.fill as (
+          value: string,
+          options?: { duration?: number; click?: { beforeClickPause?: number } }
+        ) => Promise<void>
+      )('Acme', { duration: 100, click: { beforeClickPause: 0 } }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const fill = recordedInputEvents[0]!
+    const waits = fill.events.filter((event) => event.type === 'mouseWait')
+    const trailingWait = waits.at(-1)
+
+    expect(fill.subType).toBe('pressSequentially')
+    expect(waits).toHaveLength(2)
+    expect(trailingWait?.type).toBe('mouseWait')
+    if (trailingWait?.type !== 'mouseWait') {
+      throw new Error('Expected a trailing mouseWait event')
+    }
+
+    expect(trailingWait.endMs - trailingWait.startMs).toBe(
+      DEFAULT_POST_TYPING_SETTLE_PAUSE_MS
+    )
+  })
+
   it('skips the default pre-typing click animation for fill when the input is already focused', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
@@ -804,6 +850,11 @@ describe('instrumentLocator', () => {
     const fill = recordedInputEvents[0]!
     expect(fill.events.some((event) => event.type === 'mouseDown')).toBe(false)
     expect(fill.events.some((event) => event.type === 'mouseUp')).toBe(false)
+    const waits = fill.events.filter((event) => event.type === 'mouseWait')
+    expect(waits).toHaveLength(1)
+    expect(waits[0]!.endMs - waits[0]!.startMs).toBe(
+      DEFAULT_POST_TYPING_SETTLE_PAUSE_MS
+    )
   })
 
   it('skips the default pre-typing click animation for pressSequentially when the input is already focused', async () => {
@@ -839,6 +890,163 @@ describe('instrumentLocator', () => {
     expect(
       pressSequentially.events.some((event) => event.type === 'mouseUp')
     ).toBe(false)
+    const waits = pressSequentially.events.filter(
+      (event) => event.type === 'mouseWait'
+    )
+    expect(waits).toHaveLength(1)
+    expect(waits[0]!.endMs - waits[0]!.startMs).toBe(
+      DEFAULT_POST_TYPING_SETTLE_PAUSE_MS
+    )
+  })
+
+  it('keeps custom fill click.postClickPause as a pre-typing wait and still appends the settle pause', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    instrumentLocator(locator)
+
+    await Promise.all([
+      (
+        locator.fill as (
+          value: string,
+          options?: {
+            duration?: number
+            click?: { beforeClickPause?: number; postClickPause?: number }
+          }
+        ) => Promise<void>
+      )('Acme', {
+        duration: 100,
+        click: { beforeClickPause: 0, postClickPause: 240 },
+      }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const fill = recordedInputEvents[0]!
+    const waits = fill.events.filter((event) => event.type === 'mouseWait')
+    const up = fill.events.find((event) => event.type === 'mouseUp')
+
+    expect(waits).toHaveLength(2)
+    expect(up?.type).toBe('mouseUp')
+    if (up?.type !== 'mouseUp') {
+      throw new Error('Expected a mouseUp event')
+    }
+
+    expect(waits[0]!.startMs - up.endMs).toBe(0)
+    expect(waits[0]!.endMs - waits[0]!.startMs).toBe(240)
+    expect(waits[1]!.endMs - waits[1]!.startMs).toBe(
+      DEFAULT_POST_TYPING_SETTLE_PAUSE_MS
+    )
+  })
+
+  it('records a trailing post-typing settle pause for pressSequentially in recording mode', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    instrumentLocator(locator)
+
+    await Promise.all([
+      locator.pressSequentially('Acme', {
+        delay: 10,
+        click: { beforeClickPause: 0 },
+      }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const pressSequentially = recordedInputEvents[0]!
+    const waits = pressSequentially.events.filter(
+      (event) => event.type === 'mouseWait'
+    )
+    const trailingWait = waits.at(-1)
+
+    expect(pressSequentially.subType).toBe('pressSequentially')
+    expect(waits).toHaveLength(2)
+    expect(trailingWait?.type).toBe('mouseWait')
+    if (trailingWait?.type !== 'mouseWait') {
+      throw new Error('Expected a trailing mouseWait event')
+    }
+
+    expect(trailingWait.endMs - trailingWait.startMs).toBe(
+      DEFAULT_POST_TYPING_SETTLE_PAUSE_MS
+    )
+  })
+
+  it('does not add a real post-typing delay outside recording mode', async () => {
+    process.env[SCREENCI_DISABLE_RECORDING_TIMINGS_ENV] = 'true'
+    vi.useRealTimers()
+
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const fillLocator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    ;(
+      fillLocator as unknown as {
+        _doc: { activeElement: unknown }
+        _element: unknown
+      }
+    )._doc.activeElement = (
+      fillLocator as unknown as { _element: unknown }
+    )._element
+    instrumentLocator(fillLocator)
+
+    const pressLocator = makeLocatorMock(
+      { x: 100, y: 260, width: 80, height: 40 },
+      page
+    )
+    ;(
+      pressLocator as unknown as {
+        _doc: { activeElement: unknown }
+        _element: unknown
+      }
+    )._doc.activeElement = (
+      pressLocator as unknown as { _element: unknown }
+    )._element
+    instrumentLocator(pressLocator)
+
+    const fillStartMs = Date.now()
+    await (
+      fillLocator.fill as (
+        value: string,
+        options?: { duration?: number }
+      ) => Promise<void>
+    )('Acme', { duration: 100 })
+    const fillDurationMs = Date.now() - fillStartMs
+
+    const pressStartMs = Date.now()
+    await pressLocator.pressSequentially('Acme', { delay: 10 })
+    const pressDurationMs = Date.now() - pressStartMs
+
+    expect(recordedInputEvents).toHaveLength(2)
+    expect(fillDurationMs).toBeLessThan(DEFAULT_POST_TYPING_SETTLE_PAUSE_MS / 2)
+    expect(pressDurationMs).toBeLessThan(
+      DEFAULT_POST_TYPING_SETTLE_PAUSE_MS / 2
+    )
+    expect(
+      recordedInputEvents.every(
+        (event) =>
+          event.events.filter((inner) => inner.type === 'mouseWait').length ===
+          0
+      )
+    ).toBe(true)
   })
 
   it('snaps the real mouse after scroll while keeping the recorded move duration', async () => {

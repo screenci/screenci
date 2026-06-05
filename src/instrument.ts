@@ -64,7 +64,10 @@ import {
   setOriginalMouseShow,
   setOriginalMouseUp,
 } from './mouse.js'
-import { resolveRecordingTimingDuration } from './runtimeMode.js'
+import {
+  resolveRecordingTimingDuration,
+  shouldSimulateRecordingTimings,
+} from './runtimeMode.js'
 import {
   getRuntimeClickRecorder,
   setRuntimeClickRecorder,
@@ -74,6 +77,7 @@ const pageClickRecorders = new WeakMap<object, IEventRecorder>()
 
 const DEFAULT_PRE_CLICK_PAUSE_MS = 50
 const DEFAULT_POST_CLICK_PAUSE_MS = 500
+const DEFAULT_POST_TYPING_SETTLE_PAUSE_MS = CLICK_DURATION_MS / 2
 
 export function setActiveClickRecorder(recorder: IEventRecorder | null): void {
   setRuntimeClickRecorder(recorder)
@@ -154,6 +158,13 @@ async function appendMouseWait(
     startMs,
     endMs: Date.now(),
   })
+}
+
+async function appendPostTypingSettleWait(
+  innerEvents: ClickActionResult['innerEvents']
+): Promise<void> {
+  if (!shouldSimulateRecordingTimings()) return
+  await appendMouseWait(innerEvents, DEFAULT_POST_TYPING_SETTLE_PAUSE_MS)
 }
 
 const LOCATOR_RETURN_METHODS = [
@@ -608,14 +619,7 @@ export function instrumentLocator(locator: Locator): Locator {
       )
     }
 
-    const innerEvents: Array<
-      | FocusChangeEvent
-      | MouseMoveEvent
-      | MouseDownEvent
-      | MouseUpEvent
-      | MouseHideEvent
-      | MouseWaitEvent
-    > = []
+    const innerEvents: ClickActionResult['innerEvents'] = []
     let elementRect: ElementRect | undefined = undefined
 
     const {
@@ -627,33 +631,43 @@ export function instrumentLocator(locator: Locator): Locator {
       postClickMove,
     } = clickOpt
 
-    const clickActionResult = await performAction(
-      shouldSkipDefaultClickAnimation
-        ? undefined
-        : buildDefaultClickMouseMoveRequest({
-            targetPosInElement: options?.position,
-            moveDuration,
-            moveSpeed,
-            moveEasing,
-          }),
-      locator,
-      async () =>
-        originalPressSequentially(
-          text,
-          pressOptions as Parameters<Locator['pressSequentially']>[1]
-        ),
-      false,
-      'singleBefore',
-      autoZoomOptions,
-      options?.position,
-      clickOpt.noWaitAfter,
-      beforeClickPause ?? DEFAULT_PRE_CLICK_PAUSE_MS,
-      postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
-      postClickMove,
-      true
-    )
-    innerEvents.push(...(clickActionResult?.innerEvents ?? []))
-    elementRect = clickActionResult?.elementRect
+    if (shouldSkipDefaultClickAnimation) {
+      const focusChange = await changeFocus(locator, autoZoomOptions)
+      innerEvents.push(focusChange)
+      elementRect = focusChange.elementRect
+      await originalPressSequentially(
+        text,
+        pressOptions as Parameters<Locator['pressSequentially']>[1]
+      )
+    } else {
+      const clickActionResult = await performAction(
+        buildDefaultClickMouseMoveRequest({
+          targetPosInElement: options?.position,
+          moveDuration,
+          moveSpeed,
+          moveEasing,
+        }),
+        locator,
+        async () =>
+          originalPressSequentially(
+            text,
+            pressOptions as Parameters<Locator['pressSequentially']>[1]
+          ),
+        false,
+        'singleBefore',
+        autoZoomOptions,
+        options?.position,
+        clickOpt.noWaitAfter,
+        beforeClickPause ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+        postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
+        postClickMove,
+        true
+      )
+      innerEvents.push(...(clickActionResult?.innerEvents ?? []))
+      elementRect = clickActionResult?.elementRect
+    }
+
+    await appendPostTypingSettleWait(innerEvents)
 
     const activeClickRecorder = getActiveClickRecorder(locator.page())
     if (activeClickRecorder) {
@@ -694,14 +708,7 @@ export function instrumentLocator(locator: Locator): Locator {
       options?.click === undefined &&
       (await isLocatorAlreadyFocusedForTyping(locator))
     const clickOpt: ClickBeforeFillOption = options?.click ?? {}
-    const innerEvents: Array<
-      | FocusChangeEvent
-      | MouseMoveEvent
-      | MouseDownEvent
-      | MouseUpEvent
-      | MouseHideEvent
-      | MouseWaitEvent
-    > = []
+    const innerEvents: ClickActionResult['innerEvents'] = []
     let elementRect: ElementRect | undefined = undefined
 
     const {
@@ -713,54 +720,63 @@ export function instrumentLocator(locator: Locator): Locator {
       postClickMove,
     } = clickOpt
 
-    const clickActionResult = await performAction(
-      shouldSkipDefaultClickAnimation
-        ? undefined
-        : buildDefaultClickMouseMoveRequest({
-            targetPosInElement: options?.position,
-            moveDuration,
-            moveSpeed,
-            moveEasing,
-          }),
-      locator,
-      async () => {
-        await locator.evaluate((element) => {
-          if (
-            element instanceof HTMLInputElement ||
-            element instanceof HTMLTextAreaElement
-          ) {
-            element.focus()
-            element.select()
-            return
-          }
+    const typeFilledValue = async (): Promise<void> => {
+      await locator.evaluate((element) => {
+        if (
+          element instanceof HTMLInputElement ||
+          element instanceof HTMLTextAreaElement
+        ) {
+          element.focus()
+          element.select()
+          return
+        }
 
-          if (element instanceof HTMLElement && element.isContentEditable) {
-            element.focus()
-            const selection = element.ownerDocument.getSelection()
-            if (!selection) return
-            const range = element.ownerDocument.createRange()
-            range.selectNodeContents(element)
-            selection.removeAllRanges()
-            selection.addRange(range)
-          }
-        })
+        if (element instanceof HTMLElement && element.isContentEditable) {
+          element.focus()
+          const selection = element.ownerDocument.getSelection()
+          if (!selection) return
+          const range = element.ownerDocument.createRange()
+          range.selectNodeContents(element)
+          selection.removeAllRanges()
+          selection.addRange(range)
+        }
+      })
 
-        const duration = options?.duration ?? 1000
-        const delay = value.length > 0 ? duration / value.length : 0
-        await locator.page().keyboard.type(value, { delay })
-      },
-      false,
-      'singleBefore',
-      options?.autoZoomOptions,
-      options?.position,
-      clickOpt.noWaitAfter,
-      beforeClickPause ?? DEFAULT_PRE_CLICK_PAUSE_MS,
-      postClickPause ?? CLICK_DURATION_MS / 2,
-      postClickMove,
-      true
-    )
-    innerEvents.push(...(clickActionResult?.innerEvents ?? []))
-    elementRect = clickActionResult?.elementRect
+      const duration = options?.duration ?? 1000
+      const delay = value.length > 0 ? duration / value.length : 0
+      await locator.page().keyboard.type(value, { delay })
+    }
+
+    if (shouldSkipDefaultClickAnimation) {
+      const focusChange = await changeFocus(locator, options?.autoZoomOptions)
+      innerEvents.push(focusChange)
+      elementRect = focusChange.elementRect
+      await typeFilledValue()
+    } else {
+      const clickActionResult = await performAction(
+        buildDefaultClickMouseMoveRequest({
+          targetPosInElement: options?.position,
+          moveDuration,
+          moveSpeed,
+          moveEasing,
+        }),
+        locator,
+        typeFilledValue,
+        false,
+        'singleBefore',
+        options?.autoZoomOptions,
+        options?.position,
+        clickOpt.noWaitAfter,
+        beforeClickPause ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+        postClickPause ?? CLICK_DURATION_MS / 2,
+        postClickMove,
+        true
+      )
+      innerEvents.push(...(clickActionResult?.innerEvents ?? []))
+      elementRect = clickActionResult?.elementRect
+    }
+
+    await appendPostTypingSettleWait(innerEvents)
 
     const activeClickRecorder = getActiveClickRecorder(locator.page())
     if (activeClickRecorder) {

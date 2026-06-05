@@ -32,5 +32,14 @@ export { time } from './src/time.js'
 export { autoZoom } from './src/autoZoom.js'
 export { zoomTo, resetZoom } from './src/manualZoom.js'
 export { createAssets } from './src/asset.js'
-export type { AssetController, AssetConfig, Assets } from './src/asset.js'
+export type {
+  AssetController,
+  AssetConfig,
+  Assets,
+  SvgPath,
+  PngPath,
+  Mp4Path,
+  ImageAssetConfig,
+  VideoAssetConfig,
+} from './src/asset.js'
 export type { ZoomTarget, ZoomTargetPoint } from './src/manualZoom.js'

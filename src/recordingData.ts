@@ -173,15 +173,29 @@ export type VideoCueStartEvent = {
   translations?: Record<string, VideoCueTranslation>
 }
 
-export type AssetStartEvent = {
+export type ImageAssetStartEvent = {
   type: 'assetStart'
   timeMs: number
   name: string
+  kind: 'image'
+  path: string
+  fileHash?: string
+  durationMs: number
+  fullScreen: boolean
+}
+
+export type VideoAssetStartEvent = {
+  type: 'assetStart'
+  timeMs: number
+  name: string
+  kind: 'video'
   path: string
   fileHash?: string
   audio: number
   fullScreen: boolean
 }
+
+export type AssetStartEvent = ImageAssetStartEvent | VideoAssetStartEvent
 
 export type HideStartEvent = {
   type: 'hideStart'

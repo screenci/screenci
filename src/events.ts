@@ -240,15 +240,36 @@ export type VideoCueStartEvent = {
   translations?: Record<string, VideoCueTranslation>
 }
 
-export type AssetStartEvent = {
+/**
+ * Asset format policy is recorded explicitly so renderers never need to infer
+ * timing or audio rules from file extensions after the recording phase.
+ */
+export type ImageAssetStartEvent = {
   type: 'assetStart'
   timeMs: number
   name: string
+  kind: 'image'
+  path: string
+  fileHash?: string
+  durationMs: number
+  fullScreen: boolean
+}
+
+export type VideoAssetStartEvent = {
+  type: 'assetStart'
+  timeMs: number
+  name: string
+  kind: 'video'
   path: string
   fileHash?: string
   audio: number
   fullScreen: boolean
 }
+
+export type AssetStartEvent = ImageAssetStartEvent | VideoAssetStartEvent
+export type AssetStartPayload =
+  | Omit<ImageAssetStartEvent, 'type' | 'timeMs' | 'name'>
+  | Omit<VideoAssetStartEvent, 'type' | 'timeMs' | 'name'>
 
 export type HideStartEvent = {
   type: 'hideStart'
@@ -403,12 +424,7 @@ export interface IEventRecorder {
     subtitle?: string,
     translations?: Record<string, VideoCueTranslation>
   ): void
-  addAssetStart(
-    name: string,
-    path: string,
-    audio: number,
-    fullScreen: boolean
-  ): void
+  addAssetStart(name: string, asset: AssetStartPayload): void
   addHideStart(): void
   addHideEnd(): void
   addSpeedStart(multiplier: number): void
@@ -649,21 +665,32 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addAssetStart(
-    name: string,
-    path: string,
-    audio: number,
-    fullScreen: boolean
-  ): void {
+  addAssetStart(name: string, asset: AssetStartPayload): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
+    if (asset.kind === 'image') {
+      this.events.push({
+        type: 'assetStart',
+        timeMs,
+        name,
+        kind: 'image',
+        path: asset.path,
+        ...(asset.fileHash !== undefined && { fileHash: asset.fileHash }),
+        durationMs: asset.durationMs,
+        fullScreen: asset.fullScreen,
+      })
+      return
+    }
+
     this.events.push({
       type: 'assetStart',
       timeMs,
       name,
-      path,
-      audio,
-      fullScreen,
+      kind: 'video',
+      path: asset.path,
+      ...(asset.fileHash !== undefined && { fileHash: asset.fileHash }),
+      audio: asset.audio,
+      fullScreen: asset.fullScreen,
     })
   }
 

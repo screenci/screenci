@@ -44,8 +44,8 @@ describe('createAssets', () => {
 
   it('creates a callable controller for each key in the map', () => {
     const assets = createAssets({
-      logo: { path: './logo.png', audio: 0, fullScreen: false },
-      intro: { path: './intro.mp4', audio: 1.0, fullScreen: true },
+      logo: { path: './logo.png', durationMs: 1200, fullScreen: false },
+      intro: { path: './intro.mp4', fullScreen: true },
     })
 
     expect(assets.logo).toBeDefined()
@@ -57,18 +57,18 @@ describe('createAssets', () => {
   describe('calling asset controller', () => {
     it('calls addAssetStart with correct arguments', async () => {
       const assets = createAssets({
-        logo: { path: './logo.png', audio: 0, fullScreen: false },
+        logo: { path: './logo.png', durationMs: 1200, fullScreen: false },
       })
 
       await assets.logo()
 
       expect(recorder.addAssetStart).toHaveBeenCalledOnce()
-      expect(recorder.addAssetStart).toHaveBeenCalledWith(
-        'logo',
-        './logo.png',
-        0,
-        false
-      )
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
+        kind: 'image',
+        path: './logo.png',
+        durationMs: 1200,
+        fullScreen: false,
+      })
     })
 
     it('passes fullScreen: true correctly', async () => {
@@ -78,12 +78,12 @@ describe('createAssets', () => {
 
       await assets.intro()
 
-      expect(recorder.addAssetStart).toHaveBeenCalledWith(
-        'intro',
-        './intro.mp4',
-        0.5,
-        true
-      )
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
+        kind: 'video',
+        path: './intro.mp4',
+        audio: 0.5,
+        fullScreen: true,
+      })
     })
 
     it('passes non-zero audio value', async () => {
@@ -93,17 +93,32 @@ describe('createAssets', () => {
 
       await assets.audio()
 
-      expect(recorder.addAssetStart).toHaveBeenCalledWith(
-        'audio',
-        './sound.mp4',
-        0.8,
-        false
-      )
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('audio', {
+        kind: 'video',
+        path: './sound.mp4',
+        audio: 0.8,
+        fullScreen: false,
+      })
+    })
+
+    it('defaults mp4 audio to 1 when omitted', async () => {
+      const assets = createAssets({
+        intro: { path: './intro.mp4', fullScreen: true },
+      })
+
+      await assets.intro()
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
+        kind: 'video',
+        path: './intro.mp4',
+        audio: 1,
+        fullScreen: true,
+      })
     })
 
     it('resolves immediately', async () => {
       const assets = createAssets({
-        clip: { path: './clip.mp4', audio: 0, fullScreen: true },
+        clip: { path: './clip.mp4', fullScreen: true },
       })
 
       await expect(assets.clip()).resolves.toBeUndefined()
@@ -111,34 +126,32 @@ describe('createAssets', () => {
 
     it('each controller uses its own name and config', async () => {
       const assets = createAssets({
-        logo: { path: './logo.png', audio: 0, fullScreen: false },
-        intro: { path: './intro.mp4', audio: 1.0, fullScreen: true },
+        logo: { path: './logo.png', durationMs: 1200, fullScreen: false },
+        intro: { path: './intro.mp4', fullScreen: true },
       })
 
       await assets.logo()
       await assets.intro()
 
       expect(recorder.addAssetStart).toHaveBeenCalledTimes(2)
-      expect(recorder.addAssetStart).toHaveBeenNthCalledWith(
-        1,
-        'logo',
-        './logo.png',
-        0,
-        false
-      )
-      expect(recorder.addAssetStart).toHaveBeenNthCalledWith(
-        2,
-        'intro',
-        './intro.mp4',
-        1.0,
-        true
-      )
+      expect(recorder.addAssetStart).toHaveBeenNthCalledWith(1, 'logo', {
+        kind: 'image',
+        path: './logo.png',
+        durationMs: 1200,
+        fullScreen: false,
+      })
+      expect(recorder.addAssetStart).toHaveBeenNthCalledWith(2, 'intro', {
+        kind: 'video',
+        path: './intro.mp4',
+        audio: 1,
+        fullScreen: true,
+      })
     })
 
     it('fails when the asset file is missing relative to the active test file', async () => {
       const tempDir = await mkdtemp(join(tmpdir(), 'screenci-asset-spec-'))
       const assets = createAssets({
-        logo: { path: './missing.png', audio: 0, fullScreen: false },
+        logo: { path: './missing.png', durationMs: 1200, fullScreen: false },
       })
 
       try {
@@ -160,7 +173,7 @@ describe('createAssets', () => {
       const tempDir = await mkdtemp(join(tmpdir(), 'screenci-asset-spec-'))
       await writeFile(join(tempDir, 'logo.png'), 'logo')
       const assets = createAssets({
-        logo: { path: './logo.png', audio: 0, fullScreen: false },
+        logo: { path: './logo.png', durationMs: 1200, fullScreen: false },
       })
 
       try {
@@ -172,15 +185,73 @@ describe('createAssets', () => {
           () => assets.logo()
         )
 
-        expect(recorder.addAssetStart).toHaveBeenCalledWith(
-          'logo',
-          './logo.png',
-          0,
-          false
-        )
+        expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
+          kind: 'image',
+          path: './logo.png',
+          durationMs: 1200,
+          fullScreen: false,
+        })
       } finally {
         await rm(tempDir, { recursive: true, force: true })
       }
+    })
+
+    it('rejects dynamic image paths without durationMs', () => {
+      const dynamicPath = `./logo.${'png'}`
+
+      expect(() =>
+        createAssets({
+          broken: {
+            path: dynamicPath,
+            fullScreen: false,
+          } as never,
+        })
+      ).toThrow(
+        'Asset "broken" (./logo.png) must provide a finite durationMs greater than or equal to 0.'
+      )
+    })
+
+    it('rejects mp4 assets with durationMs', () => {
+      expect(() =>
+        createAssets({
+          broken: {
+            path: './clip.mp4',
+            durationMs: 1000,
+            audio: 0,
+            fullScreen: true,
+          } as never,
+        })
+      ).toThrow(
+        'Asset "broken" (./clip.mp4) is a video asset and must not provide durationMs. Its natural media duration is used instead.'
+      )
+    })
+
+    it('rejects mp4 assets with invalid audio when specified', () => {
+      expect(() =>
+        createAssets({
+          broken: {
+            path: './clip.mp4',
+            audio: Number.NaN,
+            fullScreen: true,
+          } as never,
+        })
+      ).toThrow(
+        'Asset "broken" (./clip.mp4) must provide a finite audio value between 0 and 1 for .mp4 assets when audio is specified. Use audio: 0 for silent playback.'
+      )
+    })
+
+    it('rejects unsupported extensions', () => {
+      expect(() =>
+        createAssets({
+          broken: {
+            path: './photo.webp',
+            audio: 0,
+            fullScreen: false,
+          } as never,
+        })
+      ).toThrow(
+        'Asset "broken" must use one of: .svg, .png, .mp4. Received: ./photo.webp'
+      )
     })
   })
 
@@ -189,7 +260,7 @@ describe('createAssets', () => {
 
     it('calling the controller is a no-op', async () => {
       const assets = createAssets({
-        logo: { path: './logo.png', audio: 0, fullScreen: false },
+        logo: { path: './logo.png', durationMs: 1200, fullScreen: false },
       })
 
       await expect(assets.logo()).resolves.toBeUndefined()

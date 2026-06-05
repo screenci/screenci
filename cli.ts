@@ -414,6 +414,22 @@ function createUploadProgressReporter(
   }
 }
 
+function shouldKeepRecordedArtifacts(): boolean {
+  return process.env.DEBUG === 'true'
+}
+
+function cleanupUploadedRecordingDir(screenciDir: string, entry: string): void {
+  if (shouldKeepRecordedArtifacts()) return
+
+  try {
+    rmSync(resolve(screenciDir, entry), { recursive: true, force: true })
+  } catch (error) {
+    logger.warn(
+      `Uploaded recording cleanup failed for "${entry}": ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+}
+
 async function loadUploadCandidate(
   screenciDir: string,
   entry: string,
@@ -590,6 +606,7 @@ async function uploadRecordingCandidate(
     }
 
     progressReporter.complete(progressIndex, 'success')
+    cleanupUploadedRecordingDir(screenciDir, entry)
     return { projectId, hadFailure: false, videoName }
   } catch (err) {
     if (isUploadCancelledError(err)) {
@@ -1255,7 +1272,7 @@ async function uploadAssets(
 
       const checkBody = (await checkRes.json()) as { exists: boolean }
       if (checkBody.exists) {
-        logInfo(`Asset already exists: ${asset.path}`)
+        logInfo(`${pc.green('✔')} Asset already exists: ${asset.path}`)
         continue
       }
 
@@ -1286,7 +1303,7 @@ async function uploadAssets(
       if (!res.ok) {
         const text = await res.text()
         if (res.status === 409 && text.includes('already exists')) {
-          logInfo(`Asset already exists: ${asset.path}`)
+          logInfo(`${pc.green('✔')} Asset already exists: ${asset.path}`)
         } else {
           throw new UploadAssetError(
             `Failed to upload asset ${asset.path}: ${res.status} ${text}${hint401(res.status, secret)}`
@@ -2138,7 +2155,6 @@ export async function main() {
               failedVideoMessages: [],
             }
             try {
-              logger.info('')
               uploadResult = await uploadRecordings(
                 screenciDir,
                 screenciConfig.projectName,
@@ -2240,7 +2256,6 @@ export async function main() {
       if (process.env.SCREENCI_RECORDING === 'true') return
 
       const recordCommand = getSuggestedScreenciCommand('record')
-      logger.info('')
       logger.info(
         `Tests passed. Run ${pc.cyan(recordCommand)} to render the videos.`
       )
@@ -2552,7 +2567,6 @@ async function run(
 }
 
 function logRecordFailureHint(): void {
-  logger.info('')
   logger.info(
     `If ${pc.cyan('screenci test')} works but ${pc.cyan(
       'screenci record'

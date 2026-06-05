@@ -2212,6 +2212,43 @@ describe('CLI', () => {
         )
       )
     })
+
+    it('surfaces the first Playwright discovery error and snippet instead of raw JSON', async () => {
+      process.argv = ['node', 'cli.js', 'record']
+      process.env.SCREENCI_SECRET = 'test-secret'
+      mockSpawn.mockImplementation((_command: string, args: string[]) => {
+        if (args.includes('--list')) {
+          process.nextTick(() => {
+            mockChildProcess.stdout.emit(
+              'data',
+              JSON.stringify({
+                config: { reporter: [['json']] },
+                suites: [],
+                errors: [
+                  {
+                    message:
+                      'Error: [screenci] Asset "badge" (./assets/brand-badge.svg) is an image asset and must not provide audio. Use durationMs instead.',
+                    snippet:
+                      "   at styled-assets.video.ts:24\n\n  22 | })\n  23 |\n> 24 | const assets = createAssets({\n     |                ^\n  25 |   badge: {\n  26 |     path: './assets/brand-badge.svg',\n  27 |     audio: 0,",
+                  },
+                ],
+              })
+            )
+            mockChildProcess.emit('close', 1)
+          })
+          return mockChildProcess as unknown as ChildProcess
+        }
+
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow(
+        'Error: [screenci] Asset "badge" (./assets/brand-badge.svg) is an image asset and must not provide audio. Use durationMs instead.\n\nat styled-assets.video.ts:24'
+      )
+    })
   })
 
   describe('project info commands', () => {

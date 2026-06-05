@@ -69,6 +69,10 @@ type PlaywrightListReportSuite = {
 
 type PlaywrightListReport = {
   suites?: PlaywrightListReportSuite[]
+  errors?: Array<{
+    message?: string
+    snippet?: string
+  }>
 }
 
 export function collectPlaywrightListTitles(
@@ -94,6 +98,27 @@ export function collectPlaywrightListTitles(
 
 function parsePlaywrightListReport(stdout: string): PlaywrightListReport {
   return JSON.parse(stdout) as PlaywrightListReport
+}
+
+function extractPlaywrightDiscoveryError(output: string): string | null {
+  try {
+    const report = parsePlaywrightListReport(output)
+    const firstError = report.errors?.find(
+      (entry) =>
+        typeof entry.message === 'string' && entry.message.trim() !== ''
+    )
+
+    if (!firstError?.message) {
+      return null
+    }
+
+    const message = firstError.message.trim()
+    const snippet = firstError.snippet?.trim()
+
+    return snippet ? `${message}\n\n${snippet}` : message
+  } catch {
+    return null
+  }
 }
 
 function logScreenCISecretGuide(): void {
@@ -169,9 +194,14 @@ async function collectDiscoveredTestTitles(
           resolve([])
           return
         }
+        const parsedDiscoveryError =
+          stderr.trim() === '' ? extractPlaywrightDiscoveryError(stdout) : null
         reject(
           new Error(
-            stderr.trim() || stdout.trim() || 'Playwright test discovery failed'
+            stderr.trim() ||
+              parsedDiscoveryError ||
+              stdout.trim() ||
+              'Playwright test discovery failed'
           )
         )
         return

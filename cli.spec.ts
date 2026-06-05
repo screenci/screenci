@@ -1502,10 +1502,11 @@ describe('CLI', () => {
           .join('')
         const normalizedWrites = stripVTControlCharacters(allWrites)
         const moveUpCount = (allWrites.match(/\u001B\[2A/g) ?? []).length
-
-        expect(loggerInfoSpy).toHaveBeenCalledWith(
-          '✔ Asset already exists: videos/logo.png'
+        const messages = loggerInfoSpy.mock.calls.map((call) =>
+          stripVTControlCharacters(String(call[0]))
         )
+
+        expect(messages).toContain('✔ Asset already exists: videos/logo.png')
         expect(moveUpCount).toBeGreaterThanOrEqual(3)
         expect(normalizedWrites).toContain('... Uploading "Demo"')
         expect(normalizedWrites).toContain('... Uploading "Second Demo"')

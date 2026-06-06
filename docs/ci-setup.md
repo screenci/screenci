@@ -24,12 +24,16 @@ The generated workflow:
 - checks that `SCREENCI_SECRET` exists
 - checks out the repository
 - installs Node.js 24 and caches dependencies for your package manager
-- installs Chromium if the Playwright cache is cold
+- installs the Playwright Chromium Headless Shell
 - runs `screenci record`
 
 That is intentionally close to Playwright's own CI model. If you need deeper
 background on Playwright runners and browser installation, see
 [Playwright CI](https://playwright.dev/docs/ci).
+
+The generated workflow caches package-manager dependencies through
+`actions/setup-node`. It does not add a separate GitHub Actions browser cache
+step.
 
 ScreenCI itself requires Node.js 18 or newer. The generated recording workflow
 uses Node.js 24 by default for a current CI runtime, while this repository's

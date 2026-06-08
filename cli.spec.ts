@@ -3934,7 +3934,7 @@ describe('CLI', () => {
       expect(mockWriteFile).not.toHaveBeenCalled()
     })
 
-    it('fails fast when yarn 1.x is detected', async () => {
+    it('fails fast when yarn 1.x is detected and corepack yarn is also v1', async () => {
       process.argv = [
         'node',
         'cli.js',
@@ -3945,14 +3945,20 @@ describe('CLI', () => {
       ]
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockReturnValue(false)
-      mockSpawn.mockImplementation((_command: string, args: string[]) => {
+      mockSpawn.mockImplementation((command: string, args: string[]) => {
         const child = Object.assign(new EventEmitter(), {
           unref: vi.fn(),
           stdout: new EventEmitter(),
           stderr: new EventEmitter(),
         })
         process.nextTick(() => {
-          if (Array.isArray(args) && args[0] === '--version') {
+          // yarn --version → v1; corepack yarn --version → v1 (no escape hatch)
+          if (
+            (command === 'yarn' && args[0] === '--version') ||
+            (command === 'corepack' &&
+              args[0] === 'yarn' &&
+              args[1] === '--version')
+          ) {
             child.stdout.emit('data', '1.22.22\n')
             child.emit('close', 0)
             return
@@ -3979,6 +3985,52 @@ describe('CLI', () => {
         expect.anything()
       )
       expect(mockWriteFile).not.toHaveBeenCalled()
+    })
+
+    it('proceeds when yarn 1.x shadows the corepack shim but corepack yarn is v2+', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--package-manager',
+        'yarn',
+        '--yes',
+      ]
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+      mockSpawn.mockImplementation((command: string, args: string[]) => {
+        const child = Object.assign(new EventEmitter(), {
+          unref: vi.fn(),
+          stdout: new EventEmitter(),
+          stderr: new EventEmitter(),
+        })
+        process.nextTick(() => {
+          if (command === 'yarn' && args[0] === '--version') {
+            // pre-installed yarn 1.x shadows corepack in PATH
+            child.stdout.emit('data', '1.22.22\n')
+            child.emit('close', 0)
+            return
+          }
+          if (
+            command === 'corepack' &&
+            args[0] === 'yarn' &&
+            args[1] === '--version'
+          ) {
+            // corepack has berry activated
+            child.stdout.emit('data', '4.9.1\n')
+            child.emit('close', 0)
+            return
+          }
+          child.emit('close', 0)
+        })
+        return child as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await expect(main()).resolves.toBeUndefined()
+      expect(mockWriteFile).toHaveBeenCalled()
     })
 
     it('skips pnpm version checks when npm is explicitly selected', async () => {

@@ -84,9 +84,14 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Yarn
+        shell: bash
         run: |
           corepack enable yarn
           corepack prepare yarn@stable --activate
+          # bash -lc (used by ci-run-in-shell.js) rebuilds PATH from profile files,
+          # which can put pre-installed yarn 1.x before the corepack shim. Prepend
+          # the Node.js bin dir so login shells always find the corepack yarn first.
+          printf 'export PATH="%s:$PATH"\n' "$(dirname "$(which node)")" >> ~/.bash_profile
 
       - name: Build package
         run: pnpm run build

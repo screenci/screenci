@@ -672,7 +672,23 @@ async function detectYarnVersionSupport(
 ): Promise<YarnVersionSupport> {
   try {
     const { stdout } = await spawnCaptured('yarn', ['--version'], cwd)
-    return parseYarnVersionSupport(stdout)
+    const result = parseYarnVersionSupport(stdout)
+    if (result.supported) return result
+    // yarn --version resolved to v1 or a malformed string (e.g. yarn 1.x is
+    // first in PATH and shadows the corepack shim). Try `corepack yarn --version`
+    // as a fallback — corepack routes directly to the activated berry release.
+    try {
+      const { stdout: corStdout } = await spawnCaptured(
+        'corepack',
+        ['yarn', '--version'],
+        cwd
+      )
+      const corResult = parseYarnVersionSupport(corStdout)
+      if (corResult.supported) return corResult
+    } catch {
+      // corepack not available or yarn not configured in corepack; fall through
+    }
+    return result
   } catch {
     return { supported: false, reason: 'yarn-not-found' }
   }

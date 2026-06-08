@@ -3140,7 +3140,7 @@ describe('CLI', () => {
       )
     })
 
-    it('does not rewrite an existing package.json and installs dependencies directly', async () => {
+    it('does not rewrite an existing package.json that already has type:module and installs dependencies directly', async () => {
       process.argv = ['node', 'cli.js', 'init', 'My Project']
       process.env.SCREENCI_INIT_CWD = '/workspace/my-app'
       mockExistsSync.mockImplementation((path: string) => {
@@ -3149,6 +3149,12 @@ describe('CLI', () => {
           return true
         }
         return false
+      })
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        if (String(path).endsWith('package.json')) {
+          return JSON.stringify({ type: 'module', version: '0.0.32' })
+        }
+        return ''
       })
 
       const { main } = await import('./cli')
@@ -3472,6 +3478,49 @@ describe('CLI', () => {
         'run: yarn playwright install --only-shell chromium'
       )
       expect(workflowCall?.[1]).toContain('run: yarn screenci record')
+    })
+
+    it('adds "type": "module" to an existing package.json that lacks it', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--package-manager',
+        'npm',
+        '--yes',
+      ]
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      // package.json exists but has no "type": "module" (e.g. a workspace root)
+      mockExistsSync.mockImplementation((p: string) =>
+        p.endsWith('package.json')
+      )
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        if (String(path).endsWith('package.json')) {
+          return JSON.stringify({
+            name: 'smoke-workspace',
+            private: true,
+            version: '0.0.1',
+          })
+        }
+        return ''
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      const packageJsonCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          typeof call[0] === 'string' && call[0].endsWith('package.json')
+      )
+      expect(packageJsonCall).toBeDefined()
+      const written = JSON.parse(packageJsonCall![1] as string) as Record<
+        string,
+        unknown
+      >
+      expect(written['type']).toBe('module')
+      // other fields preserved
+      expect(written['name']).toBe('smoke-workspace')
     })
 
     it('uses workspace -W flag when yarn workspace is detected', async () => {

@@ -523,6 +523,20 @@ function generateEmptyPackageJson(): string {
   return '{\n  "type": "module"\n}\n'
 }
 
+async function ensurePackageJsonTypeModule(
+  packageJsonPath: string
+): Promise<void> {
+  try {
+    const raw = await readFile(packageJsonPath, 'utf-8')
+    const pkg = JSON.parse(raw) as Record<string, unknown>
+    if (pkg['type'] === 'module') return
+    pkg['type'] = 'module'
+    await writeFile(packageJsonPath, JSON.stringify(pkg, null, 2) + '\n')
+  } catch {
+    // Malformed or unreadable package.json — leave it untouched.
+  }
+}
+
 function parseSemverTriplet(version: string): [number, number, number] | null {
   const match = version
     .trim()
@@ -1162,6 +1176,8 @@ export async function runInit(
   )
   if (!hasExistingPackageJson) {
     await writeFile(packageJsonPath, generateEmptyPackageJson())
+  } else {
+    await ensurePackageJsonTypeModule(packageJsonPath)
   }
   await writeInitGitignore(projectDir, packageManager)
   await writeFile(

@@ -40,21 +40,36 @@ pnpm create screenci my-product
 ```
 
   </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn create screenci
+yarn create screenci my-product
+```
+
+  </TabItem>
 </Tabs>
 
 When using `npm init`, pass extra initializer flags after `--`:
 
 ```bash
 npm init screenci@latest -- --yes --package-manager pnpm
+npm init screenci@latest -- --yes --package-manager yarn
 ```
+
+The package manager is auto-detected from the `npm_config_user_agent` environment
+variable (set automatically when you run `pnpm create` or `yarn create`), lockfile
+presence (`pnpm-lock.yaml`, `yarn.lock`), or the `packageManager` field in
+`package.json`. Use `--package-manager` to override.
 
 Common options:
 
 - `-y, --yes` accepts all defaults
+- `--package-manager <npm|pnpm|yarn>` overrides auto-detected package manager
 - `--agent <name>` passes an agent name to the selected skills install command
 - `-v, --verbose` prints underlying command output
 
-Interactive defaults create the GitHub Actions workflow, install npm
+Interactive defaults create the GitHub Actions workflow, install
 dependencies, install Chromium, skip OS dependency installation, install the
 ScreenCI skill, and install optional `playwright-cli` support.
 
@@ -81,6 +96,15 @@ npx screenci login --config screenci.config.ts
 pnpm exec screenci login
 pnpm exec screenci login --open
 pnpm exec screenci login --config screenci.config.ts
+```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn screenci login
+yarn screenci login --open
+yarn screenci login --config screenci.config.ts
 ```
 
   </TabItem>
@@ -126,6 +150,16 @@ pnpm exec screenci test --ui
 ```
 
   </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn screenci test
+yarn screenci test videos/onboarding.video.ts
+yarn screenci test --grep "billing"
+yarn screenci test --ui
+```
+
+  </TabItem>
 </Tabs>
 
 Use this during normal authoring. Most trailing arguments are forwarded to
@@ -152,6 +186,15 @@ pnpm exec screenci test --ui
 ```
 
   </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn screenci test --project=chromium
+yarn screenci test --grep "onboarding"
+yarn screenci test --ui
+```
+
+  </TabItem>
 </Tabs>
 
 ### `--mock-record`
@@ -168,6 +211,13 @@ npx screenci test --mock-record
 
 ```bash
 pnpm exec screenci test --mock-record
+```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn screenci test --mock-record
 ```
 
   </TabItem>
@@ -202,6 +252,16 @@ pnpm exec screenci record
 pnpm exec screenci record videos/onboarding.video.ts
 pnpm exec screenci record --grep "billing"
 pnpm exec screenci record --project=chromium
+```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn screenci record
+yarn screenci record videos/onboarding.video.ts
+yarn screenci record --grep "billing"
+yarn screenci record --project=chromium
 ```
 
   </TabItem>
@@ -245,6 +305,13 @@ pnpm exec screenci info
 ```
 
   </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn screenci info
+```
+
+  </TabItem>
 </Tabs>
 
 Prints remote project data for the current `projectName`, including video IDs
@@ -284,6 +351,13 @@ pnpm exec screenci make-public video_123
 ```
 
   </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn screenci make-public video_123
+```
+
+  </TabItem>
 </Tabs>
 
 Enables public delivery for a video. Get the ID from `screenci info`.
@@ -311,6 +385,13 @@ npx screenci make-private video_123
 
 ```bash
 pnpm exec screenci make-private video_123
+```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn screenci make-private video_123
 ```
 
   </TabItem>

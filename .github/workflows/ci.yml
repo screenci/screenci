@@ -83,6 +83,9 @@ jobs:
           npm_config_strict_dep_builds: false
         run: pnpm install --frozen-lockfile
 
+      - name: Install Yarn
+        run: npm install -g yarn@1
+
       - name: Build package
         run: pnpm run build
 
@@ -101,11 +104,11 @@ jobs:
 
       - name: Set smoke project directories
         run: >-
-          node -e "const fs=require('node:fs'); const path=require('node:path'); const base=path.join(process.env.RUNNER_TEMP, 'screenci-smoke'); const entries={SMOKE_DIRECT_NPM:path.join(base,'smoke-direct-npm'),SMOKE_DIRECT_PNPM:path.join(base,'smoke-direct-pnpm'),SMOKE_CREATE_NPM:path.join(base,'smoke-create-npm'),SMOKE_CREATE_PNPM:path.join(base,'smoke-create-pnpm')}; fs.appendFileSync(process.env.GITHUB_ENV, Object.entries(entries).map(([key, value]) => key + '=' + value).join('\n') + '\n')"
+          node -e "const fs=require('node:fs'); const path=require('node:path'); const base=path.join(process.env.RUNNER_TEMP, 'screenci-smoke'); const entries={SMOKE_DIRECT_NPM:path.join(base,'smoke-direct-npm'),SMOKE_DIRECT_PNPM:path.join(base,'smoke-direct-pnpm'),SMOKE_CREATE_NPM:path.join(base,'smoke-create-npm'),SMOKE_CREATE_PNPM:path.join(base,'smoke-create-pnpm'),SMOKE_DIRECT_YARN:path.join(base,'smoke-direct-yarn'),SMOKE_PNPM_WORKSPACE:path.join(base,'smoke-pnpm-workspace')}; fs.appendFileSync(process.env.GITHUB_ENV, Object.entries(entries).map(([key, value]) => key + '=' + value).join('\n') + '\n')"
 
       - name: Prepare smoke projects
         run: >-
-          node -e "const fs=require('node:fs'); const path=require('node:path'); const screenciPkg=require('./package.json'); const createPkg=require('./create-screenci/package.json'); const screenciTarball=screenciPkg.name + '-' + screenciPkg.version + '.tgz'; const createTarball=createPkg.name + '-' + createPkg.version + '.tgz'; for (const dir of [process.env.SMOKE_DIRECT_NPM, process.env.SMOKE_DIRECT_PNPM, process.env.SMOKE_CREATE_NPM, process.env.SMOKE_CREATE_PNPM]) { fs.mkdirSync(dir, { recursive: true }); fs.copyFileSync(path.join(process.cwd(), screenciTarball), path.join(dir, screenciTarball)); fs.copyFileSync(path.join(process.cwd(), 'create-screenci', createTarball), path.join(dir, createTarball)); }"
+          node -e "const fs=require('node:fs'); const path=require('node:path'); const screenciPkg=require('./package.json'); const createPkg=require('./create-screenci/package.json'); const screenciTarball=screenciPkg.name + '-' + screenciPkg.version + '.tgz'; const createTarball=createPkg.name + '-' + createPkg.version + '.tgz'; for (const dir of [process.env.SMOKE_DIRECT_NPM, process.env.SMOKE_DIRECT_PNPM, process.env.SMOKE_CREATE_NPM, process.env.SMOKE_CREATE_PNPM, process.env.SMOKE_DIRECT_YARN, process.env.SMOKE_PNPM_WORKSPACE]) { fs.mkdirSync(dir, { recursive: true }); fs.copyFileSync(path.join(process.cwd(), screenciTarball), path.join(dir, screenciTarball)); fs.copyFileSync(path.join(process.cwd(), 'create-screenci', createTarball), path.join(dir, createTarball)); }"
 
       - name: Set local create-screenci dependency for smoke tests
         run: node -e "const fs=require('node:fs'); const path=require('node:path'); const pkg=require('./create-screenci/package.json'); const tarballPath=path.resolve(process.cwd(), 'create-screenci', pkg.name + '-' + pkg.version + '.tgz'); fs.appendFileSync(process.env.GITHUB_ENV, 'CREATE_SCREENCI_DEPENDENCY=file:' + tarballPath + '\n')"
@@ -140,4 +143,30 @@ jobs:
 
       - name: Run generated screenci test with pnpm
         working-directory: ${{ env.SMOKE_CREATE_PNPM }}
+        run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} pnpm exec screenci test
+
+      - name: Run screenci init with yarn
+        working-directory: ${{ env.SMOKE_DIRECT_YARN }}
+        run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} node ${{ github.workspace }}/bin/screenci.js init smoke-project --package-manager yarn --yes --verbose
+
+      - name: Run screenci test with yarn
+        working-directory: ${{ env.SMOKE_DIRECT_YARN }}
+        run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} yarn screenci test
+
+      - name: Create pnpm workspace scaffold
+        env:
+          npm_config_strict_dep_builds: false
+        run: >-
+          node -e "const fs=require('node:fs'); const path=require('node:path'); const {spawnSync}=require('node:child_process'); const dir=process.env.SMOKE_PNPM_WORKSPACE; fs.writeFileSync(path.join(dir,'pnpm-workspace.yaml'),'packages:\n  - packages/*\n'); fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify({name:'smoke-workspace',private:true,version:'0.0.1'})+'\n'); const r=spawnSync('pnpm',['install'],{cwd:dir,stdio:'inherit',shell:true,env:{...process.env,npm_config_strict_dep_builds:'false'}}); if(r.status!==0) process.exit(r.status??1)"
+
+      - name: Run screenci init in pnpm workspace
+        working-directory: ${{ env.SMOKE_PNPM_WORKSPACE }}
+        env:
+          # Clear the user agent so PM detection falls through to lockfile sniffing.
+          npm_config_user_agent: ''
+          npm_config_strict_dep_builds: false
+        run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} node ${{ github.workspace }}/bin/screenci.js init smoke-project --yes --verbose
+
+      - name: Run screenci test in pnpm workspace
+        working-directory: ${{ env.SMOKE_PNPM_WORKSPACE }}
         run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} pnpm exec screenci test

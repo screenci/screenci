@@ -119,6 +119,46 @@ function expectPnpmDevInstalls(
   )
 }
 
+function expectYarnDevInstalls(
+  mockSpawn: ReturnType<typeof vi.fn>,
+  cwd: string,
+  screenciVersion = '0.0.32',
+  includePlaywrightCli = true
+) {
+  const yarnInstallCalls = mockSpawn.mock.calls.filter(
+    (call: unknown[]) =>
+      call[0] === 'yarn' &&
+      Array.isArray(call[1]) &&
+      call[1][0] === 'add' &&
+      call[1][1] === '--dev' &&
+      call[2] &&
+      typeof call[2] === 'object' &&
+      'cwd' in (call[2] as Record<string, unknown>) &&
+      (call[2] as { cwd?: string }).cwd === cwd &&
+      'stdio' in (call[2] as Record<string, unknown>) &&
+      (call[2] as { stdio?: string }).stdio === 'pipe'
+  )
+
+  const expectedPackages = [
+    ['add', '--dev', `@playwright/test@^1.59.0`],
+    ['add', '--dev', `screenci@${screenciVersion}`],
+    ['add', '--dev', '@types/node@^25.9.1'],
+    ...(includePlaywrightCli
+      ? [['add', '--dev', '@playwright/cli@latest']]
+      : []),
+  ]
+
+  expect(yarnInstallCalls).toEqual(
+    expect.arrayContaining(
+      expectedPackages.map((args) => [
+        'yarn',
+        args,
+        expect.objectContaining({ cwd, stdio: 'pipe' }),
+      ])
+    )
+  )
+}
+
 vi.mock('child_process', () => ({
   spawn: mockSpawn,
   exec: mockExec,
@@ -3162,7 +3202,7 @@ describe('CLI', () => {
         }),
         expect.objectContaining({
           message:
-            "Install playwright-cli for URL-based browser inspection (can be done manually via 'npx skills add screenci/screenci --skill playwright-cli -y && npm install @playwright/cli')? (Y/n)",
+            "Install playwright-cli for URL-based browser inspection (can be done manually via 'npx skills add screenci/screenci --skill playwright-cli -y && npm install --save-dev @playwright/cli')? (Y/n)",
           default: 'y',
         }),
       ])
@@ -3304,6 +3344,154 @@ describe('CLI', () => {
       expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/my-project/README.md',
         expect.any(String)
+      )
+    })
+
+    it('defaults to pnpm when pnpm-lock.yaml is detected in the project dir', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project', '--yes']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockImplementation(
+        (p: string) =>
+          p === '/workspace/my-project/pnpm-lock.yaml' ||
+          p.endsWith('pnpm-lock.yaml')
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expectPnpmDevInstalls(mockSpawn, '/workspace/my-project')
+    })
+
+    it('defaults to yarn when yarn.lock is detected in the project dir', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project', '--yes']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockImplementation(
+        (p: string) => p === '/workspace/my-project/yarn.lock'
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expectYarnDevInstalls(mockSpawn, '/workspace/my-project')
+    })
+
+    it('defaults to pnpm when packageManager field in package.json says pnpm', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project', '--yes']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (p.endsWith('package.json')) {
+          return JSON.stringify({ packageManager: 'pnpm@11.0.9' })
+        }
+        return 'VITE_APP_BASE_URL=https://example.com\n'
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expectPnpmDevInstalls(mockSpawn, '/workspace/my-project')
+    })
+
+    it('uses workspace -w flag when pnpm-workspace.yaml is present', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--package-manager',
+        'pnpm',
+        '--yes',
+      ]
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockImplementation((p: string) =>
+        p.endsWith('pnpm-workspace.yaml')
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'pnpm',
+        ['add', '--save-dev', '-w', '@playwright/test@^1.59.0'],
+        expect.objectContaining({ cwd: '/workspace/my-project', stdio: 'pipe' })
+      )
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'pnpm',
+        [
+          'add',
+          '--save-dev',
+          '-w',
+          '--allow-build=ffmpeg-static',
+          'screenci@0.0.32',
+        ],
+        expect.objectContaining({ cwd: '/workspace/my-project', stdio: 'pipe' })
+      )
+    })
+
+    it('supports yarn init flows end to end', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--package-manager',
+        'yarn',
+        '--yes',
+      ]
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expectYarnDevInstalls(mockSpawn, '/workspace/my-project')
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'yarn',
+        ['playwright', 'install', '--only-shell', 'chromium'],
+        expect.objectContaining({
+          cwd: '/workspace/my-project',
+          stdio: 'inherit',
+        })
+      )
+      const workflowCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          typeof call[0] === 'string' && call[0].endsWith('screenci.yaml')
+      )
+      expect(workflowCall?.[1]).toContain('cache: yarn')
+      expect(workflowCall?.[1]).toContain('cache-dependency-path: yarn.lock')
+      expect(workflowCall?.[1]).toContain('run: yarn install --frozen-lockfile')
+      expect(workflowCall?.[1]).toContain(
+        'run: yarn playwright install --only-shell chromium'
+      )
+      expect(workflowCall?.[1]).toContain('run: yarn screenci record')
+    })
+
+    it('uses workspace -W flag when yarn workspace is detected', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--package-manager',
+        'yarn',
+        '--yes',
+      ]
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+      mockReadFileSync.mockImplementation((p: string) => {
+        if (p.endsWith('package.json')) {
+          return JSON.stringify({ workspaces: ['packages/*'] })
+        }
+        return 'VITE_APP_BASE_URL=https://example.com\n'
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'yarn',
+        ['add', '--dev', '-W', '@playwright/test@^1.59.0'],
+        expect.objectContaining({ cwd: '/workspace/my-project', stdio: 'pipe' })
       )
     })
 

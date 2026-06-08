@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
-import { existsSync, realpathSync } from 'fs'
+import { existsSync, readFileSync, realpathSync } from 'fs'
 import { appendFile, mkdir, readFile, writeFile } from 'fs/promises'
 import { basename, delimiter, dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
@@ -13,7 +13,7 @@ import { logger } from './logger.js'
 const PLAYWRIGHT_TEST_VERSION = '^1.59.0'
 const PLAYWRIGHT_CLI_VERSION = 'latest'
 const NODE_TYPES_VERSION = '^25.9.1'
-export type PackageManager = 'npm' | 'pnpm'
+export type PackageManager = 'npm' | 'pnpm' | 'yarn'
 
 export type InitOptions = {
   verbose: boolean
@@ -34,13 +34,75 @@ export type PnpmVersionSupport = {
     | 'version-too-old'
 }
 
-export function determinePackageManager(): PackageManager {
+export function detectPackageManagerFromLockfile(
+  dir: string
+): PackageManager | null {
+  let current = dir
+  while (true) {
+    if (existsSync(resolve(current, 'pnpm-lock.yaml'))) return 'pnpm'
+    if (existsSync(resolve(current, 'yarn.lock'))) return 'yarn'
+    const parent = dirname(current)
+    if (parent === current) break
+    current = parent
+  }
+  return null
+}
+
+export function detectPackageManagerFromPackageJson(
+  dir: string
+): PackageManager | null {
+  try {
+    const raw = readFileSync(resolve(dir, 'package.json'), 'utf-8')
+    const pkg = JSON.parse(raw) as { packageManager?: unknown }
+    const pm = pkg.packageManager
+    if (typeof pm !== 'string') return null
+    if (pm.startsWith('pnpm')) return 'pnpm'
+    if (pm.startsWith('yarn')) return 'yarn'
+    if (pm.startsWith('npm')) return 'npm'
+  } catch {
+    // ignore missing or unparseable package.json
+  }
+  return null
+}
+
+export function determinePackageManager(cwd?: string): PackageManager {
   const userAgent = process.env.npm_config_user_agent
-  if (userAgent?.includes('pnpm')) {
-    return 'pnpm'
+  if (userAgent?.includes('pnpm')) return 'pnpm'
+  if (userAgent?.includes('yarn')) return 'yarn'
+
+  // Filesystem detection is only performed during init (when cwd is provided).
+  // record/test commands rely solely on the user agent, which correctly reflects
+  // how the CLI was invoked (e.g. "pnpm exec screenci record" sets the agent).
+  if (cwd !== undefined) {
+    const fromLockfile = detectPackageManagerFromLockfile(cwd)
+    if (fromLockfile) return fromLockfile
+
+    const fromPkgJson = detectPackageManagerFromPackageJson(cwd)
+    if (fromPkgJson) return fromPkgJson
   }
 
   return 'npm'
+}
+
+export function detectPnpmWorkspace(cwd: string): boolean {
+  let current = cwd
+  while (true) {
+    if (existsSync(resolve(current, 'pnpm-workspace.yaml'))) return true
+    const parent = dirname(current)
+    if (parent === current) break
+    current = parent
+  }
+  return false
+}
+
+function detectYarnWorkspace(cwd: string): boolean {
+  try {
+    const raw = readFileSync(resolve(cwd, 'package.json'), 'utf-8')
+    const pkg = JSON.parse(raw) as { workspaces?: unknown }
+    return pkg.workspaces !== undefined
+  } catch {
+    return false
+  }
 }
 
 function resolveSpawnSpec(
@@ -56,7 +118,7 @@ function resolveSpawnSpec(
     return { command: cmd, args }
   }
 
-  const windowsCmdShims = new Set(['npm', 'npx', 'playwright', 'pnpm'])
+  const windowsCmdShims = new Set(['npm', 'npx', 'playwright', 'pnpm', 'yarn'])
   if (!windowsCmdShims.has(cmd)) {
     return { command: cmd, args }
   }
@@ -306,34 +368,50 @@ function spawnInherited(
   })
 }
 
-export function parsePackageManager(value: string | undefined): PackageManager {
+export function parsePackageManager(
+  value: string | undefined,
+  cwd?: string
+): PackageManager {
   if (value === undefined) {
-    return determinePackageManager()
+    return determinePackageManager(cwd)
   }
 
-  if (value === 'npm' || value === 'pnpm') {
+  if (value === 'npm' || value === 'pnpm' || value === 'yarn') {
     return value
   }
 
-  throw new Error('Expected package manager to be one of: npm, pnpm')
+  throw new Error('Expected package manager to be one of: npm, pnpm, yarn')
 }
 
-function getPackageManagerCommand(packageManager: PackageManager): {
+function getPackageManagerCommand(
+  packageManager: PackageManager,
+  isWorkspace = false
+): {
   screenciRun: string
   playwrightRun: string
   installCommand: string
   installArgs: (pkg: string) => string[]
+  screenciInstallArgs: (pkg: string) => string[]
   skillsCommand: string
   skillsArgs: (skills: string[], agent?: string) => string[]
   cacheName: PackageManager
   lockfileName: string
+  frozenInstallCommand: string
 } {
   if (packageManager === 'pnpm') {
+    const workspaceFlag = isWorkspace ? ['-w'] : []
     return {
       screenciRun: 'pnpm exec screenci',
       playwrightRun: 'pnpm exec playwright',
       installCommand: 'pnpm',
-      installArgs: (pkg) => ['add', '--save-dev', pkg],
+      installArgs: (pkg) => ['add', '--save-dev', ...workspaceFlag, pkg],
+      screenciInstallArgs: (pkg) => [
+        'add',
+        '--save-dev',
+        ...workspaceFlag,
+        '--allow-build=ffmpeg-static',
+        pkg,
+      ],
       skillsCommand: 'pnpm',
       skillsArgs: (skills, agent) => [
         'dlx',
@@ -346,6 +424,31 @@ function getPackageManagerCommand(packageManager: PackageManager): {
       ],
       cacheName: 'pnpm',
       lockfileName: 'pnpm-lock.yaml',
+      frozenInstallCommand: 'pnpm install --frozen-lockfile',
+    }
+  }
+
+  if (packageManager === 'yarn') {
+    const workspaceFlag = isWorkspace ? ['-W'] : []
+    return {
+      screenciRun: 'yarn screenci',
+      playwrightRun: 'yarn playwright',
+      installCommand: 'yarn',
+      installArgs: (pkg) => ['add', '--dev', ...workspaceFlag, pkg],
+      screenciInstallArgs: (pkg) => ['add', '--dev', ...workspaceFlag, pkg],
+      skillsCommand: 'yarn',
+      skillsArgs: (skills, agent) => [
+        'dlx',
+        'skills',
+        'add',
+        'screenci/screenci',
+        ...(agent ? ['--agent', agent] : []),
+        ...skills.flatMap((skillName) => ['--skill', skillName]),
+        '-y',
+      ],
+      cacheName: 'yarn',
+      lockfileName: 'yarn.lock',
+      frozenInstallCommand: 'yarn install --frozen-lockfile',
     }
   }
 
@@ -354,6 +457,7 @@ function getPackageManagerCommand(packageManager: PackageManager): {
     playwrightRun: 'npx playwright',
     installCommand: 'npm',
     installArgs: (pkg) => ['install', '--save-dev', pkg],
+    screenciInstallArgs: (pkg) => ['install', '--save-dev', pkg],
     skillsCommand: 'npm',
     skillsArgs: (skills, agent) => [
       'exec',
@@ -369,7 +473,21 @@ function getPackageManagerCommand(packageManager: PackageManager): {
     ],
     cacheName: 'npm',
     lockfileName: 'package-lock.json',
+    frozenInstallCommand: 'npm ci',
   }
+}
+
+function buildPlaywrightSpawnArgs(
+  packageManager: PackageManager,
+  ...playwrightArgs: string[]
+): [string, ...string[]] {
+  if (packageManager === 'pnpm') {
+    return ['pnpm', 'exec', 'playwright', ...playwrightArgs]
+  }
+  if (packageManager === 'yarn') {
+    return ['yarn', 'playwright', ...playwrightArgs]
+  }
+  return ['npx', 'playwright', ...playwrightArgs]
 }
 
 function getSkillsManualCommand(
@@ -377,13 +495,13 @@ function getSkillsManualCommand(
   skills: string[],
   agent?: string
 ): string {
-  return [
-    packageManager === 'pnpm' ? 'pnpm' : 'npx',
-    ...(packageManager === 'pnpm' ? ['dlx'] : []),
-    'skills',
-    'add',
-    'screenci/screenci',
-  ]
+  const prefix =
+    packageManager === 'pnpm'
+      ? ['pnpm', 'dlx']
+      : packageManager === 'yarn'
+        ? ['yarn', 'dlx']
+        : ['npx']
+  return [...prefix, 'skills', 'add', 'screenci/screenci']
     .concat(agent ? ['--agent', agent] : [])
     .concat(skills.flatMap((skillName) => ['--skill', skillName]))
     .concat(['-y'])
@@ -587,9 +705,8 @@ async function installInitDependencies(
   verbose: boolean,
   screenciDependency: string,
   includePlaywrightCli: boolean,
-  packageManager: PackageManager
+  commands: ReturnType<typeof getPackageManagerCommand>
 ): Promise<void> {
-  const commands = getPackageManagerCommand(packageManager)
   const installSteps: Array<{ message: string; args: string[] }> = [
     {
       message: 'Installing Playwright Test...',
@@ -597,15 +714,7 @@ async function installInitDependencies(
     },
     {
       message: 'Installing ScreenCI...',
-      args:
-        packageManager === 'pnpm'
-          ? [
-              'add',
-              '--save-dev',
-              '--allow-build=ffmpeg-static',
-              `screenci@${screenciDependency}`,
-            ]
-          : commands.installArgs(`screenci@${screenciDependency}`),
+      args: commands.screenciInstallArgs(`screenci@${screenciDependency}`),
     },
     {
       message: 'Installing Node.js types...',
@@ -684,8 +793,11 @@ function printInitNextSteps(
   logger.info('Happy hacking! 🎥')
 }
 
-function generateGithubAction(packageManager: PackageManager): string {
-  const commands = getPackageManagerCommand(packageManager)
+function generateGithubAction(
+  packageManager: PackageManager,
+  isWorkspace = false
+): string {
+  const commands = getPackageManagerCommand(packageManager, isWorkspace)
   return `name: ScreenCI
 
 on:
@@ -722,7 +834,7 @@ jobs:
         env:
           HUSKY: 0
           npm_config_strict_dep_builds: false
-        run: ${packageManager === 'pnpm' ? 'pnpm install --frozen-lockfile' : 'npm ci'}
+        run: ${commands.frozenInstallCommand}
 
       - name: Install Chromium Headless Shell
         working-directory: .
@@ -851,10 +963,11 @@ async function promptInitPlaywrightCliSkillForPackageManager(
   packageManager: PackageManager,
   agent?: string
 ): Promise<boolean> {
-  const installPlaywrightCli =
-    packageManager === 'pnpm'
-      ? 'pnpm add --save-dev @playwright/cli'
-      : 'npm install @playwright/cli'
+  const cmds = getPackageManagerCommand(packageManager)
+  const installPlaywrightCli = [
+    cmds.installCommand,
+    ...cmds.installArgs('@playwright/cli'),
+  ].join(' ')
   return promptYesNo(
     `Install playwright-cli for URL-based browser inspection (can be done manually via '${getSkillsManualCommand(packageManager, ['playwright-cli'], agent)} && ${installPlaywrightCli}')? (Y/n)`,
     true
@@ -870,8 +983,14 @@ export async function runInit(
   options: InitOptions
 ): Promise<void> {
   const { verbose, yes, agent, packageManager } = options
-  const commands = getPackageManagerCommand(packageManager)
   const initCwd = getInitProjectRoot()
+  const isWorkspace =
+    packageManager === 'pnpm'
+      ? detectPnpmWorkspace(initCwd)
+      : packageManager === 'yarn'
+        ? detectYarnWorkspace(initCwd)
+        : false
+  const commands = getPackageManagerCommand(packageManager, isWorkspace)
 
   let projectName = projectNameArg?.trim()
 
@@ -945,7 +1064,10 @@ export async function runInit(
     generateExampleVideo()
   )
   if (shouldAddGithubActionWorkflow) {
-    await writeFile(githubActionPath, generateGithubAction(packageManager))
+    await writeFile(
+      githubActionPath,
+      generateGithubAction(packageManager, isWorkspace)
+    )
   }
 
   if (packageManager === 'pnpm') {
@@ -978,21 +1100,20 @@ export async function runInit(
     verbose,
     screenciDependency,
     shouldInstallPlaywrightCli,
-    packageManager
+    commands
   )
 
   if (shouldInstallPlaywrightBrowsers) {
     logger.info(
       `Installing Playwright Chromium headless shell with '${commands.playwrightRun} install --only-shell chromium'...`
     )
-    await spawnInherited(
-      packageManager === 'pnpm' ? 'pnpm' : 'npx',
-      packageManager === 'pnpm'
-        ? ['exec', 'playwright', 'install', '--only-shell', 'chromium']
-        : ['playwright', 'install', '--only-shell', 'chromium'],
-      projectDir,
-      'screenci init'
+    const [browserCmd, ...browserArgs] = buildPlaywrightSpawnArgs(
+      packageManager,
+      'install',
+      '--only-shell',
+      'chromium'
     )
+    await spawnInherited(browserCmd!, browserArgs, projectDir, 'screenci init')
     logger.info(
       `${pc.green('✔')} Playwright Chromium headless shell installed successfully`
     )
@@ -1002,14 +1123,12 @@ export async function runInit(
     logger.info(
       `Installing Playwright operating system dependencies with '${commands.playwrightRun} install-deps chromium'...`
     )
-    await spawnInherited(
-      packageManager === 'pnpm' ? 'pnpm' : 'npx',
-      packageManager === 'pnpm'
-        ? ['exec', 'playwright', 'install-deps', 'chromium']
-        : ['playwright', 'install-deps', 'chromium'],
-      projectDir,
-      'screenci init'
+    const [depsCmd, ...depsArgs] = buildPlaywrightSpawnArgs(
+      packageManager,
+      'install-deps',
+      'chromium'
     )
+    await spawnInherited(depsCmd!, depsArgs, projectDir, 'screenci init')
     logger.info(
       `${pc.green('✔')} Playwright operating system dependencies installed successfully`
     )
@@ -1046,7 +1165,7 @@ export async function runCreateScreenciCli(
   )
   program.option(
     '--package-manager <manager>',
-    `package manager to use: npm or pnpm (default: ${defaultPackageManager})`
+    `package manager to use: npm, pnpm, or yarn (default: ${defaultPackageManager})`
   )
   program.option('-y, --yes', 'accept init defaults')
   program.option('-v, --verbose', 'verbose output')
@@ -1057,7 +1176,8 @@ export async function runCreateScreenciCli(
         verbose: (options['verbose'] as boolean | undefined) ?? false,
         yes: (options['yes'] as boolean | undefined) ?? false,
         packageManager: parsePackageManager(
-          options['packageManager'] as string | undefined
+          options['packageManager'] as string | undefined,
+          getInitProjectRoot()
         ),
         ...(agent !== undefined ? { agent } : {}),
       })

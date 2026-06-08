@@ -35,6 +35,13 @@ pnpm create screenci
 ```
 
   </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn create screenci
+```
+
+  </TabItem>
 </Tabs>
 
 If that does not work, install [Node.js 18 or newer](https://nodejs.org/en/download),
@@ -47,7 +54,7 @@ ScreenCI creates the starter project scaffold below.
 ```text
 screenci.config.ts          # ScreenCI and Playwright configuration
 package.json
-package-lock.json           # Or pnpm-lock.yaml, depending on package manager
+package-lock.json           # Or pnpm-lock.yaml / yarn.lock, depending on package manager
 videos/
   example.video.ts          # Minimal starter video
 .github/workflows/
@@ -117,6 +124,13 @@ pnpm exec screenci test
 ```
 
   </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn screenci test
+```
+
+  </TabItem>
 </Tabs>
 
 The `test` command is for fast video script verification. It runs the
@@ -142,6 +156,13 @@ pnpm exec screenci test --ui
 ```
 
   </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn screenci test --ui
+```
+
+  </TabItem>
 </Tabs>
 
 ## Record the final result
@@ -162,6 +183,14 @@ npx screenci record
 ```bash
 pnpm exec screenci login
 pnpm exec screenci record
+```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn screenci login
+yarn screenci record
 ```
 
   </TabItem>

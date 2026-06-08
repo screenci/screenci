@@ -31,6 +31,13 @@ pnpm add --save-dev @playwright/test@latest
 ```
 
   </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn add --dev screenci@latest @playwright/test@latest
+```
+
+  </TabItem>
 </Tabs>
 
 This is the default upgrade path. ScreenCI uses `@playwright/test` underneath, so keeping both packages current together is usually the cleanest choice.
@@ -65,21 +72,69 @@ pnpm exec playwright install chromium
 ```
 
   </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn install
+yarn playwright install chromium
+```
+
+  </TabItem>
 </Tabs>
 
 You do not need to reinstall browsers on every upgrade, only when Playwright reports that the local browser build is missing or outdated.
 
 If you installed the ScreenCI skill during `screenci init`, refresh it after updating the package:
 
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
 ```bash
 npx -y skills add screenci/screenci --skill screenci -y
 ```
 
+  </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+pnpm dlx skills add screenci/screenci --skill screenci -y
+```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn dlx skills add screenci/screenci --skill screenci -y
+```
+
+  </TabItem>
+</Tabs>
+
 If you also installed the optional `playwright-cli` skill for URL-based inspection or AI-assisted authoring, refresh both:
+
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
 
 ```bash
 npx -y skills add screenci/screenci --skill screenci --skill playwright-cli -y
 ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+pnpm dlx skills add screenci/screenci --skill screenci --skill playwright-cli -y
+```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn dlx skills add screenci/screenci --skill screenci --skill playwright-cli -y
+```
+
+  </TabItem>
+</Tabs>
 
 ## When to update Playwright too
 
@@ -122,6 +177,14 @@ npx screenci record
 ```bash
 pnpm exec screenci test
 pnpm exec screenci record
+```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn screenci test
+yarn screenci record
 ```
 
   </TabItem>

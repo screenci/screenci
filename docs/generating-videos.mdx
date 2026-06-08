@@ -25,7 +25,8 @@ Good setup:
 
 - initialize ScreenCI inside the existing repository
 - accept the ScreenCI skill install during `screenci init`, or run
-  `npx -y skills add screenci/screenci --skill screenci -y` later
+  `npx -y skills add screenci/screenci --skill screenci -y` (or
+  `pnpm dlx` / `yarn dlx` equivalent) later
 - point the agent at the routes and components that define the flow
 - ask it to verify the result with `screenci test`
 
@@ -36,8 +37,8 @@ create a screenci video for the onboarding flow in english and spanish.
 Inspect @src/routes/onboarding and @src/components/signup-form.tsx.
 ```
 
-The agent should verify the script with `npx screenci test` and the final recording can be
-recorded via `npx screenci record`.
+The agent should verify the script with `screenci test` and the final recording can be
+recorded via `screenci record`.
 
 ## AI generation based on URL with `playwright-cli`
 
@@ -48,10 +49,11 @@ Good setup:
 
 - initialize a standalone ScreenCI project
 - accept the ScreenCI skill install during `screenci init`, or run
-  `npx -y skills add screenci/screenci --skill screenci -y` later
+  `npx -y skills add screenci/screenci --skill screenci -y` (or
+  `pnpm dlx` / `yarn dlx` equivalent) later
 - accept the optional `playwright-cli` install during `screenci init`, or run
-  `npx -y skills add screenci/screenci --skill playwright-cli -y` and
-  install `@playwright/cli` later
+  `npx -y skills add screenci/screenci --skill playwright-cli -y` (or
+  `pnpm dlx` / `yarn dlx` equivalent) and install `@playwright/cli` later
 
 Example prompt for a deployed-site workflow:
 
@@ -60,8 +62,8 @@ Create a screenci video for https://screenci.com that shows
 how to find the documentation. Use playwright-cli.
 ```
 
-Again, the agent should verify the script with `npx screenci test` and the final recording can be
-recorded via `npx screenci record`.
+Again, the agent should verify the script with `screenci test` and the final recording can be
+recorded via `screenci record`.
 
 ## Playwright codegen
 
@@ -86,6 +88,13 @@ pnpm exec playwright codegen https://screenci.com
 ```
 
   </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn playwright codegen https://screenci.com
+```
+
+  </TabItem>
 </Tabs>
 
 This opens a browser window and the Playwright Inspector. As you click,
@@ -97,4 +106,4 @@ The output is not a final ScreenCI video yet, but to make it work with ScreenCI 
 - change `test` to `video`
 - add narration using `createNarration`
 
-Then you can follow the `npx screenci test` and `npx screenci record` flow.
+Then you can follow the `screenci test` and `screenci record` flow.

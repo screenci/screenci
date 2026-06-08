@@ -126,9 +126,10 @@ function logScreenCISecretGuide(): void {
 }
 
 function getSuggestedScreenciCommand(command: 'login' | 'record'): string {
-  return determinePackageManager() === 'pnpm'
-    ? `pnpm exec screenci ${command}`
-    : `npx screenci ${command}`
+  const pm = determinePackageManager()
+  if (pm === 'pnpm') return `pnpm exec screenci ${command}`
+  if (pm === 'yarn') return `yarn screenci ${command}`
+  return `npx screenci ${command}`
 }
 
 async function collectDiscoveredTestTitles(
@@ -2337,7 +2338,7 @@ export async function main() {
     )
     .option(
       '--package-manager <manager>',
-      `package manager to use: npm or pnpm (default: ${defaultPackageManager})`
+      `package manager to use: npm, pnpm, or yarn (default: ${defaultPackageManager})`
     )
     .option('-y, --yes', 'accept init defaults')
     .option('-v, --verbose', 'verbose output')
@@ -2348,7 +2349,8 @@ export async function main() {
           verbose: (options['verbose'] as boolean | undefined) ?? false,
           yes: (options['yes'] as boolean | undefined) ?? false,
           packageManager: parsePackageManager(
-            options['packageManager'] as string | undefined
+            options['packageManager'] as string | undefined,
+            process.env['SCREENCI_INIT_CWD'] ?? process.cwd()
           ),
           ...(agent !== undefined ? { agent } : {}),
         })

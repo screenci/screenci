@@ -23,6 +23,17 @@ export type InitOptions = {
 }
 
 const MIN_SUPPORTED_PNPM_VERSION = '10.26.0'
+const MIN_SUPPORTED_YARN_VERSION = '2.0.0'
+
+export type YarnVersionSupport = {
+  supported: boolean
+  detectedVersion?: string
+  reason:
+    | 'supported'
+    | 'yarn-not-found'
+    | 'malformed-version'
+    | 'version-too-old'
+}
 
 export type PnpmVersionSupport = {
   supported: boolean
@@ -639,6 +650,75 @@ async function ensureSupportedPnpmVersion(cwd: string): Promise<void> {
   }
 }
 
+export function parseYarnVersionSupport(
+  versionOutput: string
+): YarnVersionSupport {
+  const detectedVersion = versionOutput.trim()
+  const parsedDetectedVersion = parseSemverTriplet(detectedVersion)
+  if (parsedDetectedVersion === null) {
+    return { supported: false, detectedVersion, reason: 'malformed-version' }
+  }
+
+  const parsedMin = parseSemverTriplet(MIN_SUPPORTED_YARN_VERSION)!
+  if (compareSemverTriplets(parsedDetectedVersion, parsedMin) < 0) {
+    return { supported: false, detectedVersion, reason: 'version-too-old' }
+  }
+
+  return { supported: true, detectedVersion, reason: 'supported' }
+}
+
+async function detectYarnVersionSupport(
+  cwd: string
+): Promise<YarnVersionSupport> {
+  try {
+    const { stdout } = await spawnCaptured('yarn', ['--version'], cwd)
+    return parseYarnVersionSupport(stdout)
+  } catch {
+    return { supported: false, reason: 'yarn-not-found' }
+  }
+}
+
+function buildUnsupportedYarnError(versionSupport: YarnVersionSupport): Error {
+  const upgrade = [
+    'Upgrade to yarn 2+ and rerun, or use a different package manager:',
+    '  corepack enable && corepack prepare yarn@stable --activate',
+    '  yarn create screenci',
+    '  npm init screenci@latest',
+  ].join('\n')
+
+  if (versionSupport.reason === 'yarn-not-found') {
+    return new Error(
+      [
+        'yarn could not be detected. ScreenCI requires yarn 2+ (yarn berry) because it uses `yarn dlx` for skill installation.',
+        upgrade,
+      ].join('\n')
+    )
+  }
+
+  if (versionSupport.reason === 'version-too-old') {
+    return new Error(
+      [
+        `Detected yarn ${versionSupport.detectedVersion}. ScreenCI requires yarn 2+ (yarn berry) because it uses \`yarn dlx\` for skill installation.`,
+        upgrade,
+      ].join('\n')
+    )
+  }
+
+  return new Error(
+    [
+      `Detected yarn version output ${JSON.stringify(versionSupport.detectedVersion ?? '')}, which ScreenCI could not parse. ScreenCI requires yarn 2+ (yarn berry).`,
+      upgrade,
+    ].join('\n')
+  )
+}
+
+async function ensureSupportedYarnVersion(cwd: string): Promise<void> {
+  const versionSupport = await detectYarnVersionSupport(cwd)
+  if (!versionSupport.supported) {
+    throw buildUnsupportedYarnError(versionSupport)
+  }
+}
+
 async function readCurrentScreenciVersion(): Promise<string> {
   const currentFileDir = dirname(fileURLToPath(import.meta.url))
   const packageJsonPaths = [
@@ -664,7 +744,8 @@ async function readCurrentScreenciVersion(): Promise<string> {
   return 'latest'
 }
 
-function generateGitignore(): string {
+function generateGitignore(packageManager: PackageManager = 'npm'): string {
+  const yarnSection = packageManager === 'yarn' ? '\n# Yarn\n.yarn/\n' : ''
   return `# ScreenCI
 .screenci
 .playwright-cli/
@@ -677,14 +758,18 @@ node_modules/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
-`
+${yarnSection}`
 }
 
-async function writeInitGitignore(projectDir: string): Promise<void> {
+async function writeInitGitignore(
+  projectDir: string,
+  packageManager: PackageManager
+): Promise<void> {
   const gitignorePath = resolve(projectDir, '.gitignore')
+  const content = generateGitignore(packageManager)
 
   if (!existsSync(gitignorePath)) {
-    await writeFile(gitignorePath, generateGitignore())
+    await writeFile(gitignorePath, content)
     return
   }
 
@@ -697,7 +782,7 @@ async function writeInitGitignore(projectDir: string): Promise<void> {
         : existing.endsWith('\n')
           ? '\n'
           : '\n\n'
-  await appendFile(gitignorePath, `${separator}${generateGitignore()}`)
+  await appendFile(gitignorePath, `${separator}${content}`)
 }
 
 async function installInitDependencies(
@@ -992,6 +1077,10 @@ export async function runInit(
         : false
   const commands = getPackageManagerCommand(packageManager, isWorkspace)
 
+  if (packageManager === 'yarn') {
+    await ensureSupportedYarnVersion(initCwd)
+  }
+
   let projectName = projectNameArg?.trim()
 
   if (!projectName) {
@@ -1058,7 +1147,7 @@ export async function runInit(
   if (!hasExistingPackageJson) {
     await writeFile(packageJsonPath, generateEmptyPackageJson())
   }
-  await writeInitGitignore(projectDir)
+  await writeInitGitignore(projectDir, packageManager)
   await writeFile(
     resolve(projectDir, 'videos', 'example.video.ts'),
     generateExampleVideo()
@@ -1072,6 +1161,13 @@ export async function runInit(
 
   if (packageManager === 'pnpm') {
     await ensureSupportedPnpmVersion(projectDir)
+  }
+
+  if (packageManager === 'yarn') {
+    await writeFile(
+      resolve(projectDir, '.yarnrc.yml'),
+      'nodeLinker: node-modules\n'
+    )
   }
 
   if (skillsArgs !== null) {

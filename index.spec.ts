@@ -45,6 +45,7 @@ describe('public api surface', () => {
       'generateExampleVideo',
       'parsePackageManager',
       'parsePnpmVersionSupport',
+      'parseYarnVersionSupport',
       'runCreateScreenciCli',
       'runInit',
     ])

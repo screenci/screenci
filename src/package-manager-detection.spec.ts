@@ -4,6 +4,7 @@ import {
   detectPackageManagerFromPackageJson,
   detectPnpmWorkspace,
   determinePackageManager,
+  parseYarnVersionSupport,
 } from './init.js'
 
 const mockExistsSync = vi.fn<(path: string) => boolean>()
@@ -162,5 +163,39 @@ describe('determinePackageManager', () => {
     process.env.npm_config_user_agent = 'pnpm/11.0.8 npm/? node/v24.0.0'
     mockExistsSync.mockImplementation((p) => p.endsWith('yarn.lock'))
     expect(determinePackageManager('/project')).toBe('pnpm')
+  })
+})
+
+describe('parseYarnVersionSupport', () => {
+  it('returns supported for yarn 2.x', () => {
+    const result = parseYarnVersionSupport('2.0.0')
+    expect(result.supported).toBe(true)
+    expect(result.reason).toBe('supported')
+    expect(result.detectedVersion).toBe('2.0.0')
+  })
+
+  it('returns supported for yarn 4.x', () => {
+    const result = parseYarnVersionSupport('4.9.1')
+    expect(result.supported).toBe(true)
+    expect(result.detectedVersion).toBe('4.9.1')
+  })
+
+  it('returns version-too-old for yarn 1.x', () => {
+    const result = parseYarnVersionSupport('1.22.22')
+    expect(result.supported).toBe(false)
+    expect(result.reason).toBe('version-too-old')
+    expect(result.detectedVersion).toBe('1.22.22')
+  })
+
+  it('returns malformed-version for non-semver output', () => {
+    const result = parseYarnVersionSupport('not-a-version')
+    expect(result.supported).toBe(false)
+    expect(result.reason).toBe('malformed-version')
+  })
+
+  it('trims whitespace from version output', () => {
+    const result = parseYarnVersionSupport('  4.0.0\n')
+    expect(result.supported).toBe(true)
+    expect(result.detectedVersion).toBe('4.0.0')
   })
 })

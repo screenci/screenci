@@ -2338,7 +2338,7 @@ export async function main() {
     )
     .option(
       '--package-manager <manager>',
-      `package manager to use: npm, pnpm, or yarn (default: ${defaultPackageManager})`
+      `package manager to use: npm, pnpm, or yarn 2+ (default: ${defaultPackageManager})`
     )
     .option('-y, --yes', 'accept init defaults')
     .option('-v, --verbose', 'verbose output')

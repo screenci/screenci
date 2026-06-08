@@ -3453,6 +3453,14 @@ describe('CLI', () => {
           stdio: 'inherit',
         })
       )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-project/.yarnrc.yml',
+        'nodeLinker: node-modules\n'
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-project/.gitignore',
+        expect.stringContaining('.yarn/')
+      )
       const workflowCall = mockWriteFile.mock.calls.find(
         (call: unknown[]) =>
           typeof call[0] === 'string' && call[0].endsWith('screenci.yaml')
@@ -3883,6 +3891,94 @@ describe('CLI', () => {
         expect.arrayContaining(['add']),
         expect.anything()
       )
+    })
+
+    it('fails fast when yarn cannot be detected', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--package-manager',
+        'yarn',
+      ]
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+      mockSpawn.mockImplementation((_command: string, args: string[]) => {
+        const child = Object.assign(new EventEmitter(), {
+          unref: vi.fn(),
+          stdout: new EventEmitter(),
+          stderr: new EventEmitter(),
+        })
+        process.nextTick(() => {
+          if (Array.isArray(args) && args[0] === '--version') {
+            child.emit('error', new Error('spawn yarn ENOENT'))
+            return
+          }
+          child.emit('close', 0)
+        })
+        return child as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow(
+        [
+          'yarn could not be detected. ScreenCI requires yarn 2+ (yarn berry) because it uses `yarn dlx` for skill installation.',
+          'Upgrade to yarn 2+ and rerun, or use a different package manager:',
+          '  corepack enable && corepack prepare yarn@stable --activate',
+          '  yarn create screenci',
+          '  npm init screenci@latest',
+        ].join('\n')
+      )
+      expect(mockWriteFile).not.toHaveBeenCalled()
+    })
+
+    it('fails fast when yarn 1.x is detected', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--package-manager',
+        'yarn',
+      ]
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+      mockSpawn.mockImplementation((_command: string, args: string[]) => {
+        const child = Object.assign(new EventEmitter(), {
+          unref: vi.fn(),
+          stdout: new EventEmitter(),
+          stderr: new EventEmitter(),
+        })
+        process.nextTick(() => {
+          if (Array.isArray(args) && args[0] === '--version') {
+            child.stdout.emit('data', '1.22.22\n')
+            child.emit('close', 0)
+            return
+          }
+          child.emit('close', 0)
+        })
+        return child as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow(
+        [
+          'Detected yarn 1.22.22. ScreenCI requires yarn 2+ (yarn berry) because it uses `yarn dlx` for skill installation.',
+          'Upgrade to yarn 2+ and rerun, or use a different package manager:',
+          '  corepack enable && corepack prepare yarn@stable --activate',
+          '  yarn create screenci',
+          '  npm init screenci@latest',
+        ].join('\n')
+      )
+      expect(mockSpawn).not.toHaveBeenCalledWith(
+        'yarn',
+        expect.arrayContaining(['add']),
+        expect.anything()
+      )
+      expect(mockWriteFile).not.toHaveBeenCalled()
     })
 
     it('skips pnpm version checks when npm is explicitly selected', async () => {

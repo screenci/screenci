@@ -84,7 +84,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Yarn
-        run: npm install -g yarn@1
+        run: |
+          corepack enable
+          corepack prepare yarn@stable --activate
 
       - name: Build package
         run: pnpm run build

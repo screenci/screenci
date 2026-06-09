@@ -2425,8 +2425,16 @@ describe('CLI', () => {
     })
   })
 
-  describe('dev URL helpers', () => {
+  describe('ScreenCI environment URL helpers', () => {
+    it('should default to production backend and frontend URLs', async () => {
+      const { getDevBackendUrl, getDevFrontendUrl } = await import('./cli')
+
+      expect(getDevBackendUrl()).toBe('https://api.screenci.com')
+      expect(getDevFrontendUrl()).toBe('https://app.screenci.com')
+    })
+
     it('should use DEV_BACKEND_PORT for local backend uploads', async () => {
+      process.env.SCREENCI_ENVIRONMENT = 'local'
       process.env.DEV_BACKEND_PORT = '8787'
 
       const { getDevBackendUrl } = await import('./cli')
@@ -2435,11 +2443,21 @@ describe('CLI', () => {
     })
 
     it('should use DEV_FRONTEND_PORT for local frontend auth and links', async () => {
+      process.env.SCREENCI_ENVIRONMENT = 'local'
       process.env.DEV_FRONTEND_PORT = '5173'
 
       const { getDevFrontendUrl } = await import('./cli')
 
       expect(getDevFrontendUrl()).toBe('http://localhost:5173')
+    })
+
+    it('should use dev hosted URLs when SCREENCI_ENVIRONMENT=dev', async () => {
+      process.env.SCREENCI_ENVIRONMENT = 'dev'
+
+      const { getDevBackendUrl, getDevFrontendUrl } = await import('./cli')
+
+      expect(getDevBackendUrl()).toBe('https://dev.api.screenci.com')
+      expect(getDevFrontendUrl()).toBe('https://dev.app.screenci.com')
     })
 
     it('should open browser via cmd start on Windows during auth flow', async () => {
@@ -2679,6 +2697,43 @@ describe('CLI', () => {
         })
       )
       expect(mockConfirm).not.toHaveBeenCalled()
+    })
+
+    it('uses the dev hosted login URL with SCREENCI_ENVIRONMENT=dev', async () => {
+      process.argv = ['node', 'cli.js', 'login', '--open']
+      process.env.SCREENCI_ENVIRONMENT = 'dev'
+      mockCreateHttpServer.mockImplementation(
+        (handler: (req: unknown, res: unknown) => void) => {
+          const server = {
+            listen: vi.fn((_port: number, _host: string, cb: () => void) => {
+              cb()
+              const req = { url: '/callback?secret=auth-secret-123' }
+              const res = { writeHead: vi.fn(), end: vi.fn() }
+              handler(req, res)
+            }),
+            close: vi.fn(),
+            address: vi.fn().mockReturnValue({ port: 12345 }),
+            on: vi.fn(),
+          }
+          return server
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        expect.stringMatching(/open|xdg-open/),
+        [
+          expect.stringContaining(
+            'https://dev.app.screenci.com/cli-auth?callback='
+          ),
+        ],
+        expect.objectContaining({
+          detached: true,
+          stdio: 'ignore',
+        })
+      )
     })
 
     it('saves the secret to project .env when envFile is not configured', async () => {

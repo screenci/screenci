@@ -45,7 +45,14 @@ const SCREENCI_MOCK_RECORD_DOCS_URL =
   'https://screenci.com/docs/reference/cli/#--mock-record'
 const SCREENCI_LOGIN_DOCS_URL =
   'https://screenci.com/docs/reference/cli/#screenci-login'
-const SCREENCI_SECRETS_URL = 'https://app.screenci.com/secrets'
+const SCREENCI_ENVIRONMENT_VARIABLE = 'SCREENCI_ENVIRONMENT'
+const SCREENCI_ENVIRONMENT_OPTION_VALUES = ['local', 'dev', 'prod'] as const
+const SCREENCI_PRODUCTION_BACKEND_URL = 'https://api.screenci.com'
+const SCREENCI_PRODUCTION_FRONTEND_URL = 'https://app.screenci.com'
+const SCREENCI_DEVELOPMENT_BACKEND_URL = 'https://dev.api.screenci.com'
+const SCREENCI_DEVELOPMENT_FRONTEND_URL = 'https://dev.app.screenci.com'
+
+type ScreenCIEnvironment = (typeof SCREENCI_ENVIRONMENT_OPTION_VALUES)[number]
 
 type ProjectInfoVideo = {
   name: string
@@ -73,6 +80,29 @@ type PlaywrightListReport = {
     message?: string
     snippet?: string
   }>
+}
+
+function parseScreenCIEnvironment(
+  value: string | undefined
+): ScreenCIEnvironment | undefined {
+  if (value === undefined) return undefined
+
+  if (
+    SCREENCI_ENVIRONMENT_OPTION_VALUES.includes(value as ScreenCIEnvironment)
+  ) {
+    return value as ScreenCIEnvironment
+  }
+
+  throw new Error(
+    `Invalid ${SCREENCI_ENVIRONMENT_VARIABLE} "${value}". Expected one of: ${SCREENCI_ENVIRONMENT_OPTION_VALUES.join(', ')}`
+  )
+}
+
+function getScreenCIEnvironment(): ScreenCIEnvironment {
+  const parsed = parseScreenCIEnvironment(
+    process.env[SCREENCI_ENVIRONMENT_VARIABLE]
+  )
+  return parsed ?? 'prod'
 }
 
 export function collectPlaywrightListTitles(
@@ -1468,17 +1498,37 @@ async function countCompletedRecordings(screenciDir: string): Promise<number> {
 }
 
 export function getDevBackendUrl(): string {
-  const devBackendPort = process.env.DEV_BACKEND_PORT
-  return devBackendPort
-    ? `http://localhost:${devBackendPort}`
-    : 'https://api.screenci.com'
+  switch (getScreenCIEnvironment()) {
+    case 'local': {
+      const devBackendPort = process.env.DEV_BACKEND_PORT
+      return devBackendPort
+        ? `http://localhost:${devBackendPort}`
+        : 'http://localhost:8787'
+    }
+    case 'dev':
+      return SCREENCI_DEVELOPMENT_BACKEND_URL
+    case 'prod':
+      return SCREENCI_PRODUCTION_BACKEND_URL
+  }
 }
 
 export function getDevFrontendUrl(): string {
-  const devFrontendPort = process.env.DEV_FRONTEND_PORT
-  return devFrontendPort
-    ? `http://localhost:${devFrontendPort}`
-    : 'https://app.screenci.com'
+  switch (getScreenCIEnvironment()) {
+    case 'local': {
+      const devFrontendPort = process.env.DEV_FRONTEND_PORT
+      return devFrontendPort
+        ? `http://localhost:${devFrontendPort}`
+        : 'http://localhost:5173'
+    }
+    case 'dev':
+      return SCREENCI_DEVELOPMENT_FRONTEND_URL
+    case 'prod':
+      return SCREENCI_PRODUCTION_FRONTEND_URL
+  }
+}
+
+function getScreenCISecretsUrl(): string {
+  return `${getDevFrontendUrl()}/secrets`
 }
 
 async function writeGitHubProjectOutput(projectUrl: string): Promise<void> {
@@ -2051,7 +2101,7 @@ export async function ensureScreenciSecret(
     const msg = err instanceof Error ? err.message : String(err)
     logger.warn(`Authentication failed: ${msg}`)
     logger.info(
-      `You can add SCREENCI_SECRET manually to .env later. Get it from ${SCREENCI_SECRETS_URL}.`
+      `You can add SCREENCI_SECRET manually to .env later. Get it from ${getScreenCISecretsUrl()}.`
     )
     logScreenCISecretGuide()
     return undefined
@@ -2080,7 +2130,7 @@ async function runLogin(configPath?: string, open = false): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err)
     logger.warn(`Authentication failed: ${msg}`)
     logger.info(
-      `You can run ${pc.cyan(getSuggestedScreenciCommand('login'))} again or add SCREENCI_SECRET manually to ${savePath}. Get it from ${SCREENCI_SECRETS_URL}.`
+      `You can run ${pc.cyan(getSuggestedScreenciCommand('login'))} again or add SCREENCI_SECRET manually to ${savePath}. Get it from ${getScreenCISecretsUrl()}.`
     )
     logScreenCISecretGuide()
   }

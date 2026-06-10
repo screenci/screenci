@@ -1246,11 +1246,6 @@ async function executeScrollAndZoomPlan(params: {
     await sleep(duration)
   }
 
-  const remainingMs = Math.max(0, plannedEndMs - Date.now())
-  if (remainingMs > 0) {
-    await sleep(remainingMs)
-  }
-
   return {
     ...(scrolled
       ? {

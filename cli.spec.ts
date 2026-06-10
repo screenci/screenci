@@ -2644,7 +2644,7 @@ describe('CLI', () => {
       expect(mockConfirm).toHaveBeenCalledWith(
         expect.objectContaining({
           message: 'Open this link in your browser now?',
-          default: false,
+          default: true,
         }),
         expect.objectContaining({
           signal: expect.any(AbortSignal),

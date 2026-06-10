@@ -1940,7 +1940,7 @@ async function promptToOpenLoginUrlWithSignal(
   return await confirm(
     {
       message: 'Open this link in your browser now?',
-      default: false,
+      default: true,
     },
     { signal }
   )

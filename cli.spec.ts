@@ -454,8 +454,11 @@ describe('CLI', () => {
       await main()
 
       expect(mockSpawn).toHaveBeenCalledWith(
-        'playwright',
-        expect.arrayContaining(['test']),
+        process.execPath,
+        expect.arrayContaining([
+          expect.stringContaining('@playwright/test/cli'),
+          'test',
+        ]),
         expect.objectContaining({
           env: expect.objectContaining({
             SCREENCI_RECORDING: 'true',
@@ -2397,7 +2400,7 @@ describe('CLI', () => {
       expect(loggerErrorSpy).toHaveBeenCalledWith('Unknown command: retry')
     })
 
-    it('should launch Playwright through cmd.exe on Windows', async () => {
+    it('should launch Playwright through node on Windows', async () => {
       process.argv = ['node', 'cli.js', 'test']
       const platformSpy = vi
         .spyOn(process, 'platform', 'get')
@@ -2412,11 +2415,13 @@ describe('CLI', () => {
         await main()
 
         expect(mockSpawn).toHaveBeenCalledWith(
-          'cmd.exe',
-          expect.arrayContaining(['/d', '/s', '/c']),
+          process.execPath,
+          expect.arrayContaining([
+            expect.stringContaining('@playwright/test/cli'),
+            'test',
+          ]),
           expect.objectContaining({
             stdio: 'inherit',
-            windowsVerbatimArguments: true,
           })
         )
       } finally {

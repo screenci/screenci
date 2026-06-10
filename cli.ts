@@ -11,6 +11,7 @@ import {
 } from 'fs'
 import { createHash } from 'crypto'
 import { createServer } from 'http'
+import { createRequire } from 'module'
 import type { AddressInfo } from 'net'
 import { appendFile, readdir, readFile, stat, writeFile } from 'fs/promises'
 import { delimiter, dirname, relative as pathRelative, resolve } from 'path'
@@ -51,6 +52,7 @@ const SCREENCI_PRODUCTION_BACKEND_URL = 'https://api.screenci.com'
 const SCREENCI_PRODUCTION_FRONTEND_URL = 'https://app.screenci.com'
 const SCREENCI_DEVELOPMENT_BACKEND_URL = 'https://dev.api.screenci.com'
 const SCREENCI_DEVELOPMENT_FRONTEND_URL = 'https://dev.app.screenci.com'
+const require = createRequire(import.meta.url)
 
 type ScreenCIEnvironment = (typeof SCREENCI_ENVIRONMENT_OPTION_VALUES)[number]
 
@@ -175,7 +177,7 @@ async function collectDiscoveredTestTitles(
     '--list',
     '--reporter=json',
   ]
-  const spawnSpec = resolveSpawnSpec('playwright', listArgs)
+  const spawnSpec = resolvePlaywrightSpawnSpec(listArgs, dirname(configPath))
 
   return await new Promise<string[]>((resolve, reject) => {
     const child = spawn(spawnSpec.command, spawnSpec.args, {
@@ -826,6 +828,25 @@ function resolveWindowsCmdShim(cmd: string): string {
   }
 
   return shimName
+}
+
+function resolvePlaywrightSpawnSpec(
+  args: string[],
+  searchFrom: string
+): {
+  command: string
+  args: string[]
+  shell?: boolean
+  windowsVerbatimArguments?: boolean
+} {
+  const cliEntrypoint = require.resolve('@playwright/test/cli', {
+    paths: [searchFrom],
+  })
+
+  return {
+    command: process.execPath,
+    args: [cliEntrypoint, ...args],
+  }
 }
 
 function forwardChildSignals(
@@ -2591,7 +2612,10 @@ async function run(
 
   const playwrightArgs = ['test', '--config', configPath, ...additionalArgs]
 
-  const spawnSpec = resolveSpawnSpec('playwright', playwrightArgs)
+  const spawnSpec = resolvePlaywrightSpawnSpec(
+    playwrightArgs,
+    dirname(configPath)
+  )
   const child = spawn(spawnSpec.command, spawnSpec.args, {
     stdio: 'inherit',
     ...(process.platform !== 'win32' ? { detached: true } : {}),

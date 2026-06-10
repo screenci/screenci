@@ -888,7 +888,7 @@ describe('changeFocus', () => {
     const result = await promise
 
     expect((result.scroll?.endMs ?? 0) - (result.scroll?.startMs ?? 0)).toBe(
-      1136
+      1200
     )
   })
 
@@ -932,8 +932,8 @@ describe('changeFocus', () => {
 
     expect(result?.mouse?.startMs).toBe(result?.scroll?.startMs)
     expect(result?.mouse?.startMs).toBe(result?.zoom?.startMs)
-    expect(result?.mouse?.endMs).toBeGreaterThan(result?.scroll?.endMs ?? 0)
-    expect(result?.mouse?.endMs).toBeGreaterThan(result?.zoom?.endMs ?? 0)
+    expect(result?.mouse?.endMs).toBe(result?.scroll?.endMs)
+    expect(result?.mouse?.endMs).toBe(result?.zoom?.endMs)
     expect(result?.mouse?.easing).toBe('linear')
     expect(result?.scroll?.easing).toBe('linear')
     expect(result?.zoom?.easing).toBe('linear')

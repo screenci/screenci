@@ -142,6 +142,30 @@ describe('mouse helpers', () => {
     expect(result.endMs).toBeGreaterThanOrEqual(result.startMs)
   })
 
+  it('records the planned mouse duration even when the real move is slow', async () => {
+    const page = {}
+    const mouseMoveInternal = vi.fn().mockImplementation(
+      async () =>
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 20)
+        })
+    )
+    setOriginalMouseMove(page, mouseMoveInternal)
+
+    const promise = performMouseMove({
+      page,
+      targetX: 30,
+      targetY: 40,
+      duration: 100,
+      easing: 'linear',
+    })
+
+    await vi.runAllTimersAsync()
+    const result = await promise
+
+    expect(result.endMs - result.startMs).toBe(100)
+  })
+
   it('performs instant mouse movement', async () => {
     const page = {}
     const mouseMoveInternal = vi.fn().mockResolvedValue(undefined)

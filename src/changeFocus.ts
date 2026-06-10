@@ -1117,6 +1117,7 @@ async function executeScrollAndZoomPlan(params: {
   if (!scrolled && !zoomed) return undefined
 
   const startMs = Date.now()
+  const plannedEndMs = startMs + duration
 
   if (scrolled) {
     await locator.evaluate(
@@ -1245,14 +1246,17 @@ async function executeScrollAndZoomPlan(params: {
     await sleep(duration)
   }
 
-  const endMs = Date.now()
+  const remainingMs = Math.max(0, plannedEndMs - Date.now())
+  if (remainingMs > 0) {
+    await sleep(remainingMs)
+  }
 
   return {
     ...(scrolled
       ? {
           scroll: {
             startMs,
-            endMs,
+            endMs: plannedEndMs,
             ...(duration > 0 ? { easing } : {}),
           },
         }
@@ -1261,7 +1265,7 @@ async function executeScrollAndZoomPlan(params: {
       ? {
           zoom: {
             startMs,
-            endMs,
+            endMs: plannedEndMs,
             ...(duration > 0 ? { easing } : {}),
           },
         }

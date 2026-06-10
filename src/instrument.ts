@@ -427,24 +427,22 @@ async function performAction(
         defaultDuration: DEFAULT_CLICK_MOUSE_MOVE_DURATION,
         context: 'postClickMove',
       })
-      const startMs = Date.now()
-      await performMouseMove({
+      const moveResult = await performMouseMove({
         page,
         targetX,
         targetY,
         duration,
         easing,
       })
-      const endMs = Date.now()
       innerEvents.push({
         type: 'focusChange',
         x: targetX,
         y: targetY,
-        startMs,
-        endMs,
+        startMs: moveResult.startMs,
+        endMs: moveResult.endMs,
         mouse: {
-          startMs,
-          endMs,
+          startMs: moveResult.startMs,
+          endMs: moveResult.endMs,
           ...(duration > 0 ? { easing } : {}),
         },
       })
@@ -1528,8 +1526,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
       context: 'page.mouse.move',
     })
     const easing = options?.easing ?? 'ease-in-out'
-    const startMs = Date.now()
-    await performMouseMove({
+    const moveResult = await performMouseMove({
       page,
       targetX: x,
       targetY: y,
@@ -1538,13 +1535,13 @@ export async function instrumentPage(page: Page): Promise<Page> {
     })
     const moveEvent: FocusChangeEvent = {
       type: 'focusChange',
-      startMs,
-      endMs: Date.now(),
+      startMs: moveResult.startMs,
+      endMs: moveResult.endMs,
       x,
       y,
       mouse: {
-        startMs,
-        endMs: Date.now(),
+        startMs: moveResult.startMs,
+        endMs: moveResult.endMs,
         ...(duration > 0 ? { easing } : {}),
       },
     }
@@ -1554,7 +1551,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
       // Auto-show cursor when moving after a typing auto-hide
       if (!isMouseVisible(page)) {
         setMouseVisible(page, true)
-        const showMs = startMs
+        const showMs = moveResult.startMs
         const showEvent: MouseShowEvent = {
           type: 'mouseShow',
           startMs: showMs,

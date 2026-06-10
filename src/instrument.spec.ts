@@ -612,12 +612,9 @@ describe('instrumentLocator', () => {
       startMs: expect.any(Number),
       endMs: expect.any(Number),
     })
-    expect(
-      focusChange?.mouse?.endMs - focusChange?.mouse?.startMs
-    ).toBeGreaterThanOrEqual(DEFAULT_CLICK_MOUSE_MOVE_DURATION * 0.9)
-    expect(
-      focusChange?.mouse?.endMs - focusChange?.mouse?.startMs
-    ).toBeLessThanOrEqual(DEFAULT_CLICK_MOUSE_MOVE_DURATION)
+    expect(focusChange?.mouse?.endMs - focusChange?.mouse?.startMs).toBe(
+      DEFAULT_CLICK_MOUSE_MOVE_DURATION
+    )
   })
 
   it('defaults selectOption to noWaitAfter true', async () => {
@@ -665,12 +662,9 @@ describe('instrumentLocator', () => {
       startMs: expect.any(Number),
       endMs: expect.any(Number),
     })
-    expect(
-      focusChange?.mouse?.endMs - focusChange?.mouse?.startMs
-    ).toBeGreaterThanOrEqual(DEFAULT_CLICK_MOUSE_MOVE_DURATION * 0.9)
-    expect(
-      focusChange?.mouse?.endMs - focusChange?.mouse?.startMs
-    ).toBeLessThanOrEqual(DEFAULT_CLICK_MOUSE_MOVE_DURATION)
+    expect(focusChange?.mouse?.endMs - focusChange?.mouse?.startMs).toBe(
+      DEFAULT_CLICK_MOUSE_MOVE_DURATION
+    )
   })
 
   it('records fill clicks at the element center by default', async () => {

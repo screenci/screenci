@@ -345,6 +345,7 @@ export async function performMouseMove(options: {
   })
   const startPos = getMousePosition(page) ?? { x: 0, y: 0 }
   const startMs = Date.now()
+  const plannedEndMs = startMs + duration
 
   if (duration > 0) {
     const steps = Math.max(1, Math.floor(duration / CURSOR_FRAME_INTERVAL_MS))
@@ -357,7 +358,9 @@ export async function performMouseMove(options: {
       const y = startPos.y + easedT * (targetY - startPos.y)
       await mouseMoveInternal(x, y)
       if (i < steps) {
-        await new Promise<void>((resolve) => setTimeout(resolve, stepMs))
+        const elapsedMs = Date.now() - startMs
+        const remainingMs = Math.max(0, (i + 1) * stepMs - elapsedMs)
+        await new Promise<void>((resolve) => setTimeout(resolve, remainingMs))
       }
     }
   } else {
@@ -366,7 +369,7 @@ export async function performMouseMove(options: {
 
   setMousePosition(page, { x: targetX, y: targetY })
 
-  return { startMs, endMs: Date.now() }
+  return { startMs, endMs: plannedEndMs }
 }
 
 export function buildMouseDownEvent(options: {

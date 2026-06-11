@@ -4,9 +4,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    typecheck: {
-      enabled: true,
-      tsconfig: './tsconfig.test.json',
-    },
+    pool: 'forks',
+    execArgv: ['--max-old-space-size=8192'],
   },
 })

@@ -10,13 +10,10 @@ import {
   rmSync,
 } from 'fs'
 import { createHash } from 'crypto'
-import { createServer } from 'http'
 import { createRequire } from 'module'
-import type { AddressInfo } from 'net'
 import { appendFile, readdir, readFile, stat, writeFile } from 'fs/promises'
 import { delimiter, dirname, relative as pathRelative, resolve } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
-import { confirm } from '@inquirer/prompts'
 import { Command, CommanderError } from 'commander'
 import pc from 'picocolors'
 import { logger } from './src/logger.js'
@@ -44,14 +41,16 @@ import {
 
 const SCREENCI_MOCK_RECORD_DOCS_URL =
   'https://screenci.com/docs/reference/cli/#--mock-record'
-const SCREENCI_LOGIN_DOCS_URL =
-  'https://screenci.com/docs/reference/cli/#screenci-login'
+const SCREENCI_RECORD_DOCS_URL =
+  'https://screenci.com/docs/reference/cli/#screenci-record'
 const SCREENCI_ENVIRONMENT_VARIABLE = 'SCREENCI_ENVIRONMENT'
 const SCREENCI_ENVIRONMENT_OPTION_VALUES = ['local', 'dev', 'prod'] as const
 const SCREENCI_PRODUCTION_BACKEND_URL = 'https://api.screenci.com'
 const SCREENCI_PRODUCTION_FRONTEND_URL = 'https://app.screenci.com'
 const SCREENCI_DEVELOPMENT_BACKEND_URL = 'https://dev.api.screenci.com'
 const SCREENCI_DEVELOPMENT_FRONTEND_URL = 'https://dev.app.screenci.com'
+const SCREENCI_LINK_SESSION_FILE = 'link-session.json'
+const SCREENCI_LINK_SESSION_POLL_INTERVAL_MS = 2_000
 const require = createRequire(import.meta.url)
 
 type ScreenCIEnvironment = (typeof SCREENCI_ENVIRONMENT_OPTION_VALUES)[number]
@@ -82,6 +81,24 @@ type PlaywrightListReport = {
     message?: string
     snippet?: string
   }>
+}
+
+type LinkSessionStatus =
+  | 'pending'
+  | 'completed'
+  | 'consumed'
+  | 'expired'
+  | 'invalid'
+
+type PersistedLinkSessionSpec = {
+  token: string
+  appUrl: string
+  pollUrl: string
+  createdAt: string
+  expiresAt: string
+  environment: ScreenCIEnvironment
+  resolvedConfigPath?: string
+  envFilePath: string
 }
 
 function parseScreenCIEnvironment(
@@ -154,10 +171,10 @@ function extractPlaywrightDiscoveryError(output: string): string | null {
 }
 
 function logScreenCISecretGuide(): void {
-  logger.info(`Guide: ${pc.cyan(SCREENCI_LOGIN_DOCS_URL)}`)
+  logger.info(`Guide: ${pc.cyan(SCREENCI_RECORD_DOCS_URL)}`)
 }
 
-function getSuggestedScreenciCommand(command: 'login' | 'record'): string {
+function getSuggestedScreenciCommand(command: 'record' | 'test'): string {
   const pm = determinePackageManager()
   if (pm === 'pnpm') return `pnpm exec screenci ${command}`
   if (pm === 'yarn') return `yarn screenci ${command}`
@@ -929,9 +946,10 @@ function forwardChildSignals(
   }
 }
 
-function clearDirectory(dir: string): void {
+function clearRecordingDirectories(dir: string): void {
   mkdirSync(dir, { recursive: true })
   for (const entry of readdirSync(dir)) {
+    if (entry === SCREENCI_LINK_SESSION_FILE) continue
     rmSync(resolve(dir, entry), { recursive: true, force: true })
   }
 }
@@ -1548,6 +1566,10 @@ export function getDevFrontendUrl(): string {
   }
 }
 
+export function getCliLinkSessionApiUrl(): string {
+  return getDevFrontendUrl()
+}
+
 function getScreenCISecretsUrl(): string {
   return `${getDevFrontendUrl()}/secrets`
 }
@@ -1867,11 +1889,13 @@ async function requireScreenCISecret(configPath?: string): Promise<{
 }> {
   const { resolvedConfigPath, screenciConfig } =
     await loadScreenCIConfigAndEnv(configPath)
-  const secret = process.env.SCREENCI_SECRET
+  const secret =
+    process.env.SCREENCI_SECRET ??
+    (await ensureScreenciSecret(resolvedConfigPath))
   if (!secret) {
     const envFilePath = await resolveProjectEnvFilePath(resolvedConfigPath)
     logger.error(
-      `No SCREENCI_SECRET configured. Run ${pc.cyan(getSuggestedScreenciCommand('login'))} or add SCREENCI_SECRET manually to ${envFilePath} by following the guide at ${pc.cyan(SCREENCI_LOGIN_DOCS_URL)}.`
+      `No SCREENCI_SECRET configured. Rerun ${pc.cyan(getSuggestedScreenciCommand('record'))} or add SCREENCI_SECRET manually to ${envFilePath} by following the guide at ${pc.cyan(SCREENCI_RECORD_DOCS_URL)}.`
     )
     process.exit(1)
   }
@@ -1937,36 +1961,6 @@ async function updateVideoVisibility(
   logger.info(`${isPublic ? 'Made public' : 'Made private'}: ${videoId}`)
 }
 
-function openBrowser(url: string): void {
-  try {
-    if (process.platform === 'win32') {
-      spawn('cmd', ['/c', 'start', '', url], {
-        detached: true,
-        stdio: 'ignore',
-        shell: true,
-      }).unref()
-      return
-    }
-
-    const cmd = process.platform === 'darwin' ? 'open' : 'xdg-open'
-    spawn(cmd, [url], { detached: true, stdio: 'ignore' }).unref()
-  } catch (err) {
-    logger.warn('Failed to open browser automatically:', err)
-  }
-}
-
-async function promptToOpenLoginUrlWithSignal(
-  signal: AbortSignal
-): Promise<boolean> {
-  return await confirm(
-    {
-      message: 'Open this link in your browser now?',
-      default: true,
-    },
-    { signal }
-  )
-}
-
 async function persistScreenCISecret(
   envFilePath: string,
   secret: string
@@ -2001,103 +1995,116 @@ async function persistScreenCISecret(
   await writeFile(envFilePath, `${nextLine}\n`)
 }
 
-async function performBrowserLogin(
-  appUrl: string,
-  options?: { openBrowserImmediately?: boolean }
-): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    let settled = false
-    const promptAbort = new AbortController()
+function getLinkSessionFilePath(projectDir: string): string {
+  return resolve(projectDir, '.screenci', SCREENCI_LINK_SESSION_FILE)
+}
 
-    const finish = (callback: () => void) => {
-      if (settled) return
-      settled = true
-      promptAbort.abort()
-      callback()
+async function readPersistedLinkSessionSpec(
+  specPath: string
+): Promise<PersistedLinkSessionSpec | null> {
+  try {
+    const raw = await readFile(specPath, 'utf-8')
+    return JSON.parse(raw) as PersistedLinkSessionSpec
+  } catch (error) {
+    if (!isMissingFileError(error)) {
+      logger.warn(`Ignoring invalid stored link session at ${specPath}.`)
+      rmSync(specPath, { force: true })
+    }
+    return null
+  }
+}
+
+async function writePersistedLinkSessionSpec(
+  specPath: string,
+  spec: PersistedLinkSessionSpec
+): Promise<void> {
+  mkdirSync(dirname(specPath), { recursive: true })
+  await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`)
+}
+
+function deletePersistedLinkSessionSpec(specPath: string): void {
+  rmSync(specPath, { force: true })
+}
+
+function isStoredLinkSessionReusable(
+  spec: PersistedLinkSessionSpec,
+  options: {
+    environment: ScreenCIEnvironment
+    resolvedConfigPath?: string
+    envFilePath: string
+  }
+): boolean {
+  return (
+    spec.environment === options.environment &&
+    spec.envFilePath === options.envFilePath &&
+    spec.resolvedConfigPath === options.resolvedConfigPath &&
+    spec.expiresAt > new Date().toISOString()
+  )
+}
+
+async function createLinkSessionSpec(options: {
+  apiUrl: string
+  appUrl: string
+  environment: ScreenCIEnvironment
+  resolvedConfigPath?: string
+  envFilePath: string
+}): Promise<PersistedLinkSessionSpec> {
+  const response = await fetch(`${options.apiUrl}/cli-link/session`, {
+    method: 'POST',
+  })
+
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(`Failed to create link session: ${response.status} ${text}`)
+  }
+
+  const body = (await response.json()) as {
+    token: string
+    createdAt: string
+    expiresAt: string
+  }
+
+  return {
+    token: body.token,
+    appUrl: `${options.appUrl}/cli-auth?session=${encodeURIComponent(body.token)}`,
+    pollUrl: `${options.apiUrl}/cli-link/session?token=${encodeURIComponent(body.token)}`,
+    createdAt: body.createdAt,
+    expiresAt: body.expiresAt,
+    environment: options.environment,
+    ...(options.resolvedConfigPath
+      ? { resolvedConfigPath: options.resolvedConfigPath }
+      : {}),
+    envFilePath: options.envFilePath,
+  }
+}
+
+async function pollLinkSession(
+  spec: PersistedLinkSessionSpec
+): Promise<{ status: LinkSessionStatus; secret?: string }> {
+  for (;;) {
+    const response = await fetch(spec.pollUrl)
+    const body = (await response.json()) as {
+      status?: LinkSessionStatus
+      secret?: string
+    }
+    const status = body.status ?? 'invalid'
+
+    if (status === 'completed' && body.secret) {
+      return { status, secret: body.secret }
     }
 
-    const server = createServer((req, res) => {
-      try {
-        const reqUrl = new URL(req.url ?? '/', 'http://localhost')
-        const secret = reqUrl.searchParams.get('secret')
+    if (status === 'expired' || status === 'consumed' || status === 'invalid') {
+      return { status }
+    }
 
-        if (secret) {
-          res.writeHead(200, { 'Content-Type': 'text/html' })
-          res.end(
-            '<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p style="font-size:1.2rem">Setup complete! You can close this tab.</p></body></html>'
-          )
-          server.close()
-          finish(() => resolve(secret))
-        } else {
-          res.writeHead(400, { 'Content-Type': 'text/html' })
-          res.end(
-            '<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><p style="color:red;font-size:1.2rem">Authentication failed: no secret received. Please try again.</p></body></html>'
-          )
-          server.close()
-          finish(() => reject(new Error('No secret received in callback')))
-        }
-      } catch (err) {
-        res.writeHead(500)
-        res.end('Internal error')
-        server.close()
-        finish(() => reject(err))
-      }
-    })
+    if (new Date().toISOString() >= spec.expiresAt) {
+      return { status: 'expired' }
+    }
 
-    server.listen(0, '127.0.0.1', () => {
-      const port = (server.address() as AddressInfo).port
-      const callbackUrl = `http://localhost:${port}/callback`
-      const loginUrl = `${appUrl}/cli-auth?callback=${encodeURIComponent(callbackUrl)}`
-
-      logger.info(`Open this link to log in to ScreenCI:\n${loginUrl}\n`)
-      void (async () => {
-        if (options?.openBrowserImmediately) {
-          openBrowser(loginUrl)
-          return
-        }
-
-        if (settled) return
-
-        const shouldOpen = await promptToOpenLoginUrlWithSignal(
-          promptAbort.signal
-        )
-        if (settled) return
-
-        if (shouldOpen) {
-          openBrowser(loginUrl)
-          return
-        }
-
-        logger.info(
-          'Browser not opened. Keep this command running and open the link manually to continue.'
-        )
-      })().catch((err) => {
-        if (settled) return
-        if (
-          err instanceof Error &&
-          (err.name === 'AbortPromptError' ||
-            err.name === 'AbortError' ||
-            err.message === 'Prompt was canceled')
-        ) {
-          return
-        }
-        server.close()
-        finish(() => reject(err))
-      })
-    })
-
-    const timeout = setTimeout(
-      () => {
-        server.close()
-        finish(() =>
-          reject(new Error('Authentication timed out after 15 minutes'))
-        )
-      },
-      15 * 60 * 1000
+    await new Promise((resolveDelay) =>
+      setTimeout(resolveDelay, SCREENCI_LINK_SESSION_POLL_INTERVAL_MS)
     )
-
-    server.on('close', () => clearTimeout(timeout))
-  })
+  }
 }
 
 export async function ensureScreenciSecret(
@@ -2106,54 +2113,62 @@ export async function ensureScreenciSecret(
   const existingSecret = process.env.SCREENCI_SECRET
   if (existingSecret) return existingSecret
 
-  const appUrl = getDevFrontendUrl()
   try {
-    const secret = await performBrowserLogin(appUrl, {
-      openBrowserImmediately: true,
-    })
-    process.env.SCREENCI_SECRET = secret
-    const savePath = resolvedConfigPath
+    const environment = getScreenCIEnvironment()
+    const apiUrl = getCliLinkSessionApiUrl()
+    const appUrl = getDevFrontendUrl()
+    const envFilePath = resolvedConfigPath
       ? await resolveProjectEnvFilePath(resolvedConfigPath)
       : resolve(process.cwd(), '.env')
-    await persistScreenCISecret(savePath, secret)
-    logger.info(`Successfully saved SCREENCI_SECRET to ${savePath}`)
-    return secret
+    const projectDir = resolvedConfigPath
+      ? dirname(resolvedConfigPath)
+      : process.cwd()
+    const specPath = getLinkSessionFilePath(projectDir)
+    const linkSessionContext = {
+      environment,
+      envFilePath,
+      ...(resolvedConfigPath ? { resolvedConfigPath } : {}),
+    }
+
+    for (;;) {
+      const storedSpec = await readPersistedLinkSessionSpec(specPath)
+      const spec =
+        storedSpec &&
+        isStoredLinkSessionReusable(storedSpec, linkSessionContext)
+          ? storedSpec
+          : await createLinkSessionSpec({
+              apiUrl,
+              appUrl,
+              ...linkSessionContext,
+            })
+
+      if (spec !== storedSpec) {
+        await writePersistedLinkSessionSpec(specPath, spec)
+      }
+
+      logger.info(
+        `Open this link to sign in and connect the CLI:\n${pc.cyan(spec.appUrl)}\n`
+      )
+
+      const result = await pollLinkSession(spec)
+      if (result.status === 'completed' && result.secret) {
+        process.env.SCREENCI_SECRET = result.secret
+        await persistScreenCISecret(envFilePath, result.secret)
+        deletePersistedLinkSessionSpec(specPath)
+        logger.info(`Successfully saved SCREENCI_SECRET to ${envFilePath}`)
+        return result.secret
+      }
+
+      deletePersistedLinkSessionSpec(specPath)
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     logger.warn(`Authentication failed: ${msg}`)
     logger.info(
-      `You can add SCREENCI_SECRET manually to .env later. Get it from ${getScreenCISecretsUrl()}.`
+      `You can add SCREENCI_SECRET manually to ${resolvedConfigPath ? await resolveProjectEnvFilePath(resolvedConfigPath) : '.env'} later. Get it from ${getScreenCISecretsUrl()}.`
     )
     logScreenCISecretGuide()
     return undefined
-  }
-}
-
-async function runLogin(configPath?: string, open = false): Promise<void> {
-  const { resolvedConfigPath } = await loadScreenCIConfigAndEnv(configPath)
-
-  if (process.env.SCREENCI_SECRET) {
-    logger.info('SCREENCI_SECRET is already configured.')
-    return
-  }
-
-  const savePath = await resolveProjectEnvFilePath(resolvedConfigPath)
-  const appUrl = getDevFrontendUrl()
-
-  try {
-    const secret = await performBrowserLogin(appUrl, {
-      openBrowserImmediately: open,
-    })
-    process.env.SCREENCI_SECRET = secret
-    await persistScreenCISecret(savePath, secret)
-    logger.info(`Successfully saved SCREENCI_SECRET to ${savePath}`)
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    logger.warn(`Authentication failed: ${msg}`)
-    logger.info(
-      `You can run ${pc.cyan(getSuggestedScreenciCommand('login'))} again or add SCREENCI_SECRET manually to ${savePath}. Get it from ${getScreenCISecretsUrl()}.`
-    )
-    logScreenCISecretGuide()
   }
 }
 
@@ -2161,7 +2176,7 @@ export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
     logger.error(
-      'Available commands: login, record, test, info, make-public, make-private, init'
+      'Available commands: record, test, info, make-public, make-private, init'
     )
     process.exit(1)
   }
@@ -2170,15 +2185,6 @@ export async function main() {
   const defaultPackageManager = determinePackageManager()
   program.name('screenci')
   program.exitOverride()
-
-  program
-    .command('login')
-    .description('Authenticate and save SCREENCI_SECRET for this project')
-    .option('-c, --config <path>', 'path to screenci.config.ts')
-    .option('--open', 'open the login URL in your browser immediately')
-    .action(async (options: { config?: string; open?: boolean }) => {
-      await runLogin(options.config, options.open === true)
-    })
 
   // record command — playwright args pass through as-is
   program
@@ -2230,7 +2236,7 @@ export async function main() {
             logger.info('All recordings failed.')
           } else if (!secret) {
             logger.info(
-              `No SCREENCI_SECRET configured for uploads. Run ${getSuggestedScreenciCommand('login')} or add it to the project env file.`
+              `No SCREENCI_SECRET configured for uploads. Rerun ${getSuggestedScreenciCommand('record')} or add it to the project env file.`
             )
           } else if (
             playwrightFailure !== null &&
@@ -2589,7 +2595,7 @@ async function run(
     }
     validateArgs(additionalArgs)
     const screenciDir = resolve(dirname(configPath), '.screenci')
-    clearDirectory(screenciDir)
+    clearRecordingDirectories(screenciDir)
   }
 
   const envForChild = { ...process.env }

@@ -8,9 +8,7 @@ If you are creating new videos, remove the starter `videos/example.video.ts` fil
 ## Commands
 
 ```bash
-npx screenci login
 npx screenci record
-npx screenci login -c screenci.config.ts
 npx screenci record -c screenci.config.ts
 ```
 
@@ -23,11 +21,10 @@ npx screenci record -c screenci.config.ts
 
 ## Runtime Behavior
 
-- `screenci login` is the interactive auth/bootstrap step for `SCREENCI_SECRET`.
 - Recording runs with local Playwright.
-- `screenci record` does not open the browser or start login automatically.
+- When `SCREENCI_SECRET` is missing, `screenci record` prints a one-time auth link, waits for browser sign-in, saves the secret, and then continues.
+- Pending auth state is cached in `.screenci/link-session.json`, so rerunning `record` reuses the same link until it expires or completes.
 - Playwright arguments can be passed through after the command.
-- `screenci record` requires `SCREENCI_SECRET` to already be configured.
 - When API configuration and `SCREENCI_SECRET` are available, uploads may run after recording.
 
 ## Recommended Workflow
@@ -35,9 +32,6 @@ npx screenci record -c screenci.config.ts
 ```bash
 # first verify the flow
 npx screenci test
-
-# then authenticate once for this project
-npx screenci login
 
 # then record
 npx screenci record
@@ -49,6 +43,5 @@ Always run `npx screenci test` until it passes before running `npx screenci reco
 
 ```bash
 npx screenci test   # verify selectors, flow, and narration
-npx screenci login  # save SCREENCI_SECRET for this project
 npx screenci record # capture the final recording
 ```

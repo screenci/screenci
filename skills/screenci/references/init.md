@@ -34,7 +34,7 @@ package.json
 - `--yes` accepts the defaults.
 - `--agent <name>` is passed to the selected skills install command.
 - `--verbose` shows more setup output.
-- `login` saves `SCREENCI_SECRET` into the project env file before the first remote upload/render.
+- `record` bootstraps `SCREENCI_SECRET` on first run if it is missing.
 - `record` uses local Playwright.
 
 ## Typical Flow
@@ -42,6 +42,5 @@ package.json
 ```bash
 npm init screenci "My Project" -- --yes
 npx screenci test   # verify the video works
-npx screenci login  # save SCREENCI_SECRET for this project
 npx screenci record # capture the final recording
 ```

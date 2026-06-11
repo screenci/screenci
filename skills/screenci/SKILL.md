@@ -36,9 +36,6 @@ npx screenci test
 # run only some tests with normal Playwright filters
 npx screenci test videos/signup.video.ts --grep "fills billing details"
 
-# authenticate once before remote upload/render
-npx screenci login
-
 # only record after tests pass
 npx screenci record
 ```
@@ -122,9 +119,9 @@ await autoZoom(async () => {
 
 ## Command Notes
 
-- `screenci login` prints the auth URL, optionally opens the browser, and saves `SCREENCI_SECRET` into the configured `envFile` or project `.env`.
 - `screenci record` runs the recording flow with local Playwright.
-- `screenci record` does not open the browser for auth. It requires `SCREENCI_SECRET` to already be configured.
+- When `SCREENCI_SECRET` is missing, `screenci record` prints a one-time auth link, waits for browser sign-in, saves the secret into the configured `envFile` or project `.env`, and then continues.
+- Pending auth state is cached in `.screenci/link-session.json`, so rerunning `record` reuses the same link until it expires or completes.
 - `screenci test <playwright args...>` forwards most Playwright test arguments unchanged, while still using `screenci.config.ts`.
 
 ## Recording Workflow
@@ -151,8 +148,8 @@ await autoZoom(async () => {
    ```
 
 3. Run `npx screenci test` until it passes.
-4. Run `npx screenci login` once before the first remote upload/render, or add `SCREENCI_SECRET` to the project env file manually.
-5. Run `npx screenci record` to produce `.screenci/<video-name>/recording.mp4` and `data.json`.
+4. Run `npx screenci record`. If `SCREENCI_SECRET` is missing, finish the one-time browser sign-in and let the CLI resume automatically.
+5. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` for each recorded video.
 
 ## Specific Tasks
 

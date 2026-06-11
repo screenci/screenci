@@ -887,11 +887,10 @@ function printInitNextSteps(
   logger.info(`  ${pc.cyan(`${commands.screenciRun} test --ui`)}`)
   logger.info('    Tests your video scripts in interactive UI mode.')
   logger.info('')
-  logger.info(`  ${pc.cyan(`${commands.screenciRun} login`)}`)
-  logger.info('    Saves SCREENCI_SECRET for uploads and remote rendering.')
-  logger.info('')
   logger.info(`  ${pc.cyan(`${commands.screenciRun} record`)}`)
-  logger.info('    Records, uploads and renders final videos after login.')
+  logger.info(
+    '    Records locally and pauses for first-time ScreenCI setup if needed.'
+  )
   logger.info('')
   logger.info('We suggest that you begin by typing:')
   logger.info('')

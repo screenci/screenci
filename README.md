@@ -89,13 +89,15 @@ Playwright without starting the final recording and upload path.
 ## Record the final output
 
 ```bash
-npx screenci login
 npx screenci record
 ```
 
-`login` saves `SCREENCI_SECRET` into the project env file. `record` writes local
-artifacts into `.screenci/<video-name>/` and uploads them when that secret is
-configured.
+On the first run without `SCREENCI_SECRET`, `record` prints a one-time ScreenCI
+link, waits for you to finish sign-in in the browser, saves the secret into the
+project env file, and then continues. Pending auth state is cached in
+`.screenci/link-session.json`, so rerunning `record` reuses the same link until
+it expires or completes. Recorded artifacts still live in
+`.screenci/<video-name>/`.
 
 ## Configure
 

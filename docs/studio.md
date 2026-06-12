@@ -9,15 +9,18 @@ There are two ways to use it:
 - **Remix an existing video.** Any video recorded with `createNarration` can
   be remixed in Studio. Your code-specified values are prefilled; override
   them and render a new version server-side.
-- **Opt in from code.** Declare cue keys with `createStudioNarration` and set
-  `renderOptions: STUDIO_RENDER_OPTIONS` so narration and render options are
-  managed entirely on the Studio page.
+- **Opt in from code.** Declare cue keys with `createStudioNarration`, asset
+  keys with `createStudioAssets`, and set
+  `renderOptions: STUDIO_RENDER_OPTIONS` so narration, assets, and render
+  options are managed entirely on the Studio page.
 
 #### You will learn
 
 - [how to remix a video from the web](#remix-a-video)
 - [how to reapply or auto-apply a remix](#reapply-and-auto-apply)
 - [how to manage narration from Studio](#studio-narration-from-code)
+- [how to use uploaded media as narration](#narration-media-from-studio)
+- [how to manage assets from Studio](#studio-assets-from-code)
 - [how to defer render options to Studio](#studio-render-options)
 
 ## Remix a video
@@ -84,6 +87,47 @@ https://app.screenci.com/project/<projectId>/video/<videoId>/studio
 
 After the video has been configured once, subsequent uploads reuse the saved
 Studio configuration and render automatically.
+
+## Narration media from Studio
+
+Any editable narration entry in Studio can use an uploaded media file instead
+of synthesized speech — the web equivalent of `createNarration`'s
+`{ media: './intro.mp4' }` entries. Switch a cue's entry from **Text** to
+**Media**, upload an `.mp4` file, and optionally provide a subtitle used for
+captions.
+
+This works per language, so one language can use an uploaded recording while
+the others keep text-to-speech. Entries whose media file is specified in code
+stay read-only in Studio.
+
+## Studio assets from code
+
+`createStudioAssets` declares asset keys in code while the files and display
+options are configured in Studio:
+
+```ts
+import { createStudioAssets, video } from 'screenci'
+
+const assets = createStudioAssets('intro', 'logo')
+
+video('Product demo', async ({ page }) => {
+  await assets.intro()
+  await page.goto('/dashboard')
+  await assets.logo()
+})
+```
+
+Calling a controller marks the point in the timeline, exactly like
+`createAssets` controllers. The file (`.svg`, `.png`, or `.mp4`), full-screen
+mode, overlay duration for images, and audio level for videos are all set on
+the Studio page. TypeScript knows the declared keys, so `assets.typo` is a
+compile error.
+
+Like studio narration, the first upload of a video using `createStudioAssets`
+is held until every declared asset has a file configured in Studio; the CLI
+prints a direct link. Later uploads reuse the saved configuration. See
+[Assets & overlays](./assets-and-overlays.md) for how assets behave on the
+timeline.
 
 ## Studio render options
 

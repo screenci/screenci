@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { createAssets, setActiveAssetRecorder } from './asset.js'
+import {
+  createAssets,
+  createStudioAssets,
+  setActiveAssetRecorder,
+} from './asset.js'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
 import {
@@ -19,6 +23,7 @@ function createMockRecorder(): IEventRecorder {
     addCueEnd: vi.fn(),
     addVideoCueStart: vi.fn(),
     addAssetStart: vi.fn(),
+    addStudioAssetStart: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),
     addAutoZoomStart: vi.fn(),
@@ -267,5 +272,68 @@ describe('createAssets', () => {
       await expect(assets.logo()).resolves.toBeUndefined()
       expect(recorder.addAssetStart).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('createStudioAssets', () => {
+  let recorder: IEventRecorder
+
+  beforeEach(() => {
+    recorder = createMockRecorder()
+    setActiveAssetRecorder(recorder)
+  })
+
+  afterEach(() => {
+    setActiveAssetRecorder(NOOP_EVENT_RECORDER)
+  })
+
+  it('creates a callable controller for each key', () => {
+    const assets = createStudioAssets('intro', 'logo')
+
+    expect(typeof assets.intro).toBe('function')
+    expect(typeof assets.logo).toBe('function')
+  })
+
+  it('records a studio asset start with the key name', async () => {
+    const assets = createStudioAssets('intro', 'logo')
+
+    await assets.intro()
+    await assets.logo()
+
+    expect(recorder.addStudioAssetStart).toHaveBeenCalledTimes(2)
+    expect(recorder.addStudioAssetStart).toHaveBeenNthCalledWith(1, 'intro')
+    expect(recorder.addStudioAssetStart).toHaveBeenNthCalledWith(2, 'logo')
+    expect(recorder.addAssetStart).not.toHaveBeenCalled()
+  })
+
+  it('resolves immediately', async () => {
+    const assets = createStudioAssets('intro')
+
+    await expect(assets.intro()).resolves.toBeUndefined()
+  })
+
+  it('throws on duplicate keys', () => {
+    expect(() => createStudioAssets('intro', 'intro')).toThrow(
+      'Duplicate asset key "intro" passed to createStudioAssets. Asset keys must be unique.'
+    )
+  })
+
+  it('does not require the asset file to exist locally', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'screenci-studio-asset-'))
+    const assets = createStudioAssets('intro')
+
+    try {
+      await runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({
+          recorder,
+          testFilePath: join(tempDir, 'demo.video.ts'),
+        }),
+        () => assets.intro()
+      )
+
+      expect(recorder.addStudioAssetStart).toHaveBeenCalledWith('intro')
+    } finally {
+      await rm(tempDir, { recursive: true, force: true })
+    }
   })
 })

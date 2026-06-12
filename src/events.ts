@@ -249,6 +249,8 @@ export type VideoCueStartEvent = {
   type: 'videoCueStart'
   timeMs: number
   name: string
+  /** Cue declared via `createStudioNarration` whose Studio entry is a media file. */
+  studio?: true
   /** Single-language API: SHA-256 hash of the pre-recorded asset. */
   assetHash?: string
   /** Single-language API: local file path — present only during recording; stripped from submitted data. */
@@ -289,6 +291,17 @@ export type AssetStartEvent = ImageAssetStartEvent | VideoAssetStartEvent
 export type AssetStartPayload =
   | Omit<ImageAssetStartEvent, 'type' | 'timeMs' | 'name'>
   | Omit<VideoAssetStartEvent, 'type' | 'timeMs' | 'name'>
+
+/**
+ * Asset declared via `createStudioAssets` — the file and display options are
+ * configured in Studio, so the recording only marks the timeline point.
+ */
+export type StudioAssetStartEvent = {
+  type: 'assetStart'
+  timeMs: number
+  name: string
+  studio: true
+}
 
 export type HideStartEvent = {
   type: 'hideStart'
@@ -345,6 +358,7 @@ export type RecordingEvent =
   | CueEndEvent
   | VideoCueStartEvent
   | AssetStartEvent
+  | StudioAssetStartEvent
   | HideStartEvent
   | HideEndEvent
   | SpeedStartEvent
@@ -385,11 +399,13 @@ export type RecordingMetadata = {
   /**
    * Which parts of this recording opted into Studio configuration.
    * `renderOptions` is set when `STUDIO_RENDER_OPTIONS` was used; `narration`
-   * when the recording contains `createStudioNarration` cues.
+   * when the recording contains `createStudioNarration` cues; `assets` when it
+   * contains `createStudioAssets` assets.
    */
   studio?: {
     renderOptions?: boolean
     narration?: boolean
+    assets?: boolean
   }
 }
 
@@ -459,6 +475,8 @@ export interface IEventRecorder {
     translations?: Record<string, VideoCueTranslation>
   ): void
   addAssetStart(name: string, asset: AssetStartPayload): void
+  /** Records a studio-mode asset start — the file and options are configured in Studio. */
+  addStudioAssetStart(name: string): void
   addHideStart(): void
   addHideEnd(): void
   addSpeedStart(multiplier: number): void
@@ -488,6 +506,7 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addCueEnd(): void {},
   addVideoCueStart(): void {},
   addAssetStart(): void {},
+  addStudioAssetStart(): void {},
   addHideStart(): void {},
   addHideEnd(): void {},
   addSpeedStart(): void {},
@@ -746,6 +765,17 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
+  addStudioAssetStart(name: string): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'assetStart',
+      timeMs,
+      name,
+      studio: true,
+    })
+  }
+
   addHideStart(): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
@@ -922,11 +952,18 @@ export class EventRecorder implements IEventRecorder {
     const studioNarration = this.events.some(
       (event) => event.type === 'cueStart' && event.studio === true
     )
+    const studioAssets = this.events.some(
+      (event) =>
+        event.type === 'assetStart' &&
+        'studio' in event &&
+        event.studio === true
+    )
     const studio: RecordingMetadata['studio'] =
-      studioRenderOptions || studioNarration
+      studioRenderOptions || studioNarration || studioAssets
         ? {
             ...(studioRenderOptions && { renderOptions: true }),
             ...(studioNarration && { narration: true }),
+            ...(studioAssets && { assets: true }),
           }
         : undefined
 

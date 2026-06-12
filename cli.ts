@@ -1128,7 +1128,7 @@ async function prepareCustomVoiceAssets(
   return preparedAssets
 }
 
-async function collectUploadAssets(
+export async function collectUploadAssets(
   data: RecordingData,
   configDir: string
 ): Promise<PreparedUploadAsset[]> {
@@ -1137,6 +1137,9 @@ async function collectUploadAssets(
 
   for (const event of data.events) {
     if (event.type === 'assetStart') {
+      // Studio assets have no local file — they are uploaded from the Studio
+      // page and merged into the recording by the backend.
+      if ('studio' in event && event.studio === true) continue
       if (assets.has(`name:${event.name}`)) continue
       const resolvedFile = await readRecordingFile(
         event.path,

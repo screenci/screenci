@@ -146,6 +146,8 @@ export type CueStartEvent = {
   type: 'cueStart'
   timeMs: number
   name: string
+  /** Cue declared via `createStudioNarration` — text and voice come from Studio. */
+  studio?: true
   text?: string
   cueConfig?: CueConfig
   translations?: Record<string, CueTranslation>
@@ -185,6 +187,8 @@ export type VideoCueStartEvent = {
   type: 'videoCueStart'
   timeMs: number
   name: string
+  /** Cue declared via `createStudioNarration` whose Studio entry is a media file. */
+  studio?: true
   assetHash?: string
   assetPath?: string
   subtitle?: string
@@ -214,6 +218,17 @@ export type VideoAssetStartEvent = {
 }
 
 export type AssetStartEvent = ImageAssetStartEvent | VideoAssetStartEvent
+
+/**
+ * Asset declared via `createStudioAssets` — the file and display options are
+ * configured in Studio, so the recording only marks the timeline point.
+ */
+export type StudioAssetStartEvent = {
+  type: 'assetStart'
+  timeMs: number
+  name: string
+  studio: true
+}
 
 export type HideStartEvent = {
   type: 'hideStart'
@@ -270,6 +285,7 @@ export type RecordingEvent =
   | CueEndEvent
   | VideoCueStartEvent
   | AssetStartEvent
+  | StudioAssetStartEvent
   | HideStartEvent
   | HideEndEvent
   | SpeedStartEvent
@@ -288,6 +304,12 @@ export type RecordingMetadata = {
   commit?: string
   /** Whether the repo had uncommitted changes (always false in CI). */
   isDirty?: boolean
+  /** Which parts of this recording opted into Studio configuration. */
+  studio?: {
+    renderOptions?: boolean
+    narration?: boolean
+    assets?: boolean
+  }
 }
 
 export type RecordingData = {

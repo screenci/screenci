@@ -37,7 +37,7 @@ export { speed } from './src/speed.js'
 export { time } from './src/time.js'
 export { autoZoom } from './src/autoZoom.js'
 export { zoomTo, resetZoom } from './src/manualZoom.js'
-export { createAssets } from './src/asset.js'
+export { createAssets, createStudioAssets } from './src/asset.js'
 export type {
   AssetController,
   AssetConfig,

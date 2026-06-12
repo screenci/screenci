@@ -11,6 +11,7 @@ describe('public api surface', () => {
       'autoZoom',
       'createAssets',
       'createNarration',
+      'createStudioAssets',
       'createStudioNarration',
       'defineConfig',
       'hide',

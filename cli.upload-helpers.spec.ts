@@ -433,6 +433,28 @@ describe('CLI', () => {
       })
     })
 
+    it('skips studio asset events when collecting upload assets', async () => {
+      const { collectUploadAssets } = await import('./cli')
+
+      const assets = await collectUploadAssets(
+        {
+          events: [
+            { type: 'videoStart', timeMs: 0 },
+            {
+              type: 'assetStart',
+              timeMs: 100,
+              name: 'intro',
+              studio: true,
+            },
+          ],
+        } as unknown as RecordingData,
+        '/project'
+      )
+
+      expect(assets).toEqual([])
+      expect(loggerWarnSpy).not.toHaveBeenCalled()
+    })
+
     it('should pause stdin when removing the upload abort listener', async () => {
       const { attachUploadAbortStdinListener } = await import('./cli')
       const input = new EventEmitter() as EventEmitter & {

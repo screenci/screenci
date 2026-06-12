@@ -646,6 +646,55 @@ describe('EventRecorder', () => {
         })
       })
 
+      it('records studio asset starts and sets metadata.studio.assets', async () => {
+        recorder.start()
+        now = 1500
+        recorder.addStudioAssetStart('intro')
+        await recorder.writeToFile(tmpDir, 'Test Video')
+
+        const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+        const parsed: RecordingData = JSON.parse(content)
+        expect(parsed.events[1]).toEqual({
+          type: 'assetStart',
+          timeMs: 500,
+          name: 'intro',
+          studio: true,
+        })
+        expect(parsed.metadata?.studio).toEqual({ assets: true })
+      })
+
+      it('combines all three studio flags', async () => {
+        recorder = new EventRecorder(STUDIO_RENDER_OPTIONS)
+        recorder.start()
+        recorder.addStudioCueStart('intro')
+        recorder.addStudioAssetStart('logo')
+        await recorder.writeToFile(tmpDir, 'Test Video')
+
+        const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+        const parsed: RecordingData = JSON.parse(content)
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          narration: true,
+          assets: true,
+        })
+      })
+
+      it('does not set metadata.studio.assets for regular assets', async () => {
+        recorder = new EventRecorder({ recording: { size: 0.8 } })
+        recorder.start()
+        recorder.addAssetStart('logo', {
+          kind: 'image',
+          path: './logo.png',
+          durationMs: 1200,
+          fullScreen: false,
+        })
+        await recorder.writeToFile(tmpDir, 'Test Video')
+
+        const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+        const parsed: RecordingData = JSON.parse(content)
+        expect(parsed.metadata?.studio).toBeUndefined()
+      })
+
       it('writes no metadata.studio for regular recordings', async () => {
         recorder = new EventRecorder({ recording: { size: 0.8 } })
         recorder.start()

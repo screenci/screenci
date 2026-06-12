@@ -144,6 +144,59 @@ export function createAssets<const T extends Record<string, AssetConfig>>(
   return result
 }
 
+/**
+ * Creates typed asset controllers whose files and display options are
+ * configured on the ScreenCI Studio page instead of in code. Business tier
+ * only.
+ *
+ * Each key becomes a callable asset controller with the same timeline
+ * behavior as {@link createAssets} controllers. The file (`.svg`, `.png`, or
+ * `.mp4`), full-screen mode, image duration, and video audio level all come
+ * from Studio.
+ *
+ * On the first upload of a studio-mode video, rendering is held until the
+ * video is configured in Studio (the CLI prints a direct link). Later uploads
+ * reuse the saved Studio configuration automatically.
+ *
+ * @example
+ * ```ts
+ * const assets = createStudioAssets('intro', 'logo')
+ *
+ * video('Product demo', async ({ page }) => {
+ *   await assets.intro()
+ *   await page.goto('/dashboard')
+ *   await assets.logo()
+ * })
+ * ```
+ */
+export function createStudioAssets<
+  const K extends readonly [string, ...string[]],
+>(...keys: K): Record<K[number], AssetController> {
+  const seen = new Set<string>()
+  for (const key of keys) {
+    if (seen.has(key)) {
+      throw new Error(
+        `Duplicate asset key "${key}" passed to createStudioAssets. Asset keys must be unique.`
+      )
+    }
+    seen.add(key)
+  }
+
+  const result = {} as Record<K[number], AssetController>
+  for (const key of keys) {
+    result[key as K[number]] = createStudioAssetController(key)
+  }
+  return result
+}
+
+function createStudioAssetController(name: string): AssetController {
+  return (): Promise<void> => {
+    const activeRecorder = getRuntimeAssetRecorder()
+    activeRecorder.addStudioAssetStart(name)
+    return Promise.resolve()
+  }
+}
+
 function createAssetController(
   name: string,
   config: AssetConfig

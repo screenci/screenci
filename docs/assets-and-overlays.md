@@ -30,6 +30,11 @@ video('Overview', async ({ page }) => {
 
 Each key becomes a callable asset controller.
 
+On the Business tier you can also declare asset keys with
+`createStudioAssets('intro', 'logo')` and upload the files plus display
+options on the Studio page instead of keeping them in the repository — see
+[Studio](./studio.md#studio-assets-from-code).
+
 Rules:
 
 - `.svg` and `.png` assets require `durationMs`

@@ -27,6 +27,7 @@ export type {
   VideoCueStartEvent,
   ImageAssetStartEvent,
   VideoAssetStartEvent,
+  StudioAssetStartEvent,
   HideStartEvent,
   HideEndEvent,
   SpeedStartEvent,

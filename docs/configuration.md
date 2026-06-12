@@ -75,9 +75,40 @@ Use this as a menu, not a template you must fill out. Most projects only need
 ### Project identity
 
 - `projectName` identifies the project in ScreenCI.
-- `envFile` points to the file that holds `SCREENCI_SECRET` and related
-  variables.
-- If `envFile` is omitted, ScreenCI falls back to the usual process environment.
+- `envFile` points to the file that holds `SCREENCI_SECRET` and other local
+  runtime variables your ScreenCI workflow needs.
+- If `envFile` is configured, ScreenCI loads it automatically.
+- If `envFile` is omitted, ScreenCI falls back to the project `.env`.
+
+For example, keep `SCREENCI_SECRET` there, and keep any local BYOK secrets such
+as `ELEVENLABS_API_KEY` there when your local ScreenCI or backend setup depends
+on them. ScreenCI does not store raw API keys from your env file.
+
+### Example: `.env` file
+
+A typical local env file looks like this:
+
+```bash
+SCREENCI_SECRET=sc_live_your_project_secret
+ELEVENLABS_API_KEY=sk_your_elevenlabs_key
+GOOGLE_CLOUD_API_KEY=your_google_cloud_key
+GOOGLE_VERTEX_SERVICE_ACCOUNT={"project_id":"my-project","client_email":"...","private_key":"..."}
+GOOGLE_VERTEX_LOCATION=us-central1
+```
+
+Common cases:
+
+- `SCREENCI_SECRET` authenticates `screenci record`, `screenci info`, and
+  public visibility commands.
+- `ELEVENLABS_API_KEY` is required when your narration uses
+  `voices.elevenlabs({ voiceId })` or custom voice assets.
+- `GOOGLE_CLOUD_API_KEY` is used for consistent model-backed narration.
+- `GOOGLE_VERTEX_SERVICE_ACCOUNT` and `GOOGLE_VERTEX_LOCATION` are used for
+  expressive Gemini narration.
+
+Keep adding local runtime secrets here as needed. `screenci.config.ts` only
+points to the env file; the actual secret values belong in `.env` or whatever
+file you set via `envFile`.
 
 ### File locations
 
@@ -114,6 +145,42 @@ Set shared `renderOptions` under `use` when you want consistent output styling:
 
 Use project-wide render defaults for branding and layout consistency, then
 override only the files that need a different look.
+
+### Example: shared `use` defaults
+
+Use `use` when multiple videos should share the same recording, navigation, or
+rendering defaults:
+
+```ts
+import { defineConfig } from 'screenci'
+
+export default defineConfig({
+  projectName: 'my-product',
+  envFile: '.env',
+  use: {
+    baseURL: 'https://staging.example.com',
+    recordOptions: {
+      aspectRatio: '16:9',
+      quality: '1080p',
+      fps: 60,
+    },
+    renderOptions: {
+      narration: {
+        corner: 'bottom-left',
+        size: 'medium',
+      },
+      output: {
+        background: {
+          backgroundCss: 'linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)',
+        },
+      },
+    },
+  },
+})
+```
+
+This keeps every video in the project on the same baseline, so individual files
+only need to override the few things that are actually different.
 
 ### Playwright integration
 
@@ -193,4 +260,5 @@ real workflow.
 ## Related pages
 
 - [CLI](/docs/reference/cli) for how config is discovered and loaded.
-  for the runtime helpers used inside scripts.
+- [Narration and Localization](/docs/narration-and-localization) for cue and
+  voice authoring.

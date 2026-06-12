@@ -51,6 +51,40 @@ Use the cue methods intentionally:
 That is the main tool for overlapping speech with UI motion without losing
 control of the timeline.
 
+Keep cues small. In practice, one sentence per cue is the safest default for
+timing, overlap control, and subtitle readability.
+
+If only one file needs a different narration layout, pair your cue definitions
+with `video.use()` instead of changing the whole project:
+
+```ts
+import { createNarration, video, voices } from 'screenci'
+
+video.use({
+  renderOptions: {
+    narration: {
+      corner: 'top-right',
+    },
+  },
+})
+
+const narration = createNarration({
+  voice: { name: voices.Sophie },
+  en: {
+    intro: 'Open the analytics tab.',
+    summary: 'Review the latest numbers.',
+  },
+})
+
+video('Analytics walkthrough', async ({ page }) => {
+  await narration.intro.start()
+  await page.getByRole('tab', { name: 'Analytics' }).click()
+  await narration.intro.end()
+
+  await narration.summary()
+})
+```
+
 ## Add localization
 
 Add more languages by keeping the same cue keys:
@@ -108,6 +142,10 @@ narration.
 
 Use the top-level `voice` as the default and override only the languages that
 genuinely need a different voice or delivery profile.
+
+When you use ElevenLabs-specific voices or custom voice assets, keep each cue as
+its own sentence-sized unit. That makes re-recording cheaper and avoids paying
+to regenerate long blocks when only one line changes.
 
 ## Available voices
 
@@ -239,3 +277,44 @@ Use `modelType` when you need to choose between consistency and expressiveness.
 - `consistent` is the safer default for docs and product walkthroughs
 - `expressive` is useful when you want a more natural, less uniform delivery
 - `expressive` and `style` prompts require the Business tier
+
+## ElevenLabs BYOK and cost control
+
+If your narration setup uses ElevenLabs-backed voices, treat that as BYOK.
+Keep `ELEVENLABS_API_KEY` in your configured `envFile` or project `.env`; see
+[Configuration](/docs/reference/configuration). ScreenCI loads that file
+automatically for local commands, and ScreenCI does not store the raw
+ElevenLabs API key.
+
+Use `voices.elevenlabs({ voiceId })` when you want to target a specific
+ElevenLabs voice from your own account:
+
+```ts
+import { createNarration, video, voices } from 'screenci'
+
+const narration = createNarration({
+  en: {
+    voice: {
+      name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }),
+    },
+    intro: 'Welcome to the dashboard.',
+    details: 'Open settings to review billing details.',
+  },
+})
+
+video('Billing walkthrough', async ({ page }) => {
+  await narration.intro()
+
+  await narration.details.start()
+  await page.goto('/settings')
+  await page.getByRole('button', { name: 'Open billing' }).click()
+  await narration.details.end()
+})
+```
+
+Replace the `voiceId` with the voice from your ElevenLabs account. For the
+env-file setup, see [Configuration](/docs/reference/configuration).
+
+Author cues sparingly, one sentence at a time, instead of large paragraphs.
+That keeps the timeline easier to control and should reduce unnecessary
+synthesis/API cost when you revise only part of the script.

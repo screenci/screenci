@@ -9,7 +9,7 @@ import {
   realpathSync,
   rmSync,
 } from 'fs'
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { createRequire } from 'module'
 import { appendFile, readdir, readFile, stat, writeFile } from 'fs/promises'
 import { delimiter, dirname, relative as pathRelative, resolve } from 'path'
@@ -369,6 +369,7 @@ type UploadJobResult = {
   hadFailure: boolean
   videoName: string
   failureMessage?: string
+  recordId: string
 }
 
 type UploadProgressStatus = 'success' | 'failure' | 'cancelled'
@@ -394,6 +395,16 @@ class PartialUploadError extends Error {
   }
 }
 
+class RecordFailureHintError extends Error {
+  readonly cause: Error
+
+  constructor(cause: Error) {
+    super(cause.message)
+    this.name = cause.name
+    this.cause = cause
+  }
+}
+
 function isUploadCancelledError(err: unknown): boolean {
   return (
     err instanceof UploadCancelledError ||
@@ -404,6 +415,10 @@ function isUploadCancelledError(err: unknown): boolean {
 
 function isPartialUploadError(err: unknown): boolean {
   return err instanceof PartialUploadError
+}
+
+function isRecordFailureHintError(err: unknown): err is RecordFailureHintError {
+  return err instanceof RecordFailureHintError
 }
 
 function isUploadAssetError(err: unknown): boolean {
@@ -550,13 +565,15 @@ async function uploadRecordingCandidate(
   projectName: string,
   apiUrl: string,
   secret: string,
+  elevenLabsApiKey: string | undefined,
   verbose: boolean,
   uploadAbort: ReturnType<typeof createUploadAbortController>,
   progressReporter: {
     complete: (index: number, status: UploadProgressStatus) => void
     info: (message: string) => void
   },
-  progressIndex: number
+  progressIndex: number,
+  recordId: string
 ): Promise<UploadJobResult> {
   const { entry, videoName, data, preparedUploadAssets } = candidate
   let projectId: string | null = null
@@ -571,6 +588,7 @@ async function uploadRecordingCandidate(
         hadFailure: true,
         videoName,
         failureMessage: `Missing recording.mp4 for "${videoName}"`,
+        recordId,
       }
     }
 
@@ -580,12 +598,16 @@ async function uploadRecordingCandidate(
       headers: {
         'Content-Type': 'application/json',
         'X-ScreenCI-Secret': secret,
+        ...(elevenLabsApiKey
+          ? { 'X-ElevenLabs-Api-Key': elevenLabsApiKey }
+          : {}),
       },
       body: JSON.stringify({
         projectName,
         videoName,
         data,
         recordingHash,
+        recordId,
         expectedAssets: preparedUploadAssets.map((asset) => ({
           fileHash: asset.fileHash,
           size: asset.size,
@@ -612,6 +634,7 @@ async function uploadRecordingCandidate(
           text,
           secret
         ),
+        recordId,
       }
     }
 
@@ -664,6 +687,9 @@ async function uploadRecordingCandidate(
             'Content-Type': 'video/mp4',
             'Content-Length': String(fileStat.size),
             'X-ScreenCI-Secret': secret,
+            ...(elevenLabsApiKey
+              ? { 'X-ElevenLabs-Api-Key': elevenLabsApiKey }
+              : {}),
           },
           body: stream as unknown as BodyInit,
           signal: uploadAbort.signal,
@@ -679,6 +705,7 @@ async function uploadRecordingCandidate(
           hadFailure: true,
           videoName,
           failureMessage: `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}${hint401(recordingResponse.status, secret)}`,
+          recordId,
         }
       }
     } finally {
@@ -687,7 +714,7 @@ async function uploadRecordingCandidate(
 
     progressReporter.complete(progressIndex, 'success')
     cleanupUploadedRecordingDir(screenciDir, entry)
-    return { projectId, hadFailure: false, videoName }
+    return { projectId, hadFailure: false, videoName, recordId }
   } catch (err) {
     if (isUploadCancelledError(err)) {
       progressReporter.complete(progressIndex, 'cancelled')
@@ -701,6 +728,7 @@ async function uploadRecordingCandidate(
         hadFailure: true,
         videoName,
         failureMessage: err instanceof Error ? err.message : String(err),
+        recordId,
       }
     }
 
@@ -710,6 +738,7 @@ async function uploadRecordingCandidate(
       hadFailure: true,
       videoName,
       failureMessage: `Network error uploading "${videoName}": ${err instanceof Error ? err.message : String(err)}`,
+      recordId,
     }
   }
 }
@@ -1435,11 +1464,13 @@ export async function uploadRecordings(
   verbose = false
 ): Promise<{
   projectId: string | null
+  recordId: string | null
   hadFailures: boolean
   failedVideoNames: string[]
   failedVideoMessages: Array<{ videoName: string; message: string }>
 }> {
   const uploadAbort = createUploadAbortController('upload')
+  const recordId = randomUUID()
   let entries: string[]
   try {
     entries = await readdir(screenciDir)
@@ -1447,6 +1478,7 @@ export async function uploadRecordings(
     logger.warn('No .screenci directory found, skipping upload')
     return {
       projectId: null,
+      recordId: null,
       hadFailures: false,
       failedVideoNames: [],
       failedVideoMessages: [],
@@ -1458,6 +1490,7 @@ export async function uploadRecordings(
   }
 
   let firstProjectId: string | null = null
+  const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY?.trim() || undefined
 
   try {
     const candidates = (
@@ -1472,6 +1505,7 @@ export async function uploadRecordings(
     if (candidates.length === 0) {
       return {
         projectId: null,
+        recordId: null,
         hadFailures: false,
         failedVideoNames: [],
         failedVideoMessages: [],
@@ -1492,10 +1526,12 @@ export async function uploadRecordings(
             projectName,
             apiUrl,
             secret,
+            elevenLabsApiKey,
             verbose,
             uploadAbort,
             progressReporter,
-            index
+            index,
+            recordId
           )
       )
     )
@@ -1514,6 +1550,7 @@ export async function uploadRecordings(
 
     return {
       projectId: firstProjectId,
+      recordId,
       hadFailures,
       failedVideoNames,
       failedVideoMessages,
@@ -2199,14 +2236,11 @@ export async function main() {
       try {
         await run('record', parsed.otherArgs, parsed.configPath, parsed.verbose)
       } catch (error) {
-        logRecordFailureHint()
-        if (
-          error instanceof Error &&
-          error.message.startsWith('Playwright exited with code ')
-        ) {
-          playwrightFailure = error
+        if (!(error instanceof Error)) throw error
+        if (error.message.startsWith('Playwright exited with code ')) {
+          playwrightFailure = new RecordFailureHintError(error)
         } else {
-          throw error
+          throw new RecordFailureHintError(error)
         }
       }
 
@@ -2253,11 +2287,13 @@ export async function main() {
             }
             let uploadResult: {
               projectId: string | null
+              recordId: string | null
               hadFailures: boolean
               failedVideoNames: string[]
               failedVideoMessages: Array<{ videoName: string; message: string }>
             } = {
               projectId: null,
+              recordId: null,
               hadFailures: false,
               failedVideoNames: [],
               failedVideoMessages: [],
@@ -2277,11 +2313,22 @@ export async function main() {
             }
             const {
               projectId,
+              recordId,
               hadFailures,
               failedVideoNames,
               failedVideoMessages,
             } = uploadResult
-            if (projectId !== null) {
+            if (recordId !== null && projectId !== null) {
+              const recordUrl = `${appUrl}/record/${recordId}`
+              await writeGitHubProjectOutput(recordUrl)
+              logger.info('')
+              logger.info(
+                playwrightFailure !== null
+                  ? 'Recording partially succeeded, rendering in progress. Results available at:'
+                  : 'Recording finished, rendering in progress. Results available at:'
+              )
+              logger.info(pc.cyan(recordUrl))
+            } else if (projectId !== null) {
               const projectUrl = `${appUrl}/project/${projectId}`
               await writeGitHubProjectOutput(projectUrl)
               logger.info('')
@@ -2679,12 +2726,29 @@ async function run(
 }
 
 function logRecordFailureHint(): void {
+  logger.info('')
   logger.info(
     `If ${pc.cyan('screenci test')} works but ${pc.cyan(
       'screenci record'
     )} fails, try ${pc.cyan('screenci test --mock-record')}.`
   )
   logger.info(`More info: ${pc.cyan(SCREENCI_MOCK_RECORD_DOCS_URL)}`)
+}
+
+export function logCliError(error: unknown): void {
+  if (isPartialUploadError(error)) {
+    return
+  }
+
+  const errorToLog = isRecordFailureHintError(error) ? error.cause : error
+  const message =
+    errorToLog instanceof Error ? errorToLog.message : String(errorToLog)
+
+  logger.error(message)
+
+  if (isRecordFailureHintError(error)) {
+    logRecordFailureHint()
+  }
 }
 
 // Only run if this file is being executed directly
@@ -2700,10 +2764,7 @@ if (
     currentFile === realpathSync(mainFile))
 ) {
   main().catch((error) => {
-    if (isPartialUploadError(error)) {
-      process.exit(1)
-    }
-    logger.error('Error:', error.message)
+    logCliError(error)
     process.exit(1)
   })
 }

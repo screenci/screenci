@@ -600,6 +600,7 @@ describe('CLI', () => {
 
       expect(result).toEqual({
         projectId: 'project_123',
+        recordId: expect.any(String),
         hadFailures: false,
         failedVideoNames: [],
         failedVideoMessages: [],
@@ -608,6 +609,88 @@ describe('CLI', () => {
       expect(mockReadFile).toHaveBeenCalledWith(
         expect.stringContaining('/repo/.screenci/demo-video/data.json'),
         'utf-8'
+      )
+    })
+
+    it('forwards ELEVENLABS_API_KEY during upload requests when configured', async () => {
+      process.env.ELEVENLABS_API_KEY = 'elevenlabs-byok-key'
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('record-upload.config.ts')) {
+          return "export default { projectName: 'Test Project' }"
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('test-fixtures/record-upload.config.ts') ||
+          path.endsWith('data.json') ||
+          path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+
+        if (url.endsWith('/cli/upload/recording_123/recording')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+
+      const { uploadRecordings } = await import('./cli')
+
+      await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.screenci.test/cli/upload/start',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'X-ScreenCI-Secret': 'test-secret',
+            'X-ElevenLabs-Api-Key': 'elevenlabs-byok-key',
+          }),
+        })
+      )
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.screenci.test/cli/upload/recording_123/recording',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'X-ScreenCI-Secret': 'test-secret',
+            'X-ElevenLabs-Api-Key': 'elevenlabs-byok-key',
+          }),
+        })
       )
     })
 
@@ -757,6 +840,7 @@ describe('CLI', () => {
 
       expect(result).toEqual({
         projectId: null,
+        recordId: null,
         hadFailures: false,
         failedVideoNames: [],
         failedVideoMessages: [],
@@ -791,6 +875,7 @@ describe('CLI', () => {
 
       expect(result).toEqual({
         projectId: null,
+        recordId: expect.any(String),
         hadFailures: true,
         failedVideoNames: ['Demo'],
         failedVideoMessages: [
@@ -888,6 +973,7 @@ describe('CLI', () => {
 
       expect(result).toEqual({
         projectId: 'project_123',
+        recordId: expect.any(String),
         hadFailures: true,
         failedVideoNames: ['Demo'],
         failedVideoMessages: [
@@ -1004,6 +1090,7 @@ describe('CLI', () => {
 
       expect(result).toEqual({
         projectId: 'project_123',
+        recordId: expect.any(String),
         hadFailures: false,
         failedVideoNames: [],
         failedVideoMessages: [],
@@ -1094,6 +1181,7 @@ describe('CLI', () => {
 
       expect(result).toEqual({
         projectId: 'project_123',
+        recordId: expect.any(String),
         hadFailures: true,
         failedVideoNames: ['Failed Demo'],
         failedVideoMessages: [
@@ -1163,6 +1251,7 @@ describe('CLI', () => {
 
       expect(result).toEqual({
         projectId: 'project_123',
+        recordId: expect.any(String),
         hadFailures: false,
         failedVideoNames: [],
         failedVideoMessages: [],
@@ -1232,6 +1321,7 @@ describe('CLI', () => {
 
       expect(result).toEqual({
         projectId: 'project_123',
+        recordId: expect.any(String),
         hadFailures: false,
         failedVideoNames: [],
         failedVideoMessages: [],
@@ -1332,6 +1422,7 @@ describe('CLI', () => {
 
         expect(result).toEqual({
           projectId: 'project_123',
+          recordId: expect.any(String),
           hadFailures: false,
           failedVideoNames: [],
           failedVideoMessages: [],

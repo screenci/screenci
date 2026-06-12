@@ -30,6 +30,8 @@ import { resolveRecordingTimingDuration } from './runtimeMode.js'
 
 // One frame at 24fps — ensures at least one rendered frame captures each cue state.
 export const ONE_FRAME_MS = 1000 / 24
+const ELEVENLABS_DOCS_URL =
+  'https://screenci.com/docs/narration-and-localization'
 
 // Blocking sleep — spin until the elapsed time has passed
 let sleepFn = (ms: number): void => {
@@ -105,6 +107,23 @@ async function toRecordedVoice(
     assetHash: await resolveAssetFileHash(voice.path, testFilePath),
     assetPath: voice.path,
   }
+}
+
+function usesElevenLabsVoice(voice: VoiceKey | CustomVoiceRef): boolean {
+  if (isCustomVoiceRef(voice)) return true
+  return voice.startsWith('elevenlabs:')
+}
+
+function assertElevenLabsApiKeyConfigured(
+  voice: VoiceKey | CustomVoiceRef,
+  location: string
+): void {
+  if (!usesElevenLabsVoice(voice)) return
+  if (process.env.ELEVENLABS_API_KEY?.trim()) return
+
+  throw new Error(
+    `${location} uses an ElevenLabs voice, but ELEVENLABS_API_KEY is not set. Add ELEVENLABS_API_KEY to your env file or process environment. See ${ELEVENLABS_DOCS_URL}.`
+  )
 }
 
 /**
@@ -531,6 +550,11 @@ function buildCuesFromInput(
     const effectiveModelType = effectiveStyle
       ? 'expressive'
       : (langOverride?.modelType ?? topVoice.modelType)
+
+    assertElevenLabsApiKeyConfigured(
+      effectiveVoiceName,
+      `createNarration(${lang})`
+    )
 
     resolvedVoices.set(lang, effectiveVoiceName)
     resolvedVoiceMeta.set(lang, {

@@ -125,6 +125,11 @@ export default defineConfig({
 ScreenCI manages `testDir`, `testMatch`, and `retries` for you. Most other
 Playwright config still passes through.
 
+If you keep local runtime secrets in an env file, point `envFile` at it or use
+the project `.env`. ScreenCI loads that file automatically for CLI commands.
+That is also the right place for BYOK-style secrets such as
+`ELEVENLABS_API_KEY`. ScreenCI does not store raw API keys from your env file.
+
 ## Authoring helpers
 
 | Export            | What it does                                              |
@@ -151,3 +156,7 @@ Playwright config still passes through.
 
 When `SCREENCI_SECRET` is configured, `screenci record` uploads the output to
 ScreenCI for rendering, narration generation, and hosted delivery.
+
+For narration authoring, keep cues short and usually one sentence at a time.
+That makes overlap timing easier to manage and should reduce TTS regeneration
+cost when only one line changes.

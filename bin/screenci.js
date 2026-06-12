@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-import { main } from '../dist/cli.js'
+import { logCliError, main } from '../dist/cli.js'
 
 main().catch((error) => {
-  console.error('Error:', error.message)
+  logCliError(error)
   process.exit(1)
 })

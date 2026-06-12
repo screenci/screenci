@@ -14,6 +14,7 @@ import type {
 import { RENDER_OPTIONS_DEFAULTS } from './types.js'
 import type { VoiceKey } from './voices.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
+import { getGitMetadata } from './git.js'
 
 function assertAutoZoomUnitIntervalOption(
   value: number,
@@ -859,6 +860,8 @@ export class EventRecorder implements IEventRecorder {
     }
     const languages = languageSet.size > 0 ? [...languageSet].sort() : undefined
 
+    const git = getGitMetadata()
+
     const data: RecordingData = {
       events: this.events,
       renderOptions: resolved,
@@ -870,6 +873,8 @@ export class EventRecorder implements IEventRecorder {
         screenciVersion: SCREENCI_VERSION,
         ...(languages !== undefined && { languages }),
         ...(sourceFilePath !== undefined && { sourceFilePath }),
+        ...(git.commit !== undefined && { commit: git.commit }),
+        ...(git.isDirty !== undefined && { isDirty: git.isDirty }),
       },
     }
     await writeFile(filePath, JSON.stringify(data, null, 2))

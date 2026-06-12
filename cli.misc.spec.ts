@@ -541,10 +541,20 @@ describe('CLI', () => {
         return mockChildProcess as unknown as ChildProcess
       })
 
-      const { main } = await import('./cli')
+      const { main, logCliError } = await import('./cli')
 
-      await expect(main()).rejects.toThrow('Playwright exited with code 1')
+      const error = await main().catch((err) => err)
 
+      expect(error).toBeInstanceOf(Error)
+      expect((error as Error).message).toBe('Playwright exited with code 1')
+
+      loggerErrorSpy.mockClear()
+      loggerInfoSpy.mockClear()
+      logCliError(error)
+
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        'Playwright exited with code 1'
+      )
       expect(loggerInfoSpy).toHaveBeenCalledWith(
         expect.stringContaining('screenci test --mock-record')
       )
@@ -552,6 +562,9 @@ describe('CLI', () => {
         expect.stringContaining(
           'https://screenci.com/docs/reference/cli/#--mock-record'
         )
+      )
+      expect(loggerErrorSpy.mock.invocationCallOrder[0]).toBeLessThan(
+        loggerInfoSpy.mock.invocationCallOrder[0]
       )
     })
 
@@ -585,10 +598,29 @@ describe('CLI', () => {
         return mockChildProcess as unknown as ChildProcess
       })
 
-      const { main } = await import('./cli')
+      const { main, logCliError } = await import('./cli')
 
-      await expect(main()).rejects.toThrow(
+      const error = await main().catch((err) => err)
+
+      expect(error).toBeInstanceOf(Error)
+      expect((error as Error).message).toContain(
         'Error: [screenci] Asset "badge" (./assets/brand-badge.svg) is an image asset and must not provide audio. Use durationMs instead.\n\nat styled-assets.video.ts:24'
+      )
+
+      loggerErrorSpy.mockClear()
+      loggerInfoSpy.mockClear()
+      logCliError(error)
+
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Error: [screenci] Asset "badge" (./assets/brand-badge.svg) is an image asset and must not provide audio. Use durationMs instead.\n\nat styled-assets.video.ts:24'
+        )
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('screenci test --mock-record')
+      )
+      expect(loggerErrorSpy.mock.invocationCallOrder[0]).toBeLessThan(
+        loggerInfoSpy.mock.invocationCallOrder[0]
       )
     })
   })

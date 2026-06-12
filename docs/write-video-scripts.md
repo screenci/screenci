@@ -207,6 +207,7 @@ Common options:
 - per-language `voice` overrides when one language needs a different voice
 - cue entries as text or file-based entries, depending on how you want to
   source narration
+- short, sentence-sized cues instead of paragraph-sized narration blocks
 
 ```ts
 const narration = createNarration({
@@ -232,6 +233,11 @@ video('Billing walkthrough', async ({ page }) => {
   await narration.intro.end()
 })
 ```
+
+Prefer one sentence per cue. Split longer narration into separate named cues and
+place them where they belong in the flow. That gives you cleaner overlap
+control, makes revisions less brittle, and should save API cost when a TTS
+provider such as ElevenLabs only needs to regenerate one changed sentence.
 
 API reference: [createNarration()](/docs/reference/api/functions/createnarration),
 [voices](/docs/reference/api/variables/voices)

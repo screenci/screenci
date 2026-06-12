@@ -229,6 +229,38 @@ describe('createNarration', () => {
     )
   })
 
+  it('throws during createNarration when an ElevenLabs voice is configured without ELEVENLABS_API_KEY', () => {
+    delete process.env.ELEVENLABS_API_KEY
+
+    expect(() =>
+      createNarration({
+        voice: {
+          name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }),
+        },
+        en: {
+          intro: 'Hello world',
+        },
+      })
+    ).toThrow(
+      'createNarration(en) uses an ElevenLabs voice, but ELEVENLABS_API_KEY is not set. Add ELEVENLABS_API_KEY to your env file or process environment. See https://screenci.com/docs/narration-and-localization.'
+    )
+  })
+
+  it('throws during createNarration when a custom voice ref is configured without ELEVENLABS_API_KEY', () => {
+    delete process.env.ELEVENLABS_API_KEY
+
+    expect(() =>
+      createNarration({
+        voice: { name: { path: './voice.mp3' } },
+        en: {
+          intro: 'Hello world',
+        },
+      })
+    ).toThrow(
+      'createNarration(en) uses an ElevenLabs voice, but ELEVENLABS_API_KEY is not set. Add ELEVENLABS_API_KEY to your env file or process environment. See https://screenci.com/docs/narration-and-localization.'
+    )
+  })
+
   it('throws when a video cue name is reused in one recording', async () => {
     const first = createNarration({
       voice: { name: voices.Ava },
@@ -648,6 +680,7 @@ describe('createNarration', () => {
     })
 
     it('allows custom voice refs before validation and resolves them at start', async () => {
+      process.env.ELEVENLABS_API_KEY = 'test-elevenlabs-key'
       const tempDir = mkdtempSync(join(tmpdir(), 'screenci-voice-'))
 
       try {

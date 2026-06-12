@@ -141,7 +141,7 @@ Set shared `renderOptions` under `use` when you want consistent output styling:
 - `output.background`
 - `recording.size`, `recording.roundness`, `recording.dropShadow`
 - `narration.corner`, `narration.padding`, `narration.size`
-- `mouse.size`
+- `mouse.size`, `mouse.style` (`'white'` or `'black'` cursor)
 
 Use project-wide render defaults for branding and layout consistency, then
 override only the files that need a different look.

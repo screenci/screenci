@@ -105,6 +105,8 @@ export type RenderOptions = {
   mouse?: {
     /** 0-1: 0=missing, 1=height of video */
     size?: number
+    /** Cursor colour. Defaults to `'white'`. */
+    style?: 'white' | 'black'
   }
   output?: {
     /**
@@ -155,6 +157,7 @@ export const RENDER_OPTIONS_DEFAULTS = {
   },
   mouse: {
     size: 0.05,
+    style: 'white' as 'white' | 'black',
   },
   output: {
     aspectRatio: '16:9' as AspectRatio,
@@ -188,6 +191,7 @@ export type ResolvedRenderOptions = {
   }
   mouse: {
     size: number
+    style: 'white' | 'black'
   }
   output: {
     aspectRatio: AspectRatio

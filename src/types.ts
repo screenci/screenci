@@ -324,6 +324,8 @@ export type ScreenCILocatorFillOptions = CursorMoveOptions & {
   position?: { x: number; y: number }
   /** Hide the cursor while typing; shown again on the next mouse move. */
   hideMouse?: boolean
+  click?: boolean
+  postClickMove?: boolean
   autoZoomOptions?: AutoZoomOptions
 }
 

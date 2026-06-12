@@ -311,6 +311,13 @@ export type ScreenCILocatorClickOptions = Omit<
     autoZoomOptions?: AutoZoomOptions
   }
 
+export type ScreenCILocatorPostClickMoveOptions = CursorMoveTimingOption & {
+  direction?: 'up' | 'down' | 'left' | 'right'
+  duration?: number
+  easing?: Easing
+  padding?: number
+}
+
 export type ScreenCILocatorFillOptions = ScreenCILocatorClickOptions & {
   /**
    * When `true`, forces the pre-type click animation even if the target input
@@ -324,8 +331,8 @@ export type ScreenCILocatorFillOptions = ScreenCILocatorClickOptions & {
   position?: { x: number; y: number }
   /** Hide the cursor while typing; shown again on the next mouse move. */
   hideMouse?: boolean
-  click?: boolean
-  postClickMove?: boolean
+  click?: false | ScreenCILocatorClickOptions
+  postClickMove?: ScreenCILocatorPostClickMoveOptions
   autoZoomOptions?: AutoZoomOptions
 }
 

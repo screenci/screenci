@@ -311,7 +311,7 @@ export type ScreenCILocatorClickOptions = Omit<
     autoZoomOptions?: AutoZoomOptions
   }
 
-export type ScreenCILocatorFillOptions = CursorMoveOptions & {
+export type ScreenCILocatorFillOptions = ScreenCILocatorClickOptions & {
   /**
    * When `true`, forces the pre-type click animation even if the target input
    * is already focused. By default the click is skipped when already focused.

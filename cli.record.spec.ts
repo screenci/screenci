@@ -496,26 +496,8 @@ describe('CLI', () => {
             SCREENCI_RECORDING: 'true',
             VITE_APP_BASE_URL: 'https://example.com',
           }),
-          stdio: ['inherit', 'pipe', 'inherit'],
+          stdio: 'inherit',
         })
-      )
-    })
-
-    it('removes Playwright HTML reporter duplicate trailing blank line', async () => {
-      const { createPlaywrightStdoutForwarder } = await import('./cli')
-      const writes: string[] = []
-      const forwarder = createPlaywrightStdoutForwarder((chunk) => {
-        writes.push(chunk)
-      })
-
-      forwarder.write(
-        '\nTo open last HTML report run:\n\u001B[36m\n  pnpm exec playwright show-report\n\u001B[39m\n\n'
-      )
-      forwarder.write('Asset uploaded: ./assets/brand-badge.svg\n')
-      forwarder.end()
-
-      expect(stripVTControlCharacters(writes.join(''))).toBe(
-        '\nTo open last HTML report run:\n\n  pnpm exec playwright show-report\n\nAsset uploaded: ./assets/brand-badge.svg\n'
       )
     })
 
@@ -1557,7 +1539,7 @@ describe('CLI', () => {
       }
     })
 
-    it('updates upload rows in place outside CI on interactive terminals', async () => {
+    it('logs upload completions normally on interactive terminals', async () => {
       const stdoutWriteSpy = vi
         .spyOn(process.stdout, 'write')
         .mockImplementation(() => true)
@@ -1641,16 +1623,12 @@ describe('CLI', () => {
           'test-secret'
         )
 
-        const allWrites = stdoutWriteSpy.mock.calls
-          .map((call) => String(call[0]))
-          .join('')
-        const normalizedWrites = stripVTControlCharacters(allWrites)
-
-        expect(normalizedWrites).toContain('... Uploading "Demo"')
-        expect(normalizedWrites).toContain('... Uploading "Second Demo"')
-        expect(allWrites).toContain('\u001B[2A')
-        expect(normalizedWrites).toContain('✔ Uploaded "Demo"')
-        expect(normalizedWrites).toContain('✔ Uploaded "Second Demo"')
+        const messages = loggerInfoSpy.mock.calls.map((call) =>
+          stripVTControlCharacters(String(call[0]))
+        )
+        expect(messages).toContain('✔ Uploaded "Demo"')
+        expect(messages).toContain('✔ Uploaded "Second Demo"')
+        expect(stdoutWriteSpy).not.toHaveBeenCalled()
         expect(loggerInfoSpy).not.toHaveBeenCalledWith(
           'Uploading 2 recordings in parallel...'
         )
@@ -1665,7 +1643,7 @@ describe('CLI', () => {
       }
     })
 
-    it('re-renders upload rows after asset logs on interactive terminals', async () => {
+    it('logs assets without reserving upload rows on interactive terminals', async () => {
       const stdoutWriteSpy = vi
         .spyOn(process.stdout, 'write')
         .mockImplementation(() => true)
@@ -1775,21 +1753,14 @@ describe('CLI', () => {
           'test-secret'
         )
 
-        const allWrites = stdoutWriteSpy.mock.calls
-          .map((call) => String(call[0]))
-          .join('')
-        const normalizedWrites = stripVTControlCharacters(allWrites)
-        const moveUpCount = (allWrites.match(/\u001B\[2A/g) ?? []).length
         const messages = loggerInfoSpy.mock.calls.map((call) =>
           stripVTControlCharacters(String(call[0]))
         )
 
         expect(messages).toContain('✔ Asset already exists: videos/logo.png')
-        expect(moveUpCount).toBeGreaterThanOrEqual(3)
-        expect(normalizedWrites).toContain('... Uploading "Demo"')
-        expect(normalizedWrites).toContain('... Uploading "Second Demo"')
-        expect(normalizedWrites).toContain('✔ Uploaded "Demo"')
-        expect(normalizedWrites).toContain('✔ Uploaded "Second Demo"')
+        expect(messages).toContain('✔ Uploaded "Demo"')
+        expect(messages).toContain('✔ Uploaded "Second Demo"')
+        expect(stdoutWriteSpy).not.toHaveBeenCalled()
       } finally {
         stdoutWriteSpy.mockRestore()
         if (originalIsTTY) {

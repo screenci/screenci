@@ -27,6 +27,10 @@ current narration text, voices, and render options from the latest upload.
 Change what you need and choose **Save & render** — a new version is rendered
 from the same recording, with your overrides applied.
 
+Rendering is per language: next to the render button you can toggle which
+languages to render, so a one-language fix doesn't re-render every localized
+version.
+
 Remixed versions are marked with a **Studio** badge in the version list, and
 the version page shows exactly which values were changed compared to the
 code-specified ones.

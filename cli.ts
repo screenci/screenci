@@ -14,7 +14,6 @@ import { createRequire } from 'module'
 import { appendFile, readdir, readFile, stat, writeFile } from 'fs/promises'
 import { delimiter, dirname, relative as pathRelative, resolve } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
-import { stripVTControlCharacters } from 'util'
 import { Command, CommanderError } from 'commander'
 import pc from 'picocolors'
 import { logger } from './src/logger.js'
@@ -477,10 +476,6 @@ function isUploadAssetError(err: unknown): boolean {
   return err instanceof UploadAssetError
 }
 
-function supportsInPlaceUploadUpdates(verbose: boolean): boolean {
-  return !verbose && process.stdout.isTTY === true && !process.env.CI
-}
-
 function formatUploadProgressLine(
   videoName: string,
   status?: UploadProgressStatus
@@ -503,60 +498,19 @@ function formatUploadProgressLine(
 
 function createUploadProgressReporter(
   videoNames: readonly string[],
-  verbose: boolean
+  _verbose: boolean
 ): {
   complete: (index: number, status: UploadProgressStatus) => void
   info: (message: string) => void
 } {
-  const useInPlaceUpdates = supportsInPlaceUploadUpdates(verbose)
-
-  if (!useInPlaceUpdates) {
-    return {
-      complete(index, status) {
-        logger.info(
-          formatUploadProgressLine(videoNames[index] ?? 'unknown', status)
-        )
-      },
-      info(message) {
-        logger.info(message)
-      },
-    }
-  }
-
-  const statuses = new Array<UploadProgressStatus | undefined>(
-    videoNames.length
-  )
-  let hasRendered = false
-
-  const render = () => {
-    const renderedLines = videoNames.map((videoName, index) =>
-      formatUploadProgressLine(videoName, statuses[index])
-    )
-    process.stdout.write(
-      `${hasRendered && videoNames.length > 0 ? `\u001B[${videoNames.length}A` : ''}${renderedLines.map((line) => `\r\u001B[2K${line}`).join('\n')}\n`
-    )
-    hasRendered = true
-  }
-
-  const clear = () => {
-    if (!hasRendered || videoNames.length === 0) return
-    process.stdout.write(
-      `\u001B[${videoNames.length}A${Array.from({ length: videoNames.length }, () => '\r\u001B[2K').join('\n')}\n`
-    )
-    hasRendered = false
-  }
-
-  render()
-
   return {
     complete(index, status) {
-      statuses[index] = status
-      render()
+      logger.info(
+        formatUploadProgressLine(videoNames[index] ?? 'unknown', status)
+      )
     },
     info(message) {
-      clear()
       logger.info(message)
-      render()
     },
   }
 }
@@ -961,57 +915,6 @@ function resolvePlaywrightSpawnSpec(
   return {
     command: process.execPath,
     args: [cliEntrypoint, ...args],
-  }
-}
-
-export function createPlaywrightStdoutForwarder(
-  write: (chunk: string) => void
-): {
-  write: (chunk: string | Buffer) => void
-  end: () => void
-} {
-  let buffered = ''
-  let suppressNextBlankLine = false
-
-  const forwardLine = (line: string) => {
-    const visibleLine = stripVTControlCharacters(
-      line.replace(/(?:\r\n|\n|\r)$/, '')
-    )
-
-    if (suppressNextBlankLine && visibleLine.trim() === '') {
-      const lineWithoutEnding = line.replace(/(?:\r\n|\n|\r)$/, '')
-      if (lineWithoutEnding !== '') write(lineWithoutEnding)
-      suppressNextBlankLine = false
-      return
-    }
-
-    write(line)
-    if (visibleLine.includes('playwright show-report')) {
-      suppressNextBlankLine = true
-    } else if (visibleLine.trim() !== '') {
-      suppressNextBlankLine = false
-    }
-  }
-
-  return {
-    write(chunk) {
-      buffered += chunk.toString()
-      let lineEnd = buffered.search(/\r\n|\n|\r/)
-      while (lineEnd !== -1) {
-        const delimiterLength =
-          buffered[lineEnd] === '\r' && buffered[lineEnd + 1] === '\n' ? 2 : 1
-        const completeLine = buffered.slice(0, lineEnd + delimiterLength)
-        buffered = buffered.slice(lineEnd + delimiterLength)
-        forwardLine(completeLine)
-        lineEnd = buffered.search(/\r\n|\n|\r/)
-      }
-    },
-    end() {
-      if (buffered !== '') {
-        forwardLine(buffered)
-        buffered = ''
-      }
-    },
   }
 }
 
@@ -2826,17 +2729,8 @@ async function run(
     playwrightArgs,
     dirname(configPath)
   )
-  const forwardRecordStdout =
-    command === 'record' && process.env.SCREENCI_RECORDING !== 'true'
-  const playwrightTTY =
-    process.stdout.isTTY === true &&
-    process.env.PLAYWRIGHT_FORCE_TTY === undefined
-      ? process.stdout.columns && process.stdout.rows
-        ? `${process.stdout.columns}x${process.stdout.rows}`
-        : 'true'
-      : undefined
   const child = spawn(spawnSpec.command, spawnSpec.args, {
-    stdio: forwardRecordStdout ? ['inherit', 'pipe', 'inherit'] : 'inherit',
+    stdio: 'inherit',
     ...(process.platform !== 'win32' ? { detached: true } : {}),
     ...(spawnSpec.shell !== undefined ? { shell: spawnSpec.shell } : {}),
     ...(spawnSpec.windowsVerbatimArguments !== undefined
@@ -2855,18 +2749,7 @@ async function run(
       ...(command === 'test' && mockRecord
         ? { [SCREENCI_MOCK_RECORD_ENV]: 'true' }
         : {}),
-      ...(playwrightTTY !== undefined
-        ? { PLAYWRIGHT_FORCE_TTY: playwrightTTY }
-        : {}),
     },
-  })
-  const stdoutForwarder = forwardRecordStdout
-    ? createPlaywrightStdoutForwarder((chunk) => {
-        process.stdout.write(chunk)
-      })
-    : null
-  child.stdout?.on('data', (chunk: string | Buffer) => {
-    stdoutForwarder?.write(chunk)
   })
   const childSignals = forwardChildSignals(child, `screenci ${command}`, {
     killTree: process.platform !== 'win32',
@@ -2876,7 +2759,6 @@ async function run(
   return new Promise<void>((resolve, reject) => {
     child.on('close', (code, signal) => {
       void (async () => {
-        stdoutForwarder?.end()
         const forwardedSignal = childSignals.getForwardedSignal()
         childSignals.cleanup()
 

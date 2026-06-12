@@ -7,11 +7,14 @@ import * as voicesModule from './src/voices.js'
 describe('public api surface', () => {
   it('only exports public runtime api from the root entrypoint', () => {
     expect(Object.keys(screenci).sort()).toEqual([
+      'STUDIO_RENDER_OPTIONS',
       'autoZoom',
       'createAssets',
       'createNarration',
+      'createStudioNarration',
       'defineConfig',
       'hide',
+      'isStudioRenderOptions',
       'modelTypes',
       'resetZoom',
       'speed',

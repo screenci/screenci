@@ -140,11 +140,11 @@ export const voices = {
     `elevenlabs:${voiceId}` as ElevenLabsVoiceKey,
 } as const
 
-type VoiceName = keyof Omit<typeof voices, 'elevenlabs'>
-type ElevenLabsVoiceKey = `elevenlabs:${string}`
+export type ModelVoiceKey = keyof Omit<typeof voices, 'elevenlabs'>
+export type ElevenLabsVoiceKey = `elevenlabs:${string}`
 
 /** Union of all valid voice keys, e.g. `'Aria' | 'elevenlabs:abc123'`. */
-export type VoiceKey = VoiceName | ElevenLabsVoiceKey
+export type VoiceKey = ModelVoiceKey | ElevenLabsVoiceKey
 
 // DOCS_SYNC:
 // Keep the "Available languages" section in docs/narration-and-localization.md

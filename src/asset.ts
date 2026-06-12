@@ -103,6 +103,7 @@ async function validateAssetPath(
  */
 export type AssetController = () => Promise<void>
 
+/** Typed asset controllers keyed by the names passed to {@link createAssets}. */
 export type Assets<T extends Record<string, AssetConfig>> = {
   [K in keyof T]: AssetController
 }

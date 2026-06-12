@@ -146,6 +146,10 @@ Set shared `renderOptions` under `use` when you want consistent output styling:
 Use project-wide render defaults for branding and layout consistency, then
 override only the files that need a different look.
 
+On the Business tier you can defer render options to the web app entirely by
+setting `renderOptions: STUDIO_RENDER_OPTIONS` — they are then managed on the
+Studio page. See [Studio](/docs/guides/studio).
+
 ### Example: shared `use` defaults
 
 Use `use` when multiple videos should share the same recording, navigation, or
@@ -260,5 +264,5 @@ real workflow.
 ## Related pages
 
 - [CLI](/docs/reference/cli) for how config is discovered and loaded.
-- [Narration and Localization](/docs/narration-and-localization) for cue and
+- [Narration and Localization](/docs/guides/narration-and-localization) for cue and
   voice authoring.

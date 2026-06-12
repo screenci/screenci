@@ -131,6 +131,15 @@ export type RecordingCustomVoiceRef = {
 export type CueTranslation = {
   text: string
   voice: VoiceKey | RecordingCustomVoiceRef
+  modelType?: string
+  style?: string | number
+  accent?: string
+  pacing?: string | number
+  stability?: number
+  similarityBoost?: number
+  speed?: number
+  useSpeakerBoost?: boolean
+  seed?: number
 }
 
 export type CueStartEvent = {
@@ -157,6 +166,15 @@ export type VideoCueTranslationFile = {
 export type VideoCueTranslationTTS = {
   text: string
   voice: VoiceKey | RecordingCustomVoiceRef
+  modelType?: string
+  style?: string | number
+  accent?: string
+  pacing?: string | number
+  stability?: number
+  similarityBoost?: number
+  speed?: number
+  useSpeakerBoost?: boolean
+  seed?: number
 }
 
 export type VideoCueTranslation =

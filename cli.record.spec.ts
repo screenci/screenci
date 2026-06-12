@@ -496,8 +496,26 @@ describe('CLI', () => {
             SCREENCI_RECORDING: 'true',
             VITE_APP_BASE_URL: 'https://example.com',
           }),
-          stdio: 'inherit',
+          stdio: ['inherit', 'pipe', 'inherit'],
         })
+      )
+    })
+
+    it('removes Playwright HTML reporter duplicate trailing blank line', async () => {
+      const { createPlaywrightStdoutForwarder } = await import('./cli')
+      const writes: string[] = []
+      const forwarder = createPlaywrightStdoutForwarder((chunk) => {
+        writes.push(chunk)
+      })
+
+      forwarder.write(
+        '\nTo open last HTML report run:\n\u001B[36m\n  pnpm exec playwright show-report\n\u001B[39m\n\n'
+      )
+      forwarder.write('Asset uploaded: ./assets/brand-badge.svg\n')
+      forwarder.end()
+
+      expect(stripVTControlCharacters(writes.join(''))).toBe(
+        '\nTo open last HTML report run:\n\n  pnpm exec playwright show-report\n\nAsset uploaded: ./assets/brand-badge.svg\n'
       )
     })
 
@@ -602,6 +620,7 @@ describe('CLI', () => {
         projectId: 'project_123',
         recordId: expect.any(String),
         hadFailures: false,
+        studioNotices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
       })
@@ -610,6 +629,91 @@ describe('CLI', () => {
         expect.stringContaining('/repo/.screenci/demo-video/data.json'),
         'utf-8'
       )
+    })
+
+    it('surfaces studio hold and override notices from the upload start response', async () => {
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') || path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+              videoId: 'video_123',
+              studio: { held: true },
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+
+      const { uploadRecordings } = await import('./cli')
+
+      const result = await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(result.studioNotices).toEqual([
+        {
+          videoName: 'Demo',
+          videoId: 'video_123',
+          studio: { held: true },
+        },
+      ])
+    })
+
+    it('formats studio change summaries and studio URLs', async () => {
+      const { formatStudioChangeSummary, formatStudioUrl } =
+        await import('./cli')
+
+      expect(
+        formatStudioChangeSummary([
+          {
+            kind: 'renderOption',
+            label: 'recording.size',
+            from: '1',
+            to: '0.8',
+          },
+          {
+            kind: 'narration',
+            label: 'narration "intro"',
+            cue: 'intro',
+            language: 'en',
+          },
+          { kind: 'renderOption', label: 'output.quality' },
+        ])
+      ).toBe('recording.size (1 → 0.8), narration "intro" (en), output.quality')
+
+      expect(
+        formatStudioUrl('https://app.screenci.test', 'project_1', 'video_2')
+      ).toBe('https://app.screenci.test/project/project_1/video/video_2/studio')
     })
 
     it('forwards ELEVENLABS_API_KEY during upload requests when configured', async () => {
@@ -842,6 +946,7 @@ describe('CLI', () => {
         projectId: null,
         recordId: null,
         hadFailures: false,
+        studioNotices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
       })
@@ -877,6 +982,7 @@ describe('CLI', () => {
         projectId: null,
         recordId: expect.any(String),
         hadFailures: true,
+        studioNotices: [],
         failedVideoNames: ['Demo'],
         failedVideoMessages: [
           {
@@ -975,6 +1081,7 @@ describe('CLI', () => {
         projectId: 'project_123',
         recordId: expect.any(String),
         hadFailures: true,
+        studioNotices: [],
         failedVideoNames: ['Demo'],
         failedVideoMessages: [
           {
@@ -1092,6 +1199,7 @@ describe('CLI', () => {
         projectId: 'project_123',
         recordId: expect.any(String),
         hadFailures: false,
+        studioNotices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
       })
@@ -1183,6 +1291,7 @@ describe('CLI', () => {
         projectId: 'project_123',
         recordId: expect.any(String),
         hadFailures: true,
+        studioNotices: [],
         failedVideoNames: ['Failed Demo'],
         failedVideoMessages: [
           {
@@ -1253,6 +1362,7 @@ describe('CLI', () => {
         projectId: 'project_123',
         recordId: expect.any(String),
         hadFailures: false,
+        studioNotices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
       })
@@ -1323,6 +1433,7 @@ describe('CLI', () => {
         projectId: 'project_123',
         recordId: expect.any(String),
         hadFailures: false,
+        studioNotices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
       })
@@ -1424,6 +1535,7 @@ describe('CLI', () => {
           projectId: 'project_123',
           recordId: expect.any(String),
           hadFailures: false,
+          studioNotices: [],
           failedVideoNames: [],
           failedVideoMessages: [],
         })

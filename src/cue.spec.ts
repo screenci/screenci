@@ -5,6 +5,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import {
   createNarration,
+  createStudioNarration,
   setActiveCueRecorder,
   resetCueChain,
   setSleepFn,
@@ -29,6 +30,7 @@ function createMockRecorder(): IEventRecorder {
     start: vi.fn(),
     addInput: vi.fn(),
     addCueStart: vi.fn(),
+    addStudioCueStart: vi.fn(),
     addCueEnd: vi.fn(),
     addVideoCueStart: vi.fn(),
     addAssetStart: vi.fn(),
@@ -242,7 +244,7 @@ describe('createNarration', () => {
         },
       })
     ).toThrow(
-      'createNarration(en) uses an ElevenLabs voice, but ELEVENLABS_API_KEY is not set. Add ELEVENLABS_API_KEY to your env file or process environment. See https://screenci.com/docs/narration-and-localization.'
+      'createNarration(en) uses an ElevenLabs voice, but ELEVENLABS_API_KEY is not set. Add ELEVENLABS_API_KEY to your env file or process environment. See https://screenci.com/docs/guides/narration-and-localization.'
     )
   })
 
@@ -257,7 +259,7 @@ describe('createNarration', () => {
         },
       })
     ).toThrow(
-      'createNarration(en) uses an ElevenLabs voice, but ELEVENLABS_API_KEY is not set. Add ELEVENLABS_API_KEY to your env file or process environment. See https://screenci.com/docs/narration-and-localization.'
+      'createNarration(en) uses an ElevenLabs voice, but ELEVENLABS_API_KEY is not set. Add ELEVENLABS_API_KEY to your env file or process environment. See https://screenci.com/docs/guides/narration-and-localization.'
     )
   })
 
@@ -804,6 +806,110 @@ describe('createNarration', () => {
 
       await expect(cues1.intro.start()).resolves.toBeUndefined()
       await expect(cues2.other.start()).resolves.toBeUndefined()
+    })
+  })
+})
+
+describe('createStudioNarration', () => {
+  let recorder: IEventRecorder
+  let order: string[]
+
+  beforeEach(() => {
+    order = []
+    recorder = createMockRecorder()
+    resetCueChain()
+    ;(
+      recorder.addStudioCueStart as ReturnType<typeof vi.fn>
+    ).mockImplementation((name: string) =>
+      order.push(`studioCueStart(${name})`)
+    )
+    ;(recorder.addCueEnd as ReturnType<typeof vi.fn>).mockImplementation(() =>
+      order.push('cueEnd')
+    )
+    setSleepFn(() => order.push('sleep'))
+    setActiveCueRecorder(recorder)
+  })
+
+  afterEach(() => {
+    setActiveCueRecorder(NOOP_EVENT_RECORDER)
+    setSleepFn((ms) => {
+      const end = performance.now() + ms
+      while (performance.now() < end) {}
+    })
+  })
+
+  it('exposes callable cues with start() and end() for each key', () => {
+    const cues = createStudioNarration('intro', 'outro')
+
+    expect(typeof cues.intro).toBe('function')
+    expect(typeof cues.intro.start).toBe('function')
+    expect(typeof cues.intro.end).toBe('function')
+    expect(typeof cues.outro).toBe('function')
+  })
+
+  it('throws on duplicate cue keys', () => {
+    expect(() => createStudioNarration('intro', 'intro')).toThrow(
+      'Duplicate cue key "intro"'
+    )
+  })
+
+  it('start() emits a studio cue start without text or translations', async () => {
+    const cues = createStudioNarration('intro')
+
+    await cues.intro.start()
+    expect(order).toEqual(['sleep', 'studioCueStart(intro)'])
+    expect(recorder.addCueStart).not.toHaveBeenCalled()
+  })
+
+  it('calling a cue runs one start and one end for a single run', async () => {
+    const cues = createStudioNarration('intro')
+
+    await cues.intro()
+    expect(order).toEqual([
+      'sleep',
+      'studioCueStart(intro)',
+      'sleep',
+      'cueEnd',
+      'sleep',
+    ])
+  })
+
+  it('auto-ends the previous cue when the next one starts', async () => {
+    const cues = createStudioNarration('intro', 'outro')
+
+    await cues.intro.start()
+    await cues.outro.start()
+    expect(order).toEqual([
+      'sleep',
+      'studioCueStart(intro)',
+      'cueEnd',
+      'sleep',
+      'sleep',
+      'studioCueStart(outro)',
+    ])
+  })
+
+  it('enforces unique cue names across the recording', async () => {
+    const studio = createStudioNarration('intro')
+    const regular = createNarration({
+      voice: { name: voices.Ava },
+      en: { intro: 'Hello' },
+    })
+
+    await studio.intro.start()
+    await expect(regular.intro.start()).rejects.toThrow(
+      'Duplicate cue name "intro"'
+    )
+  })
+
+  it('throws when started inside hide()', async () => {
+    setActiveHideRecorder(recorder)
+    const cues = createStudioNarration('intro')
+
+    await hide(async () => {
+      await expect(cues.intro.start()).rejects.toThrow(
+        'Cannot start narration inside hide()'
+      )
     })
   })
 })

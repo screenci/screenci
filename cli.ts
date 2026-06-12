@@ -14,6 +14,7 @@ import { createRequire } from 'module'
 import { appendFile, readdir, readFile, stat, writeFile } from 'fs/promises'
 import { delimiter, dirname, relative as pathRelative, resolve } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
+import { stripVTControlCharacters } from 'util'
 import { Command, CommanderError } from 'commander'
 import pc from 'picocolors'
 import { logger } from './src/logger.js'
@@ -364,12 +365,63 @@ type UploadCandidate = {
   preparedUploadAssets: PreparedUploadAsset[]
 }
 
+export type StudioAppliedChange = {
+  kind?: string
+  label?: string
+  cue?: string
+  language?: string
+  from?: string
+  to?: string
+}
+
+export type UploadStudioInfo =
+  | { held: true }
+  | { appliedChanges: StudioAppliedChange[] }
+
+export type StudioUploadNotice = {
+  videoName: string
+  videoId: string | null
+  studio: UploadStudioInfo
+}
+
+/**
+ * One-line summary of Studio overrides for CLI output, e.g.
+ * `recording.size (1 → 0.8), narration "intro" (en)`.
+ */
+export function formatStudioChangeSummary(
+  changes: StudioAppliedChange[]
+): string {
+  return changes
+    .map((change) => {
+      const label = change.label ?? 'selection'
+      if (change.kind === 'narration') {
+        return change.language !== undefined
+          ? `${label} (${change.language})`
+          : label
+      }
+      return change.from !== undefined && change.to !== undefined
+        ? `${label} (${change.from} → ${change.to})`
+        : label
+    })
+    .join(', ')
+}
+
+export function formatStudioUrl(
+  appUrl: string,
+  projectId: string,
+  videoId: string
+): string {
+  return `${appUrl}/project/${projectId}/video/${videoId}/studio`
+}
+
 type UploadJobResult = {
   projectId: string | null
+  videoId: string | null
   hadFailure: boolean
   videoName: string
   failureMessage?: string
   recordId: string
+  studio?: UploadStudioInfo
 }
 
 type UploadProgressStatus = 'success' | 'failure' | 'cancelled'
@@ -577,6 +629,7 @@ async function uploadRecordingCandidate(
 ): Promise<UploadJobResult> {
   const { entry, videoName, data, preparedUploadAssets } = candidate
   let projectId: string | null = null
+  let videoId: string | null = null
 
   try {
     uploadAbort.throwIfAborted()
@@ -585,6 +638,7 @@ async function uploadRecordingCandidate(
       progressReporter.complete(progressIndex, 'failure')
       return {
         projectId: null,
+        videoId: null,
         hadFailure: true,
         videoName,
         failureMessage: `Missing recording.mp4 for "${videoName}"`,
@@ -626,6 +680,7 @@ async function uploadRecordingCandidate(
       progressReporter.complete(progressIndex, 'failure')
       return {
         projectId: null,
+        videoId: null,
         hadFailure: true,
         videoName,
         failureMessage: formatUploadStartFailureMessage(
@@ -641,9 +696,13 @@ async function uploadRecordingCandidate(
     const startBody = (await startResponse.json()) as {
       recordingId: string
       projectId: string
+      videoId?: string
+      studio?: UploadStudioInfo
     }
     const { recordingId } = startBody
     projectId = startBody.projectId
+    videoId = startBody.videoId ?? null
+    const studio = startBody.studio
 
     if (verbose) {
       logger.info(`recordingId=${recordingId} projectId=${projectId}`)
@@ -702,6 +761,7 @@ async function uploadRecordingCandidate(
         progressReporter.complete(progressIndex, 'failure')
         return {
           projectId,
+          videoId,
           hadFailure: true,
           videoName,
           failureMessage: `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}${hint401(recordingResponse.status, secret)}`,
@@ -714,7 +774,14 @@ async function uploadRecordingCandidate(
 
     progressReporter.complete(progressIndex, 'success')
     cleanupUploadedRecordingDir(screenciDir, entry)
-    return { projectId, hadFailure: false, videoName, recordId }
+    return {
+      projectId,
+      videoId,
+      hadFailure: false,
+      videoName,
+      recordId,
+      ...(studio !== undefined && { studio }),
+    }
   } catch (err) {
     if (isUploadCancelledError(err)) {
       progressReporter.complete(progressIndex, 'cancelled')
@@ -725,6 +792,7 @@ async function uploadRecordingCandidate(
       progressReporter.complete(progressIndex, 'failure')
       return {
         projectId,
+        videoId,
         hadFailure: true,
         videoName,
         failureMessage: err instanceof Error ? err.message : String(err),
@@ -735,6 +803,7 @@ async function uploadRecordingCandidate(
     progressReporter.complete(progressIndex, 'failure')
     return {
       projectId,
+      videoId,
       hadFailure: true,
       videoName,
       failureMessage: `Network error uploading "${videoName}": ${err instanceof Error ? err.message : String(err)}`,
@@ -892,6 +961,57 @@ function resolvePlaywrightSpawnSpec(
   return {
     command: process.execPath,
     args: [cliEntrypoint, ...args],
+  }
+}
+
+export function createPlaywrightStdoutForwarder(
+  write: (chunk: string) => void
+): {
+  write: (chunk: string | Buffer) => void
+  end: () => void
+} {
+  let buffered = ''
+  let suppressNextBlankLine = false
+
+  const forwardLine = (line: string) => {
+    const visibleLine = stripVTControlCharacters(
+      line.replace(/(?:\r\n|\n|\r)$/, '')
+    )
+
+    if (suppressNextBlankLine && visibleLine.trim() === '') {
+      const lineWithoutEnding = line.replace(/(?:\r\n|\n|\r)$/, '')
+      if (lineWithoutEnding !== '') write(lineWithoutEnding)
+      suppressNextBlankLine = false
+      return
+    }
+
+    write(line)
+    if (visibleLine.includes('playwright show-report')) {
+      suppressNextBlankLine = true
+    } else if (visibleLine.trim() !== '') {
+      suppressNextBlankLine = false
+    }
+  }
+
+  return {
+    write(chunk) {
+      buffered += chunk.toString()
+      let lineEnd = buffered.search(/\r\n|\n|\r/)
+      while (lineEnd !== -1) {
+        const delimiterLength =
+          buffered[lineEnd] === '\r' && buffered[lineEnd + 1] === '\n' ? 2 : 1
+        const completeLine = buffered.slice(0, lineEnd + delimiterLength)
+        buffered = buffered.slice(lineEnd + delimiterLength)
+        forwardLine(completeLine)
+        lineEnd = buffered.search(/\r\n|\n|\r/)
+      }
+    },
+    end() {
+      if (buffered !== '') {
+        forwardLine(buffered)
+        buffered = ''
+      }
+    },
   }
 }
 
@@ -1468,6 +1588,7 @@ export async function uploadRecordings(
   hadFailures: boolean
   failedVideoNames: string[]
   failedVideoMessages: Array<{ videoName: string; message: string }>
+  studioNotices: StudioUploadNotice[]
 }> {
   const uploadAbort = createUploadAbortController('upload')
   const recordId = randomUUID()
@@ -1482,6 +1603,7 @@ export async function uploadRecordings(
       hadFailures: false,
       failedVideoNames: [],
       failedVideoMessages: [],
+      studioNotices: [],
     }
   }
 
@@ -1509,6 +1631,7 @@ export async function uploadRecordings(
         hadFailures: false,
         failedVideoNames: [],
         failedVideoMessages: [],
+        studioNotices: [],
       }
     }
 
@@ -1548,12 +1671,25 @@ export async function uploadRecordings(
         : []
     )
 
+    const studioNotices = results.flatMap((result) =>
+      !result.hadFailure && result.studio !== undefined
+        ? [
+            {
+              videoName: result.videoName,
+              videoId: result.videoId,
+              studio: result.studio,
+            },
+          ]
+        : []
+    )
+
     return {
       projectId: firstProjectId,
       recordId,
       hadFailures,
       failedVideoNames,
       failedVideoMessages,
+      studioNotices,
     }
   } finally {
     uploadAbort.cleanup()
@@ -2291,12 +2427,14 @@ export async function main() {
               hadFailures: boolean
               failedVideoNames: string[]
               failedVideoMessages: Array<{ videoName: string; message: string }>
+              studioNotices: StudioUploadNotice[]
             } = {
               projectId: null,
               recordId: null,
               hadFailures: false,
               failedVideoNames: [],
               failedVideoMessages: [],
+              studioNotices: [],
             }
             try {
               uploadResult = await uploadRecordings(
@@ -2317,6 +2455,7 @@ export async function main() {
               hadFailures,
               failedVideoNames,
               failedVideoMessages,
+              studioNotices,
             } = uploadResult
             if (recordId !== null && projectId !== null) {
               const recordUrl = `${appUrl}/record/${recordId}`
@@ -2338,6 +2477,24 @@ export async function main() {
                   : 'Recording finished, rendering in progress. Results available at:'
               )
               logger.info(pc.cyan(projectUrl))
+            }
+            for (const notice of studioNotices) {
+              if ('held' in notice.studio) {
+                logger.info('')
+                logger.info(
+                  `Rendering for "${notice.videoName}" is on hold — configure it in Studio:`
+                )
+                if (projectId !== null && notice.videoId !== null) {
+                  logger.info(
+                    pc.cyan(formatStudioUrl(appUrl, projectId, notice.videoId))
+                  )
+                }
+              } else if (notice.studio.appliedChanges.length > 0) {
+                logger.info('')
+                logger.info(
+                  `Selections were overridden in Studio for "${notice.videoName}": ${formatStudioChangeSummary(notice.studio.appliedChanges)}`
+                )
+              }
             }
             if (hadFailures) {
               for (const failedVideo of failedVideoMessages) {
@@ -2669,8 +2826,17 @@ async function run(
     playwrightArgs,
     dirname(configPath)
   )
+  const forwardRecordStdout =
+    command === 'record' && process.env.SCREENCI_RECORDING !== 'true'
+  const playwrightTTY =
+    process.stdout.isTTY === true &&
+    process.env.PLAYWRIGHT_FORCE_TTY === undefined
+      ? process.stdout.columns && process.stdout.rows
+        ? `${process.stdout.columns}x${process.stdout.rows}`
+        : 'true'
+      : undefined
   const child = spawn(spawnSpec.command, spawnSpec.args, {
-    stdio: 'inherit',
+    stdio: forwardRecordStdout ? ['inherit', 'pipe', 'inherit'] : 'inherit',
     ...(process.platform !== 'win32' ? { detached: true } : {}),
     ...(spawnSpec.shell !== undefined ? { shell: spawnSpec.shell } : {}),
     ...(spawnSpec.windowsVerbatimArguments !== undefined
@@ -2689,7 +2855,18 @@ async function run(
       ...(command === 'test' && mockRecord
         ? { [SCREENCI_MOCK_RECORD_ENV]: 'true' }
         : {}),
+      ...(playwrightTTY !== undefined
+        ? { PLAYWRIGHT_FORCE_TTY: playwrightTTY }
+        : {}),
     },
+  })
+  const stdoutForwarder = forwardRecordStdout
+    ? createPlaywrightStdoutForwarder((chunk) => {
+        process.stdout.write(chunk)
+      })
+    : null
+  child.stdout?.on('data', (chunk: string | Buffer) => {
+    stdoutForwarder?.write(chunk)
   })
   const childSignals = forwardChildSignals(child, `screenci ${command}`, {
     killTree: process.platform !== 'win32',
@@ -2699,6 +2876,7 @@ async function run(
   return new Promise<void>((resolve, reject) => {
     child.on('close', (code, signal) => {
       void (async () => {
+        stdoutForwarder?.end()
         const forwardedSignal = childSignals.getForwardedSignal()
         childSignals.cleanup()
 

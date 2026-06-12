@@ -12,6 +12,10 @@ import type {
   ResolvedRenderOptions,
 } from './types.js'
 import { RENDER_OPTIONS_DEFAULTS } from './types.js'
+import {
+  isStudioRenderOptions,
+  type StudioRenderOptionsSentinel,
+} from './studio.js'
 import type { VoiceKey } from './voices.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { getGitMetadata } from './git.js'
@@ -167,12 +171,20 @@ export type CueTranslation = {
   voice: VoiceKey | RecordingCustomVoiceRef
   /** TTS model type — `'expressive'` or `'consistent'`. Defaults to `'consistent'`. `'expressive'` requires the Business tier. */
   modelType?: string
-  /** Speaking style prompt for expressive synthesis. Business tier only. */
-  style?: string
+  /** Gemini style prompt, or ElevenLabs `eleven_multilingual_v2` style exaggeration. */
+  style?: string | number
   /** Accent description for expressive synthesis. Omitted from the prompt when not set. */
   accent?: string
   /** Pacing description for expressive synthesis, or speaking rate for consistent synthesis. */
   pacing?: string | number
+  /** ElevenLabs `eleven_multilingual_v2` stability, from 0 to 1. */
+  stability?: number
+  /** ElevenLabs `eleven_multilingual_v2` similarity boost, from 0 to 1. */
+  similarityBoost?: number
+  /** ElevenLabs `eleven_multilingual_v2` speed, from 0.7 to 1.2. */
+  speed?: number
+  /** Whether ElevenLabs speaker boost is enabled. */
+  useSpeakerBoost?: boolean
   /**
    * Integer seed included in the audio cache key. A different seed always forces
    * regeneration. Consistent output is not guaranteed across all voice types.
@@ -184,6 +196,8 @@ export type CueStartEvent = {
   type: 'cueStart'
   timeMs: number
   name: string
+  /** Cue declared via `createStudioNarration` — text and voice come from Studio. */
+  studio?: true
   /** Single-language API (backward compat) */
   text?: string
   cueConfig?: CueConfig
@@ -211,12 +225,16 @@ export type VideoCueTranslationTTS = {
   voice: VoiceKey | RecordingCustomVoiceRef
   /** TTS model type — `'expressive'` or `'consistent'`. Defaults to `'consistent'`. `'expressive'` requires the Business tier. */
   modelType?: string
-  /** Speaking style prompt for expressive synthesis. Business tier only. */
-  style?: string
+  /** Gemini style prompt, or ElevenLabs `eleven_multilingual_v2` style exaggeration. */
+  style?: string | number
   /** Accent description for expressive synthesis. Omitted from the prompt when not set. */
   accent?: string
   /** Pacing description for expressive synthesis, or speaking rate for consistent synthesis. */
   pacing?: string | number
+  stability?: number
+  similarityBoost?: number
+  speed?: number
+  useSpeakerBoost?: boolean
   /**
    * Integer seed included in the audio cache key. A different seed always forces
    * regeneration. Consistent output is not guaranteed across all voice types.
@@ -346,12 +364,16 @@ export type VoiceLanguageMeta = {
   seed?: number
   /** TTS model type — `'expressive'` or `'consistent'`. Defaults to `'consistent'`. `'expressive'` requires the Business tier. */
   modelType?: string
-  /** Speaking style prompt for expressive synthesis. Business tier only. */
-  style?: string
+  /** Gemini style prompt, or ElevenLabs `eleven_multilingual_v2` style exaggeration. */
+  style?: string | number
   /** Accent description for expressive synthesis. Omitted from the prompt when not set. */
   accent?: string
   /** Pacing description for expressive synthesis, or speaking rate for consistent synthesis. */
   pacing?: string | number
+  stability?: number
+  similarityBoost?: number
+  speed?: number
+  useSpeakerBoost?: boolean
 }
 
 export type RecordingMetadata = {
@@ -360,6 +382,15 @@ export type RecordingMetadata = {
   /** Language codes present in multi-language cues, e.g. `['en', 'de']`. Omitted when no multi-language cues are used. */
   languages?: string[]
   sourceFilePath?: string
+  /**
+   * Which parts of this recording opted into Studio configuration.
+   * `renderOptions` is set when `STUDIO_RENDER_OPTIONS` was used; `narration`
+   * when the recording contains `createStudioNarration` cues.
+   */
+  studio?: {
+    renderOptions?: boolean
+    narration?: boolean
+  }
 }
 
 function readScreenciVersion(): string {
@@ -417,6 +448,8 @@ export interface IEventRecorder {
     cueConfig?: CueConfig,
     translations?: Record<string, CueTranslation>
   ): void
+  /** Records a studio-mode cue start — text and voice are configured in Studio. */
+  addStudioCueStart(name: string): void
   addCueEnd(reason?: 'auto' | 'wait'): void
   addVideoCueStart(
     name: string,
@@ -451,6 +484,7 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   start(): void {},
   addInput(): void {},
   addCueStart(): void {},
+  addStudioCueStart(): void {},
   addCueEnd(): void {},
   addVideoCueStart(): void {},
   addAssetStart(): void {},
@@ -473,9 +507,15 @@ export class EventRecorder implements IEventRecorder {
   private readonly events: RecordingEvent[] = []
   private startTime: number | null = null
   private readonly recordOptions: RecordOptions | undefined
-  private readonly renderOptions: RenderOptions | undefined
+  private readonly renderOptions:
+    | RenderOptions
+    | StudioRenderOptionsSentinel
+    | undefined
 
-  constructor(renderOptions?: RenderOptions, recordOptions?: RecordOptions) {
+  constructor(
+    renderOptions?: RenderOptions | StudioRenderOptionsSentinel,
+    recordOptions?: RecordOptions
+  ) {
     this.recordOptions = recordOptions
     this.renderOptions = renderOptions
   }
@@ -633,6 +673,17 @@ export class EventRecorder implements IEventRecorder {
       ...(text.length > 0 && { text }),
       ...(cueConfig !== undefined && { cueConfig }),
       ...(translations !== undefined && { translations }),
+    })
+  }
+
+  addStudioCueStart(name: string): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'cueStart',
+      timeMs,
+      name,
+      studio: true,
     })
   }
 
@@ -800,9 +851,14 @@ export class EventRecorder implements IEventRecorder {
   ): Promise<void> {
     const filePath = join(dir, 'data.json')
 
+    // Studio mode: render options come from the Studio page. data.json still
+    // gets fully-resolved defaults (so it always validates and renders), and
+    // metadata.studio.renderOptions marks the deferral for the backend.
+    const studioRenderOptions = isStudioRenderOptions(this.renderOptions)
+
     // Resolve all defaults so data.json always contains a complete set of
     // render options.
-    const ro = this.renderOptions
+    const ro = studioRenderOptions ? undefined : this.renderOptions
     const resolved: ResolvedRenderOptions = {
       recording: {
         size: ro?.recording?.size ?? RENDER_OPTIONS_DEFAULTS.recording.size,
@@ -862,6 +918,17 @@ export class EventRecorder implements IEventRecorder {
 
     const git = getGitMetadata()
 
+    const studioNarration = this.events.some(
+      (event) => event.type === 'cueStart' && event.studio === true
+    )
+    const studio: RecordingMetadata['studio'] =
+      studioRenderOptions || studioNarration
+        ? {
+            ...(studioRenderOptions && { renderOptions: true }),
+            ...(studioNarration && { narration: true }),
+          }
+        : undefined
+
     const data: RecordingData = {
       events: this.events,
       renderOptions: resolved,
@@ -875,6 +942,7 @@ export class EventRecorder implements IEventRecorder {
         ...(sourceFilePath !== undefined && { sourceFilePath }),
         ...(git.commit !== undefined && { commit: git.commit }),
         ...(git.isDirty !== undefined && { isDirty: git.isDirty }),
+        ...(studio !== undefined && { studio }),
       },
     }
     await writeFile(filePath, JSON.stringify(data, null, 2))

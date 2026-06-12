@@ -10,6 +10,8 @@ import {
   supportedLanguages,
   voices,
   type VoiceKey,
+  type ModelVoiceKey,
+  type ElevenLabsVoiceKey,
   type Lang,
   type CustomVoiceRef,
   type ModelType,
@@ -31,7 +33,7 @@ import { resolveRecordingTimingDuration } from './runtimeMode.js'
 // One frame at 24fps — ensures at least one rendered frame captures each cue state.
 export const ONE_FRAME_MS = 1000 / 24
 const ELEVENLABS_DOCS_URL =
-  'https://screenci.com/docs/narration-and-localization'
+  'https://screenci.com/docs/guides/narration-and-localization'
 
 // Blocking sleep — spin until the elapsed time has passed
 let sleepFn = (ms: number): void => {
@@ -221,6 +223,7 @@ type NarrationCueObject =
 /** A single narration cue value in a multi-language map. */
 export type CueMapValue = string | NarrationCueObject
 
+/** Typed narration controllers keyed by the cue names in a language map. */
 export type Cues<T extends Record<string, CueMapValue>> = {
   [K in keyof T]: NarrationCue
 }
@@ -229,13 +232,33 @@ export type Cues<T extends Record<string, CueMapValue>> = {
  * Top-level voice configuration shared across all languages.
  * `seed` is not allowed here — use per-language `voice` overrides instead.
  *
- * Use `style` for expressive synthesis, or `modelType` for an explicit
- * model choice. `style` and `modelType` are mutually exclusive. Expressive
- * synthesis and `style` prompts require the Business tier.
+ * Built-in model voices support expressive/consistent model controls.
+ * ElevenLabs voices support only the numeric settings documented below.
  */
+type ElevenLabsVoiceSettings = {
+  /** Voice stability for ElevenLabs `eleven_multilingual_v2`. Valid range: 0 to 1. */
+  stability?: number
+  /** Similarity enhancement for ElevenLabs `eleven_multilingual_v2`. Valid range: 0 to 1. */
+  similarityBoost?: number
+  /** Style exaggeration for ElevenLabs `eleven_multilingual_v2`. Valid range: 0 to 1. */
+  style?: number
+  /** Playback speed for ElevenLabs `eleven_multilingual_v2`. Valid range: 0.7 to 1.2. */
+  speed?: number
+  /** Enables ElevenLabs speaker boost. Defaults to `true`. */
+  useSpeakerBoost?: boolean
+}
+
+type ElevenLabsVoiceConfig = ElevenLabsVoiceSettings & {
+  name: ElevenLabsVoiceKey | CustomVoiceRef
+  modelType?: never
+  accent?: never
+  pacing?: never
+}
+
 export type TopLevelVoiceConfig =
+  | ElevenLabsVoiceConfig
   | {
-      name: VoiceKey | CustomVoiceRef
+      name: ModelVoiceKey
       /** Speaking style prompt for expressive synthesis. Business tier only. Implies `expressive` model type. */
       style: string
       /** Can be omitted when `style` is set — `expressive` is implied. Business tier only. */
@@ -253,7 +276,7 @@ export type TopLevelVoiceConfig =
       pacing?: string
     }
   | {
-      name: VoiceKey | CustomVoiceRef
+      name: ModelVoiceKey
       style?: never
       accent?: never
       /** Speaking rate for consistent synthesis. Valid range: 0.25 to 2. */
@@ -266,13 +289,20 @@ export type TopLevelVoiceConfig =
  * Per-language narration override. Can override the top-level voice name and
  * optionally set a `seed` for TTS generation.
  *
- * Use `style` for expressive synthesis, or `modelType` for an explicit
- * model choice. `style` and `modelType` are mutually exclusive. Expressive
- * synthesis and `style` prompts require the Business tier.
+ * The voice name discriminates provider-specific settings: built-in model
+ * voices use expressive/consistent controls, while ElevenLabs voices use the
+ * numeric `eleven_multilingual_v2` controls.
  */
 export type LangNarrationOverride =
+  | (ElevenLabsVoiceConfig & {
+      /**
+       * Integer seed included in the audio cache key and forwarded to ElevenLabs.
+       * A different seed always forces regeneration.
+       */
+      seed?: number
+    })
   | {
-      name: VoiceKey | CustomVoiceRef
+      name: ModelVoiceKey
       /**
        * Integer seed included in the audio cache key. A different seed always forces
        * regeneration. Consistent output is not guaranteed across all voice types.
@@ -295,7 +325,7 @@ export type LangNarrationOverride =
       pacing?: string
     }
   | {
-      name: VoiceKey | CustomVoiceRef
+      name: ModelVoiceKey
       /**
        * Integer seed included in the audio cache key. A different seed always forces
        * regeneration. Consistent output is not guaranteed across all voice types.
@@ -426,6 +456,100 @@ export function createNarration<
   ) as Cues<AllCues<M>>
 }
 
+function createCueController(
+  name: string,
+  emitStart: (recorder: IEventRecorder) => void | Promise<void>
+): NarrationCue {
+  let didRegisterName = false
+
+  const start = async (startedWithExplicitStart = true): Promise<void> => {
+    if (isInsideHide()) throw new Error('Cannot start narration inside hide()')
+    const recorder = getRuntimeCueRecorder()
+    const context = getScreenCIRuntimeContext()
+    if (!didRegisterName) {
+      assertUniqueCueName(name)
+      didRegisterName = true
+    }
+    cueAutoEnd(name)
+    const run = createActiveCueRun(startedWithExplicitStart)
+    context.cue.activeCueName = name
+    context.cue.activeCueRun = run
+    await emitStart(recorder)
+  }
+
+  const end = async (): Promise<void> => {
+    if (isInsideHide()) throw new Error('Cannot call end() inside hide()')
+    const context = getScreenCIRuntimeContext()
+    if (
+      context.cue.activeCueName !== name ||
+      context.cue.activeCueRun === null
+    ) {
+      throw new Error(
+        `Cannot call end() for cue "${name}" because it is not the active started cue`
+      )
+    }
+
+    const run = context.cue.activeCueRun
+    await endActiveCue()
+    await run.finished
+  }
+
+  const cue = (async (): Promise<void> => {
+    await start(false)
+    sleepForCueFrameGap()
+    await end()
+  }) as NarrationCue
+
+  cue.start = start
+  cue.end = end
+  return cue
+}
+
+/**
+ * Creates typed narration controllers whose text and voice are configured on
+ * the ScreenCI Studio page instead of in code. Business tier only.
+ *
+ * Each key becomes a cue with the same behavior as {@link createNarration}
+ * cues — callable, with explicit `start()` and `end()` methods. Languages,
+ * narration text, and voice settings all come from Studio.
+ *
+ * On the first upload of a studio-mode video, rendering is held until the
+ * video is configured in Studio (the CLI prints a direct link). Later uploads
+ * reuse the saved Studio configuration automatically.
+ *
+ * @example
+ * ```ts
+ * const narration = createStudioNarration('intro', 'checkout', 'outro')
+ *
+ * await narration.intro()
+ * await page.goto('/checkout')
+ * await narration.checkout.start()
+ * await narration.checkout.end()
+ * ```
+ */
+export function createStudioNarration<
+  const K extends readonly [string, ...string[]],
+>(...keys: K): Cues<Record<K[number], CueMapValue>> {
+  const seen = new Set<string>()
+  for (const key of keys) {
+    if (seen.has(key)) {
+      throw new Error(
+        `Duplicate cue key "${key}" passed to createStudioNarration. Cue keys must be unique.`
+      )
+    }
+    seen.add(key)
+  }
+
+  const result = {} as Cues<Record<K[number], CueMapValue>>
+  for (const key of keys) {
+    result[key as K[number]] = createCueController(key, (recorder) => {
+      sleepForCueFrameGap()
+      recorder.addStudioCueStart(key)
+    })
+  }
+  return result
+}
+
 type NormalizedCueMapValue =
   | { type: 'text'; text: string }
   | { type: 'file'; path: string; subtitle?: string }
@@ -526,15 +650,10 @@ function buildCuesFromInput(
     const langOverride = entry?.voice
     const effectiveVoiceName = langOverride?.name ?? topVoice.name
     const effectiveSeed = langOverride?.seed
-    // If a lang override exists it owns style/accent/pacing entirely — no inheritance from the
-    // top-level voice. This prevents a top-level `style` from forcing `expressive` on a lang
-    // that explicitly sets `modelType: 'consistent'`.
+    // A language override owns all provider settings. This prevents settings
+    // for one provider from leaking across a voice override to another.
     const effectiveStyle =
-      langOverride !== undefined
-        ? langOverride?.style
-        : 'style' in topVoice
-          ? (topVoice as { style: string }).style
-          : undefined
+      langOverride !== undefined ? langOverride.style : topVoice.style
     const effectiveAccent =
       langOverride !== undefined
         ? langOverride?.accent
@@ -547,9 +666,42 @@ function buildCuesFromInput(
         : 'pacing' in topVoice
           ? (topVoice as { pacing?: string | number }).pacing
           : undefined
-    const effectiveModelType = effectiveStyle
-      ? 'expressive'
-      : (langOverride?.modelType ?? topVoice.modelType)
+    const effectiveStability =
+      langOverride !== undefined
+        ? 'stability' in langOverride
+          ? langOverride.stability
+          : undefined
+        : 'stability' in topVoice
+          ? topVoice.stability
+          : undefined
+    const effectiveSimilarityBoost =
+      langOverride !== undefined
+        ? 'similarityBoost' in langOverride
+          ? langOverride.similarityBoost
+          : undefined
+        : 'similarityBoost' in topVoice
+          ? topVoice.similarityBoost
+          : undefined
+    const effectiveSpeed =
+      langOverride !== undefined
+        ? 'speed' in langOverride
+          ? langOverride.speed
+          : undefined
+        : 'speed' in topVoice
+          ? topVoice.speed
+          : undefined
+    const effectiveUseSpeakerBoost =
+      langOverride !== undefined
+        ? 'useSpeakerBoost' in langOverride
+          ? langOverride.useSpeakerBoost
+          : undefined
+        : 'useSpeakerBoost' in topVoice
+          ? topVoice.useSpeakerBoost
+          : undefined
+    const effectiveModelType =
+      typeof effectiveStyle === 'string'
+        ? 'expressive'
+        : (langOverride?.modelType ?? topVoice.modelType)
 
     assertElevenLabsApiKeyConfigured(
       effectiveVoiceName,
@@ -566,6 +718,16 @@ function buildCuesFromInput(
       ...(effectiveStyle !== undefined && { style: effectiveStyle }),
       ...(effectiveAccent !== undefined && { accent: effectiveAccent }),
       ...(effectivePacing !== undefined && { pacing: effectivePacing }),
+      ...(effectiveStability !== undefined && {
+        stability: effectiveStability,
+      }),
+      ...(effectiveSimilarityBoost !== undefined && {
+        similarityBoost: effectiveSimilarityBoost,
+      }),
+      ...(effectiveSpeed !== undefined && { speed: effectiveSpeed }),
+      ...(effectiveUseSpeakerBoost !== undefined && {
+        useSpeakerBoost: effectiveUseSpeakerBoost,
+      }),
     })
   }
 
@@ -576,56 +738,6 @@ function buildCuesFromInput(
 
   const firstCues = getLanguageCues(firstLang, firstEntry)
   if (firstCues === undefined) return {} as Cues<Record<string, CueMapValue>>
-
-  function createCueController(
-    name: string,
-    emitStart: (recorder: IEventRecorder) => void | Promise<void>
-  ): NarrationCue {
-    let didRegisterName = false
-
-    const start = async (startedWithExplicitStart = true): Promise<void> => {
-      if (isInsideHide())
-        throw new Error('Cannot start narration inside hide()')
-      const recorder = getRuntimeCueRecorder()
-      const context = getScreenCIRuntimeContext()
-      if (!didRegisterName) {
-        assertUniqueCueName(name)
-        didRegisterName = true
-      }
-      cueAutoEnd(name)
-      const run = createActiveCueRun(startedWithExplicitStart)
-      context.cue.activeCueName = name
-      context.cue.activeCueRun = run
-      await emitStart(recorder)
-    }
-
-    const end = async (): Promise<void> => {
-      if (isInsideHide()) throw new Error('Cannot call end() inside hide()')
-      const context = getScreenCIRuntimeContext()
-      if (
-        context.cue.activeCueName !== name ||
-        context.cue.activeCueRun === null
-      ) {
-        throw new Error(
-          `Cannot call end() for cue "${name}" because it is not the active started cue`
-        )
-      }
-
-      const run = context.cue.activeCueRun
-      await endActiveCue()
-      await run.finished
-    }
-
-    const cue = (async (): Promise<void> => {
-      await start(false)
-      sleepForCueFrameGap()
-      await end()
-    }) as NarrationCue
-
-    cue.start = start
-    cue.end = end
-    return cue
-  }
 
   for (const key in firstCues) {
     const keyStr = key
@@ -661,6 +773,11 @@ function buildCuesFromInput(
           const style = meta?.style
           const accent = meta?.accent
           const pacing = meta?.pacing
+          const stability = meta?.stability
+          const similarityBoost = meta?.similarityBoost
+          const speed = meta?.speed
+          const useSpeakerBoost = meta?.useSpeakerBoost
+          const seed = meta?.seed
           if (val.type === 'text') {
             videoTranslations[lang] = {
               text: val.text,
@@ -669,6 +786,11 @@ function buildCuesFromInput(
               ...(style !== undefined && { style }),
               ...(accent !== undefined && { accent }),
               ...(pacing !== undefined && { pacing }),
+              ...(stability !== undefined && { stability }),
+              ...(similarityBoost !== undefined && { similarityBoost }),
+              ...(speed !== undefined && { speed }),
+              ...(useSpeakerBoost !== undefined && { useSpeakerBoost }),
+              ...(seed !== undefined && { seed }),
             }
           } else {
             videoTranslations[lang] = await entryToVideoTranslation(
@@ -704,6 +826,11 @@ function buildCuesFromInput(
             const style = meta?.style
             const accent = meta?.accent
             const pacing = meta?.pacing
+            const stability = meta?.stability
+            const similarityBoost = meta?.similarityBoost
+            const speed = meta?.speed
+            const useSpeakerBoost = meta?.useSpeakerBoost
+            const seed = meta?.seed
             textTranslations[lang] = {
               text: val.text,
               voice: await toRecordedVoice(voice),
@@ -711,6 +838,11 @@ function buildCuesFromInput(
               ...(style !== undefined && { style }),
               ...(accent !== undefined && { accent }),
               ...(pacing !== undefined && { pacing }),
+              ...(stability !== undefined && { stability }),
+              ...(similarityBoost !== undefined && { similarityBoost }),
+              ...(speed !== undefined && { speed }),
+              ...(useSpeakerBoost !== undefined && { useSpeakerBoost }),
+              ...(seed !== undefined && { seed }),
             }
           }
         }

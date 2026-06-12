@@ -278,13 +278,21 @@ Use `modelType` when you need to choose between consistency and expressiveness.
 - `expressive` is useful when you want a more natural, less uniform delivery
 - `expressive` and `style` prompts require the Business tier
 
-## ElevenLabs BYOK and cost control
+## ElevenLabs voices
 
-If your narration setup uses ElevenLabs-backed voices, treat that as BYOK.
-Keep `ELEVENLABS_API_KEY` in your configured `envFile` or project `.env`; see
-[Configuration](/docs/reference/configuration). ScreenCI loads that file
-automatically for local commands, and ScreenCI does not store the raw
-ElevenLabs API key.
+ElevenLabs voices require the ScreenCI Business tier and use your own
+ElevenLabs API key. Keep `ELEVENLABS_API_KEY` in your configured `envFile` or
+project `.env`; see [Configuration](/docs/reference/configuration). ScreenCI
+loads that file automatically for local commands, and ScreenCI does not store
+the raw API key or use it for anything except synthesizing narration for your
+videos.
+
+For example, your project `.env` can contain:
+
+```dotenv
+SCREENCI_SECRET=added_by_npx_screenci_record
+ELEVENLABS_API_KEY=your_elevenlabs_api_key
+```
 
 Use `voices.elevenlabs({ voiceId })` when you want to target a specific
 ElevenLabs voice from your own account:
@@ -315,6 +323,44 @@ video('Billing walkthrough', async ({ page }) => {
 Replace the `voiceId` with the voice from your ElevenLabs account. For the
 env-file setup, see [Configuration](/docs/reference/configuration).
 
+ScreenCI supports the ElevenLabs `eleven_multilingual_v2` model only. Its
+supported per-voice controls are `stability` (`0`–`1`), `similarityBoost`
+(`0`–`1`), numeric `style` exaggeration (`0`–`1`), `speed` (`0.7`–`1.2`),
+and `useSpeakerBoost`. These fields are accepted only for
+`voices.elevenlabs(...)` and custom cloned voices:
+
+```ts
+const narration = createNarration({
+  voice: {
+    name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }),
+    stability: 0.45,
+    similarityBoost: 0.8,
+    style: 0.2,
+    speed: 0.9,
+    useSpeakerBoost: true,
+  },
+  en: {
+    intro: 'Welcome to the dashboard.',
+  },
+})
+```
+
+See the ElevenLabs
+[Create speech with timing API](https://elevenlabs.io/docs/api-reference/text-to-speech/convert-with-timestamps)
+for the upstream request fields. ElevenLabs `style` is a numeric exaggeration
+control; it is not the free-form style prompt available to ScreenCI expressive
+model voices.
+
 Author cues sparingly, one sentence at a time, instead of large paragraphs.
-That keeps the timeline easier to control and should reduce unnecessary
-synthesis/API cost when you revise only part of the script.
+ScreenCI also uses the ElevenLabs API sparingly: generated narration is cached
+per cue, so unchanged cues are reused and only changed narration is synthesized
+again. Smaller cues keep the timeline easier to control and further reduce API
+cost when you revise only part of the script.
+
+## Manage narration from Studio
+
+On the Business tier you can manage narration from the web app instead of
+code: declare cue keys with `createStudioNarration('intro', 'outro')` and fill
+in text, languages, and voices on the Studio page. Existing
+`createNarration` videos can also be remixed in Studio without code changes.
+See [Studio](/docs/guides/studio).

@@ -5,6 +5,7 @@ import { tmpdir } from 'os'
 import { readFile } from 'fs/promises'
 import { EventRecorder } from './events.js'
 import type { RecordingData, InputEvent } from './events.js'
+import { STUDIO_RENDER_OPTIONS, isStudioRenderOptions } from './studio.js'
 import { voices } from './voices.js'
 
 describe('EventRecorder', () => {
@@ -596,6 +597,76 @@ describe('EventRecorder', () => {
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed = JSON.parse(content) as { metadata?: { voices?: unknown } }
       expect(parsed.metadata?.voices).toBeUndefined()
+    })
+
+    describe('studio mode', () => {
+      it('writes resolved defaults and metadata.studio.renderOptions for STUDIO_RENDER_OPTIONS', async () => {
+        recorder = new EventRecorder(STUDIO_RENDER_OPTIONS)
+        recorder.start()
+        await recorder.writeToFile(tmpDir, 'Test Video')
+
+        const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+        const parsed: RecordingData = JSON.parse(content)
+        // data.json always contains a complete, renderable set of options
+        expect(parsed.renderOptions.recording.size).toBe(1.0)
+        expect(parsed.renderOptions.output.aspectRatio).toBe('16:9')
+        expect(parsed.metadata?.studio).toEqual({ renderOptions: true })
+      })
+
+      it('records studio cue starts and sets metadata.studio.narration', async () => {
+        recorder.start()
+        now = 1500
+        recorder.addStudioCueStart('intro')
+        await recorder.writeToFile(tmpDir, 'Test Video')
+
+        const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+        const parsed: RecordingData = JSON.parse(content)
+        expect(parsed.events[1]).toEqual({
+          type: 'cueStart',
+          timeMs: 500,
+          name: 'intro',
+          studio: true,
+        })
+        expect(parsed.metadata?.studio).toEqual({ narration: true })
+        // studio cues have no translations, so no language list is derived
+        expect(parsed.metadata?.languages).toBeUndefined()
+      })
+
+      it('sets both studio flags when sentinel and studio cues are combined', async () => {
+        recorder = new EventRecorder(STUDIO_RENDER_OPTIONS)
+        recorder.start()
+        recorder.addStudioCueStart('intro')
+        await recorder.writeToFile(tmpDir, 'Test Video')
+
+        const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+        const parsed: RecordingData = JSON.parse(content)
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          narration: true,
+        })
+      })
+
+      it('writes no metadata.studio for regular recordings', async () => {
+        recorder = new EventRecorder({ recording: { size: 0.8 } })
+        recorder.start()
+        recorder.addCueStart('', 'greeting', undefined, {
+          en: { text: 'Hello', voice: voices.Ava },
+        })
+        await recorder.writeToFile(tmpDir, 'Test Video')
+
+        const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+        const parsed: RecordingData = JSON.parse(content)
+        expect(parsed.metadata?.studio).toBeUndefined()
+      })
+
+      it('survives JSON serialization of the sentinel (Playwright use options)', () => {
+        const roundTripped: unknown = JSON.parse(
+          JSON.stringify(STUDIO_RENDER_OPTIONS)
+        )
+        expect(isStudioRenderOptions(roundTripped)).toBe(true)
+        expect(isStudioRenderOptions({ recording: { size: 1 } })).toBe(false)
+        expect(isStudioRenderOptions(undefined)).toBe(false)
+      })
     })
   })
 })

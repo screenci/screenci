@@ -198,7 +198,7 @@ API reference: [zoomTo()](/docs/reference/api/functions/zoomto),
 ### `createNarration()`
 
 Use `createNarration()` to define narration cues and language variants. See
-[Narration and Localization](/docs/narration-and-localization).
+[Narration and Localization](/docs/guides/narration-and-localization).
 
 Common options:
 

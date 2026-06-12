@@ -14,6 +14,7 @@ function makeRecorder(): IEventRecorder {
     start: vi.fn(),
     addInput: vi.fn(),
     addCueStart: vi.fn(),
+    addStudioCueStart: vi.fn(),
     addCueEnd: vi.fn(),
     addVideoCueStart: vi.fn(),
     addAssetStart: vi.fn(),

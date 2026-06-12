@@ -98,25 +98,37 @@ export const docsManifest = [
     description:
       'Add intro clips, corner logos, transition assets, and timed overlays to ScreenCI recordings.',
     prev: 'docs/guides/camera-and-zooming',
+    next: 'docs/guides/studio',
+  },
+  {
+    source: 'studio.md',
+    slug: 'docs/guides/studio',
+    section: 'Guides',
+    order: 5,
+    navLabel: 'Studio',
+    title: 'Studio',
+    description:
+      'Remix render options, narration text, and voices from the web app, or manage them entirely in Studio with createStudioNarration. Business tier.',
+    prev: 'docs/guides/assets-and-overlays',
     next: 'docs/guides/public-urls-and-embeds',
   },
   {
     source: 'public-urls-and-embeds.md',
     slug: 'docs/guides/public-urls-and-embeds',
     section: 'Guides',
-    order: 5,
+    order: 6,
     navLabel: 'Public URLs and embeds',
     title: 'Public URLs and Embeds',
     description:
       'Enable public delivery for a video, understand stable language-specific URLs, and embed ScreenCI outputs in other sites.',
-    prev: 'docs/guides/assets-and-overlays',
+    prev: 'docs/guides/studio',
     next: 'docs/guides/update-screenci',
   },
   {
     source: 'update-screenci.mdx',
     slug: 'docs/guides/update-screenci',
     section: 'Guides',
-    order: 6,
+    order: 7,
     navLabel: 'Update ScreenCI',
     title: 'Update ScreenCI',
     description:
@@ -128,7 +140,7 @@ export const docsManifest = [
     source: 'cli.mdx',
     slug: 'docs/reference/cli',
     section: 'Guides',
-    order: 7,
+    order: 8,
     navLabel: 'CLI',
     title: 'CLI',
     description:
@@ -140,7 +152,7 @@ export const docsManifest = [
     source: 'configuration.md',
     slug: 'docs/reference/configuration',
     section: 'Guides',
-    order: 8,
+    order: 9,
     navLabel: 'Configuration',
     title: 'Configuration',
     description:
@@ -152,7 +164,7 @@ export const docsManifest = [
     source: 'public-delivery-api.md',
     slug: 'docs/reference/public-delivery-api',
     section: 'Guides',
-    order: 9,
+    order: 10,
     navLabel: 'Public delivery API',
     title: 'Public Delivery API',
     description:

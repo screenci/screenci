@@ -53,6 +53,7 @@ function makeRecorder() {
       }
     ),
     addCueStart: vi.fn(),
+    addStudioCueStart: vi.fn(),
     addCueEnd: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),

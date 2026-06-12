@@ -1,5 +1,5 @@
 import { describe, it, assertType } from 'vitest'
-import { createNarration } from './cue.js'
+import { createNarration, createStudioNarration } from './cue.js'
 import type { NarrationCue } from './cue.js'
 import { modelTypes, voices } from './voices.js'
 
@@ -128,5 +128,65 @@ describe('createNarration type constraints', () => {
       },
       en: { intro: 'Hello' },
     })
+  })
+
+  it('accepts ElevenLabs multilingual v2 voice settings', () => {
+    createNarration({
+      voice: {
+        name: voices.elevenlabs({ voiceId: 'voice-en' }),
+        stability: 0.45,
+        similarityBoost: 0.8,
+        style: 0.2,
+        speed: 0.9,
+        useSpeakerBoost: false,
+      },
+      en: { intro: 'Hello' },
+    })
+  })
+
+  it('rejects ElevenLabs settings for model voices', () => {
+    createNarration({
+      voice: {
+        name: voices.Ava,
+        // @ts-expect-error — stability is only available for ElevenLabs voices
+        stability: 0.5,
+      },
+      en: { intro: 'Hello' },
+    })
+  })
+
+  it('rejects model voice prompts for ElevenLabs voices', () => {
+    createNarration({
+      voice: {
+        name: voices.elevenlabs({ voiceId: 'voice-en' }),
+        // @ts-expect-error — ElevenLabs style is a numeric exaggeration setting
+        style: 'Friendly and energetic',
+      },
+      en: { intro: 'Hello' },
+    })
+  })
+})
+
+describe('createStudioNarration type constraints', () => {
+  it('types each key as a NarrationCue', () => {
+    const narration = createStudioNarration('intro', 'checkout', 'outro')
+
+    assertType<NarrationCue>(narration.intro)
+    assertType<NarrationCue>(narration.checkout)
+    assertType<NarrationCue>(narration.outro)
+    assertType<() => Promise<void>>(narration.intro.start)
+    assertType<() => Promise<void>>(narration.intro.end)
+  })
+
+  it('rejects keys that were not declared', () => {
+    const narration = createStudioNarration('intro')
+
+    // @ts-expect-error — "typo" was not declared as a cue key
+    void narration.typo
+  })
+
+  it('requires at least one cue key', () => {
+    // @ts-expect-error — at least one cue key is required
+    createStudioNarration()
   })
 })

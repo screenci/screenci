@@ -5,6 +5,7 @@ import type {
   Locator,
   Mouse,
 } from '@playwright/test'
+import type { StudioRenderOptionsSentinel } from './studio.js'
 
 /**
  * Aspect ratio for recording and output.
@@ -710,14 +711,25 @@ export type ScreenCIPage = Omit<
   getByTitle(...args: Parameters<Page['getByTitle']>): ScreenCILocator
 }
 
-import type { VoiceKey } from './voices.js'
+import type { ElevenLabsVoiceKey, ModelVoiceKey } from './voices.js'
 
-export type CueConfig = {
-  voice: VoiceKey
-  speed?: number
-  stability?: number
-  style?: number
-}
+export type CueConfig =
+  | {
+      voice: ElevenLabsVoiceKey
+      speed?: number
+      stability?: number
+      similarityBoost?: number
+      style?: number
+      useSpeakerBoost?: boolean
+    }
+  | {
+      voice: ModelVoiceKey
+      speed?: never
+      stability?: never
+      similarityBoost?: never
+      style?: never
+      useSpeakerBoost?: never
+    }
 
 export type ScreenCIConfig = Omit<
   PlaywrightTestConfig,
@@ -774,7 +786,8 @@ export type ScreenCIConfig = Omit<
   webServer?: PlaywrightTestConfig['webServer']
   use?: Omit<NonNullable<PlaywrightTestConfig['use']>, 'trace'> & {
     recordOptions?: RecordOptions
-    renderOptions?: RenderOptions
+    /** Render options, or `STUDIO_RENDER_OPTIONS` to configure them in Studio (Business tier). */
+    renderOptions?: RenderOptions | StudioRenderOptionsSentinel
     /**
      * Timeout in milliseconds for individual actions like `click()`, `fill()`, etc.
      *
@@ -803,7 +816,8 @@ export type ScreenCIConfig = Omit<
   projects?: (Omit<Project, 'use'> & {
     use?: Omit<NonNullable<Project['use']>, 'trace'> & {
       recordOptions?: RecordOptions
-      renderOptions?: RenderOptions
+      /** Render options, or `STUDIO_RENDER_OPTIONS` to configure them in Studio (Business tier). */
+      renderOptions?: RenderOptions | StudioRenderOptionsSentinel
       /**
        * When to record traces during test execution.
        * Uses Playwright's native `trace` option type.

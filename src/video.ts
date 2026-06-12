@@ -22,6 +22,7 @@ import type {
   ScreenCIPage,
 } from './types.js'
 import type { Page } from '@playwright/test'
+import type { StudioRenderOptionsSentinel } from './studio.js'
 export { getDimensions } from './dimensions.js'
 import { getDimensions, getViewportCenter } from './dimensions.js'
 import { resetCueChain } from './cue.js'
@@ -218,7 +219,7 @@ async function withActiveRecordingContext<T>(params: {
 
 type VideoFixtureOptions = {
   recordOptions: RecordOptions
-  renderOptions: RenderOptions | undefined
+  renderOptions: RenderOptions | StudioRenderOptionsSentinel | undefined
 }
 
 const _videoBase = base.extend<

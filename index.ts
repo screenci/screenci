@@ -14,7 +14,13 @@ export type {
 
 // Re-export voices
 export { voices, modelTypes } from './src/voices.js'
-export type { VoiceKey, CustomVoiceRef, ModelType } from './src/voices.js'
+export type {
+  VoiceKey,
+  ModelVoiceKey,
+  ElevenLabsVoiceKey,
+  CustomVoiceRef,
+  ModelType,
+} from './src/voices.js'
 
 // Re-export config function
 export { defineConfig } from './src/config.js'
@@ -22,8 +28,10 @@ export { defineConfig } from './src/config.js'
 // Re-export video fixture and narration cue
 export { video } from './src/video.js'
 export type { ScreenCIPage, ScreenCILocator } from './src/types.js'
-export { createNarration } from './src/cue.js'
+export { createNarration, createStudioNarration } from './src/cue.js'
 export type { NarrationCue, Cues, TopLevelVoiceConfig } from './src/cue.js'
+export { STUDIO_RENDER_OPTIONS, isStudioRenderOptions } from './src/studio.js'
+export type { StudioRenderOptionsSentinel } from './src/studio.js'
 export { hide } from './src/hide.js'
 export { speed } from './src/speed.js'
 export { time } from './src/time.js'

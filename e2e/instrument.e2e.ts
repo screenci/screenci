@@ -14,11 +14,7 @@ import type {
   MouseHideEvent,
   MouseWaitEvent,
 } from '../src/events.js'
-import type {
-  ClickBeforeFillOption,
-  Easing,
-  PostClickMove,
-} from '../src/types.js'
+import type { Easing } from '../src/types.js'
 import type { Locator, Page } from '@playwright/test'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -27,45 +23,43 @@ const fixtureHtml = readFileSync(
   'utf-8'
 )
 
-// Helper type: locator with the click option our instrumentation adds
-type WithClick<T> = T & { click?: ClickBeforeFillOption }
+type CursorMoveOpts = {
+  moveDuration?: number
+  moveSpeed?: number
+  moveEasing?: Easing
+  beforeClickPause?: number
+  postClickPause?: number
+}
 
 function checkLocator(locator: Locator): {
-  check(opts?: WithClick<Parameters<Locator['check']>[0]>): Promise<void>
+  check(opts?: Parameters<Locator['check']>[0] & CursorMoveOpts): Promise<void>
 } {
   return locator as never
 }
 function uncheckLocator(locator: Locator): {
-  uncheck(opts?: WithClick<Parameters<Locator['uncheck']>[0]>): Promise<void>
+  uncheck(
+    opts?: Parameters<Locator['uncheck']>[0] & CursorMoveOpts
+  ): Promise<void>
 } {
   return locator as never
 }
 function tapLocator(locator: Locator): {
-  tap(opts?: WithClick<Parameters<Locator['tap']>[0]>): Promise<void>
+  tap(opts?: Parameters<Locator['tap']>[0] & CursorMoveOpts): Promise<void>
 } {
   return locator as never
 }
 function clickableLocator(locator: Locator): {
-  click(
-    opts?: Parameters<Locator['click']>[0] & {
-      moveDuration?: number
-      moveSpeed?: number
-      beforeClickPause?: number
-      moveEasing?: Easing
-      postClickPause?: number
-      postClickMove?: PostClickMove
-    }
-  ): Promise<void>
+  click(opts?: Parameters<Locator['click']>[0] & CursorMoveOpts): Promise<void>
 } {
   return locator as never
 }
 function fillableLocator(locator: Locator): {
   fill(
     value: string,
-    opts?: {
+    opts?: CursorMoveOpts & {
       duration?: number
       timeout?: number
-      click?: ClickBeforeFillOption
+      forceClick?: boolean
       hideMouse?: boolean
     }
   ): Promise<void>
@@ -75,10 +69,11 @@ function fillableLocator(locator: Locator): {
 function typeableLocator(locator: Locator): {
   pressSequentially(
     text: string,
-    opts?: Parameters<Locator['pressSequentially']>[1] & {
-      click?: ClickBeforeFillOption
-      hideMouse?: boolean
-    }
+    opts?: Parameters<Locator['pressSequentially']>[1] &
+      CursorMoveOpts & {
+        forceClick?: boolean
+        hideMouse?: boolean
+      }
   ): Promise<void>
 } {
   return locator as never
@@ -86,9 +81,7 @@ function typeableLocator(locator: Locator): {
 function selectableLocator(locator: Locator): {
   selectOption(
     values: Parameters<Locator['selectOption']>[0],
-    opts?: Parameters<Locator['selectOption']>[1] & {
-      click?: ClickBeforeFillOption
-    }
+    opts?: Parameters<Locator['selectOption']>[1] & CursorMoveOpts
   ): Promise<string[]>
 } {
   return locator as never
@@ -312,7 +305,7 @@ test.describe('fill instrumentation', () => {
   test('with click option: records click sub-events', async ({ page }) => {
     await fillableLocator(page.locator('#text-input')).fill('hi', {
       duration: 100,
-      click: { moveDuration: 50 },
+      moveDuration: 50,
     })
 
     const events = inputEvents()
@@ -422,7 +415,7 @@ test.describe('pressSequentially instrumentation', () => {
   test('with click option: records click sub-events', async ({ page }) => {
     await typeableLocator(page.locator('#text-input')).pressSequentially('hi', {
       delay: 30,
-      click: { moveDuration: 50 },
+      moveDuration: 50,
     })
 
     const events = inputEvents()
@@ -543,7 +536,7 @@ test.describe('check instrumentation', () => {
     page,
   }) => {
     await checkLocator(page.locator('#checkbox-unchecked')).check({
-      click: { moveDuration: 100 },
+      moveDuration: 100,
     })
 
     const events = inputEvents()
@@ -566,7 +559,7 @@ test.describe('check instrumentation', () => {
 
   test('with click option: actually checks the checkbox', async ({ page }) => {
     await checkLocator(page.locator('#checkbox-unchecked')).check({
-      click: { moveDuration: 50 },
+      moveDuration: 50,
     })
     await expect(page.locator('#checkbox-unchecked')).toBeChecked()
   })
@@ -645,7 +638,7 @@ test.describe('uncheck instrumentation', () => {
     page,
   }) => {
     await uncheckLocator(page.locator('#checkbox-checked')).uncheck({
-      click: { moveDuration: 100 },
+      moveDuration: 100,
     })
 
     const events = inputEvents()
@@ -661,7 +654,7 @@ test.describe('uncheck instrumentation', () => {
     page,
   }) => {
     await uncheckLocator(page.locator('#checkbox-checked')).uncheck({
-      click: { moveDuration: 50 },
+      moveDuration: 50,
     })
     await expect(page.locator('#checkbox-checked')).not.toBeChecked()
   })
@@ -744,7 +737,7 @@ test.describe('tap instrumentation', () => {
     page,
   }) => {
     await tapLocator(page.locator('#tap-target')).tap({
-      click: { moveDuration: 100 },
+      moveDuration: 100,
     })
 
     const events = inputEvents()
@@ -764,7 +757,7 @@ test.describe('tap instrumentation', () => {
     page,
   }) => {
     await tapLocator(page.locator('#tap-target')).tap({
-      click: { moveDuration: 50 },
+      moveDuration: 50,
     })
     await expect(page.locator('#tap-status')).not.toHaveText('Not yet tapped')
   })
@@ -848,7 +841,7 @@ test.describe('selectOption instrumentation', () => {
     page,
   }) => {
     await selectableLocator(page.locator('#cars')).selectOption('audi', {
-      click: { moveDuration: 100 },
+      moveDuration: 100,
     })
 
     const events = inputEvents()
@@ -872,14 +865,14 @@ test.describe('selectOption instrumentation', () => {
 
   test('with click option: actually selects the option', async ({ page }) => {
     await selectableLocator(page.locator('#cars')).selectOption('saab', {
-      click: { moveDuration: 50 },
+      moveDuration: 50,
     })
     await expect(page.locator('#cars')).toHaveValue('saab')
   })
 
   test('with click option: cursor y is at select center', async ({ page }) => {
     await selectableLocator(page.locator('#cars')).selectOption('audi', {
-      click: { moveDuration: 100 },
+      moveDuration: 100,
     })
 
     const events = inputEvents()
@@ -1022,7 +1015,7 @@ function hoverableLocator(locator: Locator): {
   hover(
     opts?: Parameters<Locator['hover']>[0] & {
       moveDuration?: number
-      easing?: string
+      moveEasing?: string
       hoverDuration?: number
     }
   ): Promise<void>
@@ -1081,7 +1074,7 @@ function selectTextLocator(locator: Locator): {
   selectText(
     opts?: Parameters<Locator['selectText']>[0] & {
       moveDuration?: number
-      easing?: string
+      moveEasing?: string
       beforeClickPause?: number
       selectDuration?: number
     }

@@ -92,6 +92,74 @@ video('Billing walkthrough', async ({ page }) => {
 })
 ```
 
+## Cursor animation options
+
+Every locator action that moves the cursor accepts the same flat set of
+animation options. Mix and match as needed:
+
+| Option             | Type            | Default         | Description                                                     |
+| ------------------ | --------------- | --------------- | --------------------------------------------------------------- |
+| `moveDuration`     | `number` (ms)   | 900             | Duration of the cursor move to the element.                     |
+| `moveSpeed`        | `number` (px/s) | —               | Speed-based alternative to `moveDuration` (mutually exclusive). |
+| `moveEasing`       | `Easing`        | `'ease-in-out'` | Easing curve for the cursor move animation.                     |
+| `beforeClickPause` | `number` (ms)   | 50              | Pause after the cursor arrives, before the action fires.        |
+| `postClickPause`   | `number` (ms)   | 500             | Pause after the action completes.                               |
+
+```ts
+// Slow the cursor move and add a brief pause before the click
+await page.getByRole('button', { name: 'Save' }).click({
+  moveDuration: 1200,
+  moveEasing: 'ease-out',
+  beforeClickPause: 100,
+})
+
+// Speed-based cursor movement for a fill
+await page.getByLabel('Company name').fill('ScreenCI Labs', {
+  moveSpeed: 500,
+})
+
+// Slower hover with a longer dwell time
+await page.getByTestId('tooltip-trigger').hover({
+  moveDuration: 600,
+  hoverDuration: 2000,
+})
+
+// Drag with separate move and drag animations
+await page.getByTestId('card').dragTo(page.getByTestId('column'), {
+  moveDuration: 400,
+  moveEasing: 'ease-in',
+  dragDuration: 800,
+  dragEasing: 'ease-out',
+})
+```
+
+### fill and pressSequentially
+
+`fill` and `pressSequentially` animate a click before typing by default.
+The click is skipped automatically when the element is already focused.
+Pass `forceClick: true` to always show the click animation:
+
+```ts
+await page.getByLabel('Search').fill('product tour', { forceClick: true })
+```
+
+### selectText
+
+`selectText` shows a triple-click animation. Control its total duration:
+
+```ts
+await page.getByTestId('code-block').selectText({ selectDuration: 900 })
+```
+
+### page.mouse.move
+
+`page.mouse.move` uses `duration` and `speed` without the `move` prefix
+(since the call itself is already a mouse move):
+
+```ts
+await page.mouse.move(400, 300, { duration: 600, easing: 'ease-in-out' })
+```
+
 ## Related pages
 
 - [Video Script Basics](/docs/write-video-scripts)

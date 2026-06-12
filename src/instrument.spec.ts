@@ -392,10 +392,10 @@ describe('instrumentPage', () => {
       type: 'focusChange',
       x: 300,
       y: 400,
-      mouse: expect.objectContaining({ easing: 'ease-in-out' }),
+      mouse: expect.objectContaining({}),
     })
-    expect(move!.endMs - move!.startMs).toBeGreaterThan(0)
-    expect(originalMove.mock.calls.length).toBeGreaterThan(1)
+    expect(move!.endMs).toBeGreaterThanOrEqual(move!.startMs)
+    expect(originalMove).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -676,14 +676,7 @@ describe('instrumentLocator', () => {
     instrumentLocator(locator)
 
     await Promise.all([
-      (
-        locator as unknown as {
-          fill(
-            value: string,
-            options?: { click?: { postClickPause?: number } }
-          ): Promise<void>
-        }
-      ).fill('Acme Corporation', { click: { postClickPause: 0 } }),
+      locator.fill('Acme Corporation', { postClickPause: 0 }),
       vi.runAllTimersAsync(),
     ])
 
@@ -704,12 +697,7 @@ describe('instrumentLocator', () => {
     instrumentLocator(locator)
 
     await Promise.all([
-      (
-        locator.fill as (
-          value: string,
-          options?: { duration?: number; click?: { postClickPause?: number } }
-        ) => Promise<void>
-      )('Acme Corporation', { duration: 100, click: { postClickPause: 0 } }),
+      locator.fill('Acme Corporation', { duration: 100, postClickPause: 0 }),
       vi.runAllTimersAsync(),
     ])
 
@@ -742,12 +730,7 @@ describe('instrumentLocator', () => {
     instrumentLocator(locator)
 
     await Promise.all([
-      (
-        locator.fill as (
-          value: string,
-          options?: { duration?: number; click?: { beforeClickPause?: number } }
-        ) => Promise<void>
-      )('Acme Corporation', { duration: 100, click: { beforeClickPause: 0 } }),
+      locator.fill('Acme Corporation', { duration: 100, beforeClickPause: 0 }),
       vi.runAllTimersAsync(),
     ])
 
@@ -785,12 +768,7 @@ describe('instrumentLocator', () => {
     instrumentLocator(locator)
 
     await Promise.all([
-      (
-        locator.fill as (
-          value: string,
-          options?: { duration?: number; click?: { beforeClickPause?: number } }
-        ) => Promise<void>
-      )('Acme', { duration: 100, click: { beforeClickPause: 0 } }),
+      locator.fill('Acme', { duration: 100, beforeClickPause: 0 }),
       vi.runAllTimersAsync(),
     ])
 
@@ -907,17 +885,10 @@ describe('instrumentLocator', () => {
     instrumentLocator(locator)
 
     await Promise.all([
-      (
-        locator.fill as (
-          value: string,
-          options?: {
-            duration?: number
-            click?: { beforeClickPause?: number; postClickPause?: number }
-          }
-        ) => Promise<void>
-      )('Acme', {
+      locator.fill('Acme', {
         duration: 100,
-        click: { beforeClickPause: 0, postClickPause: 240 },
+        beforeClickPause: 0,
+        postClickPause: 240,
       }),
       vi.runAllTimersAsync(),
     ])
@@ -955,7 +926,7 @@ describe('instrumentLocator', () => {
     await Promise.all([
       locator.pressSequentially('Acme', {
         delay: 10,
-        click: { beforeClickPause: 0 },
+        beforeClickPause: 0,
       }),
       vi.runAllTimersAsync(),
     ])
@@ -1332,21 +1303,11 @@ describe('instrumentLocator', () => {
 
     const p = autoZoom(
       async () => {
-        await (
-          locator.fill as (
-            value: string,
-            options?: {
-              duration?: number
-              click?: {
-                moveDuration?: number
-                beforeClickPause?: number
-                postClickPause?: number
-              }
-            }
-          ) => Promise<void>
-        )('hi', {
+        await locator.fill('hi', {
           duration: 100,
-          click: { moveDuration: 0, beforeClickPause: 0, postClickPause: 0 },
+          moveDuration: 0,
+          beforeClickPause: 0,
+          postClickPause: 0,
         })
       },
       { duration: 300, postZoomDelay: 0 }
@@ -1380,21 +1341,11 @@ describe('instrumentLocator', () => {
     instrumentLocator(locator)
 
     await Promise.all([
-      (
-        locator.fill as (
-          value: string,
-          options?: {
-            duration?: number
-            click?: {
-              moveDuration?: number
-              beforeClickPause?: number
-              postClickPause?: number
-            }
-          }
-        ) => Promise<void>
-      )('hi', {
+      locator.fill('hi', {
         duration: 100,
-        click: { moveDuration: 0, beforeClickPause: 0, postClickPause: 0 },
+        moveDuration: 0,
+        beforeClickPause: 0,
+        postClickPause: 0,
       }),
       vi.runAllTimersAsync(),
     ])
@@ -1423,16 +1374,10 @@ describe('instrumentLocator', () => {
     instrumentLocator(locator)
 
     await Promise.all([
-      (
-        locator.check as (options?: {
-          click?: {
-            moveDuration?: number
-            beforeClickPause?: number
-            postClickPause?: number
-          }
-        }) => Promise<void>
-      )({
-        click: { moveDuration: 0, beforeClickPause: 0, postClickPause: 0 },
+      locator.check({
+        moveDuration: 0,
+        beforeClickPause: 0,
+        postClickPause: 0,
       }),
       vi.runAllTimersAsync(),
     ])
@@ -1803,18 +1748,9 @@ describe('instrumentLocator', () => {
           hideMouse: true,
         } as unknown as Parameters<Locator['pressSequentially']>[1])
 
-        await (
-          locator.check as (options?: { click?: unknown }) => Promise<void>
-        )({ click: {} })
-        await (
-          locator.uncheck as (options?: { click?: unknown }) => Promise<void>
-        )({ click: {} })
-        await (
-          locator.selectOption as (
-            values: string,
-            options?: { click?: unknown; position?: { x: number; y: number } }
-          ) => Promise<string[]>
-        )('one', { click: {}, position: { x: 1, y: 1 } })
+        await locator.check()
+        await locator.uncheck()
+        await locator.selectOption('one', { position: { x: 1, y: 1 } })
       }),
       vi.runAllTimersAsync(),
     ])

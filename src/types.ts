@@ -272,16 +272,6 @@ export type MouseMoveTimingOption =
       speed?: number
     }
 
-export type RequiredMouseMoveTimingOption =
-  | {
-      duration: number
-      speed?: never
-    }
-  | {
-      duration?: never
-      speed: number
-    }
-
 export type CursorMoveTimingOption =
   | {
       moveDuration?: number
@@ -302,71 +292,36 @@ export type CursorDragTimingOption =
       dragSpeed?: number
     }
 
-/**
- * Options for the automatic click that precedes a `fill`,
- * `pressSequentially`, `check`, `uncheck`, `setChecked`, or `selectOption`.
- *
- * These methods already click the locator first (with animated cursor
- * movement), then begin the action immediately. For `fill` and
- * `pressSequentially`, that default pre-typing cursor move/click is skipped
- * when the target input is already focused. Pass this as `click` when you
- * want to customize or force that built-in click timing. No extra zoom-pan
- * sleep is inserted — the cursor-move animation covers it.
- *
- * To control where on the element the cursor moves, pass `position` at the
- * top level of the method's options (not inside `click`).
- */
-export type ClickBeforeFillOption = CursorMoveTimingOption & {
-  /** Pause between cursor arrival and click in ms (default: 50). */
-  beforeClickPause?: number
+/** Shared cursor-animation options available on all locator actions. */
+type CursorMoveOptions = CursorMoveTimingOption & {
+  /** Easing function for the cursor move animation (default: 'ease-in-out'). */
   moveEasing?: Easing
-  noWaitAfter?: boolean
+  /** Pause between cursor arrival and the action in ms (default: 50). */
+  beforeClickPause?: number
+  /** Pause after the action completes in ms. */
   postClickPause?: number
-  postClickMove?: PostClickMove
 }
-
-/**
- * Camera pan to perform after a click completes.
- *
- * Direction-based: the camera shifts by the element's bounding-box size
- * (in output pixels) plus optional `padding` (output pixels, applied to each
- * side) in the given direction.
- *
- * Pixel-based: the camera shifts by explicit `x` / `y` output-pixel offsets
- * (negative values pan in the opposite direction).
- */
-export type PostClickMove =
-  | (RequiredMouseMoveTimingOption & {
-      easing?: Easing
-      /** Output pixels added to each side of the element rect before computing the shift. */
-      padding?: number
-      direction: 'up' | 'down' | 'left' | 'right'
-    })
-  | (RequiredMouseMoveTimingOption & {
-      easing?: Easing
-      /** Horizontal camera shift in output pixels (negative = left). */
-      x: number
-      /** Vertical camera shift in output pixels (negative = up). */
-      y: number
-    })
 
 export type ScreenCILocatorClickOptions = Omit<
   NonNullable<Parameters<Locator['click']>[0]>,
   'steps'
 > &
-  CursorMoveTimingOption & {
-    beforeClickPause?: number
-    moveEasing?: Easing
-    postClickPause?: number
-    postClickMove?: PostClickMove
+  CursorMoveOptions & {
     autoZoomOptions?: AutoZoomOptions
   }
 
-export type ScreenCILocatorFillOptions = {
+export type ScreenCILocatorFillOptions = CursorMoveOptions & {
+  /**
+   * When `true`, forces the pre-type click animation even if the target input
+   * is already focused. By default the click is skipped when already focused.
+   */
+  forceClick?: boolean
+  noWaitAfter?: boolean
+  /** Total time in milliseconds to spend typing (default: 1000). */
   duration?: number
   timeout?: number
-  click?: ClickBeforeFillOption
   position?: { x: number; y: number }
+  /** Hide the cursor while typing; shown again on the next mouse move. */
   hideMouse?: boolean
   autoZoomOptions?: AutoZoomOptions
 }
@@ -374,28 +329,38 @@ export type ScreenCILocatorFillOptions = {
 export type ScreenCILocatorPressSequentiallyOptions = Omit<
   NonNullable<Parameters<Locator['pressSequentially']>[1]>,
   'delay'
-> & {
-  delay?: number
-  click?: ClickBeforeFillOption
-  position?: { x: number; y: number }
-  hideMouse?: boolean
-  autoZoomOptions?: AutoZoomOptions
-}
+> &
+  CursorMoveOptions & {
+    /**
+     * When `true`, forces the pre-type click animation even if the target input
+     * is already focused. By default the click is skipped when already focused.
+     */
+    forceClick?: boolean
+    noWaitAfter?: boolean
+    delay?: number
+    position?: { x: number; y: number }
+    /** Hide the cursor while typing; shown again on the next mouse move. */
+    hideMouse?: boolean
+    autoZoomOptions?: AutoZoomOptions
+  }
 
 export type ScreenCILocatorCheckOptions = NonNullable<
   Parameters<Locator['check']>[0]
-> & {
-  position?: { x: number; y: number }
-  click?: ClickBeforeFillOption
-  autoZoomOptions?: AutoZoomOptions
-}
+> &
+  CursorMoveOptions & {
+    noWaitAfter?: boolean
+    position?: { x: number; y: number }
+    autoZoomOptions?: AutoZoomOptions
+  }
 
 export type ScreenCILocatorHoverOptions = Omit<
   NonNullable<Parameters<Locator['hover']>[0]>,
   'steps'
 > &
   CursorMoveTimingOption & {
-    easing?: Easing
+    /** Easing function for the cursor move animation (default: 'ease-in-out'). */
+    moveEasing?: Easing
+    /** How long to hold the hover in ms (default: 1000). */
     hoverDuration?: number
     position?: { x: number; y: number }
   }
@@ -405,8 +370,13 @@ export type ScreenCILocatorSelectTextOptions = Omit<
   'steps'
 > &
   CursorMoveTimingOption & {
-    easing?: Easing
+    /** Easing function for the cursor move animation (default: 'ease-in-out'). */
+    moveEasing?: Easing
     beforeClickPause?: number
+    /**
+     * Total duration of the triple-click animation in ms (default: 600).
+     * Divided equally across the 3 click cycles.
+     */
     selectDuration?: number
   }
 
@@ -425,11 +395,12 @@ export type ScreenCILocatorDragToOptions = Omit<
 
 export type ScreenCILocatorSelectOptionOptions = NonNullable<
   Parameters<Locator['selectOption']>[1]
-> & {
-  click?: ClickBeforeFillOption
-  position?: { x: number; y: number }
-  autoZoomOptions?: AutoZoomOptions
-}
+> &
+  CursorMoveOptions & {
+    noWaitAfter?: boolean
+    position?: { x: number; y: number }
+    autoZoomOptions?: AutoZoomOptions
+  }
 
 type LocatorReturnMethodNames =
   | 'locator'
@@ -500,15 +471,18 @@ export type ScreenCILocator = Omit<
    * keep Playwright's default waiting behavior.
    *
    * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
+   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
+   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
    * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
-   * @param options.moveEasing - Easing function for the cursor move animation.
    * @param options.postClickPause - Pause after the click completes in ms.
-   * @param options.postClickMove - When provided, animates the cursor away from
-   *   the element after the click (e.g. to simulate the cursor moving off a button).
    */
   click(options?: ScreenCILocatorClickOptions): Promise<void>
   /**
    * Types `value` character-by-character using `pressSequentially`.
+   *
+   * ScreenCI animates a cursor move and click before typing unless the target
+   * input is already focused (in which case the click is skipped). Pass
+   * `forceClick: true` to always animate the click.
    *
    * @param value - The text to type into the element.
    * @param options.duration - Total time in milliseconds to spend typing
@@ -516,105 +490,115 @@ export type ScreenCILocator = Omit<
    *   divided by the number of characters. Has no effect on empty strings.
    * @param options.timeout - Maximum time in milliseconds to wait for the
    *   element to be actionable.
-   * @param options.click - Customizes the built-in click before typing
-   *   (animated cursor move + click). When omitted, ScreenCI skips the
-   *   default pre-typing cursor move/click if the target input is already
-   *   focused. No extra zoom-pan sleep is inserted. That built-in click
-   *   defaults `noWaitAfter` to `true`; pass `options.click.noWaitAfter: false`
-   *   to keep Playwright's default waiting behavior.
-   * @param options.position - Point relative to the element's top-left corner
-   *   to click before filling.
-   *   Defaults to the element center.
-   * @param options.hideMouse - When `true`, the mouse cursor is hidden while
-   *   typing and shown again on the next mouse move. Defaults to `false`.
+   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
+   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
+   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
+   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
+   * @param options.postClickPause - Pause after the click in ms.
+   * @param options.forceClick - When `true`, forces the pre-type click even if already focused.
+   * @param options.noWaitAfter - When `false`, keeps Playwright's default navigation-wait behavior.
+   * @param options.position - Point relative to the element's top-left corner to click before filling.
+   * @param options.hideMouse - When `true`, the mouse cursor is hidden while typing.
    */
   fill(value: string, options?: ScreenCILocatorFillOptions): Promise<void>
   /**
    * Presses keys one by one as if on a physical keyboard.
    *
+   * ScreenCI animates a cursor move and click before typing unless the target
+   * input is already focused (in which case the click is skipped). Pass
+   * `forceClick: true` to always animate the click.
+   *
    * @param text - The text to type.
    * @param options.delay - Time between keystrokes in milliseconds.
    * @param options.timeout - Maximum time in milliseconds to wait for the
    *   element to be actionable.
-   * @param options.click - Customizes the built-in click before typing
-   *   (animated cursor move + click). When omitted, ScreenCI skips the
-   *   default pre-typing cursor move/click if the target input is already
-   *   focused. No extra zoom-pan sleep is inserted. That built-in click
-   *   defaults `noWaitAfter` to `true`; pass `options.click.noWaitAfter: false`
-   *   to keep Playwright's default waiting behavior.
-   * @param options.position - Point relative to the element's top-left corner
-   *   to click before typing.
-   *   Defaults to the element center.
-   * @param options.hideMouse - When `true`, the mouse cursor is hidden while
-   *   typing and shown again on the next mouse move. Defaults to `false`.
+   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
+   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
+   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
+   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
+   * @param options.postClickPause - Pause after the click in ms.
+   * @param options.forceClick - When `true`, forces the pre-type click even if already focused.
+   * @param options.noWaitAfter - When `false`, keeps Playwright's default navigation-wait behavior.
+   * @param options.position - Point relative to the element's top-left corner to click before typing.
+   * @param options.hideMouse - When `true`, the mouse cursor is hidden while typing.
    */
   pressSequentially(
     text: string,
     options?: ScreenCILocatorPressSequentiallyOptions
   ): Promise<void>
   /**
-   * Checks the checkbox or radio button.
+   * Checks the checkbox or radio button with an animated cursor move.
    *
    * ScreenCI defaults `noWaitAfter` to `true` for the underlying click.
    * Pass `noWaitAfter: false` to keep Playwright's default waiting behavior.
    *
-   * @param options.position - Point relative to the element's top-left corner
-   *   to click. Defaults to the element center.
-   * @param options.click - Customizes the built-in click before checking.
-   *   The click timing data is embedded in the recorded event.
+   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
+   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
+   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
+   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
+   * @param options.postClickPause - Pause after the click in ms.
+   * @param options.position - Point relative to the element's top-left corner to click.
    */
   check(options?: ScreenCILocatorCheckOptions): Promise<void>
   /**
-   * Unchecks the checkbox.
+   * Unchecks the checkbox with an animated cursor move.
    *
    * ScreenCI defaults `noWaitAfter` to `true` for the underlying click.
    * Pass `noWaitAfter: false` to keep Playwright's default waiting behavior.
    *
-   * @param options.position - Point relative to the element's top-left corner
-   *   to click. Defaults to the element center.
-   * @param options.click - Customizes the built-in click before unchecking.
-   *   The click timing data is embedded in the recorded event.
+   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
+   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
+   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
+   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
+   * @param options.postClickPause - Pause after the click in ms.
+   * @param options.position - Point relative to the element's top-left corner to click.
    */
   uncheck(options?: ScreenCILocatorCheckOptions): Promise<void>
   /**
-   * Sets the checked state of a checkbox or radio element.
-   * Delegates to the instrumented `check()` or `uncheck()` based on `checked`.
+   * Sets the checked state of a checkbox or radio element with an animated cursor move.
+   * Delegates to `check()` or `uncheck()` based on `checked`.
    * ScreenCI defaults `noWaitAfter` to `true` for the underlying click.
    * Pass `noWaitAfter: false` to keep Playwright's default waiting behavior.
    *
-   * @param options.position - Point relative to the element's top-left corner
-   *   to click. Defaults to the element center.
-   * @param options.click - Customizes the built-in click before acting.
-   *   The click timing data is embedded in the recorded event.
+   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
+   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
+   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
+   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
+   * @param options.postClickPause - Pause after the click in ms.
+   * @param options.position - Point relative to the element's top-left corner to click.
    */
   setChecked(
     checked: boolean,
     options?: ScreenCILocatorCheckOptions
   ): Promise<void>
   /**
-   * Taps the element (touch event).
+   * Taps the element (touch event) with an animated cursor move.
    *
    * ScreenCI defaults `noWaitAfter` to `true` for this action so the rendered
    * tap is not delayed by later navigation waits. Pass `noWaitAfter: false`
    * to keep Playwright's default waiting behavior.
    *
-   * @param options.click - Customizes the built-in click before tapping.
-   *   The click timing data is embedded in the recorded event.
+   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
+   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
+   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
+   * @param options.beforeClickPause - Pause between cursor arrival and tap in ms (default: 50).
+   * @param options.postClickPause - Pause after the tap in ms.
    */
   tap(
-    options?: Parameters<Locator['tap']>[0] & {
-      click?: ClickBeforeFillOption
-      autoZoomOptions?: AutoZoomOptions
-    }
+    options?: Omit<NonNullable<Parameters<Locator['tap']>[0]>, 'steps'> &
+      CursorMoveOptions & {
+        noWaitAfter?: boolean
+        autoZoomOptions?: AutoZoomOptions
+      }
   ): Promise<void>
   /**
    * Hovers over the element with an animated cursor move.
    *
    * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
-   * @param options.easing - Easing function for the cursor move animation.
+   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
+   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
    * @param options.hoverDuration - How long to hold the hover in ms (default: 1000).
    * @param options.position - Point relative to the element's top-left corner to hover over.
-   *   Defaults to the element center.
    */
   hover(options?: ScreenCILocatorHoverOptions): Promise<void>
   /**
@@ -622,10 +606,10 @@ export type ScreenCILocator = Omit<
    * triple-click animation.
    *
    * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
-   * @param options.easing - Easing function for the cursor move animation.
+   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
+   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
    * @param options.beforeClickPause - Pause between cursor arrival and the triple-click in ms (default: 50).
    * @param options.selectDuration - Total duration of the triple-click animation in ms (default: 600).
-   *   Divided into 6 equal segments: 3 mouseDown + 3 mouseUp phases.
    */
   selectText(options?: ScreenCILocatorSelectTextOptions): Promise<void>
   /**
@@ -648,7 +632,7 @@ export type ScreenCILocator = Omit<
    */
   dragTo(target: Locator, options?: ScreenCILocatorDragToOptions): Promise<void>
   /**
-   * Selects an option in a `<select>` element.
+   * Selects an option in a `<select>` element with an animated cursor move.
    *
    * Note: the native dropdown UI is not rendered. ScreenCI animates the
    * cursor to the select element, clicks it, and then selects the option
@@ -657,10 +641,12 @@ export type ScreenCILocator = Omit<
    * Pass `noWaitAfter: false` to keep Playwright's default waiting behavior.
    *
    * @param values - The option(s) to select (value, label, index, or element).
-   * @param options.click - Customizes the built-in click before selecting.
-   *   The click timing data is embedded in the recorded event.
-   * @param options.position - Point relative to the element's top-left corner
-   *   to click before selecting. Defaults to the element center.
+   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
+   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
+   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
+   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
+   * @param options.postClickPause - Pause after the click in ms.
+   * @param options.position - Point relative to the element's top-left corner to click before selecting.
    */
   selectOption(
     values: Parameters<Locator['selectOption']>[0],
@@ -698,14 +684,18 @@ export type ScreenCIPage = Omit<
    * ScreenCI defaults `noWaitAfter` to `true` for this action so the rendered
    * click can complete before navigation waits. Pass `noWaitAfter: false` to
    * keep Playwright's default waiting behavior.
+   *
+   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
+   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
+   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
+   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
+   * @param options.postClickPause - Pause after the click in ms.
    */
   click(
     selector: string,
     options?: Parameters<Page['click']>[1] &
-      CursorMoveTimingOption & {
-        beforeClickPause?: number
-        moveEasing?: Easing
-        postClickMove?: PostClickMove
+      CursorMoveOptions & {
+        autoZoomOptions?: AutoZoomOptions
       }
   ): Promise<void>
   locator(...args: Parameters<Page['locator']>): ScreenCILocator

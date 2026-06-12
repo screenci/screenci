@@ -17,13 +17,7 @@ import type {
   MouseWaitEvent,
 } from './events.js'
 import { NOOP_EVENT_RECORDER } from './events.js'
-import type {
-  ClickBeforeFillOption,
-  AutoZoomOptions,
-  Easing,
-  PostClickMove,
-  ScreenCIPage,
-} from './types.js'
+import type { AutoZoomOptions, Easing, ScreenCIPage } from './types.js'
 import { isInsideHide } from './hide.js'
 import { changeFocus, type MouseMoveRequest } from './changeFocus.js'
 import { DEFAULT_CLICK_MOUSE_MOVE_DURATION } from './defaults.js'
@@ -39,7 +33,6 @@ import {
   getOriginalLocatorUncheck,
   getOriginalMouseDown,
   getOriginalMouseHide,
-  getMousePosition,
   getOriginalMouseShow,
   getOriginalMouseUp,
   isMouseVisible,
@@ -311,10 +304,9 @@ async function performAction(
   noWaitAfter?: boolean,
   beforeClickPause = 0,
   postClickPause = 0,
-  postClickMove?: PostClickMove,
-  shouldHideMouse = false
+  shouldHideMouse = false,
+  selectDuration?: number
 ): Promise<ClickActionResult | null> {
-  const page = locator.page()
   const focusChange = await changeFocus(
     locator,
     autoZoomOptions,
@@ -376,6 +368,7 @@ async function performAction(
           ...clickActionBase,
           mode,
           shouldHideMouse,
+          ...(selectDuration !== undefined ? { selectDuration } : {}),
         } satisfies Parameters<typeof performMouseClickAction>[0])
 
   const { events, elementRect: actionElementRect } =
@@ -384,70 +377,6 @@ async function performAction(
   innerEvents.push(...events)
 
   await appendMouseWait(innerEvents, postClickPause)
-
-  if (postClickMove !== undefined) {
-    const currentPos = getMousePosition(page) ?? { x: 0, y: 0 }
-    let targetX: number | undefined
-    let targetY: number | undefined
-
-    if ('direction' in postClickMove) {
-      const padding = postClickMove.padding ?? 0
-      switch (postClickMove.direction) {
-        case 'up':
-          targetX = currentPos.x
-          targetY = elementRect.y - padding
-          break
-        case 'down':
-          targetX = currentPos.x
-          targetY = elementRect.y + elementRect.height + padding
-          break
-        case 'left':
-          targetX = elementRect.x - padding
-          targetY = currentPos.y
-          break
-        case 'right':
-          targetX = elementRect.x + elementRect.width + padding
-          targetY = currentPos.y
-          break
-        default: {
-          const _: never = postClickMove.direction
-          throw new Error(`Unknown postClickMove direction: ${_}`)
-        }
-      }
-    } else {
-      targetX = currentPos.x + postClickMove.x
-      targetY = currentPos.y + postClickMove.y
-    }
-
-    if (targetX !== undefined && targetY !== undefined) {
-      const easing = postClickMove.easing ?? 'ease-in-out'
-      const duration = resolveMouseMoveDuration(page, targetX, targetY, {
-        duration: postClickMove.duration,
-        speed: postClickMove.speed,
-        defaultDuration: DEFAULT_CLICK_MOUSE_MOVE_DURATION,
-        context: 'postClickMove',
-      })
-      const moveResult = await performMouseMove({
-        page,
-        targetX,
-        targetY,
-        duration,
-        easing,
-      })
-      innerEvents.push({
-        type: 'focusChange',
-        x: targetX,
-        y: targetY,
-        startMs: moveResult.startMs,
-        endMs: moveResult.endMs,
-        mouse: {
-          startMs: moveResult.startMs,
-          endMs: moveResult.endMs,
-          ...(duration > 0 ? { easing } : {}),
-        },
-      })
-    }
-  }
 
   return {
     elementRect: actionElementRect ?? elementRect,
@@ -526,7 +455,6 @@ export function instrumentLocator(locator: Locator): Locator {
       beforeClickPause?: number
       moveEasing?: Easing
       postClickPause?: number
-      postClickMove?: PostClickMove
       autoZoomOptions?: AutoZoomOptions
     }
   ) => {
@@ -536,7 +464,6 @@ export function instrumentLocator(locator: Locator): Locator {
       beforeClickPause,
       moveEasing,
       postClickPause,
-      postClickMove,
       autoZoomOptions,
       position,
       steps: _steps,
@@ -574,7 +501,6 @@ export function instrumentLocator(locator: Locator): Locator {
       clickOptions.noWaitAfter,
       beforeClickPause,
       postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
-      postClickMove,
       false
     )
 
@@ -587,7 +513,13 @@ export function instrumentLocator(locator: Locator): Locator {
   type PressSequentiallyOptions = Parameters<
     Locator['pressSequentially']
   >[1] & {
-    click?: ClickBeforeFillOption
+    moveDuration?: number
+    moveSpeed?: number
+    moveEasing?: Easing
+    beforeClickPause?: number
+    postClickPause?: number
+    noWaitAfter?: boolean
+    forceClick?: boolean
     autoZoomOptions?: AutoZoomOptions
     hideMouse?: boolean
     position?: { x: number; y: number }
@@ -599,14 +531,18 @@ export function instrumentLocator(locator: Locator): Locator {
     options?: PressSequentiallyOptions
   ): Promise<void> => {
     const shouldSkipDefaultClickAnimation =
-      options?.click === undefined &&
-      (await isLocatorAlreadyFocusedForTyping(locator))
-    const clickOpt: ClickBeforeFillOption = options?.click ?? {}
+      !options?.forceClick && (await isLocatorAlreadyFocusedForTyping(locator))
     const {
-      click: _click,
+      moveDuration,
+      moveSpeed,
+      moveEasing = 'ease-in-out',
+      beforeClickPause,
+      postClickPause,
+      noWaitAfter,
+      forceClick: _forceClick,
       autoZoomOptions,
       hideMouse: _hideMouse,
-      position: _position,
+      position,
       ...pressOptions
     } = options ?? {}
 
@@ -620,15 +556,6 @@ export function instrumentLocator(locator: Locator): Locator {
     const innerEvents: ClickActionResult['innerEvents'] = []
     let elementRect: ElementRect | undefined = undefined
 
-    const {
-      moveDuration,
-      moveSpeed,
-      beforeClickPause,
-      moveEasing = 'ease-in-out',
-      postClickPause,
-      postClickMove,
-    } = clickOpt
-
     if (shouldSkipDefaultClickAnimation) {
       const focusChange = await changeFocus(locator, autoZoomOptions)
       innerEvents.push(focusChange)
@@ -640,7 +567,7 @@ export function instrumentLocator(locator: Locator): Locator {
     } else {
       const clickActionResult = await performAction(
         buildDefaultClickMouseMoveRequest({
-          targetPosInElement: options?.position,
+          targetPosInElement: position,
           moveDuration,
           moveSpeed,
           moveEasing,
@@ -654,12 +581,11 @@ export function instrumentLocator(locator: Locator): Locator {
         false,
         'singleBefore',
         autoZoomOptions,
-        options?.position,
-        clickOpt.noWaitAfter,
+        position,
+        noWaitAfter,
         beforeClickPause ?? DEFAULT_PRE_CLICK_PAUSE_MS,
         postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
-        postClickMove,
-        true
+        _hideMouse ?? false
       )
       innerEvents.push(...(clickActionResult?.innerEvents ?? []))
       elementRect = clickActionResult?.elementRect
@@ -681,9 +607,15 @@ export function instrumentLocator(locator: Locator): Locator {
   locator.fill = async (
     value: string,
     options?: {
+      moveDuration?: number
+      moveSpeed?: number
+      moveEasing?: Easing
+      beforeClickPause?: number
+      postClickPause?: number
+      noWaitAfter?: boolean
+      forceClick?: boolean
       duration?: number
       timeout?: number
-      click?: ClickBeforeFillOption
       position?: { x: number; y: number }
       hideMouse?: boolean
       autoZoomOptions?: AutoZoomOptions
@@ -691,8 +623,14 @@ export function instrumentLocator(locator: Locator): Locator {
   ) => {
     if (isInsideHide()) {
       const {
+        moveDuration: _moveDuration,
+        moveSpeed: _moveSpeed,
+        moveEasing: _moveEasing,
+        beforeClickPause: _beforeClickPause,
+        postClickPause: _postClickPause,
+        noWaitAfter: _noWaitAfter,
+        forceClick: _forceClick,
         duration: _duration,
-        click: _click,
         position: _position,
         hideMouse: _hideMouse,
         autoZoomOptions: _autoZoomOptions,
@@ -703,20 +641,22 @@ export function instrumentLocator(locator: Locator): Locator {
     }
 
     const shouldSkipDefaultClickAnimation =
-      options?.click === undefined &&
-      (await isLocatorAlreadyFocusedForTyping(locator))
-    const clickOpt: ClickBeforeFillOption = options?.click ?? {}
-    const innerEvents: ClickActionResult['innerEvents'] = []
-    let elementRect: ElementRect | undefined = undefined
+      !options?.forceClick && (await isLocatorAlreadyFocusedForTyping(locator))
 
     const {
       moveDuration,
       moveSpeed,
-      beforeClickPause,
       moveEasing = 'ease-in-out',
+      beforeClickPause,
       postClickPause,
-      postClickMove,
-    } = clickOpt
+      noWaitAfter,
+      hideMouse: _hideMouse,
+      autoZoomOptions,
+      position,
+    } = options ?? {}
+
+    const innerEvents: ClickActionResult['innerEvents'] = []
+    let elementRect: ElementRect | undefined = undefined
 
     const typeFilledValue = async (): Promise<void> => {
       await locator.evaluate((element) => {
@@ -746,14 +686,14 @@ export function instrumentLocator(locator: Locator): Locator {
     }
 
     if (shouldSkipDefaultClickAnimation) {
-      const focusChange = await changeFocus(locator, options?.autoZoomOptions)
+      const focusChange = await changeFocus(locator, autoZoomOptions)
       innerEvents.push(focusChange)
       elementRect = focusChange.elementRect
       await typeFilledValue()
     } else {
       const clickActionResult = await performAction(
         buildDefaultClickMouseMoveRequest({
-          targetPosInElement: options?.position,
+          targetPosInElement: position,
           moveDuration,
           moveSpeed,
           moveEasing,
@@ -762,13 +702,12 @@ export function instrumentLocator(locator: Locator): Locator {
         typeFilledValue,
         false,
         'singleBefore',
-        options?.autoZoomOptions,
-        options?.position,
-        clickOpt.noWaitAfter,
+        autoZoomOptions,
+        position,
+        noWaitAfter,
         beforeClickPause ?? DEFAULT_PRE_CLICK_PAUSE_MS,
         postClickPause ?? CLICK_DURATION_MS / 2,
-        postClickMove,
-        true
+        _hideMouse ?? false
       )
       innerEvents.push(...(clickActionResult?.innerEvents ?? []))
       elementRect = clickActionResult?.elementRect
@@ -796,13 +735,22 @@ export function instrumentLocator(locator: Locator): Locator {
   )
   locator.tap = async (
     options?: Parameters<Locator['tap']>[0] & {
-      click?: ClickBeforeFillOption
+      moveDuration?: number
+      moveSpeed?: number
+      moveEasing?: Easing
+      beforeClickPause?: number
+      postClickPause?: number
+      noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
-    const clickOpt: ClickBeforeFillOption = options?.click ?? {}
     const {
-      click: _click,
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      beforeClickPause,
+      postClickPause,
+      noWaitAfter,
       position,
       autoZoomOptions,
       ...tapOpts
@@ -811,7 +759,7 @@ export function instrumentLocator(locator: Locator): Locator {
     if (isInsideHide()) {
       return originalTap({
         ...(tapOpts as Parameters<Locator['tap']>[0]),
-        noWaitAfter: tapOpts.noWaitAfter ?? true,
+        noWaitAfter: noWaitAfter ?? true,
       })
     }
 
@@ -820,9 +768,9 @@ export function instrumentLocator(locator: Locator): Locator {
     const result = await performAction(
       buildDefaultClickMouseMoveRequest({
         targetPosInElement: position,
-        moveDuration: clickOpt.moveDuration,
-        moveSpeed: clickOpt.moveSpeed,
-        moveEasing: clickOpt.moveEasing,
+        moveDuration,
+        moveSpeed,
+        moveEasing,
       }),
       locator,
       doClick,
@@ -830,10 +778,9 @@ export function instrumentLocator(locator: Locator): Locator {
       'singleDuring',
       autoZoomOptions,
       position,
-      tapOpts.noWaitAfter,
-      clickOpt?.beforeClickPause,
-      clickOpt?.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
-      clickOpt?.postClickMove,
+      noWaitAfter,
+      beforeClickPause,
+      postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
       false
     )
 
@@ -857,18 +804,31 @@ export function instrumentLocator(locator: Locator): Locator {
   )
   locator.check = async (
     options?: Parameters<Locator['check']>[0] & {
-      click?: ClickBeforeFillOption
+      moveDuration?: number
+      moveSpeed?: number
+      moveEasing?: Easing
+      beforeClickPause?: number
+      postClickPause?: number
+      noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
-    const clickOpt: ClickBeforeFillOption = options?.click ?? {}
-    const position = options?.position
-    const { click: _click, autoZoomOptions, ...checkOpts } = options ?? {}
+    const {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      beforeClickPause,
+      postClickPause,
+      noWaitAfter,
+      position,
+      autoZoomOptions,
+      ...checkOpts
+    } = options ?? {}
 
     if (isInsideHide()) {
       return originalCheck({
         ...(checkOpts as Parameters<Locator['check']>[0]),
-        noWaitAfter: checkOpts.noWaitAfter ?? true,
+        noWaitAfter: noWaitAfter ?? true,
       })
     }
 
@@ -880,9 +840,9 @@ export function instrumentLocator(locator: Locator): Locator {
     const result = await performAction(
       buildDefaultClickMouseMoveRequest({
         targetPosInElement: position,
-        moveDuration: clickOpt.moveDuration,
-        moveSpeed: clickOpt.moveSpeed,
-        moveEasing: clickOpt.moveEasing,
+        moveDuration,
+        moveSpeed,
+        moveEasing,
       }),
       locator,
       doClick,
@@ -890,10 +850,9 @@ export function instrumentLocator(locator: Locator): Locator {
       'singleDuring',
       autoZoomOptions,
       position,
-      checkOpts.noWaitAfter,
-      clickOpt?.beforeClickPause,
-      clickOpt?.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
-      clickOpt?.postClickMove,
+      noWaitAfter,
+      beforeClickPause,
+      postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
       false
     )
 
@@ -917,18 +876,31 @@ export function instrumentLocator(locator: Locator): Locator {
   )
   locator.uncheck = async (
     options?: Parameters<Locator['uncheck']>[0] & {
-      click?: ClickBeforeFillOption
+      moveDuration?: number
+      moveSpeed?: number
+      moveEasing?: Easing
+      beforeClickPause?: number
+      postClickPause?: number
+      noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
-    const clickOpt: ClickBeforeFillOption = options?.click ?? {}
-    const position = options?.position
-    const { click: _click, autoZoomOptions, ...uncheckOpts } = options ?? {}
+    const {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      beforeClickPause,
+      postClickPause,
+      noWaitAfter,
+      position,
+      autoZoomOptions,
+      ...uncheckOpts
+    } = options ?? {}
 
     if (isInsideHide()) {
       return originalUncheck({
         ...(uncheckOpts as Parameters<Locator['uncheck']>[0]),
-        noWaitAfter: uncheckOpts.noWaitAfter ?? true,
+        noWaitAfter: noWaitAfter ?? true,
       })
     }
 
@@ -940,9 +912,9 @@ export function instrumentLocator(locator: Locator): Locator {
     const result = await performAction(
       buildDefaultClickMouseMoveRequest({
         targetPosInElement: position,
-        moveDuration: clickOpt.moveDuration,
-        moveSpeed: clickOpt.moveSpeed,
-        moveEasing: clickOpt.moveEasing,
+        moveDuration,
+        moveSpeed,
+        moveEasing,
       }),
       locator,
       doClick,
@@ -950,10 +922,9 @@ export function instrumentLocator(locator: Locator): Locator {
       'singleDuring',
       autoZoomOptions,
       position,
-      uncheckOpts.noWaitAfter,
-      clickOpt?.beforeClickPause,
-      clickOpt?.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
-      clickOpt?.postClickMove,
+      noWaitAfter,
+      beforeClickPause,
+      postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
       false
     )
 
@@ -970,7 +941,12 @@ export function instrumentLocator(locator: Locator): Locator {
   locator.setChecked = async (
     checked: boolean,
     options?: Parameters<Locator['check']>[0] & {
-      click?: ClickBeforeFillOption
+      moveDuration?: number
+      moveSpeed?: number
+      moveEasing?: Easing
+      beforeClickPause?: number
+      postClickPause?: number
+      noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
@@ -997,14 +973,23 @@ export function instrumentLocator(locator: Locator): Locator {
   locator.selectOption = async (
     values: Parameters<Locator['selectOption']>[0],
     options?: Parameters<Locator['selectOption']>[1] & {
-      click?: ClickBeforeFillOption
+      moveDuration?: number
+      moveSpeed?: number
+      moveEasing?: Easing
+      beforeClickPause?: number
+      postClickPause?: number
+      noWaitAfter?: boolean
       position?: { x: number; y: number }
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<string[]> => {
-    const clickOpt: ClickBeforeFillOption = options?.click ?? {}
     const {
-      click: _click,
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      beforeClickPause,
+      postClickPause,
+      noWaitAfter,
       position,
       autoZoomOptions,
       ...selectOpts
@@ -1013,7 +998,7 @@ export function instrumentLocator(locator: Locator): Locator {
     if (isInsideHide()) {
       return originalSelectOption(values, {
         ...(selectOpts as Parameters<Locator['selectOption']>[1]),
-        noWaitAfter: selectOpts.noWaitAfter ?? true,
+        noWaitAfter: noWaitAfter ?? true,
       })
     }
 
@@ -1027,9 +1012,9 @@ export function instrumentLocator(locator: Locator): Locator {
     const actionResult = await performAction(
       buildDefaultClickMouseMoveRequest({
         targetPosInElement: position,
-        moveDuration: clickOpt.moveDuration,
-        moveSpeed: clickOpt.moveSpeed,
-        moveEasing: clickOpt.moveEasing,
+        moveDuration,
+        moveSpeed,
+        moveEasing,
       }),
       locator,
       doClick,
@@ -1037,10 +1022,9 @@ export function instrumentLocator(locator: Locator): Locator {
       'singleDuring',
       autoZoomOptions,
       position,
-      selectOpts.noWaitAfter,
-      clickOpt?.beforeClickPause,
-      clickOpt?.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
-      clickOpt?.postClickMove
+      noWaitAfter,
+      beforeClickPause,
+      postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS
     )
 
     const activeClickRecorder = getActiveClickRecorder(locator.page())
@@ -1060,7 +1044,7 @@ export function instrumentLocator(locator: Locator): Locator {
     options?: Parameters<Locator['hover']>[0] & {
       moveDuration?: number
       moveSpeed?: number
-      easing?: Easing
+      moveEasing?: Easing
       hoverDuration?: number
       autoZoomOptions?: AutoZoomOptions
     }
@@ -1068,7 +1052,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const {
       moveDuration,
       moveSpeed,
-      easing: moveEasing = 'ease-in-out',
+      moveEasing = 'ease-in-out',
       hoverDuration = 1000,
       position,
       ...hoverOptions
@@ -1158,15 +1142,17 @@ export function instrumentLocator(locator: Locator): Locator {
     options?: Parameters<Locator['selectText']>[0] & {
       moveDuration?: number
       moveSpeed?: number
-      easing?: Easing
+      moveEasing?: Easing
       beforeClickPause?: number
+      selectDuration?: number
     }
   ): Promise<void> => {
     const {
       moveDuration,
       moveSpeed,
-      easing: moveEasing = 'ease-in-out',
+      moveEasing = 'ease-in-out',
       beforeClickPause = DEFAULT_PRE_CLICK_PAUSE_MS,
+      selectDuration,
       ...selectOpts
     } = options ?? {}
 
@@ -1199,8 +1185,8 @@ export function instrumentLocator(locator: Locator): Locator {
       undefined,
       beforeClickPause,
       undefined,
-      undefined,
-      false
+      false,
+      selectDuration
     )
 
     const locatorRect = selectActionResult?.elementRect
@@ -1419,7 +1405,8 @@ export async function instrumentPage(page: Page): Promise<Page> {
       moveSpeed?: number
       beforeClickPause?: number
       moveEasing?: Easing
-      postClickMove?: PostClickMove
+      postClickPause?: number
+      autoZoomOptions?: AutoZoomOptions
     }
   ) => {
     return page.locator(selector).click(options)
@@ -1522,7 +1509,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
     const duration = resolveMouseMoveDuration(page, x, y, {
       duration: options?.duration,
       speed: options?.speed,
-      defaultDuration: DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+      defaultDuration: 0,
       context: 'page.mouse.move',
     })
     const easing = options?.easing ?? 'ease-in-out'

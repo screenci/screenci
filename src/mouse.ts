@@ -67,6 +67,7 @@ type PerformMouseClickActionOptions = {
   targetY: number
   clickOptions?: LocatorMouseActionOptions
   easing?: Easing
+  selectDuration?: number
 } & (
   | {
       mode: 'singleBefore' | 'tripleBefore'
@@ -427,9 +428,13 @@ export async function performMouseClickAction(
   }
 
   if (mode === 'tripleBefore') {
+    const perClickDurationMs =
+      options.selectDuration !== undefined
+        ? Math.round(options.selectDuration / 3)
+        : CLICK_DURATION_MS
     for (let i = 0; i < 3; i++) {
       const startMs = Date.now()
-      await sleep(CLICK_DURATION_MS)
+      await sleep(perClickDurationMs)
 
       const endMs = Date.now()
       const clickTimeMs = startMs + (endMs - startMs) / 2

@@ -10,8 +10,6 @@ export type {
   ExtendedScreenCIConfig,
   AutoZoomOptions,
   Easing,
-  PostClickMove,
-  ClickBeforeFillOption,
 } from './src/types.js'
 
 // Re-export voices

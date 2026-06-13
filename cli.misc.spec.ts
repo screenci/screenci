@@ -479,7 +479,7 @@ describe('CLI', () => {
       await expect(main()).rejects.toThrow('process.exit called')
 
       expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Error: screenci.config.ts not found in current directory'
+        expect.stringContaining('screenci.config.ts not found')
       )
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })

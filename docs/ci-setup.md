@@ -11,11 +11,21 @@ ScreenCI can generate a GitHub Actions workflow during `init`, and that workflow
 
 ## Generated workflow
 
-When you opt into CI during `init`, ScreenCI writes:
+When you opt into CI during `init`, ScreenCI writes the workflow at the
+repository root (GitHub only discovers workflows there):
 
 ```text
 .github/workflows/screenci.yaml
 ```
+
+Because your ScreenCI project lives in a self-contained `screenci/` directory,
+every step in the workflow is scoped to it via `working-directory: screenci`
+(and the dependency cache points at `screenci/<lockfile>`). If you ran `init`
+from a nested package, the `working-directory` is the path from the repo root
+to that `screenci/` folder.
+
+If a `.github/workflows/screenci.yaml` already exists when you re-run `init`,
+it is left untouched (ScreenCI logs that it skipped it rather than overwriting).
 
 The generated workflow:
 
@@ -24,8 +34,8 @@ The generated workflow:
 - checks that `SCREENCI_SECRET` exists
 - checks out the repository
 - installs Node.js 24 and caches dependencies for your package manager
-- installs the Playwright Chromium Headless Shell
-- runs `screenci record`
+- installs dependencies and the Playwright Chromium Headless Shell inside `screenci/`
+- runs `screenci record` inside `screenci/`
 
 That is intentionally close to Playwright's own CI model. If you need deeper
 background on Playwright runners and browser installation, see

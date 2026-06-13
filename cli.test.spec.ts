@@ -365,6 +365,111 @@ describe('CLI', () => {
     processExitSpy?.mockRestore()
     loadEnvFileSpy?.mockRestore()
   })
+  describe('config discovery', () => {
+    function findResolvedConfigArg(): string | undefined {
+      const call = mockSpawn.mock.calls.find(
+        (c: unknown[]) =>
+          Array.isArray(c[1]) && (c[1] as string[]).includes('--config')
+      )
+      if (!call) return undefined
+      const args = call[1] as string[]
+      return args[args.indexOf('--config') + 1]
+    }
+
+    function mockSpawnCloseZero(): void {
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+    }
+
+    it('resolves a flat config in the current directory (inside the island)', async () => {
+      process.argv = ['node', 'cli.js', 'test']
+      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/screenci')
+      mockExistsSync.mockImplementation(
+        (p: string) => String(p) === '/repo/screenci/screenci.config.ts'
+      )
+      mockSpawnCloseZero()
+      try {
+        const { main } = await import('./cli')
+        await main()
+        expect(findResolvedConfigArg()).toBe(
+          '/repo/screenci/screenci.config.ts'
+        )
+      } finally {
+        cwdSpy.mockRestore()
+      }
+    })
+
+    it('resolves the island config when run from the repo root', async () => {
+      process.argv = ['node', 'cli.js', 'test']
+      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo')
+      mockExistsSync.mockImplementation(
+        (p: string) => String(p) === '/repo/screenci/screenci.config.ts'
+      )
+      mockSpawnCloseZero()
+      try {
+        const { main } = await import('./cli')
+        await main()
+        expect(findResolvedConfigArg()).toBe(
+          '/repo/screenci/screenci.config.ts'
+        )
+      } finally {
+        cwdSpy.mockRestore()
+      }
+    })
+
+    it('walks up from a nested directory to find the island config', async () => {
+      process.argv = ['node', 'cli.js', 'test']
+      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/apps/web')
+      mockExistsSync.mockImplementation(
+        (p: string) => String(p) === '/repo/screenci/screenci.config.ts'
+      )
+      mockSpawnCloseZero()
+      try {
+        const { main } = await import('./cli')
+        await main()
+        expect(findResolvedConfigArg()).toBe(
+          '/repo/screenci/screenci.config.ts'
+        )
+      } finally {
+        cwdSpy.mockRestore()
+      }
+    })
+
+    it('errors when no config is found in the cwd or any parent', async () => {
+      process.argv = ['node', 'cli.js', 'test']
+      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/apps/web')
+      mockExistsSync.mockReturnValue(false)
+      mockSpawnCloseZero()
+      try {
+        const { main } = await import('./cli')
+        await expect(main()).rejects.toThrow('process.exit called')
+        expect(loggerErrorSpy).toHaveBeenCalledWith(
+          expect.stringContaining('screenci.config.ts not found')
+        )
+      } finally {
+        cwdSpy.mockRestore()
+      }
+    })
+
+    it('honors an explicit --config path over discovery', async () => {
+      process.argv = ['node', 'cli.js', 'test', '--config', 'custom.config.ts']
+      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo')
+      mockExistsSync.mockImplementation(
+        (p: string) => String(p) === '/repo/custom.config.ts'
+      )
+      mockSpawnCloseZero()
+      try {
+        const { main } = await import('./cli')
+        await main()
+        expect(findResolvedConfigArg()).toBe('/repo/custom.config.ts')
+      } finally {
+        cwdSpy.mockRestore()
+      }
+    })
+  })
+
   describe('test command', () => {
     it('disables recording timings for plain test runs', async () => {
       process.argv = ['node', 'cli.js', 'test']

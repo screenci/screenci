@@ -1,8 +1,8 @@
 import { spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
-import { existsSync, readFileSync, realpathSync } from 'fs'
+import { existsSync, readFileSync, realpathSync, rmSync } from 'fs'
 import { appendFile, mkdir, readFile, writeFile } from 'fs/promises'
-import { basename, delimiter, dirname, resolve } from 'path'
+import { basename, delimiter, dirname, relative, resolve, sep } from 'path'
 import { fileURLToPath } from 'url'
 import { Command, CommanderError } from 'commander'
 import { input } from '@inquirer/prompts'
@@ -77,13 +77,20 @@ export function detectPackageManagerFromPackageJson(
 }
 
 export function determinePackageManager(cwd?: string): PackageManager {
+  // 1. The package manager that spawned the process is explicit intent
+  //    (`pnpm create screenci`, `yarn create screenci`, `npm init screenci`) and
+  //    always wins — including npm, so `npm init` gives an npm island even in a
+  //    pnpm/yarn repo. Check pnpm/yarn before npm because their user-agent
+  //    strings also contain an `npm/...` segment.
   const userAgent = process.env.npm_config_user_agent
   if (userAgent?.includes('pnpm')) return 'pnpm'
   if (userAgent?.includes('yarn')) return 'yarn'
+  if (userAgent?.includes('npm')) return 'npm'
 
-  // Filesystem detection is only performed during init (when cwd is provided).
-  // record/test commands rely solely on the user agent, which correctly reflects
-  // how the CLI was invoked (e.g. "pnpm exec screenci record" sets the agent).
+  // 2. No package-manager wrapper set a user agent (e.g. a global or direct
+  //    `screenci init`). Fall back to the surrounding repo's toolchain so the
+  //    island matches it, then to npm. Pass `--package-manager` to override.
+  //    (record/test pass no cwd and rely solely on the user agent.)
   if (cwd !== undefined) {
     const fromLockfile = detectPackageManagerFromLockfile(cwd)
     if (fromLockfile) return fromLockfile
@@ -106,14 +113,30 @@ export function detectPnpmWorkspace(cwd: string): boolean {
   return false
 }
 
-function detectYarnWorkspace(cwd: string): boolean {
-  try {
-    const raw = readFileSync(resolve(cwd, 'package.json'), 'utf-8')
-    const pkg = JSON.parse(raw) as { workspaces?: unknown }
-    return pkg.workspaces !== undefined
-  } catch {
-    return false
+/**
+ * Locate the repository root by walking up from `startDir` until a `.git`
+ * directory is found. Used to place the GitHub Actions workflow (which GitHub
+ * only discovers at the repo root) and the agent skills. Falls back to
+ * `startDir` when no `.git` is found.
+ */
+function findRepoRoot(startDir: string): string {
+  let current = startDir
+  while (true) {
+    if (existsSync(resolve(current, '.git'))) return current
+    const parent = dirname(current)
+    if (parent === current) break
+    current = parent
   }
+  return startDir
+}
+
+/**
+ * Convert a filesystem-relative path to a POSIX-style path suitable for YAML
+ * `working-directory` / `cache-dependency-path` fields in the workflow.
+ */
+function toWorkflowPath(relativePath: string): string {
+  const normalized = relativePath.split(sep).join('/')
+  return normalized.length === 0 ? '.' : normalized
 }
 
 function resolveSpawnSpec(
@@ -519,22 +542,53 @@ function getSkillsManualCommand(
     .join(' ')
 }
 
-function generateEmptyPackageJson(): string {
-  return '{\n  "type": "module"\n}\n'
+/**
+ * Turn a human project name into a valid npm package name for the island's own
+ * package.json. The name must NOT be `screenci` (a package cannot depend on a
+ * package with its own name), so we suffix with `-videos` and fall back to
+ * `screenci-videos` when the slug is empty.
+ */
+function toIslandPackageName(projectName: string): string {
+  const slug = projectName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  if (slug.length === 0 || slug === 'screenci') {
+    return 'screenci-videos'
+  }
+  return slug === 'screenci-videos' ? slug : `${slug}-videos`
 }
 
-async function ensurePackageJsonTypeModule(
-  packageJsonPath: string
-): Promise<void> {
-  try {
-    const raw = await readFile(packageJsonPath, 'utf-8')
-    const pkg = JSON.parse(raw) as Record<string, unknown>
-    if (pkg['type'] === 'module') return
-    pkg['type'] = 'module'
-    await writeFile(packageJsonPath, JSON.stringify(pkg, null, 2) + '\n')
-  } catch {
-    // Malformed or unreadable package.json — leave it untouched.
-  }
+function generateIslandPackageJson(projectName: string): string {
+  return (
+    JSON.stringify(
+      {
+        name: toIslandPackageName(projectName),
+        private: true,
+        type: 'module',
+        scripts: {
+          screenci: 'screenci',
+          test: 'screenci test',
+          record: 'screenci record',
+        },
+      },
+      null,
+      2
+    ) + '\n'
+  )
+}
+
+function generatePnpmWorkspaceYaml(): string {
+  // A nested `pnpm-workspace.yaml` makes pnpm treat the island as its own
+  // workspace root, so a surrounding monorepo workspace does not absorb it (no
+  // hoisting, no `-w` install). `onlyBuiltDependencies` pre-approves the
+  // ffmpeg-static build script for non-interactive installs.
+  return `packages:
+  - '.'
+
+onlyBuiltDependencies:
+  - ffmpeg-static
+`
 }
 
 function parseSemverTriplet(version: string): [number, number, number] | null {
@@ -870,6 +924,7 @@ async function installInitDependencies(
 
 function printInitNextSteps(
   projectDir: string,
+  islandDirName: string,
   packageManager: PackageManager
 ): void {
   const resolvedProjectDir = realpathSync(projectDir)
@@ -879,7 +934,10 @@ function printInitNextSteps(
     `${pc.green('✔ Success!')} Created a ScreenCI project at ${resolvedProjectDir}`
   )
   logger.info('')
-  logger.info('Inside that directory, you can run several commands:')
+  logger.info(
+    `It is a self-contained project, so commands run from inside ${pc.cyan(islandDirName)}/ ` +
+      `(or from anywhere above it):`
+  )
   logger.info('')
   logger.info(`  ${pc.cyan(`${commands.screenciRun} test`)}`)
   logger.info('    Tests your video scripts fast locally.')
@@ -894,11 +952,16 @@ function printInitNextSteps(
   logger.info('')
   logger.info('We suggest that you begin by typing:')
   logger.info('')
+  logger.info(`    ${pc.cyan(`cd ${islandDirName}`)}`)
   logger.info(`    ${pc.cyan(`${commands.screenciRun} test`)}`)
   logger.info('')
   logger.info('And check out the following files:')
-  logger.info('  - ./videos/example.video.ts - Example video script')
-  logger.info('  - ./screenci.config.ts - ScreenCI configuration')
+  logger.info(
+    `  - ./${islandDirName}/videos/example.video.ts - Example video script`
+  )
+  logger.info(
+    `  - ./${islandDirName}/screenci.config.ts - ScreenCI configuration`
+  )
   logger.info('')
   logger.info(
     `Visit ${pc.cyan('https://screenci.com/docs')} for more information.`
@@ -909,9 +972,13 @@ function printInitNextSteps(
 
 function generateGithubAction(
   packageManager: PackageManager,
-  isWorkspace = false
+  islandWorkflowPath: string
 ): string {
-  const commands = getPackageManagerCommand(packageManager, isWorkspace)
+  const commands = getPackageManagerCommand(packageManager)
+  const cacheDependencyPath =
+    islandWorkflowPath === '.'
+      ? commands.lockfileName
+      : `${islandWorkflowPath}/${commands.lockfileName}`
   return `name: ScreenCI
 
 on:
@@ -941,22 +1008,22 @@ jobs:
         with:
           node-version: 24
           cache: ${commands.cacheName}
-          cache-dependency-path: ${commands.lockfileName}
+          cache-dependency-path: ${cacheDependencyPath}
 
       - name: Install dependencies
-        working-directory: .
+        working-directory: ${islandWorkflowPath}
         env:
           HUSKY: 0
           npm_config_strict_dep_builds: false
         run: ${commands.frozenInstallCommand}
 
       - name: Install Chromium Headless Shell
-        working-directory: .
+        working-directory: ${islandWorkflowPath}
         run: ${commands.playwrightRun} install --only-shell chromium
 
       - id: record
         name: Record
-        working-directory: .
+        working-directory: ${islandWorkflowPath}
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
         run: ${commands.screenciRun} record
@@ -1098,13 +1165,24 @@ export async function runInit(
 ): Promise<void> {
   const { verbose, yes, agent, packageManager } = options
   const initCwd = getInitProjectRoot()
-  const isWorkspace =
-    packageManager === 'pnpm'
-      ? detectPnpmWorkspace(initCwd)
-      : packageManager === 'yarn'
-        ? detectYarnWorkspace(initCwd)
-        : false
-  const commands = getPackageManagerCommand(packageManager, isWorkspace)
+  const commands = getPackageManagerCommand(packageManager)
+
+  // ScreenCI scaffolds a self-contained `screenci/` island under the current
+  // directory: its own package.json + local install, deliberately NOT a member
+  // of any surrounding workspace. This keeps installation deterministic in
+  // monorepos. The GitHub workflow and agent skills, however, must live at the
+  // repository root (that is where GitHub and coding agents discover them).
+  const repoRoot = findRepoRoot(initCwd)
+  const islandDir = resolve(initCwd, 'screenci')
+  const islandDirName = toWorkflowPath(relative(initCwd, islandDir))
+  const islandWorkflowPath = toWorkflowPath(relative(repoRoot, islandDir))
+
+  if (existsSync(islandDir)) {
+    logger.error(
+      `Error: ${islandDirName}/ already exists. Remove it (or run init in a different directory) and try again.`
+    )
+    process.exit(1)
+  }
 
   if (packageManager === 'yarn') {
     await ensureSupportedYarnVersion(initCwd)
@@ -1121,8 +1199,7 @@ export async function runInit(
     process.exit(1)
   }
 
-  const projectDir = initCwd
-  const githubWorkflowsDir = resolve(projectDir, '.github', 'workflows')
+  const githubWorkflowsDir = resolve(repoRoot, '.github', 'workflows')
   const githubActionPath = resolve(githubWorkflowsDir, 'screenci.yaml')
   const shouldAddGithubActionWorkflow = yes
     ? true
@@ -1140,12 +1217,17 @@ export async function runInit(
     ? true
     : await promptInitPlaywrightCliSkillForPackageManager(packageManager, agent)
 
-  if (shouldAddGithubActionWorkflow && existsSync(githubActionPath)) {
-    logger.error(
-      'Error: GitHub Actions workflow ".github/workflows/screenci.yaml" already exists'
+  // The workflow lives at the repo root. If one already exists, skip it (do not
+  // overwrite, do not fail) so re-running init stays non-destructive.
+  const workflowAlreadyExists =
+    shouldAddGithubActionWorkflow && existsSync(githubActionPath)
+  if (workflowAlreadyExists) {
+    logger.info(
+      `Skipping GitHub Actions workflow: ${toWorkflowPath(relative(repoRoot, githubActionPath))} already exists`
     )
-    process.exit(1)
   }
+  const shouldWriteGithubActionWorkflow =
+    shouldAddGithubActionWorkflow && !workflowAlreadyExists
 
   const skills: string[] = []
   if (shouldInstallScreenCISkill) {
@@ -1162,106 +1244,149 @@ export async function runInit(
       : `${commands.skillsCommand} ${skillsArgs.join(' ')}`
   const screenciDependency =
     getInitScreenciDependencyOverride() ?? (await readCurrentScreenciVersion())
-  const packageJsonPath = resolve(projectDir, 'package.json')
-  const hasExistingPackageJson = existsSync(packageJsonPath)
 
-  await mkdir(resolve(projectDir, 'videos'), { recursive: true })
-  if (shouldAddGithubActionWorkflow) {
-    await mkdir(githubWorkflowsDir, { recursive: true })
-  }
-  await writeFile(
-    resolve(projectDir, 'screenci.config.ts'),
-    generateConfig(projectName)
-  )
-  if (!hasExistingPackageJson) {
-    await writeFile(packageJsonPath, generateEmptyPackageJson())
-  } else {
-    await ensurePackageJsonTypeModule(packageJsonPath)
-  }
-  await writeInitGitignore(projectDir, packageManager)
-  await writeFile(
-    resolve(projectDir, 'videos', 'example.video.ts'),
-    generateExampleVideo()
-  )
-  if (shouldAddGithubActionWorkflow) {
-    await writeFile(
-      githubActionPath,
-      generateGithubAction(packageManager, isWorkspace)
-    )
-  }
-
-  if (packageManager === 'pnpm') {
-    await ensureSupportedPnpmVersion(projectDir)
-  }
-
-  if (packageManager === 'yarn') {
-    await writeFile(
-      resolve(projectDir, '.yarnrc.yml'),
-      'nodeLinker: node-modules\n'
-    )
-  }
-
-  if (skillsArgs !== null) {
-    if (verbose) {
-      logger.info(`Running '${skillsCommand}'...`)
-      await spawnInherited(
-        commands.skillsCommand,
-        skillsArgs,
-        projectDir,
-        'screenci init'
-      )
-    } else {
-      const spinner = ora('Adding selected AI skills...').start()
-      try {
-        await spawnSilent(commands.skillsCommand, skillsArgs, projectDir)
-        spinner.succeed('Installing selected AI skills')
-      } catch (err) {
-        spinner.fail('AI skills install failed')
-        throw err
-      }
+  // Everything below creates files / runs installs. If anything fails (or the
+  // user interrupts), roll back the `screenci/` directory we created so the
+  // next `init` run starts from a clean slate. Pre-existing repo-root files
+  // (e.g. .github/, .claude/) are left untouched.
+  let islandCreated = false
+  let scaffoldComplete = false
+  const removePartialIsland = (): void => {
+    if (!islandCreated || scaffoldComplete) return
+    try {
+      rmSync(islandDir, { recursive: true, force: true })
+    } catch {
+      // best-effort cleanup
     }
   }
+  const onSigint = (): void => {
+    removePartialIsland()
+    process.exit(130)
+  }
+  const onSigterm = (): void => {
+    removePartialIsland()
+    process.exit(143)
+  }
+  process.on('SIGINT', onSigint)
+  process.on('SIGTERM', onSigterm)
+  process.on('exit', removePartialIsland)
 
-  await installInitDependencies(
-    projectDir,
-    verbose,
-    screenciDependency,
-    shouldInstallPlaywrightCli,
-    commands
-  )
+  try {
+    await mkdir(resolve(islandDir, 'videos'), { recursive: true })
+    islandCreated = true
 
-  if (shouldInstallPlaywrightBrowsers) {
-    logger.info(
-      `Installing Playwright Chromium headless shell with '${commands.playwrightRun} install --only-shell chromium'...`
+    await writeFile(
+      resolve(islandDir, 'screenci.config.ts'),
+      generateConfig(projectName)
     )
-    const [browserCmd, ...browserArgs] = buildPlaywrightSpawnArgs(
-      packageManager,
-      'install',
-      '--only-shell',
-      'chromium'
+    await writeFile(
+      resolve(islandDir, 'package.json'),
+      generateIslandPackageJson(projectName)
     )
-    await spawnInherited(browserCmd!, browserArgs, projectDir, 'screenci init')
-    logger.info(
-      `${pc.green('✔')} Playwright Chromium headless shell installed successfully`
+    await writeInitGitignore(islandDir, packageManager)
+    await writeFile(
+      resolve(islandDir, 'videos', 'example.video.ts'),
+      generateExampleVideo()
     )
+
+    if (packageManager === 'pnpm') {
+      await writeFile(
+        resolve(islandDir, 'pnpm-workspace.yaml'),
+        generatePnpmWorkspaceYaml()
+      )
+    }
+    if (packageManager === 'yarn') {
+      await writeFile(
+        resolve(islandDir, '.yarnrc.yml'),
+        'nodeLinker: node-modules\n'
+      )
+    }
+
+    if (shouldWriteGithubActionWorkflow) {
+      await mkdir(githubWorkflowsDir, { recursive: true })
+      await writeFile(
+        githubActionPath,
+        generateGithubAction(packageManager, islandWorkflowPath)
+      )
+    }
+
+    if (packageManager === 'pnpm') {
+      await ensureSupportedPnpmVersion(islandDir)
+    }
+
+    // Install skills at the repo root so coding agents discover them when the
+    // repository is opened as the workspace.
+    if (skillsArgs !== null) {
+      if (verbose) {
+        logger.info(`Running '${skillsCommand}'...`)
+        await spawnInherited(
+          commands.skillsCommand,
+          skillsArgs,
+          repoRoot,
+          'screenci init'
+        )
+      } else {
+        const spinner = ora('Adding selected AI skills...').start()
+        try {
+          await spawnSilent(commands.skillsCommand, skillsArgs, repoRoot)
+          spinner.succeed('Installing selected AI skills')
+        } catch (err) {
+          spinner.fail('AI skills install failed')
+          throw err
+        }
+      }
+    }
+
+    await installInitDependencies(
+      islandDir,
+      verbose,
+      screenciDependency,
+      shouldInstallPlaywrightCli,
+      commands
+    )
+
+    if (shouldInstallPlaywrightBrowsers) {
+      logger.info(
+        `Installing Playwright Chromium headless shell with '${commands.playwrightRun} install --only-shell chromium'...`
+      )
+      const [browserCmd, ...browserArgs] = buildPlaywrightSpawnArgs(
+        packageManager,
+        'install',
+        '--only-shell',
+        'chromium'
+      )
+      await spawnInherited(browserCmd!, browserArgs, islandDir, 'screenci init')
+      logger.info(
+        `${pc.green('✔')} Playwright Chromium headless shell installed successfully`
+      )
+    }
+
+    if (shouldInstallPlaywrightOsDependencies) {
+      logger.info(
+        `Installing Playwright operating system dependencies with '${commands.playwrightRun} install-deps chromium'...`
+      )
+      const [depsCmd, ...depsArgs] = buildPlaywrightSpawnArgs(
+        packageManager,
+        'install-deps',
+        'chromium'
+      )
+      await spawnInherited(depsCmd!, depsArgs, islandDir, 'screenci init')
+      logger.info(
+        `${pc.green('✔')} Playwright operating system dependencies installed successfully`
+      )
+    }
+
+    scaffoldComplete = true
+  } catch (err) {
+    removePartialIsland()
+    throw err
+  } finally {
+    process.off('SIGINT', onSigint)
+    process.off('SIGTERM', onSigterm)
+    process.off('exit', removePartialIsland)
   }
 
-  if (shouldInstallPlaywrightOsDependencies) {
-    logger.info(
-      `Installing Playwright operating system dependencies with '${commands.playwrightRun} install-deps chromium'...`
-    )
-    const [depsCmd, ...depsArgs] = buildPlaywrightSpawnArgs(
-      packageManager,
-      'install-deps',
-      'chromium'
-    )
-    await spawnInherited(depsCmd!, depsArgs, projectDir, 'screenci init')
-    logger.info(
-      `${pc.green('✔')} Playwright operating system dependencies installed successfully`
-    )
-  }
-
-  printInitNextSteps(projectDir, packageManager)
+  printInitNextSteps(islandDir, islandDirName, packageManager)
 }
 
 function handleCreateCommanderError(err: unknown): void {

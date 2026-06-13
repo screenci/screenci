@@ -1015,11 +1015,25 @@ function findScreenCIConfig(customPath?: string): string | null {
     return null
   }
 
-  const cwd = process.cwd()
-  const configPath = resolve(cwd, 'screenci.config.ts')
+  // Walk up from the current directory so `screenci test`/`record` work both
+  // inside the `screenci/` island and from the repo root (or any directory in
+  // between). At each level we prefer a flat `screenci.config.ts`, then fall
+  // back to the island layout `screenci/screenci.config.ts`.
+  let current = process.cwd()
+  while (true) {
+    const flatConfig = resolve(current, 'screenci.config.ts')
+    if (existsSync(flatConfig)) {
+      return flatConfig
+    }
 
-  if (existsSync(configPath)) {
-    return configPath
+    const islandConfig = resolve(current, 'screenci', 'screenci.config.ts')
+    if (existsSync(islandConfig)) {
+      return islandConfig
+    }
+
+    const parent = dirname(current)
+    if (parent === current) break
+    current = parent
   }
 
   return null
@@ -2689,7 +2703,7 @@ async function run(
   if (!configPath) {
     const errorMsg = customConfigPath
       ? `Error: Config file not found: ${customConfigPath}`
-      : 'Error: screenci.config.ts not found in current directory'
+      : 'Error: screenci.config.ts not found in the current directory or any parent (looked for ./screenci.config.ts and ./screenci/screenci.config.ts)'
     logger.error(errorMsg)
     process.exit(1)
   }

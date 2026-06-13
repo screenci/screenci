@@ -15,22 +15,26 @@ npm init screenci@latest
 pnpm create screenci
 ```
 
-`init` creates a ready-to-run project in the current directory, installs
-dependencies, and installs Chromium by default. When using `npm init`, pass
+`init` creates a ready-to-run, self-contained `screenci/` directory ("the
+island") with its own dependencies, and installs Chromium by default. The
+island is deliberately isolated from any surrounding workspace, which makes
+installation reliable inside complex monorepos. When using `npm init`, pass
 extra initializer flags after `--`, for example
 `npm init screenci@latest -- --yes --package-manager pnpm`.
 
 ```text
-screenci.config.ts
-package.json
-tsconfig.json
-README.md
-.gitignore
-.env
-videos/
-  example.video.ts
-.github/workflows/screenci.yaml
+screenci/
+  screenci.config.ts
+  package.json
+  package-lock.json        # or pnpm-lock.yaml / yarn.lock
+  .gitignore
+  videos/
+    example.video.ts
+.github/workflows/screenci.yaml   # at the repo root, scoped to screenci/
 ```
+
+`screenci test` and `screenci record` work both from inside `screenci/` and
+from the repository root.
 
 Docs:
 

@@ -13,7 +13,8 @@ Updating ScreenCI should be a small maintenance task, not a reinvention of the p
 
 ## Update the package
 
-In a generated ScreenCI project:
+Run these from inside the generated `screenci/` directory (that is where the
+ScreenCI project and its dependencies live):
 
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
@@ -210,6 +211,6 @@ If your team uses AI-assisted authoring, check that the tooling still matches th
 - reinstall skills or local helpers after package upgrades when they are part of your normal setup
 - update Playwright-based inspection tooling when browser automation starts failing
 - keep prompt instructions aligned with the current docs structure
-- make sure generated scripts still target `videos/*.video.ts` and use the current ScreenCI helpers
+- make sure generated scripts still target `screenci/videos/*.video.ts` and use the current ScreenCI helpers
 
 This should be the last step, not the first one. The core upgrade check here is still `screenci test`.

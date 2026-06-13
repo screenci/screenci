@@ -9,6 +9,12 @@ ScreenCI builds on Playwright's config model, so most normal Playwright config
 still works here. For the Playwright side of the file, see
 [Configuration](https://playwright.dev/docs/test-configuration).
 
+`screenci.config.ts` lives inside the self-contained `screenci/` directory that
+`init` creates, and paths like `videoDir` and `envFile` are resolved relative
+to it. ScreenCI couples to your app only through a `baseURL` (and optional
+`storageState`) — it does not need to live in, or share dependencies with, the
+app it records, which is what keeps it isolated in a monorepo.
+
 The config merges three layers:
 
 1. ScreenCI defaults.

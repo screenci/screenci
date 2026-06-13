@@ -113,55 +113,59 @@ describe('determinePackageManager', () => {
     process.env = originalEnv
   })
 
-  it('returns pnpm when user agent contains pnpm', () => {
+  it('returns pnpm when the user agent contains pnpm', () => {
     process.env.npm_config_user_agent = 'pnpm/11.0.8 npm/? node/v24.0.0'
     expect(determinePackageManager('/project')).toBe('pnpm')
   })
 
-  it('returns yarn when user agent contains yarn', () => {
+  it('returns yarn when the user agent contains yarn', () => {
     process.env.npm_config_user_agent = 'yarn/1.22.0 npm/? node/v24.0.0'
     expect(determinePackageManager('/project')).toBe('yarn')
   })
 
-  it('returns pnpm via lockfile when cwd is provided and user agent is absent', () => {
+  it('returns npm when the user agent contains npm', () => {
+    process.env.npm_config_user_agent = 'npm/10.0.0 node/v24.0.0'
+    expect(determinePackageManager('/project')).toBe('npm')
+  })
+
+  it('falls back to a pnpm lockfile when no user agent is set', () => {
     mockExistsSync.mockImplementation((p) => p.endsWith('pnpm-lock.yaml'))
     expect(determinePackageManager('/project')).toBe('pnpm')
   })
 
-  it('returns yarn via lockfile when cwd is provided and user agent is absent', () => {
+  it('falls back to a yarn lockfile when no user agent is set', () => {
     mockExistsSync.mockImplementation((p) => p.endsWith('yarn.lock'))
     expect(determinePackageManager('/project')).toBe('yarn')
   })
 
-  it('returns pnpm via packageManager field when cwd is provided and no lockfile exists', () => {
+  it('falls back to the packageManager field when no lockfile exists', () => {
     mockReadFileSync.mockReturnValue(
       JSON.stringify({ packageManager: 'pnpm@11.0.9' })
     )
     expect(determinePackageManager('/project')).toBe('pnpm')
   })
 
-  it('returns npm as default when no signal is present and cwd is provided', () => {
+  it('defaults to npm when no user agent and no filesystem signal is present', () => {
     expect(determinePackageManager('/project')).toBe('npm')
   })
 
-  it('returns npm as default when no signal is present and no cwd is provided', () => {
+  it('defaults to npm when no cwd is provided and no user agent is set', () => {
     expect(determinePackageManager()).toBe('npm')
   })
 
-  it('npm user agent falls through to lockfile detection when cwd is provided', () => {
+  it('honors an explicit npm user agent over a pnpm lockfile (spawner wins)', () => {
     process.env.npm_config_user_agent = 'npm/10.0.0 node/v24.0.0'
     mockExistsSync.mockImplementation((p) => p.endsWith('pnpm-lock.yaml'))
-    expect(determinePackageManager('/project')).toBe('pnpm')
+    expect(determinePackageManager('/project')).toBe('npm')
   })
 
   it('skips filesystem detection when no cwd is provided', () => {
-    mockExistsSync.mockReturnValue(true) // pnpm-lock.yaml would exist everywhere
-    expect(determinePackageManager()).toBe('npm') // but cwd not given → no lockfile check
+    mockExistsSync.mockReturnValue(true) // lockfiles would appear to exist
+    expect(determinePackageManager()).toBe('npm')
   })
 
-  it('pnpm user agent takes precedence over yarn lockfile', () => {
+  it('checks pnpm before npm (a pnpm user agent also contains npm/...)', () => {
     process.env.npm_config_user_agent = 'pnpm/11.0.8 npm/? node/v24.0.0'
-    mockExistsSync.mockImplementation((p) => p.endsWith('yarn.lock'))
     expect(determinePackageManager('/project')).toBe('pnpm')
   })
 })

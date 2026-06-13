@@ -19,8 +19,8 @@ Then ScreenCI allows converting these tests into product videos with `record` co
 
 ## Initialize ScreenCI project
 
-Run the command in an existing repository or in a new empty directory to
-initialize a ScreenCI project:
+Run the command at the root of an existing repository (or in a new empty
+directory) to initialize a ScreenCI project:
 
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
@@ -51,23 +51,38 @@ which comes with npm.
 
 ## What initializing creates
 
-ScreenCI creates the starter project scaffold below.
+ScreenCI scaffolds a **self-contained `screenci/` directory** with its own
+dependencies, plus a couple of files at the repository root that have to live
+there:
 
 ```text
-screenci.config.ts          # ScreenCI and Playwright configuration
-package.json
-package-lock.json           # Or pnpm-lock.yaml / yarn.lock, depending on package manager
-videos/
-  example.video.ts          # Minimal starter video
+screenci/                   # Self-contained ScreenCI project ("the island")
+  screenci.config.ts        # ScreenCI and Playwright configuration
+  package.json              # Its own package.json (own dependencies + scripts)
+  package-lock.json         # Or pnpm-lock.yaml / yarn.lock, depending on package manager
+  videos/
+    example.video.ts        # Minimal starter video
 .github/workflows/
-  screenci.yaml             # Optional GitHub Actions workflow for recording
+  screenci.yaml             # Optional workflow (at the repo root, scoped to screenci/)
 ```
 
-Initialization may also optionally add agent skills-related files, depending on
-the agent tooling installed on your system. See
-[Vercel Skills](https://github.com/vercel-labs/skills#readme).
+The `screenci/` directory is deliberately **isolated**: it installs its own
+copy of `@playwright/test` and ScreenCI instead of relying on a surrounding
+workspace. This is what makes installation reliable inside complex monorepos —
+ScreenCI never touches your app's `package.json` and is immune to pnpm/yarn
+workspace hoisting. It still drives your app the normal Playwright way, through
+a `baseURL` (and optional `storageState`); see [Configuration](/docs/configuration).
 
-The starter video source is generated at `videos/example.video.ts` and looks
+Two things must live at the repository root rather than inside `screenci/`,
+because that is where they are discovered:
+
+- `.github/workflows/screenci.yaml` — GitHub only runs workflows from the repo
+  root. Its steps `cd` into `screenci/` automatically.
+- Agent skills (`.claude/skills`, etc.) — installed at the repo root so coding
+  agents pick them up. See
+  [Vercel Skills](https://github.com/vercel-labs/skills#readme).
+
+The starter video source is generated at `screenci/videos/example.video.ts` and looks
 like this. For an explanation of how it works, see [Video Script
 Basics](/docs/write-video-scripts#generated-starter-video):
 
@@ -109,7 +124,9 @@ video('How to find docs', async ({ page }) => {
 
 ## Run the example
 
-Test the starter video locally from the same directory:
+Test the starter video locally. The `screenci` commands work both from inside
+the `screenci/` directory and from the repository root — ScreenCI walks up to
+find `screenci/screenci.config.ts` automatically:
 
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
@@ -169,7 +186,7 @@ yarn screenci test --ui
 
 ## Record the final result
 
-When you are ready to record the videos in the `videos/` directory, run:
+When you are ready to record the videos in the `screenci/videos/` directory, run:
 
 <Tabs syncKey="package-manager">
   <TabItem label="npm">

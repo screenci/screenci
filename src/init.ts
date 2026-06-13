@@ -424,7 +424,7 @@ function getPackageManagerCommand(
   screenciRun: string
   playwrightRun: string
   installCommand: string
-  installArgs: (pkg: string) => string[]
+  installArgs: (...pkgs: string[]) => string[]
   screenciInstallArgs: (pkg: string) => string[]
   skillsCommand: string
   skillsArgs: (skills: string[], agent?: string) => string[]
@@ -438,7 +438,12 @@ function getPackageManagerCommand(
       screenciRun: 'pnpm exec screenci',
       playwrightRun: 'pnpm exec playwright',
       installCommand: 'pnpm',
-      installArgs: (pkg) => ['add', '--save-dev', ...workspaceFlag, pkg],
+      installArgs: (...pkgs) => [
+        'add',
+        '--save-dev',
+        ...workspaceFlag,
+        ...pkgs,
+      ],
       screenciInstallArgs: (pkg) => [
         'add',
         '--save-dev',
@@ -468,7 +473,7 @@ function getPackageManagerCommand(
       screenciRun: 'yarn screenci',
       playwrightRun: 'yarn playwright',
       installCommand: 'yarn',
-      installArgs: (pkg) => ['add', '--dev', ...workspaceFlag, pkg],
+      installArgs: (...pkgs) => ['add', '--dev', ...workspaceFlag, ...pkgs],
       screenciInstallArgs: (pkg) => ['add', '--dev', ...workspaceFlag, pkg],
       skillsCommand: 'yarn',
       skillsArgs: (skills, agent) => [
@@ -490,7 +495,7 @@ function getPackageManagerCommand(
     screenciRun: 'npx screenci',
     playwrightRun: 'npx playwright',
     installCommand: 'npm',
-    installArgs: (pkg) => ['install', '--save-dev', pkg],
+    installArgs: (...pkgs) => ['install', '--save-dev', ...pkgs],
     screenciInstallArgs: (pkg) => ['install', '--save-dev', pkg],
     skillsCommand: 'npm',
     skillsArgs: (skills, agent) => [
@@ -578,17 +583,48 @@ function generateIslandPackageJson(projectName: string): string {
   )
 }
 
-function generatePnpmWorkspaceYaml(): string {
+function generateIslandTsconfig(): string {
+  // Minimal config so an editor type-checks the island as its own project
+  // instead of inheriting a surrounding repo's tsconfig or the legacy TS
+  // defaults. `module`/`moduleResolution` let TypeScript read screenci's ESM
+  // `exports` map; `target` gives the example's async/await a modern lib.
+  return (
+    JSON.stringify(
+      {
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          target: 'ESNext',
+        },
+      },
+      null,
+      2
+    ) + '\n'
+  )
+}
+
+function generatePnpmWorkspaceYaml(pnpmMajor: number): string {
   // A nested `pnpm-workspace.yaml` makes pnpm treat the island as its own
   // workspace root, so a surrounding monorepo workspace does not absorb it (no
-  // hoisting, no `-w` install). `onlyBuiltDependencies` pre-approves the
-  // ffmpeg-static build script for non-interactive installs.
+  // hoisting, no `-w` install). It also pre-approves the ffmpeg-static build
+  // script so non-interactive installs (e.g. `pnpm install --frozen-lockfile`
+  // in CI) build the bundled binary without prompting.
+  //
+  // pnpm 10 and 11 spell this approval differently: pnpm 11 removed
+  // `onlyBuiltDependencies` in favour of the `allowBuilds` map. Emit the key
+  // that matches the installed pnpm so the approval is actually honoured.
+  const buildApproval =
+    pnpmMajor >= 11
+      ? `allowBuilds:
+  ffmpeg-static: true
+`
+      : `onlyBuiltDependencies:
+  - ffmpeg-static
+`
   return `packages:
   - '.'
 
-onlyBuiltDependencies:
-  - ffmpeg-static
-`
+${buildApproval}`
 }
 
 function parseSemverTriplet(version: string): [number, number, number] | null {
@@ -711,11 +747,23 @@ function buildUnsupportedPnpmError(versionSupport: PnpmVersionSupport): Error {
   )
 }
 
-async function ensureSupportedPnpmVersion(cwd: string): Promise<void> {
+async function ensureSupportedPnpmVersion(
+  cwd: string
+): Promise<PnpmVersionSupport> {
   const versionSupport = await detectPnpmVersionSupport(cwd)
   if (!versionSupport.supported) {
     throw buildUnsupportedPnpmError(versionSupport)
   }
+  return versionSupport
+}
+
+// A supported pnpm version always parses (the support check rejects malformed
+// versions), so the major is reliable here; fall back to 10 defensively.
+function pnpmMajorFromSupport(versionSupport: PnpmVersionSupport): number {
+  const parsed = versionSupport.detectedVersion
+    ? parseSemverTriplet(versionSupport.detectedVersion)
+    : null
+  return parsed?.[0] ?? 10
 }
 
 export function parseYarnVersionSupport(
@@ -876,27 +924,28 @@ async function installInitDependencies(
   includePlaywrightCli: boolean,
   commands: ReturnType<typeof getPackageManagerCommand>
 ): Promise<void> {
+  // Packages that share identical install flags are installed in a single
+  // command so the package manager resolves the dependency graph once instead
+  // of once per package. ScreenCI stays separate because on pnpm it needs an
+  // extra '--allow-build=ffmpeg-static' flag the others don't carry.
+  const sharedPackages = [
+    `@playwright/test@${PLAYWRIGHT_TEST_VERSION}`,
+    `@types/node@${NODE_TYPES_VERSION}`,
+    ...(includePlaywrightCli
+      ? [`@playwright/cli@${PLAYWRIGHT_CLI_VERSION}`]
+      : []),
+  ]
+
   const installSteps: Array<{ message: string; args: string[] }> = [
     {
-      message: 'Installing Playwright Test...',
-      args: commands.installArgs(`@playwright/test@${PLAYWRIGHT_TEST_VERSION}`),
+      message: 'Installing dependencies...',
+      args: commands.installArgs(...sharedPackages),
     },
     {
       message: 'Installing ScreenCI...',
       args: commands.screenciInstallArgs(`screenci@${screenciDependency}`),
     },
-    {
-      message: 'Installing Node.js types...',
-      args: commands.installArgs(`@types/node@${NODE_TYPES_VERSION}`),
-    },
   ]
-
-  if (includePlaywrightCli) {
-    installSteps.push({
-      message: 'Installing playwright-cli...',
-      args: commands.installArgs(`@playwright/cli@${PLAYWRIGHT_CLI_VERSION}`),
-    })
-  }
 
   for (const step of installSteps) {
     if (verbose) {
@@ -934,10 +983,7 @@ function printInitNextSteps(
     `${pc.green('✔ Success!')} Created a ScreenCI project at ${resolvedProjectDir}`
   )
   logger.info('')
-  logger.info(
-    `It is a self-contained project, so commands run from inside ${pc.cyan(islandDirName)}/ ` +
-      `(or from anywhere above it):`
-  )
+  logger.info('You can now run these commands:')
   logger.info('')
   logger.info(`  ${pc.cyan(`${commands.screenciRun} test`)}`)
   logger.info('    Tests your video scripts fast locally.')
@@ -1283,6 +1329,10 @@ export async function runInit(
       resolve(islandDir, 'package.json'),
       generateIslandPackageJson(projectName)
     )
+    await writeFile(
+      resolve(islandDir, 'tsconfig.json'),
+      generateIslandTsconfig()
+    )
     await writeInitGitignore(islandDir, packageManager)
     await writeFile(
       resolve(islandDir, 'videos', 'example.video.ts'),
@@ -1290,9 +1340,12 @@ export async function runInit(
     )
 
     if (packageManager === 'pnpm') {
+      // Resolve (and gate on) the pnpm version before writing the workspace
+      // file so the build-approval key matches the installed pnpm.
+      const pnpmVersionSupport = await ensureSupportedPnpmVersion(islandDir)
       await writeFile(
         resolve(islandDir, 'pnpm-workspace.yaml'),
-        generatePnpmWorkspaceYaml()
+        generatePnpmWorkspaceYaml(pnpmMajorFromSupport(pnpmVersionSupport))
       )
     }
     if (packageManager === 'yarn') {
@@ -1308,10 +1361,6 @@ export async function runInit(
         githubActionPath,
         generateGithubAction(packageManager, islandWorkflowPath)
       )
-    }
-
-    if (packageManager === 'pnpm') {
-      await ensureSupportedPnpmVersion(islandDir)
     }
 
     // Install skills at the repo root so coding agents discover them when the

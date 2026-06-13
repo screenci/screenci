@@ -54,18 +54,24 @@ function expectNpmDevInstalls(
       (call[2] as { stdio?: string }).stdio === 'pipe'
   )
 
-  const expectedPackages = [
-    `@playwright/test@^1.59.0`,
-    `screenci@${screenciVersion}`,
-    '@types/node@^25.9.1',
-    ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
+  // Packages sharing identical flags install in one command; screenci is
+  // installed separately.
+  const expectedCalls = [
+    [
+      'install',
+      '--save-dev',
+      `@playwright/test@^1.59.0`,
+      '@types/node@^25.9.1',
+      ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
+    ],
+    ['install', '--save-dev', `screenci@${screenciVersion}`],
   ]
 
   expect(npmInstallCalls).toEqual(
     expect.arrayContaining(
-      expectedPackages.map((pkg) => [
+      expectedCalls.map((args) => [
         'npm',
-        ['install', '--save-dev', pkg],
+        args,
         expect.objectContaining({ cwd, stdio: 'pipe' }),
       ])
     )
@@ -93,17 +99,19 @@ function expectPnpmDevInstalls(
   )
 
   const expectedPackages = [
-    ['add', '--save-dev', `@playwright/test@^1.59.0`],
+    [
+      'add',
+      '--save-dev',
+      `@playwright/test@^1.59.0`,
+      '@types/node@^25.9.1',
+      ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
+    ],
     [
       'add',
       '--save-dev',
       '--allow-build=ffmpeg-static',
       `screenci@${screenciVersion}`,
     ],
-    ['add', '--save-dev', '@types/node@^25.9.1'],
-    ...(includePlaywrightCli
-      ? [['add', '--save-dev', '@playwright/cli@latest']]
-      : []),
   ]
 
   expect(pnpmInstallCalls).toEqual(
@@ -138,12 +146,14 @@ function expectYarnDevInstalls(
   )
 
   const expectedPackages = [
-    ['add', '--dev', `@playwright/test@^1.59.0`],
+    [
+      'add',
+      '--dev',
+      `@playwright/test@^1.59.0`,
+      '@types/node@^25.9.1',
+      ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
+    ],
     ['add', '--dev', `screenci@${screenciVersion}`],
-    ['add', '--dev', '@types/node@^25.9.1'],
-    ...(includePlaywrightCli
-      ? [['add', '--dev', '@playwright/cli@latest']]
-      : []),
   ]
 
   expect(yarnInstallCalls).toEqual(
@@ -417,10 +427,17 @@ describe('CLI', () => {
         '/workspace/my-app/screenci/videos/example.video.ts',
         expect.stringContaining("await page.goto('https://screenci.com/')")
       )
-      expect(mockWriteFile).not.toHaveBeenCalledWith(
-        '/workspace/my-app/screenci/tsconfig.json',
-        expect.any(String)
+      const tsconfigCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          call[0] === '/workspace/my-app/screenci/tsconfig.json'
       )
+      expect(tsconfigCall).toBeDefined()
+      const tsconfig = JSON.parse(tsconfigCall![1] as string) as {
+        compilerOptions?: Record<string, unknown>
+      }
+      // `bundler` resolution lets TypeScript read screenci's ESM `exports` map.
+      expect(tsconfig.compilerOptions?.['moduleResolution']).toBe('bundler')
+      expect(tsconfig.compilerOptions?.['module']).toBe('ESNext')
       expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/my-app/screenci/.env',
         ''
@@ -478,15 +495,9 @@ describe('CLI', () => {
         'Installing selected AI skills'
       )
       expect(mockSpinner.succeed).toHaveBeenCalledWith(
-        'Installing Playwright Test'
+        'Installing dependencies'
       )
       expect(mockSpinner.succeed).toHaveBeenCalledWith('Installing ScreenCI')
-      expect(mockSpinner.succeed).toHaveBeenCalledWith(
-        'Installing Node.js types'
-      )
-      expect(mockSpinner.succeed).toHaveBeenCalledWith(
-        'Installing playwright-cli'
-      )
       expect(mockSpinner.succeed).not.toHaveBeenCalledWith(
         'Selected AI skills added'
       )
@@ -843,7 +854,13 @@ describe('CLI', () => {
       // No -w flag: the island is its own isolated project, installed locally.
       expect(mockSpawn).toHaveBeenCalledWith(
         'pnpm',
-        ['add', '--save-dev', '@playwright/test@^1.59.0'],
+        [
+          'add',
+          '--save-dev',
+          '@playwright/test@^1.59.0',
+          '@types/node@^25.9.1',
+          '@playwright/cli@latest',
+        ],
         expect.objectContaining({
           cwd: '/workspace/my-project/screenci',
           stdio: 'pipe',
@@ -984,7 +1001,13 @@ describe('CLI', () => {
 
       expect(mockSpawn).toHaveBeenCalledWith(
         'yarn',
-        ['add', '--dev', '@playwright/test@^1.59.0'],
+        [
+          'add',
+          '--dev',
+          '@playwright/test@^1.59.0',
+          '@types/node@^25.9.1',
+          '@playwright/cli@latest',
+        ],
         expect.objectContaining({
           cwd: '/workspace/my-project/screenci',
           stdio: 'pipe',
@@ -1063,9 +1086,17 @@ describe('CLI', () => {
         ],
         expect.objectContaining({ cwd: '/workspace/my-project', stdio: 'pipe' })
       )
+      // playwright-cli is installed in the shared-flag batch alongside the
+      // other dev dependencies.
       expect(mockSpawn).toHaveBeenCalledWith(
         'npm',
-        ['install', '--save-dev', '@playwright/cli@latest'],
+        [
+          'install',
+          '--save-dev',
+          '@playwright/test@^1.59.0',
+          '@types/node@^25.9.1',
+          '@playwright/cli@latest',
+        ],
         expect.objectContaining({
           cwd: '/workspace/my-project/screenci',
           stdio: 'pipe',
@@ -1176,9 +1207,7 @@ describe('CLI', () => {
           pc.cyan('https://screenci.com/docs') +
           ' for more information.'
       )
-      expect(messages).toContain(
-        'It is a self-contained project, so commands run from inside screenci/ (or from anywhere above it):'
-      )
+      expect(messages).toContain('You can now run these commands:')
       expect(messages).toContain('We suggest that you begin by typing:')
       expect(messages).toContain('    cd screenci')
       expect(messages).toContain('    npx screenci test')
@@ -1279,6 +1308,16 @@ describe('CLI', () => {
           stdio: 'pipe',
         })
       )
+      // pnpm 11 (the default mocked version) approves builds via `allowBuilds`,
+      // so non-interactive installs build ffmpeg-static without prompting.
+      const workspaceCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          call[0] === '/workspace/my-project/screenci/pnpm-workspace.yaml'
+      )
+      expect(workspaceCall?.[1]).toContain(
+        'allowBuilds:\n  ffmpeg-static: true'
+      )
+      expect(workspaceCall?.[1]).not.toContain('onlyBuiltDependencies')
       // The flat (host) pnpm-workspace.yaml is never written; only the island's.
       expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/my-project/pnpm-workspace.yaml',
@@ -1288,6 +1327,45 @@ describe('CLI', () => {
         '/workspace/my-project/pnpm-workspace.yaml',
         'utf-8'
       )
+    })
+
+    it('uses onlyBuiltDependencies build approval on pnpm 10', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--package-manager',
+        'pnpm',
+      ]
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+      mockSpawn.mockImplementation((_command: string, args: string[]) => {
+        const child = Object.assign(new EventEmitter(), {
+          unref: vi.fn(),
+          stdout: new EventEmitter(),
+          stderr: new EventEmitter(),
+        })
+        process.nextTick(() => {
+          if (Array.isArray(args) && args[0] === '--version') {
+            child.stdout.emit('data', '10.26.0\n')
+          }
+          child.emit('close', 0)
+        })
+        return child as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      const workspaceCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          call[0] === '/workspace/my-project/screenci/pnpm-workspace.yaml'
+      )
+      expect(workspaceCall?.[1]).toContain(
+        'onlyBuiltDependencies:\n  - ffmpeg-static'
+      )
+      expect(workspaceCall?.[1]).not.toContain('allowBuilds')
     })
 
     it('fails fast when pnpm cannot be detected', async () => {
@@ -1775,7 +1853,7 @@ describe('CLI', () => {
             call[0] === 'cmd.exe' &&
             Array.isArray(call[1]) &&
             (call[1] as string[])[3] ===
-              '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0""'
+              '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest""'
         )
         expect(installCall).toEqual([
           'cmd.exe',
@@ -1783,7 +1861,7 @@ describe('CLI', () => {
             '/d',
             '/s',
             '/c',
-            '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0""',
+            '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest""',
           ],
           expect.objectContaining({
             cwd: '/workspace/create-app/screenci',
@@ -1885,7 +1963,7 @@ describe('CLI', () => {
         "Running 'npm exec --yes --package=skills -- skills add screenci/screenci --skill screenci --skill playwright-cli -y'..."
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        "Running 'npm install --save-dev @playwright/test@^1.59.0'..."
+        "Running 'npm install --save-dev @playwright/test@^1.59.0 @types/node@^25.9.1 @playwright/cli@latest'..."
       )
     })
   })

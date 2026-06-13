@@ -177,3 +177,81 @@ jobs:
       - name: Run screenci test in pnpm workspace
         working-directory: ${{ env.SMOKE_PNPM_WORKSPACE }}
         run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} pnpm exec screenci test
+
+  # pnpm 10 and 11 ignore dependency build scripts unless they are approved, and
+  # they spell that approval differently (pnpm 11 replaced onlyBuiltDependencies
+  # with allowBuilds). This job verifies the generated island actually builds the
+  # ffmpeg-static binary on both majors, both during `init` and on a later
+  # non-interactive `pnpm install` that relies solely on the workspace approval
+  # key (no --allow-build flag). A skipped build only surfaces at render time, so
+  # mocked unit tests cannot catch it.
+  ffmpeg-build-approval:
+    name: ffmpeg-static build approval (pnpm ${{ matrix.pnpm }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Minimum supported pnpm: approves builds via onlyBuiltDependencies.
+          - pnpm: 10.26.0
+            node: 20
+          # pnpm 11: approves builds via allowBuilds. Needs Node.js 20+.
+          - pnpm: 11
+            node: 22
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ matrix.pnpm }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install package dependencies
+        env:
+          HUSKY: 0
+          npm_config_strict_dep_builds: false
+        run: pnpm install --frozen-lockfile
+
+      - name: Build package
+        run: pnpm run build
+
+      - name: Pack local screenci package
+        run: npm pack
+
+      - name: Set local screenci dependency for init
+        run: node -e "const fs=require('node:fs'); const path=require('node:path'); const pkg=require('./package.json'); const tarballPath=path.resolve(process.cwd(), pkg.name + '-' + pkg.version + '.tgz'); fs.appendFileSync(process.env.GITHUB_ENV, 'SCREENCI_INIT_SCREENCI_DEPENDENCY=file:' + tarballPath + '\n')"
+
+      - name: Prepare project directory
+        run: >-
+          node -e "const fs=require('node:fs'); const path=require('node:path'); const dir=path.join(process.env.RUNNER_TEMP, 'screenci-approval'); fs.mkdirSync(dir, { recursive: true }); fs.appendFileSync(process.env.GITHUB_ENV, 'APPROVAL_DIR=' + dir + '\n')"
+
+      - name: Run screenci init with pnpm
+        working-directory: ${{ env.APPROVAL_DIR }}
+        run: node ${{ github.workspace }}/bin/screenci.js init smoke-project --package-manager pnpm --yes --verbose
+
+      - name: Assert ffmpeg-static built during init
+        run: node ${{ github.workspace }}/scripts/assert-ffmpeg-built.js ${{ env.APPROVAL_DIR }}/screenci
+
+      # Mirror a fresh clone in CI: drop node_modules and reinstall non
+      # interactively. This install has no --allow-build flag, so the build can
+      # only run if the generated pnpm-workspace.yaml approval key is correct for
+      # the installed pnpm major.
+      - name: Reinstall from the generated workspace approval only
+        working-directory: ${{ env.APPROVAL_DIR }}/screenci
+        env:
+          npm_config_strict_dep_builds: false
+        run: |
+          rm -rf node_modules
+          pnpm install --frozen-lockfile
+
+      - name: Assert ffmpeg-static built from the generated workspace approval
+        run: node ${{ github.workspace }}/scripts/assert-ffmpeg-built.js ${{ env.APPROVAL_DIR }}/screenci

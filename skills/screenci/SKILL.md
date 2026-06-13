@@ -19,7 +19,7 @@ Trigger this skill when the user asks to:
 
 Routing rules:
 
-- If the user provides a URL, always use the `playwright-cli` skill first to inspect the real page flow and selectors before editing the ScreenCI script.
+- If the user provides a URL for video context, always use the `playwright-cli` skill first. It drives a real browser from the CLI (navigate, snapshot, click, type) so you can discover the actual page flow, stable selectors, and cookie/consent steps before editing the ScreenCI script.
 - If the user provides source code for the target page/component, that usually means browser exploration is not required first.
 - If the request is only about application/source-code changes (not recording or `.video.ts` updates), do not use this skill.
 

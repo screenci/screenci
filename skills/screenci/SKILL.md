@@ -1,6 +1,6 @@
 ---
 name: screenci
-description: Create, show, and guide with ScreenCI videos in an already-initialized project by editing `.video.ts` files and running the Screenci workflow.
+description: Create, show, and guide with ScreenCI videos and recordings in an already-initialized project by editing `.video.ts` files and running the Screenci workflow.
 allowed-tools:
   - Bash(screenci:*)
   - Bash(npx:*)
@@ -9,13 +9,13 @@ allowed-tools:
 
 # ScreenCI Video and Guide Skill
 
-Use this skill when the task is about ScreenCI video recording workflows in an existing project, or updating `.video.ts` files and `screenci.config.ts`.
+Use this skill when the task is about ScreenCI video recording workflows in an existing project, or updating `.video.ts` files and `screenci.config.ts`. The terms "video" and "recording" are used interchangeably here.
 
 Trigger this skill when the user asks to:
 
-- create a video
-- show a flow as a video
-- create a guide/demo video
+- create a video or recording
+- show a flow as a video or recording
+- create a guide/demo video or recording
 
 Routing rules:
 
@@ -25,9 +25,9 @@ Routing rules:
 
 ## Quick Start
 
-Assume the project is already initialized. Add or edit video scripts in `videos/`.
+Assume the project is already initialized. Add or edit video/recording scripts in `videos/`.
 
-If you are creating new videos, remove the starter `videos/example.video.ts` file.
+If you are creating new videos or recordings, remove the starter `videos/example.video.ts` file.
 
 ```bash
 # verify repeatedly until green
@@ -46,7 +46,7 @@ npx screenci record
 
 ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific helpers:
 
-- `video()` declares one output video per test.
+- `video()` declares one output video (recording) per test.
 - `hide()` removes setup and loading sections from the final recording.
 - `autoZoom()` follows navigation, click-driven, and broader interaction sequences with smooth camera motion. Use it sparingly, and start with its default options unless the user explicitly asks for different zoom behavior or the flow clearly needs a targeted override.
 - `zoomTo()` and `resetZoom()` are better for forms and other steady editing sections where the camera should stay fixed while the user types, selects, toggles, and confirms within one area.
@@ -77,12 +77,12 @@ await page.getByRole('link', { name: 'Invoices' }).click()
 
 ## Required Conventions
 
-**Every video MUST follow these conventions:**
+**Every video/recording MUST follow these conventions:**
 
-- **Narration on every video (required, no exceptions)** — always define `createNarration({ ... })` and add narration to every `.video.ts` file. Videos without narration are not acceptable.
-- **Open with the video's purpose** — the first spoken narration should clearly state what the video is for before moving into the step-by-step explanation.
+- **Narration on every video/recording (required, no exceptions)** — always define `createNarration({ ... })` and add narration to every `.video.ts` file. Videos/recordings without narration are not acceptable.
+- **Open with the video/recording's purpose** — the first spoken narration should clearly state what the video or recording is for before moving into the step-by-step explanation.
 - **Guide pronunciation for URLs and domains** — if narration says a URL, domain, product name, or other term that a voice model might read incorrectly, add a `[pronounce: ...]` hint or phrase it in a clearly spoken way.
-- **Start on the requested page** — the visible video should always begin on the page the user requested.
+- **Start on the requested page** — the visible video/recording should always begin on the page the user requested.
 - **Hide initial setup** — the initial page load should almost always be wrapped in `hide()`. Keep authentication, navigation to the starting page, loading spinners, cookie banner dismissal, and any other non-demo boilerplate inside that hidden block so they are cut from the final recording. After the initial navigation, explicitly try to find and click any cookie consent or cookie policy accept button there if one appears.
 - **Navigate visibly with clicks** — after hidden setup, move through the demo by clicking real links and buttons instead of calling `page.goto()`.
 - **Prefer mouse-driven selection after typing** — when typing into search boxes, comboboxes, autocomplete fields, command menus, or similar UI, prefer clicking the visible result or CTA with the mouse instead of submitting with keyboard actions like `press('Enter')` when a clickable target is available. Example: after `await searchBox.fill('product')`, prefer `await page.getByRole('link', { name: 'Specific Product' }).click()`.
@@ -128,7 +128,7 @@ await autoZoom(async () => {
 
 1. Start from the existing initialized ScreenCI package.
 2. Add or edit `.video.ts` files in `videos/`.
-   Remove `videos/example.video.ts` if you are creating new videos and do not need the starter video.
+   Remove `videos/example.video.ts` if you are creating new videos/recordings and do not need the starter video.
    For narration, define `const narration = createNarration({ ... })` near the top of the file and trigger lines with `await narration.someKey()` when the full line should finish before moving on. Use `await narration.someKey.start()` only when narration should overlap with the next action, and `await narration.someKey.end()` only to close that same active cue later. This is especially important before visible navigation or page changes. Use inline tags like `[pronounce: ...]` and `[short pause]` inside cue text when needed, especially for URLs and domains such as `screenci.com [pronounce: screen see eye dot com]`.
    Example:
 
@@ -149,7 +149,7 @@ await autoZoom(async () => {
 
 3. Run `npx screenci test` until it passes.
 4. Run `npx screenci record`. If `SCREENCI_SECRET` is missing, finish the one-time browser sign-in and let the CLI resume automatically.
-5. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` for each recorded video.
+5. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` for each recorded video/recording.
 
 ## Specific Tasks
 

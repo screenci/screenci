@@ -124,6 +124,25 @@ function getScreenCIEnvironment(): ScreenCIEnvironment {
   return parsed ?? 'prod'
 }
 
+/**
+ * Reports whether the current session can complete an interactive browser
+ * sign-in. A session is interactive only when both stdin and stdout are
+ * attached to a terminal and no signal marks the run as automated. This is the
+ * proxy for "a human is present to open the sign-in link" — it does not attempt
+ * to identify any particular caller (CI, a piped shell, or an automated tool).
+ *
+ * Dependency-injected so tests can force a value without a real terminal.
+ */
+export function detectInteractiveSession(
+  env: NodeJS.ProcessEnv = process.env,
+  stdout: { isTTY?: boolean } = process.stdout,
+  stdin: { isTTY?: boolean } = process.stdin
+): boolean {
+  if (env.SCREENCI_NONINTERACTIVE === '1') return false
+  if (env.CI === 'true') return false
+  return Boolean(stdout.isTTY) && Boolean(stdin.isTTY)
+}
+
 export function collectPlaywrightListTitles(
   suites: readonly PlaywrightListReportSuite[]
 ): string[] {
@@ -1974,7 +1993,10 @@ async function loadRecordConfigWithoutPlaywrightCollision(
   }
 }
 
-async function requireScreenCISecret(configPath?: string): Promise<{
+async function requireScreenCISecret(
+  configPath?: string,
+  opts: { interactive?: boolean } = {}
+): Promise<{
   resolvedConfigPath: string
   screenciConfig: ScreenCIConfig
   secret: string
@@ -1984,8 +2006,13 @@ async function requireScreenCISecret(configPath?: string): Promise<{
     await loadScreenCIConfigAndEnv(configPath)
   const secret =
     process.env.SCREENCI_SECRET ??
-    (await ensureScreenciSecret(resolvedConfigPath))
+    (await ensureScreenciSecret(resolvedConfigPath, opts))
   if (!secret) {
+    // In a non-interactive session ensureScreenciSecret already printed the
+    // sign-in link and the next step, so we exit without repeating guidance.
+    if (opts.interactive === false) {
+      process.exit(1)
+    }
     const envFilePath = await resolveProjectEnvFilePath(resolvedConfigPath)
     logger.error(
       `No SCREENCI_SECRET configured. Rerun ${pc.cyan(getSuggestedScreenciCommand('record'))} or add SCREENCI_SECRET manually to ${envFilePath} by following the guide at ${pc.cyan(SCREENCI_RECORD_DOCS_URL)}.`
@@ -2004,8 +2031,10 @@ async function requireScreenCISecret(configPath?: string): Promise<{
 async function fetchProjectInfo(
   configPath?: string
 ): Promise<ProjectInfoResponse> {
-  const { screenciConfig, secret, apiUrl } =
-    await requireScreenCISecret(configPath)
+  const { screenciConfig, secret, apiUrl } = await requireScreenCISecret(
+    configPath,
+    { interactive: detectInteractiveSession() }
+  )
   const url = new URL(`${apiUrl}/cli/project-info`)
   url.searchParams.set('projectName', screenciConfig.projectName)
 
@@ -2035,7 +2064,9 @@ async function updateVideoVisibility(
   isPublic: boolean,
   configPath?: string
 ): Promise<void> {
-  const { secret, apiUrl } = await requireScreenCISecret(configPath)
+  const { secret, apiUrl } = await requireScreenCISecret(configPath, {
+    interactive: detectInteractiveSession(),
+  })
   const method = isPublic ? 'PUT' : 'DELETE'
   const res = await fetch(`${apiUrl}/cli/public-video/${videoId}`, {
     method,
@@ -2171,27 +2202,43 @@ async function createLinkSessionSpec(options: {
   }
 }
 
+async function pollLinkSessionOnce(
+  spec: PersistedLinkSessionSpec
+): Promise<{ status: LinkSessionStatus; secret?: string }> {
+  const response = await fetch(spec.pollUrl)
+  const body = (await response.json()) as {
+    status?: LinkSessionStatus
+    secret?: string
+  }
+  const status = body.status ?? 'invalid'
+
+  if (status === 'completed' && body.secret) {
+    return { status, secret: body.secret }
+  }
+
+  if (status === 'pending' && new Date().toISOString() >= spec.expiresAt) {
+    return { status: 'expired' }
+  }
+
+  return { status }
+}
+
 async function pollLinkSession(
   spec: PersistedLinkSessionSpec
 ): Promise<{ status: LinkSessionStatus; secret?: string }> {
   for (;;) {
-    const response = await fetch(spec.pollUrl)
-    const body = (await response.json()) as {
-      status?: LinkSessionStatus
-      secret?: string
-    }
-    const status = body.status ?? 'invalid'
+    const result = await pollLinkSessionOnce(spec)
 
-    if (status === 'completed' && body.secret) {
-      return { status, secret: body.secret }
+    if (result.status === 'completed' && result.secret) {
+      return result
     }
 
-    if (status === 'expired' || status === 'consumed' || status === 'invalid') {
-      return { status }
-    }
-
-    if (new Date().toISOString() >= spec.expiresAt) {
-      return { status: 'expired' }
+    if (
+      result.status === 'expired' ||
+      result.status === 'consumed' ||
+      result.status === 'invalid'
+    ) {
+      return result
     }
 
     await new Promise((resolveDelay) =>
@@ -2201,8 +2248,10 @@ async function pollLinkSession(
 }
 
 export async function ensureScreenciSecret(
-  resolvedConfigPath?: string
+  resolvedConfigPath?: string,
+  opts: { interactive?: boolean } = {}
 ): Promise<string | undefined> {
+  const interactive = opts.interactive ?? true
   const existingSecret = process.env.SCREENCI_SECRET
   if (existingSecret) return existingSecret
 
@@ -2223,7 +2272,7 @@ export async function ensureScreenciSecret(
       ...(resolvedConfigPath ? { resolvedConfigPath } : {}),
     }
 
-    for (;;) {
+    const ensureSpec = async (): Promise<PersistedLinkSessionSpec> => {
       const storedSpec = await readPersistedLinkSessionSpec(specPath)
       const spec =
         storedSpec &&
@@ -2239,17 +2288,58 @@ export async function ensureScreenciSecret(
         await writePersistedLinkSessionSpec(specPath, spec)
       }
 
+      return spec
+    }
+
+    const saveCompletedSecret = async (secret: string): Promise<string> => {
+      process.env.SCREENCI_SECRET = secret
+      await persistScreenCISecret(envFilePath, secret)
+      deletePersistedLinkSessionSpec(specPath)
+      logger.info(`Successfully saved SCREENCI_SECRET to ${envFilePath}`)
+      return secret
+    }
+
+    if (!interactive) {
+      // Non-interactive sessions cannot complete a browser sign-in here, so we
+      // never block. Reuse or create the persisted session and check its status
+      // once; if a stored session is stale, recreate it and check once more.
+      // When the session is already completed (the sign-in happened between
+      // runs) we pick up the secret; otherwise we print the link and return so
+      // the caller can surface it and rerun later.
+      let spec = await ensureSpec()
+      let result = await pollLinkSessionOnce(spec)
+
+      if (
+        result.status === 'expired' ||
+        result.status === 'consumed' ||
+        result.status === 'invalid'
+      ) {
+        deletePersistedLinkSessionSpec(specPath)
+        spec = await ensureSpec()
+        result = await pollLinkSessionOnce(spec)
+      }
+
+      if (result.status === 'completed' && result.secret) {
+        return await saveCompletedSecret(result.secret)
+      }
+
+      logger.info(
+        `Sign-in required to record. Open this link to sign in and choose a plan:\n${pc.cyan(spec.appUrl)}\n` +
+          `This session is non-interactive, so sign-in can't complete here. After signing in, rerun ${pc.cyan(getSuggestedScreenciCommand('record'))} to continue.`
+      )
+      return undefined
+    }
+
+    for (;;) {
+      const spec = await ensureSpec()
+
       logger.info(
         `Open this link to sign in and connect the CLI:\n${pc.cyan(spec.appUrl)}\n`
       )
 
       const result = await pollLinkSession(spec)
       if (result.status === 'completed' && result.secret) {
-        process.env.SCREENCI_SECRET = result.secret
-        await persistScreenCISecret(envFilePath, result.secret)
-        deletePersistedLinkSessionSpec(specPath)
-        logger.info(`Successfully saved SCREENCI_SECRET to ${envFilePath}`)
-        return result.secret
+        return await saveCompletedSecret(result.secret)
       }
 
       deletePersistedLinkSessionSpec(specPath)
@@ -2715,7 +2805,9 @@ async function run(
   // Only validate args for record command
   if (command === 'record') {
     if (!process.env.SCREENCI_SECRET) {
-      await requireScreenCISecret(configPath)
+      await requireScreenCISecret(configPath, {
+        interactive: detectInteractiveSession(),
+      })
     }
     validateArgs(additionalArgs)
     const screenciDir = resolve(dirname(configPath), '.screenci')

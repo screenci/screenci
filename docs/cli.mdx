@@ -225,7 +225,9 @@ Behavior:
 
 - enables recording timing
 - writes local output into `.screenci/`
-- when `SCREENCI_SECRET` is missing, prints a blue one-time link and waits for browser sign-in before starting Playwright
+- when `SCREENCI_SECRET` is missing in an interactive terminal, prints a blue one-time link and waits for browser sign-in before starting Playwright
+- when `SCREENCI_SECRET` is missing in a non-interactive session (no terminal, or `SCREENCI_NONINTERACTIVE=1`), does not wait: prints the sign-in link and exits, so you can sign in and choose a plan in the browser, then rerun `record`, which detects the completed session and continues
+- set `SCREENCI_SECRET` ahead of time (env var or project `.env`) to skip sign-in entirely — the zero-prompt path for CI and automated tooling
 - caches the pending auth session in `.screenci/link-session.json`, so rerunning `record` reuses the same link until it expires or completes
 - uploads successful recordings when `SCREENCI_SECRET` is available
 - prints a project URL after upload when rendering has been started remotely

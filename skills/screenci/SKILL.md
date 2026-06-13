@@ -120,7 +120,9 @@ await autoZoom(async () => {
 ## Command Notes
 
 - `screenci record` runs the recording flow with local Playwright.
-- When `SCREENCI_SECRET` is missing, `screenci record` prints a one-time auth link, waits for browser sign-in, saves the secret into the configured `envFile` or project `.env`, and then continues.
+- When `SCREENCI_SECRET` is missing and the session is **interactive** (a terminal), `screenci record` prints a one-time auth link, waits for browser sign-in, saves the secret into the configured `envFile` or project `.env`, and then continues.
+- When the session is **non-interactive** (no terminal — e.g. run from an automated tool, a pipe, or CI; or `SCREENCI_NONINTERACTIVE=1`), `screenci record` does not wait. It prints the sign-in link and exits. Surface that link to whoever can sign in and choose a plan; once they finish, rerun `screenci record` and it detects the completed session, saves the secret, and continues.
+- To skip sign-in entirely, set `SCREENCI_SECRET` ahead of time (env var or project `.env`).
 - Pending auth state is cached in `.screenci/link-session.json`, so rerunning `record` reuses the same link until it expires or completes.
 - `screenci test <playwright args...>` forwards most Playwright test arguments unchanged, while still using `screenci.config.ts`.
 
@@ -148,7 +150,7 @@ await autoZoom(async () => {
    ```
 
 3. Run `npx screenci test` until it passes.
-4. Run `npx screenci record`. If `SCREENCI_SECRET` is missing, finish the one-time browser sign-in and let the CLI resume automatically.
+4. Run `npx screenci record`. If `SCREENCI_SECRET` is missing: in an interactive terminal, finish the one-time browser sign-in and let the CLI resume automatically; in a non-interactive session, `record` prints the sign-in link and exits, so surface that link to whoever can sign in and choose a plan, then rerun `npx screenci record` to continue.
 5. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` for each recorded video.
 
 ## Specific Tasks

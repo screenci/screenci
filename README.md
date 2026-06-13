@@ -96,12 +96,16 @@ Playwright without starting the final recording and upload path.
 npx screenci record
 ```
 
-On the first run without `SCREENCI_SECRET`, `record` prints a one-time ScreenCI
-link, waits for you to finish sign-in in the browser, saves the secret into the
-project env file, and then continues. Pending auth state is cached in
-`.screenci/link-session.json`, so rerunning `record` reuses the same link until
-it expires or completes. Recorded artifacts still live in
-`.screenci/<video-name>/`.
+On the first run without `SCREENCI_SECRET` in an interactive terminal, `record`
+prints a one-time ScreenCI link, waits for you to finish sign-in in the browser,
+saves the secret into the project env file, and then continues. In a
+non-interactive session (no terminal, or `SCREENCI_NONINTERACTIVE=1`) `record`
+does not wait: it prints the sign-in link and exits, so you can open the link,
+sign in, choose a plan, and rerun `record`, which then detects the completed
+session and continues. Set `SCREENCI_SECRET` ahead of time to skip sign-in
+entirely. Pending auth state is cached in `.screenci/link-session.json`, so
+rerunning `record` reuses the same link until it expires or completes. Recorded
+artifacts still live in `.screenci/<video-name>/`.
 
 ## Configure
 

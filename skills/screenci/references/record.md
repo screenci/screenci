@@ -22,7 +22,8 @@ npx screenci record -c screenci.config.ts
 ## Runtime Behavior
 
 - Recording runs with local Playwright.
-- When `SCREENCI_SECRET` is missing, `screenci record` prints a one-time auth link, waits for browser sign-in, saves the secret, and then continues.
+- When `SCREENCI_SECRET` is missing in an interactive terminal, `screenci record` prints a one-time auth link, waits for browser sign-in, saves the secret, and then continues.
+- When `SCREENCI_SECRET` is missing in a non-interactive session (no terminal, or `SCREENCI_NONINTERACTIVE=1`), `screenci record` does not wait: it prints the sign-in link and exits. Surface that link to whoever can sign in and choose a plan; rerunning `record` afterwards detects the completed session and continues. Set `SCREENCI_SECRET` ahead of time to skip sign-in entirely.
 - Pending auth state is cached in `.screenci/link-session.json`, so rerunning `record` reuses the same link until it expires or completes.
 - Playwright arguments can be passed through after the command.
 - When API configuration and `SCREENCI_SECRET` are available, uploads may run after recording.

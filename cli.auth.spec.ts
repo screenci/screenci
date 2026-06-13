@@ -524,4 +524,188 @@ describe('CLI', () => {
       )
     })
   })
+
+  describe('record auth bootstrap — non-interactive', () => {
+    const storedSessionFile = (status?: string) =>
+      JSON.stringify({
+        token: 'stored-token',
+        appUrl: 'https://app.screenci.com/cli-auth?session=stored-token',
+        pollUrl: 'https://api.screenci.com/cli-link/session?token=stored-token',
+        createdAt: '2026-06-11T10:00:00.000Z',
+        expiresAt: '2099-06-11T10:15:00.000Z',
+        environment: 'prod',
+        envFilePath: `${process.cwd()}/.env`,
+        ...(status ? { status } : {}),
+      })
+
+    function mockReadFileWithSession(sessionJson: string | null): void {
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('link-session.json')) {
+          if (sessionJson === null) {
+            const error = new Error('ENOENT') as Error & { code?: string }
+            error.code = 'ENOENT'
+            throw error
+          }
+          return sessionJson
+        }
+        if (pathString.endsWith('screenci.config.ts')) {
+          return "export default defineConfig({ projectName: 'Test Project' })"
+        }
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        return ''
+      })
+    }
+
+    it('detects a completed session without polling in a loop', async () => {
+      mockReadFileWithSession(storedSessionFile())
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.includes('token=stored-token')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              status: 'completed',
+              secret: 'auth-secret-123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        throw new Error(`Unexpected fetch: ${url}`)
+      })
+
+      const { ensureScreenciSecret } = await import('./cli')
+      await expect(
+        ensureScreenciSecret(undefined, { interactive: false })
+      ).resolves.toBe('auth-secret-123')
+
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        `${process.cwd()}/.env`,
+        'SCREENCI_SECRET=auth-secret-123\n'
+      )
+    })
+
+    it('prints the sign-in link and returns without hanging when pending', async () => {
+      mockReadFileWithSession(storedSessionFile())
+      const timeoutSpy = vi.spyOn(global, 'setTimeout')
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.includes('token=stored-token')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({ status: 'pending' }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        throw new Error(`Unexpected fetch: ${url}`)
+      })
+
+      const { ensureScreenciSecret } = await import('./cli')
+      await expect(
+        ensureScreenciSecret(undefined, { interactive: false })
+      ).resolves.toBeUndefined()
+
+      // A single status check, no polling loop / no scheduled retry.
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      expect(timeoutSpy).not.toHaveBeenCalled()
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'https://app.screenci.com/cli-auth?session=stored-token'
+        )
+      )
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        `${process.cwd()}/.env`,
+        expect.stringContaining('SCREENCI_SECRET=')
+      )
+      timeoutSpy.mockRestore()
+    })
+
+    it('creates a session and prints the link when none is stored', async () => {
+      mockReadFileWithSession(null)
+      mockFetch.mockImplementation(
+        async (input: string | URL, init?: RequestInit) => {
+          const url = String(input)
+          if (url.endsWith('/cli-link/session') && init?.method === 'POST') {
+            return {
+              ok: true,
+              status: 201,
+              json: vi.fn().mockResolvedValue({
+                token: 'fresh-token',
+                createdAt: '2026-06-11T10:00:00.000Z',
+                expiresAt: '2099-06-11T10:15:00.000Z',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          if (url.includes('token=fresh-token')) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({ status: 'pending' }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          throw new Error(`Unexpected fetch: ${url}`)
+        }
+      )
+
+      const { ensureScreenciSecret } = await import('./cli')
+      await expect(
+        ensureScreenciSecret(undefined, { interactive: false })
+      ).resolves.toBeUndefined()
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://app.screenci.com/cli-link/session',
+        expect.objectContaining({ method: 'POST' })
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'https://app.screenci.com/cli-auth?session=fresh-token'
+        )
+      )
+    })
+  })
+
+  describe('detectInteractiveSession', () => {
+    it('is interactive when both streams are a TTY and no automation flag is set', async () => {
+      const { detectInteractiveSession } = await import('./cli')
+      expect(
+        detectInteractiveSession({}, { isTTY: true }, { isTTY: true })
+      ).toBe(true)
+    })
+
+    it('is not interactive without a TTY', async () => {
+      const { detectInteractiveSession } = await import('./cli')
+      expect(
+        detectInteractiveSession({}, { isTTY: false }, { isTTY: false })
+      ).toBe(false)
+    })
+
+    it('is not interactive under CI', async () => {
+      const { detectInteractiveSession } = await import('./cli')
+      expect(
+        detectInteractiveSession(
+          { CI: 'true' },
+          { isTTY: true },
+          { isTTY: true }
+        )
+      ).toBe(false)
+    })
+
+    it('is not interactive when SCREENCI_NONINTERACTIVE=1', async () => {
+      const { detectInteractiveSession } = await import('./cli')
+      expect(
+        detectInteractiveSession(
+          { SCREENCI_NONINTERACTIVE: '1' },
+          { isTTY: true },
+          { isTTY: true }
+        )
+      ).toBe(false)
+    })
+  })
 })

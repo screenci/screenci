@@ -370,8 +370,13 @@ describe('CLI', () => {
       process.env.SCREENCI_SECRET = 'test-secret'
     })
 
-    it('bootstraps auth when SCREENCI_SECRET is missing', async () => {
+    it('bootstraps auth interactively when SCREENCI_SECRET is missing', async () => {
       delete process.env.SCREENCI_SECRET
+      // Force an interactive session so record runs the blocking browser flow.
+      const originalStdoutTTY = process.stdout.isTTY
+      const originalStdinTTY = process.stdin.isTTY
+      process.stdout.isTTY = true
+      process.stdin.isTTY = true
       process.argv = ['node', 'cli.js', 'record']
       mockFetch.mockImplementation(
         async (input: string | URL, init?: RequestInit) => {
@@ -430,6 +435,60 @@ describe('CLI', () => {
       expect(mockWriteFile).toHaveBeenCalledWith(
         `${process.cwd()}/.env`,
         'SCREENCI_SECRET=auth-secret-123\n'
+      )
+
+      process.stdout.isTTY = originalStdoutTTY
+      process.stdin.isTTY = originalStdinTTY
+    })
+
+    it('prints the sign-in link and exits without recording in a non-interactive session', async () => {
+      delete process.env.SCREENCI_SECRET
+      process.env.SCREENCI_NONINTERACTIVE = '1'
+      process.argv = ['node', 'cli.js', 'record']
+      mockFetch.mockImplementation(
+        async (input: string | URL, init?: RequestInit) => {
+          const url = String(input)
+          if (url.endsWith('/cli-link/session') && init?.method === 'POST') {
+            return {
+              ok: true,
+              status: 201,
+              json: vi.fn().mockResolvedValue({
+                token: 'session-token-123',
+                createdAt: '2026-06-11T10:00:00.000Z',
+                expiresAt: '2099-06-11T10:15:00.000Z',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          if (url.includes('/cli-link/session?token=session-token-123')) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({ status: 'pending' }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+      )
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow('process.exit called')
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('https://app.screenci.com/cli-auth?session=')
+      )
+      // Never starts Playwright when sign-in has not completed.
+      expect(mockSpawn).not.toHaveBeenCalled()
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        `${process.cwd()}/.env`,
+        expect.stringContaining('SCREENCI_SECRET=')
       )
     })
 

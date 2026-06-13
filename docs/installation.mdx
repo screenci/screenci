@@ -56,8 +56,9 @@ dependencies, plus a couple of files at the repository root that have to live
 there:
 
 ```text
-screenci/                   # Self-contained ScreenCI project ("the island")
+screenci/                   # Self-contained ScreenCI project
   screenci.config.ts        # ScreenCI and Playwright configuration
+  tsconfig.json             # Minimal TypeScript config so editors type-check the project
   package.json              # Its own package.json (own dependencies + scripts)
   package-lock.json         # Or pnpm-lock.yaml / yarn.lock, depending on package manager
   videos/

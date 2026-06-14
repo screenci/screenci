@@ -57,6 +57,12 @@ function makeRecorder() {
     addCueEnd: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),
+    getHideLagThresholdMs: vi.fn(() => 0),
+    addSpeedStart: vi.fn(),
+    addSpeedEnd: vi.fn(),
+    addTimeStart: vi.fn(),
+    addTimeEnd: vi.fn(),
+    addStudioAssetStart: vi.fn(),
     addAutoZoomStart: vi.fn(),
     addAutoZoomEnd: vi.fn(),
     addVideoCueStart: vi.fn(),
@@ -1709,6 +1715,113 @@ describe('instrumentLocator', () => {
         event.events.some((innerEvent) => innerEvent.type === 'mouseHide')
       ).toBe(true)
     }
+  })
+
+  describe('hideLag', () => {
+    it('emits addHideStart and addHideEnd around waitFor when threshold > 0', async () => {
+      const { recorder } = makeRecorder()
+      recorder.getHideLagThresholdMs = vi.fn(() => 100)
+      setActiveClickRecorder(recorder)
+
+      const page = makePageMock()
+      await instrumentPage(page)
+      const bb = { x: 10, y: 20, width: 100, height: 30 }
+      const locator = makeLocatorMock(bb, page)
+      instrumentLocator(locator)
+
+      await Promise.all([
+        locator.click({ moveDuration: 10 }),
+        vi.runAllTimersAsync(),
+      ])
+
+      expect(recorder.addHideStart).toHaveBeenCalledTimes(1)
+      expect(recorder.addHideEnd).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not emit hide events when threshold is 0', async () => {
+      const { recorder } = makeRecorder()
+      recorder.getHideLagThresholdMs = vi.fn(() => 0)
+      setActiveClickRecorder(recorder)
+
+      const page = makePageMock()
+      await instrumentPage(page)
+      const bb = { x: 10, y: 20, width: 100, height: 30 }
+      const locator = makeLocatorMock(bb, page)
+      instrumentLocator(locator)
+
+      await Promise.all([
+        locator.click({ moveDuration: 10 }),
+        vi.runAllTimersAsync(),
+      ])
+
+      expect(recorder.addHideStart).not.toHaveBeenCalled()
+      expect(recorder.addHideEnd).not.toHaveBeenCalled()
+    })
+
+    it('per-action hideLagThresholdMs: 0 disables hiding even when global threshold is set', async () => {
+      const { recorder } = makeRecorder()
+      recorder.getHideLagThresholdMs = vi.fn(() => 500)
+      setActiveClickRecorder(recorder)
+
+      const page = makePageMock()
+      await instrumentPage(page)
+      const bb = { x: 10, y: 20, width: 100, height: 30 }
+      const locator = makeLocatorMock(bb, page)
+      instrumentLocator(locator)
+
+      await Promise.all([
+        (
+          locator.click as (options?: {
+            moveDuration?: number
+            hideLagThresholdMs?: number
+          }) => Promise<void>
+        )({ moveDuration: 10, hideLagThresholdMs: 0 }),
+        vi.runAllTimersAsync(),
+      ])
+
+      expect(recorder.addHideStart).not.toHaveBeenCalled()
+      expect(recorder.addHideEnd).not.toHaveBeenCalled()
+    })
+
+    it('calls waitFor on the locator when threshold > 0', async () => {
+      const { recorder } = makeRecorder()
+      recorder.getHideLagThresholdMs = vi.fn(() => 100)
+      setActiveClickRecorder(recorder)
+
+      const page = makePageMock()
+      await instrumentPage(page)
+      const bb = { x: 10, y: 20, width: 100, height: 30 }
+      const locator = makeLocatorMock(bb, page)
+      const originalWaitFor = locator.waitFor
+      instrumentLocator(locator)
+
+      await Promise.all([
+        locator.click({ moveDuration: 10 }),
+        vi.runAllTimersAsync(),
+      ])
+
+      expect(originalWaitFor).toHaveBeenCalledWith({ state: 'visible' })
+    })
+
+    it('does not call waitFor when threshold is 0', async () => {
+      const { recorder } = makeRecorder()
+      recorder.getHideLagThresholdMs = vi.fn(() => 0)
+      setActiveClickRecorder(recorder)
+
+      const page = makePageMock()
+      await instrumentPage(page)
+      const bb = { x: 10, y: 20, width: 100, height: 30 }
+      const locator = makeLocatorMock(bb, page)
+      const originalWaitFor = locator.waitFor
+      instrumentLocator(locator)
+
+      await Promise.all([
+        locator.click({ moveDuration: 10 }),
+        vi.runAllTimersAsync(),
+      ])
+
+      expect(originalWaitFor).not.toHaveBeenCalled()
+    })
   })
 
   it('uses original interactions and skips recording inside hide()', async () => {

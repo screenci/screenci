@@ -479,6 +479,7 @@ export interface IEventRecorder {
   addStudioAssetStart(name: string): void
   addHideStart(): void
   addHideEnd(): void
+  getHideLagThresholdMs(): number
   addSpeedStart(multiplier: number): void
   addSpeedEnd(): void
   addTimeStart(durationMs: number): void
@@ -509,6 +510,9 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addStudioAssetStart(): void {},
   addHideStart(): void {},
   addHideEnd(): void {},
+  getHideLagThresholdMs(): number {
+    return 0
+  },
   addSpeedStart(): void {},
   addSpeedEnd(): void {},
   addTimeStart(): void {},
@@ -786,6 +790,10 @@ export class EventRecorder implements IEventRecorder {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     this.events.push({ type: 'hideEnd', timeMs })
+  }
+
+  getHideLagThresholdMs(): number {
+    return this.recordOptions?.hideLagThresholdMs ?? 0
   }
 
   addSpeedStart(multiplier: number): void {

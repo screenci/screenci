@@ -206,6 +206,26 @@ describe('EventRecorder', () => {
     })
   })
 
+  describe('getHideLagThresholdMs', () => {
+    it('returns 0 when no recordOptions are provided', () => {
+      expect(new EventRecorder().getHideLagThresholdMs()).toBe(0)
+    })
+
+    it('returns the configured hideLagThresholdMs', () => {
+      expect(
+        new EventRecorder(undefined, {
+          hideLagThresholdMs: 500,
+        }).getHideLagThresholdMs()
+      ).toBe(500)
+    })
+
+    it('returns 0 when hideLagThresholdMs is not set in recordOptions', () => {
+      expect(
+        new EventRecorder(undefined, { fps: 60 }).getHideLagThresholdMs()
+      ).toBe(0)
+    })
+  })
+
   describe('autoZoom validation', () => {
     it('throws when autoZoom centering exceeds the supported 0..1 range', () => {
       recorder.start()

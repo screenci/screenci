@@ -241,6 +241,15 @@ export type RecordOptions = {
    * @default 60
    */
   fps?: FPS
+
+  /**
+   * Hides the recording while waiting for an element to respond before an
+   * interaction. If the wait takes longer than this threshold (ms), a warning
+   * with a link to the docs is printed. Set to 0 to disable.
+   *
+   * @default 0
+   */
+  hideLagThresholdMs?: number
 }
 
 export type Easing =
@@ -313,6 +322,8 @@ export type ScreenCILocatorClickOptions = Omit<
 > &
   CursorMoveOptions & {
     autoZoomOptions?: AutoZoomOptions
+    /** Override the global `hideLagThresholdMs` for this action. Set to 0 to disable hiding. */
+    hideLagThresholdMs?: number
   }
 
 export type ScreenCILocatorPostClickMoveOptions = CursorMoveTimingOption & {
@@ -356,6 +367,8 @@ export type ScreenCILocatorPressSequentiallyOptions = Omit<
     /** Hide the cursor while typing; shown again on the next mouse move. */
     hideMouse?: boolean
     autoZoomOptions?: AutoZoomOptions
+    /** Override the global `hideLagThresholdMs` for this action. Set to 0 to disable hiding. */
+    hideLagThresholdMs?: number
   }
 
 export type ScreenCILocatorCheckOptions = NonNullable<
@@ -365,6 +378,8 @@ export type ScreenCILocatorCheckOptions = NonNullable<
     noWaitAfter?: boolean
     position?: { x: number; y: number }
     autoZoomOptions?: AutoZoomOptions
+    /** Override the global `hideLagThresholdMs` for this action. Set to 0 to disable hiding. */
+    hideLagThresholdMs?: number
   }
 
 export type ScreenCILocatorHoverOptions = Omit<
@@ -377,6 +392,8 @@ export type ScreenCILocatorHoverOptions = Omit<
     /** How long to hold the hover in ms (default: 1000). */
     hoverDuration?: number
     position?: { x: number; y: number }
+    /** Override the global `hideLagThresholdMs` for this action. Set to 0 to disable hiding. */
+    hideLagThresholdMs?: number
   }
 
 export type ScreenCILocatorSelectTextOptions = Omit<
@@ -392,6 +409,8 @@ export type ScreenCILocatorSelectTextOptions = Omit<
      * Divided equally across the 3 click cycles.
      */
     selectDuration?: number
+    /** Override the global `hideLagThresholdMs` for this action. Set to 0 to disable hiding. */
+    hideLagThresholdMs?: number
   }
 
 export type ScreenCILocatorDragToOptions = Omit<
@@ -405,6 +424,8 @@ export type ScreenCILocatorDragToOptions = Omit<
     dragEasing?: Easing
     sourcePosition?: { x: number; y: number }
     targetPosition?: { x: number; y: number }
+    /** Override the global `hideLagThresholdMs` for this action. Set to 0 to disable hiding. */
+    hideLagThresholdMs?: number
   }
 
 export type ScreenCILocatorSelectOptionOptions = NonNullable<
@@ -414,6 +435,8 @@ export type ScreenCILocatorSelectOptionOptions = NonNullable<
     noWaitAfter?: boolean
     position?: { x: number; y: number }
     autoZoomOptions?: AutoZoomOptions
+    /** Override the global `hideLagThresholdMs` for this action. Set to 0 to disable hiding. */
+    hideLagThresholdMs?: number
   }
 
 type LocatorReturnMethodNames =

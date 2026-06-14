@@ -751,6 +751,7 @@ describe('CLI', () => {
         studioNotices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
+        plan: null,
       })
       expect(mockReaddir).toHaveBeenCalledWith('/repo/.screenci')
       expect(mockReadFile).toHaveBeenCalledWith(
@@ -824,6 +825,75 @@ describe('CLI', () => {
       )
       expect(messages.some((message) => message.includes('/select-plan'))).toBe(
         true
+      )
+    })
+
+    it('omits the upgrade mention for business plans', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'record',
+        '--config',
+        'test-fixtures/record-upload.config.ts',
+      ]
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('record-upload.config.ts')) {
+          return "export default { projectName: 'Test Project' }"
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('test-fixtures/record-upload.config.ts') ||
+          path.endsWith('data.json') ||
+          path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+              plan: 'business',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await main()
+
+      const messages = loggerInfoSpy.mock.calls.map((call) =>
+        stripVTControlCharacters(String(call[0]))
+      )
+      expect(messages).toContain(
+        'Recording finished, rendering in progress. Results available at:'
+      )
+      expect(messages.some((message) => message.includes('/select-plan'))).toBe(
+        false
       )
     })
 
@@ -1145,6 +1215,7 @@ describe('CLI', () => {
         studioNotices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
+        plan: null,
       })
       expect(mockFetch).not.toHaveBeenCalled()
     })
@@ -1186,6 +1257,7 @@ describe('CLI', () => {
             message: 'Missing recording.mp4 for "Demo"',
           },
         ],
+        plan: null,
       })
       expect(mockFetch).not.toHaveBeenCalledWith(
         expect.stringContaining('/cli/upload/start'),
@@ -1286,6 +1358,7 @@ describe('CLI', () => {
               'Failed to check asset videos/logo.png: 500 backend exploded',
           },
         ],
+        plan: null,
       })
       expect(
         mockFetch.mock.calls.some(([input]) =>
@@ -1398,6 +1471,7 @@ describe('CLI', () => {
         studioNotices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
+        plan: null,
       })
       expect(startBody?.expectedAssets).toEqual([
         expect.objectContaining({
@@ -1495,6 +1569,7 @@ describe('CLI', () => {
             message: 'Upload limit reached for current plan.',
           },
         ],
+        plan: null,
       })
     })
 
@@ -1561,6 +1636,7 @@ describe('CLI', () => {
         studioNotices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
+        plan: null,
       })
       expect(mockRmSync).toHaveBeenCalledWith('/repo/.screenci/demo-video', {
         recursive: true,
@@ -1632,6 +1708,7 @@ describe('CLI', () => {
         studioNotices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
+        plan: null,
       })
       expect(mockRmSync).not.toHaveBeenCalled()
     })
@@ -1734,6 +1811,7 @@ describe('CLI', () => {
           studioNotices: [],
           failedVideoNames: [],
           failedVideoMessages: [],
+          plan: null,
         })
 
         const messages = loggerInfoSpy.mock.calls.map((call) => String(call[0]))

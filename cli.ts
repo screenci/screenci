@@ -440,6 +440,8 @@ export function formatStudioUrl(
   return `${appUrl}/project/${projectId}/video/${videoId}/studio`
 }
 
+type OrgPlan = 'free' | 'starter' | 'business'
+
 type UploadJobResult = {
   projectId: string | null
   videoId: string | null
@@ -448,6 +450,7 @@ type UploadJobResult = {
   failureMessage?: string
   recordId: string
   studio?: UploadStudioInfo
+  plan?: OrgPlan
 }
 
 type UploadProgressStatus = 'success' | 'failure' | 'cancelled'
@@ -628,6 +631,7 @@ async function uploadRecordingCandidate(
   const { entry, videoName, data, preparedUploadAssets } = candidate
   let projectId: string | null = null
   let videoId: string | null = null
+  let plan: OrgPlan | null = null
 
   try {
     uploadAbort.throwIfAborted()
@@ -700,10 +704,12 @@ async function uploadRecordingCandidate(
       projectId: string
       videoId?: string
       studio?: UploadStudioInfo
+      plan?: OrgPlan
     }
     const { recordingId } = startBody
     projectId = startBody.projectId
     videoId = startBody.videoId ?? null
+    plan = startBody.plan ?? null
     const studio = startBody.studio
 
     if (verbose) {
@@ -768,6 +774,7 @@ async function uploadRecordingCandidate(
         videoName,
         failureMessage: `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}${hint401(recordingResponse.status, secret)}`,
         recordId,
+        ...(plan !== null && { plan }),
       }
     }
 
@@ -780,6 +787,7 @@ async function uploadRecordingCandidate(
       videoName,
       recordId,
       ...(studio !== undefined && { studio }),
+      ...(plan !== null && { plan }),
     }
   } catch (err) {
     if (isUploadCancelledError(err)) {
@@ -796,6 +804,7 @@ async function uploadRecordingCandidate(
         videoName,
         failureMessage: err instanceof Error ? err.message : String(err),
         recordId,
+        ...(plan !== null && { plan }),
       }
     }
 
@@ -807,6 +816,7 @@ async function uploadRecordingCandidate(
       videoName,
       failureMessage: `Network error uploading "${videoName}": ${err instanceof Error ? err.message : String(err)}`,
       recordId,
+      ...(plan !== null && { plan }),
     }
   }
 }
@@ -1622,6 +1632,7 @@ export async function uploadRecordings(
   failedVideoNames: string[]
   failedVideoMessages: Array<{ videoName: string; message: string }>
   studioNotices: StudioUploadNotice[]
+  plan: OrgPlan | null
 }> {
   const uploadAbort = createUploadAbortController('upload')
   const recordId = randomUUID()
@@ -1637,6 +1648,7 @@ export async function uploadRecordings(
       failedVideoNames: [],
       failedVideoMessages: [],
       studioNotices: [],
+      plan: null,
     }
   }
 
@@ -1665,6 +1677,7 @@ export async function uploadRecordings(
         failedVideoNames: [],
         failedVideoMessages: [],
         studioNotices: [],
+        plan: null,
       }
     }
 
@@ -1694,6 +1707,8 @@ export async function uploadRecordings(
 
     firstProjectId =
       results.find((result) => result.projectId !== null)?.projectId ?? null
+    const resolvedPlan =
+      results.find((result) => result.plan !== undefined)?.plan ?? null
     const hadFailures = results.some((result) => result.hadFailure)
     const failedVideoNames = results
       .filter((result) => result.hadFailure)
@@ -1723,6 +1738,7 @@ export async function uploadRecordings(
       failedVideoNames,
       failedVideoMessages,
       studioNotices,
+      plan: resolvedPlan,
     }
   } finally {
     uploadAbort.cleanup()
@@ -2574,6 +2590,7 @@ export async function main() {
               failedVideoNames: string[]
               failedVideoMessages: Array<{ videoName: string; message: string }>
               studioNotices: StudioUploadNotice[]
+              plan: OrgPlan | null
             } = {
               projectId: null,
               recordId: null,
@@ -2581,6 +2598,7 @@ export async function main() {
               failedVideoNames: [],
               failedVideoMessages: [],
               studioNotices: [],
+              plan: null,
             }
             try {
               uploadResult = await uploadRecordings(
@@ -2602,6 +2620,7 @@ export async function main() {
               failedVideoNames,
               failedVideoMessages,
               studioNotices,
+              plan,
             } = uploadResult
             if (recordId !== null && projectId !== null) {
               const recordUrl = `${appUrl}/record/${recordId}`
@@ -2624,7 +2643,7 @@ export async function main() {
               )
               logger.info(pc.cyan(projectUrl))
             }
-            if (projectId !== null) {
+            if (projectId !== null && plan !== 'business') {
               logger.info('')
               logger.info(
                 'Upgrade for more renders, more active videos, and expressive narration:'

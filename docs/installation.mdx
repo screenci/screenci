@@ -1,14 +1,16 @@
-# Installation & First Video
+# Manual Setup & First Video
 
 import { Tabs, TabItem } from '@astrojs/starlight/components'
 
-ScreenCI is a Playwright-based workflow for producing product videos as code.
-For recording and rendering, ScreenCI never sees your source code.
-If you already know Playwright, the startup path should feel familiar:
-initialize a project and run the generated E2E tests locally using `test` command.
-Then ScreenCI allows converting these tests into product videos with `record` command.
+This is the by-hand path for adding ScreenCI. If you would rather have a coding
+agent do it for you, see [Agent integration](/docs/agent-integration). For how
+recording and rendering are split (and why the service never sees your source
+code), see the [Overview](/docs).
 
-<!-- screenci-image:InstallationFlowDiagram -->
+ScreenCI is a Playwright-based workflow for producing product videos as code. If
+you already know Playwright, the startup path should feel familiar: initialize a
+project and run the generated E2E tests locally using the `test` command. Then
+ScreenCI converts these tests into product videos with the `record` command.
 
 #### You will learn
 
@@ -69,17 +71,17 @@ screenci/                   # Self-contained ScreenCI project
 
 The `screenci/` directory is deliberately **isolated**: it installs its own
 copy of `@playwright/test` and ScreenCI instead of relying on a surrounding
-workspace. This is what makes installation reliable inside complex monorepos —
+workspace. This is what makes installation reliable inside complex monorepos.
 ScreenCI never touches your app's `package.json` and is immune to pnpm/yarn
-workspace hoisting. It still drives your app the normal Playwright way, through
-a `baseURL` (and optional `storageState`); see [Configuration](/docs/configuration).
+workspace hoisting. It still drives your app the normal Playwright way, using
+your project's standard Playwright settings. See [Configuration](/docs/configuration).
 
 Two things must live at the repository root rather than inside `screenci/`,
 because that is where they are discovered:
 
-- `.github/workflows/screenci.yaml` — GitHub only runs workflows from the repo
+- `.github/workflows/screenci.yaml`: GitHub only runs workflows from the repo
   root. Its steps `cd` into `screenci/` automatically.
-- Agent skills (`.claude/skills`, etc.) — installed at the repo root so coding
+- Agent skills (`.claude/skills`, etc.): installed at the repo root so coding
   agents pick them up. See
   [Vercel Skills](https://github.com/vercel-labs/skills#readme).
 
@@ -126,7 +128,7 @@ video('How to find docs', async ({ page }) => {
 ## Run the example
 
 Test the starter video locally. The `screenci` commands work both from inside
-the `screenci/` directory and from the repository root — ScreenCI walks up to
+the `screenci/` directory and from the repository root. ScreenCI walks up to
 find `screenci/screenci.config.ts` automatically:
 
 <Tabs syncKey="package-manager">
@@ -222,14 +224,12 @@ code.
 
 It should look something like this:
 
-<!-- screenci-doc-video:docs -->
+<!-- screenci-doc-video:docs/installation -->
 
 ## What's next
 
-- [Generating Videos](/docs/generating-videos) to run, record, and publish
-  videos.
 - [Video Script Basics](/docs/write-video-scripts) to learn how video scripts
-  work.
+  work, including how to generate a first draft with codegen.
 - [CI Setup](/docs/ci-setup) to configure recording in GitHub Actions and keep
   CI runs predictable.
 - [Public URLs and Embeds](/docs/guides/public-urls-and-embeds) to publish a

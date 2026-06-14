@@ -32,14 +32,14 @@ Each key becomes a callable asset controller.
 
 On the Business tier you can also declare asset keys with
 `createStudioAssets('intro', 'logo')` and upload the files plus display
-options on the Studio page instead of keeping them in the repository — see
+options on the Studio page instead of keeping them in the repository. See
 [Studio](./studio.md#studio-assets-from-code).
 
 Rules:
 
 - `.svg` and `.png` assets require `durationMs`
 - `.svg` and `.png` assets do not support `audio`
-- `.mp4` assets may provide `audio`; if omitted it defaults to `1`
+- `.mp4` assets may provide `audio`. If omitted it defaults to `1`
 - `.mp4` assets use the file's natural duration and must not provide `durationMs`
 
 ## Full-screen vs overlay

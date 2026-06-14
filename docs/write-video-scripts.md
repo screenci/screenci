@@ -5,15 +5,39 @@ ScreenCI videos use the same syntax, guides, and general best practices as
 difference is that video scripts usually do not need assertions, and instead
 focus on viewer-facing behavior such as narration and camera movement.
 
-Need a faster way to get a first draft? Start with
-[Generating Videos](/docs/generating-videos), then come back here to refine the
-script structure and ScreenCI-specific APIs.
+Need a faster way to get a first draft? Generate one with
+[Playwright codegen](#generate-a-first-draft-with-codegen) (or let a coding agent
+do it, see [Agent integration](/docs/agent-integration)), then come back here to
+refine the script structure and ScreenCI-specific APIs.
 
 #### You will learn
 
+- [how to generate a first draft with codegen](#generate-a-first-draft-with-codegen)
 - [how a ScreenCI video differs from a Playwright test](#screenci-video-vs-playwright-test)
 - [how to configure ScreenCI](#configure-screenci)
 - [which core ScreenCI APIs to use](#core-screenci-apis)
+
+## Generate a first draft with codegen
+
+Writing a script from scratch is optional. Playwright's
+[test generator (codegen)](https://playwright.dev/docs/codegen) lets you click
+through the exact flow in a browser and have the actions written for you. Run:
+
+```bash
+npx playwright codegen https://your-app.example.com
+```
+
+This opens a browser window and the Playwright Inspector. As you click, type, and
+navigate, it generates Playwright actions for the flow. The output is not a
+ScreenCI video yet. To turn it into one:
+
+- copy the generated code into a `videos/<flow>.video.ts` file
+- change `test(...)` to `video(...)`
+- add narration with `createNarration()` (see [Core ScreenCI APIs](#core-screenci-apis))
+
+Then follow the usual `screenci test` and `screenci record` flow. If you only
+have a deployed URL and want this automated, point a coding agent at it with the
+`playwright-cli` skill, see [Agent integration](/docs/agent-integration).
 
 ## ScreenCI video vs Playwright test
 
@@ -94,8 +118,8 @@ final video or just retimed:
 - Use `time()` when the viewer should still see the step, and you want the
   whole visible block to occupy an exact duration in the output.
 
-See [Setup vs visible sequence](#setup-vs-visible-sequence) and [Generating
-Videos](/docs/generating-videos).
+See [Page Instrumentation](/docs/guides/page-instrumentation) for how visible
+actions are captured.
 
 `hide()` takes just the function to run. It removes the enclosed recording
 range from the final output.

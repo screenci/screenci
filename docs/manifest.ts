@@ -5,46 +5,58 @@
 
 export const docsManifest = [
   {
-    source: 'installation.mdx',
+    source: 'overview.mdx',
     slug: 'docs',
     section: 'Getting Started',
     order: 1,
-    navLabel: 'Installation & first video',
-    title: 'Installation & First Video',
+    navLabel: 'Overview',
+    title: 'Overview',
     description:
-      'Install ScreenCI, initialize a project, run the starter video locally, and record your first final video.',
+      'How ScreenCI works: record locally, render in the service, and serve from a CDN. The service never sees your source code, and the CLI is open source.',
     prev: null,
-    next: 'docs/generating-videos',
+    next: 'docs/agent-integration',
   },
   {
-    source: 'generating-videos.mdx',
-    slug: 'docs/generating-videos',
+    source: 'agent-integration.mdx',
+    slug: 'docs/agent-integration',
     section: 'Getting Started',
     order: 2,
-    navLabel: 'Generating videos',
-    title: 'Generating Videos',
+    navLabel: 'Agent integration',
+    title: 'Agent Integration',
     description:
-      'Use Playwright codegen and AI-assisted workflows to generate a first ScreenCI draft, then refine it into a real video script.',
+      'The recommended path: point a coding agent at the integration brief so it scaffolds ScreenCI, authors a video for your flow, and records it.',
     prev: 'docs',
+    next: 'docs/installation',
+  },
+  {
+    source: 'installation.mdx',
+    slug: 'docs/installation',
+    section: 'Getting Started',
+    order: 3,
+    navLabel: 'Manual setup & first video',
+    title: 'Manual Setup & First Video',
+    description:
+      'Wire ScreenCI up by hand: initialize a project, run the starter video locally, and record your first final video.',
+    prev: 'docs/agent-integration',
     next: 'docs/write-video-scripts',
   },
   {
     source: 'write-video-scripts.md',
     slug: 'docs/write-video-scripts',
     section: 'Getting Started',
-    order: 3,
+    order: 4,
     navLabel: 'Video script basics',
     title: 'Video Script Basics',
     description:
       'Author .video.ts files with Playwright-like APIs, ScreenCI narration and camera helpers, and workflow-aware pacing.',
-    prev: 'docs/generating-videos',
+    prev: 'docs/installation',
     next: 'docs/ci-setup',
   },
   {
     source: 'ci-setup.md',
     slug: 'docs/ci-setup',
     section: 'Getting Started',
-    order: 4,
+    order: 5,
     navLabel: 'CI setup',
     title: 'CI Setup',
     description:
@@ -139,8 +151,8 @@ export const docsManifest = [
   {
     source: 'cli.mdx',
     slug: 'docs/reference/cli',
-    section: 'Guides',
-    order: 8,
+    section: 'Reference',
+    order: 1,
     navLabel: 'CLI',
     title: 'CLI',
     description:
@@ -151,8 +163,8 @@ export const docsManifest = [
   {
     source: 'configuration.md',
     slug: 'docs/reference/configuration',
-    section: 'Guides',
-    order: 9,
+    section: 'Reference',
+    order: 2,
     navLabel: 'Configuration',
     title: 'Configuration',
     description:
@@ -163,8 +175,8 @@ export const docsManifest = [
   {
     source: 'public-delivery-api.md',
     slug: 'docs/reference/public-delivery-api',
-    section: 'Guides',
-    order: 10,
+    section: 'Reference',
+    order: 3,
     navLabel: 'Public delivery API',
     title: 'Public Delivery API',
     description:
@@ -174,7 +186,7 @@ export const docsManifest = [
   },
 ] as const
 
-export const docsSections = ['Getting Started', 'Guides'] as const
+export const docsSections = ['Getting Started', 'Guides', 'Reference'] as const
 
 export function getDocBySlug(slug: string) {
   return docsManifest.find((entry) => entry.slug === slug)
@@ -222,7 +234,7 @@ export function getDocsSidebarConfig(
       .sort((a, b) => a.order - b.order)
       .map(toSidebarItem)
 
-    if (section === 'Guides' && typedocSidebarGroup) {
+    if (section === 'Reference' && typedocSidebarGroup) {
       items.push(typedocSidebarGroup)
     }
 

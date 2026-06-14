@@ -100,7 +100,7 @@ animation options. Mix and match as needed:
 | Option             | Type            | Default         | Description                                                     |
 | ------------------ | --------------- | --------------- | --------------------------------------------------------------- |
 | `moveDuration`     | `number` (ms)   | 900             | Duration of the cursor move to the element.                     |
-| `moveSpeed`        | `number` (px/s) | —               | Speed-based alternative to `moveDuration` (mutually exclusive). |
+| `moveSpeed`        | `number` (px/s) | none            | Speed-based alternative to `moveDuration` (mutually exclusive). |
 | `moveEasing`       | `Easing`        | `'ease-in-out'` | Easing curve for the cursor move animation.                     |
 | `beforeClickPause` | `number` (ms)   | 50              | Pause after the cursor arrives, before the action fires.        |
 | `postClickPause`   | `number` (ms)   | 500             | Pause after the action completes.                               |

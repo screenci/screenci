@@ -1,0 +1,66 @@
+# Agent Integration
+
+The fastest way to add ScreenCI is to let a coding agent do it. ScreenCI
+publishes an agent-readable integration brief at
+[`/integrate.md`](https://screenci.com/integrate.md). Point your agent at it and
+describe the flow you want, and the agent scaffolds ScreenCI, authors a video,
+and records it.
+
+## Start with one paste
+
+Paste this into Claude Code, Codex, Cursor, or any other coding agent:
+
+```text
+integrate screenci screenci.com/integrate.md and add a video about <feature>
+```
+
+Replace `<feature>` with whatever you want the video to show off. Add `@files`
+or a URL so the agent has context to work from, for example
+`add a video about the onboarding flow in @src/routes/onboarding`.
+
+## What the agent does
+
+The brief walks the agent through three steps:
+
+1. **Scaffold the project.** It runs `npm init screenci@latest "<Project Name>"
+-- --yes` at the repository root. The project name and `--yes` are both
+   required so the command runs non-interactively instead of blocking on
+   prompts. This installs the `screenci` package, scaffolds `screenci.config.ts`
+   and `videos/`, and installs the `screenci` agent skill at the repository root.
+2. **Author a video** for the flow you described, including narration via
+   `createNarration()`, with setup wrapped in `hide()` and the demo driven with
+   visible clicks.
+3. **Verify, then record.** It runs `npx screenci test` until the script is
+   green, then `npx screenci record` to capture the final video.
+
+## How the agent gathers context
+
+To write an accurate script, the agent works from whatever context you give it:
+
+- **Referenced files.** Point it at routes and components with `@files` so it
+  learns the real selectors and flow from your source.
+- **Live URLs.** Give it a URL when the app is deployed and you do not want to
+  hand it the source.
+- **The `playwright-cli` skill.** ScreenCI can install an optional
+  `playwright-cli` skill that lets the agent open and explore a live site before
+  authoring the script. This is the best path when you only have a URL.
+
+If you would rather generate a first draft yourself before involving an agent,
+see [Playwright codegen](/docs/write-video-scripts#generate-a-first-draft-with-codegen).
+
+## Signing in
+
+The first `screenci record` needs a one-time sign-in. In an interactive terminal
+the CLI prints a sign-in link, waits for you to finish in the browser, and
+continues. In a non-interactive session (an agent or CI), it prints the link and
+exits instead of hanging, so surface the link to whoever can sign in, then rerun
+`npx screenci record`. You can also set `SCREENCI_SECRET` ahead of time to skip
+sign-in entirely.
+
+The upload contains the raw recording, not your source code. See
+[Overview](/docs) for how recording and rendering are split.
+
+## Prefer to wire it by hand?
+
+Everything the agent does, you can do yourself. See
+[Manual setup & first video](/docs/installation).

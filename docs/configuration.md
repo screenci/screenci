@@ -12,7 +12,7 @@ still works here. For the Playwright side of the file, see
 `screenci.config.ts` lives inside the self-contained `screenci/` directory that
 `init` creates, and paths like `videoDir` and `envFile` are resolved relative
 to it. ScreenCI couples to your app only through a `baseURL` (and optional
-`storageState`) — it does not need to live in, or share dependencies with, the
+`storageState`). It does not need to live in, or share dependencies with, the
 app it records, which is what keeps it isolated in a monorepo.
 
 The config merges three layers:
@@ -113,7 +113,7 @@ Common cases:
   expressive Gemini narration.
 
 Keep adding local runtime secrets here as needed. `screenci.config.ts` only
-points to the env file; the actual secret values belong in `.env` or whatever
+points to the env file. The actual secret values belong in `.env` or whatever
 file you set via `envFile`.
 
 ### File locations
@@ -153,7 +153,7 @@ Use project-wide render defaults for branding and layout consistency, then
 override only the files that need a different look.
 
 On the Business tier you can defer render options to the web app entirely by
-setting `renderOptions: STUDIO_RENDER_OPTIONS` — they are then managed on the
+setting `renderOptions: STUDIO_RENDER_OPTIONS`. They are then managed on the
 Studio page. See [Studio](/docs/guides/studio).
 
 ### Example: shared `use` defaults

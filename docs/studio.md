@@ -1,13 +1,13 @@
 # Studio
 
-Studio lets your team remix videos from the ScreenCI web app — change render
+Studio lets your team remix videos from the ScreenCI web app: change render
 options, narration text, and voices without touching code or re-running the
 recording. Studio is available on the Business tier.
 
 There are two ways to use it:
 
 - **Remix an existing video.** Any video recorded with `createNarration` can
-  be remixed in Studio. Your code-specified values are prefilled; override
+  be remixed in Studio. Your code-specified values are prefilled. Override
   them and render a new version server-side.
 - **Opt in from code.** Declare cue keys with `createStudioNarration`, asset
   keys with `createStudioAssets`, and set
@@ -27,7 +27,7 @@ There are two ways to use it:
 
 Open a video in the web app and choose **Open in Studio**. Studio shows the
 current narration text, voices, and render options from the latest upload.
-Change what you need and choose **Save & render** — a new version is rendered
+Change what you need and choose **Save & render**. A new version is rendered
 from the same recording, with your overrides applied.
 
 Rendering is per language: next to the render button you can toggle which
@@ -72,7 +72,7 @@ video('Checkout walkthrough', async ({ page }) => {
 })
 ```
 
-The cues behave exactly like `createNarration` cues — callable, with explicit
+The cues behave exactly like `createNarration` cues: callable, with explicit
 `start()` and `end()`, and automatic sequencing between consecutive cues.
 TypeScript knows the declared keys, so `narration.typo` is a compile error.
 
@@ -81,7 +81,7 @@ someone fills in the narration on the Studio page. The CLI prints the hold
 together with a direct link to Studio:
 
 ```
-Rendering for "Checkout walkthrough" is on hold — configure it in Studio:
+Rendering for "Checkout walkthrough" is on hold. Configure it in Studio:
 https://app.screenci.com/project/<projectId>/video/<videoId>/studio
 ```
 
@@ -91,7 +91,7 @@ Studio configuration and render automatically.
 ## Narration media from Studio
 
 Any editable narration entry in Studio can use an uploaded media file instead
-of synthesized speech — the web equivalent of `createNarration`'s
+of synthesized speech, the web equivalent of `createNarration`'s
 `{ media: './intro.mp4' }` entries. Switch a cue's entry from **Text** to
 **Media**, upload an `.mp4` file, and optionally provide a subtitle used for
 captions.
@@ -124,7 +124,7 @@ the Studio page. TypeScript knows the declared keys, so `assets.typo` is a
 compile error.
 
 Like studio narration, the first upload of a video using `createStudioAssets`
-is held until every declared asset has a file configured in Studio; the CLI
+is held until every declared asset has a file configured in Studio. The CLI
 prints a direct link. Later uploads reuse the saved configuration. See
 [Assets & overlays](./assets-and-overlays.md) for how assets behave on the
 timeline.

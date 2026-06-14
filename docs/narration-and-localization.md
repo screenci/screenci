@@ -282,7 +282,7 @@ Use `modelType` when you need to choose between consistency and expressiveness.
 
 ElevenLabs voices require the ScreenCI Business tier and use your own
 ElevenLabs API key. Keep `ELEVENLABS_API_KEY` in your configured `envFile` or
-project `.env`; see [Configuration](/docs/reference/configuration). ScreenCI
+project `.env`. See [Configuration](/docs/reference/configuration). ScreenCI
 loads that file automatically for local commands, and ScreenCI does not store
 the raw API key or use it for anything except synthesizing narration for your
 videos.
@@ -348,7 +348,7 @@ const narration = createNarration({
 See the ElevenLabs
 [Create speech with timing API](https://elevenlabs.io/docs/api-reference/text-to-speech/convert-with-timestamps)
 for the upstream request fields. ElevenLabs `style` is a numeric exaggeration
-control; it is not the free-form style prompt available to ScreenCI expressive
+control. It is not the free-form style prompt available to ScreenCI expressive
 model voices.
 
 Author cues sparingly, one sentence at a time, instead of large paragraphs.

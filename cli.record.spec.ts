@@ -373,6 +373,10 @@ describe('CLI', () => {
     it('bootstraps auth interactively when SCREENCI_SECRET is missing', async () => {
       delete process.env.SCREENCI_SECRET
       // Force an interactive session so record runs the blocking browser flow.
+      // detectInteractiveSession() also treats CI=true and SCREENCI_NONINTERACTIVE
+      // as non-interactive, so clear them (GitHub Actions sets CI=true).
+      delete process.env.CI
+      delete process.env.SCREENCI_NONINTERACTIVE
       const originalStdoutTTY = process.stdout.isTTY
       const originalStdinTTY = process.stdin.isTTY
       process.stdout.isTTY = true

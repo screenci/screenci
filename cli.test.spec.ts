@@ -401,7 +401,7 @@ describe('CLI', () => {
       }
     })
 
-    it('resolves the island config when run from the repo root', async () => {
+    it('does not auto-use the island config from the repo root, and guides cd screenci', async () => {
       process.argv = ['node', 'cli.js', 'test']
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo')
       mockExistsSync.mockImplementation(
@@ -410,16 +410,20 @@ describe('CLI', () => {
       mockSpawnCloseZero()
       try {
         const { main } = await import('./cli')
-        await main()
-        expect(findResolvedConfigArg()).toBe(
-          '/repo/screenci/screenci.config.ts'
+        await expect(main()).rejects.toThrow('process.exit called')
+        // The island config must not be silently used: running from outside the
+        // island resolves the `screenci` binary from the registry, not the
+        // version-pinned island install.
+        expect(findResolvedConfigArg()).toBeUndefined()
+        expect(loggerErrorSpy).toHaveBeenCalledWith(
+          expect.stringContaining('cd screenci')
         )
       } finally {
         cwdSpy.mockRestore()
       }
     })
 
-    it('walks up from a nested directory to find the island config', async () => {
+    it('guides cd into a nested island found while walking up parents', async () => {
       process.argv = ['node', 'cli.js', 'test']
       const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue('/repo/apps/web')
       mockExistsSync.mockImplementation(
@@ -428,9 +432,10 @@ describe('CLI', () => {
       mockSpawnCloseZero()
       try {
         const { main } = await import('./cli')
-        await main()
-        expect(findResolvedConfigArg()).toBe(
-          '/repo/screenci/screenci.config.ts'
+        await expect(main()).rejects.toThrow('process.exit called')
+        expect(findResolvedConfigArg()).toBeUndefined()
+        expect(loggerErrorSpy).toHaveBeenCalledWith(
+          expect.stringContaining('cd ../../screenci')
         )
       } finally {
         cwdSpy.mockRestore()

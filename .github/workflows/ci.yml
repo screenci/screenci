@@ -125,7 +125,7 @@ jobs:
         run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} node ${{ github.workspace }}/bin/screenci.js init smoke-project --package-manager npm --yes --verbose
 
       - name: Run screenci test with npm
-        working-directory: ${{ env.SMOKE_DIRECT_NPM }}
+        working-directory: ${{ env.SMOKE_DIRECT_NPM }}/screenci
         run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} npx screenci test
 
       - name: Run screenci init with pnpm
@@ -133,7 +133,7 @@ jobs:
         run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} node ${{ github.workspace }}/bin/screenci.js init smoke-project --package-manager pnpm --yes --verbose
 
       - name: Run screenci test with pnpm
-        working-directory: ${{ env.SMOKE_DIRECT_PNPM }}
+        working-directory: ${{ env.SMOKE_DIRECT_PNPM }}/screenci
         run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} pnpm exec screenci test
 
       - name: Run create-screenci with npm
@@ -141,7 +141,7 @@ jobs:
         run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} npm exec --yes --package=${{ env.CREATE_SCREENCI_DEPENDENCY }} --package=${{ env.SCREENCI_INIT_SCREENCI_DEPENDENCY }} -- create-screenci smoke-project --package-manager npm --yes --verbose
 
       - name: Run generated screenci test with npm
-        working-directory: ${{ env.SMOKE_CREATE_NPM }}
+        working-directory: ${{ env.SMOKE_CREATE_NPM }}/screenci
         run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} npx screenci test
 
       - name: Run create-screenci with pnpm
@@ -149,7 +149,7 @@ jobs:
         run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} pnpm dlx --package=${{ env.CREATE_SCREENCI_DEPENDENCY }} --package=${{ env.SCREENCI_INIT_SCREENCI_DEPENDENCY }} create-screenci smoke-project --package-manager pnpm --yes --verbose
 
       - name: Run generated screenci test with pnpm
-        working-directory: ${{ env.SMOKE_CREATE_PNPM }}
+        working-directory: ${{ env.SMOKE_CREATE_PNPM }}/screenci
         run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} pnpm exec screenci test
 
       - name: Run screenci init with yarn
@@ -157,7 +157,7 @@ jobs:
         run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} node ${{ github.workspace }}/bin/screenci.js init smoke-project --package-manager yarn --yes --verbose
 
       - name: Run screenci test with yarn
-        working-directory: ${{ env.SMOKE_DIRECT_YARN }}
+        working-directory: ${{ env.SMOKE_DIRECT_YARN }}/screenci
         run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} yarn screenci test
 
       - name: Create pnpm workspace scaffold
@@ -175,7 +175,7 @@ jobs:
         run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} node ${{ github.workspace }}/bin/screenci.js init smoke-project --yes --verbose
 
       - name: Run screenci test in pnpm workspace
-        working-directory: ${{ env.SMOKE_PNPM_WORKSPACE }}
+        working-directory: ${{ env.SMOKE_PNPM_WORKSPACE }}/screenci
         run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} pnpm exec screenci test
 
   # pnpm 10 and 11 ignore dependency build scripts unless they are approved, and

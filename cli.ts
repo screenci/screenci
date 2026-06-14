@@ -918,6 +918,28 @@ function resolveWindowsCmdShim(cmd: string): string {
   return shimName
 }
 
+function isModuleNotFoundError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error as NodeJS.ErrnoException).code === 'MODULE_NOT_FOUND'
+  )
+}
+
+function resolvePlaywrightCliEntrypoint(searchFrom: string): string {
+  // Prefer the @playwright/test installed alongside the user's config, since it
+  // is declared as a peer dependency of the project being recorded.
+  try {
+    return require.resolve('@playwright/test/cli', { paths: [searchFrom] })
+  } catch (error) {
+    if (!isModuleNotFoundError(error)) throw error
+  }
+
+  // Fall back to the copy resolvable from the screenci CLI's own install. This
+  // keeps discovery working when Playwright is hoisted to a parent install or
+  // bundled with the CLI rather than next to the config file.
+  return require.resolve('@playwright/test/cli')
+}
+
 function resolvePlaywrightSpawnSpec(
   args: string[],
   searchFrom: string
@@ -927,9 +949,7 @@ function resolvePlaywrightSpawnSpec(
   shell?: boolean
   windowsVerbatimArguments?: boolean
 } {
-  const cliEntrypoint = require.resolve('@playwright/test/cli', {
-    paths: [searchFrom],
-  })
+  const cliEntrypoint = resolvePlaywrightCliEntrypoint(searchFrom)
 
   return {
     command: process.execPath,
@@ -1025,29 +1045,39 @@ function clearRecordingDirectories(dir: string): void {
   }
 }
 
-function findScreenCIConfig(customPath?: string): string | null {
+type ScreenCIConfigResolution =
+  | { kind: 'found'; path: string }
+  | { kind: 'island-not-entered'; islandConfigPath: string }
+  | { kind: 'not-found' }
+
+function findScreenCIConfig(customPath?: string): ScreenCIConfigResolution {
   if (customPath) {
     const resolvedPath = resolve(process.cwd(), customPath)
-    if (existsSync(resolvedPath)) {
-      return resolvedPath
-    }
-    return null
+    return existsSync(resolvedPath)
+      ? { kind: 'found', path: resolvedPath }
+      : { kind: 'not-found' }
   }
 
-  // Walk up from the current directory so `screenci test`/`record` work both
-  // inside the `screenci/` island and from the repo root (or any directory in
-  // between). At each level we prefer a flat `screenci.config.ts`, then fall
-  // back to the island layout `screenci/screenci.config.ts`.
+  // Walk up from the current directory looking for a flat `screenci.config.ts`,
+  // which is what's present when the command runs from inside the `screenci/`
+  // island. We deliberately do NOT auto-use a nested
+  // `screenci/screenci.config.ts`: running the CLI from outside the island
+  // resolves the `screenci` binary from the registry (npx download) rather than
+  // the version-pinned island install, so it would silently run a different
+  // version. Instead we detect the island and ask the user to `cd` into it.
   let current = process.cwd()
+  let islandConfigPath: string | undefined
   while (true) {
     const flatConfig = resolve(current, 'screenci.config.ts')
     if (existsSync(flatConfig)) {
-      return flatConfig
+      return { kind: 'found', path: flatConfig }
     }
 
-    const islandConfig = resolve(current, 'screenci', 'screenci.config.ts')
-    if (existsSync(islandConfig)) {
-      return islandConfig
+    if (islandConfigPath === undefined) {
+      const islandConfig = resolve(current, 'screenci', 'screenci.config.ts')
+      if (existsSync(islandConfig)) {
+        islandConfigPath = islandConfig
+      }
     }
 
     const parent = dirname(current)
@@ -1055,7 +1085,39 @@ function findScreenCIConfig(customPath?: string): string | null {
     current = parent
   }
 
-  return null
+  if (islandConfigPath !== undefined) {
+    return { kind: 'island-not-entered', islandConfigPath }
+  }
+  return { kind: 'not-found' }
+}
+
+// Resolve the config path, or log a helpful message and exit. Centralizes the
+// `cd screenci` guidance so every command (test/record/info/...) behaves the
+// same when invoked from outside the island.
+function resolveScreenCIConfigPathOrExit(customPath?: string): string {
+  const resolution = findScreenCIConfig(customPath)
+  switch (resolution.kind) {
+    case 'found':
+      return resolution.path
+    case 'island-not-entered': {
+      const islandDir = dirname(resolution.islandConfigPath)
+      const relDir = pathRelative(process.cwd(), islandDir) || '.'
+      logger.error(
+        `Error: no screenci.config.ts found here, but found ${pc.cyan(
+          `${relDir}/screenci.config.ts`
+        )}. Run ${pc.cyan(`cd ${relDir}`)} and rerun the command from there.`
+      )
+      return process.exit(1)
+    }
+    case 'not-found': {
+      logger.error(
+        customPath
+          ? `Error: Config file not found: ${customPath}`
+          : 'Error: screenci.config.ts not found in the current directory or any parent.'
+      )
+      return process.exit(1)
+    }
+  }
 }
 
 async function hashFile(filePath: string): Promise<string> {
@@ -1697,14 +1759,7 @@ async function loadScreenCIConfigAndEnv(configPath?: string): Promise<{
   resolvedConfigPath: string
   screenciConfig: ScreenCIConfig
 }> {
-  const resolvedConfigPath = findScreenCIConfig(configPath)
-  if (!resolvedConfigPath) {
-    const errorMsg = configPath
-      ? `Error: Config file not found: ${configPath}`
-      : 'Error: screenci.config.ts not found in current directory'
-    logger.error(errorMsg)
-    process.exit(1)
-  }
+  const resolvedConfigPath = resolveScreenCIConfigPathOrExit(configPath)
 
   let screenciConfig: ScreenCIConfig
   try {
@@ -2392,9 +2447,12 @@ export async function main() {
 
       if (process.env.SCREENCI_RECORDING === 'true') return
 
-      // After recording, upload results to API if configured
-      const resolvedConfigPath = findScreenCIConfig(parsed.configPath)
-      if (resolvedConfigPath) {
+      // After recording, upload results to API if configured. `run` already
+      // resolved the config (or exited), so this best-effort lookup only acts
+      // when a flat config is present in/under the current directory.
+      const resolution = findScreenCIConfig(parsed.configPath)
+      if (resolution.kind === 'found') {
+        const resolvedConfigPath = resolution.path
         try {
           const screenciConfig =
             await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
@@ -2549,8 +2607,11 @@ export async function main() {
       const parsed = parseConfigCliArgs(getSubcommandArgv('test'))
       let configMockRecord = false
 
-      const resolvedConfigPath = findScreenCIConfig(parsed.configPath)
-      if (resolvedConfigPath) {
+      // Best-effort env preload before handing off to `run`, which performs the
+      // authoritative resolution (and emits the `cd screenci` guidance on miss).
+      const resolution = findScreenCIConfig(parsed.configPath)
+      if (resolution.kind === 'found') {
+        const resolvedConfigPath = resolution.path
         try {
           const screenciConfig =
             await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
@@ -2788,15 +2849,7 @@ async function run(
   verbose = false,
   mockRecord = false
 ) {
-  const configPath = findScreenCIConfig(customConfigPath)
-
-  if (!configPath) {
-    const errorMsg = customConfigPath
-      ? `Error: Config file not found: ${customConfigPath}`
-      : 'Error: screenci.config.ts not found in the current directory or any parent (looked for ./screenci.config.ts and ./screenci/screenci.config.ts)'
-    logger.error(errorMsg)
-    process.exit(1)
-  }
+  const configPath = resolveScreenCIConfigPathOrExit(customConfigPath)
 
   if (command === 'test' || process.env.SCREENCI_RECORDING !== 'true') {
     await loadEnvFileFromConfigSource(configPath, false)

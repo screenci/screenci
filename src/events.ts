@@ -479,7 +479,16 @@ export interface IEventRecorder {
   addStudioAssetStart(name: string): void
   addHideStart(): void
   addHideEnd(): void
-  getHideLagThresholdMs(): number
+  getMaxLagMs(): number
+  /**
+   * Retroactively marks the span between `startedAtMs` (an absolute `Date.now()`
+   * captured when a wait began) and now as a time-compression block that plays
+   * back over exactly `targetDurationMs`. Used to cap an over-long UI wait so it
+   * occupies a fixed, smooth duration in the recording instead of the full real
+   * time. Nothing is recorded during the wait, so emitting the pair after the
+   * fact keeps the event timeline ordered.
+   */
+  addCompressedSpan(startedAtMs: number, targetDurationMs: number): void
   addSpeedStart(multiplier: number): void
   addSpeedEnd(): void
   addTimeStart(durationMs: number): void
@@ -510,9 +519,10 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addStudioAssetStart(): void {},
   addHideStart(): void {},
   addHideEnd(): void {},
-  getHideLagThresholdMs(): number {
+  getMaxLagMs(): number {
     return 0
   },
+  addCompressedSpan(): void {},
   addSpeedStart(): void {},
   addSpeedEnd(): void {},
   addTimeStart(): void {},
@@ -792,8 +802,8 @@ export class EventRecorder implements IEventRecorder {
     this.events.push({ type: 'hideEnd', timeMs })
   }
 
-  getHideLagThresholdMs(): number {
-    return this.recordOptions?.hideLagThresholdMs ?? 0
+  getMaxLagMs(): number {
+    return this.recordOptions?.maxLagMs ?? 0
   }
 
   addSpeedStart(multiplier: number): void {
@@ -812,6 +822,18 @@ export class EventRecorder implements IEventRecorder {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     this.events.push({ type: 'timeStart', timeMs, durationMs })
+  }
+
+  addCompressedSpan(startedAtMs: number, targetDurationMs: number): void {
+    if (this.startTime === null) return
+    const startMs = Math.max(0, startedAtMs - this.startTime)
+    const endMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'timeStart',
+      timeMs: startMs,
+      durationMs: targetDurationMs,
+    })
+    this.events.push({ type: 'timeEnd', timeMs: endMs })
   }
 
   addTimeEnd(): void {

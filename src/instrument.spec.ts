@@ -22,6 +22,8 @@ import { DEFAULT_CLICK_MOUSE_MOVE_DURATION } from './defaults.js'
 import { hide } from './hide.js'
 import { CLICK_DURATION_MS, getMousePosition } from './mouse.js'
 import { SCREENCI_DISABLE_RECORDING_TIMINGS_ENV } from './runtimeMode.js'
+import { logger } from './logger.js'
+import { time, setActiveTimeRecorder } from './time.js'
 
 type DOMClickData = { x: number; y: number; targetRect: ElementRect }
 type ScrollLogicalPosition = 'start' | 'center' | 'end' | 'nearest'
@@ -57,7 +59,8 @@ function makeRecorder() {
     addCueEnd: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),
-    getHideLagThresholdMs: vi.fn(() => 0),
+    getMaxLagMs: vi.fn(() => 0),
+    addCompressedSpan: vi.fn(),
     addSpeedStart: vi.fn(),
     addSpeedEnd: vi.fn(),
     addTimeStart: vi.fn(),
@@ -1717,10 +1720,10 @@ describe('instrumentLocator', () => {
     }
   })
 
-  describe('hideLag', () => {
-    it('emits addHideStart and addHideEnd around waitFor when threshold > 0', async () => {
+  describe('lag cap', () => {
+    it('does not compress waits that stay under the threshold', async () => {
       const { recorder } = makeRecorder()
-      recorder.getHideLagThresholdMs = vi.fn(() => 100)
+      recorder.getMaxLagMs = vi.fn(() => 100)
       setActiveClickRecorder(recorder)
 
       const page = makePageMock()
@@ -1734,58 +1737,67 @@ describe('instrumentLocator', () => {
         vi.runAllTimersAsync(),
       ])
 
-      expect(recorder.addHideStart).toHaveBeenCalledTimes(1)
-      expect(recorder.addHideEnd).toHaveBeenCalledTimes(1)
-    })
-
-    it('does not emit hide events when threshold is 0', async () => {
-      const { recorder } = makeRecorder()
-      recorder.getHideLagThresholdMs = vi.fn(() => 0)
-      setActiveClickRecorder(recorder)
-
-      const page = makePageMock()
-      await instrumentPage(page)
-      const bb = { x: 10, y: 20, width: 100, height: 30 }
-      const locator = makeLocatorMock(bb, page)
-      instrumentLocator(locator)
-
-      await Promise.all([
-        locator.click({ moveDuration: 10 }),
-        vi.runAllTimersAsync(),
-      ])
-
+      // Fast (mocked) waits play naturally: no compression, no hiding.
+      expect(recorder.addCompressedSpan).not.toHaveBeenCalled()
       expect(recorder.addHideStart).not.toHaveBeenCalled()
-      expect(recorder.addHideEnd).not.toHaveBeenCalled()
     })
 
-    it('per-action hideLagThresholdMs: 0 disables hiding even when global threshold is set', async () => {
+    it('does nothing when threshold is 0', async () => {
       const { recorder } = makeRecorder()
-      recorder.getHideLagThresholdMs = vi.fn(() => 500)
+      recorder.getMaxLagMs = vi.fn(() => 0)
       setActiveClickRecorder(recorder)
 
       const page = makePageMock()
       await instrumentPage(page)
       const bb = { x: 10, y: 20, width: 100, height: 30 }
       const locator = makeLocatorMock(bb, page)
+      const originalWaitFor = locator.waitFor
+      instrumentLocator(locator)
+
+      await Promise.all([
+        locator.click({ moveDuration: 10 }),
+        vi.runAllTimersAsync(),
+      ])
+
+      expect(recorder.addCompressedSpan).not.toHaveBeenCalled()
+      expect(recorder.addHideStart).not.toHaveBeenCalled()
+      expect(originalWaitFor).not.toHaveBeenCalled()
+    })
+
+    it('per-action maxLagMs: 0 disables the cap even when the global threshold is set', async () => {
+      const { recorder } = makeRecorder()
+      recorder.getMaxLagMs = vi.fn(() => 500)
+      setActiveClickRecorder(recorder)
+
+      const page = makePageMock()
+      await instrumentPage(page)
+      const bb = { x: 10, y: 20, width: 100, height: 30 }
+      const locator = makeLocatorMock(bb, page)
+      const clickMock = locator.click as ReturnType<typeof vi.fn>
+      clickMock.mockImplementation(async (options?: { trial?: boolean }) => {
+        if (options?.trial) {
+          await new Promise((resolve) => setTimeout(resolve, 3000))
+        }
+      })
       instrumentLocator(locator)
 
       await Promise.all([
         (
           locator.click as (options?: {
             moveDuration?: number
-            hideLagThresholdMs?: number
+            maxLagMs?: number
           }) => Promise<void>
-        )({ moveDuration: 10, hideLagThresholdMs: 0 }),
+        )({ moveDuration: 10, maxLagMs: 0 }),
         vi.runAllTimersAsync(),
       ])
 
+      expect(recorder.addCompressedSpan).not.toHaveBeenCalled()
       expect(recorder.addHideStart).not.toHaveBeenCalled()
-      expect(recorder.addHideEnd).not.toHaveBeenCalled()
     })
 
     it('calls waitFor on the locator when threshold > 0', async () => {
       const { recorder } = makeRecorder()
-      recorder.getHideLagThresholdMs = vi.fn(() => 100)
+      recorder.getMaxLagMs = vi.fn(() => 100)
       setActiveClickRecorder(recorder)
 
       const page = makePageMock()
@@ -1803,16 +1815,24 @@ describe('instrumentLocator', () => {
       expect(originalWaitFor).toHaveBeenCalledWith({ state: 'visible' })
     })
 
-    it('does not call waitFor when threshold is 0', async () => {
+    it('runs the actionability trial just before the click, after the move', async () => {
       const { recorder } = makeRecorder()
-      recorder.getHideLagThresholdMs = vi.fn(() => 0)
+      recorder.getMaxLagMs = vi.fn(() => 100)
       setActiveClickRecorder(recorder)
 
+      const order: string[] = []
       const page = makePageMock()
+      const originalMove = page.mouse.move as ReturnType<typeof vi.fn>
+      originalMove.mockImplementation(async () => {
+        order.push('move')
+      })
       await instrumentPage(page)
       const bb = { x: 10, y: 20, width: 100, height: 30 }
       const locator = makeLocatorMock(bb, page)
-      const originalWaitFor = locator.waitFor
+      const clickMock = locator.click as ReturnType<typeof vi.fn>
+      clickMock.mockImplementation(async (options?: { trial?: boolean }) => {
+        order.push(options?.trial ? 'trial' : 'click')
+      })
       instrumentLocator(locator)
 
       await Promise.all([
@@ -1820,7 +1840,88 @@ describe('instrumentLocator', () => {
         vi.runAllTimersAsync(),
       ])
 
-      expect(originalWaitFor).not.toHaveBeenCalled()
+      // The trial (actionability wait) happens after the cursor has moved, and
+      // the real click happens after the trial.
+      const trialIdx = order.indexOf('trial')
+      const clickIdx = order.indexOf('click')
+      expect(order.indexOf('move')).toBeGreaterThanOrEqual(0)
+      expect(trialIdx).toBeGreaterThan(order.indexOf('move'))
+      expect(clickIdx).toBeGreaterThan(trialIdx)
+    })
+
+    it('compresses to the threshold and warns when the element is slow to become actionable', async () => {
+      const { recorder } = makeRecorder()
+      recorder.getMaxLagMs = vi.fn(() => 500)
+      setActiveClickRecorder(recorder)
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+
+      const page = makePageMock()
+      await instrumentPage(page)
+      const bb = { x: 10, y: 20, width: 100, height: 30 }
+      const locator = makeLocatorMock(bb, page)
+      // waitFor({ state: 'visible' }) resolves immediately (default mock), but
+      // the element only becomes actionable after a 3s lag, surfaced by the
+      // trial click.
+      const clickMock = locator.click as ReturnType<typeof vi.fn>
+      clickMock.mockImplementation(async (options?: { trial?: boolean }) => {
+        if (options?.trial) {
+          await new Promise((resolve) => setTimeout(resolve, 3000))
+        }
+      })
+      instrumentLocator(locator)
+
+      await Promise.all([
+        locator.click({ moveDuration: 10 }),
+        vi.runAllTimersAsync(),
+      ])
+
+      // The actionability wait is compressed to exactly the threshold, never
+      // hidden.
+      expect(recorder.addCompressedSpan).toHaveBeenCalledTimes(1)
+      expect(recorder.addCompressedSpan).toHaveBeenCalledWith(
+        expect.any(Number),
+        500
+      )
+      expect(recorder.addHideStart).not.toHaveBeenCalled()
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('compressed to 500ms')
+      )
+
+      warnSpy.mockRestore()
+    })
+
+    it('hides instead of compressing when inside a time() block', async () => {
+      const { recorder } = makeRecorder()
+      recorder.getMaxLagMs = vi.fn(() => 500)
+      setActiveClickRecorder(recorder)
+      setActiveTimeRecorder(recorder)
+
+      const page = makePageMock()
+      await instrumentPage(page)
+      const bb = { x: 10, y: 20, width: 100, height: 30 }
+      const locator = makeLocatorMock(bb, page)
+      const clickMock = locator.click as ReturnType<typeof vi.fn>
+      clickMock.mockImplementation(async (options?: { trial?: boolean }) => {
+        if (options?.trial) {
+          await new Promise((resolve) => setTimeout(resolve, 3000))
+        }
+      })
+      instrumentLocator(locator)
+
+      await Promise.all([
+        time(1000, async () => {
+          await locator.click({ moveDuration: 10 })
+        }),
+        vi.runAllTimersAsync(),
+      ])
+
+      // A compression block cannot nest inside the user's time() block, so the
+      // over-long wait is hidden instead.
+      expect(recorder.addCompressedSpan).not.toHaveBeenCalled()
+      expect(recorder.addHideStart).toHaveBeenCalled()
+      expect(recorder.addHideEnd).toHaveBeenCalled()
+
+      setActiveTimeRecorder(null)
     })
   })
 

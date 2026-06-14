@@ -20,6 +20,7 @@ import { NOOP_EVENT_RECORDER } from './events.js'
 import { logger } from './logger.js'
 import type { AutoZoomOptions, Easing, ScreenCIPage } from './types.js'
 import { isInsideHide } from './hide.js'
+import { isInsideTimeWarp } from './timelineBlock.js'
 import { changeFocus, type MouseMoveRequest } from './changeFocus.js'
 import { DEFAULT_CLICK_MOUSE_MOVE_DURATION } from './defaults.js'
 import {
@@ -161,24 +162,70 @@ async function appendPostTypingSettleWait(
   await appendMouseWait(innerEvents, DEFAULT_POST_TYPING_SETTLE_PAUSE_MS)
 }
 
-async function hideLag(
+/**
+ * Runs a wait and, if it takes longer than the threshold, compresses that span
+ * in the recording so it plays back over exactly `threshold` ms instead of the
+ * full real time. Waits at or under the threshold play at their natural speed.
+ * Warns whenever a wait is compressed.
+ *
+ * Inside a user `time()`/`speed()` block a compression block cannot be nested,
+ * so the over-long wait is hidden (cut) instead.
+ */
+async function capAndMeasureLag(
+  recorder: IEventRecorder,
+  threshold: number,
+  wait: () => Promise<void>
+): Promise<void> {
+  if (isInsideTimeWarp()) {
+    recorder.addHideStart()
+    try {
+      await wait()
+    } finally {
+      recorder.addHideEnd()
+    }
+    return
+  }
+  const startedAtMs = Date.now()
+  await wait()
+  const lagMs = Date.now() - startedAtMs
+  if (lagMs > threshold) {
+    recorder.addCompressedSpan(startedAtMs, threshold)
+    logger.warn(
+      `[screenci] Slow UI response (${lagMs}ms) compressed to ${threshold}ms in the recording. See https://docs.screenci.com/guides/ci-lag`
+    )
+  }
+}
+
+async function capLag(
   locator: Locator,
   thresholdOverride?: number
 ): Promise<void> {
   if (isInsideHide()) return
   const recorder = getActiveClickRecorder(locator.page())
-  const threshold = thresholdOverride ?? recorder.getHideLagThresholdMs()
+  const threshold = thresholdOverride ?? recorder.getMaxLagMs()
   if (threshold <= 0) return
-  recorder.addHideStart()
-  const start = Date.now()
-  await locator.waitFor({ state: 'visible' })
-  recorder.addHideEnd()
-  const lagMs = Date.now() - start
-  if (lagMs >= threshold) {
-    logger.warn(
-      `[screenci] Slow UI response (${lagMs}ms). The wait is hidden in the recording. See https://docs.screenci.com/guides/ci-lag`
-    )
-  }
+  await capAndMeasureLag(recorder, threshold, () =>
+    locator.waitFor({ state: 'visible' })
+  )
+}
+
+/**
+ * Builds a wrapper that caps the actionability wait Playwright performs right
+ * before a pointer interaction (waiting for the element to be stable, enabled,
+ * and receiving events). The wait is wrapped where the trial runs: just before
+ * the click and after the cursor has already moved, so Playwright's
+ * scroll-into-view during the checks does not fight screenci's own animated
+ * scroll. Returns undefined when capping is disabled.
+ */
+function buildActionabilityWaitWrapper(
+  locator: Locator,
+  thresholdOverride?: number
+): ((wait: () => Promise<void>) => Promise<void>) | undefined {
+  if (isInsideHide()) return undefined
+  const recorder = getActiveClickRecorder(locator.page())
+  const threshold = thresholdOverride ?? recorder.getMaxLagMs()
+  if (threshold <= 0) return undefined
+  return (wait) => capAndMeasureLag(recorder, threshold, wait)
 }
 
 const LOCATOR_RETURN_METHODS = [
@@ -326,7 +373,8 @@ async function performAction(
   beforeClickPause = 0,
   postClickPause = 0,
   shouldHideMouse = false,
-  selectDuration?: number
+  selectDuration?: number,
+  actionabilityWaitWrapper?: (wait: () => Promise<void>) => Promise<void>
 ): Promise<ClickActionResult | null> {
   const focusChange = await changeFocus(
     locator,
@@ -377,6 +425,9 @@ async function performAction(
       position: targetPosition,
       ...(noWaitAfter !== undefined ? { noWaitAfter } : {}),
     },
+    ...(actionabilityWaitWrapper !== undefined
+      ? { wrapActionabilityWait: actionabilityWaitWrapper }
+      : {}),
   }
 
   const clickActionOptions =
@@ -477,7 +528,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveEasing?: Easing
       postClickPause?: number
       autoZoomOptions?: AutoZoomOptions
-      hideLagThresholdMs?: number
+      maxLagMs?: number
     }
   ) => {
     const {
@@ -487,7 +538,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveEasing,
       postClickPause,
       autoZoomOptions,
-      hideLagThresholdMs,
+      maxLagMs,
       position,
       steps: _steps,
       ...clickOptions
@@ -501,7 +552,7 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
-    await hideLag(locator, hideLagThresholdMs)
+    await capLag(locator, maxLagMs)
     assertDurationOrSpeed(moveDuration, moveSpeed, 'click move')
 
     const { doClick, supportsTrial } = resolveLocatorMouseAction(
@@ -525,7 +576,9 @@ export function instrumentLocator(locator: Locator): Locator {
       clickOptions.noWaitAfter,
       beforeClickPause,
       postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
-      false
+      false,
+      undefined,
+      buildActionabilityWaitWrapper(locator, maxLagMs)
     )
 
     const activeClickRecorder = getActiveClickRecorder(locator.page())
@@ -547,7 +600,7 @@ export function instrumentLocator(locator: Locator): Locator {
     autoZoomOptions?: AutoZoomOptions
     hideMouse?: boolean
     position?: { x: number; y: number }
-    hideLagThresholdMs?: number
+    maxLagMs?: number
   }
 
   const originalPressSequentially = locator.pressSequentially.bind(locator)
@@ -567,7 +620,7 @@ export function instrumentLocator(locator: Locator): Locator {
       forceClick: _forceClick,
       autoZoomOptions,
       hideMouse: _hideMouse,
-      hideLagThresholdMs,
+      maxLagMs,
       position,
       ...pressOptions
     } = options ?? {}
@@ -579,7 +632,7 @@ export function instrumentLocator(locator: Locator): Locator {
       )
     }
 
-    await hideLag(locator, hideLagThresholdMs)
+    await capLag(locator, maxLagMs)
     const innerEvents: ClickActionResult['innerEvents'] = []
     let elementRect: ElementRect | undefined = undefined
 
@@ -646,7 +699,7 @@ export function instrumentLocator(locator: Locator): Locator {
       position?: { x: number; y: number }
       hideMouse?: boolean
       autoZoomOptions?: AutoZoomOptions
-      hideLagThresholdMs?: number
+      maxLagMs?: number
     }
   ) => {
     if (isInsideHide()) {
@@ -662,7 +715,7 @@ export function instrumentLocator(locator: Locator): Locator {
         position: _position,
         hideMouse: _hideMouse,
         autoZoomOptions: _autoZoomOptions,
-        hideLagThresholdMs: _hideLagThresholdMs,
+        maxLagMs: _maxLagMs,
         ...fillOptions
       } = options ?? {}
 
@@ -681,11 +734,11 @@ export function instrumentLocator(locator: Locator): Locator {
       noWaitAfter,
       hideMouse: _hideMouse,
       autoZoomOptions,
-      hideLagThresholdMs,
+      maxLagMs,
       position,
     } = options ?? {}
 
-    await hideLag(locator, hideLagThresholdMs)
+    await capLag(locator, maxLagMs)
     const innerEvents: ClickActionResult['innerEvents'] = []
     let elementRect: ElementRect | undefined = undefined
 
@@ -773,7 +826,7 @@ export function instrumentLocator(locator: Locator): Locator {
       postClickPause?: number
       noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
-      hideLagThresholdMs?: number
+      maxLagMs?: number
     }
   ): Promise<void> => {
     const {
@@ -785,7 +838,7 @@ export function instrumentLocator(locator: Locator): Locator {
       noWaitAfter,
       position,
       autoZoomOptions,
-      hideLagThresholdMs,
+      maxLagMs,
       ...tapOpts
     } = options ?? {}
 
@@ -796,7 +849,7 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
-    await hideLag(locator, hideLagThresholdMs)
+    await capLag(locator, maxLagMs)
     const { doClick, supportsTrial } = resolveLocatorMouseAction(locator, 'tap')
 
     const result = await performAction(
@@ -815,7 +868,9 @@ export function instrumentLocator(locator: Locator): Locator {
       noWaitAfter,
       beforeClickPause,
       postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
-      false
+      false,
+      undefined,
+      buildActionabilityWaitWrapper(locator, maxLagMs)
     )
 
     const activeClickRecorder = getActiveClickRecorder(locator.page())
@@ -845,7 +900,7 @@ export function instrumentLocator(locator: Locator): Locator {
       postClickPause?: number
       noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
-      hideLagThresholdMs?: number
+      maxLagMs?: number
     }
   ): Promise<void> => {
     const {
@@ -857,7 +912,7 @@ export function instrumentLocator(locator: Locator): Locator {
       noWaitAfter,
       position,
       autoZoomOptions,
-      hideLagThresholdMs,
+      maxLagMs,
       ...checkOpts
     } = options ?? {}
 
@@ -868,7 +923,7 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
-    await hideLag(locator, hideLagThresholdMs)
+    await capLag(locator, maxLagMs)
     const { doClick, supportsTrial } = resolveLocatorMouseAction(
       locator,
       'check'
@@ -890,7 +945,9 @@ export function instrumentLocator(locator: Locator): Locator {
       noWaitAfter,
       beforeClickPause,
       postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
-      false
+      false,
+      undefined,
+      buildActionabilityWaitWrapper(locator, maxLagMs)
     )
 
     const activeClickRecorder = getActiveClickRecorder(locator.page())
@@ -920,7 +977,7 @@ export function instrumentLocator(locator: Locator): Locator {
       postClickPause?: number
       noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
-      hideLagThresholdMs?: number
+      maxLagMs?: number
     }
   ): Promise<void> => {
     const {
@@ -932,7 +989,7 @@ export function instrumentLocator(locator: Locator): Locator {
       noWaitAfter,
       position,
       autoZoomOptions,
-      hideLagThresholdMs,
+      maxLagMs,
       ...uncheckOpts
     } = options ?? {}
 
@@ -943,7 +1000,7 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
-    await hideLag(locator, hideLagThresholdMs)
+    await capLag(locator, maxLagMs)
     const { doClick, supportsTrial } = resolveLocatorMouseAction(
       locator,
       'uncheck'
@@ -965,7 +1022,9 @@ export function instrumentLocator(locator: Locator): Locator {
       noWaitAfter,
       beforeClickPause,
       postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
-      false
+      false,
+      undefined,
+      buildActionabilityWaitWrapper(locator, maxLagMs)
     )
 
     const activeClickRecorder = getActiveClickRecorder(locator.page())
@@ -1021,7 +1080,7 @@ export function instrumentLocator(locator: Locator): Locator {
       noWaitAfter?: boolean
       position?: { x: number; y: number }
       autoZoomOptions?: AutoZoomOptions
-      hideLagThresholdMs?: number
+      maxLagMs?: number
     }
   ): Promise<string[]> => {
     const {
@@ -1033,7 +1092,7 @@ export function instrumentLocator(locator: Locator): Locator {
       noWaitAfter,
       position,
       autoZoomOptions,
-      hideLagThresholdMs,
+      maxLagMs,
       ...selectOpts
     } = options ?? {}
 
@@ -1044,7 +1103,7 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
-    await hideLag(locator, hideLagThresholdMs)
+    await capLag(locator, maxLagMs)
     currentSelectValues = values
     currentSelectOptions = selectOpts as Parameters<Locator['selectOption']>[1]
     currentSelectResult = []
@@ -1090,7 +1149,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveEasing?: Easing
       hoverDuration?: number
       autoZoomOptions?: AutoZoomOptions
-      hideLagThresholdMs?: number
+      maxLagMs?: number
     }
   ): Promise<void> => {
     const {
@@ -1099,13 +1158,13 @@ export function instrumentLocator(locator: Locator): Locator {
       moveEasing = 'ease-in-out',
       hoverDuration = 1000,
       position,
-      hideLagThresholdMs,
+      maxLagMs,
       ...hoverOptions
     } = options ?? {}
 
     assertDurationOrSpeed(moveDuration, moveSpeed, 'hover move')
 
-    await hideLag(locator, hideLagThresholdMs)
+    await capLag(locator, maxLagMs)
 
     const innerEvents: Array<
       FocusChangeEvent | MouseMoveEvent | MouseWaitEvent
@@ -1192,7 +1251,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveEasing?: Easing
       beforeClickPause?: number
       selectDuration?: number
-      hideLagThresholdMs?: number
+      maxLagMs?: number
     }
   ): Promise<void> => {
     const {
@@ -1201,13 +1260,13 @@ export function instrumentLocator(locator: Locator): Locator {
       moveEasing = 'ease-in-out',
       beforeClickPause = DEFAULT_PRE_CLICK_PAUSE_MS,
       selectDuration,
-      hideLagThresholdMs,
+      maxLagMs,
       ...selectOpts
     } = options ?? {}
 
     assertDurationOrSpeed(moveDuration, moveSpeed, 'selectText move')
 
-    await hideLag(locator, hideLagThresholdMs)
+    await capLag(locator, maxLagMs)
 
     const innerEvents: Array<
       | FocusChangeEvent
@@ -1259,7 +1318,7 @@ export function instrumentLocator(locator: Locator): Locator {
       dragDuration?: number
       dragSpeed?: number
       dragEasing?: Easing
-      hideLagThresholdMs?: number
+      maxLagMs?: number
     }
   ): Promise<void> => {
     const {
@@ -1272,13 +1331,13 @@ export function instrumentLocator(locator: Locator): Locator {
       dragEasing = 'ease-in-out',
       sourcePosition,
       targetPosition,
-      hideLagThresholdMs,
+      maxLagMs,
     } = options ?? {}
 
     assertDurationOrSpeed(moveDuration, moveSpeed, 'dragTo move')
     assertDurationOrSpeed(dragDuration, dragSpeed, 'dragTo drag')
 
-    await hideLag(locator, hideLagThresholdMs)
+    await capLag(locator, maxLagMs)
 
     const page = locator.page()
 

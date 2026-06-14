@@ -57,6 +57,18 @@ describe('EventRecorder', () => {
         { type: 'timeEnd', timeMs: 400 },
       ])
     })
+
+    it('records a compressed span as a time block over the elapsed wait', () => {
+      recorder.start() // startTime = 1000
+      const startedAt = 1200 // absolute Date.now() captured when the wait began
+      now = 4200 // wait ended 3000ms later
+      recorder.addCompressedSpan(startedAt, 500)
+
+      expect(recorder.getEvents().slice(1)).toEqual([
+        { type: 'timeStart', timeMs: 200, durationMs: 500 },
+        { type: 'timeEnd', timeMs: 3200 },
+      ])
+    })
   })
 
   describe('addInput', () => {
@@ -206,23 +218,21 @@ describe('EventRecorder', () => {
     })
   })
 
-  describe('getHideLagThresholdMs', () => {
+  describe('getMaxLagMs', () => {
     it('returns 0 when no recordOptions are provided', () => {
-      expect(new EventRecorder().getHideLagThresholdMs()).toBe(0)
+      expect(new EventRecorder().getMaxLagMs()).toBe(0)
     })
 
-    it('returns the configured hideLagThresholdMs', () => {
+    it('returns the configured maxLagMs', () => {
       expect(
         new EventRecorder(undefined, {
-          hideLagThresholdMs: 500,
-        }).getHideLagThresholdMs()
+          maxLagMs: 500,
+        }).getMaxLagMs()
       ).toBe(500)
     })
 
-    it('returns 0 when hideLagThresholdMs is not set in recordOptions', () => {
-      expect(
-        new EventRecorder(undefined, { fps: 60 }).getHideLagThresholdMs()
-      ).toBe(0)
+    it('returns 0 when maxLagMs is not set in recordOptions', () => {
+      expect(new EventRecorder(undefined, { fps: 60 }).getMaxLagMs()).toBe(0)
     })
   })
 

@@ -243,13 +243,15 @@ export type RecordOptions = {
   fps?: FPS
 
   /**
-   * Hides the recording while waiting for an element to respond before an
-   * interaction. If the wait takes longer than this threshold (ms), a warning
-   * with a link to the docs is printed. Set to 0 to disable.
+   * Caps how long a pre-interaction wait (waiting for an element to become
+   * visible and actionable) may occupy the recording. Waits at or under this
+   * value (ms) play at natural speed; longer waits are compressed to play back
+   * over exactly this value, and a warning with a link to the docs is printed.
+   * Set to 0 to disable.
    *
    * @default 0
    */
-  hideLagThresholdMs?: number
+  maxLagMs?: number
 }
 
 export type Easing =
@@ -322,8 +324,8 @@ export type ScreenCILocatorClickOptions = Omit<
 > &
   CursorMoveOptions & {
     autoZoomOptions?: AutoZoomOptions
-    /** Override the global `hideLagThresholdMs` for this action. Set to 0 to disable hiding. */
-    hideLagThresholdMs?: number
+    /** Override the global `maxLagMs` cap for this action. Set to 0 to disable. */
+    maxLagMs?: number
   }
 
 export type ScreenCILocatorPostClickMoveOptions = CursorMoveTimingOption & {
@@ -367,8 +369,8 @@ export type ScreenCILocatorPressSequentiallyOptions = Omit<
     /** Hide the cursor while typing; shown again on the next mouse move. */
     hideMouse?: boolean
     autoZoomOptions?: AutoZoomOptions
-    /** Override the global `hideLagThresholdMs` for this action. Set to 0 to disable hiding. */
-    hideLagThresholdMs?: number
+    /** Override the global `maxLagMs` cap for this action. Set to 0 to disable. */
+    maxLagMs?: number
   }
 
 export type ScreenCILocatorCheckOptions = NonNullable<
@@ -378,8 +380,8 @@ export type ScreenCILocatorCheckOptions = NonNullable<
     noWaitAfter?: boolean
     position?: { x: number; y: number }
     autoZoomOptions?: AutoZoomOptions
-    /** Override the global `hideLagThresholdMs` for this action. Set to 0 to disable hiding. */
-    hideLagThresholdMs?: number
+    /** Override the global `maxLagMs` cap for this action. Set to 0 to disable. */
+    maxLagMs?: number
   }
 
 export type ScreenCILocatorHoverOptions = Omit<
@@ -392,8 +394,8 @@ export type ScreenCILocatorHoverOptions = Omit<
     /** How long to hold the hover in ms (default: 1000). */
     hoverDuration?: number
     position?: { x: number; y: number }
-    /** Override the global `hideLagThresholdMs` for this action. Set to 0 to disable hiding. */
-    hideLagThresholdMs?: number
+    /** Override the global `maxLagMs` cap for this action. Set to 0 to disable. */
+    maxLagMs?: number
   }
 
 export type ScreenCILocatorSelectTextOptions = Omit<
@@ -409,8 +411,8 @@ export type ScreenCILocatorSelectTextOptions = Omit<
      * Divided equally across the 3 click cycles.
      */
     selectDuration?: number
-    /** Override the global `hideLagThresholdMs` for this action. Set to 0 to disable hiding. */
-    hideLagThresholdMs?: number
+    /** Override the global `maxLagMs` cap for this action. Set to 0 to disable. */
+    maxLagMs?: number
   }
 
 export type ScreenCILocatorDragToOptions = Omit<
@@ -424,8 +426,8 @@ export type ScreenCILocatorDragToOptions = Omit<
     dragEasing?: Easing
     sourcePosition?: { x: number; y: number }
     targetPosition?: { x: number; y: number }
-    /** Override the global `hideLagThresholdMs` for this action. Set to 0 to disable hiding. */
-    hideLagThresholdMs?: number
+    /** Override the global `maxLagMs` cap for this action. Set to 0 to disable. */
+    maxLagMs?: number
   }
 
 export type ScreenCILocatorSelectOptionOptions = NonNullable<
@@ -435,8 +437,8 @@ export type ScreenCILocatorSelectOptionOptions = NonNullable<
     noWaitAfter?: boolean
     position?: { x: number; y: number }
     autoZoomOptions?: AutoZoomOptions
-    /** Override the global `hideLagThresholdMs` for this action. Set to 0 to disable hiding. */
-    hideLagThresholdMs?: number
+    /** Override the global `maxLagMs` cap for this action. Set to 0 to disable. */
+    maxLagMs?: number
   }
 
 type LocatorReturnMethodNames =

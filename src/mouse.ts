@@ -68,6 +68,13 @@ type PerformMouseClickActionOptions = {
   clickOptions?: LocatorMouseActionOptions
   easing?: Easing
   selectDuration?: number
+  /**
+   * Wraps the pre-action trial (the actionability wait) so callers can hide it
+   * from the recording and measure it. Runs just before the click, after the
+   * cursor has moved, so Playwright's scroll-into-view during the checks does
+   * not interfere with the animated scroll.
+   */
+  wrapActionabilityWait?: (wait: () => Promise<void>) => Promise<void>
 } & (
   | {
       mode: 'singleBefore' | 'tripleBefore'
@@ -415,11 +422,15 @@ export async function performMouseClickAction(
   const mode = options.mode ?? 'singleDuring'
 
   if (options.supportsTrial) {
-    await options.doClick({
-      ...options.clickOptions,
-      trial: true,
-      noWaitAfter: options.clickOptions?.noWaitAfter ?? true,
-    })
+    const runActionabilityTrial = (): Promise<void> =>
+      options.doClick({
+        ...options.clickOptions,
+        trial: true,
+        noWaitAfter: options.clickOptions?.noWaitAfter ?? true,
+      })
+    await (options.wrapActionabilityWait
+      ? options.wrapActionabilityWait(runActionabilityTrial)
+      : runActionabilityTrial())
   }
 
   const elementRect = await options.locator.boundingBox()

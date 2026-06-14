@@ -1579,7 +1579,7 @@ export default defineConfig({
       fps: 60,
       // Auto-hides the recording when the UI takes longer than this to respond
       // before an interaction. Increase or set to 0 to disable.
-      hideLagThresholdMs: 500,
+      maxLagMs: 500,
     },
   },
   projects: [

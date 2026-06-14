@@ -438,6 +438,9 @@ describe('CLI', () => {
       // `bundler` resolution lets TypeScript read screenci's ESM `exports` map.
       expect(tsconfig.compilerOptions?.['moduleResolution']).toBe('bundler')
       expect(tsconfig.compilerOptions?.['module']).toBe('ESNext')
+      // `types: ['node']` makes `process.env.CI` in screenci.config.ts resolve
+      // without relying on TS auto-discovery of @types/node.
+      expect(tsconfig.compilerOptions?.['types']).toEqual(['node'])
       expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/my-app/screenci/.env',
         ''

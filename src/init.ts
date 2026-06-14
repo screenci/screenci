@@ -588,6 +588,10 @@ function generateIslandTsconfig(): string {
   // instead of inheriting a surrounding repo's tsconfig or the legacy TS
   // defaults. `module`/`moduleResolution` let TypeScript read screenci's ESM
   // `exports` map; `target` gives the example's async/await a modern lib.
+  // `types: ['node']` makes the `process` global resolve in screenci.config.ts
+  // (which reads `process.env.CI`) without depending on whether the editor's TS
+  // server auto-discovers @types/node, which is unreliable under pnpm's isolated
+  // node_modules layout.
   return (
     JSON.stringify(
       {
@@ -595,6 +599,7 @@ function generateIslandTsconfig(): string {
           module: 'ESNext',
           moduleResolution: 'bundler',
           target: 'ESNext',
+          types: ['node'],
         },
       },
       null,

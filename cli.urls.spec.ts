@@ -390,13 +390,19 @@ describe('CLI', () => {
       expect(getDevFrontendUrl()).toBe('http://localhost:5173')
     })
 
-    it('should use the local frontend URL for auth bootstrap sessions', async () => {
+    it('should use the local backend URL for auth bootstrap sessions', async () => {
       process.env.SCREENCI_ENVIRONMENT = 'local'
-      process.env.DEV_FRONTEND_PORT = '5173'
+      process.env.DEV_BACKEND_PORT = '8787'
 
       const { getCliLinkSessionApiUrl } = await import('./cli')
 
-      expect(getCliLinkSessionApiUrl()).toBe('http://localhost:5173')
+      expect(getCliLinkSessionApiUrl()).toBe('http://localhost:8787')
+    })
+
+    it('should use the production backend URL for auth bootstrap sessions', async () => {
+      const { getCliLinkSessionApiUrl } = await import('./cli')
+
+      expect(getCliLinkSessionApiUrl()).toBe('https://api.screenci.com')
     })
 
     it('should use dev hosted URLs when SCREENCI_ENVIRONMENT=dev', async () => {

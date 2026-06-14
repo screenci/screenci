@@ -660,7 +660,7 @@ describe('CLI', () => {
       ).resolves.toBeUndefined()
 
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://app.screenci.com/cli-link/session',
+        'https://api.screenci.com/cli-link/session',
         expect.objectContaining({ method: 'POST' })
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith(

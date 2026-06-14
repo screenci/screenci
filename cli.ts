@@ -1741,7 +1741,13 @@ export function getDevFrontendUrl(): string {
 }
 
 export function getCliLinkSessionApiUrl(): string {
-  return getDevFrontendUrl()
+  // The `/cli-link/session` routes are Convex HTTP actions served from the same
+  // backend host as the `/cli/*` upload endpoints. We hit that host directly
+  // rather than the frontend: the frontend only forwards these routes via the
+  // vite dev-server proxy, which does not exist on the hosted dev/prod frontend
+  // (a POST there returns 405). The CLI runs under Node, so there is no CORS
+  // constraint that would require going through the frontend origin.
+  return getDevBackendUrl()
 }
 
 function getScreenCISecretsUrl(): string {

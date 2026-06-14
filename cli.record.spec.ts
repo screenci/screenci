@@ -426,7 +426,7 @@ describe('CLI', () => {
       await main()
 
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://app.screenci.com/cli-link/session',
+        'https://api.screenci.com/cli-link/session',
         { method: 'POST' }
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith(

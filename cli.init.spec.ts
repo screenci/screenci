@@ -453,12 +453,18 @@ describe('CLI', () => {
         islandPackageJsonCall![1] as string
       ) as Record<string, unknown>
       expect(islandPkg['type']).toBe('module')
-      expect(islandPkg['name']).toBe('my-project-videos')
+      expect(islandPkg['name']).toBe('my-project')
       expect(islandPkg['scripts']).toMatchObject({
-        screenci: 'screenci',
         test: 'screenci test',
         record: 'screenci record',
       })
+      expect(islandPkg['scripts']).not.toHaveProperty('screenci')
+      // The island gets a minimal README documenting the run scripts and
+      // linking to the docs.
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/screenci/README.md',
+        expect.stringContaining('https://screenci.com/docs')
+      )
       expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/my-app/package.json',
         expect.any(String)
@@ -974,7 +980,7 @@ describe('CLI', () => {
         unknown
       >
       expect(written['type']).toBe('module')
-      expect(written['name']).toBe('my-project-videos')
+      expect(written['name']).toBe('my-project')
     })
 
     it('installs into the island without -W even with yarn workspaces', async () => {

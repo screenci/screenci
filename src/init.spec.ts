@@ -2,7 +2,12 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { generateExampleVideo, parsePnpmVersionSupport } from './init.js'
+import {
+  generateExampleVideo,
+  generateIslandReadme,
+  parsePnpmVersionSupport,
+  toIslandPackageName,
+} from './init.js'
 
 describe('generateExampleVideo', () => {
   it('matches the installation doc video source', () => {
@@ -28,6 +33,59 @@ describe('generateExampleVideo', () => {
       .toContain(`voice: { name: voices.Sophie },
 
   en: {`)
+  })
+})
+
+describe('generateIslandReadme', () => {
+  it('titles the readme with the project name', () => {
+    expect(generateIslandReadme('My Demo', 'npm')).toContain('# My Demo')
+  })
+
+  it('uses npm run-script invocations for npm', () => {
+    const readme = generateIslandReadme('Demo', 'npm')
+    expect(readme).toContain('`npm test` tests')
+    expect(readme).toContain('`npm test -- --ui` tests')
+    expect(readme).toContain('`npm run record` records')
+  })
+
+  it('uses pnpm invocations for pnpm', () => {
+    const readme = generateIslandReadme('Demo', 'pnpm')
+    expect(readme).toContain('`pnpm test` tests')
+    expect(readme).toContain('`pnpm test --ui` tests')
+    expect(readme).toContain('`pnpm record` records')
+  })
+
+  it('uses yarn invocations for yarn', () => {
+    const readme = generateIslandReadme('Demo', 'yarn')
+    expect(readme).toContain('`yarn test` tests')
+    expect(readme).toContain('`yarn test --ui` tests')
+    expect(readme).toContain('`yarn record` records')
+  })
+
+  it('links to the docs', () => {
+    expect(generateIslandReadme('Demo', 'npm')).toContain(
+      'https://screenci.com/docs'
+    )
+  })
+})
+
+describe('toIslandPackageName', () => {
+  it('uses the project name directly without a -videos suffix', () => {
+    expect(toIslandPackageName('my-app')).toBe('my-app')
+  })
+
+  it('slugifies a human project name', () => {
+    expect(toIslandPackageName('My Product')).toBe('my-product')
+  })
+
+  it('falls back to screenci-videos when the slug collides with screenci', () => {
+    expect(toIslandPackageName('screenci')).toBe('screenci-videos')
+    expect(toIslandPackageName('ScreenCI')).toBe('screenci-videos')
+  })
+
+  it('falls back to screenci-videos when the slug is empty', () => {
+    expect(toIslandPackageName('')).toBe('screenci-videos')
+    expect(toIslandPackageName('---')).toBe('screenci-videos')
   })
 })
 

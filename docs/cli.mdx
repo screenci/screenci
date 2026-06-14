@@ -18,7 +18,7 @@ pass `--config <path>`.
 | `screenci make-public <videoId>`   | Enable public delivery for a video                    |
 | `screenci make-private <videoId>`  | Disable public delivery for a video                   |
 
-## `screenci init [name]`
+## `screenci init`
 
 Create a new ScreenCI project in the current directory:
 
@@ -27,7 +27,6 @@ Create a new ScreenCI project in the current directory:
 
 ```bash
 npm init screenci@latest
-npm init screenci@latest my-product
 ```
 
   </TabItem>
@@ -35,7 +34,6 @@ npm init screenci@latest my-product
 
 ```bash
 pnpm create screenci
-pnpm create screenci my-product
 ```
 
   </TabItem>
@@ -43,11 +41,12 @@ pnpm create screenci my-product
 
 ```bash
 yarn create screenci
-yarn create screenci my-product
 ```
 
   </TabItem>
 </Tabs>
+
+The project name defaults to the repository root directory name.
 
 When using `npm init`, pass extra initializer flags after `--`:
 

@@ -549,11 +549,12 @@ function getSkillsManualCommand(
 
 /**
  * Turn a human project name into a valid npm package name for the island's own
- * package.json. The name must NOT be `screenci` (a package cannot depend on a
- * package with its own name), so we suffix with `-videos` and fall back to
- * `screenci-videos` when the slug is empty.
+ * package.json. We use the project name (the repository root directory name by
+ * default) directly. The name must NOT be `screenci` (a package cannot depend
+ * on a package with its own name), so we fall back to `screenci-videos` only
+ * when the slug is empty or would collide with `screenci`.
  */
-function toIslandPackageName(projectName: string): string {
+export function toIslandPackageName(projectName: string): string {
   const slug = projectName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -561,7 +562,7 @@ function toIslandPackageName(projectName: string): string {
   if (slug.length === 0 || slug === 'screenci') {
     return 'screenci-videos'
   }
-  return slug === 'screenci-videos' ? slug : `${slug}-videos`
+  return slug
 }
 
 function generateIslandPackageJson(projectName: string): string {
@@ -572,7 +573,6 @@ function generateIslandPackageJson(projectName: string): string {
         private: true,
         type: 'module',
         scripts: {
-          screenci: 'screenci',
           test: 'screenci test',
           record: 'screenci record',
         },
@@ -601,6 +601,59 @@ function generateIslandTsconfig(): string {
       2
     ) + '\n'
   )
+}
+
+/**
+ * Resolve the package-manager-specific command a user types to run the island's
+ * own `test` / `record` scripts. npm needs `run` for non-`test` scripts and `--`
+ * to forward flags; pnpm and yarn forward both implicitly.
+ */
+function getIslandScriptInvocations(packageManager: PackageManager): {
+  test: string
+  testUi: string
+  record: string
+} {
+  if (packageManager === 'pnpm') {
+    return {
+      test: 'pnpm test',
+      testUi: 'pnpm test --ui',
+      record: 'pnpm record',
+    }
+  }
+  if (packageManager === 'yarn') {
+    return {
+      test: 'yarn test',
+      testUi: 'yarn test --ui',
+      record: 'yarn record',
+    }
+  }
+  return {
+    test: 'npm test',
+    testUi: 'npm test -- --ui',
+    record: 'npm run record',
+  }
+}
+
+export function generateIslandReadme(
+  projectName: string,
+  packageManager: PackageManager
+): string {
+  const scripts = getIslandScriptInvocations(packageManager)
+  return `# ${projectName}
+
+ScreenCI video scripts for this project. Edit the \`*.video.ts\` files in
+\`videos/\` to script your recordings.
+
+## Commands
+
+- \`${scripts.test}\` tests your video scripts fast locally.
+- \`${scripts.testUi}\` tests your video scripts in interactive UI mode.
+- \`${scripts.record}\` records and pauses for first-time setup if needed.
+
+## Learn more
+
+Visit https://screenci.com/docs for the full documentation.
+`
 }
 
 function generatePnpmWorkspaceYaml(pnpmMajor: number): string {
@@ -1008,6 +1061,9 @@ function printInitNextSteps(
   logger.info(
     `  - ./${islandDirName}/screenci.config.ts - ScreenCI configuration`
   )
+  logger.info(
+    `  - ./${islandDirName}/README.md - Project commands and docs link`
+  )
   logger.info('')
   logger.info(
     `Visit ${pc.cyan('https://screenci.com/docs')} for more information.`
@@ -1332,6 +1388,10 @@ export async function runInit(
     await writeFile(
       resolve(islandDir, 'tsconfig.json'),
       generateIslandTsconfig()
+    )
+    await writeFile(
+      resolve(islandDir, 'README.md'),
+      generateIslandReadme(projectName, packageManager)
     )
     await writeInitGitignore(islandDir, packageManager)
     await writeFile(

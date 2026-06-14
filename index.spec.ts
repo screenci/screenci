@@ -47,11 +47,13 @@ describe('public api surface', () => {
       'detectPnpmWorkspace',
       'determinePackageManager',
       'generateExampleVideo',
+      'generateIslandReadme',
       'parsePackageManager',
       'parsePnpmVersionSupport',
       'parseYarnVersionSupport',
       'runCreateScreenciCli',
       'runInit',
+      'toIslandPackageName',
     ])
   })
 })

@@ -22,11 +22,12 @@ or a URL so the agent has context to work from, for example
 
 The brief walks the agent through three steps:
 
-1. **Scaffold the project.** It runs `npm init screenci@latest "<Project Name>"
--- --yes` at the repository root. The project name and `--yes` are both
-   required so the command runs non-interactively instead of blocking on
-   prompts. This installs the `screenci` package, scaffolds `screenci.config.ts`
-   and `videos/`, and installs the `screenci` agent skill at the repository root.
+1. **Scaffold the project.** It runs `npm init screenci@latest -- --yes` at the
+   repository root. The `--yes` flag is required so the command runs
+   non-interactively instead of blocking on prompts, defaulting the project name
+   to the repository root directory name. This installs the `screenci` package,
+   scaffolds `screenci.config.ts` and `videos/`, and installs the `screenci`
+   agent skill at the repository root.
 2. **Author a video** for the flow you described, including narration via
    `createNarration()`, with setup wrapped in `hide()` and the demo driven with
    visible clicks.

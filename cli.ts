@@ -51,6 +51,10 @@ const SCREENCI_DEVELOPMENT_BACKEND_URL = 'https://dev.api.screenci.com'
 const SCREENCI_DEVELOPMENT_FRONTEND_URL = 'https://dev.app.screenci.com'
 const SCREENCI_LINK_SESSION_FILE = 'link-session.json'
 const SCREENCI_LINK_SESSION_POLL_INTERVAL_MS = 2_000
+// `record --poll` keeps a non-interactive session (an agent or CI) waiting for
+// sign-in. We poll on a slower cadence than the interactive loop so a long wait
+// for a human to click the link does not hammer the backend.
+const SCREENCI_LINK_SESSION_POLL_FLAG_INTERVAL_MS = 5_000
 const require = createRequire(import.meta.url)
 
 type ScreenCIEnvironment = (typeof SCREENCI_ENVIRONMENT_OPTION_VALUES)[number]
@@ -193,11 +197,15 @@ function logScreenCISecretGuide(): void {
   logger.info(`Guide: ${pc.cyan(SCREENCI_RECORD_DOCS_URL)}`)
 }
 
-function getSuggestedScreenciCommand(command: 'record' | 'test'): string {
+function getSuggestedScreenciCommand(
+  command: 'record' | 'test',
+  flags = ''
+): string {
+  const suffix = flags ? ` ${flags}` : ''
   const pm = determinePackageManager()
-  if (pm === 'pnpm') return `pnpm exec screenci ${command}`
-  if (pm === 'yarn') return `yarn screenci ${command}`
-  return `npx screenci ${command}`
+  if (pm === 'pnpm') return `pnpm exec screenci ${command}${suffix}`
+  if (pm === 'yarn') return `yarn screenci ${command}${suffix}`
+  return `npx screenci ${command}${suffix}`
 }
 
 async function collectDiscoveredTestTitles(
@@ -495,6 +503,23 @@ function isUploadAssetError(err: unknown): boolean {
   return err instanceof UploadAssetError
 }
 
+export async function withUploadRetry<T>(
+  fn: () => Promise<T>,
+  signal: AbortSignal | undefined,
+  maxAttempts = 3
+): Promise<T> {
+  let lastErr: unknown
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      if (isUploadCancelledError(err)) throw err
+      lastErr = err
+    }
+  }
+  throw lastErr
+}
+
 function formatUploadProgressLine(
   videoName: string,
   status?: UploadProgressStatus
@@ -620,33 +645,37 @@ async function uploadRecordingCandidate(
     }
 
     const recordingHash = await hashFile(recordingPath)
-    const startResponse = await fetch(`${apiUrl}/cli/upload/start`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-ScreenCI-Secret': secret,
-        ...(elevenLabsApiKey
-          ? { 'X-ElevenLabs-Api-Key': elevenLabsApiKey }
-          : {}),
-      },
-      body: JSON.stringify({
-        projectName,
-        videoName,
-        data,
-        recordingHash,
-        recordId,
-        expectedAssets: preparedUploadAssets.map((asset) => ({
-          fileHash: asset.fileHash,
-          size: asset.size,
-          path: asset.path,
-          ...(typeof asset.contentType === 'string'
-            ? { contentType: asset.contentType }
-            : {}),
-          ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
-        })),
-      }),
-      signal: uploadAbort.signal,
-    })
+    const startResponse = await withUploadRetry(
+      () =>
+        fetch(`${apiUrl}/cli/upload/start`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-ScreenCI-Secret': secret,
+            ...(elevenLabsApiKey
+              ? { 'X-ElevenLabs-Api-Key': elevenLabsApiKey }
+              : {}),
+          },
+          body: JSON.stringify({
+            projectName,
+            videoName,
+            data,
+            recordingHash,
+            recordId,
+            expectedAssets: preparedUploadAssets.map((asset) => ({
+              fileHash: asset.fileHash,
+              size: asset.size,
+              path: asset.path,
+              ...(typeof asset.contentType === 'string'
+                ? { contentType: asset.contentType }
+                : {}),
+              ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
+            })),
+          }),
+          signal: uploadAbort.signal,
+        }),
+      uploadAbort.signal
+    )
 
     if (!startResponse.ok) {
       const text = await startResponse.text()
@@ -701,19 +730,16 @@ async function uploadRecordingCandidate(
         `Uploading recording.mp4 size=${(fileStat.size / 1024 / 1024).toFixed(1)}MB`
       )
     }
-    const stream = createReadStream(recordingPath)
-    const abortStream = () => {
-      stream.destroy(
-        new UploadCancelledError(`Upload cancelled for "${videoName}"`)
-      )
-    }
-    uploadAbort.signal.addEventListener('abort', abortStream, {
-      once: true,
-    })
-    try {
-      const recordingResponse = await fetch(
-        `${apiUrl}/cli/upload/${recordingId}/recording`,
-        {
+    const recordingResponse = await withUploadRetry(async () => {
+      const stream = createReadStream(recordingPath)
+      const abortStream = () => {
+        stream.destroy(
+          new UploadCancelledError(`Upload cancelled for "${videoName}"`)
+        )
+      }
+      uploadAbort.signal.addEventListener('abort', abortStream, { once: true })
+      try {
+        return await fetch(`${apiUrl}/cli/upload/${recordingId}/recording`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'video/mp4',
@@ -727,22 +753,22 @@ async function uploadRecordingCandidate(
           signal: uploadAbort.signal,
           // @ts-expect-error Node.js fetch supports duplex for streaming
           duplex: 'half',
-        }
-      )
-      if (!recordingResponse.ok) {
-        const text = await recordingResponse.text()
-        progressReporter.complete(progressIndex, 'failure')
-        return {
-          projectId,
-          videoId,
-          hadFailure: true,
-          videoName,
-          failureMessage: `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}${hint401(recordingResponse.status, secret)}`,
-          recordId,
-        }
+        })
+      } finally {
+        uploadAbort.signal.removeEventListener('abort', abortStream)
       }
-    } finally {
-      uploadAbort.signal.removeEventListener('abort', abortStream)
+    }, uploadAbort.signal)
+    if (!recordingResponse.ok) {
+      const text = await recordingResponse.text()
+      progressReporter.complete(progressIndex, 'failure')
+      return {
+        projectId,
+        videoId,
+        hadFailure: true,
+        videoName,
+        failureMessage: `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}${hint401(recordingResponse.status, secret)}`,
+        recordId,
+      }
     }
 
     progressReporter.complete(progressIndex, 'success')
@@ -1494,23 +1520,24 @@ async function uploadAssets(
   for (const asset of assets) {
     throwIfAborted()
     try {
-      const checkRes = await fetch(
-        `${apiUrl}/cli/upload/${recordingId}/asset/check`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-ScreenCI-Secret': secret,
-          },
-          body: JSON.stringify({
-            fileHash: asset.fileHash,
-            contentType: asset.contentType,
-            size: asset.size,
-            path: asset.path,
-            ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
+      const checkRes = await withUploadRetry(
+        () =>
+          fetch(`${apiUrl}/cli/upload/${recordingId}/asset/check`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-ScreenCI-Secret': secret,
+            },
+            body: JSON.stringify({
+              fileHash: asset.fileHash,
+              contentType: asset.contentType,
+              size: asset.size,
+              path: asset.path,
+              ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
+            }),
+            signal,
           }),
-          signal,
-        }
+        signal
       )
 
       if (!checkRes.ok) {
@@ -1532,24 +1559,29 @@ async function uploadAssets(
         )
       }
 
+      const fileBuffer = asset.fileBuffer
       throwIfAborted()
 
-      const res = await fetch(`${apiUrl}/cli/upload/${recordingId}/asset`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-ScreenCI-Secret': secret,
-        },
-        body: JSON.stringify({
-          fileHash: asset.fileHash,
-          fileBase64: asset.fileBuffer.toString('base64'),
-          contentType: asset.contentType,
-          size: asset.size,
-          path: asset.path,
-          ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
-        }),
-        signal,
-      })
+      const res = await withUploadRetry(
+        () =>
+          fetch(`${apiUrl}/cli/upload/${recordingId}/asset`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-ScreenCI-Secret': secret,
+            },
+            body: JSON.stringify({
+              fileHash: asset.fileHash,
+              fileBase64: fileBuffer.toString('base64'),
+              contentType: asset.contentType,
+              size: asset.size,
+              path: asset.path,
+              ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
+            }),
+            signal,
+          }),
+        signal
+      )
       if (!res.ok) {
         const text = await res.text()
         if (res.status === 409 && text.includes('already exists')) {
@@ -2056,7 +2088,7 @@ async function loadRecordConfigWithoutPlaywrightCollision(
 
 async function requireScreenCISecret(
   configPath?: string,
-  opts: { interactive?: boolean } = {}
+  opts: { interactive?: boolean; pollAuth?: boolean } = {}
 ): Promise<{
   resolvedConfigPath: string
   screenciConfig: ScreenCIConfig
@@ -2071,8 +2103,10 @@ async function requireScreenCISecret(
   if (!secret) {
     // In a non-interactive session ensureScreenciSecret already printed the
     // sign-in link and the next step, so we exit without repeating guidance.
+    // A pending sign-in is an expected handoff (surface the link, then rerun),
+    // not a failure, so exit cleanly (0) to avoid flagging the run as red.
     if (opts.interactive === false) {
-      process.exit(1)
+      process.exit(0)
     }
     const envFilePath = await resolveProjectEnvFilePath(resolvedConfigPath)
     logger.error(
@@ -2285,7 +2319,8 @@ async function pollLinkSessionOnce(
 }
 
 async function pollLinkSession(
-  spec: PersistedLinkSessionSpec
+  spec: PersistedLinkSessionSpec,
+  pollIntervalMs: number = SCREENCI_LINK_SESSION_POLL_INTERVAL_MS
 ): Promise<{ status: LinkSessionStatus; secret?: string }> {
   for (;;) {
     const result = await pollLinkSessionOnce(spec)
@@ -2303,16 +2338,17 @@ async function pollLinkSession(
     }
 
     await new Promise((resolveDelay) =>
-      setTimeout(resolveDelay, SCREENCI_LINK_SESSION_POLL_INTERVAL_MS)
+      setTimeout(resolveDelay, pollIntervalMs)
     )
   }
 }
 
 export async function ensureScreenciSecret(
   resolvedConfigPath?: string,
-  opts: { interactive?: boolean } = {}
+  opts: { interactive?: boolean; pollAuth?: boolean } = {}
 ): Promise<string | undefined> {
   const interactive = opts.interactive ?? true
+  const pollAuth = opts.pollAuth ?? false
   const existingSecret = process.env.SCREENCI_SECRET
   if (existingSecret) return existingSecret
 
@@ -2361,12 +2397,14 @@ export async function ensureScreenciSecret(
     }
 
     if (!interactive) {
-      // Non-interactive sessions cannot complete a browser sign-in here, so we
-      // never block. Reuse or create the persisted session and check its status
-      // once; if a stored session is stale, recreate it and check once more.
-      // When the session is already completed (the sign-in happened between
-      // runs) we pick up the secret; otherwise we print the link and return so
-      // the caller can surface it and rerun later.
+      // Non-interactive sessions cannot complete a browser sign-in here, so by
+      // default we never block. Reuse or create the persisted session and check
+      // its status once; if a stored session is stale, recreate it and check
+      // once more. When the session is already completed (the sign-in happened
+      // between runs) we pick up the secret; otherwise we print the link and
+      // return so the caller can surface it and rerun later. The exception is
+      // `pollAuth` (the `--poll-auth` flag), which opts in to waiting: it keeps
+      // polling on a slow cadence until sign-in completes.
       let spec = await ensureSpec()
       let result = await pollLinkSessionOnce(spec)
 
@@ -2384,9 +2422,32 @@ export async function ensureScreenciSecret(
         return await saveCompletedSecret(result.secret)
       }
 
+      if (pollAuth) {
+        // The caller asked us to wait for sign-in. Print the link, then poll on
+        // a slow cadence until the human finishes signing in, and continue
+        // recording automatically once the secret lands. We re-print the link
+        // on every (re)created session so the latest valid link is always
+        // visible, including after a stale session is recreated.
+        for (;;) {
+          logger.info(
+            `Sign-in required to record. Open this link to sign in and choose a plan:\n${pc.cyan(spec.appUrl)}\n` +
+              `Waiting for sign-in (checking every 5 seconds). Recording continues automatically once you finish.`
+          )
+          const polled = await pollLinkSession(
+            spec,
+            SCREENCI_LINK_SESSION_POLL_FLAG_INTERVAL_MS
+          )
+          if (polled.status === 'completed' && polled.secret) {
+            return await saveCompletedSecret(polled.secret)
+          }
+          deletePersistedLinkSessionSpec(specPath)
+          spec = await ensureSpec()
+        }
+      }
+
       logger.info(
         `Sign-in required to record. Open this link to sign in and choose a plan:\n${pc.cyan(spec.appUrl)}\n` +
-          `This session is non-interactive, so sign-in can't complete here. After signing in, rerun ${pc.cyan(getSuggestedScreenciCommand('record'))} to continue.`
+          `This session is non-interactive, so sign-in can't complete here. After signing in, rerun ${pc.cyan(getSuggestedScreenciCommand('record'))} to continue, or run ${pc.cyan(getSuggestedScreenciCommand('record', '--poll-auth'))} to print the link again and wait for sign-in, continuing automatically.`
       )
       return undefined
     }
@@ -2435,13 +2496,24 @@ export async function main() {
     .command('record [playwrightArgs...]')
     .description('Record videos using Playwright')
     .option('-v, --verbose', 'verbose output')
+    .option(
+      '--poll-auth',
+      'wait for sign-in to complete (polling every 5s) instead of exiting, then continue recording'
+    )
     .allowUnknownOption(true)
     .action(async () => {
       const parsed = parseRecordCliArgs(getSubcommandArgv('record'))
       let playwrightFailure: Error | null = null
 
       try {
-        await run('record', parsed.otherArgs, parsed.configPath, parsed.verbose)
+        await run(
+          'record',
+          parsed.otherArgs,
+          parsed.configPath,
+          parsed.verbose,
+          false,
+          parsed.pollAuth
+        )
       } catch (error) {
         if (!(error instanceof Error)) throw error
         if (error.message.startsWith('Playwright exited with code ')) {
@@ -2759,10 +2831,12 @@ function getSubcommandArgv(command: string): string[] {
 function parseRecordCliArgs(args: string[]): {
   configPath: string | undefined
   verbose: boolean
+  pollAuth: boolean
   otherArgs: string[]
 } {
   let configPath: string | undefined
   let verbose = false
+  let pollAuth = false
   const otherArgs: string[] = []
 
   for (let i = 0; i < args.length; i++) {
@@ -2778,6 +2852,8 @@ function parseRecordCliArgs(args: string[]): {
       i++
     } else if (arg === '--verbose' || arg === '-v') {
       verbose = true
+    } else if (arg === '--poll-auth') {
+      pollAuth = true
     } else {
       otherArgs.push(arg)
     }
@@ -2786,6 +2862,7 @@ function parseRecordCliArgs(args: string[]): {
   return {
     configPath,
     verbose,
+    pollAuth,
     otherArgs,
   }
 }
@@ -2853,7 +2930,8 @@ async function run(
   additionalArgs: string[],
   customConfigPath?: string,
   verbose = false,
-  mockRecord = false
+  mockRecord = false,
+  pollAuth = false
 ) {
   const configPath = resolveScreenCIConfigPathOrExit(customConfigPath)
 
@@ -2866,6 +2944,7 @@ async function run(
     if (!process.env.SCREENCI_SECRET) {
       await requireScreenCISecret(configPath, {
         interactive: detectInteractiveSession(),
+        pollAuth,
       })
     }
     validateArgs(additionalArgs)

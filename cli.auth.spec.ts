@@ -669,6 +669,62 @@ describe('CLI', () => {
         )
       )
     })
+
+    it('with pollAuth, prints the link and waits, then continues once signed in', async () => {
+      mockReadFileWithSession(storedSessionFile())
+      const timeoutSpy = vi.spyOn(global, 'setTimeout').mockImplementation(((
+        fn: () => void
+      ) => {
+        fn()
+        return 0 as unknown as ReturnType<typeof setTimeout>
+      }) as unknown as typeof setTimeout)
+      let pollCount = 0
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.includes('token=stored-token')) {
+          pollCount += 1
+          // Stay pending for the first two checks, then complete: this proves
+          // the flag keeps polling instead of exiting on the first pending.
+          if (pollCount < 3) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({ status: 'pending' }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              status: 'completed',
+              secret: 'auth-secret-123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        throw new Error(`Unexpected fetch: ${url}`)
+      })
+
+      const { ensureScreenciSecret } = await import('./cli')
+      await expect(
+        ensureScreenciSecret(undefined, { interactive: false, pollAuth: true })
+      ).resolves.toBe('auth-secret-123')
+
+      expect(pollCount).toBe(3)
+      // Polls on the 5-second cadence while waiting for sign-in.
+      expect(timeoutSpy).toHaveBeenCalledWith(expect.any(Function), 5_000)
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'https://app.screenci.com/cli-auth?session=stored-token'
+        )
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        `${process.cwd()}/.env`,
+        'SCREENCI_SECRET=auth-secret-123\n'
+      )
+      timeoutSpy.mockRestore()
+    })
   })
 
   describe('detectInteractiveSession', () => {

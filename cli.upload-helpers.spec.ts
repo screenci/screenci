@@ -477,4 +477,59 @@ describe('CLI', () => {
       expect(input.listenerCount('data')).toBe(0)
     })
   })
+
+  describe('withUploadRetry', () => {
+    it('returns the result when the first attempt succeeds', async () => {
+      const { withUploadRetry } = await import('./cli')
+      const fn = vi.fn().mockResolvedValue('ok')
+      const result = await withUploadRetry(fn, undefined)
+      expect(result).toBe('ok')
+      expect(fn).toHaveBeenCalledTimes(1)
+    })
+
+    it('retries on network error and returns result on second attempt', async () => {
+      const { withUploadRetry } = await import('./cli')
+      const networkErr = new TypeError('fetch failed')
+      const fn = vi
+        .fn()
+        .mockRejectedValueOnce(networkErr)
+        .mockResolvedValue('ok')
+      const result = await withUploadRetry(fn, undefined)
+      expect(result).toBe('ok')
+      expect(fn).toHaveBeenCalledTimes(2)
+    })
+
+    it('exhausts all 3 attempts and throws the last network error', async () => {
+      const { withUploadRetry } = await import('./cli')
+      const networkErr = new TypeError('fetch failed')
+      const fn = vi.fn().mockRejectedValue(networkErr)
+      await expect(withUploadRetry(fn, undefined)).rejects.toThrow(
+        'fetch failed'
+      )
+      expect(fn).toHaveBeenCalledTimes(3)
+    })
+
+    it('does not retry on AbortError', async () => {
+      const { withUploadRetry } = await import('./cli')
+      const abortErr = new DOMException(
+        'The operation was aborted',
+        'AbortError'
+      )
+      const fn = vi.fn().mockRejectedValue(abortErr)
+      await expect(withUploadRetry(fn, undefined)).rejects.toThrow(
+        'The operation was aborted'
+      )
+      expect(fn).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not retry when the abort signal is already aborted', async () => {
+      const { withUploadRetry } = await import('./cli')
+      const controller = new AbortController()
+      controller.abort()
+      const abortErr = new DOMException('signal aborted', 'AbortError')
+      const fn = vi.fn().mockRejectedValue(abortErr)
+      await expect(withUploadRetry(fn, controller.signal)).rejects.toThrow()
+      expect(fn).toHaveBeenCalledTimes(1)
+    })
+  })
 })

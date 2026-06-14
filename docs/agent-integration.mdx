@@ -54,9 +54,12 @@ see [Playwright codegen](/docs/write-video-scripts#generate-a-first-draft-with-c
 The first `screenci record` needs a one-time sign-in. In an interactive terminal
 the CLI prints a sign-in link, waits for you to finish in the browser, and
 continues. In a non-interactive session (an agent or CI), it prints the link and
-exits instead of hanging, so surface the link to whoever can sign in, then rerun
-`npx screenci record`. You can also set `SCREENCI_SECRET` ahead of time to skip
-sign-in entirely.
+exits cleanly (exit code `0`, not a failure) instead of hanging, so surface the
+link to whoever can sign in. To verify sign-in and continue without rerunning by
+hand, pass `--poll-auth`: `npx screenci record --poll-auth` prints the link
+again, polls every 5 seconds, and continues recording automatically once sign-in
+completes. You can also set `SCREENCI_SECRET` ahead of time to skip sign-in
+entirely.
 
 The upload contains the raw recording, not your source code. See
 [Overview](/docs) for how recording and rendering are split.

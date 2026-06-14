@@ -488,12 +488,95 @@ describe('CLI', () => {
       expect(loggerInfoSpy).toHaveBeenCalledWith(
         expect.stringContaining('https://app.screenci.com/cli-auth?session=')
       )
+      // A pending sign-in is an expected handoff, not a failure, so we exit 0.
+      expect(processExitSpy).toHaveBeenCalledWith(0)
       // Never starts Playwright when sign-in has not completed.
       expect(mockSpawn).not.toHaveBeenCalled()
       expect(mockWriteFile).not.toHaveBeenCalledWith(
         `${process.cwd()}/.env`,
         expect.stringContaining('SCREENCI_SECRET=')
       )
+    })
+
+    it('with --poll-auth, waits for sign-in then records in a non-interactive session', async () => {
+      delete process.env.SCREENCI_SECRET
+      process.env.SCREENCI_NONINTERACTIVE = '1'
+      process.argv = ['node', 'cli.js', 'record', '--poll-auth']
+      const timeoutSpy = vi.spyOn(global, 'setTimeout').mockImplementation(((
+        fn: () => void
+      ) => {
+        fn()
+        return 0 as unknown as ReturnType<typeof setTimeout>
+      }) as unknown as typeof setTimeout)
+      let pollCount = 0
+      mockFetch.mockImplementation(
+        async (input: string | URL, init?: RequestInit) => {
+          const url = String(input)
+          if (url.endsWith('/cli-link/session') && init?.method === 'POST') {
+            return {
+              ok: true,
+              status: 201,
+              json: vi.fn().mockResolvedValue({
+                token: 'session-token-123',
+                createdAt: '2026-06-11T10:00:00.000Z',
+                expiresAt: '2099-06-11T10:15:00.000Z',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          if (url.includes('/cli-link/session?token=session-token-123')) {
+            pollCount += 1
+            // Stay pending through the initial check and one in-loop poll, then
+            // complete: proves --poll-auth keeps waiting (and delays between
+            // checks) instead of exiting on the first pending.
+            if (pollCount < 3) {
+              return {
+                ok: true,
+                status: 200,
+                json: vi.fn().mockResolvedValue({ status: 'pending' }),
+                text: vi.fn().mockResolvedValue(''),
+              }
+            }
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({
+                status: 'completed',
+                secret: 'auth-secret-123',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+      )
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await main()
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('https://app.screenci.com/cli-auth?session=')
+      )
+      // Waited for sign-in (polled past the first pending) on the 5s cadence.
+      expect(pollCount).toBe(3)
+      expect(timeoutSpy).toHaveBeenCalledWith(expect.any(Function), 5_000)
+      // Persisted the secret and went on to record once sign-in completed.
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        `${process.cwd()}/.env`,
+        'SCREENCI_SECRET=auth-secret-123\n'
+      )
+      expect(mockSpawn).toHaveBeenCalled()
+      timeoutSpy.mockRestore()
     })
 
     it('loads SCREENCI_SECRET from the project .env when envFile is not configured', async () => {

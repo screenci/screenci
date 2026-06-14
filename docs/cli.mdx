@@ -359,7 +359,8 @@ dashboard.
 
 The CLI currently covers:
 
-- project auth setup with `login`
+- project scaffolding with `init`
+- project auth setup (handled automatically on first `record`)
 - local iteration with `test`
 - final capture and upload with `record`
 - remote inspection with `info`
@@ -375,7 +376,6 @@ Manual version pinning is currently handled in the app UI:
 
 These commands support `--config <path>`:
 
-- `login`
 - `test`
 - `record`
 - `info`
@@ -384,7 +384,7 @@ These commands support `--config <path>`:
 
 `SCREENCI_SECRET` is used for:
 
-- login bootstrap and persistence
+- auth bootstrap and persistence
 - uploads
 - project info
 - public delivery changes

@@ -2430,7 +2430,7 @@ export async function ensureScreenciSecret(
         // visible, including after a stale session is recreated.
         for (;;) {
           logger.info(
-            `Sign-in required to record. Open this link to sign in and choose a plan:\n${pc.cyan(spec.appUrl)}\n` +
+            `Sign-in required to record. Open this link to sign in:\n${pc.cyan(spec.appUrl)}\n` +
               `Waiting for sign-in (checking every 5 seconds). Recording continues automatically once you finish.`
           )
           const polled = await pollLinkSession(
@@ -2446,7 +2446,7 @@ export async function ensureScreenciSecret(
       }
 
       logger.info(
-        `Sign-in required to record. Open this link to sign in and choose a plan:\n${pc.cyan(spec.appUrl)}\n` +
+        `Sign-in required to record. Open this link to sign in:\n${pc.cyan(spec.appUrl)}\n` +
           `This session is non-interactive, so sign-in can't complete here. After signing in, rerun ${pc.cyan(getSuggestedScreenciCommand('record'))} to continue, or run ${pc.cyan(getSuggestedScreenciCommand('record', '--poll-auth'))} to print the link again and wait for sign-in, continuing automatically.`
       )
       return undefined
@@ -2623,6 +2623,13 @@ export async function main() {
                   : 'Recording finished, rendering in progress. Results available at:'
               )
               logger.info(pc.cyan(projectUrl))
+            }
+            if (projectId !== null) {
+              logger.info('')
+              logger.info(
+                'Upgrade for more renders, more active videos, and expressive narration:'
+              )
+              logger.info(pc.cyan(`${appUrl}/select-plan`))
             }
             for (const notice of studioNotices) {
               if ('held' in notice.studio) {

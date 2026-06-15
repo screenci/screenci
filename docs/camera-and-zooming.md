@@ -85,3 +85,11 @@ Do not mix `autoZoom()` and manual zooming at the same time. In practice, that m
 - do not start `autoZoom()` while a manual zoom is still active
 
 for the exported zoom helpers.
+
+## Motion blur
+
+Camera pans and zooms are blurred by default so fast movement smears naturally
+instead of stepping frame to frame. Tune it with `zoom.motionBlur` in
+`renderOptions` (0-1, default `0.5`, `0` disables it). The cursor has its own
+independent `mouse.motionBlur`. See
+[Configuration](/docs/reference/configuration#motion-blur) for the full reference.

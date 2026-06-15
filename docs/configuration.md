@@ -148,6 +148,28 @@ Set shared `renderOptions` under `use` when you want consistent output styling:
 - `recording.size`, `recording.roundness`, `recording.dropShadow`
 - `narration.corner`, `narration.padding`, `narration.size`
 - `mouse.size`, `mouse.style` (`'white'` or `'black'` cursor)
+- `mouse.motionBlur` and `zoom.motionBlur` (motion blur strength, see below)
+
+### Motion blur
+
+ScreenCI adds screen.studio-style motion blur so fast cursor moves and camera
+pans/zooms smear naturally instead of jumping frame to frame.
+
+- `mouse.motionBlur` blurs the cursor along its path.
+- `zoom.motionBlur` blurs the camera viewport during pans and zooms.
+
+Both take a value from `0` to `1` and default to `0.5`. The value is the shutter
+open time as a fraction of one output frame interval: `0` disables the effect,
+`1` is a full-frame shutter (maximum smear). The blur is adaptive, so slow or
+static frames cost nothing. The two settings are independent: you can blur the
+camera without blurring the cursor, or the reverse.
+
+```ts
+renderOptions: {
+  mouse: { motionBlur: 0.5 },
+  zoom: { motionBlur: 0.5 },
+}
+```
 
 Use project-wide render defaults for branding and layout consistency, then
 override only the files that need a different look.

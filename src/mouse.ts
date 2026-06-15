@@ -68,13 +68,6 @@ type PerformMouseClickActionOptions = {
   clickOptions?: LocatorMouseActionOptions
   easing?: Easing
   selectDuration?: number
-  /**
-   * Wraps the pre-action trial (the actionability wait) so callers can hide it
-   * from the recording and measure it. Runs just before the click, after the
-   * cursor has moved, so Playwright's scroll-into-view during the checks does
-   * not interfere with the animated scroll.
-   */
-  wrapActionabilityWait?: (wait: () => Promise<void>) => Promise<void>
 } & (
   | {
       mode: 'singleBefore' | 'tripleBefore'
@@ -122,6 +115,13 @@ const originalLocatorSelects = new WeakMap<
 
 export const CLICK_DURATION_MS = 200
 export const CURSOR_FRAME_INTERVAL_MS = 1000 / 60
+
+/**
+ * If an element takes longer than this to pass Playwright's actionability
+ * checks before an interaction, warn that the app or CI machine is slow to
+ * respond. This is informational only and does not change the recording.
+ */
+export const SLOW_INTERACTION_WARN_MS = 1000
 
 export function getMousePosition(
   page: object
@@ -422,15 +422,22 @@ export async function performMouseClickAction(
   const mode = options.mode ?? 'singleDuring'
 
   if (options.supportsTrial) {
-    const runActionabilityTrial = (): Promise<void> =>
-      options.doClick({
-        ...options.clickOptions,
-        trial: true,
-        noWaitAfter: options.clickOptions?.noWaitAfter ?? true,
-      })
-    await (options.wrapActionabilityWait
-      ? options.wrapActionabilityWait(runActionabilityTrial)
-      : runActionabilityTrial())
+    // Trial run performs Playwright's actionability checks (visible, stable,
+    // enabled, receiving events) without clicking. If it takes a long time, the
+    // app or CI machine is slow to make the element ready; warn so it can be
+    // investigated. screenci does not alter the recording to hide this.
+    const trialStartMs = Date.now()
+    await options.doClick({
+      ...options.clickOptions,
+      trial: true,
+      noWaitAfter: options.clickOptions?.noWaitAfter ?? true,
+    })
+    const trialMs = Date.now() - trialStartMs
+    if (trialMs >= SLOW_INTERACTION_WARN_MS) {
+      logger.warn(
+        `[screenci] Slow UI response: waited ${trialMs}ms for an element to become ready before an interaction. This is usually a slow CI machine, not screenci. See https://screenci.com/docs/ci-setup#ci-performance`
+      )
+    }
   }
 
   const elementRect = await options.locator.boundingBox()

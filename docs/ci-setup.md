@@ -77,6 +77,22 @@ CI recordings work best when:
 
 If a flow only works when everything is timed perfectly, fix the script locally before pushing CI responsibility onto it.
 
+## CI performance
+
+ScreenCI records the browser in real time, so the speed of the CI machine directly affects the recording. On underpowered runners the same test that is instant locally can show visible pauses, because the browser is genuinely slow to respond.
+
+Before each click-style interaction ScreenCI checks that the element is ready (visible, stable, enabled, receiving events). If that takes more than ~1 second it prints a warning so you can see where the time went:
+
+```text
+[screenci] Slow UI response: waited 2300ms for an element to become ready before an interaction. This is usually a slow CI machine, not screenci.
+```
+
+This is informational only. ScreenCI does not alter the recording to hide the wait. If recordings look sluggish:
+
+- **Run one worker.** Parallel workers share the runner's CPU, and recording plus the browser are already heavy. The generated config already sets `workers: process.env.CI ? 1 : undefined` for this reason.
+- **Use a faster runner.** Recording is CPU- and GPU-bound; GitHub's larger runners (or a faster provider) make a big difference. The free 2-core runners are the most likely to show pauses.
+- **Keep the app fast.** Slow page loads, long hydration, and heavy on-page animation all delay when an element becomes interactive. Put setup inside `hide()` so that dead time stays out of the recording.
+
 ## Relation to accepted and latest renders
 
 CI uses the same ScreenCI upload and render pipeline as local recording. The main difference is that it becomes repeatable and repository-driven, which is useful when published videos should follow the shipped app.

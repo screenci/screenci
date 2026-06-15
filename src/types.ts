@@ -107,6 +107,21 @@ export type RenderOptions = {
     size?: number
     /** Cursor colour. Defaults to `'white'`. */
     style?: 'white' | 'black'
+    /**
+     * Cursor motion blur, 0-1. Defaults to `0.5`; `0` disables it. The value is
+     * the shutter open time as a fraction of one output frame interval, so a
+     * fast-moving cursor smears along its path. Slow or static frames cost
+     * nothing.
+     */
+    motionBlur?: number
+  }
+  zoom?: {
+    /**
+     * Camera (pan/zoom) motion blur, 0-1. Defaults to `0.5`; `0` disables it.
+     * Same shutter semantics as `mouse.motionBlur`, applied to the camera
+     * viewport so fast pans and zooms smear. Independent of the cursor blur.
+     */
+    motionBlur?: number
   }
   output?: {
     /**
@@ -158,6 +173,10 @@ export const RENDER_OPTIONS_DEFAULTS = {
   mouse: {
     size: 0.05,
     style: 'white' as 'white' | 'black',
+    motionBlur: 0.5,
+  },
+  zoom: {
+    motionBlur: 0.5,
   },
   output: {
     aspectRatio: '16:9' as AspectRatio,
@@ -192,6 +211,10 @@ export type ResolvedRenderOptions = {
   mouse: {
     size: number
     style: 'white' | 'black'
+    motionBlur: number
+  }
+  zoom: {
+    motionBlur: number
   }
   output: {
     aspectRatio: AspectRatio
@@ -241,17 +264,6 @@ export type RecordOptions = {
    * @default 60
    */
   fps?: FPS
-
-  /**
-   * Caps how long a pre-interaction wait (waiting for an element to become
-   * visible and actionable) may occupy the recording. Waits at or under this
-   * value (ms) play at natural speed; longer waits are compressed to play back
-   * over exactly this value, and a warning with a link to the docs is printed.
-   * Set to 0 to disable.
-   *
-   * @default 0
-   */
-  maxLagMs?: number
 }
 
 export type Easing =
@@ -324,8 +336,6 @@ export type ScreenCILocatorClickOptions = Omit<
 > &
   CursorMoveOptions & {
     autoZoomOptions?: AutoZoomOptions
-    /** Override the global `maxLagMs` cap for this action. Set to 0 to disable. */
-    maxLagMs?: number
   }
 
 export type ScreenCILocatorPostClickMoveOptions = CursorMoveTimingOption & {
@@ -369,8 +379,6 @@ export type ScreenCILocatorPressSequentiallyOptions = Omit<
     /** Hide the cursor while typing; shown again on the next mouse move. */
     hideMouse?: boolean
     autoZoomOptions?: AutoZoomOptions
-    /** Override the global `maxLagMs` cap for this action. Set to 0 to disable. */
-    maxLagMs?: number
   }
 
 export type ScreenCILocatorCheckOptions = NonNullable<
@@ -380,8 +388,6 @@ export type ScreenCILocatorCheckOptions = NonNullable<
     noWaitAfter?: boolean
     position?: { x: number; y: number }
     autoZoomOptions?: AutoZoomOptions
-    /** Override the global `maxLagMs` cap for this action. Set to 0 to disable. */
-    maxLagMs?: number
   }
 
 export type ScreenCILocatorHoverOptions = Omit<
@@ -394,8 +400,6 @@ export type ScreenCILocatorHoverOptions = Omit<
     /** How long to hold the hover in ms (default: 1000). */
     hoverDuration?: number
     position?: { x: number; y: number }
-    /** Override the global `maxLagMs` cap for this action. Set to 0 to disable. */
-    maxLagMs?: number
   }
 
 export type ScreenCILocatorSelectTextOptions = Omit<
@@ -411,8 +415,6 @@ export type ScreenCILocatorSelectTextOptions = Omit<
      * Divided equally across the 3 click cycles.
      */
     selectDuration?: number
-    /** Override the global `maxLagMs` cap for this action. Set to 0 to disable. */
-    maxLagMs?: number
   }
 
 export type ScreenCILocatorDragToOptions = Omit<
@@ -426,8 +428,6 @@ export type ScreenCILocatorDragToOptions = Omit<
     dragEasing?: Easing
     sourcePosition?: { x: number; y: number }
     targetPosition?: { x: number; y: number }
-    /** Override the global `maxLagMs` cap for this action. Set to 0 to disable. */
-    maxLagMs?: number
   }
 
 export type ScreenCILocatorSelectOptionOptions = NonNullable<
@@ -437,8 +437,6 @@ export type ScreenCILocatorSelectOptionOptions = NonNullable<
     noWaitAfter?: boolean
     position?: { x: number; y: number }
     autoZoomOptions?: AutoZoomOptions
-    /** Override the global `maxLagMs` cap for this action. Set to 0 to disable. */
-    maxLagMs?: number
   }
 
 type LocatorReturnMethodNames =

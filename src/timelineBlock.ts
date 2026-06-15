@@ -66,19 +66,6 @@ export function isInsideTime(): boolean {
   return hasRuntimeTimelineBlock('time')
 }
 
-export function isInsideSpeed(): boolean {
-  return hasRuntimeTimelineBlock('speed')
-}
-
-/**
- * True when execution is inside a user `time()` or `speed()` block. A
- * compression block (a `time` block) cannot be nested inside either, so the
- * lag cap falls back to hiding in that case.
- */
-export function isInsideTimeWarp(): boolean {
-  return isInsideTime() || isInsideSpeed()
-}
-
 function assertTimelineBlockNesting(type: TimelineBlockType): void {
   const activeBlocks = getRuntimeTimelineBlocks()
   const activeTop = activeBlocks[activeBlocks.length - 1]

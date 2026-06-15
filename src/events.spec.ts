@@ -57,18 +57,6 @@ describe('EventRecorder', () => {
         { type: 'timeEnd', timeMs: 400 },
       ])
     })
-
-    it('records a compressed span as a time block over the elapsed wait', () => {
-      recorder.start() // startTime = 1000
-      const startedAt = 1200 // absolute Date.now() captured when the wait began
-      now = 4200 // wait ended 3000ms later
-      recorder.addCompressedSpan(startedAt, 500)
-
-      expect(recorder.getEvents().slice(1)).toEqual([
-        { type: 'timeStart', timeMs: 200, durationMs: 500 },
-        { type: 'timeEnd', timeMs: 3200 },
-      ])
-    })
   })
 
   describe('addInput', () => {
@@ -215,24 +203,6 @@ describe('EventRecorder', () => {
       const click = events[1] as InputEvent
       expect(click.elementRect).toBeUndefined()
       expect(click.events[0]).toMatchObject({ elementRect: rect })
-    })
-  })
-
-  describe('getMaxLagMs', () => {
-    it('returns 0 when no recordOptions are provided', () => {
-      expect(new EventRecorder().getMaxLagMs()).toBe(0)
-    })
-
-    it('returns the configured maxLagMs', () => {
-      expect(
-        new EventRecorder(undefined, {
-          maxLagMs: 500,
-        }).getMaxLagMs()
-      ).toBe(500)
-    })
-
-    it('returns 0 when maxLagMs is not set in recordOptions', () => {
-      expect(new EventRecorder(undefined, { fps: 60 }).getMaxLagMs()).toBe(0)
     })
   })
 
@@ -476,6 +446,24 @@ describe('EventRecorder', () => {
       expect((ro.narration as Record<string, unknown>).dropShadow).toBe(1)
       // mouse default
       expect((ro.mouse as Record<string, unknown>).size).toBe(0.05)
+      // motion blur defaults (cursor + camera)
+      expect((ro.mouse as Record<string, unknown>).motionBlur).toBe(0.5)
+      expect((ro.zoom as Record<string, unknown>).motionBlur).toBe(0.5)
+    })
+
+    it('preserves explicit cursor and camera motion blur', async () => {
+      recorder = new EventRecorder({
+        mouse: { motionBlur: 0 },
+        zoom: { motionBlur: 0.8 },
+      })
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed: RecordingData = JSON.parse(content)
+      const ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.mouse as Record<string, unknown>).motionBlur).toBe(0)
+      expect((ro.zoom as Record<string, unknown>).motionBlur).toBe(0.8)
     })
 
     it('merges explicit values with defaults', async () => {

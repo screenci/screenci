@@ -44,6 +44,7 @@ import {
   performMouseShow,
   performMouseUp,
   resolveMouseMoveDuration,
+  setPerformanceIntervals,
   setOriginalLocatorCheck,
   setOriginalLocatorClick,
   setOriginalLocatorSelect,
@@ -80,7 +81,9 @@ export function bindClickRecorderToPage(
   page: object,
   recorder: IEventRecorder | null
 ): void {
-  pageClickRecorders.set(page, recorder ?? NOOP_EVENT_RECORDER)
+  const resolved = recorder ?? NOOP_EVENT_RECORDER
+  pageClickRecorders.set(page, resolved)
+  setPerformanceIntervals(page, resolved.getPerformanceIntervals())
 }
 
 function getActiveClickRecorder(page?: object): IEventRecorder {

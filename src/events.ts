@@ -19,6 +19,10 @@ import {
 import type { VoiceKey } from './voices.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { getGitMetadata } from './git.js'
+import {
+  resolvePerformanceIntervals,
+  type PerformanceIntervals,
+} from './performance.js'
 
 function assertAutoZoomUnitIntervalOption(
   value: number,
@@ -479,6 +483,8 @@ export interface IEventRecorder {
   addStudioAssetStart(name: string): void
   addHideStart(): void
   addHideEnd(): void
+  /** Resolved cursor/scroll dispatch intervals from `recordOptions.performance`. */
+  getPerformanceIntervals(): PerformanceIntervals
   addSpeedStart(multiplier: number): void
   addSpeedEnd(): void
   addTimeStart(durationMs: number): void
@@ -509,6 +515,9 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addStudioAssetStart(): void {},
   addHideStart(): void {},
   addHideEnd(): void {},
+  getPerformanceIntervals(): PerformanceIntervals {
+    return resolvePerformanceIntervals(undefined)
+  },
   addSpeedStart(): void {},
   addSpeedEnd(): void {},
   addTimeStart(): void {},
@@ -786,6 +795,13 @@ export class EventRecorder implements IEventRecorder {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     this.events.push({ type: 'hideEnd', timeMs })
+  }
+
+  getPerformanceIntervals(): PerformanceIntervals {
+    return resolvePerformanceIntervals(
+      this.recordOptions?.performance,
+      this.recordOptions?.fps
+    )
   }
 
   addSpeedStart(multiplier: number): void {

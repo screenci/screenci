@@ -19,6 +19,7 @@ import {
   performMouseShow,
   performMouseUp,
   resolveMouseMoveDuration,
+  setPerformanceIntervals,
   setOriginalLocatorCheck,
   setOriginalLocatorClick,
   setOriginalMouseClick,
@@ -164,6 +165,46 @@ describe('mouse helpers', () => {
     const result = await promise
 
     expect(result.endMs - result.startMs).toBe(100)
+  })
+
+  it('dispatches the real cursor at the configured performance interval', async () => {
+    const fine = {}
+    const fineMove = vi.fn().mockResolvedValue(undefined)
+    setOriginalMouseMove(fine, fineMove)
+    setMousePosition(fine, { x: 0, y: 0 })
+    setPerformanceIntervals(fine, { mouseMs: 16, scrollMs: 16 })
+    const finePromise = performMouseMove({
+      page: fine,
+      targetX: 100,
+      targetY: 0,
+      duration: 200,
+      easing: 'linear',
+    })
+    await vi.runAllTimersAsync()
+    await finePromise
+
+    const coarse = {}
+    const coarseMove = vi.fn().mockResolvedValue(undefined)
+    setOriginalMouseMove(coarse, coarseMove)
+    setMousePosition(coarse, { x: 0, y: 0 })
+    setPerformanceIntervals(coarse, { mouseMs: 100, scrollMs: 100 })
+    const coarsePromise = performMouseMove({
+      page: coarse,
+      targetX: 100,
+      targetY: 0,
+      duration: 200,
+      easing: 'linear',
+    })
+    await vi.runAllTimersAsync()
+    await coarsePromise
+
+    // A coarser interval dispatches the real cursor far fewer times...
+    expect(coarseMove.mock.calls.length).toBeLessThan(
+      fineMove.mock.calls.length
+    )
+    // ...but both still end exactly on the target (final dispatch is t=1).
+    expect(coarseMove.mock.calls.at(-1)).toEqual([100, 0])
+    expect(fineMove.mock.calls.at(-1)).toEqual([100, 0])
   })
 
   it('performs instant mouse movement', async () => {

@@ -6,6 +6,7 @@ import type {
   Mouse,
 } from '@playwright/test'
 import type { StudioRenderOptionsSentinel } from './studio.js'
+import type { PerformanceOption } from './performance.js'
 
 /**
  * Aspect ratio for recording and output.
@@ -264,6 +265,28 @@ export type RecordOptions = {
    * @default 60
    */
   fps?: FPS
+
+  /**
+   * Tunes how many output frames screenci skips between cursor and scroll
+   * dispatches while recording. Dispatching less often keeps interactions
+   * responsive on busy pages / slow CI (each dispatch queues behind the page's
+   * own work).
+   *
+   * Pass a preset (a symmetric frame skip on both) or an object of frame-skip
+   * counts to tune each independently (`0` = every frame):
+   *
+   * - `'smooth'`   - skip 0 (every frame)
+   * - `'balanced'` - skip 2 (every 3rd frame)
+   * - `'fast'`     - skip 5 (every 6th frame, ~10fps at 60fps)
+   *
+   * By default the cursor skips 5 frames (it is re-drawn at render time, so this
+   * is free) and the scroll skips none (it is real footage, so it stays smooth).
+   * Intervals are derived from the recording `fps`.
+   *
+   * @example 'smooth'
+   * @example { mouseFrameSkip: 5, scrollFrameSkip: 0 }
+   */
+  performance?: PerformanceOption
 }
 
 export type Easing =

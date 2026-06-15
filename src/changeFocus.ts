@@ -8,6 +8,7 @@ import {
 import type { AutoZoomOptions, Easing } from './types.js'
 import {
   getMousePosition,
+  getScrollDispatchIntervalMs,
   performMouseMove,
   resolveMouseMoveDuration,
 } from './mouse.js'
@@ -1129,7 +1130,7 @@ async function executeScrollAndZoomPlan(params: {
     // stretch a ~1s scroll into several seconds. Progress is time-based: a
     // laggy machine renders fewer frames and a fast one renders the full set,
     // and either way the scroll finishes in ~duration.
-    const frameMs = 1000 / 60
+    const frameMs = getScrollDispatchIntervalMs(locator.page())
     const animStart = Date.now()
 
     const applyScrollAtProgress = (easedT: number): Promise<unknown> =>

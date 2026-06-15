@@ -136,9 +136,39 @@ Set shared `recordOptions` under `use`:
 - `aspectRatio`
 - `quality`
 - `fps`
+- `performance` (see below)
 
 These values determine the recording viewport, so they are the supported way to
 control recording size.
+
+### Recording performance
+
+`recordOptions.performance` controls how many output frames screenci skips
+between cursor and scroll dispatches while recording. On a busy page or a slow CI
+runner, each dispatch queues behind the page's own work, so dispatching on every
+frame can stall an interaction. The cursor is re-drawn at render time from a
+single move event, so skipping cursor frames does not make it choppy; scroll is
+real footage, so skipping scroll frames does.
+
+Pass a preset (a symmetric frame skip on both) or an object of frame-skip counts
+to tune each independently (`0` = every frame). Intervals are derived from the
+recording `fps`:
+
+```ts
+recordOptions: {
+  performance: 'smooth', // skip 0 | 'balanced' skip 2 | 'fast' skip 5
+}
+
+recordOptions: {
+  // Defaults: dispatch the cursor sparingly (render-time), scroll every frame.
+  performance: { mouseFrameSkip: 5, scrollFrameSkip: 0 },
+}
+```
+
+By default the cursor skips 5 frames (~10fps at 60fps), since it is re-drawn at
+render time; the scroll skips none (every frame), since it is real footage.
+Lower the cursor's skip only if a flow depends on hovering elements along the
+cursor's path.
 
 ### Rendering defaults
 

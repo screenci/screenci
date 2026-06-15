@@ -6,6 +6,11 @@ import type {
   MouseUpEvent,
 } from './events.js'
 import type { Easing } from './types.js'
+import {
+  DEFAULT_MOUSE_INTERVAL_MS,
+  DEFAULT_SCROLL_INTERVAL_MS,
+  type PerformanceIntervals,
+} from './performance.js'
 import { evaluateEasingAtT } from './easing.js'
 import { logger } from './logger.js'
 import {
@@ -96,6 +101,7 @@ type MouseVisibilityInternal = () => void
 
 const mousePositions = new WeakMap<object, ViewportMousePosition>()
 const mouseVisibilities = new WeakMap<object, boolean>()
+const performanceIntervals = new WeakMap<object, PerformanceIntervals>()
 const originalMouseMoves = new WeakMap<object, MouseMoveInternal>()
 const originalMouseClicks = new WeakMap<object, MouseClickInternal>()
 const originalMouseDowns = new WeakMap<object, MouseDownInternal>()
@@ -135,6 +141,21 @@ export function setMousePosition(
   pos: ViewportMousePosition
 ): void {
   mousePositions.set(page, pos)
+}
+
+export function setPerformanceIntervals(
+  page: object,
+  intervals: PerformanceIntervals
+): void {
+  performanceIntervals.set(page, intervals)
+}
+
+export function getMouseDispatchIntervalMs(page: object): number {
+  return performanceIntervals.get(page)?.mouseMs ?? DEFAULT_MOUSE_INTERVAL_MS
+}
+
+export function getScrollDispatchIntervalMs(page: object): number {
+  return performanceIntervals.get(page)?.scrollMs ?? DEFAULT_SCROLL_INTERVAL_MS
 }
 
 export function isMouseVisible(page: object): boolean {
@@ -357,20 +378,21 @@ export async function performMouseMove(options: {
   const plannedEndMs = startMs + duration
 
   if (duration > 0) {
-    const steps = Math.max(1, Math.floor(duration / CURSOR_FRAME_INTERVAL_MS))
-    const stepMs = duration / steps
-
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps
+    // The rendered cursor is interpolated at render time from the recorded
+    // move event (start/end/easing), so dispatching the real cursor at 60fps
+    // does nothing for smoothness and only loads the renderer. Dispatch at the
+    // configured interval instead, time-based so a busy page drops dispatches
+    // rather than stretching the gesture.
+    const intervalMs = getMouseDispatchIntervalMs(page)
+    for (;;) {
+      const elapsedMs = Date.now() - startMs
+      const t = Math.min(1, elapsedMs / duration)
       const easedT = evaluateEasingAtT(t, easing)
       const x = startPos.x + easedT * (targetX - startPos.x)
       const y = startPos.y + easedT * (targetY - startPos.y)
       await mouseMoveInternal(x, y)
-      if (i < steps) {
-        const elapsedMs = Date.now() - startMs
-        const remainingMs = Math.max(0, (i + 1) * stepMs - elapsedMs)
-        await new Promise<void>((resolve) => setTimeout(resolve, remainingMs))
-      }
+      if (t >= 1) break
+      await new Promise<void>((resolve) => setTimeout(resolve, intervalMs))
     }
   } else {
     await mouseMoveInternal(targetX, targetY)

@@ -18,7 +18,10 @@ import {
   resolveAutoZoomOptions,
   resolveZoomTarget,
 } from './zoom.js'
-import { resolveRecordingTimingDuration } from './runtimeMode.js'
+import {
+  isTimingDebugEnabled,
+  resolveRecordingTimingDuration,
+} from './runtimeMode.js'
 
 type ScrollRectLike = {
   top: number
@@ -1220,12 +1223,21 @@ async function executeScrollAndZoomPlan(params: {
         }
       )
 
+    let frames = 0
     for (;;) {
       const elapsed = Date.now() - animStart
       const t = duration > 0 ? Math.min(1, elapsed / duration) : 1
       await applyScrollAtProgress(evaluateEasingAtT(t, easing))
+      frames += 1
       if (t >= 1) break
       await new Promise<void>((resolve) => setTimeout(resolve, frameMs))
+    }
+    if (isTimingDebugEnabled()) {
+      logger.info(
+        `[screenci:timing] scroll=${Date.now() - animStart}ms (planned ~${Math.round(
+          duration
+        )}ms) frames=${frames}`
+      )
     }
   } else if (zoomed && duration > 0) {
     await sleep(duration)
@@ -1358,7 +1370,9 @@ export async function changeFocus(
   const shouldApplyZoom = state.insideAutoZoom || allowStandaloneZoom
   const shouldSuppressAutoScroll =
     state.mode === 'manual' && !state.insideAutoZoom && !allowStandaloneZoom
+  const snapshotStartMs = Date.now()
   const snapshot = await captureFocusSnapshot(locator)
+  const snapshotMs = Date.now() - snapshotStartMs
   if (
     shouldApplyZoom &&
     (snapshot.locatorRect.width > snapshot.viewportSize.width ||
@@ -1523,6 +1537,7 @@ export async function changeFocus(
     mousePromise,
     scrollAndZoomPromise,
   ])
+  const animationMs = Date.now() - focusChangeStartMs
 
   const zoomTarget = shouldApplyZoom
     ? resolveZoomTarget({
@@ -1553,6 +1568,14 @@ export async function changeFocus(
     await sleep(focusOptions.postZoomDelay)
   }
   const focusChangeEndMs = Date.now()
+  if (isTimingDebugEnabled()) {
+    logger.info(
+      `[screenci:timing] changeFocus total=${focusChangeEndMs - snapshotStartMs}ms ` +
+        `snapshot=${snapshotMs}ms ` +
+        `animation=${animationMs}ms (planned ~${Math.round(timing.duration)}ms) ` +
+        `postZoom=${focusOptions.postZoomDelay}ms`
+    )
+  }
   const focusChange = {
     type: 'focusChange' as const,
     startMs: focusChangeStartMs,

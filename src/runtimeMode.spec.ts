@@ -1,10 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isTimingDebugEnabled,
   resolveRecordingTimingDuration,
   shouldSimulateRecordingTimings,
 } from './runtimeMode.js'
 
 describe('runtimeMode', () => {
+  it('enables timing debug only when SCREENCI_DEBUG_TIMING is set', () => {
+    expect(isTimingDebugEnabled({} as NodeJS.ProcessEnv)).toBe(false)
+    expect(
+      isTimingDebugEnabled({ SCREENCI_DEBUG_TIMING: '1' } as NodeJS.ProcessEnv)
+    ).toBe(true)
+    expect(
+      isTimingDebugEnabled({
+        SCREENCI_DEBUG_TIMING: 'true',
+      } as NodeJS.ProcessEnv)
+    ).toBe(true)
+    expect(
+      isTimingDebugEnabled({ SCREENCI_DEBUG_TIMING: '0' } as NodeJS.ProcessEnv)
+    ).toBe(false)
+  })
+
   it('disables recording timings when the fast-test env is set', () => {
     const env = {
       SCREENCI_DISABLE_RECORDING_TIMINGS: 'true',

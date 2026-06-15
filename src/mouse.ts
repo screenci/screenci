@@ -9,6 +9,7 @@ import type { Easing } from './types.js'
 import { evaluateEasingAtT } from './easing.js'
 import { logger } from './logger.js'
 import {
+  isTimingDebugEnabled,
   resolveRecordingTimingDuration,
   shouldSimulateRecordingTimings,
 } from './runtimeMode.js'
@@ -433,6 +434,9 @@ export async function performMouseClickAction(
       noWaitAfter: options.clickOptions?.noWaitAfter ?? true,
     })
     const trialMs = Date.now() - trialStartMs
+    if (isTimingDebugEnabled()) {
+      logger.info(`[screenci:timing] actionability trial=${trialMs}ms`)
+    }
     if (trialMs >= SLOW_INTERACTION_WARN_MS) {
       logger.warn(
         `[screenci] Slow UI response: waited ${trialMs}ms for an element to become ready before an interaction. This is usually a slow CI machine, not screenci. See https://screenci.com/docs/ci-setup#ci-performance`
@@ -440,7 +444,13 @@ export async function performMouseClickAction(
     }
   }
 
+  const boundingBoxStartMs = Date.now()
   const elementRect = await options.locator.boundingBox()
+  if (isTimingDebugEnabled()) {
+    logger.info(
+      `[screenci:timing] boundingBox=${Date.now() - boundingBoxStartMs}ms`
+    )
+  }
   if (!elementRect) {
     logger.warn('[screenci] Unable to resolve locator bounds before action.')
   }

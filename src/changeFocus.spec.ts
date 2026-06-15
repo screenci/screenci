@@ -951,7 +951,7 @@ describe('changeFocus', () => {
     const result = await promise
 
     expect((result.scroll?.endMs ?? 0) - (result.scroll?.startMs ?? 0)).toBe(
-      1200
+      900
     )
   })
 

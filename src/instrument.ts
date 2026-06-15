@@ -70,7 +70,7 @@ import {
 const pageClickRecorders = new WeakMap<object, IEventRecorder>()
 
 const DEFAULT_PRE_CLICK_PAUSE_MS = 50
-const DEFAULT_POST_CLICK_PAUSE_MS = 500
+const DEFAULT_POST_CLICK_PAUSE_MS = 300
 const DEFAULT_POST_TYPING_SETTLE_PAUSE_MS = CLICK_DURATION_MS / 2
 
 export function setActiveClickRecorder(recorder: IEventRecorder | null): void {

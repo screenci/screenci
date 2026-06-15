@@ -103,7 +103,7 @@ animation options. Mix and match as needed:
 | `moveSpeed`        | `number` (px/s) | none            | Speed-based alternative to `moveDuration` (mutually exclusive). |
 | `moveEasing`       | `Easing`        | `'ease-in-out'` | Easing curve for the cursor move animation.                     |
 | `beforeClickPause` | `number` (ms)   | 50              | Pause after the cursor arrives, before the action fires.        |
-| `postClickPause`   | `number` (ms)   | 500             | Pause after the action completes.                               |
+| `postClickPause`   | `number` (ms)   | 300             | Pause after the action completes.                               |
 
 ```ts
 // Slow the cursor move and add a brief pause before the click

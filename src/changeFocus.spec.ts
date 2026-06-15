@@ -81,6 +81,8 @@ function makeLocatorMock(options: {
     scrollWidth: number
     scrollHeight: number
   }
+  /** Simulated delay between animation frames (ms). Defaults to 60fps. */
+  frameIntervalMs?: number
 }): Locator & {
   __scrollToCalls: ScrollCall[]
   __nestedScrollTops: number[]
@@ -135,7 +137,10 @@ function makeLocatorMock(options: {
       }
     },
     requestAnimationFrame: (callback) => {
-      setTimeout(() => callback(Date.now()), 1000 / 60)
+      setTimeout(
+        () => callback(Date.now()),
+        options.frameIntervalMs ?? 1000 / 60
+      )
       return 1
     },
     scrollTo: ({ top, left, behavior }) => {
@@ -827,6 +832,43 @@ describe('changeFocus', () => {
     expect(finalScrollCall?.left).toBeCloseTo(170, 0)
     expect(result?.elementRect?.x).toBeCloseTo(1230, 0)
     expect(result?.zoom?.optimalOffset).toEqual({ x: 0, y: 0 })
+  })
+
+  it('keeps the scroll animation bounded when frames are throttled (CI)', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 1400, y: 520, width: 420, height: 80 },
+      viewport: { width: 1920, height: 1080 },
+      scrollSize: { width: 2600, height: 4000 },
+      // A busy CI machine throttles requestAnimationFrame to ~4fps.
+      frameIntervalMs: 250,
+    })
+
+    const promise = autoZoom(
+      async () => {
+        setCurrentZoomViewport({
+          focusPoint: { x: 1610, y: 560 },
+          elementRect: { x: 1400, y: 520, width: 420, height: 80 },
+          end: {
+            pointPx: { x: 960, y: 270 },
+            size: { widthPx: 960, heightPx: 540 },
+          },
+          viewportSize: { width: 1920, height: 1080 },
+        })
+        await changeFocus(locator, { amount: 0.5, centering: 1 })
+      },
+      { amount: 0.5, centering: 1, duration: 1000, postZoomDelay: 0 }
+    )
+
+    await vi.runAllTimersAsync()
+    await promise
+
+    // Time-based progress drops frames instead of stretching: a 1000ms scroll
+    // at 250ms/frame finishes in a handful of frames, not the ~60 a fixed step
+    // count would emit (which is what made it take seconds on throttled CI).
+    expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
+    expect(locator.__scrollToCalls.length).toBeLessThanOrEqual(10)
+    // The final scroll position is still reached exactly.
+    expect(locator.__scrollToCalls.at(-1)?.left).toBeCloseTo(170, 0)
   })
 
   it('scrolls nested containers when ancestor clipping requires it', async () => {

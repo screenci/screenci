@@ -1181,8 +1181,7 @@ async function executeScrollAndZoomPlan(params: {
             ancestors.push(current)
           }
 
-          const steps = Math.max(1, Math.floor(args.duration / frameMs))
-          let step = 0
+          const startTime = Date.now()
 
           const scheduleNextFrame = (): void => {
             if (typeof win.requestAnimationFrame === 'function') {
@@ -1192,9 +1191,15 @@ async function executeScrollAndZoomPlan(params: {
             setTimeout(tick, frameMs)
           }
 
+          // Time-based progress: when requestAnimationFrame is throttled (common
+          // on busy CI machines), advance by real elapsed time and drop frames
+          // instead of stretching the animation. A fixed step count would make a
+          // ~1s scroll take many seconds of wall-clock when frames are delayed.
           const tick = (): void => {
-            step += 1
-            const easedT = evaluateEasingAtT(step / steps, args.easing)
+            const elapsed = Date.now() - startTime
+            const t =
+              args.duration > 0 ? Math.min(1, elapsed / args.duration) : 1
+            const easedT = evaluateEasingAtT(t, args.easing)
 
             for (const [index, plan] of args.ancestorScrollPlans.entries()) {
               const ancestor = ancestors[index]
@@ -1223,7 +1228,7 @@ async function executeScrollAndZoomPlan(params: {
               behavior: 'auto',
             })
 
-            if (step >= steps) {
+            if (t >= 1) {
               resolve()
               return
             }

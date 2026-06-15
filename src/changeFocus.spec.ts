@@ -81,16 +81,18 @@ function makeLocatorMock(options: {
     scrollWidth: number
     scrollHeight: number
   }
-  /** Simulated delay between animation frames (ms). Defaults to 60fps. */
-  frameIntervalMs?: number
+  /** Simulated per-frame cost of applying a scroll step (ms), e.g. a laggy CI. */
+  evaluateDelayMs?: number
 }): Locator & {
   __scrollToCalls: ScrollCall[]
   __nestedScrollTops: number[]
+  __requestAnimationFrameCalls: number
 } {
   let windowScrollY = 0
   let windowScrollX = 0
   let nestedScrollTop = 0
   let nestedScrollLeft = 0
+  let requestAnimationFrameCalls = 0
   const scrollToCalls: ScrollCall[] = []
   const nestedScrollTops: number[] = []
 
@@ -137,10 +139,8 @@ function makeLocatorMock(options: {
       }
     },
     requestAnimationFrame: (callback) => {
-      setTimeout(
-        () => callback(Date.now()),
-        options.frameIntervalMs ?? 1000 / 60
-      )
+      requestAnimationFrameCalls += 1
+      setTimeout(() => callback(Date.now()), 1000 / 60)
       return 1
     },
     scrollTo: ({ top, left, behavior }) => {
@@ -233,7 +233,21 @@ function makeLocatorMock(options: {
       async (
         fn: (el: typeof element, arg?: unknown) => unknown,
         arg?: unknown
-      ) => fn(element, arg)
+      ) => {
+        // Simulate a slow per-frame cost for scroll-step applies (which carry an
+        // `easedT`), to exercise time-based frame dropping.
+        if (
+          options.evaluateDelayMs &&
+          arg !== null &&
+          typeof arg === 'object' &&
+          'easedT' in arg
+        ) {
+          await new Promise<void>((resolve) =>
+            setTimeout(resolve, options.evaluateDelayMs)
+          )
+        }
+        return fn(element, arg)
+      }
     ),
     page: vi.fn().mockReturnValue({
       viewportSize: () => ({
@@ -246,9 +260,13 @@ function makeLocatorMock(options: {
     }),
     __scrollToCalls: scrollToCalls,
     __nestedScrollTops: nestedScrollTops,
+    get __requestAnimationFrameCalls() {
+      return requestAnimationFrameCalls
+    },
   } as unknown as Locator & {
     __scrollToCalls: ScrollCall[]
     __nestedScrollTops: number[]
+    __requestAnimationFrameCalls: number
   }
 }
 
@@ -834,13 +852,13 @@ describe('changeFocus', () => {
     expect(result?.zoom?.optimalOffset).toEqual({ x: 0, y: 0 })
   })
 
-  it('keeps the scroll animation bounded when frames are throttled (CI)', async () => {
+  it('drives the scroll from Node and drops frames when each frame is slow (CI)', async () => {
     const locator = makeLocatorMock({
       rect: { x: 1400, y: 520, width: 420, height: 80 },
       viewport: { width: 1920, height: 1080 },
       scrollSize: { width: 2600, height: 4000 },
-      // A busy CI machine throttles requestAnimationFrame to ~4fps.
-      frameIntervalMs: 250,
+      // A laggy CI machine: each applied scroll frame costs 250ms.
+      evaluateDelayMs: 250,
     })
 
     const promise = autoZoom(
@@ -862,9 +880,12 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     await promise
 
+    // The scroll never uses the page's requestAnimationFrame (which the browser
+    // freezes while recording); it is paced from Node instead.
+    expect(locator.__requestAnimationFrameCalls).toBe(0)
     // Time-based progress drops frames instead of stretching: a 1000ms scroll
-    // at 250ms/frame finishes in a handful of frames, not the ~60 a fixed step
-    // count would emit (which is what made it take seconds on throttled CI).
+    // at 250ms/frame finishes in a handful of frames, not the ~60 a 60fps run
+    // would emit.
     expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
     expect(locator.__scrollToCalls.length).toBeLessThanOrEqual(10)
     // The final scroll position is still reached exactly.
@@ -1162,7 +1183,7 @@ describe('changeFocus', () => {
     ).toBe(true)
   })
 
-  it('injects browser-side helpers for animated scrolling', async () => {
+  it('applies per-frame scroll progress, ending fully eased', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
@@ -1174,17 +1195,13 @@ describe('changeFocus', () => {
     await promise
 
     const evaluateMock = vi.mocked(locator.evaluate)
-    const animatedScrollArgs = evaluateMock.mock.calls.at(-1)?.[1] as
-      | {
-          evaluateEasingAtTSource?: string
-          positionEpsilonPx?: number
-        }
+    const lastScrollArgs = evaluateMock.mock.calls.at(-1)?.[1] as
+      | { easedT?: number; positionEpsilonPx?: number }
       | undefined
 
-    expect(animatedScrollArgs?.evaluateEasingAtTSource).toContain(
-      'function evaluateEasingAtT'
-    )
-    expect(animatedScrollArgs?.positionEpsilonPx).toBeGreaterThan(0)
+    // The scroll is applied frame by frame; the final frame is fully eased.
+    expect(lastScrollArgs?.easedT).toBeCloseTo(1, 5)
+    expect(lastScrollArgs?.positionEpsilonPx).toBeGreaterThan(0)
   })
 
   it('does not try to scroll fixed-position targets', async () => {

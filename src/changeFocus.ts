@@ -1120,86 +1120,68 @@ async function executeScrollAndZoomPlan(params: {
   const plannedEndMs = startMs + duration
 
   if (scrolled) {
-    await locator.evaluate(
-      (element, args) =>
-        new Promise<void>((resolve) => {
-          const frameMs = 1000 / 60
-          const evaluateEasingAtT = Function(
-            `return (${args.evaluateEasingAtTSource})`
-          )() as (t: number, easing: Easing) => number
-          const positionsDiffer = (start: number, target: number): boolean =>
-            Math.abs(target - start) > args.positionEpsilonPx
+    // Drive the scroll from Node, the same way the cursor move is driven,
+    // instead of an in-page requestAnimationFrame loop. While the page is being
+    // captured the browser pauses/throttles its rAF and timers, which would
+    // stretch a ~1s scroll into several seconds. Progress is time-based: a
+    // laggy machine renders fewer frames and a fast one renders the full set,
+    // and either way the scroll finishes in ~duration.
+    const frameMs = 1000 / 60
+    const animStart = Date.now()
+
+    const applyScrollAtProgress = (easedT: number): Promise<unknown> =>
+      locator.evaluate(
+        (element, args) => {
           const doc = element.ownerDocument
           const win = doc.defaultView as ScrollWindow | null
-          if (!win) {
-            resolve()
-            return
-          }
+          if (!win) return
+          const positionsDiffer = (start: number, target: number): boolean =>
+            Math.abs(target - start) > args.positionEpsilonPx
 
-          const isScrollable = (node: unknown): node is ScrollableElement => {
-            if (
-              !node ||
-              typeof node !== 'object' ||
-              !('getBoundingClientRect' in node) ||
-              !('clientHeight' in node) ||
-              !('clientWidth' in node) ||
-              !('scrollHeight' in node) ||
-              !('scrollWidth' in node) ||
-              !('scrollTop' in node) ||
-              !('scrollLeft' in node)
+          if (args.ancestorScrollPlans.length > 0) {
+            const isScrollable = (node: unknown): node is ScrollableElement => {
+              if (
+                !node ||
+                typeof node !== 'object' ||
+                !('getBoundingClientRect' in node) ||
+                !('clientHeight' in node) ||
+                !('clientWidth' in node) ||
+                !('scrollHeight' in node) ||
+                !('scrollWidth' in node) ||
+                !('scrollTop' in node) ||
+                !('scrollLeft' in node)
+              ) {
+                return false
+              }
+              const el = node as ScrollableElement
+              const style = win.getComputedStyle(node as Element)
+              return (
+                ((style.overflowY === 'auto' ||
+                  style.overflowY === 'scroll' ||
+                  style.overflowY === 'overlay') &&
+                  el.scrollHeight > el.clientHeight) ||
+                ((style.overflowX === 'auto' ||
+                  style.overflowX === 'scroll' ||
+                  style.overflowX === 'overlay') &&
+                  el.scrollWidth > el.clientWidth)
+              )
+            }
+
+            const ancestors: ScrollableElement[] = []
+            for (
+              let current: Element | null = element.parentElement;
+              current;
+              current = current.parentElement
             ) {
-              return false
+              if (
+                !isScrollable(current) ||
+                current === doc.documentElement ||
+                current === doc.body
+              ) {
+                continue
+              }
+              ancestors.push(current)
             }
-
-            const el = node as ScrollableElement
-            const style = win.getComputedStyle(node as Element)
-            return (
-              ((style.overflowY === 'auto' ||
-                style.overflowY === 'scroll' ||
-                style.overflowY === 'overlay') &&
-                el.scrollHeight > el.clientHeight) ||
-              ((style.overflowX === 'auto' ||
-                style.overflowX === 'scroll' ||
-                style.overflowX === 'overlay') &&
-                el.scrollWidth > el.clientWidth)
-            )
-          }
-
-          const ancestors: ScrollableElement[] = []
-          for (
-            let current: Element | null = element.parentElement;
-            current;
-            current = current.parentElement
-          ) {
-            if (
-              !isScrollable(current) ||
-              current === doc.documentElement ||
-              current === doc.body
-            ) {
-              continue
-            }
-            ancestors.push(current)
-          }
-
-          const startTime = Date.now()
-
-          const scheduleNextFrame = (): void => {
-            if (typeof win.requestAnimationFrame === 'function') {
-              win.requestAnimationFrame(() => tick())
-              return
-            }
-            setTimeout(tick, frameMs)
-          }
-
-          // Time-based progress: when requestAnimationFrame is throttled (common
-          // on busy CI machines), advance by real elapsed time and drop frames
-          // instead of stretching the animation. A fixed step count would make a
-          // ~1s scroll take many seconds of wall-clock when frames are delayed.
-          const tick = (): void => {
-            const elapsed = Date.now() - startTime
-            const t =
-              args.duration > 0 ? Math.min(1, elapsed / args.duration) : 1
-            const easedT = evaluateEasingAtT(t, args.easing)
 
             for (const [index, plan] of args.ancestorScrollPlans.entries()) {
               const ancestor = ancestors[index]
@@ -1211,42 +1193,40 @@ async function executeScrollAndZoomPlan(params: {
                 continue
               }
               ancestor.scrollTop =
-                plan.startTop + (plan.targetTop - plan.startTop) * easedT
+                plan.startTop + (plan.targetTop - plan.startTop) * args.easedT
               ancestor.scrollLeft =
-                plan.startLeft + (plan.targetLeft - plan.startLeft) * easedT
+                plan.startLeft +
+                (plan.targetLeft - plan.startLeft) * args.easedT
             }
-
-            win.scrollTo({
-              top:
-                args.pageScrollPlan.startY +
-                (args.pageScrollPlan.targetY - args.pageScrollPlan.startY) *
-                  easedT,
-              left:
-                args.pageScrollPlan.startX +
-                (args.pageScrollPlan.targetX - args.pageScrollPlan.startX) *
-                  easedT,
-              behavior: 'auto',
-            })
-
-            if (t >= 1) {
-              resolve()
-              return
-            }
-
-            scheduleNextFrame()
           }
 
-          tick()
-        }),
-      {
-        ancestorScrollPlans,
-        pageScrollPlan,
-        duration,
-        easing,
-        evaluateEasingAtTSource: evaluateEasingAtT.toString(),
-        positionEpsilonPx: POSITION_EPSILON_PX,
-      }
-    )
+          win.scrollTo({
+            top:
+              args.pageScrollPlan.startY +
+              (args.pageScrollPlan.targetY - args.pageScrollPlan.startY) *
+                args.easedT,
+            left:
+              args.pageScrollPlan.startX +
+              (args.pageScrollPlan.targetX - args.pageScrollPlan.startX) *
+                args.easedT,
+            behavior: 'auto',
+          })
+        },
+        {
+          ancestorScrollPlans,
+          pageScrollPlan,
+          easedT,
+          positionEpsilonPx: POSITION_EPSILON_PX,
+        }
+      )
+
+    for (;;) {
+      const elapsed = Date.now() - animStart
+      const t = duration > 0 ? Math.min(1, elapsed / duration) : 1
+      await applyScrollAtProgress(evaluateEasingAtT(t, easing))
+      if (t >= 1) break
+      await new Promise<void>((resolve) => setTimeout(resolve, frameMs))
+    }
   } else if (zoomed && duration > 0) {
     await sleep(duration)
   }

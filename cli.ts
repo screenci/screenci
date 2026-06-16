@@ -50,6 +50,9 @@ const SCREENCI_PRODUCTION_FRONTEND_URL = 'https://app.screenci.com'
 const SCREENCI_DEVELOPMENT_BACKEND_URL = 'https://dev.api.screenci.com'
 const SCREENCI_DEVELOPMENT_FRONTEND_URL = 'https://dev.app.screenci.com'
 const SCREENCI_LINK_SESSION_FILE = 'link-session.json'
+// Records the recordId of the most recent `screenci record` upload so
+// `screenci info` can report exactly the run that was just made.
+const SCREENCI_LAST_RECORD_FILE = 'last-record.json'
 const SCREENCI_LINK_SESSION_POLL_INTERVAL_MS = 2_000
 // `record --poll` keeps a non-interactive session (an agent or CI) waiting for
 // sign-in. We poll on a slower cadence than the interactive loop so a long wait
@@ -58,20 +61,6 @@ const SCREENCI_LINK_SESSION_POLL_FLAG_INTERVAL_MS = 5_000
 const require = createRequire(import.meta.url)
 
 type ScreenCIEnvironment = (typeof SCREENCI_ENVIRONMENT_OPTION_VALUES)[number]
-
-type ProjectInfoVideo = {
-  name: string
-  id: string
-  isPublic: boolean
-  videoURL?: string
-  thumbnailURL?: string
-  subtitlesURL?: string
-}
-
-type ProjectInfoResponse = {
-  projectName: string
-  videos: ProjectInfoVideo[]
-}
 
 type PlaywrightListReportSuite = {
   title?: string
@@ -2139,37 +2128,6 @@ async function requireScreenCISecret(
   }
 }
 
-async function fetchProjectInfo(
-  configPath?: string
-): Promise<ProjectInfoResponse> {
-  const { screenciConfig, secret, apiUrl } = await requireScreenCISecret(
-    configPath,
-    { interactive: detectInteractiveSession() }
-  )
-  const url = new URL(`${apiUrl}/cli/project-info`)
-  url.searchParams.set('projectName', screenciConfig.projectName)
-
-  const res = await fetch(url.toString(), {
-    headers: {
-      'X-ScreenCI-Secret': secret,
-    },
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(
-      `Failed to fetch project info: ${res.status} ${text}${hint401(res.status, secret)}`
-    )
-  }
-
-  return (await res.json()) as ProjectInfoResponse
-}
-
-async function printProjectInfo(configPath?: string): Promise<void> {
-  const info = await fetchProjectInfo(configPath)
-  process.stdout.write(`${JSON.stringify(info, null, 2)}\n`)
-}
-
 async function updateVideoVisibility(
   videoId: string,
   isPublic: boolean,
@@ -2194,6 +2152,80 @@ async function updateVideoVisibility(
   }
 
   logger.info(`${isPublic ? 'Made public' : 'Made private'}: ${videoId}`)
+}
+
+function getLastRecordFilePath(screenciDir: string): string {
+  return resolve(screenciDir, SCREENCI_LAST_RECORD_FILE)
+}
+
+/**
+ * Persists the recordId of the just-completed `screenci record` upload so a
+ * later `screenci info` can report exactly that run. Best-effort: a
+ * failure to write must not fail the record command.
+ */
+async function saveLastRecordId(
+  screenciDir: string,
+  recordId: string
+): Promise<void> {
+  try {
+    mkdirSync(screenciDir, { recursive: true })
+    await writeFile(
+      getLastRecordFilePath(screenciDir),
+      `${JSON.stringify({ recordId, savedAt: new Date().toISOString() }, null, 2)}\n`
+    )
+  } catch (err) {
+    logger.warn(
+      `Failed to record run id for info: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+}
+
+async function readLastRecordId(screenciDir: string): Promise<string | null> {
+  try {
+    const raw = await readFile(getLastRecordFilePath(screenciDir), 'utf-8')
+    const parsed = JSON.parse(raw) as { recordId?: unknown }
+    return typeof parsed.recordId === 'string' ? parsed.recordId : null
+  } catch (err) {
+    if (!isMissingFileError(err)) {
+      logger.warn(
+        `Ignoring invalid stored record at ${getLastRecordFilePath(screenciDir)}.`
+      )
+    }
+    return null
+  }
+}
+
+// `screenci info` prints every project video and its public URLs as JSON. When
+// this machine has recorded a run (a recordId is stored in
+// .screenci/last-record.json), the backend also attaches, to the videos from
+// that run, a per-language `latestRecord` with render status and record-pinned
+// URLs. Without a local run, only the project-wide listing with `static` URLs is
+// returned. The server does the merge; the CLI just passes the recordId.
+async function printInfo(configPath?: string): Promise<void> {
+  const { resolvedConfigPath, screenciConfig, secret, apiUrl } =
+    await requireScreenCISecret(configPath, {
+      interactive: detectInteractiveSession(),
+    })
+
+  const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
+  const recordId = await readLastRecordId(screenciDir)
+
+  const url = new URL(`${apiUrl}/cli/info`)
+  url.searchParams.set('projectName', screenciConfig.projectName)
+  if (recordId) url.searchParams.set('record', recordId)
+
+  const res = await fetch(url.toString(), {
+    headers: { 'X-ScreenCI-Secret': secret },
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(
+      `Failed to fetch info: ${res.status} ${text}${hint401(res.status, secret)}`
+    )
+  }
+
+  const data = await res.json()
+  process.stdout.write(`${JSON.stringify(data, null, 2)}\n`)
 }
 
 async function persistScreenCISecret(
@@ -2622,6 +2654,10 @@ export async function main() {
               studioNotices,
               plan,
             } = uploadResult
+            // Remember this run so `screenci info` can report exactly it.
+            if (recordId !== null) {
+              await saveLastRecordId(screenciDir, recordId)
+            }
             if (recordId !== null && projectId !== null) {
               const recordUrl = `${appUrl}/record/${recordId}`
               await writeGitHubProjectOutput(recordUrl)
@@ -2750,10 +2786,12 @@ export async function main() {
 
   program
     .command('info')
-    .description('Print remote project info as JSON')
+    .description(
+      "Print the latest record run's video URLs and render status as JSON"
+    )
     .option('-c, --config <path>', 'path to screenci.config.ts')
     .action(async (options: Record<string, unknown>) => {
-      await printProjectInfo(options['config'] as string | undefined)
+      await printInfo(options['config'] as string | undefined)
     })
 
   program

@@ -111,12 +111,12 @@ CI uses the same ScreenCI upload and render pipeline as local recording. The mai
 
 Rendering happens after `screenci record` uploads, so a green `record` step does
 not mean the videos are rendered yet. To check the renders from the run you just
-made, use `screenci record-urls`. It reads the run id stored in
-`.screenci/last-record.json` and prints each video's render status (`finished`,
-`not_finished`, or `failed`) and public URLs as JSON, so a CI job can poll until
-everything reaches `finished` or gate on failures. See
-[`screenci record-urls`](/docs/reference/cli#screenci-record-urls) for the output
-shape.
+made, use `screenci info`. It reads the run id stored in
+`.screenci/last-record.json` and prints, per language, a `latestRecord` with the
+render status (`finished`, `rendering`, or `failed`) and that run's public URLs,
+as JSON. A CI job can poll until each `latestRecord.status` is `finished` or gate
+on `failed`. See [`screenci info`](/docs/reference/cli#screenci-info) for the
+output shape.
 
 ## What's next
 

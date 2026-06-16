@@ -72,6 +72,27 @@ one.
 
 Manual selection is currently done in the app, not the CLI.
 
+## Per-run (record-pinned) URLs
+
+Alongside the stable URLs above, every media URL accepts an optional
+`?record=<recordId>` parameter that pins it to a specific `screenci record` run:
+
+```text
+https://api.screenci.com/public/<videoId>/<language>/video?record=<recordId>
+```
+
+The same single **Enable public URL** switch turns on both the stable URLs and
+these record-pinned ones. A record-pinned URL serves that run's own render while
+it exists, and automatically falls back to the latest selected version once the
+run's render is cleaned up. It always honors the public switch, so it `404`s if
+the video is made private.
+
+Use the stable URL when you always want the newest published render, and the
+record-pinned URL when you want to reference exactly the run a given CI build
+produced. The [`screenci info`](/docs/reference/cli#screenci-info) command prints
+both URL sets (as `static` and `latestRecord`) when run on a machine that made
+the record.
+
 ## Typical embed
 
 ```html

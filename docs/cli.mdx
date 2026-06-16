@@ -15,7 +15,7 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | `screenci init [name]`             | Scaffold a ScreenCI project                           |
 | `screenci test [playwrightArgs]`   | Run `.video.ts` files locally without final recording |
 | `screenci record [playwrightArgs]` | Record videos and upload results when configured      |
-| `screenci info`                    | Print remote project info as JSON                     |
+| `screenci info`                    | Print the last record run's URLs and render status    |
 | `screenci make-public <videoId>`   | Enable public delivery for a video                    |
 | `screenci make-private <videoId>`  | Disable public delivery for a video                   |
 
@@ -270,25 +270,69 @@ yarn screenci info
   </TabItem>
 </Tabs>
 
-Prints remote project data for the current `projectName`, including video IDs
-and whether public delivery is enabled.
+Lists **every video in the project** with its public URLs as JSON, keyed by
+video name and language code. It is where you get the remote `videoId` for
+`make-public` and `make-private`.
 
-Use this before public-delivery changes when you need the remote `videoId`:
+When this machine has recorded a run, `info` also reports that run. Each
+`screenci record` upload stores its unique record id in
+`.screenci/last-record.json`; `info` then attaches, **only to the videos
+produced by that run**, a per-language `latestRecord` with the run's render
+status and its record-pinned URLs, plus a `latestRecordId` on the video. Videos
+that were not part of the run are still listed, with `static` URLs only. This is
+the command to use in CI to gate on rendering or grab links right after a record.
 
 ```json
 {
   "projectName": "My Product",
-  "videos": [
-    {
-      "id": "video_123",
-      "name": "Onboarding",
+  "videos": {
+    "Onboarding": {
+      "videoId": "kh74…",
+      "latestRecordId": "5f1c…",
       "isPublic": true,
-      "language": "en",
-      "hasSubtitles": true
+      "languages": {
+        "en": {
+          "static": {
+            "video": "https://api.screenci.com/public/kh74…/en/video",
+            "thumbnail": "https://api.screenci.com/public/kh74…/en/thumbnail",
+            "subtitle": "https://api.screenci.com/public/kh74…/en/subtitle"
+          },
+          "latestRecord": {
+            "status": "finished",
+            "video": "https://api.screenci.com/public/kh74…/en/video?record=5f1c…",
+            "thumbnail": "https://api.screenci.com/public/kh74…/en/thumbnail?record=5f1c…",
+            "subtitle": "https://api.screenci.com/public/kh74…/en/subtitle?record=5f1c…"
+          }
+        }
+      }
     }
-  ]
+  }
 }
 ```
+
+Each language exposes up to two URL sets:
+
+- `static`: stable URLs that always follow the currently selected version
+- `latestRecord`: this run's render status plus URLs pinned to it with
+  `?record=<recordId>` (see
+  [the fallback logic](/docs/reference/public-delivery-api#record-pinned-urls))
+
+`static` is `null` for videos without public delivery enabled. `latestRecord`
+carries the render status even for private videos, but its URLs are then `null`.
+
+Render status (under `latestRecord.status`) is one of:
+
+- `finished`: a render finished and is servable
+- `rendering`: a render is still in progress (or has not started)
+- `failed`: a render failed and none for that language is still in progress
+
+Because rendering happens after upload, poll `info` until each `latestRecord`
+reaches `finished` (or gate your pipeline on `failed`).
+
+**Not recorded on this machine?** If there is no `.screenci/last-record.json`
+(for example a fresh checkout that has never run `screenci record`), `info` does
+not fail. It simply omits `latestRecordId` and the `latestRecord` fields and
+prints the project-wide listing with `static` URLs only.
 
 ## `screenci make-public <videoId>`
 
@@ -296,21 +340,21 @@ Use this before public-delivery changes when you need the remote `videoId`:
   <TabItem label="npm">
 
 ```bash
-npx screenci make-public video_123
+npx screenci make-public kh74…
 ```
 
   </TabItem>
   <TabItem label="pnpm">
 
 ```bash
-pnpm exec screenci make-public video_123
+pnpm exec screenci make-public kh74…
 ```
 
   </TabItem>
   <TabItem label="yarn">
 
 ```bash
-yarn screenci make-public video_123
+yarn screenci make-public kh74…
 ```
 
   </TabItem>
@@ -333,21 +377,21 @@ URL** in the dashboard.
   <TabItem label="npm">
 
 ```bash
-npx screenci make-private video_123
+npx screenci make-private kh74…
 ```
 
   </TabItem>
   <TabItem label="pnpm">
 
 ```bash
-pnpm exec screenci make-private video_123
+pnpm exec screenci make-private kh74…
 ```
 
   </TabItem>
   <TabItem label="yarn">
 
 ```bash
-yarn screenci make-private video_123
+yarn screenci make-private kh74…
 ```
 
   </TabItem>
@@ -366,7 +410,7 @@ The CLI currently covers:
 - project auth setup (handled automatically on first `record`)
 - local iteration with `test`
 - final capture and upload with `record`
-- remote inspection with `info`
+- per-run URLs and render status with `info`
 - public visibility changes with `make-public` and `make-private`
 
 Manual version pinning is currently handled in the app UI:
@@ -389,7 +433,7 @@ These commands support `--config <path>`:
 
 - auth bootstrap and persistence
 - uploads
-- project info
+- per-run URLs and render status (`info`)
 - public delivery changes
 
 If `envFile` is configured in `screenci.config.ts`, the CLI loads it

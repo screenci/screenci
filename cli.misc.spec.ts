@@ -625,8 +625,30 @@ describe('CLI', () => {
     })
   })
 
-  describe('project info commands', () => {
-    it('should print project info JSON for info', async () => {
+  describe('info command', () => {
+    const baseReadFile = (recordId: string | null) => {
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const p = String(path)
+        if (p.endsWith('last-record.json')) {
+          if (recordId === null) {
+            throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+          }
+          return JSON.stringify({
+            recordId,
+            savedAt: '2026-06-16T00:00:00.000Z',
+          })
+        }
+        if (p.endsWith('screenci.config.ts')) {
+          return "export default defineConfig({ projectName: 'Test Project' })"
+        }
+        if (p.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        return ''
+      })
+    }
+
+    it('passes the local recordId to /cli/info and prints the response', async () => {
       process.argv = [
         'node',
         'cli.js',
@@ -635,16 +657,46 @@ describe('CLI', () => {
         'test-fixtures/screenci.config.ts',
       ]
       process.env.SCREENCI_SECRET = 'test-secret'
+      baseReadFile('rec_abc')
+
+      // The backend builds the merged listing; the CLI prints it verbatim.
+      const infoResponse = {
+        projectName: 'Test Project',
+        videos: {
+          Demo: {
+            videoId: 'kh74',
+            latestRecordId: 'rec_abc',
+            isPublic: true,
+            languages: {
+              en: {
+                static: {
+                  video: 'https://api.screenci.com/public/kh74/en/video',
+                  thumbnail:
+                    'https://api.screenci.com/public/kh74/en/thumbnail',
+                  subtitle: 'https://api.screenci.com/public/kh74/en/subtitle',
+                },
+                latestRecord: {
+                  status: 'finished',
+                  video:
+                    'https://api.screenci.com/public/kh74/en/video?record=rec_abc',
+                  thumbnail:
+                    'https://api.screenci.com/public/kh74/en/thumbnail?record=rec_abc',
+                  subtitle:
+                    'https://api.screenci.com/public/kh74/en/subtitle?record=rec_abc',
+                },
+              },
+            },
+          },
+        },
+      }
+
       const stdoutSpy = vi
         .spyOn(process.stdout, 'write')
         .mockImplementation(() => true)
       mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue({
-          projectName: 'Test Project',
-          videos: [{ id: 'video_123', name: 'Demo', isPublic: false }],
-        }),
+        json: vi.fn().mockResolvedValue(infoResponse),
         text: vi.fn().mockResolvedValue(''),
       })
 
@@ -652,23 +704,50 @@ describe('CLI', () => {
       await main()
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/cli/project-info?projectName=Test+Project'),
+        expect.stringMatching(
+          /\/cli\/info\?projectName=Test\+Project&record=rec_abc$/
+        ),
         expect.objectContaining({
           headers: { 'X-ScreenCI-Secret': 'test-secret' },
         })
       )
       expect(stdoutSpy).toHaveBeenCalledWith(
-        `${JSON.stringify(
-          {
-            projectName: 'Test Project',
-            videos: [{ id: 'video_123', name: 'Demo', isPublic: false }],
-          },
-          null,
-          2
-        )}\n`
+        `${JSON.stringify(infoResponse, null, 2)}\n`
       )
 
       stdoutSpy.mockRestore()
+    })
+
+    it('omits the record param when this machine has not recorded a run', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'info',
+        '--config',
+        'test-fixtures/screenci.config.ts',
+      ]
+      process.env.SCREENCI_SECRET = 'test-secret'
+      baseReadFile(null)
+
+      let calledUrl = ''
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        calledUrl = String(input)
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({
+            projectName: 'Test Project',
+            videos: {},
+          }),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(calledUrl).toContain('/cli/info?projectName=Test+Project')
+      expect(calledUrl).not.toContain('record=')
     })
   })
 

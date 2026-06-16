@@ -1064,6 +1064,83 @@ describe('CLI', () => {
       )
     })
 
+    it('does not forward arbitrary env vars (e.g. user app secrets) to the service', async () => {
+      process.env.YOUR_PRIVATE_SECRET = 'super-secret-app-key'
+      process.env.GOOGLE_CLOUD_API_KEY = 'should-never-leave-the-machine'
+      delete process.env.ELEVENLABS_API_KEY
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('record-upload.config.ts')) {
+          return "export default { projectName: 'Test Project' }"
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('test-fixtures/record-upload.config.ts') ||
+          path.endsWith('data.json') ||
+          path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+
+      const { uploadRecordings } = await import('./cli')
+
+      await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      const sentHeaders = mockFetch.mock.calls.flatMap((call) => {
+        const init = call[1] as { headers?: Record<string, string> } | undefined
+        return init?.headers ? [init.headers] : []
+      })
+      expect(sentHeaders.length).toBeGreaterThan(0)
+      for (const headers of sentHeaders) {
+        const allowedHeaderNames = new Set([
+          'Content-Type',
+          'Content-Length',
+          'X-ScreenCI-Secret',
+        ])
+        for (const name of Object.keys(headers)) {
+          expect(allowedHeaderNames.has(name)).toBe(true)
+        }
+        const serialized = JSON.stringify(headers)
+        expect(serialized).not.toContain('super-secret-app-key')
+        expect(serialized).not.toContain('should-never-leave-the-machine')
+        expect(serialized.toUpperCase()).not.toContain('GOOGLE')
+        expect(serialized.toUpperCase()).not.toContain('VERTEX')
+      }
+    })
+
     it('uploads completed recordings after partial failure with default policy, then still fails', async () => {
       process.argv = [
         'node',

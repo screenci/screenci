@@ -97,9 +97,7 @@ A typical local env file looks like this:
 ```bash
 SCREENCI_SECRET=sc_live_your_project_secret
 ELEVENLABS_API_KEY=sk_your_elevenlabs_key
-GOOGLE_CLOUD_API_KEY=your_google_cloud_key
-GOOGLE_VERTEX_SERVICE_ACCOUNT={"project_id":"my-project","client_email":"...","private_key":"..."}
-GOOGLE_VERTEX_LOCATION=us-central1
+YOUR_PRIVATE_SECRET=your_own_app_secret
 ```
 
 Common cases:
@@ -108,9 +106,23 @@ Common cases:
   public visibility commands.
 - `ELEVENLABS_API_KEY` is required when your narration uses
   `voices.elevenlabs({ voiceId })` or custom voice assets.
-- `GOOGLE_CLOUD_API_KEY` is used for consistent model-backed narration.
-- `GOOGLE_VERTEX_SERVICE_ACCOUNT` and `GOOGLE_VERTEX_LOCATION` are used for
-  expressive Gemini narration.
+- Any other variables (for example `YOUR_PRIVATE_SECRET`) are yours to use
+  inside your own app or test setup. ScreenCI reads them from the env file into
+  `process.env` like any normal environment variable, but never transmits them.
+
+### What ScreenCI sends to the service
+
+Only two values are ever sent to the ScreenCI service, and only as request
+headers on upload and command calls:
+
+- `SCREENCI_SECRET`, as the `X-ScreenCI-Secret` header, to authenticate your
+  project.
+- `ELEVENLABS_API_KEY`, as the `X-ElevenLabs-Api-Key` header, and only when your
+  narration actually uses ElevenLabs voices.
+
+No other environment variable is forwarded. Your app secrets, database URLs, and
+any other entries in the env file stay on your machine. ScreenCI does not store
+raw API keys from your env file.
 
 Keep adding local runtime secrets here as needed. `screenci.config.ts` only
 points to the env file. The actual secret values belong in `.env` or whatever

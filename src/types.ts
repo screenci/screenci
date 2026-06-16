@@ -287,7 +287,29 @@ export type RecordOptions = {
    * @example { mouseFrameSkip: 5, scrollFrameSkip: 0 }
    */
   performance?: PerformanceOption
+
+  /**
+   * Encoder used for the realtime screen capture.
+   *
+   * - `'sharp'`  - tuned for text-heavy UI (low CRF + still-image tune) so
+   *   glyph edges stay crisp. Uses a little more CPU; on most machines it
+   *   still encodes comfortably above realtime.
+   * - `'fast'`   - the lightest possible encode (ultrafast preset). Use this on
+   *   resource-constrained CI where `'sharp'` cannot keep up with the capture
+   *   stream (falling behind drops frames and shortens the recording).
+   *
+   * Defaults to `'fast'` as the safe baseline. The `init`-scaffolded config sets
+   * `process.env.CI ? 'fast' : 'sharp'` so new projects get crisp text locally.
+   *
+   * @default 'fast'
+   */
+  encoder?: VideoEncoderPreset
 }
+
+/**
+ * Encoder preset for the realtime screen capture. See {@link RecordOptions.encoder}.
+ */
+export type VideoEncoderPreset = 'sharp' | 'fast'
 
 export type Easing =
   | 'linear'

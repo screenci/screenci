@@ -92,10 +92,31 @@ This is informational only. ScreenCI does not alter the recording to hide the wa
 - **Run one worker.** Parallel workers share the runner's CPU, and recording plus the browser are already heavy. The generated config already sets `workers: process.env.CI ? 1 : undefined` for this reason.
 - **Use a faster runner.** Recording is CPU- and GPU-bound; GitHub's larger runners (or a faster provider) make a big difference. The free 2-core runners are the most likely to show pauses.
 - **Keep the app fast.** Slow page loads, long hydration, and heavy on-page animation all delay when an element becomes interactive. Put setup inside `hide()` so that dead time stays out of the recording.
+- **Keep CI on the `fast` encoder.** The capture encode itself can fall behind on a small runner, which drops frames and shortens recordings. The `fast` encoder is the default and the `init` config keeps CI on it while using the crisper `sharp` encoder locally. If you have overridden `encoder` globally, restore the conditional so CI stays light. See [Recording encoder](/docs/configuration#recording-encoder).
+
+  ```ts
+  use: {
+    recordOptions: {
+      // Lightest encode on constrained CI runners; full quality locally.
+      encoder: process.env.CI ? 'fast' : 'sharp',
+    },
+  },
+  ```
 
 ## Relation to accepted and latest renders
 
 CI uses the same ScreenCI upload and render pipeline as local recording. The main difference is that it becomes repeatable and repository-driven, which is useful when published videos should follow the shipped app.
+
+## Reading back render status in CI
+
+Rendering happens after `screenci record` uploads, so a green `record` step does
+not mean the videos are rendered yet. To check the renders from the run you just
+made, use `screenci record-urls`. It reads the run id stored in
+`.screenci/last-record.json` and prints each video's render status (`finished`,
+`not_finished`, or `failed`) and public URLs as JSON, so a CI job can poll until
+everything reaches `finished` or gate on failures. See
+[`screenci record-urls`](/docs/reference/cli#screenci-record-urls) for the output
+shape.
 
 ## What's next
 

@@ -10,6 +10,7 @@ export type {
   ExtendedScreenCIConfig,
   AutoZoomOptions,
   Easing,
+  VideoEncoderPreset,
 } from './src/types.js'
 
 // Re-export voices

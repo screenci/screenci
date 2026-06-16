@@ -3,11 +3,20 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
+  generateConfig,
   generateExampleVideo,
   generateIslandReadme,
   parsePnpmVersionSupport,
   toIslandPackageName,
 } from './init.js'
+
+describe('generateConfig', () => {
+  it('scaffolds the sharp-locally / fast-in-CI encoder by default', () => {
+    expect(generateConfig('My Demo')).toContain(
+      "encoder: process.env.CI ? 'fast' : 'sharp',"
+    )
+  })
+})
 
 describe('generateExampleVideo', () => {
   it('matches the installation doc video source', () => {

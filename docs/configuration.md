@@ -137,9 +137,31 @@ Set shared `recordOptions` under `use`:
 - `quality`
 - `fps`
 - `performance` (see below)
+- `encoder` (see below)
 
 These values determine the recording viewport, so they are the supported way to
 control recording size.
+
+### Recording encoder
+
+`recordOptions.encoder` selects how the screen capture is encoded:
+
+- `'fast'` (default) is the lightest possible encode. It never falls behind the
+  capture stream, so it is the safe baseline on any runner. (When the encoder
+  falls behind it drops frames and shortens the recording.)
+- `'sharp'` is tuned for text-heavy UI, so labels, code, and small type stay
+  crisp. It uses a little more CPU; on most machines it still encodes above
+  realtime.
+
+The `init`-scaffolded config opts into `'sharp'` locally and keeps `'fast'` in
+CI, which is the recommended setup:
+
+```ts
+recordOptions: {
+  // Lightest encode on constrained CI runners; full quality locally.
+  encoder: process.env.CI ? 'fast' : 'sharp', // default: 'fast'
+}
+```
 
 ### Recording performance
 
@@ -299,6 +321,7 @@ format, or staging target than the rest of the project.
 | `recordOptions.aspectRatio` | `'16:9'`        |
 | `recordOptions.quality`     | `'1080p'`       |
 | `recordOptions.fps`         | `60`            |
+| `recordOptions.encoder`     | `'fast'`        |
 | `timeout`                   | `1800000`       |
 | `actionTimeout`             | `30000`         |
 | `navigationTimeout`         | `30000`         |

@@ -20,6 +20,7 @@ import type {
   RecordOptions,
   RenderOptions,
   ScreenCIPage,
+  VideoEncoderPreset,
 } from './types.js'
 import type { Page } from '@playwright/test'
 import type { StudioRenderOptionsSentinel } from './studio.js'
@@ -35,6 +36,7 @@ import {
   DEFAULT_ASPECT_RATIO,
   DEFAULT_QUALITY,
   DEFAULT_FPS,
+  DEFAULT_VIDEO_ENCODER,
 } from './defaults.js'
 import { EventRecorder } from './events.js'
 import {
@@ -139,12 +141,73 @@ export async function positionMouseAtViewportCenter(
   return viewportCenter
 }
 
+/**
+ * Encoder arguments for the screencast's realtime first pass, per preset.
+ *
+ * We keep the recorder's realtime first pass as the final artifact (the second
+ * pass is disabled below via `runSecondPass`), so these are the only encoder
+ * settings that reach the saved recording. The upstream default is not
+ * configurable in playwright-recorder-plus without the local pnpm patch that
+ * exposes `firstPassArgs`.
+ *
+ * - `'sharp'` is tuned for text-heavy UI: `-tune stillimage` and a low `-crf`
+ *   preserve sharp glyph edges, while `-preset veryfast` stays above realtime
+ *   so the screencast stream never backpressures (which drops frames and
+ *   shortens the timeline).
+ * - `'fast'` mirrors the library's original `-preset ultrafast -crf 18` for
+ *   resource-constrained CI that cannot keep up with the sharper encode.
+ *
+ * Both use `yuv420p` so the output stays decodable by the downstream NVDEC
+ * CUDA render pipeline (4:4:4 H.264 is not reliably hardware-decodable).
+ */
+const FIRST_PASS_ARGS_BY_ENCODER: Record<
+  VideoEncoderPreset,
+  readonly string[]
+> = {
+  sharp: [
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-crf',
+    '12',
+    '-tune',
+    'stillimage',
+    '-pix_fmt',
+    'yuv420p',
+    '-movflags',
+    '+faststart',
+  ],
+  fast: [
+    '-c:v',
+    'libx264',
+    '-preset',
+    'ultrafast',
+    '-crf',
+    '18',
+    '-pix_fmt',
+    'yuv420p',
+    '-movflags',
+    '+faststart',
+  ],
+}
+
+/**
+ * Resolve the first-pass encoder args for a given preset. Exported for testing.
+ */
+export function resolveRecordingFirstPassArgs(
+  encoder: VideoEncoderPreset = DEFAULT_VIDEO_ENCODER
+): readonly string[] {
+  return FIRST_PASS_ARGS_BY_ENCODER[encoder]
+}
+
 async function startScreencastRecording(
   page: Page,
   outputPath: string,
   fps: FPS,
   quality: Quality,
-  aspectRatio: AspectRatio
+  aspectRatio: AspectRatio,
+  encoder: VideoEncoderPreset
 ): Promise<Recorder> {
   const { width, height } = getDimensions(aspectRatio, quality)
 
@@ -155,20 +218,7 @@ async function startScreencastRecording(
     size: { width, height },
     fps,
     jpegQuality: 100,
-    ffmpegArgs: [
-      '-c:v',
-      'libx264',
-      '-preset',
-      'slow',
-      '-tune',
-      'stillimage',
-      '-crf',
-      '12',
-      '-pix_fmt',
-      'yuv444p',
-      '-movflags',
-      'frag_keyframe+empty_moov',
-    ],
+    firstPassArgs: [...resolveRecordingFirstPassArgs(encoder)],
   })
 
   // Keep the recorder's realtime first-pass mp4 as the final artifact.
@@ -323,6 +373,7 @@ const _videoBase = base.extend<
     const aspectRatio = recordOptions.aspectRatio ?? DEFAULT_ASPECT_RATIO
     const quality = recordOptions.quality ?? DEFAULT_QUALITY
     const fps = recordOptions.fps ?? DEFAULT_FPS
+    const encoder = recordOptions.encoder ?? DEFAULT_VIDEO_ENCODER
     const dimensions = getDimensions(aspectRatio, quality)
 
     const directoryName = escapeFileSystemPathSegment(testInfo.title)
@@ -365,7 +416,8 @@ const _videoBase = base.extend<
       videoPath,
       fps,
       quality,
-      aspectRatio
+      aspectRatio,
+      encoder
     )
 
     await positionMouseAtViewportCenter(page, dimensions)

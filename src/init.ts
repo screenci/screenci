@@ -1557,7 +1557,7 @@ export async function runCreateScreenciCli(
   }
 }
 
-function generateConfig(projectName: string): string {
+export function generateConfig(projectName: string): string {
   return `import { defineConfig } from 'screenci'
 
 export default defineConfig({
@@ -1577,6 +1577,8 @@ export default defineConfig({
       aspectRatio: '16:9',
       quality: '1080p',
       fps: 60,
+      // Lightest encode on constrained CI runners; full quality locally.
+      encoder: process.env.CI ? 'fast' : 'sharp',
     },
   },
   projects: [

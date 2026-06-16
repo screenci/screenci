@@ -5,6 +5,7 @@ import type {
   Quality,
   RecordUploadPolicy,
   RecordOptions,
+  VideoEncoderPreset,
 } from './types.js'
 
 // DOCS_SYNC:
@@ -74,10 +75,18 @@ export const DEFAULT_ACTION_TIMEOUT: number = 30_000
 export const DEFAULT_NAVIGATION_TIMEOUT: number = 30_000
 
 /**
+ * Default capture encoder preset. `'fast'` is the safest baseline (lightest
+ * encode, never falls behind realtime on weak runners). The `init`-scaffolded
+ * config opts into `'sharp'` locally for crisper text and keeps `'fast'` in CI.
+ */
+export const DEFAULT_VIDEO_ENCODER: VideoEncoderPreset = 'fast'
+
+/**
  * Default video options combining all video-related defaults
  */
 export const DEFAULT_VIDEO_OPTIONS: RecordOptions = {
   aspectRatio: DEFAULT_ASPECT_RATIO,
   quality: DEFAULT_QUALITY,
   fps: DEFAULT_FPS,
+  encoder: DEFAULT_VIDEO_ENCODER,
 }

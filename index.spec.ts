@@ -46,6 +46,7 @@ describe('public api surface', () => {
       'detectPackageManagerFromPackageJson',
       'detectPnpmWorkspace',
       'determinePackageManager',
+      'generateConfig',
       'generateExampleVideo',
       'generateIslandReadme',
       'parsePackageManager',

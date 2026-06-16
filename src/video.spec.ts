@@ -5,7 +5,14 @@ import {
   finalizeDeferredRecordingStops,
   POST_VIDEO_PAUSE,
   positionMouseAtViewportCenter,
+  resolveRecordingFirstPassArgs,
 } from './video.js'
+
+/** Read the value that follows a flag in an ffmpeg-style argv array. */
+function argValue(args: readonly string[], flag: string): string | undefined {
+  const i = args.indexOf(flag)
+  return i >= 0 ? args[i + 1] : undefined
+}
 
 /**
  * Dimension table (shorter side = quality base, longer side from ratio):
@@ -314,5 +321,53 @@ describe('deferred recording stops', () => {
     rejectFinalized(new Error('finalization failed'))
 
     await expect(finalizePromise).rejects.toThrow('finalization failed')
+  })
+})
+
+describe('resolveRecordingFirstPassArgs', () => {
+  it("defaults to the 'fast' preset (safe baseline)", () => {
+    expect(resolveRecordingFirstPassArgs()).toEqual(
+      resolveRecordingFirstPassArgs('fast')
+    )
+  })
+
+  describe("'sharp'", () => {
+    const args = resolveRecordingFirstPassArgs('sharp')
+
+    it('encodes the kept first pass with libx264 tuned for text', () => {
+      expect(argValue(args, '-c:v')).toBe('libx264')
+      expect(argValue(args, '-tune')).toBe('stillimage')
+    })
+
+    it('uses a high-quality CRF for sharp glyph edges', () => {
+      expect(Number(argValue(args, '-crf'))).toBeLessThanOrEqual(14)
+    })
+
+    it('stays above realtime by avoiding slow x264 presets', () => {
+      // ScreenCI keeps the realtime first pass, so the preset must not let the
+      // encoder fall behind the screencast stream (which drops frames).
+      const slowPresets = ['slow', 'slower', 'veryslow', 'placebo']
+      expect(slowPresets).not.toContain(argValue(args, '-preset'))
+    })
+  })
+
+  describe("'fast'", () => {
+    const args = resolveRecordingFirstPassArgs('fast')
+
+    it('uses the lightest ultrafast preset for constrained CI', () => {
+      expect(argValue(args, '-preset')).toBe('ultrafast')
+    })
+
+    it('omits the CPU-heavy stillimage tune', () => {
+      expect(args).not.toContain('-tune')
+    })
+  })
+
+  it('keeps yuv420p in both presets so the render pipeline can NVDEC-decode it', () => {
+    for (const preset of ['sharp', 'fast'] as const) {
+      const args = resolveRecordingFirstPassArgs(preset)
+      expect(argValue(args, '-pix_fmt')).toBe('yuv420p')
+      expect(argValue(args, '-movflags')).toBe('+faststart')
+    }
   })
 })

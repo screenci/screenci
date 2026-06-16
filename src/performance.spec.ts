@@ -18,22 +18,6 @@ describe('resolvePerformanceIntervals', () => {
     })
   })
 
-  it('maps presets to a symmetric frame skip on both streams', () => {
-    const frameMs = 1000 / 60
-    expect(resolvePerformanceIntervals('smooth')).toEqual({
-      mouseMs: frameMs, // skip 0
-      scrollMs: frameMs,
-    })
-    expect(resolvePerformanceIntervals('balanced')).toEqual({
-      mouseMs: 3 * frameMs, // skip 2
-      scrollMs: 3 * frameMs,
-    })
-    expect(resolvePerformanceIntervals('fast')).toEqual({
-      mouseMs: 6 * frameMs, // skip 5
-      scrollMs: 6 * frameMs,
-    })
-  })
-
   it('tunes the frame skip per stream from an object', () => {
     const frameMs = 1000 / 60
     expect(

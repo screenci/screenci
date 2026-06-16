@@ -16,16 +16,12 @@
  *   frame) and stays smooth.
  */
 
-export type PerformancePreset = 'smooth' | 'balanced' | 'fast'
-
-export type PerformanceOptions = {
+export type PerformanceOption = {
   /** Output frames to skip between cursor dispatches. 0 = every frame. */
   mouseFrameSkip?: number
   /** Output frames to skip between scroll dispatches. 0 = every frame. */
   scrollFrameSkip?: number
 }
-
-export type PerformanceOption = PerformancePreset | PerformanceOptions
 
 export type PerformanceIntervals = {
   mouseMs: number
@@ -39,12 +35,6 @@ export const DEFAULT_SCROLL_FRAME_SKIP = 0
 
 /** Mirrors `DEFAULT_FPS`; kept local to avoid an import cycle. */
 const DEFAULT_FPS = 60
-
-const PRESET_FRAME_SKIP: Record<PerformancePreset, number> = {
-  smooth: 0, // every frame
-  balanced: 2, // every 3rd frame
-  fast: 5, // every 6th frame (~10fps at 60fps)
-}
 
 function frameSkipToIntervalMs(skip: number, fps: number): number {
   const frameMs = 1000 / (fps > 0 ? fps : DEFAULT_FPS)
@@ -75,14 +65,6 @@ export function resolvePerformanceIntervals(
     return {
       mouseMs: frameSkipToIntervalMs(DEFAULT_MOUSE_FRAME_SKIP, fps),
       scrollMs: frameSkipToIntervalMs(DEFAULT_SCROLL_FRAME_SKIP, fps),
-    }
-  }
-
-  if (typeof option === 'string') {
-    const skip = PRESET_FRAME_SKIP[option]
-    return {
-      mouseMs: frameSkipToIntervalMs(skip, fps),
-      scrollMs: frameSkipToIntervalMs(skip, fps),
     }
   }
 

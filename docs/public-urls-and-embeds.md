@@ -82,10 +82,16 @@ https://api.screenci.com/public/<videoId>/<language>/video?record=<recordId>
 ```
 
 The same single **Enable public URL** switch turns on both the stable URLs and
-these record-pinned ones. A record-pinned URL serves that run's own render while
-it exists, and automatically falls back to the latest selected version once the
-run's render is cleaned up. It always honors the public switch, so it `404`s if
+these record-pinned ones. A record-pinned URL is immutable: it serves that run's
+own render, or `404`s once the run is cleaned up. It never falls back to a
+different version, and it always honors the public switch, so it also `404`s if
 the video is made private.
+
+ScreenCI keeps only a bounded number of versions per language (3 on Free, 5 on
+Starter, 50 on Business), so older runs are eventually pruned. To keep a specific
+run forever, download it via the authenticated URLs in
+[`screenci info`](/docs/reference/cli#screenci-info), described under
+[Keep a render forever](/docs/reference/public-delivery-api#keep-a-render-forever).
 
 Use the stable URL when you always want the newest published render, and the
 record-pinned URL when you want to reference exactly the run a given CI build

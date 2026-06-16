@@ -126,37 +126,58 @@ This record-pinned surface is enabled by the same single public switch as the
 static URLs (no separate setting). The CLI surfaces it per language as
 `latestRecord` in [`screenci info`](/docs/reference/cli#screenci-info).
 
-### Fallback logic
+### Resolution rules
 
-Renders do not live forever. ScreenCI keeps only a bounded number of versions
-per video and cleans up older ones, so a record-pinned URL must keep working
-after the exact render it points at is gone:
+A record-pinned URL is an **immutable** contract: it serves that exact run's
+render, or it `404`s. It never silently swaps to a different video.
 
 1. **Public gate.** If the video has no public delivery configured, the request
    `404`s immediately, with or without `?record=`. Making a video private takes
    every URL (static and pinned) offline at once.
 2. **Pinned render.** With `?record=<recordId>`, if that run's render for the
    requested language still exists, it is served exactly.
-3. **Fallback to selected.** If that run's render has been cleaned up (or the
-   run never produced one for this language), the request transparently falls
-   back to the currently selected version, the same bytes the static URL would
-   return. The response still succeeds; it just serves the newest selection.
-4. **Asset-level fallback.** Thumbnails and subtitles fall back independently of
-   the video: if this run's render had no subtitle, the subtitle URL falls back
-   to the selected version's subtitle (and `404`s only if none exists at all).
+3. **404 once cleaned up.** If that run's render has been pruned (or the run
+   never produced one for this language), the pinned URL `404`s. It does **not**
+   fall back to the currently selected version, because doing so could serve a
+   different video than the one you embedded.
+4. **Asset-level.** Each asset is pinned to the same run: if this run produced no
+   subtitle, the pinned subtitle URL `404`s rather than borrowing the selected
+   version's subtitle.
 
-In short: a record-pinned URL serves the exact run while it lives, then the
-newest selected version, and `404`s only when the video is not public (or the
-language was never published).
+The stable `static` URL (no `?record=`) always follows the currently selected
+version, which always exists, so use it whenever you just want "the latest."
 
-Each video keeps only a bounded number of its own versions, so older runs of the
-same video are eventually cleaned up no matter what. If you need many record
-runs to stay individually addressable forever, record them as **separate
-videos** rather than as repeated runs of one video: every video has its own
-version budget, so adding more videos is how you keep more renders alive at once.
+### Version retention
 
-The `recordId` for the most recent run, along with both URL sets, is printed by
-[`screenci info`](/docs/reference/cli#screenci-info).
+Renders do not live forever. ScreenCI keeps the currently selected version plus
+a bounded number of recent versions per language, then prunes the rest. The
+budget depends on your plan:
+
+| Plan     | Versions kept per language |
+| -------- | -------------------------- |
+| Free     | 3                          |
+| Starter  | 5                          |
+| Business | 50                         |
+
+Once a run is pruned, its record-pinned URLs `404` (see above).
+
+### Keep a render forever
+
+To archive a specific run permanently, download its files right after recording,
+before they can be pruned, using the authenticated download URLs printed by
+[`screenci info`](/docs/reference/cli#screenci-info). These require your
+`X-ScreenCI-Secret` header, so they are private (not embeddable), and they let
+you keep the exact bytes in your own storage without growing your ScreenCI
+version budget:
+
+```bash
+curl -H "X-ScreenCI-Secret: $SCREENCI_SECRET" \
+  "https://api.screenci.com/cli/download/YOUR_VIDEO_ID/en/video?record=YOUR_RECORD_ID" \
+  -o video.mp4
+```
+
+The `recordId` for the most recent run, along with the public and download URL
+sets, is printed by [`screenci info`](/docs/reference/cli#screenci-info).
 
 ## Response behavior
 

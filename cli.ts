@@ -38,18 +38,32 @@ import {
   findDuplicateTitles,
   formatDuplicateTitlesMessage,
 } from './src/titleValidation.js'
+import {
+  createLinkSessionSpec,
+  deletePersistedLinkSessionSpec,
+  getCliLinkSessionApiUrl,
+  getDevBackendUrl,
+  getDevFrontendUrl,
+  getLinkSessionFilePath,
+  getScreenCIEnvironment,
+  isStoredLinkSessionReusable,
+  readPersistedLinkSessionSpec,
+  SCREENCI_LINK_SESSION_FILE,
+  writePersistedLinkSessionSpec,
+} from './src/linkSession.js'
+import type {
+  LinkSessionStatus,
+  PersistedLinkSessionSpec,
+} from './src/linkSession.js'
+
+// Re-export the environment-aware URL helpers so existing importers (and tests)
+// can keep importing them from the CLI entrypoint.
+export { getCliLinkSessionApiUrl, getDevBackendUrl, getDevFrontendUrl }
 
 const SCREENCI_MOCK_RECORD_DOCS_URL =
   'https://screenci.com/docs/reference/cli/#--mock-record'
 const SCREENCI_RECORD_DOCS_URL =
   'https://screenci.com/docs/reference/cli/#screenci-record'
-const SCREENCI_ENVIRONMENT_VARIABLE = 'SCREENCI_ENVIRONMENT'
-const SCREENCI_ENVIRONMENT_OPTION_VALUES = ['local', 'dev', 'prod'] as const
-const SCREENCI_PRODUCTION_BACKEND_URL = 'https://api.screenci.com'
-const SCREENCI_PRODUCTION_FRONTEND_URL = 'https://app.screenci.com'
-const SCREENCI_DEVELOPMENT_BACKEND_URL = 'https://dev.api.screenci.com'
-const SCREENCI_DEVELOPMENT_FRONTEND_URL = 'https://dev.app.screenci.com'
-const SCREENCI_LINK_SESSION_FILE = 'link-session.json'
 // Records the recordId of the most recent `screenci record` upload so
 // `screenci info` can report exactly the run that was just made.
 const SCREENCI_LAST_RECORD_FILE = 'last-record.json'
@@ -58,9 +72,12 @@ const SCREENCI_LINK_SESSION_POLL_INTERVAL_MS = 2_000
 // sign-in. We poll on a slower cadence than the interactive loop so a long wait
 // for a human to click the link does not hammer the backend.
 const SCREENCI_LINK_SESSION_POLL_FLAG_INTERVAL_MS = 5_000
+// `record --poll-auth` does not wait forever: after this long without a
+// completed sign-in we stop polling and exit cleanly so an agent or CI step does
+// not hang indefinitely. The link stays valid, so the command can be rerun. The
+// default can be overridden with SCREENCI_POLL_AUTH_TIMEOUT_MS (milliseconds).
+const SCREENCI_LINK_SESSION_POLL_FLAG_TIMEOUT_MS = 5 * 60 * 1_000
 const require = createRequire(import.meta.url)
-
-type ScreenCIEnvironment = (typeof SCREENCI_ENVIRONMENT_OPTION_VALUES)[number]
 
 type PlaywrightListReportSuite = {
   title?: string
@@ -74,47 +91,6 @@ type PlaywrightListReport = {
     message?: string
     snippet?: string
   }>
-}
-
-type LinkSessionStatus =
-  | 'pending'
-  | 'completed'
-  | 'consumed'
-  | 'expired'
-  | 'invalid'
-
-type PersistedLinkSessionSpec = {
-  token: string
-  appUrl: string
-  pollUrl: string
-  createdAt: string
-  expiresAt: string
-  environment: ScreenCIEnvironment
-  resolvedConfigPath?: string
-  envFilePath: string
-}
-
-function parseScreenCIEnvironment(
-  value: string | undefined
-): ScreenCIEnvironment | undefined {
-  if (value === undefined) return undefined
-
-  if (
-    SCREENCI_ENVIRONMENT_OPTION_VALUES.includes(value as ScreenCIEnvironment)
-  ) {
-    return value as ScreenCIEnvironment
-  }
-
-  throw new Error(
-    `Invalid ${SCREENCI_ENVIRONMENT_VARIABLE} "${value}". Expected one of: ${SCREENCI_ENVIRONMENT_OPTION_VALUES.join(', ')}`
-  )
-}
-
-function getScreenCIEnvironment(): ScreenCIEnvironment {
-  const parsed = parseScreenCIEnvironment(
-    process.env[SCREENCI_ENVIRONMENT_VARIABLE]
-  )
-  return parsed ?? 'prod'
 }
 
 /**
@@ -400,24 +376,23 @@ export type StudioUploadNotice = {
 }
 
 /**
- * One-line summary of Studio overrides for CLI output, e.g.
- * `recording.size (1 → 0.8), narration "intro" (en)`.
+ * Category-level summary of Studio overrides for CLI output, e.g.
+ * `narration, overlays, render options`. Deliberately omits the exact
+ * selections: it only names which kinds of things were overridden.
  */
 export function formatStudioChangeSummary(
   changes: StudioAppliedChange[]
 ): string {
-  return changes
-    .map((change) => {
-      const label = change.label ?? 'selection'
-      if (change.kind === 'narration') {
-        return change.language !== undefined
-          ? `${label} (${change.language})`
-          : label
-      }
-      return change.from !== undefined && change.to !== undefined
-        ? `${label} (${change.from} → ${change.to})`
-        : label
-    })
+  // Stable, user-facing order. `asset` is surfaced as "overlays".
+  const order: { kind: string; label: string }[] = [
+    { kind: 'narration', label: 'narration' },
+    { kind: 'asset', label: 'overlays' },
+    { kind: 'renderOption', label: 'render options' },
+  ]
+  const present = new Set(changes.map((change) => change.kind))
+  return order
+    .filter(({ kind }) => present.has(kind))
+    .map(({ label }) => label)
     .join(', ')
 }
 
@@ -1747,46 +1722,6 @@ async function countCompletedRecordings(screenciDir: string): Promise<number> {
   ).length
 }
 
-export function getDevBackendUrl(): string {
-  switch (getScreenCIEnvironment()) {
-    case 'local': {
-      const devBackendPort = process.env.DEV_BACKEND_PORT
-      return devBackendPort
-        ? `http://localhost:${devBackendPort}`
-        : 'http://localhost:8787'
-    }
-    case 'dev':
-      return SCREENCI_DEVELOPMENT_BACKEND_URL
-    case 'prod':
-      return SCREENCI_PRODUCTION_BACKEND_URL
-  }
-}
-
-export function getDevFrontendUrl(): string {
-  switch (getScreenCIEnvironment()) {
-    case 'local': {
-      const devFrontendPort = process.env.DEV_FRONTEND_PORT
-      return devFrontendPort
-        ? `http://localhost:${devFrontendPort}`
-        : 'http://localhost:5173'
-    }
-    case 'dev':
-      return SCREENCI_DEVELOPMENT_FRONTEND_URL
-    case 'prod':
-      return SCREENCI_PRODUCTION_FRONTEND_URL
-  }
-}
-
-export function getCliLinkSessionApiUrl(): string {
-  // The `/cli-link/session` routes are Convex HTTP actions served from the same
-  // backend host as the `/cli/*` upload endpoints. We hit that host directly
-  // rather than the frontend: the frontend only forwards these routes via the
-  // vite dev-server proxy, which does not exist on the hosted dev/prod frontend
-  // (a POST there returns 405). The CLI runs under Node, so there is no CORS
-  // constraint that would require going through the frontend origin.
-  return getDevBackendUrl()
-}
-
 function getScreenCISecretsUrl(): string {
   return `${getDevFrontendUrl()}/secrets`
 }
@@ -2262,89 +2197,6 @@ async function persistScreenCISecret(
   await writeFile(envFilePath, `${nextLine}\n`)
 }
 
-function getLinkSessionFilePath(projectDir: string): string {
-  return resolve(projectDir, '.screenci', SCREENCI_LINK_SESSION_FILE)
-}
-
-async function readPersistedLinkSessionSpec(
-  specPath: string
-): Promise<PersistedLinkSessionSpec | null> {
-  try {
-    const raw = await readFile(specPath, 'utf-8')
-    return JSON.parse(raw) as PersistedLinkSessionSpec
-  } catch (error) {
-    if (!isMissingFileError(error)) {
-      logger.warn(`Ignoring invalid stored link session at ${specPath}.`)
-      rmSync(specPath, { force: true })
-    }
-    return null
-  }
-}
-
-async function writePersistedLinkSessionSpec(
-  specPath: string,
-  spec: PersistedLinkSessionSpec
-): Promise<void> {
-  mkdirSync(dirname(specPath), { recursive: true })
-  await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`)
-}
-
-function deletePersistedLinkSessionSpec(specPath: string): void {
-  rmSync(specPath, { force: true })
-}
-
-function isStoredLinkSessionReusable(
-  spec: PersistedLinkSessionSpec,
-  options: {
-    environment: ScreenCIEnvironment
-    resolvedConfigPath?: string
-    envFilePath: string
-  }
-): boolean {
-  return (
-    spec.environment === options.environment &&
-    spec.envFilePath === options.envFilePath &&
-    spec.resolvedConfigPath === options.resolvedConfigPath &&
-    spec.expiresAt > new Date().toISOString()
-  )
-}
-
-async function createLinkSessionSpec(options: {
-  apiUrl: string
-  appUrl: string
-  environment: ScreenCIEnvironment
-  resolvedConfigPath?: string
-  envFilePath: string
-}): Promise<PersistedLinkSessionSpec> {
-  const response = await fetch(`${options.apiUrl}/cli-link/session`, {
-    method: 'POST',
-  })
-
-  if (!response.ok) {
-    const text = await response.text()
-    throw new Error(`Failed to create link session: ${response.status} ${text}`)
-  }
-
-  const body = (await response.json()) as {
-    token: string
-    createdAt: string
-    expiresAt: string
-  }
-
-  return {
-    token: body.token,
-    appUrl: `${options.appUrl}/cli-auth?session=${encodeURIComponent(body.token)}`,
-    pollUrl: `${options.apiUrl}/cli-link/session?token=${encodeURIComponent(body.token)}`,
-    createdAt: body.createdAt,
-    expiresAt: body.expiresAt,
-    environment: options.environment,
-    ...(options.resolvedConfigPath
-      ? { resolvedConfigPath: options.resolvedConfigPath }
-      : {}),
-    envFilePath: options.envFilePath,
-  }
-}
-
 async function pollLinkSessionOnce(
   spec: PersistedLinkSessionSpec
 ): Promise<{ status: LinkSessionStatus; secret?: string }> {
@@ -2366,10 +2218,20 @@ async function pollLinkSessionOnce(
   return { status }
 }
 
+function getPollAuthTimeoutMs(): number {
+  const raw = process.env.SCREENCI_POLL_AUTH_TIMEOUT_MS
+  if (raw === undefined) return SCREENCI_LINK_SESSION_POLL_FLAG_TIMEOUT_MS
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed >= 0
+    ? parsed
+    : SCREENCI_LINK_SESSION_POLL_FLAG_TIMEOUT_MS
+}
+
 async function pollLinkSession(
   spec: PersistedLinkSessionSpec,
-  pollIntervalMs: number = SCREENCI_LINK_SESSION_POLL_INTERVAL_MS
-): Promise<{ status: LinkSessionStatus; secret?: string }> {
+  pollIntervalMs: number = SCREENCI_LINK_SESSION_POLL_INTERVAL_MS,
+  deadlineEpochMs?: number
+): Promise<{ status: LinkSessionStatus | 'timed-out'; secret?: string }> {
   for (;;) {
     const result = await pollLinkSessionOnce(spec)
 
@@ -2383,6 +2245,12 @@ async function pollLinkSession(
       result.status === 'invalid'
     ) {
       return result
+    }
+
+    // Stop before sleeping again once the optional deadline has passed so
+    // `--poll-auth` cannot block forever waiting for a human to sign in.
+    if (deadlineEpochMs !== undefined && Date.now() >= deadlineEpochMs) {
+      return { status: 'timed-out' }
     }
 
     await new Promise((resolveDelay) =>
@@ -2475,18 +2343,31 @@ export async function ensureScreenciSecret(
         // a slow cadence until the human finishes signing in, and continue
         // recording automatically once the secret lands. We re-print the link
         // on every (re)created session so the latest valid link is always
-        // visible, including after a stale session is recreated.
+        // visible, including after a stale session is recreated. We do not wait
+        // forever: after a default timeout we stop polling and exit cleanly so
+        // an agent or CI step does not hang. The link stays valid for a rerun.
+        const timeoutMs = getPollAuthTimeoutMs()
+        const timeoutMinutes = Math.round(timeoutMs / 60_000)
+        const deadlineEpochMs = Date.now() + timeoutMs
         for (;;) {
           logger.info(
             `Sign-in required to record. Open this link to sign in:\n${pc.cyan(spec.appUrl)}\n` +
-              `Waiting for sign-in (checking every 5 seconds). Recording continues automatically once you finish.`
+              `Waiting for sign-in (checking every 5 seconds, up to ${timeoutMinutes} minutes). Recording continues automatically once you finish.`
           )
           const polled = await pollLinkSession(
             spec,
-            SCREENCI_LINK_SESSION_POLL_FLAG_INTERVAL_MS
+            SCREENCI_LINK_SESSION_POLL_FLAG_INTERVAL_MS,
+            deadlineEpochMs
           )
           if (polled.status === 'completed' && polled.secret) {
             return await saveCompletedSecret(polled.secret)
+          }
+          if (polled.status === 'timed-out' || Date.now() >= deadlineEpochMs) {
+            logger.info(
+              `Timed out after ${timeoutMinutes} minutes waiting for sign-in. The link is still valid:\n${pc.cyan(spec.appUrl)}\n` +
+                `After signing in, rerun ${pc.cyan(getSuggestedScreenciCommand('record'))} to continue, or ${pc.cyan(getSuggestedScreenciCommand('record', '--poll-auth'))} to wait again.`
+            )
+            return undefined
           }
           deletePersistedLinkSessionSpec(specPath)
           spec = await ensureSpec()
@@ -2546,7 +2427,7 @@ export async function main() {
     .option('-v, --verbose', 'verbose output')
     .option(
       '--poll-auth',
-      'wait for sign-in to complete (polling every 5s) instead of exiting, then continue recording'
+      'wait for sign-in to complete (polling every 5s, up to 5 minutes) instead of exiting, then continue recording'
     )
     .allowUnknownOption(true)
     .action(async () => {
@@ -2700,7 +2581,7 @@ export async function main() {
               } else if (notice.studio.appliedChanges.length > 0) {
                 logger.info('')
                 logger.info(
-                  `Selections were overridden in Studio for "${notice.videoName}": ${formatStudioChangeSummary(notice.studio.appliedChanges)}`
+                  `Studio overrides applied for "${notice.videoName}": ${formatStudioChangeSummary(notice.studio.appliedChanges)}`
                 )
               }
             }

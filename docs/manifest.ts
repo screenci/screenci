@@ -105,10 +105,10 @@ export const docsManifest = [
     slug: 'docs/guides/assets-and-overlays',
     section: 'Guides',
     order: 4,
-    navLabel: 'Assets and overlays',
-    title: 'Assets and Overlays',
+    navLabel: 'Overlays',
+    title: 'Overlays',
     description:
-      'Add intro clips, corner logos, transition assets, and timed overlays to ScreenCI recordings.',
+      'Add intro clips, corner logos, transitions, and timed overlays to ScreenCI recordings from files, HTML, or React.',
     prev: 'docs/guides/camera-and-zooming',
     next: 'docs/guides/studio',
   },
@@ -120,7 +120,7 @@ export const docsManifest = [
     navLabel: 'Studio',
     title: 'Studio',
     description:
-      'Remix render options, narration text, voices, and assets from the web app, or manage them entirely in Studio with createStudioNarration and createStudioAssets. Business tier.',
+      'Remix render options, narration text, voices, and overlays from the web app, or manage them entirely in Studio with createStudioNarration and createStudioOverlays. Business tier.',
     prev: 'docs/guides/assets-and-overlays',
     next: 'docs/guides/public-urls-and-embeds',
   },

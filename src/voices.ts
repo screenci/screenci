@@ -26,22 +26,39 @@ export type ModelType = (typeof modelTypes)[keyof typeof modelTypes]
  *
  * ```ts
  * createNarration({
- *   en: { voice: voices.Aria, intro: 'Hello' },
- *   fi: { voice: voices.Aria, intro: 'Hei' },
+ *   en: { voice: { name: voices.Aria }, intro: 'Hello' },
+ *   fi: { voice: { name: voices.Aria }, intro: 'Hei' },
  * })
  * ```
  *
- * ElevenLabs voices are passed explicitly by provider voice id:
+ * ElevenLabs voices are passed by provider voice id, or cloned from a local
+ * audio/video sample — both via `voices.elevenlabs(...)`:
  *
  * ```ts
  * createNarration({
  *   en: {
- *     voice: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }),
+ *     voice: { name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }) },
  *     intro: 'Hello',
+ *   },
+ *   fi: {
+ *     voice: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
+ *     intro: 'Hei',
  *   },
  * })
  * ```
  */
+// Resolves an ElevenLabs voice reference: either an existing voice id from your
+// account, or a local audio/video sample to clone via Instant Voice Cloning.
+function elevenlabsVoice(ref: { voiceId: string }): ElevenLabsVoiceKey
+function elevenlabsVoice(ref: { path: string }): CustomVoiceRef
+function elevenlabsVoice(
+  ref: { voiceId: string } | { path: string }
+): ElevenLabsVoiceKey | CustomVoiceRef {
+  return 'path' in ref
+    ? { path: ref.path }
+    : (`elevenlabs:${ref.voiceId}` as ElevenLabsVoiceKey)
+}
+
 // DOCS_SYNC:
 // Keep the "Available voices" section in docs/narration-and-localization.md
 // in sync with this list and the voice character blurbs below.
@@ -136,8 +153,7 @@ export const voices = {
   /** Female — Upbeat — Positive and motivating, encouraging continued interaction. */
   Zoe: 'Zoe',
 
-  elevenlabs: ({ voiceId }: { voiceId: string }) =>
-    `elevenlabs:${voiceId}` as ElevenLabsVoiceKey,
+  elevenlabs: elevenlabsVoice,
 } as const
 
 export type ModelVoiceKey = keyof Omit<typeof voices, 'elevenlabs'>
@@ -239,12 +255,16 @@ export type Lang = SupportedBaseLanguageCode
 
 /**
  * A reference to a local audio or video file for ElevenLabs Instant Voice Cloning.
- * Pass as the `voice` in `createNarration` to clone a voice from the file at `path`.
+ * Build one with `voices.elevenlabs({ path })` and pass it as the voice `name`
+ * in `createNarration` to clone a voice from the file at `path`.
  *
  * @example
  * ```ts
  * createNarration({
- *   en: { voice: { path: './my-voice.mp3' }, intro: 'Hello.' },
+ *   en: {
+ *     voice: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
+ *     intro: 'Hello.',
+ *   },
  * })
  * ```
  */

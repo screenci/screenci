@@ -38,15 +38,13 @@ export { speed } from './src/speed.js'
 export { time } from './src/time.js'
 export { autoZoom } from './src/autoZoom.js'
 export { zoomTo, resetZoom } from './src/manualZoom.js'
-export { createAssets, createStudioAssets } from './src/asset.js'
+export { createOverlays, createStudioOverlays } from './src/asset.js'
 export type {
-  AssetController,
-  AssetConfig,
-  Assets,
-  SvgPath,
-  PngPath,
-  Mp4Path,
-  ImageAssetConfig,
-  VideoAssetConfig,
+  OverlayController,
+  OverlayConfig,
+  OverlayInput,
+  Overlays,
+  ReactElementLike,
+  OverlayPlacement,
 } from './src/asset.js'
 export type { ZoomTarget, ZoomTargetPoint } from './src/manualZoom.js'

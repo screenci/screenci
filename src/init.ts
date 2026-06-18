@@ -9,10 +9,22 @@ import { input } from '@inquirer/prompts'
 import ora from 'ora'
 import pc from 'picocolors'
 import { logger } from './logger.js'
+import {
+  createLinkSessionSpec,
+  getCliLinkSessionApiUrl,
+  getDevFrontendUrl,
+  getLinkSessionFilePath,
+  getScreenCIEnvironment,
+  writePersistedLinkSessionSpec,
+} from './linkSession.js'
 
 const PLAYWRIGHT_TEST_VERSION = '^1.59.0'
 const PLAYWRIGHT_CLI_VERSION = 'latest'
 const NODE_TYPES_VERSION = '^25.9.1'
+const REACT_VERSION = '^19.0.0'
+const REACT_DOM_VERSION = '^19.0.0'
+const REACT_TYPES_VERSION = '^19.0.0'
+const REACT_DOM_TYPES_VERSION = '^19.0.0'
 export type PackageManager = 'npm' | 'pnpm' | 'yarn'
 
 export type InitOptions = {
@@ -583,7 +595,7 @@ function generateIslandPackageJson(projectName: string): string {
   )
 }
 
-function generateIslandTsconfig(): string {
+export function generateIslandTsconfig(withReact = false): string {
   // Minimal config so an editor type-checks the island as its own project
   // instead of inheriting a surrounding repo's tsconfig or the legacy TS
   // defaults. `module`/`moduleResolution` let TypeScript read screenci's ESM
@@ -592,6 +604,11 @@ function generateIslandTsconfig(): string {
   // (which reads `process.env.CI`) without depending on whether the editor's TS
   // server auto-discovers @types/node, which is unreliable under pnpm's isolated
   // node_modules layout.
+  //
+  // `jsx: 'react-jsx'` is added only when React overlays are scaffolded so the
+  // `.video.tsx` example type-checks with the automatic JSX runtime. It is the
+  // one piece of React setup a published package cannot do for the user, so the
+  // scaffold owns it.
   return (
     JSON.stringify(
       {
@@ -599,6 +616,7 @@ function generateIslandTsconfig(): string {
           module: 'ESNext',
           moduleResolution: 'bundler',
           target: 'ESNext',
+          ...(withReact && { jsx: 'react-jsx' }),
           types: ['node'],
         },
       },
@@ -980,6 +998,7 @@ async function installInitDependencies(
   verbose: boolean,
   screenciDependency: string,
   includePlaywrightCli: boolean,
+  includeReact: boolean,
   commands: ReturnType<typeof getPackageManagerCommand>
 ): Promise<void> {
   // Packages that share identical install flags are installed in a single
@@ -991,6 +1010,17 @@ async function installInitDependencies(
     `@types/node@${NODE_TYPES_VERSION}`,
     ...(includePlaywrightCli
       ? [`@playwright/cli@${PLAYWRIGHT_CLI_VERSION}`]
+      : []),
+    // React element overlays render via react/react-dom, which are optional
+    // peer deps imported lazily by createOverlays. Install them (and their
+    // types) so the .tsx example resolves and records out of the box.
+    ...(includeReact
+      ? [
+          `react@${REACT_VERSION}`,
+          `react-dom@${REACT_DOM_VERSION}`,
+          `@types/react@${REACT_TYPES_VERSION}`,
+          `@types/react-dom@${REACT_DOM_TYPES_VERSION}`,
+        ]
       : []),
   ]
 
@@ -1029,10 +1059,55 @@ async function installInitDependencies(
   }
 }
 
+/**
+ * Pre-creates a CLI sign-in link during init and persists it into the new
+ * project's `.screenci/link-session.json`, so the user can sign in while their
+ * first video is being authored and a later `screenci record` reuses the same
+ * link (it just polls and continues once sign-in completes).
+ *
+ * Best-effort: a network failure here must never fail `init`. If a secret is
+ * already configured there is nothing to sign in for, so we skip silently.
+ *
+ * Returns the sign-in URL when one was created, otherwise null.
+ */
+export async function createInitLinkSession(
+  islandDir: string,
+  options: { env?: NodeJS.ProcessEnv } = {}
+): Promise<string | null> {
+  const env = options.env ?? process.env
+  if (env.SCREENCI_SECRET) return null
+
+  try {
+    // The generated config sets `envFile: '.env'`, so the env file and config
+    // paths here match what `screenci record` resolves later. Keeping them in
+    // sync lets record treat the persisted session as reusable.
+    const resolvedConfigPath = resolve(islandDir, 'screenci.config.ts')
+    const envFilePath = resolve(islandDir, '.env')
+    const spec = await createLinkSessionSpec({
+      apiUrl: getCliLinkSessionApiUrl(),
+      appUrl: getDevFrontendUrl(),
+      environment: getScreenCIEnvironment(),
+      resolvedConfigPath,
+      envFilePath,
+    })
+    await writePersistedLinkSessionSpec(getLinkSessionFilePath(islandDir), spec)
+    return spec.appUrl
+  } catch (err) {
+    logger.warn(
+      `Could not pre-create a sign-in link (you can still sign in when you run record): ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    )
+    return null
+  }
+}
+
 function printInitNextSteps(
   projectDir: string,
   islandDirName: string,
-  packageManager: PackageManager
+  packageManager: PackageManager,
+  withReact: boolean,
+  signInUrl: string | null
 ): void {
   const resolvedProjectDir = realpathSync(projectDir)
   const commands = getPackageManagerCommand(packageManager)
@@ -1063,12 +1138,27 @@ function printInitNextSteps(
   logger.info(
     `  - ./${islandDirName}/videos/example.video.ts - Example video script`
   )
+  if (withReact) {
+    logger.info(
+      `  - ./${islandDirName}/videos/example-react.video.tsx - React overlay example`
+    )
+  }
   logger.info(
     `  - ./${islandDirName}/screenci.config.ts - ScreenCI configuration`
   )
   logger.info(
     `  - ./${islandDirName}/README.md - Project commands and docs link`
   )
+  if (signInUrl) {
+    logger.info('')
+    logger.info(
+      'Sign in now (the link stays valid for 24 hours) so recording can finish later without waiting:'
+    )
+    logger.info(`    ${pc.cyan(signInUrl)}`)
+    logger.info(
+      'You can keep building your video while this is open. Sign-in must be done before the final recording; running record will reuse this link.'
+    )
+  }
   logger.info('')
   logger.info(
     `Visit ${pc.cyan('https://screenci.com/docs')} for more information.`
@@ -1170,6 +1260,50 @@ video('How to find docs', async ({ page }) => {
 `
 }
 
+export function generateReactExampleVideo(): string {
+  return `import { createOverlays, hide, video } from 'screenci'
+
+// A code-defined overlay: any React element renderable to static markup works.
+function Badge({ label }: { label: string }) {
+  return (
+    <div
+      style={{
+        font: '600 22px ui-sans-serif, system-ui, sans-serif',
+        color: '#fff',
+        background: 'linear-gradient(135deg, #6366f1, #ec4899)',
+        padding: '12px 20px',
+        borderRadius: '999px',
+        boxShadow: '0 16px 40px rgba(99, 102, 241, 0.45)',
+      }}
+    >
+      {label}
+    </div>
+  )
+}
+
+const overlays = createOverlays({
+  // Pass a React element straight in. It is rasterized to a transparent PNG at
+  // recording time, then placed like any other overlay (placement is flat and
+  // defaults to the full screen; override any field).
+  badge: { element: <Badge label="New" />, x: 0.7, y: 0.1, width: 0.18 },
+})
+
+video('React overlay', async ({ page }) => {
+  // Run setup without showing these actions in the final recording.
+  await hide(async () => {
+    await page.goto('https://screenci.com/')
+    await page.waitForLoadState('networkidle')
+  })
+
+  // Drive the overlay with start()/end() so it stays on screen while the page
+  // keeps running underneath. Pass a number instead for a blocking overlay.
+  await overlays.badge.start()
+  await page.waitForTimeout(2500)
+  await overlays.badge.end()
+})
+`
+}
+
 function getInitProjectRoot(): string {
   return process.env['SCREENCI_INIT_CWD'] ?? process.cwd()
 }
@@ -1215,6 +1349,13 @@ async function promptYesNo(
 
 async function promptInitGithubActionWorkflow(): Promise<boolean> {
   return promptYesNo('Add a GitHub Actions workflow? (Y/n)', true)
+}
+
+async function promptInitReactOverlays(): Promise<boolean> {
+  return promptYesNo(
+    'Add React overlay support (installs react/react-dom, enables JSX, adds a .tsx example)? (Y/n)',
+    true
+  )
 }
 
 async function promptInitPlaywrightBrowsersForPackageManager(
@@ -1311,6 +1452,7 @@ export async function runInit(
   const shouldAddGithubActionWorkflow = yes
     ? true
     : await promptInitGithubActionWorkflow()
+  const shouldAddReactOverlays = yes ? true : await promptInitReactOverlays()
   const shouldInstallPlaywrightBrowsers = yes
     ? true
     : await promptInitPlaywrightBrowsersForPackageManager(packageManager)
@@ -1392,7 +1534,7 @@ export async function runInit(
     )
     await writeFile(
       resolve(islandDir, 'tsconfig.json'),
-      generateIslandTsconfig()
+      generateIslandTsconfig(shouldAddReactOverlays)
     )
     await writeFile(
       resolve(islandDir, 'README.md'),
@@ -1403,6 +1545,12 @@ export async function runInit(
       resolve(islandDir, 'videos', 'example.video.ts'),
       generateExampleVideo()
     )
+    if (shouldAddReactOverlays) {
+      await writeFile(
+        resolve(islandDir, 'videos', 'example-react.video.tsx'),
+        generateReactExampleVideo()
+      )
+    }
 
     if (packageManager === 'pnpm') {
       // Resolve (and gate on) the pnpm version before writing the workspace
@@ -1456,6 +1604,7 @@ export async function runInit(
       verbose,
       screenciDependency,
       shouldInstallPlaywrightCli,
+      shouldAddReactOverlays,
       commands
     )
 
@@ -1500,7 +1649,15 @@ export async function runInit(
     process.off('exit', removePartialIsland)
   }
 
-  printInitNextSteps(islandDir, islandDirName, packageManager)
+  const signInUrl = await createInitLinkSession(islandDir)
+
+  printInitNextSteps(
+    islandDir,
+    islandDirName,
+    packageManager,
+    shouldAddReactOverlays,
+    signInUrl
+  )
 }
 
 function handleCreateCommanderError(err: unknown): void {

@@ -579,6 +579,63 @@ describe('CLI', () => {
       timeoutSpy.mockRestore()
     })
 
+    it('with --poll-auth, stops polling and exits without recording once the timeout elapses', async () => {
+      delete process.env.SCREENCI_SECRET
+      process.env.SCREENCI_NONINTERACTIVE = '1'
+      // A zero timeout makes the deadline elapse on the first pending check, so
+      // the loop stops without waiting in real time.
+      process.env.SCREENCI_POLL_AUTH_TIMEOUT_MS = '0'
+      process.argv = ['node', 'cli.js', 'record', '--poll-auth']
+      mockFetch.mockImplementation(
+        async (input: string | URL, init?: RequestInit) => {
+          const url = String(input)
+          if (url.endsWith('/cli-link/session') && init?.method === 'POST') {
+            return {
+              ok: true,
+              status: 201,
+              json: vi.fn().mockResolvedValue({
+                token: 'session-token-123',
+                createdAt: '2026-06-11T10:00:00.000Z',
+                expiresAt: '2099-06-11T10:15:00.000Z',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          if (url.includes('/cli-link/session?token=session-token-123')) {
+            // Never completes: proves --poll-auth gives up at the timeout.
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({ status: 'pending' }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+      )
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow('process.exit called')
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Timed out')
+      )
+      // A timed-out sign-in is an expected handoff, not a failure, so exit 0.
+      expect(processExitSpy).toHaveBeenCalledWith(0)
+      // Never starts Playwright and never persists a secret when it times out.
+      expect(mockSpawn).not.toHaveBeenCalled()
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        `${process.cwd()}/.env`,
+        expect.stringContaining('SCREENCI_SECRET=')
+      )
+    })
+
     it('loads SCREENCI_SECRET from the project .env when envFile is not configured', async () => {
       delete process.env.SCREENCI_SECRET
       process.argv = ['node', 'cli.js', 'record']
@@ -959,6 +1016,8 @@ describe('CLI', () => {
       const { formatStudioChangeSummary, formatStudioUrl } =
         await import('./cli')
 
+      // Category-level only: names the kinds overridden, not the selections,
+      // deduped and in a stable order (narration, overlays, render options).
       expect(
         formatStudioChangeSummary([
           {
@@ -974,8 +1033,28 @@ describe('CLI', () => {
             language: 'en',
           },
           { kind: 'renderOption', label: 'output.quality' },
+          { kind: 'asset', label: 'asset "logo"' },
         ])
-      ).toBe('recording.size (1 → 0.8), narration "intro" (en), output.quality')
+      ).toBe('narration, overlays, render options')
+
+      expect(
+        formatStudioChangeSummary([
+          {
+            kind: 'narration',
+            label: 'narration "intro"',
+            cue: 'intro',
+            language: 'en',
+          },
+          {
+            kind: 'narration',
+            label: 'narration "outro"',
+            cue: 'outro',
+            language: 'fi',
+          },
+        ])
+      ).toBe('narration')
+
+      expect(formatStudioChangeSummary([])).toBe('')
 
       expect(
         formatStudioUrl('https://app.screenci.test', 'project_1', 'video_2')

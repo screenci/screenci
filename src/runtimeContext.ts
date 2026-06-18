@@ -31,6 +31,12 @@ export type ActiveCueRun = {
   startedWithExplicitStart: boolean
 }
 
+export type ActiveAssetRun = {
+  finished: Promise<void>
+  resolveFinished: () => void
+  startedWithExplicitStart: boolean
+}
+
 export type TimelineBlockType = 'hide' | 'speed' | 'time'
 
 export type TimelineBlockState = {
@@ -47,11 +53,21 @@ export type ScreenCIRuntimeContext = {
   clickRecorder: IEventRecorder
   page: Page | null
   testFilePath: string | null
+  /**
+   * Per-recording output directory (`.screenci/<title>/`) when recording is
+   * active. Generated overlay assets (HTML/React rasterized to PNG) are written
+   * here so they are uploaded alongside the recording. Null when not recording.
+   */
+  recordingDir: string | null
   timelineBlocks: TimelineBlockState[]
   cue: {
     activeCueName: string | null
     activeCueRun: ActiveCueRun | null
     usedCueNames: Set<string>
+  }
+  asset: {
+    activeAssetName: string | null
+    activeAssetRun: ActiveAssetRun | null
   }
   autoZoom: AutoZoomState
 }
@@ -66,6 +82,7 @@ export function createScreenCIRuntimeContext(
     recorder?: IEventRecorder | null
     page?: Page | null
     testFilePath?: string | null
+    recordingDir?: string | null
   } = {}
 ): ScreenCIRuntimeContext {
   const defaultRecorder = overrides.recorder ?? NOOP_EVENT_RECORDER
@@ -77,11 +94,16 @@ export function createScreenCIRuntimeContext(
     clickRecorder: defaultRecorder,
     page: overrides.page ?? null,
     testFilePath: overrides.testFilePath ?? null,
+    recordingDir: overrides.recordingDir ?? null,
     timelineBlocks: [],
     cue: {
       activeCueName: null,
       activeCueRun: null,
       usedCueNames: new Set<string>(),
+    },
+    asset: {
+      activeAssetName: null,
+      activeAssetRun: null,
     },
     autoZoom: {
       insideAutoZoom: false,
@@ -163,11 +185,21 @@ export function getRuntimePage(): Page | null {
   return getScreenCIRuntimeContext().page
 }
 
+export function getRuntimeRecordingDir(): string | null {
+  return getScreenCIRuntimeContext().recordingDir
+}
+
 export function resetCueRuntimeState(): void {
   const context = getScreenCIRuntimeContext()
   context.cue.activeCueName = null
   context.cue.activeCueRun = null
   context.cue.usedCueNames.clear()
+}
+
+export function resetAssetRuntimeState(): void {
+  const context = getScreenCIRuntimeContext()
+  context.asset.activeAssetName = null
+  context.asset.activeAssetRun = null
 }
 
 export function pushRuntimeTimelineBlock(block: TimelineBlockState): void {

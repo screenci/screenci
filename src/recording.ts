@@ -37,6 +37,8 @@ export type {
   AutoZoomStartEvent,
   AutoZoomEndEvent,
   AssetStartEvent,
+  AssetEndEvent,
+  OverlayPlacement,
   CueTranslation,
   VideoCueTranslation,
   VideoCueTranslationFile,

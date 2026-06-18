@@ -202,7 +202,7 @@ export type ImageAssetStartEvent = {
   kind: 'image'
   path: string
   fileHash?: string
-  durationMs: number
+  durationMs?: number
   fullScreen: boolean
 }
 
@@ -220,7 +220,7 @@ export type VideoAssetStartEvent = {
 export type AssetStartEvent = ImageAssetStartEvent | VideoAssetStartEvent
 
 /**
- * Asset declared via `createStudioAssets` — the file and display options are
+ * Asset declared via `createStudioOverlays` — the file and display options are
  * configured in Studio, so the recording only marks the timeline point.
  */
 export type StudioAssetStartEvent = {

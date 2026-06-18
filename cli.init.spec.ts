@@ -34,11 +34,21 @@ const mockSpinner = {
 }
 const mockOra = vi.fn().mockReturnValue(mockSpinner)
 
+// React overlay support, scaffolded by default, appends these to the shared
+// dev-dependency install (after the optional playwright-cli entry).
+const REACT_INSTALL_PACKAGES = [
+  'react@^19.0.0',
+  'react-dom@^19.0.0',
+  '@types/react@^19.0.0',
+  '@types/react-dom@^19.0.0',
+]
+
 function expectNpmDevInstalls(
   mockSpawn: ReturnType<typeof vi.fn>,
   cwd: string,
   screenciVersion = '0.0.32',
-  includePlaywrightCli = true
+  includePlaywrightCli = true,
+  includeReact = true
 ) {
   const npmInstallCalls = mockSpawn.mock.calls.filter(
     (call: unknown[]) =>
@@ -63,6 +73,7 @@ function expectNpmDevInstalls(
       `@playwright/test@^1.59.0`,
       '@types/node@^25.9.1',
       ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
+      ...(includeReact ? REACT_INSTALL_PACKAGES : []),
     ],
     ['install', '--save-dev', `screenci@${screenciVersion}`],
   ]
@@ -82,7 +93,8 @@ function expectPnpmDevInstalls(
   mockSpawn: ReturnType<typeof vi.fn>,
   cwd: string,
   screenciVersion = '0.0.32',
-  includePlaywrightCli = true
+  includePlaywrightCli = true,
+  includeReact = true
 ) {
   const pnpmInstallCalls = mockSpawn.mock.calls.filter(
     (call: unknown[]) =>
@@ -105,6 +117,7 @@ function expectPnpmDevInstalls(
       `@playwright/test@^1.59.0`,
       '@types/node@^25.9.1',
       ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
+      ...(includeReact ? REACT_INSTALL_PACKAGES : []),
     ],
     [
       'add',
@@ -129,7 +142,8 @@ function expectYarnDevInstalls(
   mockSpawn: ReturnType<typeof vi.fn>,
   cwd: string,
   screenciVersion = '0.0.32',
-  includePlaywrightCli = true
+  includePlaywrightCli = true,
+  includeReact = true
 ) {
   const yarnInstallCalls = mockSpawn.mock.calls.filter(
     (call: unknown[]) =>
@@ -152,6 +166,7 @@ function expectYarnDevInstalls(
       `@playwright/test@^1.59.0`,
       '@types/node@^25.9.1',
       ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
+      ...(includeReact ? REACT_INSTALL_PACKAGES : []),
     ],
     ['add', '--dev', `screenci@${screenciVersion}`],
   ]
@@ -631,6 +646,11 @@ describe('CLI', () => {
         }),
         expect.objectContaining({
           message:
+            'Add React overlay support (installs react/react-dom, enables JSX, adds a .tsx example)? (Y/n)',
+          default: 'y',
+        }),
+        expect.objectContaining({
+          message:
             "Install Playwright browsers (can be done manually via 'npx playwright install --only-shell chromium')? (Y/n)",
           default: 'y',
         }),
@@ -869,6 +889,7 @@ describe('CLI', () => {
           '@playwright/test@^1.59.0',
           '@types/node@^25.9.1',
           '@playwright/cli@latest',
+          ...REACT_INSTALL_PACKAGES,
         ],
         expect.objectContaining({
           cwd: '/workspace/my-project/screenci',
@@ -1016,6 +1037,7 @@ describe('CLI', () => {
           '@playwright/test@^1.59.0',
           '@types/node@^25.9.1',
           '@playwright/cli@latest',
+          ...REACT_INSTALL_PACKAGES,
         ],
         expect.objectContaining({
           cwd: '/workspace/my-project/screenci',
@@ -1069,12 +1091,14 @@ describe('CLI', () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockReturnValue(false)
+      // Project name comes from argv, so it is not prompted.
       mockInput
-        .mockResolvedValueOnce('')
-        .mockResolvedValueOnce('')
-        .mockResolvedValueOnce('')
-        .mockResolvedValueOnce('n')
-        .mockResolvedValueOnce('y')
+        .mockResolvedValueOnce('') // github workflow
+        .mockResolvedValueOnce('') // react overlays
+        .mockResolvedValueOnce('') // playwright browsers
+        .mockResolvedValueOnce('') // playwright OS deps
+        .mockResolvedValueOnce('n') // screenci skill
+        .mockResolvedValueOnce('y') // playwright-cli skill
 
       const { main } = await import('./cli')
       await main()
@@ -1105,6 +1129,7 @@ describe('CLI', () => {
           '@playwright/test@^1.59.0',
           '@types/node@^25.9.1',
           '@playwright/cli@latest',
+          ...REACT_INSTALL_PACKAGES,
         ],
         expect.objectContaining({
           cwd: '/workspace/my-project/screenci',
@@ -1162,12 +1187,14 @@ describe('CLI', () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockReturnValue(false)
+      // Project name comes from argv, so it is not prompted.
       mockInput
-        .mockResolvedValueOnce('')
-        .mockResolvedValueOnce('')
-        .mockResolvedValueOnce('y')
-        .mockResolvedValueOnce('')
-        .mockResolvedValueOnce('')
+        .mockResolvedValueOnce('') // github workflow
+        .mockResolvedValueOnce('') // react overlays
+        .mockResolvedValueOnce('') // playwright browsers
+        .mockResolvedValueOnce('y') // playwright OS deps
+        .mockResolvedValueOnce('') // screenci skill
+        .mockResolvedValueOnce('') // playwright-cli skill
 
       const { main } = await import('./cli')
       await main()
@@ -1862,7 +1889,7 @@ describe('CLI', () => {
             call[0] === 'cmd.exe' &&
             Array.isArray(call[1]) &&
             (call[1] as string[])[3] ===
-              '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest""'
+              '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0""'
         )
         expect(installCall).toEqual([
           'cmd.exe',
@@ -1870,7 +1897,7 @@ describe('CLI', () => {
             '/d',
             '/s',
             '/c',
-            '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest""',
+            '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0""',
           ],
           expect.objectContaining({
             cwd: '/workspace/create-app/screenci',
@@ -1972,7 +1999,7 @@ describe('CLI', () => {
         "Running 'npm exec --yes --package=skills -- skills add screenci/screenci --skill screenci --skill playwright-cli -y'..."
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        "Running 'npm install --save-dev @playwright/test@^1.59.0 @types/node@^25.9.1 @playwright/cli@latest'..."
+        "Running 'npm install --save-dev @playwright/test@^1.59.0 @types/node@^25.9.1 @playwright/cli@latest react@^19.0.0 react-dom@^19.0.0 @types/react@^19.0.0 @types/react-dom@^19.0.0'..."
       )
     })
   })

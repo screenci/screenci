@@ -9,9 +9,9 @@ There are two ways to use it:
 - **Remix an existing video.** Any video recorded with `createNarration` can
   be remixed in Studio. Your code-specified values are prefilled. Override
   them and render a new version server-side.
-- **Opt in from code.** Declare cue keys with `createStudioNarration`, asset
-  keys with `createStudioAssets`, and set
-  `renderOptions: STUDIO_RENDER_OPTIONS` so narration, assets, and render
+- **Opt in from code.** Declare cue keys with `createStudioNarration`, overlay
+  keys with `createStudioOverlays`, and set
+  `renderOptions: STUDIO_RENDER_OPTIONS` so narration, overlays, and render
   options are managed entirely on the Studio page.
 
 #### You will learn
@@ -20,15 +20,22 @@ There are two ways to use it:
 - [how to reapply or auto-apply a remix](#reapply-and-auto-apply)
 - [how to manage narration from Studio](#studio-narration-from-code)
 - [how to use uploaded media as narration](#narration-media-from-studio)
-- [how to manage assets from Studio](#studio-assets-from-code)
+- [how to manage overlays from Studio](#studio-overlays-from-code)
 - [how to defer render options to Studio](#studio-render-options)
 
 ## Remix a video
 
-Open a video in the web app and choose **Open in Studio**. Studio shows the
-current narration text, voices, and render options from the latest upload.
-Change what you need and choose **Save & render**. A new version is rendered
-from the same recording, with your overrides applied.
+Open a video in the web app and choose **Open in Studio**. Studio starts from
+the code-specified narration, voices, and render options and lets you **add
+modifications** on top: only the changes you make are kept, so a saved override
+always means "this was set in Studio, not in code". Studio-declared items
+(`createStudioNarration`, `createStudioOverlays`, `STUDIO_RENDER_OPTIONS`) are
+shown as required fields you must fill in before the first render.
+
+Choose **Save & render** to store your changes in the override set and render a
+new version from the same recording. Choose **Render once** to render with your
+current edits without saving them: the override set is left untouched, which is
+handy for trying a one-off tweak.
 
 Rendering is per language: next to the render button you can toggle which
 languages to render, so a one-language fix doesn't re-render every localized
@@ -48,9 +55,14 @@ a newer upload is one click.
 
 If you want every new upload to get the same treatment, enable
 **Auto-apply to new uploads** in Studio. When auto-apply is active, the CLI
-prints which selections were overridden in Studio as part of the upload
-output, so it is always visible in CI logs that the rendered video differs
-from what the code specifies.
+prints which kinds of selections were overridden in Studio (narration,
+overlays, render options) as part of the upload output, so it is always visible
+in CI logs that the rendered video differs from what the code specifies. The
+exact values are not printed, only the categories:
+
+```
+Studio overrides applied for "Checkout walkthrough": narration, render options
+```
 
 ## Studio narration from code
 
@@ -100,34 +112,41 @@ This works per language, so one language can use an uploaded recording while
 the others keep text-to-speech. Entries whose media file is specified in code
 stay read-only in Studio.
 
-## Studio assets from code
+### Media subtitles
 
-`createStudioAssets` declares asset keys in code while the files and display
+A media narration entry can carry an optional subtitle. When you leave it
+blank, captions are generated automatically from the speech in the uploaded
+file. When you provide one, that text is used instead. Either way, captions are
+timed from the detected speech, so they appear only while the line is actually
+spoken (not during any leading silence or music).
+
+## Studio overlays from code
+
+`createStudioOverlays` declares overlay keys in code while the files and display
 options are configured in Studio:
 
 ```ts
-import { createStudioAssets, video } from 'screenci'
+import { createStudioOverlays, video } from 'screenci'
 
-const assets = createStudioAssets('intro', 'logo')
+const overlays = createStudioOverlays('intro', 'logo')
 
 video('Product demo', async ({ page }) => {
-  await assets.intro()
+  await overlays.intro()
   await page.goto('/dashboard')
-  await assets.logo()
+  await overlays.logo()
 })
 ```
 
 Calling a controller marks the point in the timeline, exactly like
-`createAssets` controllers. The file (`.svg`, `.png`, or `.mp4`), full-screen
+`createOverlays` controllers. The file (`.svg`, `.png`, or `.mp4`), full-screen
 mode, overlay duration for images, and audio level for videos are all set on
-the Studio page. TypeScript knows the declared keys, so `assets.typo` is a
+the Studio page. TypeScript knows the declared keys, so `overlays.typo` is a
 compile error.
 
-Like studio narration, the first upload of a video using `createStudioAssets`
-is held until every declared asset has a file configured in Studio. The CLI
+Like studio narration, the first upload of a video using `createStudioOverlays`
+is held until every declared overlay has a file configured in Studio. The CLI
 prints a direct link. Later uploads reuse the saved configuration. See
-[Assets & overlays](./assets-and-overlays.md) for how assets behave on the
-timeline.
+[Overlays](./assets-and-overlays.md) for how overlays behave on the timeline.
 
 ## Studio render options
 

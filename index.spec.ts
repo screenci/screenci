@@ -9,10 +9,10 @@ describe('public api surface', () => {
     expect(Object.keys(screenci).sort()).toEqual([
       'STUDIO_RENDER_OPTIONS',
       'autoZoom',
-      'createAssets',
       'createNarration',
-      'createStudioAssets',
+      'createOverlays',
       'createStudioNarration',
+      'createStudioOverlays',
       'defineConfig',
       'hide',
       'isStudioRenderOptions',
@@ -42,6 +42,7 @@ describe('public api surface', () => {
 
   it('only exports the supported init helpers from the init entrypoint', () => {
     expect(Object.keys(initModule).sort()).toEqual([
+      'createInitLinkSession',
       'detectPackageManagerFromLockfile',
       'detectPackageManagerFromPackageJson',
       'detectPnpmWorkspace',
@@ -49,6 +50,8 @@ describe('public api surface', () => {
       'generateConfig',
       'generateExampleVideo',
       'generateIslandReadme',
+      'generateIslandTsconfig',
+      'generateReactExampleVideo',
       'parsePackageManager',
       'parsePnpmVersionSupport',
       'parseYarnVersionSupport',

@@ -357,6 +357,75 @@ per cue, so unchanged cues are reused and only changed narration is synthesized
 again. Smaller cues keep the timeline easier to control and further reduce API
 cost when you revise only part of the script.
 
+### Clone a voice from an audio sample
+
+Instead of a `voiceId` from your account, you can clone a voice from a local
+audio or video sample using ElevenLabs Instant Voice Cloning. This also requires
+the Business tier and your own `ELEVENLABS_API_KEY` (see the setup above).
+
+Use the same `voices.elevenlabs(...)` helper, but pass `{ path }` instead of
+`{ voiceId }`:
+
+```ts
+import { createNarration, video, voices } from 'screenci'
+
+const narration = createNarration({
+  en: {
+    voice: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
+    intro: 'Welcome to the dashboard.',
+    details: 'Open settings to review billing details.',
+  },
+})
+
+video('Billing walkthrough', async ({ page }) => {
+  await narration.intro()
+
+  await narration.details.start()
+  await page.goto('/settings')
+  await narration.details.end()
+})
+```
+
+The `path` is resolved relative to your video script. The sample can be an
+`.mp3` audio file or an `.mp4` video file. ScreenCI uploads the sample and
+creates the cloned voice once, then reuses it: the clone is keyed by the sample
+and language, so the same file does not get re-cloned on later runs.
+
+A cloned voice is an ElevenLabs voice, so it accepts the same
+`eleven_multilingual_v2` controls as `voices.elevenlabs(...)`, and can be set
+per language or at the top level:
+
+```ts
+const narration = createNarration({
+  voice: {
+    name: voices.elevenlabs({ path: './my-voice.mp3' }),
+    stability: 0.45,
+    similarityBoost: 0.8,
+    speed: 0.95,
+  },
+  en: {
+    intro: 'Welcome to the dashboard.',
+  },
+  fi: {
+    // A different sample (or a built-in voice) for another language.
+    voice: { name: voices.elevenlabs({ path: './my-voice-fi.mp3' }) },
+    intro: 'Tervetuloa hallintapaneeliin.',
+  },
+})
+```
+
+Only clone voices you have the right to use. Use samples of your own voice, or
+voices you are licensed to reproduce, in line with the ElevenLabs
+[voice cloning terms](https://elevenlabs.io/docs/product-guides/voices/voice-cloning).
+
+> **Note:** Your ElevenLabs account has a limit on how many custom voices it can
+> hold (the cap depends on your plan). When that limit is reached, cloning a new
+> voice fails and the render fails with it. If a render fails for this reason,
+> open the [Voices page](https://elevenlabs.io/app/voice-lab) in your ElevenLabs
+> account, delete custom voices you no longer need to free up slots, then re-run
+> the render. ScreenCI names cloned voices `ScreenCI:<language>:<file>` (for
+> example `ScreenCI:en:my-voice.mp3`), so they are easy to spot in the list.
+
 ## Manage narration from Studio
 
 On the Business tier you can manage narration from the web app instead of

@@ -1,11 +1,15 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  createInitLinkSession,
   generateConfig,
   generateExampleVideo,
   generateIslandReadme,
+  generateIslandTsconfig,
+  generateReactExampleVideo,
   parsePnpmVersionSupport,
   toIslandPackageName,
 } from './init.js'
@@ -15,6 +19,85 @@ describe('generateConfig', () => {
     expect(generateConfig('My Demo')).toContain(
       "encoder: process.env.CI ? 'fast' : 'sharp',"
     )
+  })
+})
+
+describe('createInitLinkSession', () => {
+  const originalFetch = global.fetch
+  let islandDir: string
+
+  beforeEach(() => {
+    islandDir = mkdtempSync(path.join(tmpdir(), 'screenci-init-link-'))
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+    rmSync(islandDir, { recursive: true, force: true })
+    vi.restoreAllMocks()
+  })
+
+  it('creates and persists a sign-in session, returning the sign-in URL', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        token: 'init-token-123',
+        createdAt: '2026-06-18T10:00:00.000Z',
+        expiresAt: '2026-06-19T10:00:00.000Z',
+      }),
+      text: async () => '',
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const url = await createInitLinkSession(islandDir, { env: {} })
+
+    expect(url).toContain('/cli-auth?session=init-token-123')
+
+    const specPath = path.join(islandDir, '.screenci', 'link-session.json')
+    expect(existsSync(specPath)).toBe(true)
+    const spec = JSON.parse(readFileSync(specPath, 'utf-8')) as {
+      token: string
+      resolvedConfigPath: string
+      envFilePath: string
+    }
+    expect(spec.token).toBe('init-token-123')
+    // Paths must match what `record` resolves later so the session is reusable.
+    expect(spec.resolvedConfigPath).toBe(
+      path.resolve(islandDir, 'screenci.config.ts')
+    )
+    expect(spec.envFilePath).toBe(path.resolve(islandDir, '.env'))
+  })
+
+  it('skips session creation when a secret is already configured', async () => {
+    const fetchMock = vi.fn()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const url = await createInitLinkSession(islandDir, {
+      env: { SCREENCI_SECRET: 'already-set' },
+    })
+
+    expect(url).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(
+      existsSync(path.join(islandDir, '.screenci', 'link-session.json'))
+    ).toBe(false)
+  })
+
+  it('is best-effort: returns null without throwing when session creation fails', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+      text: async () => 'boom',
+    })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const url = await createInitLinkSession(islandDir, { env: {} })
+
+    expect(url).toBeNull()
+    expect(
+      existsSync(path.join(islandDir, '.screenci', 'link-session.json'))
+    ).toBe(false)
   })
 })
 
@@ -42,6 +125,40 @@ describe('generateExampleVideo', () => {
       .toContain(`voice: { name: voices.Sophie },
 
   en: {`)
+  })
+})
+
+describe('generateIslandTsconfig', () => {
+  it('omits the jsx setting by default', () => {
+    const tsconfig = JSON.parse(generateIslandTsconfig()) as {
+      compilerOptions: Record<string, unknown>
+    }
+    expect(tsconfig.compilerOptions.jsx).toBeUndefined()
+  })
+
+  it('enables the automatic JSX runtime when React overlays are scaffolded', () => {
+    const tsconfig = JSON.parse(generateIslandTsconfig(true)) as {
+      compilerOptions: Record<string, unknown>
+    }
+    expect(tsconfig.compilerOptions.jsx).toBe('react-jsx')
+  })
+})
+
+describe('generateReactExampleVideo', () => {
+  it('uses createOverlays from the main entry point', () => {
+    expect(generateReactExampleVideo()).toContain(
+      "import { createOverlays, hide, video } from 'screenci'"
+    )
+  })
+
+  it('does not import the removed screenci/react entry', () => {
+    expect(generateReactExampleVideo()).not.toContain('screenci/react')
+  })
+
+  it('passes a JSX element straight into the overlay config', () => {
+    expect(generateReactExampleVideo()).toContain(
+      'element: <Badge label="New" />'
+    )
   })
 })
 

@@ -266,8 +266,37 @@ export type VideoCueStartEvent = {
 }
 
 /**
+ * Placement of a visual asset overlay. Coordinates are normalized 0-1 fractions
+ * of a reference box, with the asset anchored at its top-left corner.
+ *
+ * - `fullScreen` fills the entire output frame.
+ * - The positioned variants place the asset against the full output frame
+ *   (`relativeTo: 'screen'`) or the composited recording area
+ *   (`relativeTo: 'recording'`). Provide exactly one of `width` or `height`;
+ *   the other dimension is derived from the asset's intrinsic aspect ratio.
+ */
+export type OverlayPlacement =
+  | { fullScreen: true }
+  | {
+      relativeTo: 'screen' | 'recording'
+      x: number
+      y: number
+      width: number
+    }
+  | {
+      relativeTo: 'screen' | 'recording'
+      x: number
+      y: number
+      height: number
+    }
+
+/**
  * Asset format policy is recorded explicitly so renderers never need to infer
  * timing or audio rules from file extensions after the recording phase.
+ *
+ * `durationMs` is present for blocking overlays (the asset holds a frozen frame
+ * for that long). It is omitted when the overlay is driven by `start()`/`end()`,
+ * in which case a paired `assetEnd` event defines the visible window.
  */
 export type ImageAssetStartEvent = {
   type: 'assetStart'
@@ -276,8 +305,9 @@ export type ImageAssetStartEvent = {
   kind: 'image'
   path: string
   fileHash?: string
-  durationMs: number
+  durationMs?: number
   fullScreen: boolean
+  placement?: OverlayPlacement
 }
 
 export type VideoAssetStartEvent = {
@@ -289,6 +319,19 @@ export type VideoAssetStartEvent = {
   fileHash?: string
   audio: number
   fullScreen: boolean
+  placement?: OverlayPlacement
+}
+
+/**
+ * End marker for an asset overlay driven by `start()`/`end()`. The asset is
+ * visible from its `assetStart` until this event (a live overlay over the
+ * recording, no frozen frame). `reason` mirrors cue ends: `'wait'` for an
+ * explicit `end()`, `'auto'` when a new asset start auto-ended this one.
+ */
+export type AssetEndEvent = {
+  type: 'assetEnd'
+  timeMs: number
+  reason?: 'auto' | 'wait'
 }
 
 export type AssetStartEvent = ImageAssetStartEvent | VideoAssetStartEvent
@@ -297,7 +340,7 @@ export type AssetStartPayload =
   | Omit<VideoAssetStartEvent, 'type' | 'timeMs' | 'name'>
 
 /**
- * Asset declared via `createStudioAssets` — the file and display options are
+ * Asset declared via `createStudioOverlays` — the file and display options are
  * configured in Studio, so the recording only marks the timeline point.
  */
 export type StudioAssetStartEvent = {
@@ -362,6 +405,7 @@ export type RecordingEvent =
   | CueEndEvent
   | VideoCueStartEvent
   | AssetStartEvent
+  | AssetEndEvent
   | StudioAssetStartEvent
   | HideStartEvent
   | HideEndEvent
@@ -404,7 +448,7 @@ export type RecordingMetadata = {
    * Which parts of this recording opted into Studio configuration.
    * `renderOptions` is set when `STUDIO_RENDER_OPTIONS` was used; `narration`
    * when the recording contains `createStudioNarration` cues; `assets` when it
-   * contains `createStudioAssets` assets.
+   * contains `createStudioOverlays` assets.
    */
   studio?: {
     renderOptions?: boolean
@@ -479,6 +523,8 @@ export interface IEventRecorder {
     translations?: Record<string, VideoCueTranslation>
   ): void
   addAssetStart(name: string, asset: AssetStartPayload): void
+  /** Records the end of a `start()`/`end()`-driven asset overlay. */
+  addAssetEnd(reason?: 'auto' | 'wait'): void
   /** Records a studio-mode asset start — the file and options are configured in Studio. */
   addStudioAssetStart(name: string): void
   addHideStart(): void
@@ -512,6 +558,7 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addCueEnd(): void {},
   addVideoCueStart(): void {},
   addAssetStart(): void {},
+  addAssetEnd(): void {},
   addStudioAssetStart(): void {},
   addHideStart(): void {},
   addHideEnd(): void {},
@@ -756,8 +803,9 @@ export class EventRecorder implements IEventRecorder {
         kind: 'image',
         path: asset.path,
         ...(asset.fileHash !== undefined && { fileHash: asset.fileHash }),
-        durationMs: asset.durationMs,
+        ...(asset.durationMs !== undefined && { durationMs: asset.durationMs }),
         fullScreen: asset.fullScreen,
+        ...(asset.placement !== undefined && { placement: asset.placement }),
       })
       return
     }
@@ -771,6 +819,17 @@ export class EventRecorder implements IEventRecorder {
       ...(asset.fileHash !== undefined && { fileHash: asset.fileHash }),
       audio: asset.audio,
       fullScreen: asset.fullScreen,
+      ...(asset.placement !== undefined && { placement: asset.placement }),
+    })
+  }
+
+  addAssetEnd(reason?: 'auto' | 'wait'): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'assetEnd',
+      timeMs,
+      ...(reason !== undefined && { reason }),
     })
   }
 

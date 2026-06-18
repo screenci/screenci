@@ -400,6 +400,7 @@ const _videoBase = base.extend<
       recorder,
       page,
       testFilePath: testInfo.file,
+      recordingDir: videoDir,
     })
 
     await setupMouseTracking(page, recorder)

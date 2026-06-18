@@ -1,54 +1,54 @@
-import { describe, it } from 'vitest'
-import { createAssets } from './asset.js'
+import { describe, it, expectTypeOf } from 'vitest'
+import { createElement } from 'react'
+import { createOverlays, type OverlayController } from './asset.js'
 
-describe('createAssets type constraints', () => {
-  it('accepts svg assets with durationMs', () => {
-    createAssets({
-      badge: { path: './badge.svg', durationMs: 1200, fullScreen: false },
+describe('createOverlays type constraints', () => {
+  it('accepts a bare file path string', () => {
+    createOverlays({ logo: './logo.png' })
+  })
+
+  it('accepts a React element value', () => {
+    createOverlays({ badge: createElement('div', null, 'New') })
+  })
+
+  it('accepts a flat config object with a path', () => {
+    createOverlays({
+      logo: {
+        path: './logo.png',
+        durationMs: 1200,
+        x: 0.1,
+        y: 0.1,
+        width: 0.3,
+      },
     })
   })
 
-  it('accepts png assets with durationMs', () => {
-    createAssets({
-      badge: { path: './badge.png', durationMs: 1200, fullScreen: false },
+  it('accepts a flat config object with an element', () => {
+    createOverlays({
+      badge: { element: createElement('span', null, 'hi'), height: 0.2 },
     })
   })
 
-  it('accepts mp4 assets with audio', () => {
-    createAssets({
-      intro: { path: './intro.mp4', audio: 0, fullScreen: true },
+  it('accepts the fullScreen flag', () => {
+    createOverlays({ intro: { path: './intro.mp4', fullScreen: true } })
+  })
+
+  it('maps each key to an OverlayController', () => {
+    const overlays = createOverlays({ logo: './logo.png' })
+    expectTypeOf(overlays.logo).toEqualTypeOf<OverlayController>()
+  })
+
+  it('rejects an invalid relativeTo', () => {
+    createOverlays({
+      // @ts-expect-error relativeTo must be 'screen' or 'recording'
+      logo: { path: './logo.png', relativeTo: 'viewport', width: 0.3 },
     })
   })
 
-  it('accepts mp4 assets without audio', () => {
-    createAssets({
-      intro: { path: './intro.mp4', fullScreen: true },
-    })
-  })
-
-  it('rejects svg assets with audio', () => {
-    createAssets({
-      // @ts-expect-error image assets do not accept audio
-      badge: { path: './badge.svg', audio: 0, fullScreen: false },
-    })
-  })
-
-  it('rejects mp4 assets with durationMs', () => {
-    createAssets({
-      // @ts-expect-error mp4 assets use natural duration
-      intro: { path: './intro.mp4', durationMs: 1200, fullScreen: true },
-    })
-  })
-
-  it('rejects unsupported extensions', () => {
-    createAssets({
-      // @ts-expect-error jpg assets are not supported
-      photo: { path: './photo.jpg', durationMs: 1200, fullScreen: false },
-    })
-
-    createAssets({
-      // @ts-expect-error webp assets are not supported
-      photo: { path: './photo.webp', durationMs: 1200, fullScreen: false },
+  it('rejects a non-numeric placement field', () => {
+    createOverlays({
+      // @ts-expect-error width must be a number
+      logo: { path: './logo.png', width: 'big' },
     })
   })
 })

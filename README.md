@@ -149,7 +149,7 @@ That is also the right place for BYOK-style secrets such as
 | `autoZoom`        | Smooth camera follow for an interaction block             |
 | `zoomTo`          | Manual camera framing for a locator or point              |
 | `resetZoom`       | Returns from manual framing to the full viewport          |
-| `createAssets`    | Inserts timed media overlays into the recording timeline  |
+| `createOverlays`  | Inserts timed media overlays into the recording timeline  |
 | `voices`          | Available voice constants such as `voices.Ava`            |
 | `modelTypes`      | Narration model constants such as `modelTypes.consistent` |
 

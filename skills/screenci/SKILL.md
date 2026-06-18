@@ -119,16 +119,38 @@ await autoZoom(async () => {
 
 ## Command Notes
 
+- `screenci init` (or `npm init screenci`) scaffolds a new project. It can be run at any time, but if the project is already initialized it fails on purpose: it exits with an error like `screenci/ already exists`. That is expected, not a problem to fix. Do not delete the existing project to force a re-init. Continue working with the project that is already there. On a fresh init it also prints a sign-in link (valid for 24 hours) so the user can sign in early, before any recording.
 - `screenci record` runs the recording flow with local Playwright.
-- When `SCREENCI_SECRET` is missing and the session is **interactive** (a terminal), `screenci record` prints a one-time auth link, waits for browser sign-in, saves the secret into the configured `envFile` or project `.env`, and then continues.
-- When the session is **non-interactive** (no terminal — e.g. run from an automated tool, a pipe, or CI; or `SCREENCI_NONINTERACTIVE=1`), `screenci record` does not wait. It prints the sign-in link and exits. Surface that link to whoever can sign in and choose a plan; once they finish, rerun `screenci record` and it detects the completed session, saves the secret, and continues.
+- `screenci test <playwright args...>` forwards most Playwright test arguments unchanged, while still using `screenci.config.ts`.
+
+### Sign in early (do this first)
+
+Signing in does not block writing or testing the video, only the final recording. So get it started up front, in parallel with your work:
+
+1. Find the sign-in link. A fresh `screenci init` prints one (valid for 24 hours). If you did not just init (the project already exists), run `npx screenci record` once to print the link, or `cat screenci/.screenci/link-session.json` if a session is already cached.
+2. Surface that link to the user verbatim and ask them to open it, sign in, and choose a plan while you build and test the video. Tell them it just needs to be done before the final recording.
+3. Build and test the video as normal (`npx screenci test`) while they sign in.
+4. For the final recording, run `npx screenci record --poll-auth`: if they already signed in it records immediately; otherwise it polls and records automatically once they finish. There is no harm in attempting it before they are done: if it has not happened yet, it just reprints the link (and times out cleanly after a few minutes). Re-prompt the user to sign in and run it again.
+
+### Signing in, and why a clean exit may not mean a recording happened
+
+`screenci record` needs a `SCREENCI_SECRET`. If one is not set, it does not record yet. Instead it bootstraps sign-in:
+
+- When the session is **interactive** (a terminal), `screenci record` prints a one-time auth link, waits for browser sign-in, saves the secret into the configured `envFile` or project `.env`, and then continues recording automatically.
+- When the session is **non-interactive** (no terminal, for example run from an automated agent, a pipe, or CI; or `SCREENCI_NONINTERACTIVE=1`), `screenci record` does **not** wait. It prints the sign-in link and exits cleanly with exit code 0 **without recording**. A clean exit here is a handoff, not a finished recording. Whenever the output contains a sign-in link, treat the run as "needs sign-in," not "done," even though the exit code is 0.
+
+How to handle the non-interactive case (this is the common case for agents):
+
+1. Surface the printed sign-in link to the user verbatim and ask them to open it, sign in, and choose a plan.
+2. After the user confirms they have signed in, rerun `npx screenci record`. It detects the completed session, saves the secret, and continues recording. The same link can be retried as many times as needed until it completes or expires.
+3. Alternatively, run `npx screenci record --poll-auth` to print the link once and keep polling (every 5 seconds, for up to 5 minutes by default) until sign-in completes, then continue recording automatically in the same run. Use this when you can leave the command running while the user signs in. If the timeout elapses before sign-in, it exits cleanly with the link still valid, so rerun it (or plain `record`) to continue.
+
 - To skip sign-in entirely, set `SCREENCI_SECRET` ahead of time (env var or project `.env`).
 - Pending auth state is cached in `.screenci/link-session.json`, so rerunning `record` reuses the same link until it expires or completes.
-- `screenci test <playwright args...>` forwards most Playwright test arguments unchanged, while still using `screenci.config.ts`.
 
 ## Recording Workflow
 
-1. Start from the existing initialized ScreenCI package.
+1. Start from the existing initialized ScreenCI package. Early on, surface the sign-in link to the user (printed by `screenci init`, or by running `npx screenci record` once, or from `screenci/.screenci/link-session.json`) and ask them to sign in while you build the video. The link is valid for 24 hours and only needs to be used before the final recording.
 2. Add or edit `.video.ts` files in `videos/`.
    Remove `videos/example.video.ts` if you are creating new videos and do not need the starter video.
    For narration, define `const narration = createNarration({ ... })` near the top of the file and trigger lines with `await narration.someKey()` when the full line should finish before moving on. Use `await narration.someKey.start()` only when narration should overlap with the next action, and `await narration.someKey.end()` only to close that same active cue later. This is especially important before visible navigation or page changes. Use inline tags like `[pronounce: ...]` and `[short pause]` inside cue text when needed, especially for URLs and domains such as `screenci.com [pronounce: screen see eye dot com]`.
@@ -150,7 +172,7 @@ await autoZoom(async () => {
    ```
 
 3. Run `npx screenci test` until it passes.
-4. Run `npx screenci record`. If `SCREENCI_SECRET` is missing: in an interactive terminal, finish the one-time browser sign-in and let the CLI resume automatically; in a non-interactive session, `record` prints the sign-in link and exits, so surface that link to whoever can sign in and choose a plan, then rerun `npx screenci record` to continue.
+4. For the final recording, run `npx screenci record --poll-auth`. If the user already signed in (via the link from step 1) it records immediately; otherwise it polls and continues automatically once they finish, then times out cleanly after a few minutes with the link still valid. A clean exit that printed a sign-in link (exit code 0) does not mean a recording was made: if that happens, re-prompt the user to sign in and run the command again. The link can be retried until it completes.
 5. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` for each recorded video.
 
 ## Specific Tasks

@@ -72,6 +72,12 @@ Interactive defaults create the GitHub Actions workflow, install
 dependencies, install Chromium, skip OS dependency installation, install the
 ScreenCI skill, and install optional `playwright-cli` support.
 
+On a fresh init (when `SCREENCI_SECRET` is not already set) the command also
+prints a sign-in link, valid for 24 hours, and caches it in
+`screenci/.screenci/link-session.json`. Sign in early using that link so the
+final recording does not have to wait: a later `screenci record` reuses the same
+session.
+
 Use this command in [Manual Setup & First Video](/docs/installation).
 
 ## `screenci test [playwrightArgs...]`
@@ -227,7 +233,7 @@ Behavior:
 - writes local output into `.screenci/`
 - when `SCREENCI_SECRET` is missing in an interactive terminal, prints a blue one-time link and waits for browser sign-in before starting Playwright
 - when `SCREENCI_SECRET` is missing in a non-interactive session (no terminal, or `SCREENCI_NONINTERACTIVE=1`), does not wait: prints the sign-in link and exits cleanly (exit code `0`, not a failure), so you can sign in in the browser, then rerun `record`, which detects the completed session and continues
-- pass `--poll-auth` in a non-interactive session to wait for sign-in instead of exiting: `record` prints the link, polls every 5 seconds, and continues recording automatically once sign-in completes
+- pass `--poll-auth` in a non-interactive session to wait for sign-in instead of exiting: `record` prints the link, polls every 5 seconds (for up to 5 minutes by default, overridable with `SCREENCI_POLL_AUTH_TIMEOUT_MS` in milliseconds), and continues recording automatically once sign-in completes; if the timeout elapses first it exits cleanly with the link still valid so it can be rerun
 - set `SCREENCI_SECRET` ahead of time (env var or project `.env`) to skip sign-in entirely (the zero-prompt path for CI and automated tooling)
 - caches the pending auth session in `.screenci/link-session.json`, so rerunning `record` reuses the same link until it expires or completes
 - uploads successful recordings when `SCREENCI_SECRET` is available
@@ -238,7 +244,7 @@ Relevant options:
 
 - `-c, --config <path>`
 - `-v, --verbose`
-- `--poll-auth` (non-interactive sessions: wait for sign-in, polling every 5s, then continue)
+- `--poll-auth` (non-interactive sessions: wait for sign-in, polling every 5s for up to 5 minutes by default, then continue)
 
 Important restriction:
 

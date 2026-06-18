@@ -877,6 +877,52 @@ describe('createOverlays', () => {
         })
       ).toThrow('only applies to animated overlays')
     })
+
+    it('passes css and capturePadding to the animated rasterizer', async () => {
+      let captured: { css?: string; capturePadding?: number } | undefined
+      setAnimatedHtmlRasterizer(async (request) => {
+        captured = {
+          css: request.css,
+          capturePadding: request.capturePadding,
+        }
+        return { buffer: Buffer.from('mp4'), width: 320, height: 80 }
+      })
+      const overlays = createOverlays({
+        intro: {
+          element: createElement('div', null, 'hi'),
+          animate: true,
+          durationMs: 1000,
+          css: '.card{color:red}',
+          capturePadding: 80,
+        },
+      })
+
+      await run(() => overlays.intro())
+
+      expect(captured?.css).toBe('.card{color:red}')
+      expect(captured?.capturePadding).toBe(80)
+    })
+
+    it('rejects css/capturePadding on a non-HTML file overlay', () => {
+      expect(() =>
+        createOverlays({
+          logo: { path: './logo.png', css: '.a{}', durationMs: 1000 },
+        })
+      ).toThrow('only supported for HTML files and React elements')
+    })
+
+    it('rejects a negative capturePadding', () => {
+      expect(() =>
+        createOverlays({
+          intro: {
+            element: createElement('div', null, 'hi'),
+            animate: true,
+            durationMs: 1000,
+            capturePadding: -5,
+          },
+        })
+      ).toThrow('capturePadding')
+    })
   })
 
   describe('with the default no-op recorder', () => {

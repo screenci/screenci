@@ -27,6 +27,15 @@ const narration = createNarration({
 })
 
 video('Studio web editing', async ({ page }) => {
+  // Studio lives behind auth, so this recording only works with a logged-in
+  // session (SCREENCI_APP_STORAGE_STATE, see screenci.config.ts). When it is not
+  // configured (e.g. CI without the session secret), skip instead of timing out
+  // on the login page.
+  video.skip(
+    !process.env.SCREENCI_APP_STORAGE_STATE,
+    'Requires SCREENCI_APP_STORAGE_STATE (a logged-in app session).'
+  )
+
   // Navigate from the dashboard into Studio without showing it in the recording.
   await hide(async () => {
     await page.goto('https://app.screenci.com/')

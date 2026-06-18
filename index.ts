@@ -38,7 +38,11 @@ export { speed } from './src/speed.js'
 export { time } from './src/time.js'
 export { autoZoom } from './src/autoZoom.js'
 export { zoomTo, resetZoom } from './src/manualZoom.js'
-export { createOverlays, createStudioOverlays } from './src/asset.js'
+export {
+  createOverlays,
+  createStudioOverlays,
+  setOverlayCss,
+} from './src/asset.js'
 export type {
   OverlayController,
   OverlayConfig,

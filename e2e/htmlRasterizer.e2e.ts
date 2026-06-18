@@ -104,3 +104,49 @@ test('rasterizes an animated overlay to a two-stream transparent clip', async ({
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('applies injected css so overlays can be styled with className', async ({
+  page,
+}) => {
+  const dir = await mkdtemp(join(tmpdir(), 'screenci-css-e2e-'))
+  try {
+    const result = await runWithScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ page, recordingDir: dir }),
+      () =>
+        rasterizeHtmlOverlay({
+          name: 'card',
+          html: '<div class="box"></div>',
+          css: '.box{width:120px;height:60px;background:#f00}',
+        })
+    )
+
+    // Without injected CSS the bare <div> would collapse; the className sizes it.
+    expect(result.width).toBe(120)
+    expect(result.height).toBe(60)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('capturePadding grows the captured box around the content', async ({
+  page,
+}) => {
+  const dir = await mkdtemp(join(tmpdir(), 'screenci-pad-e2e-'))
+  try {
+    const result = await runWithScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ page, recordingDir: dir }),
+      () =>
+        rasterizeHtmlOverlay({
+          name: 'padded',
+          html: '<div style="width:200px;height:80px;background:#0a0"></div>',
+          capturePadding: 40,
+        })
+    )
+
+    // 40px of transparent padding on every side: 200+80 x 80+80.
+    expect(result.width).toBe(280)
+    expect(result.height).toBe(160)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

@@ -104,8 +104,8 @@ How the animation is triggered and how long it runs:
 - **Trigger.** The animation starts from its first frame at the moment the
   overlay appears. Capture is deterministic (a virtual clock is advanced one
   frame at a time), so playback matches exactly what you author. Animate with
-  `transform`/`opacity` and keep the element's box size stable; the overlay is
-  captured at its initial layout box.
+  `transform`/`opacity`; the overlay is captured at its initial layout box, so
+  use `capturePadding` (below) to give the motion room.
 - **Length.** You set the length explicitly: pass it to the blocking call
   (`await overlays.intro(2000)`) or set `durationMs` in the config. When you
   drive an animated overlay with `start()`/`end()`, `durationMs` is required in
@@ -116,6 +116,60 @@ How the animation is triggered and how long it runs:
 
 Capturing many frames is heavier than a single screenshot, so prefer short
 durations for full-screen animations.
+
+### Styling with className (and Tailwind)
+
+By default an HTML/React overlay only sees a tiny CSS reset, so utility classes
+do nothing. Inject a stylesheet with the `css` option (per overlay) or
+`setOverlayCss` (once, for all overlays) and then style with `className`. Pass
+your **compiled** CSS, for example Tailwind's build output:
+
+```tsx
+import { createOverlays, setOverlayCss } from 'screenci'
+import { readFileSync } from 'node:fs'
+
+// Compile once (e.g. `npx @tailwindcss/cli -i in.css -o overlay.css`) and inject:
+setOverlayCss(readFileSync('./assets/overlay.css', 'utf-8'))
+
+const overlays = createOverlays({
+  badge: {
+    element: (
+      <div className="rounded-2xl bg-sky-500 px-6 py-4 text-white">New</div>
+    ),
+    durationMs: 1500,
+  },
+  // Or scope CSS to a single overlay:
+  hint: { path: 'callout.html', css: '.callout{color:#fff}', durationMs: 1500 },
+})
+```
+
+Per-overlay `css` is merged after the global `setOverlayCss`. CSS injection
+works for both static and animated HTML/React overlays. (The Tailwind Play CDN
+is not supported: it relies on runtime JS that the deterministic capture clock
+does not drive.)
+
+### Giving animations room: `capturePadding`
+
+Overlays are captured at their initial layout box, so an animation that
+translates, scales, or rotates beyond that box would be clipped. Set
+`capturePadding` (CSS px) to add transparent padding around the content so the
+motion stays inside the captured frame, instead of building a manual "stage"
+wrapper:
+
+```tsx
+const overlays = createOverlays({
+  intro: {
+    element: <Intro />, // slides/rotates in
+    animate: true,
+    durationMs: 1500,
+    capturePadding: 80, // room on every side for the motion
+    width: 0.4, // placement sizes the padded box, so make it a bit wider
+  },
+})
+```
+
+The placement sizes the _padded_ box, so widen it to keep the content the size
+you want. `capturePadding` applies to static and animated HTML/React overlays.
 
 ## Positioning
 

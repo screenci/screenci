@@ -7,6 +7,8 @@ import {
   rasterizeHtmlOverlay,
   rasterizeAnimatedHtmlOverlay,
 } from './htmlRasterizer.js'
+
+export { setOverlayCss } from './htmlRasterizer.js'
 import { isInsideHide, isInsideTime } from './timelineBlock.js'
 import {
   getScreenCIRuntimeContext,
@@ -72,6 +74,19 @@ export type OverlayConfig = {
   animate?: boolean
   /** Animation capture frame rate. Only valid with `animate`. Defaults to `30`. */
   fps?: number
+  /**
+   * Extra CSS injected into the overlay document so it can be styled with
+   * `className` (for example a compiled Tailwind stylesheet). Merged on top of
+   * any global CSS set via `setOverlayCss`. HTML files and React elements only.
+   */
+  css?: string
+  /**
+   * Transparent padding (CSS px) added around the overlay content. Lets an
+   * animation move, scale, or rotate beyond its box without being clipped (an
+   * automatic "stage"), at the cost of the placement sizing the padded box.
+   * HTML files and React elements only.
+   */
+  capturePadding?: number
   /** Soundtrack volume 0..1 for `.mp4` overlays. Defaults to `1`. */
   audio?: number
 }
@@ -285,6 +300,20 @@ function buildOverlayFromConfig(
       )
     }
   }
+  if (
+    config.capturePadding !== undefined &&
+    (!Number.isFinite(config.capturePadding) || config.capturePadding < 0)
+  ) {
+    throw new Error(
+      `[screenci] Overlay "${name}" must provide a finite "capturePadding" greater than or equal to 0. Received: ${String(config.capturePadding)}`
+    )
+  }
+  const renderOpts: OverlayRenderOpts = {
+    ...(config.css !== undefined && { css: config.css }),
+    ...(config.capturePadding !== undefined && {
+      capturePadding: config.capturePadding,
+    }),
+  }
 
   // React element: rendered to markup lazily at recording time.
   if (hasElement) {
@@ -298,7 +327,8 @@ function buildOverlayFromConfig(
         placement,
         fullScreen,
         config.fps,
-        config.durationMs
+        config.durationMs,
+        renderOpts
       )
     }
     return createRenderedOverlayController(
@@ -306,7 +336,8 @@ function buildOverlayFromConfig(
       getMarkup,
       placement,
       fullScreen,
-      config.durationMs
+      config.durationMs,
+      renderOpts
     )
   }
 
@@ -316,6 +347,14 @@ function buildOverlayFromConfig(
   if (animate && extension !== '.html') {
     throw new Error(
       `[screenci] Overlay "${name}" (${path}) cannot animate: "animate" is only supported for HTML files and React elements.`
+    )
+  }
+  if (
+    (config.css !== undefined || config.capturePadding !== undefined) &&
+    extension !== '.html'
+  ) {
+    throw new Error(
+      `[screenci] Overlay "${name}" (${path}) cannot use "css" or "capturePadding": they are only supported for HTML files and React elements.`
     )
   }
 
@@ -330,7 +369,8 @@ function buildOverlayFromConfig(
         placement,
         fullScreen,
         config.fps,
-        config.durationMs
+        config.durationMs,
+        renderOpts
       )
     }
     return createRenderedOverlayController(
@@ -338,7 +378,8 @@ function buildOverlayFromConfig(
       getMarkup,
       placement,
       fullScreen,
-      config.durationMs
+      config.durationMs,
+      renderOpts
     )
   }
 
@@ -677,6 +718,12 @@ function createFileOverlayController(
   )
 }
 
+/** Styling/capture options shared by rendered (HTML/React) overlay controllers. */
+type OverlayRenderOpts = {
+  css?: string
+  capturePadding?: number
+}
+
 /**
  * An overlay rendered to a transparent PNG at recording time, from either an
  * HTML file or a React element. `getMarkup` produces the HTML to rasterize.
@@ -686,7 +733,8 @@ function createRenderedOverlayController(
   getMarkup: () => Promise<string>,
   placement: OverlayPlacement,
   fullScreen: boolean,
-  durationMs?: number
+  durationMs?: number,
+  renderOpts: OverlayRenderOpts = {}
 ): OverlayController {
   let generated: { path: string; fileHash: string } | undefined
   let skipped = false
@@ -703,7 +751,14 @@ function createRenderedOverlayController(
         return
       }
       const html = await getMarkup()
-      const result = await rasterizeHtmlOverlay({ name, html })
+      const result = await rasterizeHtmlOverlay({
+        name,
+        html,
+        ...(renderOpts.css !== undefined && { css: renderOpts.css }),
+        ...(renderOpts.capturePadding !== undefined && {
+          capturePadding: renderOpts.capturePadding,
+        }),
+      })
       generated = { path: result.path, fileHash: result.fileHash }
     },
     (recorder, mode) => {
@@ -737,7 +792,8 @@ function createAnimatedOverlayController(
   placement: OverlayPlacement,
   fullScreen: boolean,
   fps: number | undefined,
-  configDurationMs: number | undefined
+  configDurationMs: number | undefined,
+  renderOpts: OverlayRenderOpts = {}
 ): OverlayController {
   let generated:
     | { path: string; fileHash: string; durationMs: number }
@@ -791,6 +847,10 @@ function createAnimatedOverlayController(
           html,
           durationMs,
           ...(fps !== undefined && { fps }),
+          ...(renderOpts.css !== undefined && { css: renderOpts.css }),
+          ...(renderOpts.capturePadding !== undefined && {
+            capturePadding: renderOpts.capturePadding,
+          }),
         })
         generated = {
           path: result.path,

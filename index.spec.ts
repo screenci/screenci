@@ -18,6 +18,7 @@ describe('public api surface', () => {
       'isStudioRenderOptions',
       'modelTypes',
       'resetZoom',
+      'setOverlayCss',
       'speed',
       'time',
       'video',

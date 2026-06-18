@@ -3,7 +3,11 @@ import { access, readFile } from 'fs/promises'
 import { dirname, resolve } from 'path'
 import { logger } from './logger.js'
 import { resolveRecordingTimingDuration } from './runtimeMode.js'
-import { rasterizeHtmlOverlay } from './htmlRasterizer.js'
+import {
+  rasterizeHtmlOverlay,
+  rasterizeAnimatedHtmlOverlay,
+} from './htmlRasterizer.js'
+import { isInsideHide, isInsideTime } from './timelineBlock.js'
 import {
   getScreenCIRuntimeContext,
   getRuntimeAssetRecorder,
@@ -54,8 +58,20 @@ export type OverlayConfig = {
   /**
    * Visible length for the blocking call form (`await overlays.logo(1200)`).
    * Omit when driving with `start()`/`end()`. Image/HTML/React overlays only.
+   *
+   * For animated overlays (`animate: true`) this is also the capture length: it
+   * is required when driving with `start()`/`end()` (the capture length is
+   * otherwise unknown).
    */
   durationMs?: number
+  /**
+   * Capture the overlay as an animation so its CSS/JS animation plays back in
+   * the video (HTML files and React elements only). The animation is sampled
+   * over the resolved duration with a transparent background preserved.
+   */
+  animate?: boolean
+  /** Animation capture frame rate. Only valid with `animate`. Defaults to `30`. */
+  fps?: number
   /** Soundtrack volume 0..1 for `.mp4` overlays. Defaults to `1`. */
   audio?: number
 }
@@ -256,13 +272,38 @@ function buildOverlayFromConfig(
 
   const placement = resolveOverlayPlacement(name, config)
   const fullScreen = config.fullScreen ?? false
+  const animate = config.animate === true
+  if (config.fps !== undefined && !animate) {
+    throw new Error(
+      `[screenci] Overlay "${name}" sets "fps" without "animate: true". "fps" only applies to animated overlays.`
+    )
+  }
+  if (animate && config.fps !== undefined) {
+    if (!Number.isFinite(config.fps) || config.fps <= 0) {
+      throw new Error(
+        `[screenci] Overlay "${name}" must provide a finite "fps" greater than 0. Received: ${String(config.fps)}`
+      )
+    }
+  }
 
   // React element: rendered to markup lazily at recording time.
   if (hasElement) {
     const element = config.element!
+    const getMarkup = (): Promise<string> =>
+      renderElementToMarkup(name, element)
+    if (animate) {
+      return createAnimatedOverlayController(
+        name,
+        getMarkup,
+        placement,
+        fullScreen,
+        config.fps,
+        config.durationMs
+      )
+    }
     return createRenderedOverlayController(
       name,
-      () => renderElementToMarkup(name, element),
+      getMarkup,
       placement,
       fullScreen,
       config.durationMs
@@ -272,12 +313,29 @@ function buildOverlayFromConfig(
   const path = config.path!
   const extension = getAssetExtension(path)
 
-  // HTML file: read + rasterize to a transparent PNG.
+  if (animate && extension !== '.html') {
+    throw new Error(
+      `[screenci] Overlay "${name}" (${path}) cannot animate: "animate" is only supported for HTML files and React elements.`
+    )
+  }
+
+  // HTML file: read + rasterize to a transparent PNG (or an animated clip).
   if (extension === '.html') {
     registeredAssetPaths.add(path)
+    const getMarkup = (): Promise<string> => readHtmlOverlayFile(path)
+    if (animate) {
+      return createAnimatedOverlayController(
+        name,
+        getMarkup,
+        placement,
+        fullScreen,
+        config.fps,
+        config.durationMs
+      )
+    }
     return createRenderedOverlayController(
       name,
-      () => readHtmlOverlayFile(path),
+      getMarkup,
       placement,
       fullScreen,
       config.durationMs
@@ -524,10 +582,17 @@ function endActiveAsset(): void {
 function createAssetControllerCore(
   name: string,
   validate: () => Promise<void>,
-  emitStart: (recorder: IEventRecorder, mode: AssetStartMode) => void
+  emitStart: (recorder: IEventRecorder, mode: AssetStartMode) => void,
+  /**
+   * Optional async step run after {@link validate} and before {@link emitStart},
+   * receiving the resolved start mode. Used by animated overlays to rasterize
+   * the clip once the capture length (mode duration) is known.
+   */
+  prepare?: (mode: AssetStartMode) => Promise<void>
 ): OverlayController {
   const start = async (startedWithExplicitStart = true): Promise<void> => {
     await validate()
+    await prepare?.({ type: 'live' })
     const recorder = getRuntimeAssetRecorder()
     const context = getScreenCIRuntimeContext()
     assetAutoEnd(name)
@@ -553,13 +618,15 @@ function createAssetControllerCore(
   }
 
   const controller = (async (durationMs?: number): Promise<void> => {
-    await validate()
-    assetAutoEnd(name)
-    const recorder = getRuntimeAssetRecorder()
-    emitStart(recorder, {
+    const mode: AssetStartMode = {
       type: 'blocking',
       ...(durationMs !== undefined && { durationMs }),
-    })
+    }
+    await validate()
+    await prepare?.(mode)
+    assetAutoEnd(name)
+    const recorder = getRuntimeAssetRecorder()
+    emitStart(recorder, mode)
   }) as OverlayController
 
   controller.start = () => start(true)
@@ -654,6 +721,101 @@ function createRenderedOverlayController(
           mode
         )
       )
+    }
+  )
+}
+
+/**
+ * An animated overlay rendered to a transparent clip at recording time, from
+ * either an HTML file or a React element. The capture length is resolved from
+ * the call argument or config `durationMs`; `start()`/`end()` requires a config
+ * `durationMs` (the capture length is otherwise unknown).
+ */
+function createAnimatedOverlayController(
+  name: string,
+  getMarkup: () => Promise<string>,
+  placement: OverlayPlacement,
+  fullScreen: boolean,
+  fps: number | undefined,
+  configDurationMs: number | undefined
+): OverlayController {
+  let generated:
+    | { path: string; fileHash: string; durationMs: number }
+    | undefined
+
+  const resolveDurationMs = (mode: AssetStartMode): number => {
+    if (mode.type === 'blocking') {
+      const durationMs = mode.durationMs ?? configDurationMs
+      if (durationMs === undefined) {
+        throw new Error(
+          `[screenci] Animated overlay "${name}" needs a duration: pass one to the call (overlays.${name}(1000)), set durationMs in the config, or drive it with .start()/.end() (with durationMs in the config).`
+        )
+      }
+      validateDurationMs(name, `overlay "${name}"`, durationMs)
+      return durationMs
+    }
+    if (configDurationMs === undefined) {
+      throw new Error(
+        `[screenci] Animated overlay "${name}" driven with .start()/.end() needs durationMs in its config (the capture length is otherwise unknown).`
+      )
+    }
+    validateDurationMs(name, `overlay "${name}"`, configDurationMs)
+    return configDurationMs
+  }
+
+  return createAssetControllerCore(
+    name,
+    () => Promise.resolve(),
+    (recorder, mode) => {
+      if (generated === undefined) return
+      recorder.addAssetStart(name, {
+        kind: 'animation',
+        path: generated.path,
+        fileHash: generated.fileHash,
+        ...(mode.type === 'blocking' && { durationMs: generated.durationMs }),
+        fullScreen,
+        placement,
+      })
+    },
+    async (mode) => {
+      // Outside recording there is nothing to upload, so the controller is a
+      // no-op, mirroring the no-op recorder and the static rendered controller.
+      if (getRuntimePage() === null || getRuntimeRecordingDir() === null) {
+        return
+      }
+      const durationMs = resolveDurationMs(mode)
+      const html = await getMarkup()
+      const rasterize = async (): Promise<void> => {
+        const result = await rasterizeAnimatedHtmlOverlay({
+          name,
+          html,
+          durationMs,
+          ...(fps !== undefined && { fps }),
+        })
+        generated = {
+          path: result.path,
+          fileHash: result.fileHash,
+          durationMs,
+        }
+      }
+      // Capturing the animation (screenshotting each frame + encoding) takes
+      // real wall-clock that would otherwise be baked into the recording as a
+      // long frozen pause before the overlay appears. Cut that time from the
+      // output by wrapping the capture in a hide block. On a cache hit this is
+      // ~instant, so the cut is a negligible sliver. Skip the wrapping when
+      // already inside a hide()/time() block (a hide cannot nest, and the
+      // surrounding block already governs that time).
+      if (isInsideHide() || isInsideTime()) {
+        await rasterize()
+        return
+      }
+      const recorder = getRuntimeAssetRecorder()
+      recorder.addHideStart()
+      try {
+        await rasterize()
+      } finally {
+        recorder.addHideEnd()
+      }
     }
   )
 }

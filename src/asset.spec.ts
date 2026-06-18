@@ -9,7 +9,10 @@ import {
   setActiveAssetRecorder,
   setAssetSleepFn,
 } from './asset.js'
-import { setHtmlRasterizer } from './htmlRasterizer.js'
+import {
+  setAnimatedHtmlRasterizer,
+  setHtmlRasterizer,
+} from './htmlRasterizer.js'
 import type { Page } from '@playwright/test'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
@@ -708,6 +711,171 @@ describe('createOverlays', () => {
       )
 
       expect(recorder.addAssetStart).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('animated overlays', () => {
+    let dir: string
+    const fakePage = {} as unknown as Page
+
+    beforeEach(async () => {
+      dir = await mkdtemp(join(tmpdir(), 'screenci-animated-overlay-'))
+      setAnimatedHtmlRasterizer(async () => ({
+        buffer: Buffer.from('mp4'),
+        width: 320,
+        height: 80,
+      }))
+    })
+
+    afterEach(async () => {
+      await rm(dir, { recursive: true, force: true })
+    })
+
+    const run = (fn: () => Promise<void>) =>
+      runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({
+          recorder,
+          page: fakePage,
+          recordingDir: dir,
+          testFilePath: join(dir, 'demo.video.ts'),
+        }),
+        fn
+      )
+
+    it('records an animation start with the config duration (blocking)', async () => {
+      const overlays = createOverlays({
+        intro: {
+          element: createElement('div', null, 'hi'),
+          animate: true,
+          durationMs: 1500,
+        },
+      })
+
+      await run(() => overlays.intro())
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+        'intro',
+        expect.objectContaining({
+          kind: 'animation',
+          durationMs: 1500,
+          fullScreen: false,
+          placement: SCREEN,
+        })
+      )
+      const payload = vi.mocked(recorder.addAssetStart).mock.calls[0]![1] as {
+        path: string
+        fileHash?: string
+      }
+      expect(payload.path.endsWith('.mp4')).toBe(true)
+      expect(payload.fileHash).toBeDefined()
+    })
+
+    it('uses the blocking call argument as the capture duration', async () => {
+      const overlays = createOverlays({
+        intro: { element: createElement('div', null, 'hi'), animate: true },
+      })
+
+      await run(() => overlays.intro(800))
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+        'intro',
+        expect.objectContaining({ kind: 'animation', durationMs: 800 })
+      )
+    })
+
+    it('cuts the capture time from the recording (wraps capture in a hide)', async () => {
+      const overlays = createOverlays({
+        intro: {
+          element: createElement('div', null, 'hi'),
+          animate: true,
+          durationMs: 1500,
+        },
+      })
+
+      await run(() => overlays.intro())
+
+      // The slow frame capture is bracketed by hideStart/hideEnd so its
+      // wall-clock is cut from the output, and the asset start is recorded
+      // after the capture finishes.
+      expect(recorder.addHideStart).toHaveBeenCalledOnce()
+      expect(recorder.addHideEnd).toHaveBeenCalledOnce()
+      const hideStart = vi.mocked(recorder.addHideStart).mock
+        .invocationCallOrder[0]!
+      const hideEnd = vi.mocked(recorder.addHideEnd).mock
+        .invocationCallOrder[0]!
+      const assetStart = vi.mocked(recorder.addAssetStart).mock
+        .invocationCallOrder[0]!
+      expect(hideStart).toBeLessThan(hideEnd)
+      expect(hideEnd).toBeLessThanOrEqual(assetStart)
+    })
+
+    it('animates an .html file overlay', async () => {
+      await writeFile(join(dir, 'intro.html'), '<div class="fade">hi</div>')
+      const overlays = createOverlays({
+        intro: { path: './intro.html', animate: true, durationMs: 1000 },
+      })
+
+      await run(() => overlays.intro())
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+        'intro',
+        expect.objectContaining({ kind: 'animation', durationMs: 1000 })
+      )
+    })
+
+    it('omits durationMs for a live start()/end()-driven animation', async () => {
+      const overlays = createOverlays({
+        badge: {
+          element: createElement('div', null, 'hi'),
+          animate: true,
+          durationMs: 1000,
+        },
+      })
+
+      await run(() => overlays.badge.start())
+
+      const payload = vi.mocked(recorder.addAssetStart).mock.calls[0]![1] as {
+        kind: string
+        durationMs?: number
+      }
+      expect(payload.kind).toBe('animation')
+      expect(payload.durationMs).toBeUndefined()
+    })
+
+    it('throws when driven with start() and no config duration', async () => {
+      const overlays = createOverlays({
+        badge: { element: createElement('div', null, 'hi'), animate: true },
+      })
+
+      await expect(run(() => overlays.badge.start())).rejects.toThrow(
+        'needs durationMs in its config'
+      )
+    })
+
+    it('throws when called blocking with no duration anywhere', async () => {
+      const overlays = createOverlays({
+        intro: { element: createElement('div', null, 'hi'), animate: true },
+      })
+
+      await expect(run(() => overlays.intro())).rejects.toThrow(
+        'needs a duration'
+      )
+    })
+
+    it('rejects animate on a non-HTML file overlay', () => {
+      expect(() =>
+        createOverlays({
+          logo: { path: './logo.png', animate: true, durationMs: 1000 },
+        })
+      ).toThrow('only supported for HTML files and React elements')
+    })
+
+    it('rejects fps without animate', () => {
+      expect(() =>
+        createOverlays({
+          logo: { path: './logo.png', fps: 30, durationMs: 1000 },
+        })
+      ).toThrow('only applies to animated overlays')
     })
   })
 

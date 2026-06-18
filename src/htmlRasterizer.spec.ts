@@ -5,7 +5,10 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { createHash } from 'crypto'
 import {
+  framesForDuration,
+  rasterizeAnimatedHtmlOverlay,
   rasterizeHtmlOverlay,
+  setAnimatedHtmlRasterizer,
   setHtmlRasterizer,
   setOverlayCacheEnabled,
 } from './htmlRasterizer.js'
@@ -118,5 +121,132 @@ describe('rasterizeHtmlOverlay caching', () => {
     await render('<div>same</div>')
     await render('<div>same</div>')
     expect(calls).toBe(2)
+  })
+})
+
+describe('framesForDuration', () => {
+  it('samples one frame per output frame period', () => {
+    expect(framesForDuration(1000, 30)).toBe(30)
+    expect(framesForDuration(1500, 30)).toBe(45)
+    expect(framesForDuration(1000, 24)).toBe(24)
+    expect(framesForDuration(100, 30)).toBe(3)
+  })
+
+  it('always captures at least one frame', () => {
+    expect(framesForDuration(0, 30)).toBe(1)
+    expect(framesForDuration(5, 30)).toBe(1)
+  })
+
+  it('rejects invalid duration or fps', () => {
+    expect(() => framesForDuration(-1, 30)).toThrow('durationMs')
+    expect(() => framesForDuration(1000, 0)).toThrow('fps')
+    expect(() => framesForDuration(1000, -5)).toThrow('fps')
+  })
+})
+
+describe('rasterizeAnimatedHtmlOverlay', () => {
+  let dir: string
+  const clipBytes = Buffer.from('fake-mp4-bytes')
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'screenci-anim-raster-'))
+    setAnimatedHtmlRasterizer(async () => ({
+      buffer: clipBytes,
+      width: 320,
+      height: 80,
+    }))
+  })
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('writes an .mp4 into the recording dir and returns its path, hash, size, and duration', async () => {
+    const result = await runWithScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ recordingDir: dir }),
+      () =>
+        rasterizeAnimatedHtmlOverlay({
+          name: 'intro',
+          html: '<div>hi</div>',
+          durationMs: 1500,
+        })
+    )
+
+    expect(result.width).toBe(320)
+    expect(result.height).toBe(80)
+    expect(result.durationMs).toBe(1500)
+    expect(result.fileHash).toBe(
+      createHash('sha256').update(clipBytes).digest('hex')
+    )
+    expect(result.path.startsWith(join(dir, 'generated'))).toBe(true)
+    expect(result.path.endsWith('.mp4')).toBe(true)
+    expect(existsSync(result.path)).toBe(true)
+    expect(await readFile(result.path)).toEqual(clipBytes)
+  })
+
+  it('throws when there is no active recording directory', async () => {
+    await expect(
+      runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({ recordingDir: null }),
+        () =>
+          rasterizeAnimatedHtmlOverlay({
+            name: 'intro',
+            html: '<div>hi</div>',
+            durationMs: 1000,
+          })
+      )
+    ).rejects.toThrow('no active recording directory')
+  })
+})
+
+describe('rasterizeAnimatedHtmlOverlay caching', () => {
+  let base: string
+  let recordingDir: string
+  let calls: number
+
+  beforeEach(async () => {
+    base = await mkdtemp(join(tmpdir(), 'screenci-anim-cache-'))
+    recordingDir = join(base, 'recording')
+    calls = 0
+    setAnimatedHtmlRasterizer(async () => {
+      calls += 1
+      return { buffer: Buffer.from(`mp4-${calls}`), width: 100, height: 50 }
+    })
+    setOverlayCacheEnabled(true)
+  })
+
+  afterEach(async () => {
+    setOverlayCacheEnabled(false)
+    await rm(base, { recursive: true, force: true })
+  })
+
+  const render = (html: string, opts?: { fps?: number; durationMs?: number }) =>
+    runWithScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ recordingDir }),
+      () =>
+        rasterizeAnimatedHtmlOverlay({
+          name: 'intro',
+          html,
+          durationMs: opts?.durationMs ?? 1000,
+          ...(opts?.fps !== undefined && { fps: opts.fps }),
+        })
+    )
+
+  it('renders once for the same input and serves later runs from the cache', async () => {
+    const first = await render('<div>same</div>')
+    const second = await render('<div>same</div>')
+
+    expect(calls).toBe(1)
+    expect(second.fileHash).toBe(first.fileHash)
+  })
+
+  it('re-renders when the markup, fps, or duration changes', async () => {
+    await render('<div>a</div>')
+    await render('<div>b</div>')
+    expect(calls).toBe(2)
+    await render('<div>b</div>', { fps: 60 })
+    expect(calls).toBe(3)
+    await render('<div>b</div>', { fps: 60, durationMs: 2000 })
+    expect(calls).toBe(4)
   })
 })

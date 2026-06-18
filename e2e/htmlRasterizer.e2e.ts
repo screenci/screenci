@@ -2,7 +2,12 @@ import { test, expect } from '@playwright/test'
 import { mkdtemp, rm, readFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { rasterizeHtmlOverlay } from '../src/htmlRasterizer.js'
+import { spawnSync } from 'child_process'
+import ffmpegStatic from 'ffmpeg-static'
+import {
+  rasterizeAnimatedHtmlOverlay,
+  rasterizeHtmlOverlay,
+} from '../src/htmlRasterizer.js'
 import {
   createScreenCIRuntimeContext,
   runWithScreenCIRuntimeContext,
@@ -55,6 +60,46 @@ test('does not require a fixed viewport: content larger than the default viewpor
 
     expect(result.width).toBe(640)
     expect(result.height).toBe(120)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('rasterizes an animated overlay to a two-stream transparent clip', async ({
+  page,
+}) => {
+  const dir = await mkdtemp(join(tmpdir(), 'screenci-anim-e2e-'))
+  try {
+    const result = await runWithScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ page, recordingDir: dir }),
+      () =>
+        rasterizeAnimatedHtmlOverlay({
+          name: 'intro',
+          html:
+            '<div style="width:200px;height:80px;background:#f00;' +
+            'animation:fade 1s linear">hi' +
+            '<style>@keyframes fade{from{opacity:0}to{opacity:1}}</style></div>',
+          durationMs: 500,
+          fps: 30,
+        })
+    )
+
+    expect(result.width).toBe(200)
+    expect(result.height).toBe(80)
+    expect(result.durationMs).toBe(500)
+    expect(result.path.endsWith('.mp4')).toBe(true)
+
+    const buffer = await readFile(result.path)
+    expect(buffer.length).toBeGreaterThan(0)
+
+    // The clip must carry two video streams: color + alpha matte.
+    const ffmpegPath = ffmpegStatic as unknown as string
+    const probe = spawnSync(ffmpegPath, ['-hide_banner', '-i', result.path], {
+      encoding: 'utf8',
+    })
+    const info = `${probe.stdout ?? ''}${probe.stderr ?? ''}`
+    const videoStreams = (info.match(/Stream #0:\d+.*Video:/g) ?? []).length
+    expect(videoStreams).toBe(2)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

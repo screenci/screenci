@@ -2,7 +2,7 @@
 
 Overlays let you place additional media on top of the recording timeline. Use them for intros, transitions, corner branding, callouts, or short contextual clips that would be awkward to build inside the browser automation itself.
 
-An overlay can come from a file (`.html`, `.svg`, `.png`, or `.mp4`), a React element, or an inline config object. HTML files and React elements are rendered to a transparent PNG at recording time and then behave exactly like an image overlay.
+An overlay can come from a file (`.html`, `.svg`, `.png`, or `.mp4`), a React element, or an inline config object. HTML files and React elements are rendered to a transparent PNG at recording time and then behave exactly like an image overlay, or, with `animate: true`, are captured as a transparent animated clip (see [Animated overlays](#animated-overlays)).
 
 #### You will learn
 
@@ -70,6 +70,52 @@ const overlays = createOverlays({
   badge: { element: <Badge label="New" />, x: 0.7, y: 0.1, width: 0.15 },
 })
 ```
+
+### Animated overlays
+
+By default an HTML or React overlay is captured as a single still frame. Set
+`animate: true` to play its CSS/JS animation back in the video, with the
+transparent background preserved. Only HTML files and React elements can
+animate.
+
+```tsx
+const overlays = createOverlays({
+  // A React element that fades/slides in via CSS.
+  intro: {
+    element: <Intro />,
+    animate: true,
+    durationMs: 1500,
+    fullScreen: true,
+  },
+  // An animated .html overlay, captured at 60fps.
+  hint: {
+    path: 'assets/callout.html',
+    animate: true,
+    durationMs: 1200,
+    fps: 60,
+  },
+})
+
+await overlays.intro() // plays the 1.5s animation over a frozen frame
+```
+
+How the animation is triggered and how long it runs:
+
+- **Trigger.** The animation starts from its first frame at the moment the
+  overlay appears. Capture is deterministic (a virtual clock is advanced one
+  frame at a time), so playback matches exactly what you author. Animate with
+  `transform`/`opacity` and keep the element's box size stable; the overlay is
+  captured at its initial layout box.
+- **Length.** You set the length explicitly: pass it to the blocking call
+  (`await overlays.intro(2000)`) or set `durationMs` in the config. When you
+  drive an animated overlay with `start()`/`end()`, `durationMs` is required in
+  the config (the capture length is otherwise unknown); if the live window
+  outlasts the clip, its last frame is held.
+- **`fps`** sets the capture frame rate (defaults to `30`) and only applies with
+  `animate: true`.
+
+Capturing many frames is heavier than a single screenshot, so prefer short
+durations for full-screen animations.
 
 ## Positioning
 

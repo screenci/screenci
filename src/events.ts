@@ -323,6 +323,25 @@ export type VideoAssetStartEvent = {
 }
 
 /**
+ * An animated HTML/React overlay captured to a single alpha-preserving video.
+ * It behaves like an {@link ImageAssetStartEvent} on the timeline (a blocking
+ * call holds a frozen frame for `durationMs`; `start()`/`end()` drives a live
+ * window), but the renderer composites it as a video so the animation plays.
+ * It never carries audio.
+ */
+export type AnimationAssetStartEvent = {
+  type: 'assetStart'
+  timeMs: number
+  name: string
+  kind: 'animation'
+  path: string
+  fileHash?: string
+  durationMs?: number
+  fullScreen: boolean
+  placement?: OverlayPlacement
+}
+
+/**
  * End marker for an asset overlay driven by `start()`/`end()`. The asset is
  * visible from its `assetStart` until this event (a live overlay over the
  * recording, no frozen frame). `reason` mirrors cue ends: `'wait'` for an
@@ -334,10 +353,14 @@ export type AssetEndEvent = {
   reason?: 'auto' | 'wait'
 }
 
-export type AssetStartEvent = ImageAssetStartEvent | VideoAssetStartEvent
+export type AssetStartEvent =
+  | ImageAssetStartEvent
+  | VideoAssetStartEvent
+  | AnimationAssetStartEvent
 export type AssetStartPayload =
   | Omit<ImageAssetStartEvent, 'type' | 'timeMs' | 'name'>
   | Omit<VideoAssetStartEvent, 'type' | 'timeMs' | 'name'>
+  | Omit<AnimationAssetStartEvent, 'type' | 'timeMs' | 'name'>
 
 /**
  * Asset declared via `createStudioOverlays` — the file and display options are
@@ -801,6 +824,21 @@ export class EventRecorder implements IEventRecorder {
         timeMs,
         name,
         kind: 'image',
+        path: asset.path,
+        ...(asset.fileHash !== undefined && { fileHash: asset.fileHash }),
+        ...(asset.durationMs !== undefined && { durationMs: asset.durationMs }),
+        fullScreen: asset.fullScreen,
+        ...(asset.placement !== undefined && { placement: asset.placement }),
+      })
+      return
+    }
+
+    if (asset.kind === 'animation') {
+      this.events.push({
+        type: 'assetStart',
+        timeMs,
+        name,
+        kind: 'animation',
         path: asset.path,
         ...(asset.fileHash !== undefined && { fileHash: asset.fileHash }),
         ...(asset.durationMs !== undefined && { durationMs: asset.durationMs }),

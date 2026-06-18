@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from 'vitest'
 import { getDimensions, getViewportCenter } from './dimensions.js'
 import { getMousePosition } from './mouse.js'
 import {
+  applyFirstPassEncoderArgs,
   finalizeDeferredRecordingStops,
+  overrideFirstPassEncoderArgs,
   POST_VIDEO_PAUSE,
   positionMouseAtViewportCenter,
   resolveRecordingFirstPassArgs,
@@ -369,5 +371,121 @@ describe('resolveRecordingFirstPassArgs', () => {
       expect(argValue(args, '-pix_fmt')).toBe('yuv420p')
       expect(argValue(args, '-movflags')).toBe('+faststart')
     }
+  })
+})
+
+/**
+ * Mirrors the first-pass argv the recorder builds: an mjpeg input decoder
+ * (first `-c:v`), the rate/input flags, then the default output encoder (last
+ * `-c:v`). The override must replace only the output-encoder tail.
+ */
+const BUILT_FIRST_PASS_ARGS = [
+  '-loglevel',
+  'error',
+  '-f',
+  'image2pipe',
+  '-c:v',
+  'mjpeg',
+  '-r',
+  '30',
+  '-i',
+  'pipe:0',
+  '-y',
+  '-an',
+  '-fps_mode',
+  'passthrough',
+  '-c:v',
+  'libx264',
+  '-preset',
+  'ultrafast',
+  '-crf',
+  '18',
+  '-pix_fmt',
+  'yuv420p',
+]
+
+describe('overrideFirstPassEncoderArgs', () => {
+  it('replaces everything from the last -c:v onward with the encoder args', () => {
+    const result = overrideFirstPassEncoderArgs(BUILT_FIRST_PASS_ARGS, [
+      '-c:v',
+      'libx264',
+      '-preset',
+      'veryfast',
+    ])
+    expect(result).toEqual([
+      '-loglevel',
+      'error',
+      '-f',
+      'image2pipe',
+      '-c:v',
+      'mjpeg',
+      '-r',
+      '30',
+      '-i',
+      'pipe:0',
+      '-y',
+      '-an',
+      '-fps_mode',
+      'passthrough',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'veryfast',
+    ])
+  })
+
+  it('preserves the mjpeg input decoder (the first -c:v)', () => {
+    const result = overrideFirstPassEncoderArgs(
+      BUILT_FIRST_PASS_ARGS,
+      resolveRecordingFirstPassArgs('sharp')
+    )
+    // Input decoder stays mjpeg; output encoder tail becomes the sharp preset.
+    expect(result.slice(0, 6)).toEqual([
+      '-loglevel',
+      'error',
+      '-f',
+      'image2pipe',
+      '-c:v',
+      'mjpeg',
+    ])
+    expect(argValue(result, '-tune')).toBe('stillimage')
+    expect(result.lastIndexOf('-c:v')).toBeGreaterThan(result.indexOf('-c:v'))
+  })
+
+  it('does not mutate the input array', () => {
+    const input = [...BUILT_FIRST_PASS_ARGS]
+    overrideFirstPassEncoderArgs(input, ['-c:v', 'libx264'])
+    expect(input).toEqual(BUILT_FIRST_PASS_ARGS)
+  })
+
+  it('throws when no output encoder (-c:v) is present', () => {
+    expect(() =>
+      overrideFirstPassEncoderArgs(['-loglevel', 'error'], ['-c:v', 'libx264'])
+    ).toThrow(/no output encoder/)
+  })
+})
+
+describe('applyFirstPassEncoderArgs', () => {
+  it('overrides the recorder config.firstPassArgs in place', () => {
+    const recorder = {
+      config: { firstPassArgs: [...BUILT_FIRST_PASS_ARGS] },
+    }
+    applyFirstPassEncoderArgs(
+      recorder as never,
+      resolveRecordingFirstPassArgs('sharp')
+    )
+    expect(argValue(recorder.config.firstPassArgs, '-preset')).toBe('veryfast')
+    expect(argValue(recorder.config.firstPassArgs, '-tune')).toBe('stillimage')
+    // Input decoder untouched.
+    expect(recorder.config.firstPassArgs).toContain('image2pipe')
+  })
+
+  it('throws if the recorder no longer exposes config.firstPassArgs', () => {
+    expect(() => applyFirstPassEncoderArgs({} as never, ['-c:v'])).toThrow(
+      /did not expose config.firstPassArgs/
+    )
+    expect(() =>
+      applyFirstPassEncoderArgs({ config: {} } as never, ['-c:v'])
+    ).toThrow(/did not expose config.firstPassArgs/)
   })
 })

@@ -146,9 +146,11 @@ export async function positionMouseAtViewportCenter(
  *
  * We keep the recorder's realtime first pass as the final artifact (the second
  * pass is disabled below via `runSecondPass`), so these are the only encoder
- * settings that reach the saved recording. The upstream default is not
- * configurable in playwright-recorder-plus without the local pnpm patch that
- * exposes `firstPassArgs`.
+ * settings that reach the saved recording. playwright-recorder-plus has no
+ * public option for the first-pass encoder, so `applyFirstPassEncoderArgs`
+ * overrides the recorder's internal first-pass args at runtime. Doing it at
+ * runtime (rather than patching the dependency on disk) means it works for
+ * every install: npm, pnpm and yarn, with no postinstall step.
  *
  * - `'sharp'` is tuned for text-heavy UI: `-tune stillimage` and a low `-crf`
  *   preserve sharp glyph edges, while `-preset veryfast` stays above realtime
@@ -201,6 +203,62 @@ export function resolveRecordingFirstPassArgs(
   return FIRST_PASS_ARGS_BY_ENCODER[encoder]
 }
 
+/**
+ * Replace the output-encoder tail of a built first-pass ffmpeg arg list.
+ *
+ * The recorder's first-pass args contain two `-c:v` flags: the first selects
+ * the mjpeg input decoder, the last selects the output encoder. We swap
+ * everything from that last `-c:v` to the end with `encoderArgs` (which start
+ * at their own `-c:v`), leaving the input/rate flags before it untouched.
+ *
+ * Pure and exported for testing. Throws if no output encoder is present, so a
+ * future change to the recorder's internals fails loudly instead of silently
+ * recording with the wrong encoder.
+ */
+export function overrideFirstPassEncoderArgs(
+  currentArgs: readonly string[],
+  encoderArgs: readonly string[]
+): string[] {
+  const encoderStart = currentArgs.lastIndexOf('-c:v')
+  if (encoderStart === -1) {
+    throw new Error(
+      'playwright-recorder-plus first-pass args contained no output encoder (-c:v); ' +
+        'cannot apply the configured capture encoder. The recorder internals may have changed.'
+    )
+  }
+  return [...currentArgs.slice(0, encoderStart), ...encoderArgs]
+}
+
+/** Minimal view of the recorder's internal config that we override in place. */
+type RecorderWithFirstPassConfig = {
+  config?: { firstPassArgs?: unknown }
+}
+
+/**
+ * Override the recorder's first-pass encoder in place, before `start()`.
+ *
+ * `attachRecorder` builds `config.firstPassArgs` eagerly but only spawns the
+ * first-pass ffmpeg process on `start()`, so mutating it here (with
+ * `autoStart: false`) takes effect for the actual recording.
+ */
+export function applyFirstPassEncoderArgs(
+  recorder: Recorder,
+  encoderArgs: readonly string[]
+): void {
+  const config = (recorder as RecorderWithFirstPassConfig).config
+  const current = config?.firstPassArgs
+  if (!config || !Array.isArray(current)) {
+    throw new Error(
+      'playwright-recorder-plus recorder did not expose config.firstPassArgs; ' +
+        'cannot apply the configured capture encoder. The recorder internals may have changed.'
+    )
+  }
+  config.firstPassArgs = overrideFirstPassEncoderArgs(
+    current as string[],
+    encoderArgs
+  )
+}
+
 async function startScreencastRecording(
   page: Page,
   outputPath: string,
@@ -218,8 +276,12 @@ async function startScreencastRecording(
     size: { width, height },
     fps,
     jpegQuality: 100,
-    firstPassArgs: [...resolveRecordingFirstPassArgs(encoder)],
   })
+
+  // Apply the configured capture encoder. The library has no public option for
+  // the first-pass encoder, so we override the recorder's internal first-pass
+  // args in place (before start(), which autoStart: false guarantees).
+  applyFirstPassEncoderArgs(recorder, resolveRecordingFirstPassArgs(encoder))
 
   // Keep the recorder's realtime first-pass mp4 as the final artifact.
   // This disables the library's background second-pass transcode so shared

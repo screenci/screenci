@@ -37,15 +37,16 @@ export type ReactElementLike = {
 
 /**
  * Display options for an overlay. Placement fields are flat (not nested) and
- * each defaults independently: `relativeTo: 'screen'`, `x: 0`, `y: 0`, and
- * `width: 1` when neither `width` nor `height` is given.
+ * each defaults independently: `relativeTo: 'recording'`, `x: 0`, `y: 0`, and
+ * `width: 1` when neither `width` nor `height` is given. The default box fills
+ * the recording area, whose final size is chosen later in the studio.
  */
 export type OverlayConfig = {
   /** File path: `.html` (rendered), `.svg`/`.png` (image), or `.mp4` (video). */
   path?: string
   /** A React element, rendered to a transparent PNG. Mutually exclusive with `path`. */
   element?: ReactElementLike
-  /** Reference box for placement coordinates. Defaults to `'screen'`. */
+  /** Reference box for placement coordinates. Defaults to `'recording'`. */
   relativeTo?: 'screen' | 'recording'
   /** Left edge as a 0..1 fraction of the reference box. Defaults to `0`. */
   x?: number
@@ -220,8 +221,8 @@ export type Overlays<T extends Record<string, OverlayInput>> = {
  * or passed to the blocking call) unless driven with `start()`/`end()`; `.mp4`
  * overlays use their natural duration and default `audio` to `0.5` (natural level).
  *
- * Placement defaults to the full screen (`relativeTo: 'screen', x: 0, y: 0,
- * width: 1`); override any field independently.
+ * Placement defaults to the full recording area (`relativeTo: 'recording',
+ * x: 0, y: 0, width: 1`); override any field independently.
  *
  * @example
  * ```tsx
@@ -958,8 +959,9 @@ function validatePlacement(name: string, placement: OverlayPlacement): void {
 
 /**
  * Resolves an {@link OverlayConfig}'s flat placement fields into the event-shape
- * {@link OverlayPlacement}, applying the defaults `relativeTo: 'screen'`,
- * `x: 0`, `y: 0`, and `width: 1` (when neither width nor height is given).
+ * {@link OverlayPlacement}, applying the defaults `relativeTo: 'recording'`,
+ * `x: 0`, `y: 0`, and `width: 1` (when neither width nor height is given). The
+ * default box therefore fills the recording area.
  */
 function resolveOverlayPlacement(
   name: string,
@@ -973,7 +975,7 @@ function resolveOverlayPlacement(
       `[screenci] Overlay "${name}" must set only one of width or height (the other is derived from the aspect ratio).`
     )
   }
-  const relativeTo = config.relativeTo ?? 'screen'
+  const relativeTo = config.relativeTo ?? 'recording'
   const x = config.x ?? 0
   const y = config.y ?? 0
   const placement: OverlayPlacement =

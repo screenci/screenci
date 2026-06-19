@@ -1284,7 +1284,7 @@ function Badge({ label }: { label: string }) {
 const overlays = createOverlays({
   // Pass a React element straight in. It is rasterized to a transparent PNG at
   // recording time, then placed like any other overlay (placement is flat and
-  // defaults to the full screen; override any field).
+  // defaults to the full recording area; override any field).
   badge: { element: <Badge label="New" />, x: 0.7, y: 0.1, width: 0.18 },
 })
 

@@ -272,8 +272,9 @@ export type VideoCueStartEvent = {
  * - `fullScreen` fills the entire output frame.
  * - The positioned variants place the asset against the full output frame
  *   (`relativeTo: 'screen'`) or the composited recording area
- *   (`relativeTo: 'recording'`). Provide exactly one of `width` or `height`;
- *   the other dimension is derived from the asset's intrinsic aspect ratio.
+ *   (`relativeTo: 'recording'`, the default). Provide exactly one of `width` or
+ *   `height`; the other dimension is derived from the asset's intrinsic aspect
+ *   ratio.
  */
 export type OverlayPlacement =
   | { fullScreen: true }

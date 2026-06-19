@@ -21,8 +21,14 @@ import {
   runWithScreenCIRuntimeContext,
 } from './runtimeContext.js'
 
-// The default placement every overlay resolves to when no fields are given.
-const SCREEN = { relativeTo: 'screen', x: 0, y: 0, width: 1 } as const
+// The default placement every overlay resolves to when no fields are given:
+// the recording area filled edge to edge.
+const DEFAULT_PLACEMENT = {
+  relativeTo: 'recording',
+  x: 0,
+  y: 0,
+  width: 1,
+} as const
 
 function createMockRecorder(): IEventRecorder {
   return {
@@ -72,7 +78,7 @@ describe('createOverlays', () => {
   })
 
   describe('calling an overlay controller', () => {
-    it('records an image start with the default full-screen placement', async () => {
+    it('records an image start with the default recording placement', async () => {
       const overlays = createOverlays({
         logo: { path: './logo.png', durationMs: 1200 },
       })
@@ -85,7 +91,7 @@ describe('createOverlays', () => {
         path: './logo.png',
         durationMs: 1200,
         fullScreen: false,
-        placement: SCREEN,
+        placement: DEFAULT_PLACEMENT,
       })
     })
 
@@ -99,7 +105,7 @@ describe('createOverlays', () => {
         path: './logo.png',
         durationMs: 1000,
         fullScreen: false,
-        placement: SCREEN,
+        placement: DEFAULT_PLACEMENT,
       })
     })
 
@@ -131,7 +137,7 @@ describe('createOverlays', () => {
         path: './sound.mp4',
         audio: 0.8,
         fullScreen: false,
-        placement: SCREEN,
+        placement: DEFAULT_PLACEMENT,
       })
     })
 
@@ -174,7 +180,7 @@ describe('createOverlays', () => {
         path: './logo.png',
         durationMs: 1200,
         fullScreen: false,
-        placement: SCREEN,
+        placement: DEFAULT_PLACEMENT,
       })
       expect(recorder.addAssetStart).toHaveBeenNthCalledWith(2, 'intro', {
         kind: 'video',
@@ -227,7 +233,7 @@ describe('createOverlays', () => {
           path: './logo.png',
           durationMs: 1200,
           fullScreen: false,
-          placement: SCREEN,
+          placement: DEFAULT_PLACEMENT,
         })
       } finally {
         await rm(tempDir, { recursive: true, force: true })
@@ -254,7 +260,7 @@ describe('createOverlays', () => {
         path: './logo.png',
         durationMs: 3000,
         fullScreen: false,
-        placement: SCREEN,
+        placement: DEFAULT_PLACEMENT,
       })
     })
 
@@ -373,7 +379,7 @@ describe('createOverlays', () => {
       })
     })
 
-    it('defaults to full-screen-width placement when no fields are given', async () => {
+    it('defaults to full-recording-width placement when no fields are given', async () => {
       const overlays = createOverlays({
         logo: { path: './logo.png', durationMs: 1000 },
       })
@@ -382,7 +388,7 @@ describe('createOverlays', () => {
 
       expect(recorder.addAssetStart).toHaveBeenCalledWith(
         'logo',
-        expect.objectContaining({ placement: SCREEN })
+        expect.objectContaining({ placement: DEFAULT_PLACEMENT })
       )
     })
 
@@ -452,7 +458,7 @@ describe('createOverlays', () => {
         path: './logo.png',
         durationMs: 1500,
         fullScreen: false,
-        placement: SCREEN,
+        placement: DEFAULT_PLACEMENT,
       })
       expect(recorder.addAssetEnd).not.toHaveBeenCalled()
     })
@@ -465,7 +471,7 @@ describe('createOverlays', () => {
         kind: 'image',
         path: './badge.png',
         fullScreen: false,
-        placement: SCREEN,
+        placement: DEFAULT_PLACEMENT,
       })
 
       await overlays.badge.end()
@@ -508,7 +514,7 @@ describe('createOverlays', () => {
         path: './b.png',
         durationMs: 800,
         fullScreen: false,
-        placement: SCREEN,
+        placement: DEFAULT_PLACEMENT,
       })
     })
 
@@ -566,7 +572,7 @@ describe('createOverlays', () => {
           kind: 'image',
           durationMs: 1500,
           fullScreen: false,
-          placement: { relativeTo: 'screen', x: 0.1, y: 0.1, width: 0.3 },
+          placement: { relativeTo: 'recording', x: 0.1, y: 0.1, width: 0.3 },
         })
       )
       const payload = vi.mocked(recorder.addAssetStart).mock.calls[0]![1] as {
@@ -596,7 +602,7 @@ describe('createOverlays', () => {
         expect.objectContaining({
           kind: 'image',
           durationMs: 1200,
-          placement: SCREEN,
+          placement: DEFAULT_PLACEMENT,
         })
       )
     })
@@ -617,7 +623,7 @@ describe('createOverlays', () => {
 
       expect(recorder.addAssetStart).toHaveBeenCalledWith(
         'badge',
-        expect.objectContaining({ kind: 'image', placement: SCREEN })
+        expect.objectContaining({ kind: 'image', placement: DEFAULT_PLACEMENT })
       )
     })
 
@@ -660,7 +666,7 @@ describe('createOverlays', () => {
       expect(captured).toBe('<div class="badge">New</div>')
       expect(recorder.addAssetStart).toHaveBeenCalledWith(
         'badge',
-        expect.objectContaining({ kind: 'image', placement: SCREEN })
+        expect.objectContaining({ kind: 'image', placement: DEFAULT_PLACEMENT })
       )
     })
 
@@ -692,7 +698,7 @@ describe('createOverlays', () => {
       expect(captured).toBe('<span>hi</span>')
       expect(recorder.addAssetStart).toHaveBeenCalledWith(
         'badge',
-        expect.objectContaining({ kind: 'image', placement: SCREEN })
+        expect.objectContaining({ kind: 'image', placement: DEFAULT_PLACEMENT })
       )
     })
 
@@ -759,7 +765,7 @@ describe('createOverlays', () => {
           kind: 'animation',
           durationMs: 1500,
           fullScreen: false,
-          placement: SCREEN,
+          placement: DEFAULT_PLACEMENT,
         })
       )
       const payload = vi.mocked(recorder.addAssetStart).mock.calls[0]![1] as {

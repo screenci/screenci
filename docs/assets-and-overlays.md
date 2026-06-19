@@ -180,7 +180,7 @@ same placement renders correctly at 720p, 1080p, 4K, or vertical.
 
 ```tsx
 const overlays = createOverlays({
-  // Top-left badge sized to 15% of the full output frame width.
+  // Top-left badge sized to 15% of the recording width.
   badge: {
     path: 'assets/badge.png',
     durationMs: 1500,
@@ -188,11 +188,11 @@ const overlays = createOverlays({
     y: 0.05,
     width: 0.15,
   },
-  // A label pinned over the recording area, sized by height.
+  // A banner across the full output frame, sized by height.
   label: {
     path: 'assets/label.svg',
     durationMs: 1500,
-    relativeTo: 'recording',
+    relativeTo: 'screen',
     x: 0.1,
     y: 0.8,
     height: 0.1,
@@ -200,12 +200,12 @@ const overlays = createOverlays({
 })
 ```
 
-- `relativeTo: 'screen'` (the default) positions against the full output frame.
-- `relativeTo: 'recording'` positions against the composited recording area (which may be inset when `renderOptions.recording.size < 1`).
+- `relativeTo: 'recording'` (the default) positions against the composited recording area (which may be inset when `renderOptions.recording.size < 1`). Because the recording's final size is chosen later in the studio, a recording-relative box stays correct whatever output size you settle on.
+- `relativeTo: 'screen'` positions against the full output frame.
 - `x` and `y` are the top-left corner as fractions of the reference box. Both default to `0`.
 - Provide one of `width` or `height`. The other is derived from the overlay's aspect ratio so it is never distorted. When neither is set, `width` defaults to `1`.
 
-The default placement (no fields set) is therefore `{ relativeTo: 'screen', x: 0, y: 0, width: 1 }`, the full output width anchored at the top-left. For a full-frame overlay use `fullScreen: true`.
+The default placement (no fields set) is therefore `{ relativeTo: 'recording', x: 0, y: 0, width: 1 }`, the recording area filled edge to edge. For a full-frame overlay use `fullScreen: true`.
 
 ## Timing and control flow
 

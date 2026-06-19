@@ -11,16 +11,17 @@ const ffmpegPath = ffmpegStatic as unknown as string | null
 
 const OVERLAY_ROOT_ID = 'screenci-overlay-root'
 
-// Render overlays at a high pixel density so the PNG carries more detail than
-// the on-screen overlay size. The renderer then downscales it to the placement
-// box, which keeps text and edges crisp. Overlay content is bounded by the
-// off-screen page viewport, so even at this density the screenshot stays well
-// under GPU texture limits.
-const DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR = 4
+// Render overlays at 2x pixel density so the PNG carries more detail than the
+// on-screen overlay size. The renderer then downscales it to the placement box,
+// which keeps text and edges crisp. 2x keeps overlays sharp at typical sizes
+// while roughly quartering the byte cost of the previous 4x density. Overlay
+// content is bounded by the off-screen page viewport, so the screenshot stays
+// well under GPU texture limits.
+const DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR = 2
 
 // Bump when anything that affects rasterized output changes (the HTML wrapper,
 // screenshot options, default density) so stale cache entries are invalidated.
-const RASTERIZE_CACHE_VERSION = 1
+const RASTERIZE_CACHE_VERSION = 2
 
 export type HtmlRasterizeResult = {
   /** Absolute path to the written PNG. */

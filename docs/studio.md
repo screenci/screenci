@@ -55,13 +55,12 @@ a newer upload is one click.
 
 If you want every new upload to get the same treatment, enable
 **Auto-apply to new uploads** in Studio. When auto-apply is active, the CLI
-prints which kinds of selections were overridden in Studio (narration,
-overlays, render options) as part of the upload output, so it is always visible
-in CI logs that the rendered video differs from what the code specifies. The
-exact values are not printed, only the categories:
+prints a line in the upload output so it is always visible in CI logs that the
+rendered video uses the Studio configuration rather than what the code
+specifies:
 
 ```
-Studio overrides applied for "Checkout walkthrough": narration, render options
+Studio configuration applied for "Checkout walkthrough".
 ```
 
 ## Studio narration from code

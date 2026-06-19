@@ -356,44 +356,12 @@ type UploadCandidate = {
   preparedUploadAssets: PreparedUploadAsset[]
 }
 
-export type StudioAppliedChange = {
-  kind?: string
-  label?: string
-  cue?: string
-  language?: string
-  from?: string
-  to?: string
-}
-
-export type UploadStudioInfo =
-  | { held: true }
-  | { appliedChanges: StudioAppliedChange[] }
+export type UploadStudioInfo = { held: true } | { applied: true }
 
 export type StudioUploadNotice = {
   videoName: string
   videoId: string | null
   studio: UploadStudioInfo
-}
-
-/**
- * Category-level summary of Studio overrides for CLI output, e.g.
- * `narration, overlays, render options`. Deliberately omits the exact
- * selections: it only names which kinds of things were overridden.
- */
-export function formatStudioChangeSummary(
-  changes: StudioAppliedChange[]
-): string {
-  // Stable, user-facing order. `asset` is surfaced as "overlays".
-  const order: { kind: string; label: string }[] = [
-    { kind: 'narration', label: 'narration' },
-    { kind: 'asset', label: 'overlays' },
-    { kind: 'renderOption', label: 'render options' },
-  ]
-  const present = new Set(changes.map((change) => change.kind))
-  return order
-    .filter(({ kind }) => present.has(kind))
-    .map(({ label }) => label)
-    .join(', ')
 }
 
 export function formatStudioUrl(
@@ -2578,10 +2546,10 @@ export async function main() {
                     pc.cyan(formatStudioUrl(appUrl, projectId, notice.videoId))
                   )
                 }
-              } else if (notice.studio.appliedChanges.length > 0) {
+              } else if (notice.studio.applied) {
                 logger.info('')
                 logger.info(
-                  `Studio overrides applied for "${notice.videoName}": ${formatStudioChangeSummary(notice.studio.appliedChanges)}`
+                  `Studio configuration applied for "${notice.videoName}".`
                 )
               }
             }

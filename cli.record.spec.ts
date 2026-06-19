@@ -1012,49 +1012,66 @@ describe('CLI', () => {
       ])
     })
 
-    it('formats studio change summaries and studio URLs', async () => {
-      const { formatStudioChangeSummary, formatStudioUrl } =
-        await import('./cli')
+    it('surfaces an applied studio notice when configuration was applied', async () => {
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') || path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+              videoId: 'video_123',
+              studio: { applied: true },
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
 
-      // Category-level only: names the kinds overridden, not the selections,
-      // deduped and in a stable order (narration, overlays, render options).
-      expect(
-        formatStudioChangeSummary([
-          {
-            kind: 'renderOption',
-            label: 'recording.size',
-            from: '1',
-            to: '0.8',
-          },
-          {
-            kind: 'narration',
-            label: 'narration "intro"',
-            cue: 'intro',
-            language: 'en',
-          },
-          { kind: 'renderOption', label: 'output.quality' },
-          { kind: 'asset', label: 'asset "logo"' },
-        ])
-      ).toBe('narration, overlays, render options')
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
 
-      expect(
-        formatStudioChangeSummary([
-          {
-            kind: 'narration',
-            label: 'narration "intro"',
-            cue: 'intro',
-            language: 'en',
-          },
-          {
-            kind: 'narration',
-            label: 'narration "outro"',
-            cue: 'outro',
-            language: 'fi',
-          },
-        ])
-      ).toBe('narration')
+      const { uploadRecordings } = await import('./cli')
 
-      expect(formatStudioChangeSummary([])).toBe('')
+      const result = await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(result.studioNotices).toEqual([
+        {
+          videoName: 'Demo',
+          videoId: 'video_123',
+          studio: { applied: true },
+        },
+      ])
+    })
+
+    it('formats studio URLs', async () => {
+      const { formatStudioUrl } = await import('./cli')
 
       expect(
         formatStudioUrl('https://app.screenci.test', 'project_1', 'video_2')

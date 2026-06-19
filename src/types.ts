@@ -147,7 +147,9 @@ export type RenderOptions = {
      * @example '1080p'
      */
     quality?: Quality
-    background?: { assetPath: string } | { backgroundCss: string }
+    background?:
+      | { assetPath: string; fileHash?: string }
+      | { backgroundCss: string }
   }
 }
 
@@ -185,7 +187,7 @@ export const RENDER_OPTIONS_DEFAULTS = {
     background: {
       backgroundCss:
         'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
-    } as { assetPath: string } | { backgroundCss: string },
+    } as { assetPath: string; fileHash?: string } | { backgroundCss: string },
   },
 }
 
@@ -220,7 +222,9 @@ export type ResolvedRenderOptions = {
   output: {
     aspectRatio: AspectRatio
     quality: Quality
-    background: { assetPath: string } | { backgroundCss: string }
+    background:
+      | { assetPath: string; fileHash?: string }
+      | { backgroundCss: string }
   }
 }
 

@@ -41,6 +41,8 @@ function createMockRecorder(): IEventRecorder {
     addAssetStart: vi.fn(),
     addAssetEnd: vi.fn(),
     addStudioAssetStart: vi.fn(),
+    addAudioStart: vi.fn(),
+    addAudioEnd: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),
     addAutoZoomStart: vi.fn(),
@@ -141,7 +143,7 @@ describe('createOverlays', () => {
       })
     })
 
-    it('defaults mp4 audio to 0.5 (natural level) when omitted', async () => {
+    it('defaults mp4 audio to 1 (natural level) when omitted', async () => {
       const overlays = createOverlays({
         intro: { path: './intro.mp4', fullScreen: true },
       })
@@ -151,7 +153,7 @@ describe('createOverlays', () => {
       expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
         kind: 'video',
         path: './intro.mp4',
-        audio: 0.5,
+        audio: 1,
         fullScreen: true,
         placement: { fullScreen: true },
       })
@@ -185,7 +187,7 @@ describe('createOverlays', () => {
       expect(recorder.addAssetStart).toHaveBeenNthCalledWith(2, 'intro', {
         kind: 'video',
         path: './intro.mp4',
-        audio: 0.5,
+        audio: 1,
         fullScreen: true,
         placement: { fullScreen: true },
       })
@@ -290,7 +292,7 @@ describe('createOverlays', () => {
           broken: { path: './clip.mp4', audio: Number.NaN },
         })
       ).toThrow(
-        'Overlay "broken" (./clip.mp4) must provide a finite audio value between 0 and 1 for .mp4 overlays. Use audio: 0 for silent playback.'
+        'Overlay "broken" (./clip.mp4) must provide a finite audio value between 0 and 4 for .mp4 overlays. 1 is the natural level, 0 is silent, and values above 1 boost it.'
       )
     })
 

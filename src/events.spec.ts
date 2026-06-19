@@ -59,6 +59,55 @@ describe('EventRecorder', () => {
     })
   })
 
+  describe('background audio events', () => {
+    it('records an audioStart with path, volume and repeat', () => {
+      recorder.start()
+      now = 1300
+      recorder.addAudioStart('theme', {
+        path: 'music.mp3',
+        fileHash: 'a'.repeat(64),
+        volume: 0.3,
+        repeat: true,
+      })
+
+      expect(recorder.getEvents().slice(1)).toEqual([
+        {
+          type: 'audioStart',
+          timeMs: 300,
+          name: 'theme',
+          path: 'music.mp3',
+          fileHash: 'a'.repeat(64),
+          volume: 0.3,
+          repeat: true,
+        },
+      ])
+    })
+
+    it('records a paired audioEnd with the track name', () => {
+      recorder.start()
+      now = 1200
+      recorder.addAudioStart('theme', {
+        path: 'music.mp3',
+        volume: 1,
+        repeat: false,
+      })
+      now = 1800
+      recorder.addAudioEnd('theme', 'wait')
+
+      expect(recorder.getEvents().slice(1)).toEqual([
+        {
+          type: 'audioStart',
+          timeMs: 200,
+          name: 'theme',
+          path: 'music.mp3',
+          volume: 1,
+          repeat: false,
+        },
+        { type: 'audioEnd', timeMs: 800, name: 'theme', reason: 'wait' },
+      ])
+    })
+  })
+
   describe('addInput', () => {
     it('does nothing before start is called', () => {
       recorder.addInput('focusChange', undefined, [

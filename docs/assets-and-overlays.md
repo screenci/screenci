@@ -48,7 +48,7 @@ Rules:
 
 - HTML, React, `.svg`, and `.png` overlays need a `durationMs` for the blocking call form (set it in the config or pass it to the call, for example `await overlays.logo(1200)`). You can omit it when driving the overlay with `start()`/`end()`.
 - Image, HTML, and React overlays do not support `audio`.
-- `.mp4` overlays may provide `audio` (a 0..1 level). `0.5` (the default) plays the source at its natural level, `0` mutes it, and `1` boosts it to twice the natural level.
+- `.mp4` overlays may provide `audio` (a linear gain). `1` (the default) plays the source at its natural level, `0` mutes it, and values above `1` boost it (e.g. `2` is twice as loud, up to `4`).
 - `.mp4` overlays use the file's natural duration and must not provide `durationMs`.
 
 ### HTML and React overlays
@@ -250,11 +250,55 @@ on screen.
 
 Other timing notes:
 
-- video overlays (`.mp4`) use the media file's natural duration and play at their natural level (`audio` defaults to `0.5`); set `audio` to mute (`0`) or boost (up to `1` for twice the level)
+- video overlays (`.mp4`) use the media file's natural duration and play at their natural level (`audio` defaults to `1`); set `audio` to mute (`0`) or boost (above `1`, up to `4`)
 - full-screen overlays take over the output frame
 - overlays stay on top of the recording while the underlying screen continues
 
 That means you do not need separate timing math just to line an intro clip up with the next step.
+
+## Background music and audio
+
+Overlays are visual. For sound that plays _under_ the recording (and any
+narration), use `createAudio`. It takes a map of named tracks, each a file path
+or a config object, and accepts `.mp3`, `.wav`, `.m4a`, `.aac`, or an
+audio-only `.mp4`:
+
+```ts
+import { createAudio, video } from 'screenci'
+
+const music = createAudio({
+  theme: { path: 'assets/bg.mp3', volume: 0.3, repeat: true },
+  sting: 'assets/celebrate.wav',
+})
+
+video('Overview', async ({ page }) => {
+  await music.theme() // plays under the whole video, looping to fill
+  await page.goto('/dashboard')
+
+  await music.sting.start() // bound a track to a span
+  await page.click('#celebrate')
+  await music.sting.end()
+})
+```
+
+Options:
+
+- `volume` is a linear gain. `1` (the default) is the source's natural level,
+  `0` is silent, and values above `1` boost it (e.g. `2` is twice as loud, up to
+  `4`). Lower it (for example `0.2`-`0.4`) so music sits under narration.
+- `repeat: true` loops a short track to fill its span. Omit it (the default) to
+  play the source once and then fall silent.
+
+Timing:
+
+- A bare call (`await music.theme()`) starts the track at that point and plays it
+  for the **rest of the video**.
+- `start()` / `end()` bound a track to a specific span, without freezing a frame.
+- Tracks are **non-exclusive**: starting one never stops another, so music and a
+  sound effect can overlap. Each track also runs independently of narration.
+
+Unlike overlays, audio tracks have no placement and never hold a frozen frame:
+they simply mix into the soundtrack.
 
 ## File organization
 

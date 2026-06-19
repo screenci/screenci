@@ -31,6 +31,7 @@ import { setActiveCueRecorder } from './cue.js'
 import { setActiveHideRecorder } from './hide.js'
 import { setActiveAutoZoomRecorder, setActiveZoomPage } from './autoZoom.js'
 import { setActiveAssetRecorder } from './asset.js'
+import { setActiveAudioRecorder } from './audio.js'
 import {
   DEFAULT_VIDEO_OPTIONS,
   DEFAULT_ASPECT_RATIO,
@@ -53,6 +54,7 @@ import {
   runWithScreenCIRuntimeContext,
   setActiveScreenCIRuntimeContext,
   setRuntimeAssetRecorder,
+  setRuntimeAudioRecorder,
   setRuntimeAutoZoomRecorder,
   setRuntimeClickRecorder,
   setRuntimeCueRecorder,
@@ -329,12 +331,14 @@ async function withActiveRecordingContext<T>(params: {
       setRuntimeHideRecorder(recorder)
       setRuntimeAutoZoomRecorder(recorder)
       setRuntimeAssetRecorder(recorder)
+      setRuntimeAudioRecorder(recorder)
       setRuntimeClickRecorder(recorder)
       setActiveCueRecorder(recorder)
       setActiveHideRecorder(recorder)
       setActiveAutoZoomRecorder(recorder)
       setActiveZoomPage(page)
       setActiveAssetRecorder(recorder)
+      setActiveAudioRecorder(recorder)
       setActiveClickRecorder(recorder)
       bindClickRecorderToPage(page, recorder)
       setRuntimePage(page)

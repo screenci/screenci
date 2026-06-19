@@ -42,6 +42,7 @@ export {
   createOverlays,
   createStudioOverlays,
   setOverlayCss,
+  MAX_AUDIO_LEVEL,
 } from './src/asset.js'
 export type {
   OverlayController,
@@ -51,4 +52,11 @@ export type {
   ReactElementLike,
   OverlayPlacement,
 } from './src/asset.js'
+export { createAudio } from './src/audio.js'
+export type {
+  AudioController,
+  AudioConfig,
+  AudioInput,
+  AudioTracks,
+} from './src/audio.js'
 export type { ZoomTarget, ZoomTargetPoint } from './src/manualZoom.js'

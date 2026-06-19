@@ -381,6 +381,42 @@ export type StudioAssetStartEvent = {
   studio: true
 }
 
+/**
+ * Start of a background audio track (`createAudio`). Unlike asset overlays this
+ * carries no visual: it is mixed under the recording from `timeMs` until its
+ * paired {@link AudioEndEvent}, or until the end of the video when no end is
+ * recorded (the common background-music case). `volume` is a linear gain (`1`
+ * is natural); `repeat` loops the source to fill the span.
+ */
+export type AudioStartEvent = {
+  type: 'audioStart'
+  timeMs: number
+  name: string
+  path: string
+  /** SHA-256 of the audio file — present only during recording; used for upload/caching. */
+  fileHash?: string
+  volume: number
+  repeat: boolean
+}
+
+/**
+ * End marker for a background audio track. `name` pairs it to its
+ * {@link AudioStartEvent}; an audioStart with no matching end plays to the end
+ * of the video.
+ */
+export type AudioEndEvent = {
+  type: 'audioEnd'
+  timeMs: number
+  name?: string
+  reason?: 'wait'
+}
+
+/** Payload for {@link IEventRecorder.addAudioStart} (timing/name added by the recorder). */
+export type AudioStartPayload = Omit<
+  AudioStartEvent,
+  'type' | 'timeMs' | 'name'
+>
+
 export type HideStartEvent = {
   type: 'hideStart'
   timeMs: number
@@ -438,6 +474,8 @@ export type RecordingEvent =
   | AssetStartEvent
   | AssetEndEvent
   | StudioAssetStartEvent
+  | AudioStartEvent
+  | AudioEndEvent
   | HideStartEvent
   | HideEndEvent
   | SpeedStartEvent
@@ -562,6 +600,13 @@ export interface IEventRecorder {
   addAssetEnd(name: string | undefined, reason?: 'auto' | 'wait'): void
   /** Records a studio-mode asset start — the file and options are configured in Studio. */
   addStudioAssetStart(name: string): void
+  /** Records the start of a background audio track (`createAudio`). */
+  addAudioStart(name: string, audio: AudioStartPayload): void
+  /**
+   * Records the end of a background audio track. `name` pairs it to its start;
+   * an audio track left open plays to the end of the video.
+   */
+  addAudioEnd(name: string | undefined, reason?: 'wait'): void
   addHideStart(): void
   addHideEnd(): void
   /** Resolved cursor/scroll dispatch intervals from `recordOptions.performance`. */
@@ -595,6 +640,8 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addAssetStart(): void {},
   addAssetEnd(): void {},
   addStudioAssetStart(): void {},
+  addAudioStart(): void {},
+  addAudioEnd(): void {},
   addHideStart(): void {},
   addHideEnd(): void {},
   getPerformanceIntervals(): PerformanceIntervals {
@@ -892,6 +939,31 @@ export class EventRecorder implements IEventRecorder {
       timeMs,
       name,
       studio: true,
+    })
+  }
+
+  addAudioStart(name: string, audio: AudioStartPayload): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'audioStart',
+      timeMs,
+      name,
+      path: audio.path,
+      ...(audio.fileHash !== undefined && { fileHash: audio.fileHash }),
+      volume: audio.volume,
+      repeat: audio.repeat,
+    })
+  }
+
+  addAudioEnd(name: string | undefined, reason?: 'wait'): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'audioEnd',
+      timeMs,
+      ...(name !== undefined && { name }),
+      ...(reason !== undefined && { reason }),
     })
   }
 

@@ -7,8 +7,10 @@ import * as voicesModule from './src/voices.js'
 describe('public api surface', () => {
   it('only exports public runtime api from the root entrypoint', () => {
     expect(Object.keys(screenci).sort()).toEqual([
+      'MAX_AUDIO_LEVEL',
       'STUDIO_RENDER_OPTIONS',
       'autoZoom',
+      'createAudio',
       'createNarration',
       'createOverlays',
       'createStudioNarration',

@@ -88,12 +88,19 @@ export type OverlayConfig = {
    */
   capturePadding?: number
   /**
-   * Soundtrack level 0..1 for `.mp4` overlays. `0.5` (the default) plays the
-   * source at its natural level, `0` mutes it, and `1` boosts it to twice the
-   * natural level.
+   * Soundtrack level for `.mp4` overlays as a linear gain. `1` (the default)
+   * plays the source at its natural level, `0` mutes it, and values above `1`
+   * boost it (e.g. `2` is twice the natural level). Capped at
+   * {@link MAX_AUDIO_LEVEL}.
    */
   audio?: number
 }
+
+/**
+ * Upper bound for an audio level (linear gain). `4` is +12 dB, plenty of
+ * headroom for a boost while guarding against accidental extreme distortion.
+ */
+export const MAX_AUDIO_LEVEL = 4
 
 /**
  * A value accepted by {@link createOverlays} for each key:
@@ -229,7 +236,7 @@ export type Overlays<T extends Record<string, OverlayInput>> = {
  * Calling a controller shows the overlay in the recording timeline. Image
  * (`.svg`/`.png`), HTML, and React overlays need a `durationMs` (in the config
  * or passed to the blocking call) unless driven with `start()`/`end()`; `.mp4`
- * overlays use their natural duration and default `audio` to `0.5` (natural level).
+ * overlays use their natural duration and default `audio` to `1` (natural level).
  *
  * Placement defaults to the full recording area (`relativeTo: 'recording',
  * x: 0, y: 0, width: 1`); override any field independently.
@@ -426,10 +433,12 @@ function buildOverlayFromConfig(
     }
     if (
       config.audio !== undefined &&
-      (!Number.isFinite(config.audio) || config.audio < 0 || config.audio > 1)
+      (!Number.isFinite(config.audio) ||
+        config.audio < 0 ||
+        config.audio > MAX_AUDIO_LEVEL)
     ) {
       throw new Error(
-        `[screenci] Overlay "${name}" (${path}) must provide a finite audio value between 0 and 1 for .mp4 overlays. Use audio: 0 for silent playback.`
+        `[screenci] Overlay "${name}" (${path}) must provide a finite audio value between 0 and ${MAX_AUDIO_LEVEL} for .mp4 overlays. 1 is the natural level, 0 is silent, and values above 1 boost it.`
       )
     }
     registeredAssetPaths.add(path)
@@ -1043,7 +1052,7 @@ function toRecordedFileStart(
   return {
     kind: 'video',
     path: resolved.path,
-    audio: resolved.audio ?? 0.5,
+    audio: resolved.audio ?? 1,
     fullScreen: resolved.fullScreen,
     placement: resolved.placement,
   }

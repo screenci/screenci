@@ -37,6 +37,11 @@ export type ActiveAssetRun = {
   startedWithExplicitStart: boolean
 }
 
+export type ActiveAudioRun = {
+  finished: Promise<void>
+  resolveFinished: () => void
+}
+
 export type TimelineBlockType = 'hide' | 'speed' | 'time'
 
 export type TimelineBlockState = {
@@ -50,6 +55,7 @@ export type ScreenCIRuntimeContext = {
   hideRecorder: IEventRecorder
   autoZoomRecorder: IEventRecorder
   assetRecorder: IEventRecorder
+  audioRecorder: IEventRecorder
   clickRecorder: IEventRecorder
   page: Page | null
   testFilePath: string | null
@@ -73,6 +79,14 @@ export type ScreenCIRuntimeContext = {
      */
     activeRuns: Map<string, ActiveAssetRun>
   }
+  audio: {
+    /**
+     * Background audio tracks (`createAudio`) that are playing, keyed by name.
+     * Tracks are non-exclusive (music plus a sound effect can overlap), so this
+     * is a map. A track left open here plays to the end of the video.
+     */
+    activeRuns: Map<string, ActiveAudioRun>
+  }
   autoZoom: AutoZoomState
 }
 
@@ -95,6 +109,7 @@ export function createScreenCIRuntimeContext(
     hideRecorder: defaultRecorder,
     autoZoomRecorder: defaultRecorder,
     assetRecorder: defaultRecorder,
+    audioRecorder: defaultRecorder,
     clickRecorder: defaultRecorder,
     page: overrides.page ?? null,
     testFilePath: overrides.testFilePath ?? null,
@@ -107,6 +122,9 @@ export function createScreenCIRuntimeContext(
     },
     asset: {
       activeRuns: new Map<string, ActiveAssetRun>(),
+    },
+    audio: {
+      activeRuns: new Map<string, ActiveAudioRun>(),
     },
     autoZoom: {
       insideAutoZoom: false,
@@ -172,6 +190,14 @@ export function getRuntimeAssetRecorder(): IEventRecorder {
   return getScreenCIRuntimeContext().assetRecorder
 }
 
+export function setRuntimeAudioRecorder(recorder: IEventRecorder | null): void {
+  getScreenCIRuntimeContext().audioRecorder = recorder ?? NOOP_EVENT_RECORDER
+}
+
+export function getRuntimeAudioRecorder(): IEventRecorder {
+  return getScreenCIRuntimeContext().audioRecorder
+}
+
 export function setRuntimeClickRecorder(recorder: IEventRecorder | null): void {
   getScreenCIRuntimeContext().clickRecorder = recorder ?? NOOP_EVENT_RECORDER
 }
@@ -202,6 +228,11 @@ export function resetCueRuntimeState(): void {
 export function resetAssetRuntimeState(): void {
   const context = getScreenCIRuntimeContext()
   context.asset.activeRuns.clear()
+}
+
+export function resetAudioRuntimeState(): void {
+  const context = getScreenCIRuntimeContext()
+  context.audio.activeRuns.clear()
 }
 
 export function pushRuntimeTimelineBlock(block: TimelineBlockState): void {

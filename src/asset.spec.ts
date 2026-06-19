@@ -135,7 +135,7 @@ describe('createOverlays', () => {
       })
     })
 
-    it('defaults mp4 audio to 1 when omitted', async () => {
+    it('defaults mp4 audio to 0.5 (natural level) when omitted', async () => {
       const overlays = createOverlays({
         intro: { path: './intro.mp4', fullScreen: true },
       })
@@ -145,7 +145,7 @@ describe('createOverlays', () => {
       expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
         kind: 'video',
         path: './intro.mp4',
-        audio: 1,
+        audio: 0.5,
         fullScreen: true,
         placement: { fullScreen: true },
       })
@@ -179,7 +179,7 @@ describe('createOverlays', () => {
       expect(recorder.addAssetStart).toHaveBeenNthCalledWith(2, 'intro', {
         kind: 'video',
         path: './intro.mp4',
-        audio: 1,
+        audio: 0.5,
         fullScreen: true,
         placement: { fullScreen: true },
       })

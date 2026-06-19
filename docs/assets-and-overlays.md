@@ -48,7 +48,7 @@ Rules:
 
 - HTML, React, `.svg`, and `.png` overlays need a `durationMs` for the blocking call form (set it in the config or pass it to the call, for example `await overlays.logo(1200)`). You can omit it when driving the overlay with `start()`/`end()`.
 - Image, HTML, and React overlays do not support `audio`.
-- `.mp4` overlays may provide `audio`. If omitted it defaults to `1`.
+- `.mp4` overlays may provide `audio` (a 0..1 level). `0.5` (the default) plays the source at its natural level, `0` mutes it, and `1` boosts it to twice the natural level.
 - `.mp4` overlays use the file's natural duration and must not provide `durationMs`.
 
 ### HTML and React overlays
@@ -234,7 +234,7 @@ call or `start()`) automatically ends the previous one.
 
 Other timing notes:
 
-- video overlays (`.mp4`) use the media file's natural duration and play at full volume unless `audio` is specified
+- video overlays (`.mp4`) use the media file's natural duration and play at their natural level (`audio` defaults to `0.5`); set `audio` to mute (`0`) or boost (up to `1` for twice the level)
 - full-screen overlays take over the output frame
 - overlays stay on top of the recording while the underlying screen continues
 

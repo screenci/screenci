@@ -139,8 +139,9 @@ video('Product demo', async ({ page }) => {
 Calling a controller marks the point in the timeline, exactly like
 `createOverlays` controllers. The file (`.svg`, `.png`, or `.mp4`), full-screen
 mode, overlay duration for images, and audio level for videos are all set on
-the Studio page. TypeScript knows the declared keys, so `overlays.typo` is a
-compile error.
+the Studio page. The audio level is a 0..1 slider: `0.5` (the default) plays the
+video at its natural level, `0` mutes it, and `1` boosts it to twice the level.
+TypeScript knows the declared keys, so `overlays.typo` is a compile error.
 
 Like studio narration, the first upload of a video using `createStudioOverlays`
 is held until every declared overlay has a file configured in Studio. The CLI

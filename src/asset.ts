@@ -87,7 +87,11 @@ export type OverlayConfig = {
    * HTML files and React elements only.
    */
   capturePadding?: number
-  /** Soundtrack volume 0..1 for `.mp4` overlays. Defaults to `1`. */
+  /**
+   * Soundtrack level 0..1 for `.mp4` overlays. `0.5` (the default) plays the
+   * source at its natural level, `0` mutes it, and `1` boosts it to twice the
+   * natural level.
+   */
   audio?: number
 }
 
@@ -214,7 +218,7 @@ export type Overlays<T extends Record<string, OverlayInput>> = {
  * Calling a controller shows the overlay in the recording timeline. Image
  * (`.svg`/`.png`), HTML, and React overlays need a `durationMs` (in the config
  * or passed to the blocking call) unless driven with `start()`/`end()`; `.mp4`
- * overlays use their natural duration and default `audio` to `1`.
+ * overlays use their natural duration and default `audio` to `0.5` (natural level).
  *
  * Placement defaults to the full screen (`relativeTo: 'screen', x: 0, y: 0,
  * width: 1`); override any field independently.
@@ -1040,7 +1044,7 @@ function toRecordedFileStart(
   return {
     kind: 'video',
     path: resolved.path,
-    audio: resolved.audio ?? 1,
+    audio: resolved.audio ?? 0.5,
     fullScreen: resolved.fullScreen,
     placement: resolved.placement,
   }

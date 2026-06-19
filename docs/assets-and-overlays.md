@@ -229,8 +229,24 @@ await page.fill('#email', 'demo@example.com')
 await overlays.badge.end()
 ```
 
-Only one overlay is visible at a time. Starting a new overlay (with a blocking
-call or `start()`) automatically ends the previous one.
+Overlays can overlap. Several can be live at the same time, and a blocking
+overlay can run while others stay live, so you can layer them freely:
+
+```ts
+await overlays.badge.start()
+await overlays.logo.start() // both live now
+await page.click('#next')
+await overlays.tip(1500) // blocking overlay, badge and logo stay composited
+await overlays.badge.end() // end each one independently, in any order
+await overlays.logo.end()
+```
+
+Every overlay you `start()` must be `end()`ed before the video function returns,
+and the same overlay cannot be started twice without ending it in between.
+Leaving an overlay open, or restarting one that is already live, raises an error.
+
+Narration runs independently of overlays, so you can narrate while an overlay is
+on screen.
 
 Other timing notes:
 

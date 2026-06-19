@@ -66,8 +66,12 @@ export type ScreenCIRuntimeContext = {
     usedCueNames: Set<string>
   }
   asset: {
-    activeAssetName: string | null
-    activeAssetRun: ActiveAssetRun | null
+    /**
+     * Live overlays driven by `start()`/`end()`, keyed by name. Overlays may
+     * overlap (several active at once), so this is a map rather than a single
+     * slot. Blocking overlays (`overlays.x(ms)`) never register here.
+     */
+    activeRuns: Map<string, ActiveAssetRun>
   }
   autoZoom: AutoZoomState
 }
@@ -102,8 +106,7 @@ export function createScreenCIRuntimeContext(
       usedCueNames: new Set<string>(),
     },
     asset: {
-      activeAssetName: null,
-      activeAssetRun: null,
+      activeRuns: new Map<string, ActiveAssetRun>(),
     },
     autoZoom: {
       insideAutoZoom: false,
@@ -198,8 +201,7 @@ export function resetCueRuntimeState(): void {
 
 export function resetAssetRuntimeState(): void {
   const context = getScreenCIRuntimeContext()
-  context.asset.activeAssetName = null
-  context.asset.activeAssetRun = null
+  context.asset.activeRuns.clear()
 }
 
 export function pushRuntimeTimelineBlock(block: TimelineBlockState): void {

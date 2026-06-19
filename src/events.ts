@@ -346,11 +346,18 @@ export type AnimationAssetStartEvent = {
  * End marker for an asset overlay driven by `start()`/`end()`. The asset is
  * visible from its `assetStart` until this event (a live overlay over the
  * recording, no frozen frame). `reason` mirrors cue ends: `'wait'` for an
- * explicit `end()`, `'auto'` when a new asset start auto-ended this one.
+ * explicit `end()`, `'auto'` when this one was auto-ended.
+ *
+ * `name` identifies which overlay this end belongs to. Because overlays may
+ * overlap (several live at once, interleaved rather than nested), ends are
+ * paired to their starts by name rather than by position. Older recordings
+ * predate this field, so it is optional; the renderer falls back to closing
+ * the most recently opened overlay when it is absent.
  */
 export type AssetEndEvent = {
   type: 'assetEnd'
   timeMs: number
+  name?: string
   reason?: 'auto' | 'wait'
 }
 
@@ -547,8 +554,12 @@ export interface IEventRecorder {
     translations?: Record<string, VideoCueTranslation>
   ): void
   addAssetStart(name: string, asset: AssetStartPayload): void
-  /** Records the end of a `start()`/`end()`-driven asset overlay. */
-  addAssetEnd(reason?: 'auto' | 'wait'): void
+  /**
+   * Records the end of a `start()`/`end()`-driven asset overlay. `name`
+   * identifies which overlay ended (overlays may overlap), so the renderer can
+   * pair this end to its start by name.
+   */
+  addAssetEnd(name: string | undefined, reason?: 'auto' | 'wait'): void
   /** Records a studio-mode asset start — the file and options are configured in Studio. */
   addStudioAssetStart(name: string): void
   addHideStart(): void
@@ -862,12 +873,13 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addAssetEnd(reason?: 'auto' | 'wait'): void {
+  addAssetEnd(name: string | undefined, reason?: 'auto' | 'wait'): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     this.events.push({
       type: 'assetEnd',
       timeMs,
+      ...(name !== undefined && { name }),
       ...(reason !== undefined && { reason }),
     })
   }

@@ -3,12 +3,23 @@ import { getDimensions, getViewportCenter } from './dimensions.js'
 import { getMousePosition } from './mouse.js'
 import {
   applyFirstPassEncoderArgs,
+  assertAllOverlaysEnded,
   finalizeDeferredRecordingStops,
   overrideFirstPassEncoderArgs,
   POST_VIDEO_PAUSE,
   positionMouseAtViewportCenter,
   resolveRecordingFirstPassArgs,
 } from './video.js'
+import {
+  createOverlays,
+  setActiveAssetRecorder,
+  setAssetSleepFn,
+} from './asset.js'
+import { NOOP_EVENT_RECORDER } from './events.js'
+import {
+  createScreenCIRuntimeContext,
+  runWithScreenCIRuntimeContext,
+} from './runtimeContext.js'
 
 /** Read the value that follows a flag in an ffmpeg-style argv array. */
 function argValue(args: readonly string[], flag: string): string | undefined {
@@ -245,6 +256,47 @@ describe('startup mouse positioning', () => {
     expect(move).toHaveBeenCalledWith(640, 360)
     expect(result).toEqual({ x: 640, y: 360 })
     expect(getMousePosition(page)).toEqual({ x: 640, y: 360 })
+  })
+})
+
+describe('assertAllOverlaysEnded', () => {
+  // The recording lifecycle runs this on the success path: an overlay started
+  // with start() but never end()ed is a hard error (the renderer would see a
+  // dangling assetStart). Overlapping overlays each need their own end().
+  it('throws naming overlays left started but not ended', async () => {
+    const context = createScreenCIRuntimeContext()
+    setAssetSleepFn(() => {})
+    await runWithScreenCIRuntimeContext(context, async () => {
+      setActiveAssetRecorder(NOOP_EVENT_RECORDER)
+      const overlays = createOverlays({
+        a: { path: './a.png' },
+        b: { path: './b.png' },
+      })
+      await overlays.a.start()
+      await overlays.b.start()
+      await overlays.a.end()
+      // "b" left open.
+      expect(() => assertAllOverlaysEnded(context)).toThrow(
+        'Overlay(s) "b" were started with .start() but never ended'
+      )
+    })
+  })
+
+  it('does not throw when every started overlay was ended', async () => {
+    const context = createScreenCIRuntimeContext()
+    setAssetSleepFn(() => {})
+    await runWithScreenCIRuntimeContext(context, async () => {
+      setActiveAssetRecorder(NOOP_EVENT_RECORDER)
+      const overlays = createOverlays({
+        a: { path: './a.png' },
+        b: { path: './b.png' },
+      })
+      await overlays.a.start()
+      await overlays.b.start()
+      await overlays.a.end()
+      await overlays.b.end()
+      expect(() => assertAllOverlaysEnded(context)).not.toThrow()
+    })
   })
 })
 

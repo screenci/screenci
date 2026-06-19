@@ -295,6 +295,23 @@ async function startScreencastRecording(
   return recorder
 }
 
+/**
+ * Fails the recording if any overlay was `start()`ed but never `end()`ed.
+ * Every live overlay must be paired so the renderer never sees a dangling
+ * `assetStart` with no `assetEnd`. Only called on the success path, so it never
+ * masks an error thrown by the video function itself.
+ */
+export function assertAllOverlaysEnded(
+  runtimeContext: ReturnType<typeof createScreenCIRuntimeContext>
+): void {
+  const open = [...runtimeContext.asset.activeRuns.keys()]
+  if (open.length === 0) return
+  const names = open.map((name) => `"${name}"`).join(', ')
+  throw new Error(
+    `[screenci] Overlay(s) ${names} were started with .start() but never ended. Call end() for each overlay before the video function returns.`
+  )
+}
+
 async function withActiveRecordingContext<T>(params: {
   runtimeContext: ReturnType<typeof createScreenCIRuntimeContext>
   page: Page
@@ -322,7 +339,9 @@ async function withActiveRecordingContext<T>(params: {
       bindClickRecorderToPage(page, recorder)
       setRuntimePage(page)
 
-      return await fn()
+      const result = await fn()
+      assertAllOverlaysEnded(runtimeContext)
+      return result
     })
   } finally {
     setActiveScreenCIRuntimeContext(null)

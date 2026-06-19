@@ -1,7 +1,6 @@
 import type { IEventRecorder, OverlayPlacement } from './events.js'
 import { access, readFile } from 'fs/promises'
 import { dirname, resolve } from 'path'
-import { logger } from './logger.js'
 import { resolveRecordingTimingDuration } from './runtimeMode.js'
 import {
   rasterizeHtmlOverlay,
@@ -187,8 +186,12 @@ async function validateAssetPath(
  *
  * Calling it shows the overlay over a frozen frame for a fixed duration
  * (blocking). Use `start()`/`end()` to keep the overlay on screen while the page
- * is driven underneath. Only one overlay is visible at a time: starting a new
- * overlay auto-ends the previous one.
+ * is driven underneath.
+ *
+ * Overlays may overlap: several can be live at once (interleaved, not just
+ * nested), and a blocking overlay can run while others stay live. Each overlay
+ * you `start()` must be `end()`ed before the video function returns, and the
+ * same overlay cannot be started twice without ending it in between.
  *
  * @example
  * ```ts
@@ -199,6 +202,13 @@ async function validateAssetPath(
  * await overlays.badge.start()
  * await page.click('#next')
  * await overlays.badge.end()
+ *
+ * // Overlapping: two overlays live at the same time, ended independently.
+ * await overlays.badge.start()
+ * await overlays.logo.start()
+ * await page.click('#next')
+ * await overlays.badge.end()
+ * await overlays.logo.end()
  * ```
  */
 export type OverlayController = {
@@ -595,34 +605,19 @@ function createActiveAssetRun(
   return { finished, resolveFinished: resolve, startedWithExplicitStart }
 }
 
-/** Auto-ends any currently active overlay before a new one starts. */
-function assetAutoEnd(nextAssetName: string): void {
+/**
+ * Ends a single live overlay identified by name, emitting its `assetEnd`,
+ * holding a frame, and clearing it from the active map. Overlays may overlap,
+ * so ending one never touches the others.
+ */
+function endLiveAsset(name: string, reason: 'auto' | 'wait'): void {
   const context = getScreenCIRuntimeContext()
-  const run = context.asset.activeAssetRun
-  if (run === null) return
-  if (run.startedWithExplicitStart && context.asset.activeAssetName !== null) {
-    logger.warn(
-      `[screenci] Overlay "${context.asset.activeAssetName}" was started with .start() and auto-ended when overlay "${nextAssetName}" started. Call .end() explicitly before starting the next overlay.`
-    )
-  }
-  getRuntimeAssetRecorder().addAssetEnd('auto')
+  const run = context.asset.activeRuns.get(name)
+  if (run === undefined) return
+  getRuntimeAssetRecorder().addAssetEnd(name, reason)
   sleepForAssetFrameGap()
+  context.asset.activeRuns.delete(name)
   run.resolveFinished()
-  context.asset.activeAssetName = null
-  context.asset.activeAssetRun = null
-}
-
-function endActiveAsset(): void {
-  const context = getScreenCIRuntimeContext()
-  const run = context.asset.activeAssetRun
-  if (run === null) return
-  getRuntimeAssetRecorder().addAssetEnd('wait')
-  sleepForAssetFrameGap()
-  run.resolveFinished()
-  if (context.asset.activeAssetRun === run) {
-    context.asset.activeAssetName = null
-    context.asset.activeAssetRun = null
-  }
 }
 
 function createAssetControllerCore(
@@ -641,36 +636,38 @@ function createAssetControllerCore(
     await prepare?.({ type: 'live' })
     const recorder = getRuntimeAssetRecorder()
     const context = getScreenCIRuntimeContext()
-    assetAutoEnd(name)
+    if (context.asset.activeRuns.has(name)) {
+      throw new Error(
+        `[screenci] Overlay "${name}" is already started. Call end() for it before starting it again.`
+      )
+    }
     const run = createActiveAssetRun(startedWithExplicitStart)
-    context.asset.activeAssetName = name
-    context.asset.activeAssetRun = run
+    context.asset.activeRuns.set(name, run)
     emitStart(recorder, { type: 'live' })
   }
 
   const end = async (): Promise<void> => {
     const context = getScreenCIRuntimeContext()
-    if (
-      context.asset.activeAssetName !== name ||
-      context.asset.activeAssetRun === null
-    ) {
+    const run = context.asset.activeRuns.get(name)
+    if (run === undefined) {
       throw new Error(
-        `Cannot call end() for overlay "${name}" because it is not the active started overlay`
+        `Cannot call end() for overlay "${name}" because it is not a started overlay`
       )
     }
-    const run = context.asset.activeAssetRun
-    endActiveAsset()
+    endLiveAsset(name, 'wait')
     await run.finished
   }
 
   const controller = (async (durationMs?: number): Promise<void> => {
+    // A blocking overlay holds a frozen frame for a fixed duration. It never
+    // registers a live run and never ends overlays that are already live, so it
+    // can run while other overlays stay composited across the frozen frame.
     const mode: AssetStartMode = {
       type: 'blocking',
       ...(durationMs !== undefined && { durationMs }),
     }
     await validate()
     await prepare?.(mode)
-    assetAutoEnd(name)
     const recorder = getRuntimeAssetRecorder()
     emitStart(recorder, mode)
   }) as OverlayController

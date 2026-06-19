@@ -475,13 +475,10 @@ describe('createOverlays', () => {
       })
 
       await overlays.badge.end()
-      expect(recorder.addAssetEnd).toHaveBeenCalledWith('wait')
+      expect(recorder.addAssetEnd).toHaveBeenCalledWith('badge', 'wait')
     })
 
-    it('starting a second overlay auto-ends the first and warns', async () => {
-      const warnSpy = vi
-        .spyOn(await import('./logger.js').then((m) => m.logger), 'warn')
-        .mockImplementation(() => {})
+    it('keeps overlapping overlays live and ends each by name independently', async () => {
       const overlays = createOverlays({
         a: { path: './a.png' },
         b: { path: './b.png' },
@@ -490,16 +487,16 @@ describe('createOverlays', () => {
       await overlays.a.start()
       await overlays.b.start()
 
-      expect(recorder.addAssetEnd).toHaveBeenCalledWith('auto')
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'Overlay "a" was started with .start() and auto-ended'
-        )
-      )
-      warnSpy.mockRestore()
+      // Starting a second overlay does not auto-end the first: both stay live.
+      expect(recorder.addAssetEnd).not.toHaveBeenCalled()
+
+      await overlays.a.end()
+      expect(recorder.addAssetEnd).toHaveBeenCalledWith('a', 'wait')
+      await overlays.b.end()
+      expect(recorder.addAssetEnd).toHaveBeenLastCalledWith('b', 'wait')
     })
 
-    it('blocking call auto-ends a previously started live overlay', async () => {
+    it('does not auto-end a live overlay when a blocking overlay runs', async () => {
       const overlays = createOverlays({
         a: { path: './a.png' },
         b: { path: './b.png', durationMs: 800 },
@@ -508,7 +505,8 @@ describe('createOverlays', () => {
       await overlays.a.start()
       await overlays.b()
 
-      expect(recorder.addAssetEnd).toHaveBeenCalledWith('auto')
+      // The blocking overlay holds a frame while "a" stays composited: no end yet.
+      expect(recorder.addAssetEnd).not.toHaveBeenCalled()
       expect(recorder.addAssetStart).toHaveBeenLastCalledWith('b', {
         kind: 'image',
         path: './b.png',
@@ -516,13 +514,25 @@ describe('createOverlays', () => {
         fullScreen: false,
         placement: DEFAULT_PLACEMENT,
       })
+
+      await overlays.a.end()
+      expect(recorder.addAssetEnd).toHaveBeenCalledWith('a', 'wait')
+    })
+
+    it('starting the same overlay twice without ending throws', async () => {
+      const overlays = createOverlays({ a: { path: './a.png' } })
+
+      await overlays.a.start()
+      await expect(overlays.a.start()).rejects.toThrow(
+        'Overlay "a" is already started'
+      )
     })
 
     it('end() without an active overlay throws', async () => {
       const overlays = createOverlays({ a: { path: './a.png' } })
 
       await expect(overlays.a.end()).rejects.toThrow(
-        'Cannot call end() for overlay "a" because it is not the active started overlay'
+        'Cannot call end() for overlay "a" because it is not a started overlay'
       )
     })
   })

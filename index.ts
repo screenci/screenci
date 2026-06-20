@@ -52,7 +52,7 @@ export type {
   ReactElementLike,
   OverlayPlacement,
 } from './src/asset.js'
-export { createAudio } from './src/audio.js'
+export { createAudio, createStudioAudio } from './src/audio.js'
 export type {
   AudioController,
   AudioConfig,

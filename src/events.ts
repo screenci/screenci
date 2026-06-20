@@ -411,6 +411,18 @@ export type AudioEndEvent = {
   reason?: 'wait'
 }
 
+/**
+ * Background audio track declared via `createStudioAudio` — the file, volume,
+ * and repeat are configured in Studio, so the recording only marks the timeline
+ * point (mirrors {@link StudioAssetStartEvent} for overlays).
+ */
+export type StudioAudioStartEvent = {
+  type: 'audioStart'
+  timeMs: number
+  name: string
+  studio: true
+}
+
 /** Payload for {@link IEventRecorder.addAudioStart} (timing/name added by the recorder). */
 export type AudioStartPayload = Omit<
   AudioStartEvent,
@@ -475,6 +487,7 @@ export type RecordingEvent =
   | AssetEndEvent
   | StudioAssetStartEvent
   | AudioStartEvent
+  | StudioAudioStartEvent
   | AudioEndEvent
   | HideStartEvent
   | HideEndEvent
@@ -517,12 +530,14 @@ export type RecordingMetadata = {
    * Which parts of this recording opted into Studio configuration.
    * `renderOptions` is set when `STUDIO_RENDER_OPTIONS` was used; `narration`
    * when the recording contains `createStudioNarration` cues; `assets` when it
-   * contains `createStudioOverlays` assets.
+   * contains `createStudioOverlays` assets; `audio` when it contains
+   * `createStudioAudio` tracks.
    */
   studio?: {
     renderOptions?: boolean
     narration?: boolean
     assets?: boolean
+    audio?: boolean
   }
 }
 
@@ -602,6 +617,8 @@ export interface IEventRecorder {
   addStudioAssetStart(name: string): void
   /** Records the start of a background audio track (`createAudio`). */
   addAudioStart(name: string, audio: AudioStartPayload): void
+  /** Records a studio-mode audio start — the file, volume, and repeat are configured in Studio. */
+  addStudioAudioStart(name: string): void
   /**
    * Records the end of a background audio track. `name` pairs it to its start;
    * an audio track left open plays to the end of the video.
@@ -641,6 +658,7 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addAssetEnd(): void {},
   addStudioAssetStart(): void {},
   addAudioStart(): void {},
+  addStudioAudioStart(): void {},
   addAudioEnd(): void {},
   addHideStart(): void {},
   addHideEnd(): void {},
@@ -956,6 +974,17 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
+  addStudioAudioStart(name: string): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'audioStart',
+      timeMs,
+      name,
+      studio: true,
+    })
+  }
+
   addAudioEnd(name: string | undefined, reason?: 'wait'): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
@@ -1162,12 +1191,19 @@ export class EventRecorder implements IEventRecorder {
         'studio' in event &&
         event.studio === true
     )
+    const studioAudio = this.events.some(
+      (event) =>
+        event.type === 'audioStart' &&
+        'studio' in event &&
+        event.studio === true
+    )
     const studio: RecordingMetadata['studio'] =
-      studioRenderOptions || studioNarration || studioAssets
+      studioRenderOptions || studioNarration || studioAssets || studioAudio
         ? {
             ...(studioRenderOptions && { renderOptions: true }),
             ...(studioNarration && { narration: true }),
             ...(studioAssets && { assets: true }),
+            ...(studioAudio && { audio: true }),
           }
         : undefined
 

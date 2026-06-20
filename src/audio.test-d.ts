@@ -1,5 +1,9 @@
 import { describe, it, expectTypeOf } from 'vitest'
-import { createAudio, type AudioController } from './audio.js'
+import {
+  createAudio,
+  createStudioAudio,
+  type AudioController,
+} from './audio.js'
 
 describe('createAudio type constraints', () => {
   it('accepts a bare file path string', () => {
@@ -31,5 +35,21 @@ describe('createAudio type constraints', () => {
       // @ts-expect-error placement is not an audio option
       theme: { path: './music.mp3', x: 0.5 },
     })
+  })
+})
+
+describe('createStudioAudio type constraints', () => {
+  it('maps each declared key to an AudioController', () => {
+    const music = createStudioAudio('theme', 'sting')
+    expectTypeOf(music.theme).toEqualTypeOf<AudioController>()
+    expectTypeOf(music.sting).toEqualTypeOf<AudioController>()
+    expectTypeOf(music.theme.start).toEqualTypeOf<() => Promise<void>>()
+    expectTypeOf(music.theme.end).toEqualTypeOf<() => Promise<void>>()
+  })
+
+  it('only exposes the declared keys', () => {
+    const music = createStudioAudio('theme')
+    // @ts-expect-error 'typo' was not declared
+    expectTypeOf(music.typo)
   })
 })

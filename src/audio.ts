@@ -174,28 +174,61 @@ export function createAudio<const T extends Record<string, AudioInput>>(
   return result
 }
 
-function buildAudioController(
-  name: string,
-  input: AudioInput
-): AudioController {
-  const config = normalizeAudioConfig(name, input)
-
-  const buildPayload = async (): Promise<AudioStartPayload> => {
-    const testFilePath = getScreenCIRuntimeContext().testFilePath
-    const resolved = await resolveAudioFile(name, config.path, testFilePath)
-    return {
-      path: resolved.path,
-      fileHash: resolved.fileHash,
-      volume: config.volume ?? 1,
-      repeat: config.repeat ?? false,
+/**
+ * Creates typed background audio controllers whose files, volume, and repeat are
+ * configured on the ScreenCI Studio page instead of in code. Business tier only.
+ *
+ * Each key becomes a callable controller with the same timeline behavior as
+ * {@link createAudio} controllers, including `start()`/`end()`. The audio file,
+ * volume, and repeat all come from Studio (mirrors {@link createStudioOverlays}
+ * for overlays).
+ *
+ * On the first upload of a studio-mode video, rendering is held until the video
+ * is configured in Studio (the CLI prints a direct link). Later uploads reuse
+ * the saved Studio configuration automatically.
+ *
+ * @example
+ * ```ts
+ * const music = createStudioAudio('theme', 'sting')
+ *
+ * video('Product demo', async ({ page }) => {
+ *   await music.theme()          // plays under the whole video
+ *   await page.goto('/dashboard')
+ *   await music.sting.start()
+ *   await page.click('#celebrate')
+ *   await music.sting.end()
+ * })
+ * ```
+ */
+export function createStudioAudio<
+  const K extends readonly [string, ...string[]],
+>(...keys: K): Record<K[number], AudioController> {
+  const seen = new Set<string>()
+  for (const key of keys) {
+    if (seen.has(key)) {
+      throw new Error(
+        `Duplicate audio key "${key}" passed to createStudioAudio. Audio keys must be unique.`
+      )
     }
+    seen.add(key)
   }
 
-  const emitStart = async (recorder: IEventRecorder): Promise<void> => {
-    const payload = await buildPayload()
-    recorder.addAudioStart(name, payload)
+  const result = {} as Record<K[number], AudioController>
+  for (const key of keys) {
+    result[key as K[number]] = buildStudioAudioController(key)
   }
+  return result
+}
 
+/**
+ * Builds the callable/`start()`/`end()` audio controller shared by code-defined
+ * ({@link createAudio}) and Studio ({@link createStudioAudio}) tracks. The only
+ * difference is how `emitStart` records the start event.
+ */
+function createAudioControllerCore(
+  name: string,
+  emitStart: (recorder: IEventRecorder) => Promise<void>
+): AudioController {
   // start()/end() register a live run so end() can pair to its start and a
   // double start() is rejected.
   const start = async (): Promise<void> => {
@@ -246,4 +279,34 @@ function buildAudioController(
   controller.start = start
   controller.end = end
   return controller
+}
+
+function buildAudioController(
+  name: string,
+  input: AudioInput
+): AudioController {
+  const config = normalizeAudioConfig(name, input)
+
+  const buildPayload = async (): Promise<AudioStartPayload> => {
+    const testFilePath = getScreenCIRuntimeContext().testFilePath
+    const resolved = await resolveAudioFile(name, config.path, testFilePath)
+    return {
+      path: resolved.path,
+      fileHash: resolved.fileHash,
+      volume: config.volume ?? 1,
+      repeat: config.repeat ?? false,
+    }
+  }
+
+  return createAudioControllerCore(name, async (recorder) => {
+    const payload = await buildPayload()
+    recorder.addAudioStart(name, payload)
+  })
+}
+
+function buildStudioAudioController(name: string): AudioController {
+  return createAudioControllerCore(name, (recorder) => {
+    recorder.addStudioAudioStart(name)
+    return Promise.resolve()
+  })
 }

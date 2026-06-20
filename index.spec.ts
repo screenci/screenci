@@ -13,6 +13,7 @@ describe('public api surface', () => {
       'createAudio',
       'createNarration',
       'createOverlays',
+      'createStudioAudio',
       'createStudioNarration',
       'createStudioOverlays',
       'defineConfig',

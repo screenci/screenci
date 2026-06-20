@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { createAudio } from './audio.js'
+import { createAudio, createStudioAudio } from './audio.js'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
 import {
@@ -23,6 +23,7 @@ function createMockRecorder(): IEventRecorder {
     addAssetEnd: vi.fn(),
     addStudioAssetStart: vi.fn(),
     addAudioStart: vi.fn(),
+    addStudioAudioStart: vi.fn(),
     addAudioEnd: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),
@@ -188,5 +189,74 @@ describe('createAudio', () => {
     expect(audio.theme).toBeDefined()
     // Restore noop to confirm nothing was left registered.
     void NOOP_EVENT_RECORDER
+  })
+})
+
+describe('createStudioAudio', () => {
+  let recorder: IEventRecorder
+  let context: ScreenCIRuntimeContext
+
+  beforeEach(() => {
+    recorder = createMockRecorder()
+    context = createScreenCIRuntimeContext({ recorder, testFilePath: null })
+  })
+
+  const run = (fn: () => Promise<void>): Promise<void> =>
+    runWithScreenCIRuntimeContext(context, fn)
+
+  it('creates a callable controller with start()/end() for each key', () => {
+    const music = createStudioAudio('theme', 'sting')
+    expect(typeof music.theme).toBe('function')
+    expect(typeof music.theme.start).toBe('function')
+    expect(typeof music.theme.end).toBe('function')
+    expect(typeof music.sting).toBe('function')
+  })
+
+  it('a bare call records a studio audio start with the key name', async () => {
+    await run(async () => {
+      const music = createStudioAudio('theme', 'sting')
+      await music.theme()
+      await music.sting()
+    })
+    expect(recorder.addStudioAudioStart).toHaveBeenCalledTimes(2)
+    expect(recorder.addStudioAudioStart).toHaveBeenNthCalledWith(1, 'theme')
+    expect(recorder.addStudioAudioStart).toHaveBeenNthCalledWith(2, 'sting')
+    // Studio tracks never resolve a file, so no code-path audioStart is emitted.
+    expect(recorder.addAudioStart).not.toHaveBeenCalled()
+  })
+
+  it('start() then end() records a paired studio start and audioEnd', async () => {
+    await run(async () => {
+      const music = createStudioAudio('theme')
+      await music.theme.start()
+      await music.theme.end()
+    })
+    expect(recorder.addStudioAudioStart).toHaveBeenCalledWith('theme')
+    expect(recorder.addAudioEnd).toHaveBeenCalledWith('theme', 'wait')
+  })
+
+  it('rejects starting the same track twice without ending it', async () => {
+    await run(async () => {
+      const music = createStudioAudio('theme')
+      await music.theme.start()
+      await expect(music.theme.start()).rejects.toThrow(
+        'Audio "theme" is already started'
+      )
+    })
+  })
+
+  it('rejects end() for a track that was never started', async () => {
+    await run(async () => {
+      const music = createStudioAudio('theme')
+      await expect(music.theme.end()).rejects.toThrow(
+        'Cannot call end() for audio "theme"'
+      )
+    })
+  })
+
+  it('throws on duplicate keys', () => {
+    expect(() => createStudioAudio('theme', 'theme')).toThrow(
+      'Duplicate audio key "theme" passed to createStudioAudio. Audio keys must be unique.'
+    )
   })
 })

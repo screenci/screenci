@@ -10,9 +10,10 @@ There are two ways to use it:
   be remixed in Studio. Your code-specified values are prefilled. Override
   them and render a new version server-side.
 - **Opt in from code.** Declare cue keys with `createStudioNarration`, overlay
-  keys with `createStudioOverlays`, and set
-  `renderOptions: STUDIO_RENDER_OPTIONS` so narration, overlays, and render
-  options are managed entirely on the Studio page.
+  keys with `createStudioOverlays`, background audio keys with
+  `createStudioAudio`, and set `renderOptions: STUDIO_RENDER_OPTIONS` so
+  narration, overlays, background audio, and render options are managed entirely
+  on the Studio page.
 
 #### You will learn
 
@@ -21,6 +22,7 @@ There are two ways to use it:
 - [how to manage narration from Studio](#studio-narration-from-code)
 - [how to use uploaded media as narration](#narration-media-from-studio)
 - [how to manage overlays from Studio](#studio-overlays-from-code)
+- [how to manage background audio from Studio](#studio-audio-from-code)
 - [how to defer render options to Studio](#studio-render-options)
 
 ## Remix a video
@@ -29,8 +31,9 @@ Open a video in the web app and choose **Open in Studio**. Studio starts from
 the code-specified narration, voices, and render options and lets you **add
 modifications** on top: only the changes you make are kept, so a saved override
 always means "this was set in Studio, not in code". Studio-declared items
-(`createStudioNarration`, `createStudioOverlays`, `STUDIO_RENDER_OPTIONS`) are
-shown as required fields you must fill in before the first render.
+(`createStudioNarration`, `createStudioOverlays`, `createStudioAudio`,
+`STUDIO_RENDER_OPTIONS`) are shown as required fields you must fill in before
+the first render.
 
 Choose **Save & render** to store your changes in the override set and render a
 new version from the same recording. Choose **Render once** to render with your
@@ -148,6 +151,39 @@ Like studio narration, the first upload of a video using `createStudioOverlays`
 is held until every declared overlay has a file configured in Studio. The CLI
 prints a direct link. Later uploads reuse the saved configuration. See
 [Overlays](./assets-and-overlays.md) for how overlays behave on the timeline.
+
+## Studio audio from code
+
+`createStudioAudio` declares background-audio keys in code while the file,
+volume, and repeat are configured in Studio:
+
+```ts
+import { createStudioAudio, video } from 'screenci'
+
+const music = createStudioAudio('theme', 'sting')
+
+video('Product demo', async ({ page }) => {
+  await music.theme() // plays under the whole video
+  await page.goto('/dashboard')
+  await music.sting.start()
+  await page.click('#celebrate')
+  await music.sting.end()
+})
+```
+
+Calling a controller marks the point in the timeline, exactly like
+`createAudio` controllers: a bare call plays from that point to the end of the
+video, while `start()`/`end()` bound the track to a span. The audio file, the
+volume, and whether the track loops to fill its span are all set on the Studio
+page. The volume is a linear-gain slider: `1` (the default) plays the source at
+its natural level, `0` mutes it, and values above `1` boost it (up to `4`).
+TypeScript knows the declared keys, so `music.typo` is a compile error.
+
+Like studio overlays, the first upload of a video using `createStudioAudio` is
+held until every declared track has a file configured in Studio. The CLI prints
+a direct link. Later uploads reuse the saved configuration. See
+[Background audio](./assets-and-overlays.md) for how audio behaves on the
+timeline.
 
 ## Studio render options
 

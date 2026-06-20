@@ -30,13 +30,14 @@ Error responses:
 
 ## `GET /public/:id/:language/video`
 
-Serves the rendered MP4 for one language variant.
+Serves the rendered MP4 for one language variant. This is the stable static URL,
+which follows the currently selected version. To pin to a specific run, use the
+[record-pinned URL](#record-pinned-urls) form instead.
 
 Useful query parameters:
 
 - `filename`
 - `download=1`
-- `record=<recordId>` (see [Record-pinned URLs](#record-pinned-urls))
 
 Response headers:
 
@@ -64,13 +65,14 @@ When the language is not available, the response can include the languages that 
 
 ## `GET /public/:id/:language/thumbnail`
 
-Serves the published thumbnail image for one language variant.
+Serves the published thumbnail image for one language variant. Follows the
+currently selected version; pin to a run with the
+[record-pinned URL](#record-pinned-urls) form.
 
 Useful query parameters:
 
 - `filename`
 - `download=1`
-- `record=<recordId>` (see [Record-pinned URLs](#record-pinned-urls))
 
 Response headers:
 
@@ -88,13 +90,14 @@ Error responses:
 
 ## `GET /public/:id/:language/subtitle`
 
-Serves the WebVTT subtitle file for one language variant when subtitles exist for the selected render.
+Serves the WebVTT subtitle file for one language variant when subtitles exist for the selected render. Follows the
+currently selected version; pin to a run with the
+[record-pinned URL](#record-pinned-urls) form.
 
 Useful query parameters:
 
 - `filename`
 - `download=1`
-- `record=<recordId>` (see [Record-pinned URLs](#record-pinned-urls))
 
 Response headers:
 
@@ -112,15 +115,19 @@ Error responses:
 
 ## Record-pinned URLs
 
-Every media endpoint accepts an optional `record=<recordId>` query parameter.
-Without it, the route serves the **currently selected** version (the stable,
-"static" URL). With it, the route serves the render produced by that specific
-`screenci record` run.
+Every media endpoint has a record-pinned form that adds a `records/<recordId>`
+segment to the path. The static URL (no `records/` segment) serves the
+**currently selected** version. The pinned URL serves the render produced by that
+specific `screenci record` run.
 
 ```text
-GET /public/:id/:language/video                    # latest selected version
-GET /public/:id/:language/video?record=<recordId>  # this run's render
+GET /public/:id/:language/video                       # latest selected version
+GET /public/:id/records/<recordId>/:language/video    # this run's render
 ```
+
+The same shape applies to `thumbnail` and `subtitle`. Because a pinned URL is
+immutable, it is served with a long, `immutable` `Cache-Control`, while the
+static URL uses a short TTL so it can follow the selected version.
 
 This record-pinned surface is enabled by the same single public switch as the
 static URLs (no separate setting). The CLI surfaces it per language as
@@ -132,10 +139,10 @@ A record-pinned URL is an **immutable** contract: it serves that exact run's
 render, or it `404`s. It never silently swaps to a different video.
 
 1. **Public gate.** If the video has no public delivery configured, the request
-   `404`s immediately, with or without `?record=`. Making a video private takes
-   every URL (static and pinned) offline at once.
-2. **Pinned render.** With `?record=<recordId>`, if that run's render for the
-   requested language still exists, it is served exactly.
+   `404`s immediately, for both the static and pinned URLs. Making a video
+   private takes every URL (static and pinned) offline at once.
+2. **Pinned render.** With `records/<recordId>` in the path, if that run's render
+   for the requested language still exists, it is served exactly.
 3. **404 once cleaned up.** If that run's render has been pruned (or the run
    never produced one for this language), the pinned URL `404`s. It does **not**
    fall back to the currently selected version, because doing so could serve a

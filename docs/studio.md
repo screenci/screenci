@@ -6,65 +6,69 @@ recording. Studio is available on the Business tier.
 
 There are two ways to use it:
 
-- **Remix an existing video.** Any video recorded with `createNarration` can
-  be remixed in Studio. Your code-specified values are prefilled. Override
-  them and render a new version server-side.
 - **Opt in from code.** Declare cue keys with `createStudioNarration`, overlay
   keys with `createStudioOverlays`, background audio keys with
-  `createStudioAudio`, and set `renderOptions: STUDIO_RENDER_OPTIONS` so
-  narration, overlays, background audio, and render options are managed entirely
-  on the Studio page.
+  `createStudioAudio`, and set `renderOptions: STUDIO_RENDER_OPTIONS`. Those
+  items are then edited on the Studio page. Your edits are saved and applied
+  automatically to every later upload.
+- **Render a one-off version.** Any video can be opened in Studio and rendered
+  as a one-off, overriding any code-defined narration, overlays, or render
+  options for a single render. One-off renders are not saved and do not change
+  what future uploads render.
 
 #### You will learn
 
-- [how to remix a video from the web](#remix-a-video)
-- [how to reapply or auto-apply a remix](#reapply-and-auto-apply)
+- [how to edit and render a video in Studio](#editing-in-studio)
+- [how saved edits and one-off renders differ](#saved-edits-vs-one-off-renders)
 - [how to manage narration from Studio](#studio-narration-from-code)
 - [how to use uploaded media as narration](#narration-media-from-studio)
 - [how to manage overlays from Studio](#studio-overlays-from-code)
 - [how to manage background audio from Studio](#studio-audio-from-code)
 - [how to defer render options to Studio](#studio-render-options)
 
-## Remix a video
+## Editing in Studio
 
-Open a video in the web app and choose **Open in Studio**. Studio starts from
-the code-specified narration, voices, and render options and lets you **add
-modifications** on top: only the changes you make are kept, so a saved override
-always means "this was set in Studio, not in code". Studio-declared items
-(`createStudioNarration`, `createStudioOverlays`, `createStudioAudio`,
-`STUDIO_RENDER_OPTIONS`) are shown as required fields you must fill in before
-the first render.
+Open a video in the web app and choose **Open in Studio**. Studio shows the
+narration, voices, overlays, audio, and render options the video uses. Items you
+opted into from code (`createStudioNarration`, `createStudioOverlays`,
+`createStudioAudio`, `STUDIO_RENDER_OPTIONS`) are editable; anything defined in
+code is shown read-only and marked with a **code** badge.
 
-Choose **Save & render** to store your changes in the override set and render a
-new version from the same recording. Choose **Render once** to render with your
-current edits without saving them: the override set is left untouched, which is
-handy for trying a one-off tweak.
+Edits autosave: a status line shows **Saving...** and then **All changes
+saved**. The saved set is this video's Studio configuration, and it is applied
+automatically to every later upload (see [Saved edits vs one-off
+renders](#saved-edits-vs-one-off-renders)).
 
-Rendering is per language: next to the render button you can toggle which
-languages to render, so a one-language fix doesn't re-render every localized
-version.
+Pick a language at the top, then choose **Render** to render a new version in
+that language from the same recording. Rendering is per language: switch the
+language and render again to update another localized version.
 
-Remixed versions are marked with a **Studio** badge in the version list, and
-the version page shows exactly which values were changed compared to the
+Studio versions are marked with a **Studio** badge in the version list, and the
+version page shows exactly which values were changed compared to the
 code-specified ones.
 
-A remix is one-off by default: the next CI upload renders with the values
-from code again.
+## Saved edits vs one-off renders
 
-## Reapply and auto-apply
+Studio separates changes that stick from changes that do not:
 
-Your Studio edits are saved with the video, so reapplying the same changes to
-a newer upload is one click.
+- **Saved edits** to studio-declared items (`createStudioNarration`,
+  `createStudioOverlays`, `createStudioAudio`, `STUDIO_RENDER_OPTIONS`) autosave
+  into the video's Studio configuration. That configuration is reused
+  automatically on every later upload, so CI keeps rendering with your Studio
+  values instead of the code defaults. When this happens the CLI prints a line
+  in the upload output, so it is visible in CI logs:
 
-If you want every new upload to get the same treatment, enable
-**Auto-apply to new uploads** in Studio. When auto-apply is active, the CLI
-prints a line in the upload output so it is always visible in CI logs that the
-rendered video uses the Studio configuration rather than what the code
-specifies:
+  ```
+  Studio configuration applied for "Checkout walkthrough".
+  ```
 
-```
-Studio configuration applied for "Checkout walkthrough".
-```
+- **One-off renders** let you change anything, including values defined in code.
+  Choose **Create one-off version**, confirm the prompt, edit freely, then
+  **Render one-off** to produce a single version. One-off renders are not saved
+  and never change what future uploads render. To make a code-defined value
+  editable in the normal, saved flow instead, switch it to the matching Studio
+  variant in code (`createStudioNarration`, `createStudioOverlays`,
+  `createStudioAudio`, or `STUDIO_RENDER_OPTIONS`).
 
 ## Studio narration from code
 
@@ -90,6 +94,10 @@ The cues behave exactly like `createNarration` cues: callable, with explicit
 `start()` and `end()`, and automatic sequencing between consecutive cues.
 TypeScript knows the declared keys, so `narration.typo` is a compile error.
 
+For each cue, Studio exposes the same voice controls available in code (model
+type, style, accent, and pacing) plus a per-cue volume, alongside the narration
+text and language list.
+
 On the **first upload** of a studio-mode video, rendering is held until
 someone fills in the narration on the Studio page. The CLI prints the hold
 together with a direct link to Studio:
@@ -101,6 +109,8 @@ https://app.screenci.com/project/<projectId>/video/<videoId>/studio
 
 After the video has been configured once, subsequent uploads reuse the saved
 Studio configuration and render automatically.
+
+API reference: [createStudioNarration()](/docs/reference/api/functions/createStudioNarration)
 
 ## Narration media from Studio
 
@@ -154,6 +164,8 @@ is held until every declared overlay has a file configured in Studio. The CLI
 prints a direct link. Later uploads reuse the saved configuration. See
 [Overlays](./assets-and-overlays.md) for how overlays behave on the timeline.
 
+API reference: [createStudioOverlays()](/docs/reference/api/functions/createStudioOverlays)
+
 ## Studio audio from code
 
 `createStudioAudio` declares background-audio keys in code while the file,
@@ -190,6 +202,8 @@ a direct link. Later uploads reuse the saved configuration. See
 [Background audio](./assets-and-overlays.md) for how audio behaves on the
 timeline.
 
+API reference: [createStudioAudio()](/docs/reference/api/functions/createStudioAudio)
+
 ## Studio render options
 
 Set the `renderOptions` option to `STUDIO_RENDER_OPTIONS` to manage render
@@ -208,6 +222,8 @@ export default defineConfig({
 This works in the top-level `use` block and in per-project `use` blocks. Until
 the video is configured in Studio, uploads render with the default render
 options (or are held together with studio narration, if both are used).
+
+API reference: [STUDIO_RENDER_OPTIONS](/docs/reference/api/variables/STUDIO_RENDER_OPTIONS)
 
 ## Tier requirements
 

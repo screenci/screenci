@@ -2,7 +2,7 @@
 
 Overlays let you place additional media on top of the recording timeline. Use them for intros, transitions, corner branding, callouts, or short contextual clips that would be awkward to build inside the browser automation itself.
 
-An overlay can come from a file (`.html`, `.svg`, `.png`, or `.mp4`), a React element, or an inline config object. HTML files and React elements are rendered to a transparent PNG at recording time and then behave exactly like an image overlay, or, with `animate: true`, are captured as a transparent animated clip (see [Animated overlays](#animated-overlays)).
+An overlay can come from a file (`.html`, `.svg`, `.png`, or `.mp4`), a React element, an inline HTML fragment, or an inline config object. HTML (file or inline) and React elements are rendered to a transparent PNG at recording time and then behave exactly like an image overlay, or, with `animate: true`, are captured as a transparent animated clip (see [Animated overlays](#animated-overlays)).
 
 #### You will learn
 
@@ -17,7 +17,9 @@ An overlay can come from a file (`.html`, `.svg`, `.png`, or `.mp4`), a React el
 
 - a **file path** string (`.html`, `.svg`, `.png`, `.mp4`),
 - a **React element**, or
-- a **config object** (`{ path | element, ...placement }`).
+- a **config object** (`{ path | element | html, ...placement }`).
+
+A config object draws its content from exactly one source: a file `path`, a React `element`, or an inline `html` fragment.
 
 ```tsx
 import { createOverlays, video } from 'screenci'
@@ -27,6 +29,7 @@ const overlays = createOverlays({
   intro: { path: 'assets/intro.mp4', fullScreen: true }, // full-frame video
   hint: 'assets/callout.html', // HTML file
   badge: <Badge label="New" />, // React element
+  note: { html: '<div class="note">Tip</div>', x: 0.7, y: 0.1, width: 0.2 }, // inline HTML
   logo: { path: 'assets/logo.png', x: 0.05, y: 0.05, width: 0.15 },
 })
 
@@ -54,14 +57,23 @@ Rules:
 
 ### HTML and React overlays
 
-HTML overlays are authored as `.html` files; pass the path like any other file.
-React overlays are passed straight in as elements. `react` and `react-dom` are
-optional peer dependencies imported lazily, so installing screenci never pulls
-React into your project unless you actually use an element. `screenci init`
-offers to set this up for you (it installs `react`/`react-dom`, enables
-`"jsx": "react-jsx"` in the scaffolded `tsconfig.json`, and adds a `.tsx`
-example). To wire it up by hand, install the packages, set `"jsx": "react-jsx"`
-in your tsconfig, and author the overlay in a `.video.tsx` file.
+You can build the same overlay three ways, and all of them honor the same
+[placement](#positioning) fields (`x`, `y`, `width`/`height`, `relativeTo`),
+`durationMs`, `animate`, `css`, and `capturePadding`:
+
+- **An `.html` file** (`path`): authored as a standalone `.html` file and passed
+  like any other file path.
+- **A React element** (`element`): passed straight in as JSX. `react` and
+  `react-dom` are optional peer dependencies imported lazily, so installing
+  screenci never pulls React into your project unless you actually use an
+  element. `screenci init` offers to set this up for you (it installs
+  `react`/`react-dom`, enables `"jsx": "react-jsx"` in the scaffolded
+  `tsconfig.json`, and adds a `.tsx` example). To wire it up by hand, install the
+  packages, set `"jsx": "react-jsx"` in your tsconfig, and author the overlay in
+  a `.video.tsx` file.
+- **An inline HTML fragment** (`html`): a string of plain HTML, with no React
+  dependency and no separate file. Use it for small, one-off overlays you would
+  rather keep next to the script.
 
 ```tsx
 const overlays = createOverlays({
@@ -69,15 +81,39 @@ const overlays = createOverlays({
   hint: { path: 'assets/callout.html', x: 0.4, y: 0.8, width: 0.2 },
   // From a React element.
   badge: { element: <Badge label="New" />, x: 0.7, y: 0.1, width: 0.15 },
+  // From an inline HTML fragment.
+  note: { html: '<div class="note">Saved</div>', x: 0.7, y: 0.1, width: 0.2 },
 })
 ```
+
+The `html` value must be a **fragment**, not a full document. screenci wraps your
+markup in its own document before rasterizing, so `<!doctype>`, `<html>`,
+`<head>`, and `<body>` tags are rejected (a full document would nest documents
+and break the capture). Write only the content, exactly as you would inside a
+React element:
+
+```tsx
+// Good: a fragment.
+{
+  html: '<div class="badge"><span>New</span></div>'
+}
+
+// Rejected: a full document.
+{
+  html: '<!doctype html><html><body><div>New</div></body></html>'
+}
+```
+
+To style an inline fragment with `className`, inject a stylesheet with `css` or
+`setOverlayCss`, exactly as for `.html` files and React elements (see
+[Styling with className](#styling-with-classname-and-tailwind)).
 
 ### Animated overlays
 
 By default an HTML or React overlay is captured as a single still frame. Set
 `animate: true` to play its CSS/JS animation back in the video, with the
-transparent background preserved. Only HTML files and React elements can
-animate.
+transparent background preserved. Only rendered overlays (HTML files, inline
+`html` fragments, and React elements) can animate.
 
 ```tsx
 const overlays = createOverlays({
@@ -305,6 +341,11 @@ Timing:
 
 Unlike overlays, audio tracks have no placement and never hold a frozen frame:
 they simply mix into the soundtrack.
+
+On the Business tier you can also declare track keys with
+`createStudioAudio('theme', 'sting')` and upload the files plus options on the
+Studio page instead of keeping them in the repository. See
+[Studio](./studio.md#studio-audio-from-code).
 
 ## File organization
 

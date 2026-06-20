@@ -310,9 +310,9 @@ the command to use in CI to gate on rendering or grab links right after a record
           },
           "latestRecord": {
             "status": "finished",
-            "video": "https://api.screenci.com/public/kh74…/en/video?record=5f1c…",
-            "thumbnail": "https://api.screenci.com/public/kh74…/en/thumbnail?record=5f1c…",
-            "subtitle": "https://api.screenci.com/public/kh74…/en/subtitle?record=5f1c…",
+            "video": "https://api.screenci.com/public/kh74…/records/5f1c…/en/video",
+            "thumbnail": "https://api.screenci.com/public/kh74…/records/5f1c…/en/thumbnail",
+            "subtitle": "https://api.screenci.com/public/kh74…/records/5f1c…/en/subtitle",
             "download": {
               "video": "https://api.screenci.com/cli/download/kh74…/en/video?record=5f1c…",
               "thumbnail": "https://api.screenci.com/cli/download/kh74…/en/thumbnail?record=5f1c…",
@@ -331,8 +331,9 @@ Each language exposes up to three URL sets:
 - `static`: stable, public URLs that always follow the currently selected
   version
 - `download`: authenticated download URLs for the selected version (see below)
-- `latestRecord`: this run's render status plus public URLs pinned to it with
-  `?record=<recordId>` (an immutable contract: the exact run, or `404`, see
+- `latestRecord`: this run's render status plus public URLs pinned to it via a
+  `records/<recordId>` path segment (an immutable contract: the exact run, or
+  `404`, see
   [resolution rules](/docs/reference/public-delivery-api#resolution-rules)). Once
   finished, it also carries record-pinned `download` URLs.
 

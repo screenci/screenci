@@ -43,8 +43,20 @@ export type ReactElementLike = {
 export type OverlayConfig = {
   /** File path: `.html` (rendered), `.svg`/`.png` (image), or `.mp4` (video). */
   path?: string
-  /** A React element, rendered to a transparent PNG. Mutually exclusive with `path`. */
+  /**
+   * A React element, rendered to a transparent PNG. Use this for overlays built
+   * in JSX. Provide exactly one source: `path`, `element`, or `html`.
+   */
   element?: ReactElementLike
+  /**
+   * An inline HTML fragment, rendered to a transparent PNG. Use this when you
+   * want plain HTML without a React dependency or a separate `.html` file. It
+   * must be a fragment (for example `'<div class="badge">New</div>'`), never a
+   * full document: `<!doctype>`, `<html>`, `<head>`, and `<body>` tags are
+   * rejected because screenci wraps the markup in its own document. Provide
+   * exactly one source: `path`, `element`, or `html`.
+   */
+  html?: string
   /** Reference box for placement coordinates. Defaults to `'recording'`. */
   relativeTo?: 'screen' | 'recording'
   /** Left edge as a 0..1 fraction of the reference box. Defaults to `0`. */
@@ -249,6 +261,8 @@ export type Overlays<T extends Record<string, OverlayInput>> = {
 /**
  * Creates a set of typed overlay controllers, one per key in the map. Each value
  * is a file path string, a React element, or an {@link OverlayConfig} object.
+ * A config can draw its content from exactly one source: a file `path`, a React
+ * `element`, or an inline `html` fragment.
  *
  * Calling a controller shows the overlay in the recording timeline. Image
  * (`.svg`/`.png`), HTML, and React overlays need a `durationMs` (in the config
@@ -263,6 +277,7 @@ export type Overlays<T extends Record<string, OverlayInput>> = {
  * const overlays = createOverlays({
  *   hint:  'callout.html',                       // HTML file
  *   badge: <Badge label="New" />,                // React element
+ *   note:  { html: '<div class="note">Tip</div>', x: 0.7, y: 0.1, width: 0.2 },
  *   logo:  { path: 'logo.png', x: 0.05, y: 0.05, width: 0.2 },
  *   intro: { path: 'intro.mp4', fullScreen: true },
  * })
@@ -313,15 +328,20 @@ function buildOverlayFromConfig(
 ): OverlayController {
   const hasPath = config.path !== undefined
   const hasElement = config.element !== undefined
-  if (hasPath && hasElement) {
+  const hasHtml = config.html !== undefined
+  const sourceCount = Number(hasPath) + Number(hasElement) + Number(hasHtml)
+  if (sourceCount > 1) {
     throw new Error(
-      `[screenci] Overlay "${name}" must provide only one of "path" or "element".`
+      `[screenci] Overlay "${name}" must provide only one of "path", "element", or "html".`
     )
   }
-  if (!hasPath && !hasElement) {
+  if (sourceCount === 0) {
     throw new Error(
-      `[screenci] Overlay "${name}" must provide a "path" or an "element".`
+      `[screenci] Overlay "${name}" must provide a "path", an "element", or inline "html".`
     )
+  }
+  if (hasHtml) {
+    validateInlineHtmlFragment(name, config.html!)
   }
 
   const placement = resolveOverlayPlacement(name, config)
@@ -358,18 +378,20 @@ function buildOverlayFromConfig(
   // overlays. Images, HTML, React, and animated overlays have no source rate.
   if (
     (config.speed !== undefined || config.time !== undefined) &&
-    (hasElement || getAssetExtension(config.path ?? '') !== '.mp4')
+    (hasElement || hasHtml || getAssetExtension(config.path ?? '') !== '.mp4')
   ) {
     throw new Error(
       `[screenci] Overlay "${name}" only supports speed/time on .mp4 video overlays.`
     )
   }
 
-  // React element: rendered to markup lazily at recording time.
-  if (hasElement) {
-    const element = config.element!
-    const getMarkup = (): Promise<string> =>
-      renderElementToMarkup(name, element)
+  // React element or inline HTML fragment: rendered to markup lazily at
+  // recording time. Both follow the identical placement/animate/css/padding
+  // path; only how the markup is produced differs.
+  if (hasElement || hasHtml) {
+    const getMarkup = hasElement
+      ? (): Promise<string> => renderElementToMarkup(name, config.element!)
+      : (): Promise<string> => Promise.resolve(config.html!)
     if (animate) {
       return createAnimatedOverlayController(
         name,
@@ -485,6 +507,35 @@ function buildOverlayFromConfig(
   throw new Error(
     `[screenci] Overlay "${name}" must use one of: .html, .svg, .png, .mp4. Received: ${path}`
   )
+}
+
+/**
+ * Validates an inline `html` overlay fragment. It must be non-empty and must
+ * not contain document-level tags (`<!doctype>`, `<html>`, `<head>`, `<body>`):
+ * screenci wraps the markup in its own document before rasterizing, so a full
+ * document here would nest documents and break the capture. Mirrors the
+ * fragment contract of a React `element`.
+ */
+function validateInlineHtmlFragment(name: string, html: string): void {
+  if (html.trim().length === 0) {
+    throw new Error(
+      `[screenci] Overlay "${name}" inline "html" must not be empty.`
+    )
+  }
+  const lower = html.toLowerCase()
+  const forbidden: Array<{ token: string; label: string }> = [
+    { token: '<!doctype', label: '<!doctype>' },
+    { token: '<html', label: '<html>' },
+    { token: '<head', label: '<head>' },
+    { token: '<body', label: '<body>' },
+  ]
+  for (const { token, label } of forbidden) {
+    if (lower.includes(token)) {
+      throw new Error(
+        `[screenci] Overlay "${name}" inline "html" must be a fragment, not a full HTML document. Remove the ${label} tag; screenci wraps the markup in a document for you.`
+      )
+    }
+  }
 }
 
 async function renderElementToMarkup(

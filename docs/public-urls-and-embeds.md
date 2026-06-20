@@ -74,11 +74,12 @@ Manual selection is currently done in the app, not the CLI.
 
 ## Per-run (record-pinned) URLs
 
-Alongside the stable URLs above, every media URL accepts an optional
-`?record=<recordId>` parameter that pins it to a specific `screenci record` run:
+Alongside the stable URLs above, every media URL has a record-pinned form that
+adds a `records/<recordId>` segment to the path, pinning it to a specific
+`screenci record` run:
 
 ```text
-https://api.screenci.com/public/<videoId>/<language>/video?record=<recordId>
+https://api.screenci.com/public/<videoId>/records/<recordId>/<language>/video
 ```
 
 The same single **Enable public URL** switch turns on both the stable URLs and

@@ -107,65 +107,42 @@ See [Configuration](/docs/reference/configuration).
 
 ### `hide()`, `speed()`, and `time()`
 
-Use these timeline helpers to decide whether a step should be removed from the
-final video or just retimed:
-
-- Use `hide()` when the viewer should not see the step at all. This is useful
-  for navigation, sign-in, waiting for app state, or dismissing a cookie
-  banner before the real flow begins.
-- Use `speed()` when the viewer should still see the step, but faster or
-  slower than real time.
-- Use `time()` when the viewer should still see the step, and you want the
-  whole visible block to occupy an exact duration in the output.
-
-See [Page Instrumentation](/docs/guides/page-instrumentation) for how visible
-actions are captured.
-
-`hide()` takes just the function to run. It removes the enclosed recording
-range from the final output.
+Timeline helpers that decide whether a step is removed from the final video or
+just retimed. Not every automated step belongs in the recording: use `hide()`
+for non-viewer setup the viewer does not need to watch, such as signing in,
+accepting cookies, waiting for app state, or opening the right screen before the
+visible flow begins.
 
 ```ts
-await hide(async () => {
-  await page.goto('/settings')
-  await page.getByRole('button', { name: 'Accept all cookies' }).click()
-  await page.getByRole('button', { name: 'Open billing' }).click()
-})
-```
-
-Use `speed()` and `time()` when a step should stay visible but play at a
-different pace in the rendered output.
-
-- `speed(1, fn)` keeps real-time playback.
-- `speed(0.5, fn)` plays the enclosed visible content at half-speed, so it
-  takes 2x longer in the output.
-- `speed(2, fn)` plays the enclosed visible content at 2x speed, so it takes
-  half as long in the output.
-- `time(1000, fn)` makes the enclosed visible content occupy exactly `1000`
-  milliseconds in the output.
-- `hide()` may be used inside `speed()` or `time()`, but not inside another
-  `hide()`.
-- `speed()` and `time()` may not be nested inside each other or inside
-  themselves.
-- Narration cue audio is not retimed. These blocks only remap the main
-  recording timeline.
-
-```ts
+// hide(): run the step but remove it from the output.
+// Use for navigation, sign-in, waiting, or dismissing banners.
 await hide(async () => {
   await page.goto('/reports')
   await page.getByRole('button', { name: 'Accept cookies' }).click()
 })
 
+// speed(): keep the step visible, but play it faster or slower.
+// 1 = real time, 0.5 = half-speed (2x longer), 2 = 2x speed (half as long).
 await speed(0.5, async () => {
   await page.getByRole('button', { name: 'Preview invoice' }).click()
 })
 
+// time(): keep the step visible and make it occupy an exact duration.
+// Here the visible block lasts exactly 1000ms in the output.
 await time(1000, async () => {
   await page.getByRole('tab', { name: 'Analytics' }).click()
   await page.waitForLoadState('networkidle')
 })
+
+// Nesting rules:
+// - hide() may sit inside speed() or time(), but not inside another hide().
+// - speed() and time() may not be nested inside each other or themselves.
+// - Narration cue audio is not retimed; these only remap the recording timeline.
 ```
 
-API reference: [hide()](/docs/reference/api/functions/hide)
+API reference: [hide()](/docs/reference/api/functions/hide). See also [Page
+Instrumentation](/docs/guides/page-instrumentation) for how visible actions are
+captured.
 
 ### `autoZoom()`
 

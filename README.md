@@ -3,44 +3,36 @@
 Your UI changed. Your demo videos didn't. screenci fixes that.
 
 Record product walkthroughs as code. When the UI ships, run
-`npx screenci record` and your videos regenerate.
+`npx screenci record` and your videos regenerate. You keep the Playwright
+mental model, but the output is a maintainable product video instead of a
+test report.
 
-ScreenCI keeps the Playwright mental model, but the output is a maintainable
-product video instead of a test report.
+Learn more at [screenci.com](https://screenci.com).
 
-## Install and scaffold
+## Get started
 
 ```bash
 npm init screenci@latest
+# or
 pnpm create screenci
 ```
 
-`init` creates a ready-to-run, self-contained `screenci/` directory ("the
-island") with its own dependencies, and installs Chromium by default. The
-island is deliberately isolated from any surrounding workspace, which makes
-installation reliable inside complex monorepos. When using `npm init`, pass
-extra initializer flags after `--`, for example
-`npm init screenci@latest -- --yes --package-manager pnpm`.
+This scaffolds a self-contained `screenci/` directory with its own
+dependencies and installs Chromium. The directory is isolated from the
+surrounding workspace, which keeps installation reliable inside monorepos.
 
-```text
-screenci/
-  screenci.config.ts
-  package.json
-  package-lock.json        # or pnpm-lock.yaml / yarn.lock
-  .gitignore
-  videos/
-    example.video.ts
-.github/workflows/screenci.yaml   # at the repo root, scoped to screenci/
+Then write a video, run it locally, and record the final output:
+
+```bash
+npx screenci test      # author the video
+npx screenci record    # render and upload the final video
 ```
 
-`screenci test` and `screenci record` work both from inside `screenci/` and
-from the repository root.
+Full docs:
 
-Docs:
-
-- Getting started: `https://screenci.com/docs`
-- Writing scripts: `https://screenci.com/docs/write-video-scripts`
-- CLI reference: `https://screenci.com/docs/reference/cli`
+- [Getting started](https://screenci.com/docs)
+- [Writing scripts](https://screenci.com/docs/write-video-scripts)
+- [CLI reference](https://screenci.com/docs/reference/cli)
 
 ## Write a video
 
@@ -70,101 +62,32 @@ video('Onboarding flow', async ({ page }) => {
 ```
 
 Each `video()` call becomes one output video. The title becomes the filename
-and the remote video identity.
-
-Inside `video()`, `page` is a `ScreenCIPage`: a Playwright `Page` with animated
-cursor movement and visible typing layered on top of normal Playwright
-behavior.
+and the remote video identity. Inside `video()`, `page` is a `ScreenCIPage`: a
+Playwright `Page` with animated cursor movement and visible typing layered on
+top of normal Playwright behavior.
 
 `hide()` removes setup entirely. `speed()` and `time()` keep a section visible
-but remap its rendered duration. Narration cue audio keeps its original
-playback speed.
-
-## Run locally
-
-```bash
-npx screenci test
-npx screenci test --ui
-```
-
-Use `test` for the normal authoring loop. It runs the video scripts through
-Playwright without starting the final recording and upload path.
-
-## Record the final output
-
-```bash
-npx screenci record
-```
-
-On the first run without `SCREENCI_SECRET` in an interactive terminal, `record`
-prints a one-time ScreenCI link, waits for you to finish sign-in in the browser,
-saves the secret into the project env file, and then continues. In a
-non-interactive session (no terminal, or `SCREENCI_NONINTERACTIVE=1`) `record`
-does not wait: it prints the sign-in link and exits, so you can open the link,
-sign in, choose a plan, and rerun `record`, which then detects the completed
-session and continues. Set `SCREENCI_SECRET` ahead of time to skip sign-in
-entirely. Pending auth state is cached in `.screenci/link-session.json`, so
-rerunning `record` reuses the same link until it expires or completes. Recorded
-artifacts still live in `.screenci/<video-name>/`.
-
-## Configure
-
-```ts
-// screenci.config.ts
-import { defineConfig } from 'screenci'
-
-export default defineConfig({
-  projectName: 'my-project',
-  envFile: '.env',
-  videoDir: './videos',
-  use: {
-    baseURL: 'https://app.example.com',
-    recordOptions: {
-      aspectRatio: '16:9',
-      quality: '1080p',
-      fps: 60,
-    },
-    trace: 'retain-on-failure',
-  },
-  projects: [{ name: 'chromium' }],
-})
-```
-
-ScreenCI manages `testDir`, `testMatch`, and `retries` for you. Most other
-Playwright config still passes through.
-
-If you keep local runtime secrets in an env file, point `envFile` at it or use
-the project `.env`. ScreenCI loads that file automatically for CLI commands.
-That is also the right place for BYOK-style secrets such as
-`ELEVENLABS_API_KEY`. ScreenCI does not store raw API keys from your env file.
+but remap its rendered duration.
 
 ## Authoring helpers
 
-| Export            | What it does                                              |
-| ----------------- | --------------------------------------------------------- |
-| `defineConfig`    | Wraps Playwright config with ScreenCI defaults            |
-| `video`           | Declares a video recording test                           |
-| `createNarration` | Creates typed narration controllers                       |
-| `hide`            | Cuts setup or cleanup out of the visible recording        |
-| `autoZoom`        | Smooth camera follow for an interaction block             |
-| `zoomTo`          | Manual camera framing for a locator or point              |
-| `resetZoom`       | Returns from manual framing to the full viewport          |
-| `createOverlays`  | Inserts timed media overlays into the recording timeline  |
-| `voices`          | Available voice constants such as `voices.Ava`            |
-| `modelTypes`      | Narration model constants such as `modelTypes.consistent` |
+| Export            | What it does                                             |
+| ----------------- | -------------------------------------------------------- |
+| `defineConfig`    | Wraps Playwright config with ScreenCI defaults           |
+| `video`           | Declares a video recording test                          |
+| `createNarration` | Creates typed narration controllers                      |
+| `hide`            | Cuts setup or cleanup out of the visible recording       |
+| `autoZoom`        | Smooth camera follow for an interaction block            |
+| `zoomTo`          | Manual camera framing for a locator or point             |
+| `resetZoom`       | Returns from manual framing to the full viewport         |
+| `createOverlays`  | Inserts timed media overlays into the recording timeline |
+| `voices`          | Available voice constants such as `voices.Ava`           |
+| `modelTypes`      | Narration model constants                                |
 
-## Output
+See the [docs](https://screenci.com/docs) for configuration, narration,
+camera, and CI setup.
 
-```text
-.screenci/
-  <video-name>/
-    recording.mp4
-    data.json
-```
+## Community
 
-When `SCREENCI_SECRET` is configured, `screenci record` uploads the output to
-ScreenCI for rendering, narration generation, and hosted delivery.
-
-For narration authoring, keep cues short and usually one sentence at a time.
-That makes overlap timing easier to manage and should reduce TTS regeneration
-cost when only one line changes.
+Questions, ideas, or want to show off your videos? Join us on
+[Discord](https://discord.gg/DyjSRFzeBc).

@@ -7,7 +7,7 @@ browser interactions behave like a recording instead of a robotic test run.
 
 - [which interactions are animated](#animated-interactions)
 - [what stays the same from Playwright](#playwright-apis-still-work)
-- [when to hide setup instead of showing it](#hide-non-viewer-setup)
+- [how to hide or retime steps](#hide-or-retime-steps)
 
 ## Animated interactions
 
@@ -19,6 +19,7 @@ Common visible actions are animated automatically:
 - scrolling
 
 ```ts
+// Import `video` from 'screenci' instead of `test` from '@playwright/test'.
 import { video } from 'screenci'
 
 video('Open billing', async ({ page }) => {
@@ -54,43 +55,13 @@ Most normal Playwright APIs still work as expected, including:
 That means you can keep using standard Playwright guides for locator strategy,
 page structure, waiting, and shared setup patterns.
 
-## Hide non-viewer setup
+## Hide or retime steps
 
-Not every automated step should be visible in the final video. Use `hide()` for
-setup the viewer does not need to watch, such as signing in, accepting cookies,
-or opening the right screen before the visible flow begins.
-
-When the viewer should still see the step, but at a different pace, use
-`speed()` or `time()` instead:
-
-- `hide()` removes the enclosed section from the output completely.
-- `speed(1)` is real-time.
-- `speed(0.5)` is half-speed, so the visible block takes 2x longer in output.
-- `time(1000)` fits the visible block to exactly 1 second in output.
-- `hide()` can be placed inside `speed()` or `time()`, but other nesting is
-  not supported.
-- Narration cue audio is not retimed.
-
-```ts
-import { hide, speed, time, video } from 'screenci'
-
-video('Billing walkthrough', async ({ page }) => {
-  await hide(async () => {
-    await page.goto('/settings')
-    await page.getByRole('button', { name: 'Accept all cookies' }).click()
-  })
-
-  await speed(0.5, async () => {
-    await page.getByRole('button', { name: 'Open usage chart' }).click()
-  })
-
-  await time(1000, async () => {
-    await page.getByRole('button', { name: 'Expand invoice preview' }).click()
-  })
-
-  await page.getByRole('link', { name: 'Billing' }).click()
-})
-```
+Not every instrumented step belongs in the final video. To remove non-viewer
+setup (signing in, accepting cookies, navigating into place) or to retime a
+visible step, use the `hide()`, `speed()`, and `time()` timeline helpers. See
+[`hide()`, `speed()`, and `time()`](/docs/write-video-scripts#hide-speed-and-time)
+in Video Script Basics.
 
 ## Cursor animation options
 

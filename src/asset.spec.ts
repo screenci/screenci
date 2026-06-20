@@ -387,15 +387,55 @@ describe('createOverlays', () => {
           },
         })
       ).toThrow(
-        'Overlay "broken" must provide only one of "path" or "element".'
+        'Overlay "broken" must provide only one of "path", "element", or "html".'
       )
     })
 
-    it('rejects a config with neither path nor element', () => {
-      expect(() => createOverlays({ broken: { width: 0.2 } })).toThrow(
-        'Overlay "broken" must provide a "path" or an "element".'
+    it('rejects a config with both path and html', () => {
+      expect(() =>
+        createOverlays({
+          broken: { path: './logo.png', html: '<div>x</div>' },
+        })
+      ).toThrow(
+        'Overlay "broken" must provide only one of "path", "element", or "html".'
       )
     })
+
+    it('rejects a config with both element and html', () => {
+      expect(() =>
+        createOverlays({
+          broken: {
+            element: createElement('div', null, 'x'),
+            html: '<div>x</div>',
+          },
+        })
+      ).toThrow(
+        'Overlay "broken" must provide only one of "path", "element", or "html".'
+      )
+    })
+
+    it('rejects a config with no content source', () => {
+      expect(() => createOverlays({ broken: { width: 0.2 } })).toThrow(
+        'Overlay "broken" must provide a "path", an "element", or inline "html".'
+      )
+    })
+
+    it('rejects empty inline html', () => {
+      expect(() =>
+        createOverlays({ broken: { html: '   ', durationMs: 1000 } })
+      ).toThrow('Overlay "broken" inline "html" must not be empty.')
+    })
+
+    it.each(['<!doctype html>', '<html>', '<HEAD>', '<body class="x">'])(
+      'rejects inline html containing the document tag %s',
+      (markup) => {
+        expect(() =>
+          createOverlays({
+            broken: { html: `${markup}<div>x</div>`, durationMs: 1000 },
+          })
+        ).toThrow('must be a fragment, not a full HTML document')
+      }
+    )
   })
 
   describe('placement', () => {
@@ -776,6 +816,45 @@ describe('createOverlays', () => {
       )
     })
 
+    it('renders an inline html fragment to an image overlay with placement', async () => {
+      let captured: string | undefined
+      setHtmlRasterizer(async (req) => {
+        captured = req.html
+        return { buffer: Buffer.from('png'), width: 200, height: 50 }
+      })
+
+      const overlays = createOverlays({
+        note: {
+          html: '<div class="note">Tip</div>',
+          durationMs: 1400,
+          x: 0.7,
+          y: 0.1,
+          width: 0.2,
+        },
+      })
+
+      await runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({
+          recorder,
+          page: fakePage,
+          recordingDir: dir,
+        }),
+        () => overlays.note()
+      )
+
+      // The fragment is passed through verbatim (the rasterizer wraps it).
+      expect(captured).toBe('<div class="note">Tip</div>')
+      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+        'note',
+        expect.objectContaining({
+          kind: 'image',
+          durationMs: 1400,
+          fullScreen: false,
+          placement: { relativeTo: 'recording', x: 0.7, y: 0.1, width: 0.2 },
+        })
+      )
+    })
+
     it('is a no-op outside an active recording (no page / recording dir)', async () => {
       const overlays = createOverlays({
         hint: { path: './hint.html', durationMs: 1000 },
@@ -897,6 +976,29 @@ describe('createOverlays', () => {
 
       await run(() => overlays.intro())
 
+      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+        'intro',
+        expect.objectContaining({ kind: 'animation', durationMs: 1000 })
+      )
+    })
+
+    it('animates an inline html fragment overlay', async () => {
+      let captured: string | undefined
+      setAnimatedHtmlRasterizer(async (req) => {
+        captured = req.html
+        return { buffer: Buffer.from('mp4'), width: 320, height: 80 }
+      })
+      const overlays = createOverlays({
+        intro: {
+          html: '<div class="fade">hi</div>',
+          animate: true,
+          durationMs: 1000,
+        },
+      })
+
+      await run(() => overlays.intro())
+
+      expect(captured).toBe('<div class="fade">hi</div>')
       expect(recorder.addAssetStart).toHaveBeenCalledWith(
         'intro',
         expect.objectContaining({ kind: 'animation', durationMs: 1000 })

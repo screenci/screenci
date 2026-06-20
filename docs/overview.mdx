@@ -5,20 +5,16 @@ hand, you describe a flow once as a Playwright-based script. ScreenCI drives you
 app, adds narration and camera motion, and renders a polished video. When the UI
 changes, you rerun the script and the video regenerates.
 
-## How ScreenCI works
+## How it works
 
-The ScreenCI CLI runs on your machine or in CI. It records the flow and uploads
-the raw video plus timing data. The ScreenCI service renders the final video
-with narration and animations, then makes it available to download or serve from
-a CDN-backed static URL.
+Record with the CLI, render in the cloud, then deliver the final video where
+your team needs it.
 
-<!-- screenci-image:InstallationFlowDiagram -->
+<!-- screenci-image:VideoLifecycle -->
 
-The ScreenCI service never sees your source code, browser session, or
-credentials. The CLI runs everything that touches your app locally, and the only
-thing that leaves your machine is the raw recording plus timing data. The upload
-contains the recording, not your source code. The CLI itself is
-[open source](https://github.com/screenci/screenci).
+The CLI runs everything that touches your app locally, so the only thing that
+leaves your machine is the raw recording plus timing data, not your source code.
+The CLI itself is [open source](https://github.com/screenci/screenci).
 
 ## Two ways to set up
 

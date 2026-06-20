@@ -51,26 +51,9 @@ see [Playwright codegen](/docs/write-video-scripts#generate-a-first-draft-with-c
 
 ## Signing in
 
-Sign-in only blocks the final recording, not authoring or testing, so it is best
-started early. A fresh `npm init screenci` prints a sign-in link (valid for 24
-hours) and caches it in `screenci/.screenci/link-session.json`. Surface that link
-to whoever can sign in while the video is being built; a later `screenci record`
-reuses the same session, so it just needs to be done before the final recording.
-
-The first `screenci record` needs a one-time sign-in. In an interactive terminal
-the CLI prints a sign-in link, waits for you to finish in the browser, and
-continues. In a non-interactive session (an agent or CI), it prints the link and
-exits cleanly (exit code `0`, not a failure) instead of hanging, so surface the
-link to whoever can sign in. A clean exit here is a handoff, not a finished
-recording: when the output contains a sign-in link, the recording has not run
-yet. After the user signs in, rerun `npx screenci record` to detect the completed
-session and continue. The link can be retried until it completes or expires. To
-verify sign-in and continue without rerunning by hand, pass `--poll-auth`:
-`npx screenci record --poll-auth` prints the link again, polls every 5 seconds
-(for up to 5 minutes by default), and continues recording automatically once
-sign-in completes. If the timeout elapses before sign-in, it exits cleanly with
-the link still valid so it can be rerun. You can also set `SCREENCI_SECRET` ahead
-of time to skip sign-in entirely.
+Only the final recording needs sign-in, not authoring or testing. The CLI prints
+a sign-in link; surface it to whoever can sign in, then rerun `npx screenci record`
+to continue. Set `SCREENCI_SECRET` ahead of time to skip sign-in entirely.
 
 The upload contains the raw recording, not your source code. See
 [Overview](/docs) for how recording and rendering are split.

@@ -29,6 +29,25 @@ describe('createOverlays type constraints', () => {
     })
   })
 
+  it('accepts a flat config object with inline html', () => {
+    createOverlays({
+      note: {
+        html: '<div class="note">Tip</div>',
+        durationMs: 1200,
+        x: 0.7,
+        y: 0.1,
+        width: 0.2,
+      },
+    })
+  })
+
+  it('rejects a non-string inline html value', () => {
+    createOverlays({
+      // @ts-expect-error html must be a string fragment
+      note: { html: 123, durationMs: 1200 },
+    })
+  })
+
   it('accepts the fullScreen flag', () => {
     createOverlays({ intro: { path: './intro.mp4', fullScreen: true } })
   })

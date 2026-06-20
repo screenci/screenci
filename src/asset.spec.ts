@@ -306,6 +306,68 @@ describe('createOverlays', () => {
       )
     })
 
+    it('passes speed for an mp4 overlay', async () => {
+      const overlays = createOverlays({
+        clip: { path: './clip.mp4', fullScreen: true, speed: 2 },
+      })
+
+      await overlays.clip()
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('clip', {
+        kind: 'video',
+        path: './clip.mp4',
+        audio: 1,
+        fullScreen: true,
+        placement: { fullScreen: true },
+        speed: 2,
+      })
+    })
+
+    it('passes time for an mp4 overlay', async () => {
+      const overlays = createOverlays({
+        clip: { path: './clip.mp4', fullScreen: true, time: 3000 },
+      })
+
+      await overlays.clip()
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('clip', {
+        kind: 'video',
+        path: './clip.mp4',
+        audio: 1,
+        fullScreen: true,
+        placement: { fullScreen: true },
+        time: 3000,
+      })
+    })
+
+    it('rejects mp4 overlays with both speed and time', () => {
+      expect(() =>
+        createOverlays({
+          broken: { path: './clip.mp4', speed: 2, time: 3000 },
+        })
+      ).toThrow(
+        'Overlay "broken" (./clip.mp4) must set only one of speed or time, not both.'
+      )
+    })
+
+    it('rejects mp4 overlays with a non-positive speed', () => {
+      expect(() =>
+        createOverlays({
+          broken: { path: './clip.mp4', speed: 0 },
+        })
+      ).toThrow(/must provide a finite speed greater than 0/)
+    })
+
+    it('rejects speed/time on a non-video overlay', () => {
+      expect(() =>
+        createOverlays({
+          broken: { path: './logo.png', durationMs: 1000, speed: 2 } as never,
+        })
+      ).toThrow(
+        'Overlay "broken" only supports speed/time on .mp4 video overlays.'
+      )
+    })
+
     it('rejects unsupported extensions', () => {
       expect(() =>
         createOverlays({

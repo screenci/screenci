@@ -335,6 +335,20 @@ export type VideoAssetStartEvent = {
   audio: number
   fullScreen: boolean
   placement?: OverlayPlacement
+  /**
+   * Playback-rate multiplier for the overlay video (and its audio). `2` plays
+   * it twice as fast, `0.5` at half speed. Omitted plays at the natural rate.
+   * For a blocking overlay this also shortens/lengthens the frozen window it
+   * holds (so later content shifts); a live overlay keeps its window and just
+   * plays the source faster/slower inside it.
+   */
+  speed?: number
+  /**
+   * Target playback duration (ms) for the overlay video, an alternative to
+   * {@link speed}: the effective rate is the source duration divided by this.
+   * Takes precedence over `speed` when both are set.
+   */
+  time?: number
 }
 
 /**
@@ -411,6 +425,18 @@ export type AudioStartEvent = {
   fileHash?: string
   volume: number
   repeat: boolean
+  /**
+   * Playback-rate multiplier for the track. `2` plays it twice as fast, `0.5`
+   * at half speed. Omitted plays at the natural rate. The track keeps its
+   * output span; only the source is consumed faster/slower (no timeline shift).
+   */
+  speed?: number
+  /**
+   * Target playback duration (ms) for the track, an alternative to
+   * {@link speed}: the effective rate is the source duration divided by this.
+   * Takes precedence over `speed` when both are set.
+   */
+  time?: number
 }
 
 /**
@@ -955,6 +981,8 @@ export class EventRecorder implements IEventRecorder {
       audio: asset.audio,
       fullScreen: asset.fullScreen,
       ...(asset.placement !== undefined && { placement: asset.placement }),
+      ...(asset.speed !== undefined && { speed: asset.speed }),
+      ...(asset.time !== undefined && { time: asset.time }),
     })
   }
 
@@ -991,6 +1019,8 @@ export class EventRecorder implements IEventRecorder {
       ...(audio.fileHash !== undefined && { fileHash: audio.fileHash }),
       volume: audio.volume,
       repeat: audio.repeat,
+      ...(audio.speed !== undefined && { speed: audio.speed }),
+      ...(audio.time !== undefined && { time: audio.time }),
     })
   }
 

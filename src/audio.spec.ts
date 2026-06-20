@@ -159,6 +159,40 @@ describe('createAudio', () => {
     expect(recorder.addAudioEnd).toHaveBeenNthCalledWith(2, 'sting', 'wait')
   })
 
+  it('passes through speed from the config', async () => {
+    await run(async () => {
+      const audio = createAudio({ theme: { path: './music.mp3', speed: 2 } })
+      await audio.theme()
+    })
+    expect(recorder.addAudioStart).toHaveBeenCalledWith(
+      'theme',
+      expect.objectContaining({ speed: 2 })
+    )
+  })
+
+  it('passes through time from the config', async () => {
+    await run(async () => {
+      const audio = createAudio({ theme: { path: './music.mp3', time: 5000 } })
+      await audio.theme()
+    })
+    expect(recorder.addAudioStart).toHaveBeenCalledWith(
+      'theme',
+      expect.objectContaining({ time: 5000 })
+    )
+  })
+
+  it('rejects both speed and time on the same track', () => {
+    expect(() =>
+      createAudio({ theme: { path: './music.mp3', speed: 2, time: 5000 } })
+    ).toThrow('Audio "theme" (./music.mp3) must set only one of speed or time')
+  })
+
+  it('rejects a non-positive speed', () => {
+    expect(() =>
+      createAudio({ theme: { path: './music.mp3', speed: 0 } })
+    ).toThrow('must provide a finite speed greater than 0')
+  })
+
   it('rejects an unsupported file extension', () => {
     expect(() => createAudio({ bad: './notes.txt' })).toThrow(
       'Audio "bad" must use one of'

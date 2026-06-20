@@ -94,6 +94,23 @@ export type OverlayConfig = {
    * {@link MAX_AUDIO_LEVEL}.
    */
   audio?: number
+  /**
+   * Playback-rate multiplier for `.mp4` overlays. `2` plays the clip (and its
+   * audio) twice as fast, `0.5` at half speed; `1` (the default) is the natural
+   * rate. Works like {@link speed} for a recording. For a blocking overlay
+   * (`await overlays.clip()`) this also shortens or lengthens the window it
+   * holds, so later content shifts; a live overlay (`start()`/`end()`) keeps
+   * its window and just plays the source faster/slower inside it. Mutually
+   * exclusive with {@link time}. Video overlays only.
+   */
+  speed?: number
+  /**
+   * Target playback duration (ms) for a `.mp4` overlay, an alternative to
+   * {@link speed}: the clip is sped up or slowed down so its source plays over
+   * exactly this long. Works like {@link time} for a recording. Mutually
+   * exclusive with {@link speed}. Video overlays only.
+   */
+  time?: number
 }
 
 /**
@@ -337,6 +354,17 @@ function buildOverlayFromConfig(
     }),
   }
 
+  // speed/time re-time a moving picture, so they only apply to .mp4 video
+  // overlays. Images, HTML, React, and animated overlays have no source rate.
+  if (
+    (config.speed !== undefined || config.time !== undefined) &&
+    (hasElement || getAssetExtension(config.path ?? '') !== '.mp4')
+  ) {
+    throw new Error(
+      `[screenci] Overlay "${name}" only supports speed/time on .mp4 video overlays.`
+    )
+  }
+
   // React element: rendered to markup lazily at recording time.
   if (hasElement) {
     const element = config.element!
@@ -441,6 +469,7 @@ function buildOverlayFromConfig(
         `[screenci] Overlay "${name}" (${path}) must provide a finite audio value between 0 and ${MAX_AUDIO_LEVEL} for .mp4 overlays. 1 is the natural level, 0 is silent, and values above 1 boost it.`
       )
     }
+    validateSpeedTime(`Overlay "${name}" (${path})`, config.speed, config.time)
     registeredAssetPaths.add(path)
     return createFileOverlayController(name, {
       kind: 'video',
@@ -448,6 +477,8 @@ function buildOverlayFromConfig(
       placement,
       fullScreen,
       ...(config.audio !== undefined && { audio: config.audio }),
+      ...(config.speed !== undefined && { speed: config.speed }),
+      ...(config.time !== undefined && { time: config.time }),
     })
   }
 
@@ -709,6 +740,8 @@ type ResolvedFileOverlay =
       placement: OverlayPlacement
       fullScreen: boolean
       audio?: number
+      speed?: number
+      time?: number
     }
 
 function createFileOverlayController(
@@ -924,6 +957,42 @@ function validateDurationMs(
   }
 }
 
+/**
+ * Upper bound for a playback-speed multiplier. `16` is already an extreme rate;
+ * the cap guards against accidental runaway values producing degenerate output.
+ */
+export const MAX_SPEED = 16
+
+/**
+ * Validates a `speed`/`time` pair shared by `.mp4` overlays and audio tracks.
+ * `speed` must be a finite multiplier in `(0, MAX_SPEED]`; `time` must be a
+ * finite duration greater than 0 (ms). They are mutually exclusive.
+ */
+export function validateSpeedTime(
+  label: string,
+  speed: number | undefined,
+  time: number | undefined
+): void {
+  if (speed !== undefined && time !== undefined) {
+    throw new Error(
+      `[screenci] ${label} must set only one of speed or time, not both.`
+    )
+  }
+  if (
+    speed !== undefined &&
+    (!Number.isFinite(speed) || speed <= 0 || speed > MAX_SPEED)
+  ) {
+    throw new Error(
+      `[screenci] ${label} must provide a finite speed greater than 0 and at most ${MAX_SPEED}. 2 plays twice as fast, 0.5 at half speed.`
+    )
+  }
+  if (time !== undefined && (!Number.isFinite(time) || time <= 0)) {
+    throw new Error(
+      `[screenci] ${label} must provide a finite time (ms) greater than 0.`
+    )
+  }
+}
+
 function validatePlacement(name: string, placement: OverlayPlacement): void {
   if ('fullScreen' in placement) {
     if (placement.fullScreen !== true) {
@@ -1055,5 +1124,7 @@ function toRecordedFileStart(
     audio: resolved.audio ?? 1,
     fullScreen: resolved.fullScreen,
     placement: resolved.placement,
+    ...(resolved.speed !== undefined && { speed: resolved.speed }),
+    ...(resolved.time !== undefined && { time: resolved.time }),
   }
 }

@@ -3,7 +3,7 @@ import { readFile } from 'fs/promises'
 import { createHash } from 'crypto'
 import { dirname, resolve } from 'path'
 import { isInsideHide } from './hide.js'
-import { MAX_AUDIO_LEVEL } from './asset.js'
+import { MAX_AUDIO_LEVEL, validateSpeedTime } from './asset.js'
 import {
   getScreenCIRuntimeContext,
   getRuntimeAudioRecorder,
@@ -34,6 +34,20 @@ export type AudioConfig = {
    * `false` (the source plays once and then falls silent).
    */
   repeat?: boolean
+  /**
+   * Playback-rate multiplier. `2` plays the track twice as fast, `0.5` at half
+   * speed; `1` (the default) is the natural rate. Works like {@link speed} for
+   * a recording. The track keeps its output span (it never freezes a frame or
+   * shifts the recording); only the source is consumed faster or slower.
+   * Mutually exclusive with {@link time}.
+   */
+  speed?: number
+  /**
+   * Target playback duration (ms), an alternative to {@link speed}: the source
+   * is sped up or slowed down so it plays over exactly this long. Works like
+   * {@link time} for a recording. Mutually exclusive with {@link speed}.
+   */
+  time?: number
 }
 
 /**
@@ -136,6 +150,11 @@ function normalizeAudioConfig(name: string, input: AudioInput): AudioConfig {
       `[screenci] Audio "${name}" (${config.path}) must provide a finite volume between 0 and ${MAX_AUDIO_LEVEL}. 1 is the natural level, 0 is silent, and values above 1 boost it.`
     )
   }
+  validateSpeedTime(
+    `Audio "${name}" (${config.path})`,
+    config.speed,
+    config.time
+  )
   return config
 }
 
@@ -295,6 +314,8 @@ function buildAudioController(
       fileHash: resolved.fileHash,
       volume: config.volume ?? 1,
       repeat: config.repeat ?? false,
+      ...(config.speed !== undefined && { speed: config.speed }),
+      ...(config.time !== undefined && { time: config.time }),
     }
   }
 

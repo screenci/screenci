@@ -50,6 +50,7 @@ Rules:
 - Image, HTML, and React overlays do not support `audio`.
 - `.mp4` overlays may provide `audio` (a linear gain). `1` (the default) plays the source at its natural level, `0` mutes it, and values above `1` boost it (e.g. `2` is twice as loud, up to `4`).
 - `.mp4` overlays use the file's natural duration and must not provide `durationMs`.
+- `.mp4` overlays may provide `speed` or `time` to play the clip (and its audio) faster or slower. `speed` is a multiplier (`2` plays it twice as fast, `0.5` at half speed); `time` is a target playback duration in ms (the clip is sped up or slowed down to play over exactly that long). Set at most one. For a blocking call (`await overlays.intro()`) this also changes how long the overlay holds, so later content shifts; for a live overlay (`start()`/`end()`) the window stays put and only the playback rate changes. Image, HTML, and React overlays do not support `speed`/`time`.
 
 ### HTML and React overlays
 
@@ -288,6 +289,11 @@ Options:
   `4`). Lower it (for example `0.2`-`0.4`) so music sits under narration.
 - `repeat: true` loops a short track to fill its span. Omit it (the default) to
   play the source once and then fall silent.
+- `speed` or `time` play the track faster or slower. `speed` is a multiplier
+  (`2` plays it twice as fast, `0.5` at half speed); `time` is a target playback
+  duration in ms (the source is sped up or slowed down to play over exactly that
+  long). Set at most one. The track keeps its span and never shifts the
+  recording: only the source is consumed faster or slower.
 
 Timing:
 

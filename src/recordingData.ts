@@ -227,6 +227,14 @@ export type VideoAssetStartEvent = {
   fileHash?: string
   audio: number
   fullScreen: boolean
+  /**
+   * Playback-rate multiplier for the overlay video (and its audio). `2` plays
+   * it twice as fast; omitted plays at the natural rate. A blocking overlay's
+   * frozen window scales with it; a live overlay keeps its window.
+   */
+  speed?: number
+  /** Target playback duration (ms); an alternative to {@link speed}. */
+  time?: number
 }
 
 export type AssetStartEvent = ImageAssetStartEvent | VideoAssetStartEvent

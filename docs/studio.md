@@ -144,7 +144,9 @@ Calling a controller marks the point in the timeline, exactly like
 mode, overlay duration for images, and audio level for videos are all set on
 the Studio page. The audio level is a linear-gain slider: `1` (the default)
 plays the video at its natural level, `0` mutes it, and values above `1` boost
-it (up to `4`).
+it (up to `4`). Video overlays also have **speed** and **time** controls: speed
+plays the clip faster or slower (a multiplier), and time fits it to a target
+playback duration in ms. Set at most one.
 TypeScript knows the declared keys, so `overlays.typo` is a compile error.
 
 Like studio narration, the first upload of a video using `createStudioOverlays`
@@ -177,6 +179,9 @@ video, while `start()`/`end()` bound the track to a span. The audio file, the
 volume, and whether the track loops to fill its span are all set on the Studio
 page. The volume is a linear-gain slider: `1` (the default) plays the source at
 its natural level, `0` mutes it, and values above `1` boost it (up to `4`).
+Tracks also have **speed** and **time** controls: speed plays the track faster
+or slower (a multiplier), and time fits it to a target playback duration in ms.
+Set at most one.
 TypeScript knows the declared keys, so `music.typo` is a compile error.
 
 Like studio overlays, the first upload of a video using `createStudioAudio` is

@@ -304,7 +304,7 @@ function isReactElementLike(value: unknown): value is ReactElementLike {
   // A real React element carries a symbol `$$typeof`.
   if (typeof (value as { $$typeof?: unknown }).$$typeof === 'symbol')
     return true
-  // Playwright transpiles JSX in `.video.tsx` files with its own automatic
+  // Playwright transpiles JSX in `.screenci.tsx` files with its own automatic
   // runtime, which produces `{ __pw_type: 'jsx', ... }` nodes instead.
   return (value as { __pw_type?: unknown }).__pw_type === 'jsx'
 }

@@ -63,6 +63,7 @@ import {
 } from './runtimeContext.js'
 import { escapeFileSystemPathSegment } from './fileSystemName.js'
 import { resolveRecordingTimingDuration } from './runtimeMode.js'
+import { buildScreenCIContextOptions } from './contextOptions.js'
 
 export const POST_VIDEO_PAUSE = 500
 
@@ -314,7 +315,7 @@ export function assertAllOverlaysEnded(
   )
 }
 
-async function withActiveRecordingContext<T>(params: {
+export async function withActiveRecordingContext<T>(params: {
   runtimeContext: ReturnType<typeof createScreenCIRuntimeContext>
   page: Page
   recorder: EventRecorder
@@ -389,39 +390,73 @@ const _videoBase = base.extend<
     }
   },
 
-  context: async ({ browser, recordOptions }, use) => {
-    // Configure browser context
+  context: async (
+    {
+      browser,
+      recordOptions,
+      colorScheme,
+      locale,
+      timezoneId,
+      userAgent,
+      geolocation,
+      permissions,
+      extraHTTPHeaders,
+      httpCredentials,
+      ignoreHTTPSErrors,
+      offline,
+      storageState,
+      baseURL,
+      bypassCSP,
+      acceptDownloads,
+      javaScriptEnabled,
+      hasTouch,
+      isMobile,
+    },
+    use
+  ) => {
+    // Configure browser context. The viewport is derived from recordOptions;
+    // other Playwright `use` options (colorScheme, locale, storageState, ...)
+    // are forwarded so they take effect on the context screenci creates.
     const aspectRatio = recordOptions.aspectRatio ?? DEFAULT_ASPECT_RATIO
     const quality = recordOptions.quality ?? DEFAULT_QUALITY
     const dimensions = getDimensions(aspectRatio, quality)
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
 
-    if (shouldRecord) {
-      const context = await browser.newContext({
-        locale: 'en-US',
-        viewport: dimensions,
+    // deviceScaleFactor is intentionally not applied to video: the screencast
+    // encoder expects frames at the viewport resolution.
+    const context = await browser.newContext(
+      buildScreenCIContextOptions({
+        dimensions,
+        applyLocaleDefault: shouldRecord,
+        forwarded: {
+          colorScheme,
+          locale,
+          timezoneId,
+          userAgent,
+          geolocation,
+          permissions,
+          extraHTTPHeaders,
+          httpCredentials,
+          ignoreHTTPSErrors,
+          offline,
+          storageState,
+          baseURL,
+          bypassCSP,
+          acceptDownloads,
+          javaScriptEnabled,
+          hasTouch,
+          isMobile,
+        },
       })
-
-      instrumentContext(context)
-
-      try {
-        await use(context)
-      } finally {
-        await context.close()
-      }
-
-      return
-    }
-
-    const context = await browser.newContext({
-      viewport: dimensions,
-    })
+    )
 
     instrumentContext(context)
 
-    await use(context)
-
-    await context.close()
+    try {
+      await use(context)
+    } finally {
+      await context.close()
+    }
   },
 
   page: async (

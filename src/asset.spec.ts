@@ -204,7 +204,7 @@ describe('createOverlays', () => {
           runWithScreenCIRuntimeContext(
             createScreenCIRuntimeContext({
               recorder,
-              testFilePath: join(tempDir, 'demo.video.ts'),
+              testFilePath: join(tempDir, 'demo.screenci.ts'),
             }),
             () => overlays.logo()
           )
@@ -225,7 +225,7 @@ describe('createOverlays', () => {
         await runWithScreenCIRuntimeContext(
           createScreenCIRuntimeContext({
             recorder,
-            testFilePath: join(tempDir, 'demo.video.ts'),
+            testFilePath: join(tempDir, 'demo.screenci.ts'),
           }),
           () => overlays.logo()
         )
@@ -675,7 +675,7 @@ describe('createOverlays', () => {
           recorder,
           page: fakePage,
           recordingDir: dir,
-          testFilePath: join(dir, 'demo.video.ts'),
+          testFilePath: join(dir, 'demo.screenci.ts'),
         }),
         () => overlays.hint()
       )
@@ -741,8 +741,8 @@ describe('createOverlays', () => {
       )
     })
 
-    it('renders Playwright JSX nodes (.video.tsx files) by invoking components', async () => {
-      // Playwright transpiles JSX in .video.tsx files with its own automatic
+    it('renders Playwright JSX nodes (.screenci.tsx files) by invoking components', async () => {
+      // Playwright transpiles JSX in .screenci.tsx files with its own automatic
       // runtime, producing `__pw_type` nodes instead of React elements, and a
       // component's body is pw-jsx too. Simulate that shape.
       const Badge = (props: { label: string }) => ({
@@ -896,7 +896,7 @@ describe('createOverlays', () => {
           recorder,
           page: fakePage,
           recordingDir: dir,
-          testFilePath: join(dir, 'demo.video.ts'),
+          testFilePath: join(dir, 'demo.screenci.ts'),
         }),
         fn
       )
@@ -1172,7 +1172,7 @@ describe('createStudioOverlays', () => {
       await runWithScreenCIRuntimeContext(
         createScreenCIRuntimeContext({
           recorder,
-          testFilePath: join(tempDir, 'demo.video.ts'),
+          testFilePath: join(tempDir, 'demo.screenci.ts'),
         }),
         () => overlays.intro()
       )

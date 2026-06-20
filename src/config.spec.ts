@@ -166,10 +166,13 @@ describe('defineConfig', () => {
     }).toThrow('screenci does not support "testMatch" option')
   })
 
-  it('should force testMatch to **/*.video.?(c|m)[jt]s?(x)', () => {
+  it('should force testMatch to the screenci pattern (plus the deprecated .video alias)', () => {
     const config = defineConfig({ projectName: 'Test' })
 
-    expect(config.testMatch).toBe('**/*.video.?(c|m)[jt]s?(x)')
+    expect(config.testMatch).toEqual([
+      '**/*.screenci.?(c|m)[jt]s?(x)',
+      '**/*.video.?(c|m)[jt]s?(x)',
+    ])
   })
 
   it('should throw error when viewport is defined in use', () => {

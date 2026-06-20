@@ -31,7 +31,7 @@ This opens a browser window and the Playwright Inspector. As you click, type, an
 navigate, it generates Playwright actions for the flow. The output is not a
 ScreenCI video yet. To turn it into one:
 
-- copy the generated code into a `videos/<flow>.video.ts` file
+- copy the generated code into a `videos/<flow>.screenci.ts` file
 - change `test(...)` to `video(...)`
 - add narration with `createNarration()` (see [Core ScreenCI APIs](#core-screenci-apis))
 
@@ -85,7 +85,7 @@ video('How to find docs', async ({ page }) => {
 <!-- screenci-doc-code-sample:starter-video:end -->
 
 You can define multiple `video()` calls in the same file, or create multiple
-`.video.ts` files under `videos/`.
+`.screenci.ts` files under `videos/`.
 
 ## Configure ScreenCI
 

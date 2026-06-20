@@ -70,7 +70,7 @@ You can build the same overlay three ways, and all of them honor the same
   `react`/`react-dom`, enables `"jsx": "react-jsx"` in the scaffolded
   `tsconfig.json`, and adds a `.tsx` example). To wire it up by hand, install the
   packages, set `"jsx": "react-jsx"` in your tsconfig, and author the overlay in
-  a `.video.tsx` file.
+  a `.screenci.tsx` file.
 - **An inline HTML fragment** (`html`): a string of plain HTML, with no React
   dependency and no separate file. Use it for small, one-off overlays you would
   rather keep next to the script.

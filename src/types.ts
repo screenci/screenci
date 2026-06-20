@@ -77,10 +77,25 @@ export type RecordUploadPolicy = 'passed-only' | 'all-or-nothing'
  * Rendering options passed as-is to `data.json`.
  * Mirrors the `renderOptions` shape consumed by the rendering pipeline.
  */
+/**
+ * Output image format for a screenshot. `'png'` is lossless (the default).
+ * `'jpeg'` produces smaller files; `quality` (1-100, default 90) is the JPEG
+ * compression quality. This is distinct from {@link Quality}, which is the
+ * resolution preset. Videos ignore this.
+ */
+export type ScreenshotOutputFormat = 'png' | { type: 'jpeg'; quality?: number }
+
 export type RenderOptions = {
   recording?: {
     /** 0-1: 0 causes warning, 1=one side touches background edge */
     size?: number
+    /**
+     * Screenshot only: margin (CSS-like) between the framed shot and the canvas
+     * edge, as a fraction (0-1) of the shorter output side. The shot scales to
+     * fit the canvas minus this margin on every side, centered. Supersedes
+     * `size` for screenshots; videos ignore it. Defaults to `0.06`.
+     */
+    margin?: number
     /** 0-1: 0=sharp corners, 1=shorter side is half circle */
     roundness?: number
     shape?: 'rounded'
@@ -126,16 +141,20 @@ export type RenderOptions = {
   }
   output?: {
     /**
-     * Aspect ratio of the rendered output video.
+     * Aspect ratio of the rendered output.
      *
      * Combined with `quality`, this determines the final pixel dimensions.
      * See {@link AspectRatio} for the full dimension table.
+     *
+     * Screenshots also accept `'auto'`: the canvas hugs the (cropped) shot plus
+     * a uniform `recording.margin`, with no letterbox bars. Videos must use a
+     * fixed ratio.
      *
      * Defaults to `'16:9'` when not specified.
      *
      * @example '16:9'
      */
-    aspectRatio?: AspectRatio
+    aspectRatio?: AspectRatio | 'auto'
     /**
      * Resolution quality of the rendered output video.
      *
@@ -150,6 +169,8 @@ export type RenderOptions = {
     background?:
       | { assetPath: string; fileHash?: string }
       | { backgroundCss: string }
+    /** Screenshot only: output image format. Defaults to `'png'`. */
+    format?: ScreenshotOutputFormat
   }
 }
 
@@ -199,6 +220,8 @@ export const RENDER_OPTIONS_DEFAULTS = {
 export type ResolvedRenderOptions = {
   recording: {
     size: number
+    /** Screenshot framing margin (0-1). Present only when set; videos ignore it. */
+    margin?: number
     roundness: number
     shape: 'rounded'
     dropShadow: string
@@ -220,11 +243,13 @@ export type ResolvedRenderOptions = {
     motionBlur: number
   }
   output: {
-    aspectRatio: AspectRatio
+    aspectRatio: AspectRatio | 'auto'
     quality: Quality
     background:
       | { assetPath: string; fileHash?: string }
       | { backgroundCss: string }
+    /** Screenshot output format. Present only when set; defaults to png. */
+    format?: ScreenshotOutputFormat
   }
 }
 
@@ -303,6 +328,18 @@ export type RecordOptions = {
    * @default 'fast'
    */
   encoder?: VideoEncoderPreset
+
+  /**
+   * Device scale factor (DPR) used when capturing.
+   *
+   * Screenshots multiply the viewport by this for a higher-DPI still: `2`
+   * doubles the pixel density. This is the easy way to ask for a sharper
+   * screenshot. It does not apply to video recording (the screencast stays at
+   * the viewport resolution).
+   *
+   * @default 1
+   */
+  deviceScaleFactor?: number
 }
 
 /**
@@ -827,9 +864,9 @@ export type ScreenCIConfig = Omit<
    */
   envFile?: string
   /**
-   * Directory that will be searched recursively for `*.video.*` files.
+   * Directory that will be searched recursively for `*.screenci.*` files.
    *
-   * Matches files like `example.video.ts`, `demo.video.js`, etc.
+   * Matches files like `example.screenci.ts`, `demo.screenci.js`, etc.
    *
    * Defaults to `'./videos'`.
    */

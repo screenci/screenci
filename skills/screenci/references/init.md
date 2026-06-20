@@ -17,7 +17,7 @@ npm init screenci "My Project" -- --verbose
 ```text
 screenci.config.ts
 videos/
-  example.video.ts
+  example.screenci.ts
 package.json
 .gitignore
 .github/workflows/screenci.yaml (optional)

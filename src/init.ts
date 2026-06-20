@@ -606,7 +606,7 @@ export function generateIslandTsconfig(withReact = false): string {
   // node_modules layout.
   //
   // `jsx: 'react-jsx'` is added only when React overlays are scaffolded so the
-  // `.video.tsx` example type-checks with the automatic JSX runtime. It is the
+  // `.screenci.tsx` example type-checks with the automatic JSX runtime. It is the
   // one piece of React setup a published package cannot do for the user, so the
   // scaffold owns it.
   return (
@@ -664,7 +664,7 @@ export function generateIslandReadme(
   const scripts = getIslandScriptInvocations(packageManager)
   return `# ${projectName}
 
-ScreenCI video scripts for this project. Edit the \`*.video.ts\` files in
+ScreenCI video scripts for this project. Edit the \`*.screenci.ts\` files in
 \`videos/\` to script your recordings.
 
 ## Commands
@@ -1136,11 +1136,11 @@ function printInitNextSteps(
   logger.info('')
   logger.info('And check out the following files:')
   logger.info(
-    `  - ./${islandDirName}/videos/example.video.ts - Example video script`
+    `  - ./${islandDirName}/videos/example.screenci.ts - Example video script`
   )
   if (withReact) {
     logger.info(
-      `  - ./${islandDirName}/videos/example-react.video.tsx - React overlay example`
+      `  - ./${islandDirName}/videos/example-react.screenci.tsx - React overlay example`
     )
   }
   logger.info(
@@ -1542,12 +1542,12 @@ export async function runInit(
     )
     await writeInitGitignore(islandDir, packageManager)
     await writeFile(
-      resolve(islandDir, 'videos', 'example.video.ts'),
+      resolve(islandDir, 'videos', 'example.screenci.ts'),
       generateExampleVideo()
     )
     if (shouldAddReactOverlays) {
       await writeFile(
-        resolve(islandDir, 'videos', 'example-react.video.tsx'),
+        resolve(islandDir, 'videos', 'example-react.screenci.tsx'),
         generateReactExampleVideo()
       )
     }
@@ -1722,7 +1722,7 @@ export default defineConfig({
   projectName: ${JSON.stringify(projectName)},
   // Load SCREENCI_SECRET and other env vars from this file.
   envFile: '.env',
-  // Look for *.video.ts files in this directory.
+  // Look for *.screenci.ts files in this directory.
   videoDir: './videos',
   // Let independent video files run in parallel.
   fullyParallel: true,

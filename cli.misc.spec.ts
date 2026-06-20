@@ -584,7 +584,7 @@ describe('CLI', () => {
                     message:
                       'Error: [screenci] Overlay "badge" (./assets/brand-badge.svg) is an image and must not provide audio. Use durationMs instead.',
                     snippet:
-                      "   at styled-assets.video.ts:24\n\n  22 | })\n  23 |\n> 24 | const overlays = createOverlays({\n     |                ^\n  25 |   badge: {\n  26 |     path: './assets/brand-badge.svg',\n  27 |     audio: 0,",
+                      "   at styled-assets.screenci.ts:24\n\n  22 | })\n  23 |\n> 24 | const overlays = createOverlays({\n     |                ^\n  25 |   badge: {\n  26 |     path: './assets/brand-badge.svg',\n  27 |     audio: 0,",
                   },
                 ],
               })
@@ -604,7 +604,7 @@ describe('CLI', () => {
 
       expect(error).toBeInstanceOf(Error)
       expect((error as Error).message).toContain(
-        'Error: [screenci] Overlay "badge" (./assets/brand-badge.svg) is an image and must not provide audio. Use durationMs instead.\n\nat styled-assets.video.ts:24'
+        'Error: [screenci] Overlay "badge" (./assets/brand-badge.svg) is an image and must not provide audio. Use durationMs instead.\n\nat styled-assets.screenci.ts:24'
       )
 
       loggerErrorSpy.mockClear()
@@ -613,7 +613,7 @@ describe('CLI', () => {
 
       expect(loggerErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining(
-          'Error: [screenci] Overlay "badge" (./assets/brand-badge.svg) is an image and must not provide audio. Use durationMs instead.\n\nat styled-assets.video.ts:24'
+          'Error: [screenci] Overlay "badge" (./assets/brand-badge.svg) is an image and must not provide audio. Use durationMs instead.\n\nat styled-assets.screenci.ts:24'
         )
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith(

@@ -10,14 +10,14 @@ commands from inside your `screenci/` project directory. Most commands resolve
 
 ## Command overview
 
-| Command                            | Purpose                                               |
-| ---------------------------------- | ----------------------------------------------------- |
-| `screenci init [name]`             | Scaffold a ScreenCI project                           |
-| `screenci test [playwrightArgs]`   | Run `.video.ts` files locally without final recording |
-| `screenci record [playwrightArgs]` | Record videos and upload results when configured      |
-| `screenci info`                    | Print the last record run's URLs and render status    |
-| `screenci make-public <videoId>`   | Enable public delivery for a video                    |
-| `screenci make-private <videoId>`  | Disable public delivery for a video                   |
+| Command                            | Purpose                                                  |
+| ---------------------------------- | -------------------------------------------------------- |
+| `screenci init [name]`             | Scaffold a ScreenCI project                              |
+| `screenci test [playwrightArgs]`   | Run `.screenci.ts` files locally without final recording |
+| `screenci record [playwrightArgs]` | Record videos and upload results when configured         |
+| `screenci info`                    | Print the last record run's URLs and render status       |
+| `screenci make-public <videoId>`   | Enable public delivery for a video                       |
+| `screenci make-private <videoId>`  | Disable public delivery for a video                      |
 
 ## `screenci init`
 
@@ -91,7 +91,7 @@ Run videos locally without the final recording pipeline:
 
 ```bash
 npx screenci test
-npx screenci test videos/onboarding.video.ts
+npx screenci test videos/onboarding.screenci.ts
 npx screenci test --grep "billing"
 npx screenci test --ui
 ```
@@ -101,7 +101,7 @@ npx screenci test --ui
 
 ```bash
 pnpm exec screenci test
-pnpm exec screenci test videos/onboarding.video.ts
+pnpm exec screenci test videos/onboarding.screenci.ts
 pnpm exec screenci test --grep "billing"
 pnpm exec screenci test --ui
 ```
@@ -111,7 +111,7 @@ pnpm exec screenci test --ui
 
 ```bash
 yarn screenci test
-yarn screenci test videos/onboarding.video.ts
+yarn screenci test videos/onboarding.screenci.ts
 yarn screenci test --grep "billing"
 yarn screenci test --ui
 ```
@@ -196,7 +196,7 @@ Record final output:
 
 ```bash
 npx screenci record
-npx screenci record videos/onboarding.video.ts
+npx screenci record videos/onboarding.screenci.ts
 npx screenci record --grep "billing"
 npx screenci record --project=chromium
 ```
@@ -206,7 +206,7 @@ npx screenci record --project=chromium
 
 ```bash
 pnpm exec screenci record
-pnpm exec screenci record videos/onboarding.video.ts
+pnpm exec screenci record videos/onboarding.screenci.ts
 pnpm exec screenci record --grep "billing"
 pnpm exec screenci record --project=chromium
 ```
@@ -216,7 +216,7 @@ pnpm exec screenci record --project=chromium
 
 ```bash
 yarn screenci record
-yarn screenci record videos/onboarding.video.ts
+yarn screenci record videos/onboarding.screenci.ts
 yarn screenci record --grep "billing"
 yarn screenci record --project=chromium
 ```

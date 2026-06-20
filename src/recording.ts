@@ -7,6 +7,7 @@ export type {
   RecordOptions,
   RenderOptions,
   ResolvedRenderOptions,
+  ScreenshotOutputFormat,
 } from './types.js'
 
 export type {
@@ -45,4 +46,6 @@ export type {
   VideoCueTranslationFile,
   VoiceLanguageMeta,
   RecordingMetadata,
+  ScreenshotCrop,
+  ScreenshotInfo,
 } from './events.js'

@@ -338,7 +338,7 @@ describe('createNarration', () => {
       await Promise.all([
         runWithScreenCIRuntimeContext(
           createScreenCIRuntimeContext({
-            testFilePath: join(tempDirA, 'test.video.ts'),
+            testFilePath: join(tempDirA, 'test.screenci.ts'),
           }),
           async () => {
             setActiveCueRecorder(recorderA)
@@ -347,7 +347,7 @@ describe('createNarration', () => {
         ),
         runWithScreenCIRuntimeContext(
           createScreenCIRuntimeContext({
-            testFilePath: join(tempDirB, 'test.video.ts'),
+            testFilePath: join(tempDirB, 'test.screenci.ts'),
           }),
           async () => {
             setActiveCueRecorder(recorderB)
@@ -745,7 +745,7 @@ describe('createNarration', () => {
 
         await runWithScreenCIRuntimeContext(
           createScreenCIRuntimeContext({
-            testFilePath: join(tempDir, 'test.video.ts'),
+            testFilePath: join(tempDir, 'test.screenci.ts'),
           }),
           async () => {
             setActiveCueRecorder(recorder)

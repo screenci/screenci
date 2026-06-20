@@ -101,7 +101,7 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
   ) {
     throw new Error(
       'screenci does not support "testDir" option. ' +
-        'Use "videoDir" instead to specify the directory containing your *.video.* files. ' +
+        'Use "videoDir" instead to specify the directory containing your *.screenci.* files. ' +
         'Defaults to "./videos".'
     )
   }
@@ -110,7 +110,7 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
   if ('testMatch' in config) {
     throw new Error(
       'screenci does not support "testMatch" option. ' +
-        'screenci automatically configures tests to only run *.video.* files.'
+        'screenci automatically configures tests to only run *.screenci.* files.'
     )
   }
 
@@ -149,7 +149,13 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
   // Map videoDir to testDir and keep screenci-managed defaults in place.
   return {
     testDir: videoDir ?? DEFAULT_VIDEO_DIR,
-    testMatch: '**/*.video.?(c|m)[jt]s?(x)',
+    testMatch: [
+      '**/*.screenci.?(c|m)[jt]s?(x)',
+      // Deprecated alias kept only for backward compatibility: legacy
+      // `.video.ts` files are still discovered. Not documented anywhere; all
+      // new files use `.screenci.ts`. Do not surface this in docs or output.
+      '**/*.video.?(c|m)[jt]s?(x)',
+    ],
     ...rest,
     record: {
       upload: record?.upload ?? DEFAULT_RECORD_UPLOAD_POLICY,

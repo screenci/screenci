@@ -610,11 +610,46 @@ function readScreenciVersion(): string {
 
 const SCREENCI_VERSION = readScreenciVersion()
 
+/** Crop rect for a screenshot, as fractions (0..1) of the captured image. */
+export type ScreenshotCrop = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/**
+ * Capture details for a screenshot output. The raw page capture is saved beside
+ * `data.json` (as `path`) at `width`×`height` device pixels (the viewport scaled
+ * by `deviceScaleFactor`). `crop`, when present, is the fractional region the
+ * compositor frames on the background; absent means the full capture.
+ */
+export type ScreenshotInfo = {
+  path: string
+  width: number
+  height: number
+  deviceScaleFactor: number
+  crop?: ScreenshotCrop
+}
+
 export type RecordingData = {
   events: RecordingEvent[]
   renderOptions: ResolvedRenderOptions
   recordOptions?: RecordOptions
   metadata?: RecordingMetadata
+  /**
+   * Output kind for this recording. Absent is treated as `'video'` so existing
+   * recordings, stored versions, and manifests keep working without migration.
+   */
+  output?: 'video' | 'screenshot'
+  /** Capture details. Present only when `output === 'screenshot'`. */
+  screenshot?: ScreenshotInfo
+}
+
+/** Extra, output-specific fields written into `data.json`. */
+export type WriteRecordingOptions = {
+  output?: 'video' | 'screenshot'
+  screenshot?: ScreenshotInfo
 }
 
 export interface IEventRecorder {
@@ -685,7 +720,8 @@ export interface IEventRecorder {
   writeToFile(
     dir: string,
     videoName: string,
-    sourceFilePath?: string
+    sourceFilePath?: string,
+    options?: WriteRecordingOptions
   ): Promise<void>
 }
 
@@ -1154,7 +1190,8 @@ export class EventRecorder implements IEventRecorder {
   async writeToFile(
     dir: string,
     videoName: string,
-    sourceFilePath?: string
+    sourceFilePath?: string,
+    options?: WriteRecordingOptions
   ): Promise<void> {
     const filePath = join(dir, 'data.json')
 
@@ -1169,6 +1206,10 @@ export class EventRecorder implements IEventRecorder {
     const resolved: ResolvedRenderOptions = {
       recording: {
         size: ro?.recording?.size ?? RENDER_OPTIONS_DEFAULTS.recording.size,
+        // Screenshot-only; passed through unresolved (the compositor defaults it).
+        ...(ro?.recording?.margin !== undefined && {
+          margin: ro.recording.margin,
+        }),
         roundness:
           ro?.recording?.roundness ??
           RENDER_OPTIONS_DEFAULTS.recording.roundness,
@@ -1208,6 +1249,8 @@ export class EventRecorder implements IEventRecorder {
         quality: ro?.output?.quality ?? RENDER_OPTIONS_DEFAULTS.output.quality,
         background:
           ro?.output?.background ?? RENDER_OPTIONS_DEFAULTS.output.background,
+        // Screenshot-only; passed through (the compositor defaults to png).
+        ...(ro?.output?.format !== undefined && { format: ro.output.format }),
       },
     }
 
@@ -1262,6 +1305,10 @@ export class EventRecorder implements IEventRecorder {
       renderOptions: resolved,
       ...(this.recordOptions !== undefined && {
         recordOptions: this.recordOptions,
+      }),
+      ...(options?.output !== undefined && { output: options.output }),
+      ...(options?.screenshot !== undefined && {
+        screenshot: options.screenshot,
       }),
       metadata: {
         videoName,

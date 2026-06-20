@@ -1,0 +1,344 @@
+import { test as base } from '@playwright/test'
+import type {
+  TestType,
+  PlaywrightTestArgs,
+  PlaywrightTestOptions,
+  PlaywrightWorkerArgs,
+  PlaywrightWorkerOptions,
+  TestDetails,
+  TestInfo,
+} from '@playwright/test'
+import { mkdir, rm } from 'fs/promises'
+import { join, relative } from 'path'
+import type { RecordOptions, RenderOptions, ScreenCIPage } from './types.js'
+import type { StudioRenderOptionsSentinel } from './studio.js'
+import { getDimensions } from './dimensions.js'
+import {
+  DEFAULT_VIDEO_OPTIONS,
+  DEFAULT_ASPECT_RATIO,
+  DEFAULT_QUALITY,
+} from './defaults.js'
+import { EventRecorder } from './events.js'
+import type { ScreenshotInfo } from './events.js'
+import { instrumentBrowser, instrumentContext } from './instrument.js'
+import { getChromiumLaunchOptions } from './browserLaunchOptions.js'
+import { createScreenCIRuntimeContext } from './runtimeContext.js'
+import { escapeFileSystemPathSegment } from './fileSystemName.js'
+import {
+  buildScreenCIContextOptions,
+  resolveDeviceScaleFactor,
+} from './contextOptions.js'
+import { getRecordedCrop, resetCrop } from './crop.js'
+import { withActiveRecordingContext } from './video.js'
+
+/** File name of the raw page capture written beside `data.json`. */
+const SCREENSHOT_FILE_NAME = 'screenshot.png'
+
+type ScreenshotFixtureOptions = {
+  recordOptions: RecordOptions
+  renderOptions: RenderOptions | StudioRenderOptionsSentinel | undefined
+}
+
+const _screenshotBase = base.extend<ScreenshotFixtureOptions>({
+  recordOptions: [DEFAULT_VIDEO_OPTIONS, { option: true }],
+  renderOptions: [undefined, { option: true }],
+
+  browser: async ({ playwright }, use) => {
+    const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
+    const launchOptions = getChromiumLaunchOptions(shouldRecord)
+
+    const browser = await playwright.chromium.launch(launchOptions)
+    instrumentBrowser(browser)
+    await use(browser)
+    if (browser.isConnected()) {
+      await browser.close()
+    }
+  },
+
+  context: async (
+    {
+      browser,
+      recordOptions,
+      colorScheme,
+      locale,
+      timezoneId,
+      userAgent,
+      geolocation,
+      permissions,
+      extraHTTPHeaders,
+      httpCredentials,
+      ignoreHTTPSErrors,
+      offline,
+      storageState,
+      baseURL,
+      bypassCSP,
+      acceptDownloads,
+      javaScriptEnabled,
+      hasTouch,
+      isMobile,
+      deviceScaleFactor,
+    },
+    use
+  ) => {
+    const aspectRatio = recordOptions.aspectRatio ?? DEFAULT_ASPECT_RATIO
+    const quality = recordOptions.quality ?? DEFAULT_QUALITY
+    const dimensions = getDimensions(aspectRatio, quality)
+    const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
+
+    // Screenshots honor deviceScaleFactor for higher-DPI stills.
+    const context = await browser.newContext(
+      buildScreenCIContextOptions({
+        dimensions,
+        applyLocaleDefault: shouldRecord,
+        deviceScaleFactor: resolveDeviceScaleFactor(
+          recordOptions,
+          deviceScaleFactor
+        ),
+        forwarded: {
+          colorScheme,
+          locale,
+          timezoneId,
+          userAgent,
+          geolocation,
+          permissions,
+          extraHTTPHeaders,
+          httpCredentials,
+          ignoreHTTPSErrors,
+          offline,
+          storageState,
+          baseURL,
+          bypassCSP,
+          acceptDownloads,
+          javaScriptEnabled,
+          hasTouch,
+          isMobile,
+        },
+      })
+    )
+
+    instrumentContext(context)
+
+    try {
+      await use(context)
+    } finally {
+      await context.close()
+    }
+  },
+
+  page: async (
+    { context, recordOptions, renderOptions, deviceScaleFactor },
+    use,
+    testInfo
+  ) => {
+    const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
+    const recorder = new EventRecorder(renderOptions, recordOptions)
+
+    if (!shouldRecord) {
+      // Preview run (`screenci test`): exercise the body without capturing.
+      const page = await context.newPage()
+      const runtimeContext = createScreenCIRuntimeContext({
+        recorder,
+        page,
+        testFilePath: testInfo.file,
+      })
+      recorder.start()
+      resetCrop()
+      await withActiveRecordingContext({
+        runtimeContext,
+        page,
+        recorder,
+        fn: async () => {
+          await use(page)
+        },
+      })
+      await page.close()
+      return
+    }
+
+    const aspectRatio = recordOptions.aspectRatio ?? DEFAULT_ASPECT_RATIO
+    const quality = recordOptions.quality ?? DEFAULT_QUALITY
+    const dimensions = getDimensions(aspectRatio, quality)
+    const dsf = resolveDeviceScaleFactor(recordOptions, deviceScaleFactor)
+
+    const directoryName = escapeFileSystemPathSegment(testInfo.title)
+    const screenshotDir = join(process.cwd(), '.screenci', directoryName)
+
+    // Start fresh.
+    try {
+      await rm(screenshotDir, { recursive: true, force: true })
+    } catch {
+      // Ignore if it does not exist.
+    }
+    await mkdir(screenshotDir, { recursive: true })
+
+    const page = await context.newPage()
+    const runtimeContext = createScreenCIRuntimeContext({
+      recorder,
+      page,
+      testFilePath: testInfo.file,
+      recordingDir: screenshotDir,
+    })
+
+    recorder.start()
+    resetCrop()
+
+    try {
+      await withActiveRecordingContext({
+        runtimeContext,
+        page,
+        recorder,
+        fn: async () => {
+          await use(page)
+        },
+      })
+
+      // The body completed successfully: capture the final page state. Capturing
+      // here (not in `finally`) mirrors the video fixture's passed-only upload:
+      // a thrown body skips capture and fails the test.
+      await page.screenshot({
+        path: join(screenshotDir, SCREENSHOT_FILE_NAME),
+      })
+
+      const crop = getRecordedCrop()
+      const screenshot: ScreenshotInfo = {
+        path: SCREENSHOT_FILE_NAME,
+        width: Math.round(dimensions.width * dsf),
+        height: Math.round(dimensions.height * dsf),
+        deviceScaleFactor: dsf,
+        ...(crop !== undefined && { crop }),
+      }
+
+      const configDir = process.env.SCREENCI_CONFIG_DIR ?? process.cwd()
+      await recorder.writeToFile(
+        screenshotDir,
+        testInfo.title,
+        relative(configDir, testInfo.file),
+        { output: 'screenshot', screenshot }
+      )
+    } finally {
+      await page.close()
+    }
+  },
+})
+
+type ScreenshotType = TestType<
+  PlaywrightTestArgs &
+    PlaywrightTestOptions &
+    ScreenshotFixtureOptions &
+    PlaywrightWorkerArgs &
+    PlaywrightWorkerOptions,
+  PlaywrightWorkerArgs & PlaywrightWorkerOptions
+>
+
+type ScreenshotArgs = Omit<PlaywrightTestArgs, 'page'> & {
+  page: ScreenCIPage
+} & PlaywrightTestOptions &
+  ScreenshotFixtureOptions &
+  PlaywrightWorkerArgs &
+  PlaywrightWorkerOptions
+
+type ScreenshotBody = (
+  args: ScreenshotArgs,
+  testInfo: TestInfo
+) => void | Promise<void>
+
+/** Conditional overloads shared by skip / fixme / fail */
+type ConditionalOverloads = ((
+  condition?: boolean,
+  description?: string
+) => void) &
+  ((condition?: boolean, callback?: () => string) => void)
+
+interface ScreenshotCallSignatures {
+  /**
+   * Declares a ScreenCI screenshot test.
+   *
+   * Drives the page like a `video()` test, then captures the final state as a
+   * still image. The capture is framed on the configured background with the
+   * branded frame, cropped with {@link crop}, and decorated with overlays at
+   * render time. The viewport is derived from `recordOptions.aspectRatio` and
+   * `recordOptions.quality`; `recordOptions.deviceScaleFactor` raises the DPI.
+   *
+   * @example
+   * ```ts
+   * import { screenshot, crop } from 'screenci'
+   *
+   * screenshot('Dashboard hero', async ({ page }) => {
+   *   await page.goto('https://app.example.com/dashboard')
+   *   await crop(page.getByTestId('revenue-card'), { padding: 0.06 })
+   * })
+   * ```
+   */
+  (title: string, body: ScreenshotBody): void
+
+  /**
+   * Declares a ScreenCI screenshot test with additional details (tags,
+   * annotations, etc.).
+   */
+  (title: string, details: TestDetails, body: ScreenshotBody): void
+}
+
+/**
+ * Recursive interface so `.only`, `.skip`, `.fixme`, `.fail`, and `.slow`
+ * surface `page: ScreenCIPage` instead of the raw Playwright `page: Page`.
+ */
+interface Screenshot extends ScreenshotCallSignatures {
+  only: Screenshot
+  skip: Screenshot & ConditionalOverloads
+  fixme: Screenshot & ConditionalOverloads
+  fail: Screenshot & ConditionalOverloads
+  slow: Screenshot & ((condition?: boolean, description?: string) => void)
+
+  beforeEach(
+    inner: (args: ScreenshotArgs, testInfo: TestInfo) => Promise<void> | void
+  ): void
+  beforeEach(
+    title: string,
+    inner: (args: ScreenshotArgs, testInfo: TestInfo) => Promise<void> | void
+  ): void
+  afterEach(
+    inner: (args: ScreenshotArgs, testInfo: TestInfo) => Promise<void> | void
+  ): void
+  afterEach(
+    title: string,
+    inner: (args: ScreenshotArgs, testInfo: TestInfo) => Promise<void> | void
+  ): void
+
+  describe: ScreenshotType['describe']
+  beforeAll: ScreenshotType['beforeAll']
+  afterAll: ScreenshotType['afterAll']
+  use: ScreenshotType['use']
+  extend: ScreenshotType['extend']
+  step: ScreenshotType['step']
+  info: ScreenshotType['info']
+  expect: ScreenshotType['expect']
+  setTimeout: ScreenshotType['setTimeout']
+}
+
+/**
+ * ScreenCI screenshot test fixture.
+ *
+ * Extended Playwright test that captures a branded still image of the final page
+ * state. Configure capture options with `screenshot.use()` or in your config.
+ *
+ * @example
+ * ```ts
+ * import { screenshot, crop, createOverlays } from 'screenci'
+ *
+ * const overlays = createOverlays({
+ *   badge: { path: '../assets/new-badge.png', x: 0.72, y: 0.06, width: 0.2 },
+ * })
+ *
+ * screenshot.use({
+ *   colorScheme: 'dark',
+ *   recordOptions: { quality: '1440p', deviceScaleFactor: 2 },
+ * })
+ *
+ * screenshot('Dashboard hero', async ({ page }) => {
+ *   await page.goto('https://app.example.com/dashboard')
+ *   await overlays.badge()
+ *   await crop(page.getByTestId('revenue-card'), { padding: 0.06 })
+ * })
+ * ```
+ */
+export const screenshot = _screenshotBase as unknown as Screenshot

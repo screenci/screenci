@@ -1,9 +1,9 @@
 # `screenci record`
 
-Use `screenci record` to capture ScreenCI videos from `.video.ts` scripts.
+Use `screenci record` to capture ScreenCI videos from `.screenci.ts` scripts.
 
 Assume the ScreenCI project is already initialized. Add new video scripts under `videos/`.
-If you are creating new videos, remove the starter `videos/example.video.ts` file.
+If you are creating new videos, remove the starter `videos/example.screenci.ts` file.
 
 ## Commands
 

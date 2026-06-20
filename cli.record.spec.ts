@@ -1562,7 +1562,7 @@ describe('CLI', () => {
             ],
             metadata: {
               videoName: 'Demo',
-              sourceFilePath: 'videos/nested/demo.video.ts',
+              sourceFilePath: 'videos/nested/demo.screenci.ts',
             },
           })
         }

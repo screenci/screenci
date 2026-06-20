@@ -1,6 +1,6 @@
 ---
 name: screenci
-description: Create, show, and guide with ScreenCI videos in an already-initialized project by editing `.video.ts` files and running the Screenci workflow.
+description: Create, show, and guide with ScreenCI videos in an already-initialized project by editing `.screenci.ts` files and running the Screenci workflow.
 allowed-tools:
   - Bash(screenci:*)
   - Bash(npx:*)
@@ -9,7 +9,7 @@ allowed-tools:
 
 # ScreenCI Video and Guide Skill
 
-Use this skill when the task is about ScreenCI video recording workflows in an existing project, or updating `.video.ts` files and `screenci.config.ts`.
+Use this skill when the task is about ScreenCI video recording workflows in an existing project, or updating `.screenci.ts` files and `screenci.config.ts`.
 
 Trigger this skill when the user asks to:
 
@@ -21,20 +21,20 @@ Routing rules:
 
 - If the user provides a URL for video context, always use the `playwright-cli` skill first. It drives a real browser from the CLI (navigate, snapshot, click, type) so you can discover the actual page flow, stable selectors, and cookie/consent steps before editing the ScreenCI script.
 - If the user provides source code for the target page/component, that usually means browser exploration is not required first.
-- If the request is only about application/source-code changes (not recording or `.video.ts` updates), do not use this skill.
+- If the request is only about application/source-code changes (not recording or `.screenci.ts` updates), do not use this skill.
 
 ## Quick Start
 
 Assume the project is already initialized. Add or edit video scripts in `videos/`.
 
-If you are creating new videos, remove the starter `videos/example.video.ts` file.
+If you are creating new videos, remove the starter `videos/example.screenci.ts` file.
 
 ```bash
 # verify repeatedly until green
 npx screenci test
 
 # run only some tests with normal Playwright filters
-npx screenci test videos/signup.video.ts --grep "fills billing details"
+npx screenci test videos/signup.screenci.ts --grep "fills billing details"
 
 # only record after tests pass
 npx screenci record
@@ -44,13 +44,13 @@ npx screenci record
 
 ## What ScreenCI Adds
 
-ScreenCI uses Playwright-style `.video.ts` files and adds recording-specific helpers:
+ScreenCI uses Playwright-style `.screenci.ts` files and adds recording-specific helpers:
 
 - `video()` declares one output video per test.
 - `hide()` removes setup and loading sections from the final recording.
 - `autoZoom()` follows navigation, click-driven, and broader interaction sequences with smooth camera motion. Use it sparingly, and start with its default options unless the user explicitly asks for different zoom behavior or the flow clearly needs a targeted override.
 - `zoomTo()` and `resetZoom()` are better for forms and other steady editing sections where the camera should stay fixed while the user types, selects, toggles, and confirms within one area.
-- `createNarration()` is mandatory for every video: define it in every `.video.ts` file and include spoken narration throughout the demo. The opening narration should first state the purpose of the video, then continue with the explanation or walkthrough. Define the map once, then call `await narration.key()` for the common case where the full line should run before moving on. Use `await narration.key.start()` when narration should overlap with the next action, and `await narration.key.end()` only to close that same active cue later, especially before visible navigation or route changes.
+- `createNarration()` is mandatory for every video: define it in every `.screenci.ts` file and include spoken narration throughout the demo. The opening narration should first state the purpose of the video, then continue with the explanation or walkthrough. Define the map once, then call `await narration.key()` for the common case where the full line should run before moving on. Use `await narration.key.start()` when narration should overlap with the next action, and `await narration.key.end()` only to close that same active cue later, especially before visible navigation or route changes.
 - Narration text can include inline speech-control tags such as `[pronounce: screen see eye]`, `[short pause]`, `[medium pause]`, and `[long pause]` when a word needs guided pronunciation or an intentional pause. When narration includes a URL or domain name, add a pronunciation guide or rewrite the line so it will be spoken clearly. Example: `screenci.com [pronounce: screen see eye dot com]`.
 
 Example:
@@ -79,7 +79,7 @@ await page.getByRole('link', { name: 'Invoices' }).click()
 
 **Every video MUST follow these conventions:**
 
-- **Narration on every video (required, no exceptions)** — always define `createNarration({ ... })` and add narration to every `.video.ts` file. Videos without narration are not acceptable.
+- **Narration on every video (required, no exceptions)** — always define `createNarration({ ... })` and add narration to every `.screenci.ts` file. Videos without narration are not acceptable.
 - **Open with the video's purpose** — the first spoken narration should clearly state what the video is for before moving into the step-by-step explanation.
 - **Guide pronunciation for URLs and domains** — if narration says a URL, domain, product name, or other term that a voice model might read incorrectly, add a `[pronounce: ...]` hint or phrase it in a clearly spoken way.
 - **Start on the requested page** — the visible video should always begin on the page the user requested.
@@ -151,8 +151,8 @@ How to handle the non-interactive case (this is the common case for agents):
 ## Recording Workflow
 
 1. Start from the existing initialized ScreenCI package. Early on, surface the sign-in link to the user (printed by `screenci init`, or by running `npx screenci record` once, or from `screenci/.screenci/link-session.json`) and ask them to sign in while you build the video. The link is valid for 24 hours and only needs to be used before the final recording.
-2. Add or edit `.video.ts` files in `videos/`.
-   Remove `videos/example.video.ts` if you are creating new videos and do not need the starter video.
+2. Add or edit `.screenci.ts` files in `videos/`.
+   Remove `videos/example.screenci.ts` if you are creating new videos and do not need the starter video.
    For narration, define `const narration = createNarration({ ... })` near the top of the file and trigger lines with `await narration.someKey()` when the full line should finish before moving on. Use `await narration.someKey.start()` only when narration should overlap with the next action, and `await narration.someKey.end()` only to close that same active cue later. This is especially important before visible navigation or page changes. Use inline tags like `[pronounce: ...]` and `[short pause]` inside cue text when needed, especially for URLs and domains such as `screenci.com [pronounce: screen see eye dot com]`.
    Example:
 

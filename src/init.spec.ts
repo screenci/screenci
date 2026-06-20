@@ -106,7 +106,7 @@ describe('generateExampleVideo', () => {
     const currentDir = path.dirname(fileURLToPath(import.meta.url))
     const installationVideoPath = path.resolve(
       currentDir,
-      '../docs/video-sources/installation.video.ts'
+      '../docs/video-sources/installation.screenci.ts'
     )
 
     const installationVideoSource = readFileSync(installationVideoPath, 'utf8')

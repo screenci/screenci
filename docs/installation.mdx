@@ -64,7 +64,7 @@ screenci/                   # Self-contained ScreenCI project
   package.json              # Its own package.json (own dependencies + scripts)
   package-lock.json         # Or pnpm-lock.yaml / yarn.lock, depending on package manager
   videos/
-    example.video.ts        # Minimal starter video
+    example.screenci.ts        # Minimal starter video
 .github/workflows/
   screenci.yaml             # Optional workflow (at the repo root, scoped to screenci/)
 ```
@@ -85,7 +85,7 @@ because that is where they are discovered:
   agents pick them up. See
   [Vercel Skills](https://github.com/vercel-labs/skills#readme).
 
-The starter video source is generated at `screenci/videos/example.video.ts` and looks
+The starter video source is generated at `screenci/videos/example.screenci.ts` and looks
 like this. For an explanation of how it works, see [Video Script
 Basics](/docs/write-video-scripts#generated-starter-video):
 
@@ -161,7 +161,7 @@ yarn screenci test
 </Tabs>
 
 The `test` command is for fast video script verification. It runs the
-`.video.ts` file with ScreenCI's Playwright base but skips the final recording
+`.screenci.ts` file with ScreenCI's Playwright base but skips the final recording
 pipeline, which slows down recording to produce correct timings for mouse
 animations.
 

@@ -435,11 +435,11 @@ describe('CLI', () => {
         expect.stringContaining('fullyParallel: true')
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
-        '/workspace/my-app/screenci/videos/example.video.ts',
+        '/workspace/my-app/screenci/videos/example.screenci.ts',
         expect.stringContaining("video('How to find docs'")
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
-        '/workspace/my-app/screenci/videos/example.video.ts',
+        '/workspace/my-app/screenci/videos/example.screenci.ts',
         expect.stringContaining("await page.goto('https://screenci.com/')")
       )
       const tsconfigCall = mockWriteFile.mock.calls.find(
@@ -1248,7 +1248,7 @@ describe('CLI', () => {
       expect(messages).toContain('    cd screenci')
       expect(messages).toContain('    npx screenci test')
       expect(messages).toContain(
-        '  - ./screenci/videos/example.video.ts - Example video script'
+        '  - ./screenci/videos/example.screenci.ts - Example video script'
       )
       expect(messages).toContain(
         '  - ./screenci/screenci.config.ts - ScreenCI configuration'

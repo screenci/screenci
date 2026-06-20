@@ -49,7 +49,7 @@ describe('createAudio', () => {
     recorder = createMockRecorder()
     context = createScreenCIRuntimeContext({
       recorder,
-      testFilePath: join(tempDir, 'demo.video.ts'),
+      testFilePath: join(tempDir, 'demo.screenci.ts'),
     })
   })
 

@@ -34,7 +34,7 @@ export default defineConfig({
   projectName: 'my-product',
   // Load SCREENCI_SECRET and related env vars from this file.
   envFile: '.env',
-  // Look for *.video.ts files here.
+  // Look for *.screenci.ts files here.
   videoDir: './videos',
 
   test: {
@@ -130,7 +130,7 @@ file you set via `envFile`.
 
 ### File locations
 
-- `videoDir` controls where ScreenCI discovers `*.video.ts` files.
+- `videoDir` controls where ScreenCI discovers `*.screenci.ts` files.
 - ScreenCI also maps Playwright `testDir` to this directory automatically.
 
 ### Recording behavior
@@ -337,11 +337,11 @@ format, or staging target than the rest of the project.
 
 ScreenCI still owns a small set of Playwright behavior:
 
-| Setting     | Value          | Reason                                     |
-| ----------- | -------------- | ------------------------------------------ |
-| `retries`   | `0`            | Retrying would overwrite the video         |
-| `testMatch` | `**/*.video.*` | Scopes Playwright to video test files only |
-| `testDir`   | `videoDir`     | ScreenCI discovers videos from this path   |
+| Setting     | Value             | Reason                                     |
+| ----------- | ----------------- | ------------------------------------------ |
+| `retries`   | `0`               | Retrying would overwrite the video         |
+| `testMatch` | `**/*.screenci.*` | Scopes Playwright to video test files only |
+| `testDir`   | `videoDir`        | ScreenCI discovers videos from this path   |
 
 It also rejects `viewport` in `use` or project `use`, because ScreenCI derives
 viewport dimensions from `recordOptions`.

@@ -606,6 +606,47 @@ describe('createNarration', () => {
       )
     })
 
+    it('passes a per-cue volume to addCueStart and keeps it out of translations', async () => {
+      const cues = createNarration({
+        voice: { name: voices.Ava },
+        en: { intro: { text: 'Hello world', volume: 0.5 } },
+        fi: { intro: { text: 'Hei maailma', volume: 0.5 } },
+      })
+      await cues.intro.start()
+
+      expect(recorder.addCueStart).toHaveBeenCalledWith(
+        '',
+        'intro',
+        undefined,
+        {
+          en: { text: 'Hello world', voice: voices.Ava },
+          fi: { text: 'Hei maailma', voice: voices.Ava },
+        },
+        0.5
+      )
+    })
+
+    it('omits the volume arg when no per-cue volume is set', async () => {
+      const cues = createNarration({
+        voice: { name: voices.Ava },
+        en: { intro: 'Hello world' },
+      })
+      await cues.intro.start()
+
+      const call = (recorder.addCueStart as ReturnType<typeof vi.fn>).mock
+        .calls[0]
+      expect(call).toHaveLength(4)
+    })
+
+    it('rejects a per-cue volume above the maximum level', () => {
+      expect(() =>
+        createNarration({
+          voice: { name: voices.Ava },
+          en: { intro: { text: 'Hello world', volume: 99 } },
+        })
+      ).toThrow(/finite volume between 0 and 4/)
+    })
+
     it('includes numeric pacing for consistent narration translations', async () => {
       const cues = createNarration({
         voice: {

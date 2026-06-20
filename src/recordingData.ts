@@ -151,6 +151,12 @@ export type CueStartEvent = {
   text?: string
   cueConfig?: CueConfig
   translations?: Record<string, CueTranslation>
+  /**
+   * Linear gain applied to this cue's narration audio at mix time (`1` is the
+   * natural level). A render-time mix property kept out of the translations so it
+   * never affects the audio cache key. Omitted plays at unity.
+   */
+  volume?: number
 }
 
 export type CueEndEvent = {
@@ -193,6 +199,12 @@ export type VideoCueStartEvent = {
   assetPath?: string
   subtitle?: string
   translations?: Record<string, VideoCueTranslation>
+  /**
+   * Linear gain applied to this cue's narration audio at mix time (`1` is the
+   * natural level). A render-time mix property kept out of the translations so it
+   * never affects the audio cache key. Omitted plays at unity.
+   */
+  volume?: number
 }
 
 export type ImageAssetStartEvent = {

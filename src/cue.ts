@@ -17,6 +17,7 @@ import {
   type ModelType,
 } from './voices.js'
 import { isCustomVoiceRef } from './customVoiceRef.js'
+import { MAX_AUDIO_LEVEL } from './asset.js'
 import { isInsideHide } from './hide.js'
 import { logger } from './logger.js'
 import { readFile } from 'fs/promises'
@@ -215,10 +216,22 @@ export type NarrationCue = {
   end(): Promise<void>
 }
 
+/**
+ * Linear gain applied to a cue's narration audio at mix time. `1` is the natural
+ * level (the default), `0` mutes it, and values above `1` boost it. Capped at
+ * {@link MAX_AUDIO_LEVEL}.
+ *
+ * Volume is a per-cue, render-time mix property: it is applied with ffmpeg when
+ * the narration is mixed and is deliberately not part of the voice/generation
+ * settings, so changing it never regenerates the audio. When more than one
+ * language sets a volume for the same cue, the first one wins.
+ */
+type NarrationVolume = { volume?: number }
+
 type NarrationCueObject =
-  | { text: string }
-  | { media: string; subtitle?: string }
-  | { path: string; subtitle?: string }
+  | ({ text: string } & NarrationVolume)
+  | ({ media: string; subtitle?: string } & NarrationVolume)
+  | ({ path: string; subtitle?: string } & NarrationVolume)
 
 /** A single narration cue value in a multi-language map. */
 export type CueMapValue = string | NarrationCueObject
@@ -551,11 +564,24 @@ export function createStudioNarration<
 }
 
 type NormalizedCueMapValue =
-  | { type: 'text'; text: string }
-  | { type: 'file'; path: string; subtitle?: string }
+  | { type: 'text'; text: string; volume?: number }
+  | { type: 'file'; path: string; subtitle?: string; volume?: number }
 
 const RESERVED_LANGUAGE_METADATA_KEYS = new Set<LanguageMetadataKey>(['voice'])
 const SUPPORTED_LANGUAGE_SET = new Set<Lang>(supportedLanguages)
+
+/**
+ * Validates a per-cue narration volume and returns it unchanged. A volume must
+ * be a finite number between 0 and {@link MAX_AUDIO_LEVEL}. Throws otherwise.
+ */
+function validateCueVolume(name: string, volume: number): number {
+  if (!Number.isFinite(volume) || volume < 0 || volume > MAX_AUDIO_LEVEL) {
+    throw new Error(
+      `[screenci] Narration cue "${name}" must provide a finite volume between 0 and ${MAX_AUDIO_LEVEL}. 1 is the natural level, 0 is silent, and values above 1 boost it.`
+    )
+  }
+  return volume
+}
 
 function normalizeCueMapValue(value: CueMapValue): NormalizedCueMapValue {
   if (typeof value === 'string') {
@@ -563,7 +589,11 @@ function normalizeCueMapValue(value: CueMapValue): NormalizedCueMapValue {
   }
 
   if ('text' in value) {
-    return { type: 'text', text: value.text }
+    return {
+      type: 'text',
+      text: value.text,
+      ...(value.volume !== undefined && { volume: value.volume }),
+    }
   }
 
   const mediaPath = 'media' in value ? value.media : value.path
@@ -572,6 +602,7 @@ function normalizeCueMapValue(value: CueMapValue): NormalizedCueMapValue {
     type: 'file',
     path: mediaPath,
     ...(value.subtitle !== undefined && { subtitle: value.subtitle }),
+    ...(value.volume !== undefined && { volume: value.volume }),
   }
 }
 
@@ -746,6 +777,9 @@ function buildCuesFromInput(
 
     // Normalize shorthand values and determine if any language uses a file entry for this key.
     let hasFileEntry = false
+    // Volume is per-cue (a render-time mix property, not per-language): the first
+    // language that sets a volume for this cue wins.
+    let cueVolume: number | undefined
     for (const lang of langs) {
       const val = getLanguageCues(lang, languages[lang])?.[keyStr]
       if (val !== undefined) {
@@ -753,6 +787,9 @@ function buildCuesFromInput(
         normalizedByLang.set(lang, normalized)
         if (normalized.type === 'file') {
           hasFileEntry = true
+        }
+        if (cueVolume === undefined && normalized.volume !== undefined) {
+          cueVolume = validateCueVolume(keyStr, normalized.volume)
         }
       }
     }
@@ -808,7 +845,10 @@ function buildCuesFromInput(
           undefined,
           undefined,
           undefined,
-          videoTranslations
+          videoTranslations,
+          // Spread so the volume arg is omitted entirely (not passed as
+          // undefined) when no per-cue volume was set.
+          ...(cueVolume !== undefined ? [cueVolume] : [])
         )
       })
     } else {
@@ -847,7 +887,15 @@ function buildCuesFromInput(
           }
         }
         sleepForCueFrameGap()
-        recorder.addCueStart('', keyStr, undefined, textTranslations)
+        recorder.addCueStart(
+          '',
+          keyStr,
+          undefined,
+          textTranslations,
+          // Spread so the volume arg is omitted entirely (not passed as
+          // undefined) when no per-cue volume was set.
+          ...(cueVolume !== undefined ? [cueVolume] : [])
+        )
       })
     }
   }

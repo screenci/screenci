@@ -207,6 +207,13 @@ export type CueStartEvent = {
   cueConfig?: CueConfig
   /** Multi-language API — all language translations keyed by language code */
   translations?: Record<string, CueTranslation>
+  /**
+   * Linear gain applied to this cue's narration audio at mix time (`1` is the
+   * natural level, `0` mutes it, values above `1` boost it). It is a render-time
+   * mix property, not a generation setting: it is deliberately kept out of the
+   * translations so it never changes the audio cache key. Omitted plays at unity.
+   */
+  volume?: number
 }
 
 export type CueEndEvent = {
@@ -263,6 +270,13 @@ export type VideoCueStartEvent = {
   subtitle?: string
   /** Multi-language API — per-language translations keyed by language code. */
   translations?: Record<string, VideoCueTranslation>
+  /**
+   * Linear gain applied to this cue's narration audio at mix time (`1` is the
+   * natural level). A render-time mix property kept out of the translations so it
+   * never affects the audio cache key. Omitted plays at unity. See
+   * {@link CueStartEvent.volume}.
+   */
+  volume?: number
 }
 
 /**
@@ -594,7 +608,8 @@ export interface IEventRecorder {
     text: string,
     name: string,
     cueConfig?: CueConfig,
-    translations?: Record<string, CueTranslation>
+    translations?: Record<string, CueTranslation>,
+    volume?: number
   ): void
   /** Records a studio-mode cue start — text and voice are configured in Studio. */
   addStudioCueStart(name: string): void
@@ -604,7 +619,8 @@ export interface IEventRecorder {
     assetPath: string | undefined,
     assetHash: string | undefined,
     subtitle?: string,
-    translations?: Record<string, VideoCueTranslation>
+    translations?: Record<string, VideoCueTranslation>,
+    volume?: number
   ): void
   addAssetStart(name: string, asset: AssetStartPayload): void
   /**
@@ -837,7 +853,8 @@ export class EventRecorder implements IEventRecorder {
     text: string,
     name: string,
     cueConfig?: CueConfig,
-    translations?: Record<string, CueTranslation>
+    translations?: Record<string, CueTranslation>,
+    volume?: number
   ): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
@@ -848,6 +865,7 @@ export class EventRecorder implements IEventRecorder {
       ...(text.length > 0 && { text }),
       ...(cueConfig !== undefined && { cueConfig }),
       ...(translations !== undefined && { translations }),
+      ...(volume !== undefined && { volume }),
     })
   }
 
@@ -877,7 +895,8 @@ export class EventRecorder implements IEventRecorder {
     assetPath: string | undefined,
     assetHash: string | undefined,
     subtitle?: string,
-    translations?: Record<string, VideoCueTranslation>
+    translations?: Record<string, VideoCueTranslation>,
+    volume?: number
   ): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
@@ -889,6 +908,7 @@ export class EventRecorder implements IEventRecorder {
       ...(assetPath !== undefined && { assetPath }),
       ...(subtitle !== undefined && { subtitle }),
       ...(translations !== undefined && { translations }),
+      ...(volume !== undefined && { volume }),
     })
   }
 

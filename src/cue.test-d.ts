@@ -51,6 +51,30 @@ describe('createNarration type constraints', () => {
     })
   })
 
+  it('accepts a per-cue volume on text and media cue values', () => {
+    createNarration({
+      voice: { name: voices.Ava },
+      en: {
+        intro: { text: 'Hello', volume: 0.5 },
+        clip: { media: '/clip.mp4', subtitle: 'Watch', volume: 2 },
+      },
+      fi: {
+        intro: { text: 'Hei', volume: 0.5 },
+        clip: { path: '/clip.mp4', volume: 2 },
+      },
+    })
+  })
+
+  it('rejects a non-numeric volume', () => {
+    createNarration({
+      voice: { name: voices.Ava },
+      en: {
+        // @ts-expect-error — volume must be a number
+        intro: { text: 'Hello', volume: 'loud' },
+      },
+    })
+  })
+
   it('rejects a language with a missing cue key', () => {
     createNarration({
       voice: { name: voices.Ava },

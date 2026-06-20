@@ -85,6 +85,36 @@ video('Analytics walkthrough', async ({ page }) => {
 })
 ```
 
+## Balance narration volume
+
+Set a per-cue `volume` to balance a spoken line against the recording and any
+background audio. Use the object form of a cue and add `volume`:
+
+```ts
+const narration = createNarration({
+  voice: { name: voices.Sophie },
+  en: {
+    // Quieter than natural, e.g. to sit under a louder moment in the recording.
+    intro: { text: 'Open the settings page.', volume: 0.6 },
+    // Natural level (the default); the same as `summary: 'Review the numbers.'`.
+    summary: { text: 'Review the numbers.', volume: 1 },
+  },
+})
+```
+
+`volume` is a linear gain: `1` is the natural level (the default), `0` is silent,
+and values above `1` boost the line (capped at `4`). It is a per-cue setting, so a
+file-based cue accepts it too:
+
+```ts
+clip: { media: '/walkthrough.mp4', volume: 0.5 }
+```
+
+Volume is applied when the narration is mixed into the final video, not when the
+speech is generated. Changing it never regenerates the audio, and it is not a
+per-language setting: when more than one language sets a volume for the same cue,
+the first one wins.
+
 ## Add localization
 
 Add more languages by keeping the same cue keys:

@@ -40,6 +40,13 @@ export const DEFAULT_ASPECT_RATIO: AspectRatio = '16:9'
 export const DEFAULT_QUALITY: Quality = '1080p'
 
 /**
+ * Default device scale factor (DPR) for screenshots. Stills default to 2 so they
+ * are crisp; override with `recordOptions.deviceScaleFactor`. Video ignores this
+ * (the screencast encoder needs frames at the viewport resolution).
+ */
+export const DEFAULT_SCREENSHOT_DEVICE_SCALE_FACTOR = 2
+
+/**
  * Default frames per second for video recording
  */
 export const DEFAULT_FPS: FPS = 60

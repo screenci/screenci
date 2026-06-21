@@ -5,7 +5,9 @@ import {
   type IEventRecorder,
   type ElementRect,
 } from './events.js'
-import type { AutoZoomOptions } from './types.js'
+import type { AutoZoomOptions, RecordOptions, RenderOptions } from './types.js'
+import type { StudioRenderOptionsSentinel } from './studio.js'
+import type { ScreenshotCrop } from './crop.js'
 
 export type CurrentZoomViewport = {
   focusPoint: { x: number; y: number }
@@ -65,6 +67,16 @@ export type ScreenCIRuntimeContext = {
    * here so they are uploaded alongside the recording. Null when not recording.
    */
   recordingDir: string | null
+  /** Resolved capture options for the active recording, when available. */
+  recordOptions: RecordOptions | null
+  /** Base render options for the active recording (drive a still's framing). */
+  renderOptions: RenderOptions | StudioRenderOptionsSentinel | undefined
+  /**
+   * Crop recorded for the current `screenshot()` fixture capture, or null for the
+   * full image. Set via the `crop` fixture argument and read by the fixture at
+   * capture time. Replaces the previous module-global crop state.
+   */
+  crop: ScreenshotCrop | null
   timelineBlocks: TimelineBlockState[]
   cue: {
     activeCueName: string | null
@@ -101,6 +113,8 @@ export function createScreenCIRuntimeContext(
     page?: Page | null
     testFilePath?: string | null
     recordingDir?: string | null
+    recordOptions?: RecordOptions | null
+    renderOptions?: RenderOptions | StudioRenderOptionsSentinel | undefined
   } = {}
 ): ScreenCIRuntimeContext {
   const defaultRecorder = overrides.recorder ?? NOOP_EVENT_RECORDER
@@ -114,6 +128,9 @@ export function createScreenCIRuntimeContext(
     page: overrides.page ?? null,
     testFilePath: overrides.testFilePath ?? null,
     recordingDir: overrides.recordingDir ?? null,
+    recordOptions: overrides.recordOptions ?? null,
+    renderOptions: overrides.renderOptions,
+    crop: null,
     timelineBlocks: [],
     cue: {
       activeCueName: null,
@@ -216,6 +233,25 @@ export function getRuntimePage(): Page | null {
 
 export function getRuntimeRecordingDir(): string | null {
   return getScreenCIRuntimeContext().recordingDir
+}
+
+export function getRuntimeRecordOptions(): RecordOptions | null {
+  return getScreenCIRuntimeContext().recordOptions
+}
+
+export function getRuntimeRenderOptions():
+  | RenderOptions
+  | StudioRenderOptionsSentinel
+  | undefined {
+  return getScreenCIRuntimeContext().renderOptions
+}
+
+export function setRuntimeCrop(crop: ScreenshotCrop | null): void {
+  getScreenCIRuntimeContext().crop = crop
+}
+
+export function getRuntimeCrop(): ScreenshotCrop | undefined {
+  return getScreenCIRuntimeContext().crop ?? undefined
 }
 
 export function resetCueRuntimeState(): void {

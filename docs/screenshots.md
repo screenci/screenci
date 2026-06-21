@@ -9,10 +9,40 @@ A screenshot is captured directly from the page (no video is recorded), then
 composited at render time. Screenshots are cheaper to render than videos and are
 delivered through the same hosting, versioning, and Studio editing.
 
+## Two ways to capture
+
+**1. A standalone `screenshot()` test** drives the page and captures the final
+state (no video recorded):
+
+```ts
+import { screenshot } from 'screenci'
+
+screenshot('Dashboard hero', async ({ page }) => {
+  await page.goto('https://app.example.com/dashboard')
+})
+```
+
+**2. `page.screenshot()` inside a `video()`** grabs a still of a moment that also
+appears in the video. Each call becomes its own screenshot recording named by the
+`name` you pass:
+
+```ts
+import { video } from 'screenci'
+
+video('Product demo', async ({ page }) => {
+  await page.goto('https://app.example.com/dashboard')
+  await page.screenshot({ name: 'hero' }) // -> screenshot named "hero"
+})
+```
+
+Both produce the same branded still, framed and hosted identically. The rest of
+this guide applies to either. The sections below detail each.
+
 #### You will learn
 
 - [how a screenshot script differs from a video](#screenshot-vs-video)
 - [how to crop to a component or a region](#cropping)
+- [how to capture stills during a video](#stills-during-a-video)
 - [how to set quality and dark mode](#quality-and-appearance)
 - [how to add overlays and a background](#overlays-and-background)
 
@@ -38,14 +68,15 @@ ignored.
 
 ## Cropping
 
-Use `crop()` to frame a single component or an explicit region. The crop is
-applied by the renderer, which places the cropped region (plus any `padding`) on
-the background with the branded frame.
+The `screenshot()` fixture provides a `crop` argument. Call it to frame a single
+component or an explicit region. The crop is applied by the renderer, which
+places the cropped region (plus any `padding`) on the background with the branded
+frame.
 
 ```ts
-import { screenshot, crop } from 'screenci'
+import { screenshot } from 'screenci'
 
-screenshot('Revenue card', async ({ page }) => {
+screenshot('Revenue card', async ({ page, crop }) => {
   await page.goto('https://app.example.com/dashboard')
 
   // Crop to a component, with 6% breathing room around it.
@@ -53,18 +84,53 @@ screenshot('Revenue card', async ({ page }) => {
 })
 ```
 
-`crop()` also accepts an explicit region as fractions (0..1) of the viewport:
+`crop` also accepts an explicit region as fractions (0..1) of the viewport:
 
 ```ts
 await crop({ x: 0.1, y: 0.2, width: 0.8, height: 0.6 })
 ```
 
+The crop is stored as a render option (`renderOptions.screenshot.crop`), so it is
+editable in Studio afterward. You can also set a default crop in config; a `crop()`
+call (or `page.screenshot({ crop })` inside a video) overrides that default.
+
+## Stills during a video
+
+You do not need a separate `screenshot()` test to grab a still of a moment that
+already appears in a video. Inside a `video()`, call `page.screenshot()` to
+capture a branded still at that point. It is delivered as its own screenshot
+recording named by the `name` you pass, framed and hosted exactly like a
+standalone screenshot, and the call still returns the captured bytes.
+
+```ts
+import { video } from 'screenci'
+
+video('Product demo', async ({ page }) => {
+  await page.goto('https://app.example.com/dashboard')
+  await page.screenshot({ name: 'hero' }) // -> screenshot named "hero"
+
+  await page.getByRole('button', { name: 'Reports' }).click()
+  await page.screenshot({
+    name: 'reports',
+    crop: page.getByTestId('chart'), // a locator or a fractional region
+  })
+})
+```
+
+Each call produces one still, so give each a distinct `name` (names must be unique
+across your recordings, like video titles). A still captured
+this way is taken at the video's viewport resolution (the video pipeline does not
+upscale device pixels), so record at a higher `recordOptions.quality` for crisp
+stills, or use a standalone `screenshot()` test when you need a higher DPI than
+the video.
+
 ## Quality and appearance
 
 The viewport comes from `recordOptions.aspectRatio` and `recordOptions.quality`,
-the same as videos. For a sharper, higher-DPI still, set
-`recordOptions.deviceScaleFactor` (the easy way to ask for higher quality). Any
-Playwright `use` option (such as `colorScheme: 'dark'`) is honored too.
+the same as videos. Screenshots capture at `recordOptions.deviceScaleFactor`,
+which **defaults to `2`** so stills are crisp; lower it to `1` for smaller files,
+or raise it for extra-high-DPI captures. Any Playwright `use` option (such as
+`colorScheme: 'dark'`) is honored too.
 
 ```ts
 screenshot.use({
@@ -72,44 +138,44 @@ screenshot.use({
   recordOptions: {
     aspectRatio: '16:9',
     quality: '1440p',
-    deviceScaleFactor: 2,
+    deviceScaleFactor: 2, // the default; set to 1 for smaller files
   },
 })
 ```
 
-## Framing: margin and aspect ratio
+## The screenshot render group
 
-Control the framing the way you would in CSS. `recording.margin` is the gap
-between the framed shot and the canvas edge, as a fraction (0-1) of the shorter
-output side; the shot scales to fit the canvas minus that margin, centered. It
-supersedes `recording.size` for screenshots.
-
-`output.aspectRatio` sets the canvas shape. Use a fixed ratio (`'1:1'`,
-`'16:9'`, ...) for a social card, or `'auto'` to let the canvas hug the shot
-plus a uniform margin (no letterbox bars).
+All screenshot-only render options live under `renderOptions.screenshot`:
+`format`, `quality`, `aspectRatio`, `margin`, and `crop`. (Background, frame
+roundness, and shadow are shared with video and stay under `renderOptions.output`
+and `renderOptions.recording`.) Every field here is editable later in Studio.
 
 ```ts
 screenshot.use({
   renderOptions: {
-    recording: { margin: 0.08 },
-    output: { aspectRatio: 'auto' }, // or '1:1', '16:9', ...
+    screenshot: {
+      aspectRatio: 'auto', // or '1:1', '16:9', ... (fixed)
+      quality: '1440p',
+      margin: 0.08,
+      format: { type: 'jpeg', quality: 82 }, // or 'png' (the default)
+    },
   },
 })
 ```
 
-## Output format
+### Framing: margin and aspect ratio
+
+`margin` is the gap between the framed shot and the canvas edge, as a fraction
+(0-1) of the shorter output side; the shot scales to fit the canvas minus that
+margin, centered. `aspectRatio` sets the canvas shape: a fixed ratio (`'1:1'`,
+`'16:9'`, ...) for a social card, or `'auto'` to let the canvas hug the shot plus
+a uniform margin (no letterbox bars).
+
+### Output format
 
 Screenshots are PNG by default (lossless). Choose JPEG for smaller, photo-heavy
-shots; `quality` is the JPEG compression quality (1-100, default 90) and is
-separate from `recordOptions.quality`, which is the resolution.
-
-```ts
-screenshot.use({
-  renderOptions: {
-    output: { format: { type: 'jpeg', quality: 82 } }, // or 'png'
-  },
-})
-```
+shots; its `quality` is the JPEG compression quality (1-100, default 90),
+separate from `screenshot.quality`, which is the resolution.
 
 ## Overlays and background
 
@@ -119,7 +185,7 @@ screenshot and a video from the same project share one visual language. Use
 and `renderOptions` for the background, frame roundness, and shadow.
 
 ```ts
-import { screenshot, crop, createOverlays } from 'screenci'
+import { screenshot, createOverlays } from 'screenci'
 
 const overlays = createOverlays({
   newBadge: { path: '../assets/new-badge.png', x: 0.72, y: 0.06, width: 0.2 },
@@ -140,9 +206,14 @@ screenshot.use({
   },
 })
 
-screenshot('Dashboard hero', async ({ page }) => {
+screenshot('Dashboard hero', async ({ page, crop }) => {
   await page.goto('https://app.example.com/dashboard')
-  await overlays.newBadge()
+  // In a screenshot, start an overlay and leave it open: it stays in the still.
+  await overlays.newBadge.start()
   await crop(page.getByTestId('revenue-card'), { padding: 0.06 })
 })
 ```
+
+A still has no timeline, so an overlay you `start()` is simply shown in the image,
+with no matching `end()` needed. (In a `video()`, every `start()` still needs an
+`end()`.)

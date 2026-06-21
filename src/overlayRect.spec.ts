@@ -49,6 +49,35 @@ describe('overlayRect', () => {
     expect(rect.normalized).toEqual({ x: 0, y: 0, width: 0.5, height: 0.5 })
   })
 
+  it('inflates by margin (px on every side) and re-normalizes', async () => {
+    const rect = await overlayRect(
+      fakeLocator(
+        { x: 100, y: 100, width: 200, height: 200 },
+        { width: 1000, height: 1000 }
+      ),
+      { margin: 50 }
+    )
+    expect(rect.pixels).toEqual({ x: 50, y: 50, width: 300, height: 300 })
+    expect(rect.normalized).toEqual({
+      x: 0.05,
+      y: 0.05,
+      width: 0.3,
+      height: 0.3,
+    })
+  })
+
+  it('clamps a margin that would extend past the viewport edges', async () => {
+    const rect = await overlayRect(
+      fakeLocator(
+        { x: 10, y: 10, width: 100, height: 100 },
+        { width: 1000, height: 1000 }
+      ),
+      { margin: 40 }
+    )
+    // Left/top clamp to 0 (10 - 40 < 0); right/bottom stay 110 + 40 = 150.
+    expect(rect.pixels).toEqual({ x: 0, y: 0, width: 150, height: 150 })
+  })
+
   it('passes relativeTo through to the result', async () => {
     const rect = await overlayRect(
       fakeLocator(

@@ -290,33 +290,54 @@ The default placement (no fields set) is therefore `{ relativeTo: 'recording', x
 
 ### Positioning over a live element
 
-`overlayRect(locator)` captures a locator's on-screen box and converts it to
-normalized `0`-`1` coordinates in the recording area. Pair it with a
-[programmatic overlay](#programmatic-overlays-props): spread the result into the
-placement to position the overlay over the element, and/or pass it as a prop so
-the component can draw relative to the element.
+To frame or circle a real element, give a [programmatic overlay](#programmatic-overlays-props)
+an `over` locator (and an optional `margin` in CSS px). screenci reads the
+element's box at recording time, sizes the overlay to it (plus the margin), and
+positions it over the element. Your overlay content fills that box, so a ring
+lands exactly around the element:
 
 ```tsx
+import { createOverlays, overlayRect, video, type OverlayRect } from 'screenci'
+
 const overlays = createOverlays({
-  ring: (p: { rect: OverlayRect }) => ({
-    element: <Ring />, // a CSS ring/circle that fills its box
-    ...p.rect, // relativeTo / x / y / width, positioned over the element
+  // The overlay is sized to the element's box; fill it (width/height: 100%).
+  ring: (target: Locator) => ({
+    html: '<div style="width:100%;height:100%;border:4px solid #ec4899;border-radius:12px"></div>',
+    over: target,
+    margin: 8, // optional breathing room around the element
   }),
 })
 
-const rect = await overlayRect(page.locator('#save'))
-await overlays.ring({ rect }).start()
-await page.click('#save')
-await overlays.ring({ rect }).end()
+const save = page.getByRole('button', { name: 'Save' })
+await overlays.ring(save).start()
+await save.click()
+await overlays.ring(save).end()
 ```
 
-The returned object carries the placement fields (`relativeTo`, `x`, `y`, and one
-of `width`/`height`) at the top level for spreading, plus `normalized` (all four
-fractions) and `pixels` (the raw box) for a component to use. Pass
-`{ dimension: 'height' }` to expose `height` instead of `width`, and
-`{ relativeTo: 'screen' }` to tag the result for screen-relative placement (only
-meaningful when the recording fills the output frame). Make sure the element is
-visible before calling `overlayRect`; it throws if the locator has no box.
+`over` works with React elements, inline `html`, and `.html` files. It is always
+recording-relative and overrides `x`/`y`/`width`/`height`/`relativeTo`/`fullScreen`.
+Make the content fill its box (`width:100%;height:100%`). Repeated calls with the
+same element box rasterize only once.
+
+#### `overlayRect` (lower-level)
+
+If you need the element's coordinates yourself (for example to pass into a
+component that draws relative to the element), call `overlayRect(locator, opts?)`.
+It returns the box as normalized `0`-`1` fractions of the recording area:
+
+```tsx
+const rect = await overlayRect(page.getByRole('button', { name: 'Save' }), {
+  margin: 8,
+})
+// rect.normalized -> { x, y, width, height }; rect.pixels -> the CSS-px box.
+// Top-level relativeTo/x/y/width spread into a placement: { ...rect }
+```
+
+Options: `margin` (px around the element), `dimension` (`'width'` by default, or
+`'height'` to expose that axis at the top level), and `relativeTo` (`'recording'`
+by default; `'screen'` is only meaningful when the recording fills the output
+frame). Make sure the element is visible first; it throws if the locator has no
+box.
 
 ## Timing and control flow
 

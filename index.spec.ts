@@ -16,7 +16,6 @@ describe('public api surface', () => {
       'createStudioAudio',
       'createStudioNarration',
       'createStudioOverlays',
-      'crop',
       'defineConfig',
       'hide',
       'isStudioRenderOptions',

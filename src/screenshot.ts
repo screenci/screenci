@@ -17,6 +17,7 @@ import {
   DEFAULT_VIDEO_OPTIONS,
   DEFAULT_ASPECT_RATIO,
   DEFAULT_QUALITY,
+  DEFAULT_SCREENSHOT_DEVICE_SCALE_FACTOR,
 } from './defaults.js'
 import { EventRecorder } from './events.js'
 import type { ScreenshotInfo } from './events.js'
@@ -28,8 +29,21 @@ import {
   buildScreenCIContextOptions,
   resolveDeviceScaleFactor,
 } from './contextOptions.js'
-import { getRecordedCrop, resetCrop } from './crop.js'
+import { resolveCrop } from './crop.js'
+import type { CropTarget, CropOptions } from './crop.js'
+import { getRuntimePage, setRuntimeCrop } from './runtimeContext.js'
+import { ScreenciError } from './errors.js'
 import { withActiveRecordingContext } from './video.js'
+
+/**
+ * The `crop` fixture argument. Call it inside a `screenshot()` body to crop the
+ * implicit end-of-body capture to a locator or fractional region. Replaces the
+ * old module-level `crop()` function; the crop is recorded per test.
+ */
+export type CropFixture = (
+  target: CropTarget,
+  options?: CropOptions
+) => Promise<void>
 
 /** File name of the raw page capture written beside `data.json`. */
 const SCREENSHOT_FILE_NAME = 'screenshot.png'
@@ -39,9 +53,27 @@ type ScreenshotFixtureOptions = {
   renderOptions: RenderOptions | StudioRenderOptionsSentinel | undefined
 }
 
-const _screenshotBase = base.extend<ScreenshotFixtureOptions>({
+type ScreenshotFixtures = {
+  crop: CropFixture
+}
+
+const _screenshotBase = base.extend<
+  ScreenshotFixtureOptions & ScreenshotFixtures
+>({
   recordOptions: [DEFAULT_VIDEO_OPTIONS, { option: true }],
   renderOptions: [undefined, { option: true }],
+
+  crop: async ({}, use) => {
+    await use(async (target, options) => {
+      const page = getRuntimePage()
+      if (page === null) {
+        throw new ScreenciError(
+          'crop() requires an active ScreenCI page. Call it inside a screenshot() body.'
+        )
+      }
+      setRuntimeCrop(await resolveCrop(target, page, options))
+    })
+  },
 
   browser: async ({ playwright }, use) => {
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
@@ -92,7 +124,8 @@ const _screenshotBase = base.extend<ScreenshotFixtureOptions>({
         applyLocaleDefault: shouldRecord,
         deviceScaleFactor: resolveDeviceScaleFactor(
           recordOptions,
-          deviceScaleFactor
+          deviceScaleFactor,
+          DEFAULT_SCREENSHOT_DEVICE_SCALE_FACTOR
         ),
         forwarded: {
           colorScheme,
@@ -142,11 +175,11 @@ const _screenshotBase = base.extend<ScreenshotFixtureOptions>({
         testFilePath: testInfo.file,
       })
       recorder.start()
-      resetCrop()
       await withActiveRecordingContext({
         runtimeContext,
         page,
         recorder,
+        unendedOverlays: 'autoEnd',
         fn: async () => {
           await use(page)
         },
@@ -158,7 +191,11 @@ const _screenshotBase = base.extend<ScreenshotFixtureOptions>({
     const aspectRatio = recordOptions.aspectRatio ?? DEFAULT_ASPECT_RATIO
     const quality = recordOptions.quality ?? DEFAULT_QUALITY
     const dimensions = getDimensions(aspectRatio, quality)
-    const dsf = resolveDeviceScaleFactor(recordOptions, deviceScaleFactor)
+    const dsf = resolveDeviceScaleFactor(
+      recordOptions,
+      deviceScaleFactor,
+      DEFAULT_SCREENSHOT_DEVICE_SCALE_FACTOR
+    )
 
     const directoryName = escapeFileSystemPathSegment(testInfo.title)
     const screenshotDir = join(process.cwd(), '.screenci', directoryName)
@@ -180,13 +217,13 @@ const _screenshotBase = base.extend<ScreenshotFixtureOptions>({
     })
 
     recorder.start()
-    resetCrop()
 
     try {
       await withActiveRecordingContext({
         runtimeContext,
         page,
         recorder,
+        unendedOverlays: 'autoEnd',
         fn: async () => {
           await use(page)
         },
@@ -199,21 +236,26 @@ const _screenshotBase = base.extend<ScreenshotFixtureOptions>({
         path: join(screenshotDir, SCREENSHOT_FILE_NAME),
       })
 
-      const crop = getRecordedCrop()
+      const crop = runtimeContext.crop ?? undefined
       const screenshot: ScreenshotInfo = {
         path: SCREENSHOT_FILE_NAME,
         width: Math.round(dimensions.width * dsf),
         height: Math.round(dimensions.height * dsf),
         deviceScaleFactor: dsf,
-        ...(crop !== undefined && { crop }),
       }
 
       const configDir = process.env.SCREENCI_CONFIG_DIR ?? process.cwd()
+      // The crop (from the `crop` fixture) is a render option, so it goes into
+      // renderOptions.screenshot.crop (editable in Studio), not ScreenshotInfo.
       await recorder.writeToFile(
         screenshotDir,
         testInfo.title,
         relative(configDir, testInfo.file),
-        { output: 'screenshot', screenshot }
+        {
+          output: 'screenshot',
+          screenshot,
+          ...(crop !== undefined && { crop }),
+        }
       )
     } finally {
       await page.close()
@@ -225,6 +267,7 @@ type ScreenshotType = TestType<
   PlaywrightTestArgs &
     PlaywrightTestOptions &
     ScreenshotFixtureOptions &
+    ScreenshotFixtures &
     PlaywrightWorkerArgs &
     PlaywrightWorkerOptions,
   PlaywrightWorkerArgs & PlaywrightWorkerOptions
@@ -234,6 +277,7 @@ type ScreenshotArgs = Omit<PlaywrightTestArgs, 'page'> & {
   page: ScreenCIPage
 } & PlaywrightTestOptions &
   ScreenshotFixtureOptions &
+  ScreenshotFixtures &
   PlaywrightWorkerArgs &
   PlaywrightWorkerOptions
 
@@ -255,15 +299,16 @@ interface ScreenshotCallSignatures {
    *
    * Drives the page like a `video()` test, then captures the final state as a
    * still image. The capture is framed on the configured background with the
-   * branded frame, cropped with {@link crop}, and decorated with overlays at
-   * render time. The viewport is derived from `recordOptions.aspectRatio` and
-   * `recordOptions.quality`; `recordOptions.deviceScaleFactor` raises the DPI.
+   * branded frame, cropped with the `crop` fixture argument, and decorated with
+   * overlays at render time. The viewport is derived from
+   * `recordOptions.aspectRatio` and `recordOptions.quality`;
+   * `recordOptions.deviceScaleFactor` raises the DPI.
    *
    * @example
    * ```ts
-   * import { screenshot, crop } from 'screenci'
+   * import { screenshot } from 'screenci'
    *
-   * screenshot('Dashboard hero', async ({ page }) => {
+   * screenshot('Dashboard hero', async ({ page, crop }) => {
    *   await page.goto('https://app.example.com/dashboard')
    *   await crop(page.getByTestId('revenue-card'), { padding: 0.06 })
    * })
@@ -323,7 +368,7 @@ interface Screenshot extends ScreenshotCallSignatures {
  *
  * @example
  * ```ts
- * import { screenshot, crop, createOverlays } from 'screenci'
+ * import { screenshot, createOverlays } from 'screenci'
  *
  * const overlays = createOverlays({
  *   badge: { path: '../assets/new-badge.png', x: 0.72, y: 0.06, width: 0.2 },
@@ -334,7 +379,7 @@ interface Screenshot extends ScreenshotCallSignatures {
  *   recordOptions: { quality: '1440p', deviceScaleFactor: 2 },
  * })
  *
- * screenshot('Dashboard hero', async ({ page }) => {
+ * screenshot('Dashboard hero', async ({ page, crop }) => {
  *   await page.goto('https://app.example.com/dashboard')
  *   await overlays.badge()
  *   await crop(page.getByTestId('revenue-card'), { padding: 0.06 })

@@ -32,7 +32,10 @@ export type OverlayRect = {
   height?: number
   /** All four normalized fractions, regardless of the chosen placement dimension. */
   normalized: { x: number; y: number; width: number; height: number }
-  /** The raw viewport box in CSS pixels, as returned by `boundingBox()`. */
+  /**
+   * The box in CSS pixels (viewport-relative), after any `margin` and clamping
+   * to the viewport. Equals the element's `boundingBox()` when no margin is set.
+   */
   pixels: { x: number; y: number; width: number; height: number }
 }
 
@@ -45,6 +48,12 @@ export type OverlayRectOptions = {
    * the result carries only the chosen one. Defaults to `'width'`.
    */
   dimension?: 'width' | 'height'
+  /**
+   * Extra space in CSS px added around the element on every side, so the rect
+   * surrounds the element rather than sitting exactly on its edges. The rect is
+   * clamped to the viewport. Defaults to `0`.
+   */
+  margin?: number
 }
 
 async function resolveViewportSize(
@@ -88,11 +97,25 @@ export async function overlayRect(
     )
   }
 
+  // Inflate by the margin (CSS px on every side), then clamp to the viewport so
+  // the normalized rect stays within 0..1 even near the edges.
+  const margin = options.margin ?? 0
+  const left = Math.max(0, box.x - margin)
+  const top = Math.max(0, box.y - margin)
+  const right = Math.min(viewport.width, box.x + box.width + margin)
+  const bottom = Math.min(viewport.height, box.y + box.height + margin)
+  const pixels = {
+    x: left,
+    y: top,
+    width: Math.max(0, right - left),
+    height: Math.max(0, bottom - top),
+  }
+
   const normalized = {
-    x: box.x / viewport.width,
-    y: box.y / viewport.height,
-    width: box.width / viewport.width,
-    height: box.height / viewport.height,
+    x: pixels.x / viewport.width,
+    y: pixels.y / viewport.height,
+    width: pixels.width / viewport.width,
+    height: pixels.height / viewport.height,
   }
   const relativeTo = options.relativeTo ?? 'recording'
   const dimension = options.dimension ?? 'width'
@@ -105,6 +128,6 @@ export async function overlayRect(
       ? { height: normalized.height }
       : { width: normalized.width }),
     normalized,
-    pixels: { x: box.x, y: box.y, width: box.width, height: box.height },
+    pixels,
   }
 }

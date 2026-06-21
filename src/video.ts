@@ -65,6 +65,7 @@ import {
 import { escapeFileSystemPathSegment } from './fileSystemName.js'
 import { resolveRecordingTimingDuration } from './runtimeMode.js'
 import { buildScreenCIContextOptions } from './contextOptions.js'
+import { bindStillCaptureToPage } from './stillCapture.js'
 
 export const POST_VIDEO_PAUSE = 500
 
@@ -316,13 +317,42 @@ export function assertAllOverlaysEnded(
   )
 }
 
+/**
+ * Ends any overlays left open with `.start()`, in record order. Used by the
+ * screenshot fixture, where a `.start()` with no `.end()` means "keep this
+ * overlay visible in the still" rather than being an error (the still has no
+ * timeline, so the renderer shows every overlay regardless).
+ */
+export function autoEndOpenOverlays(
+  runtimeContext: ReturnType<typeof createScreenCIRuntimeContext>,
+  recorder: EventRecorder
+): void {
+  for (const [name, run] of runtimeContext.asset.activeRuns) {
+    recorder.addAssetEnd(name, 'auto')
+    run.resolveFinished()
+  }
+  runtimeContext.asset.activeRuns.clear()
+}
+
 export async function withActiveRecordingContext<T>(params: {
   runtimeContext: ReturnType<typeof createScreenCIRuntimeContext>
   page: Page
   recorder: EventRecorder
   fn: () => Promise<T>
+  /**
+   * How to handle overlays left open at the end of the body. `'throw'` (video)
+   * rejects dangling overlays; `'autoEnd'` (screenshot) ends them so a badge
+   * `.start()`ed without `.end()` stays visible in the still.
+   */
+  unendedOverlays?: 'throw' | 'autoEnd'
 }): Promise<T> {
-  const { runtimeContext, page, recorder, fn } = params
+  const {
+    runtimeContext,
+    page,
+    recorder,
+    fn,
+    unendedOverlays = 'throw',
+  } = params
 
   setActiveScreenCIRuntimeContext(runtimeContext)
 
@@ -346,7 +376,11 @@ export async function withActiveRecordingContext<T>(params: {
       setRuntimePage(page)
 
       const result = await fn()
-      assertAllOverlaysEnded(runtimeContext)
+      if (unendedOverlays === 'autoEnd') {
+        autoEndOpenOverlays(runtimeContext, recorder)
+      } else {
+        assertAllOverlaysEnded(runtimeContext)
+      }
       // Rasterize deferred overlays now that the test body has succeeded and
       // every overlay's props/timing are known, before the recorder is written
       // to disk. On the failure path fn() throws, so this never runs and no
@@ -481,7 +515,10 @@ const _videoBase = base.extend<
         recorder,
         page,
         testFilePath: testInfo.file,
+        recordOptions,
+        renderOptions,
       })
+      bindStillCaptureToPage(page)
       await setupMouseTracking(page, recorder)
       recorder.start()
       await withActiveRecordingContext({
@@ -528,8 +565,11 @@ const _videoBase = base.extend<
       page,
       testFilePath: testInfo.file,
       recordingDir: videoDir,
+      recordOptions,
+      renderOptions,
     })
 
+    bindStillCaptureToPage(page)
     await setupMouseTracking(page, recorder)
 
     // Navigate to blank page to ensure window is ready and rendered

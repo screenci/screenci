@@ -1,4 +1,6 @@
+import type { Locator } from '@playwright/test'
 import type { IEventRecorder, OverlayPlacement } from './events.js'
+import { overlayRect } from './overlayRect.js'
 import { access, readFile } from 'fs/promises'
 import { dirname, resolve } from 'path'
 import { resolveRecordingTimingDuration } from './runtimeMode.js'
@@ -69,6 +71,21 @@ export type OverlayConfig = {
   height?: number
   /** Fill the whole output frame. Overrides x/y/width/height. */
   fullScreen?: boolean
+  /**
+   * Position the overlay over a live element, captured at recording time from
+   * the locator's bounding box. The overlay is sized to that box (plus
+   * {@link margin}) and fills it, so it frames the element exactly. Overrides
+   * `x`/`y`/`width`/`height`/`relativeTo`/`fullScreen` (placement is always
+   * recording-relative). HTML files, inline `html`, and React elements only;
+   * your content should fill its box (for example `width:100%;height:100%`).
+   */
+  over?: Locator
+  /**
+   * Extra space (CSS px) added around the {@link over} element on every side,
+   * so the overlay surrounds it rather than sitting exactly on its edges. Only
+   * valid together with `over`.
+   */
+  margin?: number
   /**
    * Visible length for the blocking call form (`await overlays.logo(1200)`).
    * Omit when driving with `start()`/`end()`. Image/HTML/React overlays only.
@@ -397,7 +414,11 @@ function buildOverlayFromConfig(
     validateInlineHtmlFragment(name, config.html!)
   }
 
-  const placement = resolveOverlayPlacement(name, config)
+  const placementSource = resolvePlacementSource(name, config, {
+    hasElement,
+    hasHtml,
+    hasPath,
+  })
   const fullScreen = config.fullScreen ?? false
   const animate = config.animate === true
   if (config.fps !== undefined && !animate) {
@@ -449,7 +470,7 @@ function buildOverlayFromConfig(
       return createAnimatedOverlayController(
         name,
         getMarkup,
-        placement,
+        placementSource,
         fullScreen,
         config.fps,
         config.durationMs,
@@ -459,7 +480,7 @@ function buildOverlayFromConfig(
     return createRenderedOverlayController(
       name,
       getMarkup,
-      placement,
+      placementSource,
       fullScreen,
       config.durationMs,
       renderOpts
@@ -468,6 +489,13 @@ function buildOverlayFromConfig(
 
   const path = config.path!
   const extension = getAssetExtension(path)
+  // Image/video file overlays never use `over` (rejected in
+  // resolvePlacementSource), so the source is always a concrete placement for
+  // them. The `.html` file branch supports `over`, so it keeps the source.
+  const placement =
+    placementSource.kind === 'fixed'
+      ? placementSource.placement
+      : resolveOverlayPlacement(name, config)
 
   if (animate && extension !== '.html') {
     throw new Error(
@@ -491,7 +519,7 @@ function buildOverlayFromConfig(
       return createAnimatedOverlayController(
         name,
         getMarkup,
-        placement,
+        placementSource,
         fullScreen,
         config.fps,
         config.durationMs,
@@ -501,7 +529,7 @@ function buildOverlayFromConfig(
     return createRenderedOverlayController(
       name,
       getMarkup,
-      placement,
+      placementSource,
       fullScreen,
       config.durationMs,
       renderOpts
@@ -879,22 +907,29 @@ type OverlayRenderOpts = {
 function createRenderedOverlayController(
   name: string,
   getMarkup: () => Promise<string>,
-  placement: OverlayPlacement,
+  placementSource: PlacementSource,
   fullScreen: boolean,
   durationMs?: number,
   renderOpts: OverlayRenderOpts = {}
 ): OverlayController {
-  // The markup is resolved during the test (cheap: renderToStaticMarkup / a
-  // string), but rasterization (a browser screenshot) is deferred to after the
-  // test so identical overlays render once. See overlayFlush.ts.
+  // The markup and placement are resolved during the test (cheap:
+  // renderToStaticMarkup / a string, plus a boundingBox read for `over`), but
+  // rasterization (a browser screenshot) is deferred to after the test so
+  // identical overlays render once. See overlayFlush.ts.
   let resolvedHtml: string | undefined
+  let resolvedPlacement: OverlayPlacement | undefined
   let skipped = false
 
   return createAssetControllerCore(
     name,
     () => Promise.resolve(),
     (recorder, mode) => {
-      if (skipped || resolvedHtml === undefined) return
+      if (
+        skipped ||
+        resolvedHtml === undefined ||
+        resolvedPlacement === undefined
+      )
+        return
       let durationMsForEvent: number | undefined
       if (mode.type === 'blocking') {
         durationMsForEvent = mode.durationMs ?? durationMs
@@ -911,7 +946,7 @@ function createRenderedOverlayController(
           durationMs: durationMsForEvent,
         }),
         fullScreen,
-        placement,
+        placement: resolvedPlacement,
         request: {
           kind: 'image',
           name,
@@ -931,7 +966,11 @@ function createRenderedOverlayController(
         skipped = true
         return
       }
-      resolvedHtml = await getMarkup()
+      const { placement, sizePx } = await resolvePlacement(placementSource)
+      resolvedPlacement = placement
+      const markup = await getMarkup()
+      resolvedHtml =
+        sizePx !== undefined ? sizeWrapMarkup(markup, sizePx) : markup
     }
   )
 }
@@ -950,13 +989,15 @@ function createRenderedOverlayController(
 function createAnimatedOverlayController(
   name: string,
   getMarkup: () => Promise<string>,
-  placement: OverlayPlacement,
+  placementSource: PlacementSource,
   fullScreen: boolean,
   fps: number | undefined,
   configDurationMs: number | undefined,
   renderOpts: OverlayRenderOpts = {}
 ): OverlayController {
-  let resolved: { html: string; durationMs: number } | undefined
+  let resolved:
+    | { html: string; durationMs: number; placement: OverlayPlacement }
+    | undefined
   let skipped = false
 
   const resolveDurationMs = (mode: AssetStartMode): number => {
@@ -988,7 +1029,7 @@ function createAnimatedOverlayController(
         kind: 'animation',
         ...(mode.type === 'blocking' && { durationMs: resolved.durationMs }),
         fullScreen,
-        placement,
+        placement: resolved.placement,
         request: {
           kind: 'animation',
           name,
@@ -1009,8 +1050,13 @@ function createAnimatedOverlayController(
         return
       }
       const durationMs = resolveDurationMs(mode)
-      const html = await getMarkup()
-      resolved = { html, durationMs }
+      const { placement, sizePx } = await resolvePlacement(placementSource)
+      const markup = await getMarkup()
+      resolved = {
+        html: sizePx !== undefined ? sizeWrapMarkup(markup, sizePx) : markup,
+        durationMs,
+        placement,
+      }
     }
   )
 }
@@ -1150,6 +1196,106 @@ function resolveOverlayPlacement(
       : { relativeTo, x, y, width: config.width ?? 1 }
   validatePlacement(name, placement)
   return placement
+}
+
+/**
+ * Where a rendered/animated overlay's placement comes from: a fixed config
+ * placement resolved up front, or an {@link OverlayConfig.over} locator resolved
+ * at recording time from its bounding box.
+ */
+type PlacementSource =
+  | { kind: 'fixed'; placement: OverlayPlacement }
+  | { kind: 'over'; over: Locator; margin: number }
+
+/**
+ * Chooses the placement source for an overlay. With {@link OverlayConfig.over}
+ * the placement is deferred to recording time (the element box is unknown until
+ * the page runs); otherwise it is resolved from the flat config fields now.
+ */
+function resolvePlacementSource(
+  name: string,
+  config: OverlayConfig,
+  flags: { hasElement: boolean; hasHtml: boolean; hasPath: boolean }
+): PlacementSource {
+  if (config.margin !== undefined && config.over === undefined) {
+    throw new Error(
+      `[screenci] Overlay "${name}" sets "margin" without "over". "margin" only applies when positioning over a locator.`
+    )
+  }
+  if (config.over === undefined) {
+    return { kind: 'fixed', placement: resolveOverlayPlacement(name, config) }
+  }
+
+  const isRendered =
+    flags.hasElement ||
+    flags.hasHtml ||
+    (flags.hasPath && getAssetExtension(config.path ?? '') === '.html')
+  if (!isRendered) {
+    throw new Error(
+      `[screenci] Overlay "${name}" can only use "over" with a React element, inline "html", or an .html file (the overlay is sized to the element's box).`
+    )
+  }
+  if (config.fullScreen === true) {
+    throw new Error(
+      `[screenci] Overlay "${name}" cannot set both "over" and "fullScreen".`
+    )
+  }
+  if (
+    config.x !== undefined ||
+    config.y !== undefined ||
+    config.width !== undefined ||
+    config.height !== undefined ||
+    config.relativeTo !== undefined
+  ) {
+    throw new Error(
+      `[screenci] Overlay "${name}" cannot combine "over" with x/y/width/height/relativeTo. The placement comes from the locator's box.`
+    )
+  }
+  const margin = config.margin ?? 0
+  if (!Number.isFinite(margin) || margin < 0) {
+    throw new Error(
+      `[screenci] Overlay "${name}" must provide a finite "margin" greater than or equal to 0. Received: ${String(config.margin)}`
+    )
+  }
+  return { kind: 'over', over: config.over, margin }
+}
+
+/**
+ * Resolves a {@link PlacementSource} to a concrete placement at recording time.
+ * For an `over` source it reads the locator's box (plus margin) via
+ * {@link overlayRect} and returns the element's pixel size so the markup can be
+ * sized to match, making the rasterized overlay frame the element exactly.
+ */
+async function resolvePlacement(source: PlacementSource): Promise<{
+  placement: OverlayPlacement
+  sizePx?: { width: number; height: number }
+}> {
+  if (source.kind === 'fixed') {
+    return { placement: source.placement }
+  }
+  const rect = await overlayRect(source.over, { margin: source.margin })
+  return {
+    placement: {
+      relativeTo: rect.relativeTo,
+      x: rect.x,
+      y: rect.y,
+      width: rect.width ?? rect.normalized.width,
+    },
+    sizePx: { width: rect.pixels.width, height: rect.pixels.height },
+  }
+}
+
+/**
+ * Wraps overlay markup in a box of the given CSS pixel size so the rasterized
+ * PNG carries the element's aspect ratio. The renderer then derives the overlay
+ * height from that aspect, landing it exactly on the element's box. The wrapped
+ * content should fill the box (for example `width:100%;height:100%`).
+ */
+function sizeWrapMarkup(
+  html: string,
+  size: { width: number; height: number }
+): string {
+  return `<div style="width:${size.width}px;height:${size.height}px;box-sizing:border-box">${html}</div>`
 }
 
 function toRecordedFileStart(

@@ -1,5 +1,4 @@
-import type { Locator } from '@playwright/test'
-import { getActiveZoomPage } from './autoZoom.js'
+import type { Locator, Page } from '@playwright/test'
 import { invalidOptionError, ScreenciError } from './errors.js'
 
 /** A manual crop region, expressed as fractions (0..1) of the captured viewport. */
@@ -31,18 +30,6 @@ export type ScreenshotCrop = {
   y: number
   width: number
   height: number
-}
-
-let recordedCrop: ScreenshotCrop | null = null
-
-/** Clears any crop recorded by a previous screenshot. Called per recording. */
-export function resetCrop(): void {
-  recordedCrop = null
-}
-
-/** The crop recorded for the current screenshot, or `undefined` for the full image. */
-export function getRecordedCrop(): ScreenshotCrop | undefined {
-  return recordedCrop ?? undefined
 }
 
 function isLocator(target: CropTarget): target is Locator {
@@ -107,16 +94,10 @@ function assertValidRegion(region: CropRegion): void {
   }
 }
 
-async function resolveViewportSize(): Promise<{
+async function resolveViewportSize(page: Page): Promise<{
   width: number
   height: number
 }> {
-  const page = getActiveZoomPage()
-  if (page === null) {
-    throw new ScreenciError(
-      'crop() requires an active ScreenCI page. Call it inside a screenshot() body.'
-    )
-  }
   const viewport = page.viewportSize()
   if (viewport !== null) return viewport
   return page.evaluate(() => ({
@@ -126,21 +107,27 @@ async function resolveViewportSize(): Promise<{
 }
 
 /**
- * Crop the screenshot to a component or region.
+ * Resolve a crop target to a normalized fractional region.
  *
  * Pass a Playwright locator to frame an element, or an explicit `{ x, y, width,
- * height }` region (fractions of the viewport). The crop is applied by the
- * compositor, which places the cropped region (plus any `padding`) on the
- * configured background with the branded frame and shadow.
+ * height }` region (fractions of the viewport). The returned crop is what the
+ * compositor places (plus any `padding`) on the configured background with the
+ * branded frame and shadow.
+ *
+ * Pure aside from reading the live `page` (a locator's bounding box and the
+ * viewport size). It does not record any global state: callers store the result
+ * where it belongs (the `screenshot()` fixture's per-test crop, or a `video()`
+ * still's metadata).
  *
  * @example
- * await crop(page.getByTestId('revenue-card'), { padding: 0.06 })
- * await crop({ x: 0.1, y: 0.2, width: 0.8, height: 0.6 })
+ * await resolveCrop(page.getByTestId('revenue-card'), page, { padding: 0.06 })
+ * await resolveCrop({ x: 0.1, y: 0.2, width: 0.8, height: 0.6 }, page)
  */
-export async function crop(
+export async function resolveCrop(
   target: CropTarget,
+  page: Page,
   options: CropOptions = {}
-): Promise<void> {
+): Promise<ScreenshotCrop> {
   const padding = options.padding ?? 0
   if (!Number.isFinite(padding) || padding < 0) {
     throw invalidOptionError({
@@ -159,7 +146,7 @@ export async function crop(
         'crop(locator): the target element has no bounding box (it may be hidden or detached).'
       )
     }
-    const viewport = await resolveViewportSize()
+    const viewport = await resolveViewportSize(page)
     base = {
       x: box.x / viewport.width,
       y: box.y / viewport.height,
@@ -176,5 +163,5 @@ export async function crop(
     }
   }
 
-  recordedCrop = applyCropPadding(base, padding)
+  return applyCropPadding(base, padding)
 }

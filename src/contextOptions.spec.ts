@@ -104,4 +104,14 @@ describe('resolveDeviceScaleFactor', () => {
   it('defaults to 1', () => {
     expect(resolveDeviceScaleFactor({}, undefined)).toBe(1)
   })
+
+  it('uses the provided default when nothing is set (screenshots pass 2)', () => {
+    expect(resolveDeviceScaleFactor({}, undefined, 2)).toBe(2)
+  })
+
+  it('still prefers an explicit recordOptions value over the default', () => {
+    expect(
+      resolveDeviceScaleFactor({ deviceScaleFactor: 1 }, undefined, 2)
+    ).toBe(1)
+  })
 })

@@ -49,13 +49,15 @@ export type ForwardedContextOptions = {
  * Resolve the device scale factor (DPR) for capture. `recordOptions` wins so the
  * dedicated `recordOptions.deviceScaleFactor` knob is the easy way to ask for a
  * higher-DPI still; a Playwright `use: { deviceScaleFactor }` is honored as a
- * fallback. Defaults to `1`.
+ * fallback. `defaultDsf` is the fallback when neither is set (screenshots pass
+ * `2` for crisp stills; the general default is `1`).
  */
 export function resolveDeviceScaleFactor(
   recordOptions: RecordOptions,
-  forwarded: number | undefined
+  forwarded: number | undefined,
+  defaultDsf = 1
 ): number {
-  return recordOptions.deviceScaleFactor ?? forwarded ?? 1
+  return recordOptions.deviceScaleFactor ?? forwarded ?? defaultDsf
 }
 
 /**

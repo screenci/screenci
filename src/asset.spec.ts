@@ -13,7 +13,7 @@ import {
   setAnimatedHtmlRasterizer,
   setHtmlRasterizer,
 } from './htmlRasterizer.js'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
 import {
@@ -29,6 +29,18 @@ const DEFAULT_PLACEMENT = {
   y: 0,
   width: 1,
 } as const
+
+/** A minimal Locator stand-in exposing the box + viewport overlayRect reads. */
+function fakeLocator(
+  box: { x: number; y: number; width: number; height: number },
+  viewport: { width: number; height: number }
+): Locator {
+  const page = { viewportSize: () => viewport }
+  return {
+    boundingBox: async () => box,
+    page: () => page,
+  } as unknown as Locator
+}
 
 function createMockRecorder(): IEventRecorder {
   return {
@@ -927,6 +939,108 @@ describe('createOverlays', () => {
       expect(() => overlays.bad({})).toThrow(
         'must provide only one of "path", "element", or "html"'
       )
+    })
+
+    it('positions over a locator and sizes the markup to the element box', async () => {
+      const target = fakeLocator(
+        { x: 100, y: 50, width: 300, height: 80 },
+        { width: 1000, height: 500 }
+      )
+      const overlays = createOverlays({
+        ring: (loc: Locator) => ({
+          html: '<div class="ring"></div>',
+          over: loc,
+        }),
+      })
+
+      await runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({
+          recorder,
+          page: fakePage,
+          recordingDir: dir,
+        }),
+        () => overlays.ring(target)(1000)
+      )
+
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
+        'ring',
+        expect.objectContaining({
+          // Placement comes from the locator box, normalized to the recording.
+          placement: { relativeTo: 'recording', x: 0.1, y: 0.1, width: 0.3 },
+          request: expect.objectContaining({
+            // Markup is wrapped in a box sized to the element so the rasterized
+            // PNG carries its aspect ratio.
+            html: '<div style="width:300px;height:80px;box-sizing:border-box"><div class="ring"></div></div>',
+          }),
+        })
+      )
+    })
+
+    it('applies margin (px) around the element when positioning over it', async () => {
+      const target = fakeLocator(
+        { x: 100, y: 100, width: 200, height: 200 },
+        { width: 1000, height: 1000 }
+      )
+      const overlays = createOverlays({
+        ring: (loc: Locator) => ({
+          html: '<div></div>',
+          over: loc,
+          margin: 20,
+        }),
+      })
+
+      await runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({
+          recorder,
+          page: fakePage,
+          recordingDir: dir,
+        }),
+        () => overlays.ring(target)(1000)
+      )
+
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
+        'ring',
+        expect.objectContaining({
+          placement: { relativeTo: 'recording', x: 0.08, y: 0.08, width: 0.24 },
+          request: expect.objectContaining({
+            html: '<div style="width:240px;height:240px;box-sizing:border-box"><div></div></div>',
+          }),
+        })
+      )
+    })
+
+    it('rejects over on a non-rendered (image/video) overlay', () => {
+      const target = fakeLocator(
+        { x: 0, y: 0, width: 10, height: 10 },
+        { width: 100, height: 100 }
+      )
+      const overlays = createOverlays({
+        badge: (loc: Locator) => ({ path: './badge.png', over: loc }),
+      })
+      expect(() => overlays.badge(target)).toThrow('can only use "over"')
+    })
+
+    it('rejects combining over with explicit placement fields', () => {
+      const target = fakeLocator(
+        { x: 0, y: 0, width: 10, height: 10 },
+        { width: 100, height: 100 }
+      )
+      const overlays = createOverlays({
+        ring: (loc: Locator) => ({
+          html: '<div></div>',
+          over: loc,
+          width: 0.5,
+        }),
+      })
+      expect(() => overlays.ring(target)).toThrow('cannot combine "over"')
+    })
+
+    it('rejects margin without over', () => {
+      expect(() =>
+        createOverlays({
+          note: { html: '<div></div>', durationMs: 1000, margin: 10 },
+        })
+      ).toThrow('"margin" only applies when positioning over a locator')
     })
   })
 

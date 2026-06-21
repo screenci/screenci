@@ -7,6 +7,7 @@ import type {
 } from '@playwright/test'
 import type { StudioRenderOptionsSentinel } from './studio.js'
 import type { PerformanceOption } from './performance.js'
+import type { CropTarget, ScreenshotCrop } from './crop.js'
 
 /**
  * Aspect ratio for recording and output.
@@ -85,17 +86,39 @@ export type RecordUploadPolicy = 'passed-only' | 'all-or-nothing'
  */
 export type ScreenshotOutputFormat = 'png' | { type: 'jpeg'; quality?: number }
 
+/**
+ * Screenshot-only render options, grouped so they are easy to set in a config
+ * and to edit in Studio. The renderer reads these for stills, falling back to
+ * the legacy locations (`output.format`, `output.aspectRatio`,
+ * `recording.margin`) for recordings made before this group existed.
+ */
+export type ScreenshotRenderOptions = {
+  /** Output image format. Defaults to `'png'`. */
+  format?: ScreenshotOutputFormat
+  /** Output resolution. Defaults to `output.quality`, then `'1080p'`. */
+  quality?: Quality
+  /**
+   * Output canvas aspect ratio. `'auto'` hugs the (cropped) shot plus a uniform
+   * `margin`, with no letterbox bars. Defaults to `output.aspectRatio`.
+   */
+  aspectRatio?: AspectRatio | 'auto'
+  /**
+   * Margin between the framed shot and the canvas edge, as a fraction (0-1) of
+   * the shorter output side. Defaults to `0.06`.
+   */
+  margin?: number
+  /**
+   * Crop applied by the renderer (fractions 0-1 of the captured image). Seeded
+   * at record time by a `crop()` call or `page.screenshot({ crop })` (which
+   * override a crop set here in config), and editable in Studio afterward.
+   */
+  crop?: ScreenshotCrop
+}
+
 export type RenderOptions = {
   recording?: {
     /** 0-1: 0 causes warning, 1=one side touches background edge */
     size?: number
-    /**
-     * Screenshot only: margin (CSS-like) between the framed shot and the canvas
-     * edge, as a fraction (0-1) of the shorter output side. The shot scales to
-     * fit the canvas minus this margin on every side, centered. Supersedes
-     * `size` for screenshots; videos ignore it. Defaults to `0.06`.
-     */
-    margin?: number
     /** 0-1: 0=sharp corners, 1=shorter side is half circle */
     roundness?: number
     shape?: 'rounded'
@@ -141,25 +164,24 @@ export type RenderOptions = {
   }
   output?: {
     /**
-     * Aspect ratio of the rendered output.
+     * Aspect ratio of the rendered video output.
      *
      * Combined with `quality`, this determines the final pixel dimensions.
-     * See {@link AspectRatio} for the full dimension table.
-     *
-     * Screenshots also accept `'auto'`: the canvas hugs the (cropped) shot plus
-     * a uniform `recording.margin`, with no letterbox bars. Videos must use a
-     * fixed ratio.
+     * See {@link AspectRatio} for the full dimension table. Screenshots use
+     * {@link ScreenshotRenderOptions.aspectRatio} instead (which also allows
+     * `'auto'`).
      *
      * Defaults to `'16:9'` when not specified.
      *
      * @example '16:9'
      */
-    aspectRatio?: AspectRatio | 'auto'
+    aspectRatio?: AspectRatio
     /**
      * Resolution quality of the rendered output video.
      *
      * Combined with `aspectRatio`, this determines the final pixel dimensions.
-     * See {@link Quality} for available presets.
+     * See {@link Quality} for available presets. Screenshots use
+     * {@link ScreenshotRenderOptions.quality} instead.
      *
      * Defaults to `'1080p'` when not specified.
      *
@@ -169,9 +191,9 @@ export type RenderOptions = {
     background?:
       | { assetPath: string; fileHash?: string }
       | { backgroundCss: string }
-    /** Screenshot only: output image format. Defaults to `'png'`. */
-    format?: ScreenshotOutputFormat
   }
+  /** Screenshot-only render options (format, quality, aspectRatio, margin, crop). */
+  screenshot?: ScreenshotRenderOptions
 }
 
 /**
@@ -220,8 +242,6 @@ export const RENDER_OPTIONS_DEFAULTS = {
 export type ResolvedRenderOptions = {
   recording: {
     size: number
-    /** Screenshot framing margin (0-1). Present only when set; videos ignore it. */
-    margin?: number
     roundness: number
     shape: 'rounded'
     dropShadow: string
@@ -243,14 +263,18 @@ export type ResolvedRenderOptions = {
     motionBlur: number
   }
   output: {
-    aspectRatio: AspectRatio | 'auto'
+    aspectRatio: AspectRatio
     quality: Quality
     background:
       | { assetPath: string; fileHash?: string }
       | { backgroundCss: string }
-    /** Screenshot output format. Present only when set; defaults to png. */
-    format?: ScreenshotOutputFormat
   }
+  /**
+   * Screenshot-only render options. Present only when at least one field was set
+   * (in config) or a crop was recorded. Renderers read screenshot framing
+   * (format, quality, aspectRatio, margin, crop) exclusively from here.
+   */
+  screenshot?: ScreenshotRenderOptions
 }
 
 /**
@@ -791,11 +815,34 @@ export type ScreenCILocator = Omit<
   all(): Promise<ScreenCILocator[]>
 }
 
+/**
+ * Options for {@link ScreenCIPage.screenshot}: Playwright's native screenshot
+ * options plus the screenci-specific `name`/`crop`. Inside a `video()`, calling
+ * `page.screenshot()` also writes a branded still as a separate screenshot
+ * recording; these keys are stripped before delegating to Playwright.
+ */
+export type ScreenCIScreenshotOptions = NonNullable<
+  Parameters<Page['screenshot']>[0]
+> & {
+  /** Names the still recording: "<video title> - <name>". */
+  name?: string
+  /** Crop the still to a locator or fractional region. */
+  crop?: CropTarget
+}
+
 export type ScreenCIPage = Omit<
   Page,
-  'click' | 'mouse' | LocatorReturnMethodNames
+  'click' | 'mouse' | 'screenshot' | LocatorReturnMethodNames
 > & {
   mouse: ScreenCIMouse
+  /**
+   * Captures a screenshot. Inside a `video()` recording this also writes a
+   * branded still as a separate screenshot recording named "<video title> -
+   * <name>", then returns the captured bytes as usual.
+   */
+  screenshot(
+    options?: ScreenCIScreenshotOptions
+  ): ReturnType<Page['screenshot']>
   /**
    * Clicks an element matched by `selector` with an animated cursor move.
    *

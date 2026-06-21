@@ -668,15 +668,14 @@ export type ScreenshotCrop = {
 /**
  * Capture details for a screenshot output. The raw page capture is saved beside
  * `data.json` (as `path`) at `width`×`height` device pixels (the viewport scaled
- * by `deviceScaleFactor`). `crop`, when present, is the fractional region the
- * compositor frames on the background; absent means the full capture.
+ * by `deviceScaleFactor`). The crop is a render option
+ * (`renderOptions.screenshot.crop`), not a capture detail.
  */
 export type ScreenshotInfo = {
   path: string
   width: number
   height: number
   deviceScaleFactor: number
-  crop?: ScreenshotCrop
 }
 
 export type RecordingData = {
@@ -697,6 +696,12 @@ export type RecordingData = {
 export type WriteRecordingOptions = {
   output?: 'video' | 'screenshot'
   screenshot?: ScreenshotInfo
+  /**
+   * Crop recorded at capture time (a `crop()` call or `page.screenshot({ crop })`).
+   * Merged into `renderOptions.screenshot.crop`, overriding any crop set in
+   * config, so it is editable in Studio afterward.
+   */
+  crop?: ScreenshotCrop
 }
 
 export interface IEventRecorder {
@@ -1296,10 +1301,6 @@ export class EventRecorder implements IEventRecorder {
     const resolved: ResolvedRenderOptions = {
       recording: {
         size: ro?.recording?.size ?? RENDER_OPTIONS_DEFAULTS.recording.size,
-        // Screenshot-only; passed through unresolved (the compositor defaults it).
-        ...(ro?.recording?.margin !== undefined && {
-          margin: ro.recording.margin,
-        }),
         roundness:
           ro?.recording?.roundness ??
           RENDER_OPTIONS_DEFAULTS.recording.roundness,
@@ -1339,9 +1340,30 @@ export class EventRecorder implements IEventRecorder {
         quality: ro?.output?.quality ?? RENDER_OPTIONS_DEFAULTS.output.quality,
         background:
           ro?.output?.background ?? RENDER_OPTIONS_DEFAULTS.output.background,
-        // Screenshot-only; passed through (the compositor defaults to png).
-        ...(ro?.output?.format !== undefined && { format: ro.output.format }),
       },
+    }
+
+    // Screenshot render group: pass through any configured fields and merge the
+    // record-time crop (which overrides a crop set in config). Present only when
+    // something is set, so video recordings stay unaffected.
+    const cropOverride = options?.crop ?? ro?.screenshot?.crop
+    const screenshotGroup = {
+      ...(ro?.screenshot?.format !== undefined && {
+        format: ro.screenshot.format,
+      }),
+      ...(ro?.screenshot?.quality !== undefined && {
+        quality: ro.screenshot.quality,
+      }),
+      ...(ro?.screenshot?.aspectRatio !== undefined && {
+        aspectRatio: ro.screenshot.aspectRatio,
+      }),
+      ...(ro?.screenshot?.margin !== undefined && {
+        margin: ro.screenshot.margin,
+      }),
+      ...(cropOverride !== undefined && { crop: cropOverride }),
+    }
+    if (Object.keys(screenshotGroup).length > 0) {
+      resolved.screenshot = screenshotGroup
     }
 
     const languageSet = new Set<string>()

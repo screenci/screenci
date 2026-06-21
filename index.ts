@@ -7,6 +7,7 @@ export type {
   RecordOptions,
   RenderOptions,
   ScreenshotOutputFormat,
+  ScreenshotRenderOptions,
   ScreenCIConfig,
   ExtendedScreenCIConfig,
   AutoZoomOptions,
@@ -30,7 +31,6 @@ export { defineConfig } from './src/config.js'
 // Re-export video fixture and narration cue
 export { video } from './src/video.js'
 export { screenshot } from './src/screenshot.js'
-export { crop } from './src/crop.js'
 export type {
   CropTarget,
   CropRegion,

@@ -1438,6 +1438,96 @@ describe('CLI', () => {
       )
     })
 
+    it('uploads a screenshot recording as image/png from screenshot.png', async () => {
+      mockReaddir.mockResolvedValue(['home'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({
+            events: [],
+            output: 'screenshot',
+            screenshot: {
+              path: 'screenshot.png',
+              width: 1920,
+              height: 1080,
+              deviceScaleFactor: 1,
+            },
+            metadata: { videoName: 'home' },
+          })
+        }
+        return ''
+      })
+      // The screenshot capture exists, but there is no recording.mp4.
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') || path.endsWith('screenshot.png')
+      )
+
+      let recordingPut: RequestInit | undefined
+      mockFetch.mockImplementation(
+        async (input: string | URL, init?: RequestInit) => {
+          const url = String(input)
+          if (url.endsWith('/cli/upload/start')) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({
+                recordingId: 'recording_123',
+                projectId: 'project_123',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          if (url.endsWith('/cli/upload/recording_123/recording')) {
+            recordingPut = init
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({}),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+      )
+
+      const { uploadRecordings } = await import('./cli')
+
+      const result = await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(result).toEqual({
+        projectId: 'project_123',
+        recordId: expect.any(String),
+        hadFailures: false,
+        studioNotices: [],
+        failedVideoNames: [],
+        failedVideoMessages: [],
+        plan: null,
+      })
+      // The capture is streamed from screenshot.png with an image content type.
+      expect(mockCreateReadStream).toHaveBeenCalledWith(
+        expect.stringContaining('screenshot.png')
+      )
+      expect(
+        (recordingPut?.headers as Record<string, string> | undefined)?.[
+          'Content-Type'
+        ]
+      ).toBe('image/png')
+    })
+
     it('fails the upload when an asset check fails', async () => {
       mockReaddir.mockResolvedValue(['demo-video'])
       mockReadFile.mockImplementation(async (path: string | URL) => {

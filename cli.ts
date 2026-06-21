@@ -567,7 +567,15 @@ async function uploadRecordingCandidate(
 
   try {
     uploadAbort.throwIfAborted()
-    const recordingPath = resolve(screenciDir, entry, 'recording.mp4')
+    // A screenshot recording uploads its raw page capture (always a PNG) through
+    // the same recording endpoint a video uses; the renderer reads those bytes as
+    // the capture. Videos upload recording.mp4. Output kind defaults to 'video'.
+    const isScreenshot = data.output === 'screenshot'
+    const recordingFileName = isScreenshot
+      ? (data.screenshot?.path ?? 'screenshot.png')
+      : 'recording.mp4'
+    const recordingContentType = isScreenshot ? 'image/png' : 'video/mp4'
+    const recordingPath = resolve(screenciDir, entry, recordingFileName)
     if (!existsSync(recordingPath)) {
       progressReporter.complete(progressIndex, 'failure')
       return {
@@ -575,7 +583,7 @@ async function uploadRecordingCandidate(
         videoId: null,
         hadFailure: true,
         videoName,
-        failureMessage: `Missing recording.mp4 for "${videoName}"`,
+        failureMessage: `Missing ${recordingFileName} for "${videoName}"`,
         recordId,
       }
     }
@@ -665,7 +673,7 @@ async function uploadRecordingCandidate(
     const fileStat = await stat(recordingPath)
     if (verbose) {
       logger.info(
-        `Uploading recording.mp4 size=${(fileStat.size / 1024 / 1024).toFixed(1)}MB`
+        `Uploading ${recordingFileName} size=${(fileStat.size / 1024 / 1024).toFixed(1)}MB`
       )
     }
     const recordingResponse = await withUploadRetry(async () => {
@@ -680,7 +688,7 @@ async function uploadRecordingCandidate(
         return await fetch(`${apiUrl}/cli/upload/${recordingId}/recording`, {
           method: 'PUT',
           headers: {
-            'Content-Type': 'video/mp4',
+            'Content-Type': recordingContentType,
             'Content-Length': String(fileStat.size),
             'X-ScreenCI-Secret': secret,
             ...(elevenLabsApiKey

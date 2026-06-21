@@ -6,6 +6,7 @@ import { join } from 'path'
 import { createHash } from 'crypto'
 import {
   framesForDuration,
+  overlayInputHash,
   rasterizeAnimatedHtmlOverlay,
   rasterizeHtmlOverlay,
   setAnimatedHtmlRasterizer,
@@ -123,6 +124,20 @@ describe('rasterizeHtmlOverlay caching', () => {
     await render('<div>same</div>')
     await render('<div>same</div>')
     expect(calls).toBe(2)
+  })
+
+  it('keys the on-disk cache by overlayInputHash (single source of truth)', async () => {
+    await render('<div>hash-me</div>')
+    // overlayInputHash must reproduce the exact key the cache writes to, so the
+    // deferred flush can dedupe against the same identity the cache uses.
+    const hash = overlayInputHash({
+      kind: 'image',
+      deviceScaleFactor: 2,
+      capturePadding: 0,
+      css: '',
+      html: '<div>hash-me</div>',
+    })
+    expect(existsSync(join(base, '.overlay-cache', `${hash}.png`))).toBe(true)
   })
 })
 
@@ -250,6 +265,20 @@ describe('rasterizeAnimatedHtmlOverlay caching', () => {
     expect(calls).toBe(3)
     await render('<div>b</div>', { fps: 60, durationMs: 2000 })
     expect(calls).toBe(4)
+  })
+
+  it('keys the on-disk cache by overlayInputHash (single source of truth)', async () => {
+    await render('<div>hash-me</div>', { fps: 30, durationMs: 1000 })
+    const hash = overlayInputHash({
+      kind: 'animation',
+      deviceScaleFactor: 2,
+      capturePadding: 0,
+      fps: 30,
+      durationMs: 1000,
+      css: '',
+      html: '<div>hash-me</div>',
+    })
+    expect(existsSync(join(base, '.overlay-cache', `${hash}.mp4`))).toBe(true)
   })
 })
 

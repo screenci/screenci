@@ -3,12 +3,12 @@ import { access, readFile } from 'fs/promises'
 import { dirname, resolve } from 'path'
 import { resolveRecordingTimingDuration } from './runtimeMode.js'
 import {
-  rasterizeHtmlOverlay,
-  rasterizeAnimatedHtmlOverlay,
+  resolveOverlayCss,
+  DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
+  DEFAULT_ANIMATION_FPS,
 } from './htmlRasterizer.js'
 
 export { setOverlayCss } from './htmlRasterizer.js'
-import { isInsideHide, isInsideTime } from './timelineBlock.js'
 import {
   getScreenCIRuntimeContext,
   getRuntimeAssetRecorder,
@@ -140,6 +140,33 @@ export const MAX_AUDIO_LEVEL = 4
  */
 export type OverlayInput = string | ReactElementLike | OverlayConfig
 
+/**
+ * A factory that builds an {@link OverlayConfig} from caller-supplied props.
+ * Use this to make an overlay programmatic: the returned config (its content and
+ * its placement) can depend on values only known at runtime, for example a
+ * locator's position captured with {@link overlayRect}. Both the `element`/`html`
+ * content and the placement may vary per call.
+ *
+ * @example
+ * ```tsx
+ * const overlays = createOverlays({
+ *   note: (p: { text: string }) => ({ html: `<div class="note">${p.text}</div>` }),
+ * })
+ * await overlays.note({ text: 'Saved' })(1200)
+ * ```
+ */
+export type OverlayConfigFactory<P = unknown> = (props: P) => OverlayConfig
+
+/**
+ * A value accepted by {@link createOverlays}: a static input or a config
+ * factory. The factory arm uses a `never` parameter so a factory with any
+ * concrete props type is assignable (function parameters are contravariant);
+ * {@link OverlayControllerFor} then recovers the real props type per key.
+ */
+export type OverlayInputOrFactory =
+  | OverlayInput
+  | ((props: never) => OverlayConfig)
+
 const registeredAssetPaths = new Set<string>()
 
 // One frame at 24fps — ensures at least one rendered frame captures each asset
@@ -253,9 +280,22 @@ export type OverlayController = {
   end(): Promise<void>
 }
 
+/**
+ * The controller type for one {@link createOverlays} value: a static input
+ * (string/element/config) yields a plain {@link OverlayController}; a config
+ * factory yields a `(props) => OverlayController` so props are passed at the
+ * call site. A static input is never callable, so it never matches the factory
+ * arm: existing static maps keep exactly today's controller type.
+ */
+export type OverlayControllerFor<V> = V extends (
+  props: infer P
+) => OverlayConfig
+  ? (props: P) => OverlayController
+  : OverlayController
+
 /** Typed overlay controllers keyed by the names passed to {@link createOverlays}. */
-export type Overlays<T extends Record<string, OverlayInput>> = {
-  [K in keyof T]: OverlayController
+export type Overlays<T extends Record<string, OverlayInputOrFactory>> = {
+  [K in keyof T]: OverlayControllerFor<T[K]>
 }
 
 /**
@@ -288,15 +328,21 @@ export type Overlays<T extends Record<string, OverlayInput>> = {
  *   await overlays.logo(1200)
  * })
  * ```
+ *
+ * A value can also be an {@link OverlayConfigFactory} `(props) => OverlayConfig`,
+ * making the overlay programmatic. Calling `overlays.name(props)` builds and
+ * returns a controller you then drive with `(durationMs)`, `start()`, or
+ * `end()`. The factory runs (and its config is validated) on each call, so
+ * content and placement can depend on runtime values.
  */
-export function createOverlays<const T extends Record<string, OverlayInput>>(
-  overlays: T
-): Overlays<T> {
-  const result = {} as Overlays<T>
+export function createOverlays<
+  const T extends Record<string, OverlayInputOrFactory>,
+>(overlays: T): Overlays<T> {
+  const result = {} as Record<string, unknown>
   for (const name in overlays) {
     result[name] = buildOverlayController(name, overlays[name]!)
   }
-  return result
+  return result as Overlays<T>
 }
 
 function isReactElementLike(value: unknown): value is ReactElementLike {
@@ -311,8 +357,15 @@ function isReactElementLike(value: unknown): value is ReactElementLike {
 
 function buildOverlayController(
   name: string,
-  input: OverlayInput
-): OverlayController {
+  input: OverlayInputOrFactory
+): OverlayController | ((props: unknown) => OverlayController) {
+  // A factory is the only callable input. React elements and config objects are
+  // plain objects, so this branch never captures them. The config (and its
+  // validation) is built per call so props can vary placement and content.
+  if (typeof input === 'function') {
+    return (props: unknown) =>
+      buildOverlayFromConfig(name, (input as OverlayConfigFactory)(props))
+  }
   if (typeof input === 'string') {
     return buildOverlayFromConfig(name, { path: input })
   }
@@ -831,55 +884,68 @@ function createRenderedOverlayController(
   durationMs?: number,
   renderOpts: OverlayRenderOpts = {}
 ): OverlayController {
-  let generated: { path: string; fileHash: string } | undefined
+  // The markup is resolved during the test (cheap: renderToStaticMarkup / a
+  // string), but rasterization (a browser screenshot) is deferred to after the
+  // test so identical overlays render once. See overlayFlush.ts.
+  let resolvedHtml: string | undefined
   let skipped = false
 
   return createAssetControllerCore(
     name,
+    () => Promise.resolve(),
+    (recorder, mode) => {
+      if (skipped || resolvedHtml === undefined) return
+      let durationMsForEvent: number | undefined
+      if (mode.type === 'blocking') {
+        durationMsForEvent = mode.durationMs ?? durationMs
+        if (durationMsForEvent === undefined) {
+          throw new Error(
+            `[screenci] Overlay "${name}" needs a duration: pass one to the call (overlays.${name}(1000)), set durationMs in the config, or drive it with .start()/.end().`
+          )
+        }
+        validateDurationMs(name, `overlay "${name}"`, durationMsForEvent)
+      }
+      recorder.addPendingAssetStart(name, {
+        kind: 'image',
+        ...(durationMsForEvent !== undefined && {
+          durationMs: durationMsForEvent,
+        }),
+        fullScreen,
+        placement,
+        request: {
+          kind: 'image',
+          name,
+          html: resolvedHtml,
+          css: resolveOverlayCss(renderOpts.css),
+          capturePadding: renderOpts.capturePadding ?? 0,
+          deviceScaleFactor: DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
+        },
+      })
+    },
     async () => {
-      if (generated !== undefined || skipped) return
-      // Generating an overlay needs an active recording page and output dir.
+      if (resolvedHtml !== undefined || skipped) return
+      // Resolving an overlay needs an active recording page and output dir.
       // Outside recording (e.g. plain test runs) there is nothing to upload, so
       // the controller is a no-op, mirroring the no-op recorder.
       if (getRuntimePage() === null || getRuntimeRecordingDir() === null) {
         skipped = true
         return
       }
-      const html = await getMarkup()
-      const result = await rasterizeHtmlOverlay({
-        name,
-        html,
-        ...(renderOpts.css !== undefined && { css: renderOpts.css }),
-        ...(renderOpts.capturePadding !== undefined && {
-          capturePadding: renderOpts.capturePadding,
-        }),
-      })
-      generated = { path: result.path, fileHash: result.fileHash }
-    },
-    (recorder, mode) => {
-      if (generated === undefined) return
-      recorder.addAssetStart(
-        name,
-        toRecordedRenderedStart(
-          name,
-          {
-            placement,
-            fullScreen,
-            ...(durationMs !== undefined && { durationMs }),
-          },
-          generated,
-          mode
-        )
-      )
+      resolvedHtml = await getMarkup()
     }
   )
 }
 
 /**
- * An animated overlay rendered to a transparent clip at recording time, from
- * either an HTML file or a React element. The capture length is resolved from
- * the call argument or config `durationMs`; `start()`/`end()` requires a config
- * `durationMs` (the capture length is otherwise unknown).
+ * An animated overlay rendered to a transparent clip, from either an HTML file
+ * or a React element. The capture length is resolved from the call argument or
+ * config `durationMs`; `start()`/`end()` requires a config `durationMs` (the
+ * capture length is otherwise unknown).
+ *
+ * Markup and duration are captured during the test; the clip itself is encoded
+ * after the test (see overlayFlush.ts). Because no rasterization happens during
+ * the recording, the old "hide block" that cut capture wall-clock from the
+ * timeline is no longer needed.
  */
 function createAnimatedOverlayController(
   name: string,
@@ -890,9 +956,8 @@ function createAnimatedOverlayController(
   configDurationMs: number | undefined,
   renderOpts: OverlayRenderOpts = {}
 ): OverlayController {
-  let generated:
-    | { path: string; fileHash: string; durationMs: number }
-    | undefined
+  let resolved: { html: string; durationMs: number } | undefined
+  let skipped = false
 
   const resolveDurationMs = (mode: AssetStartMode): number => {
     if (mode.type === 'blocking') {
@@ -918,59 +983,34 @@ function createAnimatedOverlayController(
     name,
     () => Promise.resolve(),
     (recorder, mode) => {
-      if (generated === undefined) return
-      recorder.addAssetStart(name, {
+      if (skipped || resolved === undefined) return
+      recorder.addPendingAssetStart(name, {
         kind: 'animation',
-        path: generated.path,
-        fileHash: generated.fileHash,
-        ...(mode.type === 'blocking' && { durationMs: generated.durationMs }),
+        ...(mode.type === 'blocking' && { durationMs: resolved.durationMs }),
         fullScreen,
         placement,
+        request: {
+          kind: 'animation',
+          name,
+          html: resolved.html,
+          css: resolveOverlayCss(renderOpts.css),
+          capturePadding: renderOpts.capturePadding ?? 0,
+          deviceScaleFactor: DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
+          fps: fps ?? DEFAULT_ANIMATION_FPS,
+          durationMs: resolved.durationMs,
+        },
       })
     },
     async (mode) => {
       // Outside recording there is nothing to upload, so the controller is a
       // no-op, mirroring the no-op recorder and the static rendered controller.
       if (getRuntimePage() === null || getRuntimeRecordingDir() === null) {
+        skipped = true
         return
       }
       const durationMs = resolveDurationMs(mode)
       const html = await getMarkup()
-      const rasterize = async (): Promise<void> => {
-        const result = await rasterizeAnimatedHtmlOverlay({
-          name,
-          html,
-          durationMs,
-          ...(fps !== undefined && { fps }),
-          ...(renderOpts.css !== undefined && { css: renderOpts.css }),
-          ...(renderOpts.capturePadding !== undefined && {
-            capturePadding: renderOpts.capturePadding,
-          }),
-        })
-        generated = {
-          path: result.path,
-          fileHash: result.fileHash,
-          durationMs,
-        }
-      }
-      // Capturing the animation (screenshotting each frame + encoding) takes
-      // real wall-clock that would otherwise be baked into the recording as a
-      // long frozen pause before the overlay appears. Cut that time from the
-      // output by wrapping the capture in a hide block. On a cache hit this is
-      // ~instant, so the cut is a negligible sliver. Skip the wrapping when
-      // already inside a hide()/time() block (a hide cannot nest, and the
-      // surrounding block already governs that time).
-      if (isInsideHide() || isInsideTime()) {
-        await rasterize()
-        return
-      }
-      const recorder = getRuntimeAssetRecorder()
-      recorder.addHideStart()
-      try {
-        await rasterize()
-      } finally {
-        recorder.addHideEnd()
-      }
+      resolved = { html, durationMs }
     }
   )
 }
@@ -1110,38 +1150,6 @@ function resolveOverlayPlacement(
       : { relativeTo, x, y, width: config.width ?? 1 }
   validatePlacement(name, placement)
   return placement
-}
-
-type ResolvedRenderedOverlay = {
-  placement: OverlayPlacement
-  fullScreen: boolean
-  durationMs?: number
-}
-
-function toRecordedRenderedStart(
-  name: string,
-  resolved: ResolvedRenderedOverlay,
-  generated: { path: string; fileHash: string },
-  mode: AssetStartMode
-): Parameters<IEventRecorder['addAssetStart']>[1] {
-  let durationMs: number | undefined
-  if (mode.type === 'blocking') {
-    durationMs = mode.durationMs ?? resolved.durationMs
-    if (durationMs === undefined) {
-      throw new Error(
-        `[screenci] Overlay "${name}" needs a duration: pass one to the call (overlays.${name}(1000)), set durationMs in the config, or drive it with .start()/.end().`
-      )
-    }
-    validateDurationMs(name, `overlay "${name}"`, durationMs)
-  }
-  return {
-    kind: 'image',
-    path: generated.path,
-    fileHash: generated.fileHash,
-    ...(durationMs !== undefined && { durationMs }),
-    fullScreen: resolved.fullScreen,
-    placement: resolved.placement,
-  }
 }
 
 function toRecordedFileStart(

@@ -56,11 +56,16 @@ export {
 export type {
   OverlayController,
   OverlayConfig,
+  OverlayConfigFactory,
   OverlayInput,
+  OverlayInputOrFactory,
   Overlays,
+  OverlayControllerFor,
   ReactElementLike,
   OverlayPlacement,
 } from './src/asset.js'
+export { overlayRect } from './src/overlayRect.js'
+export type { OverlayRect, OverlayRectOptions } from './src/overlayRect.js'
 export { createAudio, createStudioAudio } from './src/audio.js'
 export type {
   AudioController,

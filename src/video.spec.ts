@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getDimensions, getViewportCenter } from './dimensions.js'
 import { getMousePosition } from './mouse.js'
 import {
@@ -9,13 +9,19 @@ import {
   POST_VIDEO_PAUSE,
   positionMouseAtViewportCenter,
   resolveRecordingFirstPassArgs,
+  withActiveRecordingContext,
 } from './video.js'
 import {
   createOverlays,
   setActiveAssetRecorder,
   setAssetSleepFn,
 } from './asset.js'
-import { NOOP_EVENT_RECORDER } from './events.js'
+import { setHtmlRasterizer } from './htmlRasterizer.js'
+import { EventRecorder, NOOP_EVENT_RECORDER } from './events.js'
+import type { Page } from '@playwright/test'
+import { mkdtemp, rm } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import {
   createScreenCIRuntimeContext,
   runWithScreenCIRuntimeContext,
@@ -539,5 +545,116 @@ describe('applyFirstPassEncoderArgs', () => {
     expect(() =>
       applyFirstPassEncoderArgs({ config: {} } as never, ['-c:v'])
     ).toThrow(/did not expose config.firstPassArgs/)
+  })
+})
+
+describe('withActiveRecordingContext deferred overlay flush', () => {
+  let dir: string
+  let rasterCalls: number
+  const page = {} as unknown as Page
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'screenci-video-flush-'))
+    rasterCalls = 0
+    setHtmlRasterizer(async () => {
+      rasterCalls += 1
+      return {
+        buffer: Buffer.from(`png-${rasterCalls}`),
+        width: 10,
+        height: 10,
+      }
+    })
+  })
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  const imageRequest = () => ({
+    kind: 'image' as const,
+    name: 'ring',
+    html: '<div>ring</div>',
+    css: '',
+    capturePadding: 0,
+    deviceScaleFactor: 2,
+  })
+
+  it('rasterizes deferred overlays after a passing test body, before write', async () => {
+    const recorder = new EventRecorder()
+    recorder.start()
+    const runtimeContext = createScreenCIRuntimeContext({
+      recorder,
+      page,
+      recordingDir: dir,
+    })
+
+    await withActiveRecordingContext({
+      runtimeContext,
+      page,
+      recorder,
+      fn: async () => {
+        recorder.addPendingAssetStart('ring', {
+          kind: 'image',
+          durationMs: 1000,
+          fullScreen: false,
+          request: imageRequest(),
+        })
+      },
+    })
+
+    expect(rasterCalls).toBe(1)
+    const start = recorder.getEvents().find((e) => e.type === 'assetStart') as {
+      path: string
+      fileHash?: string
+    }
+    expect(start.path).not.toBe('')
+    expect(start.fileHash).toBeDefined()
+  })
+
+  it('does not rasterize when the test body throws', async () => {
+    const recorder = new EventRecorder()
+    recorder.start()
+    const runtimeContext = createScreenCIRuntimeContext({
+      recorder,
+      page,
+      recordingDir: dir,
+    })
+
+    await expect(
+      withActiveRecordingContext({
+        runtimeContext,
+        page,
+        recorder,
+        fn: async () => {
+          recorder.addPendingAssetStart('ring', {
+            kind: 'image',
+            fullScreen: false,
+            request: imageRequest(),
+          })
+          throw new Error('boom')
+        },
+      })
+    ).rejects.toThrow('boom')
+
+    expect(rasterCalls).toBe(0)
+  })
+
+  it('is a no-op when no overlays were deferred', async () => {
+    const recorder = new EventRecorder()
+    recorder.start()
+    const runtimeContext = createScreenCIRuntimeContext({
+      recorder,
+      page,
+      recordingDir: dir,
+    })
+
+    await withActiveRecordingContext({
+      runtimeContext,
+      page,
+      recorder,
+      fn: async () => {},
+    })
+
+    expect(rasterCalls).toBe(0)
   })
 })

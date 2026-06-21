@@ -21,6 +21,7 @@ describe('public api surface', () => {
       'hide',
       'isStudioRenderOptions',
       'modelTypes',
+      'overlayRect',
       'resetZoom',
       'screenshot',
       'setOverlayCss',

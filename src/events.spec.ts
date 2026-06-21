@@ -819,4 +819,87 @@ describe('EventRecorder', () => {
       })
     })
   })
+
+  describe('addPendingAssetStart', () => {
+    let tmpDir: string
+
+    beforeEach(async () => {
+      tmpDir = join(tmpdir(), `screenci-pending-${now}`)
+      await mkdir(tmpDir, { recursive: true })
+    })
+
+    afterEach(async () => {
+      await rm(tmpDir, { recursive: true, force: true })
+    })
+
+    it('pushes an assetStart with a placeholder path at the current time and registers it', () => {
+      recorder.start()
+      now = 1300
+      recorder.addPendingAssetStart('hint', {
+        kind: 'image',
+        durationMs: 1500,
+        fullScreen: false,
+        placement: { relativeTo: 'recording', x: 0.1, y: 0.1, width: 0.3 },
+        request: {
+          kind: 'image',
+          name: 'hint',
+          html: '<div>Hi</div>',
+          css: '',
+          capturePadding: 0,
+          deviceScaleFactor: 2,
+        },
+      })
+
+      const events = recorder.getEvents()
+      const start = events.find((e) => e.type === 'assetStart')
+      expect(start).toMatchObject({
+        type: 'assetStart',
+        timeMs: 300,
+        name: 'hint',
+        kind: 'image',
+        path: '',
+        durationMs: 1500,
+        fullScreen: false,
+        placement: { relativeTo: 'recording', x: 0.1, y: 0.1, width: 0.3 },
+      })
+      expect(start).not.toHaveProperty('fileHash')
+
+      const pending = recorder.getPendingOverlays()
+      expect(pending).toHaveLength(1)
+      // The registered event is the same object as the one in the timeline.
+      expect(pending[0]!.event).toBe(start)
+      expect(pending[0]!.request.html).toBe('<div>Hi</div>')
+    })
+
+    it('patching the pending event mutates what writeToFile serializes', async () => {
+      recorder.start()
+      recorder.addPendingAssetStart('hint', {
+        kind: 'image',
+        durationMs: 1000,
+        fullScreen: false,
+        request: {
+          kind: 'image',
+          name: 'hint',
+          html: '<div/>',
+          css: '',
+          capturePadding: 0,
+          deviceScaleFactor: 2,
+        },
+      })
+
+      const entry = recorder.getPendingOverlays()[0]!
+      entry.event.path = '/abs/generated/hint-abc.png'
+      entry.event.fileHash = 'abc'
+
+      await recorder.writeToFile(tmpDir, 'Patched Video')
+      const parsed: RecordingData = JSON.parse(
+        await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      )
+      const serialized = parsed.events.find((e) => e.type === 'assetStart')
+      expect(serialized).toMatchObject({
+        path: '/abs/generated/hint-abc.png',
+        fileHash: 'abc',
+      })
+    })
+  })
 })

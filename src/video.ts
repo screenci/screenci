@@ -31,6 +31,7 @@ import { setActiveCueRecorder } from './cue.js'
 import { setActiveHideRecorder } from './hide.js'
 import { setActiveAutoZoomRecorder, setActiveZoomPage } from './autoZoom.js'
 import { setActiveAssetRecorder } from './asset.js'
+import { flushPendingOverlays } from './overlayFlush.js'
 import { setActiveAudioRecorder } from './audio.js'
 import {
   DEFAULT_VIDEO_OPTIONS,
@@ -346,6 +347,12 @@ export async function withActiveRecordingContext<T>(params: {
 
       const result = await fn()
       assertAllOverlaysEnded(runtimeContext)
+      // Rasterize deferred overlays now that the test body has succeeded and
+      // every overlay's props/timing are known, before the recorder is written
+      // to disk. On the failure path fn() throws, so this never runs and no
+      // partial assets are produced (matching writeToFile, which only runs on a
+      // passing test).
+      await flushPendingOverlays(recorder)
       return result
     })
   } finally {

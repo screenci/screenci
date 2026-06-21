@@ -393,6 +393,53 @@ export type AssetStartEvent =
   | ImageAssetStartEvent
   | VideoAssetStartEvent
   | AnimationAssetStartEvent
+
+/**
+ * The resolved markup and render parameters captured during the test for a
+ * rendered (HTML/React) or animated overlay whose rasterization is deferred to
+ * after the test body succeeds. `css` is already merged with the global default
+ * (frozen at call time). These fields fully determine the rasterized bytes, so
+ * they double as the in-run de-duplication key (see `overlayInputHash`).
+ */
+export type DeferredRasterizeRequest =
+  | {
+      kind: 'image'
+      name: string
+      html: string
+      css: string
+      capturePadding: number
+      deviceScaleFactor: number
+    }
+  | {
+      kind: 'animation'
+      name: string
+      html: string
+      css: string
+      capturePadding: number
+      deviceScaleFactor: number
+      fps: number
+      durationMs: number
+    }
+
+/**
+ * A recorded `assetStart` whose `path`/`fileHash` are not yet known because its
+ * overlay is rasterized after the test. The `event` reference is the same object
+ * pushed into the recorder's event list, so patching it in place updates what
+ * `writeToFile` serializes.
+ */
+export type PendingOverlay = {
+  event: ImageAssetStartEvent | AnimationAssetStartEvent
+  request: DeferredRasterizeRequest
+}
+
+/** Payload for {@link IEventRecorder.addPendingAssetStart}. */
+export type PendingAssetStart = {
+  kind: 'image' | 'animation'
+  durationMs?: number
+  fullScreen: boolean
+  placement?: OverlayPlacement
+  request: DeferredRasterizeRequest
+}
 export type AssetStartPayload =
   | Omit<ImageAssetStartEvent, 'type' | 'timeMs' | 'name'>
   | Omit<VideoAssetStartEvent, 'type' | 'timeMs' | 'name'>
@@ -685,6 +732,20 @@ export interface IEventRecorder {
   ): void
   addAssetStart(name: string, asset: AssetStartPayload): void
   /**
+   * Records a rendered/animated overlay `assetStart` whose bytes are produced
+   * after the test. The event is pushed at the current timeline position with a
+   * placeholder `path` and no `fileHash`; the deferred flush rasterizes the
+   * captured {@link DeferredRasterizeRequest} and patches the event in place.
+   */
+  addPendingAssetStart(name: string, pending: PendingAssetStart): void
+  /**
+   * The overlays awaiting deferred rasterization, in record order. Each entry's
+   * `event` is the live object in the recording, so the flush patches it
+   * directly. Empty for the no-op recorder and for runs without deferred
+   * overlays.
+   */
+  getPendingOverlays(): readonly PendingOverlay[]
+  /**
    * Records the end of a `start()`/`end()`-driven asset overlay. `name`
    * identifies which overlay ended (overlays may overlap), so the renderer can
    * pair this end to its start by name.
@@ -733,6 +794,10 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addCueEnd(): void {},
   addVideoCueStart(): void {},
   addAssetStart(): void {},
+  addPendingAssetStart(): void {},
+  getPendingOverlays(): readonly PendingOverlay[] {
+    return []
+  },
   addAssetEnd(): void {},
   addStudioAssetStart(): void {},
   addAudioStart(): void {},
@@ -758,6 +823,7 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
 
 export class EventRecorder implements IEventRecorder {
   private readonly events: RecordingEvent[] = []
+  private readonly pendingOverlays: PendingOverlay[] = []
   private startTime: number | null = null
   private readonly recordOptions: RecordOptions | undefined
   private readonly renderOptions:
@@ -1020,6 +1086,30 @@ export class EventRecorder implements IEventRecorder {
       ...(asset.speed !== undefined && { speed: asset.speed }),
       ...(asset.time !== undefined && { time: asset.time }),
     })
+  }
+
+  addPendingAssetStart(name: string, pending: PendingAssetStart): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    const event: ImageAssetStartEvent | AnimationAssetStartEvent = {
+      type: 'assetStart',
+      timeMs,
+      name,
+      kind: pending.kind,
+      // Patched by the deferred flush once the overlay is rasterized.
+      path: '',
+      ...(pending.durationMs !== undefined && {
+        durationMs: pending.durationMs,
+      }),
+      fullScreen: pending.fullScreen,
+      ...(pending.placement !== undefined && { placement: pending.placement }),
+    }
+    this.events.push(event)
+    this.pendingOverlays.push({ event, request: pending.request })
+  }
+
+  getPendingOverlays(): readonly PendingOverlay[] {
+    return this.pendingOverlays
   }
 
   addAssetEnd(name: string | undefined, reason?: 'auto' | 'wait'): void {

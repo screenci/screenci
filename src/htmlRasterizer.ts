@@ -17,7 +17,7 @@ const OVERLAY_ROOT_ID = 'screenci-overlay-root'
 // while roughly quartering the byte cost of the previous 4x density. Overlay
 // content is bounded by the off-screen page viewport, so the screenshot stays
 // well under GPU texture limits.
-const DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR = 2
+export const DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR = 2
 
 // Bump when anything that affects rasterized output changes (the HTML wrapper,
 // screenshot options, default density) so stale cache entries are invalidated.
@@ -86,6 +86,43 @@ export function resolveOverlayCss(css?: string): string {
   return [defaultOverlayCss, css]
     .filter((part): part is string => part !== undefined && part.length > 0)
     .join('\n')
+}
+
+/**
+ * The fully resolved inputs that determine a rasterized overlay's bytes. `css`
+ * is the already-merged stylesheet (see {@link resolveOverlayCss}). Used both
+ * for the cross-run disk cache key and for in-run de-duplication of identical
+ * deferred overlays, so both paths key off the exact same string.
+ */
+export type OverlayRasterizeKeyInput =
+  | {
+      kind: 'image'
+      deviceScaleFactor: number
+      capturePadding: number
+      css: string
+      html: string
+    }
+  | {
+      kind: 'animation'
+      deviceScaleFactor: number
+      capturePadding: number
+      fps: number
+      durationMs: number
+      css: string
+      html: string
+    }
+
+/**
+ * Content hash that uniquely identifies a rasterized overlay's output. The
+ * single source of truth for both the on-disk cache key and the in-run dedupe
+ * key, so the two can never drift apart.
+ */
+export function overlayInputHash(input: OverlayRasterizeKeyInput): string {
+  const body =
+    input.kind === 'image'
+      ? `${RASTERIZE_CACHE_VERSION} ${input.deviceScaleFactor} ${input.capturePadding} ${input.css} ${input.html}`
+      : `${RASTERIZE_CACHE_VERSION} anim ${input.deviceScaleFactor} ${input.capturePadding} ${input.fps} ${input.durationMs} ${input.css} ${input.html}`
+  return createHash('sha256').update(body).digest('hex')
 }
 
 function wrapOverlayHtml(
@@ -187,11 +224,13 @@ async function renderOverlay(
     return rasterizer(request)
   }
 
-  const inputHash = createHash('sha256')
-    .update(
-      `${RASTERIZE_CACHE_VERSION} ${deviceScaleFactor} ${capturePadding} ${css} ${html}`
-    )
-    .digest('hex')
+  const inputHash = overlayInputHash({
+    kind: 'image',
+    deviceScaleFactor,
+    capturePadding,
+    css,
+    html,
+  })
   const cacheDir = join(dirname(recordingDir), '.overlay-cache')
   const pngPath = join(cacheDir, `${inputHash}.png`)
   const metaPath = join(cacheDir, `${inputHash}.json`)
@@ -226,6 +265,13 @@ export async function rasterizeHtmlOverlay(opts: {
   deviceScaleFactor?: number
   css?: string
   capturePadding?: number
+  /**
+   * When `true`, `css` is already merged with the global default (see
+   * {@link resolveOverlayCss}) and is used verbatim. The deferred flush passes
+   * the frozen, resolved CSS this way so it is not prefixed with the default a
+   * second time.
+   */
+  cssResolved?: boolean
 }): Promise<HtmlRasterizeResult> {
   const recordingDir = getRuntimeRecordingDir()
   if (recordingDir === null) {
@@ -235,11 +281,13 @@ export async function rasterizeHtmlOverlay(opts: {
   }
   const deviceScaleFactor =
     opts.deviceScaleFactor ?? DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR
+  const css =
+    opts.cssResolved === true ? (opts.css ?? '') : resolveOverlayCss(opts.css)
   const { buffer, width, height } = await renderOverlay(
     recordingDir,
     deviceScaleFactor,
     opts.html,
-    resolveOverlayCss(opts.css),
+    css,
     opts.capturePadding ?? 0
   )
   const fileHash = createHash('sha256').update(buffer).digest('hex')
@@ -255,7 +303,7 @@ export async function rasterizeHtmlOverlay(opts: {
 
 // ─── Animated overlays ────────────────────────────────────────────────────────
 
-const DEFAULT_ANIMATION_FPS = 30
+export const DEFAULT_ANIMATION_FPS = 30
 
 /**
  * Number of frames captured for an animation of `durationMs` at `fps`. At least
@@ -500,11 +548,15 @@ async function renderAnimatedOverlay(
 
   const deviceScaleFactor =
     request.deviceScaleFactor ?? DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR
-  const inputHash = createHash('sha256')
-    .update(
-      `${RASTERIZE_CACHE_VERSION} anim ${deviceScaleFactor} ${request.capturePadding ?? 0} ${request.fps} ${request.durationMs} ${request.css ?? ''} ${request.html}`
-    )
-    .digest('hex')
+  const inputHash = overlayInputHash({
+    kind: 'animation',
+    deviceScaleFactor,
+    capturePadding: request.capturePadding ?? 0,
+    fps: request.fps,
+    durationMs: request.durationMs,
+    css: request.css ?? '',
+    html: request.html,
+  })
   const cacheDir = join(dirname(recordingDir), '.overlay-cache')
   const clipPath = join(cacheDir, `${inputHash}.mp4`)
   const metaPath = join(cacheDir, `${inputHash}.anim.json`)
@@ -542,6 +594,13 @@ export async function rasterizeAnimatedHtmlOverlay(opts: {
   deviceScaleFactor?: number
   css?: string
   capturePadding?: number
+  /**
+   * When `true`, `css` is already merged with the global default (see
+   * {@link resolveOverlayCss}) and is used verbatim. The deferred flush passes
+   * the frozen, resolved CSS this way so it is not prefixed with the default a
+   * second time.
+   */
+  cssResolved?: boolean
 }): Promise<AnimatedHtmlRasterizeResult> {
   const recordingDir = getRuntimeRecordingDir()
   if (recordingDir === null) {
@@ -554,7 +613,8 @@ export async function rasterizeAnimatedHtmlOverlay(opts: {
     opts.deviceScaleFactor ?? DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR
   // Validate sampling parameters up front (also exercised by the real capture).
   framesForDuration(opts.durationMs, fps)
-  const css = resolveOverlayCss(opts.css)
+  const css =
+    opts.cssResolved === true ? (opts.css ?? '') : resolveOverlayCss(opts.css)
 
   const { buffer, width, height } = await renderAnimatedOverlay(recordingDir, {
     html: opts.html,

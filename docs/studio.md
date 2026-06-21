@@ -4,6 +4,8 @@ Studio lets your team remix videos from the ScreenCI web app: change render
 options, narration text, and voices without touching code or re-running the
 recording. Studio is available on the Business tier.
 
+<!-- screenci-doc-video:docs/guides/studio -->
+
 There are two ways to use it:
 
 - **Opt in from code.** Declare cue keys with `createStudioNarration`, overlay

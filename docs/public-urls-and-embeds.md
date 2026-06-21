@@ -2,6 +2,8 @@
 
 Public URLs give a ScreenCI video a stable delivery surface outside the app. Once enabled, each selected language gets its own video, thumbnail, and subtitle URL that you can embed in docs, changelogs, support articles, or product pages.
 
+<!-- screenci-doc-video:docs/guides/public-urls-and-embeds -->
+
 #### You will learn
 
 - [what public URLs are](#what-public-urls-look-like)

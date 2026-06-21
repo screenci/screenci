@@ -108,6 +108,50 @@ To style an inline fragment with `className`, inject a stylesheet with `css` or
 `setOverlayCss`, exactly as for `.html` files and React elements (see
 [Styling with className](#styling-with-classname-and-tailwind)).
 
+### Programmatic overlays (props)
+
+Instead of a static value, an overlay can be a **factory** `(props) => config`.
+The factory runs each time you call the overlay, so its content **and** its
+placement can depend on values you only know at runtime. Call
+`overlays.name(props)` to get a controller, then drive it the usual way
+(`(durationMs)`, `start()`, `end()`):
+
+```tsx
+const overlays = createOverlays({
+  // Props build the markup. Works for inline html (template literal)...
+  note: (p: { text: string }) => ({
+    html: `<div class="note">${p.text}</div>`,
+    x: 0.7,
+    y: 0.1,
+    width: 0.2,
+  }),
+  // ...and for React elements.
+  badge: (p: { label: string }) => ({
+    element: <Badge label={p.label} />,
+    x: 0.7,
+    y: 0.1,
+    width: 0.15,
+  }),
+})
+
+await overlays.note({ text: 'Saved' })(1200) // blocking, 1.2s
+await overlays.badge({ label: 'New' }).start()
+await page.click('#next')
+await overlays.badge({ label: 'New' }).end()
+```
+
+This is how an overlay receives props: the factory closes over them and returns
+the config. To position an overlay over a live element, combine a factory with
+[`overlayRect`](#positioning-over-a-live-element) below, which captures a
+locator's position and spreads into the placement (and can be passed as a prop
+so the component draws relative to the element, for example a circle around it).
+
+> Rendered (HTML/React) and animated overlays are rasterized **after** the test
+> body finishes, not inline while it runs. The resolved markup and parameters are
+> captured during the test; overlays with identical content are then rasterized
+> just once (and unchanged overlays are still served from a cross-run cache). You
+> do not need to record the same overlay repeatedly.
+
 ### Animated overlays
 
 By default an HTML or React overlay is captured as a single still frame. Set
@@ -243,6 +287,36 @@ const overlays = createOverlays({
 - Provide one of `width` or `height`. The other is derived from the overlay's aspect ratio so it is never distorted. When neither is set, `width` defaults to `1`.
 
 The default placement (no fields set) is therefore `{ relativeTo: 'recording', x: 0, y: 0, width: 1 }`, the recording area filled edge to edge. For a full-frame overlay use `fullScreen: true`.
+
+### Positioning over a live element
+
+`overlayRect(locator)` captures a locator's on-screen box and converts it to
+normalized `0`-`1` coordinates in the recording area. Pair it with a
+[programmatic overlay](#programmatic-overlays-props): spread the result into the
+placement to position the overlay over the element, and/or pass it as a prop so
+the component can draw relative to the element.
+
+```tsx
+const overlays = createOverlays({
+  ring: (p: { rect: OverlayRect }) => ({
+    element: <Ring />, // a CSS ring/circle that fills its box
+    ...p.rect, // relativeTo / x / y / width, positioned over the element
+  }),
+})
+
+const rect = await overlayRect(page.locator('#save'))
+await overlays.ring({ rect }).start()
+await page.click('#save')
+await overlays.ring({ rect }).end()
+```
+
+The returned object carries the placement fields (`relativeTo`, `x`, `y`, and one
+of `width`/`height`) at the top level for spreading, plus `normalized` (all four
+fractions) and `pixels` (the raw box) for a component to use. Pass
+`{ dimension: 'height' }` to expose `height` instead of `width`, and
+`{ relativeTo: 'screen' }` to tag the result for screen-relative placement (only
+meaningful when the recording fills the output frame). Make sure the element is
+visible before calling `overlayRect`; it throws if the locator has no box.
 
 ## Timing and control flow
 

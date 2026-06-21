@@ -39,6 +39,8 @@ function createMockRecorder(): IEventRecorder {
     addCueEnd: vi.fn(),
     addVideoCueStart: vi.fn(),
     addAssetStart: vi.fn(),
+    addPendingAssetStart: vi.fn(),
+    getPendingOverlays: vi.fn().mockReturnValue([]),
     addAssetEnd: vi.fn(),
     addStudioAssetStart: vi.fn(),
     addAudioStart: vi.fn(),
@@ -658,8 +660,14 @@ describe('createOverlays', () => {
       await rm(dir, { recursive: true, force: true })
     })
 
-    it('reads an .html file and records an image start with the generated png', async () => {
+    it('reads an .html file and records a deferred image start (markup captured, not yet rasterized)', async () => {
       await writeFile(join(dir, 'hint.html'), '<div>Click</div>')
+      const rasterize = vi.fn(async () => ({
+        buffer: Buffer.from('png'),
+        width: 200,
+        height: 50,
+      }))
+      setHtmlRasterizer(rasterize)
       const overlays = createOverlays({
         hint: {
           path: './hint.html',
@@ -680,21 +688,23 @@ describe('createOverlays', () => {
         () => overlays.hint()
       )
 
-      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+      // Deferred: the start is pending (no rasterization happened during the call).
+      expect(recorder.addAssetStart).not.toHaveBeenCalled()
+      expect(rasterize).not.toHaveBeenCalled()
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
         'hint',
         expect.objectContaining({
           kind: 'image',
           durationMs: 1500,
           fullScreen: false,
           placement: { relativeTo: 'recording', x: 0.1, y: 0.1, width: 0.3 },
+          request: expect.objectContaining({
+            kind: 'image',
+            name: 'hint',
+            html: '<div>Click</div>',
+          }),
         })
       )
-      const payload = vi.mocked(recorder.addAssetStart).mock.calls[0]![1] as {
-        path: string
-        fileHash?: string
-      }
-      expect(payload.path.endsWith('.png')).toBe(true)
-      expect(payload.fileHash).toBeDefined()
     })
 
     it('renders a React element to an image overlay', async () => {
@@ -711,7 +721,7 @@ describe('createOverlays', () => {
         () => overlays.badge()
       )
 
-      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
         'badge',
         expect.objectContaining({
           kind: 'image',
@@ -735,7 +745,7 @@ describe('createOverlays', () => {
         () => overlays.badge.start()
       )
 
-      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
         'badge',
         expect.objectContaining({ kind: 'image', placement: DEFAULT_PLACEMENT })
       )
@@ -758,12 +768,6 @@ describe('createOverlays', () => {
         key: null,
       }
 
-      let captured: string | undefined
-      setHtmlRasterizer(async (req) => {
-        captured = req.html
-        return { buffer: Buffer.from('png'), width: 200, height: 50 }
-      })
-
       const overlays = createOverlays({
         badge: { element: pwElement, durationMs: 1000 },
       })
@@ -777,10 +781,15 @@ describe('createOverlays', () => {
         () => overlays.badge()
       )
 
-      expect(captured).toBe('<div class="badge">New</div>')
-      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
         'badge',
-        expect.objectContaining({ kind: 'image', placement: DEFAULT_PLACEMENT })
+        expect.objectContaining({
+          kind: 'image',
+          placement: DEFAULT_PLACEMENT,
+          request: expect.objectContaining({
+            html: '<div class="badge">New</div>',
+          }),
+        })
       )
     })
 
@@ -791,12 +800,6 @@ describe('createOverlays', () => {
         props: { children: 'hi' },
         key: null,
       }
-
-      let captured: string | undefined
-      setHtmlRasterizer(async (req) => {
-        captured = req.html
-        return { buffer: Buffer.from('png'), width: 50, height: 20 }
-      })
 
       const overlays = createOverlays({ badge: pwElement })
 
@@ -809,20 +812,17 @@ describe('createOverlays', () => {
         () => overlays.badge.start()
       )
 
-      expect(captured).toBe('<span>hi</span>')
-      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
         'badge',
-        expect.objectContaining({ kind: 'image', placement: DEFAULT_PLACEMENT })
+        expect.objectContaining({
+          kind: 'image',
+          placement: DEFAULT_PLACEMENT,
+          request: expect.objectContaining({ html: '<span>hi</span>' }),
+        })
       )
     })
 
     it('renders an inline html fragment to an image overlay with placement', async () => {
-      let captured: string | undefined
-      setHtmlRasterizer(async (req) => {
-        captured = req.html
-        return { buffer: Buffer.from('png'), width: 200, height: 50 }
-      })
-
       const overlays = createOverlays({
         note: {
           html: '<div class="note">Tip</div>',
@@ -842,15 +842,17 @@ describe('createOverlays', () => {
         () => overlays.note()
       )
 
-      // The fragment is passed through verbatim (the rasterizer wraps it).
-      expect(captured).toBe('<div class="note">Tip</div>')
-      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+      // The fragment is captured verbatim (the rasterizer wraps it at flush time).
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
         'note',
         expect.objectContaining({
           kind: 'image',
           durationMs: 1400,
           fullScreen: false,
           placement: { relativeTo: 'recording', x: 0.7, y: 0.1, width: 0.2 },
+          request: expect.objectContaining({
+            html: '<div class="note">Tip</div>',
+          }),
         })
       )
     })
@@ -870,6 +872,61 @@ describe('createOverlays', () => {
       )
 
       expect(recorder.addAssetStart).not.toHaveBeenCalled()
+      expect(recorder.addPendingAssetStart).not.toHaveBeenCalled()
+    })
+
+    it('runs the factory per call so props drive content and placement', async () => {
+      const overlays = createOverlays({
+        ring: (p: { label: string; x: number }) => ({
+          html: `<div class="ring">${p.label}</div>`,
+          durationMs: 1000,
+          x: p.x,
+          y: 0.2,
+          width: 0.1,
+        }),
+      })
+
+      await runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({
+          recorder,
+          page: fakePage,
+          recordingDir: dir,
+        }),
+        async () => {
+          await overlays.ring({ label: 'A', x: 0.1 })()
+          await overlays.ring({ label: 'B', x: 0.5 })()
+        }
+      )
+
+      expect(recorder.addPendingAssetStart).toHaveBeenNthCalledWith(
+        1,
+        'ring',
+        expect.objectContaining({
+          placement: { relativeTo: 'recording', x: 0.1, y: 0.2, width: 0.1 },
+          request: expect.objectContaining({
+            html: '<div class="ring">A</div>',
+          }),
+        })
+      )
+      expect(recorder.addPendingAssetStart).toHaveBeenNthCalledWith(
+        2,
+        'ring',
+        expect.objectContaining({
+          placement: { relativeTo: 'recording', x: 0.5, y: 0.2, width: 0.1 },
+          request: expect.objectContaining({
+            html: '<div class="ring">B</div>',
+          }),
+        })
+      )
+    })
+
+    it('surfaces factory config validation errors at call time', () => {
+      const overlays = createOverlays({
+        bad: () => ({ path: './logo.png', element: createElement('div') }),
+      })
+      expect(() => overlays.bad({})).toThrow(
+        'must provide only one of "path", "element", or "html"'
+      )
     })
   })
 
@@ -912,21 +969,20 @@ describe('createOverlays', () => {
 
       await run(() => overlays.intro())
 
-      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
         'intro',
         expect.objectContaining({
           kind: 'animation',
           durationMs: 1500,
           fullScreen: false,
           placement: DEFAULT_PLACEMENT,
+          request: expect.objectContaining({
+            kind: 'animation',
+            durationMs: 1500,
+            fps: 30,
+          }),
         })
       )
-      const payload = vi.mocked(recorder.addAssetStart).mock.calls[0]![1] as {
-        path: string
-        fileHash?: string
-      }
-      expect(payload.path.endsWith('.mp4')).toBe(true)
-      expect(payload.fileHash).toBeDefined()
     })
 
     it('uses the blocking call argument as the capture duration', async () => {
@@ -936,13 +992,19 @@ describe('createOverlays', () => {
 
       await run(() => overlays.intro(800))
 
-      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
         'intro',
         expect.objectContaining({ kind: 'animation', durationMs: 800 })
       )
     })
 
-    it('cuts the capture time from the recording (wraps capture in a hide)', async () => {
+    it('does not hide or rasterize during the recording (deferred to flush)', async () => {
+      const rasterize = vi.fn(async () => ({
+        buffer: Buffer.from('mp4'),
+        width: 320,
+        height: 80,
+      }))
+      setAnimatedHtmlRasterizer(rasterize)
       const overlays = createOverlays({
         intro: {
           element: createElement('div', null, 'hi'),
@@ -953,19 +1015,12 @@ describe('createOverlays', () => {
 
       await run(() => overlays.intro())
 
-      // The slow frame capture is bracketed by hideStart/hideEnd so its
-      // wall-clock is cut from the output, and the asset start is recorded
-      // after the capture finishes.
-      expect(recorder.addHideStart).toHaveBeenCalledOnce()
-      expect(recorder.addHideEnd).toHaveBeenCalledOnce()
-      const hideStart = vi.mocked(recorder.addHideStart).mock
-        .invocationCallOrder[0]!
-      const hideEnd = vi.mocked(recorder.addHideEnd).mock
-        .invocationCallOrder[0]!
-      const assetStart = vi.mocked(recorder.addAssetStart).mock
-        .invocationCallOrder[0]!
-      expect(hideStart).toBeLessThan(hideEnd)
-      expect(hideEnd).toBeLessThanOrEqual(assetStart)
+      // Rasterization no longer happens inline, so there is no capture
+      // wall-clock to hide from the timeline.
+      expect(rasterize).not.toHaveBeenCalled()
+      expect(recorder.addHideStart).not.toHaveBeenCalled()
+      expect(recorder.addHideEnd).not.toHaveBeenCalled()
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledOnce()
     })
 
     it('animates an .html file overlay', async () => {
@@ -976,18 +1031,19 @@ describe('createOverlays', () => {
 
       await run(() => overlays.intro())
 
-      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
         'intro',
-        expect.objectContaining({ kind: 'animation', durationMs: 1000 })
+        expect.objectContaining({
+          kind: 'animation',
+          durationMs: 1000,
+          request: expect.objectContaining({
+            html: '<div class="fade">hi</div>',
+          }),
+        })
       )
     })
 
     it('animates an inline html fragment overlay', async () => {
-      let captured: string | undefined
-      setAnimatedHtmlRasterizer(async (req) => {
-        captured = req.html
-        return { buffer: Buffer.from('mp4'), width: 320, height: 80 }
-      })
       const overlays = createOverlays({
         intro: {
           html: '<div class="fade">hi</div>',
@@ -998,10 +1054,15 @@ describe('createOverlays', () => {
 
       await run(() => overlays.intro())
 
-      expect(captured).toBe('<div class="fade">hi</div>')
-      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
         'intro',
-        expect.objectContaining({ kind: 'animation', durationMs: 1000 })
+        expect.objectContaining({
+          kind: 'animation',
+          durationMs: 1000,
+          request: expect.objectContaining({
+            html: '<div class="fade">hi</div>',
+          }),
+        })
       )
     })
 
@@ -1016,7 +1077,8 @@ describe('createOverlays', () => {
 
       await run(() => overlays.badge.start())
 
-      const payload = vi.mocked(recorder.addAssetStart).mock.calls[0]![1] as {
+      const payload = vi.mocked(recorder.addPendingAssetStart).mock
+        .calls[0]![1] as {
         kind: string
         durationMs?: number
       }
@@ -1060,15 +1122,7 @@ describe('createOverlays', () => {
       ).toThrow('only applies to animated overlays')
     })
 
-    it('passes css and capturePadding to the animated rasterizer', async () => {
-      let captured: { css?: string; capturePadding?: number } | undefined
-      setAnimatedHtmlRasterizer(async (request) => {
-        captured = {
-          css: request.css,
-          capturePadding: request.capturePadding,
-        }
-        return { buffer: Buffer.from('mp4'), width: 320, height: 80 }
-      })
+    it('captures css and capturePadding in the deferred animation request', async () => {
       const overlays = createOverlays({
         intro: {
           element: createElement('div', null, 'hi'),
@@ -1081,8 +1135,15 @@ describe('createOverlays', () => {
 
       await run(() => overlays.intro())
 
-      expect(captured?.css).toBe('.card{color:red}')
-      expect(captured?.capturePadding).toBe(80)
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
+        'intro',
+        expect.objectContaining({
+          request: expect.objectContaining({
+            css: '.card{color:red}',
+            capturePadding: 80,
+          }),
+        })
+      )
     })
 
     it('rejects css/capturePadding on a non-HTML file overlay', () => {

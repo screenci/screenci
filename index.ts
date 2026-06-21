@@ -36,11 +36,13 @@ export type {
   CropRegion,
   CropOptions,
   ScreenshotCrop,
+  ScreenshotCropRecord,
+  ResolvedCropPadding,
 } from './src/crop.js'
 export type { ScreenCIPage, ScreenCILocator } from './src/types.js'
 export { createNarration, createStudioNarration } from './src/cue.js'
 export type { NarrationCue, Cues, TopLevelVoiceConfig } from './src/cue.js'
-export { STUDIO_RENDER_OPTIONS, isStudioRenderOptions } from './src/studio.js'
+export { isStudioRenderOptions } from './src/studio.js'
 export type { StudioRenderOptionsSentinel } from './src/studio.js'
 export { hide } from './src/hide.js'
 export { speed } from './src/speed.js'

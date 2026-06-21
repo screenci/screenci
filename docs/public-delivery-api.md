@@ -113,6 +113,36 @@ Error responses:
 | ------ | ------------------------------------------------------------------------------------------------- |
 | `404`  | No rendered version found, no subtitles for this version, or the VTT file is missing from storage |
 
+## `GET /public/:id/:language/screenshot`
+
+Serves the published screenshot image for one language variant. A version is
+either a video or a screenshot, never both: this route only serves versions
+recorded as screenshots, and `/video` only serves video versions. Follows the
+currently selected version; pin to a run with the
+[record-pinned URL](#record-pinned-urls) form.
+
+Useful query parameters:
+
+- `filename`
+- `download=1`
+
+Response headers:
+
+```text
+Content-Type: image/png
+Content-Length: <bytes>
+Access-Control-Allow-Origin: *
+```
+
+The `Content-Type` is `image/png`, or `image/jpeg` when the stored screenshot is
+a JPEG.
+
+Error responses:
+
+| Status | Condition                                                                                                                                           |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `404`  | No public URL configured, the requested language is not available, the selected version is a video (not a screenshot), or the screenshot is missing |
+
 ## Record-pinned URLs
 
 Every media endpoint has a record-pinned form that adds a `records/<recordId>`
@@ -125,7 +155,7 @@ GET /public/:id/:language/video                       # latest selected version
 GET /public/:id/records/<recordId>/:language/video    # this run's render
 ```
 
-The same shape applies to `thumbnail` and `subtitle`. Because a pinned URL is
+The same shape applies to `thumbnail`, `subtitle`, and `screenshot`. Because a pinned URL is
 immutable, it is served with a long, `immutable` `Cache-Control`, while the
 static URL uses a short TTL so it can follow the selected version.
 

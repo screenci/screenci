@@ -301,22 +301,26 @@ the command to use in CI to gate on rendering or grab links right after a record
           "static": {
             "video": "https://api.screenci.com/public/kh74…/en/video",
             "thumbnail": "https://api.screenci.com/public/kh74…/en/thumbnail",
-            "subtitle": "https://api.screenci.com/public/kh74…/en/subtitle"
+            "subtitle": "https://api.screenci.com/public/kh74…/en/subtitle",
+            "screenshot": "https://api.screenci.com/public/kh74…/en/screenshot"
           },
           "download": {
             "video": "https://api.screenci.com/cli/download/kh74…/en/video",
             "thumbnail": "https://api.screenci.com/cli/download/kh74…/en/thumbnail",
-            "subtitle": "https://api.screenci.com/cli/download/kh74…/en/subtitle"
+            "subtitle": "https://api.screenci.com/cli/download/kh74…/en/subtitle",
+            "screenshot": "https://api.screenci.com/cli/download/kh74…/en/screenshot"
           },
           "latestRecord": {
             "status": "finished",
             "video": "https://api.screenci.com/public/kh74…/records/5f1c…/en/video",
             "thumbnail": "https://api.screenci.com/public/kh74…/records/5f1c…/en/thumbnail",
             "subtitle": "https://api.screenci.com/public/kh74…/records/5f1c…/en/subtitle",
+            "screenshot": "https://api.screenci.com/public/kh74…/records/5f1c…/en/screenshot",
             "download": {
               "video": "https://api.screenci.com/cli/download/kh74…/en/video?record=5f1c…",
               "thumbnail": "https://api.screenci.com/cli/download/kh74…/en/thumbnail?record=5f1c…",
-              "subtitle": "https://api.screenci.com/cli/download/kh74…/en/subtitle?record=5f1c…"
+              "subtitle": "https://api.screenci.com/cli/download/kh74…/en/subtitle?record=5f1c…",
+              "screenshot": "https://api.screenci.com/cli/download/kh74…/en/screenshot?record=5f1c…"
             }
           }
         }
@@ -336,6 +340,11 @@ Each language exposes up to three URL sets:
   `404`, see
   [resolution rules](/docs/reference/public-delivery-api#resolution-rules)). Once
   finished, it also carries record-pinned `download` URLs.
+
+Each URL set carries one entry per asset: `video`, `thumbnail`, `subtitle`, and
+`screenshot`. A version is either a video or a screenshot, never both, so use the
+`video` asset for video recordings and the `screenshot` asset for screenshot
+recordings: the asset that does not match the version's type `404`s when fetched.
 
 `static` is `null` for videos without public delivery enabled. `latestRecord`
 carries the render status even for private videos, but its public URLs are then

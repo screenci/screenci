@@ -29,7 +29,7 @@ export const docsManifest = [
     next: 'docs/installation',
   },
   {
-    source: 'installation.mdx',
+    source: 'manual-setup.mdx',
     slug: 'docs/installation',
     section: 'Getting Started',
     order: 3,
@@ -101,7 +101,7 @@ export const docsManifest = [
     next: 'docs/guides/assets-and-overlays',
   },
   {
-    source: 'assets-and-overlays.md',
+    source: 'overlays.md',
     slug: 'docs/guides/assets-and-overlays',
     section: 'Guides',
     order: 4,

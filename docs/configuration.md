@@ -234,7 +234,7 @@ Use project-wide render defaults for branding and layout consistency, then
 override only the files that need a different look.
 
 On the Business tier you can defer render options to the web app entirely by
-setting `renderOptions: STUDIO_RENDER_OPTIONS`. They are then managed on the
+setting `renderOptions: 'studio'`. They are then managed on the
 Studio page. See [Studio](/docs/guides/studio).
 
 ### Example: shared `use` defaults

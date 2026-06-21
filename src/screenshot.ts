@@ -310,7 +310,7 @@ interface ScreenshotCallSignatures {
    *
    * screenshot('Dashboard hero', async ({ page, crop }) => {
    *   await page.goto('https://app.example.com/dashboard')
-   *   await crop(page.getByTestId('revenue-card'), { padding: 0.06 })
+   *   await crop(page.getByTestId('revenue-card'), { padding: 48 })
    * })
    * ```
    */

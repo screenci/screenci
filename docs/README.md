@@ -12,7 +12,7 @@ reference material to drill into.
 
 - [Overview](./overview.mdx)
 - [Agent Integration](./agent-integration.mdx)
-- [Manual Setup & First Video](./installation.mdx)
+- [Manual Setup & First Video](./manual-setup.mdx)
 - [Video Script Basics](./write-video-scripts.md)
 - [CI Setup](./ci-setup.md)
 
@@ -21,7 +21,7 @@ reference material to drill into.
 - [Page Instrumentation](./page-instrumentation.md)
 - [Narration and Localization](./narration-and-localization.md)
 - [Camera and Zooming](./camera-and-zooming.md)
-- [Assets and Overlays](./assets-and-overlays.md)
+- [Overlays](./overlays.md)
 - [Studio](./studio.md)
 - [Public URLs and Embeds](./public-urls-and-embeds.md)
 - [Update ScreenCI](./update-screenci.mdx)

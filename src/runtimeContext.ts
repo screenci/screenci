@@ -7,7 +7,7 @@ import {
 } from './events.js'
 import type { AutoZoomOptions, RecordOptions, RenderOptions } from './types.js'
 import type { StudioRenderOptionsSentinel } from './studio.js'
-import type { ScreenshotCrop } from './crop.js'
+import type { ScreenshotCropRecord } from './crop.js'
 
 export type CurrentZoomViewport = {
   focusPoint: { x: number; y: number }
@@ -76,7 +76,7 @@ export type ScreenCIRuntimeContext = {
    * full image. Set via the `crop` fixture argument and read by the fixture at
    * capture time. Replaces the previous module-global crop state.
    */
-  crop: ScreenshotCrop | null
+  crop: ScreenshotCropRecord | null
   timelineBlocks: TimelineBlockState[]
   cue: {
     activeCueName: string | null
@@ -246,11 +246,11 @@ export function getRuntimeRenderOptions():
   return getScreenCIRuntimeContext().renderOptions
 }
 
-export function setRuntimeCrop(crop: ScreenshotCrop | null): void {
+export function setRuntimeCrop(crop: ScreenshotCropRecord | null): void {
   getScreenCIRuntimeContext().crop = crop
 }
 
-export function getRuntimeCrop(): ScreenshotCrop | undefined {
+export function getRuntimeCrop(): ScreenshotCropRecord | undefined {
   return getScreenCIRuntimeContext().crop ?? undefined
 }
 

@@ -12,6 +12,7 @@ import type {
   ResolvedRenderOptions,
 } from './types.js'
 import { RENDER_OPTIONS_DEFAULTS } from './types.js'
+import type { ScreenshotCropRecord } from './crop.js'
 import {
   isStudioRenderOptions,
   type StudioRenderOptionsSentinel,
@@ -620,7 +621,7 @@ export type RecordingMetadata = {
   sourceFilePath?: string
   /**
    * Which parts of this recording opted into Studio configuration.
-   * `renderOptions` is set when `STUDIO_RENDER_OPTIONS` was used; `narration`
+   * `renderOptions` is set when `renderOptions: 'studio'` was used; `narration`
    * when the recording contains `createStudioNarration` cues; `assets` when it
    * contains `createStudioOverlays` assets; `audio` when it contains
    * `createStudioAudio` tracks.
@@ -706,7 +707,7 @@ export type WriteRecordingOptions = {
    * Merged into `renderOptions.screenshot.crop`, overriding any crop set in
    * config, so it is editable in Studio afterward.
    */
-  crop?: ScreenshotCrop
+  crop?: ScreenshotCropRecord
 }
 
 export interface IEventRecorder {
@@ -1349,21 +1350,19 @@ export class EventRecorder implements IEventRecorder {
     }
 
     // Screenshot render group: pass through any configured fields and merge the
-    // record-time crop (which overrides a crop set in config). Present only when
-    // something is set, so video recordings stay unaffected.
-    const cropOverride = options?.crop ?? ro?.screenshot?.crop
+    // record-time crop. The crop is never configurable, so it comes only from a
+    // `crop()` call or `page.screenshot({ crop })`. Present only when something
+    // is set, so video recordings stay unaffected.
+    const cropOverride = options?.crop
     const screenshotGroup = {
       ...(ro?.screenshot?.format !== undefined && {
         format: ro.screenshot.format,
       }),
-      ...(ro?.screenshot?.quality !== undefined && {
-        quality: ro.screenshot.quality,
+      ...(ro?.screenshot?.margin !== undefined && {
+        margin: ro.screenshot.margin,
       }),
       ...(ro?.screenshot?.aspectRatio !== undefined && {
         aspectRatio: ro.screenshot.aspectRatio,
-      }),
-      ...(ro?.screenshot?.margin !== undefined && {
-        margin: ro.screenshot.margin,
       }),
       ...(cropOverride !== undefined && { crop: cropOverride }),
     }

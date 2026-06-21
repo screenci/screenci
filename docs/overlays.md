@@ -135,13 +135,19 @@ const overlays = createOverlays({
 })
 
 await overlays.note({ text: 'Saved' })(1200) // blocking, 1.2s
-await overlays.badge({ label: 'New' }).start()
+
+// For start()/end(), capture the controller so the props appear once.
+const badge = overlays.badge({ label: 'New' })
+await badge.start()
 await page.click('#next')
-await overlays.badge({ label: 'New' }).end()
+await badge.end()
 ```
 
 This is how an overlay receives props: the factory closes over them and returns
-the config. To position an overlay over a live element, combine a factory with
+the config. Calling the overlay (`overlays.badge({ label: 'New' })`) runs the
+factory once and returns a controller; capture that controller and reuse it for
+`start()` and `end()` rather than calling the overlay again, so the props appear
+only once. To position an overlay over a live element, combine a factory with
 [`overlayRect`](#positioning-over-a-live-element) below, which captures a
 locator's position and spreads into the placement (and can be passed as a prop
 so the component draws relative to the element, for example a circle around it).
@@ -311,15 +317,24 @@ const overlays = createOverlays({
 })
 
 const save = page.getByRole('button', { name: 'Save' })
-await overlays.ring(save).start()
+const ring = overlays.ring(save) // capture the controller, then drive it
+await ring.start()
 await save.click()
-await overlays.ring(save).end()
+await ring.end()
 ```
 
 `over` works with React elements, inline `html`, and `.html` files. It is always
 recording-relative and overrides `x`/`y`/`width`/`height`/`relativeTo`/`fullScreen`.
 Make the content fill its box (`width:100%;height:100%`). Repeated calls with the
 same element box rasterize only once.
+
+Add [`animate: true`](#animated-overlays) and the ring plays its CSS animation
+back in the video while the page keeps being driven underneath. Here is that same
+margin ring, pulsing around a live element (the
+[Screenshots guide](/docs/guides/screenshots#highlight-a-locator) shows the
+still version):
+
+<!-- screenci-doc-video:docs/guides/assets-and-overlays -->
 
 #### `overlayRect` (lower-level)
 

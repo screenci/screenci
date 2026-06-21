@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Locator, Page } from '@playwright/test'
-import { applyCropAspectRatio, applyCropPadding, resolveCrop } from './crop.js'
+import { applyCropPadding, resolveCrop } from './crop.js'
 
 const VIEWPORT = { width: 1000, height: 800 }
 
@@ -41,30 +41,6 @@ describe('applyCropPadding', () => {
   })
 })
 
-describe('applyCropAspectRatio', () => {
-  const square = { width: 1000, height: 1000 }
-
-  it('widens a too-narrow crop to the ratio, centered', () => {
-    const rect = { x: 400, y: 300, width: 200, height: 200 }
-    const out = applyCropAspectRatio(rect, 2, square)
-    expect(out).toEqual({ x: 300, y: 300, width: 400, height: 200 })
-  })
-
-  it('grows the height of a too-wide crop to the ratio, centered', () => {
-    const rect = { x: 200, y: 400, width: 400, height: 200 }
-    const out = applyCropAspectRatio(rect, 1, square)
-    expect(out).toEqual({ x: 200, y: 300, width: 400, height: 400 })
-  })
-
-  it('trims the other axis when the viewport caps the growth', () => {
-    // Want 4:1 from a square, but the viewport is only 400 wide: width caps at
-    // 400, so the height shrinks to 100 to keep the ratio exact.
-    const rect = { x: 0, y: 0, width: 200, height: 200 }
-    const out = applyCropAspectRatio(rect, 4, { width: 400, height: 1000 })
-    expect(out).toEqual({ x: 0, y: 50, width: 400, height: 100 })
-  })
-})
-
 /** Minimal page stub with a fixed viewport for region-based crops. */
 function fakePage(viewport: { width: number; height: number }): Page {
   return {
@@ -82,16 +58,20 @@ function fakeLocator(
 }
 
 describe('resolveCrop', () => {
-  it('resolves a locator bounding box to a pixel rect', async () => {
+  it('records a locator bounding box as a locked box with zero padding', async () => {
     const page = fakePage({ width: 1000, height: 800 })
     const locator = fakeLocator({ x: 100, y: 80, width: 300, height: 200 })
 
     const crop = await resolveCrop(locator, page)
 
-    expect(crop).toEqual({ x: 100, y: 80, width: 300, height: 200 })
+    expect(crop).toEqual({
+      box: { x: 100, y: 80, width: 300, height: 200 },
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      source: 'locator',
+    })
   })
 
-  it('passes an explicit pixel region through', async () => {
+  it('records an explicit region as an editable box with zero padding', async () => {
     const page = fakePage({ width: 1000, height: 800 })
 
     const crop = await resolveCrop(
@@ -99,30 +79,58 @@ describe('resolveCrop', () => {
       page
     )
 
-    expect(crop).toEqual({ x: 100, y: 160, width: 800, height: 480 })
+    expect(crop).toEqual({
+      box: { x: 100, y: 160, width: 800, height: 480 },
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      source: 'region',
+    })
   })
 
-  it('expands a locator crop by padding', async () => {
+  it('keeps a locator box locked and the padding separate (editable in Studio)', async () => {
     const page = fakePage({ width: 1000, height: 1000 })
     const locator = fakeLocator({ x: 400, y: 400, width: 200, height: 200 })
 
-    // rect = 400,400,200,200; padding 20 px on every side
+    // The box stays the element box; padding is recorded as a per-side amount and
+    // applied later by the renderer, not folded into the box here.
     const crop = await resolveCrop(locator, page, { padding: 20 })
 
-    expect(crop).toEqual({ x: 380, y: 380, width: 240, height: 240 })
+    expect(crop).toEqual({
+      box: { x: 400, y: 400, width: 200, height: 200 },
+      padding: { top: 20, right: 20, bottom: 20, left: 20 },
+      source: 'locator',
+    })
   })
 
-  it('applies uneven padding then forces the aspect ratio', async () => {
+  it('normalizes uneven per-side padding on a locator crop', async () => {
     const page = fakePage({ width: 1000, height: 1000 })
     const locator = fakeLocator({ x: 400, y: 300, width: 200, height: 200 })
 
-    // padding 50 px -> {350,250,300,300}; aspectRatio 2 widens to 600x300.
     const crop = await resolveCrop(locator, page, {
-      padding: 50,
-      aspectRatio: 2,
+      padding: { top: 10, right: 20, bottom: 30, left: 40 },
     })
 
-    expect(crop).toEqual({ x: 200, y: 250, width: 600, height: 300 })
+    expect(crop).toEqual({
+      box: { x: 400, y: 300, width: 200, height: 200 },
+      padding: { top: 10, right: 20, bottom: 30, left: 40 },
+      source: 'locator',
+    })
+  })
+
+  it('folds padding into a region box and clamps it to the viewport', async () => {
+    const page = fakePage({ width: 1000, height: 1000 })
+
+    // Region 100,100,200,200 padded 50 px -> 50,50,300,300 (within viewport).
+    const crop = await resolveCrop(
+      { x: 100, y: 100, width: 200, height: 200 },
+      page,
+      { padding: 50 }
+    )
+
+    expect(crop).toEqual({
+      box: { x: 50, y: 50, width: 300, height: 300 },
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      source: 'region',
+    })
   })
 
   it('rejects a negative per-side padding', async () => {
@@ -130,15 +138,6 @@ describe('resolveCrop', () => {
     await expect(
       resolveCrop({ x: 0, y: 0, width: 500, height: 500 }, page, {
         padding: { top: -5 },
-      })
-    ).rejects.toThrow(/crop/)
-  })
-
-  it('rejects a non-positive aspect ratio', async () => {
-    const page = fakePage({ width: 1000, height: 800 })
-    await expect(
-      resolveCrop({ x: 0, y: 0, width: 500, height: 500 }, page, {
-        aspectRatio: 0,
       })
     ).rejects.toThrow(/crop/)
   })

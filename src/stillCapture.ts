@@ -6,7 +6,7 @@ import { escapeFileSystemPathSegment } from './fileSystemName.js'
 import { EventRecorder } from './events.js'
 import type { IEventRecorder, ScreenshotInfo } from './events.js'
 import { resolveCrop } from './crop.js'
-import type { CropTarget, ScreenshotCrop } from './crop.js'
+import type { CropTarget, ScreenshotCropRecord } from './crop.js'
 import { getScreenCIRuntimeContext } from './runtimeContext.js'
 import {
   DEFAULT_VIDEO_OPTIONS,
@@ -97,7 +97,7 @@ export async function writeStillRecording(params: {
   screenciDir: string
   dimensions: { width: number; height: number }
   deviceScaleFactor: number
-  crop?: ScreenshotCrop
+  crop?: ScreenshotCropRecord
   testFilePath: string | null
   configDir: string
   recordOptions: RecordOptions | undefined
@@ -193,7 +193,7 @@ export function bindStillCaptureToPage(page: Page): void {
       usedNames
     )
 
-    let crop: ScreenshotCrop | undefined
+    let crop: ScreenshotCropRecord | undefined
     if (cropTarget !== undefined && ctx.page !== null) {
       crop = await resolveCrop(cropTarget, ctx.page)
     }

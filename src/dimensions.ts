@@ -52,6 +52,20 @@ export function getDimensions(
   return dimensions[aspectRatio]
 }
 
+/**
+ * Convert an {@link AspectRatio} (e.g. `'16:9'`) to its `width / height` number.
+ * Parses the `'W:H'` form; malformed input returns `NaN` so callers can validate
+ * and report it.
+ */
+export function aspectRatioToNumber(value: AspectRatio): number {
+  const parts = value.split(':')
+  if (parts.length !== 2) return NaN
+  const w = Number(parts[0])
+  const h = Number(parts[1])
+  if (!Number.isFinite(w) || !Number.isFinite(h) || h === 0) return NaN
+  return w / h
+}
+
 export function getViewportCenter(dimensions: {
   width: number
   height: number

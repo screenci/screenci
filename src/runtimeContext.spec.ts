@@ -40,18 +40,19 @@ describe('runtime getters/setters', () => {
   it('sets and reads the per-test crop on the active context', () => {
     const ctx = createScreenCIRuntimeContext()
 
+    const cropRecord = {
+      box: { x: 100, y: 200, width: 500, height: 400 },
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      source: 'region' as const,
+    }
+
     runWithScreenCIRuntimeContext(ctx, () => {
       expect(getRuntimeCrop()).toBeUndefined()
-      setRuntimeCrop({ x: 0.1, y: 0.2, width: 0.5, height: 0.4 })
-      expect(getRuntimeCrop()).toEqual({
-        x: 0.1,
-        y: 0.2,
-        width: 0.5,
-        height: 0.4,
-      })
+      setRuntimeCrop(cropRecord)
+      expect(getRuntimeCrop()).toEqual(cropRecord)
     })
 
     // The crop is stored on the context object itself, not a module global.
-    expect(ctx.crop).toEqual({ x: 0.1, y: 0.2, width: 0.5, height: 0.4 })
+    expect(ctx.crop).toEqual(cropRecord)
   })
 })

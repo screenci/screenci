@@ -10,7 +10,7 @@ There are two ways to use it:
 
 - **Opt in from code.** Declare cue keys with `createStudioNarration`, overlay
   keys with `createStudioOverlays`, background audio keys with
-  `createStudioAudio`, and set `renderOptions: STUDIO_RENDER_OPTIONS`. Those
+  `createStudioAudio`, and set `renderOptions: 'studio'`. Those
   items are then edited on the Studio page. Your edits are saved and applied
   automatically to every later upload.
 - **Render a one-off version.** Any video can be opened in Studio and rendered
@@ -33,7 +33,7 @@ There are two ways to use it:
 Open a video in the web app and choose **Open in Studio**. Studio shows the
 narration, voices, overlays, audio, and render options the video uses. Items you
 opted into from code (`createStudioNarration`, `createStudioOverlays`,
-`createStudioAudio`, `STUDIO_RENDER_OPTIONS`) are editable; anything defined in
+`createStudioAudio`, `renderOptions: 'studio'`) are editable; anything defined in
 code is shown read-only and marked with a **code** badge.
 
 Edits autosave: a status line shows **Saving...** and then **All changes
@@ -54,7 +54,7 @@ code-specified ones.
 Studio separates changes that stick from changes that do not:
 
 - **Saved edits** to studio-declared items (`createStudioNarration`,
-  `createStudioOverlays`, `createStudioAudio`, `STUDIO_RENDER_OPTIONS`) autosave
+  `createStudioOverlays`, `createStudioAudio`, `renderOptions: 'studio'`) autosave
   into the video's Studio configuration. That configuration is reused
   automatically on every later upload, so CI keeps rendering with your Studio
   values instead of the code defaults. When this happens the CLI prints a line
@@ -70,7 +70,7 @@ Studio separates changes that stick from changes that do not:
   and never change what future uploads render. To make a code-defined value
   editable in the normal, saved flow instead, switch it to the matching Studio
   variant in code (`createStudioNarration`, `createStudioOverlays`,
-  `createStudioAudio`, or `STUDIO_RENDER_OPTIONS`).
+  `createStudioAudio`, or `renderOptions: 'studio'`).
 
 ## Studio narration from code
 
@@ -208,15 +208,15 @@ API reference: [createStudioAudio()](/docs/reference/api/functions/createStudioA
 
 ## Studio render options
 
-Set the `renderOptions` option to `STUDIO_RENDER_OPTIONS` to manage render
-options from Studio instead of code:
+Set the `renderOptions` option to `'studio'` to manage render options from
+Studio instead of code:
 
 ```ts
-import { defineConfig, STUDIO_RENDER_OPTIONS } from 'screenci'
+import { defineConfig } from 'screenci'
 
 export default defineConfig({
   use: {
-    renderOptions: STUDIO_RENDER_OPTIONS,
+    renderOptions: 'studio',
   },
 })
 ```
@@ -224,8 +224,6 @@ export default defineConfig({
 This works in the top-level `use` block and in per-project `use` blocks. Until
 the video is configured in Studio, uploads render with the default render
 options (or are held together with studio narration, if both are used).
-
-API reference: [STUDIO_RENDER_OPTIONS](/docs/reference/api/variables/STUDIO_RENDER_OPTIONS)
 
 ## Tier requirements
 

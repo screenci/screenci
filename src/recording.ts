@@ -7,8 +7,11 @@ export type {
   RecordOptions,
   RenderOptions,
   ResolvedRenderOptions,
+  ResolvedScreenshotRenderOptions,
   ScreenshotOutputFormat,
 } from './types.js'
+
+export type { ScreenshotCropRecord, ResolvedCropPadding } from './crop.js'
 
 export type {
   RecordingData,

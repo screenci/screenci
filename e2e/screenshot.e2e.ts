@@ -11,10 +11,12 @@ test.describe('resolveCrop', () => {
 
     const recorded = await resolveCrop(page.locator('#card'), page)
 
-    expect(recorded.x).toBeCloseTo(100, 3)
-    expect(recorded.y).toBeCloseTo(80, 3)
-    expect(recorded.width).toBeCloseTo(300, 3)
-    expect(recorded.height).toBeCloseTo(200, 3)
+    expect(recorded.source).toBe('locator')
+    expect(recorded.box.x).toBeCloseTo(100, 3)
+    expect(recorded.box.y).toBeCloseTo(80, 3)
+    expect(recorded.box.width).toBeCloseTo(300, 3)
+    expect(recorded.box.height).toBeCloseTo(200, 3)
+    expect(recorded.padding).toEqual({ top: 0, right: 0, bottom: 0, left: 0 })
   })
 
   test('resolves an explicit pixel region', async ({ page }) => {
@@ -24,27 +26,36 @@ test.describe('resolveCrop', () => {
       page
     )
 
-    expect(recorded.x).toBeCloseTo(100, 3)
-    expect(recorded.y).toBeCloseTo(160, 3)
-    expect(recorded.width).toBeCloseTo(800, 3)
-    expect(recorded.height).toBeCloseTo(480, 3)
+    expect(recorded.source).toBe('region')
+    expect(recorded.box.x).toBeCloseTo(100, 3)
+    expect(recorded.box.y).toBeCloseTo(160, 3)
+    expect(recorded.box.width).toBeCloseTo(800, 3)
+    expect(recorded.box.height).toBeCloseTo(480, 3)
   })
 
-  test('expands a locator crop by padding', async ({ page }) => {
+  test('keeps a locator box locked and records padding separately', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1000, height: 1000 })
     await page.setContent(
       '<div id="card" style="position:absolute;left:400px;top:400px;width:200px;height:200px"></div>'
     )
 
-    // rect = 400,400,200,200; padding 20 px on every side
     const recorded = await resolveCrop(page.locator('#card'), page, {
       padding: 20,
     })
 
-    expect(recorded.x).toBeCloseTo(380, 3)
-    expect(recorded.y).toBeCloseTo(380, 3)
-    expect(recorded.width).toBeCloseTo(240, 3)
-    expect(recorded.height).toBeCloseTo(240, 3)
+    // The element box is unchanged; the renderer applies the padding later.
+    expect(recorded.box.x).toBeCloseTo(400, 3)
+    expect(recorded.box.y).toBeCloseTo(400, 3)
+    expect(recorded.box.width).toBeCloseTo(200, 3)
+    expect(recorded.box.height).toBeCloseTo(200, 3)
+    expect(recorded.padding).toEqual({
+      top: 20,
+      right: 20,
+      bottom: 20,
+      left: 20,
+    })
   })
 
   test('rejects a negative region', async ({ page }) => {

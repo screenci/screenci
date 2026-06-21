@@ -49,7 +49,11 @@ describe('writeStillRecording', () => {
       screenciDir: '/repo/.screenci',
       dimensions: { width: 1920, height: 1080 },
       deviceScaleFactor: 1,
-      crop: { x: 0.1, y: 0.1, width: 0.5, height: 0.5 },
+      crop: {
+        box: { x: 100, y: 100, width: 500, height: 500 },
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        source: 'region',
+      },
       testFilePath: '/repo/videos/demo.screenci.ts',
       configDir: '/repo',
       recordOptions: { aspectRatio: '16:9', quality: '1080p' },
@@ -80,7 +84,11 @@ describe('writeStillRecording', () => {
         height: 1080,
         deviceScaleFactor: 1,
       },
-      crop: { x: 0.1, y: 0.1, width: 0.5, height: 0.5 },
+      crop: {
+        box: { x: 100, y: 100, width: 500, height: 500 },
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+        source: 'region',
+      },
     })
   })
 

@@ -27,13 +27,6 @@ export type CropOptions = {
    * pass `{ top, right, bottom, left }` for uneven padding. Defaults to `0`.
    */
   padding?: CropPadding
-  /**
-   * Force the crop to this aspect ratio (`width / height`, e.g. `16 / 9`),
-   * applied after {@link padding}. The crop grows along its deficient axis around
-   * its centre (capped to the viewport) to reach the ratio exactly. Omit to keep
-   * the target's own aspect.
-   */
-  aspectRatio?: number
 }
 
 /**
@@ -48,6 +41,31 @@ export type ScreenshotCrop = {
   height: number
 }
 
+/** Per-side crop padding in CSS px, fully resolved (no omitted sides). */
+export type ResolvedCropPadding = {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+/**
+ * A crop as recorded into `renderOptions.screenshot.crop`. The renderer derives
+ * the effective crop by expanding `box` by `padding` (CSS px on each side) and
+ * clamping to the captured viewport.
+ *
+ * `source` drives Studio editability:
+ * - `'locator'`: `box` is the element's bounding box and is locked (it re-resolves
+ *   from the locator on every capture). Only `padding` is editable in Studio.
+ * - `'region'`: `box` is a free rectangle (an explicit region, with any `padding`
+ *   already folded in) and is fully editable in Studio; `padding` is zero.
+ */
+export type ScreenshotCropRecord = {
+  box: ScreenshotCrop
+  padding: ResolvedCropPadding
+  source: 'locator' | 'region'
+}
+
 function isLocator(target: CropTarget): target is Locator {
   return (
     typeof target === 'object' &&
@@ -58,12 +76,7 @@ function isLocator(target: CropTarget): target is Locator {
 }
 
 /** Normalize {@link CropPadding} to explicit per-side CSS px values. */
-function normalizePadding(padding: CropPadding): {
-  top: number
-  right: number
-  bottom: number
-  left: number
-} {
+function normalizePadding(padding: CropPadding): ResolvedCropPadding {
   if (typeof padding === 'number') {
     return { top: padding, right: padding, bottom: padding, left: padding }
   }
@@ -96,45 +109,6 @@ export function applyCropPadding(
     width: Math.max(0, right - left),
     height: Math.max(0, bottom - top),
   }
-}
-
-/**
- * Force a crop to a target aspect ratio (`width / height`) by growing its
- * deficient axis around the crop's centre, capped to the viewport. If the
- * viewport is too small to grow, the other axis shrinks instead so the ratio is
- * still exact. Pure and exported for testing.
- */
-export function applyCropAspectRatio(
-  rect: ScreenshotCrop,
-  aspectRatio: number,
-  viewport: { width: number; height: number }
-): ScreenshotCrop {
-  const centerX = rect.x + rect.width / 2
-  const centerY = rect.y + rect.height / 2
-  let width = rect.width
-  let height = rect.height
-  const current = width / height
-  if (current < aspectRatio) {
-    // Too narrow: widen to the ratio, capping at the viewport (then trim height).
-    width = height * aspectRatio
-    if (width > viewport.width) {
-      width = viewport.width
-      height = width / aspectRatio
-    }
-  } else if (current > aspectRatio) {
-    // Too wide: grow height to the ratio, capping at the viewport (then trim width).
-    height = width / aspectRatio
-    if (height > viewport.height) {
-      height = viewport.height
-      width = height * aspectRatio
-    }
-  }
-  const x = Math.max(0, Math.min(centerX - width / 2, viewport.width - width))
-  const y = Math.max(
-    0,
-    Math.min(centerY - height / 2, viewport.height - height)
-  )
-  return { x, y, width, height }
 }
 
 function assertValidRegion(region: CropRegion): void {
@@ -210,7 +184,6 @@ async function resolveViewportSize(page: Page): Promise<{
  * await resolveCrop(page.getByTestId('revenue-card'), page, { padding: 48 })
  * await resolveCrop(page.getByTestId('chart'), page, {
  *   padding: { top: 24, bottom: 64, left: 24, right: 24 },
- *   aspectRatio: 16 / 9,
  * })
  * await resolveCrop({ x: 128, y: 256, width: 1024, height: 768 }, page)
  */
@@ -218,24 +191,12 @@ export async function resolveCrop(
   target: CropTarget,
   page: Page,
   options: CropOptions = {}
-): Promise<ScreenshotCrop> {
+): Promise<ScreenshotCropRecord> {
   const padding = options.padding ?? 0
   assertValidPadding(padding)
-  const { aspectRatio } = options
-  if (
-    aspectRatio !== undefined &&
-    (!Number.isFinite(aspectRatio) || aspectRatio <= 0)
-  ) {
-    throw invalidOptionError({
-      api: 'crop',
-      option: 'aspectRatio',
-      expectation: 'must be a positive number (width / height)',
-      value: aspectRatio,
-    })
-  }
 
   const viewport = await resolveViewportSize(page)
-  let base: ScreenshotCrop
+
   if (isLocator(target)) {
     const box = await target.boundingBox()
     if (box === null) {
@@ -243,25 +204,28 @@ export async function resolveCrop(
         'crop(locator): the target element has no bounding box (it may be hidden or detached).'
       )
     }
-    base = {
-      x: box.x,
-      y: box.y,
-      width: box.width,
-      height: box.height,
-    }
-  } else {
-    assertValidRegion(target)
-    base = {
-      x: target.x,
-      y: target.y,
-      width: target.width,
-      height: target.height,
+    // The element box is the locked anchor; padding stays separate so Studio can
+    // edit the breathing room without desyncing the crop from the locator. The
+    // renderer expands the box by padding and clamps to the captured viewport.
+    return {
+      box: { x: box.x, y: box.y, width: box.width, height: box.height },
+      padding: normalizePadding(padding),
+      source: 'locator',
     }
   }
 
-  const padded = applyCropPadding(base, padding, viewport)
-  // Force the aspect ratio after padding, so padding is included in the framed box.
-  return aspectRatio === undefined
-    ? padded
-    : applyCropAspectRatio(padded, aspectRatio, viewport)
+  assertValidRegion(target)
+  // An explicit region has no element to track, so it is a free rectangle in
+  // Studio. Fold any padding into the box now (clamped to the viewport) and keep
+  // padding zero: the box itself is what gets edited.
+  const box = applyCropPadding(
+    { x: target.x, y: target.y, width: target.width, height: target.height },
+    padding,
+    viewport
+  )
+  return {
+    box,
+    padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    source: 'region',
+  }
 }

@@ -5,7 +5,7 @@ import { tmpdir } from 'os'
 import { readFile } from 'fs/promises'
 import { EventRecorder } from './events.js'
 import type { RecordingData, InputEvent } from './events.js'
-import { STUDIO_RENDER_OPTIONS, isStudioRenderOptions } from './studio.js'
+import { isStudioRenderOptions } from './studio.js'
 import { voices } from './voices.js'
 
 describe('EventRecorder', () => {
@@ -559,6 +559,38 @@ describe('EventRecorder', () => {
       expect((ro.output as Record<string, unknown>).quality).toBe('1080p')
     })
 
+    it('passes through screenshot render options (format, margin, aspectRatio)', async () => {
+      recorder = new EventRecorder({
+        screenshot: {
+          format: { type: 'jpeg', quality: 80 },
+          margin: 48,
+          aspectRatio: '1:1',
+        },
+      })
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Screenshot')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed: RecordingData = JSON.parse(content)
+      const ro = parsed.renderOptions as Record<string, unknown>
+      expect(ro.screenshot).toEqual({
+        format: { type: 'jpeg', quality: 80 },
+        margin: 48,
+        aspectRatio: '1:1',
+      })
+    })
+
+    it('omits the screenshot group when no screenshot options are set', async () => {
+      recorder = new EventRecorder({})
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed: RecordingData = JSON.parse(content)
+      const ro = parsed.renderOptions as Record<string, unknown>
+      expect(ro.screenshot).toBeUndefined()
+    })
+
     it('applies default dropShadow and background when not provided', async () => {
       recorder.start()
       await recorder.writeToFile(tmpDir, 'Test Video')
@@ -667,8 +699,8 @@ describe('EventRecorder', () => {
     })
 
     describe('studio mode', () => {
-      it('writes resolved defaults and metadata.studio.renderOptions for STUDIO_RENDER_OPTIONS', async () => {
-        recorder = new EventRecorder(STUDIO_RENDER_OPTIONS)
+      it("writes resolved defaults and metadata.studio.renderOptions for renderOptions: 'studio'", async () => {
+        recorder = new EventRecorder('studio')
         recorder.start()
         await recorder.writeToFile(tmpDir, 'Test Video')
 
@@ -700,7 +732,7 @@ describe('EventRecorder', () => {
       })
 
       it('sets both studio flags when sentinel and studio cues are combined', async () => {
-        recorder = new EventRecorder(STUDIO_RENDER_OPTIONS)
+        recorder = new EventRecorder('studio')
         recorder.start()
         recorder.addStudioCueStart('intro')
         await recorder.writeToFile(tmpDir, 'Test Video')
@@ -763,7 +795,7 @@ describe('EventRecorder', () => {
       })
 
       it('combines all four studio flags', async () => {
-        recorder = new EventRecorder(STUDIO_RENDER_OPTIONS)
+        recorder = new EventRecorder('studio')
         recorder.start()
         recorder.addStudioCueStart('intro')
         recorder.addStudioAssetStart('logo')
@@ -810,9 +842,7 @@ describe('EventRecorder', () => {
       })
 
       it('survives JSON serialization of the sentinel (Playwright use options)', () => {
-        const roundTripped: unknown = JSON.parse(
-          JSON.stringify(STUDIO_RENDER_OPTIONS)
-        )
+        const roundTripped: unknown = JSON.parse(JSON.stringify('studio'))
         expect(isStudioRenderOptions(roundTripped)).toBe(true)
         expect(isStudioRenderOptions({ recording: { size: 1 } })).toBe(false)
         expect(isStudioRenderOptions(undefined)).toBe(false)

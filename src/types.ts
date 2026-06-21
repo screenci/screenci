@@ -7,7 +7,7 @@ import type {
 } from '@playwright/test'
 import type { StudioRenderOptionsSentinel } from './studio.js'
 import type { PerformanceOption } from './performance.js'
-import type { CropTarget, ScreenshotCrop } from './crop.js'
+import type { CropTarget, ScreenshotCropRecord } from './crop.js'
 
 /**
  * Aspect ratio for recording and output.
@@ -87,32 +87,45 @@ export type RecordUploadPolicy = 'passed-only' | 'all-or-nothing'
 export type ScreenshotOutputFormat = 'png' | { type: 'jpeg'; quality?: number }
 
 /**
- * Screenshot-only render options, grouped so they are easy to set in a config
- * and to edit in Studio. The renderer reads these for stills, falling back to
- * the legacy locations (`output.format`, `output.aspectRatio`,
- * `recording.margin`) for recordings made before this group existed.
+ * Screenshot-only render options that can be set in config or edited in Studio.
+ *
+ * Resolution comes from the captured crop scaled by the capture device pixel
+ * density (not a preset). There is no `frame` toggle: the configured background
+ * (and the frame shadow and rounded corners) appear only when there is canvas
+ * area around the shot for them to fill, which is created by `margin` and/or an
+ * explicit `aspectRatio`. With neither, the output is the bare crop.
+ *
+ * The crop itself is never set here: it is recorded only from a `crop()` call or
+ * `page.screenshot({ crop })` (see {@link ResolvedScreenshotRenderOptions}).
  */
 export type ScreenshotRenderOptions = {
   /** Output image format. Defaults to `'png'`. */
   format?: ScreenshotOutputFormat
-  /** Output resolution. Defaults to `output.quality`, then `'1080p'`. */
-  quality?: Quality
   /**
-   * Output canvas aspect ratio. `'auto'` hugs the (cropped) shot plus a uniform
-   * `margin`, with no letterbox bars. Defaults to `output.aspectRatio`.
-   */
-  aspectRatio?: AspectRatio | 'auto'
-  /**
-   * Margin between the framed shot and the canvas edge, as a fraction (0-1) of
-   * the shorter output side. Defaults to `0.06`.
+   * Margin between the framed shot and the canvas edge, in CSS pixels. A value
+   * greater than 0 creates a background gutter around the shot (and gives the
+   * frame shadow and rounded corners room to render). Defaults to `0` (the
+   * canvas hugs the shot, no background visible).
    */
   margin?: number
   /**
-   * Crop applied by the renderer (CSS pixels of the recording viewport). Seeded
-   * at record time by a `crop()` call or `page.screenshot({ crop })` (which
-   * override a crop set here in config), and editable in Studio afterward.
+   * Output canvas aspect ratio. `'auto'` (the default) hugs the (cropped) shot
+   * plus any `margin`, with no letterbox bars. An explicit ratio centers the
+   * framed shot in that canvas and fills the surround with the background.
    */
-  crop?: ScreenshotCrop
+  aspectRatio?: AspectRatio | 'auto'
+}
+
+/**
+ * {@link ScreenshotRenderOptions} as serialized for a recorded still. Adds the
+ * `crop`, which is never set in config: it is seeded only by a `crop()` call or
+ * `page.screenshot({ crop })`. In Studio, a locator crop's box is locked while
+ * its padding stays editable, and a region crop is a fully editable rectangle
+ * (see {@link ScreenshotCropRecord}).
+ */
+export type ResolvedScreenshotRenderOptions = ScreenshotRenderOptions & {
+  /** Crop applied by the renderer (CSS pixels of the recording viewport). */
+  crop?: ScreenshotCropRecord
 }
 
 export type RenderOptions = {
@@ -180,8 +193,9 @@ export type RenderOptions = {
      * Resolution quality of the rendered output video.
      *
      * Combined with `aspectRatio`, this determines the final pixel dimensions.
-     * See {@link Quality} for available presets. Screenshots use
-     * {@link ScreenshotRenderOptions.quality} instead.
+     * See {@link Quality} for available presets. Screenshots ignore this: their
+     * resolution comes from the captured crop (or the full output frame) scaled
+     * by the capture device pixel density.
      *
      * Defaults to `'1080p'` when not specified.
      *
@@ -192,7 +206,7 @@ export type RenderOptions = {
       | { assetPath: string; fileHash?: string }
       | { backgroundCss: string }
   }
-  /** Screenshot-only render options (format, quality, aspectRatio, margin, crop). */
+  /** Screenshot-only render options (format, margin, aspectRatio). */
   screenshot?: ScreenshotRenderOptions
 }
 
@@ -272,9 +286,9 @@ export type ResolvedRenderOptions = {
   /**
    * Screenshot-only render options. Present only when at least one field was set
    * (in config) or a crop was recorded. Renderers read screenshot framing
-   * (format, quality, aspectRatio, margin, crop) exclusively from here.
+   * (format, margin, aspectRatio, crop) exclusively from here.
    */
-  screenshot?: ScreenshotRenderOptions
+  screenshot?: ResolvedScreenshotRenderOptions
 }
 
 /**
@@ -950,7 +964,7 @@ export type ScreenCIConfig = Omit<
   webServer?: PlaywrightTestConfig['webServer']
   use?: Omit<NonNullable<PlaywrightTestConfig['use']>, 'trace'> & {
     recordOptions?: RecordOptions
-    /** Render options, or `STUDIO_RENDER_OPTIONS` to configure them in Studio (Business tier). */
+    /** Render options, or `'studio'` to configure them in Studio (Business tier). */
     renderOptions?: RenderOptions | StudioRenderOptionsSentinel
     /**
      * Timeout in milliseconds for individual actions like `click()`, `fill()`, etc.
@@ -980,7 +994,7 @@ export type ScreenCIConfig = Omit<
   projects?: (Omit<Project, 'use'> & {
     use?: Omit<NonNullable<Project['use']>, 'trace'> & {
       recordOptions?: RecordOptions
-      /** Render options, or `STUDIO_RENDER_OPTIONS` to configure them in Studio (Business tier). */
+      /** Render options, or `'studio'` to configure them in Studio (Business tier). */
       renderOptions?: RenderOptions | StudioRenderOptionsSentinel
       /**
        * When to record traces during test execution.

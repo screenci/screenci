@@ -37,10 +37,12 @@ export type ReactElementLike = {
 }
 
 /**
- * Display options for an overlay. Placement fields are flat (not nested) and
- * each defaults independently: `relativeTo: 'recording'`, `x: 0`, `y: 0`, and
- * `width: 1` when neither `width` nor `height` is given. The default box fills
- * the recording area, whose final size is chosen later in the studio.
+ * Display options for an overlay. Placement fields are flat (not nested) and use
+ * CSS pixels in the recording viewport (the same space as Playwright's
+ * `boundingBox()`, `page.mouse`, and `viewportSize()`), each defaulting
+ * independently: `relativeTo: 'recording'`, `x: 0`, `y: 0`. Provide exactly one
+ * of `width`/`height` (the other follows the source aspect, or `aspectRatio`).
+ * When no placement field is set, the overlay fills the recording area.
  */
 export type OverlayConfig = {
   /** File path: `.html` (rendered), `.svg`/`.png` (image), or `.mp4` (video). */
@@ -61,14 +63,19 @@ export type OverlayConfig = {
   html?: string
   /** Reference box for placement coordinates. Defaults to `'recording'`. */
   relativeTo?: 'screen' | 'recording'
-  /** Left edge as a 0..1 fraction of the reference box. Defaults to `0`. */
+  /** Left edge in CSS px of the recording viewport. Defaults to `0`. */
   x?: number
-  /** Top edge as a 0..1 fraction of the reference box. Defaults to `0`. */
+  /** Top edge in CSS px of the recording viewport. Defaults to `0`. */
   y?: number
-  /** Width as a 0..1 fraction. Defaults to `1` when `height` is not set. */
+  /** Width in CSS px. Provide instead of `height` (exactly one). */
   width?: number
-  /** Height as a 0..1 fraction. Provide instead of `width` (exactly one). */
+  /** Height in CSS px. Provide instead of `width` (exactly one). */
   height?: number
+  /**
+   * Aspect ratio (`width / height`) used to derive the unset axis from the one
+   * you provide, instead of the source's intrinsic aspect. Optional.
+   */
+  aspectRatio?: number
   /** Fill the whole output frame. Overrides x/y/width/height. */
   fullScreen?: boolean
   /**
@@ -326,16 +333,17 @@ export type Overlays<T extends Record<string, OverlayInputOrFactory>> = {
  * or passed to the blocking call) unless driven with `start()`/`end()`; `.mp4`
  * overlays use their natural duration and default `audio` to `1` (natural level).
  *
- * Placement defaults to the full recording area (`relativeTo: 'recording',
- * x: 0, y: 0, width: 1`); override any field independently.
+ * Placement defaults to the full recording area (`relativeTo: 'recording'`);
+ * override any field independently. Coordinates are CSS px of the recording
+ * viewport.
  *
  * @example
  * ```tsx
  * const overlays = createOverlays({
  *   hint:  'callout.html',                       // HTML file
  *   badge: <Badge label="New" />,                // React element
- *   note:  { html: '<div class="note">Tip</div>', x: 0.7, y: 0.1, width: 0.2 },
- *   logo:  { path: 'logo.png', x: 0.05, y: 0.05, width: 0.2 },
+ *   note:  { html: '<div class="note">Tip</div>', x: 1340, y: 110, width: 380 },
+ *   logo:  { path: 'logo.png', x: 96, y: 96, width: 240 },
  *   intro: { path: 'intro.mp4', fullScreen: true },
  * })
  *
@@ -550,7 +558,7 @@ function buildOverlayFromConfig(
     return createFileOverlayController(name, {
       kind: 'image',
       path,
-      placement,
+      ...(placement !== undefined && { placement }),
       fullScreen,
       ...(config.durationMs !== undefined && { durationMs: config.durationMs }),
     })
@@ -577,7 +585,7 @@ function buildOverlayFromConfig(
     return createFileOverlayController(name, {
       kind: 'video',
       path,
-      placement,
+      ...(placement !== undefined && { placement }),
       fullScreen,
       ...(config.audio !== undefined && { audio: config.audio }),
       ...(config.speed !== undefined && { speed: config.speed }),
@@ -862,14 +870,14 @@ type ResolvedFileOverlay =
   | {
       kind: 'image'
       path: string
-      placement: OverlayPlacement
+      placement?: OverlayPlacement
       fullScreen: boolean
       durationMs?: number
     }
   | {
       kind: 'video'
       path: string
-      placement: OverlayPlacement
+      placement?: OverlayPlacement
       fullScreen: boolean
       audio?: number
       speed?: number
@@ -924,12 +932,10 @@ function createRenderedOverlayController(
     name,
     () => Promise.resolve(),
     (recorder, mode) => {
-      if (
-        skipped ||
-        resolvedHtml === undefined ||
-        resolvedPlacement === undefined
-      )
-        return
+      // `resolvedHtml` is set only once the overlay has resolved, so it is the
+      // "is resolved" signal. `resolvedPlacement` may legitimately stay
+      // undefined (a fill-the-recording overlay emits no placement).
+      if (skipped || resolvedHtml === undefined) return
       let durationMsForEvent: number | undefined
       if (mode.type === 'blocking') {
         durationMsForEvent = mode.durationMs ?? durationMs
@@ -946,7 +952,9 @@ function createRenderedOverlayController(
           durationMs: durationMsForEvent,
         }),
         fullScreen,
-        placement: resolvedPlacement,
+        ...(resolvedPlacement !== undefined && {
+          placement: resolvedPlacement,
+        }),
         request: {
           kind: 'image',
           name,
@@ -996,7 +1004,7 @@ function createAnimatedOverlayController(
   renderOpts: OverlayRenderOpts = {}
 ): OverlayController {
   let resolved:
-    | { html: string; durationMs: number; placement: OverlayPlacement }
+    | { html: string; durationMs: number; placement?: OverlayPlacement }
     | undefined
   let skipped = false
 
@@ -1029,7 +1037,9 @@ function createAnimatedOverlayController(
         kind: 'animation',
         ...(mode.type === 'blocking' && { durationMs: resolved.durationMs }),
         fullScreen,
-        placement: resolved.placement,
+        ...(resolved.placement !== undefined && {
+          placement: resolved.placement,
+        }),
         request: {
           kind: 'animation',
           name,
@@ -1055,7 +1065,7 @@ function createAnimatedOverlayController(
       resolved = {
         html: sizePx !== undefined ? sizeWrapMarkup(markup, sizePx) : markup,
         durationMs,
-        placement,
+        ...(placement !== undefined && { placement }),
       }
     }
   )
@@ -1148,37 +1158,54 @@ function validatePlacement(name: string, placement: OverlayPlacement): void {
   }
 
   const hasWidth = 'width' in placement && placement.width !== undefined
-  const entries: Array<[string, unknown]> = [
+  const sizeLabel = hasWidth ? 'width' : 'height'
+  const sizeValue = hasWidth
+    ? (placement as { width: number }).width
+    : (placement as { height: number }).height
+  for (const [label, value] of [
     ['x', placement.x],
     ['y', placement.y],
-    hasWidth
-      ? ['width', (placement as { width: number }).width]
-      : ['height', (placement as { height: number }).height],
-  ]
-  for (const [label, value] of entries) {
-    if (
-      typeof value !== 'number' ||
-      !Number.isFinite(value) ||
-      value < 0 ||
-      value > 1
-    ) {
+  ] as const) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
       throw new Error(
-        `[screenci] Overlay "${name}" ${label} must be a number between 0 and 1 (normalized fraction). Received: ${String(value)}`
+        `[screenci] Overlay "${name}" ${label} must be a non-negative number of CSS pixels. Received: ${String(value)}`
       )
     }
+  }
+  if (
+    typeof sizeValue !== 'number' ||
+    !Number.isFinite(sizeValue) ||
+    sizeValue <= 0
+  ) {
+    throw new Error(
+      `[screenci] Overlay "${name}" ${sizeLabel} must be a positive number of CSS pixels. Received: ${String(sizeValue)}`
+    )
+  }
+  const aspectRatio = (placement as { aspectRatio?: unknown }).aspectRatio
+  if (
+    aspectRatio !== undefined &&
+    (typeof aspectRatio !== 'number' ||
+      !Number.isFinite(aspectRatio) ||
+      aspectRatio <= 0)
+  ) {
+    throw new Error(
+      `[screenci] Overlay "${name}" aspectRatio must be a positive number (width / height). Received: ${String(aspectRatio)}`
+    )
   }
 }
 
 /**
  * Resolves an {@link OverlayConfig}'s flat placement fields into the event-shape
- * {@link OverlayPlacement}, applying the defaults `relativeTo: 'recording'`,
- * `x: 0`, `y: 0`, and `width: 1` (when neither width nor height is given). The
- * default box therefore fills the recording area.
+ * {@link OverlayPlacement}. Coordinates are CSS pixels in the recording viewport,
+ * with the defaults `relativeTo: 'recording'`, `x: 0`, `y: 0`. When neither
+ * `width` nor `height` is given (and no other placement field is set), it returns
+ * `undefined`: the overlay fills the recording area, which the renderer resolves
+ * since the recording size is known there.
  */
 function resolveOverlayPlacement(
   name: string,
   config: OverlayConfig
-): OverlayPlacement {
+): OverlayPlacement | undefined {
   if (config.fullScreen === true) {
     return { fullScreen: true }
   }
@@ -1187,13 +1214,41 @@ function resolveOverlayPlacement(
       `[screenci] Overlay "${name}" must set only one of width or height (the other is derived from the aspect ratio).`
     )
   }
+  const hasSize = config.width !== undefined || config.height !== undefined
+  if (!hasSize) {
+    const positioned =
+      config.x !== undefined ||
+      config.y !== undefined ||
+      config.relativeTo !== undefined ||
+      config.aspectRatio !== undefined
+    if (positioned) {
+      throw new Error(
+        `[screenci] Overlay "${name}" must set "width" or "height" (in CSS px) when positioning it. Omit all placement fields to fill the recording area, or set "fullScreen".`
+      )
+    }
+    // Fill the recording area (resolved by the renderer, which knows its size).
+    return undefined
+  }
   const relativeTo = config.relativeTo ?? 'recording'
   const x = config.x ?? 0
   const y = config.y ?? 0
+  const aspectRatio = config.aspectRatio
   const placement: OverlayPlacement =
     config.height !== undefined
-      ? { relativeTo, x, y, height: config.height }
-      : { relativeTo, x, y, width: config.width ?? 1 }
+      ? {
+          relativeTo,
+          x,
+          y,
+          height: config.height,
+          ...(aspectRatio !== undefined && { aspectRatio }),
+        }
+      : {
+          relativeTo,
+          x,
+          y,
+          width: config.width!,
+          ...(aspectRatio !== undefined && { aspectRatio }),
+        }
   validatePlacement(name, placement)
   return placement
 }
@@ -1204,7 +1259,7 @@ function resolveOverlayPlacement(
  * at recording time from its bounding box.
  */
 type PlacementSource =
-  | { kind: 'fixed'; placement: OverlayPlacement }
+  | { kind: 'fixed'; placement: OverlayPlacement | undefined }
   | { kind: 'over'; over: Locator; margin: number }
 
 /**
@@ -1267,7 +1322,7 @@ function resolvePlacementSource(
  * sized to match, making the rasterized overlay frame the element exactly.
  */
 async function resolvePlacement(source: PlacementSource): Promise<{
-  placement: OverlayPlacement
+  placement: OverlayPlacement | undefined
   sizePx?: { width: number; height: number }
 }> {
   if (source.kind === 'fixed') {
@@ -1279,7 +1334,7 @@ async function resolvePlacement(source: PlacementSource): Promise<{
       relativeTo: rect.relativeTo,
       x: rect.x,
       y: rect.y,
-      width: rect.width ?? rect.normalized.width,
+      width: rect.width ?? rect.pixels.width,
     },
     sizePx: { width: rect.pixels.width, height: rect.pixels.height },
   }
@@ -1319,7 +1374,9 @@ function toRecordedFileStart(
       path: resolved.path,
       ...(durationMs !== undefined && { durationMs }),
       fullScreen: resolved.fullScreen,
-      placement: resolved.placement,
+      ...(resolved.placement !== undefined && {
+        placement: resolved.placement,
+      }),
     }
   }
 
@@ -1328,7 +1385,7 @@ function toRecordedFileStart(
     path: resolved.path,
     audio: resolved.audio ?? 1,
     fullScreen: resolved.fullScreen,
-    placement: resolved.placement,
+    ...(resolved.placement !== undefined && { placement: resolved.placement }),
     ...(resolved.speed !== undefined && { speed: resolved.speed }),
     ...(resolved.time !== undefined && { time: resolved.time }),
   }

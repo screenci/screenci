@@ -37,7 +37,7 @@ import { withActiveRecordingContext } from './video.js'
 
 /**
  * The `crop` fixture argument. Call it inside a `screenshot()` body to crop the
- * implicit end-of-body capture to a locator or fractional region. Replaces the
+ * implicit end-of-body capture to a locator or pixel region. Replaces the
  * old module-level `crop()` function; the crop is recorded per test.
  */
 export type CropFixture = (

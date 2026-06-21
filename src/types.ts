@@ -108,7 +108,7 @@ export type ScreenshotRenderOptions = {
    */
   margin?: number
   /**
-   * Crop applied by the renderer (fractions 0-1 of the captured image). Seeded
+   * Crop applied by the renderer (CSS pixels of the recording viewport). Seeded
    * at record time by a `crop()` call or `page.screenshot({ crop })` (which
    * override a crop set here in config), and editable in Studio afterward.
    */
@@ -826,7 +826,7 @@ export type ScreenCIScreenshotOptions = NonNullable<
 > & {
   /** Names the still recording: "<video title> - <name>". */
   name?: string
-  /** Crop the still to a locator or fractional region. */
+  /** Crop the still to a locator or a pixel region (CSS px of the viewport). */
   crop?: CropTarget
 }
 

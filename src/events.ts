@@ -280,15 +280,18 @@ export type VideoCueStartEvent = {
 }
 
 /**
- * Placement of a visual asset overlay. Coordinates are normalized 0-1 fractions
- * of a reference box, with the asset anchored at its top-left corner.
+ * Placement of a visual asset overlay. Coordinates are CSS pixels in the
+ * recording viewport (the same space Playwright's `boundingBox()`, `page.mouse`,
+ * and `viewportSize()` use), with the asset anchored at its top-left corner. The
+ * renderer maps these recording-viewport pixels into the final output frame, so
+ * the output size never has to be known when the recording is authored.
  *
  * - `fullScreen` fills the entire output frame.
  * - The positioned variants place the asset against the full output frame
  *   (`relativeTo: 'screen'`) or the composited recording area
  *   (`relativeTo: 'recording'`, the default). Provide exactly one of `width` or
  *   `height`; the other dimension is derived from the asset's intrinsic aspect
- *   ratio.
+ *   ratio, or from `aspectRatio` (width / height) when given.
  */
 export type OverlayPlacement =
   | { fullScreen: true }
@@ -297,12 +300,14 @@ export type OverlayPlacement =
       x: number
       y: number
       width: number
+      aspectRatio?: number
     }
   | {
       relativeTo: 'screen' | 'recording'
       x: number
       y: number
       height: number
+      aspectRatio?: number
     }
 
 /**
@@ -657,7 +662,7 @@ function readScreenciVersion(): string {
 
 const SCREENCI_VERSION = readScreenciVersion()
 
-/** Crop rect for a screenshot, as fractions (0..1) of the captured image. */
+/** Crop rect for a screenshot, in CSS pixels of the recording viewport. */
 export type ScreenshotCrop = {
   x: number
   y: number

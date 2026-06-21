@@ -1,8 +1,8 @@
 import type { Locator } from '@playwright/test'
 
 /**
- * A locator's on-screen box expressed as normalized 0..1 fractions of the
- * recording area, ready to position an overlay over a live element.
+ * A locator's on-screen box in CSS pixels of the recording viewport, ready to
+ * position an overlay over a live element.
  *
  * The top-level placement fields (`relativeTo`, `x`, `y`, and exactly one of
  * `width`/`height`) spread straight into an overlay config:
@@ -15,26 +15,25 @@ import type { Locator } from '@playwright/test'
  * await overlays.ring({ rect }).start()
  * ```
  *
- * The full geometry is also available under `normalized` (all four fractions)
- * and `pixels` (the raw viewport box), so a factory can pass it to a component
- * that draws relative to the element (for example a circle around it).
+ * The full geometry (both axes) is also available under `pixels`, so a factory
+ * can pass it to a component that draws relative to the element (for example a
+ * circle around it).
  */
 export type OverlayRect = {
   /** Reference box for the placement fields. Defaults to `'recording'`. */
   relativeTo: 'screen' | 'recording'
-  /** Left edge as a 0..1 fraction of the reference box. */
+  /** Left edge in CSS px of the recording viewport. */
   x: number
-  /** Top edge as a 0..1 fraction of the reference box. */
+  /** Top edge in CSS px of the recording viewport. */
   y: number
-  /** Width fraction. Present unless `dimension: 'height'` was requested. */
+  /** Width in CSS px. Present unless `dimension: 'height'` was requested. */
   width?: number
-  /** Height fraction. Present only when `dimension: 'height'` was requested. */
+  /** Height in CSS px. Present only when `dimension: 'height'` was requested. */
   height?: number
-  /** All four normalized fractions, regardless of the chosen placement dimension. */
-  normalized: { x: number; y: number; width: number; height: number }
   /**
-   * The box in CSS pixels (viewport-relative), after any `margin` and clamping
-   * to the viewport. Equals the element's `boundingBox()` when no margin is set.
+   * The full box in CSS pixels (viewport-relative), after any `margin` and
+   * clamping to the viewport, carrying both axes. Equals the element's
+   * `boundingBox()` when no margin is set.
    */
   pixels: { x: number; y: number; width: number; height: number }
 }
@@ -71,14 +70,12 @@ async function resolveViewportSize(
 }
 
 /**
- * Captures a locator's bounding box and converts it to normalized 0..1
- * coordinates in the recording area, so it can position an overlay over the
- * element (and feed the element's geometry into a programmatic overlay's props).
- *
- * The recording context's viewport equals the recording dimensions, so the box
- * is normalized directly against the viewport. `relativeTo` is recorded on the
- * result for spreading into a config; `'screen'` is only meaningful when the
- * recording fills the output frame.
+ * Captures a locator's bounding box in CSS pixels of the recording viewport, so
+ * it can position an overlay over the element (and feed the element's geometry
+ * into a programmatic overlay's props). `boundingBox()` is already in CSS px, so
+ * the box is used directly after applying any `margin` and clamping to the
+ * viewport. `relativeTo` is recorded on the result for spreading into a config;
+ * `'screen'` is only meaningful when the recording fills the output frame.
  */
 export async function overlayRect(
   locator: Locator,
@@ -98,7 +95,7 @@ export async function overlayRect(
   }
 
   // Inflate by the margin (CSS px on every side), then clamp to the viewport so
-  // the normalized rect stays within 0..1 even near the edges.
+  // the box stays within the recording area even near the edges.
   const margin = options.margin ?? 0
   const left = Math.max(0, box.x - margin)
   const top = Math.max(0, box.y - margin)
@@ -111,23 +108,16 @@ export async function overlayRect(
     height: Math.max(0, bottom - top),
   }
 
-  const normalized = {
-    x: pixels.x / viewport.width,
-    y: pixels.y / viewport.height,
-    width: pixels.width / viewport.width,
-    height: pixels.height / viewport.height,
-  }
   const relativeTo = options.relativeTo ?? 'recording'
   const dimension = options.dimension ?? 'width'
 
   return {
     relativeTo,
-    x: normalized.x,
-    y: normalized.y,
+    x: pixels.x,
+    y: pixels.y,
     ...(dimension === 'height'
-      ? { height: normalized.height }
-      : { width: normalized.width }),
-    normalized,
+      ? { height: pixels.height }
+      : { width: pixels.width }),
     pixels,
   }
 }

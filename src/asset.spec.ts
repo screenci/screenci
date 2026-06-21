@@ -21,15 +21,6 @@ import {
   runWithScreenCIRuntimeContext,
 } from './runtimeContext.js'
 
-// The default placement every overlay resolves to when no fields are given:
-// the recording area filled edge to edge.
-const DEFAULT_PLACEMENT = {
-  relativeTo: 'recording',
-  x: 0,
-  y: 0,
-  width: 1,
-} as const
-
 /** A minimal Locator stand-in exposing the box + viewport overlayRect reads. */
 function fakeLocator(
   box: { x: number; y: number; width: number; height: number },
@@ -107,7 +98,6 @@ describe('createOverlays', () => {
         path: './logo.png',
         durationMs: 1200,
         fullScreen: false,
-        placement: DEFAULT_PLACEMENT,
       })
     })
 
@@ -121,7 +111,6 @@ describe('createOverlays', () => {
         path: './logo.png',
         durationMs: 1000,
         fullScreen: false,
-        placement: DEFAULT_PLACEMENT,
       })
     })
 
@@ -153,7 +142,6 @@ describe('createOverlays', () => {
         path: './sound.mp4',
         audio: 0.8,
         fullScreen: false,
-        placement: DEFAULT_PLACEMENT,
       })
     })
 
@@ -196,7 +184,6 @@ describe('createOverlays', () => {
         path: './logo.png',
         durationMs: 1200,
         fullScreen: false,
-        placement: DEFAULT_PLACEMENT,
       })
       expect(recorder.addAssetStart).toHaveBeenNthCalledWith(2, 'intro', {
         kind: 'video',
@@ -249,7 +236,6 @@ describe('createOverlays', () => {
           path: './logo.png',
           durationMs: 1200,
           fullScreen: false,
-          placement: DEFAULT_PLACEMENT,
         })
       } finally {
         await rm(tempDir, { recursive: true, force: true })
@@ -276,7 +262,6 @@ describe('createOverlays', () => {
         path: './logo.png',
         durationMs: 3000,
         fullScreen: false,
-        placement: DEFAULT_PLACEMENT,
       })
     })
 
@@ -429,7 +414,7 @@ describe('createOverlays', () => {
     })
 
     it('rejects a config with no content source', () => {
-      expect(() => createOverlays({ broken: { width: 0.2 } })).toThrow(
+      expect(() => createOverlays({ broken: { width: 200 } })).toThrow(
         'Overlay "broken" must provide a "path", an "element", or inline "html".'
       )
     })
@@ -453,15 +438,15 @@ describe('createOverlays', () => {
   })
 
   describe('placement', () => {
-    it('accepts flat width-only placement fields and forwards them', async () => {
+    it('accepts flat width-only placement fields (CSS px) and forwards them', async () => {
       const overlays = createOverlays({
         logo: {
           path: './logo.png',
           durationMs: 1000,
           relativeTo: 'screen',
-          x: 0.1,
-          y: 0.2,
-          width: 0.3,
+          x: 200,
+          y: 300,
+          width: 600,
         },
       })
 
@@ -472,17 +457,17 @@ describe('createOverlays', () => {
         path: './logo.png',
         durationMs: 1000,
         fullScreen: false,
-        placement: { relativeTo: 'screen', x: 0.1, y: 0.2, width: 0.3 },
+        placement: { relativeTo: 'screen', x: 200, y: 300, width: 600 },
       })
     })
 
-    it('accepts a height-only placement', async () => {
+    it('accepts a height-only placement (CSS px)', async () => {
       const overlays = createOverlays({
         logo: {
           path: './logo.png',
           durationMs: 1000,
           relativeTo: 'recording',
-          height: 0.5,
+          height: 540,
         },
       })
 
@@ -493,11 +478,40 @@ describe('createOverlays', () => {
         path: './logo.png',
         durationMs: 1000,
         fullScreen: false,
-        placement: { relativeTo: 'recording', x: 0, y: 0, height: 0.5 },
+        placement: { relativeTo: 'recording', x: 0, y: 0, height: 540 },
       })
     })
 
-    it('defaults to full-recording-width placement when no fields are given', async () => {
+    it('forwards an explicit aspectRatio with the chosen axis', async () => {
+      const overlays = createOverlays({
+        logo: {
+          path: './logo.png',
+          durationMs: 1000,
+          x: 100,
+          y: 100,
+          width: 480,
+          aspectRatio: 16 / 9,
+        },
+      })
+
+      await overlays.logo()
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
+        kind: 'image',
+        path: './logo.png',
+        durationMs: 1000,
+        fullScreen: false,
+        placement: {
+          relativeTo: 'recording',
+          x: 100,
+          y: 100,
+          width: 480,
+          aspectRatio: 16 / 9,
+        },
+      })
+    })
+
+    it('emits no placement (fills the recording) when no fields are given', async () => {
       const overlays = createOverlays({
         logo: { path: './logo.png', durationMs: 1000 },
       })
@@ -506,8 +520,16 @@ describe('createOverlays', () => {
 
       expect(recorder.addAssetStart).toHaveBeenCalledWith(
         'logo',
-        expect.objectContaining({ placement: DEFAULT_PLACEMENT })
+        expect.not.objectContaining({ placement: expect.anything() })
       )
+    })
+
+    it('rejects positioning fields without a width or height', () => {
+      expect(() =>
+        createOverlays({
+          logo: { path: './logo.png', durationMs: 1000, x: 100, y: 100 },
+        })
+      ).toThrow('Overlay "logo" must set "width" or "height"')
     })
 
     it('rejects setting both width and height', () => {
@@ -516,8 +538,8 @@ describe('createOverlays', () => {
           logo: {
             path: './logo.png',
             durationMs: 1000,
-            width: 0.3,
-            height: 0.3,
+            width: 300,
+            height: 300,
           },
         })
       ).toThrow(
@@ -525,13 +547,23 @@ describe('createOverlays', () => {
       )
     })
 
-    it('rejects out-of-range coordinates', () => {
+    it('rejects a negative coordinate', () => {
       expect(() =>
         createOverlays({
-          logo: { path: './logo.png', durationMs: 1000, x: 1.5, width: 0.3 },
+          logo: { path: './logo.png', durationMs: 1000, x: -5, width: 300 },
         })
       ).toThrow(
-        'Overlay "logo" x must be a number between 0 and 1 (normalized fraction). Received: 1.5'
+        'Overlay "logo" x must be a non-negative number of CSS pixels. Received: -5'
+      )
+    })
+
+    it('rejects a non-positive size', () => {
+      expect(() =>
+        createOverlays({
+          logo: { path: './logo.png', durationMs: 1000, x: 0, width: 0 },
+        })
+      ).toThrow(
+        'Overlay "logo" width must be a positive number of CSS pixels. Received: 0'
       )
     })
 
@@ -542,7 +574,7 @@ describe('createOverlays', () => {
             path: './logo.png',
             durationMs: 1000,
             relativeTo: 'viewport' as never,
-            width: 0.3,
+            width: 300,
           },
         })
       ).toThrow("Overlay \"logo\" relativeTo must be 'screen' or 'recording'.")
@@ -576,7 +608,6 @@ describe('createOverlays', () => {
         path: './logo.png',
         durationMs: 1500,
         fullScreen: false,
-        placement: DEFAULT_PLACEMENT,
       })
       expect(recorder.addAssetEnd).not.toHaveBeenCalled()
     })
@@ -589,7 +620,6 @@ describe('createOverlays', () => {
         kind: 'image',
         path: './badge.png',
         fullScreen: false,
-        placement: DEFAULT_PLACEMENT,
       })
 
       await overlays.badge.end()
@@ -630,7 +660,6 @@ describe('createOverlays', () => {
         path: './b.png',
         durationMs: 800,
         fullScreen: false,
-        placement: DEFAULT_PLACEMENT,
       })
 
       await overlays.a.end()
@@ -684,9 +713,9 @@ describe('createOverlays', () => {
         hint: {
           path: './hint.html',
           durationMs: 1500,
-          x: 0.1,
-          y: 0.1,
-          width: 0.3,
+          x: 200,
+          y: 120,
+          width: 600,
         },
       })
 
@@ -709,7 +738,7 @@ describe('createOverlays', () => {
           kind: 'image',
           durationMs: 1500,
           fullScreen: false,
-          placement: { relativeTo: 'recording', x: 0.1, y: 0.1, width: 0.3 },
+          placement: { relativeTo: 'recording', x: 200, y: 120, width: 600 },
           request: expect.objectContaining({
             kind: 'image',
             name: 'hint',
@@ -738,7 +767,6 @@ describe('createOverlays', () => {
         expect.objectContaining({
           kind: 'image',
           durationMs: 1200,
-          placement: DEFAULT_PLACEMENT,
         })
       )
     })
@@ -759,7 +787,7 @@ describe('createOverlays', () => {
 
       expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
         'badge',
-        expect.objectContaining({ kind: 'image', placement: DEFAULT_PLACEMENT })
+        expect.not.objectContaining({ placement: expect.anything() })
       )
     })
 
@@ -797,7 +825,6 @@ describe('createOverlays', () => {
         'badge',
         expect.objectContaining({
           kind: 'image',
-          placement: DEFAULT_PLACEMENT,
           request: expect.objectContaining({
             html: '<div class="badge">New</div>',
           }),
@@ -828,7 +855,6 @@ describe('createOverlays', () => {
         'badge',
         expect.objectContaining({
           kind: 'image',
-          placement: DEFAULT_PLACEMENT,
           request: expect.objectContaining({ html: '<span>hi</span>' }),
         })
       )
@@ -839,9 +865,9 @@ describe('createOverlays', () => {
         note: {
           html: '<div class="note">Tip</div>',
           durationMs: 1400,
-          x: 0.7,
-          y: 0.1,
-          width: 0.2,
+          x: 1340,
+          y: 110,
+          width: 380,
         },
       })
 
@@ -861,7 +887,7 @@ describe('createOverlays', () => {
           kind: 'image',
           durationMs: 1400,
           fullScreen: false,
-          placement: { relativeTo: 'recording', x: 0.7, y: 0.1, width: 0.2 },
+          placement: { relativeTo: 'recording', x: 1340, y: 110, width: 380 },
           request: expect.objectContaining({
             html: '<div class="note">Tip</div>',
           }),
@@ -893,8 +919,8 @@ describe('createOverlays', () => {
           html: `<div class="ring">${p.label}</div>`,
           durationMs: 1000,
           x: p.x,
-          y: 0.2,
-          width: 0.1,
+          y: 300,
+          width: 200,
         }),
       })
 
@@ -905,8 +931,8 @@ describe('createOverlays', () => {
           recordingDir: dir,
         }),
         async () => {
-          await overlays.ring({ label: 'A', x: 0.1 })()
-          await overlays.ring({ label: 'B', x: 0.5 })()
+          await overlays.ring({ label: 'A', x: 100 })()
+          await overlays.ring({ label: 'B', x: 500 })()
         }
       )
 
@@ -914,7 +940,7 @@ describe('createOverlays', () => {
         1,
         'ring',
         expect.objectContaining({
-          placement: { relativeTo: 'recording', x: 0.1, y: 0.2, width: 0.1 },
+          placement: { relativeTo: 'recording', x: 100, y: 300, width: 200 },
           request: expect.objectContaining({
             html: '<div class="ring">A</div>',
           }),
@@ -924,7 +950,7 @@ describe('createOverlays', () => {
         2,
         'ring',
         expect.objectContaining({
-          placement: { relativeTo: 'recording', x: 0.5, y: 0.2, width: 0.1 },
+          placement: { relativeTo: 'recording', x: 500, y: 300, width: 200 },
           request: expect.objectContaining({
             html: '<div class="ring">B</div>',
           }),
@@ -965,8 +991,8 @@ describe('createOverlays', () => {
       expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
         'ring',
         expect.objectContaining({
-          // Placement comes from the locator box, normalized to the recording.
-          placement: { relativeTo: 'recording', x: 0.1, y: 0.1, width: 0.3 },
+          // Placement comes from the locator box, in CSS px of the recording.
+          placement: { relativeTo: 'recording', x: 100, y: 50, width: 300 },
           request: expect.objectContaining({
             // Markup is wrapped in a box sized to the element so the rasterized
             // PNG carries its aspect ratio.
@@ -1001,7 +1027,7 @@ describe('createOverlays', () => {
       expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
         'ring',
         expect.objectContaining({
-          placement: { relativeTo: 'recording', x: 0.08, y: 0.08, width: 0.24 },
+          placement: { relativeTo: 'recording', x: 80, y: 80, width: 240 },
           request: expect.objectContaining({
             html: '<div style="width:240px;height:240px;box-sizing:border-box"><div></div></div>',
           }),
@@ -1029,7 +1055,7 @@ describe('createOverlays', () => {
         ring: (loc: Locator) => ({
           html: '<div></div>',
           over: loc,
-          width: 0.5,
+          width: 300,
         }),
       })
       expect(() => overlays.ring(target)).toThrow('cannot combine "over"')
@@ -1089,7 +1115,6 @@ describe('createOverlays', () => {
           kind: 'animation',
           durationMs: 1500,
           fullScreen: false,
-          placement: DEFAULT_PLACEMENT,
           request: expect.objectContaining({
             kind: 'animation',
             durationMs: 1500,

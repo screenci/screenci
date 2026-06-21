@@ -30,7 +30,7 @@ export type StillScreenshotOptions = {
    * auto-indexed `screenshot`, `screenshot 2`, ...
    */
   name?: string
-  /** Crop the still to a locator or fractional region (applied by the compositor). */
+  /** Crop the still to a locator or pixel region (applied by the compositor). */
   crop?: CropTarget
 }
 

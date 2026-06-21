@@ -3,7 +3,7 @@ import { resolveCrop } from '../src/crop.js'
 import { buildScreenCIContextOptions } from '../src/contextOptions.js'
 
 test.describe('resolveCrop', () => {
-  test('resolves a fractional rect for a locator', async ({ page }) => {
+  test('resolves a pixel rect for a locator', async ({ page }) => {
     await page.setViewportSize({ width: 1000, height: 800 })
     await page.setContent(
       '<div id="card" style="position:absolute;left:100px;top:80px;width:300px;height:200px;background:#333"></div>'
@@ -11,22 +11,23 @@ test.describe('resolveCrop', () => {
 
     const recorded = await resolveCrop(page.locator('#card'), page)
 
-    expect(recorded.x).toBeCloseTo(0.1, 3)
-    expect(recorded.y).toBeCloseTo(0.1, 3)
-    expect(recorded.width).toBeCloseTo(0.3, 3)
-    expect(recorded.height).toBeCloseTo(0.25, 3)
+    expect(recorded.x).toBeCloseTo(100, 3)
+    expect(recorded.y).toBeCloseTo(80, 3)
+    expect(recorded.width).toBeCloseTo(300, 3)
+    expect(recorded.height).toBeCloseTo(200, 3)
   })
 
-  test('resolves an explicit fractional region', async ({ page }) => {
+  test('resolves an explicit pixel region', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 800 })
     const recorded = await resolveCrop(
-      { x: 0.1, y: 0.2, width: 0.8, height: 0.6 },
+      { x: 100, y: 160, width: 800, height: 480 },
       page
     )
 
-    expect(recorded.x).toBeCloseTo(0.1, 3)
-    expect(recorded.y).toBeCloseTo(0.2, 3)
-    expect(recorded.width).toBeCloseTo(0.8, 3)
-    expect(recorded.height).toBeCloseTo(0.6, 3)
+    expect(recorded.x).toBeCloseTo(100, 3)
+    expect(recorded.y).toBeCloseTo(160, 3)
+    expect(recorded.width).toBeCloseTo(800, 3)
+    expect(recorded.height).toBeCloseTo(480, 3)
   })
 
   test('expands a locator crop by padding', async ({ page }) => {
@@ -35,20 +36,21 @@ test.describe('resolveCrop', () => {
       '<div id="card" style="position:absolute;left:400px;top:400px;width:200px;height:200px"></div>'
     )
 
-    // rect = 0.4,0.4,0.2,0.2; pad = max(0.2,0.2) * 0.1 = 0.02
+    // rect = 400,400,200,200; padding 20 px on every side
     const recorded = await resolveCrop(page.locator('#card'), page, {
-      padding: 0.1,
+      padding: 20,
     })
 
-    expect(recorded.x).toBeCloseTo(0.38, 3)
-    expect(recorded.y).toBeCloseTo(0.38, 3)
-    expect(recorded.width).toBeCloseTo(0.24, 3)
-    expect(recorded.height).toBeCloseTo(0.24, 3)
+    expect(recorded.x).toBeCloseTo(380, 3)
+    expect(recorded.y).toBeCloseTo(380, 3)
+    expect(recorded.width).toBeCloseTo(240, 3)
+    expect(recorded.height).toBeCloseTo(240, 3)
   })
 
-  test('rejects an out-of-range region', async ({ page }) => {
+  test('rejects a negative region', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 800 })
     await expect(
-      resolveCrop({ x: 0, y: 0, width: 1.5, height: 0.5 }, page)
+      resolveCrop({ x: -1, y: 0, width: 500, height: 500 }, page)
     ).rejects.toThrow(/crop/)
   })
 })

@@ -29,8 +29,8 @@ const overlays = createOverlays({
   intro: { path: 'assets/intro.mp4', fullScreen: true }, // full-frame video
   hint: 'assets/callout.html', // HTML file
   badge: <Badge label="New" />, // React element
-  note: { html: '<div class="note">Tip</div>', x: 0.7, y: 0.1, width: 0.2 }, // inline HTML
-  logo: { path: 'assets/logo.png', x: 0.05, y: 0.05, width: 0.15 },
+  note: { html: '<div class="note">Tip</div>', x: 1340, y: 110, width: 380 }, // inline HTML
+  logo: { path: 'assets/logo.png', x: 96, y: 96, width: 288 },
 })
 
 video('Overview', async ({ page }) => {
@@ -78,11 +78,11 @@ You can build the same overlay three ways, and all of them honor the same
 ```tsx
 const overlays = createOverlays({
   // From an .html file.
-  hint: { path: 'assets/callout.html', x: 0.4, y: 0.8, width: 0.2 },
+  hint: { path: 'assets/callout.html', x: 768, y: 864, width: 384 },
   // From a React element.
-  badge: { element: <Badge label="New" />, x: 0.7, y: 0.1, width: 0.15 },
+  badge: { element: <Badge label="New" />, x: 1340, y: 110, width: 288 },
   // From an inline HTML fragment.
-  note: { html: '<div class="note">Saved</div>', x: 0.7, y: 0.1, width: 0.2 },
+  note: { html: '<div class="note">Saved</div>', x: 1340, y: 110, width: 380 },
 })
 ```
 
@@ -121,16 +121,16 @@ const overlays = createOverlays({
   // Props build the markup. Works for inline html (template literal)...
   note: (p: { text: string }) => ({
     html: `<div class="note">${p.text}</div>`,
-    x: 0.7,
-    y: 0.1,
-    width: 0.2,
+    x: 1340,
+    y: 110,
+    width: 380,
   }),
   // ...and for React elements.
   badge: (p: { label: string }) => ({
     element: <Badge label={p.label} />,
-    x: 0.7,
-    y: 0.1,
-    width: 0.15,
+    x: 1340,
+    y: 110,
+    width: 288,
   }),
 })
 
@@ -244,7 +244,7 @@ const overlays = createOverlays({
     animate: true,
     durationMs: 1500,
     capturePadding: 80, // room on every side for the motion
-    width: 0.4, // placement sizes the padded box, so make it a bit wider
+    width: 768, // placement sizes the padded box, so make it a bit wider
   },
 })
 ```
@@ -255,38 +255,40 @@ you want. `capturePadding` applies to static and animated HTML/React overlays.
 ## Positioning
 
 Placement fields are flat on the config and each defaults independently.
-Coordinates are normalized `0`-`1` fractions of a reference box, with the
-overlay anchored at its top-left corner. This is resolution-independent: the
-same placement renders correctly at 720p, 1080p, 4K, or vertical.
+Coordinates are **CSS pixels of the recording viewport**, the same space
+Playwright's `boundingBox()`, `page.mouse`, and `viewportSize()` use, with the
+overlay anchored at its top-left corner. The renderer maps these recording-viewport
+pixels into the final output frame, so the output size never has to be known when
+you author: the same placement renders correctly at 720p, 1080p, 4K, or vertical.
 
 ```tsx
 const overlays = createOverlays({
-  // Top-left badge sized to 15% of the recording width.
+  // Top-left badge, 288 px wide (on a 1920x1080 recording).
   badge: {
     path: 'assets/badge.png',
     durationMs: 1500,
-    x: 0.05,
-    y: 0.05,
-    width: 0.15,
+    x: 96,
+    y: 96,
+    width: 288,
   },
   // A banner across the full output frame, sized by height.
   label: {
     path: 'assets/label.svg',
     durationMs: 1500,
     relativeTo: 'screen',
-    x: 0.1,
-    y: 0.8,
-    height: 0.1,
+    x: 192,
+    y: 864,
+    height: 108,
   },
 })
 ```
 
-- `relativeTo: 'recording'` (the default) positions against the composited recording area (which may be inset when `renderOptions.recording.size < 1`). Because the recording's final size is chosen later in the studio, a recording-relative box stays correct whatever output size you settle on.
-- `relativeTo: 'screen'` positions against the full output frame.
-- `x` and `y` are the top-left corner as fractions of the reference box. Both default to `0`.
-- Provide one of `width` or `height`. The other is derived from the overlay's aspect ratio so it is never distorted. When neither is set, `width` defaults to `1`.
+- `relativeTo: 'recording'` (the default) positions against the composited recording area (which may be inset when `renderOptions.recording.size < 1`). Pixels are measured in the recording viewport, so the box stays correct whatever output size you settle on later in the studio.
+- `relativeTo: 'screen'` positions against the full output frame, using the same recording-pixel scale measured from the output's top-left.
+- `x` and `y` are the top-left corner in CSS px. Both default to `0`.
+- Provide one of `width` or `height` (in CSS px). The other is derived from the overlay's intrinsic aspect ratio (or from `aspectRatio`, given as `width / height`) so it is never distorted.
 
-The default placement (no fields set) is therefore `{ relativeTo: 'recording', x: 0, y: 0, width: 1 }`, the recording area filled edge to edge. For a full-frame overlay use `fullScreen: true`.
+When no placement field is set, the overlay fills the recording area (the renderer resolves this, since it knows the recording size). For a full-frame overlay use `fullScreen: true`.
 
 ### Positioning over a live element
 
@@ -323,13 +325,13 @@ same element box rasterize only once.
 
 If you need the element's coordinates yourself (for example to pass into a
 component that draws relative to the element), call `overlayRect(locator, opts?)`.
-It returns the box as normalized `0`-`1` fractions of the recording area:
+It returns the box in CSS px of the recording viewport:
 
 ```tsx
 const rect = await overlayRect(page.getByRole('button', { name: 'Save' }), {
   margin: 8,
 })
-// rect.normalized -> { x, y, width, height }; rect.pixels -> the CSS-px box.
+// rect.x / rect.y / rect.width are CSS px; rect.pixels -> the full CSS-px box.
 // Top-level relativeTo/x/y/width spread into a placement: { ...rect }
 ```
 

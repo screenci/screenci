@@ -17,7 +17,7 @@ function fakeLocator(box: Box, viewport: Size, innerSize?: Size): Locator {
 }
 
 describe('overlayRect', () => {
-  it('normalizes the bounding box against the viewport (recording space)', async () => {
+  it('exposes the bounding box in CSS px of the recording viewport', async () => {
     const rect = await overlayRect(
       fakeLocator(
         { x: 192, y: 108, width: 384, height: 216 },
@@ -26,10 +26,9 @@ describe('overlayRect', () => {
     )
 
     expect(rect.relativeTo).toBe('recording')
-    expect(rect.normalized).toEqual({ x: 0.1, y: 0.1, width: 0.2, height: 0.2 })
-    expect(rect.x).toBe(0.1)
-    expect(rect.y).toBe(0.1)
-    expect(rect.width).toBe(0.2)
+    expect(rect.x).toBe(192)
+    expect(rect.y).toBe(108)
+    expect(rect.width).toBe(384)
     expect(rect.height).toBeUndefined()
     expect(rect.pixels).toEqual({ x: 192, y: 108, width: 384, height: 216 })
   })
@@ -43,13 +42,13 @@ describe('overlayRect', () => {
       { dimension: 'height' }
     )
 
-    expect(rect.height).toBe(0.5)
+    expect(rect.height).toBe(540)
     expect(rect.width).toBeUndefined()
-    // normalized still carries both dimensions for component props.
-    expect(rect.normalized).toEqual({ x: 0, y: 0, width: 0.5, height: 0.5 })
+    // pixels still carries both dimensions for component props.
+    expect(rect.pixels).toEqual({ x: 0, y: 0, width: 960, height: 540 })
   })
 
-  it('inflates by margin (px on every side) and re-normalizes', async () => {
+  it('inflates by margin (px on every side)', async () => {
     const rect = await overlayRect(
       fakeLocator(
         { x: 100, y: 100, width: 200, height: 200 },
@@ -58,12 +57,8 @@ describe('overlayRect', () => {
       { margin: 50 }
     )
     expect(rect.pixels).toEqual({ x: 50, y: 50, width: 300, height: 300 })
-    expect(rect.normalized).toEqual({
-      x: 0.05,
-      y: 0.05,
-      width: 0.3,
-      height: 0.3,
-    })
+    expect(rect.x).toBe(50)
+    expect(rect.width).toBe(300)
   })
 
   it('clamps a margin that would extend past the viewport edges', async () => {
@@ -91,7 +86,7 @@ describe('overlayRect', () => {
 
   it('spreads into a placement that resolveOverlayPlacement accepts', async () => {
     // The top-level placement fields (relativeTo/x/y/width) are exactly what an
-    // OverlayConfig consumes; normalized/pixels are extra and ignored.
+    // OverlayConfig consumes; pixels is extra and ignored.
     const rect = await overlayRect(
       fakeLocator(
         { x: 100, y: 200, width: 300, height: 100 },
@@ -106,20 +101,23 @@ describe('overlayRect', () => {
     }
     expect(placement).toEqual({
       relativeTo: 'recording',
-      x: 0.1,
-      y: 0.2,
-      width: 0.3,
+      x: 100,
+      y: 200,
+      width: 300,
     })
   })
 
   it('falls back to the live inner size when the context has no fixed viewport', async () => {
+    // No fixed viewport, so the clamp uses the live inner size (500x500). The
+    // margin pushes the right/bottom edge past it and is clamped there.
     const rect = await overlayRect(
-      fakeLocator({ x: 50, y: 50, width: 100, height: 100 }, null, {
+      fakeLocator({ x: 400, y: 400, width: 100, height: 100 }, null, {
         width: 500,
         height: 500,
-      })
+      }),
+      { margin: 40 }
     )
-    expect(rect.normalized).toEqual({ x: 0.1, y: 0.1, width: 0.2, height: 0.2 })
+    expect(rect.pixels).toEqual({ x: 360, y: 360, width: 140, height: 140 })
   })
 
   it('throws when the locator has no bounding box', async () => {

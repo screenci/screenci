@@ -20,16 +20,16 @@ describe('createOverlays type constraints', () => {
       logo: {
         path: './logo.png',
         durationMs: 1200,
-        x: 0.1,
-        y: 0.1,
-        width: 0.3,
+        x: 200,
+        y: 120,
+        width: 600,
       },
     })
   })
 
   it('accepts a flat config object with an element', () => {
     createOverlays({
-      badge: { element: createElement('span', null, 'hi'), height: 0.2 },
+      badge: { element: createElement('span', null, 'hi'), height: 200 },
     })
   })
 
@@ -38,9 +38,9 @@ describe('createOverlays type constraints', () => {
       note: {
         html: '<div class="note">Tip</div>',
         durationMs: 1200,
-        x: 0.7,
-        y: 0.1,
-        width: 0.2,
+        x: 1340,
+        y: 110,
+        width: 380,
       },
     })
   })
@@ -64,7 +64,7 @@ describe('createOverlays type constraints', () => {
   it('rejects an invalid relativeTo', () => {
     createOverlays({
       // @ts-expect-error relativeTo must be 'screen' or 'recording'
-      logo: { path: './logo.png', relativeTo: 'viewport', width: 0.3 },
+      logo: { path: './logo.png', relativeTo: 'viewport', width: 300 },
     })
   })
 

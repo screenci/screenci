@@ -6,8 +6,8 @@ to the state you want, and ScreenCI captures it and frames it on your configured
 background, with a rounded frame, an optional crop to a component, and overlays.
 
 A screenshot is captured directly from the page (no video is recorded), then
-composited at render time. Screenshots are cheaper to render than videos and are
-delivered through the same hosting, versioning, and Studio editing.
+composited at render time, and delivered through the same hosting, versioning,
+and Studio editing.
 
 ## Two ways to capture
 
@@ -31,7 +31,7 @@ import { video } from 'screenci'
 
 video('Product demo', async ({ page }) => {
   await page.goto('https://app.example.com/dashboard')
-  await page.screenshot({ name: 'hero' }) // -> screenshot named "hero"
+  await page.screenshot({ name: 'Dashboard hero' }) // -> screenshot named "Dashboard hero"
 })
 ```
 
@@ -79,16 +79,45 @@ import { screenshot } from 'screenci'
 screenshot('Revenue card', async ({ page, crop }) => {
   await page.goto('https://app.example.com/dashboard')
 
-  // Crop to a component, with 6% breathing room around it.
-  await crop(page.getByTestId('revenue-card'), { padding: 0.06 })
+  // Crop to a component, with 48 px of breathing room around it.
+  await crop(page.getByTestId('revenue-card'), { padding: 48 })
 })
 ```
 
-`crop` also accepts an explicit region as fractions (0..1) of the viewport:
+`crop` also accepts an explicit region in CSS px of the recording viewport:
 
 ```ts
-await crop({ x: 0.1, y: 0.2, width: 0.8, height: 0.6 })
+await crop({ x: 128, y: 160, width: 1024, height: 768 })
 ```
+
+### Padding and aspect ratio
+
+`padding` is in CSS px. Pass a single number to pad every side equally, or an
+object for **uneven padding** (omitted sides default to `0`):
+
+```ts
+// 24 px on every side except a roomier bottom for a caption.
+await crop(page.getByTestId('chart'), {
+  padding: { top: 24, right: 24, bottom: 64, left: 24 },
+})
+```
+
+`aspectRatio` (`width / height`) **forces the crop to a fixed shape**, applied
+after padding, so the framed region includes the padding and still hits the ratio
+exactly. The crop grows along its deficient axis around its centre (capped to the
+viewport), which is handy for consistent social cards:
+
+```ts
+// A 16:9 crop around the card, with breathing room, regardless of its shape.
+await crop(page.getByTestId('revenue-card'), {
+  padding: 48,
+  aspectRatio: 16 / 9,
+})
+```
+
+(This is the shape of the captured region. The output canvas shape is set
+separately by `renderOptions.screenshot.aspectRatio`, which defaults to `'auto'`
+and hugs the crop.)
 
 The crop is stored as a render option (`renderOptions.screenshot.crop`), so it is
 editable in Studio afterward. You can also set a default crop in config; a `crop()`
@@ -107,12 +136,12 @@ import { video } from 'screenci'
 
 video('Product demo', async ({ page }) => {
   await page.goto('https://app.example.com/dashboard')
-  await page.screenshot({ name: 'hero' }) // -> screenshot named "hero"
+  await page.screenshot({ name: 'Dashboard hero' }) // -> screenshot named "Dashboard hero"
 
   await page.getByRole('button', { name: 'Reports' }).click()
   await page.screenshot({
     name: 'reports',
-    crop: page.getByTestId('chart'), // a locator or a fractional region
+    crop: page.getByTestId('chart'), // a locator or a pixel region
   })
 })
 ```
@@ -188,7 +217,7 @@ and `renderOptions` for the background, frame roundness, and shadow.
 import { screenshot, createOverlays } from 'screenci'
 
 const overlays = createOverlays({
-  newBadge: { path: '../assets/new-badge.png', x: 0.72, y: 0.06, width: 0.2 },
+  newBadge: { path: '../assets/new-badge.png', x: 1382, y: 65, width: 384 },
 })
 
 screenshot.use({
@@ -210,10 +239,20 @@ screenshot('Dashboard hero', async ({ page, crop }) => {
   await page.goto('https://app.example.com/dashboard')
   // In a screenshot, start an overlay and leave it open: it stays in the still.
   await overlays.newBadge.start()
-  await crop(page.getByTestId('revenue-card'), { padding: 0.06 })
+  await crop(page.getByTestId('revenue-card'), { padding: 48 })
 })
 ```
 
 A still has no timeline, so an overlay you `start()` is simply shown in the image,
-with no matching `end()` needed. (In a `video()`, every `start()` still needs an
-`end()`.)
+with no matching `end()` needed. The equivalent `video()` must close the overlay
+before the recording stops:
+
+```ts
+video('Dashboard hero', async ({ page }) => {
+  await page.goto('https://app.example.com/dashboard')
+  // In a video, an overlay you start() must be ended.
+  await overlays.newBadge.start()
+  await page.getByTestId('revenue-card').hover()
+  await overlays.newBadge.end()
+})
+```

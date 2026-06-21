@@ -62,7 +62,7 @@ export const docsVideoRegistry = {
   },
 } as const satisfies Record<string, DocVideo>
 
-export function getDocVideo(slug: string) {
+export function getDocVideo(slug: string): DocVideo | null {
   return docsVideoRegistry[slug as keyof typeof docsVideoRegistry] ?? null
 }
 

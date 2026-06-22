@@ -1,28 +1,28 @@
-import {
-  autoZoom,
-  createNarration,
-  hide,
-  resetZoom,
-  video,
-  voices,
-} from 'screenci'
+import { autoZoom, hide, resetZoom, video, voices } from 'screenci'
+
+video.use({
+  renderOptions: {
+    narration: {
+      voice: { name: voices.Sophie, style: 'Calm product guide' },
+    },
+  },
+})
 
 // Source of record for the "Public URLs and embeds" docs video. It walks the
 // public-delivery explainer page: the stable base URL, the per-language
 // outputs, and a live embed that switches languages. Recorded against the
 // deployed demo so it runs without app authentication.
-const narration = createNarration({
-  voice: { name: voices.Sophie, style: 'Calm product guide' },
-  en: {
-    intro:
-      'Turn on public delivery and your video gets a stable URL on the CDN.',
-    langs: 'Each language has its own video, thumbnail, and subtitle URL.',
-    embed:
-      'Drop it into any site. It always resolves to the latest approved render.',
+video.localize({
+  narration: {
+    en: {
+      intro:
+        'Turn on public delivery and your video gets a stable URL on the CDN.',
+      langs: 'Each language has its own video, thumbnail, and subtitle URL.',
+      embed:
+        'Drop it into any site. It always resolves to the latest approved render.',
+    },
   },
-})
-
-video('Public URLs and embeds', async ({ page }) => {
+})('Public URLs and embeds', async ({ page, narration }) => {
   await hide(async () => {
     await page.goto('https://demo.screenci.com/pitch/embed.html')
     await page.waitForLoadState('networkidle')

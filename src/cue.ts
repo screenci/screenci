@@ -10,12 +10,14 @@ import {
   supportedLanguages,
   voices,
   type VoiceKey,
-  type ModelVoiceKey,
-  type ElevenLabsVoiceKey,
   type Lang,
   type CustomVoiceRef,
-  type ModelType,
 } from './voices.js'
+import type {
+  TopLevelVoiceConfig,
+  LangNarrationOverride,
+} from './voiceConfig.js'
+export type { TopLevelVoiceConfig, LangNarrationOverride }
 import { isCustomVoiceRef } from './customVoiceRef.js'
 import { MAX_AUDIO_LEVEL } from './asset.js'
 import { isInsideHide } from './hide.js'
@@ -241,116 +243,9 @@ export type Cues<T extends Record<string, CueMapValue>> = {
   [K in keyof T]: NarrationCue
 }
 
-/**
- * Top-level voice configuration shared across all languages.
- * `seed` is not allowed here — use per-language `voice` overrides instead.
- *
- * Built-in model voices support expressive/consistent model controls.
- * ElevenLabs voices support only the numeric settings documented below.
- */
-type ElevenLabsVoiceSettings = {
-  /** Voice stability for ElevenLabs `eleven_multilingual_v2`. Valid range: 0 to 1. */
-  stability?: number
-  /** Similarity enhancement for ElevenLabs `eleven_multilingual_v2`. Valid range: 0 to 1. */
-  similarityBoost?: number
-  /** Style exaggeration for ElevenLabs `eleven_multilingual_v2`. Valid range: 0 to 1. */
-  style?: number
-  /** Playback speed for ElevenLabs `eleven_multilingual_v2`. Valid range: 0.7 to 1.2. */
-  speed?: number
-  /** Enables ElevenLabs speaker boost. Defaults to `true`. */
-  useSpeakerBoost?: boolean
-}
-
-type ElevenLabsVoiceConfig = ElevenLabsVoiceSettings & {
-  name: ElevenLabsVoiceKey | CustomVoiceRef
-  modelType?: never
-  accent?: never
-  pacing?: never
-}
-
-export type TopLevelVoiceConfig =
-  | ElevenLabsVoiceConfig
-  | {
-      name: ModelVoiceKey
-      /** Speaking style prompt for expressive synthesis. Business tier only. Implies `expressive` model type. */
-      style: string
-      /** Can be omitted when `style` is set — `expressive` is implied. Business tier only. */
-      modelType?: 'expressive'
-      /**
-       * Accent description for expressive synthesis.
-       * The more specific, the better — e.g. `'Southern American English'` or `'Received Pronunciation British'`.
-       * Omitted from the prompt when not set — the voice uses its natural default.
-       */
-      accent?: string
-      /**
-       * Pacing description for expressive synthesis.
-       * Describes the overall speed and tempo — e.g. `'Measured and deliberate'` or `'Brisk and energetic'`.
-       */
-      pacing?: string
-    }
-  | {
-      name: ModelVoiceKey
-      style?: never
-      accent?: never
-      /** Speaking rate for consistent synthesis. Valid range: 0.25 to 2. */
-      pacing?: number
-      /** TTS model type — `modelTypes.expressive` or `modelTypes.consistent`. Defaults to `consistent`. */
-      modelType?: Exclude<ModelType, 'expressive'> | undefined
-    }
-
-/**
- * Per-language narration override. Can override the top-level voice name and
- * optionally set a `seed` for TTS generation.
- *
- * The voice name discriminates provider-specific settings: built-in model
- * voices use expressive/consistent controls, while ElevenLabs voices use the
- * numeric `eleven_multilingual_v2` controls.
- */
-export type LangNarrationOverride =
-  | (ElevenLabsVoiceConfig & {
-      /**
-       * Integer seed included in the audio cache key and forwarded to ElevenLabs.
-       * A different seed always forces regeneration.
-       */
-      seed?: number
-    })
-  | {
-      name: ModelVoiceKey
-      /**
-       * Integer seed included in the audio cache key. A different seed always forces
-       * regeneration. Consistent output is not guaranteed across all voice types.
-       */
-      seed?: number
-      /** Speaking style prompt for expressive synthesis. Business tier only. Implies `expressive` model type. */
-      style: string
-      /** Can be omitted when `style` is set — `expressive` is implied. Business tier only. */
-      modelType?: 'expressive'
-      /**
-       * Accent description for expressive synthesis.
-       * The more specific, the better — e.g. `'Southern American English'` or `'Received Pronunciation British'`.
-       * Omitted from the prompt when not set — the voice uses its natural default.
-       */
-      accent?: string
-      /**
-       * Pacing description for expressive synthesis.
-       * Describes the overall speed and tempo — e.g. `'Measured and deliberate'` or `'Brisk and energetic'`.
-       */
-      pacing?: string
-    }
-  | {
-      name: ModelVoiceKey
-      /**
-       * Integer seed included in the audio cache key. A different seed always forces
-       * regeneration. Consistent output is not guaranteed across all voice types.
-       */
-      seed?: number
-      style?: never
-      accent?: never
-      /** Speaking rate for consistent synthesis. Valid range: 0.25 to 2. */
-      pacing?: number
-      /** TTS model type — `modelTypes.expressive` or `modelTypes.consistent`. Defaults to `consistent`. */
-      modelType?: Exclude<ModelType, 'expressive'> | undefined
-    }
+// Voice config types (TopLevelVoiceConfig, LangNarrationOverride) now live in
+// the leaf module `voiceConfig.ts` and are imported/re-exported at the top of
+// this file, so `renderOptions.narration` in `types.ts` can use them too.
 
 /** Converts a union type to an intersection: `A | B` → `A & B` */
 type UnionToIntersection<U> = (

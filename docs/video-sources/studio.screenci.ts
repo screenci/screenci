@@ -1,32 +1,32 @@
-import {
-  autoZoom,
-  createNarration,
-  hide,
-  resetZoom,
-  video,
-  voices,
-  zoomTo,
-} from 'screenci'
+import { autoZoom, hide, resetZoom, video, voices, zoomTo } from 'screenci'
+
+video.use({
+  renderOptions: {
+    narration: {
+      voice: { name: voices.Sophie, style: 'Friendly product guide' },
+    },
+  },
+})
 
 // Studio walkthrough recorded against the ScreenCI app (app.screenci.com), for
 // the "Remix in Studio on the web" tile on the landing page. Studio lives behind
 // auth, so recording this needs a logged-in session: set SCREENCI_APP_STORAGE_STATE
 // to a Playwright storageState JSON (see screenci.config.ts). The walkthrough is
 // self-contained: it opens the first project and video, then enters Studio.
-const narration = createNarration({
-  voice: { name: voices.Sophie, style: 'Friendly product guide' },
-  en: {
-    intro: 'Open any finished video in Studio to edit it right in the browser.',
-    edit: 'Change narration, add a language, or restyle render options, then render a new version. No code, no re-recording.',
+video.localize({
+  narration: {
+    en: {
+      intro:
+        'Open any finished video in Studio to edit it right in the browser.',
+      edit: 'Change narration, add a language, or restyle render options, then render a new version. No code, no re-recording.',
+    },
+    es: {
+      intro:
+        'Abre cualquier video terminado en Studio para editarlo directamente en el navegador.',
+      edit: 'Cambia la narracion, agrega un idioma o ajusta las opciones de render, y genera una nueva version. Sin codigo y sin volver a grabar.',
+    },
   },
-  es: {
-    intro:
-      'Abre cualquier video terminado en Studio para editarlo directamente en el navegador.',
-    edit: 'Cambia la narracion, agrega un idioma o ajusta las opciones de render, y genera una nueva version. Sin codigo y sin volver a grabar.',
-  },
-})
-
-video('Studio web editing', async ({ page }) => {
+})('Studio web editing', async ({ page, narration }) => {
   // Studio lives behind auth, so this recording only works with a logged-in
   // session (SCREENCI_APP_STORAGE_STATE, see screenci.config.ts). When it is not
   // configured (e.g. CI without the session secret), skip instead of timing out

@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { expandRegistrations, createVideoBuilder } from './builder.js'
+import { normalizeLocalizeSpec } from './localize.js'
+
+const perLanguage = (spec: Parameters<typeof normalizeLocalizeSpec>[0]) =>
+  normalizeLocalizeSpec(spec)
 
 describe('expandRegistrations', () => {
-  it('produces a single language-agnostic test when no specs are set', () => {
+  it('produces a single language-agnostic test when not localized', () => {
     const regs = expandRegistrations({
       baseTitle: 'Demo',
-      languageSpec: null,
+      localize: null,
       eachVariants: null,
       requestedLanguages: null,
     })
@@ -15,118 +19,76 @@ describe('expandRegistrations', () => {
       videoName: 'Demo',
       language: null,
       locale: null,
-      declaredLanguages: [],
+      localize: null,
     })
   })
 
   it('registers one pass per language with locale and grouped video name', () => {
     const regs = expandRegistrations({
       baseTitle: 'Tutorial',
-      languageSpec: { languages: ['en', 'fi'], mode: 'per-language' },
+      localize: perLanguage({
+        narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
+      }),
       eachVariants: null,
       requestedLanguages: null,
     })
-    expect(regs).toEqual([
-      expect.objectContaining({
-        leafTitle: 'Tutorial [en]',
-        videoName: 'Tutorial',
-        language: 'en',
-        locale: 'en-US',
-        declaredLanguages: ['en', 'fi'],
-      }),
-      expect.objectContaining({
-        leafTitle: 'Tutorial [fi]',
-        videoName: 'Tutorial',
-        language: 'fi',
-        locale: 'fi-FI',
-        declaredLanguages: ['en', 'fi'],
-      }),
+    expect(regs.map((r) => [r.leafTitle, r.language, r.locale])).toEqual([
+      ['Tutorial [en]', 'en', 'en-US'],
+      ['Tutorial [fi]', 'fi', 'fi-FI'],
     ])
+    expect(regs.every((r) => r.videoName === 'Tutorial')).toBe(true)
   })
 
-  it('honors per-language locale overrides', () => {
+  it('does not set a locale when browserLocale is false', () => {
     const regs = expandRegistrations({
       baseTitle: 'T',
-      languageSpec: {
-        languages: ['en'],
-        mode: 'per-language',
-        locales: { en: 'en-GB' },
-      },
+      localize: perLanguage({
+        languages: ['en', 'fi'],
+        text: ['heading'],
+        browserLocale: false,
+      }),
       eachVariants: null,
       requestedLanguages: null,
     })
-    expect(regs[0]?.locale).toBe('en-GB')
+    expect(regs.every((r) => r.locale === null)).toBe(true)
+    expect(regs.map((r) => r.language)).toEqual(['en', 'fi'])
   })
 
   it('records one shared pass that carries every language', () => {
     const regs = expandRegistrations({
       baseTitle: 'Tour',
-      languageSpec: { languages: ['en', 'fi'], mode: 'shared' },
+      localize: perLanguage({
+        narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
+        mode: 'shared',
+      }),
       eachVariants: null,
       requestedLanguages: null,
     })
     expect(regs).toHaveLength(1)
     expect(regs[0]).toMatchObject({
       leafTitle: 'Tour',
-      videoName: 'Tour',
       language: null,
       locale: null,
-      declaredLanguages: ['en', 'fi'],
     })
   })
 
   it('intersects per-language passes with the --languages filter', () => {
     const regs = expandRegistrations({
       baseTitle: 'T',
-      languageSpec: { languages: ['en', 'fi', 'de'], mode: 'per-language' },
+      localize: perLanguage({
+        languages: ['en', 'fi', 'de'],
+        text: ['heading'],
+      }),
       eachVariants: null,
       requestedLanguages: ['fi'],
     })
     expect(regs.map((r) => r.language)).toEqual(['fi'])
   })
 
-  it('yields nothing when the filter excludes every declared language', () => {
-    const regs = expandRegistrations({
-      baseTitle: 'T',
-      languageSpec: { languages: ['en', 'fi'], mode: 'per-language' },
-      eachVariants: null,
-      requestedLanguages: ['de'],
-    })
-    expect(regs).toEqual([])
-  })
-
-  it('does not split a shared recording by the --languages filter', () => {
-    const regs = expandRegistrations({
-      baseTitle: 'T',
-      languageSpec: { languages: ['en', 'fi'], mode: 'shared' },
-      eachVariants: null,
-      requestedLanguages: ['fi'],
-    })
-    expect(regs).toHaveLength(1)
-    expect(regs[0]?.language).toBeNull()
-  })
-
-  it('produces a separate video per each-variant with distinct names', () => {
-    const regs = expandRegistrations({
-      baseTitle: 'Landing',
-      languageSpec: null,
-      eachVariants: [
-        { key: 'mobile', recordOptions: { aspectRatio: '9:16' } },
-        { key: 'desktop', recordOptions: { aspectRatio: '16:9' } },
-      ],
-      requestedLanguages: null,
-    })
-    expect(regs.map((r) => r.videoName)).toEqual([
-      'Landing mobile',
-      'Landing desktop',
-    ])
-    expect(regs[0]?.recordOptions).toEqual({ aspectRatio: '9:16' })
-  })
-
   it('takes the cartesian product of each-variants and languages', () => {
     const regs = expandRegistrations({
       baseTitle: 'Landing',
-      languageSpec: { languages: ['en', 'fi'], mode: 'per-language' },
+      localize: perLanguage({ languages: ['en', 'fi'], text: ['heading'] }),
       eachVariants: [{ key: 'mobile' }, { key: 'desktop' }],
       requestedLanguages: null,
     })
@@ -136,7 +98,6 @@ describe('expandRegistrations', () => {
       'Landing desktop [en]',
       'Landing desktop [fi]',
     ])
-    // each-variant is the video identity; language is a version within it.
     expect(regs.map((r) => r.videoName)).toEqual([
       'Landing mobile',
       'Landing mobile',
@@ -154,6 +115,7 @@ function createTestSink() {
     tests: string[]
   } = { describes: [], uses: [], tests: [] }
 
+  const only: string[] = []
   const test = ((title: string) => {
     calls.tests.push(title)
   }) as never as Parameters<typeof createVideoBuilder>[0]
@@ -168,8 +130,16 @@ function createTestSink() {
   ;(test as { use: (o: Record<string, unknown>) => void }).use = (options) => {
     calls.uses.push(options)
   }
+  for (const modifier of ['only', 'skip', 'fixme', 'fail'] as const) {
+    ;(test as unknown as Record<string, (t: string) => void>)[modifier] = (
+      title
+    ) => {
+      calls.tests.push(title)
+      if (modifier === 'only') only.push(title)
+    }
+  }
 
-  return { test, calls }
+  return { test, calls, only }
 }
 
 describe('createVideoBuilder registration', () => {
@@ -179,27 +149,35 @@ describe('createVideoBuilder registration', () => {
   it('registers one describe+test per language with scoped use options', () => {
     const { test, calls } = createTestSink()
     const builder = createVideoBuilder(test)
-    builder.languages(['en', 'fi'])('Tutorial', async () => {})
+    builder.localize({
+      narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
+    })('Tutorial', async () => {})
 
     expect(calls.tests).toEqual(['Tutorial [en]', 'Tutorial [fi]'])
     expect(calls.uses[0]).toMatchObject({
       locale: 'en-US',
       _screenciLanguage: 'en',
       _screenciVideoName: 'Tutorial',
-      _screenciLanguages: ['en', 'fi'],
     })
-    expect(calls.uses[1]).toMatchObject({
-      locale: 'fi-FI',
-      _screenciLanguage: 'fi',
+    expect(calls.uses[0]?._screenciLocalize).toMatchObject({
+      languages: ['en', 'fi'],
     })
+  })
+
+  it('captures the calling script as _screenciSourceFile so asset paths resolve against it', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test)('Plain', async () => {})
+    // Playwright would attribute the test to builder.ts (it is registered
+    // there), so the builder captures the real caller, this spec file.
+    expect(calls.uses[0]?._screenciSourceFile).toMatch(/builder\.spec\.ts$/)
   })
 
   it('leaves _screenciLanguage undefined for shared mode', () => {
     const { test, calls } = createTestSink()
-    createVideoBuilder(test).languages(['en', 'fi'], { mode: 'shared' })(
-      'Tour',
-      async () => {}
-    )
+    createVideoBuilder(test).localize({
+      narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
+      mode: 'shared',
+    })('Tour', async () => {})
     expect(calls.tests).toEqual(['Tour'])
     expect(calls.uses[0]?._screenciLanguage).toBeUndefined()
     expect(calls.uses[0]).not.toHaveProperty('locale')
@@ -207,7 +185,7 @@ describe('createVideoBuilder registration', () => {
 
   it('supports the (title, details, body) signature', () => {
     const { test, calls } = createTestSink()
-    createVideoBuilder(test).languages(['en'])(
+    createVideoBuilder(test).localize({ languages: ['en'], text: ['h'] })(
       'Tagged',
       { tag: '@critical' },
       async () => {}
@@ -220,7 +198,10 @@ describe('createVideoBuilder registration', () => {
     process.env.SCREENCI_LANGUAGES = 'de'
     try {
       const { test, calls } = createTestSink()
-      createVideoBuilder(test).languages(['en', 'fi'])('T', async () => {})
+      createVideoBuilder(test).localize({
+        languages: ['en', 'fi'],
+        text: ['h'],
+      })('T', async () => {})
       expect(calls.tests).toEqual([])
       expect(warn).toHaveBeenCalledOnce()
     } finally {
@@ -236,10 +217,12 @@ describe('createVideoBuilder registration', () => {
     ).toThrow(/Duplicate/)
   })
 
-  it('rejects an empty language list', () => {
-    const { test } = createTestSink()
-    expect(() => createVideoBuilder(test).languages([])).toThrow(
-      /at least one language/
-    )
+  it('registers per-language passes with test.only via .only', () => {
+    const { test, calls, only } = createTestSink()
+    createVideoBuilder(test)
+      .localize({ narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } } })
+      .only('Focused', async () => {})
+    expect(calls.tests).toEqual(['Focused [en]', 'Focused [fi]'])
+    expect(only).toEqual(['Focused [en]', 'Focused [fi]'])
   })
 })

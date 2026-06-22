@@ -1,18 +1,20 @@
-import { autoZoom, createNarration, hide, video, voices } from 'screenci'
+import { autoZoom, hide, video, voices } from 'screenci'
 
-const narration = createNarration({
-  // Default voice settings for all languages.
-  voice: { name: voices.Sophie },
-  // Localized narration cues by language.
-  en: {
-    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
-  },
-  es: {
-    docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
-  },
-})
+// Voice is a render option (how narration is spoken). The localized text is
+// declared inline with video.localize below.
+video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
 
-video('How to find docs', async ({ page }) => {
+video.localize({
+  // Localized narration cues by language. The fixture exposes them as markers.
+  narration: {
+    en: {
+      docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
+    },
+    es: {
+      docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
+    },
+  },
+})('How to find docs', async ({ page, narration }) => {
   // Run setup without showing these actions in the final recording.
   await hide(async () => {
     await page.goto('https://screenci.com/')

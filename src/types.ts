@@ -8,6 +8,10 @@ import type {
 import type { StudioRenderOptionsSentinel } from './studio.js'
 import type { PerformanceOption } from './performance.js'
 import type { CropTarget, ScreenshotCropRecord } from './crop.js'
+import type {
+  TopLevelVoiceConfig,
+  LangNarrationOverride,
+} from './voiceConfig.js'
 
 /**
  * Aspect ratio for recording and output.
@@ -153,6 +157,15 @@ export type RenderOptions = {
     corner?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
     /** 0-1: 0=nothing, 1=length of shorter side of the frame */
     padding?: number
+    /**
+     * Default narration voice for every language. Voice is a render-time concern
+     * (how the narration text from `localize({ narration })` is synthesized), so
+     * it is configured here rather than in the content. Override per language with
+     * {@link voices}.
+     */
+    voice?: TopLevelVoiceConfig
+    /** Per-language voice overrides, keyed by language code. */
+    voices?: Record<string, LangNarrationOverride>
   }
   mouse?: {
     /** 0-1: 0=missing, 1=height of video */

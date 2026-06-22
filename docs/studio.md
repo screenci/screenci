@@ -6,11 +6,11 @@ recording. Studio is available on the Business tier.
 
 There are two ways to use it:
 
-- **Opt in from code.** Declare cue keys with `createStudioNarration`, overlay
-  keys with `createStudioOverlays`, background audio keys with
-  `createStudioAudio`, and set `renderOptions: 'studio'`. Those
-  items are then edited on the Studio page. Your edits are saved and applied
-  automatically to every later upload.
+- **Opt in from code.** Declare narration cue names with the name-only form of
+  `video.localize({ languages, narration: [...] })`, overlay keys with
+  `createStudioOverlays`, background audio keys with `createStudioAudio`, and set
+  `renderOptions: 'studio'`. Those items are then edited on the Studio page. Your
+  edits are saved and applied automatically to every later upload.
 - **Render a one-off version.** Any video can be opened in Studio and rendered
   as a one-off, overriding any code-defined narration, overlays, or render
   options for a single render. One-off renders are not saved and do not change
@@ -30,7 +30,7 @@ There are two ways to use it:
 
 Open a video in the web app and choose **Open in Studio**. Studio shows the
 narration, voices, overlays, audio, and render options the video uses. Items you
-opted into from code (`createStudioNarration`, `createStudioOverlays`,
+opted into from code (name-only `video.localize` narration, `createStudioOverlays`,
 `createStudioAudio`, `renderOptions: 'studio'`) are editable; anything defined in
 code is shown read-only and marked with a **code** badge.
 
@@ -51,8 +51,8 @@ code-specified ones.
 
 Studio separates changes that stick from changes that do not:
 
-- **Saved edits** to studio-declared items (`createStudioNarration`,
-  `createStudioOverlays`, `createStudioAudio`, `renderOptions: 'studio'`) autosave
+- **Saved edits** to studio-declared items (name-only `video.localize`
+  narration, `createStudioOverlays`, `createStudioAudio`, `renderOptions: 'studio'`) autosave
   into the video's Studio configuration. That configuration is reused
   automatically on every later upload, so CI keeps rendering with your Studio
   values instead of the code defaults. When this happens the CLI prints a line
@@ -67,20 +67,23 @@ Studio separates changes that stick from changes that do not:
   **Render one-off** to produce a single version. One-off renders are not saved
   and never change what future uploads render. To make a code-defined value
   editable in the normal, saved flow instead, switch it to the matching Studio
-  variant in code (`createStudioNarration`, `createStudioOverlays`,
+  variant in code (the name-only `narration` form below, `createStudioOverlays`,
   `createStudioAudio`, or `renderOptions: 'studio'`).
 
 ## Studio narration from code
 
-`createStudioNarration` declares the cue keys in code while the narration
-text, languages, and voices are configured in Studio:
+Pass `narration` a bare list of cue names (instead of a per-language text map)
+to declare the cue keys in code while the narration text, languages, and voices
+are configured in Studio. Provide the `languages` explicitly, since there is no
+seeded text to infer them from:
 
 ```ts
-import { createStudioNarration, video } from 'screenci'
+import { video } from 'screenci'
 
-const narration = createStudioNarration('intro', 'checkout', 'outro')
-
-video('Checkout walkthrough', async ({ page }) => {
+video.localize({
+  languages: ['en'],
+  narration: ['intro', 'checkout', 'outro'],
+})('Checkout walkthrough', async ({ page, narration }) => {
   await narration.intro()
   await page.goto('/checkout')
   await narration.checkout.start()
@@ -90,9 +93,9 @@ video('Checkout walkthrough', async ({ page }) => {
 })
 ```
 
-The cues behave exactly like `createNarration` cues: callable, with explicit
-`start()` and `end()`, and automatic sequencing between consecutive cues.
-TypeScript knows the declared keys, so `narration.typo` is a compile error.
+The cues behave exactly like seeded `localize` narration cues: callable, with
+explicit `start()` and `end()`, and automatic sequencing between consecutive
+cues. TypeScript knows the declared keys, so `narration.typo` is a compile error.
 
 For each cue, Studio exposes the same voice controls available in code (model
 type, style, accent, and pacing) plus a per-cue volume, alongside the narration
@@ -110,13 +113,14 @@ https://app.screenci.com/project/<projectId>/video/<videoId>/studio
 After the video has been configured once, subsequent uploads reuse the saved
 Studio configuration and render automatically.
 
-API reference: [createStudioNarration()](/docs/reference/api/functions/createStudioNarration)
+See [Narration and Localization](/docs/guides/narration-and-localization) for the
+full `video.localize` API.
 
 ## Narration media from Studio
 
 Any editable narration entry in Studio can use an uploaded media file instead
-of synthesized speech, the web equivalent of `createNarration`'s
-`{ media: './intro.mp4' }` entries. Switch a cue's entry from **Text** to
+of synthesized speech, the web equivalent of a `localize` narration cue's
+`{ media: './intro.mp4' }` entry. Switch a cue's entry from **Text** to
 **Media**, upload an `.mp4` file, and optionally provide a subtitle used for
 captions.
 

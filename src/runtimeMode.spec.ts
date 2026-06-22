@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isTimingDebugEnabled,
   parseRequestedLanguages,
+  parseTextOverrides,
   resolveRecordingTimingDuration,
   shouldSimulateRecordingTimings,
 } from './runtimeMode.js'
@@ -80,6 +81,44 @@ describe('parseRequestedLanguages', () => {
     expect(
       parseRequestedLanguages({
         SCREENCI_LANGUAGES: ' , ,',
+      } as NodeJS.ProcessEnv)
+    ).toBeNull()
+  })
+})
+
+describe('parseTextOverrides', () => {
+  it('returns null when unset or empty', () => {
+    expect(parseTextOverrides({} as NodeJS.ProcessEnv)).toBeNull()
+    expect(
+      parseTextOverrides({ SCREENCI_TEXT_OVERRIDES: '  ' } as NodeJS.ProcessEnv)
+    ).toBeNull()
+  })
+
+  it('parses a language -> field -> value JSON map', () => {
+    expect(
+      parseTextOverrides({
+        SCREENCI_TEXT_OVERRIDES: JSON.stringify({
+          en: { heading: 'Hi' },
+          fi: { heading: 'Moi' },
+        }),
+      } as NodeJS.ProcessEnv)
+    ).toEqual({ en: { heading: 'Hi' }, fi: { heading: 'Moi' } })
+  })
+
+  it('drops non-string values and keeps valid ones', () => {
+    expect(
+      parseTextOverrides({
+        SCREENCI_TEXT_OVERRIDES: JSON.stringify({
+          en: { heading: 'Hi', count: 3 },
+        }),
+      } as NodeJS.ProcessEnv)
+    ).toEqual({ en: { heading: 'Hi' } })
+  })
+
+  it('returns null on malformed JSON', () => {
+    expect(
+      parseTextOverrides({
+        SCREENCI_TEXT_OVERRIDES: 'not json',
       } as NodeJS.ProcessEnv)
     ).toBeNull()
   })

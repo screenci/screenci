@@ -436,7 +436,7 @@ describe('CLI', () => {
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/my-app/screenci/videos/example.screenci.ts',
-        expect.stringContaining("video('How to find docs'")
+        expect.stringContaining("'How to find docs'")
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/my-app/screenci/videos/example.screenci.ts',

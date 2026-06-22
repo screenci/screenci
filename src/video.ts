@@ -28,9 +28,16 @@ export { getDimensions } from './dimensions.js'
 import { getDimensions, getViewportCenter } from './dimensions.js'
 import { resetCueChain } from './cue.js'
 import { setActiveCueRecorder } from './cue.js'
-import { createNarration, assertNarrationLanguagesMatch } from './cue.js'
 import { createVideoBuilder } from './builder.js'
 import type { VideoBuilder } from './builder.js'
+import type { NormalizedLocalize } from './localize.js'
+import {
+  buildNarrationMarkers,
+  buildTextValues,
+  narrationVoiceConfigFromRenderOptions,
+  type NarrationMarkers,
+  type TextValues,
+} from './localizeRuntime.js'
 import { setActiveHideRecorder } from './hide.js'
 import { setActiveAutoZoomRecorder, setActiveZoomPage } from './autoZoom.js'
 import { setActiveAssetRecorder } from './asset.js'
@@ -66,7 +73,10 @@ import {
   setRuntimePage,
 } from './runtimeContext.js'
 import { escapeFileSystemPathSegment } from './fileSystemName.js'
-import { resolveRecordingTimingDuration } from './runtimeMode.js'
+import {
+  resolveRecordingTimingDuration,
+  parseTextOverrides,
+} from './runtimeMode.js'
 import { buildScreenCIContextOptions } from './contextOptions.js'
 import { bindStillCaptureToPage } from './stillCapture.js'
 
@@ -413,26 +423,37 @@ type VideoFixtureOptions = {
    */
   _screenciVideoName: string | undefined
   /**
-   * The video's full declared language set, set by `video.languages(...)`. Used
-   * by the `narration` fixture to validate that narration covers exactly the
-   * declared languages. Internal.
+   * The normalized localize spec for this video, set by `video.localize(...)`.
+   * Drives the `narration` and `text` fixtures. Internal.
    */
-  _screenciLanguages: string[]
+  _screenciLocalize: NormalizedLocalize | undefined
+  /**
+   * Absolute path of the `.screenci` script that registered this test, captured
+   * by the fan-out builder. Asset paths are resolved relative to it, since
+   * `testInfo.file` points at the builder module, not the script. Internal.
+   */
+  _screenciSourceFile: string | undefined
 }
 
 type VideoRuntimeFixtures = {
   /**
    * The language being recorded in this pass, for per-language navigation
    * (e.g. `page.goto('/' + language)`). `undefined` in shared mode and
-   * single-language videos.
+   * non-localized videos.
    */
   language: string | undefined
   /**
-   * Narration factory bound to the video's declared languages. Identical to the
-   * top-level `createNarration`, but validates that the provided languages match
-   * the languages declared via `video.languages(...)`.
+   * Narration markers keyed by the cue names declared in `video.localize(...)`.
+   * Each marker records timing (`()`, `.start()`, `.end()`); the text is owned by
+   * the localize spec / Studio and is never exposed here.
    */
-  narration: typeof createNarration
+  narration: NarrationMarkers
+  /**
+   * Injected text field values for the active language, keyed by the field names
+   * declared in `video.localize(...)`. Use them to fill localized content into
+   * the page.
+   */
+  text: TextValues
 }
 
 const _videoBase = base.extend<
@@ -443,25 +464,30 @@ const _videoBase = base.extend<
   renderOptions: [undefined, { option: true }],
   _screenciLanguage: [undefined, { option: true }],
   _screenciVideoName: [undefined, { option: true }],
-  _screenciLanguages: [[], { option: true }],
+  _screenciLocalize: [undefined, { option: true }],
+  _screenciSourceFile: [undefined, { option: true }],
 
   language: async ({ _screenciLanguage }, use) => {
     await use(_screenciLanguage)
   },
 
-  narration: async ({ _screenciLanguages }, use) => {
-    const narrationFactory = ((
-      input: Parameters<typeof createNarration>[0]
-    ) => {
-      if (_screenciLanguages.length > 0) {
-        assertNarrationLanguagesMatch(
-          input as Record<string, unknown>,
-          _screenciLanguages
-        )
-      }
-      return createNarration(input)
-    }) as typeof createNarration
-    await use(narrationFactory)
+  narration: async ({ _screenciLocalize, renderOptions }, use) => {
+    await use(
+      buildNarrationMarkers(
+        _screenciLocalize,
+        narrationVoiceConfigFromRenderOptions(renderOptions)
+      )
+    )
+  },
+
+  text: async ({ _screenciLocalize, _screenciLanguage }, use) => {
+    await use(
+      buildTextValues(
+        _screenciLocalize,
+        _screenciLanguage,
+        parseTextOverrides()
+      )
+    )
   },
   recordingFinalizationQueue: [
     async ({}, use) => {
@@ -566,6 +592,7 @@ const _videoBase = base.extend<
       recordingFinalizationQueue,
       _screenciLanguage,
       _screenciVideoName,
+      _screenciSourceFile,
     },
     use,
     testInfo
@@ -573,6 +600,10 @@ const _videoBase = base.extend<
     // Only record when explicitly enabled (record command)
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
     const recorder = new EventRecorder(renderOptions, recordOptions)
+    // Asset paths are authored relative to the user's script. Playwright reports
+    // `testInfo.file` as the builder module that registered the test, so prefer
+    // the script path captured at the call site.
+    const testFilePath = _screenciSourceFile ?? testInfo.file
     // In per-language mode each pass records one language; this filters cue
     // translations and stamps metadata so the upload becomes a single language
     // version. `null` (shared / single-language) keeps every language.
@@ -588,7 +619,7 @@ const _videoBase = base.extend<
       const runtimeContext = createScreenCIRuntimeContext({
         recorder,
         page,
-        testFilePath: testInfo.file,
+        testFilePath,
         recordOptions,
         renderOptions,
       })
@@ -637,7 +668,7 @@ const _videoBase = base.extend<
     const runtimeContext = createScreenCIRuntimeContext({
       recorder,
       page,
-      testFilePath: testInfo.file,
+      testFilePath,
       recordingDir: videoDir,
       recordOptions,
       renderOptions,
@@ -690,7 +721,7 @@ const _videoBase = base.extend<
         await recorder.writeToFile(
           videoDir,
           videoName,
-          relative(configDir, testInfo.file)
+          relative(configDir, testFilePath)
         )
       }
     }
@@ -813,25 +844,26 @@ interface Video extends VideoCallSignatures {
   slow: Video & ((condition?: boolean, description?: string) => void)
 
   /**
-   * Record one language version per declared language.
-   *
-   * By default each language is recorded in its own pass with the browser
-   * `locale` set from the language, and the body receives the active `language`
-   * for per-language navigation. Pass `{ mode: 'shared' }` to record a single
-   * capture shared across languages (narration overdubbed at render time).
+   * Record one localized pass per language. By default each language is recorded
+   * in its own pass with the browser `locale` set from the language; the body
+   * receives the active `language`, the `narration` markers, and the `text`
+   * values. Pass `mode: 'shared'` for a single capture shared across languages.
    *
    * Chainable with `.each(...)`.
    *
    * @example
    * ```ts
-   * video.languages(['en', 'fi'])('Tutorial', async ({ page, language, narration }) => {
+   * video.localize({
+   *   narration: { en: { intro: 'Welcome.' }, fi: { intro: 'Tervetuloa.' } },
+   *   text: { en: { heading: 'Dashboard' }, fi: { heading: 'Hallinta' } },
+   * })('Tutorial', async ({ page, language, narration, text }) => {
    *   await page.goto('/' + language)
-   *   const n = narration({ voice: { name: voices.Ava }, en: { intro: 'Welcome.' }, fi: { intro: 'Tervetuloa.' } })
-   *   await n.intro()
+   *   await page.getByTestId('heading').fill(text.heading ?? '')
+   *   await narration.intro()
    * })
    * ```
    */
-  languages: VideoBuilder<VideoBody>['languages']
+  localize: VideoBuilder<VideoArgs>['localize']
 
   /**
    * Produce a separate video per variant (viewport, theme, ...). Each variant
@@ -847,7 +879,7 @@ interface Video extends VideoCallSignatures {
    * })
    * ```
    */
-  each: VideoBuilder<VideoBody>['each']
+  each: VideoBuilder<VideoArgs>['each']
 
   /** Run a hook before each test in the current suite. */
   beforeEach(
@@ -887,17 +919,19 @@ interface Video extends VideoCallSignatures {
  * @example
  * Basic usage:
  * ```ts
- * import { createNarration, video, voices } from 'screenci'
+ * import { video, voices } from 'screenci'
  *
- * const narration = createNarration({
- *   voice: { name: voices.Ava },
- *   en: {
- *     homepage: 'User navigates to homepage.',
- *     signup: 'Clicks the sign up button.',
+ * // Voice is a render option; the localized text is declared with localize.
+ * video.use({ renderOptions: { narration: { voice: { name: voices.Ava } } } })
+ *
+ * video.localize({
+ *   narration: {
+ *     en: {
+ *       homepage: 'User navigates to homepage.',
+ *       signup: 'Clicks the sign up button.',
+ *     },
  *   },
- * })
- *
- * video('Tutorial', async ({ page }) => {
+ * })('Tutorial', async ({ page, narration }) => {
  *   await page.goto('https://example.com')
  *   await narration.homepage()
  *
@@ -910,8 +944,8 @@ export const video = _videoBase as unknown as Video
 
 // Attach the chainable fan-out builders. They register through the same test
 // instance, so per-language / per-variant passes inherit every video fixture.
-const _rootBuilder = createVideoBuilder<VideoBody>(
+const _rootBuilder = createVideoBuilder<VideoArgs>(
   _videoBase as unknown as Parameters<typeof createVideoBuilder>[0]
 )
-video.languages = _rootBuilder.languages
+video.localize = _rootBuilder.localize
 video.each = _rootBuilder.each

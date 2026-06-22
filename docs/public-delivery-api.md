@@ -30,16 +30,21 @@ Error responses:
 
 ## `GET /public/:id/:language/video`
 
-Serves the rendered MP4 for one language variant. This is the stable static URL,
-which follows the currently selected version. To pin to a specific run, use the
+Serves the primary rendered asset for one language variant: the MP4 for a video,
+or the image for a screenshot. The URL shape is the same for both media types, so
+consumers do not branch on type. This is the stable static URL, which follows the
+currently selected version. To pin to a specific run, use the
 [record-pinned URL](#record-pinned-urls) form instead.
+
+The `Content-Type` is derived from the stored asset: `video/mp4` for a video,
+`image/png` or `image/jpeg` for a screenshot.
 
 Useful query parameters:
 
 - `filename`
 - `download=1`
 
-Response headers:
+Response headers (video example):
 
 ```text
 Content-Type: video/mp4
@@ -115,11 +120,11 @@ Error responses:
 
 ## `GET /public/:id/:language/screenshot`
 
-Serves the published screenshot image for one language variant. A version is
-either a video or a screenshot, never both: this route only serves versions
-recorded as screenshots, and `/video` only serves video versions. Follows the
-currently selected version; pin to a run with the
-[record-pinned URL](#record-pinned-urls) form.
+Serves the published screenshot image for one language variant. This is a
+back-compat alias: screenshots are also served at the unified `/video` path
+above (the canonical primary-asset URL). This route only serves versions
+recorded as screenshots. Follows the currently selected version; pin to a run
+with the [record-pinned URL](#record-pinned-urls) form.
 
 Useful query parameters:
 

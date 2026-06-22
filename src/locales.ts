@@ -57,8 +57,9 @@ export const DEFAULT_LANGUAGE_LOCALES: Partial<Record<Lang, string>> = {
  * then the bare language code as a last resort.
  */
 export function resolveLocaleForLanguage(
-  lang: Lang,
+  lang: string,
   overrides?: Partial<Record<Lang, string>>
 ): string {
-  return overrides?.[lang] ?? DEFAULT_LANGUAGE_LOCALES[lang] ?? lang
+  const key = lang as Lang
+  return overrides?.[key] ?? DEFAULT_LANGUAGE_LOCALES[key] ?? lang
 }

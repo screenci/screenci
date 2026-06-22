@@ -50,36 +50,40 @@ ScreenCI uses Playwright-style `.screenci.ts` files and adds recording-specific 
 - `hide()` removes setup and loading sections from the final recording.
 - `autoZoom()` follows navigation, click-driven, and broader interaction sequences with smooth camera motion. Use it sparingly, and start with its default options unless the user explicitly asks for different zoom behavior or the flow clearly needs a targeted override.
 - `zoomTo()` and `resetZoom()` are better for forms and other steady editing sections where the camera should stay fixed while the user types, selects, toggles, and confirms within one area.
-- `createNarration()` is mandatory for every video: define it in every `.screenci.ts` file and include spoken narration throughout the demo. The opening narration should first state the purpose of the video, then continue with the explanation or walkthrough. Define the map once, then call `await narration.key()` for the common case where the full line should run before moving on. Use `await narration.key.start()` when narration should overlap with the next action, and `await narration.key.end()` only to close that same active cue later, especially before visible navigation or route changes.
+- `video.localize({ narration })` is mandatory for every video: declare narration in every `.screenci.ts` file and include spoken narration throughout the demo. The opening narration should first state the purpose of the video, then continue with the explanation or walkthrough. The body receives the `narration` marker object: call `await narration.key()` for the common case where the full line should run before moving on. Use `await narration.key.start()` when narration should overlap with the next action, and `await narration.key.end()` only to close that same active cue later, especially before visible navigation or route changes. Voice is set via `renderOptions.narration` (a render option), not in the narration content.
 - Narration text can include inline speech-control tags such as `[pronounce: screen see eye]`, `[short pause]`, `[medium pause]`, and `[long pause]` when a word needs guided pronunciation or an intentional pause. When narration includes a URL or domain name, add a pronunciation guide or rewrite the line so it will be spoken clearly. Example: `screenci.com [pronounce: screen see eye dot com]`.
 
 Example:
 
 ```ts
-const narration = createNarration({
-  intro:
-    'This video shows how to update your billing details and save the changes.',
-  explainForm:
-    'We start on the billing page and update the company name, email, and tax ID.',
-  saving: 'Now we save the changes and wait for the confirmation message.',
-  nextPage:
-    'Next, we open the invoices section to confirm the new billing details are in use.',
+video.localize({
+  narration: {
+    en: {
+      intro:
+        'This video shows how to update your billing details and save the changes.',
+      explainForm:
+        'We start on the billing page and update the company name, email, and tax ID.',
+      saving: 'Now we save the changes and wait for the confirmation message.',
+      nextPage:
+        'Next, we open the invoices section to confirm the new billing details are in use.',
+    },
+  },
+})('Update billing details', async ({ page, narration }) => {
+  await narration.intro()
+  await narration.explainForm()
+  await narration.saving.start()
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await narration.saving.end()
+  await narration.nextPage()
+  await page.getByRole('link', { name: 'Invoices' }).click()
 })
-
-await narration.intro()
-await narration.explainForm()
-await narration.saving.start()
-await page.getByRole('button', { name: 'Save changes' }).click()
-await narration.saving.end()
-await narration.nextPage()
-await page.getByRole('link', { name: 'Invoices' }).click()
 ```
 
 ## Required Conventions
 
 **Every video MUST follow these conventions:**
 
-- **Narration on every video (required, no exceptions)** — always define `createNarration({ ... })` and add narration to every `.screenci.ts` file. Videos without narration are not acceptable.
+- **Narration on every video (required, no exceptions)** — always declare `video.localize({ narration: { ... } })` and add narration to every `.screenci.ts` file. Videos without narration are not acceptable.
 - **Open with the video's purpose** — the first spoken narration should clearly state what the video is for before moving into the step-by-step explanation.
 - **Guide pronunciation for URLs and domains** — if narration says a URL, domain, product name, or other term that a voice model might read incorrectly, add a `[pronounce: ...]` hint or phrase it in a clearly spoken way.
 - **Start on the requested page** — the visible video should always begin on the page the user requested.
@@ -153,22 +157,27 @@ How to handle the non-interactive case (this is the common case for agents):
 1. Start from the existing initialized ScreenCI package. Early on, surface the sign-in link to the user (printed by `screenci init`, or by running `npx screenci record` once, or from `screenci/.screenci/link-session.json`) and ask them to sign in while you build the video. The link is valid for 24 hours and only needs to be used before the final recording.
 2. Add or edit `.screenci.ts` files in `videos/`.
    Remove `videos/example.screenci.ts` if you are creating new videos and do not need the starter video.
-   For narration, define `const narration = createNarration({ ... })` near the top of the file and trigger lines with `await narration.someKey()` when the full line should finish before moving on. Use `await narration.someKey.start()` only when narration should overlap with the next action, and `await narration.someKey.end()` only to close that same active cue later. This is especially important before visible navigation or page changes. Use inline tags like `[pronounce: ...]` and `[short pause]` inside cue text when needed, especially for URLs and domains such as `screenci.com [pronounce: screen see eye dot com]`.
+   For narration, declare it on the test with `video.localize({ narration: { en: { ... } } })` and trigger lines from the `narration` fixture with `await narration.someKey()` when the full line should finish before moving on. Use `await narration.someKey.start()` only when narration should overlap with the next action, and `await narration.someKey.end()` only to close that same active cue later. This is especially important before visible navigation or page changes. Use inline tags like `[pronounce: ...]` and `[short pause]` inside cue text when needed, especially for URLs and domains such as `screenci.com [pronounce: screen see eye dot com]`.
    Example:
 
    ```ts
-   const narration = createNarration({
-     intro: 'This video shows how to export a monthly sales report.',
-     filters:
-       'First, we set the report range and select the sales channel filters.',
-     export: 'Then we export the report and wait for the download to start.',
+   video.localize({
+     narration: {
+       en: {
+         intro: 'This video shows how to export a monthly sales report.',
+         filters:
+           'First, we set the report range and select the sales channel filters.',
+         export:
+           'Then we export the report and wait for the download to start.',
+       },
+     },
+   })('Export sales report', async ({ page, narration }) => {
+     await narration.intro()
+     await narration.filters()
+     await narration.export.start()
+     await page.getByRole('button', { name: 'Export CSV' }).click()
+     await narration.export.end()
    })
-
-   await narration.intro()
-   await narration.filters()
-   await narration.export.start()
-   await page.getByRole('button', { name: 'Export CSV' }).click()
-   await narration.export.end()
    ```
 
 3. Run `npx screenci test` until it passes.

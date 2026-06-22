@@ -32,8 +32,8 @@ navigate, it generates Playwright actions for the flow. The output is not a
 ScreenCI video yet. To turn it into one:
 
 - copy the generated code into a `videos/<flow>.screenci.ts` file
-- change `test(...)` to `video(...)`
-- add narration with `createNarration()` (see [Core ScreenCI APIs](#core-screenci-apis))
+- change `test(...)` to `video.localize(...)(...)`
+- add narration through `video.localize({ narration })` (see [Core ScreenCI APIs](#core-screenci-apis))
 
 Then follow the usual `screenci test` and `screenci record` flow. If you only
 have a deployed URL and want this automated, point a coding agent at it with the
@@ -45,27 +45,30 @@ The generated starter video keeps the same Playwright-style structure, but it
 uses a ScreenCI-instrumented page and locators so visible interactions are
 captured with the right metadata for recording. See [Page
 Instrumentation](/docs/page-instrumentation). Use it as the baseline shape for
-most ScreenCI videos, then adjust the visible flow, narration cues, and zoom
+most ScreenCI videos, then adjust the visible flow, narration cues (via
+`video.localize`), and zoom
 behavior for your specific walkthrough.
 
 <!-- screenci-doc-code-sample:starter-video:start -->
 
 ```ts
-import { autoZoom, createNarration, hide, video, voices } from 'screenci'
+import { autoZoom, hide, video, voices } from 'screenci'
 
-const narration = createNarration({
-  // Default voice settings for all languages.
-  voice: { name: voices.Sophie },
-  // Localized narration cues by language.
-  en: {
-    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
-  },
-  es: {
-    docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
-  },
-})
+// Voice is a render option (how narration is spoken). The localized text is
+// declared inline with video.localize below.
+video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
 
-video('How to find docs', async ({ page }) => {
+video.localize({
+  // Localized narration cues by language. The fixture exposes them as markers.
+  narration: {
+    en: {
+      docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
+    },
+    es: {
+      docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
+    },
+  },
+})('How to find docs', async ({ page, narration }) => {
   // Run setup without showing these actions in the final recording.
   await hide(async () => {
     await page.goto('https://screenci.com/')
@@ -196,34 +199,41 @@ await resetZoom()
 API reference: [zoomTo()](/docs/reference/api/functions/zoomto),
 [resetZoom()](/docs/reference/api/functions/resetzoom)
 
-### `createNarration()`
+### `video.localize()`
 
-Use `createNarration()` to define narration cues and language variants. See
+Use `video.localize()` to attach narration cues and language variants to a
+video. The body receives `narration` markers (timing only) and, when used,
+`text` values and the active `language`. See
 [Narration and Localization](/docs/guides/narration-and-localization).
 
-Common options:
+Common parts of the spec:
 
-- top-level `voice` for the default voice configuration
-- language keys such as `en`, `es`, or `fi`
-- per-language `voice` overrides when one language needs a different voice
-- cue entries as text or file-based entries, depending on how you want to
-  source narration
+- a `narration` map keyed by language (`en`, `es`, `fi`, ...) of cue name to text
+- an optional `text` map for localized strings injected into the page
+- `languages: [...]` when the cues are name-only (Studio owns the text)
 - short, sentence-sized cues instead of paragraph-sized narration blocks
 
+Voice is configured separately as a render option in `renderOptions.narration`
+(via `video.use(...)` or `screenci.config.ts`), with a default `voice` and
+per-language `voices` overrides.
+
 ```ts
-const narration = createNarration({
-  // Default voice settings for all languages.
-  voice: { name: voices.Sophie },
-  // Localized narration cues by language.
-  en: {
-    intro: 'Open settings and review the billing details.',
-  },
-  es: {
-    intro: 'Abre la configuracion y revisa los detalles de facturacion.',
-  },
+import { video, voices } from 'screenci'
+
+// Voice is a render option (how narration is spoken).
+video.use({
+  renderOptions: { narration: { voice: { name: voices.Sophie } } },
 })
 
-video('Billing walkthrough', async ({ page }) => {
+video.localize({
+  // Localized narration cues by language.
+  narration: {
+    en: { intro: 'Open settings and review the billing details.' },
+    es: {
+      intro: 'Abre la configuracion y revisa los detalles de facturacion.',
+    },
+  },
+})('Billing walkthrough', async ({ page, narration }) => {
   // Play the full cue before continuing.
   await narration.intro()
 
@@ -240,5 +250,4 @@ place them where they belong in the flow. That gives you cleaner overlap
 control, makes revisions less brittle, and should save API cost when a TTS
 provider such as ElevenLabs only needs to regenerate one changed sentence.
 
-API reference: [createNarration()](/docs/reference/api/functions/createnarration),
-[voices](/docs/reference/api/variables/voices)
+API reference: [voices](/docs/reference/api/variables/voices)

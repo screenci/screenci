@@ -3,7 +3,6 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
   autoZoom,
-  createNarration,
   createOverlays,
   hide,
   resetZoom,
@@ -38,35 +37,42 @@ const overlays = createOverlays({
   },
 })
 
-const narration = createNarration({
-  voice: {
-    name: voices.Sophie,
-    style: 'Calm, direct developer presenting a real product workflow',
-  },
-  en: {
-    intro:
-      'This video shows how a coding agent and ScreenCI [pronounce: screen see eye] turn a product flow into a finished product video.',
-    agent:
-      'I asked the agent to create a narrated walkthrough for this sample SaaS application. This is the actual session, condensed.',
-    source:
-      'It reads the application, then writes and tests a Playwright-style video file in the repository.',
-    oneOff:
-      'The flow is already recorded, so I can render a one-off version without recording the application again.',
-    rendering:
-      'This is the real render job, combining the recording, narration, camera motion, and overlays.',
-    privacy:
-      'The application, source, session, and credentials stayed local. Only the recording and timing data were uploaded.',
-    delivery:
-      'The finished video is ready to review, download, or publish through a stable public URL.',
-    maintenance:
-      'Run the source locally or in CI. If the product flow changes, it fails visibly instead of leaving a stale walkthrough online.',
-    more: 'One recording can produce language versions with synchronized narration and subtitles, cloned voices, and React or HTML overlays.',
-    outro:
-      'That is ScreenCI [pronounce: screen see eye]: from a coding-agent prompt to a product video you can rerun whenever the product changes.',
+video.use({
+  renderOptions: {
+    narration: {
+      voice: {
+        name: voices.Sophie,
+        style: 'Calm, direct developer presenting a real product workflow',
+      },
+    },
   },
 })
 
-video('ScreenCI product pitch', async ({ page }) => {
+video.localize({
+  narration: {
+    en: {
+      intro:
+        'This video shows how a coding agent and ScreenCI [pronounce: screen see eye] turn a product flow into a finished product video.',
+      agent:
+        'I asked the agent to create a narrated walkthrough for this sample SaaS application. This is the actual session, condensed.',
+      source:
+        'It reads the application, then writes and tests a Playwright-style video file in the repository.',
+      oneOff:
+        'The flow is already recorded, so I can render a one-off version without recording the application again.',
+      rendering:
+        'This is the real render job, combining the recording, narration, camera motion, and overlays.',
+      privacy:
+        'The application, source, session, and credentials stayed local. Only the recording and timing data were uploaded.',
+      delivery:
+        'The finished video is ready to review, download, or publish through a stable public URL.',
+      maintenance:
+        'Run the source locally or in CI. If the product flow changes, it fails visibly instead of leaving a stale walkthrough online.',
+      more: 'One recording can produce language versions with synchronized narration and subtitles, cloned voices, and React or HTML overlays.',
+      outro:
+        'That is ScreenCI [pronounce: screen see eye]: from a coding-agent prompt to a product video you can rerun whenever the product changes.',
+    },
+  },
+})('ScreenCI product pitch', async ({ page, narration }) => {
   video.skip(
     !process.env.SCREENCI_APP_STORAGE_STATE,
     'Requires SCREENCI_APP_STORAGE_STATE with a logged-in ScreenCI app session.'

@@ -34,9 +34,11 @@ import type { CropTarget, CropOptions } from './crop.js'
 import { getRuntimePage, setRuntimeCrop } from './runtimeContext.js'
 import { ScreenciError } from './errors.js'
 import { withActiveRecordingContext } from './video.js'
-import { createNarration, assertNarrationLanguagesMatch } from './cue.js'
 import { createVideoBuilder } from './builder.js'
 import type { VideoBuilder } from './builder.js'
+import type { NormalizedLocalize } from './localize.js'
+import { buildTextValues, type TextValues } from './localizeRuntime.js'
+import { parseTextOverrides } from './runtimeMode.js'
 
 /**
  * The `crop` fixture argument. Call it inside a `screenshot()` body to crop the
@@ -58,16 +60,26 @@ type ScreenshotFixtureOptions = {
   _screenciLanguage: string | undefined
   /** Grouping name written to `metadata.videoName`. Internal. */
   _screenciVideoName: string | undefined
-  /** The screenshot's full declared language set, for narration validation. Internal. */
-  _screenciLanguages: string[]
+  /** The normalized localize spec, set by `screenshot.localize(...)`. Internal. */
+  _screenciLocalize: NormalizedLocalize | undefined
+  /**
+   * Absolute path of the `.screenci` script that registered this test, captured
+   * by the fan-out builder. Asset paths are resolved relative to it, since
+   * `testInfo.file` points at the builder module, not the script. Internal.
+   */
+  _screenciSourceFile: string | undefined
 }
 
 type ScreenshotFixtures = {
   crop: CropFixture
   /** The language being captured in this pass; `undefined` outside per-language mode. */
   language: string | undefined
-  /** Narration factory bound to the screenshot's declared languages. */
-  narration: typeof createNarration
+  /**
+   * Injected text field values for the active language, keyed by the field names
+   * declared in `screenshot.localize(...)`. A still is silent, so there is no
+   * `narration` fixture.
+   */
+  text: TextValues
 }
 
 const _screenshotBase = base.extend<
@@ -77,25 +89,21 @@ const _screenshotBase = base.extend<
   renderOptions: [undefined, { option: true }],
   _screenciLanguage: [undefined, { option: true }],
   _screenciVideoName: [undefined, { option: true }],
-  _screenciLanguages: [[], { option: true }],
+  _screenciLocalize: [undefined, { option: true }],
+  _screenciSourceFile: [undefined, { option: true }],
 
   language: async ({ _screenciLanguage }, use) => {
     await use(_screenciLanguage)
   },
 
-  narration: async ({ _screenciLanguages }, use) => {
-    const narrationFactory = ((
-      input: Parameters<typeof createNarration>[0]
-    ) => {
-      if (_screenciLanguages.length > 0) {
-        assertNarrationLanguagesMatch(
-          input as Record<string, unknown>,
-          _screenciLanguages
-        )
-      }
-      return createNarration(input)
-    }) as typeof createNarration
-    await use(narrationFactory)
+  text: async ({ _screenciLocalize, _screenciLanguage }, use) => {
+    await use(
+      buildTextValues(
+        _screenciLocalize,
+        _screenciLanguage,
+        parseTextOverrides()
+      )
+    )
   },
 
   crop: async ({}, use) => {
@@ -201,6 +209,7 @@ const _screenshotBase = base.extend<
       deviceScaleFactor,
       _screenciLanguage,
       _screenciVideoName,
+      _screenciSourceFile,
     },
     use,
     testInfo
@@ -209,6 +218,10 @@ const _screenshotBase = base.extend<
     const recorder = new EventRecorder(renderOptions, recordOptions)
     recorder.setActiveLanguage(_screenciLanguage ?? null)
     const videoName = _screenciVideoName ?? testInfo.title
+    // Asset paths are authored relative to the user's script. Playwright reports
+    // `testInfo.file` as the builder module that registered the test, so prefer
+    // the script path captured at the call site.
+    const testFilePath = _screenciSourceFile ?? testInfo.file
 
     if (!shouldRecord) {
       // Preview run (`screenci test`): exercise the body without capturing.
@@ -216,7 +229,7 @@ const _screenshotBase = base.extend<
       const runtimeContext = createScreenCIRuntimeContext({
         recorder,
         page,
-        testFilePath: testInfo.file,
+        testFilePath,
       })
       recorder.start()
       await withActiveRecordingContext({
@@ -256,7 +269,7 @@ const _screenshotBase = base.extend<
     const runtimeContext = createScreenCIRuntimeContext({
       recorder,
       page,
-      testFilePath: testInfo.file,
+      testFilePath,
       recordingDir: screenshotDir,
     })
 
@@ -294,7 +307,7 @@ const _screenshotBase = base.extend<
       await recorder.writeToFile(
         screenshotDir,
         videoName,
-        relative(configDir, testInfo.file),
+        relative(configDir, testFilePath),
         {
           output: 'screenshot',
           screenshot,
@@ -381,16 +394,16 @@ interface Screenshot extends ScreenshotCallSignatures {
   /**
    * Capture one localized screenshot per declared language. By default each
    * language is captured in its own pass with the browser `locale` set from the
-   * language, and the body receives the active `language`. Chainable with
-   * `.each(...)`.
+   * language, and the body receives the active `language` and `text` values.
+   * Chainable with `.each(...)`.
    */
-  languages: VideoBuilder<ScreenshotBody>['languages']
+  localize: VideoBuilder<ScreenshotArgs>['localize']
 
   /**
    * Produce a separate screenshot per variant (viewport, theme, ...). Each
    * variant has its own identity and history. Chainable with `.languages(...)`.
    */
-  each: VideoBuilder<ScreenshotBody>['each']
+  each: VideoBuilder<ScreenshotArgs>['each']
 
   beforeEach(
     inner: (args: ScreenshotArgs, testInfo: TestInfo) => Promise<void> | void
@@ -447,8 +460,8 @@ interface Screenshot extends ScreenshotCallSignatures {
 export const screenshot = _screenshotBase as unknown as Screenshot
 
 // Attach the chainable fan-out builders, mirroring `video`.
-const _screenshotRootBuilder = createVideoBuilder<ScreenshotBody>(
+const _screenshotRootBuilder = createVideoBuilder<ScreenshotArgs>(
   _screenshotBase as unknown as Parameters<typeof createVideoBuilder>[0]
 )
-screenshot.languages = _screenshotRootBuilder.languages
+screenshot.localize = _screenshotRootBuilder.localize
 screenshot.each = _screenshotRootBuilder.each

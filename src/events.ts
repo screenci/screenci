@@ -201,7 +201,7 @@ export type CueStartEvent = {
   type: 'cueStart'
   timeMs: number
   name: string
-  /** Cue declared via `createStudioNarration` — text and voice come from Studio. */
+  /** Cue declared via the Studio-managed (name-only) narration form — text and voice come from Studio. */
   studio?: true
   /** Single-language API (backward compat) */
   text?: string
@@ -261,7 +261,7 @@ export type VideoCueStartEvent = {
   type: 'videoCueStart'
   timeMs: number
   name: string
-  /** Cue declared via `createStudioNarration` whose Studio entry is a media file. */
+  /** Cue declared via the Studio-managed (name-only) narration form whose Studio entry is a media file. */
   studio?: true
   /** Single-language API: SHA-256 hash of the pre-recorded asset. */
   assetHash?: string
@@ -622,7 +622,7 @@ export type RecordingMetadata = {
   /**
    * Which parts of this recording opted into Studio configuration.
    * `renderOptions` is set when `renderOptions: 'studio'` was used; `narration`
-   * when the recording contains `createStudioNarration` cues; `assets` when it
+   * when the recording contains Studio-managed (name-only) narration cues; `assets` when it
    * contains `createStudioOverlays` assets; `audio` when it contains
    * `createStudioAudio` tracks.
    */

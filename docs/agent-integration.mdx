@@ -29,8 +29,8 @@ The brief walks the agent through three steps:
    scaffolds `screenci.config.ts` and `videos/`, and installs the `screenci`
    agent skill at the repository root.
 2. **Author a video** for the flow you described, including narration via
-   `createNarration()`, with setup wrapped in `hide()` and the demo driven with
-   visible clicks.
+   `video.localize({ narration })`, with setup wrapped in `hide()` and the demo
+   driven with visible clicks.
 3. **Verify, then record.** It runs `npx screenci test` until the script is
    green, then `npx screenci record` to capture the final video.
 

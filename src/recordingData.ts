@@ -146,7 +146,7 @@ export type CueStartEvent = {
   type: 'cueStart'
   timeMs: number
   name: string
-  /** Cue declared via `createStudioNarration` — text and voice come from Studio. */
+  /** Cue declared via the Studio-managed (name-only) narration form — text and voice come from Studio. */
   studio?: true
   text?: string
   cueConfig?: CueConfig
@@ -193,7 +193,7 @@ export type VideoCueStartEvent = {
   type: 'videoCueStart'
   timeMs: number
   name: string
-  /** Cue declared via `createStudioNarration` whose Studio entry is a media file. */
+  /** Cue declared via the Studio-managed (name-only) narration form whose Studio entry is a media file. */
   studio?: true
   assetHash?: string
   assetPath?: string

@@ -1,33 +1,16 @@
-import type { TestDetails } from '@playwright/test'
-import type { Lang } from './voices.js'
+import { fileURLToPath } from 'node:url'
+import type { TestDetails, TestInfo } from '@playwright/test'
 import type { RecordOptions } from './types.js'
+import type { NarrationCue } from './cue.js'
+import type { NarrationMarkers, TextValues } from './localizeRuntime.js'
 import { resolveLocaleForLanguage } from './locales.js'
 import { parseRequestedLanguages } from './runtimeMode.js'
 import { logger } from './logger.js'
-
-/**
- * How a video's declared languages are recorded.
- *
- * - `'per-language'` (default): one capture pass per language, with the browser
- *   `locale` set from the language so a self-localizing app renders in that
- *   language. Each pass becomes its own language version. The body receives the
- *   active `language` so it can navigate per language.
- * - `'shared'`: a single capture shared across every language, with narration
- *   overdubbed per language at render time (the original behavior). The body's
- *   `language` fixture is `undefined`.
- */
-export type LanguageMode = 'per-language' | 'shared'
-
-export type LanguagesOptions = {
-  /** Recording mode. Defaults to `'per-language'`. */
-  mode?: LanguageMode
-  /**
-   * Override the browser locale used for one or more languages. Defaults come
-   * from the built-in language to locale map; anything not listed falls back to
-   * the bare language code.
-   */
-  locales?: Partial<Record<Lang, string>>
-}
+import {
+  normalizeLocalizeSpec,
+  type LocalizeSpec,
+  type NormalizedLocalize,
+} from './localize.js'
 
 /**
  * One variant in a generic `video.each(...)` fan-out. Each variant produces a
@@ -44,12 +27,6 @@ export type EachVariant = {
   use?: Record<string, unknown>
 }
 
-export type LanguageSpec = {
-  languages: string[]
-  mode: LanguageMode
-  locales?: Partial<Record<Lang, string>>
-}
-
 /** A single Playwright test to register, fully resolved from the fan-out specs. */
 export type Registration = {
   /** Label for the wrapping `describe` block (scopes per-test `use` options). */
@@ -58,7 +35,7 @@ export type Registration = {
   leafTitle: string
   /** Grouping key written to `metadata.videoName`; shared across a video's languages. */
   videoName: string
-  /** Active language for this pass, or `null` in shared / no-language mode. */
+  /** Active language for this pass, or `null` in shared / no-localize mode. */
   language: string | null
   /** Browser locale for this pass, or `null` to leave the default. */
   locale: string | null
@@ -66,8 +43,8 @@ export type Registration = {
   recordOptions: Partial<RecordOptions> | null
   /** Forwarded Playwright `use` options for this pass, or `null` for none. */
   use: Record<string, unknown> | null
-  /** The video's full declared language set (for narration validation); `[]` when none. */
-  declaredLanguages: string[]
+  /** The normalized localize spec for this video, or `null` when not localized. */
+  localize: NormalizedLocalize | null
 }
 
 function variantVideoName(
@@ -78,24 +55,25 @@ function variantVideoName(
 }
 
 /**
- * Expand the language / each fan-out specs into the concrete list of Playwright
+ * Expand the localize / each fan-out specs into the concrete list of Playwright
  * tests to register. Pure and exported for testing.
  *
- * - With no `languageSpec`, each variant yields a single language-agnostic test.
+ * - With no `localize`, each variant yields a single language-agnostic test.
  * - In `'shared'` mode, each variant yields one test that carries every language
  *   (narration is overdubbed at render); the `--languages` filter does not split
  *   a shared recording.
- * - In `'per-language'` mode, each variant yields one test per declared language,
+ * - In `'per-language'` mode, each variant yields one test per language,
  *   intersected with the `--languages` filter when present. A variant whose
- *   declared languages are entirely filtered out yields nothing.
+ *   languages are entirely filtered out yields nothing. The browser locale is set
+ *   per language unless `browserLocale` is `false`.
  */
 export function expandRegistrations(params: {
   baseTitle: string
-  languageSpec: LanguageSpec | null
+  localize: NormalizedLocalize | null
   eachVariants: EachVariant[] | null
   requestedLanguages: string[] | null
 }): Registration[] {
-  const { baseTitle, languageSpec, eachVariants, requestedLanguages } = params
+  const { baseTitle, localize, eachVariants, requestedLanguages } = params
   const variants: (EachVariant | null)[] = eachVariants ?? [null]
   const registrations: Registration[] = []
 
@@ -105,7 +83,7 @@ export function expandRegistrations(params: {
     const use = variant?.use ?? null
     const variantLabel = variant === null ? '' : `${variant.key} `
 
-    if (languageSpec === null) {
+    if (localize === null) {
       registrations.push({
         describeTitle: variant?.key ?? baseTitle,
         leafTitle: videoName,
@@ -114,12 +92,12 @@ export function expandRegistrations(params: {
         locale: null,
         recordOptions,
         use,
-        declaredLanguages: [],
+        localize: null,
       })
       continue
     }
 
-    if (languageSpec.mode === 'shared') {
+    if (localize.mode === 'shared') {
       registrations.push({
         describeTitle: `${variantLabel}shared`.trim(),
         leafTitle: videoName,
@@ -128,17 +106,15 @@ export function expandRegistrations(params: {
         locale: null,
         recordOptions,
         use,
-        declaredLanguages: languageSpec.languages,
+        localize,
       })
       continue
     }
 
     const languages =
       requestedLanguages === null
-        ? languageSpec.languages
-        : languageSpec.languages.filter((lang) =>
-            requestedLanguages.includes(lang)
-          )
+        ? localize.languages
+        : localize.languages.filter((lang) => requestedLanguages.includes(lang))
 
     for (const lang of languages) {
       registrations.push({
@@ -146,10 +122,12 @@ export function expandRegistrations(params: {
         leafTitle: `${videoName} [${lang}]`,
         videoName,
         language: lang,
-        locale: resolveLocaleForLanguage(lang as Lang, languageSpec.locales),
+        locale: localize.browserLocale
+          ? resolveLocaleForLanguage(lang, localize.locales)
+          : null,
         recordOptions,
         use,
-        declaredLanguages: languageSpec.languages,
+        localize,
       })
     }
   }
@@ -160,21 +138,74 @@ export function expandRegistrations(params: {
 /** Internal option keys the page/context fixtures read off a registered test. */
 const SCREENCI_LANGUAGE_OPTION = '_screenciLanguage'
 const SCREENCI_VIDEO_NAME_OPTION = '_screenciVideoName'
-const SCREENCI_LANGUAGES_OPTION = '_screenciLanguages'
+const SCREENCI_LOCALIZE_OPTION = '_screenciLocalize'
+const SCREENCI_SOURCE_FILE_OPTION = '_screenciSourceFile'
 
-/** Minimal view of the test API the builder needs to register tests. */
-type RegistrarTest = {
+/** Absolute path of this module, used to skip our own frames when capturing. */
+const BUILDER_MODULE_PATH = fileURLToPath(import.meta.url)
+
+/** Normalize a V8 call-site filename (which may be a `file://` URL) to a path. */
+function callSiteFile(frame: NodeJS.CallSite): string | null {
+  const fileName = frame.getFileName()
+  if (!fileName) return null
+  return fileName.startsWith('file://') ? fileURLToPath(fileName) : fileName
+}
+
+/**
+ * Capture the source file of the user's `.screenci` script that called the
+ * builder. Playwright attributes `testInfo.file` to this module (the test is
+ * registered here, not in the user's file), so asset paths authored relative to
+ * the script would otherwise resolve against this package. We walk the call
+ * stack and return the first frame outside this module, which is the script.
+ * Returns `null` if no such frame is found (fixtures then fall back to
+ * `testInfo.file`).
+ */
+function captureSourceFile(): string | null {
+  const originalPrepare = Error.prepareStackTrace
+  const originalLimit = Error.stackTraceLimit
+  try {
+    Error.stackTraceLimit = 50
+    Error.prepareStackTrace = (_error, stack) => stack
+    const stack = new Error().stack as unknown as NodeJS.CallSite[]
+    if (!Array.isArray(stack)) return null
+    for (const frame of stack) {
+      const file = callSiteFile(frame)
+      if (file !== null && file !== BUILDER_MODULE_PATH) {
+        return file
+      }
+    }
+    return null
+  } finally {
+    Error.prepareStackTrace = originalPrepare
+    Error.stackTraceLimit = originalLimit
+  }
+}
+
+/** Test-registration modifier mirroring Playwright's `test.only`/`skip`/etc. */
+type TestModifier = 'only' | 'skip' | 'fixme' | 'fail'
+
+type TestCall = {
   (title: string, body: unknown): void
   (title: string, details: TestDetails, body: unknown): void
+}
+
+/** Minimal view of the test API the builder needs to register tests. */
+type RegistrarTest = TestCall & {
   describe: (title: string, fn: () => void) => void
   use: (options: Record<string, unknown>) => void
+  only: TestCall
+  skip: TestCall
+  fixme: TestCall
+  fail: TestCall
 }
 
 function registerOne(
   test: RegistrarTest,
   reg: Registration,
   details: TestDetails | undefined,
-  body: unknown
+  body: unknown,
+  modifier: TestModifier | undefined,
+  sourceFile: string | null
 ): void {
   const useOptions: Record<string, unknown> = {
     ...(reg.use ?? {}),
@@ -182,53 +213,96 @@ function registerOne(
     ...(reg.locale !== null ? { locale: reg.locale } : {}),
     [SCREENCI_LANGUAGE_OPTION]: reg.language ?? undefined,
     [SCREENCI_VIDEO_NAME_OPTION]: reg.videoName,
-    [SCREENCI_LANGUAGES_OPTION]: reg.declaredLanguages,
+    [SCREENCI_LOCALIZE_OPTION]: reg.localize ?? undefined,
+    [SCREENCI_SOURCE_FILE_OPTION]: sourceFile ?? undefined,
   }
+
+  const register: TestCall = modifier ? test[modifier] : test
 
   test.describe(reg.describeTitle, () => {
     test.use(useOptions)
     if (details !== undefined) {
-      test(reg.leafTitle, details, body)
+      register(reg.leafTitle, details, body)
     } else {
-      test(reg.leafTitle, body)
+      register(reg.leafTitle, body)
     }
   })
 }
 
+/** Cue names declared by a localize spec's `narration` (seeded map or name list). */
+type CueNamesOf<S> = S extends { narration: infer N }
+  ? N extends readonly string[]
+    ? N[number]
+    : N extends Record<string, infer V>
+      ? V extends Record<string, unknown>
+        ? Extract<keyof V, string>
+        : never
+      : never
+  : never
+
+/** Field names declared by a localize spec's `text` (seeded map or name list). */
+type FieldNamesOf<S> = S extends { text: infer T }
+  ? T extends readonly string[]
+    ? T[number]
+    : T extends Record<string, infer V>
+      ? V extends Record<string, unknown>
+        ? Extract<keyof V, string>
+        : never
+      : never
+  : never
+
+type NarrationOverrideFor<S> = [CueNamesOf<S>] extends [never]
+  ? NarrationMarkers
+  : Record<CueNamesOf<S>, NarrationCue>
+
+type TextOverrideFor<S> = [FieldNamesOf<S>] extends [never]
+  ? TextValues
+  : Record<FieldNamesOf<S>, string | undefined>
+
+/**
+ * The fixture arg overrides a `localize(spec)` contributes: `narration` typed to
+ * the spec's cue names (only when the medium has narration) and `text` typed to
+ * its field names. Keys absent from `Args` (e.g. `narration` on a screenshot)
+ * are not added.
+ */
+type LocalizeOverrides<Args, S> = ('narration' extends keyof Args
+  ? { narration: NarrationOverrideFor<S> }
+  : object) &
+  ('text' extends keyof Args ? { text: TextOverrideFor<S> } : object)
+
+type MergeArgs<Args, O> = Omit<Args, keyof O> & O
+
+type BodyFn<Args> = (args: Args, testInfo: TestInfo) => void | Promise<void>
+
 /**
  * A chainable fan-out builder. Callable to register the test(s), and exposes
- * `.languages()` / `.each()` to refine the fan-out before the terminal call.
+ * `.localize()` / `.each()` to refine the fan-out before the terminal call. `O`
+ * accumulates the typed fixture overrides from `.localize(...)` so the body sees
+ * `narration`/`text` typed to the spec's names.
  */
-export interface VideoBuilder<Body> {
-  (title: string, body: Body): void
-  (title: string, details: TestDetails, body: Body): void
-  /** Record one language version per declared language (or one shared capture). */
-  languages(languages: string[], options?: LanguagesOptions): VideoBuilder<Body>
-  /** Produce a separate video per variant (viewport, theme, ...). */
-  each(variants: EachVariant[], options?: undefined): VideoBuilder<Body>
+type BuilderTerminal<Args, O> = {
+  (title: string, body: BodyFn<MergeArgs<Args, O>>): void
+  (title: string, details: TestDetails, body: BodyFn<MergeArgs<Args, O>>): void
 }
 
-function normalizeLanguageSpec(
-  languages: string[],
-  options: LanguagesOptions | undefined
-): LanguageSpec {
-  const seen = new Set<string>()
-  const deduped: string[] = []
-  for (const lang of languages) {
-    if (seen.has(lang)) continue
-    seen.add(lang)
-    deduped.push(lang)
-  }
-  if (deduped.length === 0) {
-    throw new Error(
-      'video.languages() requires at least one language, e.g. .languages(["en", "fi"]).'
-    )
-  }
-  return {
-    languages: deduped,
-    mode: options?.mode ?? 'per-language',
-    ...(options?.locales !== undefined && { locales: options.locales }),
-  }
+export interface VideoBuilder<Args, O = object> extends BuilderTerminal<
+  Args,
+  O
+> {
+  /** Record one localized pass per language (or one shared capture). */
+  localize<S extends LocalizeSpec>(
+    spec: S
+  ): VideoBuilder<Args, O & LocalizeOverrides<Args, S>>
+  /** Produce a separate video per variant (viewport, theme, ...). */
+  each(variants: EachVariant[]): VideoBuilder<Args, O>
+  /** Register the localized test(s) with `test.only`. */
+  only: BuilderTerminal<Args, O>
+  /** Register the localized test(s) with `test.skip`. */
+  skip: BuilderTerminal<Args, O>
+  /** Register the localized test(s) with `test.fixme`. */
+  fixme: BuilderTerminal<Args, O>
+  /** Register the localized test(s) with `test.fail`. */
+  fail: BuilderTerminal<Args, O>
 }
 
 function normalizeVariants(variants: EachVariant[]): EachVariant[] {
@@ -250,31 +324,36 @@ function normalizeVariants(variants: EachVariant[]): EachVariant[] {
 }
 
 type BuilderState = {
-  languageSpec: LanguageSpec | null
+  localize: NormalizedLocalize | null
   eachVariants: EachVariant[] | null
 }
 
 /**
- * Create a fan-out builder bound to a registrar test instance. `video.languages`
- * and `video.each` are the `languages`/`each` methods of a root builder created
- * with this factory.
+ * Create a fan-out builder bound to a registrar test instance. `video.localize`
+ * and `video.each` are the `localize`/`each` methods of a root builder created
+ * with this factory. `Args` is the medium's fixture arg type (video/screenshot).
  */
-export function createVideoBuilder<Body>(
+export function createVideoBuilder<Args>(
   test: RegistrarTest,
-  state: BuilderState = { languageSpec: null, eachVariants: null }
-): VideoBuilder<Body> {
-  const callable = ((
+  state: BuilderState = { localize: null, eachVariants: null }
+): VideoBuilder<Args> {
+  const runTerminal = (
+    modifier: TestModifier | undefined,
     title: string,
-    detailsOrBody: TestDetails | Body,
-    maybeBody?: Body
+    detailsOrBody: TestDetails | BodyFn<Args>,
+    maybeBody?: BodyFn<Args>
   ): void => {
     const hasDetails = typeof detailsOrBody !== 'function'
     const details = hasDetails ? (detailsOrBody as TestDetails) : undefined
     const body = (hasDetails ? maybeBody : detailsOrBody) as unknown
 
+    // Captured here, at the user's call site, so the script's path survives
+    // even though Playwright records the test as declared in this module.
+    const sourceFile = captureSourceFile()
+
     const registrations = expandRegistrations({
       baseTitle: title,
-      languageSpec: state.languageSpec,
+      localize: state.localize,
       eachVariants: state.eachVariants,
       requestedLanguages: parseRequestedLanguages(),
     })
@@ -287,18 +366,44 @@ export function createVideoBuilder<Body>(
     }
 
     for (const reg of registrations) {
-      registerOne(test, reg, details, body)
+      registerOne(test, reg, details, body, modifier, sourceFile)
     }
-  }) as VideoBuilder<Body>
+  }
 
-  callable.languages = (languages, options) =>
-    createVideoBuilder<Body>(test, {
+  const callable = ((
+    title: string,
+    detailsOrBody: TestDetails | BodyFn<Args>,
+    maybeBody?: BodyFn<Args>
+  ): void =>
+    runTerminal(
+      undefined,
+      title,
+      detailsOrBody,
+      maybeBody
+    )) as VideoBuilder<Args>
+
+  for (const modifier of ['only', 'skip', 'fixme', 'fail'] as const) {
+    callable[modifier] = ((
+      title: string,
+      detailsOrBody: TestDetails | BodyFn<Args>,
+      maybeBody?: BodyFn<Args>
+    ): void =>
+      runTerminal(
+        modifier,
+        title,
+        detailsOrBody,
+        maybeBody
+      )) as VideoBuilder<Args>[typeof modifier]
+  }
+
+  callable.localize = ((spec: LocalizeSpec) =>
+    createVideoBuilder<Args>(test, {
       ...state,
-      languageSpec: normalizeLanguageSpec(languages, options),
-    })
+      localize: normalizeLocalizeSpec(spec),
+    })) as VideoBuilder<Args>['localize']
 
   callable.each = (variants) =>
-    createVideoBuilder<Body>(test, {
+    createVideoBuilder<Args>(test, {
       ...state,
       eachVariants: normalizeVariants(variants),
     })

@@ -114,17 +114,16 @@ describe('generateExampleVideo', () => {
     expect(generateExampleVideo()).toBe(installationVideoSource)
   })
 
-  it('keeps the shared commented narration layout', () => {
-    expect(generateExampleVideo())
-      .toContain(`const narration = createNarration({
-  // Default voice settings for all languages.
-  voice: { name: voices.Sophie },
-  // Localized narration cues by language.
-  en: {`)
-    expect(generateExampleVideo()).not
-      .toContain(`voice: { name: voices.Sophie },
-
-  en: {`)
+  it('configures voice as a render option and declares localized narration', () => {
+    const source = generateExampleVideo()
+    expect(source).toContain(
+      `video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })`
+    )
+    expect(source).toContain(`video.localize({
+  // Localized narration cues by language. The fixture exposes them as markers.
+  narration: {
+    en: {`)
+    expect(source).not.toContain('createNarration')
   })
 })
 

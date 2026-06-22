@@ -3,8 +3,8 @@
  * app instead of code. Business tier only.
  *
  * Code opts in per concern:
- * - `createStudioNarration('intro', 'outro')` declares cue keys whose text and
- *   voice are filled in on the Studio page.
+ * - `video.localize({ languages, narration: ['intro', 'outro'] })` declares cue
+ *   keys whose text is filled in on the Studio page.
  * - `renderOptions: 'studio'` defers render options to Studio.
  *
  * On the first upload of a studio-mode video, rendering is held until the

@@ -1,14 +1,17 @@
 /**
- * TTS model types for use with `createNarration`.
+ * TTS model types for the narration voice (`renderOptions.narration`).
  *
  * - `expressive`: expressive synthesis with natural-sounding speech.
  * - `consistent`: consistent synthesis with stable pronunciation.
  *
  * @example
  * ```ts
- * createNarration({
- *   voice: { name: voices.Ava, modelType: modelTypes.expressive },
- *   en: { intro: 'Hello' },
+ * video.use({
+ *   renderOptions: {
+ *     narration: {
+ *       voice: { name: voices.Ava, modelType: modelTypes.expressive },
+ *     },
+ *   },
  * })
  * ```
  */
@@ -20,29 +23,29 @@ export const modelTypes = {
 export type ModelType = (typeof modelTypes)[keyof typeof modelTypes]
 
 /**
- * Named voices available for use with `createNarration`.
+ * Named voices available for the narration voice (`renderOptions.narration`).
  *
- * Built-in voices are language-agnostic at the call site:
+ * Built-in voices are language-agnostic; set a default and override per language
+ * with `voices`:
  *
  * ```ts
- * createNarration({
- *   en: { voice: { name: voices.Aria }, intro: 'Hello' },
- *   fi: { voice: { name: voices.Aria }, intro: 'Hei' },
+ * video.use({
+ *   renderOptions: { narration: { voice: { name: voices.Aria } } },
  * })
  * ```
  *
  * ElevenLabs voices are passed by provider voice id, or cloned from a local
- * audio/video sample — both via `voices.elevenlabs(...)`:
+ * audio/video sample, both via `voices.elevenlabs(...)`:
  *
  * ```ts
- * createNarration({
- *   en: {
- *     voice: { name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }) },
- *     intro: 'Hello',
- *   },
- *   fi: {
- *     voice: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
- *     intro: 'Hei',
+ * video.use({
+ *   renderOptions: {
+ *     narration: {
+ *       voice: { name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }) },
+ *       voices: {
+ *         fi: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
+ *       },
+ *     },
  *   },
  * })
  * ```
@@ -256,14 +259,15 @@ export type Lang = SupportedBaseLanguageCode
 /**
  * A reference to a local audio or video file for ElevenLabs Instant Voice Cloning.
  * Build one with `voices.elevenlabs({ path })` and pass it as the voice `name`
- * in `createNarration` to clone a voice from the file at `path`.
+ * in `renderOptions.narration` to clone a voice from the file at `path`.
  *
  * @example
  * ```ts
- * createNarration({
- *   en: {
- *     voice: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
- *     intro: 'Hello.',
+ * video.use({
+ *   renderOptions: {
+ *     narration: {
+ *       voice: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
+ *     },
  *   },
  * })
  * ```

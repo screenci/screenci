@@ -1,16 +1,23 @@
-import { autoZoom, createNarration, hide, video, voices } from 'screenci'
+import { autoZoom, hide, video, voices } from 'screenci'
 
-const narration = createNarration({
-  voice: { name: voices.Sophie, style: 'Friendly product guide' },
-  en: {
-    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
-  },
-  es: {
-    docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
+video.use({
+  renderOptions: {
+    narration: {
+      voice: { name: voices.Sophie, style: 'Friendly product guide' },
+    },
   },
 })
 
-video('Landing light', async ({ page }) => {
+video.localize({
+  narration: {
+    en: {
+      docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
+    },
+    es: {
+      docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
+    },
+  },
+})('Landing light', async ({ page, narration }) => {
   await hide(async () => {
     await page.goto('https://screenci.com/')
     await page.waitForLoadState('networkidle')

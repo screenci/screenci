@@ -1423,7 +1423,7 @@ export function formatFailedVideoMessage(
   if (message.startsWith(EXPRESSIVE_TIER_ERROR_PREFIX)) {
     return [
       `${videoName}: ${message}`,
-      "If you want to keep using the current tier, remove `voice.style` or `modelType: 'expressive'` from `createNarration()`.",
+      "If you want to keep using the current tier, remove `voice.style` or `modelType: 'expressive'` from `renderOptions.narration`.",
     ].join('\n')
   }
 

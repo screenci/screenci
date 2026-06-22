@@ -85,13 +85,25 @@ Once connected, you can dispatch the recording workflow two ways:
 - **From the app:** click **Record all** on the project page. To record a single
   video or screenshot, use its **Record** button (on the project page or its
   detail page).
-- **From the CLI:** run [`screenci record --remote`](/docs/reference/cli#-remote),
-  optionally with `--grep "<name>"` to record only matching items. It resolves the
-  project from `SCREENCI_SECRET` and triggers the workflow without recording
-  locally.
+- **From the CLI:** run [`screenci record --remote`](/docs/reference/cli#-remote).
+  It resolves the project from `SCREENCI_SECRET` and triggers the workflow without
+  recording locally.
 
-Targeted runs use the workflow's optional `grep` input, which `screenci init`
-includes in the generated `screenci.yaml`.
+### Targeted recordings
+
+You can record only some videos or screenshots instead of all of them, from
+either surface:
+
+- **From the app:** the per-item **Record** buttons.
+- **From the CLI:** pass `--grep` to filter by title, just like local recording:
+
+  ```bash
+  screenci record --remote --grep "Onboarding"
+  ```
+
+Both forward the filter to the workflow's optional `grep` input, which
+`screenci init` includes in the generated `screenci.yaml`. If your workflow
+predates that input, add it (or re-run `screenci init`) so targeted runs work.
 
 To revoke access, click **Disconnect** on the project page or uninstall the App
 from your GitHub settings.

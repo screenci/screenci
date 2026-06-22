@@ -34,6 +34,9 @@ import type { CropTarget, CropOptions } from './crop.js'
 import { getRuntimePage, setRuntimeCrop } from './runtimeContext.js'
 import { ScreenciError } from './errors.js'
 import { withActiveRecordingContext } from './video.js'
+import { createNarration, assertNarrationLanguagesMatch } from './cue.js'
+import { createVideoBuilder } from './builder.js'
+import type { VideoBuilder } from './builder.js'
 
 /**
  * The `crop` fixture argument. Call it inside a `screenshot()` body to crop the
@@ -51,10 +54,20 @@ const SCREENSHOT_FILE_NAME = 'screenshot.png'
 type ScreenshotFixtureOptions = {
   recordOptions: RecordOptions
   renderOptions: RenderOptions | StudioRenderOptionsSentinel | undefined
+  /** Active language for this pass; see {@link video} for details. Internal. */
+  _screenciLanguage: string | undefined
+  /** Grouping name written to `metadata.videoName`. Internal. */
+  _screenciVideoName: string | undefined
+  /** The screenshot's full declared language set, for narration validation. Internal. */
+  _screenciLanguages: string[]
 }
 
 type ScreenshotFixtures = {
   crop: CropFixture
+  /** The language being captured in this pass; `undefined` outside per-language mode. */
+  language: string | undefined
+  /** Narration factory bound to the screenshot's declared languages. */
+  narration: typeof createNarration
 }
 
 const _screenshotBase = base.extend<
@@ -62,6 +75,28 @@ const _screenshotBase = base.extend<
 >({
   recordOptions: [DEFAULT_VIDEO_OPTIONS, { option: true }],
   renderOptions: [undefined, { option: true }],
+  _screenciLanguage: [undefined, { option: true }],
+  _screenciVideoName: [undefined, { option: true }],
+  _screenciLanguages: [[], { option: true }],
+
+  language: async ({ _screenciLanguage }, use) => {
+    await use(_screenciLanguage)
+  },
+
+  narration: async ({ _screenciLanguages }, use) => {
+    const narrationFactory = ((
+      input: Parameters<typeof createNarration>[0]
+    ) => {
+      if (_screenciLanguages.length > 0) {
+        assertNarrationLanguagesMatch(
+          input as Record<string, unknown>,
+          _screenciLanguages
+        )
+      }
+      return createNarration(input)
+    }) as typeof createNarration
+    await use(narrationFactory)
+  },
 
   crop: async ({}, use) => {
     await use(async (target, options) => {
@@ -159,12 +194,21 @@ const _screenshotBase = base.extend<
   },
 
   page: async (
-    { context, recordOptions, renderOptions, deviceScaleFactor },
+    {
+      context,
+      recordOptions,
+      renderOptions,
+      deviceScaleFactor,
+      _screenciLanguage,
+      _screenciVideoName,
+    },
     use,
     testInfo
   ) => {
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
     const recorder = new EventRecorder(renderOptions, recordOptions)
+    recorder.setActiveLanguage(_screenciLanguage ?? null)
+    const videoName = _screenciVideoName ?? testInfo.title
 
     if (!shouldRecord) {
       // Preview run (`screenci test`): exercise the body without capturing.
@@ -249,7 +293,7 @@ const _screenshotBase = base.extend<
       // renderOptions.screenshot.crop (editable in Studio), not ScreenshotInfo.
       await recorder.writeToFile(
         screenshotDir,
-        testInfo.title,
+        videoName,
         relative(configDir, testInfo.file),
         {
           output: 'screenshot',
@@ -334,6 +378,20 @@ interface Screenshot extends ScreenshotCallSignatures {
   fail: Screenshot & ConditionalOverloads
   slow: Screenshot & ((condition?: boolean, description?: string) => void)
 
+  /**
+   * Capture one localized screenshot per declared language. By default each
+   * language is captured in its own pass with the browser `locale` set from the
+   * language, and the body receives the active `language`. Chainable with
+   * `.each(...)`.
+   */
+  languages: VideoBuilder<ScreenshotBody>['languages']
+
+  /**
+   * Produce a separate screenshot per variant (viewport, theme, ...). Each
+   * variant has its own identity and history. Chainable with `.languages(...)`.
+   */
+  each: VideoBuilder<ScreenshotBody>['each']
+
   beforeEach(
     inner: (args: ScreenshotArgs, testInfo: TestInfo) => Promise<void> | void
   ): void
@@ -387,3 +445,10 @@ interface Screenshot extends ScreenshotCallSignatures {
  * ```
  */
 export const screenshot = _screenshotBase as unknown as Screenshot
+
+// Attach the chainable fan-out builders, mirroring `video`.
+const _screenshotRootBuilder = createVideoBuilder<ScreenshotBody>(
+  _screenshotBase as unknown as Parameters<typeof createVideoBuilder>[0]
+)
+screenshot.languages = _screenshotRootBuilder.languages
+screenshot.each = _screenshotRootBuilder.each

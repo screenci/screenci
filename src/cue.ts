@@ -469,6 +469,37 @@ export function createNarration<
   ) as Cues<AllCues<M>>
 }
 
+/**
+ * Asserts that a narration input's language keys match a video's declared
+ * languages exactly. Used by the `narration` fixture so the languages declared
+ * via `video.languages([...])` stay the single source of truth: a missing or
+ * unexpected language fails loudly instead of silently drifting.
+ */
+export function assertNarrationLanguagesMatch(
+  input: Record<string, unknown>,
+  declared: readonly string[]
+): void {
+  const declaredSet = new Set(declared)
+  const inputLangs = Object.keys(input).filter(
+    (key) => !RESERVED_LANGUAGE_METADATA_KEYS.has(key as LanguageMetadataKey)
+  )
+  const inputSet = new Set(inputLangs)
+
+  const missing = declared.filter((lang) => !inputSet.has(lang))
+  const unexpected = inputLangs.filter((lang) => !declaredSet.has(lang))
+  if (missing.length === 0 && unexpected.length === 0) return
+
+  const parts: string[] = []
+  if (missing.length > 0) parts.push(`missing ${missing.join(', ')}`)
+  if (unexpected.length > 0) parts.push(`unexpected ${unexpected.join(', ')}`)
+
+  throw new Error(
+    `[screenci] narration languages must match the video's declared languages (${declared.join(
+      ', '
+    )}): ${parts.join('; ')}.`
+  )
+}
+
 function createCueController(
   name: string,
   emitStart: (recorder: IEventRecorder) => void | Promise<void>

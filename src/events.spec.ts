@@ -681,6 +681,41 @@ describe('EventRecorder', () => {
       expect(parsed.metadata?.languages).toEqual(['en'])
     })
 
+    it('filters cue translations to the active language and stamps metadata', async () => {
+      recorder.start()
+      recorder.setActiveLanguage('fi')
+      recorder.addCueStart('', 'greeting', undefined, {
+        en: { text: 'Hello', voice: voices.Ava },
+        fi: { text: 'Hei', voice: voices.Ava },
+      })
+      await recorder.writeToFile(tmpDir, 'Test Video')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed: RecordingData = JSON.parse(content)
+      expect(parsed.metadata?.languages).toEqual(['fi'])
+      const cue = parsed.events.find((e) => e.type === 'cueStart') as {
+        translations?: Record<string, unknown>
+      }
+      expect(Object.keys(cue.translations ?? {})).toEqual(['fi'])
+    })
+
+    it('drops cue translations entirely when the active language is absent', async () => {
+      recorder.start()
+      recorder.setActiveLanguage('de')
+      recorder.addCueStart('', 'greeting', undefined, {
+        en: { text: 'Hello', voice: voices.Ava },
+      })
+      await recorder.writeToFile(tmpDir, 'Test Video')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed: RecordingData = JSON.parse(content)
+      expect(parsed.metadata?.languages).toEqual(['de'])
+      const cue = parsed.events.find((e) => e.type === 'cueStart') as {
+        translations?: Record<string, unknown>
+      }
+      expect(cue.translations).toBeUndefined()
+    })
+
     it('does not write metadata.voices even when voices are registered', async () => {
       recorder.start()
       recorder.registerVoiceForLang('en', { name: 'Ava' })

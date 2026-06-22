@@ -713,6 +713,16 @@ export type WriteRecordingOptions = {
 export interface IEventRecorder {
   start(): void
   /**
+   * Restrict this recording to a single language.
+   *
+   * In per-language recording each pass records exactly one language: the
+   * metadata is stamped with `[lang]` and every cue's `translations` is filtered
+   * to that language at write time, so the upload produces exactly one language
+   * version. Pass `null` (the default) to keep every language, as in shared/fast
+   * mode and single-language recordings.
+   */
+  setActiveLanguage(lang: string | null): void
+  /**
    * Records an input action. Inner event timestamps are absolute (e.g. Date.now())
    * and are converted to recording-relative milliseconds internally.
    * Throws if the event's time span overlaps with any previously recorded input event.
@@ -799,6 +809,7 @@ export interface IEventRecorder {
 
 export const NOOP_EVENT_RECORDER: IEventRecorder = {
   start(): void {},
+  setActiveLanguage(): void {},
   addInput(): void {},
   addCueStart(): void {},
   addStudioCueStart(): void {},
@@ -836,6 +847,7 @@ export class EventRecorder implements IEventRecorder {
   private readonly events: RecordingEvent[] = []
   private readonly pendingOverlays: PendingOverlay[] = []
   private startTime: number | null = null
+  private activeLanguage: string | null = null
   private readonly recordOptions: RecordOptions | undefined
   private readonly renderOptions:
     | RenderOptions
@@ -851,6 +863,10 @@ export class EventRecorder implements IEventRecorder {
   }
 
   registerVoiceForLang(_lang: string, _meta: VoiceLanguageMeta): void {}
+
+  setActiveLanguage(lang: string | null): void {
+    this.activeLanguage = lang
+  }
 
   private normalizeCentering(
     options: AutoZoomOptions | undefined
@@ -1370,6 +1386,18 @@ export class EventRecorder implements IEventRecorder {
       resolved.screenshot = screenshotGroup
     }
 
+    // Per-language recording: each pass records exactly one language. The cue
+    // translations are filtered to that language and the metadata is stamped
+    // with `[activeLanguage]` so the upload produces a single language version
+    // (and the renderer never sees foreign-language translations).
+    const activeLanguage = this.activeLanguage
+    const serializedEvents =
+      activeLanguage !== null
+        ? this.events.map((event) =>
+            filterEventTranslationsToLanguage(event, activeLanguage)
+          )
+        : this.events
+
     const languageSet = new Set<string>()
     for (const event of this.events) {
       if (event.type === 'cueStart') {
@@ -1387,7 +1415,12 @@ export class EventRecorder implements IEventRecorder {
         }
       }
     }
-    const languages = languageSet.size > 0 ? [...languageSet].sort() : undefined
+    const languages =
+      activeLanguage !== null
+        ? [activeLanguage]
+        : languageSet.size > 0
+          ? [...languageSet].sort()
+          : undefined
 
     const git = getGitMetadata()
 
@@ -1417,7 +1450,7 @@ export class EventRecorder implements IEventRecorder {
         : undefined
 
     const data: RecordingData = {
-      events: this.events,
+      events: serializedEvents,
       renderOptions: resolved,
       ...(this.recordOptions !== undefined && {
         recordOptions: this.recordOptions,
@@ -1438,6 +1471,37 @@ export class EventRecorder implements IEventRecorder {
     }
     await writeFile(filePath, JSON.stringify(data, null, 2))
   }
+}
+
+/**
+ * Returns a copy of `event` whose `translations` map is narrowed to a single
+ * language. Cue events without a translation for that language have their
+ * `translations` dropped entirely; every other event is returned unchanged.
+ *
+ * Pure and exported for testing. Used by per-language recording so each pass
+ * writes exactly the active language's narration.
+ */
+export function filterEventTranslationsToLanguage(
+  event: RecordingEvent,
+  language: string
+): RecordingEvent {
+  if (event.type !== 'cueStart' && event.type !== 'videoCueStart') {
+    return event
+  }
+  if (event.translations === undefined) {
+    return event
+  }
+
+  const translation = (event.translations as Record<string, unknown>)[language]
+  if (translation === undefined) {
+    const { translations: _dropped, ...rest } = event
+    return rest as RecordingEvent
+  }
+
+  return {
+    ...event,
+    translations: { [language]: translation },
+  } as RecordingEvent
 }
 
 function normalizeNarrationDropShadow(

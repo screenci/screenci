@@ -30,6 +30,7 @@ import type {
 import {
   SCREENCI_DISABLE_RECORDING_TIMINGS_ENV,
   SCREENCI_MOCK_RECORD_ENV,
+  SCREENCI_LANGUAGES_ENV,
 } from './src/runtimeMode.js'
 import { DEFAULT_RECORD_UPLOAD_POLICY } from './src/defaults.js'
 import type { VoiceKey } from './src/voices.js'
@@ -2089,7 +2090,8 @@ export function extractGrep(args: string[]): string | undefined {
 // videos/screenshots.
 async function triggerRemoteRun(
   configPath?: string,
-  grep?: string
+  grep?: string,
+  languages?: string
 ): Promise<void> {
   const { screenciConfig, secret, apiUrl } = await requireScreenCISecret(
     configPath,
@@ -2105,6 +2107,7 @@ async function triggerRemoteRun(
     body: JSON.stringify({
       projectName: screenciConfig.projectName,
       ...(grep ? { grep } : {}),
+      ...(languages ? { languages } : {}),
     }),
   })
 
@@ -2115,9 +2118,13 @@ async function triggerRemoteRun(
     )
   }
 
+  const filters = [
+    ...(grep ? [`filter: ${grep}`] : []),
+    ...(languages ? [`languages: ${languages}`] : []),
+  ]
   logger.info(
-    grep
-      ? `Triggered the remote recording workflow for "${screenciConfig.projectName}" (filter: ${grep}).`
+    filters.length > 0
+      ? `Triggered the remote recording workflow for "${screenciConfig.projectName}" (${filters.join(', ')}).`
       : `Triggered the remote recording workflow for "${screenciConfig.projectName}".`
   )
 }
@@ -2466,15 +2473,24 @@ export async function main() {
       '--remote',
       'trigger the GitHub Actions recording workflow for this project remotely instead of recording locally'
     )
+    .option(
+      '--languages <langs>',
+      'record/render only these languages (comma-separated, e.g. fi,en)'
+    )
     .allowUnknownOption(true)
     .action(async () => {
       const parsed = parseRecordCliArgs(getSubcommandArgv('record'))
 
       // `--remote` is a pure dispatch: it fires the project's GitHub Actions
       // recording workflow and exits, so there is no local Playwright run. A
-      // pass-through `--grep` becomes the remote recording filter.
+      // pass-through `--grep` becomes the remote recording filter, and
+      // `--languages` limits which language versions are recorded.
       if (parsed.remote) {
-        await triggerRemoteRun(parsed.configPath, extractGrep(parsed.otherArgs))
+        await triggerRemoteRun(
+          parsed.configPath,
+          extractGrep(parsed.otherArgs),
+          parsed.languages
+        )
         return
       }
 
@@ -2487,7 +2503,8 @@ export async function main() {
           parsed.configPath,
           parsed.verbose,
           false,
-          parsed.pollAuth
+          parsed.pollAuth,
+          parsed.languages
         )
       } catch (error) {
         if (!(error instanceof Error)) throw error
@@ -2819,17 +2836,19 @@ function getSubcommandArgv(command: string): string[] {
   return commandIndex === -1 ? [] : argv.slice(commandIndex + 1)
 }
 
-function parseRecordCliArgs(args: string[]): {
+export function parseRecordCliArgs(args: string[]): {
   configPath: string | undefined
   verbose: boolean
   pollAuth: boolean
   remote: boolean
+  languages: string | undefined
   otherArgs: string[]
 } {
   let configPath: string | undefined
   let verbose = false
   let pollAuth = false
   let remote = false
+  let languages: string | undefined
   const otherArgs: string[] = []
 
   for (let i = 0; i < args.length; i++) {
@@ -2843,6 +2862,20 @@ function parseRecordCliArgs(args: string[]): {
       }
       configPath = nextArg
       i++
+    } else if (arg === '--languages' || arg === '--language') {
+      // screenci-only flag: parsed out so it is not forwarded to Playwright.
+      const nextArg = args[i + 1]
+      if (nextArg === undefined) {
+        logger.error('Error: --languages requires a comma-separated value')
+        process.exit(1)
+      }
+      languages = nextArg
+      i++
+    } else if (
+      arg.startsWith('--languages=') ||
+      arg.startsWith('--language=')
+    ) {
+      languages = arg.slice(arg.indexOf('=') + 1)
     } else if (arg === '--verbose' || arg === '-v') {
       verbose = true
     } else if (arg === '--poll-auth') {
@@ -2859,6 +2892,7 @@ function parseRecordCliArgs(args: string[]): {
     verbose,
     pollAuth,
     remote,
+    languages,
     otherArgs,
   }
 }
@@ -2927,7 +2961,8 @@ async function run(
   customConfigPath?: string,
   verbose = false,
   mockRecord = false,
-  pollAuth = false
+  pollAuth = false,
+  languages?: string
 ) {
   const configPath = resolveScreenCIConfigPathOrExit(customConfigPath)
 
@@ -2954,6 +2989,9 @@ async function run(
     ...envForChild,
     SCREENCI_CONFIG_DIR: dirname(configPath),
     ...(command === 'record' ? { SCREENCI_RECORDING: 'true' } : {}),
+    ...(command === 'record' && languages
+      ? { [SCREENCI_LANGUAGES_ENV]: languages }
+      : {}),
     ...(command === 'test' && !mockRecord
       ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
       : {}),
@@ -2986,6 +3024,10 @@ async function run(
       SCREENCI_CONFIG_DIR: dirname(configPath),
       // Enable recording only for record command
       ...(command === 'record' ? { SCREENCI_RECORDING: 'true' } : {}),
+      // Per-language filter: the builder records only these languages.
+      ...(command === 'record' && languages
+        ? { [SCREENCI_LANGUAGES_ENV]: languages }
+        : {}),
       ...(command === 'test' && !mockRecord
         ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
         : {}),

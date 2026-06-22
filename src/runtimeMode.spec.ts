@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isTimingDebugEnabled,
+  parseRequestedLanguages,
   resolveRecordingTimingDuration,
   shouldSimulateRecordingTimings,
 } from './runtimeMode.js'
@@ -48,5 +49,38 @@ describe('runtimeMode', () => {
 
     expect(shouldSimulateRecordingTimings(env)).toBe(true)
     expect(resolveRecordingTimingDuration(500, env)).toBe(500)
+  })
+})
+
+describe('parseRequestedLanguages', () => {
+  it('returns null when the env var is unset', () => {
+    expect(parseRequestedLanguages({} as NodeJS.ProcessEnv)).toBeNull()
+  })
+
+  it('parses a comma-separated list, trimming whitespace', () => {
+    expect(
+      parseRequestedLanguages({
+        SCREENCI_LANGUAGES: 'fi, en ,de',
+      } as NodeJS.ProcessEnv)
+    ).toEqual(['fi', 'en', 'de'])
+  })
+
+  it('de-duplicates while preserving first-seen order', () => {
+    expect(
+      parseRequestedLanguages({
+        SCREENCI_LANGUAGES: 'en,fi,en',
+      } as NodeJS.ProcessEnv)
+    ).toEqual(['en', 'fi'])
+  })
+
+  it('returns null when the value is empty or only separators', () => {
+    expect(
+      parseRequestedLanguages({ SCREENCI_LANGUAGES: '' } as NodeJS.ProcessEnv)
+    ).toBeNull()
+    expect(
+      parseRequestedLanguages({
+        SCREENCI_LANGUAGES: ' , ,',
+      } as NodeJS.ProcessEnv)
+    ).toBeNull()
   })
 })

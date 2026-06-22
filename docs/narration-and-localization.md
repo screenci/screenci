@@ -13,6 +13,7 @@ and Starter users should stay with the default consistent narration flow.
 - [how to define narration cues](#start-with-one-language)
 - [how to overlap narration with visible motion](#timing-modes)
 - [how to localize the same video](#add-localization)
+- [how to record a separate pass per language](#localized-recordings-per-language-capture)
 - [how to override voices per language](#per-language-voice-overrides)
 
 ## Start with one language
@@ -138,6 +139,128 @@ catches drift early.
 
 Use bare language keys such as `en`, `fi`, `fr`, and `cmn`. ScreenCI treats
 those as the public language versions for narration, rendering, and public URLs.
+
+## Localized recordings (per-language capture)
+
+The localization above captures the browser once and overdubs narration per
+language. That is ideal when the visible UI is identical across languages. When
+the UI itself differs per language (the app renders translated text, you
+navigate to a localized route, or you want the browser locale set), record a
+**separate pass per language** with `video.languages([...])`.
+
+```ts
+import { video, voices } from 'screenci'
+
+video.languages(['en', 'fi'])(
+  'Tutorial',
+  async ({ page, language, narration }) => {
+    // `language` is the language being recorded in this pass ('en' or 'fi').
+    // The browser locale is set automatically (en -> en-US, fi -> fi-FI), so a
+    // self-localizing app renders in the right language. You can also navigate
+    // per language.
+    await page.goto('/' + language)
+
+    // The `narration` fixture is bound to the declared languages, so the cue
+    // map must cover exactly the languages passed to `.languages([...])`.
+    const n = narration({
+      voice: { name: voices.Ava },
+      en: { intro: 'Open the settings page.' },
+      fi: { intro: 'Avaa asetussivu.' },
+    })
+    await n.intro()
+  }
+)
+```
+
+Each declared language becomes its own recording pass, and the passes group into
+a single video with one language version each. The declared languages are the
+single source of truth: the `narration` fixture validates that your cue map
+matches them exactly, so a forgotten translation fails loudly instead of
+silently drifting.
+
+### Choosing the locale
+
+Locales default from the language (`fi` -> `fi-FI`). Override per language when
+you need a specific region:
+
+```ts
+video.languages(['en', 'pt'], {
+  locales: { en: 'en-GB', pt: 'pt-BR' },
+})('Pricing', async ({ page, language }) => {
+  await page.goto('/' + language + '/pricing')
+})
+```
+
+### Shared capture mode
+
+To keep the single-capture behavior (one recording, narration overdubbed at
+render) while still declaring languages on the test, pass `{ mode: 'shared' }`.
+The body's `language` fixture is then `undefined`:
+
+```ts
+video.languages(['en', 'fi'], { mode: 'shared' })(
+  'Tour',
+  async ({ page, narration }) => {
+    await page.goto('/')
+    const n = narration({
+      voice: { name: voices.Ava },
+      en: { intro: 'Welcome.' },
+      fi: { intro: 'Tervetuloa.' },
+    })
+    await n.intro()
+  }
+)
+```
+
+### Recording only some languages
+
+To record (and render) a subset, pass `--languages` to `screenci record`:
+
+```bash
+screenci record --languages fi
+screenci record --languages fi,en
+```
+
+Per-language videos record only the requested languages, so a run never produces
+more than you asked for. A shared-mode recording is a single capture and is not
+split by this filter.
+
+### Localized screenshots
+
+`screenshot` supports the same API. Each language produces its own localized
+still:
+
+```ts
+import { screenshot } from 'screenci'
+
+screenshot.languages(['en', 'fi'])(
+  'Dashboard hero',
+  async ({ page, language, crop }) => {
+    await page.goto('/' + language + '/dashboard')
+    await crop(page.getByTestId('revenue-card'), { padding: 0.06 })
+  }
+)
+```
+
+### Variants with `each`
+
+`video.each([...])` (and `screenshot.each([...])`) produce a **separate video
+per variant**, for cases like viewport or theme. Each variant has its own
+identity and history. It chains with `.languages([...])`:
+
+```ts
+video
+  .each([
+    { key: 'mobile', recordOptions: { aspectRatio: '9:16' } },
+    { key: 'desktop', recordOptions: { aspectRatio: '16:9' } },
+  ])
+  .languages(['en', 'fi'])('Landing', async ({ page, language }) => {
+  await page.goto('/' + language)
+})
+```
+
+This records `Landing mobile` and `Landing desktop` as separate videos, each
+with `en` and `fi` language versions.
 
 ## Per-language voice overrides
 

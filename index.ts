@@ -42,6 +42,16 @@ export type {
 export type { ScreenCIPage, ScreenCILocator } from './src/types.js'
 export { createNarration, createStudioNarration } from './src/cue.js'
 export type { NarrationCue, Cues, TopLevelVoiceConfig } from './src/cue.js'
+export type {
+  LanguageMode,
+  LanguagesOptions,
+  EachVariant,
+  VideoBuilder,
+} from './src/builder.js'
+export {
+  resolveLocaleForLanguage,
+  DEFAULT_LANGUAGE_LOCALES,
+} from './src/locales.js'
 export { isStudioRenderOptions } from './src/studio.js'
 export type { StudioRenderOptionsSentinel } from './src/studio.js'
 export { hide } from './src/hide.js'

@@ -839,4 +839,28 @@ describe('CLI', () => {
       }
     })
   })
+
+  describe('parseRecordCliArgs --languages', () => {
+    it('parses the space-separated form and keeps it out of pass-through args', async () => {
+      const { parseRecordCliArgs } = await import('./cli')
+      const parsed = parseRecordCliArgs(['--languages', 'fi,en', '--grep', 'x'])
+      expect(parsed.languages).toBe('fi,en')
+      expect(parsed.otherArgs).toEqual(['--grep', 'x'])
+    })
+
+    it('parses the equals form', async () => {
+      const { parseRecordCliArgs } = await import('./cli')
+      expect(parseRecordCliArgs(['--languages=fi']).languages).toBe('fi')
+    })
+
+    it('accepts the singular --language alias', async () => {
+      const { parseRecordCliArgs } = await import('./cli')
+      expect(parseRecordCliArgs(['--language', 'de']).languages).toBe('de')
+    })
+
+    it('leaves languages undefined when not provided', async () => {
+      const { parseRecordCliArgs } = await import('./cli')
+      expect(parseRecordCliArgs(['--grep', 'x']).languages).toBeUndefined()
+    })
+  })
 })

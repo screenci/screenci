@@ -7,6 +7,7 @@ import * as voicesModule from './src/voices.js'
 describe('public api surface', () => {
   it('only exports public runtime api from the root entrypoint', () => {
     expect(Object.keys(screenci).sort()).toEqual([
+      'DEFAULT_LANGUAGE_LOCALES',
       'MAX_AUDIO_LEVEL',
       'autoZoom',
       'createAudio',
@@ -21,6 +22,7 @@ describe('public api surface', () => {
       'modelTypes',
       'overlayRect',
       'resetZoom',
+      'resolveLocaleForLanguage',
       'screenshot',
       'setOverlayCss',
       'speed',

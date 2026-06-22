@@ -28,6 +28,9 @@ export { getDimensions } from './dimensions.js'
 import { getDimensions, getViewportCenter } from './dimensions.js'
 import { resetCueChain } from './cue.js'
 import { setActiveCueRecorder } from './cue.js'
+import { createNarration, assertNarrationLanguagesMatch } from './cue.js'
+import { createVideoBuilder } from './builder.js'
+import type { VideoBuilder } from './builder.js'
 import { setActiveHideRecorder } from './hide.js'
 import { setActiveAutoZoomRecorder, setActiveZoomPage } from './autoZoom.js'
 import { setActiveAssetRecorder } from './asset.js'
@@ -397,14 +400,69 @@ export async function withActiveRecordingContext<T>(params: {
 type VideoFixtureOptions = {
   recordOptions: RecordOptions
   renderOptions: RenderOptions | StudioRenderOptionsSentinel | undefined
+  /**
+   * Active language for this recording pass, set by `video.languages(...)` in
+   * per-language mode. `undefined` in shared mode and single-language videos.
+   * Internal: prefer the `language` fixture in test bodies.
+   */
+  _screenciLanguage: string | undefined
+  /**
+   * Grouping name written to `metadata.videoName`, set by the fan-out builders
+   * so per-language passes (which use unique test titles) still group into one
+   * video. Falls back to the test title. Internal.
+   */
+  _screenciVideoName: string | undefined
+  /**
+   * The video's full declared language set, set by `video.languages(...)`. Used
+   * by the `narration` fixture to validate that narration covers exactly the
+   * declared languages. Internal.
+   */
+  _screenciLanguages: string[]
+}
+
+type VideoRuntimeFixtures = {
+  /**
+   * The language being recorded in this pass, for per-language navigation
+   * (e.g. `page.goto('/' + language)`). `undefined` in shared mode and
+   * single-language videos.
+   */
+  language: string | undefined
+  /**
+   * Narration factory bound to the video's declared languages. Identical to the
+   * top-level `createNarration`, but validates that the provided languages match
+   * the languages declared via `video.languages(...)`.
+   */
+  narration: typeof createNarration
 }
 
 const _videoBase = base.extend<
-  VideoFixtureOptions,
+  VideoFixtureOptions & VideoRuntimeFixtures,
   { recordingFinalizationQueue: WorkerFinalizationQueue }
 >({
   recordOptions: [DEFAULT_VIDEO_OPTIONS, { option: true }],
   renderOptions: [undefined, { option: true }],
+  _screenciLanguage: [undefined, { option: true }],
+  _screenciVideoName: [undefined, { option: true }],
+  _screenciLanguages: [[], { option: true }],
+
+  language: async ({ _screenciLanguage }, use) => {
+    await use(_screenciLanguage)
+  },
+
+  narration: async ({ _screenciLanguages }, use) => {
+    const narrationFactory = ((
+      input: Parameters<typeof createNarration>[0]
+    ) => {
+      if (_screenciLanguages.length > 0) {
+        assertNarrationLanguagesMatch(
+          input as Record<string, unknown>,
+          _screenciLanguages
+        )
+      }
+      return createNarration(input)
+    }) as typeof createNarration
+    await use(narrationFactory)
+  },
   recordingFinalizationQueue: [
     async ({}, use) => {
       const queue: WorkerFinalizationQueue = []
@@ -501,13 +559,29 @@ const _videoBase = base.extend<
   },
 
   page: async (
-    { context, recordOptions, renderOptions, recordingFinalizationQueue },
+    {
+      context,
+      recordOptions,
+      renderOptions,
+      recordingFinalizationQueue,
+      _screenciLanguage,
+      _screenciVideoName,
+    },
     use,
     testInfo
   ) => {
     // Only record when explicitly enabled (record command)
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
     const recorder = new EventRecorder(renderOptions, recordOptions)
+    // In per-language mode each pass records one language; this filters cue
+    // translations and stamps metadata so the upload becomes a single language
+    // version. `null` (shared / single-language) keeps every language.
+    recorder.setActiveLanguage(_screenciLanguage ?? null)
+
+    // Per-language passes use a unique test title (so each gets its own
+    // recording directory) but share one `videoName` so they group as language
+    // versions of one video. Plain videos fall back to the test title.
+    const videoName = _screenciVideoName ?? testInfo.title
 
     if (!shouldRecord) {
       const page = await context.newPage()
@@ -615,7 +689,7 @@ const _videoBase = base.extend<
         const configDir = process.env.SCREENCI_CONFIG_DIR ?? process.cwd()
         await recorder.writeToFile(
           videoDir,
-          testInfo.title,
+          videoName,
           relative(configDir, testInfo.file)
         )
       }
@@ -627,6 +701,7 @@ type VideoType = TestType<
   PlaywrightTestArgs &
     PlaywrightTestOptions &
     VideoFixtureOptions &
+    VideoRuntimeFixtures &
     PlaywrightWorkerArgs &
     PlaywrightWorkerOptions,
   PlaywrightWorkerArgs & PlaywrightWorkerOptions
@@ -636,6 +711,7 @@ type VideoArgs = Omit<PlaywrightTestArgs, 'page'> & {
   page: ScreenCIPage
 } & PlaywrightTestOptions &
   VideoFixtureOptions &
+  VideoRuntimeFixtures &
   PlaywrightWorkerArgs &
   PlaywrightWorkerOptions
 
@@ -736,6 +812,43 @@ interface Video extends VideoCallSignatures {
   /** Mark this test as slow, with optional conditional overload. */
   slow: Video & ((condition?: boolean, description?: string) => void)
 
+  /**
+   * Record one language version per declared language.
+   *
+   * By default each language is recorded in its own pass with the browser
+   * `locale` set from the language, and the body receives the active `language`
+   * for per-language navigation. Pass `{ mode: 'shared' }` to record a single
+   * capture shared across languages (narration overdubbed at render time).
+   *
+   * Chainable with `.each(...)`.
+   *
+   * @example
+   * ```ts
+   * video.languages(['en', 'fi'])('Tutorial', async ({ page, language, narration }) => {
+   *   await page.goto('/' + language)
+   *   const n = narration({ voice: { name: voices.Ava }, en: { intro: 'Welcome.' }, fi: { intro: 'Tervetuloa.' } })
+   *   await n.intro()
+   * })
+   * ```
+   */
+  languages: VideoBuilder<VideoBody>['languages']
+
+  /**
+   * Produce a separate video per variant (viewport, theme, ...). Each variant
+   * has its own video identity and history. Chainable with `.languages(...)`.
+   *
+   * @example
+   * ```ts
+   * video.each([
+   *   { key: 'mobile', recordOptions: { aspectRatio: '9:16' } },
+   *   { key: 'desktop', recordOptions: { aspectRatio: '16:9' } },
+   * ])('Landing', async ({ page }) => {
+   *   await page.goto('/')
+   * })
+   * ```
+   */
+  each: VideoBuilder<VideoBody>['each']
+
   /** Run a hook before each test in the current suite. */
   beforeEach(
     inner: (args: VideoArgs, testInfo: TestInfo) => Promise<void> | void
@@ -794,3 +907,11 @@ interface Video extends VideoCallSignatures {
  * ```
  */
 export const video = _videoBase as unknown as Video
+
+// Attach the chainable fan-out builders. They register through the same test
+// instance, so per-language / per-variant passes inherit every video fixture.
+const _rootBuilder = createVideoBuilder<VideoBody>(
+  _videoBase as unknown as Parameters<typeof createVideoBuilder>[0]
+)
+video.languages = _rootBuilder.languages
+video.each = _rootBuilder.each

@@ -10,6 +10,7 @@ import {
   resetCueChain,
   setSleepFn,
   validateCustomVoiceRefs,
+  assertNarrationLanguagesMatch,
 } from './cue.js'
 import * as screenci from '../index.js'
 import { hide, setActiveHideRecorder } from './hide.js'
@@ -28,6 +29,7 @@ import {
 function createMockRecorder(): IEventRecorder {
   return {
     start: vi.fn(),
+    setActiveLanguage: vi.fn(),
     addInput: vi.fn(),
     addCueStart: vi.fn(),
     addStudioCueStart: vi.fn(),
@@ -952,5 +954,34 @@ describe('createStudioNarration', () => {
         'Cannot start narration inside hide()'
       )
     })
+  })
+})
+
+describe('assertNarrationLanguagesMatch', () => {
+  it('passes when the input languages match the declared set exactly', () => {
+    expect(() =>
+      assertNarrationLanguagesMatch(
+        { voice: { name: 'Ava' }, en: {}, fi: {} },
+        ['en', 'fi']
+      )
+    ).not.toThrow()
+  })
+
+  it('ignores the reserved voice key', () => {
+    expect(() =>
+      assertNarrationLanguagesMatch({ voice: {}, en: {} }, ['en'])
+    ).not.toThrow()
+  })
+
+  it('throws when a declared language is missing', () => {
+    expect(() =>
+      assertNarrationLanguagesMatch({ en: {} }, ['en', 'fi'])
+    ).toThrow(/missing fi/)
+  })
+
+  it('throws when an unexpected language is present', () => {
+    expect(() =>
+      assertNarrationLanguagesMatch({ en: {}, de: {} }, ['en'])
+    ).toThrow(/unexpected de/)
   })
 })

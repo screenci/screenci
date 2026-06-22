@@ -798,7 +798,13 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         'run: pnpm exec playwright install --only-shell chromium'
       )
-      expect(workflowCall?.[1]).toContain('run: pnpm exec screenci record')
+      expect(workflowCall?.[1]).toContain('pnpm exec screenci record')
+      // Targeted recordings: optional `grep` input forwarded to record.
+      expect(workflowCall?.[1]).toContain('SCREENCI_GREP: ${{ inputs.grep }}')
+      expect(workflowCall?.[1]).toContain(
+        'pnpm exec screenci record --grep "$SCREENCI_GREP"'
+      )
+      expect(workflowCall?.[1]).toMatch(/workflow_dispatch:\s*\n\s*inputs:/)
     })
 
     it('defaults to pnpm when invoked from a pnpm user agent', async () => {
@@ -957,7 +963,10 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         'run: yarn playwright install --only-shell chromium'
       )
-      expect(workflowCall?.[1]).toContain('run: yarn screenci record')
+      expect(workflowCall?.[1]).toContain('yarn screenci record')
+      expect(workflowCall?.[1]).toContain(
+        'yarn screenci record --grep "$SCREENCI_GREP"'
+      )
     })
 
     it('writes a fresh island package.json without touching a host package.json that lacks type:module', async () => {

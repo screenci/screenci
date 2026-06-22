@@ -678,11 +678,11 @@ describe('CLI', () => {
                 latestRecord: {
                   status: 'finished',
                   video:
-                    'https://api.screenci.com/public/kh74/en/video?record=rec_abc',
+                    'https://api.screenci.com/public/kh74/records/rec_abc/en/video',
                   thumbnail:
-                    'https://api.screenci.com/public/kh74/en/thumbnail?record=rec_abc',
+                    'https://api.screenci.com/public/kh74/records/rec_abc/en/thumbnail',
                   subtitle:
-                    'https://api.screenci.com/public/kh74/en/subtitle?record=rec_abc',
+                    'https://api.screenci.com/public/kh74/records/rec_abc/en/subtitle',
                 },
               },
             },

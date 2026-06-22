@@ -261,10 +261,19 @@ soon as the workflow has been triggered.
 npx screenci record --remote
 ```
 
+Pass `--grep` to record only matching videos or screenshots remotely (the filter
+is forwarded to the workflow's `grep` input):
+
+```bash
+npx screenci record --remote --grep "Onboarding"
+```
+
 This requires connecting the GitHub App to the project first (a one-time setup on
 the project page in the app, see
 [Trigger recordings remotely](/docs/ci-setup#trigger-recordings-remotely)).
 Without a connected repository the command reports that GitHub is not connected.
+Targeted (`--grep`) runs need the workflow to declare a `grep` input; projects
+scaffolded by `screenci init` include it.
 
 ## `screenci info`
 
@@ -333,10 +342,10 @@ the command to use in CI to gate on rendering or grab links right after a record
             "subtitle": "https://api.screenci.com/public/kh74…/records/5f1c…/en/subtitle",
             "screenshot": "https://api.screenci.com/public/kh74…/records/5f1c…/en/screenshot",
             "download": {
-              "video": "https://api.screenci.com/cli/download/kh74…/en/video?record=5f1c…",
-              "thumbnail": "https://api.screenci.com/cli/download/kh74…/en/thumbnail?record=5f1c…",
-              "subtitle": "https://api.screenci.com/cli/download/kh74…/en/subtitle?record=5f1c…",
-              "screenshot": "https://api.screenci.com/cli/download/kh74…/en/screenshot?record=5f1c…"
+              "video": "https://api.screenci.com/cli/download/kh74…/records/5f1c…/en/video",
+              "thumbnail": "https://api.screenci.com/cli/download/kh74…/records/5f1c…/en/thumbnail",
+              "subtitle": "https://api.screenci.com/cli/download/kh74…/records/5f1c…/en/subtitle",
+              "screenshot": "https://api.screenci.com/cli/download/kh74…/records/5f1c…/en/screenshot"
             }
           }
         }
@@ -373,7 +382,7 @@ them to archive a render permanently, before older versions are pruned (see
 
 ```bash
 curl -H "X-ScreenCI-Secret: $SCREENCI_SECRET" \
-  "https://api.screenci.com/cli/download/kh74…/en/video?record=5f1c…" \
+  "https://api.screenci.com/cli/download/kh74…/records/5f1c…/en/video" \
   -o video.mp4
 ```
 

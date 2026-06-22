@@ -2065,12 +2065,32 @@ async function updateVideoVisibility(
   logger.info(`${isPublic ? 'Made public' : 'Made private'}: ${videoId}`)
 }
 
+// Extract a `--grep <value>` / `--grep=<value>` from the pass-through args so a
+// remote trigger can forward it as a filter (records only matching videos).
+export function extractGrep(args: string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (arg === undefined) continue
+    if (arg === '--grep' || arg === '-g') {
+      return args[i + 1]
+    }
+    if (arg.startsWith('--grep=')) {
+      return arg.slice('--grep='.length)
+    }
+  }
+  return undefined
+}
+
 // `screenci record --remote` triggers the project's GitHub Actions recording
 // workflow instead of recording locally. The project is resolved from the
 // existing SCREENCI_SECRET + config `projectName`, exactly like the other
 // authenticated commands; the backend dispatches the workflow using the GitHub
-// token stored for the project.
-async function triggerRemoteRun(configPath?: string): Promise<void> {
+// token stored for the project. An optional `--grep` records only matching
+// videos/screenshots.
+async function triggerRemoteRun(
+  configPath?: string,
+  grep?: string
+): Promise<void> {
   const { screenciConfig, secret, apiUrl } = await requireScreenCISecret(
     configPath,
     { interactive: detectInteractiveSession() }
@@ -2082,7 +2102,10 @@ async function triggerRemoteRun(configPath?: string): Promise<void> {
       'X-ScreenCI-Secret': secret,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ projectName: screenciConfig.projectName }),
+    body: JSON.stringify({
+      projectName: screenciConfig.projectName,
+      ...(grep ? { grep } : {}),
+    }),
   })
 
   if (!res.ok) {
@@ -2093,7 +2116,9 @@ async function triggerRemoteRun(configPath?: string): Promise<void> {
   }
 
   logger.info(
-    `Triggered the remote recording workflow for "${screenciConfig.projectName}".`
+    grep
+      ? `Triggered the remote recording workflow for "${screenciConfig.projectName}" (filter: ${grep}).`
+      : `Triggered the remote recording workflow for "${screenciConfig.projectName}".`
   )
 }
 
@@ -2446,9 +2471,10 @@ export async function main() {
       const parsed = parseRecordCliArgs(getSubcommandArgv('record'))
 
       // `--remote` is a pure dispatch: it fires the project's GitHub Actions
-      // recording workflow and exits, so there is no local Playwright run.
+      // recording workflow and exits, so there is no local Playwright run. A
+      // pass-through `--grep` becomes the remote recording filter.
       if (parsed.remote) {
-        await triggerRemoteRun(parsed.configPath)
+        await triggerRemoteRun(parsed.configPath, extractGrep(parsed.otherArgs))
         return
       }
 

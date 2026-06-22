@@ -2551,6 +2551,31 @@ describe('CLI', () => {
         ).toBe(true)
       })
 
+      it('forwards a --grep filter to the backend', async () => {
+        process.argv = [
+          'node',
+          'cli.js',
+          'record',
+          '--remote',
+          '--grep',
+          'Onboarding',
+        ]
+
+        const { main } = await import('./cli')
+        await main()
+
+        expect(mockSpawn).not.toHaveBeenCalled()
+
+        const triggerCall = mockFetch.mock.calls.find((call) =>
+          String(call[0]).endsWith('/cli/trigger-run')
+        )
+        const init = triggerCall?.[1] as RequestInit
+        expect(JSON.parse(String(init.body))).toEqual({
+          projectName: 'Test Project',
+          grep: 'Onboarding',
+        })
+      })
+
       it('throws when the backend rejects the trigger', async () => {
         process.argv = ['node', 'cli.js', 'record', '--remote']
         mockFetch.mockResolvedValue({

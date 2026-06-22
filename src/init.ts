@@ -1182,6 +1182,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      grep:
+        description: Only record videos whose title matches this pattern (optional)
+        required: false
+        type: string
 
 jobs:
   record:
@@ -1223,7 +1228,13 @@ jobs:
         working-directory: ${islandWorkflowPath}
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
-        run: ${commands.screenciRun} record
+          SCREENCI_GREP: \${{ inputs.grep }}
+        run: |
+          if [ -n "$SCREENCI_GREP" ]; then
+            ${commands.screenciRun} record --grep "$SCREENCI_GREP"
+          else
+            ${commands.screenciRun} record
+          fi
 `
 }
 

@@ -18,12 +18,12 @@ video.localize({
     en: {
       intro:
         'Open any finished video in Studio to edit it right in the browser.',
-      edit: 'Change narration, add a language, or restyle render options, then render a new version. No code, no re-recording.',
+      edit: 'Change narration or restyle render options, then render a new version. No code, no re-recording.',
     },
     es: {
       intro:
         'Abre cualquier video terminado en Studio para editarlo directamente en el navegador.',
-      edit: 'Cambia la narracion, agrega un idioma o ajusta las opciones de render, y genera una nueva version. Sin codigo y sin volver a grabar.',
+      edit: 'Cambia la narracion o ajusta las opciones de render, y genera una nueva version. Sin codigo y sin volver a grabar.',
     },
   },
 })('Studio web editing', async ({ page, narration }) => {
@@ -59,13 +59,13 @@ video.localize({
 
   await narration.intro()
 
-  // Show adding a language: a visible edit that does not trigger a render.
+  // Show editing narration text: a visible edit that does not trigger a render.
   await narration.edit.start()
   await autoZoom(async () => {
-    const addLanguage = page.getByPlaceholder(/add language/i)
-    await addLanguage.scrollIntoViewIfNeeded()
-    await addLanguage.click()
-    await addLanguage.fill('French')
+    const narrationField = page.getByPlaceholder(/narration text/i).first()
+    await narrationField.scrollIntoViewIfNeeded()
+    await narrationField.click()
+    await narrationField.fill('A fresh take on the intro.')
   })
   await narration.edit.end()
 

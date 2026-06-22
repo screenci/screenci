@@ -114,15 +114,15 @@ describe('generateExampleVideo', () => {
     expect(generateExampleVideo()).toBe(installationVideoSource)
   })
 
-  it('configures voice as a render option and declares localized narration', () => {
+  it('co-locates the voice and declares localized narration', () => {
     const source = generateExampleVideo()
-    expect(source).toContain(
-      `video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })`
-    )
     expect(source).toContain(`video.localize({
+  // The voice (how narration is spoken) and the localized text live together.
+  voice: { name: voices.Sophie },
   // Localized narration cues by language. The fixture exposes them as markers.
   narration: {
     en: {`)
+    expect(source).not.toContain('renderOptions')
     expect(source).not.toContain('createNarration')
   })
 })

@@ -9,6 +9,7 @@ import { logger } from './logger.js'
 import {
   normalizeLocalizeSpec,
   type LocalizeSpec,
+  type LocalizeNarrationValue,
   type NormalizedLocalize,
 } from './localize.js'
 
@@ -229,27 +230,66 @@ function registerOne(
   })
 }
 
-/** Cue names declared by a localize spec's `narration` (seeded map or name list). */
-type CueNamesOf<S> = S extends { narration: infer N }
-  ? N extends readonly string[]
-    ? N[number]
-    : N extends Record<string, infer V>
-      ? V extends Record<string, unknown>
-        ? Extract<keyof V, string>
-        : never
-      : never
+/** Converts a union type to an intersection: `A | B` -> `A & B`. */
+type UnionToIntersection<U> = (
+  U extends unknown ? (x: U) => void : never
+) extends (x: infer I) => void
+  ? I
   : never
 
-/** Field names declared by a localize spec's `text` (seeded map or name list). */
-type FieldNamesOf<S> = S extends { text: infer T }
-  ? T extends readonly string[]
-    ? T[number]
-    : T extends Record<string, infer V>
-      ? V extends Record<string, unknown>
-        ? Extract<keyof V, string>
-        : never
-      : never
+/**
+ * Union of every inner key across all languages of a seeded map `M` (e.g. the
+ * cue names of `{ en: { intro, save }, fi: { intro, save } }`). Uses each
+ * language's key set before intersecting, so each language must cover the union
+ * (the identical-keys guarantee, enforced via {@link EnforceIdenticalKeys}).
+ */
+type SeededKeys<M> = [M] extends [object]
+  ? Extract<
+      keyof UnionToIntersection<
+        {
+          [L in keyof M]-?: NonNullable<M[L]> extends Record<string, unknown>
+            ? Record<keyof NonNullable<M[L]> & string, unknown>
+            : never
+        }[keyof M]
+      >,
+      string
+    >
   : never
+
+/** Studio-managed names from a `studio.{narration,text}` list. */
+type StudioNamesOf<N> = N extends readonly string[] ? N[number] : never
+
+/** Cue names: seeded `narration` keys union the `studio.narration` names. */
+type CueNamesOf<S> =
+  | (S extends { narration: infer M } ? SeededKeys<M> : never)
+  | (S extends { studio: { narration: infer N } } ? StudioNamesOf<N> : never)
+
+/** Field names: seeded `text` keys union the `studio.text` names. */
+type FieldNamesOf<S> =
+  | (S extends { text: infer T } ? SeededKeys<T> : never)
+  | (S extends { studio: { text: infer N } } ? StudioNamesOf<N> : never)
+
+/**
+ * Constrains a seeded map so every language declares the same key set: each
+ * language is required to provide every key that appears in any language. A
+ * missing key fails to compile; an unrelated extra key is not part of the union,
+ * so it is rejected as excess.
+ */
+type EnforceIdenticalKeys<M, Value> = {
+  [L in keyof M]: Record<SeededKeys<M>, Value>
+}
+
+/**
+ * Refines a localize spec so its `narration`/`text` maps have identical keys
+ * across languages. Intersected with the inferred spec `S` at the `.localize`
+ * call site so a dropped per-language key is a compile error.
+ */
+type ValidateLocalizeSpec<S> = (S extends { narration: infer M }
+  ? { narration: EnforceIdenticalKeys<M, LocalizeNarrationValue> }
+  : object) &
+  (S extends { text: infer T }
+    ? { text: EnforceIdenticalKeys<T, string> }
+    : object)
 
 type NarrationOverrideFor<S> = [CueNamesOf<S>] extends [never]
   ? NarrationMarkers
@@ -290,8 +330,8 @@ export interface VideoBuilder<Args, O = object> extends BuilderTerminal<
   O
 > {
   /** Record one localized pass per language (or one shared capture). */
-  localize<S extends LocalizeSpec>(
-    spec: S
+  localize<const S extends LocalizeSpec>(
+    spec: S & ValidateLocalizeSpec<S>
   ): VideoBuilder<Args, O & LocalizeOverrides<Args, S>>
   /** Produce a separate video per variant (viewport, theme, ...). */
   each(variants: EachVariant[]): VideoBuilder<Args, O>

@@ -5,10 +5,12 @@ ScreenCI narration is cue-based. You attach a localized script to a video with
 speech should start, overlap, and end. The same script renders as multiple
 language versions without duplicating the visible browser workflow.
 
-Voice is a render option, not part of the script: the spoken text lives in
-`video.localize({ narration })`, while which voice speaks it is configured in
-`renderOptions.narration` (default `voice`, plus per-language `voices`). Changing
-the voice re-renders without re-recording; changing the spoken text re-records.
+The spoken text and the voice both live in the localize spec: `narration`
+carries the text, and `voice` carries which voice speaks it (one voice for every
+language, or a per-language map). A `renderOptions.narration.voice` set in
+`screenci.config.ts` or `video.use(...)` is the global default the localize
+`voice` falls back to. Changing the voice re-renders without re-recording;
+changing the spoken text re-records.
 
 `style` prompts and `modelType: 'expressive'` require the Business tier. Free
 and Starter users should stay with the default consistent narration flow.
@@ -20,24 +22,20 @@ and Starter users should stay with the default consistent narration flow.
 - [how to add more languages](#add-more-languages)
 - [how to inject localized page text](#inject-localized-text)
 - [how to record a separate pass per language](#localized-recordings-per-language-capture)
-- [how to override voices per language](#per-language-voice-overrides)
+- [how to set the voice per language and per cue](#voice-per-language-and-per-cue)
 
 ## Start with one language
 
 Attach the narration script with `video.localize(...)`. The body receives a
 `narration` object whose markers (`narration.intro()`, `.start()`, `.end()`)
-carry timing only: the text comes from the localize spec, and the voice comes
-from `renderOptions.narration`.
+carry timing only: the text and the voice both come from the localize spec.
 
 ```ts
 import { video, voices } from 'screenci'
 
-// Voice is a render option (how the narration is spoken).
-video.use({
-  renderOptions: { narration: { voice: { name: voices.Sophie } } },
-})
-
 video.localize({
+  // Voice for every language (how the narration is spoken).
+  voice: { name: voices.Sophie },
   // Localized narration cues by language. The body gets timing markers.
   narration: {
     en: {
@@ -78,16 +76,13 @@ with `video.use()` instead of changing the whole project:
 ```ts
 import { video, voices } from 'screenci'
 
+// `corner` is a visual render option; the voice lives in the localize spec.
 video.use({
-  renderOptions: {
-    narration: {
-      corner: 'top-right',
-      voice: { name: voices.Sophie },
-    },
-  },
+  renderOptions: { narration: { corner: 'top-right' } },
 })
 
 video.localize({
+  voice: { name: voices.Sophie },
   narration: {
     en: {
       intro: 'Open the analytics tab.',
@@ -113,9 +108,9 @@ video.localize({
   narration: {
     en: {
       // Quieter than natural, e.g. to sit under a louder moment in the recording.
-      intro: { text: 'Open the settings page.', volume: 0.6 },
+      intro: { cue: 'Open the settings page.', volume: 0.6 },
       // Natural level (the default); the same as `summary: 'Review the numbers.'`.
-      summary: { text: 'Review the numbers.', volume: 1 },
+      summary: { cue: 'Review the numbers.', volume: 1 },
     },
   },
 })('Settings', async ({ page, narration }) => {
@@ -192,11 +187,8 @@ text, you navigate to a localized route, or you want the browser locale set.
 ```ts
 import { video, voices } from 'screenci'
 
-video.use({
-  renderOptions: { narration: { voice: { name: voices.Ava } } },
-})
-
 video.localize({
+  voice: { name: voices.Ava },
   narration: {
     en: { intro: 'Open the settings page.' },
     fi: { intro: 'Avaa asetussivu.' },
@@ -319,34 +311,25 @@ with `en` and `fi` language versions.
 call: `.only(...)`, `.skip`, `.fixme`, and `.fail`. The in-body conditional
 `video.skip(condition, reason)` still exists separately for skipping mid-test.
 
-## Per-language voice overrides
+## Voice per language and per cue
 
-Voice is configured in `renderOptions.narration`. Set a default `voice` and
-override only the languages that genuinely need a different voice or delivery
-profile, keyed by language under `voices`:
+The localize `voice` is either one config for every language, or a per-language
+map (which must cover every language). Use the map form when a language needs a
+different voice or delivery profile:
 
 ```ts
 import { video, voices } from 'screenci'
 
-video.use({
-  renderOptions: {
-    narration: {
-      // Default voice for every language.
-      voice: { name: voices.Ava },
-      // Per-language overrides.
-      voices: {
-        fi: { name: voices.Nora, pacing: 0.95 },
-        de: {
-          name: voices.Julian,
-          modelType: 'expressive',
-          style: 'A friendly and energetic German speaker.',
-        },
-      },
+video.localize({
+  voice: {
+    en: { name: voices.Ava },
+    fi: { name: voices.Nora, pacing: 0.95 },
+    de: {
+      name: voices.Julian,
+      modelType: 'expressive',
+      style: 'A friendly and energetic German speaker.',
     },
   },
-})
-
-video.localize({
   narration: {
     en: { intro: 'Welcome to the dashboard.' },
     fi: { intro: 'Tervetuloa hallintapaneeliin.' },
@@ -357,12 +340,37 @@ video.localize({
 })
 ```
 
-The German override above is a Business-tier example because it uses expressive
+The German entry above is a Business-tier example because it uses expressive
 narration. A per-language voice can also carry a `seed` (an integer mixed into
 the audio cache key) to force regeneration or pin a specific take.
 
-Because voice lives in render options, you can change it (or set the same config
-in `screenci.config.ts`) and re-render without re-recording the browser.
+To override a single cue, use the object form of the cue value and pass its own
+`voice`. This is the most specific level of the cascade:
+
+```ts
+video.localize({
+  voice: { name: voices.Ava }, // every language unless a cue overrides it
+  narration: {
+    en: {
+      intro: 'Welcome to the dashboard.',
+      // This one line is read by a different voice.
+      alert: {
+        cue: 'Heads up: billing is overdue.',
+        voice: { name: voices.Marcus },
+      },
+    },
+  },
+})('Dashboard tour', async ({ page, narration }) => {
+  await narration.intro()
+  await narration.alert()
+})
+```
+
+The voice is resolved per cue and language, first defined wins: the per-cue
+`voice` overrides the localize `voice` (single config or this language's map
+entry), which overrides the `renderOptions.narration.voice` config default, which
+falls back to a built-in voice. Because voice is never captured, you can change
+it at any level and re-render without re-recording the browser.
 
 When you use ElevenLabs-specific voices or custom voice assets, keep each cue as
 its own sentence-sized unit. That makes re-recording cheaper and avoids paying
@@ -493,8 +501,8 @@ through the `voices` export.
 
 ## Model type
 
-Use `modelType` (on the voice in `renderOptions.narration`) when you need to
-choose between consistency and expressiveness.
+Use `modelType` (on the localize `voice`) when you need to choose between
+consistency and expressiveness.
 
 - `consistent` is the safer default for docs and product walkthroughs
 - `expressive` is useful when you want a more natural, less uniform delivery
@@ -517,21 +525,13 @@ ELEVENLABS_API_KEY=your_elevenlabs_api_key
 ```
 
 Use `voices.elevenlabs({ voiceId })` when you want to target a specific
-ElevenLabs voice from your own account. Because voice is a render option, set it
-under `renderOptions.narration`:
+ElevenLabs voice from your own account. Set it as the localize `voice`:
 
 ```ts
 import { video, voices } from 'screenci'
 
-video.use({
-  renderOptions: {
-    narration: {
-      voice: { name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }) },
-    },
-  },
-})
-
 video.localize({
+  voice: { name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }) },
   narration: {
     en: {
       intro: 'Welcome to the dashboard.',
@@ -558,19 +558,18 @@ and `useSpeakerBoost`. These fields are accepted only for
 `voices.elevenlabs(...)` and custom cloned voices:
 
 ```ts
-video.use({
-  renderOptions: {
-    narration: {
-      voice: {
-        name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }),
-        stability: 0.45,
-        similarityBoost: 0.8,
-        style: 0.2,
-        speed: 0.9,
-        useSpeakerBoost: true,
-      },
-    },
+video.localize({
+  voice: {
+    name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }),
+    stability: 0.45,
+    similarityBoost: 0.8,
+    style: 0.2,
+    speed: 0.9,
+    useSpeakerBoost: true,
   },
+  narration: { en: { intro: 'Welcome to the dashboard.' } },
+})('Billing walkthrough', async ({ narration }) => {
+  await narration.intro()
 })
 ```
 
@@ -596,15 +595,8 @@ Use the same `voices.elevenlabs(...)` helper, but pass `{ path }` instead of
 `{ voiceId }`:
 
 ```ts
-video.use({
-  renderOptions: {
-    narration: {
-      voice: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
-    },
-  },
-})
-
 video.localize({
+  voice: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
   narration: {
     en: {
       intro: 'Welcome to the dashboard.',
@@ -627,24 +619,26 @@ and language, so the same file does not get re-cloned on later runs.
 
 A cloned voice is an ElevenLabs voice, so it accepts the same
 `eleven_multilingual_v2` controls as `voices.elevenlabs(...)`, and can be set as
-the default `voice` or as a per-language override under `voices`:
+a single `voice` or as an entry in the per-language `voice` map:
 
 ```ts
-video.use({
-  renderOptions: {
-    narration: {
-      voice: {
-        name: voices.elevenlabs({ path: './my-voice.mp3' }),
-        stability: 0.45,
-        similarityBoost: 0.8,
-        speed: 0.95,
-      },
-      voices: {
-        // A different sample (or a built-in voice) for another language.
-        fi: { name: voices.elevenlabs({ path: './my-voice-fi.mp3' }) },
-      },
+video.localize({
+  voice: {
+    en: {
+      name: voices.elevenlabs({ path: './my-voice.mp3' }),
+      stability: 0.45,
+      similarityBoost: 0.8,
+      speed: 0.95,
     },
+    // A different sample (or a built-in voice) for another language.
+    fi: { name: voices.elevenlabs({ path: './my-voice-fi.mp3' }) },
   },
+  narration: {
+    en: { intro: 'Welcome to the dashboard.' },
+    fi: { intro: 'Tervetuloa hallintapaneeliin.' },
+  },
+})('Billing walkthrough', async ({ narration }) => {
+  await narration.intro()
 })
 ```
 
@@ -663,16 +657,16 @@ voices you are licensed to reproduce, in line with the ElevenLabs
 ## Manage narration from Studio
 
 On the Business tier you can manage narration text from the web app instead of
-code. Declare the cue names only and let Studio own the spoken text, languages,
-and voices:
+code. Declare the cue names under `studio.narration` and let Studio own the
+spoken text per language:
 
 ```ts
 import { video } from 'screenci'
 
 video.localize({
   languages: ['en', 'fi'],
-  // A bare list of cue names: Studio fills in the text per language.
-  narration: ['intro', 'save'],
+  // Studio fills in the text per language for these cue names.
+  studio: { narration: ['intro', 'save'] },
 })('Settings', async ({ page, narration }) => {
   await narration.intro()
   await page.goto('/settings')
@@ -680,6 +674,9 @@ video.localize({
 })
 ```
 
-With the name-only form you must pass `languages` explicitly, since there is no
-seeded text to infer them from. The markers still carry timing the same way;
-only the text lives in Studio. See [Studio](/docs/guides/studio).
+Studio names are language-agnostic (declared once) and must be disjoint from the
+seeded `narration` map. You can also mix the two: seed some cues in code and list
+the Studio-managed ones in `studio.narration`. When everything is Studio-managed,
+pass `languages` explicitly, since there is no seeded text to infer them from.
+The same applies to text via `studio.text`. The markers still carry timing the
+same way; only the text lives in Studio. See [Studio](/docs/guides/studio).

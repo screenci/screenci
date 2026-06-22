@@ -44,7 +44,7 @@ describe('expandRegistrations', () => {
       baseTitle: 'T',
       localize: perLanguage({
         languages: ['en', 'fi'],
-        text: ['heading'],
+        studio: { text: ['heading'] },
         browserLocale: false,
       }),
       eachVariants: null,
@@ -77,7 +77,7 @@ describe('expandRegistrations', () => {
       baseTitle: 'T',
       localize: perLanguage({
         languages: ['en', 'fi', 'de'],
-        text: ['heading'],
+        studio: { text: ['heading'] },
       }),
       eachVariants: null,
       requestedLanguages: ['fi'],
@@ -88,7 +88,10 @@ describe('expandRegistrations', () => {
   it('takes the cartesian product of each-variants and languages', () => {
     const regs = expandRegistrations({
       baseTitle: 'Landing',
-      localize: perLanguage({ languages: ['en', 'fi'], text: ['heading'] }),
+      localize: perLanguage({
+        languages: ['en', 'fi'],
+        studio: { text: ['heading'] },
+      }),
       eachVariants: [{ key: 'mobile' }, { key: 'desktop' }],
       requestedLanguages: null,
     })
@@ -185,11 +188,10 @@ describe('createVideoBuilder registration', () => {
 
   it('supports the (title, details, body) signature', () => {
     const { test, calls } = createTestSink()
-    createVideoBuilder(test).localize({ languages: ['en'], text: ['h'] })(
-      'Tagged',
-      { tag: '@critical' },
-      async () => {}
-    )
+    createVideoBuilder(test).localize({
+      languages: ['en'],
+      studio: { text: ['h'] },
+    })('Tagged', { tag: '@critical' }, async () => {})
     expect(calls.tests).toEqual(['Tagged [en]'])
   })
 
@@ -200,7 +202,7 @@ describe('createVideoBuilder registration', () => {
       const { test, calls } = createTestSink()
       createVideoBuilder(test).localize({
         languages: ['en', 'fi'],
-        text: ['h'],
+        studio: { text: ['h'] },
       })('T', async () => {})
       expect(calls.tests).toEqual([])
       expect(warn).toHaveBeenCalledOnce()

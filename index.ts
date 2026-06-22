@@ -41,20 +41,20 @@ export type {
 } from './src/crop.js'
 export type { ScreenCIPage, ScreenCILocator } from './src/types.js'
 // `createNarration` / `createStudioNarration` are no longer part of the public
-// API. Declare narration with `video.localize({ narration })` instead; voice is
-// configured via `renderOptions.narration`. The functions remain internal,
+// API. Declare narration with `video.localize({ narration, voice })` instead;
+// the voice is co-located in the localize spec. The functions remain internal,
 // powering the localize narration markers.
 export type { NarrationCue, Cues, TopLevelVoiceConfig } from './src/cue.js'
-export type {
-  LangNarrationOverride,
-  NarrationVoiceConfig,
-} from './src/voiceConfig.js'
+export type { LangNarrationOverride } from './src/voiceConfig.js'
 export type { EachVariant, VideoBuilder } from './src/builder.js'
 export type {
   LocalizeSpec,
   LocalizeMode,
-  SeededNarration,
-  SeededText,
+  LocalizeVoiceSpec,
+  LocalizeStudioSpec,
+  NarrationByLang,
+  TextByLang,
+  VoiceConfig,
   LocalizeNarrationValue,
 } from './src/localize.js'
 export {

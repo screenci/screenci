@@ -121,17 +121,3 @@ export type LangNarrationOverride =
       /** TTS model type — `modelTypes.expressive` or `modelTypes.consistent`. Defaults to `consistent`. */
       modelType?: Exclude<ModelType, 'expressive'> | undefined
     }
-
-/**
- * Voice configuration for `renderOptions.narration`. A default voice, optional
- * per-language overrides, and optional per-cue overrides. `seed` lives on the
- * per-language / per-cue voice (it is a generation parameter).
- */
-export type NarrationVoiceConfig = {
-  /** Default voice for every language. */
-  voice?: TopLevelVoiceConfig
-  /** Per-language voice overrides, keyed by language code. */
-  voices?: Record<string, LangNarrationOverride>
-  /** Per-cue voice overrides, keyed by cue name. */
-  cueVoices?: Record<string, LangNarrationOverride>
-}

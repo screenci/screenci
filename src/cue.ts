@@ -18,6 +18,7 @@ import type {
   LangNarrationOverride,
 } from './voiceConfig.js'
 export type { TopLevelVoiceConfig, LangNarrationOverride }
+import type { NormalizedNarration } from './localize.js'
 import { isCustomVoiceRef } from './customVoiceRef.js'
 import { MAX_AUDIO_LEVEL } from './asset.js'
 import { isInsideHide } from './hide.js'
@@ -839,4 +840,202 @@ async function entryToVideoTranslation(
     assetPath: path,
     ...(subtitle !== undefined && { subtitle }),
   }
+}
+
+/**
+ * Resolve a single voice config into its recorded name and language metadata.
+ * Unlike {@link buildCuesFromInput}, the config here is already fully resolved by
+ * the localize voice cascade, so there is no top-level/override merge: every
+ * provider setting comes from this one config.
+ */
+export function resolveVoiceMeta(
+  config: TopLevelVoiceConfig | LangNarrationOverride
+): { name: VoiceKey | CustomVoiceRef; meta: VoiceLanguageMeta } {
+  const name = config.name
+  const seed = 'seed' in config ? config.seed : undefined
+  const style = 'style' in config ? config.style : undefined
+  const accent = 'accent' in config ? config.accent : undefined
+  const pacing = 'pacing' in config ? config.pacing : undefined
+  const stability = 'stability' in config ? config.stability : undefined
+  const similarityBoost =
+    'similarityBoost' in config ? config.similarityBoost : undefined
+  const speed = 'speed' in config ? config.speed : undefined
+  const useSpeakerBoost =
+    'useSpeakerBoost' in config ? config.useSpeakerBoost : undefined
+  const modelType =
+    typeof style === 'string'
+      ? 'expressive'
+      : 'modelType' in config
+        ? config.modelType
+        : undefined
+
+  return {
+    name,
+    meta: {
+      name: voiceToKeyString(name),
+      ...(seed !== undefined && { seed }),
+      ...(modelType !== undefined && { modelType }),
+      ...(style !== undefined && { style }),
+      ...(accent !== undefined && { accent }),
+      ...(pacing !== undefined && { pacing }),
+      ...(stability !== undefined && { stability }),
+      ...(similarityBoost !== undefined && { similarityBoost }),
+      ...(speed !== undefined && { speed }),
+      ...(useSpeakerBoost !== undefined && { useSpeakerBoost }),
+    },
+  }
+}
+
+/** The voice fields of a cue translation derived from resolved meta (no name). */
+function translationVoiceFields(
+  meta: VoiceLanguageMeta
+): Omit<CueTranslation, 'text' | 'voice'> {
+  return {
+    ...(meta.modelType !== undefined && { modelType: meta.modelType }),
+    ...(meta.style !== undefined && { style: meta.style }),
+    ...(meta.accent !== undefined && { accent: meta.accent }),
+    ...(meta.pacing !== undefined && { pacing: meta.pacing }),
+    ...(meta.stability !== undefined && { stability: meta.stability }),
+    ...(meta.similarityBoost !== undefined && {
+      similarityBoost: meta.similarityBoost,
+    }),
+    ...(meta.speed !== undefined && { speed: meta.speed }),
+    ...(meta.useSpeakerBoost !== undefined && {
+      useSpeakerBoost: meta.useSpeakerBoost,
+    }),
+  }
+}
+
+/**
+ * Build the narration cue controllers for a localized recording, directly from
+ * the normalized localize spec. Per-cue voice can override the per-language
+ * (`voiceByLang`) and config/global (`defaultVoice`) voices, so the cascade is
+ * resolved per `(cue, language)` here rather than routed through
+ * {@link buildCuesFromInput} (which is per-language only).
+ *
+ * Seeded cues emit translations carrying the resolved voice + spoken text (the
+ * recorder filters to the active language). Studio-managed cues emit studio cue
+ * starts whose content is owned by Studio.
+ */
+export function buildLocalizedNarrationCues(
+  narration: NormalizedNarration,
+  voiceByLang: Partial<Record<string, LangNarrationOverride>>,
+  defaultVoice: TopLevelVoiceConfig | LangNarrationOverride | undefined
+): Record<string, NarrationCue> {
+  if (narration === null) return {}
+
+  const studioSet = new Set(narration.studioNames)
+  const result: Record<string, NarrationCue> = {}
+
+  for (const cueName of narration.cueNames) {
+    if (studioSet.has(cueName)) {
+      result[cueName] = createCueController(cueName, (recorder) => {
+        sleepForCueFrameGap()
+        recorder.addStudioCueStart(cueName)
+      })
+      continue
+    }
+
+    // Languages that seed this cue, with the per-(cue, language) voice resolved.
+    const langs = Object.keys(narration.seedByLang).filter(
+      (lang) => narration.seedByLang[lang as Lang]?.[cueName] !== undefined
+    )
+
+    let hasFileEntry = false
+    // Volume is per-cue (a render-time mix property): the first language that
+    // sets a volume for this cue wins.
+    let cueVolume: number | undefined
+    for (const lang of langs) {
+      const value = narration.seedByLang[lang as Lang]![cueName]!
+      if (value.kind === 'media') hasFileEntry = true
+      if (cueVolume === undefined && value.volume !== undefined) {
+        cueVolume = validateCueVolume(cueName, value.volume)
+      }
+    }
+
+    const resolveLang = (
+      lang: string
+    ): {
+      value: NonNullable<
+        NonNullable<NormalizedNarration>['seedByLang'][Lang]
+      >[string]
+      voice: VoiceKey | CustomVoiceRef
+      meta: VoiceLanguageMeta
+    } => {
+      const value = narration.seedByLang[lang as Lang]![cueName]!
+      const config = (value.kind === 'text' ? value.voice : undefined) ??
+        voiceByLang[lang] ??
+        defaultVoice ?? { name: voices.Sophie }
+      const { name, meta } = resolveVoiceMeta(config)
+      assertElevenLabsApiKeyConfigured(name, `localize narration (${lang})`)
+      return { value, voice: name, meta }
+    }
+
+    if (hasFileEntry) {
+      result[cueName] = createCueController(cueName, async (recorder) => {
+        const testFilePath = getScreenCIRuntimeContext().testFilePath
+        const resolved = new Map(langs.map((lang) => [lang, resolveLang(lang)]))
+        for (const lang of langs) {
+          recorder.registerVoiceForLang(lang, resolved.get(lang)!.meta)
+        }
+        const videoTranslations: Record<string, VideoCueTranslation> = {}
+        for (const lang of langs) {
+          const { value, voice, meta } = resolved.get(lang)!
+          if (value.kind === 'text') {
+            videoTranslations[lang] = {
+              text: value.text,
+              voice: await toRecordedVoice(voice),
+              ...translationVoiceFields(meta),
+            }
+          } else {
+            videoTranslations[lang] = await entryToVideoTranslation(
+              testFilePath,
+              {
+                path: value.path,
+                ...(value.subtitle !== undefined && {
+                  subtitle: value.subtitle,
+                }),
+              }
+            )
+          }
+        }
+        sleepForCueFrameGap()
+        recorder.addVideoCueStart(
+          cueName,
+          undefined,
+          undefined,
+          undefined,
+          videoTranslations,
+          ...(cueVolume !== undefined ? [cueVolume] : [])
+        )
+      })
+    } else {
+      result[cueName] = createCueController(cueName, async (recorder) => {
+        const resolved = new Map(langs.map((lang) => [lang, resolveLang(lang)]))
+        for (const lang of langs) {
+          recorder.registerVoiceForLang(lang, resolved.get(lang)!.meta)
+        }
+        const textTranslations: Record<string, CueTranslation> = {}
+        for (const lang of langs) {
+          const { value, voice, meta } = resolved.get(lang)!
+          if (value.kind !== 'text') continue
+          textTranslations[lang] = {
+            text: value.text,
+            voice: await toRecordedVoice(voice),
+            ...translationVoiceFields(meta),
+          }
+        }
+        sleepForCueFrameGap()
+        recorder.addCueStart(
+          '',
+          cueName,
+          undefined,
+          textTranslations,
+          ...(cueVolume !== undefined ? [cueVolume] : [])
+        )
+      })
+    }
+  }
+
+  return result
 }

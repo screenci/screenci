@@ -6,8 +6,8 @@ recording. Studio is available on the Business tier.
 
 There are two ways to use it:
 
-- **Opt in from code.** Declare narration cue names with the name-only form of
-  `video.localize({ languages, narration: [...] })`, overlay keys with
+- **Opt in from code.** Declare narration cue names with
+  `video.localize({ languages, studio: { narration: [...] } })`, overlay keys with
   `createStudioOverlays`, background audio keys with `createStudioAudio`, and set
   `renderOptions: 'studio'`. Those items are then edited on the Studio page. Your
   edits are saved and applied automatically to every later upload.
@@ -72,7 +72,7 @@ Studio separates changes that stick from changes that do not:
 
 ## Studio narration from code
 
-Pass `narration` a bare list of cue names (instead of a per-language text map)
+List the cue names under `studio.narration` (instead of a per-language text map)
 to declare the cue keys in code while the narration text, languages, and voices
 are configured in Studio. Provide the `languages` explicitly, since there is no
 seeded text to infer them from:
@@ -82,7 +82,7 @@ import { video } from 'screenci'
 
 video.localize({
   languages: ['en'],
-  narration: ['intro', 'checkout', 'outro'],
+  studio: { narration: ['intro', 'checkout', 'outro'] },
 })('Checkout walkthrough', async ({ page, narration }) => {
   await narration.intro()
   await page.goto('/checkout')

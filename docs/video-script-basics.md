@@ -54,11 +54,9 @@ behavior for your specific walkthrough.
 ```ts
 import { autoZoom, hide, video, voices } from 'screenci'
 
-// Voice is a render option (how narration is spoken). The localized text is
-// declared inline with video.localize below.
-video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
-
 video.localize({
+  // The voice (how narration is spoken) and the localized text live together.
+  voice: { name: voices.Sophie },
   // Localized narration cues by language. The fixture exposes them as markers.
   narration: {
     en: {

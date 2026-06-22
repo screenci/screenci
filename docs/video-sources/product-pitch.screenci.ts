@@ -23,6 +23,11 @@ import {
 // the complete pitch remains below two minutes (roughly 20-25 seconds).
 const projectName = process.env.SCREENCI_PITCH_PROJECT_NAME ?? 'demo-saas'
 const videoName = process.env.SCREENCI_PITCH_VIDEO_NAME ?? 'Vertical invoice'
+const appUrl =
+  process.env.SCREENCI_PITCH_APP_URL ??
+  process.env.SCREENCI_APP_URL ??
+  'https://app.screenci.com/'
+const placeholderMode = process.env.SCREENCI_PITCH_PLACEHOLDER === 'true'
 const agentRecording = fileURLToPath(
   new URL('../assets/agent.mp4', import.meta.url)
 )
@@ -73,8 +78,10 @@ video.localize({
     },
   },
 })('ScreenCI product pitch', async ({ page, narration }) => {
+  let selectedVideoName = videoName
+
   video.skip(
-    !process.env.SCREENCI_APP_STORAGE_STATE,
+    !placeholderMode && !process.env.SCREENCI_APP_STORAGE_STATE,
     'Requires SCREENCI_APP_STORAGE_STATE with a logged-in ScreenCI app session.'
   )
   video.skip(
@@ -82,17 +89,47 @@ video.localize({
     'Add the condensed agent capture at screenci/assets/agent.mp4.'
   )
 
+  if (placeholderMode) {
+    await hide(async () => {
+      await page.goto(appUrl)
+      await page.waitForLoadState('networkidle')
+    })
+
+    await narration.intro()
+    await overlays.agentSession()
+    await narration.outro()
+    return
+  }
+
   // Start in Studio for the video produced during the captured agent session.
   // Authentication and dashboard navigation are setup, so they are not shown.
   await hide(async () => {
-    await page.goto('https://app.screenci.com/')
+    await page.goto(appUrl)
     await page.waitForLoadState('networkidle')
 
     const projects = page.getByTestId('projects-list')
     await expect(projects).toBeVisible({ timeout: 30_000 })
-    await projects.getByRole('link', { name: projectName, exact: true }).click()
+    const configuredProject = projects.getByRole('link', {
+      name: projectName,
+      exact: true,
+    })
+    const projectLink =
+      (await configuredProject.count()) > 0
+        ? configuredProject
+        : projects.getByRole('link').first()
+    await projectLink.click()
 
-    await page.getByRole('link', { name: videoName, exact: true }).click()
+    const configuredVideo = page.getByRole('link', {
+      name: videoName,
+      exact: true,
+    })
+    const videoLink =
+      (await configuredVideo.count()) > 0
+        ? configuredVideo
+        : page.locator('a[href*="/video/"]').first()
+    selectedVideoName =
+      (await videoLink.getAttribute('aria-label')) ?? selectedVideoName
+    await videoLink.click()
     await expect(page.getByRole('heading', { name: /languages/i })).toBeVisible(
       { timeout: 30_000 }
     )
@@ -189,7 +226,7 @@ video.localize({
 
   // Return to the video overview so the language and delivery surfaces support
   // the final feature summary visually.
-  await page.getByRole('link', { name: videoName, exact: true }).click()
+  await page.getByRole('link', { name: selectedVideoName, exact: true }).click()
   await expect(page.getByRole('heading', { name: /languages/i })).toBeVisible({
     timeout: 30_000,
   })

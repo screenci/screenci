@@ -8,6 +8,8 @@ video.use({
   },
 })
 
+const appUrl = process.env.SCREENCI_APP_URL ?? 'https://app.screenci.com/'
+
 // Studio walkthrough recorded against the ScreenCI app (app.screenci.com), for
 // the "Remix in Studio on the web" tile on the landing page. Studio lives behind
 // auth, so recording this needs a logged-in session: set SCREENCI_APP_STORAGE_STATE
@@ -38,7 +40,7 @@ video.localize({
 
   // Navigate from the dashboard into Studio without showing it in the recording.
   await hide(async () => {
-    await page.goto('https://app.screenci.com/')
+    await page.goto(appUrl)
     await page.waitForLoadState('networkidle')
 
     await page

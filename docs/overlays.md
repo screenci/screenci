@@ -305,12 +305,13 @@ positions it over the element. Your overlay content fills that box, so a ring
 lands exactly around the element:
 
 ```tsx
-import { createOverlays, overlayRect, video, type OverlayRect } from 'screenci'
+import type { Locator } from '@playwright/test'
+import { createOverlays } from 'screenci'
 
 const overlays = createOverlays({
   // The overlay is sized to the element's box; fill it (width/height: 100%).
   ring: (target: Locator) => ({
-    html: '<div style="width:100%;height:100%;border:4px solid #ec4899;border-radius:12px"></div>',
+    html: '<div style="width:100%;height:100%;box-sizing:border-box;border:4px solid #ec4899;border-radius:12px"></div>',
     over: target,
     margin: 8, // optional breathing room around the element
   }),
@@ -334,7 +335,7 @@ margin ring, pulsing around a live element (the
 [Screenshots guide](/docs/guides/screenshots#highlight-a-locator) shows the
 still version):
 
-<!-- screenci-doc-video:docs/guides/assets-and-overlays -->
+<!-- screenci-doc-video:docs/guides/overlays -->
 
 #### `overlayRect` (lower-level)
 

@@ -3,6 +3,8 @@
  * Slugs are web-facing and stable even if source filenames change.
  */
 
+import { getDocVideo, hasPublicId } from './videos'
+
 export const docsManifest = [
   {
     source: 'overview.mdx',
@@ -26,11 +28,11 @@ export const docsManifest = [
     description:
       'The recommended path: point a coding agent at the integration brief so it scaffolds ScreenCI, authors a video for your flow, and records it.',
     prev: 'docs',
-    next: 'docs/installation',
+    next: 'docs/manual-setup',
   },
   {
     source: 'manual-setup.mdx',
-    slug: 'docs/installation',
+    slug: 'docs/manual-setup',
     section: 'Getting Started',
     order: 3,
     navLabel: 'Manual setup & first video',
@@ -38,18 +40,18 @@ export const docsManifest = [
     description:
       'Wire ScreenCI up by hand: initialize a project, run the starter video locally, and record your first final video.',
     prev: 'docs/agent-integration',
-    next: 'docs/write-video-scripts',
+    next: 'docs/video-script-basics',
   },
   {
-    source: 'write-video-scripts.md',
-    slug: 'docs/write-video-scripts',
+    source: 'video-script-basics.md',
+    slug: 'docs/video-script-basics',
     section: 'Getting Started',
     order: 4,
     navLabel: 'Video script basics',
     title: 'Video Script Basics',
     description:
       'Author .screenci.ts files with Playwright-like APIs, ScreenCI narration and camera helpers, and workflow-aware pacing.',
-    prev: 'docs/installation',
+    prev: 'docs/manual-setup',
     next: 'docs/ci-setup',
   },
   {
@@ -61,7 +63,7 @@ export const docsManifest = [
     title: 'CI Setup',
     description:
       'Understand the generated GitHub Actions workflow, required secrets, and how to keep CI recordings deterministic.',
-    prev: 'docs/write-video-scripts',
+    prev: 'docs/video-script-basics',
     next: 'docs/guides/page-instrumentation',
   },
   {
@@ -98,11 +100,11 @@ export const docsManifest = [
     description:
       'Choose between autoZoom and manual framing, and use camera direction to guide attention without making the video frantic.',
     prev: 'docs/guides/narration-and-localization',
-    next: 'docs/guides/assets-and-overlays',
+    next: 'docs/guides/overlays',
   },
   {
     source: 'overlays.md',
-    slug: 'docs/guides/assets-and-overlays',
+    slug: 'docs/guides/overlays',
     section: 'Guides',
     order: 4,
     navLabel: 'Overlays',
@@ -121,7 +123,7 @@ export const docsManifest = [
     title: 'Screenshots',
     description:
       'Capture branded still screenshots with the screenshot() fixture: crop to a component, set quality and dark mode, and frame the shot on a background with overlays.',
-    prev: 'docs/guides/assets-and-overlays',
+    prev: 'docs/guides/overlays',
     next: 'docs/guides/studio',
   },
   {
@@ -206,7 +208,16 @@ export function getDocBySlug(slug: string) {
 
 export function getOutputPathFromSlug(slug: string) {
   const entry = getDocBySlug(slug)
-  const extension = entry?.source.endsWith('.mdx') ? '.mdx' : '.md'
+  const video = getDocVideo(slug)
+
+  // A page that embeds a published video or screenshot injects a React
+  // component (DocVideoPlayer / DocScreenshot). Astro only renders component
+  // imports and JSX in .mdx, so such a page must be emitted as .mdx even when
+  // its source is plain .md. Without this, the embed silently renders as inert
+  // text. Pages without a published embed stay .md (matching their source).
+  const embedsComponent = video !== null && hasPublicId(video)
+  const extension =
+    entry?.source.endsWith('.mdx') || embedsComponent ? '.mdx' : '.md'
 
   if (slug === 'docs') return `index${extension}`
   return `${slug.replace(/^docs\//, '')}${extension}`

@@ -137,7 +137,7 @@ To force a fixed output shape (a square or social card), set the output
 
 Overlays work exactly as they do for videos, so a screenshot and a video from the
 same project share one visual language. Use
-[`createOverlays`](/docs/guides/assets-and-overlays) for badges and annotations,
+[`createOverlays`](/docs/guides/overlays) for badges and annotations,
 and start them in the screenshot body.
 
 ```ts
@@ -172,14 +172,14 @@ video('Dashboard', async ({ page }) => {
 ### Highlight a locator
 
 A common still is one element framed by a ring. Give a
-[programmatic overlay](/docs/guides/assets-and-overlays#positioning-over-a-live-element)
+[programmatic overlay](/docs/guides/overlays#positioning-over-a-live-element)
 an `over` locator and a `margin` (CSS px): screenci sizes the ring to the
 element's box plus that margin and lands it exactly around the element. In a
 still you `start()` it and leave it open.
 
 <!-- screenci-doc-screenshot:docs/guides/screenshots -->
 
-The [Overlays guide](/docs/guides/assets-and-overlays#positioning-over-a-live-element)
+The [Overlays guide](/docs/guides/overlays#positioning-over-a-live-element)
 shows the same ring animated in a video.
 
 ## Quality and appearance

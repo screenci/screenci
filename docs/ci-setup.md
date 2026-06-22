@@ -59,6 +59,37 @@ For faster, smoother recordings:
   },
   ```
 
+## Trigger recordings remotely
+
+Because the workflow accepts
+[`workflow_dispatch`](https://docs.github.com/en/actions/using-workflows/manually-running-a-workflow),
+you can start a recording run on demand without pushing a commit, from either the
+app or the CLI.
+
+To enable this, connect the GitHub App to your project once. ScreenCI uses a
+[GitHub App](https://docs.github.com/en/apps/overview) rather than a personal
+access token: **no long-lived credential is stored**. Access is granted by the
+installation and revoked the moment you uninstall the App, and each trigger uses
+a short-lived token scoped to only `Actions: write` on the repositories you pick.
+
+1. Open the project page in [app.screenci.com](https://app.screenci.com).
+2. In **GitHub recording workflow**, click **Connect GitHub** and install the App
+   on the repository you want to record (you choose exactly which repos it can
+   access).
+3. Back on the project page, pick the **repository**, and (optionally) the
+   workflow file (defaults to `screenci.yaml`) and git ref (defaults to `main`),
+   then **Save**.
+
+Once connected, you can dispatch the recording workflow two ways:
+
+- **From the app:** click **Run recording** on the project page.
+- **From the CLI:** run [`screenci record --remote`](/docs/reference/cli#-remote).
+  It resolves the project from `SCREENCI_SECRET` and triggers the workflow without
+  recording locally.
+
+To revoke access, click **Disconnect** on the project page or uninstall the App
+from your GitHub settings.
+
 ## Reading back render status
 
 Rendering happens after `record` uploads, so a green `record` step does not mean

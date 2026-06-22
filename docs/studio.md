@@ -4,8 +4,6 @@ Studio lets your team remix videos from the ScreenCI web app: change render
 options, narration text, and voices without touching code or re-running the
 recording. Studio is available on the Business tier.
 
-<!-- screenci-doc-video:docs/guides/studio -->
-
 There are two ways to use it:
 
 - **Opt in from code.** Declare cue keys with `createStudioNarration`, overlay
@@ -164,7 +162,7 @@ TypeScript knows the declared keys, so `overlays.typo` is a compile error.
 Like studio narration, the first upload of a video using `createStudioOverlays`
 is held until every declared overlay has a file configured in Studio. The CLI
 prints a direct link. Later uploads reuse the saved configuration. See
-[Overlays](./assets-and-overlays.md) for how overlays behave on the timeline.
+[Overlays](./overlays.md) for how overlays behave on the timeline.
 
 API reference: [createStudioOverlays()](/docs/reference/api/functions/createStudioOverlays)
 
@@ -201,7 +199,7 @@ TypeScript knows the declared keys, so `music.typo` is a compile error.
 Like studio overlays, the first upload of a video using `createStudioAudio` is
 held until every declared track has a file configured in Studio. The CLI prints
 a direct link. Later uploads reuse the saved configuration. See
-[Background audio](./assets-and-overlays.md) for how audio behaves on the
+[Background audio](./overlays.md) for how audio behaves on the
 timeline.
 
 API reference: [createStudioAudio()](/docs/reference/api/functions/createStudioAudio)

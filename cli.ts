@@ -2065,6 +2065,38 @@ async function updateVideoVisibility(
   logger.info(`${isPublic ? 'Made public' : 'Made private'}: ${videoId}`)
 }
 
+// `screenci record --remote` triggers the project's GitHub Actions recording
+// workflow instead of recording locally. The project is resolved from the
+// existing SCREENCI_SECRET + config `projectName`, exactly like the other
+// authenticated commands; the backend dispatches the workflow using the GitHub
+// token stored for the project.
+async function triggerRemoteRun(configPath?: string): Promise<void> {
+  const { screenciConfig, secret, apiUrl } = await requireScreenCISecret(
+    configPath,
+    { interactive: detectInteractiveSession() }
+  )
+
+  const res = await fetch(`${apiUrl}/cli/trigger-run`, {
+    method: 'POST',
+    headers: {
+      'X-ScreenCI-Secret': secret,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ projectName: screenciConfig.projectName }),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(
+      `Failed to trigger remote run: ${res.status} ${text}${hint401(res.status, secret)}`
+    )
+  }
+
+  logger.info(
+    `Triggered the remote recording workflow for "${screenciConfig.projectName}".`
+  )
+}
+
 function getLastRecordFilePath(screenciDir: string): string {
   return resolve(screenciDir, SCREENCI_LAST_RECORD_FILE)
 }
@@ -2405,9 +2437,21 @@ export async function main() {
       '--poll-auth',
       'wait for sign-in to complete (polling every 5s, up to 5 minutes) instead of exiting, then continue recording'
     )
+    .option(
+      '--remote',
+      'trigger the GitHub Actions recording workflow for this project remotely instead of recording locally'
+    )
     .allowUnknownOption(true)
     .action(async () => {
       const parsed = parseRecordCliArgs(getSubcommandArgv('record'))
+
+      // `--remote` is a pure dispatch: it fires the project's GitHub Actions
+      // recording workflow and exits, so there is no local Playwright run.
+      if (parsed.remote) {
+        await triggerRemoteRun(parsed.configPath)
+        return
+      }
+
       let playwrightFailure: Error | null = null
 
       try {
@@ -2753,11 +2797,13 @@ function parseRecordCliArgs(args: string[]): {
   configPath: string | undefined
   verbose: boolean
   pollAuth: boolean
+  remote: boolean
   otherArgs: string[]
 } {
   let configPath: string | undefined
   let verbose = false
   let pollAuth = false
+  let remote = false
   const otherArgs: string[] = []
 
   for (let i = 0; i < args.length; i++) {
@@ -2775,6 +2821,8 @@ function parseRecordCliArgs(args: string[]): {
       verbose = true
     } else if (arg === '--poll-auth') {
       pollAuth = true
+    } else if (arg === '--remote') {
+      remote = true
     } else {
       otherArgs.push(arg)
     }
@@ -2784,6 +2832,7 @@ function parseRecordCliArgs(args: string[]): {
     configPath,
     verbose,
     pollAuth,
+    remote,
     otherArgs,
   }
 }

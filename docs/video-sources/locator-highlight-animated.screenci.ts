@@ -1,42 +1,31 @@
 import type { Locator } from '@playwright/test'
 import { createOverlays, video } from 'screenci'
 
-// Source of record for the animated "highlight a locator" overlay in the
-// Overlays guide. It rings the same element as the Screenshots still
-// (locator-highlight-still.screenci.ts), but the ring pulses while the page is
-// driven underneath, then closes before the recording stops.
+// Animates the same ring as the Screenshots still: it pulses while the page is
+// driven underneath, then closes before the recording stops. An opacity-only
+// pulse keeps the ring landed exactly on the element (no scale, so no capture
+// padding is needed).
 const overlays = createOverlays({
-  // Sized to the element's box (plus the margin); the ring fills it and pulses
-  // via a CSS animation. capturePadding gives the scale-up room so it is not
-  // clipped at the box edge.
   ring: (target: Locator) => ({
-    html: '<div class="screenci-ring"></div>',
+    html: '<div class="ring"></div>',
     css: `
-      .screenci-ring {
+      .ring {
         width: 100%;
         height: 100%;
+        box-sizing: border-box;
         border: 4px solid #ec4899;
         border-radius: 14px;
-        box-shadow: 0 0 0 6px rgba(236, 72, 153, 0.25);
-        animation: screenci-ring-pulse 1.2s ease-in-out infinite;
+        animation: ring-pulse 2s ease-in-out infinite;
       }
-      @keyframes screenci-ring-pulse {
-        0%,
-        100% {
-          opacity: 1;
-          transform: scale(1);
-        }
-        50% {
-          opacity: 0.45;
-          transform: scale(1.04);
-        }
+      @keyframes ring-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
       }
     `,
     over: target,
-    margin: 12,
+    margin: 6,
     animate: true,
     durationMs: 2400,
-    capturePadding: 24,
   }),
 })
 
@@ -47,9 +36,8 @@ video('Locator highlight (animated)', async ({ page }) => {
   const cta = page.getByRole('link', { name: 'View Documentation' })
   await cta.scrollIntoViewIfNeeded()
 
-  // The ring pulses while the page stays live underneath. Every start() must be
-  // ended before the video function returns. Capture the controller so the
-  // locator appears once.
+  // The ring pulses while the page stays live. Every start() must be ended
+  // before the video function returns.
   const ring = overlays.ring(cta)
   await ring.start()
   await cta.hover()

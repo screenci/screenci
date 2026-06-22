@@ -60,7 +60,7 @@ page structure, waiting, and shared setup patterns.
 Not every instrumented step belongs in the final video. To remove non-viewer
 setup (signing in, accepting cookies, navigating into place) or to retime a
 visible step, use the `hide()`, `speed()`, and `time()` timeline helpers. See
-[`hide()`, `speed()`, and `time()`](/docs/write-video-scripts#hide-speed-and-time)
+[`hide()`, `speed()`, and `time()`](/docs/video-script-basics#hide-speed-and-time)
 in Video Script Basics.
 
 ## Cursor animation options
@@ -133,6 +133,6 @@ await page.mouse.move(400, 300, { duration: 600, easing: 'ease-in-out' })
 
 ## Related pages
 
-- [Video Script Basics](/docs/write-video-scripts)
+- [Video Script Basics](/docs/video-script-basics)
 - [Camera and Zooming](/docs/guides/camera-and-zooming)
 - [Narration and Localization](/docs/guides/narration-and-localization)

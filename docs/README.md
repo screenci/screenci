@@ -13,7 +13,7 @@ reference material to drill into.
 - [Overview](./overview.mdx)
 - [Agent Integration](./agent-integration.mdx)
 - [Manual Setup & First Video](./manual-setup.mdx)
-- [Video Script Basics](./write-video-scripts.md)
+- [Video Script Basics](./video-script-basics.md)
 - [CI Setup](./ci-setup.md)
 
 ### Guides

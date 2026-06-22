@@ -31,7 +31,7 @@ npx screenci record    # render and upload the final video
 Full docs:
 
 - [Getting started](https://screenci.com/docs)
-- [Writing scripts](https://screenci.com/docs/write-video-scripts)
+- [Writing scripts](https://screenci.com/docs/video-script-basics)
 - [CLI reference](https://screenci.com/docs/reference/cli)
 
 ## Write a video

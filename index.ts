@@ -40,10 +40,10 @@ export type {
   ResolvedCropPadding,
 } from './src/crop.js'
 export type { ScreenCIPage, ScreenCILocator } from './src/types.js'
-// `createNarration` / `createStudioNarration` are no longer part of the public
-// API. Declare narration with `video.localize({ narration, voice })` instead;
-// the voice is co-located in the localize spec. The functions remain internal,
-// powering the localize narration markers.
+// Narration is not created via a factory. Declare seeded narration with
+// `video.localize({ narration, voice })`, and Studio-managed narration with
+// `video.studio({ narration: [...] })`. Both surface through the injected
+// `narration` fixture.
 export type { NarrationCue, Cues, TopLevelVoiceConfig } from './src/cue.js'
 export type { LangNarrationOverride } from './src/voiceConfig.js'
 export type { EachVariant, VideoBuilder } from './src/builder.js'
@@ -51,7 +51,6 @@ export type {
   LocalizeSpec,
   LocalizeMode,
   LocalizeVoiceSpec,
-  LocalizeStudioSpec,
   NarrationByLang,
   TextByLang,
   VoiceConfig,
@@ -61,19 +60,13 @@ export {
   resolveLocaleForLanguage,
   DEFAULT_LANGUAGE_LOCALES,
 } from './src/locales.js'
-export { isStudioRenderOptions } from './src/studio.js'
-export type { StudioRenderOptionsSentinel } from './src/studio.js'
+export type { StudioDeclaration } from './src/studio.js'
 export { hide } from './src/hide.js'
 export { speed } from './src/speed.js'
 export { time } from './src/time.js'
 export { autoZoom } from './src/autoZoom.js'
 export { zoomTo, resetZoom } from './src/manualZoom.js'
-export {
-  createOverlays,
-  createStudioOverlays,
-  setOverlayCss,
-  MAX_AUDIO_LEVEL,
-} from './src/asset.js'
+export { createOverlays, setOverlayCss, MAX_AUDIO_LEVEL } from './src/asset.js'
 export type {
   OverlayController,
   OverlayConfig,
@@ -87,7 +80,7 @@ export type {
 } from './src/asset.js'
 export { overlayRect } from './src/overlayRect.js'
 export type { OverlayRect, OverlayRectOptions } from './src/overlayRect.js'
-export { createAudio, createStudioAudio } from './src/audio.js'
+export { createAudio } from './src/audio.js'
 export type {
   AudioController,
   AudioConfig,

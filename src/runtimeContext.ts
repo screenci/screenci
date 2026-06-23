@@ -6,7 +6,6 @@ import {
   type ElementRect,
 } from './events.js'
 import type { AutoZoomOptions, RecordOptions, RenderOptions } from './types.js'
-import type { StudioRenderOptionsSentinel } from './studio.js'
 import type { ScreenshotCropRecord } from './crop.js'
 
 export type CurrentZoomViewport = {
@@ -70,7 +69,7 @@ export type ScreenCIRuntimeContext = {
   /** Resolved capture options for the active recording, when available. */
   recordOptions: RecordOptions | null
   /** Base render options for the active recording (drive a still's framing). */
-  renderOptions: RenderOptions | StudioRenderOptionsSentinel | undefined
+  renderOptions: RenderOptions | undefined
   /**
    * Crop recorded for the current `screenshot()` fixture capture, or null for the
    * full image. Set via the `crop` fixture argument and read by the fixture at
@@ -114,7 +113,7 @@ export function createScreenCIRuntimeContext(
     testFilePath?: string | null
     recordingDir?: string | null
     recordOptions?: RecordOptions | null
-    renderOptions?: RenderOptions | StudioRenderOptionsSentinel | undefined
+    renderOptions?: RenderOptions | undefined
   } = {}
 ): ScreenCIRuntimeContext {
   const defaultRecorder = overrides.recorder ?? NOOP_EVENT_RECORDER
@@ -239,10 +238,7 @@ export function getRuntimeRecordOptions(): RecordOptions | null {
   return getScreenCIRuntimeContext().recordOptions
 }
 
-export function getRuntimeRenderOptions():
-  | RenderOptions
-  | StudioRenderOptionsSentinel
-  | undefined {
+export function getRuntimeRenderOptions(): RenderOptions | undefined {
   return getScreenCIRuntimeContext().renderOptions
 }
 

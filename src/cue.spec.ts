@@ -5,13 +5,14 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import {
   createNarration,
-  createStudioNarration,
+  buildStudioNarrationCues,
   setActiveCueRecorder,
   resetCueChain,
   setSleepFn,
   validateCustomVoiceRefs,
   assertNarrationLanguagesMatch,
 } from './cue.js'
+import { validateStudioDeclaration } from './studio.js'
 import * as screenci from '../index.js'
 import { hide, setActiveHideRecorder } from './hide.js'
 import { speed } from './speed.js'
@@ -853,7 +854,7 @@ describe('createNarration', () => {
   })
 })
 
-describe('createStudioNarration', () => {
+describe('buildStudioNarrationCues', () => {
   let recorder: IEventRecorder
   let order: string[]
 
@@ -881,33 +882,35 @@ describe('createStudioNarration', () => {
     })
   })
 
-  it('exposes callable cues with start() and end() for each key', () => {
-    const cues = createStudioNarration('intro', 'outro')
+  it('exposes callable cues with start() and end() for each name', () => {
+    const cues = buildStudioNarrationCues(['intro', 'outro'])
 
     expect(typeof cues.intro).toBe('function')
-    expect(typeof cues.intro.start).toBe('function')
-    expect(typeof cues.intro.end).toBe('function')
+    expect(typeof cues.intro!.start).toBe('function')
+    expect(typeof cues.intro!.end).toBe('function')
     expect(typeof cues.outro).toBe('function')
   })
 
-  it('throws on duplicate cue keys', () => {
-    expect(() => createStudioNarration('intro', 'intro')).toThrow(
-      'Duplicate cue key "intro"'
-    )
+  it('rejects duplicate narration names via validateStudioDeclaration', () => {
+    // Duplicate/validation now lives in the builder via validateStudioDeclaration,
+    // which video.studio({ narration: [...] }) calls before building the cues.
+    expect(() =>
+      validateStudioDeclaration({ narration: ['intro', 'intro'] }, [], [])
+    ).toThrow('video.studio(): duplicate narration name "intro".')
   })
 
   it('start() emits a studio cue start without text or translations', async () => {
-    const cues = createStudioNarration('intro')
+    const cues = buildStudioNarrationCues(['intro'])
 
-    await cues.intro.start()
+    await cues.intro!.start()
     expect(order).toEqual(['sleep', 'studioCueStart(intro)'])
     expect(recorder.addCueStart).not.toHaveBeenCalled()
   })
 
   it('calling a cue runs one start and one end for a single run', async () => {
-    const cues = createStudioNarration('intro')
+    const cues = buildStudioNarrationCues(['intro'])
 
-    await cues.intro()
+    await cues.intro!()
     expect(order).toEqual([
       'sleep',
       'studioCueStart(intro)',
@@ -918,10 +921,10 @@ describe('createStudioNarration', () => {
   })
 
   it('auto-ends the previous cue when the next one starts', async () => {
-    const cues = createStudioNarration('intro', 'outro')
+    const cues = buildStudioNarrationCues(['intro', 'outro'])
 
-    await cues.intro.start()
-    await cues.outro.start()
+    await cues.intro!.start()
+    await cues.outro!.start()
     expect(order).toEqual([
       'sleep',
       'studioCueStart(intro)',
@@ -933,13 +936,13 @@ describe('createStudioNarration', () => {
   })
 
   it('enforces unique cue names across the recording', async () => {
-    const studio = createStudioNarration('intro')
+    const studio = buildStudioNarrationCues(['intro'])
     const regular = createNarration({
       voice: { name: voices.Ava },
       en: { intro: 'Hello' },
     })
 
-    await studio.intro.start()
+    await studio.intro!.start()
     await expect(regular.intro.start()).rejects.toThrow(
       'Duplicate cue name "intro"'
     )
@@ -947,10 +950,10 @@ describe('createStudioNarration', () => {
 
   it('throws when started inside hide()', async () => {
     setActiveHideRecorder(recorder)
-    const cues = createStudioNarration('intro')
+    const cues = buildStudioNarrationCues(['intro'])
 
     await hide(async () => {
-      await expect(cues.intro.start()).rejects.toThrow(
+      await expect(cues.intro!.start()).rejects.toThrow(
         'Cannot start narration inside hide()'
       )
     })

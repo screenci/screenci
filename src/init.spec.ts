@@ -114,15 +114,18 @@ describe('generateExampleVideo', () => {
     expect(generateExampleVideo()).toBe(installationVideoSource)
   })
 
-  it('co-locates the voice and declares localized narration', () => {
+  it('sets the default voice via use and declares localized narration', () => {
     const source = generateExampleVideo()
+    expect(source).toContain(
+      `video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })`
+    )
     expect(source).toContain(`video.localize({
-  // The voice (how narration is spoken) and the localized text live together.
-  voice: { name: voices.Sophie },
   // Localized narration cues by language. The fixture exposes them as markers.
   narration: {
     en: {`)
-    expect(source).not.toContain('renderOptions')
+    // The all-languages default voice lives in use, not in the localize spec.
+    expect(source).not.toContain(`video.localize({
+  // The voice`)
     expect(source).not.toContain('createNarration')
   })
 })

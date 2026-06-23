@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { normalizeLocalizeSpec } from './localize.js'
+import { validateStudioDeclaration } from './studio.js'
 import { voices } from './voices.js'
 
 describe('normalizeLocalizeSpec', () => {
@@ -27,33 +28,25 @@ describe('normalizeLocalizeSpec', () => {
     })
   })
 
-  it('declares studio-managed names via the studio field', () => {
-    const n = normalizeLocalizeSpec({
-      languages: ['en', 'fi'],
-      studio: { narration: ['intro', 'save'], text: ['heading'] },
-    })
-    expect(n.narration).toMatchObject({
-      cueNames: ['intro', 'save'],
-      studioNames: ['intro', 'save'],
-      seededNames: [],
-    })
-    expect(n.text).toMatchObject({
-      fieldNames: ['heading'],
-      studioNames: ['heading'],
-      seededNames: [],
-    })
+  it('accepts a spec with only languages (every cue/field is Studio-managed)', () => {
+    // Studio-managed names are now declared via video.studio({...}), not on the
+    // localize spec. A spec carrying just `languages` is valid: it sets the
+    // language set and leaves narration/text null (the fixtures merge the
+    // Studio-managed cues/fields in from the studio declaration).
+    const n = normalizeLocalizeSpec({ languages: ['en', 'fi'] })
+    expect(n.narration).toBeNull()
+    expect(n.text).toBeNull()
     expect(n.languages).toEqual(['en', 'fi'])
   })
 
-  it('supports the partial form: studio names alongside seeded maps', () => {
+  it('keeps seeded maps independent of Studio-managed names', () => {
     const n = normalizeLocalizeSpec({
-      studio: { narration: ['alert'] },
       narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
       text: { en: { heading: 'H' }, fi: { heading: 'O' } },
     })
-    expect(n.narration?.cueNames).toEqual(['intro', 'alert'])
+    expect(n.narration?.cueNames).toEqual(['intro'])
     expect(n.narration?.seededNames).toEqual(['intro'])
-    expect(n.narration?.studioNames).toEqual(['alert'])
+    expect(n.narration?.studioNames).toEqual([])
     expect(n.languages).toEqual(['en', 'fi'])
   })
 
@@ -88,20 +81,18 @@ describe('normalizeLocalizeSpec', () => {
   })
 
   it('throws when a name is both seeded and studio-managed', () => {
+    // Disjointness between seeded localize names and Studio-managed names is
+    // checked by validateStudioDeclaration (called by the builder), now that
+    // studio names live in video.studio({...}) rather than the localize spec.
     expect(() =>
-      normalizeLocalizeSpec({
-        studio: { narration: ['intro'] },
-        narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
-      })
+      validateStudioDeclaration({ narration: ['intro'] }, ['intro'], [])
     ).toThrow(
-      /narration name\(s\) intro are both seeded and declared in studio/
+      /narration name\(s\) intro are both seeded in localize\(\) and declared as Studio-managed/
     )
   })
 
-  it('throws when there are no languages to infer', () => {
-    expect(() =>
-      normalizeLocalizeSpec({ studio: { narration: ['intro'] } })
-    ).toThrow(/no languages/)
+  it('throws when a spec has nothing to localize', () => {
+    expect(() => normalizeLocalizeSpec({})).toThrow(/nothing to localize/)
   })
 
   it('throws on an unsupported language code', () => {
@@ -110,9 +101,9 @@ describe('normalizeLocalizeSpec', () => {
     ).toThrow(/unsupported language "zz"/)
   })
 
-  it('rejects duplicate studio names', () => {
+  it('rejects duplicate studio names via validateStudioDeclaration', () => {
     expect(() =>
-      normalizeLocalizeSpec({ languages: ['en'], studio: { text: ['a', 'a'] } })
+      validateStudioDeclaration({ text: ['a', 'a'] }, [], [])
     ).toThrow(/duplicate text name "a"/)
   })
 
@@ -144,6 +135,24 @@ describe('normalizeLocalizeSpec', () => {
     })
   })
 
+  it('captures a per-cue synthesis language from the { cue, language } form', () => {
+    const n = normalizeLocalizeSpec({
+      narration: {
+        en: { tagline: 'Just do it' },
+        fi: { tagline: { cue: 'Just do it', language: 'en' } },
+      },
+    })
+    expect(n.narration?.seedByLang.en?.tagline).toEqual({
+      kind: 'text',
+      text: 'Just do it',
+    })
+    expect(n.narration?.seedByLang.fi?.tagline).toEqual({
+      kind: 'text',
+      text: 'Just do it',
+      language: 'en',
+    })
+  })
+
   it('normalizes a media cue value', () => {
     const n = normalizeLocalizeSpec({
       languages: ['en'],
@@ -157,17 +166,6 @@ describe('normalizeLocalizeSpec', () => {
   })
 
   describe('voice', () => {
-    it('expands a single voice config to every language', () => {
-      const n = normalizeLocalizeSpec({
-        voice: { name: voices.Ava },
-        narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
-      })
-      expect(n.voiceByLang).toEqual({
-        en: { name: voices.Ava },
-        fi: { name: voices.Ava },
-      })
-    })
-
     it('keeps a per-language voice map', () => {
       const n = normalizeLocalizeSpec({
         voice: { en: { name: voices.Ava }, fi: { name: voices.Nora } },
@@ -179,13 +177,21 @@ describe('normalizeLocalizeSpec', () => {
       })
     })
 
-    it('throws when a voice map does not cover every language', () => {
+    it('allows a partial voice map (omitted languages use the use default)', () => {
+      const n = normalizeLocalizeSpec({
+        voice: { fi: { name: voices.Nora } },
+        narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
+      })
+      expect(n.voiceByLang).toEqual({ fi: { name: voices.Nora } })
+    })
+
+    it('throws when a voice map names a language outside the localization', () => {
       expect(() =>
         normalizeLocalizeSpec({
-          voice: { en: { name: voices.Ava } },
+          voice: { en: { name: voices.Ava }, sv: { name: voices.Nora } },
           narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
         })
-      ).toThrow(/voice map must cover every language.*missing fi/)
+      ).toThrow(/voice map names language\(s\) sv that are not part/)
     })
 
     it('defaults to an empty voice map when no voice is set', () => {

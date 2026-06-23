@@ -5,10 +5,11 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import {
   createOverlays,
-  createStudioOverlays,
+  buildStudioOverlays,
   setActiveAssetRecorder,
   setAssetSleepFn,
 } from './asset.js'
+import { validateStudioDeclaration } from './studio.js'
 import {
   setAnimatedHtmlRasterizer,
   setHtmlRasterizer,
@@ -1321,7 +1322,7 @@ describe('createOverlays', () => {
   })
 })
 
-describe('createStudioOverlays', () => {
+describe('buildStudioOverlays', () => {
   let recorder: IEventRecorder
 
   beforeEach(() => {
@@ -1333,18 +1334,18 @@ describe('createStudioOverlays', () => {
     setActiveAssetRecorder(NOOP_EVENT_RECORDER)
   })
 
-  it('creates a callable controller for each key', () => {
-    const overlays = createStudioOverlays('intro', 'logo')
+  it('creates a callable controller for each name', () => {
+    const overlays = buildStudioOverlays(['intro', 'logo'])
 
     expect(typeof overlays.intro).toBe('function')
     expect(typeof overlays.logo).toBe('function')
   })
 
-  it('records a studio asset start with the key name', async () => {
-    const overlays = createStudioOverlays('intro', 'logo')
+  it('records a studio asset start with the name', async () => {
+    const overlays = buildStudioOverlays(['intro', 'logo'])
 
-    await overlays.intro()
-    await overlays.logo()
+    await overlays.intro!()
+    await overlays.logo!()
 
     expect(recorder.addStudioAssetStart).toHaveBeenCalledTimes(2)
     expect(recorder.addStudioAssetStart).toHaveBeenNthCalledWith(1, 'intro')
@@ -1353,20 +1354,22 @@ describe('createStudioOverlays', () => {
   })
 
   it('resolves immediately', async () => {
-    const overlays = createStudioOverlays('intro')
+    const overlays = buildStudioOverlays(['intro'])
 
-    await expect(overlays.intro()).resolves.toBeUndefined()
+    await expect(overlays.intro!()).resolves.toBeUndefined()
   })
 
-  it('throws on duplicate keys', () => {
-    expect(() => createStudioOverlays('intro', 'intro')).toThrow(
-      'Duplicate overlay key "intro" passed to createStudioOverlays. Overlay keys must be unique.'
-    )
+  it('rejects duplicate overlay names via validateStudioDeclaration', () => {
+    // Duplicate/validation now lives in the builder via validateStudioDeclaration,
+    // which video.studio({ overlays: [...] }) calls before building the controllers.
+    expect(() =>
+      validateStudioDeclaration({ overlays: ['intro', 'intro'] }, [], [])
+    ).toThrow('video.studio(): duplicate overlays name "intro".')
   })
 
   it('does not require the overlay file to exist locally', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'screenci-studio-overlay-'))
-    const overlays = createStudioOverlays('intro')
+    const overlays = buildStudioOverlays(['intro'])
 
     try {
       await runWithScreenCIRuntimeContext(
@@ -1374,7 +1377,7 @@ describe('createStudioOverlays', () => {
           recorder,
           testFilePath: join(tempDir, 'demo.screenci.ts'),
         }),
-        () => overlays.intro()
+        () => overlays.intro!()
       )
 
       expect(recorder.addStudioAssetStart).toHaveBeenCalledWith('intro')

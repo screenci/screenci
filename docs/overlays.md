@@ -42,10 +42,10 @@ video('Overview', async ({ page }) => {
 
 Each key becomes a callable overlay controller.
 
-On the Business tier you can also declare overlay keys with
-`createStudioOverlays('intro', 'logo')` and upload the files plus display
-options on the Studio page instead of keeping them in the repository. See
-[Studio](./studio.md#studio-overlays-from-code).
+On the Business tier you can also declare overlay names with
+`video.studio({ overlays: ['intro', 'logo'] })` and upload the files plus
+display options on the Studio page instead of keeping them in the repository.
+See [Studio](./studio.md#studio-overlays-from-code).
 
 Rules:
 
@@ -455,9 +455,9 @@ Timing:
 Unlike overlays, audio tracks have no placement and never hold a frozen frame:
 they simply mix into the soundtrack.
 
-On the Business tier you can also declare track keys with
-`createStudioAudio('theme', 'sting')` and upload the files plus options on the
-Studio page instead of keeping them in the repository. See
+On the Business tier you can also declare track names with
+`video.studio({ audio: ['theme', 'sting'] })` and upload the files plus options
+on the Studio page instead of keeping them in the repository. See
 [Studio](./studio.md#studio-audio-from-code).
 
 ## File organization

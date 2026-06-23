@@ -13,10 +13,7 @@ import type {
 } from './types.js'
 import { RENDER_OPTIONS_DEFAULTS } from './types.js'
 import type { ScreenshotCropRecord } from './crop.js'
-import {
-  isStudioRenderOptions,
-  type StudioRenderOptionsSentinel,
-} from './studio.js'
+import type { StudioOptionFlags } from './studio.js'
 import type { VoiceKey } from './voices.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { getGitMetadata } from './git.js'
@@ -195,6 +192,12 @@ export type CueTranslation = {
    * regeneration. Consistent output is not guaranteed across all voice types.
    */
   seed?: number
+  /**
+   * Synthesis language/locale for this cue, when it differs from the version
+   * language (a per-cue `language` override). Omitted means the cue is spoken in
+   * the version language. It is part of the audio cache key.
+   */
+  language?: string
 }
 
 export type CueStartEvent = {
@@ -221,6 +224,28 @@ export type CueEndEvent = {
   type: 'cueEnd'
   timeMs: number
   reason?: 'auto' | 'wait'
+}
+
+/**
+ * Declares the localized `text` fields used by a recording so the backend (and
+ * Studio) learn which fields exist and their code-declared seeds. Text fields
+ * render on screen, so unlike narration they cannot be patched at render time:
+ * the recorder emits this once at start so Studio can later supply per-language
+ * overrides that the CLI injects before a re-record.
+ */
+export type TextDeclareEvent = {
+  type: 'textDeclare'
+  timeMs: number
+  /** Every field name (seeded then Studio-managed), in declared order. */
+  fields: string[]
+  /** Studio-managed field names (declared via `studio.text`, no code seed). */
+  studioFields: string[]
+  /**
+   * Code-declared seeds keyed by language then field: `{ [lang]: { [field]: value } }`.
+   * Mirrors how cue translations embed the language. During a per-language pass
+   * only the active language is present. Omitted when there is no seed.
+   */
+  seed?: Record<string, Record<string, string>>
 }
 
 /** File-based video cue translation. assetPath is present only in the local
@@ -252,6 +277,11 @@ export type VideoCueTranslationTTS = {
    * regeneration. Consistent output is not guaranteed across all voice types.
    */
   seed?: number
+  /**
+   * Synthesis language/locale for this cue, when it differs from the version
+   * language (a per-cue `language` override). Part of the audio cache key.
+   */
+  language?: string
 }
 export type VideoCueTranslation =
   | VideoCueTranslationFile
@@ -452,8 +482,9 @@ export type AssetStartPayload =
   | Omit<AnimationAssetStartEvent, 'type' | 'timeMs' | 'name'>
 
 /**
- * Asset declared via `createStudioOverlays` — the file and display options are
- * configured in Studio, so the recording only marks the timeline point.
+ * Studio-managed overlay declared via `video.studio({ overlays: [...] })`. The
+ * file and display options are configured in Studio, so the recording only marks
+ * the timeline point.
  */
 export type StudioAssetStartEvent = {
   type: 'assetStart'
@@ -505,9 +536,10 @@ export type AudioEndEvent = {
 }
 
 /**
- * Background audio track declared via `createStudioAudio` — the file, volume,
- * and repeat are configured in Studio, so the recording only marks the timeline
- * point (mirrors {@link StudioAssetStartEvent} for overlays).
+ * Studio-managed background audio track declared via
+ * `video.studio({ audio: [...] })`. The file, volume, and repeat are configured
+ * in Studio, so the recording only marks the timeline point (mirrors
+ * {@link StudioAssetStartEvent} for overlays).
  */
 export type StudioAudioStartEvent = {
   type: 'audioStart'
@@ -575,6 +607,7 @@ export type RecordingEvent =
   | InputEvent
   | CueStartEvent
   | CueEndEvent
+  | TextDeclareEvent
   | VideoCueStartEvent
   | AssetStartEvent
   | AssetEndEvent
@@ -620,14 +653,15 @@ export type RecordingMetadata = {
   languages?: string[]
   sourceFilePath?: string
   /**
-   * Which parts of this recording opted into Studio configuration.
-   * `renderOptions` is set when `renderOptions: 'studio'` was used; `narration`
-   * when the recording contains Studio-managed (name-only) narration cues; `assets` when it
-   * contains `createStudioOverlays` assets; `audio` when it contains
-   * `createStudioAudio` tracks.
+   * Which parts of this recording opted into Studio configuration via
+   * `video.studio({...})`. `renderOptions`/`recordOptions` are set when those
+   * option groups are deferred; `narration` when the recording contains
+   * Studio-managed (name-only) narration cues; `assets` for Studio overlays;
+   * `audio` for Studio background-audio tracks.
    */
   studio?: {
     renderOptions?: boolean
+    recordOptions?: boolean
     narration?: boolean
     assets?: boolean
     audio?: boolean
@@ -742,6 +776,16 @@ export interface IEventRecorder {
   ): void
   /** Records a studio-mode cue start — text and voice are configured in Studio. */
   addStudioCueStart(name: string): void
+  /**
+   * Declares the localized `text` fields used by this recording (field names,
+   * Studio-managed field names, and the active language's seeds) so the backend
+   * learns them. See {@link TextDeclareEvent}.
+   */
+  addTextDeclare(
+    fields: string[],
+    studioFields: string[],
+    seed?: Record<string, Record<string, string>>
+  ): void
   addCueEnd(reason?: 'auto' | 'wait'): void
   addVideoCueStart(
     name: string,
@@ -813,6 +857,7 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addInput(): void {},
   addCueStart(): void {},
   addStudioCueStart(): void {},
+  addTextDeclare(): void {},
   addCueEnd(): void {},
   addVideoCueStart(): void {},
   addAssetStart(): void {},
@@ -849,17 +894,21 @@ export class EventRecorder implements IEventRecorder {
   private startTime: number | null = null
   private activeLanguage: string | null = null
   private readonly recordOptions: RecordOptions | undefined
-  private readonly renderOptions:
-    | RenderOptions
-    | StudioRenderOptionsSentinel
-    | undefined
+  private readonly renderOptions: RenderOptions | undefined
+  /** Which option groups are deferred to Studio (`video.studio({...})`). */
+  private readonly studioOptions: StudioOptionFlags
 
   constructor(
-    renderOptions?: RenderOptions | StudioRenderOptionsSentinel,
-    recordOptions?: RecordOptions
+    renderOptions?: RenderOptions,
+    recordOptions?: RecordOptions,
+    studioOptions?: StudioOptionFlags
   ) {
     this.recordOptions = recordOptions
     this.renderOptions = renderOptions
+    this.studioOptions = studioOptions ?? {
+      renderOptions: false,
+      recordOptions: false,
+    }
   }
 
   registerVoiceForLang(_lang: string, _meta: VoiceLanguageMeta): void {}
@@ -1032,6 +1081,22 @@ export class EventRecorder implements IEventRecorder {
       timeMs,
       name,
       studio: true,
+    })
+  }
+
+  addTextDeclare(
+    fields: string[],
+    studioFields: string[],
+    seed?: Record<string, Record<string, string>>
+  ): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'textDeclare',
+      timeMs,
+      fields,
+      studioFields,
+      ...(seed !== undefined && { seed }),
     })
   }
 
@@ -1315,7 +1380,8 @@ export class EventRecorder implements IEventRecorder {
     // Studio mode: render options come from the Studio page. data.json still
     // gets fully-resolved defaults (so it always validates and renders), and
     // metadata.studio.renderOptions marks the deferral for the backend.
-    const studioRenderOptions = isStudioRenderOptions(this.renderOptions)
+    const studioRenderOptions = this.studioOptions.renderOptions
+    const studioRecordOptions = this.studioOptions.recordOptions
 
     // Resolve all defaults so data.json always contains a complete set of
     // render options.
@@ -1440,9 +1506,14 @@ export class EventRecorder implements IEventRecorder {
         event.studio === true
     )
     const studio: RecordingMetadata['studio'] =
-      studioRenderOptions || studioNarration || studioAssets || studioAudio
+      studioRenderOptions ||
+      studioRecordOptions ||
+      studioNarration ||
+      studioAssets ||
+      studioAudio
         ? {
             ...(studioRenderOptions && { renderOptions: true }),
+            ...(studioRecordOptions && { recordOptions: true }),
             ...(studioNarration && { narration: true }),
             ...(studioAssets && { assets: true }),
             ...(studioAudio && { audio: true }),

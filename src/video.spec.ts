@@ -639,6 +639,61 @@ describe('withActiveRecordingContext deferred overlay flush', () => {
     expect(rasterCalls).toBe(0)
   })
 
+  it('emits a textDeclare event when a declaration is provided', async () => {
+    const recorder = new EventRecorder()
+    recorder.start()
+    const runtimeContext = createScreenCIRuntimeContext({
+      recorder,
+      page,
+      recordingDir: dir,
+    })
+
+    await withActiveRecordingContext({
+      runtimeContext,
+      page,
+      recorder,
+      textDeclaration: {
+        fields: ['heading'],
+        studioFields: [],
+        seed: { fi: { heading: 'Moi' } },
+      },
+      fn: async () => {},
+    })
+
+    expect(
+      recorder.getEvents().filter((e) => e.type === 'textDeclare')
+    ).toEqual([
+      {
+        type: 'textDeclare',
+        timeMs: expect.any(Number),
+        fields: ['heading'],
+        studioFields: [],
+        seed: { fi: { heading: 'Moi' } },
+      },
+    ])
+  })
+
+  it('emits no textDeclare event when no declaration is provided', async () => {
+    const recorder = new EventRecorder()
+    recorder.start()
+    const runtimeContext = createScreenCIRuntimeContext({
+      recorder,
+      page,
+      recordingDir: dir,
+    })
+
+    await withActiveRecordingContext({
+      runtimeContext,
+      page,
+      recorder,
+      fn: async () => {},
+    })
+
+    expect(recorder.getEvents().some((e) => e.type === 'textDeclare')).toBe(
+      false
+    )
+  })
+
   it('is a no-op when no overlays were deferred', async () => {
     const recorder = new EventRecorder()
     recorder.start()

@@ -23,7 +23,8 @@ import type {
   VideoEncoderPreset,
 } from './types.js'
 import type { Page } from '@playwright/test'
-import type { StudioRenderOptionsSentinel } from './studio.js'
+import type { StudioDeclaration } from './studio.js'
+import { studioOptionFlags } from './studio.js'
 export { getDimensions } from './dimensions.js'
 import { getDimensions, getViewportCenter } from './dimensions.js'
 import { resetCueChain } from './cue.js'
@@ -33,16 +34,26 @@ import type { VideoBuilder } from './builder.js'
 import type { NormalizedLocalize } from './localize.js'
 import {
   buildNarrationMarkers,
+  buildTextDeclaration,
   buildTextValues,
   narrationVoiceConfigFromRenderOptions,
   type NarrationMarkers,
+  type TextDeclaration,
   type TextValues,
 } from './localizeRuntime.js'
 import { setActiveHideRecorder } from './hide.js'
 import { setActiveAutoZoomRecorder, setActiveZoomPage } from './autoZoom.js'
-import { setActiveAssetRecorder } from './asset.js'
+import {
+  setActiveAssetRecorder,
+  buildStudioOverlays,
+  type OverlayController,
+} from './asset.js'
 import { flushPendingOverlays } from './overlayFlush.js'
-import { setActiveAudioRecorder } from './audio.js'
+import {
+  setActiveAudioRecorder,
+  buildStudioAudioTracks,
+  type AudioController,
+} from './audio.js'
 import {
   DEFAULT_VIDEO_OPTIONS,
   DEFAULT_ASPECT_RATIO,
@@ -76,11 +87,31 @@ import { escapeFileSystemPathSegment } from './fileSystemName.js'
 import {
   resolveRecordingTimingDuration,
   parseTextOverrides,
+  parseRecordOptions,
+  mergeStudioRecordOptions,
 } from './runtimeMode.js'
 import { buildScreenCIContextOptions } from './contextOptions.js'
 import { bindStillCaptureToPage } from './stillCapture.js'
 
 export const POST_VIDEO_PAUSE = 500
+
+/**
+ * The record options actually used for the capture: when record options are
+ * deferred to Studio (`video.studio({ recordOptions: true })`), the values
+ * fetched before recording (keyed by video name) override the code-declared
+ * aspect ratio, quality, and fps. Otherwise the code values are used as-is.
+ */
+export function resolveEffectiveRecordOptions(
+  recordOptions: RecordOptions,
+  studio: StudioDeclaration | undefined,
+  videoName: string
+): RecordOptions {
+  if (!studioOptionFlags(studio).recordOptions) return recordOptions
+  return mergeStudioRecordOptions(
+    recordOptions,
+    parseRecordOptions()?.[videoName]
+  )
+}
 
 type DeferredRecordingStop = {
   recorder: Recorder
@@ -358,6 +389,12 @@ export async function withActiveRecordingContext<T>(params: {
    * `.start()`ed without `.end()` stays visible in the still.
    */
   unendedOverlays?: 'throw' | 'autoEnd'
+  /**
+   * Localized `text` field declaration to emit once at recording start so the
+   * backend learns which fields exist and their seeds. `null`/omitted when the
+   * spec declares no `text`.
+   */
+  textDeclaration?: TextDeclaration | null
 }): Promise<T> {
   const {
     runtimeContext,
@@ -365,6 +402,7 @@ export async function withActiveRecordingContext<T>(params: {
     recorder,
     fn,
     unendedOverlays = 'throw',
+    textDeclaration,
   } = params
 
   setActiveScreenCIRuntimeContext(runtimeContext)
@@ -388,6 +426,14 @@ export async function withActiveRecordingContext<T>(params: {
       bindClickRecorderToPage(page, recorder)
       setRuntimePage(page)
 
+      if (textDeclaration) {
+        recorder.addTextDeclare(
+          textDeclaration.fields,
+          textDeclaration.studioFields,
+          textDeclaration.seed
+        )
+      }
+
       const result = await fn()
       if (unendedOverlays === 'autoEnd') {
         autoEndOpenOverlays(runtimeContext, recorder)
@@ -409,7 +455,7 @@ export async function withActiveRecordingContext<T>(params: {
 
 type VideoFixtureOptions = {
   recordOptions: RecordOptions
-  renderOptions: RenderOptions | StudioRenderOptionsSentinel | undefined
+  renderOptions: RenderOptions | undefined
   /**
    * Active language for this recording pass, set by `video.languages(...)` in
    * per-language mode. `undefined` in shared mode and single-language videos.
@@ -427,6 +473,12 @@ type VideoFixtureOptions = {
    * Drives the `narration` and `text` fixtures. Internal.
    */
   _screenciLocalize: NormalizedLocalize | undefined
+  /**
+   * The studio declaration for this video, set by `video.studio(...)`. Drives
+   * the render/record deferral flags and the Studio-managed `narration`, `text`,
+   * `overlays`, and `audio` fixtures. Internal.
+   */
+  _screenciStudio: StudioDeclaration | undefined
   /**
    * Absolute path of the `.screenci` script that registered this test, captured
    * by the fan-out builder. Asset paths are resolved relative to it, since
@@ -454,6 +506,18 @@ type VideoRuntimeFixtures = {
    * the page.
    */
   text: TextValues
+  /**
+   * Overlay controllers for the Studio-managed overlay names declared in
+   * `video.studio({ overlays: [...] })`. Each is callable with `start()`/`end()`;
+   * the file and placement come from Studio. Empty when none are declared.
+   */
+  overlays: Record<string, OverlayController>
+  /**
+   * Background-audio controllers for the Studio-managed track names declared in
+   * `video.studio({ audio: [...] })`. Each is callable with `start()`/`end()`;
+   * the file, volume, and repeat come from Studio. Empty when none are declared.
+   */
+  audio: Record<string, AudioController>
 }
 
 const _videoBase = base.extend<
@@ -465,29 +529,49 @@ const _videoBase = base.extend<
   _screenciLanguage: [undefined, { option: true }],
   _screenciVideoName: [undefined, { option: true }],
   _screenciLocalize: [undefined, { option: true }],
+  _screenciStudio: [undefined, { option: true }],
   _screenciSourceFile: [undefined, { option: true }],
 
   language: async ({ _screenciLanguage }, use) => {
     await use(_screenciLanguage)
   },
 
-  narration: async ({ _screenciLocalize, renderOptions }, use) => {
+  narration: async (
+    { _screenciLocalize, _screenciStudio, renderOptions },
+    use
+  ) => {
     await use(
       buildNarrationMarkers(
         _screenciLocalize,
-        narrationVoiceConfigFromRenderOptions(renderOptions)
+        narrationVoiceConfigFromRenderOptions(
+          renderOptions,
+          studioOptionFlags(_screenciStudio).renderOptions
+        ),
+        _screenciStudio?.narration ?? []
       )
     )
   },
 
-  text: async ({ _screenciLocalize, _screenciLanguage }, use) => {
+  text: async (
+    { _screenciLocalize, _screenciStudio, _screenciLanguage },
+    use
+  ) => {
     await use(
       buildTextValues(
         _screenciLocalize,
         _screenciLanguage,
-        parseTextOverrides()
+        parseTextOverrides(),
+        _screenciStudio?.text ?? []
       )
     )
+  },
+
+  overlays: async ({ _screenciStudio }, use) => {
+    await use(buildStudioOverlays(_screenciStudio?.overlays ?? []))
+  },
+
+  audio: async ({ _screenciStudio }, use) => {
+    await use(buildStudioAudioTracks(_screenciStudio?.audio ?? []))
   },
   recordingFinalizationQueue: [
     async ({}, use) => {
@@ -519,6 +603,8 @@ const _videoBase = base.extend<
     {
       browser,
       recordOptions,
+      _screenciStudio,
+      _screenciVideoName,
       colorScheme,
       locale,
       timezoneId,
@@ -537,13 +623,21 @@ const _videoBase = base.extend<
       hasTouch,
       isMobile,
     },
-    use
+    use,
+    testInfo
   ) => {
-    // Configure browser context. The viewport is derived from recordOptions;
-    // other Playwright `use` options (colorScheme, locale, storageState, ...)
-    // are forwarded so they take effect on the context screenci creates.
-    const aspectRatio = recordOptions.aspectRatio ?? DEFAULT_ASPECT_RATIO
-    const quality = recordOptions.quality ?? DEFAULT_QUALITY
+    // Configure browser context. The viewport is derived from recordOptions
+    // (with Studio record-option overrides applied when deferred); other
+    // Playwright `use` options (colorScheme, locale, storageState, ...) are
+    // forwarded so they take effect on the context screenci creates.
+    const effectiveRecordOptions = resolveEffectiveRecordOptions(
+      recordOptions,
+      _screenciStudio,
+      _screenciVideoName ?? testInfo.title
+    )
+    const aspectRatio =
+      effectiveRecordOptions.aspectRatio ?? DEFAULT_ASPECT_RATIO
+    const quality = effectiveRecordOptions.quality ?? DEFAULT_QUALITY
     const dimensions = getDimensions(aspectRatio, quality)
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
 
@@ -587,10 +681,12 @@ const _videoBase = base.extend<
   page: async (
     {
       context,
-      recordOptions,
+      recordOptions: codeRecordOptions,
       renderOptions,
       recordingFinalizationQueue,
       _screenciLanguage,
+      _screenciLocalize,
+      _screenciStudio,
       _screenciVideoName,
       _screenciSourceFile,
     },
@@ -599,7 +695,25 @@ const _videoBase = base.extend<
   ) => {
     // Only record when explicitly enabled (record command)
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
-    const recorder = new EventRecorder(renderOptions, recordOptions)
+    // Apply Studio record-option overrides (when deferred) so the capture,
+    // serialized recordOptions, and viewport all use the effective values.
+    const recordOptions = resolveEffectiveRecordOptions(
+      codeRecordOptions,
+      _screenciStudio,
+      _screenciVideoName ?? testInfo.title
+    )
+    const recorder = new EventRecorder(
+      renderOptions,
+      recordOptions,
+      studioOptionFlags(_screenciStudio)
+    )
+    // Declared `text` fields (and the active language's seeds) emitted once at
+    // recording start so the backend/Studio learn them.
+    const textDeclaration = buildTextDeclaration(
+      _screenciLocalize,
+      _screenciLanguage,
+      _screenciStudio?.text ?? []
+    )
     // Asset paths are authored relative to the user's script. Playwright reports
     // `testInfo.file` as the builder module that registered the test, so prefer
     // the script path captured at the call site.
@@ -630,6 +744,7 @@ const _videoBase = base.extend<
         runtimeContext,
         page,
         recorder,
+        textDeclaration,
         fn: async () => {
           await use(page)
         },
@@ -703,6 +818,7 @@ const _videoBase = base.extend<
         runtimeContext,
         page,
         recorder,
+        textDeclaration,
         fn: async () => {
           await use(page)
 
@@ -866,6 +982,26 @@ interface Video extends VideoCallSignatures {
   localize: VideoBuilder<VideoArgs>['localize']
 
   /**
+   * Defer render/record options and declare Studio-managed narration, text,
+   * overlays, and audio, configured in the ScreenCI web app. Chainable with
+   * `.localize(...)` / `.each(...)`.
+   *
+   * @example
+   * ```ts
+   * video
+   *   .studio({ recordOptions: true, narration: ['intro'], overlays: ['logo'] })
+   *   .localize({ languages: ['en', 'fi'] })(
+   *   'Product demo',
+   *   async ({ page, narration, overlays }) => {
+   *     await overlays.logo()
+   *     await narration.intro()
+   *   }
+   * )
+   * ```
+   */
+  studio: VideoBuilder<VideoArgs>['studio']
+
+  /**
    * Produce a separate video per variant (viewport, theme, ...). Each variant
    * has its own video identity and history. Chainable with `.languages(...)`.
    *
@@ -948,4 +1084,5 @@ const _rootBuilder = createVideoBuilder<VideoArgs>(
   _videoBase as unknown as Parameters<typeof createVideoBuilder>[0]
 )
 video.localize = _rootBuilder.localize
+video.studio = _rootBuilder.studio
 video.each = _rootBuilder.each

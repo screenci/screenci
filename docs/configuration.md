@@ -233,9 +233,10 @@ renderOptions: {
 Use project-wide render defaults for branding and layout consistency, then
 override only the files that need a different look.
 
-On the Business tier you can defer render options to the web app entirely by
-setting `renderOptions: 'studio'`. They are then managed on the
-Studio page. See [Studio](/docs/guides/studio).
+On the Business tier you can defer render options to the web app entirely with
+`video.studio({ renderOptions: true })` (and the record options with
+`recordOptions: true`). They are then managed on the Studio page. See
+[Studio](/docs/guides/studio).
 
 ### Example: shared `use` defaults
 

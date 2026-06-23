@@ -240,8 +240,9 @@ export type VideoAssetStartEvent = {
 export type AssetStartEvent = ImageAssetStartEvent | VideoAssetStartEvent
 
 /**
- * Asset declared via `createStudioOverlays` — the file and display options are
- * configured in Studio, so the recording only marks the timeline point.
+ * Studio-managed overlay declared via `video.studio({ overlays: [...] })`. The
+ * file and display options are configured in Studio, so the recording only marks
+ * the timeline point.
  */
 export type StudioAssetStartEvent = {
   type: 'assetStart'

@@ -1,7 +1,10 @@
+import type { AspectRatio, FPS, Quality } from './types.js'
+
 export const SCREENCI_RECORDING_ENV = 'SCREENCI_RECORDING'
 export const SCREENCI_MOCK_RECORD_ENV = 'SCREENCI_MOCK_RECORD'
 export const SCREENCI_LANGUAGES_ENV = 'SCREENCI_LANGUAGES'
 export const SCREENCI_TEXT_OVERRIDES_ENV = 'SCREENCI_TEXT_OVERRIDES'
+export const SCREENCI_RECORD_OPTIONS_ENV = 'SCREENCI_RECORD_OPTIONS'
 export const SCREENCI_DISABLE_RECORDING_TIMINGS_ENV =
   'SCREENCI_DISABLE_RECORDING_TIMINGS'
 export const SCREENCI_DEBUG_TIMING_ENV = 'SCREENCI_DEBUG_TIMING'
@@ -110,5 +113,82 @@ export function parseTextOverrides(
     return result
   } catch {
     return null
+  }
+}
+
+/** Studio record-option overrides per video name: `{ [videoName]: {...} }`. */
+export type RecordOptionsOverrides = Record<
+  string,
+  { aspectRatio?: AspectRatio; quality?: Quality; fps?: FPS }
+>
+
+const VALID_ASPECT_RATIOS = new Set<AspectRatio>([
+  '16:9',
+  '9:16',
+  '1:1',
+  '4:3',
+  '3:4',
+  '5:4',
+  '4:5',
+])
+const VALID_QUALITIES = new Set<Quality>(['720p', '1080p', '1440p', '2160p'])
+const VALID_FPS = new Set<FPS>([24, 30, 60])
+
+/**
+ * Parse Studio record-option overrides injected for a re-record. Record options
+ * (aspect ratio, quality, fps) change the captured viewport/encode, so Studio
+ * edits are fetched by the CLI before recording and passed in via
+ * `SCREENCI_RECORD_OPTIONS` (a JSON map of video name -> options). Returns `null`
+ * when unset or malformed, so the `recordOptions` fixture keeps the code values.
+ * Unknown fields/values are dropped.
+ */
+export function parseRecordOptions(
+  env: NodeJS.ProcessEnv = process.env
+): RecordOptionsOverrides | null {
+  const raw = env[SCREENCI_RECORD_OPTIONS_ENV]
+  if (raw === undefined || raw.trim().length === 0) return null
+
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) return null
+
+    const result: RecordOptionsOverrides = {}
+    for (const [videoName, options] of Object.entries(parsed)) {
+      if (typeof options !== 'object' || options === null) continue
+      const o = options as Record<string, unknown>
+      const entry: RecordOptionsOverrides[string] = {}
+      if (VALID_ASPECT_RATIOS.has(o.aspectRatio as AspectRatio)) {
+        entry.aspectRatio = o.aspectRatio as AspectRatio
+      }
+      if (VALID_QUALITIES.has(o.quality as Quality)) {
+        entry.quality = o.quality as Quality
+      }
+      if (typeof o.fps === 'number' && VALID_FPS.has(o.fps as FPS)) {
+        entry.fps = o.fps as FPS
+      }
+      result[videoName] = entry
+    }
+    return result
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Merge Studio record-option overrides over the code-declared record options.
+ * Only the Studio-owned fields (aspect ratio, quality, fps) are overridden; the
+ * rest (encoder, performance, deviceScaleFactor) stay from code. Pure.
+ */
+export function mergeStudioRecordOptions<
+  T extends { aspectRatio?: AspectRatio; quality?: Quality; fps?: FPS },
+>(codeRecordOptions: T, studio: RecordOptionsOverrides[string] | undefined): T {
+  if (studio === undefined) return codeRecordOptions
+  return {
+    ...codeRecordOptions,
+    ...(studio.aspectRatio !== undefined && {
+      aspectRatio: studio.aspectRatio,
+    }),
+    ...(studio.quality !== undefined && { quality: studio.quality }),
+    ...(studio.fps !== undefined && { fps: studio.fps }),
   }
 }

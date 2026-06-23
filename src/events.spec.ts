@@ -5,7 +5,6 @@ import { tmpdir } from 'os'
 import { readFile } from 'fs/promises'
 import { EventRecorder } from './events.js'
 import type { RecordingData, InputEvent } from './events.js'
-import { isStudioRenderOptions } from './studio.js'
 import { voices } from './voices.js'
 
 describe('EventRecorder', () => {
@@ -28,6 +27,43 @@ describe('EventRecorder', () => {
       const events = recorder.getEvents()
       expect(events).toHaveLength(1)
       expect(events[0]).toEqual({ type: 'videoStart', timeMs: 0 })
+    })
+  })
+
+  describe('addTextDeclare', () => {
+    it('records the declaration with relative time and seed', () => {
+      recorder.start()
+      now = 1300
+      recorder.addTextDeclare(['heading'], [], { en: { heading: 'Hi' } })
+
+      expect(recorder.getEvents().slice(1)).toEqual([
+        {
+          type: 'textDeclare',
+          timeMs: 300,
+          fields: ['heading'],
+          studioFields: [],
+          seed: { en: { heading: 'Hi' } },
+        },
+      ])
+    })
+
+    it('omits the seed when undefined (studio-only / shared mode)', () => {
+      recorder.start()
+      recorder.addTextDeclare(['cta'], ['cta'])
+
+      expect(recorder.getEvents().slice(1)).toEqual([
+        {
+          type: 'textDeclare',
+          timeMs: 0,
+          fields: ['cta'],
+          studioFields: ['cta'],
+        },
+      ])
+    })
+
+    it('is a no-op before start', () => {
+      recorder.addTextDeclare(['heading'], [], { en: { heading: 'Hi' } })
+      expect(recorder.getEvents()).toHaveLength(0)
     })
   })
 
@@ -734,8 +770,11 @@ describe('EventRecorder', () => {
     })
 
     describe('studio mode', () => {
-      it("writes resolved defaults and metadata.studio.renderOptions for renderOptions: 'studio'", async () => {
-        recorder = new EventRecorder('studio')
+      it('writes resolved defaults and metadata.studio.renderOptions when render options are deferred to Studio', async () => {
+        recorder = new EventRecorder(undefined, undefined, {
+          renderOptions: true,
+          recordOptions: false,
+        })
         recorder.start()
         await recorder.writeToFile(tmpDir, 'Test Video')
 
@@ -745,6 +784,19 @@ describe('EventRecorder', () => {
         expect(parsed.renderOptions.recording.size).toBe(1.0)
         expect(parsed.renderOptions.output.aspectRatio).toBe('16:9')
         expect(parsed.metadata?.studio).toEqual({ renderOptions: true })
+      })
+
+      it('sets metadata.studio.recordOptions when record options are deferred to Studio', async () => {
+        recorder = new EventRecorder(undefined, undefined, {
+          renderOptions: false,
+          recordOptions: true,
+        })
+        recorder.start()
+        await recorder.writeToFile(tmpDir, 'Test Video')
+
+        const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+        const parsed: RecordingData = JSON.parse(content)
+        expect(parsed.metadata?.studio).toEqual({ recordOptions: true })
       })
 
       it('records studio cue starts and sets metadata.studio.narration', async () => {
@@ -766,8 +818,11 @@ describe('EventRecorder', () => {
         expect(parsed.metadata?.languages).toBeUndefined()
       })
 
-      it('sets both studio flags when sentinel and studio cues are combined', async () => {
-        recorder = new EventRecorder('studio')
+      it('sets both studio flags when deferred render options and studio cues are combined', async () => {
+        recorder = new EventRecorder(undefined, undefined, {
+          renderOptions: true,
+          recordOptions: false,
+        })
         recorder.start()
         recorder.addStudioCueStart('intro')
         await recorder.writeToFile(tmpDir, 'Test Video')
@@ -829,8 +884,11 @@ describe('EventRecorder', () => {
         expect(parsed.metadata?.studio).toBeUndefined()
       })
 
-      it('combines all four studio flags', async () => {
-        recorder = new EventRecorder('studio')
+      it('combines all studio flags', async () => {
+        recorder = new EventRecorder(undefined, undefined, {
+          renderOptions: true,
+          recordOptions: true,
+        })
         recorder.start()
         recorder.addStudioCueStart('intro')
         recorder.addStudioAssetStart('logo')
@@ -841,6 +899,7 @@ describe('EventRecorder', () => {
         const parsed: RecordingData = JSON.parse(content)
         expect(parsed.metadata?.studio).toEqual({
           renderOptions: true,
+          recordOptions: true,
           narration: true,
           assets: true,
           audio: true,
@@ -876,11 +935,15 @@ describe('EventRecorder', () => {
         expect(parsed.metadata?.studio).toBeUndefined()
       })
 
-      it('survives JSON serialization of the sentinel (Playwright use options)', () => {
-        const roundTripped: unknown = JSON.parse(JSON.stringify('studio'))
-        expect(isStudioRenderOptions(roundTripped)).toBe(true)
-        expect(isStudioRenderOptions({ recording: { size: 1 } })).toBe(false)
-        expect(isStudioRenderOptions(undefined)).toBe(false)
+      it('defaults both studio flags to false when no studio options are passed', async () => {
+        recorder = new EventRecorder()
+        recorder.start()
+        await recorder.writeToFile(tmpDir, 'Test Video')
+
+        const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+        const parsed: RecordingData = JSON.parse(content)
+        // No deferral and no studio events: metadata.studio stays absent.
+        expect(parsed.metadata?.studio).toBeUndefined()
       })
     })
   })

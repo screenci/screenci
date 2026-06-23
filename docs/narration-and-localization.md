@@ -5,12 +5,13 @@ ScreenCI narration is cue-based. You attach a localized script to a video with
 speech should start, overlap, and end. The same script renders as multiple
 language versions without duplicating the visible browser workflow.
 
-The spoken text and the voice both live in the localize spec: `narration`
-carries the text, and `voice` carries which voice speaks it (one voice for every
-language, or a per-language map). A `renderOptions.narration.voice` set in
-`screenci.config.ts` or `video.use(...)` is the global default the localize
-`voice` falls back to. Changing the voice re-renders without re-recording;
-changing the spoken text re-records.
+The spoken text lives in the localize spec: `narration` carries the text. The
+default voice that speaks every language is set once with
+`renderOptions.narration.voice`, in `screenci.config.ts` or `video.use(...)`. The
+localize `voice` is a per-language map that overrides that default for specific
+languages only (there is no all-languages form here, that is what `use` is for),
+and a per-cue `voice` is the most specific override. Changing the voice re-renders
+without re-recording; changing the spoken text re-records.
 
 `style` prompts and `modelType: 'expressive'` require the Business tier. Free
 and Starter users should stay with the default consistent narration flow.
@@ -28,14 +29,16 @@ and Starter users should stay with the default consistent narration flow.
 
 Attach the narration script with `video.localize(...)`. The body receives a
 `narration` object whose markers (`narration.intro()`, `.start()`, `.end()`)
-carry timing only: the text and the voice both come from the localize spec.
+carry timing only: the text comes from the localize spec, the voice from your
+config or `video.use(...)` default.
 
 ```ts
 import { video, voices } from 'screenci'
 
+// The default voice for every language (how the narration is spoken).
+video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
+
 video.localize({
-  // Voice for every language (how the narration is spoken).
-  voice: { name: voices.Sophie },
   // Localized narration cues by language. The body gets timing markers.
   narration: {
     en: {
@@ -76,13 +79,15 @@ with `video.use()` instead of changing the whole project:
 ```ts
 import { video, voices } from 'screenci'
 
-// `corner` is a visual render option; the voice lives in the localize spec.
+// `corner` is a visual render option; `voice` is the default voice for every
+// language. Both are render options set with `use`.
 video.use({
-  renderOptions: { narration: { corner: 'top-right' } },
+  renderOptions: {
+    narration: { corner: 'top-right', voice: { name: voices.Sophie } },
+  },
 })
 
 video.localize({
-  voice: { name: voices.Sophie },
   narration: {
     en: {
       intro: 'Open the analytics tab.',
@@ -168,14 +173,42 @@ video.localize({
   },
 })('Landing', async ({ page, text }) => {
   await page.goto('/')
-  await page.getByTestId('heading').fill(text.heading ?? '')
-  await page.getByTestId('cta').fill(text.cta ?? '')
+  await page.getByTestId('heading').fill(text.heading)
+  await page.getByTestId('cta').fill(text.cta)
 })
 ```
 
 `text` and `narration` can be combined in the same spec. The language set is the
 union of both. Unlike voice (which only re-renders), changing injected `text`
 changes what is captured, so it re-records.
+
+### Studio-managed text
+
+A field can instead be owned by ScreenCI Studio: declare it under
+`video.studio({ text: [...] })` (with no code value) and set its per-language
+value from the web. This suits copy that non-developers maintain without editing
+the test.
+
+```ts
+video
+  .studio({ text: ['cta'] }) // value lives in Studio
+  .localize({
+    text: { en: { heading: 'Dashboard' }, fi: { heading: 'Hallinta' } },
+  })('Landing', async ({ page, text }) => {
+  await page.getByTestId('heading').fill(text.heading)
+  await page.getByTestId('cta').fill(text.cta) // '' until set in Studio
+})
+```
+
+The first recording reports the declared fields so Studio learns them. An unset
+Studio field resolves to the empty string, so that first recording still
+succeeds. Open the video's **Text** section in Studio, set each language's value,
+then re-record: `screenci record` fetches the current values and injects them
+before the run, with the code-declared values as the fallback. A seeded field can
+also be overridden per language in Studio; clearing the override falls back to the
+code value. Because on-screen text is captured into the recording (not
+re-rendered), Studio text always takes effect on the next record, never on a
+one-off re-render.
 
 ## Localized recordings (per-language capture)
 
@@ -188,7 +221,6 @@ text, you navigate to a localized route, or you want the browser locale set.
 import { video, voices } from 'screenci'
 
 video.localize({
-  voice: { name: voices.Ava },
   narration: {
     en: { intro: 'Open the settings page.' },
     fi: { intro: 'Avaa asetussivu.' },
@@ -274,7 +306,7 @@ screenshot.localize({
   },
 })('Dashboard hero', async ({ page, language, text, crop }) => {
   await page.goto('/' + language + '/dashboard')
-  await page.getByTestId('heading').fill(text.heading ?? '')
+  await page.getByTestId('heading').fill(text.heading)
   await crop(page.getByTestId('revenue-card'), { padding: 0.06 })
 })
 ```
@@ -313,9 +345,10 @@ call: `.only(...)`, `.skip`, `.fixme`, and `.fail`. The in-body conditional
 
 ## Voice per language and per cue
 
-The localize `voice` is either one config for every language, or a per-language
-map (which must cover every language). Use the map form when a language needs a
-different voice or delivery profile:
+The default voice for every language is set once with `renderOptions.narration.voice`
+(in your config or `video.use(...)`). The localize `voice` is a per-language map
+that overrides that default; it may be partial, and any language you omit keeps
+the default. Use it when a language needs a different voice or delivery profile:
 
 ```ts
 import { video, voices } from 'screenci'
@@ -349,7 +382,7 @@ To override a single cue, use the object form of the cue value and pass its own
 
 ```ts
 video.localize({
-  voice: { name: voices.Ava }, // every language unless a cue overrides it
+  voice: { en: { name: voices.Ava } }, // this language's voice; a cue can still override it
   narration: {
     en: {
       intro: 'Welcome to the dashboard.',
@@ -367,10 +400,38 @@ video.localize({
 ```
 
 The voice is resolved per cue and language, first defined wins: the per-cue
-`voice` overrides the localize `voice` (single config or this language's map
-entry), which overrides the `renderOptions.narration.voice` config default, which
-falls back to a built-in voice. Because voice is never captured, you can change
-it at any level and re-render without re-recording the browser.
+`voice` overrides the localize `voice` (this language's map entry), which
+overrides the `renderOptions.narration.voice` default set with `use`, which falls
+back to a built-in voice. Because voice is never captured, you can change it at
+any level and re-render without re-recording the browser.
+
+### Speak a cue in a different language
+
+A cue object can also set `language`, the locale its text is spoken in. It
+defaults to the version language, so you only set it when a single line should be
+pronounced in another language: a brand name, a quoted phrase, or a line you keep
+in a base language on purpose. The text is always present (subtitles show that
+exact text); `language` only changes the synthesis locale, not the version.
+
+```ts
+video.localize({
+  narration: {
+    en: { intro: 'Welcome.', tagline: 'Just do it' },
+    fi: {
+      intro: 'Tervetuloa.',
+      // Spoken in English inside the Finnish version (e.g. a brand tagline).
+      tagline: { cue: 'Just do it', language: 'en' },
+    },
+  },
+})('Landing', async ({ narration }) => {
+  await narration.intro()
+  await narration.tagline()
+})
+```
+
+`language` applies only to spoken (text) cues, not to file-based `media` cues
+(those carry their own audio). It is part of the audio cache key, so changing it
+regenerates just that cue.
 
 When you use ElevenLabs-specific voices or custom voice assets, keep each cue as
 its own sentence-sized unit. That makes re-recording cheaper and avoids paying
@@ -531,7 +592,9 @@ ElevenLabs voice from your own account. Set it as the localize `voice`:
 import { video, voices } from 'screenci'
 
 video.localize({
-  voice: { name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }) },
+  voice: {
+    en: { name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }) },
+  },
   narration: {
     en: {
       intro: 'Welcome to the dashboard.',
@@ -560,12 +623,14 @@ and `useSpeakerBoost`. These fields are accepted only for
 ```ts
 video.localize({
   voice: {
-    name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }),
-    stability: 0.45,
-    similarityBoost: 0.8,
-    style: 0.2,
-    speed: 0.9,
-    useSpeakerBoost: true,
+    en: {
+      name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }),
+      stability: 0.45,
+      similarityBoost: 0.8,
+      style: 0.2,
+      speed: 0.9,
+      useSpeakerBoost: true,
+    },
   },
   narration: { en: { intro: 'Welcome to the dashboard.' } },
 })('Billing walkthrough', async ({ narration }) => {
@@ -596,7 +661,7 @@ Use the same `voices.elevenlabs(...)` helper, but pass `{ path }` instead of
 
 ```ts
 video.localize({
-  voice: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
+  voice: { en: { name: voices.elevenlabs({ path: './my-voice.mp3' }) } },
   narration: {
     en: {
       intro: 'Welcome to the dashboard.',
@@ -619,7 +684,7 @@ and language, so the same file does not get re-cloned on later runs.
 
 A cloned voice is an ElevenLabs voice, so it accepts the same
 `eleven_multilingual_v2` controls as `voices.elevenlabs(...)`, and can be set as
-a single `voice` or as an entry in the per-language `voice` map:
+the default voice in `use` or as an entry in the per-language `voice` map:
 
 ```ts
 video.localize({
@@ -657,26 +722,30 @@ voices you are licensed to reproduce, in line with the ElevenLabs
 ## Manage narration from Studio
 
 On the Business tier you can manage narration text from the web app instead of
-code. Declare the cue names under `studio.narration` and let Studio own the
-spoken text per language:
+code. Declare the cue names under `video.studio({ narration: [...] })` and let
+Studio own the spoken text per language:
 
 ```ts
 import { video } from 'screenci'
 
-video.localize({
-  languages: ['en', 'fi'],
+video
   // Studio fills in the text per language for these cue names.
-  studio: { narration: ['intro', 'save'] },
-})('Settings', async ({ page, narration }) => {
-  await narration.intro()
-  await page.goto('/settings')
-  await narration.save()
-})
+  .studio({ narration: ['intro', 'save'] })
+  .localize({ languages: ['en', 'fi'] })(
+  'Settings',
+  async ({ page, narration }) => {
+    await narration.intro()
+    await page.goto('/settings')
+    await narration.save()
+  }
+)
 ```
 
 Studio names are language-agnostic (declared once) and must be disjoint from the
-seeded `narration` map. You can also mix the two: seed some cues in code and list
-the Studio-managed ones in `studio.narration`. When everything is Studio-managed,
-pass `languages` explicitly, since there is no seeded text to infer them from.
-The same applies to text via `studio.text`. The markers still carry timing the
-same way; only the text lives in Studio. See [Studio](/docs/guides/studio).
+seeded `narration` map. You can also mix the two: seed some cues in
+`localize({ narration })` and list the Studio-managed ones in
+`video.studio({ narration: [...] })`. When everything is Studio-managed, pass
+`languages` explicitly via `.localize({ languages: [...] })`, since there is no
+seeded text to infer them from. The same applies to text via
+`video.studio({ text: [...] })`. The markers still carry timing the same way;
+only the text lives in Studio. See [Studio](/docs/guides/studio).

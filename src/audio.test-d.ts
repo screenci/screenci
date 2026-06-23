@@ -1,7 +1,7 @@
 import { describe, it, expectTypeOf } from 'vitest'
 import {
   createAudio,
-  createStudioAudio,
+  buildStudioAudioTracks,
   type AudioController,
 } from './audio.js'
 
@@ -38,18 +38,13 @@ describe('createAudio type constraints', () => {
   })
 })
 
-describe('createStudioAudio type constraints', () => {
-  it('maps each declared key to an AudioController', () => {
-    const music = createStudioAudio('theme', 'sting')
+describe('buildStudioAudioTracks type constraints', () => {
+  // Studio-managed audio names are typed to the exact names by the
+  // `video.studio({ audio: [...] })` builder (see index.test-d.ts). The
+  // internal helper returns a generic record of AudioController controllers.
+  it('returns a record of AudioController controllers', () => {
+    const music = buildStudioAudioTracks(['theme', 'sting'])
+    expectTypeOf(music).toEqualTypeOf<Record<string, AudioController>>()
     expectTypeOf(music.theme).toEqualTypeOf<AudioController>()
-    expectTypeOf(music.sting).toEqualTypeOf<AudioController>()
-    expectTypeOf(music.theme.start).toEqualTypeOf<() => Promise<void>>()
-    expectTypeOf(music.theme.end).toEqualTypeOf<() => Promise<void>>()
-  })
-
-  it('only exposes the declared keys', () => {
-    const music = createStudioAudio('theme')
-    // @ts-expect-error 'typo' was not declared
-    expectTypeOf(music.typo)
   })
 })

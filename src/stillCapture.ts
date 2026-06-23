@@ -14,7 +14,6 @@ import {
   DEFAULT_QUALITY,
 } from './defaults.js'
 import type { RecordOptions, RenderOptions } from './types.js'
-import type { StudioRenderOptionsSentinel } from './studio.js'
 
 /** File name of the raw page capture written beside a still's `data.json`. */
 const SCREENSHOT_FILE_NAME = 'screenshot.png'
@@ -81,7 +80,7 @@ export type StillCaptureDeps = {
     mkdir: (path: string) => Promise<void>
   }
   makeRecorder?: (
-    renderOptions: RenderOptions | StudioRenderOptionsSentinel | undefined,
+    renderOptions: RenderOptions | undefined,
     recordOptions: RecordOptions | undefined
   ) => IEventRecorder
 }
@@ -101,7 +100,7 @@ export async function writeStillRecording(params: {
   testFilePath: string | null
   configDir: string
   recordOptions: RecordOptions | undefined
-  renderOptions: RenderOptions | StudioRenderOptionsSentinel | undefined
+  renderOptions: RenderOptions | undefined
   deps: StillCaptureDeps
 }): Promise<Buffer> {
   const {

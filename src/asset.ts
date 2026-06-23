@@ -727,46 +727,21 @@ async function readHtmlOverlayFile(path: string): Promise<string> {
 }
 
 /**
- * Creates typed overlay controllers whose files and display options are
- * configured on the ScreenCI Studio page instead of in code. Business tier
- * only.
+ * Builds overlay controllers for Studio-managed overlays declared via
+ * `video.studio({ overlays: [...] })`. Their file (`.svg`, `.png`, or `.mp4`),
+ * placement, image duration, and video audio level are configured on the
+ * ScreenCI Studio page instead of in code. Each name becomes a callable overlay
+ * controller with the same timeline behavior as a {@link createOverlays}
+ * controller, including `start()`/`end()`.
  *
- * Each key becomes a callable overlay controller with the same timeline
- * behavior as {@link createOverlays} controllers, including `start()`/`end()`.
- * The file (`.svg`, `.png`, or `.mp4`), placement, image duration, and video
- * audio level all come from Studio.
- *
- * On the first upload of a studio-mode video, rendering is held until the
- * video is configured in Studio (the CLI prints a direct link). Later uploads
- * reuse the saved Studio configuration automatically.
- *
- * @example
- * ```ts
- * const overlays = createStudioOverlays('intro', 'logo')
- *
- * video('Product demo', async ({ page }) => {
- *   await overlays.intro()
- *   await page.goto('/dashboard')
- *   await overlays.logo()
- * })
- * ```
+ * Internal: the `overlays` fixture exposes these to the test body.
  */
-export function createStudioOverlays<
-  const K extends readonly [string, ...string[]],
->(...keys: K): Record<K[number], OverlayController> {
-  const seen = new Set<string>()
-  for (const key of keys) {
-    if (seen.has(key)) {
-      throw new Error(
-        `Duplicate overlay key "${key}" passed to createStudioOverlays. Overlay keys must be unique.`
-      )
-    }
-    seen.add(key)
-  }
-
-  const result = {} as Record<K[number], OverlayController>
-  for (const key of keys) {
-    result[key as K[number]] = createStudioAssetController(key)
+export function buildStudioOverlays(
+  names: readonly string[]
+): Record<string, OverlayController> {
+  const result: Record<string, OverlayController> = {}
+  for (const name of names) {
+    result[name] = createStudioAssetController(name)
   }
   return result
 }

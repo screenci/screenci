@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   isTimingDebugEnabled,
+  mergeStudioRecordOptions,
+  parseRecordOptions,
   parseRequestedLanguages,
   parseTextOverrides,
   resolveRecordingTimingDuration,
@@ -121,5 +123,75 @@ describe('parseTextOverrides', () => {
         SCREENCI_TEXT_OVERRIDES: 'not json',
       } as NodeJS.ProcessEnv)
     ).toBeNull()
+  })
+})
+
+describe('parseRecordOptions', () => {
+  it('returns null when unset or empty', () => {
+    expect(parseRecordOptions({} as NodeJS.ProcessEnv)).toBeNull()
+    expect(
+      parseRecordOptions({
+        SCREENCI_RECORD_OPTIONS: '   ',
+      } as NodeJS.ProcessEnv)
+    ).toBeNull()
+  })
+
+  it('parses a video name -> options JSON map', () => {
+    expect(
+      parseRecordOptions({
+        SCREENCI_RECORD_OPTIONS: JSON.stringify({
+          Demo: { aspectRatio: '9:16', quality: '1080p', fps: 60 },
+        }),
+      } as NodeJS.ProcessEnv)
+    ).toEqual({ Demo: { aspectRatio: '9:16', quality: '1080p', fps: 60 } })
+  })
+
+  it('drops unknown fields and invalid values', () => {
+    expect(
+      parseRecordOptions({
+        SCREENCI_RECORD_OPTIONS: JSON.stringify({
+          Demo: {
+            aspectRatio: '21:9',
+            quality: '4320p',
+            fps: 12,
+            encoder: 'h265',
+          },
+        }),
+      } as NodeJS.ProcessEnv)
+    ).toEqual({ Demo: {} })
+  })
+
+  it('returns null on malformed JSON', () => {
+    expect(
+      parseRecordOptions({
+        SCREENCI_RECORD_OPTIONS: 'not json',
+      } as NodeJS.ProcessEnv)
+    ).toBeNull()
+  })
+})
+
+describe('mergeStudioRecordOptions', () => {
+  it('returns the code options unchanged when there is no studio override', () => {
+    const code = { aspectRatio: '16:9' as const, encoder: 'h264' }
+    expect(mergeStudioRecordOptions(code, undefined)).toBe(code)
+  })
+
+  it('overrides only the Studio-owned fields and keeps the rest from code', () => {
+    const code = {
+      aspectRatio: '16:9' as const,
+      quality: '720p' as const,
+      encoder: 'h264',
+    }
+    expect(
+      mergeStudioRecordOptions(code, {
+        aspectRatio: '9:16',
+        fps: 60,
+      })
+    ).toEqual({
+      aspectRatio: '9:16',
+      quality: '720p',
+      fps: 60,
+      encoder: 'h264',
+    })
   })
 })

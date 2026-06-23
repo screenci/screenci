@@ -10,6 +10,7 @@ describe('expandRegistrations', () => {
     const regs = expandRegistrations({
       baseTitle: 'Demo',
       localize: null,
+      studio: null,
       eachVariants: null,
       requestedLanguages: null,
     })
@@ -29,6 +30,7 @@ describe('expandRegistrations', () => {
       localize: perLanguage({
         narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
       }),
+      studio: null,
       eachVariants: null,
       requestedLanguages: null,
     })
@@ -44,9 +46,9 @@ describe('expandRegistrations', () => {
       baseTitle: 'T',
       localize: perLanguage({
         languages: ['en', 'fi'],
-        studio: { text: ['heading'] },
         browserLocale: false,
       }),
+      studio: { text: ['heading'] },
       eachVariants: null,
       requestedLanguages: null,
     })
@@ -61,6 +63,7 @@ describe('expandRegistrations', () => {
         narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
         mode: 'shared',
       }),
+      studio: null,
       eachVariants: null,
       requestedLanguages: null,
     })
@@ -77,8 +80,8 @@ describe('expandRegistrations', () => {
       baseTitle: 'T',
       localize: perLanguage({
         languages: ['en', 'fi', 'de'],
-        studio: { text: ['heading'] },
       }),
+      studio: { text: ['heading'] },
       eachVariants: null,
       requestedLanguages: ['fi'],
     })
@@ -90,8 +93,8 @@ describe('expandRegistrations', () => {
       baseTitle: 'Landing',
       localize: perLanguage({
         languages: ['en', 'fi'],
-        studio: { text: ['heading'] },
       }),
+      studio: { text: ['heading'] },
       eachVariants: [{ key: 'mobile' }, { key: 'desktop' }],
       requestedLanguages: null,
     })
@@ -188,10 +191,13 @@ describe('createVideoBuilder registration', () => {
 
   it('supports the (title, details, body) signature', () => {
     const { test, calls } = createTestSink()
-    createVideoBuilder(test).localize({
-      languages: ['en'],
-      studio: { text: ['h'] },
-    })('Tagged', { tag: '@critical' }, async () => {})
+    createVideoBuilder(test)
+      .studio({ text: ['h'] })
+      .localize({ languages: ['en'] })(
+      'Tagged',
+      { tag: '@critical' },
+      async () => {}
+    )
     expect(calls.tests).toEqual(['Tagged [en]'])
   })
 
@@ -200,10 +206,9 @@ describe('createVideoBuilder registration', () => {
     process.env.SCREENCI_LANGUAGES = 'de'
     try {
       const { test, calls } = createTestSink()
-      createVideoBuilder(test).localize({
-        languages: ['en', 'fi'],
-        studio: { text: ['h'] },
-      })('T', async () => {})
+      createVideoBuilder(test)
+        .studio({ text: ['h'] })
+        .localize({ languages: ['en', 'fi'] })('T', async () => {})
       expect(calls.tests).toEqual([])
       expect(warn).toHaveBeenCalledOnce()
     } finally {

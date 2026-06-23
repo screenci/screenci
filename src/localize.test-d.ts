@@ -10,7 +10,8 @@ describe('video.localize typed fixtures', () => {
       text: { en: { heading: 'H' }, fi: { heading: 'O' } },
     })('T', async ({ narration, text }) => {
       expectTypeOf(narration.intro).toEqualTypeOf<NarrationCue>()
-      expectTypeOf(text.heading).toEqualTypeOf<string | undefined>()
+      // Seeded fields are always populated in per-language mode (the default).
+      expectTypeOf(text.heading).toEqualTypeOf<string>()
       // @ts-expect-error 'nope' is not a declared cue
       void narration.nope
       // @ts-expect-error 'nope' is not a declared text field
@@ -18,17 +19,29 @@ describe('video.localize typed fixtures', () => {
     })
   })
 
-  it('unions seeded names with studio-managed names', () => {
+  it('types text fields as string in shared mode', () => {
     video.localize({
-      studio: { narration: ['alert'], text: ['tagline'] },
+      mode: 'shared',
+      text: { en: { heading: 'H' }, fi: { heading: 'O' } },
+    })('T', async ({ text }) => {
+      // A shared capture does no per-language injection, so a seeded field is
+      // the empty string at runtime rather than undefined.
+      expectTypeOf(text.heading).toEqualTypeOf<string>()
+    })
+  })
+
+  it('unions seeded names with studio-managed names', () => {
+    video.studio({ narration: ['alert'], text: ['tagline'] }).localize({
       narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
       text: { en: { heading: 'H' }, fi: { heading: 'O' } },
     })('T', async ({ narration, text }) => {
       // Seeded and Studio-managed names are both present.
       expectTypeOf(narration.intro).toEqualTypeOf<NarrationCue>()
       expectTypeOf(narration.alert).toEqualTypeOf<NarrationCue>()
-      expectTypeOf(text.heading).toEqualTypeOf<string | undefined>()
-      expectTypeOf(text.tagline).toEqualTypeOf<string | undefined>()
+      // Seeded field: always populated per-language.
+      expectTypeOf(text.heading).toEqualTypeOf<string>()
+      // Studio-managed field: empty string until set in Studio.
+      expectTypeOf(text.tagline).toEqualTypeOf<string>()
     })
   })
 
@@ -52,14 +65,25 @@ describe('video.localize typed fixtures', () => {
     })('T', async () => {})
   })
 
-  it('accepts a single voice config or a per-language voice map', () => {
-    video.localize({
-      voice: { name: voices.Ava },
-      narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
-    })('T', async () => {})
-
+  it('accepts a per-language voice map', () => {
     video.localize({
       voice: { en: { name: voices.Ava }, fi: { name: voices.Nora } },
+      narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
+    })('T', async () => {})
+  })
+
+  it('accepts a partial per-language voice map', () => {
+    video.localize({
+      voice: { fi: { name: voices.Nora } },
+      narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
+    })('T', async () => {})
+  })
+
+  it('rejects a single voice config for all languages (use `use` instead)', () => {
+    video.localize({
+      // @ts-expect-error voice must be a per-language map; the all-languages
+      // default belongs in `use` (renderOptions.narration.voice).
+      voice: { name: voices.Ava },
       narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
     })('T', async () => {})
   })
@@ -69,6 +93,26 @@ describe('video.localize typed fixtures', () => {
       narration: {
         en: { save: 'Save.' },
         fi: { save: { cue: 'Tallenna.', voice: { name: voices.Nora } } },
+      },
+    })('T', async () => {})
+  })
+
+  it('accepts a per-cue synthesis language on a { cue } value', () => {
+    video.localize({
+      narration: {
+        en: { tagline: 'Just do it' },
+        fi: { tagline: { cue: 'Just do it', language: 'en' } },
+      },
+    })('T', async () => {})
+  })
+
+  it('rejects language on a media cue value', () => {
+    video.localize({
+      narration: {
+        en: {
+          // @ts-expect-error language is not valid on the { media } form
+          jingle: { media: 'jingle.mp3', language: 'en' },
+        },
       },
     })('T', async () => {})
   })

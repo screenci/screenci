@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { createAudio, createStudioAudio } from './audio.js'
+import { createAudio, buildStudioAudioTracks } from './audio.js'
+import { validateStudioDeclaration } from './studio.js'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
 import {
@@ -226,7 +227,7 @@ describe('createAudio', () => {
   })
 })
 
-describe('createStudioAudio', () => {
+describe('buildStudioAudioTracks', () => {
   let recorder: IEventRecorder
   let context: ScreenCIRuntimeContext
 
@@ -238,19 +239,19 @@ describe('createStudioAudio', () => {
   const run = (fn: () => Promise<void>): Promise<void> =>
     runWithScreenCIRuntimeContext(context, fn)
 
-  it('creates a callable controller with start()/end() for each key', () => {
-    const music = createStudioAudio('theme', 'sting')
+  it('creates a callable controller with start()/end() for each name', () => {
+    const music = buildStudioAudioTracks(['theme', 'sting'])
     expect(typeof music.theme).toBe('function')
-    expect(typeof music.theme.start).toBe('function')
-    expect(typeof music.theme.end).toBe('function')
+    expect(typeof music.theme!.start).toBe('function')
+    expect(typeof music.theme!.end).toBe('function')
     expect(typeof music.sting).toBe('function')
   })
 
-  it('a bare call records a studio audio start with the key name', async () => {
+  it('a bare call records a studio audio start with the name', async () => {
     await run(async () => {
-      const music = createStudioAudio('theme', 'sting')
-      await music.theme()
-      await music.sting()
+      const music = buildStudioAudioTracks(['theme', 'sting'])
+      await music.theme!()
+      await music.sting!()
     })
     expect(recorder.addStudioAudioStart).toHaveBeenCalledTimes(2)
     expect(recorder.addStudioAudioStart).toHaveBeenNthCalledWith(1, 'theme')
@@ -261,9 +262,9 @@ describe('createStudioAudio', () => {
 
   it('start() then end() records a paired studio start and audioEnd', async () => {
     await run(async () => {
-      const music = createStudioAudio('theme')
-      await music.theme.start()
-      await music.theme.end()
+      const music = buildStudioAudioTracks(['theme'])
+      await music.theme!.start()
+      await music.theme!.end()
     })
     expect(recorder.addStudioAudioStart).toHaveBeenCalledWith('theme')
     expect(recorder.addAudioEnd).toHaveBeenCalledWith('theme', 'wait')
@@ -271,9 +272,9 @@ describe('createStudioAudio', () => {
 
   it('rejects starting the same track twice without ending it', async () => {
     await run(async () => {
-      const music = createStudioAudio('theme')
-      await music.theme.start()
-      await expect(music.theme.start()).rejects.toThrow(
+      const music = buildStudioAudioTracks(['theme'])
+      await music.theme!.start()
+      await expect(music.theme!.start()).rejects.toThrow(
         'Audio "theme" is already started'
       )
     })
@@ -281,16 +282,18 @@ describe('createStudioAudio', () => {
 
   it('rejects end() for a track that was never started', async () => {
     await run(async () => {
-      const music = createStudioAudio('theme')
-      await expect(music.theme.end()).rejects.toThrow(
+      const music = buildStudioAudioTracks(['theme'])
+      await expect(music.theme!.end()).rejects.toThrow(
         'Cannot call end() for audio "theme"'
       )
     })
   })
 
-  it('throws on duplicate keys', () => {
-    expect(() => createStudioAudio('theme', 'theme')).toThrow(
-      'Duplicate audio key "theme" passed to createStudioAudio. Audio keys must be unique.'
-    )
+  it('rejects duplicate audio names via validateStudioDeclaration', () => {
+    // Duplicate/validation now lives in the builder via validateStudioDeclaration,
+    // which video.studio({ audio: [...] }) calls before building the tracks.
+    expect(() =>
+      validateStudioDeclaration({ audio: ['theme', 'theme'] }, [], [])
+    ).toThrow('video.studio(): duplicate audio name "theme".')
   })
 })

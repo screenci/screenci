@@ -1,5 +1,5 @@
 import { describe, it, assertType } from 'vitest'
-import { createNarration, createStudioNarration } from './cue.js'
+import { createNarration, buildStudioNarrationCues } from './cue.js'
 import type { NarrationCue } from './cue.js'
 import { modelTypes, voices } from './voices.js'
 
@@ -191,26 +191,14 @@ describe('createNarration type constraints', () => {
   })
 })
 
-describe('createStudioNarration type constraints', () => {
-  it('types each key as a NarrationCue', () => {
-    const narration = createStudioNarration('intro', 'checkout', 'outro')
+describe('buildStudioNarrationCues type constraints', () => {
+  // Studio-managed narration names are typed to the exact names by the
+  // `video.studio({ narration: [...] })` builder (see index.test-d.ts). The
+  // internal helper returns a generic record of NarrationCue controllers.
+  it('returns a record of NarrationCue controllers', () => {
+    const narration = buildStudioNarrationCues(['intro', 'checkout', 'outro'])
 
-    assertType<NarrationCue>(narration.intro)
-    assertType<NarrationCue>(narration.checkout)
-    assertType<NarrationCue>(narration.outro)
-    assertType<() => Promise<void>>(narration.intro.start)
-    assertType<() => Promise<void>>(narration.intro.end)
-  })
-
-  it('rejects keys that were not declared', () => {
-    const narration = createStudioNarration('intro')
-
-    // @ts-expect-error — "typo" was not declared as a cue key
-    void narration.typo
-  })
-
-  it('requires at least one cue key', () => {
-    // @ts-expect-error — at least one cue key is required
-    createStudioNarration()
+    assertType<Record<string, NarrationCue>>(narration)
+    assertType<NarrationCue | undefined>(narration.intro)
   })
 })

@@ -194,55 +194,27 @@ export function createAudio<const T extends Record<string, AudioInput>>(
 }
 
 /**
- * Creates typed background audio controllers whose files, volume, and repeat are
- * configured on the ScreenCI Studio page instead of in code. Business tier only.
+ * Builds audio controllers for Studio-managed tracks declared via
+ * `video.studio({ audio: [...] })`. Each name becomes a callable controller with
+ * the same timeline behavior as a {@link createAudio} controller, including
+ * `start()`/`end()`. The audio file, volume, and repeat all come from Studio.
  *
- * Each key becomes a callable controller with the same timeline behavior as
- * {@link createAudio} controllers, including `start()`/`end()`. The audio file,
- * volume, and repeat all come from Studio (mirrors {@link createStudioOverlays}
- * for overlays).
- *
- * On the first upload of a studio-mode video, rendering is held until the video
- * is configured in Studio (the CLI prints a direct link). Later uploads reuse
- * the saved Studio configuration automatically.
- *
- * @example
- * ```ts
- * const music = createStudioAudio('theme', 'sting')
- *
- * video('Product demo', async ({ page }) => {
- *   await music.theme()          // plays under the whole video
- *   await page.goto('/dashboard')
- *   await music.sting.start()
- *   await page.click('#celebrate')
- *   await music.sting.end()
- * })
- * ```
+ * Internal: the `audio` fixture exposes these to the test body.
  */
-export function createStudioAudio<
-  const K extends readonly [string, ...string[]],
->(...keys: K): Record<K[number], AudioController> {
-  const seen = new Set<string>()
-  for (const key of keys) {
-    if (seen.has(key)) {
-      throw new Error(
-        `Duplicate audio key "${key}" passed to createStudioAudio. Audio keys must be unique.`
-      )
-    }
-    seen.add(key)
-  }
-
-  const result = {} as Record<K[number], AudioController>
-  for (const key of keys) {
-    result[key as K[number]] = buildStudioAudioController(key)
+export function buildStudioAudioTracks(
+  names: readonly string[]
+): Record<string, AudioController> {
+  const result: Record<string, AudioController> = {}
+  for (const name of names) {
+    result[name] = buildStudioAudioController(name)
   }
   return result
 }
 
 /**
  * Builds the callable/`start()`/`end()` audio controller shared by code-defined
- * ({@link createAudio}) and Studio ({@link createStudioAudio}) tracks. The only
- * difference is how `emitStart` records the start event.
+ * ({@link createAudio}) and Studio ({@link buildStudioAudioTracks}) tracks. The
+ * only difference is how `emitStart` records the start event.
  */
 function createAudioControllerCore(
   name: string,

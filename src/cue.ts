@@ -446,45 +446,22 @@ function createCueController(
 }
 
 /**
- * Creates typed narration controllers whose text and voice are configured on
- * the ScreenCI Studio page instead of in code. Business tier only.
+ * Builds narration controllers for Studio-managed cues declared via
+ * `video.studio({ narration: [...] })`. Their text and voice are configured on
+ * the ScreenCI Studio page instead of in code. Each name becomes a cue with the
+ * same behavior as a seeded narration cue (callable, with `start()`/`end()`);
+ * languages, narration text, and voice all come from Studio.
  *
- * Each key becomes a cue with the same behavior as {@link createNarration}
- * cues — callable, with explicit `start()` and `end()` methods. Languages,
- * narration text, and voice settings all come from Studio.
- *
- * On the first upload of a studio-mode video, rendering is held until the
- * video is configured in Studio (the CLI prints a direct link). Later uploads
- * reuse the saved Studio configuration automatically.
- *
- * @example
- * ```ts
- * const narration = createStudioNarration('intro', 'checkout', 'outro')
- *
- * await narration.intro()
- * await page.goto('/checkout')
- * await narration.checkout.start()
- * await narration.checkout.end()
- * ```
+ * Internal: the `narration` fixture merges these with the seeded localize cues.
  */
-export function createStudioNarration<
-  const K extends readonly [string, ...string[]],
->(...keys: K): Cues<Record<K[number], CueMapValue>> {
-  const seen = new Set<string>()
-  for (const key of keys) {
-    if (seen.has(key)) {
-      throw new Error(
-        `Duplicate cue key "${key}" passed to createStudioNarration. Cue keys must be unique.`
-      )
-    }
-    seen.add(key)
-  }
-
-  const result = {} as Cues<Record<K[number], CueMapValue>>
-  for (const key of keys) {
-    result[key as K[number]] = createCueController(key, (recorder) => {
+export function buildStudioNarrationCues(
+  names: readonly string[]
+): Record<string, NarrationCue> {
+  const result: Record<string, NarrationCue> = {}
+  for (const name of names) {
+    result[name] = createCueController(name, (recorder) => {
       sleepForCueFrameGap()
-      recorder.addStudioCueStart(key)
+      recorder.addStudioCueStart(name)
     })
   }
   return result
@@ -986,6 +963,8 @@ export function buildLocalizedNarrationCues(
               text: value.text,
               voice: await toRecordedVoice(voice),
               ...translationVoiceFields(meta),
+              ...(value.language !== undefined &&
+                value.language !== lang && { language: value.language }),
             }
           } else {
             videoTranslations[lang] = await entryToVideoTranslation(
@@ -1023,6 +1002,8 @@ export function buildLocalizedNarrationCues(
             text: value.text,
             voice: await toRecordedVoice(voice),
             ...translationVoiceFields(meta),
+            ...(value.language !== undefined &&
+              value.language !== lang && { language: value.language }),
           }
         }
         sleepForCueFrameGap()

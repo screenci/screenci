@@ -5,7 +5,6 @@ import type {
   Locator,
   Mouse,
 } from '@playwright/test'
-import type { StudioRenderOptionsSentinel } from './studio.js'
 import type { PerformanceOption } from './performance.js'
 import type { CropTarget, ScreenshotCropRecord } from './crop.js'
 import type { TopLevelVoiceConfig } from './voiceConfig.js'
@@ -972,8 +971,11 @@ export type ScreenCIConfig = Omit<
   webServer?: PlaywrightTestConfig['webServer']
   use?: Omit<NonNullable<PlaywrightTestConfig['use']>, 'trace'> & {
     recordOptions?: RecordOptions
-    /** Render options, or `'studio'` to configure them in Studio (Business tier). */
-    renderOptions?: RenderOptions | StudioRenderOptionsSentinel
+    /**
+     * Render options. To configure them in Studio (Business tier), use
+     * `video.studio({ renderOptions: true })` per video instead.
+     */
+    renderOptions?: RenderOptions
     /**
      * Timeout in milliseconds for individual actions like `click()`, `fill()`, etc.
      *
@@ -1002,8 +1004,11 @@ export type ScreenCIConfig = Omit<
   projects?: (Omit<Project, 'use'> & {
     use?: Omit<NonNullable<Project['use']>, 'trace'> & {
       recordOptions?: RecordOptions
-      /** Render options, or `'studio'` to configure them in Studio (Business tier). */
-      renderOptions?: RenderOptions | StudioRenderOptionsSentinel
+      /**
+       * Render options. To configure them in Studio (Business tier), use
+       * `video.studio({ renderOptions: true })` per video instead.
+       */
+      renderOptions?: RenderOptions
       /**
        * When to record traces during test execution.
        * Uses Playwright's native `trace` option type.

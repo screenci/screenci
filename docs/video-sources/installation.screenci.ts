@@ -1,8 +1,9 @@
 import { autoZoom, hide, video, voices } from 'screenci'
 
+// The default voice (how narration is spoken) for every language.
+video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
+
 video.localize({
-  // The voice (how narration is spoken) and the localized text live together.
-  voice: { name: voices.Sophie },
   // Localized narration cues by language. The fixture exposes them as markers.
   narration: {
     en: {

@@ -704,6 +704,86 @@ describe('CLI', () => {
       )
     })
 
+    it('injects Studio text overrides into the recording env', async () => {
+      process.argv = ['node', 'cli.js', 'record']
+      const overrides = { en: { heading: 'From Studio' } }
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.includes('/cli/text-overrides')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({ overrides }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+      let capturedEnv: NodeJS.ProcessEnv | undefined
+      mockSpawn.mockImplementation(
+        (
+          _command: string,
+          _args: string[],
+          options?: { env?: NodeJS.ProcessEnv }
+        ) => {
+          capturedEnv = options?.env
+          process.nextTick(() => mockChildProcess.emit('close', 0))
+          return mockChildProcess as unknown as ChildProcess
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(capturedEnv?.SCREENCI_TEXT_OVERRIDES).toBe(
+        JSON.stringify(overrides)
+      )
+    })
+
+    it('records without text overrides when the endpoint fails', async () => {
+      process.argv = ['node', 'cli.js', 'record']
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.includes('/cli/text-overrides')) {
+          return {
+            ok: false,
+            status: 500,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue('boom'),
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+      let capturedEnv: NodeJS.ProcessEnv | undefined
+      mockSpawn.mockImplementation(
+        (
+          _command: string,
+          _args: string[],
+          options?: { env?: NodeJS.ProcessEnv }
+        ) => {
+          capturedEnv = options?.env
+          process.nextTick(() => mockChildProcess.emit('close', 0))
+          return mockChildProcess as unknown as ChildProcess
+        }
+      )
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).toHaveBeenCalled()
+      expect(capturedEnv?.SCREENCI_TEXT_OVERRIDES).toBeUndefined()
+    })
+
     it('should only log the config path in verbose mode', async () => {
       process.argv = ['node', 'cli.js', 'record', '--verbose']
       process.env.VITE_APP_BASE_URL = 'https://example.com'

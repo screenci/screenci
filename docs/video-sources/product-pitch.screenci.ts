@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test'
+import { expect, type Locator } from '@playwright/test'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
@@ -65,20 +65,23 @@ video.localize({
       oneOff:
         'The flow is already recorded, so Studio can render a one-off version without recording the application again.',
       rendering:
-        'This is the real render job, combining the recording, narration, camera motion, and overlays.',
+        'Render progress belongs on the recording page: one job, all outputs, and a clear status while the cloud render runs.',
       privacy:
         'The application, source, session, and credentials stayed local. Only the recording and timing data were uploaded.',
       delivery:
         'The finished video is ready to review, download, or publish through a stable public URL.',
       maintenance:
-        'Run the source locally or in CI. If the product flow changes, it fails visibly instead of leaving a stale walkthrough online.',
-      more: 'One recording can produce language versions with synchronized narration and subtitles, cloned voices, and React or HTML overlays.',
+        'Run the source locally or in CI. If the product flow changes, the recording fails visibly instead of leaving stale software marketing online.',
+      features:
+        'The same source also gives you language versions, synchronized subtitles, voice controls, cloned voices, render options, React or HTML overlays, public URLs, embeds, screenshots, and CI reruns.',
       outro:
         'That is ScreenCI [pronounce: screen see eye]: from a coding-agent prompt to a product video you can rerun whenever the product changes.',
     },
   },
 })('ScreenCI product pitch', async ({ page, narration }) => {
-  let selectedVideoName = videoName
+  let projectUrl = appUrl
+  let videoOverviewUrl = appUrl
+  let languageUrl = appUrl
 
   video.skip(
     !placeholderMode && !process.env.SCREENCI_APP_STORAGE_STATE,
@@ -101,6 +104,128 @@ video.localize({
     return
   }
 
+  const visible = async (locator: Locator, timeout = 2_000) =>
+    locator
+      .first()
+      .isVisible({ timeout })
+      .catch(() => false)
+
+  const zoomGlimpse = async (locator: Locator, ms = 850) => {
+    const target = locator.first()
+    if (!(await visible(target, 5_000))) return false
+
+    await target.scrollIntoViewIfNeeded().catch(() => undefined)
+    await zoomTo(target)
+    await page.waitForTimeout(ms)
+    await resetZoom()
+    return true
+  }
+
+  const gotoHidden = async (url: string, waitForReady: () => Promise<void>) => {
+    await hide(async () => {
+      await page.goto(url)
+      await page.waitForLoadState('networkidle')
+      await waitForReady()
+    })
+  }
+
+  const showRenderPageGlimpse = async () => {
+    const renderProgress = page
+      .getByText(/renders finished/i)
+      .locator('xpath=ancestor::section[1]')
+    if (await zoomGlimpse(renderProgress, 1_100)) return
+
+    await zoomGlimpse(
+      page.getByRole('heading', { name: /^(one-off render|recording)/i }),
+      1_000
+    )
+  }
+
+  const openLatestRecordRun = async () => {
+    let opened = false
+    await hide(async () => {
+      await page.goto(projectUrl)
+      await page.waitForLoadState('networkidle')
+      await expect(
+        page.getByRole('heading', { name: /^videos$/i })
+      ).toBeVisible({ timeout: 30_000 })
+
+      const recordRun = page.locator('a[href^="/record/"]').first()
+      if (await visible(recordRun, 5_000)) {
+        await recordRun.click()
+        await expect(
+          page.getByRole('heading', {
+            name: /^(one-off render|recording)/i,
+          })
+        ).toBeVisible({ timeout: 30_000 })
+        opened = true
+      }
+    })
+    return opened
+  }
+
+  const showFeatureGlimpses = async () => {
+    await gotoHidden(videoOverviewUrl, async () => {
+      await expect(
+        page.getByRole('heading', { name: /language versions/i })
+      ).toBeVisible({ timeout: 30_000 })
+    })
+    await zoomGlimpse(
+      page.getByRole('heading', { name: /language versions/i }),
+      800
+    )
+    await zoomGlimpse(
+      page.getByRole('heading', { name: /public url & api/i }),
+      800
+    )
+
+    await gotoHidden(languageUrl, async () => {
+      await expect(
+        page.getByRole('heading', { name: /^studio$/i })
+      ).toBeVisible({ timeout: 30_000 })
+    })
+    await zoomGlimpse(page.getByRole('heading', { name: /^narration$/i }), 700)
+    await zoomGlimpse(
+      page.getByRole('heading', { name: /^render options$/i }),
+      700
+    )
+    await zoomGlimpse(page.getByRole('heading', { name: /^overlays$/i }), 700)
+  }
+
+  const showCiGlimpse = async () => {
+    await hide(async () => {
+      await page.goto(projectUrl)
+      await page.waitForLoadState('networkidle')
+      await expect(
+        page.getByRole('heading', { name: /^videos$/i })
+      ).toBeVisible({ timeout: 30_000 })
+
+      const editSettings = page.getByRole('button', {
+        name: /edit github settings/i,
+      })
+      const setupRecording = page.getByRole('button', {
+        name: /set up recording trigger/i,
+      })
+      if (await visible(editSettings, 1_000)) {
+        await editSettings.click()
+      } else if (await visible(setupRecording, 1_000)) {
+        await setupRecording.click()
+      }
+    })
+
+    if (
+      await zoomGlimpse(page.getByText(/GitHub recording workflow/i), 1_000)
+    ) {
+      return
+    }
+    await zoomGlimpse(
+      page.getByRole('button', {
+        name: /record all|set up recording trigger/i,
+      }),
+      900
+    )
+  }
+
   // Start in Studio for the video produced during the captured agent session.
   // Authentication and dashboard navigation are setup, so they are not shown.
   await hide(async () => {
@@ -118,6 +243,10 @@ video.localize({
         ? configuredProject
         : projects.getByRole('link').first()
     await projectLink.click()
+    await expect(page.getByRole('heading', { name: /^videos$/i })).toBeVisible({
+      timeout: 30_000,
+    })
+    projectUrl = page.url()
 
     const configuredVideo = page.getByRole('link', {
       name: videoName,
@@ -127,12 +256,11 @@ video.localize({
       (await configuredVideo.count()) > 0
         ? configuredVideo
         : page.locator('a[href*="/video/"]').first()
-    selectedVideoName =
-      (await videoLink.getAttribute('aria-label')) ?? selectedVideoName
     await videoLink.click()
     await expect(
       page.getByRole('heading', { name: /language versions/i })
     ).toBeVisible({ timeout: 30_000 })
+    videoOverviewUrl = page.url()
 
     await page
       .getByRole('link', { name: /^open /i })
@@ -141,6 +269,7 @@ video.localize({
     await expect(page.getByRole('heading', { name: /^studio$/i })).toBeVisible({
       timeout: 30_000,
     })
+    languageUrl = page.url()
   })
 
   await narration.intro()
@@ -166,20 +295,23 @@ video.localize({
     await resetZoom()
     await narration.oneOff.end()
 
+    if (await openLatestRecordRun()) {
+      await narration.rendering.start()
+      await showRenderPageGlimpse()
+      await narration.rendering.end()
+    }
+
+    await narration.features.start()
+    await showFeatureGlimpses()
+    await narration.features.end()
+
     await narration.privacy()
+
+    await narration.maintenance.start()
+    await showCiGlimpse()
+    await narration.maintenance.end()
+
     await narration.delivery()
-    await narration.maintenance()
-
-    await page
-      .getByRole('link', { name: selectedVideoName, exact: true })
-      .click()
-    await expect(
-      page.getByRole('heading', { name: /language versions/i })
-    ).toBeVisible({ timeout: 30_000 })
-
-    await zoomTo(page.getByRole('heading', { name: /language versions/i }))
-    await narration.more()
-    await resetZoom()
 
     await narration.outro()
     return
@@ -212,8 +344,9 @@ video.localize({
   await narration.rendering.start()
   await page.getByRole('link', { name: /view render/i }).click()
   await expect(
-    page.getByRole('heading', { name: /^Studio render/ })
+    page.getByRole('heading', { name: /^(one-off render|recording)/i })
   ).toBeVisible({ timeout: 30_000 })
+  await showRenderPageGlimpse()
   await narration.rendering.end()
 
   // Show the genuine progress UI, but cut the unpredictable cloud wait from
@@ -225,17 +358,14 @@ video.localize({
     ).toBeVisible({ timeout: 10 * 60_000 })
   })
 
-  await narration.privacy()
-
   // Open the finished one-off version from the render-run page.
   const finishedVersion = page
-    .getByRole('link')
-    .filter({ hasText: /View\s*→/ })
+    .locator('a[href*="/language/"][href*="?v="]')
     .first()
   await expect(finishedVersion).toBeVisible()
   await finishedVersion.click()
 
-  await expect(page.getByRole('heading', { name: /^v\d+$/ })).toBeVisible({
+  await expect(page.getByRole('heading', { name: /^versions$/i })).toBeVisible({
     timeout: 30_000,
   })
   await expect(page.getByTestId('video-loading-overlay')).toBeHidden({
@@ -259,18 +389,15 @@ video.localize({
   await page.waitForTimeout(700)
   await resetZoom()
 
-  await narration.maintenance()
+  await narration.features.start()
+  await showFeatureGlimpses()
+  await narration.features.end()
 
-  // Return to the video overview so the language and delivery surfaces support
-  // the final feature summary visually.
-  await page.getByRole('link', { name: selectedVideoName, exact: true }).click()
-  await expect(
-    page.getByRole('heading', { name: /language versions/i })
-  ).toBeVisible({ timeout: 30_000 })
+  await narration.privacy()
 
-  await zoomTo(page.getByRole('heading', { name: /language versions/i }))
-  await narration.more()
-  await resetZoom()
+  await narration.maintenance.start()
+  await showCiGlimpse()
+  await narration.maintenance.end()
 
   await narration.outro()
 })

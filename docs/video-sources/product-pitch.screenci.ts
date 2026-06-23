@@ -63,7 +63,7 @@ video.localize({
       source:
         'It reads the application, then writes and tests a Playwright-style video file in the repository.',
       oneOff:
-        'The flow is already recorded, so I can render a one-off version without recording the application again.',
+        'The flow is already recorded, so Studio can render a one-off version without recording the application again.',
       rendering:
         'This is the real render job, combining the recording, narration, camera motion, and overlays.',
       privacy:
@@ -130,11 +130,14 @@ video.localize({
     selectedVideoName =
       (await videoLink.getAttribute('aria-label')) ?? selectedVideoName
     await videoLink.click()
-    await expect(page.getByRole('heading', { name: /languages/i })).toBeVisible(
-      { timeout: 30_000 }
-    )
+    await expect(
+      page.getByRole('heading', { name: /language versions/i })
+    ).toBeVisible({ timeout: 30_000 })
 
-    await page.getByRole('link', { name: /open in studio/i }).click()
+    await page
+      .getByRole('link', { name: /^open /i })
+      .first()
+      .click()
     await expect(page.getByRole('heading', { name: /^studio$/i })).toBeVisible({
       timeout: 30_000,
     })
@@ -149,11 +152,45 @@ video.localize({
 
   await narration.source()
 
-  // This is an intentional real side effect: every run starts one new Studio
-  // render for the selected language.
+  const createOneOffButton = page.getByRole('button', {
+    name: 'Create one-off version',
+  })
+  const canCreateOneOff = await createOneOffButton
+    .isVisible({ timeout: 5_000 })
+    .catch(() => false)
+
+  if (!canCreateOneOff) {
+    await narration.oneOff.start()
+    await zoomTo(page.getByRole('heading', { name: /^studio$/i }))
+    await page.waitForTimeout(900)
+    await resetZoom()
+    await narration.oneOff.end()
+
+    await narration.privacy()
+    await narration.delivery()
+    await narration.maintenance()
+
+    await page
+      .getByRole('link', { name: selectedVideoName, exact: true })
+      .click()
+    await expect(
+      page.getByRole('heading', { name: /language versions/i })
+    ).toBeVisible({ timeout: 30_000 })
+
+    await zoomTo(page.getByRole('heading', { name: /language versions/i }))
+    await narration.more()
+    await resetZoom()
+
+    await narration.outro()
+    return
+  }
+
+  // This is an intentional real side effect when the authenticated workspace has
+  // Studio rendering enabled: every run starts one new Studio render for the
+  // selected language. Read-only CI workspaces take the fallback above.
   await narration.oneOff.start()
   await autoZoom(async () => {
-    await page.getByRole('button', { name: 'Create one-off version' }).click()
+    await createOneOffButton.click()
 
     const dialog = page.getByRole('alertdialog')
     await expect(
@@ -227,11 +264,11 @@ video.localize({
   // Return to the video overview so the language and delivery surfaces support
   // the final feature summary visually.
   await page.getByRole('link', { name: selectedVideoName, exact: true }).click()
-  await expect(page.getByRole('heading', { name: /languages/i })).toBeVisible({
-    timeout: 30_000,
-  })
+  await expect(
+    page.getByRole('heading', { name: /language versions/i })
+  ).toBeVisible({ timeout: 30_000 })
 
-  await zoomTo(page.getByRole('heading', { name: /languages/i }))
+  await zoomTo(page.getByRole('heading', { name: /language versions/i }))
   await narration.more()
   await resetZoom()
 

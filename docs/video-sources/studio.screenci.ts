@@ -1,4 +1,4 @@
-import { autoZoom, hide, resetZoom, video, voices, zoomTo } from 'screenci'
+import { hide, resetZoom, video, voices, zoomTo } from 'screenci'
 
 video.use({
   renderOptions: {
@@ -20,12 +20,12 @@ video.localize({
     en: {
       intro:
         'Open any finished video in Studio to edit it right in the browser.',
-      edit: 'Change narration or restyle render options, then render a new version. No code, no re-recording.',
+      edit: 'Review render options in the Studio panel, then render a new version. No code, no re-recording.',
     },
     es: {
       intro:
         'Abre cualquier video terminado en Studio para editarlo directamente en el navegador.',
-      edit: 'Cambia la narracion o ajusta las opciones de render, y genera una nueva version. Sin codigo y sin volver a grabar.',
+      edit: 'Revisa las opciones de render en el panel de Studio y genera una nueva version. Sin codigo y sin volver a grabar.',
     },
   },
 })('Studio web editing', async ({ page, narration }) => {
@@ -48,12 +48,16 @@ video.localize({
       .waitFor({ timeout: 30000 })
     await page.getByTestId('projects-list').getByRole('link').first().click()
 
-    // Open the first video in the project, then enter Studio.
-    await page.getByRole('link', { name: /video/i }).first().click()
+    // Open the first video, then its first language page where Studio is shown
+    // inline below the preview.
+    await page.locator('a[href*="/video/"]').first().click()
     await page
-      .getByRole('heading', { name: /languages/i })
+      .getByRole('heading', { name: /language versions/i })
       .waitFor({ timeout: 15000 })
-    await page.getByRole('link', { name: /open in studio/i }).click()
+    await page
+      .getByRole('link', { name: /^open /i })
+      .first()
+      .click()
     await page
       .getByRole('heading', { name: /^studio$/i })
       .waitFor({ timeout: 30000 })
@@ -61,18 +65,21 @@ video.localize({
 
   await narration.intro()
 
-  // Show editing narration text: a visible edit that does not trigger a render.
+  // Show the Studio panel without depending on a specific video having editable
+  // narration cues in the seeded dev data.
   await narration.edit.start()
-  await autoZoom(async () => {
-    const narrationField = page.getByPlaceholder(/narration text/i).first()
-    await narrationField.scrollIntoViewIfNeeded()
-    await narrationField.click()
-    await narrationField.fill('A fresh take on the intro.')
-  })
-  await narration.edit.end()
-
-  // Highlight the Render action without clicking it (avoid kicking off a render).
-  await zoomTo(page.getByRole('button', { name: /^render( [a-z-]+)?$/i }))
+  await zoomTo(page.getByRole('heading', { name: /^studio$/i }))
   await page.waitForTimeout(900)
   await resetZoom()
+  await narration.edit.end()
+
+  const createOneOffButton = page.getByRole('button', {
+    name: 'Create one-off version',
+  })
+  if (await createOneOffButton.isVisible().catch(() => false)) {
+    // Highlight the render entry point without clicking it.
+    await zoomTo(createOneOffButton)
+    await page.waitForTimeout(900)
+    await resetZoom()
+  }
 })

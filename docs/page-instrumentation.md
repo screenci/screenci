@@ -131,6 +131,37 @@ await page.getByTestId('code-block').selectText({ selectDuration: 900 })
 await page.mouse.move(400, 300, { duration: 600, easing: 'ease-in-out' })
 ```
 
+### page.mouse press methods
+
+`page.mouse.down`, `page.mouse.up`, `page.mouse.click`, and `page.mouse.dblclick`
+are also animated and recorded. `click` and `dblclick` move the cursor to the
+given coordinates first, then press; `down` and `up` press and release at the
+current cursor position, so you can compose a gesture by hand:
+
+```ts
+await page.mouse.move(200, 200)
+await page.mouse.down()
+await page.mouse.move(400, 300)
+await page.mouse.up()
+```
+
+Each accepts a `duration` (press animation length, default 100ms) and `easing`.
+`click` and `dblclick` also accept the `moveDuration` / `moveSpeed` / `moveEasing`
+cursor-move options.
+
+#### Mock (fake) clicks
+
+Pass `fake: true` to record the cursor press for the video **without** dispatching
+a real browser event. The page is never actually clicked, but the recorded data
+(and therefore the rendered video) is identical to a real call. This is handy for
+showing an interaction whose real effect you do not want, such as a click that
+would navigate away:
+
+```ts
+// The cursor moves and presses on screen, but nothing is actually clicked.
+await page.mouse.click(640, 360, { fake: true })
+```
+
 ## Related pages
 
 - [Video Script Basics](/docs/video-script-basics)

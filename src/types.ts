@@ -445,6 +445,45 @@ export type CursorDragTimingOption =
       dragSpeed?: number
     }
 
+/**
+ * Records a cursor press/move for the video without dispatching a real browser
+ * event. Shared by the `page.mouse` press methods.
+ */
+export type FakeMouseOption = {
+  /**
+   * When `true`, screenci records the cursor gesture for the video but does not
+   * dispatch a real browser mouse event, so the page is never actually touched.
+   * The recorded data is identical to a non-fake call, so the rendered video
+   * looks the same.
+   */
+  fake?: boolean
+}
+
+/** Press (down/up) animation timing for the `page.mouse` press methods. */
+export type ScreenCIMousePressTiming = {
+  /** Duration of the press squish animation in ms (default: 100). */
+  duration?: number
+  /** Easing function for the press animation (default: 'ease-in-out'). */
+  easing?: Easing
+}
+
+export type ScreenCIMouseDownUpOptions = Pick<
+  NonNullable<Parameters<Mouse['down']>[0]>,
+  'button' | 'clickCount'
+> &
+  ScreenCIMousePressTiming &
+  FakeMouseOption
+
+export type ScreenCIMouseClickOptions = NonNullable<
+  Parameters<Mouse['click']>[2]
+> &
+  CursorMoveTimingOption &
+  ScreenCIMousePressTiming &
+  FakeMouseOption & {
+    /** Easing function for the cursor move animation (default: 'ease-in-out'). */
+    moveEasing?: Easing
+  }
+
 /** Shared cursor-animation options available on all locator actions. */
 type CursorMoveOptions = CursorMoveTimingOption & {
   /** Easing function for the cursor move animation (default: 'ease-in-out'). */
@@ -581,7 +620,10 @@ type LocatorReturnMethodNames =
   | 'nth'
   | 'or'
 
-type ScreenCIMouse = Omit<Mouse, 'move'> & {
+type ScreenCIMouse = Omit<
+  Mouse,
+  'move' | 'down' | 'up' | 'click' | 'dblclick'
+> & {
   /**
    * Moves the mouse cursor to the given position.
    *
@@ -595,6 +637,68 @@ type ScreenCIMouse = Omit<Mouse, 'move'> & {
     x: number,
     y: number,
     options?: { steps?: number; easing?: Easing } & MouseMoveTimingOption
+  ): Promise<void>
+  /**
+   * Presses the mouse button down at the current cursor position, animating the
+   * cursor into its pressed state in the recorded video.
+   *
+   * With `fake: true`, the press is only recorded for the video: no real browser
+   * mouse event is dispatched. Pair with `up()` to release.
+   *
+   * @param options.duration - Duration of the press animation in ms (default: 100).
+   * @param options.easing - Easing function for the press animation (default: 'ease-in-out').
+   * @param options.fake - Record the press without dispatching a real event.
+   */
+  down(options?: ScreenCIMouseDownUpOptions): Promise<void>
+  /**
+   * Releases the mouse button at the current cursor position, animating the
+   * cursor back to its resting state in the recorded video.
+   *
+   * With `fake: true`, the release is only recorded for the video: no real
+   * browser mouse event is dispatched.
+   *
+   * @param options.duration - Duration of the release animation in ms (default: 100).
+   * @param options.easing - Easing function for the release animation (default: 'ease-in-out').
+   * @param options.fake - Record the release without dispatching a real event.
+   */
+  up(options?: ScreenCIMouseDownUpOptions): Promise<void>
+  /**
+   * Moves the cursor to `(x, y)` and performs an animated click there.
+   *
+   * With `fake: true`, the click is only recorded for the video: the cursor
+   * animates and presses, but no real browser mouse event is dispatched, so the
+   * page is not actually clicked.
+   *
+   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
+   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
+   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
+   * @param options.duration - Duration of the press animation in ms (default: 100).
+   * @param options.easing - Easing function for the press animation (default: 'ease-in-out').
+   * @param options.fake - Record the click without dispatching a real event.
+   */
+  click(
+    x: number,
+    y: number,
+    options?: ScreenCIMouseClickOptions
+  ): Promise<void>
+  /**
+   * Moves the cursor to `(x, y)` and performs an animated double click there
+   * (two press animations).
+   *
+   * With `fake: true`, the double click is only recorded for the video: no real
+   * browser mouse event is dispatched.
+   *
+   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
+   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
+   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
+   * @param options.duration - Duration of each press animation in ms (default: 100).
+   * @param options.easing - Easing function for the press animations (default: 'ease-in-out').
+   * @param options.fake - Record the double click without dispatching a real event.
+   */
+  dblclick(
+    x: number,
+    y: number,
+    options?: ScreenCIMouseClickOptions
   ): Promise<void>
   /**
    * Shows the mouse cursor in the recorded video.

@@ -154,6 +154,26 @@ type InstrumentedMouse = {
       easing?: string
     }
   ): Promise<void>
+  down(options?: {
+    duration?: number
+    easing?: string
+    fake?: boolean
+  }): Promise<void>
+  up(options?: {
+    duration?: number
+    easing?: string
+    fake?: boolean
+  }): Promise<void>
+  click(
+    x: number,
+    y: number,
+    options?: { moveDuration?: number; duration?: number; fake?: boolean }
+  ): Promise<void>
+  dblclick(
+    x: number,
+    y: number,
+    options?: { moveDuration?: number; duration?: number; fake?: boolean }
+  ): Promise<void>
 }
 
 async function scrollY(page: Page) {
@@ -1004,6 +1024,58 @@ test.describe('mouse.move instrumentation', () => {
     const move = moveEventsIn(click!)[0]!
     // The move should be very short since cursor was already at the target
     expect(moveEndMs(move) - moveStartMs(move)).toBeLessThan(100)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// page.mouse press methods (down / up / click / dblclick)
+// ---------------------------------------------------------------------------
+
+test.describe('mouse press instrumentation', () => {
+  async function clickButtonCenter(page: Page) {
+    const bb = await page.locator('#click-button').boundingBox()
+    return { x: bb!.x + bb!.width / 2, y: bb!.y + bb!.height / 2 }
+  }
+
+  test('records page.mouse.down and page.mouse.up as their own input events', async ({
+    page,
+  }) => {
+    const mouse = page.mouse as unknown as InstrumentedMouse
+    await mouse.down()
+    await mouse.up()
+
+    const subTypes = inputEvents().map((e) => e.subType)
+    expect(subTypes).toEqual(['mouseDown', 'mouseUp'])
+  })
+
+  test('page.mouse.click actually clicks at the coordinates', async ({
+    page,
+  }) => {
+    const { x, y } = await clickButtonCenter(page)
+    await (page.mouse as unknown as InstrumentedMouse).click(x, y, {
+      moveDuration: 50,
+    })
+
+    await expect(page.locator('#click-status')).not.toHaveText('Not clicked')
+    expect(clickEvents()).toHaveLength(1)
+  })
+
+  test('fake page.mouse.click records a click but does not click the page', async ({
+    page,
+  }) => {
+    const { x, y } = await clickButtonCenter(page)
+    await (page.mouse as unknown as InstrumentedMouse).click(x, y, {
+      moveDuration: 50,
+      fake: true,
+    })
+
+    // The page was never actually clicked...
+    await expect(page.locator('#click-status')).toHaveText('Not clicked')
+    // ...but the click is still recorded for the video.
+    const events = clickEvents()
+    expect(events).toHaveLength(1)
+    expect(events[0]!.events.some((e) => e.type === 'mouseDown')).toBe(true)
+    expect(events[0]!.events.some((e) => e.type === 'mouseUp')).toBe(true)
   })
 })
 

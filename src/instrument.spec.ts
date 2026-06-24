@@ -404,6 +404,203 @@ describe('instrumentPage', () => {
     expect(move!.endMs).toBeGreaterThanOrEqual(move!.startMs)
     expect(originalMove).toHaveBeenCalledTimes(1)
   })
+
+  it('records page.mouse.down as a mouseDown InputEvent and dispatches the real press', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    const originalDown = page.mouse.down as ReturnType<typeof vi.fn>
+    await instrumentPage(page)
+
+    await Promise.all([page.mouse.down(), vi.runAllTimersAsync()])
+
+    expect(recordedInputEvents).toHaveLength(1)
+    const input = recordedInputEvents[0]!
+    expect(input.subType).toBe('mouseDown')
+    expect(input.events).toHaveLength(1)
+    const down = input.events[0]!
+    expect(down.type).toBe('mouseDown')
+    expect(down.endMs - down.startMs).toBe(CLICK_DURATION_MS / 2)
+    expect(originalDown).toHaveBeenCalledTimes(1)
+  })
+
+  it('records page.mouse.up as a mouseUp InputEvent and dispatches the real release', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    const originalUp = page.mouse.up as ReturnType<typeof vi.fn>
+    await instrumentPage(page)
+
+    await Promise.all([page.mouse.up(), vi.runAllTimersAsync()])
+
+    expect(recordedInputEvents).toHaveLength(1)
+    const input = recordedInputEvents[0]!
+    expect(input.subType).toBe('mouseUp')
+    expect(input.events).toHaveLength(1)
+    expect(input.events[0]!.type).toBe('mouseUp')
+    expect(originalUp).toHaveBeenCalledTimes(1)
+  })
+
+  it('fake page.mouse.down records the same event but dispatches no real press', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    const originalDown = page.mouse.down as ReturnType<typeof vi.fn>
+    await instrumentPage(page)
+
+    await Promise.all([page.mouse.down({ fake: true }), vi.runAllTimersAsync()])
+
+    expect(recordedInputEvents).toHaveLength(1)
+    const input = recordedInputEvents[0]!
+    expect(input.subType).toBe('mouseDown')
+    expect(input.events[0]!.type).toBe('mouseDown')
+    expect(input.events[0]!.endMs - input.events[0]!.startMs).toBe(
+      CLICK_DURATION_MS / 2
+    )
+    expect(originalDown).not.toHaveBeenCalled()
+  })
+
+  it('honors the duration option on page.mouse.down', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    await Promise.all([
+      page.mouse.down({ duration: 500 }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const down = recordedInputEvents[0]!.events[0]!
+    expect(down.endMs - down.startMs).toBe(500)
+  })
+
+  it('records page.mouse.click as a click InputEvent (focusChange + press) and lands the cursor', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    const originalClick = page.mouse.click as ReturnType<typeof vi.fn>
+    await instrumentPage(page)
+
+    await Promise.all([page.mouse.click(300, 400), vi.runAllTimersAsync()])
+
+    expect(recordedInputEvents).toHaveLength(1)
+    const click = recordedInputEvents[0]!
+    expect(click.subType).toBe('click')
+    expect(click.events.some((e) => e.type === 'focusChange')).toBe(true)
+    expect(click.events.filter((e) => e.type === 'mouseDown')).toHaveLength(1)
+    expect(click.events.filter((e) => e.type === 'mouseUp')).toHaveLength(1)
+    expect(originalClick).toHaveBeenCalledTimes(1)
+    expect(getMousePosition(page)).toEqual({ x: 300, y: 400 })
+  })
+
+  it('fake page.mouse.click records the same events but dispatches no real click', async () => {
+    const { recorder, recordedInputEvents: real } = makeRecorder()
+    setActiveClickRecorder(recorder)
+    const realPage = makePageMock()
+    const realClick = realPage.mouse.click as ReturnType<typeof vi.fn>
+    await instrumentPage(realPage)
+    await Promise.all([realPage.mouse.click(300, 400), vi.runAllTimersAsync()])
+
+    const { recorder: fakeRecorder, recordedInputEvents: faked } =
+      makeRecorder()
+    setActiveClickRecorder(fakeRecorder)
+    const fakePage = makePageMock()
+    const fakeClick = fakePage.mouse.click as ReturnType<typeof vi.fn>
+    await instrumentPage(fakePage)
+    await Promise.all([
+      fakePage.mouse.click(300, 400, { fake: true }),
+      vi.runAllTimersAsync(),
+    ])
+
+    expect(fakeClick).not.toHaveBeenCalled()
+    expect(realClick).toHaveBeenCalledTimes(1)
+    // The recorded shape is identical whether or not the real click fired.
+    expect(faked[0]!.subType).toBe(real[0]!.subType)
+    expect(faked[0]!.events.map((e) => e.type)).toEqual(
+      real[0]!.events.map((e) => e.type)
+    )
+  })
+
+  it('records page.mouse.dblclick as two presses and dispatches a real double click', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    // The mock has no `dblclick`, so the instrumented method falls back to two
+    // real clicks via the captured original click.
+    const originalClick = page.mouse.click as ReturnType<typeof vi.fn>
+    await instrumentPage(page)
+
+    await Promise.all([page.mouse.dblclick(300, 400), vi.runAllTimersAsync()])
+
+    expect(recordedInputEvents).toHaveLength(1)
+    const dbl = recordedInputEvents[0]!
+    expect(dbl.subType).toBe('click')
+    expect(dbl.events.filter((e) => e.type === 'mouseDown')).toHaveLength(2)
+    expect(dbl.events.filter((e) => e.type === 'mouseUp')).toHaveLength(2)
+    expect(originalClick).toHaveBeenCalledTimes(2)
+  })
+
+  it('records nothing inside hide() but still dispatches the real press', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    const originalDown = page.mouse.down as ReturnType<typeof vi.fn>
+    await instrumentPage(page)
+
+    await Promise.all([
+      hide(async () => {
+        await page.mouse.down()
+      }),
+      vi.runAllTimersAsync(),
+    ])
+
+    expect(recordedInputEvents).toHaveLength(0)
+    expect(originalDown).toHaveBeenCalledTimes(1)
+  })
+
+  it('a fake press inside hide() is a complete no-op', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    const originalDown = page.mouse.down as ReturnType<typeof vi.fn>
+    await instrumentPage(page)
+
+    await Promise.all([
+      hide(async () => {
+        await page.mouse.down({ fake: true })
+      }),
+      vi.runAllTimersAsync(),
+    ])
+
+    expect(recordedInputEvents).toHaveLength(0)
+    expect(originalDown).not.toHaveBeenCalled()
+  })
+
+  it('auto-shows a hidden cursor before a press', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    page.mouse.hide()
+    await Promise.all([page.mouse.down(), vi.runAllTimersAsync()])
+
+    expect(recordedInputEvents.map((e) => e.subType)).toEqual([
+      'mouseHide',
+      'mouseShow',
+      'mouseDown',
+    ])
+  })
 })
 
 describe('instrumentLocator', () => {

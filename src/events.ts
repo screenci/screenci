@@ -148,6 +148,8 @@ export type InputEvent = {
     | 'mouseMove'
     | 'mouseShow'
     | 'mouseHide'
+    | 'mouseDown'
+    | 'mouseUp'
     | 'hover'
     | 'selectText'
     | 'dragTo'
@@ -888,6 +890,16 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   async writeToFile(): Promise<void> {},
 }
 
+/** Max gap (ms) for a direct snap with no audio markers in between. */
+const SNAP_DIRECT_MS = 5
+/**
+ * Extra allowance added when audio markers (cueStart etc.) are found in the
+ * gap. Matches the `sleepForAssetFrameGap` duration in asset.ts (2 frames at
+ * 24 fps), which runs at assetEnd and shows up as overhead before the next
+ * operation.
+ */
+const SNAP_CUE_COMPENSATION_MS = Math.ceil(2 * (1000 / 24))
+
 export class EventRecorder implements IEventRecorder {
   private readonly events: RecordingEvent[] = []
   private readonly pendingOverlays: PendingOverlay[] = []
@@ -915,6 +927,52 @@ export class EventRecorder implements IEventRecorder {
 
   setActiveLanguage(lang: string | null): void {
     this.activeLanguage = lang
+  }
+
+  /**
+   * Returns `timeMs` snapped to the nearest preceding `hideEnd`/`assetEnd`
+   * when two opaque transitions are back-to-back. Looks back through audio-only
+   * events (cueStart, cueEnd, videoCueStart, audioStart, audioEnd,
+   * textDeclare) that carry no visual frames. For a direct gap the threshold
+   * is a few ms of JS overhead; if audio markers are found in the gap the
+   * threshold is extended by {@link SNAP_CUE_COMPENSATION_MS} to cover the
+   * frame-gap sleep that ran at the preceding assetEnd.
+   *
+   * When snapping, any `cueStart`/`videoCueStart` events emitted in the gap
+   * are patched to the snapped time so narration starts at the same output
+   * position as the visual transition.
+   */
+  private snapToAdjacentTransition(timeMs: number): number {
+    let foundAudioMarker = false
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      const event = this.events[i]!
+      if (event.type === 'hideEnd' || event.type === 'assetEnd') {
+        const threshold =
+          SNAP_DIRECT_MS + (foundAudioMarker ? SNAP_CUE_COMPENSATION_MS : 0)
+        if (timeMs - event.timeMs > threshold) return timeMs
+        const snappedTime = event.timeMs
+        for (let j = i + 1; j < this.events.length; j++) {
+          const e = this.events[j]!
+          if (e.type === 'cueStart' || e.type === 'videoCueStart') {
+            ;(e as { timeMs: number }).timeMs = snappedTime
+          }
+        }
+        return snappedTime
+      }
+      if (
+        event.type === 'cueStart' ||
+        event.type === 'cueEnd' ||
+        event.type === 'videoCueStart' ||
+        event.type === 'audioStart' ||
+        event.type === 'audioEnd' ||
+        event.type === 'textDeclare'
+      ) {
+        foundAudioMarker = true
+        continue
+      }
+      break
+    }
+    return timeMs
   }
 
   private normalizeCentering(
@@ -1134,7 +1192,7 @@ export class EventRecorder implements IEventRecorder {
 
   addAssetStart(name: string, asset: AssetStartPayload): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.snapToAdjacentTransition(Date.now() - this.startTime)
     if (asset.kind === 'image') {
       this.events.push({
         type: 'assetStart',
@@ -1182,7 +1240,7 @@ export class EventRecorder implements IEventRecorder {
 
   addPendingAssetStart(name: string, pending: PendingAssetStart): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.snapToAdjacentTransition(Date.now() - this.startTime)
     const event: ImageAssetStartEvent | AnimationAssetStartEvent = {
       type: 'assetStart',
       timeMs,
@@ -1266,7 +1324,7 @@ export class EventRecorder implements IEventRecorder {
 
   addHideStart(): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.snapToAdjacentTransition(Date.now() - this.startTime)
     this.events.push({ type: 'hideStart', timeMs })
   }
 

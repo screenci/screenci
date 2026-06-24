@@ -1452,6 +1452,32 @@ export async function instrumentPage(page: Page): Promise<Page> {
           }
           await originalUp(options)
         }
+  const originalDblclickMethod = (
+    originalMouse as unknown as {
+      dblclick?: (
+        x: number,
+        y: number,
+        options?: {
+          button?: 'left' | 'right' | 'middle'
+          delay?: number
+        }
+      ) => Promise<void>
+    }
+  ).dblclick
+  const originalDblclick =
+    typeof originalDblclickMethod === 'function'
+      ? originalDblclickMethod.bind(originalMouse)
+      : async (
+          x: number,
+          y: number,
+          options?: {
+            button?: 'left' | 'right' | 'middle'
+            delay?: number
+          }
+        ) => {
+          await originalClick(x, y, options)
+          await originalClick(x, y, options)
+        }
   const originalShowMethod = (originalMouse as unknown as { show?: () => void })
     .show
   const originalHideMethod = (originalMouse as unknown as { hide?: () => void })
@@ -1551,6 +1577,248 @@ export async function instrumentPage(page: Page): Promise<Page> {
       }
       activeClickRecorder.addInput('focusChange', undefined, [moveEvent])
     }
+  }
+
+  // Cosmetic press primitives. Calling these records the cursor press for the
+  // video (the same events a real click produces). With `fake: true` the press
+  // is recorded but the real browser event is suppressed, so the recorded
+  // data.json is identical whether or not the page was actually clicked.
+  const doReal = (
+    fake: boolean | undefined,
+    real: () => Promise<void>
+  ): Promise<void> => (fake ? Promise.resolve() : real())
+
+  // Auto-show a hidden cursor before a press so it is never invisible. Mirrors
+  // the auto-show in `page.mouse.move`.
+  const autoShowCursorIfHidden = (): void => {
+    if (isMouseVisible(page)) return
+    setMouseVisible(page, true)
+    const showMs = Date.now()
+    const showEvent: MouseShowEvent = {
+      type: 'mouseShow',
+      startMs: showMs,
+      endMs: showMs,
+    }
+    getActiveClickRecorder(page).addInput('mouseShow', undefined, [showEvent])
+  }
+
+  // Records a full press (down + up) over `pressMs`, optionally dispatching the
+  // real action `during` the press window (matching the locator 'singleDuring'
+  // timing). Pushes the mouseDown/mouseUp events onto `events`.
+  const recordVisualPress = async (
+    events: Array<MouseDownEvent | MouseUpEvent>,
+    pressMs: number,
+    easing: Easing,
+    during?: () => Promise<void>
+  ): Promise<void> => {
+    const wrapperStartMs = Date.now()
+    await sleep(pressMs / 2)
+    if (during) await during()
+    await sleep(pressMs / 2)
+    const endMs = Date.now()
+    const startMs = Math.max(wrapperStartMs, endMs - pressMs)
+    const midMs = startMs + (endMs - startMs) / 2
+    events.push(
+      buildMouseDownEvent({ startMs, endMs: midMs, easing }),
+      buildMouseUpEvent({ startMs: midMs, endMs, easing })
+    )
+  }
+
+  // Animates the cursor to (x, y) and returns the focusChange event for it,
+  // mirroring how `page.mouse.move` records a move.
+  const animateCursorToForPress = async (
+    x: number,
+    y: number,
+    moveDuration: number | undefined,
+    moveSpeed: number | undefined,
+    moveEasing: Easing
+  ): Promise<FocusChangeEvent> => {
+    const duration = resolveMouseMoveDuration(page, x, y, {
+      duration: moveDuration,
+      speed: moveSpeed,
+      defaultDuration: DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+      context: 'page.mouse.click move',
+    })
+    const moveResult = await performMouseMove({
+      page,
+      targetX: x,
+      targetY: y,
+      duration,
+      easing: moveEasing,
+    })
+    return {
+      type: 'focusChange',
+      startMs: moveResult.startMs,
+      endMs: moveResult.endMs,
+      x,
+      y,
+      mouse: {
+        startMs: moveResult.startMs,
+        endMs: moveResult.endMs,
+        ...(duration > 0 ? { easing: moveEasing } : {}),
+      },
+    }
+  }
+
+  ;(
+    originalMouse as unknown as {
+      down: (options?: {
+        button?: 'left' | 'right' | 'middle'
+        clickCount?: number
+        duration?: number
+        easing?: Easing
+        fake?: boolean
+      }) => Promise<void>
+    }
+  ).down = async (options) => {
+    const { duration, easing, fake, ...native } = options ?? {}
+
+    if (isInsideHide()) {
+      await doReal(fake, () => originalDown(native))
+      return
+    }
+
+    autoShowCursorIfHidden()
+    const startMs = Date.now()
+    await doReal(fake, () => originalDown(native))
+    await sleep(duration ?? CLICK_DURATION_MS / 2)
+    const event: MouseDownEvent = buildMouseDownEvent({
+      startMs,
+      endMs: Date.now(),
+      ...(easing !== undefined ? { easing } : {}),
+    })
+    getActiveClickRecorder(page).addInput('mouseDown', undefined, [event])
+  }
+  ;(
+    originalMouse as unknown as {
+      up: (options?: {
+        button?: 'left' | 'right' | 'middle'
+        clickCount?: number
+        duration?: number
+        easing?: Easing
+        fake?: boolean
+      }) => Promise<void>
+    }
+  ).up = async (options) => {
+    const { duration, easing, fake, ...native } = options ?? {}
+
+    if (isInsideHide()) {
+      await doReal(fake, () => originalUp(native))
+      return
+    }
+
+    const startMs = Date.now()
+    await doReal(fake, () => originalUp(native))
+    await sleep(duration ?? CLICK_DURATION_MS / 2)
+    const event: MouseUpEvent = buildMouseUpEvent({
+      startMs,
+      endMs: Date.now(),
+      ...(easing !== undefined ? { easing } : {}),
+    })
+    getActiveClickRecorder(page).addInput('mouseUp', undefined, [event])
+  }
+
+  type MouseCoordinateClickOptions = {
+    button?: 'left' | 'right' | 'middle'
+    clickCount?: number
+    delay?: number
+    moveDuration?: number
+    moveSpeed?: number
+    moveEasing?: Easing
+    duration?: number
+    easing?: Easing
+    fake?: boolean
+  }
+  ;(
+    originalMouse as unknown as {
+      click: (
+        x: number,
+        y: number,
+        options?: MouseCoordinateClickOptions
+      ) => Promise<void>
+    }
+  ).click = async (x, y, options) => {
+    const {
+      moveDuration,
+      moveSpeed,
+      moveEasing = 'ease-in-out',
+      duration,
+      easing = 'ease-in-out',
+      fake,
+      ...native
+    } = options ?? {}
+
+    if (isInsideHide()) {
+      await doReal(fake, () => originalClick(x, y, native))
+      return
+    }
+
+    autoShowCursorIfHidden()
+    const focusChange = await animateCursorToForPress(
+      x,
+      y,
+      moveDuration,
+      moveSpeed,
+      moveEasing
+    )
+    const pressEvents: Array<MouseDownEvent | MouseUpEvent> = []
+    await recordVisualPress(
+      pressEvents,
+      duration ?? CLICK_DURATION_MS,
+      easing,
+      () => doReal(fake, () => originalClick(x, y, native))
+    )
+    getActiveClickRecorder(page).addInput('click', undefined, [
+      focusChange,
+      ...pressEvents,
+    ])
+  }
+  ;(
+    originalMouse as unknown as {
+      dblclick: (
+        x: number,
+        y: number,
+        options?: MouseCoordinateClickOptions
+      ) => Promise<void>
+    }
+  ).dblclick = async (x, y, options) => {
+    const {
+      moveDuration,
+      moveSpeed,
+      moveEasing = 'ease-in-out',
+      duration,
+      easing = 'ease-in-out',
+      fake,
+      ...native
+    } = options ?? {}
+
+    if (isInsideHide()) {
+      await doReal(fake, () => originalDblclick(x, y, native))
+      return
+    }
+
+    autoShowCursorIfHidden()
+    const focusChange = await animateCursorToForPress(
+      x,
+      y,
+      moveDuration,
+      moveSpeed,
+      moveEasing
+    )
+    const pressEvents: Array<MouseDownEvent | MouseUpEvent> = []
+    // The real double click fires once, during the first visual press. The
+    // second press is visual only.
+    await recordVisualPress(
+      pressEvents,
+      duration ?? CLICK_DURATION_MS,
+      easing,
+      () => doReal(fake, () => originalDblclick(x, y, native))
+    )
+    await recordVisualPress(pressEvents, duration ?? CLICK_DURATION_MS, easing)
+    getActiveClickRecorder(page).addInput('click', undefined, [
+      focusChange,
+      ...pressEvents,
+    ])
   }
 
   setMouseVisible(page, true)

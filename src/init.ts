@@ -1273,47 +1273,85 @@ video.localize({
 }
 
 export function generateReactExampleVideo(): string {
-  return `import { createOverlays, hide, video } from 'screenci'
+  return `import type { Locator } from '@playwright/test'
+import { autoZoom, createOverlays, hide, video, voices } from 'screenci'
 
 // A code-defined overlay: any React element renderable to static markup works.
-function Badge({ label }: { label: string }) {
+// This ring fills its box and pulses, so it reads as a highlight around the
+// element it is placed over.
+function Highlight() {
   return (
     <div
       style={{
-        font: '600 22px ui-sans-serif, system-ui, sans-serif',
-        color: '#fff',
-        background: 'linear-gradient(135deg, #6366f1, #ec4899)',
-        padding: '12px 20px',
-        borderRadius: '999px',
-        boxShadow: '0 16px 40px rgba(99, 102, 241, 0.45)',
+        width: '100%',
+        height: '100%',
+        boxSizing: 'border-box',
+        border: '4px solid #ec4899',
+        borderRadius: '12px',
+        animation: 'screenci-highlight 1s ease-in-out infinite',
       }}
     >
-      {label}
+      <style>{\`
+        @keyframes screenci-highlight {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.35; }
+        }
+      \`}</style>
     </div>
   )
 }
 
 const overlays = createOverlays({
-  // Pass a React element straight in. It is rasterized to a transparent PNG at
-  // recording time, then placed like any other overlay. Placement fields are
-  // CSS pixels in the recording viewport (x/y from the top-left, width sets the
-  // size and the height follows the rasterized aspect ratio). Omit them all to
-  // fill the recording area.
-  badge: { element: <Badge label="New" />, x: 1340, y: 110, width: 288 },
+  // A programmatic overlay: the factory runs each call, so placement can depend
+  // on runtime values. Pass an 'over' locator and screenci reads the element's
+  // box at recording time, sizing the ring to it (plus the margin). 'animate'
+  // plays the ring's CSS animation back in the video while the page keeps
+  // running underneath; animated start()/end() overlays need a durationMs.
+  highlight: (target: Locator) => ({
+    element: <Highlight />,
+    over: target,
+    margin: 8,
+    animate: true,
+    durationMs: 1500,
+  }),
 })
 
-video('React overlay', async ({ page }) => {
+// The default voice (how narration is spoken) for every language.
+video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
+
+video.localize({
+  // Localized narration cues by language. The fixture exposes them as markers.
+  narration: {
+    en: {
+      docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
+    },
+    es: {
+      docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
+    },
+  },
+})('How to find docs', async ({ page, narration }) => {
   // Run setup without showing these actions in the final recording.
   await hide(async () => {
     await page.goto('https://screenci.com/')
     await page.waitForLoadState('networkidle')
   })
 
-  // Drive the overlay with start()/end() so it stays on screen while the page
-  // keeps running underneath. Pass a number instead for a blocking overlay.
-  await overlays.badge.start()
-  await page.waitForTimeout(2500)
-  await overlays.badge.end()
+  // Play the matching narration line for this step.
+  await narration.docs()
+
+  // Highlight the docs link with the pulsing ring, then click it. Capture the
+  // controller once so the props appear a single time, and drive it with
+  // start()/end() so the ring stays live over the real click.
+  const docsLink = page.getByRole('link', { name: 'View Documentation' })
+  const highlight = overlays.highlight(docsLink)
+  await highlight.start()
+
+  // Automatically zoom into interactions so they are easier to follow.
+  await autoZoom(async () => {
+    await docsLink.click()
+  })
+
+  await highlight.end()
 })
 `
 }

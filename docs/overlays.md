@@ -26,7 +26,7 @@ import { createOverlays, video } from 'screenci'
 import { Badge } from './Badge'
 
 const overlays = createOverlays({
-  intro: { path: 'assets/intro.mp4', fullScreen: true }, // full-frame video
+  intro: { path: 'assets/intro.mp4', fill: 'screen' }, // full-frame video
   hint: 'assets/callout.html', // HTML file
   badge: <Badge label="New" />, // React element
   note: { html: '<div class="note">Tip</div>', x: 1340, y: 110, width: 380 }, // inline HTML
@@ -50,8 +50,8 @@ See [Studio](./studio.md#studio-overlays-from-code).
 Rules:
 
 - HTML, React, `.svg`, and `.png` overlays need a `durationMs` for the blocking call form (set it in the config or pass it to the call, for example `await overlays.logo(1200)`). You can omit it when driving the overlay with `start()`/`end()`.
-- Image, HTML, and React overlays do not support `audio`.
-- `.mp4` overlays may provide `audio` (a linear gain). `1` (the default) plays the source at its natural level, `0` mutes it, and values above `1` boost it (e.g. `2` is twice as loud, up to `4`).
+- Image, HTML, and React overlays do not support `volume`.
+- `.mp4` overlays may provide `volume` (a linear gain). `1` (the default) plays the source at its natural level, `0` mutes it, and values above `1` boost it (e.g. `2` is twice as loud, up to `4`).
 - `.mp4` overlays use the file's natural duration and must not provide `durationMs`.
 - `.mp4` overlays may provide `speed` or `time` to play the clip (and its audio) faster or slower. `speed` is a multiplier (`2` plays it twice as fast, `0.5` at half speed); `time` is a target playback duration in ms (the clip is sped up or slowed down to play over exactly that long). Set at most one. For a blocking call (`await overlays.intro()`) this also changes how long the overlay holds, so later content shifts; for a live overlay (`start()`/`end()`) the window stays put and only the playback rate changes. Image, HTML, and React overlays do not support `speed`/`time`.
 
@@ -86,14 +86,16 @@ const overlays = createOverlays({
 })
 ```
 
-The `html` value must be a **fragment**, not a full document. screenci wraps your
-markup in its own document before rasterizing, so `<!doctype>`, `<html>`,
-`<head>`, and `<body>` tags are rejected (a full document would nest documents
-and break the capture). Write only the content, exactly as you would inside a
+The `html` value must be a **single-rooted fragment**, not a full document.
+screenci wraps your markup in its own document before rasterizing, so
+`<!doctype>`, `<html>`, `<head>`, and `<body>` tags are rejected (a full document
+would nest documents and break the capture). The fragment must also contain
+exactly one top-level element (wrap multiple nodes in one container), so it sizes
+and positions predictably. Write only the content, exactly as you would inside a
 React element:
 
 ```tsx
-// Good: a fragment.
+// Good: a single-rooted fragment.
 {
   html: '<div class="badge"><span>New</span></div>'
 }
@@ -101,6 +103,11 @@ React element:
 // Rejected: a full document.
 {
   html: '<!doctype html><html><body><div>New</div></body></html>'
+}
+
+// Rejected: two top-level elements. Wrap them in one container.
+{
+  html: '<div>New</div><div>!</div>'
 }
 ```
 
@@ -172,7 +179,7 @@ const overlays = createOverlays({
     element: <Intro />,
     animate: true,
     durationMs: 1500,
-    fullScreen: true,
+    fill: 'screen',
   },
   // An animated .html overlay, captured at 60fps.
   hint: {
@@ -294,7 +301,7 @@ const overlays = createOverlays({
 - `x` and `y` are the top-left corner in CSS px. Both default to `0`.
 - Provide one of `width` or `height` (in CSS px). The other is derived from the overlay's intrinsic aspect ratio (or from `aspectRatio`, given as `width / height`) so it is never distorted.
 
-When no placement field is set, the overlay fills the recording area (the renderer resolves this, since it knows the recording size). For a full-frame overlay use `fullScreen: true`.
+When no placement field is set, the overlay fills the recording area (the renderer resolves this, since it knows the recording size). To fill explicitly, set `fill`: `'recording'` fills the recording area (the same as omitting placement), and `'screen'` fills the entire output frame.
 
 ### Positioning over a live element
 
@@ -325,7 +332,7 @@ await ring.end()
 ```
 
 `over` works with React elements, inline `html`, and `.html` files. It is always
-recording-relative and overrides `x`/`y`/`width`/`height`/`relativeTo`/`fullScreen`.
+recording-relative and overrides `x`/`y`/`width`/`height`/`relativeTo`/`fill`.
 Make the content fill its box (`width:100%;height:100%`). Repeated calls with the
 same element box rasterize only once.
 
@@ -400,7 +407,7 @@ on screen.
 
 Other timing notes:
 
-- video overlays (`.mp4`) use the media file's natural duration and play at their natural level (`audio` defaults to `1`); set `audio` to mute (`0`) or boost (above `1`, up to `4`)
+- video overlays (`.mp4`) use the media file's natural duration and play at their natural level (`volume` defaults to `1`); set `volume` to mute (`0`) or boost (above `1`, up to `4`)
 - full-screen overlays take over the output frame
 - overlays stay on top of the recording while the underlying screen continues
 

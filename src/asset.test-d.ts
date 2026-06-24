@@ -1,10 +1,6 @@
 import { describe, it, expectTypeOf } from 'vitest'
 import { createElement } from 'react'
-import {
-  createOverlays,
-  type OverlayConfig,
-  type OverlayController,
-} from './asset.js'
+import { createOverlays, type OverlayController } from './asset.js'
 
 describe('createOverlays type constraints', () => {
   it('accepts a bare file path string', () => {
@@ -52,8 +48,40 @@ describe('createOverlays type constraints', () => {
     })
   })
 
-  it('accepts the fullScreen flag', () => {
-    createOverlays({ intro: { path: './intro.mp4', fullScreen: true } })
+  it('accepts the fill option', () => {
+    createOverlays({ intro: { path: './intro.mp4', fill: 'screen' } })
+  })
+
+  it('rejects an invalid fill value', () => {
+    createOverlays({
+      // @ts-expect-error fill must be 'recording' or 'screen'
+      intro: { path: './intro.mp4', fill: 'window' },
+    })
+  })
+
+  it('accepts volume on a video file overlay', () => {
+    createOverlays({ intro: { path: './intro.mp4', volume: 0.5 } })
+  })
+
+  it('rejects volume on an inline html overlay', () => {
+    createOverlays({
+      // @ts-expect-error volume only applies to .mp4 file overlays
+      note: { html: '<div>x</div>', durationMs: 1000, volume: 0.5 },
+    })
+  })
+
+  it('rejects volume on a React element overlay', () => {
+    createOverlays({
+      // @ts-expect-error volume only applies to .mp4 file overlays
+      badge: { element: createElement('div', null, 'x'), volume: 0.5 },
+    })
+  })
+
+  it('rejects mixing two content sources', () => {
+    createOverlays({
+      // @ts-expect-error provide only one of path, element, or html
+      mixed: { path: './logo.png', html: '<div>x</div>' },
+    })
   })
 
   it('maps each key to an OverlayController', () => {
@@ -102,13 +130,13 @@ describe('createOverlays type constraints', () => {
 
   it('infers props from a factory using a placement-spreadable shape', () => {
     const overlays = createOverlays({
-      ring: (p: { rect: OverlayConfig }) => ({
+      ring: (p: { rect: { x: number; y: number; width: number } }) => ({
         element: createElement('div', null, 'ring'),
         ...p.rect,
       }),
     })
     expectTypeOf(overlays.ring).parameter(0).toEqualTypeOf<{
-      rect: OverlayConfig
+      rect: { x: number; y: number; width: number }
     }>()
   })
 

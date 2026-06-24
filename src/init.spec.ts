@@ -149,7 +149,7 @@ describe('generateIslandTsconfig', () => {
 describe('generateReactExampleVideo', () => {
   it('uses createOverlays from the main entry point', () => {
     expect(generateReactExampleVideo()).toContain(
-      "import { createOverlays, hide, video } from 'screenci'"
+      "import { autoZoom, createOverlays, hide, video, voices } from 'screenci'"
     )
   })
 
@@ -158,18 +158,22 @@ describe('generateReactExampleVideo', () => {
   })
 
   it('passes a JSX element straight into the overlay config', () => {
-    expect(generateReactExampleVideo()).toContain(
-      'element: <Badge label="New" />'
-    )
+    expect(generateReactExampleVideo()).toContain('element: <Highlight />')
   })
 
-  it('places the overlay with CSS pixel coordinates, not fractions', () => {
-    // Placement fields are CSS pixels in the recording viewport. Fractional
-    // values (e.g. width: 0.18) would rasterize and upload the overlay but
-    // render it sub-pixel, so it never appears in the output.
+  it('highlights the clicked docs link with an animated overlay', () => {
+    // The example mirrors the base script (narration + autoZoom click) and adds
+    // a React overlay that pulses around the docs link as it is clicked.
     const source = generateReactExampleVideo()
-    expect(source).toContain('x: 1340, y: 110, width: 288')
-    expect(source).not.toMatch(/width:\s*0\.\d/)
+    expect(source).toContain('over: target')
+    expect(source).toContain('animate: true')
+    expect(source).toContain('@keyframes screenci-highlight')
+    expect(source).toContain(
+      "page.getByRole('link', { name: 'View Documentation' })"
+    )
+    expect(source).toContain('await highlight.start()')
+    expect(source).toContain('await highlight.end()')
+    expect(source).toContain('await docsLink.click()')
   })
 })
 

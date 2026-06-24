@@ -76,7 +76,7 @@ describe('createOverlays', () => {
   it('creates a callable controller for each key in the map', () => {
     const overlays = createOverlays({
       logo: { path: './logo.png', durationMs: 1200 },
-      intro: { path: './intro.mp4', fullScreen: true },
+      intro: { path: './intro.mp4', fill: 'screen' },
     })
 
     expect(overlays.logo).toBeDefined()
@@ -115,9 +115,9 @@ describe('createOverlays', () => {
       })
     })
 
-    it('passes fullScreen as a fullScreen placement', async () => {
+    it('passes fill: screen as a fullScreen placement', async () => {
       const overlays = createOverlays({
-        intro: { path: './intro.mp4', audio: 0.5, fullScreen: true },
+        intro: { path: './intro.mp4', volume: 0.5, fill: 'screen' },
       })
 
       await overlays.intro()
@@ -131,9 +131,9 @@ describe('createOverlays', () => {
       })
     })
 
-    it('passes non-zero audio value', async () => {
+    it('passes non-zero volume value', async () => {
       const overlays = createOverlays({
-        audio: { path: './sound.mp4', audio: 0.8 },
+        audio: { path: './sound.mp4', volume: 0.8 },
       })
 
       await overlays.audio()
@@ -148,7 +148,7 @@ describe('createOverlays', () => {
 
     it('defaults mp4 audio to 1 (natural level) when omitted', async () => {
       const overlays = createOverlays({
-        intro: { path: './intro.mp4', fullScreen: true },
+        intro: { path: './intro.mp4', fill: 'screen' },
       })
 
       await overlays.intro()
@@ -164,7 +164,7 @@ describe('createOverlays', () => {
 
     it('resolves immediately', async () => {
       const overlays = createOverlays({
-        clip: { path: './clip.mp4', fullScreen: true },
+        clip: { path: './clip.mp4', fill: 'screen' },
       })
 
       await expect(overlays.clip()).resolves.toBeUndefined()
@@ -173,7 +173,7 @@ describe('createOverlays', () => {
     it('each controller uses its own name and config', async () => {
       const overlays = createOverlays({
         logo: { path: './logo.png', durationMs: 1200 },
-        intro: { path: './intro.mp4', fullScreen: true },
+        intro: { path: './intro.mp4', fill: 'screen' },
       })
 
       await overlays.logo()
@@ -279,36 +279,36 @@ describe('createOverlays', () => {
     it('rejects mp4 overlays with durationMs', () => {
       expect(() =>
         createOverlays({
-          broken: { path: './clip.mp4', durationMs: 1000, audio: 0 } as never,
+          broken: { path: './clip.mp4', durationMs: 1000, volume: 0 } as never,
         })
       ).toThrow(
         'Overlay "broken" (./clip.mp4) is a video and must not provide durationMs. Its natural media duration is used instead.'
       )
     })
 
-    it('rejects mp4 overlays with invalid audio when specified', () => {
+    it('rejects mp4 overlays with invalid volume when specified', () => {
       expect(() =>
         createOverlays({
-          broken: { path: './clip.mp4', audio: Number.NaN },
+          broken: { path: './clip.mp4', volume: Number.NaN },
         })
       ).toThrow(
-        'Overlay "broken" (./clip.mp4) must provide a finite audio value between 0 and 4 for .mp4 overlays. 1 is the natural level, 0 is silent, and values above 1 boost it.'
+        'Overlay "broken" (./clip.mp4) must provide a finite volume between 0 and 4 for .mp4 overlays. 1 is the natural level, 0 is silent, and values above 1 boost it.'
       )
     })
 
-    it('rejects image overlays with audio', () => {
+    it('rejects image overlays with volume', () => {
       expect(() =>
         createOverlays({
-          broken: { path: './logo.png', audio: 0.5 } as never,
+          broken: { path: './logo.png', volume: 0.5 } as never,
         })
       ).toThrow(
-        'Overlay "broken" (./logo.png) is an image and must not provide audio. Use durationMs instead.'
+        'Overlay "broken" (./logo.png) is an image and must not provide volume. Use durationMs instead.'
       )
     })
 
     it('passes speed for an mp4 overlay', async () => {
       const overlays = createOverlays({
-        clip: { path: './clip.mp4', fullScreen: true, speed: 2 },
+        clip: { path: './clip.mp4', fill: 'screen', speed: 2 },
       })
 
       await overlays.clip()
@@ -325,7 +325,7 @@ describe('createOverlays', () => {
 
     it('passes time for an mp4 overlay', async () => {
       const overlays = createOverlays({
-        clip: { path: './clip.mp4', fullScreen: true, time: 3000 },
+        clip: { path: './clip.mp4', fill: 'screen', time: 3000 },
       })
 
       await overlays.clip()
@@ -384,7 +384,7 @@ describe('createOverlays', () => {
           broken: {
             path: './logo.png',
             element: createElement('div', null, 'x'),
-          },
+          } as never,
         })
       ).toThrow(
         'Overlay "broken" must provide only one of "path", "element", or "html".'
@@ -394,7 +394,7 @@ describe('createOverlays', () => {
     it('rejects a config with both path and html', () => {
       expect(() =>
         createOverlays({
-          broken: { path: './logo.png', html: '<div>x</div>' },
+          broken: { path: './logo.png', html: '<div>x</div>' } as never,
         })
       ).toThrow(
         'Overlay "broken" must provide only one of "path", "element", or "html".'
@@ -407,7 +407,7 @@ describe('createOverlays', () => {
           broken: {
             element: createElement('div', null, 'x'),
             html: '<div>x</div>',
-          },
+          } as never,
         })
       ).toThrow(
         'Overlay "broken" must provide only one of "path", "element", or "html".'
@@ -415,7 +415,7 @@ describe('createOverlays', () => {
     })
 
     it('rejects a config with no content source', () => {
-      expect(() => createOverlays({ broken: { width: 200 } })).toThrow(
+      expect(() => createOverlays({ broken: { width: 200 } as never })).toThrow(
         'Overlay "broken" must provide a "path", an "element", or inline "html".'
       )
     })
@@ -436,6 +436,35 @@ describe('createOverlays', () => {
         ).toThrow('must be a fragment, not a full HTML document')
       }
     )
+
+    it.each([
+      ['two sibling elements', '<div>a</div><div>b</div>'],
+      ['two void siblings', '<br><br>'],
+      ['element then text', '<div>a</div>tail'],
+      ['text then element', 'lead<div>a</div>'],
+      ['bare text only', 'just text'],
+    ])('rejects inline html with %s', (_label, markup) => {
+      expect(() =>
+        createOverlays({ broken: { html: markup, durationMs: 1000 } })
+      ).toThrow('must contain a single root element')
+    })
+
+    it.each([
+      ['a single element', '<div class="note">Tip</div>'],
+      ['a single element with nested children', '<div><span>a</span> b</div>'],
+      ['a single void element', '<img src="x.png" />'],
+      ['a single element with > inside text', '<div>1 > 0</div>'],
+      [
+        'a single element with > inside an attribute',
+        '<div data-q="a>b">c</div>',
+      ],
+      ['a single element with a comment sibling', '<!-- note --><div>a</div>'],
+      ['surrounding whitespace', '   <div>a</div>   '],
+    ])('accepts inline html with %s', (_label, markup) => {
+      expect(() =>
+        createOverlays({ ok: { html: markup, durationMs: 1000 } })
+      ).not.toThrow()
+    })
   })
 
   describe('placement', () => {

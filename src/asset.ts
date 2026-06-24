@@ -37,30 +37,15 @@ export type ReactElementLike = {
 }
 
 /**
- * Display options for an overlay. Placement fields are flat (not nested) and use
- * CSS pixels in the recording viewport (the same space as Playwright's
- * `boundingBox()`, `page.mouse`, and `viewportSize()`), each defaulting
- * independently: `relativeTo: 'recording'`, `x: 0`, `y: 0`. Provide exactly one
- * of `width`/`height` (the other follows the source aspect, or `aspectRatio`).
- * When no placement field is set, the overlay fills the recording area.
+ * Placement and capture fields shared by every overlay variant. Placement is
+ * flat (not nested) and uses CSS pixels in the recording viewport (the same
+ * space as Playwright's `boundingBox()`, `page.mouse`, and `viewportSize()`),
+ * each defaulting independently: `relativeTo: 'recording'`, `x: 0`, `y: 0`.
+ * Provide exactly one of `width`/`height` (the other follows the source aspect,
+ * or `aspectRatio`). When no placement field is set, the overlay fills the
+ * recording area.
  */
-export type OverlayConfig = {
-  /** File path: `.html` (rendered), `.svg`/`.png` (image), or `.mp4` (video). */
-  path?: string
-  /**
-   * A React element, rendered to a transparent PNG. Use this for overlays built
-   * in JSX. Provide exactly one source: `path`, `element`, or `html`.
-   */
-  element?: ReactElementLike
-  /**
-   * An inline HTML fragment, rendered to a transparent PNG. Use this when you
-   * want plain HTML without a React dependency or a separate `.html` file. It
-   * must be a fragment (for example `'<div class="badge">New</div>'`), never a
-   * full document: `<!doctype>`, `<html>`, `<head>`, and `<body>` tags are
-   * rejected because screenci wraps the markup in its own document. Provide
-   * exactly one source: `path`, `element`, or `html`.
-   */
-  html?: string
+type OverlayCommon = {
   /** Reference box for placement coordinates. Defaults to `'recording'`. */
   relativeTo?: 'screen' | 'recording'
   /** Left edge in CSS px of the recording viewport. Defaults to `0`. */
@@ -76,13 +61,18 @@ export type OverlayConfig = {
    * you provide, instead of the source's intrinsic aspect. Optional.
    */
   aspectRatio?: number
-  /** Fill the whole output frame. Overrides x/y/width/height. */
-  fullScreen?: boolean
+  /**
+   * Fill the whole frame instead of positioning the overlay. `'recording'`
+   * fills the recording area (the same as omitting every placement field);
+   * `'screen'` fills the entire output frame, including any padding around the
+   * recording. Overrides `x`/`y`/`width`/`height`.
+   */
+  fill?: 'recording' | 'screen'
   /**
    * Position the overlay over a live element, captured at recording time from
    * the locator's bounding box. The overlay is sized to that box (plus
    * {@link margin}) and fills it, so it frames the element exactly. Overrides
-   * `x`/`y`/`width`/`height`/`relativeTo`/`fullScreen` (placement is always
+   * `x`/`y`/`width`/`height`/`relativeTo`/`fill` (placement is always
    * recording-relative). HTML files, inline `html`, and React elements only;
    * your content should fill its box (for example `width:100%;height:100%`).
    */
@@ -123,13 +113,17 @@ export type OverlayConfig = {
    * HTML files and React elements only.
    */
   capturePadding?: number
+}
+
+/** Fields that only apply to a `.mp4` video overlay (a file `path`). */
+type OverlayVideoFields = {
   /**
    * Soundtrack level for `.mp4` overlays as a linear gain. `1` (the default)
    * plays the source at its natural level, `0` mutes it, and values above `1`
    * boost it (e.g. `2` is twice the natural level). Capped at
    * {@link MAX_AUDIO_LEVEL}.
    */
-  audio?: number
+  volume?: number
   /**
    * Playback-rate multiplier for `.mp4` overlays. `2` plays the clip (and its
    * audio) twice as fast, `0.5` at half speed; `1` (the default) is the natural
@@ -148,6 +142,67 @@ export type OverlayConfig = {
    */
   time?: number
 }
+
+/**
+ * An overlay drawn from a file `path`: `.svg`/`.png` (image), `.mp4` (video),
+ * or `.html` (rendered). Only this variant accepts the {@link OverlayVideoFields}
+ * (`volume`/`speed`/`time`), which apply to `.mp4` files; they are rejected at
+ * recording time for image and HTML files.
+ */
+export type FileOverlayConfig = OverlayCommon &
+  OverlayVideoFields & {
+    /** File path: `.html` (rendered), `.svg`/`.png` (image), or `.mp4` (video). */
+    path: string
+    element?: never
+    html?: never
+  }
+
+/**
+ * An overlay rendered from a React `element` to a transparent PNG (or animated
+ * clip). Use this for overlays built in JSX. Video-only fields
+ * (`volume`/`speed`/`time`) do not apply.
+ */
+export type ElementOverlayConfig = OverlayCommon & {
+  /** A React element, rendered to a transparent PNG. */
+  element: ReactElementLike
+  path?: never
+  html?: never
+  volume?: never
+  speed?: never
+  time?: never
+}
+
+/**
+ * An overlay rendered from an inline `html` fragment to a transparent PNG (or
+ * animated clip). Use this when you want plain HTML without a React dependency
+ * or a separate `.html` file. The markup must be a single-rooted fragment (for
+ * example `'<div class="badge">New</div>'`), never a full document: it must
+ * contain exactly one top-level element, and `<!doctype>`, `<html>`, `<head>`,
+ * and `<body>` tags are rejected because screenci wraps the markup in its own
+ * document. Video-only fields (`volume`/`speed`/`time`) do not apply.
+ */
+export type HtmlOverlayConfig = OverlayCommon & {
+  /** An inline HTML fragment (single root element), rendered to a PNG. */
+  html: string
+  path?: never
+  element?: never
+  volume?: never
+  speed?: never
+  time?: never
+}
+
+/**
+ * Display options for an overlay. An overlay draws its content from exactly one
+ * source, which selects the variant: a file {@link FileOverlayConfig.path}, a
+ * React {@link ElementOverlayConfig.element}, or an inline
+ * {@link HtmlOverlayConfig.html} fragment. The `path` variant additionally
+ * accepts the video-only `volume`/`speed`/`time` fields (for `.mp4` files); the
+ * others reject them at compile time.
+ */
+export type OverlayConfig =
+  | FileOverlayConfig
+  | ElementOverlayConfig
+  | HtmlOverlayConfig
 
 /**
  * Upper bound for an audio level (linear gain). `4` is +12 dB, plenty of
@@ -344,7 +399,7 @@ export type Overlays<T extends Record<string, OverlayInputOrFactory>> = {
  *   badge: <Badge label="New" />,                // React element
  *   note:  { html: '<div class="note">Tip</div>', x: 1340, y: 110, width: 380 },
  *   logo:  { path: 'logo.png', x: 96, y: 96, width: 240 },
- *   intro: { path: 'intro.mp4', fullScreen: true },
+ *   intro: { path: 'intro.mp4', fill: 'screen' },
  * })
  *
  * video('Product demo', async ({ page }) => {
@@ -427,7 +482,7 @@ function buildOverlayFromConfig(
     hasHtml,
     hasPath,
   })
-  const fullScreen = config.fullScreen ?? false
+  const fullScreen = config.fill === 'screen'
   const animate = config.animate === true
   if (config.fps !== undefined && !animate) {
     throw new Error(
@@ -546,9 +601,9 @@ function buildOverlayFromConfig(
 
   // File-backed image / video overlays.
   if (extension === '.svg' || extension === '.png') {
-    if (config.audio !== undefined) {
+    if (config.volume !== undefined) {
       throw new Error(
-        `[screenci] Overlay "${name}" (${path}) is an image and must not provide audio. Use durationMs instead.`
+        `[screenci] Overlay "${name}" (${path}) is an image and must not provide volume. Use durationMs instead.`
       )
     }
     if (config.durationMs !== undefined) {
@@ -571,13 +626,13 @@ function buildOverlayFromConfig(
       )
     }
     if (
-      config.audio !== undefined &&
-      (!Number.isFinite(config.audio) ||
-        config.audio < 0 ||
-        config.audio > MAX_AUDIO_LEVEL)
+      config.volume !== undefined &&
+      (!Number.isFinite(config.volume) ||
+        config.volume < 0 ||
+        config.volume > MAX_AUDIO_LEVEL)
     ) {
       throw new Error(
-        `[screenci] Overlay "${name}" (${path}) must provide a finite audio value between 0 and ${MAX_AUDIO_LEVEL} for .mp4 overlays. 1 is the natural level, 0 is silent, and values above 1 boost it.`
+        `[screenci] Overlay "${name}" (${path}) must provide a finite volume between 0 and ${MAX_AUDIO_LEVEL} for .mp4 overlays. 1 is the natural level, 0 is silent, and values above 1 boost it.`
       )
     }
     validateSpeedTime(`Overlay "${name}" (${path})`, config.speed, config.time)
@@ -587,7 +642,7 @@ function buildOverlayFromConfig(
       path,
       ...(placement !== undefined && { placement }),
       fullScreen,
-      ...(config.audio !== undefined && { audio: config.audio }),
+      ...(config.volume !== undefined && { audio: config.volume }),
       ...(config.speed !== undefined && { speed: config.speed }),
       ...(config.time !== undefined && { time: config.time }),
     })
@@ -625,6 +680,71 @@ function validateInlineHtmlFragment(name: string, html: string): void {
       )
     }
   }
+  validateSingleRootElement(name, html)
+}
+
+/**
+ * HTML void elements: they never have a closing tag, so they do not open a
+ * nesting level when counting top-level nodes.
+ */
+const VOID_ELEMENTS = new Set([
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
+])
+
+/**
+ * Ensures an inline `html` fragment has exactly one top-level (root) element and
+ * no loose top-level text, so it wraps cleanly into screenci's overlay document
+ * and sizes predictably. Multiple siblings (for example `<div/><div/>`) or stray
+ * text outside the root are rejected. The markup inside the root may be anything,
+ * including `<script>`/`<style>`, which are left to the overlay renderer.
+ *
+ * This is a lightweight tag scanner, not a full HTML parser: it tracks nesting
+ * depth across opening, closing, void, and self-closing tags (skipping comments
+ * and quoted attribute values) which covers ordinary fragment markup.
+ */
+function validateSingleRootElement(name: string, html: string): void {
+  const fail = (): never => {
+    throw new Error(
+      `[screenci] Overlay "${name}" inline "html" must contain a single root element (for example '<div class="badge">New</div>'). Wrap multiple top-level nodes in one container.`
+    )
+  }
+  // Drop comments so they never count as top-level content.
+  const stripped = html.replace(/<!--[\s\S]*?-->/g, '')
+  const tagRe =
+    /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>/g
+  let depth = 0
+  let rootElements = 0
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = tagRe.exec(stripped)) !== null) {
+    const before = stripped.slice(lastIndex, match.index)
+    if (depth === 0 && before.trim().length > 0) fail()
+    lastIndex = match.index + match[0]!.length
+    const isClosing = match[1] === '/'
+    const tagName = match[2]!.toLowerCase()
+    const selfClosing = match[4] === '/'
+    if (isClosing) {
+      depth = Math.max(0, depth - 1)
+      continue
+    }
+    if (depth === 0) rootElements += 1
+    if (!selfClosing && !VOID_ELEMENTS.has(tagName)) depth += 1
+  }
+  if (stripped.slice(lastIndex).trim().length > 0 && depth === 0) fail()
+  if (rootElements !== 1) fail()
 }
 
 async function renderElementToMarkup(
@@ -1181,8 +1301,12 @@ function resolveOverlayPlacement(
   name: string,
   config: OverlayConfig
 ): OverlayPlacement | undefined {
-  if (config.fullScreen === true) {
+  if (config.fill === 'screen') {
     return { fullScreen: true }
+  }
+  if (config.fill === 'recording') {
+    // Fill the recording area (resolved by the renderer, which knows its size).
+    return undefined
   }
   if (config.width !== undefined && config.height !== undefined) {
     throw new Error(
@@ -1198,7 +1322,7 @@ function resolveOverlayPlacement(
       config.aspectRatio !== undefined
     if (positioned) {
       throw new Error(
-        `[screenci] Overlay "${name}" must set "width" or "height" (in CSS px) when positioning it. Omit all placement fields to fill the recording area, or set "fullScreen".`
+        `[screenci] Overlay "${name}" must set "width" or "height" (in CSS px) when positioning it. Omit all placement fields to fill the recording area, or set "fill".`
       )
     }
     // Fill the recording area (resolved by the renderer, which knows its size).
@@ -1265,9 +1389,9 @@ function resolvePlacementSource(
       `[screenci] Overlay "${name}" can only use "over" with a React element, inline "html", or an .html file (the overlay is sized to the element's box).`
     )
   }
-  if (config.fullScreen === true) {
+  if (config.fill !== undefined) {
     throw new Error(
-      `[screenci] Overlay "${name}" cannot set both "over" and "fullScreen".`
+      `[screenci] Overlay "${name}" cannot set both "over" and "fill".`
     )
   }
   if (

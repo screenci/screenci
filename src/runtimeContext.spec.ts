@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import {
   createScreenCIRuntimeContext,
+  getRuntimeCaptureKind,
   getRuntimeCrop,
   getRuntimeRecordOptions,
   getRuntimeRenderOptions,
+  isScreenshotCapture,
   runWithScreenCIRuntimeContext,
   setRuntimeCrop,
 } from './runtimeContext.js'
@@ -14,6 +16,12 @@ describe('createScreenCIRuntimeContext', () => {
     expect(ctx.recordOptions).toBeNull()
     expect(ctx.renderOptions).toBeUndefined()
     expect(ctx.crop).toBeNull()
+    expect(ctx.captureKind).toBe('video')
+  })
+
+  it('carries the capture kind from overrides', () => {
+    const ctx = createScreenCIRuntimeContext({ captureKind: 'screenshot' })
+    expect(ctx.captureKind).toBe('screenshot')
   })
 
   it('carries the recording fields from overrides', () => {
@@ -54,5 +62,23 @@ describe('runtime getters/setters', () => {
 
     // The crop is stored on the context object itself, not a module global.
     expect(ctx.crop).toEqual(cropRecord)
+  })
+
+  it('reports the capture kind from the active context', () => {
+    runWithScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ captureKind: 'screenshot' }),
+      () => {
+        expect(getRuntimeCaptureKind()).toBe('screenshot')
+        expect(isScreenshotCapture()).toBe(true)
+      }
+    )
+
+    runWithScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ captureKind: 'video' }),
+      () => {
+        expect(getRuntimeCaptureKind()).toBe('video')
+        expect(isScreenshotCapture()).toBe(false)
+      }
+    )
   })
 })

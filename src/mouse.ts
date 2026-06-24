@@ -18,6 +18,7 @@ import {
   resolveRecordingTimingDuration,
   shouldSimulateRecordingTimings,
 } from './runtimeMode.js'
+import { isScreenshotCapture } from './runtimeContext.js'
 
 // Stored mouse coordinates are always viewport coordinates, even when a
 // locator action receives an element-relative `position` option.
@@ -346,6 +347,10 @@ export function resolveMouseMoveDuration(
 ): number {
   const { duration, speed, defaultDuration, defaultSpeed, context } = options
   assertDurationOrSpeed(duration, speed, context)
+  // Screenshots keep only the final frame, so animating the cursor over time is
+  // wasted work. Make the move instant (the cursor still lands at its target),
+  // matching the timing-free behavior of `screenci test`. Videos animate.
+  if (isScreenshotCapture()) return 0
   if (!shouldSimulateRecordingTimings()) return 0
   if (speed !== undefined) {
     const startPos = getMousePosition(page) ?? { x: 0, y: 0 }

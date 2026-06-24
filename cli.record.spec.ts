@@ -382,6 +382,13 @@ describe('CLI', () => {
       process.stdout.isTTY = true
       process.stdin.isTTY = true
       process.argv = ['node', 'cli.js', 'record']
+      const timeoutSpy = vi.spyOn(global, 'setTimeout').mockImplementation(((
+        fn: () => void
+      ) => {
+        fn()
+        return 0 as unknown as ReturnType<typeof setTimeout>
+      }) as unknown as typeof setTimeout)
+      let pollCount = 0
       mockFetch.mockImplementation(
         async (input: string | URL, init?: RequestInit) => {
           const url = String(input)
@@ -398,6 +405,18 @@ describe('CLI', () => {
             }
           }
           if (url.includes('/cli-link/session?token=session-token-123')) {
+            pollCount += 1
+            // Pending through the initial check and one in-loop poll, then
+            // completed: the human opens the printed link and signs in while the
+            // interactive loop waits (and sleeps once on the 2s cadence).
+            if (pollCount < 3) {
+              return {
+                ok: true,
+                status: 200,
+                json: vi.fn().mockResolvedValue({ status: 'pending' }),
+                text: vi.fn().mockResolvedValue(''),
+              }
+            }
             return {
               ok: true,
               status: 200,
@@ -432,6 +451,8 @@ describe('CLI', () => {
       expect(loggerInfoSpy).toHaveBeenCalledWith(
         expect.stringContaining('https://app.screenci.com/cli-auth?session=')
       )
+      // Interactive sessions poll on the 2-second cadence while waiting.
+      expect(timeoutSpy).toHaveBeenCalledWith(expect.any(Function), 2_000)
       expect(mockWriteFile).toHaveBeenCalledWith(
         `${process.cwd()}/.screenci/link-session.json`,
         expect.stringContaining('"token": "session-token-123"')
@@ -441,11 +462,12 @@ describe('CLI', () => {
         'SCREENCI_SECRET=auth-secret-123\n'
       )
 
+      timeoutSpy.mockRestore()
       process.stdout.isTTY = originalStdoutTTY
       process.stdin.isTTY = originalStdinTTY
     })
 
-    it('prints the sign-in link and exits without recording in a non-interactive session', async () => {
+    it('with sign-in waiting disabled (SCREENCI_NONINTERACTIVE), prints the link and exits 0 without recording', async () => {
       delete process.env.SCREENCI_SECRET
       process.env.SCREENCI_NONINTERACTIVE = '1'
       process.argv = ['node', 'cli.js', 'record']
@@ -579,7 +601,7 @@ describe('CLI', () => {
       timeoutSpy.mockRestore()
     })
 
-    it('with --poll-auth, stops polling and exits without recording once the timeout elapses', async () => {
+    it('with --poll-auth, stops polling and exits non-zero once the timeout elapses', async () => {
       delete process.env.SCREENCI_SECRET
       process.env.SCREENCI_NONINTERACTIVE = '1'
       // A zero timeout makes the deadline elapse on the first pending check, so
@@ -623,17 +645,209 @@ describe('CLI', () => {
 
       await expect(main()).rejects.toThrow('process.exit called')
 
-      expect(loggerInfoSpy).toHaveBeenCalledWith(
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining('Timed out')
       )
-      // A timed-out sign-in is an expected handoff, not a failure, so exit 0.
-      expect(processExitSpy).toHaveBeenCalledWith(0)
+      // A timed-out sign-in means nothing was recorded, so fail loud: exit 1.
+      expect(processExitSpy).toHaveBeenCalledWith(1)
       // Never starts Playwright and never persists a secret when it times out.
       expect(mockSpawn).not.toHaveBeenCalled()
       expect(mockWriteFile).not.toHaveBeenCalledWith(
         `${process.cwd()}/.env`,
         expect.stringContaining('SCREENCI_SECRET=')
       )
+    })
+
+    it('waits for sign-in by default (no flag) in a non-interactive agent session, then records', async () => {
+      delete process.env.SCREENCI_SECRET
+      // A coding agent: no terminal, no CI marker. record should wait and record
+      // without needing --poll-auth.
+      delete process.env.CI
+      delete process.env.SCREENCI_NONINTERACTIVE
+      const originalStdoutTTY = process.stdout.isTTY
+      const originalStdinTTY = process.stdin.isTTY
+      process.stdout.isTTY = false
+      process.stdin.isTTY = false
+      process.argv = ['node', 'cli.js', 'record']
+      const timeoutSpy = vi.spyOn(global, 'setTimeout').mockImplementation(((
+        fn: () => void
+      ) => {
+        fn()
+        return 0 as unknown as ReturnType<typeof setTimeout>
+      }) as unknown as typeof setTimeout)
+      let pollCount = 0
+      mockFetch.mockImplementation(
+        async (input: string | URL, init?: RequestInit) => {
+          const url = String(input)
+          if (url.endsWith('/cli-link/session') && init?.method === 'POST') {
+            return {
+              ok: true,
+              status: 201,
+              json: vi.fn().mockResolvedValue({
+                token: 'session-token-123',
+                createdAt: '2026-06-11T10:00:00.000Z',
+                expiresAt: '2099-06-11T10:15:00.000Z',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          if (url.includes('/cli-link/session?token=session-token-123')) {
+            pollCount += 1
+            if (pollCount < 3) {
+              return {
+                ok: true,
+                status: 200,
+                json: vi.fn().mockResolvedValue({ status: 'pending' }),
+                text: vi.fn().mockResolvedValue(''),
+              }
+            }
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({
+                status: 'completed',
+                secret: 'auth-secret-123',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+      )
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await main()
+
+      // Polled past the first pending on the 5s agent cadence, then recorded.
+      expect(pollCount).toBe(3)
+      expect(timeoutSpy).toHaveBeenCalledWith(expect.any(Function), 5_000)
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        `${process.cwd()}/.env`,
+        'SCREENCI_SECRET=auth-secret-123\n'
+      )
+      expect(mockSpawn).toHaveBeenCalled()
+
+      timeoutSpy.mockRestore()
+      process.stdout.isTTY = originalStdoutTTY
+      process.stdin.isTTY = originalStdinTTY
+    })
+
+    it('with --no-poll-auth, prints the link and exits 0 without waiting even off-CI', async () => {
+      delete process.env.SCREENCI_SECRET
+      delete process.env.CI
+      delete process.env.SCREENCI_NONINTERACTIVE
+      const originalStdoutTTY = process.stdout.isTTY
+      const originalStdinTTY = process.stdin.isTTY
+      process.stdout.isTTY = false
+      process.stdin.isTTY = false
+      process.argv = ['node', 'cli.js', 'record', '--no-poll-auth']
+      const timeoutSpy = vi.spyOn(global, 'setTimeout')
+      mockFetch.mockImplementation(
+        async (input: string | URL, init?: RequestInit) => {
+          const url = String(input)
+          if (url.endsWith('/cli-link/session') && init?.method === 'POST') {
+            return {
+              ok: true,
+              status: 201,
+              json: vi.fn().mockResolvedValue({
+                token: 'session-token-123',
+                createdAt: '2026-06-11T10:00:00.000Z',
+                expiresAt: '2099-06-11T10:15:00.000Z',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          if (url.includes('/cli-link/session?token=session-token-123')) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({ status: 'pending' }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+      )
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow('process.exit called')
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('https://app.screenci.com/cli-auth?session=')
+      )
+      // Did not poll, did not record, and handed off cleanly (exit 0).
+      expect(timeoutSpy).not.toHaveBeenCalled()
+      expect(processExitSpy).toHaveBeenCalledWith(0)
+      expect(mockSpawn).not.toHaveBeenCalled()
+
+      timeoutSpy.mockRestore()
+      process.stdout.isTTY = originalStdoutTTY
+      process.stdin.isTTY = originalStdinTTY
+    })
+
+    it('under CI, prints the link and exits 0 without waiting', async () => {
+      delete process.env.SCREENCI_SECRET
+      delete process.env.SCREENCI_NONINTERACTIVE
+      process.env.CI = 'true'
+      process.argv = ['node', 'cli.js', 'record']
+      const timeoutSpy = vi.spyOn(global, 'setTimeout')
+      mockFetch.mockImplementation(
+        async (input: string | URL, init?: RequestInit) => {
+          const url = String(input)
+          if (url.endsWith('/cli-link/session') && init?.method === 'POST') {
+            return {
+              ok: true,
+              status: 201,
+              json: vi.fn().mockResolvedValue({
+                token: 'session-token-123',
+                createdAt: '2026-06-11T10:00:00.000Z',
+                expiresAt: '2099-06-11T10:15:00.000Z',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          if (url.includes('/cli-link/session?token=session-token-123')) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({ status: 'pending' }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+      )
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow('process.exit called')
+
+      expect(timeoutSpy).not.toHaveBeenCalled()
+      expect(processExitSpy).toHaveBeenCalledWith(0)
+      expect(mockSpawn).not.toHaveBeenCalled()
+
+      timeoutSpy.mockRestore()
     })
 
     it('loads SCREENCI_SECRET from the project .env when envFile is not configured', async () => {

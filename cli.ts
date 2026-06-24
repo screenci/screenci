@@ -75,11 +75,15 @@ const SCREENCI_LINK_SESSION_POLL_INTERVAL_MS = 2_000
 // sign-in. We poll on a slower cadence than the interactive loop so a long wait
 // for a human to click the link does not hammer the backend.
 const SCREENCI_LINK_SESSION_POLL_FLAG_INTERVAL_MS = 5_000
-// `record --poll-auth` does not wait forever: after this long without a
-// completed sign-in we stop polling and exit cleanly so an agent or CI step does
-// not hang indefinitely. The link stays valid, so the command can be rerun. The
-// default can be overridden with SCREENCI_POLL_AUTH_TIMEOUT_MS (milliseconds).
+// A waiting `record` does not wait forever: after this long without a completed
+// sign-in we stop polling so a non-interactive agent run does not hang. The link
+// stays valid, so the command can be rerun. The default can be overridden with
+// SCREENCI_POLL_AUTH_TIMEOUT_MS (milliseconds).
 const SCREENCI_LINK_SESSION_POLL_FLAG_TIMEOUT_MS = 5 * 60 * 1_000
+// An interactive `record` (a human at a terminal) waits longer before giving up,
+// since a person may take a while to open the link and finish signing in. Also
+// overridable with SCREENCI_POLL_AUTH_TIMEOUT_MS.
+const SCREENCI_LINK_SESSION_INTERACTIVE_TIMEOUT_MS = 15 * 60 * 1_000
 const require = createRequire(import.meta.url)
 
 type PlaywrightListReportSuite = {
@@ -301,7 +305,7 @@ function resolveRecordingFileCandidates(
   return [
     filePath,
     ...(sourceFileCandidate ? [sourceFileCandidate] : []),
-    resolve(configDir, 'videos', filePath),
+    resolve(configDir, 'recordings', filePath),
     resolve(configDir, pathRelative('/app', filePath)),
   ]
 }
@@ -418,6 +422,18 @@ class RecordFailureHintError extends Error {
     super(cause.message)
     this.name = cause.name
     this.cause = cause
+  }
+}
+
+// Thrown when we wait for a browser sign-in and the deadline passes before it
+// completes. The link stays valid, so the message tells the user to sign in and
+// rerun. A timed-out sign-in means recording did not happen, so the caller maps
+// this to a non-zero exit (it is a failure, not the clean print-and-exit handoff
+// used by CI).
+export class SignInTimeoutError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SignInTimeoutError'
   }
 }
 
@@ -2007,7 +2023,7 @@ async function loadRecordConfigWithoutPlaywrightCollision(
 
 async function requireScreenCISecret(
   configPath?: string,
-  opts: { interactive?: boolean; pollAuth?: boolean } = {}
+  opts: { interactive?: boolean; pollAuth?: boolean; noPollAuth?: boolean } = {}
 ): Promise<{
   resolvedConfigPath: string
   screenciConfig: ScreenCIConfig
@@ -2016,9 +2032,21 @@ async function requireScreenCISecret(
 }> {
   const { resolvedConfigPath, screenciConfig } =
     await loadScreenCIConfigAndEnv(configPath)
-  const secret =
-    process.env.SCREENCI_SECRET ??
-    (await ensureScreenciSecret(resolvedConfigPath, opts))
+  let secret: string | undefined
+  try {
+    secret =
+      process.env.SCREENCI_SECRET ??
+      (await ensureScreenciSecret(resolvedConfigPath, opts))
+  } catch (err) {
+    // A waited-out sign-in means recording did not happen: print the (already
+    // formatted) message and exit non-zero so the failure is loud, instead of
+    // looking like a successful run.
+    if (err instanceof SignInTimeoutError) {
+      logger.error(err.message)
+      process.exit(1)
+    }
+    throw err
+  }
   if (!secret) {
     // In a non-interactive session ensureScreenciSecret already printed the
     // sign-in link and the next step, so we exit without repeating guidance.
@@ -2260,13 +2288,11 @@ async function pollLinkSessionOnce(
   return { status }
 }
 
-function getPollAuthTimeoutMs(): number {
+function getAuthPollTimeoutMs(defaultMs: number): number {
   const raw = process.env.SCREENCI_POLL_AUTH_TIMEOUT_MS
-  if (raw === undefined) return SCREENCI_LINK_SESSION_POLL_FLAG_TIMEOUT_MS
+  if (raw === undefined) return defaultMs
   const parsed = Number(raw)
-  return Number.isFinite(parsed) && parsed >= 0
-    ? parsed
-    : SCREENCI_LINK_SESSION_POLL_FLAG_TIMEOUT_MS
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultMs
 }
 
 async function pollLinkSession(
@@ -2303,10 +2329,15 @@ async function pollLinkSession(
 
 export async function ensureScreenciSecret(
   resolvedConfigPath?: string,
-  opts: { interactive?: boolean; pollAuth?: boolean } = {}
+  opts: {
+    interactive?: boolean
+    pollAuth?: boolean
+    noPollAuth?: boolean
+  } = {}
 ): Promise<string | undefined> {
   const interactive = opts.interactive ?? true
   const pollAuth = opts.pollAuth ?? false
+  const noPollAuth = opts.noPollAuth ?? false
   const existingSecret = process.env.SCREENCI_SECRET
   if (existingSecret) return existingSecret
 
@@ -2354,90 +2385,95 @@ export async function ensureScreenciSecret(
       return secret
     }
 
-    if (!interactive) {
-      // Non-interactive sessions cannot complete a browser sign-in here, so by
-      // default we never block. Reuse or create the persisted session and check
-      // its status once; if a stored session is stale, recreate it and check
-      // once more. When the session is already completed (the sign-in happened
-      // between runs) we pick up the secret; otherwise we print the link and
-      // return so the caller can surface it and rerun later. The exception is
-      // `pollAuth` (the `--poll-auth` flag), which opts in to waiting: it keeps
-      // polling on a slow cadence until sign-in completes.
-      let spec = await ensureSpec()
-      let result = await pollLinkSessionOnce(spec)
+    // Decide whether this run waits for a browser sign-in or just prints the
+    // link and hands off. A human at a terminal always waits. A plain
+    // non-interactive run (a coding agent: no terminal, no CI) also waits by
+    // default, so `npx screenci record` records without needing a flag. CI and
+    // an explicit SCREENCI_NONINTERACTIVE never wait (CI must not hang and is
+    // expected to provide SCREENCI_SECRET), and `--no-poll-auth` opts back into
+    // that print-and-exit handoff. `--poll-auth` forces waiting and is kept for
+    // backwards compatibility (it is the default for agents now).
+    const isCI = process.env.CI === 'true'
+    const nonInteractiveForced = process.env.SCREENCI_NONINTERACTIVE === '1'
+    const waitForSignIn = noPollAuth
+      ? false
+      : interactive || pollAuth || (!isCI && !nonInteractiveForced)
+    const pollIntervalMs = interactive
+      ? SCREENCI_LINK_SESSION_POLL_INTERVAL_MS
+      : SCREENCI_LINK_SESSION_POLL_FLAG_INTERVAL_MS
+    const timeoutMs = getAuthPollTimeoutMs(
+      interactive
+        ? SCREENCI_LINK_SESSION_INTERACTIVE_TIMEOUT_MS
+        : SCREENCI_LINK_SESSION_POLL_FLAG_TIMEOUT_MS
+    )
 
-      if (
-        result.status === 'expired' ||
-        result.status === 'consumed' ||
-        result.status === 'invalid'
-      ) {
-        deletePersistedLinkSessionSpec(specPath)
-        spec = await ensureSpec()
-        result = await pollLinkSessionOnce(spec)
-      }
+    // Check the current/stored session once. If sign-in already completed (for
+    // example between runs) we pick up the secret immediately. Recreate a stale
+    // session and check once more before deciding to wait or hand off.
+    let spec = await ensureSpec()
+    let result = await pollLinkSessionOnce(spec)
+    if (
+      result.status === 'expired' ||
+      result.status === 'consumed' ||
+      result.status === 'invalid'
+    ) {
+      deletePersistedLinkSessionSpec(specPath)
+      spec = await ensureSpec()
+      result = await pollLinkSessionOnce(spec)
+    }
+    if (result.status === 'completed' && result.secret) {
+      return await saveCompletedSecret(result.secret)
+    }
 
-      if (result.status === 'completed' && result.secret) {
-        return await saveCompletedSecret(result.secret)
-      }
-
-      if (pollAuth) {
-        // The caller asked us to wait for sign-in. Print the link, then poll on
-        // a slow cadence until the human finishes signing in, and continue
-        // recording automatically once the secret lands. We re-print the link
-        // on every (re)created session so the latest valid link is always
-        // visible, including after a stale session is recreated. We do not wait
-        // forever: after a default timeout we stop polling and exit cleanly so
-        // an agent or CI step does not hang. The link stays valid for a rerun.
-        const timeoutMs = getPollAuthTimeoutMs()
-        const timeoutMinutes = Math.round(timeoutMs / 60_000)
-        const deadlineEpochMs = Date.now() + timeoutMs
-        for (;;) {
-          logger.info(
-            `Sign-in required to record. Open this link to sign in:\n${pc.cyan(spec.appUrl)}\n` +
-              `Waiting for sign-in (checking every 5 seconds, up to ${timeoutMinutes} minutes). Recording continues automatically once you finish.`
-          )
-          const polled = await pollLinkSession(
-            spec,
-            SCREENCI_LINK_SESSION_POLL_FLAG_INTERVAL_MS,
-            deadlineEpochMs
-          )
-          if (polled.status === 'completed' && polled.secret) {
-            return await saveCompletedSecret(polled.secret)
-          }
-          if (polled.status === 'timed-out' || Date.now() >= deadlineEpochMs) {
-            logger.info(
-              `Timed out after ${timeoutMinutes} minutes waiting for sign-in. The link is still valid:\n${pc.cyan(spec.appUrl)}\n` +
-                `After signing in, rerun ${pc.cyan(getSuggestedScreenciCommand('record'))} to continue, or ${pc.cyan(getSuggestedScreenciCommand('record', '--poll-auth'))} to wait again.`
-            )
-            return undefined
-          }
-          deletePersistedLinkSessionSpec(specPath)
-          spec = await ensureSpec()
-        }
-      }
-
+    if (!waitForSignIn) {
+      // CI / SCREENCI_NONINTERACTIVE / --no-poll-auth: print the link and hand
+      // off without waiting. The caller exits cleanly (0); a pending sign-in
+      // here is an expected handoff, not a failure.
       logger.info(
         `Sign-in required to record. Open this link to sign in:\n${pc.cyan(spec.appUrl)}\n` +
-          `This session is non-interactive, so sign-in can't complete here. After signing in, rerun ${pc.cyan(getSuggestedScreenciCommand('record'))} to continue, or run ${pc.cyan(getSuggestedScreenciCommand('record', '--poll-auth'))} to print the link again and wait for sign-in, continuing automatically.`
+          `This session won't wait for sign-in. After signing in, rerun ${pc.cyan(getSuggestedScreenciCommand('record'))} to record. In CI, set SCREENCI_SECRET (from ${getScreenCISecretsUrl()}) to record without an interactive sign-in.`
       )
       return undefined
     }
 
+    // Wait for sign-in: print the link, then poll until the human finishes and
+    // continue recording automatically once the secret lands. We re-print the
+    // link on every (re)created session so the latest valid link is always
+    // visible. We do not wait forever: after the timeout we throw so the caller
+    // exits non-zero (a timed-out sign-in means nothing was recorded). The link
+    // stays valid for a rerun.
+    const timeoutMinutes = Math.max(1, Math.round(timeoutMs / 60_000))
+    const intervalSeconds = Math.max(1, Math.round(pollIntervalMs / 1_000))
+    const deadlineEpochMs = Date.now() + timeoutMs
     for (;;) {
-      const spec = await ensureSpec()
-
       logger.info(
-        `Open this link to sign in and connect the CLI:\n${pc.cyan(spec.appUrl)}\n`
+        `Sign-in required to record. Open this link to sign in:\n${pc.cyan(spec.appUrl)}\n` +
+          `Waiting for sign-in (checking every ${intervalSeconds} seconds, up to ${timeoutMinutes} minutes). Recording continues automatically once you finish.`
       )
-
-      const result = await pollLinkSession(spec)
-      if (result.status === 'completed' && result.secret) {
-        return await saveCompletedSecret(result.secret)
+      const polled = await pollLinkSession(
+        spec,
+        pollIntervalMs,
+        deadlineEpochMs
+      )
+      if (polled.status === 'completed' && polled.secret) {
+        return await saveCompletedSecret(polled.secret)
       }
-
+      if (polled.status === 'timed-out' || Date.now() >= deadlineEpochMs) {
+        throw new SignInTimeoutError(
+          `Timed out after ${timeoutMinutes} minutes waiting for sign-in. The link is still valid:\n${pc.cyan(spec.appUrl)}\n` +
+            `After signing in, rerun ${pc.cyan(getSuggestedScreenciCommand('record'))} to record.`
+        )
+      }
+      // Session went stale (expired/consumed/invalid) before sign-in: recreate
+      // and keep waiting until the deadline.
       deletePersistedLinkSessionSpec(specPath)
+      spec = await ensureSpec()
     }
   } catch (err) {
+    // A timed-out sign-in is a deliberate, already-formatted failure: let it
+    // propagate so the caller can exit non-zero rather than swallowing it as a
+    // generic auth error.
+    if (err instanceof SignInTimeoutError) throw err
     const msg = err instanceof Error ? err.message : String(err)
     logger.warn(`Authentication failed: ${msg}`)
     logger.info(
@@ -2469,7 +2505,11 @@ export async function main() {
     .option('-v, --verbose', 'verbose output')
     .option(
       '--poll-auth',
-      'wait for sign-in to complete (polling every 5s, up to 5 minutes) instead of exiting, then continue recording'
+      'wait for sign-in before recording (now the default off-CI; kept for backwards compatibility)'
+    )
+    .option(
+      '--no-poll-auth',
+      'do not wait for sign-in: print the link and exit cleanly if not signed in (the default under CI)'
     )
     .option(
       '--remote',
@@ -2506,7 +2546,8 @@ export async function main() {
           parsed.verbose,
           false,
           parsed.pollAuth,
-          parsed.languages
+          parsed.languages,
+          parsed.noPollAuth
         )
       } catch (error) {
         if (!(error instanceof Error)) throw error
@@ -2842,6 +2883,7 @@ export function parseRecordCliArgs(args: string[]): {
   configPath: string | undefined
   verbose: boolean
   pollAuth: boolean
+  noPollAuth: boolean
   remote: boolean
   languages: string | undefined
   otherArgs: string[]
@@ -2849,6 +2891,7 @@ export function parseRecordCliArgs(args: string[]): {
   let configPath: string | undefined
   let verbose = false
   let pollAuth = false
+  let noPollAuth = false
   let remote = false
   let languages: string | undefined
   const otherArgs: string[] = []
@@ -2882,6 +2925,8 @@ export function parseRecordCliArgs(args: string[]): {
       verbose = true
     } else if (arg === '--poll-auth') {
       pollAuth = true
+    } else if (arg === '--no-poll-auth') {
+      noPollAuth = true
     } else if (arg === '--remote') {
       remote = true
     } else {
@@ -2893,6 +2938,7 @@ export function parseRecordCliArgs(args: string[]): {
     configPath,
     verbose,
     pollAuth,
+    noPollAuth,
     remote,
     languages,
     otherArgs,
@@ -3080,7 +3126,8 @@ async function run(
   verbose = false,
   mockRecord = false,
   pollAuth = false,
-  languages?: string
+  languages?: string,
+  noPollAuth = false
 ) {
   const configPath = resolveScreenCIConfigPathOrExit(customConfigPath)
 
@@ -3094,6 +3141,7 @@ async function run(
       await requireScreenCISecret(configPath, {
         interactive: detectInteractiveSession(),
         pollAuth,
+        noPollAuth,
       })
     }
     validateArgs(additionalArgs)

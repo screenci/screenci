@@ -31,6 +31,10 @@ import {
   setOriginalMouseMove,
   setOriginalMouseUp,
 } from './mouse.js'
+import {
+  createScreenCIRuntimeContext,
+  runWithScreenCIRuntimeContext,
+} from './runtimeContext.js'
 
 describe('mouse helpers', () => {
   let originalEnv: NodeJS.ProcessEnv
@@ -120,6 +124,42 @@ describe('mouse helpers', () => {
         context: 'test move',
       })
     ).toBe(0)
+  })
+
+  it('skips move duration when capturing a screenshot', () => {
+    const page = {}
+    setMousePosition(page, { x: 0, y: 0 })
+
+    const duration = runWithScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ captureKind: 'screenshot' }),
+      () =>
+        resolveMouseMoveDuration(page, 300, 400, {
+          duration: undefined,
+          speed: 500,
+          defaultDuration: DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+          context: 'test move',
+        })
+    )
+
+    expect(duration).toBe(0)
+  })
+
+  it('keeps move duration when capturing a video', () => {
+    const page = {}
+    setMousePosition(page, { x: 0, y: 0 })
+
+    const duration = runWithScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ captureKind: 'video' }),
+      () =>
+        resolveMouseMoveDuration(page, 300, 400, {
+          duration: undefined,
+          speed: undefined,
+          defaultDuration: DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+          context: 'test move',
+        })
+    )
+
+    expect(duration).toBe(900)
   })
 
   it('performs mouse movement and updates tracked position', async () => {

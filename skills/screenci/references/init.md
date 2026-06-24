@@ -16,7 +16,7 @@ npm init screenci "My Project" -- --verbose
 
 ```text
 screenci.config.ts
-videos/
+recordings/
   example.screenci.ts
 package.json
 .gitignore

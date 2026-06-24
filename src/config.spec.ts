@@ -2,19 +2,19 @@ import { describe, it, expect } from 'vitest'
 import { defineConfig } from './config.js'
 
 describe('defineConfig', () => {
-  it('should default videoDir to ./videos', () => {
+  it('should default recordingDir to ./recordings', () => {
     const config = defineConfig({ projectName: 'Test' })
 
-    expect(config.testDir).toBe('./videos')
+    expect(config.testDir).toBe('./recordings')
   })
 
-  it('should allow overriding videoDir', () => {
+  it('should allow overriding recordingDir', () => {
     const config = defineConfig({
       projectName: 'Test',
-      videoDir: './custom-videos',
+      recordingDir: './custom-recordings',
     })
 
-    expect(config.testDir).toBe('./custom-videos')
+    expect(config.testDir).toBe('./custom-recordings')
   })
 
   it('should throw error when testDir is defined', () => {
@@ -23,6 +23,15 @@ describe('defineConfig', () => {
         testDir: './tests',
       } as never)
     }).toThrow('screenci does not support "testDir" option')
+  })
+
+  it('should throw a migration error when the renamed videoDir is used', () => {
+    expect(() => {
+      defineConfig({
+        projectName: 'Test',
+        videoDir: './videos',
+      } as never)
+    }).toThrow('screenci renamed "videoDir" to "recordingDir"')
   })
 
   it('should pass through workers when defined', () => {
@@ -40,7 +49,7 @@ describe('defineConfig', () => {
   it('should accept all other playwright config options', () => {
     const config = defineConfig({
       projectName: 'Test',
-      videoDir: './my-videos',
+      recordingDir: './my-recordings',
       forbidOnly: true,
       reporter: 'html',
       use: {
@@ -54,7 +63,7 @@ describe('defineConfig', () => {
       ],
     })
 
-    expect(config.testDir).toBe('./my-videos')
+    expect(config.testDir).toBe('./my-recordings')
     expect(config.fullyParallel).toBeUndefined()
     expect(config.workers).toBeUndefined()
     expect(config.retries).toBe(0)

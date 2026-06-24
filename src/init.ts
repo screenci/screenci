@@ -665,7 +665,7 @@ export function generateIslandReadme(
   return `# ${projectName}
 
 ScreenCI video scripts for this project. Edit the \`*.screenci.ts\` files in
-\`videos/\` to script your recordings.
+\`recordings/\` to script your recordings.
 
 ## Commands
 
@@ -1136,11 +1136,11 @@ function printInitNextSteps(
   logger.info('')
   logger.info('And check out the following files:')
   logger.info(
-    `  - ./${islandDirName}/videos/example.screenci.ts - Example video script`
+    `  - ./${islandDirName}/recordings/example.screenci.ts - Example video script`
   )
   if (withReact) {
     logger.info(
-      `  - ./${islandDirName}/videos/example-react.screenci.tsx - React overlay example`
+      `  - ./${islandDirName}/recordings/example-react.screenci.tsx - React overlay example`
     )
   }
   logger.info(
@@ -1295,9 +1295,11 @@ function Badge({ label }: { label: string }) {
 
 const overlays = createOverlays({
   // Pass a React element straight in. It is rasterized to a transparent PNG at
-  // recording time, then placed like any other overlay (placement is flat and
-  // defaults to the full recording area; override any field).
-  badge: { element: <Badge label="New" />, x: 0.7, y: 0.1, width: 0.18 },
+  // recording time, then placed like any other overlay. Placement fields are
+  // CSS pixels in the recording viewport (x/y from the top-left, width sets the
+  // size and the height follows the rasterized aspect ratio). Omit them all to
+  // fill the recording area.
+  badge: { element: <Badge label="New" />, x: 1340, y: 110, width: 288 },
 })
 
 video('React overlay', async ({ page }) => {
@@ -1533,7 +1535,7 @@ export async function runInit(
   process.on('exit', removePartialIsland)
 
   try {
-    await mkdir(resolve(islandDir, 'videos'), { recursive: true })
+    await mkdir(resolve(islandDir, 'recordings'), { recursive: true })
     islandCreated = true
 
     await writeFile(
@@ -1554,12 +1556,12 @@ export async function runInit(
     )
     await writeInitGitignore(islandDir, packageManager)
     await writeFile(
-      resolve(islandDir, 'videos', 'example.screenci.ts'),
+      resolve(islandDir, 'recordings', 'example.screenci.ts'),
       generateExampleVideo()
     )
     if (shouldAddReactOverlays) {
       await writeFile(
-        resolve(islandDir, 'videos', 'example-react.screenci.tsx'),
+        resolve(islandDir, 'recordings', 'example-react.screenci.tsx'),
         generateReactExampleVideo()
       )
     }
@@ -1735,7 +1737,7 @@ export default defineConfig({
   // Load SCREENCI_SECRET and other env vars from this file.
   envFile: '.env',
   // Look for *.screenci.ts files in this directory.
-  videoDir: './videos',
+  recordingDir: './recordings',
   // Let independent video files run in parallel.
   fullyParallel: true,
   // Make sure CI recordings are smooth even if resources are constrained

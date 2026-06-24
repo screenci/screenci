@@ -106,7 +106,7 @@ describe('writeStillRecording', () => {
         padding: { top: 0, right: 0, bottom: 0, left: 0 },
         source: 'region',
       },
-      testFilePath: '/repo/videos/demo.screenci.ts',
+      testFilePath: '/repo/recordings/demo.screenci.ts',
       configDir: '/repo',
       recordOptions: { aspectRatio: '16:9', quality: '1080p' },
       renderOptions: undefined,
@@ -125,7 +125,7 @@ describe('writeStillRecording', () => {
     const [dir, title, sourceFile, options] = writeToFile.mock.calls[0]
     expect(dir).toBe('/repo/.screenci/hero')
     expect(title).toBe('hero')
-    expect(sourceFile).toBe('videos/demo.screenci.ts')
+    expect(sourceFile).toBe('recordings/demo.screenci.ts')
     // Crop is a render option, passed as a sibling of `screenshot` so writeToFile
     // merges it into renderOptions.screenshot.crop.
     expect(options).toEqual({

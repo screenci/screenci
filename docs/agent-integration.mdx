@@ -11,7 +11,7 @@ and records it.
 Paste this into Claude Code, Codex, Cursor, or any other coding agent:
 
 ```text
-integrate screenci screenci.com/integrate.md and add a video about <feature>
+Integrate ScreenCI by fetching https://screenci.com/integrate.md and following its steps, then add a screenci video about <feature>
 ```
 
 Replace `<feature>` with whatever you want the video to show off. Add `@files`
@@ -51,9 +51,13 @@ see [Playwright codegen](/docs/video-script-basics#generate-a-first-draft-with-c
 
 ## Signing in
 
-Only the final recording needs sign-in, not authoring or testing. The CLI prints
-a sign-in link; surface it to whoever can sign in, then rerun `npx screenci record`
-to continue. Set `SCREENCI_SECRET` ahead of time to skip sign-in entirely.
+Only the final recording needs sign-in, not authoring or testing. When sign-in is
+needed, `npx screenci record` prints a sign-in link, waits for it, and records
+automatically once you finish, so the agent surfaces the link to whoever can sign
+in and then keeps the command running. Waiting is the default off-CI; if it times
+out before sign-in, `record` exits non-zero (the link stays valid, so rerun once
+signed in). Under CI (`CI=true`) it does not wait, so set `SCREENCI_SECRET` ahead
+of time for CI runs (this also skips sign-in entirely anywhere).
 
 The upload contains the raw recording, not your source code. See
 [Overview](/docs) for how recording and rendering are split.

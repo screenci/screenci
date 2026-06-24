@@ -43,6 +43,14 @@ export type ActiveAudioRun = {
   resolveFinished: () => void
 }
 
+/**
+ * What the active fixture is capturing. A video records every frame, so cursor
+ * moves must animate. A screenshot only keeps the final frame, so cursor moves
+ * are made instant (the cursor still lands at its target), mirroring the
+ * timing-free behavior of `screenci test`.
+ */
+export type CaptureKind = 'video' | 'screenshot'
+
 export type TimelineBlockType = 'hide' | 'speed' | 'time'
 
 export type TimelineBlockState = {
@@ -70,6 +78,11 @@ export type ScreenCIRuntimeContext = {
   recordOptions: RecordOptions | null
   /** Base render options for the active recording (drive a still's framing). */
   renderOptions: RenderOptions | undefined
+  /**
+   * Whether this fixture is capturing a video or a screenshot. Screenshots keep
+   * only the final frame, so cursor animations are skipped (made instant).
+   */
+  captureKind: CaptureKind
   /**
    * Crop recorded for the current `screenshot()` fixture capture, or null for the
    * full image. Set via the `crop` fixture argument and read by the fixture at
@@ -114,6 +127,7 @@ export function createScreenCIRuntimeContext(
     recordingDir?: string | null
     recordOptions?: RecordOptions | null
     renderOptions?: RenderOptions | undefined
+    captureKind?: CaptureKind
   } = {}
 ): ScreenCIRuntimeContext {
   const defaultRecorder = overrides.recorder ?? NOOP_EVENT_RECORDER
@@ -129,6 +143,7 @@ export function createScreenCIRuntimeContext(
     recordingDir: overrides.recordingDir ?? null,
     recordOptions: overrides.recordOptions ?? null,
     renderOptions: overrides.renderOptions,
+    captureKind: overrides.captureKind ?? 'video',
     crop: null,
     timelineBlocks: [],
     cue: {
@@ -240,6 +255,18 @@ export function getRuntimeRecordOptions(): RecordOptions | null {
 
 export function getRuntimeRenderOptions(): RenderOptions | undefined {
   return getScreenCIRuntimeContext().renderOptions
+}
+
+export function getRuntimeCaptureKind(): CaptureKind {
+  return getScreenCIRuntimeContext().captureKind
+}
+
+/**
+ * True when the active fixture is capturing a screenshot. Cursor moves skip
+ * their animation in this mode since only the final frame is kept.
+ */
+export function isScreenshotCapture(): boolean {
+  return getRuntimeCaptureKind() === 'screenshot'
 }
 
 export function setRuntimeCrop(crop: ScreenshotCropRecord | null): void {

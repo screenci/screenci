@@ -249,8 +249,7 @@ export const RENDER_OPTIONS_DEFAULTS = {
     aspectRatio: '16:9' as AspectRatio,
     quality: '1080p' as Quality,
     background: {
-      backgroundCss:
-        'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+      backgroundCss: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
     } as { assetPath: string; fileHash?: string } | { backgroundCss: string },
   },
 }
@@ -936,9 +935,9 @@ export type ScreenCIConfig = Omit<
    *
    * Matches files like `example.screenci.ts`, `demo.screenci.js`, etc.
    *
-   * Defaults to `'./videos'`.
+   * Defaults to `'./recordings'`.
    */
-  videoDir?: string
+  recordingDir?: string
   /**
    * Options that only affect the `screenci record` command.
    */

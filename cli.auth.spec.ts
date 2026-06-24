@@ -589,7 +589,7 @@ describe('CLI', () => {
       )
     })
 
-    it('prints the sign-in link and returns without hanging when pending', async () => {
+    it('with sign-in waiting disabled, prints the link and returns without hanging when pending', async () => {
       mockReadFileWithSession(storedSessionFile())
       const timeoutSpy = vi.spyOn(global, 'setTimeout')
       mockFetch.mockImplementation(async (input: string | URL) => {
@@ -606,8 +606,12 @@ describe('CLI', () => {
       })
 
       const { ensureScreenciSecret } = await import('./cli')
+      // noPollAuth opts out of waiting (the CI / --no-poll-auth handoff path).
       await expect(
-        ensureScreenciSecret(undefined, { interactive: false })
+        ensureScreenciSecret(undefined, {
+          interactive: false,
+          noPollAuth: true,
+        })
       ).resolves.toBeUndefined()
 
       // A single status check, no polling loop / no scheduled retry.
@@ -656,7 +660,10 @@ describe('CLI', () => {
 
       const { ensureScreenciSecret } = await import('./cli')
       await expect(
-        ensureScreenciSecret(undefined, { interactive: false })
+        ensureScreenciSecret(undefined, {
+          interactive: false,
+          noPollAuth: true,
+        })
       ).resolves.toBeUndefined()
 
       expect(mockFetch).toHaveBeenCalledWith(
@@ -724,6 +731,88 @@ describe('CLI', () => {
         'SCREENCI_SECRET=auth-secret-123\n'
       )
       timeoutSpy.mockRestore()
+    })
+
+    it('waits for sign-in by default (no flag) when not under CI, then continues', async () => {
+      // A plain non-interactive run with no CI marker is a coding agent: it
+      // should wait for sign-in without needing --poll-auth.
+      delete process.env.CI
+      delete process.env.SCREENCI_NONINTERACTIVE
+      mockReadFileWithSession(storedSessionFile())
+      const timeoutSpy = vi.spyOn(global, 'setTimeout').mockImplementation(((
+        fn: () => void
+      ) => {
+        fn()
+        return 0 as unknown as ReturnType<typeof setTimeout>
+      }) as unknown as typeof setTimeout)
+      let pollCount = 0
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.includes('token=stored-token')) {
+          pollCount += 1
+          if (pollCount < 3) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({ status: 'pending' }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              status: 'completed',
+              secret: 'auth-secret-123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        throw new Error(`Unexpected fetch: ${url}`)
+      })
+
+      const { ensureScreenciSecret } = await import('./cli')
+      await expect(
+        ensureScreenciSecret(undefined, { interactive: false })
+      ).resolves.toBe('auth-secret-123')
+
+      expect(pollCount).toBe(3)
+      expect(timeoutSpy).toHaveBeenCalledWith(expect.any(Function), 5_000)
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        `${process.cwd()}/.env`,
+        'SCREENCI_SECRET=auth-secret-123\n'
+      )
+      timeoutSpy.mockRestore()
+    })
+
+    it('throws SignInTimeoutError when sign-in does not complete before the deadline', async () => {
+      delete process.env.CI
+      delete process.env.SCREENCI_NONINTERACTIVE
+      // A zero timeout makes the deadline elapse on the first pending check.
+      process.env.SCREENCI_POLL_AUTH_TIMEOUT_MS = '0'
+      mockReadFileWithSession(storedSessionFile())
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.includes('token=stored-token')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({ status: 'pending' }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        throw new Error(`Unexpected fetch: ${url}`)
+      })
+
+      const { ensureScreenciSecret, SignInTimeoutError } = await import('./cli')
+      await expect(
+        ensureScreenciSecret(undefined, { interactive: false })
+      ).rejects.toBeInstanceOf(SignInTimeoutError)
+
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        `${process.cwd()}/.env`,
+        expect.stringContaining('SCREENCI_SECRET=')
+      )
     })
   })
 

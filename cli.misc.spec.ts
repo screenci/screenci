@@ -863,4 +863,29 @@ describe('CLI', () => {
       expect(parseRecordCliArgs(['--grep', 'x']).languages).toBeUndefined()
     })
   })
+
+  describe('parseRecordCliArgs --poll-auth / --no-poll-auth', () => {
+    it('defaults both poll-auth flags to false', async () => {
+      const { parseRecordCliArgs } = await import('./cli')
+      const parsed = parseRecordCliArgs([])
+      expect(parsed.pollAuth).toBe(false)
+      expect(parsed.noPollAuth).toBe(false)
+    })
+
+    it('parses --poll-auth and keeps it out of pass-through args', async () => {
+      const { parseRecordCliArgs } = await import('./cli')
+      const parsed = parseRecordCliArgs(['--poll-auth', '--grep', 'x'])
+      expect(parsed.pollAuth).toBe(true)
+      expect(parsed.noPollAuth).toBe(false)
+      expect(parsed.otherArgs).toEqual(['--grep', 'x'])
+    })
+
+    it('parses --no-poll-auth and keeps it out of pass-through args', async () => {
+      const { parseRecordCliArgs } = await import('./cli')
+      const parsed = parseRecordCliArgs(['--no-poll-auth', '--grep', 'x'])
+      expect(parsed.noPollAuth).toBe(true)
+      expect(parsed.pollAuth).toBe(false)
+      expect(parsed.otherArgs).toEqual(['--grep', 'x'])
+    })
+  })
 })

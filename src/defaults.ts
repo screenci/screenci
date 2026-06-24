@@ -52,9 +52,9 @@ export const DEFAULT_SCREENSHOT_DEVICE_SCALE_FACTOR = 2
 export const DEFAULT_FPS: FPS = 60
 
 /**
- * Default directory for video files
+ * Default directory for recordings (videos and screenshots)
  */
-export const DEFAULT_VIDEO_DIR: string = './videos'
+export const DEFAULT_RECORDING_DIR: string = './recordings'
 
 /**
  * Default upload policy for `screenci record`

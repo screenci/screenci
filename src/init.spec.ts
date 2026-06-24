@@ -162,6 +162,15 @@ describe('generateReactExampleVideo', () => {
       'element: <Badge label="New" />'
     )
   })
+
+  it('places the overlay with CSS pixel coordinates, not fractions', () => {
+    // Placement fields are CSS pixels in the recording viewport. Fractional
+    // values (e.g. width: 0.18) would rasterize and upload the overlay but
+    // render it sub-pixel, so it never appears in the output.
+    const source = generateReactExampleVideo()
+    expect(source).toContain('x: 1340, y: 110, width: 288')
+    expect(source).not.toMatch(/width:\s*0\.\d/)
+  })
 })
 
 describe('generateIslandReadme', () => {

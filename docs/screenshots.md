@@ -47,11 +47,13 @@ video('Product demo', async ({ page }) => {
 Both produce the same still, framed and hosted identically. The rest of this
 guide applies to either. The sections below detail each.
 
-Screenshots live in the same `*.screenci.ts` files as videos (the `videoDir`), so
+Screenshots live in the same `*.screenci.ts` files as videos (the `recordingDir`), so
 a file can contain any mix of `video()` and `screenshot()` calls. A `screenshot()`
 body runs just like a video body; when it returns, the final page state is
 captured. Narration, audio, and camera motion do not apply to a still and are
-ignored.
+ignored. Because only the final frame is kept, cursor moves are instant during a
+screenshot (the cursor still lands at its target); the smooth gliding animation
+is for videos.
 
 #### You will learn
 

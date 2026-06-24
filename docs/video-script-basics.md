@@ -31,7 +31,7 @@ This opens a browser window and the Playwright Inspector. As you click, type, an
 navigate, it generates Playwright actions for the flow. The output is not a
 ScreenCI video yet. To turn it into one:
 
-- copy the generated code into a `videos/<flow>.screenci.ts` file
+- copy the generated code into a `recordings/<flow>.screenci.ts` file
 - change `test(...)` to `video.localize(...)(...)`
 - add narration through `video.localize({ narration })` (see [Core ScreenCI APIs](#core-screenci-apis))
 
@@ -87,11 +87,11 @@ video.localize({
 <!-- screenci-doc-code-sample:starter-video:end -->
 
 You can define multiple `video()` calls in the same file, or create multiple
-`.screenci.ts` files under `videos/`.
+`.screenci.ts` files under `recordings/`.
 
 ## Configure ScreenCI
 
-Project-wide defaults such as `projectName`, `videoDir`, `baseURL`, and shared
+Project-wide defaults such as `projectName`, `recordingDir`, `baseURL`, and shared
 recording or rendering options live in `screenci.config.ts`.
 
 ```ts

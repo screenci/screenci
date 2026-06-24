@@ -246,9 +246,8 @@ Behavior:
 
 - enables recording timing
 - writes local output into `.screenci/`
-- when `SCREENCI_SECRET` is missing in an interactive terminal, prints a blue one-time link and waits for browser sign-in before starting Playwright
-- when `SCREENCI_SECRET` is missing in a non-interactive session (no terminal, or `SCREENCI_NONINTERACTIVE=1`), does not wait: prints the sign-in link and exits cleanly (exit code `0`, not a failure), so you can sign in in the browser, then rerun `record`, which detects the completed session and continues
-- pass `--poll-auth` in a non-interactive session to wait for sign-in instead of exiting: `record` prints the link, polls every 5 seconds (for up to 5 minutes by default, overridable with `SCREENCI_POLL_AUTH_TIMEOUT_MS` in milliseconds), and continues recording automatically once sign-in completes; if the timeout elapses first it exits cleanly with the link still valid so it can be rerun
+- when `SCREENCI_SECRET` is missing, `record` waits for browser sign-in by default and continues recording once it completes. This is the default at an interactive terminal and in a plain non-interactive session (no terminal, no CI), so a coding agent does not need a flag. It prints the link, polls (every 2 seconds interactively, every 5 seconds otherwise) up to a timeout (15 minutes interactively, 5 minutes otherwise, overridable with `SCREENCI_POLL_AUTH_TIMEOUT_MS` in milliseconds), and continues automatically once sign-in completes. If the timeout elapses first, `record` exits **non-zero** with the link still valid, so rerun it once signed in
+- under CI (`CI=true`), or with `SCREENCI_NONINTERACTIVE=1` or `--no-poll-auth`, `record` does **not** wait: it prints the sign-in link and exits cleanly (exit code `0`), so you can sign in in the browser and rerun `record`, which detects the completed session and continues. A clean exit that printed a sign-in link is a handoff, not a finished recording
 - set `SCREENCI_SECRET` ahead of time (env var or project `.env`) to skip sign-in entirely (the zero-prompt path for CI and automated tooling)
 - caches the pending auth session in `.screenci/link-session.json`, so rerunning `record` reuses the same link until it expires or completes
 - uploads successful recordings when `SCREENCI_SECRET` is available
@@ -259,7 +258,8 @@ Relevant options:
 
 - `-c, --config <path>`
 - `-v, --verbose`
-- `--poll-auth` (non-interactive sessions: wait for sign-in, polling every 5s for up to 5 minutes by default, then continue)
+- `--poll-auth` (force waiting for sign-in; now the default off-CI, kept for backwards compatibility)
+- `--no-poll-auth` (do not wait for sign-in: print the link and exit cleanly if not signed in; the default under CI)
 - `--remote` (trigger the project's GitHub Actions recording workflow instead of recording locally, see below)
 
 Important restriction:

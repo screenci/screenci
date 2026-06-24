@@ -41,7 +41,7 @@ already know Playwright locators, navigation, and waiting, you already know
 most of the automation layer.
 
 ```ts
-// videos/onboarding.screenci.ts
+// recordings/onboarding.screenci.ts
 import { hide, speed, time, video } from 'screenci'
 
 video('Onboarding flow', async ({ page }) => {

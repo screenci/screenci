@@ -10,7 +10,7 @@ still works here. For the Playwright side of the file, see
 [Configuration](https://playwright.dev/docs/test-configuration).
 
 `screenci.config.ts` lives inside the self-contained `screenci/` directory that
-`init` creates, and paths like `videoDir` and `envFile` are resolved relative
+`init` creates, and paths like `recordingDir` and `envFile` are resolved relative
 to it. ScreenCI couples to your app only through a `baseURL` (and optional
 `storageState`). It does not need to live in, or share dependencies with, the
 app it records, which is what keeps it isolated in a monorepo.
@@ -35,7 +35,7 @@ export default defineConfig({
   // Load SCREENCI_SECRET and related env vars from this file.
   envFile: '.env',
   // Look for *.screenci.ts files here.
-  videoDir: './videos',
+  recordingDir: './recordings',
 
   test: {
     // Keep local test runs paced like real recording runs.
@@ -130,7 +130,7 @@ file you set via `envFile`.
 
 ### File locations
 
-- `videoDir` controls where ScreenCI discovers `*.screenci.ts` files.
+- `recordingDir` controls where ScreenCI discovers `*.screenci.ts` files.
 - ScreenCI also maps Playwright `testDir` to this directory automatically.
 
 ### Recording behavior
@@ -321,18 +321,18 @@ format, or staging target than the rest of the project.
 
 ## Default values
 
-| Option                      | Default         |
-| --------------------------- | --------------- |
-| `test.mockRecord`           | `false`         |
-| `videoDir`                  | `'./videos'`    |
-| `record.upload`             | `'passed-only'` |
-| `recordOptions.aspectRatio` | `'16:9'`        |
-| `recordOptions.quality`     | `'1080p'`       |
-| `recordOptions.fps`         | `60`            |
-| `recordOptions.encoder`     | `'fast'`        |
-| `timeout`                   | `1800000`       |
-| `actionTimeout`             | `30000`         |
-| `navigationTimeout`         | `30000`         |
+| Option                      | Default          |
+| --------------------------- | ---------------- |
+| `test.mockRecord`           | `false`          |
+| `recordingDir`              | `'./recordings'` |
+| `record.upload`             | `'passed-only'`  |
+| `recordOptions.aspectRatio` | `'16:9'`         |
+| `recordOptions.quality`     | `'1080p'`        |
+| `recordOptions.fps`         | `60`             |
+| `recordOptions.encoder`     | `'fast'`         |
+| `timeout`                   | `1800000`        |
+| `actionTimeout`             | `30000`          |
+| `navigationTimeout`         | `30000`          |
 
 ## ScreenCI-managed behavior
 
@@ -342,7 +342,7 @@ ScreenCI still owns a small set of Playwright behavior:
 | ----------- | ----------------- | ------------------------------------------ |
 | `retries`   | `0`               | Retrying would overwrite the video         |
 | `testMatch` | `**/*.screenci.*` | Scopes Playwright to video test files only |
-| `testDir`   | `videoDir`        | ScreenCI discovers videos from this path   |
+| `testDir`   | `recordingDir`    | ScreenCI discovers videos from this path   |
 
 It also rejects `viewport` in `use` or project `use`, because ScreenCI derives
 viewport dimensions from `recordOptions`.

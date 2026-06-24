@@ -287,6 +287,7 @@ const _screenshotBase = base.extend<
         recorder,
         page,
         testFilePath,
+        captureKind: 'screenshot',
       })
       recorder.start()
       await withActiveRecordingContext({
@@ -329,6 +330,7 @@ const _screenshotBase = base.extend<
       page,
       testFilePath,
       recordingDir: screenshotDir,
+      captureKind: 'screenshot',
     })
 
     recorder.start()

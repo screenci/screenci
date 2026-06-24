@@ -12,6 +12,11 @@ There are two ways to use it:
   `overlays` names, `audio` track names, and the `renderOptions` / `recordOptions`
   deferral flags. Those items are then edited on the Studio page. Your edits are
   saved and applied automatically to every later upload.
+
+  Opt in **per video and per feature**: each name list and flag is independent,
+  so you can hand Studio just one thing (for example only `overlays`) and leave
+  everything else code-defined. There is no all-or-nothing switch.
+
 - **Render a one-off version.** Any video can be opened in Studio and rendered
   as a one-off, overriding any code-defined narration, overlays, or render
   options for a single render. One-off renders are not saved and do not change
@@ -40,6 +45,12 @@ narration, voices, overlays, audio, and render options the video uses. Items you
 opted into from code via `video.studio({...})` (`narration`, `text`, `overlays`,
 `audio`, and the `renderOptions` / `recordOptions` flags) are editable; anything
 defined in code is shown read-only and marked with a **code** badge.
+
+Click a **code** badge to see how to edit that value: it shows the exact
+`video.studio({...})` line to opt the feature in for saved edits, links to that
+feature's guide, and offers to create a one-off version to change it just once.
+Each section also has a **How to edit from Studio** link to the matching guide
+below.
 
 Edits autosave: a status line shows **Saving...** and then **All changes
 saved**. The saved set is this video's Studio configuration, and it is applied
@@ -170,9 +181,12 @@ string, so the first recording still succeeds and registers the field in Studio.
 Unlike narration, voices, and overlays (which are applied when a version
 renders), on-screen text is captured into the recording itself. Studio cannot
 re-render it: saved text values are injected by `screenci record` and take effect
-on the **next recording**, not on a one-off render. So the flow is: record once
-(unset fields capture blank), set the copy in the Text section, then re-record to
-capture it.
+on the **next recording**, not when you click **Render** and not on a one-off.
+So the flow is: record once (unset fields capture blank), set the copy in the
+Text section, then re-record to capture it. The Text section shows this reminder
+inline, with a **Re-record this video** button that triggers a fresh recording
+from the web when the project is connected to GitHub (otherwise it links you to
+connect GitHub first).
 
 See [Narration and Localization](/docs/guides/narration-and-localization) for the
 code-side `text` fixture.
@@ -264,8 +278,11 @@ video.studio({ renderOptions: true })('Product demo', async ({ page }) => {
 
 Set `recordOptions: true` to defer the record options (aspect ratio, quality,
 fps) to Studio as well. Unlike render options, record options change the
-captured viewport and encode, so they are fetched before the recording runs and
-applied to that capture (later uploads reuse the saved values):
+captured viewport and encode, so they take effect on the **next recording**, not
+when you click **Render**. They are fetched before the recording runs and applied
+to that capture (later uploads reuse the saved values). Like the Text section,
+the Recording options section shows this reminder inline with a **Re-record this
+video** button:
 
 ```ts
 video.studio({ renderOptions: true, recordOptions: true })(

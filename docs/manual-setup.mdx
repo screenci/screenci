@@ -223,7 +223,13 @@ yarn screenci record
 
 If `SCREENCI_SECRET` is missing, `screenci record` prints a one-time ScreenCI
 link, waits for browser sign-in, saves the secret into the project env file,
-and then continues. Pending auth state is cached in
+and then continues recording automatically. This waiting is the default both at
+an interactive terminal and in a plain non-interactive run (for example a coding
+agent), so you do not need a flag. Under CI (`CI=true`) it does not wait: it
+prints the link and exits cleanly, so set `SCREENCI_SECRET` (from your ScreenCI
+secrets page) ahead of time for CI runs. If you wait for sign-in and it does not
+complete within the timeout, `record` exits with a non-zero status (the link
+stays valid, so rerun once signed in). Pending auth state is cached in
 `.screenci/link-session.json`, so rerunning `record` reuses the same link until
 it expires or completes. The upload contains the raw recording, not your source
 code.

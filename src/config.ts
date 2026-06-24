@@ -1,6 +1,6 @@
 import type { ScreenCIConfig, ExtendedScreenCIConfig } from './types.js'
 import {
-  DEFAULT_VIDEO_DIR,
+  DEFAULT_RECORDING_DIR,
   DEFAULT_RECORD_UPLOAD_POLICY,
   DEFAULT_TIMEOUT,
   DEFAULT_ACTION_TIMEOUT,
@@ -27,7 +27,7 @@ import {
  *
  * export default defineConfig({
  *   projectName: 'my-project',
- *   videoDir: './videos',
+ *   recordingDir: './recordings',
  *   use: {
  *     baseURL: 'https://app.example.com',
  *     recordOptions: {
@@ -101,8 +101,17 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
   ) {
     throw new Error(
       'screenci does not support "testDir" option. ' +
-        'Use "videoDir" instead to specify the directory containing your *.screenci.* files. ' +
-        'Defaults to "./videos".'
+        'Use "recordingDir" instead to specify the directory containing your *.screenci.* files. ' +
+        'Defaults to "./recordings".'
+    )
+  }
+
+  // Runtime check for the renamed videoDir option
+  if ('videoDir' in config) {
+    throw new Error(
+      'screenci renamed "videoDir" to "recordingDir". ' +
+        'Rename the option in your config to specify the directory containing your *.screenci.* files. ' +
+        'Defaults to "./recordings".'
     )
   }
 
@@ -123,7 +132,7 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
     )
   }
 
-  const { videoDir, record, test, ...rest } = config
+  const { recordingDir, record, test, ...rest } = config
   const reporter =
     rest.reporter !== undefined ? normalizeReporter(rest.reporter) : undefined
 
@@ -146,9 +155,9 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
       rest.use?.navigationTimeout ?? DEFAULT_NAVIGATION_TIMEOUT,
   }
 
-  // Map videoDir to testDir and keep screenci-managed defaults in place.
+  // Map recordingDir to testDir and keep screenci-managed defaults in place.
   return {
-    testDir: videoDir ?? DEFAULT_VIDEO_DIR,
+    testDir: recordingDir ?? DEFAULT_RECORDING_DIR,
     testMatch: [
       '**/*.screenci.?(c|m)[jt]s?(x)',
       // Deprecated alias kept only for backward compatibility: legacy

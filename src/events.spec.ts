@@ -510,8 +510,7 @@ describe('EventRecorder', () => {
       expect((ro.output as Record<string, unknown>).aspectRatio).toBe('16:9')
       expect((ro.output as Record<string, unknown>).quality).toBe('1080p')
       expect((ro.output as Record<string, unknown>).background).toEqual({
-        backgroundCss:
-          'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+        backgroundCss: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
       })
       // recording defaults
       expect((ro.recording as Record<string, unknown>).size).toBe(1.0)
@@ -639,8 +638,7 @@ describe('EventRecorder', () => {
       )
       expect((ro.narration as Record<string, unknown>).dropShadow).toBe(1)
       expect((ro.output as Record<string, unknown>).background).toEqual({
-        backgroundCss:
-          'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+        backgroundCss: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
       })
     })
 

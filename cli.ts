@@ -1414,7 +1414,7 @@ export function annotateRecordingDataWithAssetHashes(
 function hint401(status: number, secret: string): string {
   if (status !== 401 || !secret) return ''
   const frontendUrl = getDevFrontendUrl()
-  return `\nThe secret may have been deleted or belongs to a different organisation. Check your secrets at ${frontendUrl}/secrets`
+  return `\nThe secret may have been deleted. Check your secrets at ${frontendUrl}/secrets`
 }
 
 export function formatUploadStartFailureMessage(

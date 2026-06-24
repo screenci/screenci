@@ -789,7 +789,6 @@ const _videoBase = base.extend<
       renderOptions,
     })
 
-    bindStillCaptureToPage(page)
     await setupMouseTracking(page, recorder)
 
     // Navigate to blank page to ensure window is ready and rendered
@@ -813,6 +812,13 @@ const _videoBase = base.extend<
     // Mark the moment the video recording actually begins after the cursor is positioned.
     recorder.start()
 
+    // Wrap `page.screenshot()` only now, AFTER the screen recorder has started.
+    // The recorder captures a baseline frame via `page.screenshot()` inside
+    // `screenRecorder.start()`; wrapping earlier intercepted that internal call
+    // and leaked a spurious `screenshot` still into `.screenci/`. Restored in the
+    // `finally` below so the recorder's pause/finalize stays native too.
+    const restoreStillCapture = bindStillCaptureToPage(page)
+
     try {
       await withActiveRecordingContext({
         runtimeContext,
@@ -827,6 +833,7 @@ const _videoBase = base.extend<
         },
       })
     } finally {
+      restoreStillCapture()
       await screenRecorder.pause()
       recordingFinalizationQueue.push({ recorder: screenRecorder })
 

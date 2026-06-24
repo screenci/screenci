@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
-import { resolveStillName, writeStillRecording } from './stillCapture.js'
+import type { Page } from '@playwright/test'
+import {
+  bindStillCaptureToPage,
+  resolveStillName,
+  writeStillRecording,
+} from './stillCapture.js'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 
 describe('resolveStillName', () => {
@@ -22,6 +27,53 @@ describe('resolveStillName', () => {
     expect(resolveStillName('hero', undefined, used)).toBe('hero')
     expect(resolveStillName('hero', undefined, used)).toBe('hero 2')
     expect(resolveStillName('hero', undefined, used)).toBe('hero 3')
+  })
+})
+
+describe('bindStillCaptureToPage', () => {
+  // Wrapping must be reversible. The screen recorder captures a baseline frame
+  // via `page.screenshot()` when recording starts (and may capture on
+  // pause/finalize). Those internal calls run while the wrapper is NOT installed:
+  // the video fixture binds only around the user body and restores afterwards, so
+  // the recorder's own captures never leak a `screenshot` still into `.screenci/`.
+  function withRecordingDisabled<T>(fn: () => T): T {
+    const previous = process.env.SCREENCI_RECORDING
+    delete process.env.SCREENCI_RECORDING
+    try {
+      return fn()
+    } finally {
+      if (previous === undefined) delete process.env.SCREENCI_RECORDING
+      else process.env.SCREENCI_RECORDING = previous
+    }
+  }
+
+  it('wraps screenshot while bound and restores the native one', async () => {
+    await withRecordingDisabled(async () => {
+      const native = vi.fn(async () => Buffer.from('native'))
+      const page = { screenshot: native } as unknown as Page
+
+      const restore = bindStillCaptureToPage(page)
+
+      // While bound, the wrapper strips the screenci-only keys before delegating.
+      await (page.screenshot as (o?: unknown) => Promise<Buffer>)({
+        name: 'hero',
+        type: 'png',
+      })
+      expect(native).toHaveBeenCalledTimes(1)
+      expect(native).toHaveBeenLastCalledWith({ type: 'png' })
+
+      native.mockClear()
+      restore()
+
+      // After restore, the native screenshot is back: options pass through
+      // untouched (the recorder's internal baseline capture is no longer wrapped).
+      await (page.screenshot as (o?: unknown) => Promise<Buffer>)({
+        name: 'hero',
+        type: 'png',
+      })
+      expect(native).toHaveBeenCalledTimes(1)
+      expect(native).toHaveBeenLastCalledWith({ name: 'hero', type: 'png' })
+    })
   })
 })
 

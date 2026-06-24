@@ -164,8 +164,15 @@ export async function writeStillRecording(params: {
  * Bound only to the `video()` fixture's page (never the `screenshot()` fixture's),
  * so the screenshot fixture's own implicit capture and the overlay rasterizer
  * keep the native behavior.
+ *
+ * Returns a restore function that reinstalls the native `page.screenshot`. The
+ * caller binds the wrapper only around the user's recording body, NOT around the
+ * screen recorder's own lifecycle: the recorder captures a baseline frame via
+ * `page.screenshot()` when recording starts (and may capture again on
+ * pause/finalize), and those internal calls must stay native so they do not leak
+ * a spurious `screenshot` still into `.screenci/`.
  */
-export function bindStillCaptureToPage(page: Page): void {
+export function bindStillCaptureToPage(page: Page): () => void {
   const original = page.screenshot.bind(page)
   const usedNames = new Set<string>()
 
@@ -218,4 +225,8 @@ export function bindStillCaptureToPage(page: Page): void {
   }
 
   ;(page as unknown as { screenshot: typeof wrapped }).screenshot = wrapped
+
+  return () => {
+    ;(page as unknown as { screenshot: typeof original }).screenshot = original
+  }
 }

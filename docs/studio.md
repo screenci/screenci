@@ -129,7 +129,7 @@ together with a direct link to Studio:
 
 ```
 Rendering for "Checkout walkthrough" is on hold. Configure it in Studio:
-https://app.screenci.com/project/<projectId>/video/<videoId>/studio
+https://app.screenci.com/project/<projectId>/video/<videoId>?studio
 ```
 
 After the video has been configured once, subsequent uploads reuse the saved

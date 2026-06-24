@@ -1369,7 +1369,7 @@ describe('CLI', () => {
 
       expect(
         formatStudioUrl('https://app.screenci.test', 'project_1', 'video_2')
-      ).toBe('https://app.screenci.test/project/project_1/video/video_2/studio')
+      ).toBe('https://app.screenci.test/project/project_1/video/video_2?studio')
     })
 
     it('forwards ELEVENLABS_API_KEY during upload requests when configured', async () => {

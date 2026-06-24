@@ -382,7 +382,9 @@ export function formatStudioUrl(
   projectId: string,
   videoId: string
 ): string {
-  return `${appUrl}/project/${projectId}/video/${videoId}/studio`
+  // The video hub resolves `?studio` to the right language page and scrolls it
+  // to Studio, so we never need to guess the language in the printed link.
+  return `${appUrl}/project/${projectId}/video/${videoId}?studio`
 }
 
 type OrgPlan = 'free' | 'starter' | 'business'

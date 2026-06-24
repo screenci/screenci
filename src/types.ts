@@ -402,7 +402,10 @@ export type Easing =
 
 export type AutoZoomOptions = {
   easing?: Easing
+  /** Duration in milliseconds for zoom-in transitions. */
   duration?: number
+  /** Duration in milliseconds for zoom-out transitions. Defaults to `duration` if not set. */
+  zoomOutDuration?: number
   /** 0–1: fraction of output dimensions visible in the zoomed viewport (default 0.65) */
   amount?: number
   /** 0–1: extra locator framing applied as a uniform scale multiplier (default 0.2 = 20% larger box). */

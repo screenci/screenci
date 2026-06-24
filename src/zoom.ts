@@ -8,6 +8,13 @@ type FocusChangeZoom = NonNullable<FocusChangeEvent['zoom']>
 
 export type ResolvedAutoZoomOptions = Required<AutoZoomOptions>
 
+export function resolveEffectiveDuration(
+  options: ResolvedAutoZoomOptions,
+  isZoomOut: boolean
+): number {
+  return isZoomOut ? options.zoomOutDuration : options.duration
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }

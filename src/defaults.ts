@@ -16,12 +16,13 @@ import type {
 // - README.md
 export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
   easing: 'ease-out',
-  duration: 900,
+  duration: 750,
+  zoomOutDuration: 600,
   amount: 0.65,
   padding: 0.2,
   centering: 1,
   preZoomDelay: 0,
-  postZoomDelay: 300,
+  postZoomDelay: 200,
 }
 
 /**

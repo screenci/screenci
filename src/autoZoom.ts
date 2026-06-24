@@ -146,6 +146,7 @@ export async function autoZoom(
     mode: 'auto',
     options: {
       duration: resolvedOptions.duration,
+      zoomOutDuration: resolvedOptions.zoomOutDuration,
       easing: resolvedOptions.easing as Easing,
       amount: resolvedOptions.amount,
       padding: resolvedOptions.padding,
@@ -164,7 +165,8 @@ export async function autoZoom(
     if (currentAutoZoomState.currentZoomViewport !== null) {
       const zoomOutStartMs = Date.now()
       const zoomOutDuration = resolveRecordingTimingDuration(
-        currentAutoZoomState.options.duration ?? DEFAULT_ZOOM_OPTIONS.duration
+        currentAutoZoomState.options.zoomOutDuration ??
+          DEFAULT_ZOOM_OPTIONS.zoomOutDuration
       )
       activeRecorder.addInput('focusChange', undefined, [
         {

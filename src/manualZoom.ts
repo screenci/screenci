@@ -17,6 +17,7 @@ import {
 import {
   buildZoomEvent,
   resolveAutoZoomOptions,
+  resolveEffectiveDuration,
   resolveZoomTarget,
 } from './zoom.js'
 import type { AutoZoomOptions } from './types.js'
@@ -98,14 +99,17 @@ async function zoomToPoint(
     currentZoomEnd,
   })
 
+  const isZoomOut = targetViewport.width >= currentZoomEnd.size.widthPx
+  const effectiveDuration = resolveEffectiveDuration(resolvedOptions, isZoomOut)
+
   const focusChangeStartMs = Date.now()
   if (resolvedOptions.preZoomDelay > 0) {
     await sleep(resolvedOptions.preZoomDelay)
   }
 
   const zoomStartMs = Date.now()
-  if (resolvedOptions.duration > 0) {
-    await sleep(resolvedOptions.duration)
+  if (effectiveDuration > 0) {
+    await sleep(effectiveDuration)
   }
   const zoomEndMs = Date.now()
 
@@ -199,13 +203,14 @@ export async function resetZoom(options: AutoZoomOptions = {}): Promise<void> {
       heightPx: viewport.viewportSize.height,
     },
   }
+  const resetDuration = resolvedOptions.zoomOutDuration
   const focusChangeStartMs = Date.now()
   if (resolvedOptions.preZoomDelay > 0) {
     await sleep(resolvedOptions.preZoomDelay)
   }
   const zoomStartMs = Date.now()
-  if (resolvedOptions.duration > 0) {
-    await sleep(resolvedOptions.duration)
+  if (resetDuration > 0) {
+    await sleep(resetDuration)
   }
   const zoomEndMs = Date.now()
   if (resolvedOptions.postZoomDelay > 0) {

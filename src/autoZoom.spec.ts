@@ -178,7 +178,7 @@ describe('autoZoom', () => {
       })
       await vi.runAllTimersAsync()
       await p
-      expect(durationDuringFn).toBe(900)
+      expect(durationDuringFn).toBe(750)
     })
 
     it('exposes zoom easing during fn execution', async () => {
@@ -223,7 +223,7 @@ describe('autoZoom', () => {
       })
       await vi.runAllTimersAsync()
       await p
-      expect(postZoomDelayDuringFn).toBe(300)
+      expect(postZoomDelayDuringFn).toBe(200)
     })
 
     it('zoom duration is absent after fn completes', async () => {
@@ -402,11 +402,13 @@ describe('autoZoom', () => {
       })
 
       let resolved = false
-      const p = autoZoom(() => {}, { duration: 300, postZoomDelay: 0 }).then(
-        () => {
-          resolved = true
-        }
-      )
+      const p = autoZoom(() => {}, {
+        duration: 300,
+        zoomOutDuration: 300,
+        postZoomDelay: 0,
+      }).then(() => {
+        resolved = true
+      })
 
       await Promise.resolve()
       expect(resolved).toBe(false)
@@ -434,7 +436,11 @@ describe('autoZoom', () => {
         viewportSize: { width: 1280, height: 720 },
       })
 
-      const first = autoZoom(() => {}, { duration: 300, postZoomDelay: 0 })
+      const first = autoZoom(() => {}, {
+        duration: 300,
+        zoomOutDuration: 300,
+        postZoomDelay: 0,
+      })
       await vi.advanceTimersByTimeAsync(300)
       await first
 
@@ -448,7 +454,11 @@ describe('autoZoom', () => {
         viewportSize: { width: 1280, height: 720 },
       })
 
-      const second = autoZoom(() => {}, { duration: 300, postZoomDelay: 0 })
+      const second = autoZoom(() => {}, {
+        duration: 300,
+        zoomOutDuration: 300,
+        postZoomDelay: 0,
+      })
       await vi.advanceTimersByTimeAsync(300)
       await expect(second).resolves.toBeUndefined()
     })
@@ -465,7 +475,7 @@ describe('autoZoom', () => {
           await vi.advanceTimersByTimeAsync(800)
           order.push('callback-end')
         },
-        { preZoomDelay: 200, postZoomDelay: 0 }
+        { preZoomDelay: 200, zoomOutDuration: 0, postZoomDelay: 0 }
       )
 
       await Promise.resolve()

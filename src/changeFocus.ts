@@ -17,6 +17,7 @@ import { logger } from './logger.js'
 import {
   buildZoomEvent,
   resolveAutoZoomOptions,
+  resolveEffectiveDuration,
   resolveZoomTarget,
 } from './zoom.js'
 import {
@@ -1466,6 +1467,8 @@ export async function changeFocus(
         y: plan.finalLocatorRect.y + plan.finalLocatorRect.height / 2,
       }
 
+  const isZoomOut = plan.targetViewport.width >= currentZoomEnd.size.widthPx
+
   const timing =
     mouseMove !== undefined
       ? {
@@ -1482,7 +1485,12 @@ export async function changeFocus(
           ),
           easing: mouseMove.easing,
         }
-      : focusTiming
+      : {
+          ...focusTiming,
+          duration: resolveRecordingTimingDuration(
+            resolveEffectiveDuration(focusOptions, isZoomOut)
+          ),
+        }
 
   const mouseMovePlan = resolveMouseMovePlan({
     mouseMove,

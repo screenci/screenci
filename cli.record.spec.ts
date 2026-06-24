@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { createHash } from 'node:crypto'
 import type { ChildProcess } from 'child_process'
 import { EventEmitter } from 'events'
 import { Readable } from 'stream'
@@ -2037,6 +2038,120 @@ describe('CLI', () => {
           size: Buffer.from('nested-asset').byteLength,
         }),
       ])
+    })
+
+    it('streams raw asset bytes (not base64) to /asset/stream with metadata headers', async () => {
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({
+            events: [
+              {
+                type: 'assetStart',
+                timeMs: 0,
+                name: 'nested-clip',
+                kind: 'video',
+                path: './asset.mp4',
+                audio: 0,
+                fullScreen: true,
+              },
+            ],
+            metadata: {
+              videoName: 'Demo',
+              sourceFilePath: 'videos/nested/demo.screenci.ts',
+            },
+          })
+        }
+        if (pathString.endsWith('videos/nested/asset.mp4')) {
+          return Buffer.from('nested-asset')
+        }
+        throw new Error(`ENOENT: ${pathString}`)
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') || path.endsWith('recording.mp4')
+      )
+
+      let assetPut: { url: string; init: RequestInit } | undefined
+      mockFetch.mockImplementation(
+        async (input: string | URL, init?: RequestInit) => {
+          const url = String(input)
+          if (url.endsWith('/cli/upload/start')) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({
+                recordingId: 'recording_123',
+                projectId: 'project_123',
+              }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          if (url.endsWith('/asset/check')) {
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({ exists: false }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          if (url.endsWith('/asset/stream')) {
+            assetPut = { url, init: init! }
+            return {
+              ok: true,
+              status: 200,
+              json: vi.fn().mockResolvedValue({ storageKey: 'assets/x.mp4' }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+      )
+
+      const { uploadRecordings } = await import('./cli')
+      await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(assetPut).toBeDefined()
+      expect(assetPut!.url).toBe(
+        'https://api.screenci.test/cli/upload/recording_123/asset/stream'
+      )
+      expect(assetPut!.init.method).toBe('PUT')
+
+      const headers = assetPut!.init.headers as Record<string, string>
+      expect(headers['Content-Type']).toBe('video/mp4')
+      expect(headers['X-ScreenCI-File-Hash']).toBe(
+        createHash('sha256').update(Buffer.from('nested-asset')).digest('hex')
+      )
+      expect(headers['X-ScreenCI-Asset-Path']).toBe(
+        encodeURIComponent('./asset.mp4')
+      )
+
+      // The body is the raw buffer, not a base64 JSON string. This is the whole
+      // point: base64 would overflow Node's max string length on large assets.
+      const body = assetPut!.init.body
+      expect(typeof body).not.toBe('string')
+      expect(Buffer.from(body as Buffer).toString()).toBe('nested-asset')
+
+      // No request anywhere carried a base64 payload.
+      const sentBase64 = mockFetch.mock.calls.some(([, init]) => {
+        const b = (init as RequestInit | undefined)?.body
+        return typeof b === 'string' && b.includes('fileBase64')
+      })
+      expect(sentBase64).toBe(false)
     })
 
     it('returns failure state when some recordings do not upload', async () => {

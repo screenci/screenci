@@ -367,7 +367,13 @@ type StudioOverrides<Args, SD> = ('narration' extends keyof Args
       : { audio: Record<StudioAudioNamesOf<SD>, AudioController> }
     : object)
 
-type MergeArgs<Args, O> = Omit<Args, keyof O> & O
+type MergeArgs<Args, O> = {
+  [K in keyof Args | keyof O]: K extends keyof O
+    ? O[K]
+    : K extends keyof Args
+      ? Args[K]
+      : never
+}
 
 type BodyFn<Args> = (args: Args, testInfo: TestInfo) => void | Promise<void>
 

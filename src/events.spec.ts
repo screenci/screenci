@@ -1028,4 +1028,166 @@ describe('EventRecorder', () => {
       })
     })
   })
+
+  describe('transition snapping', () => {
+    it('snaps assetStart to hideEnd when they are back-to-back within a few ms (hide + overlay)', () => {
+      recorder.start()
+      now = 1200
+      recorder.addHideStart()
+      now = 2500
+      recorder.addHideEnd()
+      now = 2503
+      recorder.addAssetStart('clip', {
+        kind: 'video',
+        path: 'clip.mp4',
+        audio: 1,
+        fullScreen: true,
+      })
+
+      const events = recorder.getEvents().slice(1)
+      expect(events[1]).toMatchObject({ type: 'hideEnd', timeMs: 1500 })
+      expect(events[2]).toMatchObject({ type: 'assetStart', timeMs: 1500 })
+    })
+
+    it('snaps assetStart and patches cueStart to hideEnd when a cue fires in the gap (hide + cue + overlay)', () => {
+      recorder.start()
+      now = 1000
+      recorder.addHideStart()
+      now = 2000
+      recorder.addHideEnd()
+      now = 2084
+      recorder.addCueStart('Hello', 'agent')
+      now = 2086
+      recorder.addAssetStart('clip', {
+        kind: 'video',
+        path: 'clip.mp4',
+        audio: 1,
+        fullScreen: true,
+      })
+
+      const events = recorder.getEvents().slice(1)
+      expect(events[1]).toMatchObject({ type: 'hideEnd', timeMs: 1000 })
+      // cueStart is patched to match the snap so narration starts with the overlay
+      expect(events[2]).toMatchObject({ type: 'cueStart', timeMs: 1000 })
+      expect(events[3]).toMatchObject({ type: 'assetStart', timeMs: 1000 })
+    })
+
+    it('snaps hideStart to assetEnd within a few ms (overlay + hide)', () => {
+      recorder.start()
+      now = 1100
+      recorder.addAssetStart('clip', {
+        kind: 'video',
+        path: 'clip.mp4',
+        audio: 1,
+        fullScreen: true,
+      })
+      now = 3100
+      recorder.addAssetEnd('clip', 'wait')
+      now = 3103
+      recorder.addHideStart()
+
+      const events = recorder.getEvents().slice(1)
+      expect(events[1]).toMatchObject({ type: 'assetEnd', timeMs: 2100 })
+      expect(events[2]).toMatchObject({ type: 'hideStart', timeMs: 2100 })
+    })
+
+    it('snaps assetStart to assetEnd within a few ms (overlay + overlay)', () => {
+      recorder.start()
+      now = 1000
+      recorder.addAssetStart('a', {
+        kind: 'video',
+        path: 'a.mp4',
+        audio: 1,
+        fullScreen: true,
+      })
+      now = 3000
+      recorder.addAssetEnd('a', 'wait')
+      now = 3004
+      recorder.addAssetStart('b', {
+        kind: 'video',
+        path: 'b.mp4',
+        audio: 1,
+        fullScreen: true,
+      })
+
+      const events = recorder.getEvents().slice(1)
+      expect(events[1]).toMatchObject({ type: 'assetEnd', timeMs: 2000 })
+      expect(events[2]).toMatchObject({ type: 'assetStart', timeMs: 2000 })
+    })
+
+    it('snaps addPendingAssetStart to hideEnd within a few ms', () => {
+      recorder.start()
+      now = 1500
+      recorder.addHideEnd()
+      now = 1503
+      recorder.addPendingAssetStart('hint', {
+        kind: 'image',
+        durationMs: 1000,
+        fullScreen: true,
+        request: {
+          kind: 'image',
+          name: 'hint',
+          html: '<div/>',
+          css: '',
+          capturePadding: 0,
+          deviceScaleFactor: 2,
+        },
+      })
+
+      const events = recorder.getEvents().slice(1)
+      expect(events[0]).toMatchObject({ type: 'hideEnd', timeMs: 500 })
+      expect(events[1]).toMatchObject({ type: 'assetStart', timeMs: 500 })
+    })
+
+    it('snaps hideStart to hideEnd within a few ms (hide + hide)', () => {
+      recorder.start()
+      now = 1000
+      recorder.addHideStart()
+      now = 2000
+      recorder.addHideEnd()
+      now = 2004
+      recorder.addHideStart()
+      now = 3000
+      recorder.addHideEnd()
+
+      const events = recorder.getEvents().slice(1)
+      expect(events[1]).toMatchObject({ type: 'hideEnd', timeMs: 1000 })
+      expect(events[2]).toMatchObject({ type: 'hideStart', timeMs: 1000 })
+    })
+
+    it('does not snap a direct gap that exceeds the small direct threshold', () => {
+      recorder.start()
+      now = 1000
+      recorder.addHideEnd()
+      now = 1010
+      recorder.addAssetStart('clip', {
+        kind: 'video',
+        path: 'clip.mp4',
+        audio: 1,
+        fullScreen: true,
+      })
+
+      const events = recorder.getEvents().slice(1)
+      expect(events[1]).toMatchObject({ type: 'assetStart', timeMs: 10 })
+    })
+
+    it('does not snap a cue-mediated gap that exceeds the frame-sleep compensation', () => {
+      recorder.start()
+      now = 1000
+      recorder.addHideEnd()
+      now = 1200
+      recorder.addCueStart('Hello', 'agent')
+      now = 1203
+      recorder.addAssetStart('clip', {
+        kind: 'video',
+        path: 'clip.mp4',
+        audio: 1,
+        fullScreen: true,
+      })
+
+      const events = recorder.getEvents().slice(1)
+      // gap 203ms > SNAP_DIRECT_MS(5) + SNAP_CUE_COMPENSATION_MS(84) = 89ms, no snap
+      expect(events[2]).toMatchObject({ type: 'assetStart', timeMs: 203 })
+    })
+  })
 })

@@ -1547,24 +1547,25 @@ async function uploadAssets(
       }
 
       const fileBuffer = asset.fileBuffer
+      const contentType = asset.contentType
       throwIfAborted()
 
       const res = await withUploadRetry(
         () =>
-          fetch(`${apiUrl}/cli/upload/${recordingId}/asset`, {
+          // Send the raw bytes, not base64-in-JSON: base64 builds a string that
+          // exceeds Node's max string length (~536MB) for large assets. Metadata
+          // travels in headers (URI-encoded so non-ASCII paths stay header-safe).
+          fetch(`${apiUrl}/cli/upload/${recordingId}/asset/stream`, {
             method: 'PUT',
             headers: {
-              'Content-Type': 'application/json',
+              'Content-Type': contentType,
+              'Content-Length': String(fileBuffer.byteLength),
               'X-ScreenCI-Secret': secret,
+              'X-ScreenCI-File-Hash': asset.fileHash,
+              'X-ScreenCI-Asset-Size': String(asset.size),
+              'X-ScreenCI-Asset-Path': encodeURIComponent(asset.path),
             },
-            body: JSON.stringify({
-              fileHash: asset.fileHash,
-              fileBase64: fileBuffer.toString('base64'),
-              contentType: asset.contentType,
-              size: asset.size,
-              path: asset.path,
-              ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
-            }),
+            body: fileBuffer as unknown as BodyInit,
             signal,
           }),
         signal

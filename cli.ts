@@ -12,7 +12,13 @@ import {
 import { createHash, randomUUID } from 'crypto'
 import { createRequire } from 'module'
 import { appendFile, readdir, readFile, stat, writeFile } from 'fs/promises'
-import { delimiter, dirname, relative as pathRelative, resolve } from 'path'
+import {
+  delimiter,
+  dirname,
+  isAbsolute,
+  relative as pathRelative,
+  resolve,
+} from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { Command, CommanderError } from 'commander'
 import pc from 'picocolors'
@@ -1469,6 +1475,14 @@ export function printUploadStartFailureMessage(
   logger.warn(message)
 }
 
+export function displayAssetPath(assetPath: string): string {
+  if (!isAbsolute(assetPath)) {
+    return assetPath
+  }
+  const rel = pathRelative(process.cwd(), assetPath)
+  return rel.length > 0 ? rel : assetPath
+}
+
 async function uploadAssets(
   assets: PreparedUploadAsset[],
   apiUrl: string,
@@ -1518,7 +1532,9 @@ async function uploadAssets(
 
       const checkBody = (await checkRes.json()) as { exists: boolean }
       if (checkBody.exists) {
-        logInfo(`${pc.green('✔')} Asset already exists: ${asset.path}`)
+        logInfo(
+          `${pc.green('✔')} Asset already exists: ${displayAssetPath(asset.path)}`
+        )
         continue
       }
 
@@ -1554,14 +1570,16 @@ async function uploadAssets(
       if (!res.ok) {
         const text = await res.text()
         if (res.status === 409 && text.includes('already exists')) {
-          logInfo(`${pc.green('✔')} Asset already exists: ${asset.path}`)
+          logInfo(
+            `${pc.green('✔')} Asset already exists: ${displayAssetPath(asset.path)}`
+          )
         } else {
           throw new UploadAssetError(
             `Failed to upload asset ${asset.path}: ${res.status} ${text}${hint401(res.status, secret)}`
           )
         }
       } else {
-        logInfo(`Asset uploaded: ${asset.path}`)
+        logInfo(`Asset uploaded: ${displayAssetPath(asset.path)}`)
       }
     } catch (err) {
       if (isUploadCancelledError(err)) {

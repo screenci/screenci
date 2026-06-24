@@ -396,6 +396,29 @@ describe('CLI', () => {
       )
     })
 
+    it('shows asset paths relative to the current working directory', async () => {
+      const { displayAssetPath } = await import('./cli')
+
+      const cwdSpy = vi
+        .spyOn(process, 'cwd')
+        .mockReturnValue('/home/olli/projects/demo-saas/testagain2/screenci')
+
+      expect(
+        displayAssetPath(
+          '/home/olli/projects/demo-saas/testagain2/screenci/.screenci/React overlay/generated/badge.png'
+        )
+      ).toBe('.screenci/React overlay/generated/badge.png')
+
+      cwdSpy.mockRestore()
+    })
+
+    it('leaves relative asset paths unchanged', async () => {
+      const { displayAssetPath } = await import('./cli')
+
+      expect(displayAssetPath('logo.png')).toBe('logo.png')
+      expect(displayAssetPath('./assets/logo.png')).toBe('./assets/logo.png')
+    })
+
     it('should exit if no command provided', async () => {
       process.argv = ['node', 'cli.js']
 

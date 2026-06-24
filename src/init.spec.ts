@@ -175,6 +175,17 @@ describe('generateReactExampleVideo', () => {
     expect(source).toContain('await highlight.end()')
     expect(source).toContain('await docsLink.click()')
   })
+
+  it('uses a distinct video title so it can coexist with the base example', () => {
+    // Both examples are scaffolded into one project when React overlays are
+    // enabled. Their video titles must differ, or the per-language leaf titles
+    // collide and `screenci test` rejects the run as duplicate titles.
+    expect(generateExampleVideo()).toContain("'How to find docs'")
+    expect(generateReactExampleVideo()).toContain(
+      "'How to find docs with overlays'"
+    )
+    expect(generateReactExampleVideo()).not.toContain("'How to find docs'")
+  })
 })
 
 describe('generateIslandReadme', () => {

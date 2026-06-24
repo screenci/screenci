@@ -1329,7 +1329,7 @@ video.localize({
       docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
     },
   },
-})('How to find docs', async ({ page, narration }) => {
+})('How to find docs with overlays', async ({ page, narration }) => {
   // Run setup without showing these actions in the final recording.
   await hide(async () => {
     await page.goto('https://screenci.com/')

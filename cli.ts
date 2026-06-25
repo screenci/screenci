@@ -346,6 +346,9 @@ function contentTypeForPath(filePath: string): string {
     mp4: 'video/mp4',
     webm: 'video/webm',
     mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    m4a: 'audio/mp4',
+    aac: 'audio/aac',
     svg: 'image/svg+xml',
   }
   return contentTypeMap[ext] ?? 'application/octet-stream'
@@ -360,6 +363,10 @@ type PreparedUploadAsset = {
   name?: string
   fileBuffer?: Buffer
   contentType?: string
+  // Skip the existence check and always push to the server.
+  // Used for per-recording ephemeral captures (screen audio) that are never
+  // shared across recordings and must not be silently skipped.
+  alwaysUpload?: boolean
 }
 
 type UploadCandidate = {
@@ -1260,6 +1267,30 @@ export async function collectUploadAssets(
       continue
     }
 
+    if (event.type === 'audioStart') {
+      // Studio audio tracks have no local file.
+      if ('studio' in event && event.studio === true) continue
+      if (!event.fileHash || assets.has(`hash:${event.fileHash}`)) continue
+      const resolvedFile = await readRecordingFile(
+        event.path,
+        configDir,
+        sourceFilePath
+      )
+      if (resolvedFile === null) {
+        logger.warn(`Audio file not found, skipping upload: ${event.path}`)
+        continue
+      }
+      assets.set(`hash:${event.fileHash}`, {
+        fileHash: event.fileHash,
+        path: event.path,
+        size: resolvedFile.buffer.byteLength,
+        fileBuffer: resolvedFile.buffer,
+        contentType: contentTypeForPath(resolvedFile.resolvedPath),
+        ...(event.name === '__screen' && { alwaysUpload: true }),
+      })
+      continue
+    }
+
     if (event.type === 'videoCueStart') {
       // Single-language: hash already computed during recording, use assetPath to read file
       if (
@@ -1505,39 +1536,41 @@ async function uploadAssets(
   for (const asset of assets) {
     throwIfAborted()
     try {
-      const checkRes = await withUploadRetry(
-        () =>
-          fetch(`${apiUrl}/cli/upload/${recordingId}/asset/check`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-ScreenCI-Secret': secret,
-            },
-            body: JSON.stringify({
-              fileHash: asset.fileHash,
-              contentType: asset.contentType,
-              size: asset.size,
-              path: asset.path,
-              ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
+      if (!asset.alwaysUpload) {
+        const checkRes = await withUploadRetry(
+          () =>
+            fetch(`${apiUrl}/cli/upload/${recordingId}/asset/check`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-ScreenCI-Secret': secret,
+              },
+              body: JSON.stringify({
+                fileHash: asset.fileHash,
+                contentType: asset.contentType,
+                size: asset.size,
+                path: asset.path,
+                ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
+              }),
+              signal,
             }),
-            signal,
-          }),
-        signal
-      )
-
-      if (!checkRes.ok) {
-        const text = await checkRes.text()
-        throw new UploadAssetError(
-          `Failed to check asset ${asset.path}: ${checkRes.status} ${text}${hint401(checkRes.status, secret)}`
+          signal
         )
-      }
 
-      const checkBody = (await checkRes.json()) as { exists: boolean }
-      if (checkBody.exists) {
-        logInfo(
-          `${pc.green('✔')} Asset already exists: ${displayAssetPath(asset.path)}`
-        )
-        continue
+        if (!checkRes.ok) {
+          const text = await checkRes.text()
+          throw new UploadAssetError(
+            `Failed to check asset ${asset.path}: ${checkRes.status} ${text}${hint401(checkRes.status, secret)}`
+          )
+        }
+
+        const checkBody = (await checkRes.json()) as { exists: boolean }
+        if (checkBody.exists) {
+          logInfo(
+            `${pc.green('✔')} Asset already exists: ${displayAssetPath(asset.path)}`
+          )
+          continue
+        }
       }
 
       if (!asset.fileBuffer || !asset.contentType) {

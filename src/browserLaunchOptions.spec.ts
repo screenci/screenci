@@ -13,4 +13,10 @@ describe('getChromiumLaunchOptions', () => {
     expect(options?.args).toContain('--deny-permission-prompts')
     expect(options?.args).toContain('--disable-notifications')
   })
+
+  it('removes --mute-audio from default args when recording', () => {
+    const options = getChromiumLaunchOptions(true)
+
+    expect(options?.ignoreDefaultArgs).toContain('--mute-audio')
+  })
 })

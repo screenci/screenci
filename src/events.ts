@@ -829,6 +829,15 @@ export interface IEventRecorder {
    * an audio track left open plays to the end of the video.
    */
   addAudioEnd(name: string | undefined, reason?: 'wait'): void
+  /**
+   * Injects a background audio track that starts at `timeMs: 0` (the very
+   * beginning of the recording) and plays to the end of the video. Used to
+   * attach a captured screen-audio file after the recording is complete.
+   *
+   * Unlike {@link addAudioStart} this does not read the wall clock; the
+   * timestamp is always 0 regardless of when it is called.
+   */
+  addScreenAudioTrack(audio: AudioStartPayload): void
   addHideStart(): void
   addHideEnd(): void
   /** Resolved cursor/scroll dispatch intervals from `recordOptions.performance`. */
@@ -872,6 +881,7 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addAudioStart(): void {},
   addStudioAudioStart(): void {},
   addAudioEnd(): void {},
+  addScreenAudioTrack(): void {},
   addHideStart(): void {},
   addHideEnd(): void {},
   getPerformanceIntervals(): PerformanceIntervals {
@@ -1319,6 +1329,20 @@ export class EventRecorder implements IEventRecorder {
       timeMs,
       ...(name !== undefined && { name }),
       ...(reason !== undefined && { reason }),
+    })
+  }
+
+  addScreenAudioTrack(audio: AudioStartPayload): void {
+    this.events.push({
+      type: 'audioStart',
+      timeMs: 0,
+      name: '__screen',
+      path: audio.path,
+      ...(audio.fileHash !== undefined && { fileHash: audio.fileHash }),
+      volume: audio.volume,
+      repeat: audio.repeat,
+      ...(audio.speed !== undefined && { speed: audio.speed }),
+      ...(audio.time !== undefined && { time: audio.time }),
     })
   }
 

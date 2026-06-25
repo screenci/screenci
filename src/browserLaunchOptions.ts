@@ -13,6 +13,7 @@ export function getChromiumLaunchOptions(shouldRecord: boolean):
   | {
       headless: true
       args: string[]
+      ignoreDefaultArgs: string[]
     }
   | undefined {
   if (!shouldRecord) {
@@ -22,5 +23,10 @@ export function getChromiumLaunchOptions(shouldRecord: boolean):
   return {
     headless: true,
     args: [...RECORDING_CHROMIUM_ARGS],
+    // Playwright adds --mute-audio to all headless launches. Remove it so the
+    // browser outputs audio to the system mixer (PulseAudio/PipeWire on Linux,
+    // CoreAudio on macOS, WASAPI on Windows) where the ffmpeg monitor capture
+    // can pick it up.
+    ignoreDefaultArgs: ['--mute-audio'],
   }
 }

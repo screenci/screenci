@@ -117,4 +117,5 @@ public URLs as JSON. A CI job can poll until `finished` or gate on `failed`.
 
 ## What's next
 
+- [Screen Audio](/docs/guides/screen-audio) for capturing system audio in CI with a virtual audio device.
 - [Public URLs and Embeds](/docs/guides/public-urls-and-embeds) for delivery.

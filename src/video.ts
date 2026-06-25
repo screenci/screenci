@@ -94,6 +94,8 @@ import {
 } from './runtimeMode.js'
 import { buildScreenCIContextOptions } from './contextOptions.js'
 import { bindStillCaptureToPage } from './stillCapture.js'
+import { startScreenAudioCapture } from './screenAudio.js'
+import type { ScreenAudioCapture } from './screenAudio.js'
 
 export const POST_VIDEO_PAUSE = 500
 
@@ -825,6 +827,11 @@ const _videoBase = base.extend<
     // Mark the moment the video recording actually begins after the cursor is positioned.
     recorder.start()
 
+    const captureVolume = recordOptions.captureAudio ?? 0
+    const audioCapturePath = join(videoDir, 'screen-audio.wav')
+    const audioCapture: ScreenAudioCapture | null =
+      captureVolume > 0 ? startScreenAudioCapture(audioCapturePath) : null
+
     // Wrap `page.screenshot()` only now, AFTER the screen recorder has started.
     // The recorder captures a baseline frame via `page.screenshot()` inside
     // `screenRecorder.start()`; wrapping earlier intercepted that internal call
@@ -849,6 +856,23 @@ const _videoBase = base.extend<
       restoreStillCapture()
       await screenRecorder.pause()
       recordingFinalizationQueue.push({ recorder: screenRecorder })
+
+      if (audioCapture !== null) {
+        try {
+          const captured = await audioCapture.stop()
+          recorder.addScreenAudioTrack({
+            path: captured.path,
+            fileHash: captured.fileHash,
+            volume: captureVolume,
+            repeat: false,
+          })
+        } catch (err) {
+          logger.warn(
+            `captureAudio: failed to capture audio track and it will be omitted. ` +
+              `${err instanceof Error ? err.message : String(err)}`
+          )
+        }
+      }
 
       await page.close()
 

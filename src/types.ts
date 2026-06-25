@@ -384,6 +384,25 @@ export type RecordOptions = {
    * @default 1
    */
   deviceScaleFactor?: number
+
+  /**
+   * Capture system audio alongside the screen recording and mix it into the
+   * output video.
+   *
+   * Set to a linear gain value to enable capture:
+   * - `0` (default): disabled.
+   * - `1`: capture at unity gain (natural level).
+   * - Values above `1` boost the captured audio (e.g. `2` is twice as loud).
+   * - Values between `0` and `1` reduce the level (e.g. `0.5` is half volume).
+   *
+   * Audio is captured via ffmpeg from the platform default audio input and
+   * mixed into the rendered video starting at time 0. Each OS requires a
+   * one-time loopback source setup to capture system audio rather than the
+   * microphone. See the per-OS guide: https://screenci.com/docs/guides/screen-audio
+   *
+   * @default 0
+   */
+  captureAudio?: number
 }
 
 /**

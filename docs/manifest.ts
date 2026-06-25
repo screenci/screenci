@@ -112,25 +112,37 @@ export const docsManifest = [
     description:
       'Add intro clips, corner logos, transitions, and timed overlays to ScreenCI recordings from files, HTML, or React.',
     prev: 'docs/guides/camera-and-zooming',
+    next: 'docs/guides/screen-audio',
+  },
+  {
+    source: 'screen-audio.md',
+    slug: 'docs/guides/screen-audio',
+    section: 'Guides',
+    order: 5,
+    navLabel: 'Screen audio',
+    title: 'Screen Audio',
+    description:
+      'Capture system audio alongside the screen recording and mix it into the rendered video, with per-OS setup instructions for loopback sources.',
+    prev: 'docs/guides/overlays',
     next: 'docs/guides/screenshots',
   },
   {
     source: 'screenshots.md',
     slug: 'docs/guides/screenshots',
     section: 'Guides',
-    order: 5,
+    order: 6,
     navLabel: 'Screenshots',
     title: 'Screenshots',
     description:
       'Capture branded still screenshots with the screenshot() fixture: crop to a component, set quality and dark mode, and frame the shot on a background with overlays.',
-    prev: 'docs/guides/overlays',
+    prev: 'docs/guides/screen-audio',
     next: 'docs/guides/studio',
   },
   {
     source: 'studio.md',
     slug: 'docs/guides/studio',
     section: 'Guides',
-    order: 6,
+    order: 7,
     navLabel: 'Studio',
     title: 'Studio',
     description:
@@ -142,7 +154,7 @@ export const docsManifest = [
     source: 'public-urls-and-embeds.md',
     slug: 'docs/guides/public-urls-and-embeds',
     section: 'Guides',
-    order: 7,
+    order: 8,
     navLabel: 'Public URLs and embeds',
     title: 'Public URLs and Embeds',
     description:
@@ -154,7 +166,7 @@ export const docsManifest = [
     source: 'update-screenci.mdx',
     slug: 'docs/guides/update-screenci',
     section: 'Guides',
-    order: 8,
+    order: 9,
     navLabel: 'Update ScreenCI',
     title: 'Update ScreenCI',
     description:

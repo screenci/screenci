@@ -46,12 +46,14 @@ import { setActiveAutoZoomRecorder, setActiveZoomPage } from './autoZoom.js'
 import {
   setActiveAssetRecorder,
   buildStudioOverlays,
+  validateRegisteredAssetPaths,
   type OverlayController,
 } from './asset.js'
 import { flushPendingOverlays } from './overlayFlush.js'
 import {
   setActiveAudioRecorder,
   buildStudioAudioTracks,
+  validateRegisteredAudioPaths,
   type AudioController,
 } from './audio.js'
 import {
@@ -425,6 +427,17 @@ export async function withActiveRecordingContext<T>(params: {
       setActiveClickRecorder(recorder)
       bindClickRecorderToPage(page, recorder)
       setRuntimePage(page)
+
+      // Fail fast on missing overlay/audio files before the body runs. Only
+      // when actually recording and when testFilePath is known (relative asset
+      // paths can only be resolved with an anchor file).
+      if (
+        runtimeContext.recordingDir !== null &&
+        runtimeContext.testFilePath !== null
+      ) {
+        await validateRegisteredAssetPaths(runtimeContext.testFilePath)
+        await validateRegisteredAudioPaths(runtimeContext.testFilePath)
+      }
 
       if (textDeclaration) {
         recorder.addTextDeclare(

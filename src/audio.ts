@@ -1,7 +1,8 @@
 import type { IEventRecorder, AudioStartPayload } from './events.js'
-import { readFile } from 'fs/promises'
+import { access, readFile } from 'fs/promises'
 import { createHash } from 'crypto'
 import { dirname, resolve } from 'path'
+import { captureCallerFile } from './callerFile.js'
 import { isInsideHide } from './hide.js'
 import { MAX_AUDIO_LEVEL, validateSpeedTime } from './asset.js'
 import {
@@ -88,6 +89,72 @@ export type AudioTracks<T extends Record<string, AudioInput>> = {
 
 const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.mp4'] as const
 
+/**
+ * Audio file paths registered by `createAudio` at module load, each attributed
+ * to the `.screenci` script that declared it (or `null` when the caller could
+ * not be determined). Validated up front when a recording starts (see
+ * {@link validateRegisteredAudioPaths}) so a missing audio file fails fast with
+ * a clean error instead of only when the track is first played. Attribution
+ * keeps tracks declared by another test file sharing the worker from being
+ * validated against the wrong test file.
+ */
+const registeredAudio: Array<{ ownerFile: string | null; path: string }> = []
+
+function registerAudioPath(path: string): void {
+  const ownerFile = captureCallerFile(import.meta.url)
+  if (
+    registeredAudio.some(
+      (entry) => entry.path === path && entry.ownerFile === ownerFile
+    )
+  ) {
+    return
+  }
+  registeredAudio.push({ ownerFile, path })
+}
+
+export function resetRegisteredAudioPaths(): void {
+  registeredAudio.length = 0
+}
+
+/**
+ * Validates the audio files declared by the `.screenci` script at
+ * {@link testFilePath} (plus any unattributed registrations), resolving each
+ * as-is and relative to that file. Throws "Audio file not found" on the first
+ * missing file. Wired into the record flow so missing audio is caught before
+ * the test body runs. Tracks attributed to a different test file are skipped.
+ */
+export async function validateRegisteredAudioPaths(
+  testFilePath: string | null
+): Promise<void> {
+  for (const { ownerFile, path } of registeredAudio) {
+    if (ownerFile !== null && ownerFile !== testFilePath) continue
+    await resolveExistingAudioPath(path, testFilePath)
+  }
+}
+
+/**
+ * Resolves an audio file path to an existing path, trying it as-is and relative
+ * to the test file. Throws "Audio file not found" when no candidate exists.
+ */
+async function resolveExistingAudioPath(
+  path: string,
+  testFilePath: string | null
+): Promise<string> {
+  const candidates = [path]
+  if (testFilePath !== null) {
+    candidates.push(resolve(dirname(testFilePath), path))
+  }
+  for (const candidate of candidates) {
+    try {
+      await access(candidate)
+      return candidate
+    } catch {
+      // try next candidate
+    }
+  }
+  throw new Error(`[screenci] Audio file not found: ${path}`)
+}
+
 export function setActiveAudioRecorder(recorder: IEventRecorder | null): void {
   setRuntimeAudioRecorder(recorder)
   resetAudioRuntimeState()
@@ -155,6 +222,7 @@ function normalizeAudioConfig(name: string, input: AudioInput): AudioConfig {
     config.speed,
     config.time
   )
+  registerAudioPath(config.path)
   return config
 }
 

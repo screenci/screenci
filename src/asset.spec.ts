@@ -3,11 +3,14 @@ import { createElement } from 'react'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { fileURLToPath } from 'url'
 import {
   createOverlays,
   buildStudioOverlays,
   setActiveAssetRecorder,
   setAssetSleepFn,
+  validateRegisteredAssetPaths,
+  resetRegisteredAssetPaths,
 } from './asset.js'
 import { validateStudioDeclaration } from './studio.js'
 import {
@@ -1410,6 +1413,73 @@ describe('buildStudioOverlays', () => {
       )
 
       expect(recorder.addStudioAssetStart).toHaveBeenCalledWith('intro')
+    } finally {
+      await rm(tempDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('validateRegisteredAssetPaths', () => {
+  beforeEach(() => {
+    resetRegisteredAssetPaths()
+  })
+
+  afterEach(() => {
+    resetRegisteredAssetPaths()
+  })
+
+  // createOverlays is called from this spec file, so its registrations are
+  // attributed to it. Validation only checks registrations owned by the test
+  // file it is given, so pass this spec's path to exercise them.
+  const ownerFile = fileURLToPath(import.meta.url)
+
+  it('passes when every registered overlay file exists', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'screenci-asset-validate-'))
+    try {
+      await writeFile(join(tempDir, 'logo.png'), 'png')
+      await writeFile(join(tempDir, 'intro.mp4'), 'mp4')
+      createOverlays({
+        logo: { path: join(tempDir, 'logo.png'), durationMs: 1200 },
+        intro: { path: join(tempDir, 'intro.mp4'), fill: 'screen' },
+      })
+
+      await expect(
+        validateRegisteredAssetPaths(ownerFile)
+      ).resolves.toBeUndefined()
+    } finally {
+      await rm(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('throws "Asset file not found" when a registered file is missing', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'screenci-asset-validate-'))
+    try {
+      await writeFile(join(tempDir, 'logo.png'), 'png')
+      const missing = join(tempDir, 'intro.mp4')
+      createOverlays({
+        logo: { path: join(tempDir, 'logo.png'), durationMs: 1200 },
+        intro: { path: missing, fill: 'screen' },
+      })
+
+      await expect(validateRegisteredAssetPaths(ownerFile)).rejects.toThrow(
+        `Asset file not found: ${missing}`
+      )
+    } finally {
+      await rm(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('skips registrations owned by a different test file', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'screenci-asset-validate-'))
+    try {
+      // Owned by this spec file, and the file is missing. Validating against an
+      // unrelated test file must not fail: another script may legitimately
+      // reference a file that does not resolve there.
+      createOverlays({ intro: { path: join(tempDir, 'gone.mp4') } })
+
+      await expect(
+        validateRegisteredAssetPaths(join(tempDir, 'other.screenci.ts'))
+      ).resolves.toBeUndefined()
     } finally {
       await rm(tempDir, { recursive: true, force: true })
     }

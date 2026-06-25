@@ -2,7 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { createAudio, buildStudioAudioTracks } from './audio.js'
+import { fileURLToPath } from 'url'
+import {
+  createAudio,
+  buildStudioAudioTracks,
+  validateRegisteredAudioPaths,
+  resetRegisteredAudioPaths,
+} from './audio.js'
 import { validateStudioDeclaration } from './studio.js'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
@@ -295,5 +301,69 @@ describe('buildStudioAudioTracks', () => {
     expect(() =>
       validateStudioDeclaration({ audio: ['theme', 'theme'] }, [], [])
     ).toThrow('video.studio(): duplicate audio name "theme".')
+  })
+})
+
+describe('validateRegisteredAudioPaths', () => {
+  beforeEach(() => {
+    resetRegisteredAudioPaths()
+  })
+
+  afterEach(() => {
+    resetRegisteredAudioPaths()
+  })
+
+  // createAudio is called from this spec file, so its registrations are
+  // attributed to it. Validation only checks registrations owned by the test
+  // file it is given, so pass this spec's path to exercise them.
+  const ownerFile = fileURLToPath(import.meta.url)
+
+  it('passes when every registered audio file exists', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'screenci-audio-validate-'))
+    try {
+      await writeFile(join(tempDir, 'theme.mp3'), 'mp3')
+      await writeFile(join(tempDir, 'sting.wav'), 'wav')
+      createAudio({
+        theme: { path: join(tempDir, 'theme.mp3'), volume: 0.3 },
+        sting: join(tempDir, 'sting.wav'),
+      })
+
+      await expect(
+        validateRegisteredAudioPaths(ownerFile)
+      ).resolves.toBeUndefined()
+    } finally {
+      await rm(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('throws "Audio file not found" when a registered file is missing', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'screenci-audio-validate-'))
+    try {
+      await writeFile(join(tempDir, 'theme.mp3'), 'mp3')
+      const missing = join(tempDir, 'sting.wav')
+      createAudio({
+        theme: { path: join(tempDir, 'theme.mp3') },
+        sting: missing,
+      })
+
+      await expect(validateRegisteredAudioPaths(ownerFile)).rejects.toThrow(
+        `Audio file not found: ${missing}`
+      )
+    } finally {
+      await rm(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('skips registrations owned by a different test file', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'screenci-audio-validate-'))
+    try {
+      createAudio({ theme: join(tempDir, 'gone.mp3') })
+
+      await expect(
+        validateRegisteredAudioPaths(join(tempDir, 'other.screenci.ts'))
+      ).resolves.toBeUndefined()
+    } finally {
+      await rm(tempDir, { recursive: true, force: true })
+    }
   })
 })

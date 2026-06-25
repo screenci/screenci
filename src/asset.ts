@@ -1,6 +1,7 @@
 import type { Locator } from '@playwright/test'
 import type { IEventRecorder, OverlayPlacement } from './events.js'
 import { overlayRect } from './overlayRect.js'
+import { captureCallerFile } from './callerFile.js'
 import { access, readFile } from 'fs/promises'
 import { dirname, resolve } from 'path'
 import { resolveRecordingTimingDuration } from './runtimeMode.js'
@@ -246,7 +247,27 @@ export type OverlayInputOrFactory =
   | OverlayInput
   | ((props: never) => OverlayConfig)
 
-const registeredAssetPaths = new Set<string>()
+/**
+ * Overlay file paths registered by {@link createOverlays}, each attributed to
+ * the `.screenci` script that declared it (or `null` when the caller could not
+ * be determined). Attribution lets {@link validateRegisteredAssetPaths} check
+ * only the assets a given recording's script declared, so unrelated assets
+ * registered by other test files sharing the worker are not validated against
+ * the wrong test file.
+ */
+const registeredAssets: Array<{ ownerFile: string | null; path: string }> = []
+
+function registerAssetPath(path: string): void {
+  const ownerFile = captureCallerFile(import.meta.url)
+  if (
+    registeredAssets.some(
+      (entry) => entry.path === path && entry.ownerFile === ownerFile
+    )
+  ) {
+    return
+  }
+  registeredAssets.push({ ownerFile, path })
+}
 
 // One frame at 24fps — ensures at least one rendered frame captures each asset
 // state when an overlay is started and ended back-to-back.
@@ -276,18 +297,29 @@ export function setActiveAssetRecorder(recorder: IEventRecorder | null): void {
 }
 
 export function resetRegisteredAssetPaths(): void {
-  registeredAssetPaths.clear()
+  registeredAssets.length = 0
 }
 
 export function resetAssetChain(): void {
   resetAssetRuntimeState()
 }
 
+/**
+ * Validates the overlay files declared by the `.screenci` script at
+ * {@link testFilePath} (plus any unattributed registrations), resolving each
+ * as-is and relative to that file. Throws "Asset file not found" on the first
+ * missing file. Wired into the record flow so a missing overlay fails fast
+ * before the test body runs, rather than only when the overlay is first shown.
+ *
+ * Assets attributed to a different test file are skipped: another script sharing
+ * the worker may legitimately reference a file that does not resolve here.
+ */
 export async function validateRegisteredAssetPaths(
-  testFilePath: string
+  testFilePath: string | null
 ): Promise<void> {
-  for (const assetPath of registeredAssetPaths) {
-    await validateAssetPath(assetPath, testFilePath)
+  for (const { ownerFile, path } of registeredAssets) {
+    if (ownerFile !== null && ownerFile !== testFilePath) continue
+    await validateAssetPath(path, testFilePath)
   }
 }
 
@@ -576,7 +608,7 @@ function buildOverlayFromConfig(
 
   // HTML file: read + rasterize to a transparent PNG (or an animated clip).
   if (extension === '.html') {
-    registeredAssetPaths.add(path)
+    registerAssetPath(path)
     const getMarkup = (): Promise<string> => readHtmlOverlayFile(path)
     if (animate) {
       return createAnimatedOverlayController(
@@ -609,7 +641,7 @@ function buildOverlayFromConfig(
     if (config.durationMs !== undefined) {
       validateDurationMs(name, path, config.durationMs)
     }
-    registeredAssetPaths.add(path)
+    registerAssetPath(path)
     return createFileOverlayController(name, {
       kind: 'image',
       path,
@@ -636,7 +668,7 @@ function buildOverlayFromConfig(
       )
     }
     validateSpeedTime(`Overlay "${name}" (${path})`, config.speed, config.time)
-    registeredAssetPaths.add(path)
+    registerAssetPath(path)
     return createFileOverlayController(name, {
       kind: 'video',
       path,

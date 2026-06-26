@@ -114,6 +114,23 @@ export type ScreenshotRenderOptions = {
    * framed shot in that canvas and fills the surround with the background.
    */
   aspectRatio?: AspectRatio | 'auto'
+  /** Cursor options for the still (the cursor is hidden by default). */
+  mouse?: ScreenshotMouseOptions
+}
+
+/**
+ * Cursor options for a screenshot. The cursor is drawn at its final recorded
+ * position using the same assets and colour as the video cursor: its colour
+ * comes from `renderOptions.mouse.style` and its size from
+ * `renderOptions.mouse.size`. Only `show` is screenshot-specific.
+ */
+export type ScreenshotMouseOptions = {
+  /**
+   * Draw the cursor on the still at its final recorded position. Defaults to
+   * `false` (no cursor), so polished product stills stay clean. Has no effect
+   * when the body never moved the cursor (there is no position to draw).
+   */
+  show?: boolean
 }
 
 /**

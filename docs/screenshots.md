@@ -189,6 +189,39 @@ still you `start()` it and leave it open.
 The [Overlays guide](/docs/guides/overlays#positioning-over-a-live-element)
 shows the same ring animated in a video.
 
+## Cursor
+
+A still does not show the mouse cursor by default, so polished product shots stay
+clean. When the shot is meant to demonstrate an interaction (a hover or a click
+target), turn the cursor on with `renderOptions.screenshot.mouse.show`. It is
+drawn at the cursor's final position, the same spot the cursor lands after your
+last `move`/`click`/`hover` in the body.
+
+```ts
+import { screenshot } from 'screenci'
+
+screenshot('Hover state', async ({ page }) => {
+  await page.goto('https://app.example.com/dashboard')
+  // Land the cursor where you want it shown.
+  await page.getByRole('button', { name: 'Upgrade' }).hover()
+})
+
+screenshot.use({
+  renderOptions: {
+    screenshot: {
+      mouse: { show: true }, // default is false (no cursor)
+    },
+  },
+})
+```
+
+The cursor reuses the same assets and styling as the video cursor: its colour
+comes from `renderOptions.mouse.style` (`'white'` or `'black'`) and its size from
+`renderOptions.mouse.size` (a fraction of the output height). Setting `show: true`
+has no effect when the body never moved the cursor (there is no position to draw),
+so a still that never touches the mouse never shows one. Like every render option,
+`show` is editable later in Studio without re-recording.
+
 ## Quality and appearance
 
 The viewport comes from `recordOptions.aspectRatio` and `recordOptions.quality`,
@@ -247,6 +280,9 @@ screenshot.use({
       // `quality` (1-100, default 90) is the compression level. Low values are
       // allowed if you want a smaller file.
       format: { type: 'jpeg', quality: 82 },
+      // Show the cursor at its final recorded position. Defaults to false (no
+      // cursor). Colour/size come from `mouse.style` / `mouse.size` below.
+      mouse: { show: true },
     },
     output: {
       // Anything behind the framed shot: a CSS color, gradient, or image.

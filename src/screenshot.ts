@@ -33,6 +33,7 @@ import {
 } from './contextOptions.js'
 import { resolveCrop } from './crop.js'
 import type { CropTarget, CropOptions } from './crop.js'
+import { getMousePosition } from './mouse.js'
 import { getRuntimePage, setRuntimeCrop } from './runtimeContext.js'
 import { ScreenciError } from './errors.js'
 import {
@@ -355,11 +356,19 @@ const _screenshotBase = base.extend<
       })
 
       const crop = runtimeContext.crop ?? undefined
+      // The cursor lands at its final position even for a still (the move is
+      // instant). Record it so the renderer can draw the cursor on the still
+      // when `renderOptions.screenshot.mouse.show` is set. Absent when the body
+      // never moved the cursor, so no cursor is ever shown for such a still.
+      const mousePosition = getMousePosition(page)
       const screenshot: ScreenshotInfo = {
         path: SCREENSHOT_FILE_NAME,
         width: Math.round(dimensions.width * dsf),
         height: Math.round(dimensions.height * dsf),
         deviceScaleFactor: dsf,
+        ...(mousePosition !== undefined && {
+          mousePosition: { x: mousePosition.x, y: mousePosition.y },
+        }),
       }
 
       const configDir = process.env.SCREENCI_CONFIG_DIR ?? process.cwd()

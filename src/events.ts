@@ -718,6 +718,14 @@ export type ScreenshotInfo = {
   width: number
   height: number
   deviceScaleFactor: number
+  /**
+   * Final cursor position when the still was captured, in CSS px of the
+   * recording viewport (same coordinate space as a crop). Present only when the
+   * body moved the cursor at least once. The renderer draws the cursor here when
+   * `renderOptions.screenshot.mouse.show` is set; absent means there is nothing
+   * to draw, so the cursor never appears for a still that never touched it.
+   */
+  mousePosition?: { x: number; y: number }
 }
 
 export type RecordingData = {

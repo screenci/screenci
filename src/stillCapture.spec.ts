@@ -169,7 +169,35 @@ describe('writeStillRecording', () => {
     expect(options.screenshot.height).toBe(1200)
     // No crop passed -> no crop key at all.
     expect(options).not.toHaveProperty('crop')
+    // No mouse position passed -> no cursor info recorded.
+    expect(options.screenshot).not.toHaveProperty('mousePosition')
     // No test file path -> no source file argument.
     expect(writeToFile.mock.calls[0][2]).toBeUndefined()
+  })
+
+  it('records the final cursor position when the body moved it', async () => {
+    const capture = vi.fn(async () => Buffer.from(''))
+    const { recorder, writeToFile } = makeRecorderSpy()
+
+    await writeStillRecording({
+      name: 'shot',
+      screenciDir: '/repo/.screenci',
+      dimensions: { width: 1920, height: 1080 },
+      deviceScaleFactor: 1,
+      mousePosition: { x: 640, y: 360 },
+      testFilePath: null,
+      configDir: '/repo',
+      recordOptions: undefined,
+      renderOptions: undefined,
+      deps: {
+        capture,
+        fs: { rm: async () => {}, mkdir: async () => {} },
+        makeRecorder: () => recorder,
+      },
+    })
+
+    const options = writeToFile.mock.calls[0][3]
+    // The position is stored in viewport CSS px, alongside the capture facts.
+    expect(options.screenshot.mousePosition).toEqual({ x: 640, y: 360 })
   })
 })

@@ -7,6 +7,7 @@ import { EventRecorder } from './events.js'
 import type { IEventRecorder, ScreenshotInfo } from './events.js'
 import { resolveCrop } from './crop.js'
 import type { CropTarget, ScreenshotCropRecord } from './crop.js'
+import { getMousePosition } from './mouse.js'
 import { getScreenCIRuntimeContext } from './runtimeContext.js'
 import {
   DEFAULT_VIDEO_OPTIONS,
@@ -97,6 +98,8 @@ export async function writeStillRecording(params: {
   dimensions: { width: number; height: number }
   deviceScaleFactor: number
   crop?: ScreenshotCropRecord
+  /** Final cursor position in CSS px of the viewport, if the body moved it. */
+  mousePosition?: { x: number; y: number }
   testFilePath: string | null
   configDir: string
   recordOptions: RecordOptions | undefined
@@ -109,6 +112,7 @@ export async function writeStillRecording(params: {
     dimensions,
     deviceScaleFactor,
     crop,
+    mousePosition,
     testFilePath,
     configDir,
     recordOptions,
@@ -139,6 +143,9 @@ export async function writeStillRecording(params: {
     width: Math.round(dimensions.width * deviceScaleFactor),
     height: Math.round(dimensions.height * deviceScaleFactor),
     deviceScaleFactor,
+    ...(mousePosition !== undefined && {
+      mousePosition: { x: mousePosition.x, y: mousePosition.y },
+    }),
   }
 
   const recorder = makeRecorder(renderOptions, recordOptions)
@@ -204,6 +211,10 @@ export function bindStillCaptureToPage(page: Page): () => void {
       crop = await resolveCrop(cropTarget, ctx.page)
     }
 
+    // The cursor's last position, so the renderer can draw it on the still when
+    // the show option is set. Undefined when the body never moved the cursor.
+    const mousePosition = getMousePosition(page)
+
     const configDir = process.env.SCREENCI_CONFIG_DIR ?? process.cwd()
 
     return writeStillRecording({
@@ -214,6 +225,9 @@ export function bindStillCaptureToPage(page: Page): () => void {
       // captured mid-recording is at the viewport resolution (DSF 1).
       deviceScaleFactor: 1,
       ...(crop !== undefined && { crop }),
+      ...(mousePosition !== undefined && {
+        mousePosition: { x: mousePosition.x, y: mousePosition.y },
+      }),
       testFilePath: ctx.testFilePath,
       configDir,
       recordOptions,

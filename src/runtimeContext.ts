@@ -112,6 +112,13 @@ export type ScreenCIRuntimeContext = {
     activeRuns: Map<string, ActiveAudioRun>
   }
   autoZoom: AutoZoomState
+  /**
+   * Tracks the recording's current display size (0-1 fraction of the frame; 1 =
+   * full screen) as toggled by `resizeRecording()`/`resetRecordingSize()`. Used
+   * to no-op a reset that is already at full screen and to detect redundant
+   * resizes. Resets to 1 with each fresh recording context.
+   */
+  recordingSize: { current: number }
 }
 
 const runtimeContextStorage = new AsyncLocalStorage<ScreenCIRuntimeContext>()
@@ -163,6 +170,7 @@ export function createScreenCIRuntimeContext(
       options: {},
       currentZoomViewport: null,
     },
+    recordingSize: { current: 1 },
   }
 }
 
@@ -334,4 +342,12 @@ export function getRuntimeAutoZoomState(): AutoZoomState {
 
 export function setRuntimeAutoZoomState(state: AutoZoomState): void {
   getScreenCIRuntimeContext().autoZoom = state
+}
+
+export function getRuntimeRecordingSize(): number {
+  return getScreenCIRuntimeContext().recordingSize.current
+}
+
+export function setRuntimeRecordingSize(size: number): void {
+  getScreenCIRuntimeContext().recordingSize.current = size
 }

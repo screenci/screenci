@@ -12,7 +12,7 @@ import type { LocalizeNarrationValue } from './localize.js'
 function state(partial: Partial<BuilderState> = {}): BuilderState {
   return {
     narration: null,
-    text: null,
+    values: null,
     overlays: null,
     audio: null,
     recordingLocalize: null,
@@ -217,7 +217,7 @@ describe('createVideoBuilder registration', () => {
 
   it('supports the (title, details, body) signature', () => {
     const { test, calls } = createTestSink()
-    createVideoBuilder(test).text(['h']).languages(['en'])(
+    createVideoBuilder(test).values(['h']).languages(['en'])(
       'Tagged',
       { tag: '@critical' },
       async () => {}
@@ -230,7 +230,7 @@ describe('createVideoBuilder registration', () => {
     process.env.SCREENCI_LANGUAGES = 'de'
     try {
       const { test, calls } = createTestSink()
-      createVideoBuilder(test).text(['h']).languages(['en', 'fi'])(
+      createVideoBuilder(test).values(['h']).languages(['en', 'fi'])(
         'T',
         async () => {}
       )
@@ -252,7 +252,7 @@ describe('createVideoBuilder registration', () => {
   it('throws when a screenshot declares narration (silent medium)', () => {
     const { test } = createTestSink()
     expect(() =>
-      createVideoBuilder(test, new Set(['text', 'overlays'])).narration(['x'])
+      createVideoBuilder(test, new Set(['values', 'overlays'])).narration(['x'])
     ).toThrow(/not available for this medium/)
   })
 

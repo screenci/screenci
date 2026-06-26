@@ -8,7 +8,7 @@ import {
 } from './localize.js'
 import type { NormalizedFeature } from './declare.js'
 import type { Lang } from './voices.js'
-import type { TextOverrides } from './runtimeMode.js'
+import type { ValuesOverrides } from './runtimeMode.js'
 import type { TopLevelVoiceConfig } from './voiceConfig.js'
 import type { RenderOptions } from './types.js'
 
@@ -30,8 +30,8 @@ export function narrationVoiceConfigFromRenderOptions(
 /** Narration markers keyed by cue name. Markers carry timing, never text. */
 export type NarrationMarkers = Record<string, NarrationCue>
 
-/** Per-language text field values, keyed by field name. */
-export type TextValues = Record<string, string>
+/** Per-language values fields, keyed by field name. */
+export type Values = Record<string, string>
 
 /**
  * Convert a per-feature narration declaration into the normalized shape the voice
@@ -77,28 +77,28 @@ export function buildNarrationMarkers(
 }
 
 /**
- * Resolve the `text` field values for the active language: a Studio override wins
+ * Resolve the `values` fields for the active language: a Studio override wins
  * over the per-language seed, which wins over the shared value, then the empty
  * string (Studio-owned fields stay empty until set in the web app).
  */
-export function buildTextValues(
-  text: NormalizedFeature<string> | null | undefined,
+export function buildValues(
+  feature: NormalizedFeature<string> | null | undefined,
   language: string | undefined,
-  overrides?: TextOverrides | null
-): TextValues {
-  if (!text || text.names.length === 0) return {}
+  overrides?: ValuesOverrides | null
+): Values {
+  if (!feature || feature.names.length === 0) return {}
   const override = language !== undefined ? overrides?.[language] : undefined
-  const langSeed = language !== undefined ? text.byLang[language] : undefined
-  const values: TextValues = {}
-  for (const field of text.names) {
+  const langSeed = language !== undefined ? feature.byLang[language] : undefined
+  const values: Values = {}
+  for (const field of feature.names) {
     values[field] =
-      override?.[field] ?? langSeed?.[field] ?? text.shared[field] ?? ''
+      override?.[field] ?? langSeed?.[field] ?? feature.shared[field] ?? ''
   }
   return values
 }
 
-/** A localized text declaration emitted to the backend at recording start. */
-export type TextDeclaration = {
+/** A localized values declaration emitted to the backend at recording start. */
+export type ValuesDeclaration = {
   /** Every field name (code then Studio-managed), in declared order. */
   fields: string[]
   /** Studio-managed field names (array form, no code seed). */
@@ -108,28 +108,28 @@ export type TextDeclaration = {
 }
 
 /**
- * Build the declaration of `text` fields to emit at recording start so the
+ * Build the declaration of `values` fields to emit at recording start so the
  * backend learns which fields exist (and their code seeds) and can present the
- * Studio-managed ones for the user to fill. Returns `null` when no text declared.
+ * Studio-managed ones for the user to fill. Returns `null` when none declared.
  */
-export function buildTextDeclaration(
-  text: NormalizedFeature<string> | null | undefined,
+export function buildValuesDeclaration(
+  feature: NormalizedFeature<string> | null | undefined,
   language: string | undefined
-): TextDeclaration | null {
-  if (!text || text.names.length === 0) return null
+): ValuesDeclaration | null {
+  if (!feature || feature.names.length === 0) return null
 
-  const declaration: TextDeclaration = {
-    fields: text.names,
-    studioFields: text.studioNames,
+  const declaration: ValuesDeclaration = {
+    fields: feature.names,
+    studioFields: feature.studioNames,
   }
 
   if (language !== undefined) {
     const merged: Record<string, string> = {
-      ...text.shared,
-      ...(text.byLang[language] ?? {}),
+      ...feature.shared,
+      ...(feature.byLang[language] ?? {}),
     }
     const codeSeed: Record<string, string> = {}
-    for (const field of text.codeNames) {
+    for (const field of feature.codeNames) {
       if (merged[field] !== undefined) codeSeed[field] = merged[field]!
     }
     if (Object.keys(codeSeed).length > 0) {

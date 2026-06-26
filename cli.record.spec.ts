@@ -955,7 +955,7 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       await main()
 
-      expect(capturedEnv?.SCREENCI_TEXT_OVERRIDES).toBe(
+      expect(capturedEnv?.SCREENCI_VALUES_OVERRIDES).toBe(
         JSON.stringify(overrides)
       )
     })
@@ -996,7 +996,7 @@ describe('CLI', () => {
       await main()
 
       expect(mockSpawn).toHaveBeenCalled()
-      expect(capturedEnv?.SCREENCI_TEXT_OVERRIDES).toBeUndefined()
+      expect(capturedEnv?.SCREENCI_VALUES_OVERRIDES).toBeUndefined()
     })
 
     it('should only log the config path in verbose mode', async () => {
@@ -2726,7 +2726,7 @@ describe('CLI', () => {
           stripVTControlCharacters(String(call[0]))
         )
 
-        expect(messages).toContain('✔ Asset already exists: videos/logo.png')
+        expect(messages).toContain('✔ Overlay already exists: videos/logo.png')
         expect(messages).toContain('✔ Uploaded "Demo"')
         expect(messages).toContain('✔ Uploaded "Second Demo"')
         expect(stdoutWriteSpy).not.toHaveBeenCalled()

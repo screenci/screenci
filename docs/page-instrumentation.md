@@ -175,4 +175,4 @@ await page.mouse.click(640, 360, { fake: true })
 
 - [Video Script Basics](/docs/video-script-basics)
 - [Camera and Zooming](/docs/guides/camera-and-zooming)
-- [Narration and Localization](/docs/guides/narration-and-localization)
+- [Narration](/docs/guides/narration)

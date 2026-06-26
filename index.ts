@@ -64,6 +64,12 @@ export { speed } from './src/speed.js'
 export { time } from './src/time.js'
 export { autoZoom } from './src/autoZoom.js'
 export { zoomTo, resetZoom } from './src/manualZoom.js'
+export {
+  resizeRecording,
+  resetRecordingSize,
+  type ResizeRecordingOptions,
+} from './src/recordingSize.js'
+export { hideNarration, showNarration } from './src/narrationVisibility.js'
 export { setOverlayCss, MAX_AUDIO_LEVEL } from './src/asset.js'
 export type {
   OverlayController,

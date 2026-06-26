@@ -246,7 +246,7 @@ describe('createNarration', () => {
         },
       })
     ).toThrow(
-      'createNarration(en) uses an ElevenLabs voice, but ELEVENLABS_API_KEY is not set. Add ELEVENLABS_API_KEY to your env file or process environment. See https://screenci.com/docs/guides/narration-and-localization.'
+      'createNarration(en) uses an ElevenLabs voice, but ELEVENLABS_API_KEY is not set. Add ELEVENLABS_API_KEY to your env file or process environment. See https://screenci.com/docs/guides/narration.'
     )
   })
 
@@ -261,7 +261,7 @@ describe('createNarration', () => {
         },
       })
     ).toThrow(
-      'createNarration(en) uses an ElevenLabs voice, but ELEVENLABS_API_KEY is not set. Add ELEVENLABS_API_KEY to your env file or process environment. See https://screenci.com/docs/guides/narration-and-localization.'
+      'createNarration(en) uses an ElevenLabs voice, but ELEVENLABS_API_KEY is not set. Add ELEVENLABS_API_KEY to your env file or process environment. See https://screenci.com/docs/guides/narration.'
     )
   })
 

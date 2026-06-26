@@ -63,7 +63,7 @@ function elevenlabsVoice(
 }
 
 // DOCS_SYNC:
-// Keep the "Available voices" section in docs/narration-and-localization.md
+// Keep the "Available voices" section in docs/narration.md
 // in sync with this list and the voice character blurbs below.
 export const voices = {
   /** Male — Clear — Direct and structured, ideal for straightforward explanations. */
@@ -166,7 +166,7 @@ export type ElevenLabsVoiceKey = `elevenlabs:${string}`
 export type VoiceKey = ModelVoiceKey | ElevenLabsVoiceKey
 
 // DOCS_SYNC:
-// Keep the "Available languages" section in docs/narration-and-localization.md
+// Keep the "Available languages" section in docs/languages.md
 // in sync with this source of truth.
 const supportedBaseLanguageCodes = [
   'ar',

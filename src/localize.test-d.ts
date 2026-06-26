@@ -4,44 +4,44 @@ import { voices } from './voices.js'
 import type { NarrationCue } from './cue.js'
 
 describe('video.localize typed fixtures', () => {
-  it('types narration and text to seeded names', () => {
+  it('types narration and values to seeded names', () => {
     video.localize({
       narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
-      text: { en: { heading: 'H' }, fi: { heading: 'O' } },
-    })('T', async ({ narration, text }) => {
+      values: { en: { heading: 'H' }, fi: { heading: 'O' } },
+    })('T', async ({ narration, values }) => {
       expectTypeOf(narration.intro).toEqualTypeOf<NarrationCue>()
       // Seeded fields are always populated in per-language mode (the default).
-      expectTypeOf(text.heading).toEqualTypeOf<string>()
+      expectTypeOf(values.heading).toEqualTypeOf<string>()
       // @ts-expect-error 'nope' is not a declared cue
       void narration.nope
-      // @ts-expect-error 'nope' is not a declared text field
-      void text.nope
+      // @ts-expect-error 'nope' is not a declared values field
+      void values.nope
     })
   })
 
-  it('types text fields as string in shared mode', () => {
+  it('types values fields as string in shared mode', () => {
     video.localize({
       mode: 'shared',
-      text: { en: { heading: 'H' }, fi: { heading: 'O' } },
-    })('T', async ({ text }) => {
+      values: { en: { heading: 'H' }, fi: { heading: 'O' } },
+    })('T', async ({ values }) => {
       // A shared capture does no per-language injection, so a seeded field is
       // the empty string at runtime rather than undefined.
-      expectTypeOf(text.heading).toEqualTypeOf<string>()
+      expectTypeOf(values.heading).toEqualTypeOf<string>()
     })
   })
 
   it('unions seeded names with studio-managed names', () => {
-    video.studio({ narration: ['alert'], text: ['tagline'] }).localize({
+    video.studio({ narration: ['alert'], values: ['tagline'] }).localize({
       narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
-      text: { en: { heading: 'H' }, fi: { heading: 'O' } },
-    })('T', async ({ narration, text }) => {
+      values: { en: { heading: 'H' }, fi: { heading: 'O' } },
+    })('T', async ({ narration, values }) => {
       // Seeded and Studio-managed names are both present.
       expectTypeOf(narration.intro).toEqualTypeOf<NarrationCue>()
       expectTypeOf(narration.alert).toEqualTypeOf<NarrationCue>()
       // Seeded field: always populated per-language.
-      expectTypeOf(text.heading).toEqualTypeOf<string>()
+      expectTypeOf(values.heading).toEqualTypeOf<string>()
       // Studio-managed field: empty string until set in Studio.
-      expectTypeOf(text.tagline).toEqualTypeOf<string>()
+      expectTypeOf(values.tagline).toEqualTypeOf<string>()
     })
   })
 
@@ -55,9 +55,9 @@ describe('video.localize typed fixtures', () => {
     })('T', async () => {})
   })
 
-  it('requires every language to declare the same text keys', () => {
+  it('requires every language to declare the same values keys', () => {
     video.localize({
-      text: {
+      values: {
         en: { heading: 'H', tagline: 'T' },
         // @ts-expect-error fi is missing the `tagline` field key
         fi: { heading: 'O' },

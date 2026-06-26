@@ -36,8 +36,7 @@ import { resolveRecordingTimingDuration } from './runtimeMode.js'
 
 // One frame at 24fps — ensures at least one rendered frame captures each cue state.
 export const ONE_FRAME_MS = 1000 / 24
-const ELEVENLABS_DOCS_URL =
-  'https://screenci.com/docs/guides/narration-and-localization'
+const ELEVENLABS_DOCS_URL = 'https://screenci.com/docs/guides/narration'
 
 // Blocking sleep — spin until the elapsed time has passed
 let sleepFn = (ms: number): void => {

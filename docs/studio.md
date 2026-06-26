@@ -8,7 +8,7 @@ There are two ways to use it:
 
 - **Opt in from code.** Declare a feature with an **array of names** (for example
   `video.narration(['intro'])`) to hand it to Studio: the names exist in code,
-  but the web app owns their content. The same is true of `video.text([...])`,
+  but the web app owns their content. The same is true of `video.values([...])`,
   `video.overlays([...])`, and `video.audio([...])`. Render and record options are
   deferred with `use({ renderOptions: 'studio' })` and
   `use({ recordOptions: 'studio' })`. Those items are then edited on the Studio
@@ -30,9 +30,9 @@ There are two ways to use it:
   options for a single render. One-off renders are not saved and do not change
   what future uploads render.
 
-The `video.narration`, `video.text`, `video.overlays`, and `video.audio` name
+The `video.narration`, `video.values`, `video.overlays`, and `video.audio` name
 arrays type the matching fixtures to exactly those names, so a typo is a compile
-error. The fixtures (`narration`, `text`, `overlays`, `audio` in the test body)
+error. The fixtures (`narration`, `values`, `overlays`, `audio` in the test body)
 expose the Studio-managed controllers and values alongside any defined in code.
 
 #### You will learn
@@ -41,7 +41,7 @@ expose the Studio-managed controllers and values alongside any defined in code.
 - [how saved edits and one-off renders differ](#saved-edits-vs-one-off-renders)
 - [how to manage narration from Studio](#studio-narration-from-code)
 - [how to use uploaded media as narration](#narration-media-from-studio)
-- [how to manage on-screen text from Studio](#studio-text-from-code)
+- [how to manage on-screen values from Studio](#studio-values-from-code)
 - [how to manage overlays from Studio](#studio-overlays-from-code)
 - [how to manage background audio from Studio](#studio-audio-from-code)
 - [how to defer render and record options to Studio](#studio-render-and-record-options)
@@ -51,7 +51,7 @@ expose the Studio-managed controllers and values alongside any defined in code.
 Open a video in the web app and choose **Open in Studio**. Studio shows the
 narration, voices, overlays, audio, and render options the video uses. Items you
 opted into from code by declaring an array of names (`video.narration([...])`,
-`video.text([...])`, `video.overlays([...])`, `video.audio([...])`, plus the
+`video.values([...])`, `video.overlays([...])`, `video.audio([...])`, plus the
 `renderOptions: 'studio'` / `recordOptions: 'studio'` deferrals) are editable;
 anything defined in code is shown read-only and marked with a **code** badge.
 
@@ -79,7 +79,7 @@ code-specified ones.
 Studio separates changes that stick from changes that do not:
 
 - **Saved edits** to studio-declared items (anything declared as an array of
-  names: `video.narration([...])`, `video.text([...])`, `video.overlays([...])`,
+  names: `video.narration([...])`, `video.values([...])`, `video.overlays([...])`,
   `video.audio([...])`, plus the `renderOptions: 'studio'` /
   `recordOptions: 'studio'` deferrals) autosave into the video's Studio
   configuration. That configuration is reused automatically on every later
@@ -97,7 +97,7 @@ Studio separates changes that stick from changes that do not:
   and never change what future uploads render. To make a code-defined value
   editable in the normal, saved flow instead, declare it as an array of names
   (switch `video.narration({...})` to `video.narration([...])`, and likewise for
-  `text`, `overlays`, or `audio`, or set `use({ renderOptions: 'studio' })` /
+  `values`, `overlays`, or `audio`, or set `use({ renderOptions: 'studio' })` /
   `use({ recordOptions: 'studio' })`).
 
 ## Studio narration from code
@@ -145,9 +145,7 @@ After the video has been configured once, subsequent uploads reuse the saved
 Studio configuration and render automatically.
 
 To define narration values in code instead, pass an object with language-code
-keys: `video.narration({ en: {...}, fi: {...} })`. See [Narration and
-Localization](/docs/guides/narration-and-localization) for the full narration
-API.
+keys: `video.narration({ en: {...}, fi: {...} })`. See [Narration](/docs/guides/narration) for the full narration API.
 
 ## Narration media from Studio
 
@@ -169,39 +167,38 @@ file. When you provide one, that text is used instead. Either way, captions are
 timed from the detected speech, so they appear only while the line is actually
 spoken (not during any leading silence or music).
 
-## Studio text from code
+## Studio values from code
 
-On-screen text injected through the `text` fixture can be managed from Studio.
-Pass an **array of field names** to `video.text([...])` to keep the value in
-Studio, or pass an object with language-code keys to define the values in code
-and override them per language on the web:
+On-screen values injected through the `values` fixture can be managed from
+Studio. Pass an **array of field names** to `video.values([...])` to keep the
+value in Studio, or pass an object with language-code keys to define the values
+in code and override them per language on the web:
 
 ```ts
-video.text(['cta']).text({
+video.values(['cta']).values({
   en: { heading: 'Dashboard' },
   fi: { heading: 'Hallinta' },
-})('Landing', async ({ page, text }) => {
-  await page.getByTestId('heading').fill(text.heading)
-  await page.getByTestId('cta').fill(text.cta)
+})('Landing', async ({ page, values }) => {
+  await page.getByTestId('heading').fill(values.heading)
+  await page.getByTestId('cta').fill(values.cta)
 })
 ```
 
-The video's **Text** section lists each declared field; set its value per
-language. A Studio-managed `text` field that has not been set yet is the empty
+The video's **Values** section lists each declared field; set its value per
+language. A Studio-managed `values` field that has not been set yet is the empty
 string, so the first recording still succeeds and registers the field in Studio.
 
 Unlike narration, voices, and overlays (which are applied when a version
-renders), on-screen text is captured into the recording itself. Studio cannot
-re-render it: saved text values are injected by `screenci record` and take effect
+renders), on-screen values are captured into the recording itself. Studio cannot
+re-render them: saved values are injected by `screenci record` and take effect
 on the **next recording**, not when you click **Render** and not on a one-off.
 So the flow is: record once (unset fields capture blank), set the copy in the
-Text section, then re-record to capture it. The Text section shows this reminder
-inline, with a **Re-record this video** button that triggers a fresh recording
-from the web when the project is connected to GitHub (otherwise it links you to
-connect GitHub first).
+Values section, then re-record to capture it. The Values section shows this
+reminder inline, with a **Re-record this video** button that triggers a fresh
+recording from the web when the project is connected to GitHub (otherwise it
+links you to connect GitHub first).
 
-See [Narration and Localization](/docs/guides/narration-and-localization) for the
-code-side `text` fixture.
+See [Values](/docs/guides/values) for the code-side `values` fixture.
 
 ## Studio overlays from code
 
@@ -292,7 +289,7 @@ ratio, quality, fps) to Studio as well. Unlike render options, record options
 change the captured viewport and encode, so they take effect on the **next
 recording**, not when you click **Render**. They are fetched before the recording
 runs and applied to that capture (later uploads reuse the saved values). Like the
-Text section, the Recording options section shows this reminder inline with a
+Values section, the Recording options section shows this reminder inline with a
 **Re-record this video** button:
 
 ```ts

@@ -19,9 +19,12 @@ reference material to drill into.
 ### Guides
 
 - [Page Instrumentation](./page-instrumentation.md)
-- [Narration and Localization](./narration-and-localization.md)
-- [Camera and Zooming](./camera-and-zooming.md)
+- [Narration](./narration.md)
+- [Text](./text.md)
+- [Audio](./audio.md)
 - [Overlays](./overlays.md)
+- [Languages](./languages.md)
+- [Camera and Zooming](./camera-and-zooming.md)
 - [Studio](./studio.md)
 - [Public URLs and Embeds](./public-urls-and-embeds.md)
 - [Update ScreenCI](./update-screenci.mdx)

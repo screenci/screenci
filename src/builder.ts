@@ -80,7 +80,7 @@ export type Registration = {
   use: Record<string, unknown> | null
   /** Per-feature declarations carried into the fixtures. */
   narration: NormalizedFeature<LocalizeNarrationValue> | null
-  text: NormalizedFeature<string> | null
+  values: NormalizedFeature<string> | null
   overlays: NormalizedFeature<OverlayInputOrFactory> | null
   audio: NormalizedFeature<AudioInput> | null
   /** Resolved recording-level localize config (languages/mode/locales). */
@@ -118,7 +118,7 @@ function featureLanguages(state: BuilderState): string[] {
   const set = new Set<string>()
   for (const feature of [
     state.narration,
-    state.text,
+    state.values,
     state.overlays,
     state.audio,
   ]) {
@@ -201,7 +201,7 @@ function warnUnusedLanguages(
   const langList = resolved.languages.join(', ') || '(none)'
   const features: [string, NormalizedFeature<unknown> | null][] = [
     ['Narration', state.narration],
-    ['Text', state.text],
+    ['Values', state.values],
     ['Overlay', state.overlays],
     ['Audio', state.audio],
   ]
@@ -264,7 +264,7 @@ export function expandRegistrations(params: {
       recordOptions,
       use,
       narration: state.narration,
-      text: state.text,
+      values: state.values,
       overlays: state.overlays,
       audio: state.audio,
       recordingLocalize: resolved,
@@ -324,7 +324,7 @@ export function expandRegistrations(params: {
 const SCREENCI_LANGUAGE_OPTION = '_screenciLanguage'
 const SCREENCI_VIDEO_NAME_OPTION = '_screenciVideoName'
 const SCREENCI_NARRATION_OPTION = '_screenciNarration'
-const SCREENCI_TEXT_OPTION = '_screenciText'
+const SCREENCI_VALUES_OPTION = '_screenciValues'
 const SCREENCI_OVERLAYS_OPTION = '_screenciOverlays'
 const SCREENCI_AUDIO_OPTION = '_screenciAudio'
 const SCREENCI_RECORDING_LOCALIZE_OPTION = '_screenciRecordingLocalize'
@@ -400,7 +400,7 @@ function registerOne(
     [SCREENCI_LANGUAGE_OPTION]: reg.language ?? undefined,
     [SCREENCI_VIDEO_NAME_OPTION]: reg.videoName,
     [SCREENCI_NARRATION_OPTION]: reg.narration ?? undefined,
-    [SCREENCI_TEXT_OPTION]: reg.text ?? undefined,
+    [SCREENCI_VALUES_OPTION]: reg.values ?? undefined,
     [SCREENCI_OVERLAYS_OPTION]: reg.overlays ?? undefined,
     [SCREENCI_AUDIO_OPTION]: reg.audio ?? undefined,
     [SCREENCI_RECORDING_LOCALIZE_OPTION]: reg.recordingLocalize,
@@ -460,10 +460,10 @@ type NarrationOverrideFor<Args, A> = 'narration' extends keyof Args
     : { narration: Record<FeatureNamesOf<A>, NarrationCue> }
   : object
 
-type TextOverrideFor<Args, A> = 'text' extends keyof Args
+type ValuesOverrideFor<Args, A> = 'values' extends keyof Args
   ? [FeatureNamesOf<A>] extends [never]
     ? object
-    : { text: Record<FeatureNamesOf<A>, string> }
+    : { values: Record<FeatureNamesOf<A>, string> }
   : object
 
 type OverlayOverrideFor<Args, A> = 'overlays' extends keyof Args
@@ -496,15 +496,15 @@ type BodyFn<Args> = (args: Args, testInfo: TestInfo) => void | Promise<void>
  * A chainable fan-out builder. Callable to register the test(s), and exposes the
  * per-feature declaration methods plus `.languages()` / `.each()` to refine the
  * fan-out. `O` accumulates the typed fixture overrides so the body sees
- * `narration`/`text`/`overlays`/`audio` typed to the declared names.
+ * `narration`/`values`/`overlays`/`audio` typed to the declared names.
  */
 type BuilderTerminal<Args, O> = {
   (title: string, body: BodyFn<MergeArgs<Args, O>>): void
   (title: string, details: TestDetails, body: BodyFn<MergeArgs<Args, O>>): void
 }
 
-/** The fixture keys a medium supports (videos: all; screenshots: text+overlays). */
-export type FeatureKey = 'narration' | 'text' | 'overlays' | 'audio'
+/** The fixture keys a medium supports (videos: all; screenshots: values+overlays). */
+export type FeatureKey = 'narration' | 'values' | 'overlays' | 'audio'
 
 export interface MediaBuilder<Args, O = object> extends BuilderTerminal<
   Args,
@@ -514,10 +514,10 @@ export interface MediaBuilder<Args, O = object> extends BuilderTerminal<
   narration<const A extends FeatureArg<LocalizeNarrationValue>>(
     arg: A
   ): MediaBuilder<Args, O & NarrationOverrideFor<Args, A>>
-  /** Declare on-screen text fields. */
-  text<const A extends FeatureArg<string>>(
+  /** Declare on-screen values fields. */
+  values<const A extends FeatureArg<string>>(
     arg: A
-  ): MediaBuilder<Args, O & TextOverrideFor<Args, A>>
+  ): MediaBuilder<Args, O & ValuesOverrideFor<Args, A>>
   /** Declare overlays. */
   overlays<const A extends FeatureArg<OverlayInputOrFactory>>(
     arg: A
@@ -559,7 +559,7 @@ function normalizeVariants(variants: EachVariant[]): EachVariant[] {
 
 export type BuilderState = {
   narration: NormalizedFeature<LocalizeNarrationValue> | null
-  text: NormalizedFeature<string> | null
+  values: NormalizedFeature<string> | null
   overlays: NormalizedFeature<OverlayInputOrFactory> | null
   audio: NormalizedFeature<AudioInput> | null
   recordingLocalize: RecordingLocalize | null
@@ -570,7 +570,7 @@ export type BuilderState = {
 
 const EMPTY_STATE = (features: ReadonlySet<FeatureKey>): BuilderState => ({
   narration: null,
-  text: null,
+  values: null,
   overlays: null,
   audio: null,
   recordingLocalize: null,
@@ -581,13 +581,13 @@ const EMPTY_STATE = (features: ReadonlySet<FeatureKey>): BuilderState => ({
 /** The full set of feature fixtures for videos. */
 export const VIDEO_FEATURES: ReadonlySet<FeatureKey> = new Set([
   'narration',
-  'text',
+  'values',
   'overlays',
   'audio',
 ])
-/** Stills are silent: only text + overlays. */
+/** Stills are silent: only values + overlays. */
 export const SCREENSHOT_FEATURES: ReadonlySet<FeatureKey> = new Set([
-  'text',
+  'values',
   'overlays',
 ])
 
@@ -663,7 +663,7 @@ export function createVideoBuilder<Args>(
   ): MediaBuilder<Args> => {
     if (!features.has(key)) {
       throw new Error(
-        `[screenci] ${key}() is not available for this medium (a screenshot is silent: only text and overlays apply).`
+        `[screenci] ${key}() is not available for this medium (a screenshot is silent: only values and overlays apply).`
       )
     }
     return createVideoBuilder<Args>(test, features, {
@@ -674,8 +674,8 @@ export function createVideoBuilder<Args>(
 
   callable.narration = ((arg: FeatureArg<LocalizeNarrationValue>) =>
     withFeature('narration', arg)) as MediaBuilder<Args>['narration']
-  callable.text = ((arg: FeatureArg<string>) =>
-    withFeature('text', arg)) as MediaBuilder<Args>['text']
+  callable.values = ((arg: FeatureArg<string>) =>
+    withFeature('values', arg)) as MediaBuilder<Args>['values']
   callable.overlays = ((arg: FeatureArg<OverlayInputOrFactory>) =>
     withFeature('overlays', arg)) as MediaBuilder<Args>['overlays']
   callable.audio = ((arg: FeatureArg<AudioInput>) =>

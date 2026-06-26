@@ -4,7 +4,7 @@ import {
   mergeStudioRecordOptions,
   parseRecordOptions,
   parseRequestedLanguages,
-  parseTextOverrides,
+  parseValuesOverrides,
   resolveRecordingTimingDuration,
   shouldSimulateRecordingTimings,
 } from './runtimeMode.js'
@@ -88,18 +88,20 @@ describe('parseRequestedLanguages', () => {
   })
 })
 
-describe('parseTextOverrides', () => {
+describe('parseValuesOverrides', () => {
   it('returns null when unset or empty', () => {
-    expect(parseTextOverrides({} as NodeJS.ProcessEnv)).toBeNull()
+    expect(parseValuesOverrides({} as NodeJS.ProcessEnv)).toBeNull()
     expect(
-      parseTextOverrides({ SCREENCI_TEXT_OVERRIDES: '  ' } as NodeJS.ProcessEnv)
+      parseValuesOverrides({
+        SCREENCI_VALUES_OVERRIDES: '  ',
+      } as NodeJS.ProcessEnv)
     ).toBeNull()
   })
 
   it('parses a language -> field -> value JSON map', () => {
     expect(
-      parseTextOverrides({
-        SCREENCI_TEXT_OVERRIDES: JSON.stringify({
+      parseValuesOverrides({
+        SCREENCI_VALUES_OVERRIDES: JSON.stringify({
           en: { heading: 'Hi' },
           fi: { heading: 'Moi' },
         }),
@@ -109,8 +111,8 @@ describe('parseTextOverrides', () => {
 
   it('drops non-string values and keeps valid ones', () => {
     expect(
-      parseTextOverrides({
-        SCREENCI_TEXT_OVERRIDES: JSON.stringify({
+      parseValuesOverrides({
+        SCREENCI_VALUES_OVERRIDES: JSON.stringify({
           en: { heading: 'Hi', count: 3 },
         }),
       } as NodeJS.ProcessEnv)
@@ -119,8 +121,8 @@ describe('parseTextOverrides', () => {
 
   it('returns null on malformed JSON', () => {
     expect(
-      parseTextOverrides({
-        SCREENCI_TEXT_OVERRIDES: 'not json',
+      parseValuesOverrides({
+        SCREENCI_VALUES_OVERRIDES: 'not json',
       } as NodeJS.ProcessEnv)
     ).toBeNull()
   })

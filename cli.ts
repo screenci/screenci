@@ -37,7 +37,7 @@ import {
   SCREENCI_DISABLE_RECORDING_TIMINGS_ENV,
   SCREENCI_MOCK_RECORD_ENV,
   SCREENCI_LANGUAGES_ENV,
-  SCREENCI_TEXT_OVERRIDES_ENV,
+  SCREENCI_VALUES_OVERRIDES_ENV,
   SCREENCI_RECORD_OPTIONS_ENV,
 } from './src/runtimeMode.js'
 import { DEFAULT_RECORD_UPLOAD_POLICY } from './src/defaults.js'
@@ -357,7 +357,19 @@ function contentTypeForPath(filePath: string): string {
 
 type CustomVoiceRefLike = { assetHash: string; assetPath: string }
 
+/** What an uploaded file actually is, used to label it in the upload log. */
+type UploadAssetKind = 'overlay' | 'audio' | 'clip' | 'voice'
+
+/** Human label per upload kind, shown as `<label> uploaded: <path>`. */
+const UPLOAD_ASSET_LABEL: Record<UploadAssetKind, string> = {
+  overlay: 'Overlay',
+  audio: 'Audio',
+  clip: 'Clip',
+  voice: 'Voice',
+}
+
 type PreparedUploadAsset = {
+  kind: UploadAssetKind
   fileHash: string
   path: string
   size: number
@@ -1210,6 +1222,7 @@ async function prepareCustomVoiceAssets(
         ref.assetHash = existingHash
       }
       preparedAssets.push({
+        kind: 'voice',
         fileHash: existingHash,
         path: voicePath,
         size: 0,
@@ -1225,6 +1238,7 @@ async function prepareCustomVoiceAssets(
       ref.assetHash = assetHash
     }
     preparedAssets.push({
+      kind: 'voice',
       fileHash: assetHash,
       path: voicePath,
       size: fileBuffer.byteLength,
@@ -1255,11 +1269,12 @@ export async function collectUploadAssets(
         sourceFilePath
       )
       if (resolvedFile === null) {
-        logger.warn(`Asset file not found, skipping upload: ${event.path}`)
+        logger.warn(`Overlay file not found, skipping upload: ${event.path}`)
         continue
       }
       const { buffer: fileBuffer, resolvedPath } = resolvedFile
       assets.set(`name:${event.name}`, {
+        kind: 'overlay',
         fileHash: createHash('sha256').update(fileBuffer).digest('hex'),
         path: event.path,
         name: event.name,
@@ -1284,6 +1299,7 @@ export async function collectUploadAssets(
         continue
       }
       assets.set(`hash:${event.fileHash}`, {
+        kind: 'audio',
         fileHash: event.fileHash,
         path: event.path,
         size: resolvedFile.buffer.byteLength,
@@ -1309,6 +1325,7 @@ export async function collectUploadAssets(
               )
             : null
         assets.set(`hash:${event.assetHash}`, {
+          kind: 'clip',
           fileHash: event.assetHash,
           path: event.assetPath ?? event.assetHash,
           size: resolvedFile?.buffer.byteLength ?? 0,
@@ -1339,6 +1356,7 @@ export async function collectUploadAssets(
                   )
                 : null
             assets.set(`hash:${translation.assetHash}`, {
+              kind: 'clip',
               fileHash: translation.assetHash,
               path:
                 (translation as { assetPath?: string }).assetPath ??
@@ -1538,6 +1556,7 @@ async function uploadAssets(
 
   for (const asset of assets) {
     throwIfAborted()
+    const label = UPLOAD_ASSET_LABEL[asset.kind]
     try {
       if (!asset.alwaysUpload) {
         const checkRes = await withUploadRetry(
@@ -1570,7 +1589,7 @@ async function uploadAssets(
         const checkBody = (await checkRes.json()) as { exists: boolean }
         if (checkBody.exists) {
           logInfo(
-            `${pc.green('✔')} Asset already exists: ${displayAssetPath(asset.path)}`
+            `${pc.green('✔')} ${label} already exists: ${displayAssetPath(asset.path)}`
           )
           continue
         }
@@ -1610,7 +1629,7 @@ async function uploadAssets(
         const text = await res.text()
         if (res.status === 409 && text.includes('already exists')) {
           logInfo(
-            `${pc.green('✔')} Asset already exists: ${displayAssetPath(asset.path)}`
+            `${pc.green('✔')} ${label} already exists: ${displayAssetPath(asset.path)}`
           )
         } else {
           throw new UploadAssetError(
@@ -1618,7 +1637,9 @@ async function uploadAssets(
           )
         }
       } else {
-        logInfo(`Asset uploaded: ${displayAssetPath(asset.path)}`)
+        logInfo(
+          `${pc.green('✔')} ${label} uploaded: ${displayAssetPath(asset.path)}`
+        )
       }
     } catch (err) {
       if (isUploadCancelledError(err)) {
@@ -3170,7 +3191,7 @@ function validateArgs(args: string[]): void {
 
 /**
  * Fetch the project's current Studio text-field overrides so they can be
- * injected as SCREENCI_TEXT_OVERRIDES before a recording. On-screen `text`
+ * injected as SCREENCI_VALUES_OVERRIDES before a recording. On-screen `values`
  * fields render during the recording (they cannot be patched at render time),
  * so any Studio edits must be present here; code-declared seeds are the
  * fallback. Best-effort: any failure returns an empty env so the SDK uses the
@@ -3214,7 +3235,7 @@ async function fetchTextOverridesEnv(
     ) {
       return {}
     }
-    return { [SCREENCI_TEXT_OVERRIDES_ENV]: JSON.stringify(overrides) }
+    return { [SCREENCI_VALUES_OVERRIDES_ENV]: JSON.stringify(overrides) }
   } catch (error) {
     if (verbose) {
       logger.warn(

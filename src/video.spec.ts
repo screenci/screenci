@@ -639,7 +639,7 @@ describe('withActiveRecordingContext deferred overlay flush', () => {
     expect(rasterCalls).toBe(0)
   })
 
-  it('emits a textDeclare event when a declaration is provided', async () => {
+  it('emits a valuesDeclare event when a declaration is provided', async () => {
     const recorder = new EventRecorder()
     recorder.start()
     const runtimeContext = createScreenCIRuntimeContext({
@@ -652,7 +652,7 @@ describe('withActiveRecordingContext deferred overlay flush', () => {
       runtimeContext,
       page,
       recorder,
-      textDeclaration: {
+      valuesDeclaration: {
         fields: ['heading'],
         studioFields: [],
         seed: { fi: { heading: 'Moi' } },
@@ -661,10 +661,10 @@ describe('withActiveRecordingContext deferred overlay flush', () => {
     })
 
     expect(
-      recorder.getEvents().filter((e) => e.type === 'textDeclare')
+      recorder.getEvents().filter((e) => e.type === 'valuesDeclare')
     ).toEqual([
       {
-        type: 'textDeclare',
+        type: 'valuesDeclare',
         timeMs: expect.any(Number),
         fields: ['heading'],
         studioFields: [],
@@ -673,7 +673,7 @@ describe('withActiveRecordingContext deferred overlay flush', () => {
     ])
   })
 
-  it('emits no textDeclare event when no declaration is provided', async () => {
+  it('emits no valuesDeclare event when no declaration is provided', async () => {
     const recorder = new EventRecorder()
     recorder.start()
     const runtimeContext = createScreenCIRuntimeContext({
@@ -689,7 +689,7 @@ describe('withActiveRecordingContext deferred overlay flush', () => {
       fn: async () => {},
     })
 
-    expect(recorder.getEvents().some((e) => e.type === 'textDeclare')).toBe(
+    expect(recorder.getEvents().some((e) => e.type === 'valuesDeclare')).toBe(
       false
     )
   })

@@ -51,11 +51,11 @@ import {
 } from './builder.js'
 import type { NormalizedFeature } from './declare.js'
 import {
-  buildTextDeclaration,
-  buildTextValues,
-  type TextValues,
+  buildValuesDeclaration,
+  buildValues,
+  type Values,
 } from './localizeRuntime.js'
-import { parseTextOverrides } from './runtimeMode.js'
+import { parseValuesOverrides } from './runtimeMode.js'
 
 /**
  * The `crop` fixture argument. Call it inside a `screenshot()` body to crop the
@@ -77,8 +77,8 @@ type ScreenshotFixtureOptions = {
   _screenciLanguage: string | undefined
   /** Grouping name written to `metadata.videoName`. Internal. */
   _screenciVideoName: string | undefined
-  /** Text-field declaration (`screenshot.text(...)`). Internal. */
-  _screenciText: NormalizedFeature<string> | undefined
+  /** Values-field declaration (`screenshot.values(...)`). Internal. */
+  _screenciValues: NormalizedFeature<string> | undefined
   /** Overlay declaration (`screenshot.overlays(...)`). Internal. */
   _screenciOverlays: NormalizedFeature<OverlayInputOrFactory> | undefined
   /**
@@ -94,11 +94,11 @@ type ScreenshotFixtures = {
   /** The language being captured in this pass; `undefined` outside per-language mode. */
   language: string | undefined
   /**
-   * Injected text field values for the active language, keyed by the field names
-   * declared in `screenshot.localize(...)`. A still is silent, so there is no
+   * Injected values fields for the active language, keyed by the field names
+   * declared in `screenshot.values(...)`. A still is silent, so there is no
    * `narration` fixture.
    */
-  text: TextValues
+  values: Values
   /**
    * Overlay controllers for the names declared in `screenshot.overlays(...)`.
    * Empty when none are declared.
@@ -116,7 +116,7 @@ const _screenshotBase = base.extend<
   renderOptions: [undefined, { option: true }],
   _screenciLanguage: [undefined, { option: true }],
   _screenciVideoName: [undefined, { option: true }],
-  _screenciText: [undefined, { option: true }],
+  _screenciValues: [undefined, { option: true }],
   _screenciOverlays: [undefined, { option: true }],
   _screenciSourceFile: [undefined, { option: true }],
 
@@ -124,9 +124,9 @@ const _screenshotBase = base.extend<
     await use(_screenciLanguage)
   },
 
-  text: async ({ _screenciText, _screenciLanguage }, use) => {
+  values: async ({ _screenciValues, _screenciLanguage }, use) => {
     await use(
-      buildTextValues(_screenciText, _screenciLanguage, parseTextOverrides())
+      buildValues(_screenciValues, _screenciLanguage, parseValuesOverrides())
     )
   },
 
@@ -246,7 +246,7 @@ const _screenshotBase = base.extend<
       renderOptions,
       deviceScaleFactor,
       _screenciLanguage,
-      _screenciText,
+      _screenciValues,
       _screenciVideoName,
       _screenciSourceFile,
     },
@@ -268,10 +268,10 @@ const _screenshotBase = base.extend<
       recordOptions: studioRecord,
     })
     recorder.setActiveLanguage(_screenciLanguage ?? null)
-    // Declared `text` fields (and the active language's seeds) emitted once at
+    // Declared `values` fields (and the active language's seeds) emitted once at
     // recording start so the backend/Studio learn them.
-    const textDeclaration = buildTextDeclaration(
-      _screenciText,
+    const valuesDeclaration = buildValuesDeclaration(
+      _screenciValues,
       _screenciLanguage
     )
     const videoName = _screenciVideoName ?? testInfo.title
@@ -295,7 +295,7 @@ const _screenshotBase = base.extend<
         page,
         recorder,
         unendedOverlays: 'autoEnd',
-        textDeclaration,
+        valuesDeclaration,
         fn: async () => {
           await use(page)
         },
@@ -341,7 +341,7 @@ const _screenshotBase = base.extend<
         page,
         recorder,
         unendedOverlays: 'autoEnd',
-        textDeclaration,
+        valuesDeclaration,
         fn: async () => {
           await use(page)
         },
@@ -463,11 +463,11 @@ interface Screenshot extends ScreenshotCallSignatures {
   /**
    * Capture one localized screenshot per declared language. By default each
    * language is captured in its own pass with the browser `locale` set from the
-   * language, and the body receives the active `language` and `text` values.
+   * language, and the body receives the active `language` and `values` fields.
    * Chainable with `.each(...)`.
    */
-  /** Declare on-screen text fields (array = Studio-owned, object = code values). */
-  text: MediaBuilder<ScreenshotArgs>['text']
+  /** Declare on-screen values fields (array = Studio-owned, object = code values). */
+  values: MediaBuilder<ScreenshotArgs>['values']
 
   /** Declare overlays (array = Studio-owned, object = code values/factories). */
   overlays: MediaBuilder<ScreenshotArgs>['overlays']
@@ -543,7 +543,7 @@ const _screenshotRootBuilder = createVideoBuilder<ScreenshotArgs>(
   _screenshotBase as unknown as Parameters<typeof createVideoBuilder>[0],
   SCREENSHOT_FEATURES
 )
-screenshot.text = _screenshotRootBuilder.text
+screenshot.values = _screenshotRootBuilder.values
 screenshot.overlays = _screenshotRootBuilder.overlays
 screenshot.languages = _screenshotRootBuilder.languages
 screenshot.each = _screenshotRootBuilder.each

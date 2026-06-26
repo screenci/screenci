@@ -40,8 +40,8 @@ export type NarrationByLang = Partial<
   Record<Lang, Record<string, LocalizeNarrationValue>>
 >
 
-/** Seeded text: language -> (field name -> string). */
-export type TextByLang = Partial<Record<Lang, Record<string, string>>>
+/** Seeded values: language -> (field name -> string). */
+export type ValuesByLang = Partial<Record<Lang, Record<string, string>>>
 
 /**
  * The `voice` field: a per-language map of voice overrides. Languages omitted
@@ -55,7 +55,7 @@ export type LocalizeVoiceSpec = Partial<Record<Lang, VoiceConfig>>
 /**
  * The localization spec passed to `video.localize(...)` / `screenshot.localize(...)`.
  *
- * `narration` and `text` are seeded per-language maps (keys must be identical
+ * `narration` and `values` are seeded per-language maps (keys must be identical
  * across languages, enforced by TypeScript). Studio-managed cue/field names are
  * declared separately via `video.studio({...})`. `voice` co-locates per-language
  * narration voice overrides with the content; the all-languages default comes
@@ -71,8 +71,8 @@ export type LocalizeSpec = {
   languages?: readonly string[]
   /** Spoken narration (video only): seeded per-language map. */
   narration?: NarrationByLang
-  /** Injected text fields: seeded per-language map. */
-  text?: TextByLang
+  /** Injected values fields: seeded per-language map. */
+  values?: ValuesByLang
   /** Per-language browser-locale overrides (e.g. `{ en: 'en-GB' }`). */
   locales?: Partial<Record<Lang, string>>
   /** Recording mode. Defaults to `'per-language'`. */
@@ -103,7 +103,7 @@ export type NormalizedNarration = {
   seedByLang: Partial<Record<Lang, Record<string, NormalizedCueValue>>>
 } | null
 
-export type NormalizedText = {
+export type NormalizedValues = {
   /** Every field name: seeded then Studio, in declared order. */
   fieldNames: string[]
   /** Studio-managed field names. */
@@ -120,7 +120,7 @@ export type NormalizedLocalize = {
   browserLocale: boolean
   locales?: Partial<Record<Lang, string>>
   narration: NormalizedNarration
-  text: NormalizedText
+  values: NormalizedValues
   /** Per-language localize `voice` overrides (absent language = use config default). */
   voiceByLang: Partial<Record<Lang, VoiceConfig>>
 }
@@ -258,8 +258,8 @@ function normalizeNarration(input: NarrationByLang | undefined): {
   }
 }
 
-function normalizeText(input: TextByLang | undefined): {
-  normalized: NormalizedText
+function normalizeValues(input: ValuesByLang | undefined): {
+  normalized: NormalizedValues
   seedLangs: string[]
 } {
   const hasSeed = input !== undefined && Object.keys(input).length > 0
@@ -312,7 +312,7 @@ function normalizeVoice(
 }
 
 /**
- * Normalize and validate a localize spec: resolve narration/text into seeded
+ * Normalize and validate a localize spec: resolve narration/values into seeded
  * values + Studio name lists, infer the language set (union of seeded keys and
  * the explicit `languages`), and validate disjointness, identical seeded keys,
  * and voice coverage. Pure and exported for testing.
@@ -320,18 +320,20 @@ function normalizeVoice(
 export function normalizeLocalizeSpec(spec: LocalizeSpec): NormalizedLocalize {
   const { normalized: narration, seedLangs: narrationLangs } =
     normalizeNarration(spec.narration)
-  const { normalized: text, seedLangs: textLangs } = normalizeText(spec.text)
+  const { normalized: values, seedLangs: valuesLangs } = normalizeValues(
+    spec.values
+  )
 
   const hasExplicitLanguages =
     spec.languages !== undefined && spec.languages.length > 0
 
-  if (narration === null && text === null && !hasExplicitLanguages) {
+  if (narration === null && values === null && !hasExplicitLanguages) {
     throw new Error(
-      'localize(): nothing to localize. Provide narration and/or text (seeded maps), or pass `languages: [...]` when every cue/field is Studio-managed via video.studio({...}).'
+      'localize(): nothing to localize. Provide narration and/or values (seeded maps), or pass `languages: [...]` when every cue/field is Studio-managed via video.studio({...}).'
     )
   }
 
-  const seededLanguages = dedupe([...narrationLangs, ...textLangs])
+  const seededLanguages = dedupe([...narrationLangs, ...valuesLangs])
 
   let languages: string[]
   if (hasExplicitLanguages) {
@@ -340,7 +342,7 @@ export function normalizeLocalizeSpec(spec: LocalizeSpec): NormalizedLocalize {
     languages = seededLanguages
   } else {
     throw new Error(
-      'localize(): no languages. Pass `languages: [...]`, or seed narration/text with per-language values.'
+      'localize(): no languages. Pass `languages: [...]`, or seed narration/values with per-language values.'
     )
   }
 
@@ -360,11 +362,11 @@ export function normalizeLocalizeSpec(spec: LocalizeSpec): NormalizedLocalize {
       languages
     )
   }
-  if (text !== null) {
+  if (values !== null) {
     assertIdenticalSeededKeys(
-      'text',
-      text.seedByLang as Partial<Record<string, Record<string, unknown>>>,
-      text.seededNames,
+      'values',
+      values.seedByLang as Partial<Record<string, Record<string, unknown>>>,
+      values.seededNames,
       languages
     )
   }
@@ -377,7 +379,7 @@ export function normalizeLocalizeSpec(spec: LocalizeSpec): NormalizedLocalize {
     browserLocale: spec.browserLocale ?? true,
     ...(spec.locales !== undefined && { locales: spec.locales }),
     narration,
-    text,
+    values,
     voiceByLang,
   }
 }

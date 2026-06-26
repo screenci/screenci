@@ -3,7 +3,7 @@ import type { AspectRatio, FPS, Quality } from './types.js'
 export const SCREENCI_RECORDING_ENV = 'SCREENCI_RECORDING'
 export const SCREENCI_MOCK_RECORD_ENV = 'SCREENCI_MOCK_RECORD'
 export const SCREENCI_LANGUAGES_ENV = 'SCREENCI_LANGUAGES'
-export const SCREENCI_TEXT_OVERRIDES_ENV = 'SCREENCI_TEXT_OVERRIDES'
+export const SCREENCI_VALUES_OVERRIDES_ENV = 'SCREENCI_VALUES_OVERRIDES'
 export const SCREENCI_RECORD_OPTIONS_ENV = 'SCREENCI_RECORD_OPTIONS'
 export const SCREENCI_DISABLE_RECORDING_TIMINGS_ENV =
   'SCREENCI_DISABLE_RECORDING_TIMINGS'
@@ -81,27 +81,27 @@ export function parseRequestedLanguages(
   return languages.length > 0 ? languages : null
 }
 
-/** Per-language text field overrides: `{ [language]: { [field]: value } }`. */
-export type TextOverrides = Record<string, Record<string, string>>
+/** Per-language values-field overrides: `{ [language]: { [field]: value } }`. */
+export type ValuesOverrides = Record<string, Record<string, string>>
 
 /**
- * Parse Studio text-field overrides injected for a re-record. Because the
+ * Parse Studio values-field overrides injected for a re-record. Because the
  * recording process never reaches the backend, Studio edits are passed in via
- * `SCREENCI_TEXT_OVERRIDES` (a JSON map of language -> field -> value), set by
+ * `SCREENCI_VALUES_OVERRIDES` (a JSON map of language -> field -> value), set by
  * the CLI from the backend before the recording runs. Returns `null` when unset
- * or malformed, so the `text` fixture falls back to the code-declared seed.
+ * or malformed, so the `values` fixture falls back to the code-declared seed.
  */
-export function parseTextOverrides(
+export function parseValuesOverrides(
   env: NodeJS.ProcessEnv = process.env
-): TextOverrides | null {
-  const raw = env[SCREENCI_TEXT_OVERRIDES_ENV]
+): ValuesOverrides | null {
+  const raw = env[SCREENCI_VALUES_OVERRIDES_ENV]
   if (raw === undefined || raw.trim().length === 0) return null
 
   try {
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed !== 'object' || parsed === null) return null
 
-    const result: TextOverrides = {}
+    const result: ValuesOverrides = {}
     for (const [language, fields] of Object.entries(parsed)) {
       if (typeof fields !== 'object' || fields === null) continue
       const perLanguage: Record<string, string> = {}

@@ -353,5 +353,4 @@ real workflow.
 ## Related pages
 
 - [CLI](/docs/reference/cli) for how config is discovered and loaded.
-- [Narration and Localization](/docs/guides/narration-and-localization) for cue and
-  voice authoring.
+- [Narration](/docs/guides/narration) for cue and voice authoring.

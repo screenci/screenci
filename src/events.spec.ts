@@ -30,15 +30,15 @@ describe('EventRecorder', () => {
     })
   })
 
-  describe('addTextDeclare', () => {
+  describe('addValuesDeclare', () => {
     it('records the declaration with relative time and seed', () => {
       recorder.start()
       now = 1300
-      recorder.addTextDeclare(['heading'], [], { en: { heading: 'Hi' } })
+      recorder.addValuesDeclare(['heading'], [], { en: { heading: 'Hi' } })
 
       expect(recorder.getEvents().slice(1)).toEqual([
         {
-          type: 'textDeclare',
+          type: 'valuesDeclare',
           timeMs: 300,
           fields: ['heading'],
           studioFields: [],
@@ -49,11 +49,11 @@ describe('EventRecorder', () => {
 
     it('omits the seed when undefined (studio-only / shared mode)', () => {
       recorder.start()
-      recorder.addTextDeclare(['cta'], ['cta'])
+      recorder.addValuesDeclare(['cta'], ['cta'])
 
       expect(recorder.getEvents().slice(1)).toEqual([
         {
-          type: 'textDeclare',
+          type: 'valuesDeclare',
           timeMs: 0,
           fields: ['cta'],
           studioFields: ['cta'],
@@ -62,7 +62,7 @@ describe('EventRecorder', () => {
     })
 
     it('is a no-op before start', () => {
-      recorder.addTextDeclare(['heading'], [], { en: { heading: 'Hi' } })
+      recorder.addValuesDeclare(['heading'], [], { en: { heading: 'Hi' } })
       expect(recorder.getEvents()).toHaveLength(0)
     })
   })

@@ -76,61 +76,97 @@ export const docsManifest = [
     description:
       'Understand how ScreenCI instruments the Playwright page so visible actions like clicks, typing, mouse movement, and scrolling are animated.',
     prev: 'docs/ci-setup',
-    next: 'docs/guides/narration-and-localization',
+    next: 'docs/guides/narration',
   },
   {
-    source: 'narration-and-localization.md',
-    slug: 'docs/guides/narration-and-localization',
-    section: 'Guides',
-    order: 2,
-    navLabel: 'Narration and localization',
-    title: 'Narration and Localization',
+    source: 'narration.md',
+    slug: 'docs/guides/narration',
+    section: 'Fixtures',
+    order: 1,
+    navLabel: 'Narration',
+    title: 'Narration',
     description:
-      'Create spoken cues, overlap narration with visible UI motion, and keep multi-language variants consistent and type-safe.',
+      'Attach spoken cues to a video, overlap narration with visible UI motion, choose voices, use speech markup, and connect ElevenLabs for custom voices.',
     prev: 'docs/guides/page-instrumentation',
+    next: 'docs/guides/values',
+  },
+  {
+    source: 'values.md',
+    slug: 'docs/guides/values',
+    section: 'Fixtures',
+    order: 2,
+    navLabel: 'Values',
+    title: 'Values',
+    description:
+      'Inject per-language page content with video.values() for apps that do not self-localize, and let Studio manage field values without code changes.',
+    prev: 'docs/guides/narration',
+    next: 'docs/guides/audio',
+  },
+  {
+    source: 'audio.md',
+    slug: 'docs/guides/audio',
+    section: 'Fixtures',
+    order: 3,
+    navLabel: 'Audio',
+    title: 'Audio',
+    description:
+      'Add background music or sound effects to a video with video.audio(), control volume and looping, and let Studio manage track files.',
+    prev: 'docs/guides/values',
+    next: 'docs/guides/overlays',
+  },
+  {
+    source: 'overlays.md',
+    slug: 'docs/guides/overlays',
+    section: 'Fixtures',
+    order: 4,
+    navLabel: 'Overlays',
+    title: 'Overlays',
+    description:
+      'Add intro clips, corner logos, transitions, and timed overlays to ScreenCI recordings from files, HTML, or React.',
+    prev: 'docs/guides/audio',
+    next: 'docs/guides/languages',
+  },
+  {
+    source: 'languages.md',
+    slug: 'docs/guides/languages',
+    section: 'Fixtures',
+    order: 5,
+    navLabel: 'Languages',
+    title: 'Languages',
+    description:
+      'Record per-language video versions from one script: set browser locale automatically, localize narration, values, overlays, and audio, and control the recording mode.',
+    prev: 'docs/guides/overlays',
     next: 'docs/guides/camera-and-zooming',
   },
   {
     source: 'camera-and-zooming.md',
     slug: 'docs/guides/camera-and-zooming',
     section: 'Guides',
-    order: 3,
+    order: 2,
     navLabel: 'Camera and zooming',
     title: 'Camera and Zooming',
     description:
       'Choose between autoZoom and manual framing, and use camera direction to guide attention without making the video frantic.',
-    prev: 'docs/guides/narration-and-localization',
-    next: 'docs/guides/overlays',
-  },
-  {
-    source: 'overlays.md',
-    slug: 'docs/guides/overlays',
-    section: 'Guides',
-    order: 4,
-    navLabel: 'Overlays',
-    title: 'Overlays',
-    description:
-      'Add intro clips, corner logos, transitions, and timed overlays to ScreenCI recordings from files, HTML, or React.',
-    prev: 'docs/guides/camera-and-zooming',
+    prev: 'docs/guides/languages',
     next: 'docs/guides/screenshots',
   },
   {
     source: 'screenshots.md',
     slug: 'docs/guides/screenshots',
     section: 'Guides',
-    order: 5,
+    order: 3,
     navLabel: 'Screenshots',
     title: 'Screenshots',
     description:
       'Capture branded still screenshots with the screenshot() fixture: crop to a component, set quality and dark mode, and frame the shot on a background with overlays.',
-    prev: 'docs/guides/overlays',
+    prev: 'docs/guides/camera-and-zooming',
     next: 'docs/guides/studio',
   },
   {
     source: 'studio.md',
     slug: 'docs/guides/studio',
     section: 'Guides',
-    order: 6,
+    order: 4,
     navLabel: 'Studio',
     title: 'Studio',
     description:
@@ -142,7 +178,7 @@ export const docsManifest = [
     source: 'public-urls-and-embeds.md',
     slug: 'docs/guides/public-urls-and-embeds',
     section: 'Guides',
-    order: 7,
+    order: 5,
     navLabel: 'Public URLs and embeds',
     title: 'Public URLs and Embeds',
     description:
@@ -154,7 +190,7 @@ export const docsManifest = [
     source: 'screen-audio.md',
     slug: 'docs/guides/screen-audio',
     section: 'Guides',
-    order: 8,
+    order: 6,
     navLabel: 'Screen audio',
     title: 'Screen Audio',
     description:
@@ -166,7 +202,7 @@ export const docsManifest = [
     source: 'update-screenci.mdx',
     slug: 'docs/guides/update-screenci',
     section: 'Guides',
-    order: 9,
+    order: 7,
     navLabel: 'Update ScreenCI',
     title: 'Update ScreenCI',
     description:
@@ -212,7 +248,12 @@ export const docsManifest = [
   },
 ] as const
 
-export const docsSections = ['Getting Started', 'Guides', 'Reference'] as const
+export const docsSections = [
+  'Getting Started',
+  'Fixtures',
+  'Guides',
+  'Reference',
+] as const
 
 export function getDocBySlug(slug: string) {
   return docsManifest.find((entry) => entry.slug === slug)

@@ -158,6 +158,13 @@ export type RenderOptions = {
   narration?: {
     /** 0-1: 1=mask size equals shorter side of output */
     size?: number
+    /**
+     * Narration size when the recording is shrunk via `resizeRecording()`.
+     * When set, the narration bubble scales down and tightens into its corner
+     * in sync with the recording size transition. Omit to keep a fixed size.
+     * 0-1: same units as `size`.
+     */
+    sizeZoomed?: number
     /** 0-1: 0=square, 1=circle */
     roundness?: number
     shape?: 'rounded'

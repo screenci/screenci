@@ -229,18 +229,18 @@ export type CueEndEvent = {
 }
 
 /**
- * Declares the localized `text` fields used by a recording so the backend (and
- * Studio) learn which fields exist and their code-declared seeds. Text fields
+ * Declares the localized `values` fields used by a recording so the backend (and
+ * Studio) learn which fields exist and their code-declared seeds. Value fields
  * render on screen, so unlike narration they cannot be patched at render time:
  * the recorder emits this once at start so Studio can later supply per-language
  * overrides that the CLI injects before a re-record.
  */
-export type TextDeclareEvent = {
-  type: 'textDeclare'
+export type ValuesDeclareEvent = {
+  type: 'valuesDeclare'
   timeMs: number
   /** Every field name (seeded then Studio-managed), in declared order. */
   fields: string[]
-  /** Studio-managed field names (declared via `studio.text`, no code seed). */
+  /** Studio-managed field names (name-only form, no code seed). */
   studioFields: string[]
   /**
    * Code-declared seeds keyed by language then field: `{ [lang]: { [field]: value } }`.
@@ -620,12 +620,54 @@ export type AutoZoomEndEvent = {
   duration: number
 }
 
+/**
+ * Marks the timeline point where the recording shrinks to a limited size,
+ * revealing the styled background around it. `size` is a 0-1 fraction of the
+ * full frame (1 = full screen). The transition takes `duration` ms with the
+ * given `easing`; when `duration` is 0 or omitted the change is an instant cut.
+ * Emitted by `resizeRecording()`.
+ */
+export type RecordingSizeStartEvent = {
+  type: 'recordingSizeStart'
+  timeMs: number
+  size: number
+  /** Transition duration in milliseconds. 0 or omitted = instant cut. */
+  duration?: number
+  /** Easing function for the transition. */
+  easing?: Easing
+}
+
+/**
+ * Marks the timeline point where the recording returns to full screen
+ * (size 1). Emitted by `resetRecordingSize()`.
+ */
+export type RecordingSizeEndEvent = {
+  type: 'recordingSizeEnd'
+  timeMs: number
+}
+
+/**
+ * Hides the narration (camera PIP) from this point on. Emitted by `hideNarration()`.
+ */
+export type NarrationHideEvent = {
+  type: 'narrationHide'
+  timeMs: number
+}
+
+/**
+ * Shows the narration (camera PIP) from this point on. Emitted by `showNarration()`.
+ */
+export type NarrationShowEvent = {
+  type: 'narrationShow'
+  timeMs: number
+}
+
 export type RecordingEvent =
   | VideoStartEvent
   | InputEvent
   | CueStartEvent
   | CueEndEvent
-  | TextDeclareEvent
+  | ValuesDeclareEvent
   | VideoCueStartEvent
   | AssetStartEvent
   | AssetEndEvent
@@ -641,6 +683,10 @@ export type RecordingEvent =
   | TimeEndEvent
   | AutoZoomStartEvent
   | AutoZoomEndEvent
+  | RecordingSizeStartEvent
+  | RecordingSizeEndEvent
+  | NarrationHideEvent
+  | NarrationShowEvent
 
 export type VoiceLanguageMeta = {
   /** Voice key string: a built-in voice name or an external voice key. */
@@ -803,11 +849,11 @@ export interface IEventRecorder {
   /** Records a studio-mode cue start — text and voice are configured in Studio. */
   addStudioCueStart(name: string): void
   /**
-   * Declares the localized `text` fields used by this recording (field names,
+   * Declares the localized `values` fields used by this recording (field names,
    * Studio-managed field names, and the active language's seeds) so the backend
-   * learns them. See {@link TextDeclareEvent}.
+   * learns them. See {@link ValuesDeclareEvent}.
    */
-  addTextDeclare(
+  addValuesDeclare(
     fields: string[],
     studioFields: string[],
     seed?: Record<string, Record<string, string>>
@@ -872,6 +918,13 @@ export interface IEventRecorder {
   addTimeEnd(): void
   addAutoZoomStart(options?: AutoZoomOptions): void
   addAutoZoomEnd(options?: AutoZoomOptions): void
+  addRecordingSizeStart(
+    size: number,
+    options?: { duration?: number; easing?: Easing }
+  ): void
+  addRecordingSizeEnd(): void
+  addNarrationHide(): void
+  addNarrationShow(): void
   /**
    * Registers voice metadata seen during recording.
    * Kept for API compatibility; voice settings are stored per cue event.
@@ -892,7 +945,7 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addInput(): void {},
   addCueStart(): void {},
   addStudioCueStart(): void {},
-  addTextDeclare(): void {},
+  addValuesDeclare(): void {},
   addCueEnd(): void {},
   addVideoCueStart(): void {},
   addAssetStart(): void {},
@@ -917,6 +970,10 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addTimeEnd(): void {},
   addAutoZoomStart(): void {},
   addAutoZoomEnd(): void {},
+  addRecordingSizeStart(): void {},
+  addRecordingSizeEnd(): void {},
+  addNarrationHide(): void {},
+  addNarrationShow(): void {},
   registerVoiceForLang(): void {},
   getEvents(): RecordingEvent[] {
     return []
@@ -967,7 +1024,7 @@ export class EventRecorder implements IEventRecorder {
    * Returns `timeMs` snapped to the nearest preceding `hideEnd`/`assetEnd`
    * when two opaque transitions are back-to-back. Looks back through audio-only
    * events (cueStart, cueEnd, videoCueStart, audioStart, audioEnd,
-   * textDeclare) that carry no visual frames. For a direct gap the threshold
+   * valuesDeclare) that carry no visual frames. For a direct gap the threshold
    * is a few ms of JS overhead; if audio markers are found in the gap the
    * threshold is extended by {@link SNAP_CUE_COMPENSATION_MS} to cover the
    * frame-gap sleep that ran at the preceding assetEnd.
@@ -999,7 +1056,7 @@ export class EventRecorder implements IEventRecorder {
         event.type === 'videoCueStart' ||
         event.type === 'audioStart' ||
         event.type === 'audioEnd' ||
-        event.type === 'textDeclare'
+        event.type === 'valuesDeclare'
       ) {
         foundAudioMarker = true
         continue
@@ -1176,7 +1233,7 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addTextDeclare(
+  addValuesDeclare(
     fields: string[],
     studioFields: string[],
     seed?: Record<string, Record<string, string>>
@@ -1184,7 +1241,7 @@ export class EventRecorder implements IEventRecorder {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     this.events.push({
-      type: 'textDeclare',
+      type: 'valuesDeclare',
       timeMs,
       fields,
       studioFields,
@@ -1474,6 +1531,39 @@ export class EventRecorder implements IEventRecorder {
       easing: resolvedOptions.easing,
       duration: resolvedOptions.duration,
     })
+  }
+
+  addRecordingSizeStart(
+    size: number,
+    options?: { duration?: number; easing?: Easing }
+  ): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'recordingSizeStart',
+      timeMs,
+      size,
+      ...(options?.duration !== undefined && { duration: options.duration }),
+      ...(options?.easing !== undefined && { easing: options.easing }),
+    })
+  }
+
+  addRecordingSizeEnd(): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({ type: 'recordingSizeEnd', timeMs })
+  }
+
+  addNarrationHide(): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({ type: 'narrationHide', timeMs })
+  }
+
+  addNarrationShow(): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({ type: 'narrationShow', timeMs })
   }
 
   getEvents(): RecordingEvent[] {

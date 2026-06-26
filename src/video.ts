@@ -36,12 +36,12 @@ import type { NormalizedFeature } from './declare.js'
 import type { LocalizeNarrationValue } from './localize.js'
 import {
   buildNarrationMarkers,
-  buildTextDeclaration,
-  buildTextValues,
+  buildValuesDeclaration,
+  buildValues,
   narrationVoiceConfigFromRenderOptions,
   type NarrationMarkers,
-  type TextDeclaration,
-  type TextValues,
+  type ValuesDeclaration,
+  type Values,
 } from './localizeRuntime.js'
 import { setActiveHideRecorder } from './hide.js'
 import { setActiveAutoZoomRecorder, setActiveZoomPage } from './autoZoom.js'
@@ -96,7 +96,7 @@ import {
 import { escapeFileSystemPathSegment } from './fileSystemName.js'
 import {
   resolveRecordingTimingDuration,
-  parseTextOverrides,
+  parseValuesOverrides,
   parseRecordOptions,
   mergeStudioRecordOptions,
 } from './runtimeMode.js'
@@ -439,11 +439,11 @@ export async function withActiveRecordingContext<T>(params: {
    */
   unendedOverlays?: 'throw' | 'autoEnd'
   /**
-   * Localized `text` field declaration to emit once at recording start so the
+   * Localized `values` field declaration to emit once at recording start so the
    * backend learns which fields exist and their seeds. `null`/omitted when the
-   * spec declares no `text`.
+   * spec declares no `values`.
    */
-  textDeclaration?: TextDeclaration | null
+  valuesDeclaration?: ValuesDeclaration | null
 }): Promise<T> {
   const {
     runtimeContext,
@@ -451,7 +451,7 @@ export async function withActiveRecordingContext<T>(params: {
     recorder,
     fn,
     unendedOverlays = 'throw',
-    textDeclaration,
+    valuesDeclaration,
   } = params
 
   setActiveScreenCIRuntimeContext(runtimeContext)
@@ -486,11 +486,11 @@ export async function withActiveRecordingContext<T>(params: {
         await validateRegisteredAudioPaths(runtimeContext.testFilePath)
       }
 
-      if (textDeclaration) {
-        recorder.addTextDeclare(
-          textDeclaration.fields,
-          textDeclaration.studioFields,
-          textDeclaration.seed
+      if (valuesDeclaration) {
+        recorder.addValuesDeclare(
+          valuesDeclaration.fields,
+          valuesDeclaration.studioFields,
+          valuesDeclaration.seed
         )
       }
 
@@ -530,8 +530,8 @@ type VideoFixtureOptions = {
   _screenciVideoName: string | undefined
   /** Narration declaration (`video.narration(...)`). Internal. */
   _screenciNarration: NormalizedFeature<LocalizeNarrationValue> | undefined
-  /** Text-field declaration (`video.text(...)`). Internal. */
-  _screenciText: NormalizedFeature<string> | undefined
+  /** Values-field declaration (`video.values(...)`). Internal. */
+  _screenciValues: NormalizedFeature<string> | undefined
   /** Overlay declaration (`video.overlays(...)`). Internal. */
   _screenciOverlays: NormalizedFeature<OverlayInputOrFactory> | undefined
   /** Audio declaration (`video.audio(...)`). Internal. */
@@ -560,11 +560,11 @@ type VideoRuntimeFixtures = {
    */
   narration: NarrationMarkers
   /**
-   * Injected text field values for the active language, keyed by the field names
-   * declared in `video.localize(...)`. Use them to fill localized content into
+   * Injected values fields for the active language, keyed by the field names
+   * declared in `video.values(...)`. Use them to fill localized content into
    * the page.
    */
-  text: TextValues
+  values: Values
   /**
    * Overlay controllers for the names declared in `video.overlays(...)`. Each is
    * callable with `start()`/`end()`. Empty when none are declared.
@@ -590,7 +590,7 @@ const _videoBase = base.extend<
   _screenciLanguage: [undefined, { option: true }],
   _screenciVideoName: [undefined, { option: true }],
   _screenciNarration: [undefined, { option: true }],
-  _screenciText: [undefined, { option: true }],
+  _screenciValues: [undefined, { option: true }],
   _screenciOverlays: [undefined, { option: true }],
   _screenciAudio: [undefined, { option: true }],
   _screenciRecordingLocalize: [undefined, { option: true }],
@@ -615,9 +615,9 @@ const _videoBase = base.extend<
     )
   },
 
-  text: async ({ _screenciText, _screenciLanguage }, use) => {
+  values: async ({ _screenciValues, _screenciLanguage }, use) => {
     await use(
-      buildTextValues(_screenciText, _screenciLanguage, parseTextOverrides())
+      buildValues(_screenciValues, _screenciLanguage, parseValuesOverrides())
     )
   },
 
@@ -779,7 +779,7 @@ const _videoBase = base.extend<
       renderOptions,
       recordingFinalizationQueue,
       _screenciLanguage,
-      _screenciText,
+      _screenciValues,
       _screenciVideoName,
       _screenciSourceFile,
     },
@@ -803,10 +803,10 @@ const _videoBase = base.extend<
       renderOptions: studioRender,
       recordOptions: studioRecord,
     })
-    // Declared `text` fields (and the active language's seeds) emitted once at
+    // Declared `values` fields (and the active language's seeds) emitted once at
     // recording start so the backend/Studio learn them.
-    const textDeclaration = buildTextDeclaration(
-      _screenciText,
+    const valuesDeclaration = buildValuesDeclaration(
+      _screenciValues,
       _screenciLanguage
     )
     // Asset paths are authored relative to the user's script. Playwright reports
@@ -839,7 +839,7 @@ const _videoBase = base.extend<
         runtimeContext,
         page,
         recorder,
-        textDeclaration,
+        valuesDeclaration,
         fn: async () => {
           await use(page)
         },
@@ -947,7 +947,7 @@ const _videoBase = base.extend<
         runtimeContext,
         page,
         recorder,
-        textDeclaration,
+        valuesDeclaration,
         fn: async () => {
           await use(page)
 
@@ -1109,8 +1109,8 @@ interface Video extends VideoCallSignatures {
   /**
    * Record one localized pass per language. By default each language is recorded
    * in its own pass with the browser `locale` set from the language; the body
-   * receives the active `language`, the `narration` markers, and the `text`
-   * values. Pass `mode: 'shared'` for a single capture shared across languages.
+   * receives the active `language`, the `narration` markers, and the `values`
+   * fields. Pass `mode: 'shared'` for a single capture shared across languages.
    *
    * Chainable with `.each(...)` / `.languages(...)`.
    *
@@ -1118,11 +1118,11 @@ interface Video extends VideoCallSignatures {
    * ```ts
    * video
    *   .narration({ en: { intro: 'Welcome.' }, fi: { intro: 'Tervetuloa.' } })
-   *   .text({ en: { heading: 'Dashboard' }, fi: { heading: 'Hallinta' } })(
+   *   .values({ en: { heading: 'Dashboard' }, fi: { heading: 'Hallinta' } })(
    *   'Tutorial',
-   *   async ({ page, language, narration, text }) => {
+   *   async ({ page, language, narration, values }) => {
    *     await page.goto('/' + language)
-   *     await page.getByTestId('heading').fill(text.heading ?? '')
+   *     await page.getByTestId('heading').fill(values.heading ?? '')
    *     await narration.intro()
    *   }
    * )
@@ -1130,8 +1130,8 @@ interface Video extends VideoCallSignatures {
    */
   narration: MediaBuilder<VideoArgs>['narration']
 
-  /** Declare on-screen text fields (array = Studio-owned, object = code values). */
-  text: MediaBuilder<VideoArgs>['text']
+  /** Declare on-screen values fields (array = Studio-owned, object = code values). */
+  values: MediaBuilder<VideoArgs>['values']
 
   /** Declare overlays (array = Studio-owned, object = code values/factories). */
   overlays: MediaBuilder<VideoArgs>['overlays']
@@ -1228,7 +1228,7 @@ const _rootBuilder = createVideoBuilder<VideoArgs>(
   _videoBase as unknown as Parameters<typeof createVideoBuilder>[0]
 )
 video.narration = _rootBuilder.narration
-video.text = _rootBuilder.text
+video.values = _rootBuilder.values
 video.overlays = _rootBuilder.overlays
 video.audio = _rootBuilder.audio
 video.languages = _rootBuilder.languages

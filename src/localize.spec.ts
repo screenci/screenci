@@ -3,10 +3,10 @@ import { normalizeLocalizeSpec } from './localize.js'
 import { voices } from './voices.js'
 
 describe('normalizeLocalizeSpec', () => {
-  it('infers languages from the union of seeded narration and text keys', () => {
+  it('infers languages from the union of seeded narration and values keys', () => {
     const n = normalizeLocalizeSpec({
       narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
-      text: { en: { heading: 'H' }, fi: { heading: 'O' } },
+      values: { en: { heading: 'H' }, fi: { heading: 'O' } },
     })
     expect(n.languages).toEqual(['en', 'fi'])
     expect(n.mode).toBe('per-language')
@@ -20,7 +20,7 @@ describe('normalizeLocalizeSpec', () => {
       en: { intro: { kind: 'text', text: 'Hi' } },
       fi: { intro: { kind: 'text', text: 'Moi' } },
     })
-    expect(n.text).toMatchObject({
+    expect(n.values).toMatchObject({
       fieldNames: ['heading'],
       seededNames: ['heading'],
       studioNames: [],
@@ -30,18 +30,18 @@ describe('normalizeLocalizeSpec', () => {
   it('accepts a spec with only languages (every cue/field is Studio-managed)', () => {
     // Studio-managed names are now declared via video.studio({...}), not on the
     // localize spec. A spec carrying just `languages` is valid: it sets the
-    // language set and leaves narration/text null (the fixtures merge the
+    // language set and leaves narration/values null (the fixtures merge the
     // Studio-managed cues/fields in from the studio declaration).
     const n = normalizeLocalizeSpec({ languages: ['en', 'fi'] })
     expect(n.narration).toBeNull()
-    expect(n.text).toBeNull()
+    expect(n.values).toBeNull()
     expect(n.languages).toEqual(['en', 'fi'])
   })
 
   it('keeps seeded maps independent of Studio-managed names', () => {
     const n = normalizeLocalizeSpec({
       narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
-      text: { en: { heading: 'H' }, fi: { heading: 'O' } },
+      values: { en: { heading: 'H' }, fi: { heading: 'O' } },
     })
     expect(n.narration?.cueNames).toEqual(['intro'])
     expect(n.narration?.seededNames).toEqual(['intro'])
@@ -66,9 +66,9 @@ describe('normalizeLocalizeSpec', () => {
     expect(() =>
       normalizeLocalizeSpec({
         narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
-        text: { en: { heading: 'H' } },
+        values: { en: { heading: 'H' } },
       })
-    ).toThrow(/text for "fi" must declare the same keys.*missing heading/)
+    ).toThrow(/values for "fi" must declare the same keys.*missing heading/)
   })
 
   it('throws when seeded languages have different keys', () => {

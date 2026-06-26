@@ -379,7 +379,7 @@ describe('defineConfig', () => {
     expect(process.env.SCREENCI_CAPTURE_AUDIO).toBeUndefined()
   })
 
-  it('warns when captureAudio is enabled with parallel workers', () => {
+  it('does not warn for parallel workers (each captures its own isolated sink)', () => {
     process.env.SCREENCI_RECORDING = 'true'
     const workerIndex = process.env.TEST_WORKER_INDEX
     delete process.env.TEST_WORKER_INDEX
@@ -392,29 +392,6 @@ describe('defineConfig', () => {
         workers: 4,
       })
 
-      expect(warn).toHaveBeenCalledOnce()
-      expect(warn.mock.calls[0]?.[0]).toContain('captureAudio is enabled')
-    } finally {
-      warn.mockRestore()
-      delete process.env.SCREENCI_RECORDING
-      delete process.env.SCREENCI_CAPTURE_AUDIO
-      if (workerIndex !== undefined) process.env.TEST_WORKER_INDEX = workerIndex
-    }
-  })
-
-  it('does not warn when captureAudio runs with a single worker', () => {
-    process.env.SCREENCI_RECORDING = 'true'
-    const workerIndex = process.env.TEST_WORKER_INDEX
-    delete process.env.TEST_WORKER_INDEX
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-    try {
-      defineConfig({
-        projectName: 'Test',
-        enableCaptureAudio: true,
-        workers: 1,
-      })
-
       expect(warn).not.toHaveBeenCalled()
     } finally {
       warn.mockRestore()
@@ -424,11 +401,10 @@ describe('defineConfig', () => {
     }
   })
 
-  it('does not warn about parallel capture from inside a worker', () => {
+  it('still bridges the audio-mode env from inside a worker', () => {
     process.env.SCREENCI_RECORDING = 'true'
     const workerIndex = process.env.TEST_WORKER_INDEX
     process.env.TEST_WORKER_INDEX = '0'
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     try {
       defineConfig({
@@ -437,11 +413,8 @@ describe('defineConfig', () => {
         workers: 4,
       })
 
-      expect(warn).not.toHaveBeenCalled()
-      // The env bridge still runs inside the worker.
       expect(process.env.SCREENCI_CAPTURE_AUDIO).toBe('1')
     } finally {
-      warn.mockRestore()
       delete process.env.SCREENCI_RECORDING
       delete process.env.SCREENCI_CAPTURE_AUDIO
       if (workerIndex === undefined) delete process.env.TEST_WORKER_INDEX

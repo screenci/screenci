@@ -11,6 +11,12 @@ describe('getChromiumLaunchOptions', () => {
     expect(getChromiumLaunchOptions(false)).toBeUndefined()
   })
 
+  it('returns undefined when not recording even if audio capture is enabled', () => {
+    // `screenci test` / --ui / --headed must not be forced headless or pushed
+    // into audio mode: only `record` provides launch options at all.
+    expect(getChromiumLaunchOptions(false, true)).toBeUndefined()
+  })
+
   it('returns chromium flags that suppress permission prompts when recording', () => {
     const options = getChromiumLaunchOptions(true)
 

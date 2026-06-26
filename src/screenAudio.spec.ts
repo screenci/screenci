@@ -2,10 +2,35 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   resolvePlatformAudioArgs,
   startScreenAudioCapture,
+  isScreenAudioSupported,
+  screenAudioUnsupportedMessage,
+  setActiveCaptureDevice,
   type ScreenAudioDeps,
 } from './screenAudio.js'
 import { EventEmitter } from 'events'
 import { Writable } from 'stream'
+
+describe('isScreenAudioSupported', () => {
+  it('is true only on linux', () => {
+    expect(isScreenAudioSupported('linux')).toBe(true)
+    expect(isScreenAudioSupported('darwin')).toBe(false)
+    expect(isScreenAudioSupported('win32')).toBe(false)
+  })
+})
+
+describe('screenAudioUnsupportedMessage', () => {
+  it('returns null on linux', () => {
+    expect(screenAudioUnsupportedMessage('linux')).toBeNull()
+  })
+
+  it('names the platform and only-on-Linux on darwin/win32', () => {
+    const mac = screenAudioUnsupportedMessage('darwin')
+    expect(mac).toContain('only supported on Linux')
+    expect(mac).toContain('darwin')
+
+    expect(screenAudioUnsupportedMessage('win32')).toContain('win32')
+  })
+})
 
 describe('resolvePlatformAudioArgs', () => {
   it('returns pulse defaults on linux', () => {
@@ -35,42 +60,40 @@ describe('resolvePlatformAudioArgs', () => {
     )
   })
 
-  it('overrides the device from SCREENCI_AUDIO_DEVICE while keeping input args', () => {
-    expect(
-      resolvePlatformAudioArgs('linux', {
-        SCREENCI_AUDIO_DEVICE: 'screenci.monitor',
-      })
-    ).toEqual({
+  it('uses the worker capture device while keeping input args', () => {
+    expect(resolvePlatformAudioArgs('linux', 'screenci_1.monitor')).toEqual({
       inputArgs: ['-f', 'pulse'],
-      device: 'screenci.monitor',
+      device: 'screenci_1.monitor',
     })
 
-    expect(
-      resolvePlatformAudioArgs('darwin', { SCREENCI_AUDIO_DEVICE: ':2' })
-    ).toEqual({
+    expect(resolvePlatformAudioArgs('darwin', ':2')).toEqual({
       inputArgs: ['-f', 'avfoundation'],
       device: ':2',
     })
   })
 
-  it('ignores a blank/whitespace SCREENCI_AUDIO_DEVICE and trims a set one', () => {
-    expect(
-      resolvePlatformAudioArgs('linux', { SCREENCI_AUDIO_DEVICE: '   ' }).device
-    ).toBe('default.monitor')
-
-    expect(
-      resolvePlatformAudioArgs('linux', {
-        SCREENCI_AUDIO_DEVICE: '  screenci.monitor  ',
-      }).device
-    ).toBe('screenci.monitor')
+  it('falls back to the platform default when no device is set', () => {
+    expect(resolvePlatformAudioArgs('linux', null).device).toBe(
+      'default.monitor'
+    )
   })
 
-  it('still throws for an unsupported platform even when an override is set', () => {
-    expect(() =>
-      resolvePlatformAudioArgs('freebsd', {
-        SCREENCI_AUDIO_DEVICE: 'whatever',
-      })
-    ).toThrow(/not supported on platform "freebsd"/)
+  it('defaults to the worker capture device set via setActiveCaptureDevice', () => {
+    try {
+      setActiveCaptureDevice('screenci_99.monitor')
+      expect(resolvePlatformAudioArgs('linux').device).toBe(
+        'screenci_99.monitor'
+      )
+    } finally {
+      setActiveCaptureDevice(null)
+    }
+    expect(resolvePlatformAudioArgs('linux').device).toBe('default.monitor')
+  })
+
+  it('still throws for an unsupported platform even when a device is set', () => {
+    expect(() => resolvePlatformAudioArgs('freebsd', 'whatever')).toThrow(
+      /not supported on platform "freebsd"/
+    )
   })
 })
 

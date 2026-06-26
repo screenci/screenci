@@ -6,13 +6,48 @@ export const SCREEN_AUDIO_DOCS_URL =
   'https://screenci.com/docs/guides/screen-audio'
 
 /**
- * Environment variable that overrides the ffmpeg capture device (`-i`). Useful
- * when the platform default points at the wrong place, e.g. on Linux where the
- * default sink is a USB/wireless headset the headless browser cannot land audio
- * on. Set it to a dedicated capture target (such as a virtual null sink's
- * `<name>.monitor`) for a stable, device-independent capture.
+ * Screen audio capture is supported on Linux only. macOS and Windows have no
+ * way to route just the recording browser into an isolated capture device
+ * without third-party tooling, so capturing there would either pick up every
+ * app's sound or require muting the whole machine. On those platforms screenci
+ * skips capture and warns instead of writing a misleading track.
  */
-export const AUDIO_DEVICE_ENV = 'SCREENCI_AUDIO_DEVICE'
+export function isScreenAudioSupported(
+  platform: NodeJS.Platform = process.platform
+): boolean {
+  return platform === 'linux'
+}
+
+/**
+ * Warning shown (at run start and end) when audio capture is requested on a
+ * platform where it is not supported. Returns `null` on supported platforms.
+ */
+export function screenAudioUnsupportedMessage(
+  platform: NodeJS.Platform = process.platform
+): string | null {
+  if (isScreenAudioSupported(platform)) {
+    return null
+  }
+  return (
+    `[screenci] captureAudio is only supported on Linux. ` +
+    `This run on "${platform}" will record no audio (the video will be silent ` +
+    `where screen audio was expected). See ${SCREEN_AUDIO_DOCS_URL}`
+  )
+}
+
+/**
+ * The capture device for the current worker. Set by the recording browser
+ * fixture once it provisions this worker's dedicated null sink, so capture taps
+ * that sink's monitor; left `null` (capturing the default monitor) only as a
+ * fallback when a sink could not be created. Module-scoped, so it is private to
+ * one worker process.
+ */
+let activeCaptureDevice: string | null = null
+
+/** Sets (or clears with `null`) the capture device for this worker. */
+export function setActiveCaptureDevice(device: string | null): void {
+  activeCaptureDevice = device
+}
 
 /** @internal */
 export type PlatformAudioArgs = {
@@ -26,31 +61,29 @@ export type PlatformAudioArgs = {
  * Resolves the ffmpeg audio capture arguments for the current (or given)
  * platform. Throws when the platform is not supported.
  *
- * When `SCREENCI_AUDIO_DEVICE` is set to a non-empty value it replaces the
- * platform default device while keeping the platform's input format args, so a
- * caller can capture a specific sink monitor instead of whatever happens to be
- * the system default.
+ * When a capture device has been set for this worker (its dedicated null sink's
+ * monitor) it replaces the platform default device while keeping the platform's
+ * input format args.
  *
  * Exposed for testing; callers should use {@link startScreenAudioCapture}.
  */
 export function resolvePlatformAudioArgs(
   platform: NodeJS.Platform = process.platform,
-  env: NodeJS.ProcessEnv = process.env
+  device: string | null = activeCaptureDevice
 ): PlatformAudioArgs {
-  const override = env[AUDIO_DEVICE_ENV]?.trim()
-  const withOverride = (args: PlatformAudioArgs): PlatformAudioArgs =>
-    override ? { ...args, device: override } : args
+  const withDevice = (args: PlatformAudioArgs): PlatformAudioArgs =>
+    device ? { ...args, device } : args
 
   switch (platform) {
     case 'linux':
-      return withOverride({
+      return withDevice({
         inputArgs: ['-f', 'pulse'],
         device: 'default.monitor',
       })
     case 'darwin':
-      return withOverride({ inputArgs: ['-f', 'avfoundation'], device: ':0' })
+      return withDevice({ inputArgs: ['-f', 'avfoundation'], device: ':0' })
     case 'win32':
-      return withOverride({
+      return withDevice({
         inputArgs: ['-f', 'wasapi', '-loopback', '1'],
         device: '',
       })

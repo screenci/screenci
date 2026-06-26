@@ -82,8 +82,9 @@ export function getChromiumLaunchOptions(
   // not inject its own legacy `--headless`) and pass `--headless=new`
   // ourselves, ignoring any default `--headless`. Unmuting plus new headless is
   // necessary but still not sufficient on its own: the browser also has to land
-  // its audio on the sink whose monitor is captured. See SCREENCI_AUDIO_DEVICE
-  // and the virtual-sink recipe in docs for routing to a stable capture target.
+  // its audio on the sink whose monitor is captured. The recording browser
+  // fixture handles that by routing the browser into a dedicated per-worker null
+  // sink (via PULSE_SINK) and capturing that sink's monitor.
   return {
     headless: false,
     args: [...RECORDING_CHROMIUM_ARGS, '--headless=new'],

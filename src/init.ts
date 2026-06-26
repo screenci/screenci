@@ -1219,9 +1219,10 @@ jobs:
           npm_config_strict_dep_builds: false
         run: ${commands.frozenInstallCommand}
 
-      # Capturing system audio (enableCaptureAudio + recordOptions.captureAudio)
-      # needs the full Chromium browser plus a virtual audio device, not just the
-      # headless shell. See https://screenci.com/docs/guides/screen-audio#ci-setup
+      # Capturing system audio (enableCaptureAudio + recordOptions.captureAudio,
+      # Linux only) needs the full Chromium browser (not just the headless shell)
+      # and a running PulseAudio server. See
+      # https://screenci.com/docs/guides/screen-audio#ci-setup
       - name: Install Chromium Headless Shell
         working-directory: ${islandWorkflowPath}
         run: ${commands.playwrightRun} install --only-shell chromium

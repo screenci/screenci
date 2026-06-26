@@ -12,6 +12,16 @@ Both are needed: `enableCaptureAudio` makes the browser able to emit audio, and
 `captureAudio` says which videos record it and how loud. A video that sets
 `captureAudio` while `enableCaptureAudio` is off throws at record time.
 
+## Linux only
+
+Screen audio capture is supported on **Linux only**. On macOS and Windows there
+is no reliable way to route just the recording browser into an isolated capture
+device without third-party tooling, so capturing there would either pick up
+every app's sound or require muting the whole machine. On those platforms
+screenci **skips capture and warns** (at the start of the run and at the end)
+rather than writing a misleading track. For audio in CI, record on a Linux
+runner (the default `ubuntu-latest` works).
+
 ## Why the split
 
 The recording browser is launched **once per worker**, before any individual
@@ -22,13 +32,23 @@ launch decision therefore has to come from a run-level switch, which is what
 `enableCaptureAudio` is. `captureAudio` can then live wherever you like,
 including on an individual `video.use()`.
 
-## Audio plays out loud while recording
+## Silent and isolated by default
 
-To capture system audio, the browser has to actually output it to the host's
-audio mixer (this is where the recorder taps the audio from). So with audio mode
-enabled, a recording video's audio is **played out loud on the host machine**.
-This is expected: the same audio that plays through your speakers is what gets
-recorded and mixed into the video.
+When audio mode is on, screenci gives **each worker its own virtual null sink**,
+routes that worker's browser into it, and captures only that sink's monitor.
+This happens automatically, with no setup, and means:
+
+- You **do not hear** the recording on the host: the browser plays into a sink
+  with no physical output.
+- The capture is **isolated**: only the browser's own audio is recorded, never
+  other apps (music, notifications) or other workers.
+- It is **parallel-safe**: each worker captures its own sink, so recordings do
+  not bleed into each other.
+
+It requires a running PulseAudio/PipeWire server and the `pactl` tool (present on
+typical Linux desktops; in CI, install `pulseaudio` and run `pulseaudio
+--start`). If a sink cannot be created, screenci warns and falls back to the
+default device (audible and not isolated).
 
 ## Quick start
 
@@ -37,7 +57,7 @@ recorded and mixed into the video.
 import { defineConfig } from 'screenci'
 
 export default defineConfig({
-  // Launch the browser in audio mode for the whole run.
+  // Launch the browser in audio mode for the whole run (Linux only).
   enableCaptureAudio: true,
   use: {
     recordOptions: {
@@ -52,70 +72,15 @@ export default defineConfig({
 overlay volumes: `1` is unity gain, `0.5` is half volume, `2` is double, `0`
 disables capture.
 
-## What gets captured
+## Running recordings in parallel
 
-The behavior depends on the OS:
-
-- **Windows:** WASAPI loopback — captures system output (what the speakers
-  play). Works with no setup.
-- **Linux:** PulseAudio/PipeWire monitor source (`default.monitor`) — captures
-  system output (what the speakers play), the same as WASAPI loopback on
-  Windows. If nothing is playing the track will be silence, which is fine. See
-  [Linux: capturing the right device](#linux-capturing-the-right-device) when
-  the capture is unexpectedly silent.
-- **macOS:** AVFoundation default input — usually the microphone. To capture
-  system audio, install a virtual loopback driver such as
-  [BlackHole](https://github.com/ExistentialAudio/BlackHole) and set it as
-  the default input in _System Settings > Sound > Input_.
-
-## Linux: capturing the right device
-
-`captureAudio` captures `default.monitor`, the monitor of whatever PulseAudio /
-PipeWire reports as the **default sink**. That works when the recording browser
-actually plays its audio onto that same sink. Two things can break that and
-produce a silent track even though capture "succeeds":
-
-1. The default sink is a device the headless browser cannot reliably play to
-   (commonly a **USB or wireless headset**). The browser falls back to a null
-   output, so nothing reaches the monitor being captured.
-2. Another app changed the default sink between recordings, so you are
-   monitoring a sink the browser is not using.
-
-To make capture independent of whatever the current default sink is, route the
-browser to a **dedicated virtual sink** and capture that sink's monitor with the
-`SCREENCI_AUDIO_DEVICE` override:
-
-```bash
-# 1. Create a null sink that always exists and is trivial to open (once per boot).
-pactl load-module module-null-sink \
-  sink_name=screenci \
-  sink_properties=device.description=screenci
-
-# 2. Record with the browser routed to that sink (PULSE_SINK is inherited by the
-#    browser process) and the capture pointed at its monitor.
-PULSE_SINK=screenci SCREENCI_AUDIO_DEVICE=screenci.monitor \
-  npx screenci record videos/my-video.screenci.ts
-```
-
-`SCREENCI_AUDIO_DEVICE` replaces the capture device (`ffmpeg -i`) on any platform
-while keeping the platform's input format, so it can also point at a specific
-PipeWire/Pulse source on macOS or Windows. When it is unset, capture uses the
-platform default (`default.monitor` on Linux).
-
-To check whether a capture device is receiving audio without recording a full
-video, play something and sample the monitor directly:
-
-```bash
-ffmpeg -loglevel quiet -f pulse -i screenci.monitor -t 3 -c:a pcm_s16le -y /tmp/test.wav
-ffmpeg -hide_banner -i /tmp/test.wav -af volumedetect -f null /dev/null 2>&1 \
-  | grep -E 'mean_volume|max_volume'
-```
-
-A `max_volume` near `-91 dB` means the device captured silence.
+Parallel recording with audio is supported with no extra configuration: each
+worker gets its own isolated null sink, so `workers` can be greater than `1`
+with no cross-talk between recordings.
 
 ## CI setup
 
-Two things are needed on a GitHub Actions Ubuntu runner, and the default
+On a GitHub Actions Ubuntu runner two things are needed, and the default
 `screenci init` workflow includes neither (audio is off by default), so add them
 when you set `enableCaptureAudio: true`.
 
@@ -129,41 +94,16 @@ and the shell are installed:
   run: npx playwright install --with-deps chromium
 ```
 
-**2. Create a PulseAudio null sink** for the browser to play into and the
-recorder to capture:
+**2. Start a PulseAudio server** so screenci can create its per-worker sinks in
+it (no default sink or manual sink needed, screenci manages them):
 
 ```yaml
-- name: Set up virtual audio device
+- name: Start PulseAudio server
   run: |
     sudo apt-get update
     sudo apt-get install -y pulseaudio
     pulseaudio --start
-    pactl load-module module-null-sink sink_name=screenci \
-      sink_properties=device.description=screenci
-    pactl set-default-sink screenci
 ```
-
-The browser plays to the default sink, so `captureAudio` picks up
-`screenci.monitor` automatically. To be explicit (and immune to the default sink
-changing), set `SCREENCI_AUDIO_DEVICE: screenci.monitor` on the record step.
-
-**macOS runners** have no built-in loopback. Use a self-hosted runner with
-BlackHole installed if you need screen audio on macOS CI.
-
-**Windows runners** work with `captureAudio: 1` out of the box via WASAPI
-loopback, though the captured track will be silence if nothing is playing.
-
-## Running recordings in parallel
-
-Audio capture taps a single, system-wide monitor source (the default output's
-loopback). It is **not isolated per recording**. If two recordings run at the
-same time with `captureAudio` enabled, both browsers play to the same mixer and
-both capture the combined audio, so each video can pick up the other's sound.
-
-If you record with `enableCaptureAudio` on, run those recordings sequentially by
-setting `workers: 1` in your config. screenci warns at startup when
-`enableCaptureAudio` is on and `workers` is anything other than `1`. Runs that
-leave `enableCaptureAudio` off stay muted and are safe to run in parallel.
 
 ## Interaction with narration and other audio
 

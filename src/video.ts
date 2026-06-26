@@ -100,9 +100,18 @@ import { buildScreenCIContextOptions } from './contextOptions.js'
 import { bindStillCaptureToPage } from './stillCapture.js'
 import {
   startScreenAudioCapture,
+  isScreenAudioSupported,
+  screenAudioUnsupportedMessage,
+  setActiveCaptureDevice,
   SCREEN_AUDIO_DOCS_URL,
 } from './screenAudio.js'
 import type { ScreenAudioCapture } from './screenAudio.js'
+import {
+  createNullSink,
+  unloadNullSink,
+  workerSinkName,
+} from './screenAudioSink.js'
+import type { NullSink } from './screenAudioSink.js'
 
 export const POST_VIDEO_PAUSE = 500
 
@@ -611,16 +620,51 @@ const _videoBase = base.extend<
 
   browser: async ({ playwright }, use) => {
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
-    const launchOptions = getChromiumLaunchOptions(
-      shouldRecord,
-      isCaptureAudioEnabled()
-    )
+    // Audio capture only runs on Linux; elsewhere we leave the browser in the
+    // normal muted launch and warn (see the per-video capture site below).
+    const audioActive =
+      shouldRecord && isCaptureAudioEnabled() && isScreenAudioSupported()
 
-    const browser = await playwright.chromium.launch(launchOptions)
+    // Give this worker a dedicated null sink so capture is silent on the host,
+    // isolated from other apps, and safe under parallel workers. The browser is
+    // routed into it via PULSE_SINK and the recorder captures its monitor.
+    let sink: NullSink | null = null
+    if (audioActive) {
+      sink = await createNullSink(workerSinkName())
+      if (sink) {
+        setActiveCaptureDevice(sink.monitorSource)
+      } else {
+        logger.warn(
+          `captureAudio: could not create a dedicated audio sink (is pactl ` +
+            `available?). Falling back to the default device, so recording ` +
+            `audio will play out loud and may include other apps' sound. ` +
+            `See ${SCREEN_AUDIO_DOCS_URL}`
+        )
+      }
+    }
+
+    const launchOptions = getChromiumLaunchOptions(shouldRecord, audioActive)
+    const browser = await playwright.chromium.launch(
+      sink
+        ? {
+            ...launchOptions,
+            env: { ...process.env, PULSE_SINK: sink.sinkName },
+          }
+        : launchOptions
+    )
     instrumentBrowser(browser)
     await use(browser)
     if (browser.isConnected()) {
       await browser.close()
+    }
+    if (sink) {
+      await unloadNullSink(sink)
+      setActiveCaptureDevice(null)
+    }
+    // End-of-run reminder on platforms where capture was skipped.
+    const unsupported = screenAudioUnsupportedMessage()
+    if (shouldRecord && isCaptureAudioEnabled() && unsupported !== null) {
+      logger.warn(unsupported)
     }
   },
 
@@ -838,12 +882,19 @@ const _videoBase = base.extend<
     recorder.start()
 
     const captureVolume = recordOptions.captureAudio ?? 0
+    // captureAudio is Linux-only. On macOS/Windows skip capture entirely (a
+    // warning was already emitted at run start, and the worker fixture emits one
+    // at the end) rather than writing a silent or whole-machine track.
+    const audioSupported = isScreenAudioSupported()
     // The recording browser is launched once per worker (audio mode is decided
     // then from the root-level enableCaptureAudio switch), before this per-video
     // recordOptions is known. If a video requests captureAudio without that
     // switch on, the browser was launched muted on the legacy headless shell and
     // the captured track would be silent. Fail loudly instead of writing silence.
-    if (captureRequestedButNotEnabled(captureVolume, isCaptureAudioEnabled())) {
+    if (
+      audioSupported &&
+      captureRequestedButNotEnabled(captureVolume, isCaptureAudioEnabled())
+    ) {
       throw new Error(
         `[screenci] "${videoName}" sets captureAudio but enableCaptureAudio is ` +
           `not turned on. Add "enableCaptureAudio: true" at the top level of ` +
@@ -854,7 +905,9 @@ const _videoBase = base.extend<
     }
     const audioCapturePath = join(videoDir, 'screen-audio.wav')
     const audioCapture: ScreenAudioCapture | null =
-      captureVolume > 0 ? startScreenAudioCapture(audioCapturePath) : null
+      captureVolume > 0 && audioSupported && isCaptureAudioEnabled()
+        ? startScreenAudioCapture(audioCapturePath)
+        : null
 
     // Wrap `page.screenshot()` only now, AFTER the screen recorder has started.
     // The recorder captures a baseline frame via `page.screenshot()` inside

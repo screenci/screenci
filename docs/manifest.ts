@@ -112,37 +112,25 @@ export const docsManifest = [
     description:
       'Add intro clips, corner logos, transitions, and timed overlays to ScreenCI recordings from files, HTML, or React.',
     prev: 'docs/guides/camera-and-zooming',
-    next: 'docs/guides/screen-audio',
-  },
-  {
-    source: 'screen-audio.md',
-    slug: 'docs/guides/screen-audio',
-    section: 'Guides',
-    order: 5,
-    navLabel: 'Screen audio',
-    title: 'Screen Audio',
-    description:
-      'Capture system audio alongside the screen recording and mix it into the rendered video, with per-OS setup instructions for loopback sources.',
-    prev: 'docs/guides/overlays',
     next: 'docs/guides/screenshots',
   },
   {
     source: 'screenshots.md',
     slug: 'docs/guides/screenshots',
     section: 'Guides',
-    order: 6,
+    order: 5,
     navLabel: 'Screenshots',
     title: 'Screenshots',
     description:
       'Capture branded still screenshots with the screenshot() fixture: crop to a component, set quality and dark mode, and frame the shot on a background with overlays.',
-    prev: 'docs/guides/screen-audio',
+    prev: 'docs/guides/overlays',
     next: 'docs/guides/studio',
   },
   {
     source: 'studio.md',
     slug: 'docs/guides/studio',
     section: 'Guides',
-    order: 7,
+    order: 6,
     navLabel: 'Studio',
     title: 'Studio',
     description:
@@ -154,12 +142,24 @@ export const docsManifest = [
     source: 'public-urls-and-embeds.md',
     slug: 'docs/guides/public-urls-and-embeds',
     section: 'Guides',
-    order: 8,
+    order: 7,
     navLabel: 'Public URLs and embeds',
     title: 'Public URLs and Embeds',
     description:
       'Enable public delivery for a video, understand stable language-specific URLs, and embed ScreenCI outputs in other sites.',
     prev: 'docs/guides/studio',
+    next: 'docs/guides/screen-audio',
+  },
+  {
+    source: 'screen-audio.md',
+    slug: 'docs/guides/screen-audio',
+    section: 'Guides',
+    order: 8,
+    navLabel: 'Screen audio',
+    title: 'Screen Audio',
+    description:
+      'Capture system audio alongside the screen recording and mix it into the rendered video. Linux only, with an automatic, isolated per-worker capture sink.',
+    prev: 'docs/guides/public-urls-and-embeds',
     next: 'docs/guides/update-screenci',
   },
   {
@@ -171,7 +171,7 @@ export const docsManifest = [
     title: 'Update ScreenCI',
     description:
       'Upgrade the screenci package, refresh Playwright when needed, and verify that existing videos still behave as expected.',
-    prev: 'docs/guides/public-urls-and-embeds',
+    prev: 'docs/guides/screen-audio',
     next: 'docs/reference/cli',
   },
   {

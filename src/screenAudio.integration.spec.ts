@@ -24,6 +24,9 @@ import { join } from 'path'
 import { startScreenAudioCapture, type ScreenAudioDeps } from './screenAudio.js'
 import { spawn } from 'child_process'
 import { readFile } from 'fs/promises'
+import ffmpegStatic from 'ffmpeg-static'
+
+const ffmpegPath = (ffmpegStatic as unknown as string | null) ?? 'ffmpeg'
 
 const AUDIO_FORMAT = process.env.SCREENCI_TEST_AUDIO_FORMAT
 const AUDIO_DEVICE = process.env.SCREENCI_TEST_AUDIO_DEVICE
@@ -35,7 +38,7 @@ describe.skipIf(!AUDIO_FORMAT)('startScreenAudioCapture (integration)', () => {
     try {
       // Override platform args with the CI-supplied format/device so the test
       // works on any OS without real hardware (lavfi null source in CI).
-      const deps: ScreenAudioDeps & { _overrideArgs?: boolean } = {
+      const deps: ScreenAudioDeps = {
         spawn: vi
           .fn()
           .mockImplementation((_cmd: string, args: string[], opts: object) => {
@@ -44,7 +47,7 @@ describe.skipIf(!AUDIO_FORMAT)('startScreenAudioCapture (integration)', () => {
               if (a === args[args.indexOf('-i') + 1]) return AUDIO_DEVICE ?? ''
               return a
             })
-            return spawn('ffmpeg', overridden, opts)
+            return spawn(ffmpegPath, overridden, opts)
           }) as unknown as typeof spawn,
         readFile,
       }

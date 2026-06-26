@@ -1,6 +1,9 @@
 import { spawn as nodeSpawn } from 'child_process'
 import { createHash } from 'crypto'
 import { readFile as nodeReadFile } from 'fs/promises'
+import ffmpegStatic from 'ffmpeg-static'
+
+const defaultFfmpegPath = (ffmpegStatic as unknown as string | null) ?? 'ffmpeg'
 
 export const SCREEN_AUDIO_DOCS_URL =
   'https://screenci.com/docs/guides/screen-audio'
@@ -108,6 +111,7 @@ export type ScreenAudioCapture = {
 export type ScreenAudioDeps = {
   spawn: typeof nodeSpawn
   readFile: typeof nodeReadFile
+  ffmpegPath?: string
 }
 
 /**
@@ -123,6 +127,7 @@ export function startScreenAudioCapture(
   deps: ScreenAudioDeps = { spawn: nodeSpawn, readFile: nodeReadFile }
 ): ScreenAudioCapture {
   const { inputArgs, device } = resolvePlatformAudioArgs()
+  const ffmpegPath = deps.ffmpegPath ?? defaultFfmpegPath
 
   const args = [
     '-loglevel',
@@ -137,7 +142,7 @@ export function startScreenAudioCapture(
   ]
 
   // Use piped stdin so we can send 'q' for a clean shutdown on all platforms.
-  const proc = deps.spawn('ffmpeg', args, {
+  const proc = deps.spawn(ffmpegPath, args, {
     stdio: ['pipe', 'ignore', 'ignore'],
   })
 

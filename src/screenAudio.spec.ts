@@ -8,6 +8,9 @@ import {
   type ScreenAudioDeps,
 } from './screenAudio.js'
 import { EventEmitter } from 'events'
+import ffmpegStatic from 'ffmpeg-static'
+
+const ffmpegPath = (ffmpegStatic as unknown as string | null) ?? 'ffmpeg'
 import { Writable } from 'stream'
 
 describe('isScreenAudioSupported', () => {
@@ -196,7 +199,7 @@ describe('startScreenAudioCapture', () => {
     startScreenAudioCapture('/out.wav', deps)
 
     const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]]
-    expect(cmd).toBe('ffmpeg')
+    expect(cmd).toBe(ffmpegPath)
     expect(args).toContain('-f')
     expect(args).toContain('-i')
   })

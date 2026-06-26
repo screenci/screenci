@@ -1538,7 +1538,10 @@ export async function instrumentPage(page: Page): Promise<Page> {
     const duration = resolveMouseMoveDuration(page, x, y, {
       duration: options?.duration,
       speed: options?.speed,
-      defaultDuration: 0,
+      // A bare `page.mouse.move` animates by default (matching click-move
+      // timing) so the cursor glides instead of teleporting. Pass an explicit
+      // `duration`/`speed` to retime, or `duration: 0` for an instant jump.
+      defaultDuration: DEFAULT_CLICK_MOUSE_MOVE_DURATION,
       context: 'page.mouse.move',
     })
     const easing = options?.easing ?? 'ease-in-out'

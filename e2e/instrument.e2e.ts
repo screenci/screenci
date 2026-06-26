@@ -987,10 +987,29 @@ test.describe('mouse.move instrumentation', () => {
     ).toBe('ease-out')
   })
 
-  test('records mouseMove without easing for instant move', async ({
+  test('a bare move animates by default with default easing', async ({
     page,
   }) => {
     await (page.mouse as unknown as InstrumentedMouse).move(100, 150)
+
+    const events = mouseMoveEvents()
+    expect(events).toHaveLength(1)
+    expect(events[0]!.x).toBe(100)
+    expect(events[0]!.y).toBe(150)
+    expect(moveEndMs(events[0]!) - moveStartMs(events[0]!)).toBeGreaterThan(0)
+    expect(
+      events[0]!.type === 'mouseMove'
+        ? events[0]!.easing
+        : events[0]!.mouse?.easing
+    ).toBe('ease-in-out')
+  })
+
+  test('records mouseMove without easing for an explicit instant move', async ({
+    page,
+  }) => {
+    await (page.mouse as unknown as InstrumentedMouse).move(100, 150, {
+      duration: 0,
+    })
 
     const events = mouseMoveEvents()
     expect(events).toHaveLength(1)

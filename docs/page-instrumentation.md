@@ -131,6 +131,15 @@ await page.getByTestId('code-block').selectText({ selectDuration: 900 })
 await page.mouse.move(400, 300, { duration: 600, easing: 'ease-in-out' })
 ```
 
+A bare `page.mouse.move` (no `duration`/`speed`) animates by default so the
+cursor glides to the target instead of teleporting. Pass `duration: 0` for an
+explicit instant jump:
+
+```ts
+await page.mouse.move(400, 300) // animated
+await page.mouse.move(400, 300, { duration: 0 }) // instant
+```
+
 ### page.mouse press methods
 
 `page.mouse.down`, `page.mouse.up`, `page.mouse.click`, and `page.mouse.dblclick`

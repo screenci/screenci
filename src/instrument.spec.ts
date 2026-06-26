@@ -399,10 +399,12 @@ describe('instrumentPage', () => {
       type: 'focusChange',
       x: 300,
       y: 400,
-      mouse: expect.objectContaining({}),
+      mouse: expect.objectContaining({ easing: 'ease-in-out' }),
     })
-    expect(move!.endMs).toBeGreaterThanOrEqual(move!.startMs)
-    expect(originalMove).toHaveBeenCalledTimes(1)
+    // A bare move animates by default: it spans a non-zero duration and is
+    // dispatched in multiple interpolated steps rather than a single jump.
+    expect(move!.endMs).toBeGreaterThan(move!.startMs)
+    expect(originalMove.mock.calls.length).toBeGreaterThan(1)
   })
 
   it('records page.mouse.down as a mouseDown InputEvent and dispatches the real press', async () => {

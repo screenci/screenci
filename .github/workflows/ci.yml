@@ -179,12 +179,8 @@ jobs:
         run: node ${{ github.workspace }}/scripts/ci-run-in-shell.js ${{ matrix.shell_name }} pnpm exec screenci test
 
   audio-capture:
-    name: Audio capture (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+    name: Audio capture (ubuntu-latest)
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code

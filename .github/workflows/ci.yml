@@ -196,6 +196,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install ffmpeg
+        run: sudo apt-get install -y ffmpeg
+
       - name: Run audio capture integration test
         env:
           SCREENCI_TEST_AUDIO_DEVICE: anullsrc

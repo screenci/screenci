@@ -25,6 +25,11 @@ Then each published language exposes:
 - `/public/<videoId>/<language>/thumbnail`
 - `/public/<videoId>/<language>/subtitle`
 
+The thumbnail comes in three downscaled sizes. Add `?size=sm` (small previews),
+`?size=md` (poster, the default), or `?size=lg` (full-screen / downloads). See
+the [public delivery API](/docs/reference/public-delivery-api#get-publicidlanguagethumbnail)
+for exact dimensions.
+
 ## Latest vs selected output
 
 Public delivery can either:

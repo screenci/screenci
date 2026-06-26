@@ -70,12 +70,26 @@ When the language is not available, the response can include the languages that 
 
 ## `GET /public/:id/:language/thumbnail`
 
-Serves the published thumbnail image for one language variant. Follows the
+Serves a published thumbnail image for one language variant. Follows the
 currently selected version; pin to a run with the
 [record-pinned URL](#record-pinned-urls) form.
 
+Each version is rendered into a fixed ladder of downscaled JPEG sizes so you can
+fetch the one that fits your slot (a small grid preview vs a full-screen poster).
+Pick a size with the `size` query parameter:
+
+| `size` | Longest edge | Typical use                   |
+| ------ | ------------ | ----------------------------- |
+| `sm`   | up to 480px  | small grid / list previews    |
+| `md`   | up to 960px  | video poster (default)        |
+| `lg`   | up to 1440px | full-screen poster, downloads |
+
+When `size` is omitted the medium (`md`) size is served. All sizes preserve the
+source aspect ratio. An unknown `size` returns `400`.
+
 Useful query parameters:
 
+- `size` (`sm` | `md` | `lg`, default `md`)
 - `filename`
 - `download=1`
 
@@ -91,6 +105,7 @@ Error responses:
 
 | Status | Condition                                                                                      |
 | ------ | ---------------------------------------------------------------------------------------------- |
+| `400`  | The `size` query parameter is not one of `sm`, `md`, `lg`                                      |
 | `404`  | No public URL configured, the requested language is not available, or the thumbnail is missing |
 
 ## `GET /public/:id/:language/subtitle`

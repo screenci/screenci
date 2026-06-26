@@ -11,6 +11,11 @@ to the state you want. Three things make them worth reaching for:
 - **Delivery from a static, CDN-backed URL** you can drop straight into a page,
   README, or social card. It stays fast and cacheable, and updates when you
   re-render.
+- **Automatic updates** when the product changes: re-record locally, in CI, or
+  from the ScreenCI UI, and every hosted URL serves the latest accepted shot.
+- **Web editable** like videos: every render option (crop padding, background,
+  frame, overlays) is adjustable later in Studio in the browser, with no
+  re-recording needed.
 
 A screenshot is captured directly from the page (no video is recorded), then
 served from that hosted URL with the same versioning and Studio editing as

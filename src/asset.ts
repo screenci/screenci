@@ -1,4 +1,5 @@
 import type { Locator } from '@playwright/test'
+import type { NormalizedFeature } from './declare.js'
 import type { IEventRecorder, OverlayPlacement } from './events.js'
 import { overlayRect } from './overlayRect.js'
 import { captureCallerFile } from './callerFile.js'
@@ -894,6 +895,35 @@ export function buildStudioOverlays(
   const result: Record<string, OverlayController> = {}
   for (const name of names) {
     result[name] = createStudioAssetController(name)
+  }
+  return result
+}
+
+/**
+ * Build overlay controllers for a `video.overlays(...)` declaration. Studio
+ * (array) names become Studio-managed controllers; code (object) names resolve
+ * their config for the active language (`byLang[language] ?? shared`) and become
+ * regular overlay controllers. Per-language mode realizes one language per pass,
+ * so the active-language config is the one captured.
+ */
+export function buildOverlays(
+  feature: NormalizedFeature<OverlayInputOrFactory> | null | undefined,
+  language: string | undefined
+): Record<string, OverlayController | ((props: unknown) => OverlayController)> {
+  const result: Record<
+    string,
+    OverlayController | ((props: unknown) => OverlayController)
+  > = {}
+  if (!feature) return result
+  for (const name of feature.studioNames) {
+    result[name] = createStudioAssetController(name)
+  }
+  for (const name of feature.codeNames) {
+    const input =
+      (language !== undefined ? feature.byLang[language]?.[name] : undefined) ??
+      feature.shared[name]
+    if (input === undefined) continue
+    result[name] = buildOverlayController(name, input)
   }
   return result
 }

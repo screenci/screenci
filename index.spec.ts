@@ -10,8 +10,6 @@ describe('public api surface', () => {
       'DEFAULT_LANGUAGE_LOCALES',
       'MAX_AUDIO_LEVEL',
       'autoZoom',
-      'createAudio',
-      'createOverlays',
       'defineConfig',
       'hide',
       'modelTypes',

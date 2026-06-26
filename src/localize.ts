@@ -155,7 +155,7 @@ function collectSeededNames(
   return out
 }
 
-function normalizeCueValue(
+export function normalizeCueValue(
   name: string,
   value: LocalizeNarrationValue
 ): NormalizedCueValue {

@@ -13,7 +13,7 @@ An overlay can come from a file (`.html`, `.svg`, `.png`, or `.mp4`), a React el
 
 ## Define overlays
 
-`createOverlays` takes a map. Each value is one of:
+`video.overlays(...)` takes a map. Each value is one of:
 
 - a **file path** string (`.html`, `.svg`, `.png`, `.mp4`),
 - a **React element**, or
@@ -22,30 +22,33 @@ An overlay can come from a file (`.html`, `.svg`, `.png`, or `.mp4`), a React el
 A config object draws its content from exactly one source: a file `path`, a React `element`, or an inline `html` fragment.
 
 ```tsx
-import { createOverlays, video } from 'screenci'
+import { video } from 'screenci'
 import { Badge } from './Badge'
 
-const overlays = createOverlays({
+video.overlays({
   intro: { path: 'assets/intro.mp4', fill: 'screen' }, // full-frame video
   hint: 'assets/callout.html', // HTML file
   badge: <Badge label="New" />, // React element
   note: { html: '<div class="note">Tip</div>', x: 1340, y: 110, width: 380 }, // inline HTML
   logo: { path: 'assets/logo.png', x: 96, y: 96, width: 288 },
-})
-
-video('Overview', async ({ page }) => {
+})('Overview', async ({ page, overlays }) => {
   await overlays.intro()
   await page.goto('/dashboard')
   await overlays.logo(1200)
 })
 ```
 
-Each key becomes a callable overlay controller.
+`video.overlays({...})` returns a builder you call with the usual
+`(title, body)` arguments. Each key becomes a callable overlay controller,
+delivered to the body through the injected `overlays` fixture. The same pattern
+works for screenshots:
+`screenshot.overlays({...})('Title', async ({ page, crop, overlays }) => {...})`.
 
-On the Business tier you can also declare overlay names with
-`video.studio({ overlays: ['intro', 'logo'] })` and upload the files plus
-display options on the Studio page instead of keeping them in the repository.
-See [Studio](./studio.md#studio-overlays-from-code).
+On the Business tier you can also declare overlay names as an **array** and
+upload the files plus display options on the Studio page instead of keeping them
+in the repository: `video.overlays(['intro', 'logo'])`. The array form leaves
+the file and placement for each name configured in the ScreenCI web app. See
+[Studio](./studio.md#studio-overlays-from-code).
 
 Rules:
 
@@ -76,13 +79,15 @@ You can build the same overlay three ways, and all of them honor the same
   rather keep next to the script.
 
 ```tsx
-const overlays = createOverlays({
+video.overlays({
   // From an .html file.
   hint: { path: 'assets/callout.html', x: 768, y: 864, width: 384 },
   // From a React element.
   badge: { element: <Badge label="New" />, x: 1340, y: 110, width: 288 },
   // From an inline HTML fragment.
   note: { html: '<div class="note">Saved</div>', x: 1340, y: 110, width: 380 },
+})('Overview', async ({ page, overlays }) => {
+  // ...
 })
 ```
 
@@ -124,7 +129,7 @@ placement can depend on values you only know at runtime. Call
 (`(durationMs)`, `start()`, `end()`):
 
 ```tsx
-const overlays = createOverlays({
+video.overlays({
   // Props build the markup. Works for inline html (template literal)...
   note: (p: { text: string }) => ({
     html: `<div class="note">${p.text}</div>`,
@@ -139,15 +144,15 @@ const overlays = createOverlays({
     y: 110,
     width: 288,
   }),
+})('Overview', async ({ page, overlays }) => {
+  await overlays.note({ text: 'Saved' })(1200) // blocking, 1.2s
+
+  // For start()/end(), capture the controller so the props appear once.
+  const badge = overlays.badge({ label: 'New' })
+  await badge.start()
+  await page.click('#next')
+  await badge.end()
 })
-
-await overlays.note({ text: 'Saved' })(1200) // blocking, 1.2s
-
-// For start()/end(), capture the controller so the props appear once.
-const badge = overlays.badge({ label: 'New' })
-await badge.start()
-await page.click('#next')
-await badge.end()
 ```
 
 This is how an overlay receives props: the factory closes over them and returns
@@ -173,7 +178,7 @@ transparent background preserved. Only rendered overlays (HTML files, inline
 `html` fragments, and React elements) can animate.
 
 ```tsx
-const overlays = createOverlays({
+video.overlays({
   // A React element that fades/slides in via CSS.
   intro: {
     element: <Intro />,
@@ -188,9 +193,9 @@ const overlays = createOverlays({
     durationMs: 1200,
     fps: 60,
   },
+})('Overview', async ({ page, overlays }) => {
+  await overlays.intro() // plays the 1.5s animation over a frozen frame
 })
-
-await overlays.intro() // plays the 1.5s animation over a frozen frame
 ```
 
 How the animation is triggered and how long it runs:
@@ -219,13 +224,13 @@ do nothing. Inject a stylesheet with the `css` option (per overlay) or
 your **compiled** CSS, for example Tailwind's build output:
 
 ```tsx
-import { createOverlays, setOverlayCss } from 'screenci'
+import { video, setOverlayCss } from 'screenci'
 import { readFileSync } from 'node:fs'
 
 // Compile once (e.g. `npx @tailwindcss/cli -i in.css -o overlay.css`) and inject:
 setOverlayCss(readFileSync('./assets/overlay.css', 'utf-8'))
 
-const overlays = createOverlays({
+video.overlays({
   badge: {
     element: (
       <div className="rounded-2xl bg-sky-500 px-6 py-4 text-white">New</div>
@@ -234,6 +239,8 @@ const overlays = createOverlays({
   },
   // Or scope CSS to a single overlay:
   hint: { path: 'callout.html', css: '.callout{color:#fff}', durationMs: 1500 },
+})('Overview', async ({ page, overlays }) => {
+  // ...
 })
 ```
 
@@ -251,7 +258,7 @@ motion stays inside the captured frame, instead of building a manual "stage"
 wrapper:
 
 ```tsx
-const overlays = createOverlays({
+video.overlays({
   intro: {
     element: <Intro />, // slides/rotates in
     animate: true,
@@ -259,6 +266,8 @@ const overlays = createOverlays({
     capturePadding: 80, // room on every side for the motion
     width: 768, // placement sizes the padded box, so make it a bit wider
   },
+})('Overview', async ({ page, overlays }) => {
+  // ...
 })
 ```
 
@@ -275,7 +284,7 @@ pixels into the final output frame, so the output size never has to be known whe
 you author: the same placement renders correctly at 720p, 1080p, 4K, or vertical.
 
 ```tsx
-const overlays = createOverlays({
+video.overlays({
   // Top-left badge, 288 px wide (on a 1920x1080 recording).
   badge: {
     path: 'assets/badge.png',
@@ -293,6 +302,8 @@ const overlays = createOverlays({
     y: 864,
     height: 108,
   },
+})('Overview', async ({ page, overlays }) => {
+  // ...
 })
 ```
 
@@ -313,22 +324,22 @@ lands exactly around the element:
 
 ```tsx
 import type { Locator } from '@playwright/test'
-import { createOverlays } from 'screenci'
+import { video } from 'screenci'
 
-const overlays = createOverlays({
+video.overlays({
   // The overlay is sized to the element's box; fill it (width/height: 100%).
   ring: (target: Locator) => ({
     html: '<div style="width:100%;height:100%;box-sizing:border-box;border:4px solid #ec4899;border-radius:12px"></div>',
     over: target,
     margin: 8, // optional breathing room around the element
   }),
+})('Overview', async ({ page, overlays }) => {
+  const save = page.getByRole('button', { name: 'Save' })
+  const ring = overlays.ring(save) // capture the controller, then drive it
+  await ring.start()
+  await save.click()
+  await ring.end()
 })
-
-const save = page.getByRole('button', { name: 'Save' })
-const ring = overlays.ring(save) // capture the controller, then drive it
-await ring.start()
-await save.click()
-await ring.end()
 ```
 
 `over` works with React elements, inline `html`, and `.html` files. It is always
@@ -416,25 +427,24 @@ That means you do not need separate timing math just to line an intro clip up wi
 ## Background music and audio
 
 Overlays are visual. For sound that plays _under_ the recording (and any
-narration), use `createAudio`. It takes a map of named tracks, each a file path
-or a config object, and accepts `.mp3`, `.wav`, `.m4a`, `.aac`, or an
-audio-only `.mp4`:
+narration), use `video.audio(...)`. It takes a map of named tracks, each a file
+path or a config object, and accepts `.mp3`, `.wav`, `.m4a`, `.aac`, or an
+audio-only `.mp4`. The body receives the track controllers via the injected
+`audio` fixture:
 
 ```ts
-import { createAudio, video } from 'screenci'
+import { video } from 'screenci'
 
-const music = createAudio({
+video.audio({
   theme: { path: 'assets/bg.mp3', volume: 0.3, repeat: true },
   sting: 'assets/celebrate.wav',
-})
-
-video('Overview', async ({ page }) => {
-  await music.theme() // plays under the whole video, looping to fill
+})('Overview', async ({ page, audio }) => {
+  await audio.theme() // plays under the whole video, looping to fill
   await page.goto('/dashboard')
 
-  await music.sting.start() // bound a track to a span
+  await audio.sting.start() // bound a track to a span
   await page.click('#celebrate')
-  await music.sting.end()
+  await audio.sting.end()
 })
 ```
 
@@ -462,9 +472,9 @@ Timing:
 Unlike overlays, audio tracks have no placement and never hold a frozen frame:
 they simply mix into the soundtrack.
 
-On the Business tier you can also declare track names with
-`video.studio({ audio: ['theme', 'sting'] })` and upload the files plus options
-on the Studio page instead of keeping them in the repository. See
+On the Business tier you can also declare track names as an **array** with
+`video.audio(['theme', 'sting'])` and upload the files plus options on the
+Studio page instead of keeping them in the repository. See
 [Studio](./studio.md#studio-audio-from-code).
 
 ## File organization

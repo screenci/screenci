@@ -8,14 +8,12 @@ video.use({
   },
 })
 
-video.localize({
-  narration: {
-    en: {
-      docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
-    },
-    es: {
-      docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
-    },
+video.narration({
+  en: {
+    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
+  },
+  es: {
+    docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
   },
 })('Landing light', async ({ page, narration }) => {
   await hide(async () => {

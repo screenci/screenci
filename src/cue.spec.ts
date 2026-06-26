@@ -12,7 +12,6 @@ import {
   validateCustomVoiceRefs,
   assertNarrationLanguagesMatch,
 } from './cue.js'
-import { validateStudioDeclaration } from './studio.js'
 import * as screenci from '../index.js'
 import { hide, setActiveHideRecorder } from './hide.js'
 import { speed } from './speed.js'
@@ -889,14 +888,6 @@ describe('buildStudioNarrationCues', () => {
     expect(typeof cues.intro!.start).toBe('function')
     expect(typeof cues.intro!.end).toBe('function')
     expect(typeof cues.outro).toBe('function')
-  })
-
-  it('rejects duplicate narration names via validateStudioDeclaration', () => {
-    // Duplicate/validation now lives in the builder via validateStudioDeclaration,
-    // which video.studio({ narration: [...] }) calls before building the cues.
-    expect(() =>
-      validateStudioDeclaration({ narration: ['intro', 'intro'] }, [], [])
-    ).toThrow('video.studio(): duplicate narration name "intro".')
   })
 
   it('start() emits a studio cue start without text or translations', async () => {

@@ -1,17 +1,40 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { expandRegistrations, createVideoBuilder } from './builder.js'
-import { normalizeLocalizeSpec } from './localize.js'
+import {
+  expandRegistrations,
+  createVideoBuilder,
+  VIDEO_FEATURES,
+  type BuilderState,
+  type RecordingLocalize,
+} from './builder.js'
+import { normalizeFeature } from './declare.js'
+import type { LocalizeNarrationValue } from './localize.js'
 
-const perLanguage = (spec: Parameters<typeof normalizeLocalizeSpec>[0]) =>
-  normalizeLocalizeSpec(spec)
+function state(partial: Partial<BuilderState> = {}): BuilderState {
+  return {
+    narration: null,
+    text: null,
+    overlays: null,
+    audio: null,
+    recordingLocalize: null,
+    eachVariants: null,
+    features: VIDEO_FEATURES,
+    ...partial,
+  }
+}
+
+const narration = (
+  arg: Parameters<typeof normalizeFeature<LocalizeNarrationValue>>[1]
+) => normalizeFeature<LocalizeNarrationValue>('narration', arg)
+
+const langs = (rl: RecordingLocalize): Partial<BuilderState> => ({
+  recordingLocalize: rl,
+})
 
 describe('expandRegistrations', () => {
   it('produces a single language-agnostic test when not localized', () => {
     const regs = expandRegistrations({
       baseTitle: 'Demo',
-      localize: null,
-      studio: null,
-      eachVariants: null,
+      state: state(),
       requestedLanguages: null,
     })
     expect(regs).toHaveLength(1)
@@ -20,18 +43,15 @@ describe('expandRegistrations', () => {
       videoName: 'Demo',
       language: null,
       locale: null,
-      localize: null,
     })
   })
 
-  it('registers one pass per language with locale and grouped video name', () => {
+  it('infers one pass per language from narration keys, with locale and grouped name', () => {
     const regs = expandRegistrations({
       baseTitle: 'Tutorial',
-      localize: perLanguage({
-        narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
+      state: state({
+        narration: narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } }),
       }),
-      studio: null,
-      eachVariants: null,
       requestedLanguages: null,
     })
     expect(regs.map((r) => [r.leafTitle, r.language, r.locale])).toEqual([
@@ -44,12 +64,7 @@ describe('expandRegistrations', () => {
   it('does not set a locale when browserLocale is false', () => {
     const regs = expandRegistrations({
       baseTitle: 'T',
-      localize: perLanguage({
-        languages: ['en', 'fi'],
-        browserLocale: false,
-      }),
-      studio: { text: ['heading'] },
-      eachVariants: null,
+      state: state(langs({ languages: ['en', 'fi'], browserLocale: false })),
       requestedLanguages: null,
     })
     expect(regs.every((r) => r.locale === null)).toBe(true)
@@ -59,12 +74,7 @@ describe('expandRegistrations', () => {
   it('records one shared pass that carries every language', () => {
     const regs = expandRegistrations({
       baseTitle: 'Tour',
-      localize: perLanguage({
-        narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
-        mode: 'shared',
-      }),
-      studio: null,
-      eachVariants: null,
+      state: state(langs({ languages: ['en', 'fi'], mode: 'shared' })),
       requestedLanguages: null,
     })
     expect(regs).toHaveLength(1)
@@ -75,27 +85,42 @@ describe('expandRegistrations', () => {
     })
   })
 
+  it('records a single pending pass for a studio-owned set with none selected', () => {
+    const regs = expandRegistrations({
+      baseTitle: 'Pending',
+      state: state(langs({ languages: 'studio' })),
+      requestedLanguages: null,
+    })
+    expect(regs).toHaveLength(1)
+    expect(regs[0]).toMatchObject({ leafTitle: 'Pending', language: null })
+    expect(regs[0]?.recordingLocalize.pending).toBe(true)
+  })
+
   it('intersects per-language passes with the --languages filter', () => {
     const regs = expandRegistrations({
       baseTitle: 'T',
-      localize: perLanguage({
-        languages: ['en', 'fi', 'de'],
-      }),
-      studio: { text: ['heading'] },
-      eachVariants: null,
+      state: state(langs({ languages: ['en', 'fi', 'de'] })),
       requestedLanguages: ['fi'],
     })
     expect(regs.map((r) => r.language)).toEqual(['fi'])
   })
 
+  it('registers nothing when the filter excludes every declared language', () => {
+    const regs = expandRegistrations({
+      baseTitle: 'T',
+      state: state(langs({ languages: ['en', 'fi'] })),
+      requestedLanguages: ['de'],
+    })
+    expect(regs).toHaveLength(0)
+  })
+
   it('takes the cartesian product of each-variants and languages', () => {
     const regs = expandRegistrations({
       baseTitle: 'Landing',
-      localize: perLanguage({
-        languages: ['en', 'fi'],
+      state: state({
+        ...langs({ languages: ['en', 'fi'] }),
+        eachVariants: [{ key: 'mobile' }, { key: 'desktop' }],
       }),
-      studio: { text: ['heading'] },
-      eachVariants: [{ key: 'mobile' }, { key: 'desktop' }],
       requestedLanguages: null,
     })
     expect(regs.map((r) => r.leafTitle)).toEqual([
@@ -155,9 +180,10 @@ describe('createVideoBuilder registration', () => {
   it('registers one describe+test per language with scoped use options', () => {
     const { test, calls } = createTestSink()
     const builder = createVideoBuilder(test)
-    builder.localize({
-      narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
-    })('Tutorial', async () => {})
+    builder.narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })(
+      'Tutorial',
+      async () => {}
+    )
 
     expect(calls.tests).toEqual(['Tutorial [en]', 'Tutorial [fi]'])
     expect(calls.uses[0]).toMatchObject({
@@ -165,7 +191,7 @@ describe('createVideoBuilder registration', () => {
       _screenciLanguage: 'en',
       _screenciVideoName: 'Tutorial',
     })
-    expect(calls.uses[0]?._screenciLocalize).toMatchObject({
+    expect(calls.uses[0]?._screenciRecordingLocalize).toMatchObject({
       languages: ['en', 'fi'],
     })
   })
@@ -173,17 +199,17 @@ describe('createVideoBuilder registration', () => {
   it('captures the calling script as _screenciSourceFile so asset paths resolve against it', () => {
     const { test, calls } = createTestSink()
     createVideoBuilder(test)('Plain', async () => {})
-    // Playwright would attribute the test to builder.ts (it is registered
-    // there), so the builder captures the real caller, this spec file.
     expect(calls.uses[0]?._screenciSourceFile).toMatch(/builder\.spec\.ts$/)
   })
 
   it('leaves _screenciLanguage undefined for shared mode', () => {
     const { test, calls } = createTestSink()
-    createVideoBuilder(test).localize({
-      narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
-      mode: 'shared',
-    })('Tour', async () => {})
+    createVideoBuilder(test)
+      .narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })
+      .languages({ languages: ['en', 'fi'], mode: 'shared' })(
+      'Tour',
+      async () => {}
+    )
     expect(calls.tests).toEqual(['Tour'])
     expect(calls.uses[0]?._screenciLanguage).toBeUndefined()
     expect(calls.uses[0]).not.toHaveProperty('locale')
@@ -191,9 +217,7 @@ describe('createVideoBuilder registration', () => {
 
   it('supports the (title, details, body) signature', () => {
     const { test, calls } = createTestSink()
-    createVideoBuilder(test)
-      .studio({ text: ['h'] })
-      .localize({ languages: ['en'] })(
+    createVideoBuilder(test).text(['h']).languages(['en'])(
       'Tagged',
       { tag: '@critical' },
       async () => {}
@@ -206,9 +230,10 @@ describe('createVideoBuilder registration', () => {
     process.env.SCREENCI_LANGUAGES = 'de'
     try {
       const { test, calls } = createTestSink()
-      createVideoBuilder(test)
-        .studio({ text: ['h'] })
-        .localize({ languages: ['en', 'fi'] })('T', async () => {})
+      createVideoBuilder(test).text(['h']).languages(['en', 'fi'])(
+        'T',
+        async () => {}
+      )
       expect(calls.tests).toEqual([])
       expect(warn).toHaveBeenCalledOnce()
     } finally {
@@ -224,10 +249,17 @@ describe('createVideoBuilder registration', () => {
     ).toThrow(/Duplicate/)
   })
 
+  it('throws when a screenshot declares narration (silent medium)', () => {
+    const { test } = createTestSink()
+    expect(() =>
+      createVideoBuilder(test, new Set(['text', 'overlays'])).narration(['x'])
+    ).toThrow(/not available for this medium/)
+  })
+
   it('registers per-language passes with test.only via .only', () => {
     const { test, calls, only } = createTestSink()
     createVideoBuilder(test)
-      .localize({ narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } } })
+      .narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })
       .only('Focused', async () => {})
     expect(calls.tests).toEqual(['Focused [en]', 'Focused [fi]'])
     expect(only).toEqual(['Focused [en]', 'Focused [fi]'])

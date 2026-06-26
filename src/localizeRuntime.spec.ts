@@ -5,17 +5,23 @@ import {
   buildTextValues,
   narrationVoiceConfigFromRenderOptions,
 } from './localizeRuntime.js'
-import { normalizeLocalizeSpec } from './localize.js'
+import { normalizeFeature } from './declare.js'
+import type { LocalizeNarrationValue } from './localize.js'
 import { setActiveCueRecorder, setSleepFn } from './cue.js'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import { voices } from './voices.js'
+
+const text = (arg: Parameters<typeof normalizeFeature<string>>[1]) =>
+  normalizeFeature<string>('text', arg)
+const narr = (
+  arg: Parameters<typeof normalizeFeature<LocalizeNarrationValue>>[1]
+) => normalizeFeature<LocalizeNarrationValue>('narration', arg)
 
 describe('narrationVoiceConfigFromRenderOptions', () => {
   it('returns undefined for undefined render options or deferred studio render options', () => {
     expect(
       narrationVoiceConfigFromRenderOptions(undefined, false)
     ).toBeUndefined()
-    // When render options are deferred to Studio there is no code voice here.
     expect(
       narrationVoiceConfigFromRenderOptions(
         { narration: { voice: { name: voices.Ava } } },
@@ -39,132 +45,101 @@ describe('narrationVoiceConfigFromRenderOptions', () => {
 
 describe('buildTextValues', () => {
   it('returns the active language values for seeded text', () => {
-    const localize = normalizeLocalizeSpec({
-      text: { en: { heading: 'Hi' }, fi: { heading: 'Moi' } },
-    })
-    expect(buildTextValues(localize, 'fi')).toEqual({ heading: 'Moi' })
+    const t = text({ en: { heading: 'Hi' }, fi: { heading: 'Moi' } })
+    expect(buildTextValues(t, 'fi')).toEqual({ heading: 'Moi' })
   })
 
-  it('returns an empty string per field for unset studio-managed text', () => {
-    const localize = normalizeLocalizeSpec({ languages: ['en'] })
-    // Studio-managed text field names are passed in from the studio declaration.
-    expect(buildTextValues(localize, 'en', null, ['heading'])).toEqual({
-      heading: '',
-    })
+  it('falls back to the shared value when a language omits a field', () => {
+    const t = text({ default: { heading: 'Hi' }, fi: { other: 'Muu' } })
+    expect(buildTextValues(t, 'fi')).toEqual({ heading: 'Hi', other: 'Muu' })
+  })
+
+  it('returns an empty string per field for unset studio-managed (array) text', () => {
+    const t = text(['heading'])
+    expect(buildTextValues(t, 'en', null)).toEqual({ heading: '' })
   })
 
   it('returns an empty object when there is no text', () => {
-    const localize = normalizeLocalizeSpec({
-      narration: { en: { intro: 'Hi' } },
-    })
-    expect(buildTextValues(localize, 'en')).toEqual({})
+    expect(buildTextValues(undefined, 'en')).toEqual({})
   })
 
   it('lets a Studio override win over the seed for the active language', () => {
-    const localize = normalizeLocalizeSpec({
-      text: { en: { heading: 'Seed' }, fi: { heading: 'Siemen' } },
-    })
+    const t = text({ en: { heading: 'Seed' }, fi: { heading: 'Siemen' } })
     const overrides = { fi: { heading: 'Studio FI' } }
-    expect(buildTextValues(localize, 'fi', overrides)).toEqual({
+    expect(buildTextValues(t, 'fi', overrides)).toEqual({
       heading: 'Studio FI',
     })
-    // Languages without an override keep the seed.
-    expect(buildTextValues(localize, 'en', overrides)).toEqual({
-      heading: 'Seed',
-    })
+    expect(buildTextValues(t, 'en', overrides)).toEqual({ heading: 'Seed' })
   })
 
   it('resolves Studio-managed text from overrides', () => {
-    const localize = normalizeLocalizeSpec({ languages: ['en'] })
+    const t = text(['heading'])
     expect(
-      buildTextValues(localize, 'en', { en: { heading: 'From Studio' } }, [
-        'heading',
-      ])
+      buildTextValues(t, 'en', { en: { heading: 'From Studio' } })
     ).toEqual({ heading: 'From Studio' })
-    // Empty string (blank, recording succeeds) when no override is provided.
-    expect(buildTextValues(localize, 'en', null, ['heading'])).toEqual({
-      heading: '',
-    })
+    expect(buildTextValues(t, 'en', null)).toEqual({ heading: '' })
   })
 })
 
 describe('buildTextDeclaration', () => {
   it('declares fields with only the active language seed', () => {
-    const localize = normalizeLocalizeSpec({
-      text: { en: { heading: 'Hi' }, fi: { heading: 'Moi' } },
-    })
-    expect(buildTextDeclaration(localize, 'fi')).toEqual({
+    const t = text({ en: { heading: 'Hi' }, fi: { heading: 'Moi' } })
+    expect(buildTextDeclaration(t, 'fi')).toEqual({
       fields: ['heading'],
       studioFields: [],
       seed: { fi: { heading: 'Moi' } },
     })
   })
 
-  it('declares a studio-managed field with no seed', () => {
-    const localize = normalizeLocalizeSpec({ languages: ['en'] })
-    expect(buildTextDeclaration(localize, 'en', ['heading'])).toEqual({
+  it('seeds a content-major (shared) field under the active language', () => {
+    const t = text({ heading: 'Hi' })
+    expect(buildTextDeclaration(t, 'en')).toEqual({
+      fields: ['heading'],
+      studioFields: [],
+      seed: { en: { heading: 'Hi' } },
+    })
+  })
+
+  it('declares a studio-managed (array) field with no seed', () => {
+    const t = text(['heading'])
+    expect(buildTextDeclaration(t, 'en')).toEqual({
       fields: ['heading'],
       studioFields: ['heading'],
     })
   })
 
-  it('lists seeded and studio fields together, seeding only seeded ones', () => {
-    const localize = normalizeLocalizeSpec({
-      text: { en: { heading: 'Hi' }, fi: { heading: 'Moi' } },
-    })
-    // Studio-managed field names come from the studio declaration, appended
-    // after the seeded ones.
-    const declaration = buildTextDeclaration(localize, 'en', ['cta'])
-    expect(declaration?.fields.sort()).toEqual(['cta', 'heading'])
-    expect(declaration?.studioFields).toEqual(['cta'])
-    expect(declaration?.seed).toEqual({ en: { heading: 'Hi' } })
-  })
-
   it('omits the seed when the language is undefined (shared mode)', () => {
-    const localize = normalizeLocalizeSpec({
-      mode: 'shared',
-      text: { en: { heading: 'Hi' } },
-    })
-    expect(buildTextDeclaration(localize, undefined)).toEqual({
+    const t = text({ en: { heading: 'Hi' } })
+    expect(buildTextDeclaration(t, undefined)).toEqual({
       fields: ['heading'],
       studioFields: [],
     })
   })
 
-  it('returns null when the spec declares no text', () => {
-    const localize = normalizeLocalizeSpec({
-      narration: { en: { intro: 'Hi' } },
-    })
-    expect(buildTextDeclaration(localize, 'en')).toBeNull()
+  it('returns null when there is no text', () => {
+    expect(buildTextDeclaration(null, 'en')).toBeNull()
     expect(buildTextDeclaration(undefined, 'en')).toBeNull()
   })
 })
 
 describe('buildNarrationMarkers', () => {
   it('returns markers keyed by the declared cue names', () => {
-    const localize = normalizeLocalizeSpec({
-      narration: {
-        en: { intro: 'Hi', outro: 'Bye' },
-        fi: { intro: 'Moi', outro: 'Hei' },
-      },
+    const n = narr({
+      en: { intro: 'Hi', outro: 'Bye' },
+      fi: { intro: 'Moi', outro: 'Hei' },
     })
-    const markers = buildNarrationMarkers(localize)
+    const markers = buildNarrationMarkers(n, ['en', 'fi'])
     expect(Object.keys(markers).sort()).toEqual(['intro', 'outro'])
     expect(typeof markers.intro).toBe('function')
   })
 
-  it('includes Studio-managed cues alongside seeded ones', () => {
-    const localize = normalizeLocalizeSpec({
-      narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
-    })
-    // Studio-managed narration cue names come from the studio declaration.
-    const markers = buildNarrationMarkers(localize, undefined, ['alert'])
-    expect(Object.keys(markers).sort()).toEqual(['alert', 'intro'])
+  it('builds studio (array) narration cues', () => {
+    const markers = buildNarrationMarkers(narr(['alert']), ['en'])
+    expect(Object.keys(markers)).toEqual(['alert'])
   })
 
   it('returns an empty object when there is no narration', () => {
-    const localize = normalizeLocalizeSpec({ languages: ['en'] })
-    expect(buildNarrationMarkers(localize)).toEqual({})
+    expect(buildNarrationMarkers(undefined, ['en'])).toEqual({})
   })
 
   describe('voice cascade', () => {
@@ -198,55 +173,50 @@ describe('buildNarrationMarkers', () => {
       (cueStarts[0]?.translations as Record<string, { voice: string }>)[lang]
         .voice
 
-    it('uses the per-language localize voice map', async () => {
-      const localize = normalizeLocalizeSpec({
-        voice: { en: { name: voices.Ava }, fi: { name: voices.Nora } },
-        narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
-      })
-      const markers = buildNarrationMarkers(localize)
-
+    it('uses the per-language voice map', async () => {
+      const markers = buildNarrationMarkers(
+        narr({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } }),
+        ['en', 'fi'],
+        undefined,
+        { en: { name: voices.Ava }, fi: { name: voices.Nora } }
+      )
       await markers.intro()
-
       expect(voiceOf('en')).toBe(voices.Ava)
       expect(voiceOf('fi')).toBe(voices.Nora)
     })
 
     it('lets a per-cue voice override the per-language voice', async () => {
-      const localize = normalizeLocalizeSpec({
-        voice: { en: { name: voices.Ava }, fi: { name: voices.Ava } },
-        narration: {
+      const markers = buildNarrationMarkers(
+        narr({
           en: { intro: 'Hi' },
           fi: { intro: { cue: 'Moi', voice: { name: voices.Nora } } },
-        },
-      })
-      const markers = buildNarrationMarkers(localize)
-
+        }),
+        ['en', 'fi'],
+        undefined,
+        { en: { name: voices.Ava }, fi: { name: voices.Ava } }
+      )
       await markers.intro()
-
-      // en uses its per-language voice; fi uses its per-cue override.
       expect(voiceOf('en')).toBe(voices.Ava)
       expect(voiceOf('fi')).toBe(voices.Nora)
     })
 
-    it('falls back to the config default voice when localize has none', async () => {
-      const localize = normalizeLocalizeSpec({
-        narration: { en: { intro: 'Hi' } },
-      })
-      const markers = buildNarrationMarkers(localize, { name: voices.Ava })
-
+    it('falls back to the config default voice when none is configured per language', async () => {
+      const markers = buildNarrationMarkers(
+        narr({ en: { intro: 'Hi' } }),
+        ['en'],
+        {
+          name: voices.Ava,
+        }
+      )
       await markers.intro()
-
       expect(voiceOf('en')).toBe(voices.Ava)
     })
 
     it('falls back to a built-in default voice when nothing is configured', async () => {
-      const localize = normalizeLocalizeSpec({
-        narration: { en: { intro: 'Hi' } },
-      })
-      const markers = buildNarrationMarkers(localize)
-
+      const markers = buildNarrationMarkers(narr({ en: { intro: 'Hi' } }), [
+        'en',
+      ])
       await markers.intro()
-
       expect(voiceOf('en')).toBe(voices.Sophie)
     })
   })
@@ -284,33 +254,27 @@ describe('buildNarrationMarkers', () => {
       )[lang]
 
     it('records a per-cue language when it differs from the version language', async () => {
-      const localize = normalizeLocalizeSpec({
-        narration: {
+      const markers = buildNarrationMarkers(
+        narr({
           en: { tagline: 'Just do it' },
           fi: { tagline: { cue: 'Just do it', language: 'en' } },
-        },
-      })
-      const markers = buildNarrationMarkers(localize)
-
+        }),
+        ['en', 'fi']
+      )
       await markers.tagline()
-
-      // The fi version speaks this cue in English.
       expect(translationOf('fi')).toMatchObject({
         text: 'Just do it',
         language: 'en',
       })
-      // en has no override, so no language field is emitted.
       expect(translationOf('en').language).toBeUndefined()
     })
 
     it('omits the language field when it equals the version language', async () => {
-      const localize = normalizeLocalizeSpec({
-        narration: { fi: { intro: { cue: 'Moi', language: 'fi' } } },
-      })
-      const markers = buildNarrationMarkers(localize)
-
+      const markers = buildNarrationMarkers(
+        narr({ fi: { intro: { cue: 'Moi', language: 'fi' } } }),
+        ['fi']
+      )
       await markers.intro()
-
       expect(translationOf('fi').language).toBeUndefined()
     })
   })

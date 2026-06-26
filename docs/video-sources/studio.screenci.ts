@@ -15,18 +15,15 @@ const appUrl = process.env.SCREENCI_APP_URL ?? 'https://app.screenci.com/'
 // auth, so recording this needs a logged-in session: set SCREENCI_APP_STORAGE_STATE
 // to a Playwright storageState JSON (see screenci.config.ts). The walkthrough is
 // self-contained: it opens the first project and video, then enters Studio.
-video.localize({
-  narration: {
-    en: {
-      intro:
-        'Open any finished video in Studio to edit it right in the browser.',
-      edit: 'Review render options in the Studio panel, then render a new version. No code, no re-recording.',
-    },
-    es: {
-      intro:
-        'Abre cualquier video terminado en Studio para editarlo directamente en el navegador.',
-      edit: 'Revisa las opciones de render en el panel de Studio y genera una nueva version. Sin codigo y sin volver a grabar.',
-    },
+video.narration({
+  en: {
+    intro: 'Open any finished video in Studio to edit it right in the browser.',
+    edit: 'Review render options in the Studio panel, then render a new version. No code, no re-recording.',
+  },
+  es: {
+    intro:
+      'Abre cualquier video terminado en Studio para editarlo directamente en el navegador.',
+    edit: 'Revisa las opciones de render en el panel de Studio y genera una nueva version. Sin codigo y sin volver a grabar.',
   },
 })('Studio web editing', async ({ page, narration }) => {
   // Studio lives behind auth, so this recording only works with a logged-in

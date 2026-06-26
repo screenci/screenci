@@ -119,13 +119,12 @@ describe('generateExampleVideo', () => {
     expect(source).toContain(
       `video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })`
     )
-    expect(source).toContain(`video.localize({
-  // Localized narration cues by language. The fixture exposes them as markers.
-  narration: {
-    en: {`)
-    // The all-languages default voice lives in use, not in the localize spec.
-    expect(source).not.toContain(`video.localize({
-  // The voice`)
+    expect(source)
+      .toContain(`// Localized narration cues by language. The fixture exposes them as markers.
+video.narration({
+  en: {`)
+    // The all-languages default voice lives in use, not in the per-feature spec.
+    expect(source).not.toContain('video.localize(')
     expect(source).not.toContain('createNarration')
   })
 })
@@ -147,10 +146,13 @@ describe('generateIslandTsconfig', () => {
 })
 
 describe('generateReactExampleVideo', () => {
-  it('uses createOverlays from the main entry point', () => {
-    expect(generateReactExampleVideo()).toContain(
-      "import { autoZoom, createOverlays, hide, video, voices } from 'screenci'"
+  it('declares overlays via video.overlays from the main entry point', () => {
+    const source = generateReactExampleVideo()
+    expect(source).toContain(
+      "import { autoZoom, hide, video, voices } from 'screenci'"
     )
+    expect(source).toContain('video\n  .overlays({')
+    expect(source).not.toContain('createOverlays')
   })
 
   it('does not import the removed screenci/react entry', () => {

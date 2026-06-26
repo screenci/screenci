@@ -502,6 +502,20 @@ export type StudioAssetStartEvent = {
  * recorded (the common background-music case). `volume` is a linear gain (`1`
  * is natural); `repeat` loops the source to fill the span.
  */
+/**
+ * A per-language override of a background-audio track, used in shared-capture
+ * mode. Folded into the top-level fields for the active language before
+ * serialization (see {@link filterEventTranslationsToLanguage}).
+ */
+export type AudioTranslation = {
+  path: string
+  fileHash?: string
+  volume?: number
+  repeat?: boolean
+  speed?: number
+  time?: number
+}
+
 export type AudioStartEvent = {
   type: 'audioStart'
   timeMs: number
@@ -511,6 +525,8 @@ export type AudioStartEvent = {
   fileHash?: string
   volume: number
   repeat: boolean
+  /** Per-language file overrides (shared-capture mode); folded before render. */
+  translations?: Record<string, AudioTranslation>
   /**
    * Playback-rate multiplier for the track. `2` plays it twice as fast, `0.5`
    * at half speed. Omitted plays at the natural rate. The track keeps its
@@ -1651,23 +1667,48 @@ export function filterEventTranslationsToLanguage(
   event: RecordingEvent,
   language: string
 ): RecordingEvent {
-  if (event.type !== 'cueStart' && event.type !== 'videoCueStart') {
-    return event
-  }
-  if (event.translations === undefined) {
-    return event
+  // Narration cues keep the active language's translation as a single-language
+  // map (the renderer reads `translations[language]`).
+  if (event.type === 'cueStart' || event.type === 'videoCueStart') {
+    if (event.translations === undefined) {
+      return event
+    }
+    const translation = (event.translations as Record<string, unknown>)[
+      language
+    ]
+    if (translation === undefined) {
+      const { translations: _dropped, ...rest } = event
+      return rest as RecordingEvent
+    }
+    return {
+      ...event,
+      translations: { [language]: translation },
+    } as RecordingEvent
   }
 
-  const translation = (event.translations as Record<string, unknown>)[language]
-  if (translation === undefined) {
-    const { translations: _dropped, ...rest } = event
-    return rest as RecordingEvent
+  // Asset/audio events have no per-language map in the renderer schema: fold the
+  // active language's override up into the top-level fields and drop the map, so
+  // the renderer only ever sees a single resolved language.
+  if (
+    (event.type === 'assetStart' || event.type === 'audioStart') &&
+    'translations' in event &&
+    event.translations !== undefined
+  ) {
+    const translations = event.translations as Record<
+      string,
+      Record<string, unknown>
+    >
+    const { translations: _dropped, ...rest } = event as Record<string, unknown>
+    const override = translations[language]
+    if (override === undefined) return rest as unknown as RecordingEvent
+    const merged: Record<string, unknown> = { ...rest }
+    for (const [key, value] of Object.entries(override)) {
+      if (value !== undefined) merged[key] = value
+    }
+    return merged as unknown as RecordingEvent
   }
 
-  return {
-    ...event,
-    translations: { [language]: translation },
-  } as RecordingEvent
+  return event
 }
 
 function normalizeNarrationDropShadow(

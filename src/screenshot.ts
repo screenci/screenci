@@ -11,9 +11,11 @@ import type {
 import { mkdir, rm } from 'fs/promises'
 import { join, relative } from 'path'
 import type { RecordOptions, RenderOptions, ScreenCIPage } from './types.js'
-import type { StudioDeclaration } from './studio.js'
-import { studioOptionFlags } from './studio.js'
-import { buildStudioOverlays, type OverlayController } from './asset.js'
+import {
+  buildOverlays,
+  type OverlayController,
+  type OverlayInputOrFactory,
+} from './asset.js'
 import { getDimensions } from './dimensions.js'
 import {
   DEFAULT_VIDEO_OPTIONS,
@@ -39,10 +41,15 @@ import { ScreenciError } from './errors.js'
 import {
   withActiveRecordingContext,
   resolveEffectiveRecordOptions,
+  resolveStudioRecordOptions,
+  resolveStudioRenderOptions,
 } from './video.js'
-import { createVideoBuilder } from './builder.js'
-import type { VideoBuilder } from './builder.js'
-import type { NormalizedLocalize } from './localize.js'
+import {
+  createVideoBuilder,
+  SCREENSHOT_FEATURES,
+  type MediaBuilder,
+} from './builder.js'
+import type { NormalizedFeature } from './declare.js'
 import {
   buildTextDeclaration,
   buildTextValues,
@@ -64,21 +71,16 @@ export type CropFixture = (
 const SCREENSHOT_FILE_NAME = 'screenshot.png'
 
 type ScreenshotFixtureOptions = {
-  recordOptions: RecordOptions
-  renderOptions: RenderOptions | undefined
+  recordOptions: RecordOptions | 'studio'
+  renderOptions: RenderOptions | 'studio' | undefined
   /** Active language for this pass; see {@link video} for details. Internal. */
   _screenciLanguage: string | undefined
   /** Grouping name written to `metadata.videoName`. Internal. */
   _screenciVideoName: string | undefined
-  /** The normalized localize spec, set by `screenshot.localize(...)`. Internal. */
-  _screenciLocalize: NormalizedLocalize | undefined
-  /**
-   * The studio declaration, set by `screenshot.studio(...)`. Drives the
-   * render/record deferral flags and the Studio-managed `text` and `overlays`
-   * fixtures. A still is silent, so narration/audio declarations are ignored.
-   * Internal.
-   */
-  _screenciStudio: StudioDeclaration | undefined
+  /** Text-field declaration (`screenshot.text(...)`). Internal. */
+  _screenciText: NormalizedFeature<string> | undefined
+  /** Overlay declaration (`screenshot.overlays(...)`). Internal. */
+  _screenciOverlays: NormalizedFeature<OverlayInputOrFactory> | undefined
   /**
    * Absolute path of the `.screenci` script that registered this test, captured
    * by the fan-out builder. Asset paths are resolved relative to it, since
@@ -98,10 +100,13 @@ type ScreenshotFixtures = {
    */
   text: TextValues
   /**
-   * Overlay controllers for the Studio-managed overlay names declared in
-   * `screenshot.studio({ overlays: [...] })`. Empty when none are declared.
+   * Overlay controllers for the names declared in `screenshot.overlays(...)`.
+   * Empty when none are declared.
    */
-  overlays: Record<string, OverlayController>
+  overlays: Record<
+    string,
+    OverlayController | ((props: unknown) => OverlayController)
+  >
 }
 
 const _screenshotBase = base.extend<
@@ -111,30 +116,22 @@ const _screenshotBase = base.extend<
   renderOptions: [undefined, { option: true }],
   _screenciLanguage: [undefined, { option: true }],
   _screenciVideoName: [undefined, { option: true }],
-  _screenciLocalize: [undefined, { option: true }],
-  _screenciStudio: [undefined, { option: true }],
+  _screenciText: [undefined, { option: true }],
+  _screenciOverlays: [undefined, { option: true }],
   _screenciSourceFile: [undefined, { option: true }],
 
   language: async ({ _screenciLanguage }, use) => {
     await use(_screenciLanguage)
   },
 
-  text: async (
-    { _screenciLocalize, _screenciStudio, _screenciLanguage },
-    use
-  ) => {
+  text: async ({ _screenciText, _screenciLanguage }, use) => {
     await use(
-      buildTextValues(
-        _screenciLocalize,
-        _screenciLanguage,
-        parseTextOverrides(),
-        _screenciStudio?.text ?? []
-      )
+      buildTextValues(_screenciText, _screenciLanguage, parseTextOverrides())
     )
   },
 
-  overlays: async ({ _screenciStudio }, use) => {
-    await use(buildStudioOverlays(_screenciStudio?.overlays ?? []))
+  overlays: async ({ _screenciOverlays, _screenciLanguage }, use) => {
+    await use(buildOverlays(_screenciOverlays, _screenciLanguage))
   },
 
   crop: async ({}, use) => {
@@ -165,7 +162,6 @@ const _screenshotBase = base.extend<
     {
       browser,
       recordOptions,
-      _screenciStudio,
       _screenciVideoName,
       colorScheme,
       locale,
@@ -189,9 +185,11 @@ const _screenshotBase = base.extend<
     use,
     testInfo
   ) => {
+    const { base: baseRecordOptions, studio: studioRecord } =
+      resolveStudioRecordOptions(recordOptions)
     const effectiveRecordOptions = resolveEffectiveRecordOptions(
-      recordOptions,
-      _screenciStudio,
+      baseRecordOptions,
+      studioRecord,
       _screenciVideoName ?? testInfo.title
     )
     const aspectRatio =
@@ -248,8 +246,7 @@ const _screenshotBase = base.extend<
       renderOptions,
       deviceScaleFactor,
       _screenciLanguage,
-      _screenciLocalize,
-      _screenciStudio,
+      _screenciText,
       _screenciVideoName,
       _screenciSourceFile,
     },
@@ -257,23 +254,25 @@ const _screenshotBase = base.extend<
     testInfo
   ) => {
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
+    const { base: baseRecordOptions, studio: studioRecord } =
+      resolveStudioRecordOptions(codeRecordOptions)
+    const { obj: renderOptionsObj, studio: studioRender } =
+      resolveStudioRenderOptions(renderOptions)
     const recordOptions = resolveEffectiveRecordOptions(
-      codeRecordOptions,
-      _screenciStudio,
+      baseRecordOptions,
+      studioRecord,
       _screenciVideoName ?? testInfo.title
     )
-    const recorder = new EventRecorder(
-      renderOptions,
-      recordOptions,
-      studioOptionFlags(_screenciStudio)
-    )
+    const recorder = new EventRecorder(renderOptionsObj, recordOptions, {
+      renderOptions: studioRender,
+      recordOptions: studioRecord,
+    })
     recorder.setActiveLanguage(_screenciLanguage ?? null)
     // Declared `text` fields (and the active language's seeds) emitted once at
     // recording start so the backend/Studio learn them.
     const textDeclaration = buildTextDeclaration(
-      _screenciLocalize,
-      _screenciLanguage,
-      _screenciStudio?.text ?? []
+      _screenciText,
+      _screenciLanguage
     )
     const videoName = _screenciVideoName ?? testInfo.title
     // Asset paths are authored relative to the user's script. Playwright reports
@@ -467,20 +466,23 @@ interface Screenshot extends ScreenshotCallSignatures {
    * language, and the body receives the active `language` and `text` values.
    * Chainable with `.each(...)`.
    */
-  localize: VideoBuilder<ScreenshotArgs>['localize']
+  /** Declare on-screen text fields (array = Studio-owned, object = code values). */
+  text: MediaBuilder<ScreenshotArgs>['text']
+
+  /** Declare overlays (array = Studio-owned, object = code values/factories). */
+  overlays: MediaBuilder<ScreenshotArgs>['overlays']
 
   /**
-   * Defer render/record options and declare Studio-managed text and overlays,
-   * configured in the ScreenCI web app. Stills are silent, so narration and
-   * audio declarations are ignored. Chainable with `.localize(...)` / `.each(...)`.
+   * Declare the recorded language set / capture mode. Pass `'studio'` to let the
+   * web app own the set, an array `['en', 'fi']`, or an options object.
    */
-  studio: VideoBuilder<ScreenshotArgs>['studio']
+  languages: MediaBuilder<ScreenshotArgs>['languages']
 
   /**
    * Produce a separate screenshot per variant (viewport, theme, ...). Each
    * variant has its own identity and history. Chainable with `.languages(...)`.
    */
-  each: VideoBuilder<ScreenshotArgs>['each']
+  each: MediaBuilder<ScreenshotArgs>['each']
 
   beforeEach(
     inner: (args: ScreenshotArgs, testInfo: TestInfo) => Promise<void> | void
@@ -538,8 +540,10 @@ export const screenshot = _screenshotBase as unknown as Screenshot
 
 // Attach the chainable fan-out builders, mirroring `video`.
 const _screenshotRootBuilder = createVideoBuilder<ScreenshotArgs>(
-  _screenshotBase as unknown as Parameters<typeof createVideoBuilder>[0]
+  _screenshotBase as unknown as Parameters<typeof createVideoBuilder>[0],
+  SCREENSHOT_FEATURES
 )
-screenshot.localize = _screenshotRootBuilder.localize
-screenshot.studio = _screenshotRootBuilder.studio
+screenshot.text = _screenshotRootBuilder.text
+screenshot.overlays = _screenshotRootBuilder.overlays
+screenshot.languages = _screenshotRootBuilder.languages
 screenshot.each = _screenshotRootBuilder.each

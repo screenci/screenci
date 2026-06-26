@@ -592,7 +592,8 @@ async function uploadRecordingCandidate(
     info: (message: string) => void
   },
   progressIndex: number,
-  recordId: string
+  recordId: string,
+  expectedScreenshotCount: number
 ): Promise<UploadJobResult> {
   const { entry, videoName, data, preparedUploadAssets } = candidate
   let projectId: string | null = null
@@ -640,6 +641,7 @@ async function uploadRecordingCandidate(
             data,
             recordingHash,
             recordId,
+            ...(isScreenshot ? { expectedScreenshotCount } : {}),
             expectedAssets: preparedUploadAssets.map((asset) => ({
               fileHash: asset.fileHash,
               size: asset.size,
@@ -1699,6 +1701,13 @@ export async function uploadRecordings(
       verbose
     )
 
+    // Screenshots from this run render together on one machine; the backend
+    // waits for all of them to land before dispatching the batch, so it needs
+    // to know how many to expect.
+    const screenshotCount = candidates.filter(
+      (candidate) => candidate.data.output === 'screenshot'
+    ).length
+
     const results = await Promise.all(
       candidates.map(
         async (candidate, index) =>
@@ -1713,7 +1722,8 @@ export async function uploadRecordings(
             uploadAbort,
             progressReporter,
             index,
-            recordId
+            recordId,
+            screenshotCount
           )
       )
     )

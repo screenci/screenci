@@ -9,7 +9,6 @@ import {
   validateRegisteredAudioPaths,
   resetRegisteredAudioPaths,
 } from './audio.js'
-import { validateStudioDeclaration } from './studio.js'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
 import {
@@ -293,14 +292,6 @@ describe('buildStudioAudioTracks', () => {
         'Cannot call end() for audio "theme"'
       )
     })
-  })
-
-  it('rejects duplicate audio names via validateStudioDeclaration', () => {
-    // Duplicate/validation now lives in the builder via validateStudioDeclaration,
-    // which video.studio({ audio: [...] }) calls before building the tracks.
-    expect(() =>
-      validateStudioDeclaration({ audio: ['theme', 'theme'] }, [], [])
-    ).toThrow('video.studio(): duplicate audio name "theme".')
   })
 })
 

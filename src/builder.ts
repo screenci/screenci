@@ -2,25 +2,27 @@ import { fileURLToPath } from 'node:url'
 import type { TestDetails, TestInfo } from '@playwright/test'
 import type { RecordOptions } from './types.js'
 import type { NarrationCue } from './cue.js'
-import type { OverlayController } from './asset.js'
-import type { AudioController } from './audio.js'
-import type { NarrationMarkers, TextValues } from './localizeRuntime.js'
+import type {
+  OverlayController,
+  OverlayControllerFor,
+  OverlayInputOrFactory,
+} from './asset.js'
+import type { AudioController, AudioInput } from './audio.js'
 import { resolveLocaleForLanguage } from './locales.js'
 import { parseRequestedLanguages } from './runtimeMode.js'
 import { logger } from './logger.js'
+import type { LocalizeNarrationValue, VoiceConfig } from './localize.js'
+import type { Lang } from './voices.js'
 import {
-  normalizeLocalizeSpec,
-  type LocalizeSpec,
-  type LocalizeNarrationValue,
-  type NormalizedLocalize,
-} from './localize.js'
-import { validateStudioDeclaration, type StudioDeclaration } from './studio.js'
+  normalizeFeature,
+  type FeatureArg,
+  type NormalizedFeature,
+} from './declare.js'
 
 /**
  * One variant in a generic `video.each(...)` fan-out. Each variant produces a
  * separate video (its own identity and stored history), differing only in its
- * recording options and/or forwarded Playwright `use` options (e.g. a viewport
- * via `recordOptions.aspectRatio`, or a theme via `use.colorScheme`).
+ * recording options and/or forwarded Playwright `use` options.
  */
 export type EachVariant = {
   /** Stable label appended to the video name, e.g. `'mobile'` or `'dark'`. */
@@ -31,6 +33,35 @@ export type EachVariant = {
   use?: Record<string, unknown>
 }
 
+/** Capture strategy across languages. */
+export type LocalizeMode = 'shared' | 'per-language'
+
+/**
+ * Recording-level localization config, declared via `video.languages(...)`. It
+ * drives the registration-time fan-out (one Playwright test per language), so it
+ * lives on a builder method rather than in `recordOptions` (a run-time option).
+ *
+ * `languages` may be `'studio'`, meaning the set is owned by the ScreenCI web app
+ * and injected at record time through the same channel as `--languages`. When the
+ * web has selected none yet, the set is empty and the render stays pending (the
+ * recording still runs so its declared schema reaches the backend to be filled).
+ */
+export type RecordingLocalize = {
+  languages: readonly Lang[] | 'studio'
+  mode?: LocalizeMode
+  locales?: Partial<Record<Lang, string>>
+  browserLocale?: boolean
+}
+
+/** The argument accepted by `video.languages(...)`. */
+export type LanguagesArg = 'studio' | readonly Lang[] | RecordingLocalize
+
+function normalizeLanguagesArg(arg: LanguagesArg): RecordingLocalize {
+  if (arg === 'studio') return { languages: 'studio' }
+  if (Array.isArray(arg)) return { languages: arg as readonly Lang[] }
+  return arg as RecordingLocalize
+}
+
 /** A single Playwright test to register, fully resolved from the fan-out specs. */
 export type Registration = {
   /** Label for the wrapping `describe` block (scopes per-test `use` options). */
@@ -39,7 +70,7 @@ export type Registration = {
   leafTitle: string
   /** Grouping key written to `metadata.videoName`; shared across a video's languages. */
   videoName: string
-  /** Active language for this pass, or `null` in shared / no-localize mode. */
+  /** Active language for this pass, or `null` in shared / single-language mode. */
   language: string | null
   /** Browser locale for this pass, or `null` to leave the default. */
   locale: string | null
@@ -47,10 +78,32 @@ export type Registration = {
   recordOptions: Partial<RecordOptions> | null
   /** Forwarded Playwright `use` options for this pass, or `null` for none. */
   use: Record<string, unknown> | null
-  /** The normalized localize spec for this video, or `null` when not localized. */
-  localize: NormalizedLocalize | null
-  /** The studio declaration for this video, or `null` when not studio-managed. */
-  studio: StudioDeclaration | null
+  /** Per-feature declarations carried into the fixtures. */
+  narration: NormalizedFeature<LocalizeNarrationValue> | null
+  text: NormalizedFeature<string> | null
+  overlays: NormalizedFeature<OverlayInputOrFactory> | null
+  audio: NormalizedFeature<AudioInput> | null
+  /** Resolved recording-level localize config (languages/mode/locales). */
+  recordingLocalize: ResolvedRecordingLocalize
+}
+
+/** The recording-level localize config after registration-time resolution. */
+export type ResolvedRecordingLocalize = {
+  /** Every language this video records (the resolved set). */
+  languages: string[]
+  mode: LocalizeMode
+  browserLocale: boolean
+  locales?: Partial<Record<Lang, string>>
+  /** Whether the set is owned by the web app (`video.languages('studio')`). */
+  studioOwned: boolean
+  /** Studio-owned set with nothing selected yet: record for metadata, do not render. */
+  pending: boolean
+  /**
+   * Whether the languages were explicitly declared (via `video.languages(...)`,
+   * `'studio'`, or per-feature keys) rather than the implicit `['en']` default. A
+   * plain video with no language info stays language-agnostic (no `[lang]` tag).
+   */
+  explicit: boolean
 }
 
 function variantVideoName(
@@ -60,29 +113,132 @@ function variantVideoName(
   return variant === null ? baseTitle : `${baseTitle} ${variant.key}`
 }
 
+/** Languages contributed by the per-feature declarations (union of `byLang`). */
+function featureLanguages(state: BuilderState): string[] {
+  const set = new Set<string>()
+  for (const feature of [
+    state.narration,
+    state.text,
+    state.overlays,
+    state.audio,
+  ]) {
+    for (const lang of feature?.languages ?? []) set.add(lang)
+  }
+  return [...set]
+}
+
 /**
- * Expand the localize / each fan-out specs into the concrete list of Playwright
- * tests to register. Pure and exported for testing.
+ * Resolve the recorded language set at registration time. Priority:
+ * 1. `video.languages('studio')` -> the web-owned set, injected via the
+ *    `--languages` channel (`requestedLanguages`); empty => pending.
+ * 2. explicit `video.languages([...])`.
+ * 3. union of per-feature language keys (e.g. `narration({ fr })` -> French).
+ * 4. default `['en']`.
+ * The `requestedLanguages` filter (CLI / studio injection) intersects 2-4.
+ */
+export function resolveRecordingLocalize(
+  state: BuilderState,
+  requestedLanguages: string[] | null
+): ResolvedRecordingLocalize {
+  const rl = state.recordingLocalize
+  const mode: LocalizeMode = rl?.mode ?? 'per-language'
+  const browserLocale = rl?.browserLocale ?? true
+  const localesPatch = rl?.locales !== undefined ? { locales: rl.locales } : {}
+
+  if (rl?.languages === 'studio') {
+    const languages = requestedLanguages ?? []
+    return {
+      languages,
+      mode,
+      browserLocale,
+      ...localesPatch,
+      studioOwned: true,
+      pending: languages.length === 0,
+      explicit: true,
+    }
+  }
+
+  let declared: string[]
+  let explicit: boolean
+  if (rl !== null && rl !== undefined && Array.isArray(rl.languages)) {
+    declared = [...rl.languages]
+    explicit = true
+  } else {
+    const inferred = featureLanguages(state)
+    if (inferred.length > 0) {
+      declared = inferred
+      explicit = true
+    } else {
+      declared = ['en']
+      explicit = false
+    }
+  }
+  const languages =
+    requestedLanguages === null
+      ? declared
+      : declared.filter((lang) => requestedLanguages.includes(lang))
+  return {
+    languages,
+    mode,
+    browserLocale,
+    ...localesPatch,
+    studioOwned: false,
+    pending: false,
+    explicit,
+  }
+}
+
+/**
+ * Warn about per-feature values declared for a language outside the recorded set
+ * (e.g. `narration({ fr })` while the set is `[fi]`): the value is ignored.
+ */
+function warnUnusedLanguages(
+  state: BuilderState,
+  resolved: ResolvedRecordingLocalize
+): void {
+  const active = new Set(resolved.languages)
+  const source = resolved.studioOwned ? 'web' : 'video.languages()'
+  const langList = resolved.languages.join(', ') || '(none)'
+  const features: [string, NormalizedFeature<unknown> | null][] = [
+    ['Narration', state.narration],
+    ['Text', state.text],
+    ['Overlay', state.overlays],
+    ['Audio', state.audio],
+  ]
+  for (const [label, feature] of features) {
+    if (feature === null) continue
+    for (const [lang, entries] of Object.entries(feature.byLang)) {
+      if (active.has(lang) || entries === undefined) continue
+      for (const name of Object.keys(entries)) {
+        logger.warn(
+          `[screenci] ${label} ${name} (${lang}) is not used at all currently, ` +
+            `reason: only languages [${langList}] defined in ${source}. ` +
+            `See https://screenci.com/docs/localization`
+        )
+      }
+    }
+  }
+}
+
+/**
+ * Expand the fan-out specs into the concrete list of Playwright tests to
+ * register. Pure and exported for testing.
  *
- * - With no `localize`, each variant yields a single language-agnostic test.
- * - In `'shared'` mode, each variant yields one test that carries every language
- *   (narration is overdubbed at render); the `--languages` filter does not split
- *   a shared recording.
- * - In `'per-language'` mode, each variant yields one test per language,
- *   intersected with the `--languages` filter when present. A variant whose
- *   languages are entirely filtered out yields nothing. The browser locale is set
- *   per language unless `browserLocale` is `false`.
+ * - A single resolved language (default, or one inferred/declared) yields one
+ *   language-agnostic test (`language: null`).
+ * - `'shared'` mode yields one test carrying every language (overdubbed at
+ *   render); the `--languages` filter does not split a shared recording.
+ * - `'per-language'` mode yields one test per resolved language.
+ * - A studio-owned set with nothing selected yet yields one pending test that
+ *   records (so its schema reaches the backend) but renders nothing.
  */
 export function expandRegistrations(params: {
   baseTitle: string
-  localize: NormalizedLocalize | null
-  studio: StudioDeclaration | null
-  eachVariants: EachVariant[] | null
+  state: BuilderState
   requestedLanguages: string[] | null
 }): Registration[] {
-  const { baseTitle, localize, studio, eachVariants, requestedLanguages } =
-    params
-  const variants: (EachVariant | null)[] = eachVariants ?? [null]
+  const { baseTitle, state } = params
+  const variants: (EachVariant | null)[] = state.eachVariants ?? [null]
   const registrations: Registration[] = []
 
   for (const variant of variants) {
@@ -90,55 +246,73 @@ export function expandRegistrations(params: {
     const recordOptions = variant?.recordOptions ?? null
     const use = variant?.use ?? null
     const variantLabel = variant === null ? '' : `${variant.key} `
+    const resolved = resolveRecordingLocalize(state, params.requestedLanguages)
+    warnUnusedLanguages(state, resolved)
 
-    if (localize === null) {
+    // Explicitly-declared languages all filtered out (`--languages`) and not a
+    // pending studio set: register nothing for this variant.
+    if (
+      resolved.explicit &&
+      !resolved.studioOwned &&
+      resolved.languages.length === 0
+    ) {
+      continue
+    }
+
+    const base = {
+      videoName,
+      recordOptions,
+      use,
+      narration: state.narration,
+      text: state.text,
+      overlays: state.overlays,
+      audio: state.audio,
+      recordingLocalize: resolved,
+    }
+
+    // Pending studio set, shared mode, or a single language-agnostic pass: one
+    // registration that carries every (or no) language without splitting.
+    const singlePass =
+      resolved.pending ||
+      resolved.mode === 'shared' ||
+      resolved.languages.length <= 1
+
+    if (singlePass) {
+      // A single explicitly-declared language is tagged `[lang]`; the implicit
+      // `['en']` default (a plain video) stays language-agnostic.
+      const onlyLang =
+        resolved.explicit &&
+        resolved.mode === 'per-language' &&
+        resolved.languages.length === 1
+          ? resolved.languages[0]!
+          : null
+      const describeTitle = onlyLang
+        ? `${variantLabel}${onlyLang}`.trim()
+        : resolved.mode === 'shared' || resolved.pending
+          ? `${variantLabel}shared`.trim()
+          : (variant?.key ?? baseTitle)
       registrations.push({
-        describeTitle: variant?.key ?? baseTitle,
-        leafTitle: videoName,
-        videoName,
-        language: null,
-        locale: null,
-        recordOptions,
-        use,
-        localize: null,
-        studio,
+        ...base,
+        describeTitle,
+        leafTitle: onlyLang ? `${videoName} [${onlyLang}]` : videoName,
+        language: onlyLang,
+        locale:
+          onlyLang && resolved.browserLocale
+            ? resolveLocaleForLanguage(onlyLang, resolved.locales)
+            : null,
       })
       continue
     }
 
-    if (localize.mode === 'shared') {
+    for (const lang of resolved.languages) {
       registrations.push({
-        describeTitle: `${variantLabel}shared`.trim(),
-        leafTitle: videoName,
-        videoName,
-        language: null,
-        locale: null,
-        recordOptions,
-        use,
-        localize,
-        studio,
-      })
-      continue
-    }
-
-    const languages =
-      requestedLanguages === null
-        ? localize.languages
-        : localize.languages.filter((lang) => requestedLanguages.includes(lang))
-
-    for (const lang of languages) {
-      registrations.push({
+        ...base,
         describeTitle: `${variantLabel}${lang}`,
         leafTitle: `${videoName} [${lang}]`,
-        videoName,
         language: lang,
-        locale: localize.browserLocale
-          ? resolveLocaleForLanguage(lang, localize.locales)
+        locale: resolved.browserLocale
+          ? resolveLocaleForLanguage(lang, resolved.locales)
           : null,
-        recordOptions,
-        use,
-        localize,
-        studio,
       })
     }
   }
@@ -149,8 +323,11 @@ export function expandRegistrations(params: {
 /** Internal option keys the page/context fixtures read off a registered test. */
 const SCREENCI_LANGUAGE_OPTION = '_screenciLanguage'
 const SCREENCI_VIDEO_NAME_OPTION = '_screenciVideoName'
-const SCREENCI_LOCALIZE_OPTION = '_screenciLocalize'
-const SCREENCI_STUDIO_OPTION = '_screenciStudio'
+const SCREENCI_NARRATION_OPTION = '_screenciNarration'
+const SCREENCI_TEXT_OPTION = '_screenciText'
+const SCREENCI_OVERLAYS_OPTION = '_screenciOverlays'
+const SCREENCI_AUDIO_OPTION = '_screenciAudio'
+const SCREENCI_RECORDING_LOCALIZE_OPTION = '_screenciRecordingLocalize'
 const SCREENCI_SOURCE_FILE_OPTION = '_screenciSourceFile'
 
 /** Absolute path of this module, used to skip our own frames when capturing. */
@@ -165,12 +342,9 @@ function callSiteFile(frame: NodeJS.CallSite): string | null {
 
 /**
  * Capture the source file of the user's `.screenci` script that called the
- * builder. Playwright attributes `testInfo.file` to this module (the test is
- * registered here, not in the user's file), so asset paths authored relative to
- * the script would otherwise resolve against this package. We walk the call
- * stack and return the first frame outside this module, which is the script.
- * Returns `null` if no such frame is found (fixtures then fall back to
- * `testInfo.file`).
+ * builder. Playwright attributes `testInfo.file` to this module, so asset paths
+ * authored relative to the script would otherwise resolve against this package.
+ * We walk the call stack and return the first frame outside this module.
  */
 function captureSourceFile(): string | null {
   const originalPrepare = Error.prepareStackTrace
@@ -225,8 +399,11 @@ function registerOne(
     ...(reg.locale !== null ? { locale: reg.locale } : {}),
     [SCREENCI_LANGUAGE_OPTION]: reg.language ?? undefined,
     [SCREENCI_VIDEO_NAME_OPTION]: reg.videoName,
-    [SCREENCI_LOCALIZE_OPTION]: reg.localize ?? undefined,
-    [SCREENCI_STUDIO_OPTION]: reg.studio ?? undefined,
+    [SCREENCI_NARRATION_OPTION]: reg.narration ?? undefined,
+    [SCREENCI_TEXT_OPTION]: reg.text ?? undefined,
+    [SCREENCI_OVERLAYS_OPTION]: reg.overlays ?? undefined,
+    [SCREENCI_AUDIO_OPTION]: reg.audio ?? undefined,
+    [SCREENCI_RECORDING_LOCALIZE_OPTION]: reg.recordingLocalize,
     [SCREENCI_SOURCE_FILE_OPTION]: sourceFile ?? undefined,
   }
 
@@ -250,122 +427,60 @@ type UnionToIntersection<U> = (
   : never
 
 /**
- * Union of every inner key across all languages of a seeded map `M` (e.g. the
- * cue names of `{ en: { intro, save }, fi: { intro, save } }`). Uses each
- * language's key set before intersecting, so each language must cover the union
- * (the identical-keys guarantee, enforced via {@link EnforceIdenticalKeys}).
+ * The content names declared by a {@link FeatureArg}. Array elements for the
+ * studio form; for objects, the union of content-major top-level keys (those that
+ * are not language codes or `default`) and the language-major inner keys.
  */
-type SeededKeys<M> = [M] extends [object]
-  ? Extract<
-      keyof UnionToIntersection<
-        {
-          [L in keyof M]-?: NonNullable<M[L]> extends Record<string, unknown>
-            ? Record<keyof NonNullable<M[L]> & string, unknown>
-            : never
-        }[keyof M]
-      >,
-      string
-    >
-  : never
+type LangKey = Lang | 'default'
 
-/** Studio-managed names from a `video.studio({...})` name list. */
-type StudioNamesOf<N> = N extends readonly string[] ? N[number] : never
+type LangMajorNamesOf<A> = NonNullable<
+  {
+    [K in keyof A & LangKey]: A[K] extends Record<string, unknown>
+      ? Extract<keyof A[K], string>
+      : never
+  }[keyof A & LangKey]
+>
 
-/** Seeded cue names (declared in the per-language `narration` map). */
-type CueNamesOf<S> = S extends { narration: infer M } ? SeededKeys<M> : never
+export type FeatureNamesOf<A> = A extends readonly string[]
+  ? A[number]
+  : A extends object
+    ? Extract<Exclude<keyof A, LangKey>, string> | LangMajorNamesOf<A>
+    : never
 
-/** Seeded `text` field names (declared in the per-language `text` map). */
-type FieldNamesOf<S> = S extends { text: infer T } ? SeededKeys<T> : never
+/** The overlay controller type for a single declared name. */
+type OverlayControllerForName<A, K extends string> = A extends readonly string[]
+  ? OverlayController
+  : K extends keyof A
+    ? OverlayControllerFor<A[K]>
+    : OverlayController
 
-/**
- * Constrains a seeded map so every language declares the same key set: each
- * language is required to provide every key that appears in any language. A
- * missing key fails to compile; an unrelated extra key is not part of the union,
- * so it is rejected as excess.
- */
-type EnforceIdenticalKeys<M, Value> = {
-  [L in keyof M]: Record<SeededKeys<M>, Value>
-}
-
-/**
- * Refines a localize spec so its `narration`/`text` maps have identical keys
- * across languages. Intersected with the inferred spec `S` at the `.localize`
- * call site so a dropped per-language key is a compile error.
- */
-type ValidateLocalizeSpec<S> = (S extends { narration: infer M }
-  ? { narration: EnforceIdenticalKeys<M, LocalizeNarrationValue> }
-  : object) &
-  (S extends { text: infer T }
-    ? { text: EnforceIdenticalKeys<T, string> }
-    : object)
-
-type NarrationOverrideFor<S> = [CueNamesOf<S>] extends [never]
-  ? NarrationMarkers
-  : Record<CueNamesOf<S>, NarrationCue>
-
-/**
- * The `text` fixture type for a spec: every field is a `string`. A seeded field
- * carries its per-language value; a Studio-managed field (`studio.text`) is the
- * empty string until it is set in Studio (the recording still succeeds). In
- * `shared` mode there is no per-language injection, so seeded fields are also
- * empty until provided.
- */
-type TextOverrideFor<S> = [FieldNamesOf<S>] extends [never]
-  ? TextValues
-  : Record<FieldNamesOf<S>, string>
-
-/**
- * The fixture arg overrides a `localize(spec)` contributes: `narration` typed to
- * the spec's cue names (only when the medium has narration) and `text` typed to
- * its field names. Keys absent from `Args` (e.g. `narration` on a screenshot)
- * are not added.
- */
-type LocalizeOverrides<Args, S> = ('narration' extends keyof Args
-  ? { narration: NarrationOverrideFor<S> }
-  : object) &
-  ('text' extends keyof Args ? { text: TextOverrideFor<S> } : object)
-
-/** Studio-managed names of each kind declared in a `video.studio({...})` spec. */
-type StudioNarrationNamesOf<SD> = SD extends { narration: infer N }
-  ? StudioNamesOf<N>
-  : never
-type StudioTextNamesOf<SD> = SD extends { text: infer N }
-  ? StudioNamesOf<N>
-  : never
-type StudioOverlayNamesOf<SD> = SD extends { overlays: infer N }
-  ? StudioNamesOf<N>
-  : never
-type StudioAudioNamesOf<SD> = SD extends { audio: infer N }
-  ? StudioNamesOf<N>
-  : never
-
-/**
- * The fixture arg overrides a `studio(decl)` contributes: each declared name
- * list types its fixture (`narration`/`text`/`overlays`/`audio`) to the exact
- * names so a typo is a compile error. Keys absent from `Args` (e.g. `narration`
- * on a screenshot) or kinds not declared are not added. When combined with
- * `localize(...)`, the per-fixture records intersect, unioning the names.
- */
-type StudioOverrides<Args, SD> = ('narration' extends keyof Args
-  ? [StudioNarrationNamesOf<SD>] extends [never]
+type NarrationOverrideFor<Args, A> = 'narration' extends keyof Args
+  ? [FeatureNamesOf<A>] extends [never]
     ? object
-    : { narration: Record<StudioNarrationNamesOf<SD>, NarrationCue> }
-  : object) &
-  ('text' extends keyof Args
-    ? [StudioTextNamesOf<SD>] extends [never]
-      ? object
-      : { text: Record<StudioTextNamesOf<SD>, string> }
-    : object) &
-  ('overlays' extends keyof Args
-    ? [StudioOverlayNamesOf<SD>] extends [never]
-      ? object
-      : { overlays: Record<StudioOverlayNamesOf<SD>, OverlayController> }
-    : object) &
-  ('audio' extends keyof Args
-    ? [StudioAudioNamesOf<SD>] extends [never]
-      ? object
-      : { audio: Record<StudioAudioNamesOf<SD>, AudioController> }
-    : object)
+    : { narration: Record<FeatureNamesOf<A>, NarrationCue> }
+  : object
+
+type TextOverrideFor<Args, A> = 'text' extends keyof Args
+  ? [FeatureNamesOf<A>] extends [never]
+    ? object
+    : { text: Record<FeatureNamesOf<A>, string> }
+  : object
+
+type OverlayOverrideFor<Args, A> = 'overlays' extends keyof Args
+  ? [FeatureNamesOf<A>] extends [never]
+    ? object
+    : {
+        overlays: {
+          [K in FeatureNamesOf<A>]: OverlayControllerForName<A, K>
+        }
+      }
+  : object
+
+type AudioOverrideFor<Args, A> = 'audio' extends keyof Args
+  ? [FeatureNamesOf<A>] extends [never]
+    ? object
+    : { audio: Record<FeatureNamesOf<A>, AudioController> }
+  : object
 
 type MergeArgs<Args, O> = {
   [K in keyof Args | keyof O]: K extends keyof O
@@ -378,43 +493,51 @@ type MergeArgs<Args, O> = {
 type BodyFn<Args> = (args: Args, testInfo: TestInfo) => void | Promise<void>
 
 /**
- * A chainable fan-out builder. Callable to register the test(s), and exposes
- * `.localize()` / `.each()` to refine the fan-out before the terminal call. `O`
- * accumulates the typed fixture overrides from `.localize(...)` so the body sees
- * `narration`/`text` typed to the spec's names.
+ * A chainable fan-out builder. Callable to register the test(s), and exposes the
+ * per-feature declaration methods plus `.languages()` / `.each()` to refine the
+ * fan-out. `O` accumulates the typed fixture overrides so the body sees
+ * `narration`/`text`/`overlays`/`audio` typed to the declared names.
  */
 type BuilderTerminal<Args, O> = {
   (title: string, body: BodyFn<MergeArgs<Args, O>>): void
   (title: string, details: TestDetails, body: BodyFn<MergeArgs<Args, O>>): void
 }
 
-export interface VideoBuilder<Args, O = object> extends BuilderTerminal<
+/** The fixture keys a medium supports (videos: all; screenshots: text+overlays). */
+export type FeatureKey = 'narration' | 'text' | 'overlays' | 'audio'
+
+export interface MediaBuilder<Args, O = object> extends BuilderTerminal<
   Args,
   O
 > {
-  /** Record one localized pass per language (or one shared capture). */
-  localize<const S extends LocalizeSpec>(
-    spec: S & ValidateLocalizeSpec<S>
-  ): VideoBuilder<Args, O & LocalizeOverrides<Args, S>>
-  /**
-   * Defer render/record options and declare Studio-managed narration, text,
-   * overlays, and audio (configured in the ScreenCI web app). The declared name
-   * lists type the matching fixtures to the exact names.
-   */
-  studio<const SD extends StudioDeclaration>(
-    declaration: SD
-  ): VideoBuilder<Args, O & StudioOverrides<Args, SD>>
+  /** Declare narration cues: Studio-owned (array) or code values (object). */
+  narration<const A extends FeatureArg<LocalizeNarrationValue>>(
+    arg: A
+  ): MediaBuilder<Args, O & NarrationOverrideFor<Args, A>>
+  /** Declare on-screen text fields. */
+  text<const A extends FeatureArg<string>>(
+    arg: A
+  ): MediaBuilder<Args, O & TextOverrideFor<Args, A>>
+  /** Declare overlays. */
+  overlays<const A extends FeatureArg<OverlayInputOrFactory>>(
+    arg: A
+  ): MediaBuilder<Args, O & OverlayOverrideFor<Args, A>>
+  /** Declare background-audio tracks. */
+  audio<const A extends FeatureArg<AudioInput>>(
+    arg: A
+  ): MediaBuilder<Args, O & AudioOverrideFor<Args, A>>
+  /** Declare the recorded language set / capture mode. */
+  languages(arg: LanguagesArg): MediaBuilder<Args, O>
   /** Produce a separate video per variant (viewport, theme, ...). */
-  each(variants: EachVariant[]): VideoBuilder<Args, O>
-  /** Register the localized test(s) with `test.only`. */
+  each(variants: EachVariant[]): MediaBuilder<Args, O>
   only: BuilderTerminal<Args, O>
-  /** Register the localized test(s) with `test.skip`. */
   skip: BuilderTerminal<Args, O>
-  /** Register the localized test(s) with `test.fixme`. */
   fixme: BuilderTerminal<Args, O>
-  /** Register the localized test(s) with `test.fail`. */
   fail: BuilderTerminal<Args, O>
 }
+
+/** Backwards-compatible alias used by the video/screenshot entry points. */
+export type VideoBuilder<Args, O = object> = MediaBuilder<Args, O>
 
 function normalizeVariants(variants: EachVariant[]): EachVariant[] {
   if (variants.length === 0) {
@@ -434,21 +557,50 @@ function normalizeVariants(variants: EachVariant[]): EachVariant[] {
   return variants
 }
 
-type BuilderState = {
-  localize: NormalizedLocalize | null
-  studio: StudioDeclaration | null
+export type BuilderState = {
+  narration: NormalizedFeature<LocalizeNarrationValue> | null
+  text: NormalizedFeature<string> | null
+  overlays: NormalizedFeature<OverlayInputOrFactory> | null
+  audio: NormalizedFeature<AudioInput> | null
+  recordingLocalize: RecordingLocalize | null
   eachVariants: EachVariant[] | null
+  /** Fixtures this medium supports; declaring an unsupported one throws. */
+  features: ReadonlySet<FeatureKey>
 }
 
+const EMPTY_STATE = (features: ReadonlySet<FeatureKey>): BuilderState => ({
+  narration: null,
+  text: null,
+  overlays: null,
+  audio: null,
+  recordingLocalize: null,
+  eachVariants: null,
+  features,
+})
+
+/** The full set of feature fixtures for videos. */
+export const VIDEO_FEATURES: ReadonlySet<FeatureKey> = new Set([
+  'narration',
+  'text',
+  'overlays',
+  'audio',
+])
+/** Stills are silent: only text + overlays. */
+export const SCREENSHOT_FEATURES: ReadonlySet<FeatureKey> = new Set([
+  'text',
+  'overlays',
+])
+
 /**
- * Create a fan-out builder bound to a registrar test instance. `video.localize`
- * and `video.each` are the `localize`/`each` methods of a root builder created
- * with this factory. `Args` is the medium's fixture arg type (video/screenshot).
+ * Create a fan-out builder bound to a registrar test instance. `Args` is the
+ * medium's fixture arg type (video/screenshot); `features` selects which
+ * per-feature methods are valid for the medium.
  */
 export function createVideoBuilder<Args>(
   test: RegistrarTest,
-  state: BuilderState = { localize: null, studio: null, eachVariants: null }
-): VideoBuilder<Args> {
+  features: ReadonlySet<FeatureKey> = VIDEO_FEATURES,
+  state: BuilderState = EMPTY_STATE(features)
+): MediaBuilder<Args> {
   const runTerminal = (
     modifier: TestModifier | undefined,
     title: string,
@@ -459,24 +611,11 @@ export function createVideoBuilder<Args>(
     const details = hasDetails ? (detailsOrBody as TestDetails) : undefined
     const body = (hasDetails ? maybeBody : detailsOrBody) as unknown
 
-    // Captured here, at the user's call site, so the script's path survives
-    // even though Playwright records the test as declared in this module.
     const sourceFile = captureSourceFile()
-
-    // Studio-managed names must be unique and disjoint from the seeded localize
-    // names. Validate once, here, where both the localize spec and the studio
-    // declaration are known (they can be chained in either order).
-    validateStudioDeclaration(
-      state.studio,
-      state.localize?.narration?.seededNames ?? [],
-      state.localize?.text?.seededNames ?? []
-    )
 
     const registrations = expandRegistrations({
       baseTitle: title,
-      localize: state.localize,
-      studio: state.studio,
-      eachVariants: state.eachVariants,
+      state,
       requestedLanguages: parseRequestedLanguages(),
     })
 
@@ -502,7 +641,7 @@ export function createVideoBuilder<Args>(
       title,
       detailsOrBody,
       maybeBody
-    )) as VideoBuilder<Args>
+    )) as MediaBuilder<Args>
 
   for (const modifier of ['only', 'skip', 'fixme', 'fail'] as const) {
     callable[modifier] = ((
@@ -515,26 +654,46 @@ export function createVideoBuilder<Args>(
         title,
         detailsOrBody,
         maybeBody
-      )) as VideoBuilder<Args>[typeof modifier]
+      )) as MediaBuilder<Args>[typeof modifier]
   }
 
-  callable.localize = ((spec: LocalizeSpec) =>
-    createVideoBuilder<Args>(test, {
+  const withFeature = (
+    key: FeatureKey,
+    arg: FeatureArg<unknown>
+  ): MediaBuilder<Args> => {
+    if (!features.has(key)) {
+      throw new Error(
+        `[screenci] ${key}() is not available for this medium (a screenshot is silent: only text and overlays apply).`
+      )
+    }
+    return createVideoBuilder<Args>(test, features, {
       ...state,
-      localize: normalizeLocalizeSpec(spec),
-    })) as VideoBuilder<Args>['localize']
+      [key]: normalizeFeature(key, arg),
+    })
+  }
 
-  callable.studio = ((declaration: StudioDeclaration) =>
-    createVideoBuilder<Args>(test, {
+  callable.narration = ((arg: FeatureArg<LocalizeNarrationValue>) =>
+    withFeature('narration', arg)) as MediaBuilder<Args>['narration']
+  callable.text = ((arg: FeatureArg<string>) =>
+    withFeature('text', arg)) as MediaBuilder<Args>['text']
+  callable.overlays = ((arg: FeatureArg<OverlayInputOrFactory>) =>
+    withFeature('overlays', arg)) as MediaBuilder<Args>['overlays']
+  callable.audio = ((arg: FeatureArg<AudioInput>) =>
+    withFeature('audio', arg)) as MediaBuilder<Args>['audio']
+
+  callable.languages = ((arg: LanguagesArg) =>
+    createVideoBuilder<Args>(test, features, {
       ...state,
-      studio: declaration,
-    })) as VideoBuilder<Args>['studio']
+      recordingLocalize: normalizeLanguagesArg(arg),
+    })) as MediaBuilder<Args>['languages']
 
   callable.each = (variants) =>
-    createVideoBuilder<Args>(test, {
+    createVideoBuilder<Args>(test, features, {
       ...state,
       eachVariants: normalizeVariants(variants),
     })
 
   return callable
 }
+
+export type { VoiceConfig }

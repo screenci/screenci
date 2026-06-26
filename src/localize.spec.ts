@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import { normalizeLocalizeSpec } from './localize.js'
-import { validateStudioDeclaration } from './studio.js'
 import { voices } from './voices.js'
 
 describe('normalizeLocalizeSpec', () => {
@@ -80,17 +79,6 @@ describe('normalizeLocalizeSpec', () => {
     ).toThrow(/narration for "fi" must declare the same keys.*missing outro/)
   })
 
-  it('throws when a name is both seeded and studio-managed', () => {
-    // Disjointness between seeded localize names and Studio-managed names is
-    // checked by validateStudioDeclaration (called by the builder), now that
-    // studio names live in video.studio({...}) rather than the localize spec.
-    expect(() =>
-      validateStudioDeclaration({ narration: ['intro'] }, ['intro'], [])
-    ).toThrow(
-      /narration name\(s\) intro are both seeded in localize\(\) and declared as Studio-managed/
-    )
-  })
-
   it('throws when a spec has nothing to localize', () => {
     expect(() => normalizeLocalizeSpec({})).toThrow(/nothing to localize/)
   })
@@ -99,12 +87,6 @@ describe('normalizeLocalizeSpec', () => {
     expect(() =>
       normalizeLocalizeSpec({ narration: { en: { intro: 'Hi' }, zz: {} } })
     ).toThrow(/unsupported language "zz"/)
-  })
-
-  it('rejects duplicate studio names via validateStudioDeclaration', () => {
-    expect(() =>
-      validateStudioDeclaration({ text: ['a', 'a'] }, [], [])
-    ).toThrow(/duplicate text name "a"/)
   })
 
   it('collects cue and field names as the union across languages', () => {

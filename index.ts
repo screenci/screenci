@@ -40,33 +40,31 @@ export type {
   ResolvedCropPadding,
 } from './src/crop.js'
 export type { ScreenCIPage, ScreenCILocator } from './src/types.js'
-// Narration is not created via a factory. Declare seeded narration with
-// `video.localize({ narration, voice })`, and Studio-managed narration with
-// `video.studio({ narration: [...] })`. Both surface through the injected
-// `narration` fixture.
+// Narration is declared per-builder with `video.narration(...)`: an array of
+// names is Studio-owned, an object carries code values. It surfaces through the
+// injected `narration` fixture.
 export type { NarrationCue, Cues, TopLevelVoiceConfig } from './src/cue.js'
 export type { LangNarrationOverride } from './src/voiceConfig.js'
-export type { EachVariant, VideoBuilder } from './src/builder.js'
 export type {
-  LocalizeSpec,
+  EachVariant,
+  MediaBuilder,
+  VideoBuilder,
   LocalizeMode,
-  LocalizeVoiceSpec,
-  NarrationByLang,
-  TextByLang,
-  VoiceConfig,
-  LocalizeNarrationValue,
-} from './src/localize.js'
+  LanguagesArg,
+  RecordingLocalize,
+} from './src/builder.js'
+export type { FeatureArg } from './src/declare.js'
+export type { VoiceConfig, LocalizeNarrationValue } from './src/localize.js'
 export {
   resolveLocaleForLanguage,
   DEFAULT_LANGUAGE_LOCALES,
 } from './src/locales.js'
-export type { StudioDeclaration } from './src/studio.js'
 export { hide } from './src/hide.js'
 export { speed } from './src/speed.js'
 export { time } from './src/time.js'
 export { autoZoom } from './src/autoZoom.js'
 export { zoomTo, resetZoom } from './src/manualZoom.js'
-export { createOverlays, setOverlayCss, MAX_AUDIO_LEVEL } from './src/asset.js'
+export { setOverlayCss, MAX_AUDIO_LEVEL } from './src/asset.js'
 export type {
   OverlayController,
   OverlayConfig,
@@ -80,7 +78,6 @@ export type {
 } from './src/asset.js'
 export { overlayRect } from './src/overlayRect.js'
 export type { OverlayRect, OverlayRectOptions } from './src/overlayRect.js'
-export { createAudio } from './src/audio.js'
 export type {
   AudioController,
   AudioConfig,

@@ -97,15 +97,13 @@ import { autoZoom, hide, video, voices } from 'screenci'
 // The default voice (how narration is spoken) for every language.
 video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
 
-video.localize({
-  // Localized narration cues by language. The fixture exposes them as markers.
-  narration: {
-    en: {
-      docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
-    },
-    es: {
-      docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
-    },
+// Localized narration cues by language. The fixture exposes them as markers.
+video.narration({
+  en: {
+    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
+  },
+  es: {
+    docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
   },
 })('How to find docs', async ({ page, narration }) => {
   // Run setup without showing these actions in the final recording.

@@ -1,19 +1,21 @@
+import { buildLocalizedNarrationCues, type NarrationCue } from './cue.js'
 import {
-  buildLocalizedNarrationCues,
-  buildStudioNarrationCues,
-  type NarrationCue,
-} from './cue.js'
-import type { NormalizedLocalize } from './localize.js'
+  normalizeCueValue,
+  type LocalizeNarrationValue,
+  type NormalizedCueValue,
+  type NormalizedNarration,
+  type VoiceConfig,
+} from './localize.js'
+import type { NormalizedFeature } from './declare.js'
+import type { Lang } from './voices.js'
 import type { TextOverrides } from './runtimeMode.js'
 import type { TopLevelVoiceConfig } from './voiceConfig.js'
 import type { RenderOptions } from './types.js'
 
 /**
  * The config/global default narration voice from a recording's render options.
- * This is the lowest-priority entry in the voice cascade: the localize `voice`
- * (per-language) and per-cue `voice` override it. When render options are
- * deferred to Studio (`video.studio({ renderOptions: true })`) there is no code
- * voice here (Studio owns it at render).
+ * Lowest-priority entry in the voice cascade: the per-cue `voice` overrides it.
+ * When render options are deferred to Studio there is no code voice here.
  */
 export function narrationVoiceConfigFromRenderOptions(
   renderOptions: RenderOptions | undefined,
@@ -32,65 +34,74 @@ export type NarrationMarkers = Record<string, NarrationCue>
 export type TextValues = Record<string, string>
 
 /**
- * Build the `narration` marker object for a localized recording. Seeded cues
- * emit translations carrying the resolved voice + spoken text (filtered to the
- * active language by the recorder); Studio-managed cues emit studio cues whose
- * text is owned by Studio. The markers expose only timing, never the text.
- *
- * The narration voice is resolved per `(cue, language)`: per-cue `voice` →
- * localize `voiceByLang` → the config/global `defaultVoice` → a built-in voice.
+ * Convert a per-feature narration declaration into the normalized shape the voice
+ * / translation pipeline consumes. Each language resolves `byLang[lang] ?? shared`
+ * (the fallback-to-shared rule); a studio (array) declaration carries names only.
  */
-export function buildNarrationMarkers(
-  localize: NormalizedLocalize | undefined,
-  defaultVoice?: TopLevelVoiceConfig,
-  studioNarration: readonly string[] = []
-): NarrationMarkers {
-  const seeded = localize
-    ? buildLocalizedNarrationCues(
-        localize.narration,
-        localize.voiceByLang,
-        defaultVoice
-      )
-    : {}
-  if (studioNarration.length === 0) return seeded
-  return { ...seeded, ...buildStudioNarrationCues(studioNarration) }
+function featureToNormalizedNarration(
+  feature: NormalizedFeature<LocalizeNarrationValue> | null,
+  languages: string[]
+): NormalizedNarration {
+  if (feature === null) return null
+  const seedByLang: Partial<Record<Lang, Record<string, NormalizedCueValue>>> =
+    {}
+  for (const lang of languages) {
+    const cues: Record<string, NormalizedCueValue> = {}
+    for (const name of feature.codeNames) {
+      const value = feature.byLang[lang]?.[name] ?? feature.shared[name]
+      if (value !== undefined) cues[name] = normalizeCueValue(name, value)
+    }
+    if (Object.keys(cues).length > 0) seedByLang[lang as Lang] = cues
+  }
+  return {
+    cueNames: feature.names,
+    studioNames: feature.studioNames,
+    seededNames: feature.codeNames,
+    seedByLang,
+  }
 }
 
 /**
- * Resolve the `text` field values for the active language: a Studio override (if
- * present, from {@link parseTextOverrides}) wins over the code-declared seed.
- * A Studio-managed field has no seed, so until it is set in Studio it resolves
- * to the empty string (the recording still succeeds, and Studio learns the field
- * from the emitted declaration and flags it as needing input).
+ * Build the `narration` marker object. Code cues emit translations (resolved per
+ * `(cue, language)`, filtered to the active language by the recorder); studio
+ * (array) cues emit studio cue starts whose text is owned by the web app.
+ */
+export function buildNarrationMarkers(
+  narration: NormalizedFeature<LocalizeNarrationValue> | null | undefined,
+  languages: string[],
+  defaultVoice?: TopLevelVoiceConfig,
+  voiceByLang: Partial<Record<string, VoiceConfig>> = {}
+): NarrationMarkers {
+  const normalized = featureToNormalizedNarration(narration ?? null, languages)
+  return buildLocalizedNarrationCues(normalized, voiceByLang, defaultVoice)
+}
+
+/**
+ * Resolve the `text` field values for the active language: a Studio override wins
+ * over the per-language seed, which wins over the shared value, then the empty
+ * string (Studio-owned fields stay empty until set in the web app).
  */
 export function buildTextValues(
-  localize: NormalizedLocalize | undefined,
+  text: NormalizedFeature<string> | null | undefined,
   language: string | undefined,
-  overrides?: TextOverrides | null,
-  studioText: readonly string[] = []
+  overrides?: TextOverrides | null
 ): TextValues {
-  const text = localize?.text
-  const fieldNames = [...(text?.fieldNames ?? []), ...studioText]
-  if (fieldNames.length === 0) return {}
-
+  if (!text || text.names.length === 0) return {}
   const override = language !== undefined ? overrides?.[language] : undefined
-  const seed =
-    language !== undefined && text
-      ? (text.seedByLang as Record<string, Record<string, string>>)[language]
-      : undefined
-
+  const langSeed = language !== undefined ? text.byLang[language] : undefined
   const values: TextValues = {}
-  for (const field of fieldNames) {
-    values[field] = override?.[field] ?? seed?.[field] ?? ''
+  for (const field of text.names) {
+    values[field] =
+      override?.[field] ?? langSeed?.[field] ?? text.shared[field] ?? ''
   }
   return values
 }
 
 /** A localized text declaration emitted to the backend at recording start. */
 export type TextDeclaration = {
-  /** Every field name (seeded then Studio-managed), in declared order. */
+  /** Every field name (code then Studio-managed), in declared order. */
   fields: string[]
-  /** Studio-managed field names (declared via `studio.text`, no code seed). */
+  /** Studio-managed field names (array form, no code seed). */
   studioFields: string[]
   /** Code seeds keyed `{ [language]: { [field]: value } }`. Omitted when empty. */
   seed?: Record<string, Record<string, string>>
@@ -98,32 +109,31 @@ export type TextDeclaration = {
 
 /**
  * Build the declaration of `text` fields to emit at recording start so the
- * backend learns which fields exist and their code seeds. In a per-language pass
- * `language` is the active language and only its seeds are included (mirroring
- * how cue translations carry a single language). Returns `null` when the spec
- * declares no `text`.
+ * backend learns which fields exist (and their code seeds) and can present the
+ * Studio-managed ones for the user to fill. Returns `null` when no text declared.
  */
 export function buildTextDeclaration(
-  localize: NormalizedLocalize | undefined,
-  language: string | undefined,
-  studioText: readonly string[] = []
+  text: NormalizedFeature<string> | null | undefined,
+  language: string | undefined
 ): TextDeclaration | null {
-  const text = localize?.text
-  const seededFields = text?.fieldNames ?? []
-  const fields = [...seededFields, ...studioText]
-  if (fields.length === 0) return null
+  if (!text || text.names.length === 0) return null
 
   const declaration: TextDeclaration = {
-    fields,
-    studioFields: [...studioText],
+    fields: text.names,
+    studioFields: text.studioNames,
   }
 
-  if (language !== undefined && text) {
-    const langSeed = (
-      text.seedByLang as Record<string, Record<string, string>>
-    )[language]
-    if (langSeed !== undefined && Object.keys(langSeed).length > 0) {
-      declaration.seed = { [language]: langSeed }
+  if (language !== undefined) {
+    const merged: Record<string, string> = {
+      ...text.shared,
+      ...(text.byLang[language] ?? {}),
+    }
+    const codeSeed: Record<string, string> = {}
+    for (const field of text.codeNames) {
+      if (merged[field] !== undefined) codeSeed[field] = merged[field]!
+    }
+    if (Object.keys(codeSeed).length > 0) {
+      declaration.seed = { [language]: codeSeed }
     }
   }
 

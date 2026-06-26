@@ -134,7 +134,7 @@ export const docsManifest = [
     navLabel: 'Studio',
     title: 'Studio',
     description:
-      'Remix render options, narration text, voices, and overlays from the web app, or manage them entirely in Studio with the video.studio({...}) declaration. Business tier.',
+      'Remix render options, narration text, voices, and overlays from the web app, or manage them entirely in Studio with array-form declarations like video.narration([...]). Business tier.',
     prev: 'docs/guides/screenshots',
     next: 'docs/guides/public-urls-and-embeds',
   },

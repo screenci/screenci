@@ -1248,15 +1248,13 @@ export function generateExampleVideo(): string {
 // The default voice (how narration is spoken) for every language.
 video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
 
-video.localize({
-  // Localized narration cues by language. The fixture exposes them as markers.
-  narration: {
-    en: {
-      docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
-    },
-    es: {
-      docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
-    },
+// Localized narration cues by language. The fixture exposes them as markers.
+video.narration({
+  en: {
+    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
+  },
+  es: {
+    docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
   },
 })('How to find docs', async ({ page, narration }) => {
   // Run setup without showing these actions in the final recording.
@@ -1278,7 +1276,7 @@ video.localize({
 
 export function generateReactExampleVideo(): string {
   return `import type { Locator } from '@playwright/test'
-import { autoZoom, createOverlays, hide, video, voices } from 'screenci'
+import { autoZoom, hide, video, voices } from 'screenci'
 
 // A code-defined overlay: any React element renderable to static markup works.
 // This ring fills its box and pulses, so it reads as a highlight around the
@@ -1305,35 +1303,34 @@ function Highlight() {
   )
 }
 
-const overlays = createOverlays({
-  // A programmatic overlay: the factory runs each call, so placement can depend
-  // on runtime values. Pass an 'over' locator and screenci reads the element's
-  // box at recording time, sizing the ring to it (plus the margin). 'animate'
-  // plays the ring's CSS animation back in the video while the page keeps
-  // running underneath; animated start()/end() overlays need a durationMs.
-  highlight: (target: Locator) => ({
-    element: <Highlight />,
-    over: target,
-    margin: 8,
-    animate: true,
-    durationMs: 1500,
-  }),
-})
-
 // The default voice (how narration is spoken) for every language.
 video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
 
-video.localize({
-  // Localized narration cues by language. The fixture exposes them as markers.
-  narration: {
+// Localized narration cues by language, plus a code-defined overlay. The
+// fixtures expose narration markers and overlay controllers to the body.
+video
+  .overlays({
+    // A programmatic overlay: the factory runs each call, so placement can
+    // depend on runtime values. Pass an 'over' locator and screenci reads the
+    // element's box at recording time, sizing the ring to it (plus the margin).
+    // 'animate' plays the ring's CSS animation back in the video; animated
+    // start()/end() overlays need a durationMs.
+    highlight: (target: Locator) => ({
+      element: <Highlight />,
+      over: target,
+      margin: 8,
+      animate: true,
+      durationMs: 1500,
+    }),
+  })
+  .narration({
     en: {
       docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
     },
     es: {
       docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
     },
-  },
-})('How to find docs with overlays', async ({ page, narration }) => {
+  })('How to find docs with overlays', async ({ page, narration, overlays }) => {
   // Run setup without showing these actions in the final recording.
   await hide(async () => {
     await page.goto('https://screenci.com/')

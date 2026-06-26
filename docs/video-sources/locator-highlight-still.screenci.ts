@@ -1,17 +1,15 @@
 import type { Locator } from '@playwright/test'
-import { createOverlays, screenshot } from 'screenci'
+import { screenshot } from 'screenci'
 
 // Rings a single element on the marketing site, then captures a branded still.
 // The Overlays guide animates the same example.
-const overlays = createOverlays({
+screenshot.overlays({
   ring: (target: Locator) => ({
     html: '<div style="width:100%;height:100%;box-sizing:border-box;border:4px solid #ec4899;border-radius:14px"></div>',
     over: target,
     margin: 6,
   }),
-})
-
-screenshot('Locator highlight', async ({ page }) => {
+})('Locator highlight', async ({ page, overlays }) => {
   await page.goto('https://screenci.com/')
   await page.waitForLoadState('networkidle')
 

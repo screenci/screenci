@@ -12,7 +12,6 @@ import {
   validateRegisteredAssetPaths,
   resetRegisteredAssetPaths,
 } from './asset.js'
-import { validateStudioDeclaration } from './studio.js'
 import {
   setAnimatedHtmlRasterizer,
   setHtmlRasterizer,
@@ -1389,14 +1388,6 @@ describe('buildStudioOverlays', () => {
     const overlays = buildStudioOverlays(['intro'])
 
     await expect(overlays.intro!()).resolves.toBeUndefined()
-  })
-
-  it('rejects duplicate overlay names via validateStudioDeclaration', () => {
-    // Duplicate/validation now lives in the builder via validateStudioDeclaration,
-    // which video.studio({ overlays: [...] }) calls before building the controllers.
-    expect(() =>
-      validateStudioDeclaration({ overlays: ['intro', 'intro'] }, [], [])
-    ).toThrow('video.studio(): duplicate overlays name "intro".')
   })
 
   it('does not require the overlay file to exist locally', async () => {

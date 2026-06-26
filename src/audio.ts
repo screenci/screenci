@@ -1,3 +1,4 @@
+import type { NormalizedFeature } from './declare.js'
 import type { IEventRecorder, AudioStartPayload } from './events.js'
 import { access, readFile } from 'fs/promises'
 import { createHash } from 'crypto'
@@ -275,6 +276,30 @@ export function buildStudioAudioTracks(
   const result: Record<string, AudioController> = {}
   for (const name of names) {
     result[name] = buildStudioAudioController(name)
+  }
+  return result
+}
+
+/**
+ * Build audio controllers for a `video.audio(...)` declaration. Studio (array)
+ * names become Studio-managed controllers; code (object) names resolve their
+ * input for the active language (`byLang[language] ?? shared`).
+ */
+export function buildAudio(
+  feature: NormalizedFeature<AudioInput> | null | undefined,
+  language: string | undefined
+): Record<string, AudioController> {
+  const result: Record<string, AudioController> = {}
+  if (!feature) return result
+  for (const name of feature.studioNames) {
+    result[name] = buildStudioAudioController(name)
+  }
+  for (const name of feature.codeNames) {
+    const input =
+      (language !== undefined ? feature.byLang[language]?.[name] : undefined) ??
+      feature.shared[name]
+    if (input === undefined) continue
+    result[name] = buildAudioController(name, input)
   }
   return result
 }

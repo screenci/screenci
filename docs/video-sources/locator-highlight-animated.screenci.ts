@@ -1,11 +1,11 @@
 import type { Locator } from '@playwright/test'
-import { createOverlays, video } from 'screenci'
+import { video } from 'screenci'
 
 // Animates the same ring as the Screenshots still: it pulses while the page is
 // driven underneath, then closes before the recording stops. An opacity-only
 // pulse keeps the ring landed exactly on the element (no scale, so no capture
 // padding is needed).
-const overlays = createOverlays({
+video.overlays({
   ring: (target: Locator) => ({
     html: '<div class="ring"></div>',
     css: `
@@ -27,9 +27,7 @@ const overlays = createOverlays({
     animate: true,
     durationMs: 2400,
   }),
-})
-
-video('Locator highlight (animated)', async ({ page }) => {
+})('Locator highlight (animated)', async ({ page, overlays }) => {
   await page.goto('https://screenci.com/')
   await page.waitForLoadState('networkidle')
 

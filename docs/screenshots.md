@@ -143,18 +143,16 @@ To force a fixed output shape (a square or social card), set the output
 ## Overlays
 
 Overlays work exactly as they do for videos, so a screenshot and a video from the
-same project share one visual language. Use
-[`createOverlays`](/docs/guides/overlays) for badges and annotations,
+same project share one visual language. Declare overlays with
+[`screenshot.overlays(...)`](/docs/guides/overlays) for badges and annotations,
 and start them in the screenshot body.
 
 ```ts
-import { screenshot, createOverlays } from 'screenci'
+import { screenshot } from 'screenci'
 
-const overlays = createOverlays({
+screenshot.overlays({
   newBadge: { path: '../assets/new-badge.png', x: 1382, y: 65, width: 384 },
-})
-
-screenshot('Dashboard', async ({ page, crop }) => {
+})('Dashboard', async ({ page, crop, overlays }) => {
   await page.goto('https://app.example.com/dashboard')
   // In a screenshot, start an overlay and leave it open: it stays in the still.
   await overlays.newBadge.start()
@@ -167,7 +165,9 @@ with no matching `end()` needed. The equivalent `video()` must close the overlay
 before the recording stops:
 
 ```ts
-video('Dashboard', async ({ page }) => {
+video.overlays({
+  newBadge: { path: '../assets/new-badge.png', x: 1382, y: 65, width: 384 },
+})('Dashboard', async ({ page, overlays }) => {
   await page.goto('https://app.example.com/dashboard')
   // In a video, an overlay you start() must be ended.
   await overlays.newBadge.start()

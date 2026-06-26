@@ -6,26 +6,34 @@ recording. Studio is available on the Business tier.
 
 There are two ways to use it:
 
-- **Opt in from code.** Add a single `video.studio({...})` declaration
-  (chainable with `.localize()` / `.each()`, just like the other builder
-  methods) listing what Studio owns: `narration` cue names, `text` field names,
-  `overlays` names, `audio` track names, and the `renderOptions` / `recordOptions`
-  deferral flags. Those items are then edited on the Studio page. Your edits are
-  saved and applied automatically to every later upload.
+- **Opt in from code.** Declare a feature with an **array of names** (for example
+  `video.narration(['intro'])`) to hand it to Studio: the names exist in code,
+  but the web app owns their content. The same is true of `video.text([...])`,
+  `video.overlays([...])`, and `video.audio([...])`. Render and record options are
+  deferred with `use({ renderOptions: 'studio' })` and
+  `use({ recordOptions: 'studio' })`. Those items are then edited on the Studio
+  page. Your edits are saved and applied automatically to every later upload.
 
-  Opt in **per video and per feature**: each name list and flag is independent,
-  so you can hand Studio just one thing (for example only `overlays`) and leave
-  everything else code-defined. There is no all-or-nothing switch.
+  Declaring a feature with an **object** instead (for example
+  `video.narration({ en: {...} })`) keeps the values in code. This array-vs-object
+  split is the single mental model: an array of names means "these exist but the
+  web app owns their content" (Studio-editable), an object means the values are
+  defined in code.
+
+  Opt in **per video and per feature**: each declaration and option flag is
+  independent, so you can hand Studio just one thing (for example only
+  `video.overlays([...])`) and leave everything else code-defined. There is no
+  all-or-nothing switch.
 
 - **Render a one-off version.** Any video can be opened in Studio and rendered
   as a one-off, overriding any code-defined narration, overlays, or render
   options for a single render. One-off renders are not saved and do not change
   what future uploads render.
 
-The `narration`, `text`, `overlays`, and `audio` name lists type the matching
-fixtures to exactly those names, so a typo is a compile error. The fixtures
-(`narration`, `text`, `overlays`, `audio` in the test body) expose the
-Studio-managed controllers and values alongside any seeded in `localize()`.
+The `video.narration`, `video.text`, `video.overlays`, and `video.audio` name
+arrays type the matching fixtures to exactly those names, so a typo is a compile
+error. The fixtures (`narration`, `text`, `overlays`, `audio` in the test body)
+expose the Studio-managed controllers and values alongside any defined in code.
 
 #### You will learn
 
@@ -42,15 +50,16 @@ Studio-managed controllers and values alongside any seeded in `localize()`.
 
 Open a video in the web app and choose **Open in Studio**. Studio shows the
 narration, voices, overlays, audio, and render options the video uses. Items you
-opted into from code via `video.studio({...})` (`narration`, `text`, `overlays`,
-`audio`, and the `renderOptions` / `recordOptions` flags) are editable; anything
-defined in code is shown read-only and marked with a **code** badge.
+opted into from code by declaring an array of names (`video.narration([...])`,
+`video.text([...])`, `video.overlays([...])`, `video.audio([...])`, plus the
+`renderOptions: 'studio'` / `recordOptions: 'studio'` deferrals) are editable;
+anything defined in code is shown read-only and marked with a **code** badge.
 
 Click a **code** badge to see how to edit that value: it shows the exact
-`video.studio({...})` line to opt the feature in for saved edits, links to that
-feature's guide, and offers to create a one-off version to change it just once.
-Each section also has a **How to edit from Studio** link to the matching guide
-below.
+declaration to opt the feature in for saved edits (the array form, for example
+`video.narration([...])`), links to that feature's guide, and offers to create a
+one-off version to change it just once. Each section also has a **How to edit
+from Studio** link to the matching guide below.
 
 Edits autosave: a status line shows **Saving...** and then **All changes
 saved**. The saved set is this video's Studio configuration, and it is applied
@@ -69,9 +78,10 @@ code-specified ones.
 
 Studio separates changes that stick from changes that do not:
 
-- **Saved edits** to studio-declared items (anything listed in
-  `video.studio({...})`: `narration`, `text`, `overlays`, `audio`, and the
-  `renderOptions` / `recordOptions` flags) autosave into the video's Studio
+- **Saved edits** to studio-declared items (anything declared as an array of
+  names: `video.narration([...])`, `video.text([...])`, `video.overlays([...])`,
+  `video.audio([...])`, plus the `renderOptions: 'studio'` /
+  `recordOptions: 'studio'` deferrals) autosave into the video's Studio
   configuration. That configuration is reused automatically on every later
   upload, so CI keeps rendering with your Studio values instead of the code
   defaults. When this happens the CLI prints a line in the upload output, so it
@@ -85,23 +95,22 @@ Studio separates changes that stick from changes that do not:
   Choose **Create one-off version**, confirm the prompt, edit freely, then
   **Render one-off** to produce a single version. One-off renders are not saved
   and never change what future uploads render. To make a code-defined value
-  editable in the normal, saved flow instead, move it into `video.studio({...})`
-  (add its name to `narration`, `text`, `overlays`, or `audio`, or set
-  `renderOptions: true` / `recordOptions: true`).
+  editable in the normal, saved flow instead, declare it as an array of names
+  (switch `video.narration({...})` to `video.narration([...])`, and likewise for
+  `text`, `overlays`, or `audio`, or set `use({ renderOptions: 'studio' })` /
+  `use({ recordOptions: 'studio' })`).
 
 ## Studio narration from code
 
-List the cue names under `video.studio({ narration: [...] })` to declare the cue
+Pass an **array of cue names** to `video.narration([...])` to declare the cue
 keys in code while the narration text, languages, and voices are configured in
-Studio. Chain `.localize({ languages: [...] })` to set the language list, since
-there is no seeded text to infer it from:
+Studio. Chain `.languages([...])` to set the language list, since there is no
+text in code to infer it from:
 
 ```ts
 import { video } from 'screenci'
 
-video
-  .studio({ narration: ['intro', 'checkout', 'outro'] })
-  .localize({ languages: ['en'] })(
+video.narration(['intro', 'checkout', 'outro']).languages(['en'])(
   'Checkout walkthrough',
   async ({ page, narration }) => {
     await narration.intro()
@@ -114,7 +123,7 @@ video
 )
 ```
 
-The cues behave exactly like seeded `localize` narration cues: callable, with
+The cues behave exactly like cues whose text is defined in code: callable, with
 explicit `start()` and `end()`, and automatic sequencing between consecutive
 cues. TypeScript knows the declared names, so `narration.typo` is a compile
 error.
@@ -135,13 +144,15 @@ https://app.screenci.com/project/<projectId>/video/<videoId>?studio
 After the video has been configured once, subsequent uploads reuse the saved
 Studio configuration and render automatically.
 
-See [Narration and Localization](/docs/guides/narration-and-localization) for the
-full `video.localize` API.
+To define narration values in code instead, pass an object with language-code
+keys: `video.narration({ en: {...}, fi: {...} })`. See [Narration and
+Localization](/docs/guides/narration-and-localization) for the full narration
+API.
 
 ## Narration media from Studio
 
 Any editable narration entry in Studio can use an uploaded media file instead
-of synthesized speech, the web equivalent of a `localize` narration cue's
+of synthesized speech, the web equivalent of a code narration cue's
 `{ media: './intro.mp4' }` entry. Switch a cue's entry from **Text** to
 **Media**, upload an `.mp4` file, and optionally provide a subtitle used for
 captions.
@@ -161,13 +172,14 @@ spoken (not during any leading silence or music).
 ## Studio text from code
 
 On-screen text injected through the `text` fixture can be managed from Studio.
-List field names under `video.studio({ text: [...] })` to keep the value in
-Studio, or pass a seeded `text` map in `localize()` and override it per language
-on the web:
+Pass an **array of field names** to `video.text([...])` to keep the value in
+Studio, or pass an object with language-code keys to define the values in code
+and override them per language on the web:
 
 ```ts
-video.studio({ text: ['cta'] }).localize({
-  text: { en: { heading: 'Dashboard' }, fi: { heading: 'Hallinta' } },
+video.text(['cta']).text({
+  en: { heading: 'Dashboard' },
+  fi: { heading: 'Hallinta' },
 })('Landing', async ({ page, text }) => {
   await page.getByTestId('heading').fill(text.heading)
   await page.getByTestId('cta').fill(text.cta)
@@ -193,14 +205,14 @@ code-side `text` fixture.
 
 ## Studio overlays from code
 
-`video.studio({ overlays: [...] })` declares overlay names in code while the
-files and display options are configured in Studio. The declared names are
-exposed through the injected `overlays` fixture:
+Pass an **array of overlay names** to `video.overlays([...])` to declare the
+names in code while the files and display options are configured in Studio. The
+declared names are exposed through the injected `overlays` fixture:
 
 ```ts
 import { video } from 'screenci'
 
-video.studio({ overlays: ['intro', 'logo'] })(
+video.overlays(['intro', 'logo'])(
   'Product demo',
   async ({ page, overlays }) => {
     await overlays.intro()
@@ -210,14 +222,14 @@ video.studio({ overlays: ['intro', 'logo'] })(
 )
 ```
 
-Calling a controller marks the point in the timeline, exactly like
-`createOverlays` controllers. The file (`.svg`, `.png`, or `.mp4`), full-screen
-mode, overlay duration for images, and audio level for videos are all set on
-the Studio page. The audio level is a linear-gain slider: `1` (the default)
-plays the video at its natural level, `0` mutes it, and values above `1` boost
-it (up to `4`). Video overlays also have **speed** and **time** controls: speed
-plays the clip faster or slower (a multiplier), and time fits it to a target
-playback duration in ms. Set at most one.
+Calling a controller marks the point in the timeline, exactly like overlays
+whose files are defined in code. The file (`.svg`, `.png`, or `.mp4`),
+full-screen mode, overlay duration for images, and audio level for videos are
+all set on the Studio page. The audio level is a linear-gain slider: `1` (the
+default) plays the video at its natural level, `0` mutes it, and values above
+`1` boost it (up to `4`). Video overlays also have **speed** and **time**
+controls: speed plays the clip faster or slower (a multiplier), and time fits it
+to a target playback duration in ms. Set at most one.
 TypeScript knows the declared names, so `overlays.typo` is a compile error.
 
 Like studio narration, the first upload of a video that declares Studio overlays
@@ -227,28 +239,25 @@ prints a direct link. Later uploads reuse the saved configuration. See
 
 ## Studio audio from code
 
-`video.studio({ audio: [...] })` declares background-audio names in code while
-the file, volume, and repeat are configured in Studio. The declared names are
-exposed through the injected `audio` fixture:
+Pass an **array of track names** to `video.audio([...])` to declare the
+background-audio names in code while the file, volume, and repeat are configured
+in Studio. The declared names are exposed through the injected `audio` fixture:
 
 ```ts
 import { video } from 'screenci'
 
-video.studio({ audio: ['theme', 'sting'] })(
-  'Product demo',
-  async ({ page, audio }) => {
-    await audio.theme() // plays under the whole video
-    await page.goto('/dashboard')
-    await audio.sting.start()
-    await page.click('#celebrate')
-    await audio.sting.end()
-  }
-)
+video.audio(['theme', 'sting'])('Product demo', async ({ page, audio }) => {
+  await audio.theme() // plays under the whole video
+  await page.goto('/dashboard')
+  await audio.sting.start()
+  await page.click('#celebrate')
+  await audio.sting.end()
+})
 ```
 
-Calling a controller marks the point in the timeline, exactly like
-`createAudio` controllers: a bare call plays from that point to the end of the
-video, while `start()`/`end()` bound the track to a span. The audio file, the
+Calling a controller marks the point in the timeline, exactly like audio tracks
+whose files are defined in code: a bare call plays from that point to the end of
+the video, while `start()`/`end()` bound the track to a span. The audio file, the
 volume, and whether the track loops to fill its span are all set on the Studio
 page. The volume is a linear-gain slider: `1` (the default) plays the source at
 its natural level, `0` mutes it, and values above `1` boost it (up to `4`).
@@ -265,38 +274,60 @@ timeline.
 
 ## Studio render and record options
 
-Set `renderOptions: true` in `video.studio({...})` to manage render options from
-Studio instead of code. Render options are applied when the version renders:
+Set `use({ renderOptions: 'studio' })` to manage render options from Studio
+instead of code. Render options are applied when the version renders:
 
 ```ts
 import { video } from 'screenci'
 
-video.studio({ renderOptions: true })('Product demo', async ({ page }) => {
+video.use({ renderOptions: 'studio' })
+
+video('Product demo', async ({ page }) => {
   await page.goto('/dashboard')
 })
 ```
 
-Set `recordOptions: true` to defer the record options (aspect ratio, quality,
-fps) to Studio as well. Unlike render options, record options change the
-captured viewport and encode, so they take effect on the **next recording**, not
-when you click **Render**. They are fetched before the recording runs and applied
-to that capture (later uploads reuse the saved values). Like the Text section,
-the Recording options section shows this reminder inline with a **Re-record this
-video** button:
+Set `use({ recordOptions: 'studio' })` to defer the record options (aspect
+ratio, quality, fps) to Studio as well. Unlike render options, record options
+change the captured viewport and encode, so they take effect on the **next
+recording**, not when you click **Render**. They are fetched before the recording
+runs and applied to that capture (later uploads reuse the saved values). Like the
+Text section, the Recording options section shows this reminder inline with a
+**Re-record this video** button:
 
 ```ts
-video.studio({ renderOptions: true, recordOptions: true })(
+video.use({ renderOptions: 'studio', recordOptions: 'studio' })
+
+video('Product demo', async ({ page }) => {
+  await page.goto('/dashboard')
+})
+```
+
+These deferrals combine with the array-of-names declarations and `.each()` like
+any other per-video configuration. For example, defer the record options while
+handing narration and overlays to Studio:
+
+```ts
+video.use({ recordOptions: 'studio' })
+
+video.narration(['intro']).overlays(['logo'])(
   'Product demo',
-  async ({ page }) => {
+  async ({ page, narration, overlays }) => {
+    await narration.intro()
     await page.goto('/dashboard')
+    await overlays.logo()
   }
 )
 ```
 
-Both flags chain with `.localize()` and `.each()` like any other
-`video.studio({...})` declaration. Until the video is configured in Studio,
-uploads render with the default options (or are held together with studio
-narration, if both are used).
+Until the video is configured in Studio, uploads render with the default options
+(or are held together with studio narration, if both are used).
+
+The recorded **language set** is managed separately via `video.languages(...)`.
+Pass `'studio'` to let the web app own the set on the business-gated languages
+page (which drives a re-record), an array to fix the languages in code
+(`video.languages(['en', 'fi'])`), or an object for full recording-localization
+config. There is no `recordOptions.languages`.
 
 ## Tier requirements
 

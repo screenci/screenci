@@ -32,8 +32,8 @@ navigate, it generates Playwright actions for the flow. The output is not a
 ScreenCI video yet. To turn it into one:
 
 - copy the generated code into a `recordings/<flow>.screenci.ts` file
-- change `test(...)` to `video.localize(...)(...)`
-- add narration through `video.localize({ narration })` (see [Core ScreenCI APIs](#core-screenci-apis))
+- change `test(...)` to `video.narration(...)(...)`
+- add narration through `video.narration({...})` (see [Core ScreenCI APIs](#core-screenci-apis))
 
 Then follow the usual `screenci test` and `screenci record` flow. If you only
 have a deployed URL and want this automated, point a coding agent at it with the
@@ -46,7 +46,7 @@ uses a ScreenCI-instrumented page and locators so visible interactions are
 captured with the right metadata for recording. See [Page
 Instrumentation](/docs/page-instrumentation). Use it as the baseline shape for
 most ScreenCI videos, then adjust the visible flow, narration cues (via
-`video.localize`), and zoom
+`video.narration`), and zoom
 behavior for your specific walkthrough.
 
 <!-- screenci-doc-code-sample:starter-video:start -->
@@ -57,15 +57,13 @@ import { autoZoom, hide, video, voices } from 'screenci'
 // The default voice (how narration is spoken) for every language.
 video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
 
-video.localize({
-  // Localized narration cues by language. The fixture exposes them as markers.
-  narration: {
-    en: {
-      docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
-    },
-    es: {
-      docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
-    },
+// Localized narration cues by language. The fixture exposes them as markers.
+video.narration({
+  en: {
+    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
+  },
+  es: {
+    docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
   },
 })('How to find docs', async ({ page, narration }) => {
   // Run setup without showing these actions in the final recording.
@@ -198,18 +196,28 @@ await resetZoom()
 API reference: [zoomTo()](/docs/reference/api/functions/zoomto),
 [resetZoom()](/docs/reference/api/functions/resetzoom)
 
-### `video.localize()`
+### `video.narration()`, `video.text()`, and `video.overlays()`
 
-Use `video.localize()` to attach narration cues and language variants to a
-video. The body receives `narration` markers (timing only) and, when used,
-`text` values and the active `language`. See
+Use the per-feature builders to attach narration cues, localized strings, and
+overlay controllers to a video. Each builder returns the same chainable `video`,
+so you can combine them and end with a `(title, body)` call. The body receives
+the fixtures matching the features you declared: `narration` markers (timing
+only), `text` values, `overlays` controllers, and the active `language`. See
 [Narration and Localization](/docs/guides/narration-and-localization).
 
-Common parts of the spec:
+`video.narration({...})` accepts either form:
 
-- a `narration` map keyed by language (`en`, `es`, `fi`, ...) of cue name to text
-- an optional `text` map for localized strings injected into the page
-- `languages: [...]` when the cues are name-only (Studio owns the text)
+- an object keyed by language (`en`, `es`, `fi`, ...) of cue name to text =
+  per-language narration
+- a flat object of cue name to text (for example `{ intro: 'Hi' }`) = shared
+  across all languages
+- an array of cue names (for example `['intro']`) = name-only cues where Studio
+  (the web editor) owns the text
+
+Other parts of the spec:
+
+- chain `video.text({...})` for localized strings injected into the page
+- chain `video.overlays({...})` to declare overlay controllers (see below)
 - short, sentence-sized cues instead of paragraph-sized narration blocks
 
 Voice is configured separately as a render option in `renderOptions.narration`
@@ -224,13 +232,11 @@ video.use({
   renderOptions: { narration: { voice: { name: voices.Sophie } } },
 })
 
-video.localize({
-  // Localized narration cues by language.
-  narration: {
-    en: { intro: 'Open settings and review the billing details.' },
-    es: {
-      intro: 'Abre la configuracion y revisa los detalles de facturacion.',
-    },
+// Localized narration cues by language.
+video.narration({
+  en: { intro: 'Open settings and review the billing details.' },
+  es: {
+    intro: 'Abre la configuracion y revisa los detalles de facturacion.',
   },
 })('Billing walkthrough', async ({ page, narration }) => {
   // Play the full cue before continuing.
@@ -248,5 +254,35 @@ Prefer one sentence per cue. Split longer narration into separate named cues and
 place them where they belong in the flow. That gives you cleaner overlap
 control, makes revisions less brittle, and should save API cost when a TTS
 provider such as ElevenLabs only needs to regenerate one changed sentence.
+
+To control which languages are recorded, chain `video.languages(...)` (accepts
+`'studio'`, an array of language codes, or `{ languages, mode }`). For example,
+`video.narration({...}).languages({ mode: 'shared' })` records a single shared
+narration track instead of one per language.
+
+#### Overlays
+
+Use `video.overlays({...})` to declare overlay controllers for a video. The
+controllers are exposed through the `overlays` fixture in the body:
+
+```ts
+import { video } from 'screenci'
+
+video.overlays({
+  logo: { image: 'logo.png', position: 'top-right' },
+})('Branded intro', async ({ page, overlays }) => {
+  await overlays.logo.show()
+  await page.goto('/dashboard')
+  await overlays.logo.hide()
+})
+```
+
+For Studio-owned overlays (declared by name, with the web editor owning their
+content), pass an array of names: `video.overlays(['logo'])`. You can combine
+this with the array form of narration, for example
+`video.narration(['intro']).overlays(['logo'])`.
+
+To let Studio own the render options for a video, declare it through
+`use({ renderOptions: 'studio' })`.
 
 API reference: [voices](/docs/reference/api/variables/voices)

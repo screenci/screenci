@@ -1762,10 +1762,12 @@ describe('CLI', () => {
       )
 
       let recordingPut: RequestInit | undefined
+      let startBody: Record<string, unknown> | undefined
       mockFetch.mockImplementation(
         async (input: string | URL, init?: RequestInit) => {
           const url = String(input)
           if (url.endsWith('/cli/upload/start')) {
+            startBody = JSON.parse(String(init?.body))
             return {
               ok: true,
               status: 200,
@@ -1821,6 +1823,9 @@ describe('CLI', () => {
           'Content-Type'
         ]
       ).toBe('image/png')
+      // The screenshot upload declares how many screenshots this run produced so
+      // the backend can batch them onto one machine.
+      expect(startBody?.expectedScreenshotCount).toBe(1)
     })
 
     it('fails the upload when an asset check fails', async () => {

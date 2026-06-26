@@ -72,7 +72,11 @@ import {
 } from './instrument.js'
 import { logger } from './logger.js'
 import { setMousePosition } from './mouse.js'
-import { getChromiumLaunchOptions } from './browserLaunchOptions.js'
+import {
+  captureRequestedButNotEnabled,
+  getChromiumLaunchOptions,
+  isCaptureAudioEnabled,
+} from './browserLaunchOptions.js'
 import {
   createScreenCIRuntimeContext,
   runWithScreenCIRuntimeContext,
@@ -94,7 +98,10 @@ import {
 } from './runtimeMode.js'
 import { buildScreenCIContextOptions } from './contextOptions.js'
 import { bindStillCaptureToPage } from './stillCapture.js'
-import { startScreenAudioCapture } from './screenAudio.js'
+import {
+  startScreenAudioCapture,
+  SCREEN_AUDIO_DOCS_URL,
+} from './screenAudio.js'
 import type { ScreenAudioCapture } from './screenAudio.js'
 
 export const POST_VIDEO_PAUSE = 500
@@ -604,7 +611,10 @@ const _videoBase = base.extend<
 
   browser: async ({ playwright }, use) => {
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
-    const launchOptions = getChromiumLaunchOptions(shouldRecord)
+    const launchOptions = getChromiumLaunchOptions(
+      shouldRecord,
+      isCaptureAudioEnabled()
+    )
 
     const browser = await playwright.chromium.launch(launchOptions)
     instrumentBrowser(browser)
@@ -828,6 +838,20 @@ const _videoBase = base.extend<
     recorder.start()
 
     const captureVolume = recordOptions.captureAudio ?? 0
+    // The recording browser is launched once per worker (audio mode is decided
+    // then from the root-level enableCaptureAudio switch), before this per-video
+    // recordOptions is known. If a video requests captureAudio without that
+    // switch on, the browser was launched muted on the legacy headless shell and
+    // the captured track would be silent. Fail loudly instead of writing silence.
+    if (captureRequestedButNotEnabled(captureVolume, isCaptureAudioEnabled())) {
+      throw new Error(
+        `[screenci] "${videoName}" sets captureAudio but enableCaptureAudio is ` +
+          `not turned on. Add "enableCaptureAudio: true" at the top level of ` +
+          `your screenci config so the recording browser launches in audio mode ` +
+          `(it is decided once per worker, before a video's options are known). ` +
+          `See ${SCREEN_AUDIO_DOCS_URL}`
+      )
+    }
     const audioCapturePath = join(videoDir, 'screen-audio.wav')
     const audioCapture: ScreenAudioCapture | null =
       captureVolume > 0 ? startScreenAudioCapture(audioCapturePath) : null

@@ -34,6 +34,44 @@ describe('resolvePlatformAudioArgs', () => {
       /not supported on platform "freebsd"/
     )
   })
+
+  it('overrides the device from SCREENCI_AUDIO_DEVICE while keeping input args', () => {
+    expect(
+      resolvePlatformAudioArgs('linux', {
+        SCREENCI_AUDIO_DEVICE: 'screenci.monitor',
+      })
+    ).toEqual({
+      inputArgs: ['-f', 'pulse'],
+      device: 'screenci.monitor',
+    })
+
+    expect(
+      resolvePlatformAudioArgs('darwin', { SCREENCI_AUDIO_DEVICE: ':2' })
+    ).toEqual({
+      inputArgs: ['-f', 'avfoundation'],
+      device: ':2',
+    })
+  })
+
+  it('ignores a blank/whitespace SCREENCI_AUDIO_DEVICE and trims a set one', () => {
+    expect(
+      resolvePlatformAudioArgs('linux', { SCREENCI_AUDIO_DEVICE: '   ' }).device
+    ).toBe('default.monitor')
+
+    expect(
+      resolvePlatformAudioArgs('linux', {
+        SCREENCI_AUDIO_DEVICE: '  screenci.monitor  ',
+      }).device
+    ).toBe('screenci.monitor')
+  })
+
+  it('still throws for an unsupported platform even when an override is set', () => {
+    expect(() =>
+      resolvePlatformAudioArgs('freebsd', {
+        SCREENCI_AUDIO_DEVICE: 'whatever',
+      })
+    ).toThrow(/not supported on platform "freebsd"/)
+  })
 })
 
 // Minimal fake ChildProcess for testing startScreenAudioCapture.

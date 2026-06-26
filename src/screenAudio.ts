@@ -5,6 +5,15 @@ import { readFile as nodeReadFile } from 'fs/promises'
 export const SCREEN_AUDIO_DOCS_URL =
   'https://screenci.com/docs/guides/screen-audio'
 
+/**
+ * Environment variable that overrides the ffmpeg capture device (`-i`). Useful
+ * when the platform default points at the wrong place, e.g. on Linux where the
+ * default sink is a USB/wireless headset the headless browser cannot land audio
+ * on. Set it to a dedicated capture target (such as a virtual null sink's
+ * `<name>.monitor`) for a stable, device-independent capture.
+ */
+export const AUDIO_DEVICE_ENV = 'SCREENCI_AUDIO_DEVICE'
+
 /** @internal */
 export type PlatformAudioArgs = {
   /** Args that appear before `-i`, e.g. `['-f', 'pulse']`. */
@@ -17,18 +26,34 @@ export type PlatformAudioArgs = {
  * Resolves the ffmpeg audio capture arguments for the current (or given)
  * platform. Throws when the platform is not supported.
  *
+ * When `SCREENCI_AUDIO_DEVICE` is set to a non-empty value it replaces the
+ * platform default device while keeping the platform's input format args, so a
+ * caller can capture a specific sink monitor instead of whatever happens to be
+ * the system default.
+ *
  * Exposed for testing; callers should use {@link startScreenAudioCapture}.
  */
 export function resolvePlatformAudioArgs(
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env
 ): PlatformAudioArgs {
+  const override = env[AUDIO_DEVICE_ENV]?.trim()
+  const withOverride = (args: PlatformAudioArgs): PlatformAudioArgs =>
+    override ? { ...args, device: override } : args
+
   switch (platform) {
     case 'linux':
-      return { inputArgs: ['-f', 'pulse'], device: 'default.monitor' }
+      return withOverride({
+        inputArgs: ['-f', 'pulse'],
+        device: 'default.monitor',
+      })
     case 'darwin':
-      return { inputArgs: ['-f', 'avfoundation'], device: ':0' }
+      return withOverride({ inputArgs: ['-f', 'avfoundation'], device: ':0' })
     case 'win32':
-      return { inputArgs: ['-f', 'wasapi', '-loopback', '1'], device: '' }
+      return withOverride({
+        inputArgs: ['-f', 'wasapi', '-loopback', '1'],
+        device: '',
+      })
     default:
       throw new Error(
         `[screenci] captureAudio is not supported on platform "${platform}". ` +

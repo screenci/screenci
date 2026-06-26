@@ -396,9 +396,11 @@ export type RecordOptions = {
    * - Values between `0` and `1` reduce the level (e.g. `0.5` is half volume).
    *
    * Audio is captured via ffmpeg from the platform default audio input and
-   * mixed into the rendered video starting at time 0. Each OS requires a
-   * one-time loopback source setup to capture system audio rather than the
-   * microphone. See the per-OS guide: https://screenci.com/docs/guides/screen-audio
+   * mixed into the rendered video. While capture is enabled the browser plays
+   * the page audio out loud on the host so the recorder can tap it. Each OS
+   * requires a one-time loopback source setup to capture system audio rather
+   * than the microphone. See the per-OS guide:
+   * https://screenci.com/docs/guides/screen-audio
    *
    * @default 0
    */
@@ -1064,6 +1066,19 @@ export type ScreenCIConfig = Omit<
    * Defaults to `'./recordings'`.
    */
   recordingDir?: string
+  /**
+   * Enables system audio capture for the whole run. When `true`, the recording
+   * browser is launched in audio mode (unmuted, new headless) so that videos
+   * setting `recordOptions.captureAudio` actually capture sound.
+   *
+   * This is a launch-time switch, decided once per worker before any individual
+   * video's options are known, so it must live here at config root rather than
+   * in a video's `video.use()`. A video that sets `captureAudio` while this is
+   * `false` throws at record time with a link to the setup docs.
+   *
+   * @default false
+   */
+  enableCaptureAudio?: boolean
   /**
    * Options that only affect the `screenci record` command.
    */

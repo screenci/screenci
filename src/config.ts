@@ -1,4 +1,5 @@
 import type { ScreenCIConfig, ExtendedScreenCIConfig } from './types.js'
+import { CAPTURE_AUDIO_ENV } from './browserLaunchOptions.js'
 import {
   DEFAULT_RECORDING_DIR,
   DEFAULT_RECORD_UPLOAD_POLICY,
@@ -43,8 +44,39 @@ import {
  * @param config - screenci configuration options
  * @returns Extended Playwright configuration with screenci-managed test discovery
  */
+/**
+ * Warns when audio capture is enabled but recordings may run in parallel. Audio
+ * capture taps a single, system-wide monitor source, so two recordings playing
+ * at once mix into each other. Only `workers: 1` records audio one video at a
+ * time. The warning is emitted once from the main process (Playwright re-imports
+ * the config in every worker, where `TEST_WORKER_INDEX` is set) to avoid
+ * duplicate output.
+ */
+function warnIfParallelAudioCapture(config: ScreenCIConfig): void {
+  const inWorker = process.env.TEST_WORKER_INDEX !== undefined
+  if (inWorker || config.workers === 1) {
+    return
+  }
+
+  console.warn(
+    '[screenci] captureAudio is enabled but "workers" is not set to 1. ' +
+      'Audio capture taps a single system-wide source, so recordings running ' +
+      'in parallel can record each other\'s audio. Set "workers: 1" to record ' +
+      'audio one video at a time.'
+  )
+}
+
 export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
   const isRecording = process.env.SCREENCI_RECORDING === 'true'
+
+  // Bridge the audio-capture switch to the worker-scoped browser fixture, which
+  // decides whether to launch in audio mode (unmuted, new headless) before any
+  // per-video recordOptions is available. Keyed off the explicit root-level
+  // enableCaptureAudio flag, not the per-video captureAudio gain.
+  if (isRecording && config.enableCaptureAudio) {
+    process.env[CAPTURE_AUDIO_ENV] = '1'
+    warnIfParallelAudioCapture(config)
+  }
   const normalizeReporter = (
     reporter: NonNullable<ScreenCIConfig['reporter']>
   ): NonNullable<ScreenCIConfig['reporter']> => {

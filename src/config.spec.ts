@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { defineConfig } from './config.js'
 
 describe('defineConfig', () => {
@@ -325,6 +325,127 @@ describe('defineConfig', () => {
       expect(config.reporter).toBe('list')
     } finally {
       delete process.env.SCREENCI_RECORDING
+    }
+  })
+
+  it('signals the browser fixture to use audio mode when enableCaptureAudio is on while recording', () => {
+    process.env.SCREENCI_RECORDING = 'true'
+
+    try {
+      defineConfig({
+        projectName: 'Test',
+        enableCaptureAudio: true,
+        use: {
+          recordOptions: { captureAudio: 0.5 },
+        },
+      })
+
+      expect(process.env.SCREENCI_CAPTURE_AUDIO).toBe('1')
+    } finally {
+      delete process.env.SCREENCI_RECORDING
+      delete process.env.SCREENCI_CAPTURE_AUDIO
+    }
+  })
+
+  it('does not signal audio mode when enableCaptureAudio is off, even if a video sets captureAudio', () => {
+    process.env.SCREENCI_RECORDING = 'true'
+    delete process.env.SCREENCI_CAPTURE_AUDIO
+
+    try {
+      defineConfig({
+        projectName: 'Test',
+        use: {
+          recordOptions: { captureAudio: 1 },
+        },
+      })
+
+      expect(process.env.SCREENCI_CAPTURE_AUDIO).toBeUndefined()
+    } finally {
+      delete process.env.SCREENCI_RECORDING
+      delete process.env.SCREENCI_CAPTURE_AUDIO
+    }
+  })
+
+  it('does not set the captureAudio env var when not recording', () => {
+    delete process.env.SCREENCI_CAPTURE_AUDIO
+
+    defineConfig({
+      projectName: 'Test',
+      use: {
+        recordOptions: { captureAudio: 1 },
+      },
+    })
+
+    expect(process.env.SCREENCI_CAPTURE_AUDIO).toBeUndefined()
+  })
+
+  it('warns when captureAudio is enabled with parallel workers', () => {
+    process.env.SCREENCI_RECORDING = 'true'
+    const workerIndex = process.env.TEST_WORKER_INDEX
+    delete process.env.TEST_WORKER_INDEX
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    try {
+      defineConfig({
+        projectName: 'Test',
+        enableCaptureAudio: true,
+        workers: 4,
+      })
+
+      expect(warn).toHaveBeenCalledOnce()
+      expect(warn.mock.calls[0]?.[0]).toContain('captureAudio is enabled')
+    } finally {
+      warn.mockRestore()
+      delete process.env.SCREENCI_RECORDING
+      delete process.env.SCREENCI_CAPTURE_AUDIO
+      if (workerIndex !== undefined) process.env.TEST_WORKER_INDEX = workerIndex
+    }
+  })
+
+  it('does not warn when captureAudio runs with a single worker', () => {
+    process.env.SCREENCI_RECORDING = 'true'
+    const workerIndex = process.env.TEST_WORKER_INDEX
+    delete process.env.TEST_WORKER_INDEX
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    try {
+      defineConfig({
+        projectName: 'Test',
+        enableCaptureAudio: true,
+        workers: 1,
+      })
+
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+      delete process.env.SCREENCI_RECORDING
+      delete process.env.SCREENCI_CAPTURE_AUDIO
+      if (workerIndex !== undefined) process.env.TEST_WORKER_INDEX = workerIndex
+    }
+  })
+
+  it('does not warn about parallel capture from inside a worker', () => {
+    process.env.SCREENCI_RECORDING = 'true'
+    const workerIndex = process.env.TEST_WORKER_INDEX
+    process.env.TEST_WORKER_INDEX = '0'
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    try {
+      defineConfig({
+        projectName: 'Test',
+        enableCaptureAudio: true,
+        workers: 4,
+      })
+
+      expect(warn).not.toHaveBeenCalled()
+      // The env bridge still runs inside the worker.
+      expect(process.env.SCREENCI_CAPTURE_AUDIO).toBe('1')
+    } finally {
+      warn.mockRestore()
+      delete process.env.SCREENCI_RECORDING
+      delete process.env.SCREENCI_CAPTURE_AUDIO
+      if (workerIndex === undefined) delete process.env.TEST_WORKER_INDEX
+      else process.env.TEST_WORKER_INDEX = workerIndex
     }
   })
 

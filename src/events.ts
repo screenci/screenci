@@ -1336,6 +1336,11 @@ export class EventRecorder implements IEventRecorder {
     this.events.push({
       type: 'audioStart',
       timeMs: 0,
+      // Reserved track name: the renderer recognizes `__screen` as the captured
+      // screen audio (captureAudio) and re-segments it onto the raw recording
+      // timeline (cut/paused by hides, overlays, and cue holds) rather than
+      // treating it as createAudio background music. See
+      // buildCapturedScreenAudioOverlays in apps/rendering.
       name: '__screen',
       path: audio.path,
       ...(audio.fileHash !== undefined && { fileHash: audio.fileHash }),

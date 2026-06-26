@@ -21,7 +21,7 @@ npx screenci record -c screenci.config.ts
 
 ## Sign In Early
 
-Sign-in only blocks the final recording, not authoring or testing. Get it going up front: surface the sign-in link to the user early (printed by `screenci init`, or by running `npx screenci record` once, or read from `screenci/.screenci/link-session.json`) and ask them to sign in while you build the video. The link is valid for 24 hours. For the final recording, run `npx screenci record` (no flag): off-CI it waits and records as soon as sign-in completes. Attempting it before they finish does no harm: it reprints the link, and if the timeout elapses it exits non-zero with the link still valid, so re-prompt and run again.
+Sign-in only blocks the final recording, not authoring or testing. Get it going up front: run `npx screenci login` to open the sign-in link in the user's browser (it also prints the link and returns immediately without waiting), then surface that link to the user and ask them to sign in while you build the video. The link is valid for 24 hours. For the final recording, run `npx screenci record` (no flag): off-CI it waits and records as soon as sign-in completes. Attempting it before they finish does no harm: it reprints the link, and if the timeout elapses it exits non-zero with the link still valid, so re-prompt and run again.
 
 ## Runtime Behavior
 

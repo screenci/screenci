@@ -1156,6 +1156,9 @@ function printInitNextSteps(
     )
     logger.info(`    ${pc.cyan(signInUrl)}`)
     logger.info(
+      `Tip: run ${pc.cyan(`${commands.screenciRun} login`)} to open this link in your browser.`
+    )
+    logger.info(
       'You can keep building your video while this is open. Sign-in must be done before the final recording; running record will reuse this link.'
     )
   }

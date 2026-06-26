@@ -513,14 +513,151 @@ describe('CLI', () => {
       )
     })
 
-    it('removes login from the CLI command list', async () => {
+    it('lists login in the CLI command list', async () => {
       process.argv = ['node', 'cli.js']
 
       const { main } = await import('./cli')
       await expect(main()).rejects.toThrow('process.exit called')
 
       expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Available commands: record, test, info, make-public, make-private, init'
+        'Available commands: record, test, login, info, make-public, make-private, init'
+      )
+    })
+  })
+
+  describe('login command', () => {
+    const storedSession = (expiresAt: string) =>
+      JSON.stringify({
+        token: 'session-token-123',
+        appUrl: 'https://app.screenci.com/cli-auth?session=session-token-123',
+        pollUrl:
+          'https://api.screenci.com/cli-link/session?token=session-token-123',
+        createdAt: '2026-06-11T10:00:00.000Z',
+        expiresAt,
+        environment: 'prod',
+        // runLogin always resolves a config path, so the stored session must
+        // record it to count as reusable (matches isStoredLinkSessionReusable).
+        resolvedConfigPath: `${process.cwd()}/screenci.config.ts`,
+        envFilePath: `${process.cwd()}/.env`,
+      })
+
+    it('opens the stored sign-in link in the browser without waiting', async () => {
+      delete process.env.SCREENCI_SECRET
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('link-session.json')) {
+          return storedSession('2099-06-11T10:15:00.000Z')
+        }
+        if (pathString.endsWith('screenci.config.ts')) {
+          return "export default defineConfig({ projectName: 'Test Project' })"
+        }
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        return ''
+      })
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.includes('/cli-link/session?token=session-token-123')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({ status: 'pending' }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        throw new Error(`Unexpected fetch: ${url}`)
+      })
+
+      const { runLogin } = await import('./cli')
+      await runLogin()
+
+      // Best-effort browser open: the persisted link is spawned via the
+      // platform opener (open / xdg-open / cmd start), and we do NOT create a
+      // new session or save a secret.
+      const openCalls = mockSpawn.mock.calls.filter((call: unknown[]) =>
+        ['open', 'xdg-open', 'cmd'].includes(call[0] as string)
+      )
+      expect(openCalls.length).toBe(1)
+      expect(JSON.stringify(openCalls[0])).toContain(
+        'https://app.screenci.com/cli-auth?session=session-token-123'
+      )
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        'https://api.screenci.com/cli-link/session',
+        expect.objectContaining({ method: 'POST' })
+      )
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        `${process.cwd()}/.env`,
+        expect.stringContaining('SCREENCI_SECRET=')
+      )
+    })
+
+    it('saves the secret and skips opening when sign-in already completed', async () => {
+      delete process.env.SCREENCI_SECRET
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('link-session.json')) {
+          return storedSession('2099-06-11T10:15:00.000Z')
+        }
+        if (pathString.endsWith('screenci.config.ts')) {
+          return "export default defineConfig({ projectName: 'Test Project' })"
+        }
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        return ''
+      })
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.includes('/cli-link/session?token=session-token-123')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              status: 'completed',
+              secret: 'auth-secret-123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        throw new Error(`Unexpected fetch: ${url}`)
+      })
+
+      const { runLogin } = await import('./cli')
+      await runLogin()
+
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        `${process.cwd()}/.env`,
+        'SCREENCI_SECRET=auth-secret-123\n'
+      )
+      const openCalls = mockSpawn.mock.calls.filter((call: unknown[]) =>
+        ['open', 'xdg-open', 'cmd'].includes(call[0] as string)
+      )
+      expect(openCalls.length).toBe(0)
+    })
+
+    it('does nothing but report when already signed in', async () => {
+      process.env.SCREENCI_SECRET = 'pre-existing-secret'
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('screenci.config.ts')) {
+          return "export default defineConfig({ projectName: 'Test Project' })"
+        }
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        return ''
+      })
+
+      const { runLogin } = await import('./cli')
+      await runLogin()
+
+      const openCalls = mockSpawn.mock.calls.filter((call: unknown[]) =>
+        ['open', 'xdg-open', 'cmd'].includes(call[0] as string)
+      )
+      expect(openCalls.length).toBe(0)
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Already signed in')
       )
     })
   })

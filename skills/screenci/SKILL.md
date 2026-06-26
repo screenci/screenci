@@ -131,8 +131,8 @@ await autoZoom(async () => {
 
 Signing in does not block writing or testing the video, only the final recording. So get it started up front, in parallel with your work:
 
-1. Find the sign-in link. A fresh `screenci init` prints one (valid for 24 hours). If you did not just init (the project already exists), run `npx screenci record` once to print the link, or `cat screenci/.screenci/link-session.json` if a session is already cached.
-2. Surface that link to the user verbatim and ask them to open it, sign in, and choose a plan while you build and test the video. Tell them it just needs to be done before the final recording.
+1. Run `npx screenci login`. It opens the sign-in link (valid for 24 hours) in the user's browser and prints it, then returns immediately without waiting. It reuses the link a fresh `screenci init` created, or makes one. (You can also `cat screenci/.screenci/link-session.json` if you just want to read a cached link.)
+2. Surface the printed link to the user verbatim and ask them to sign in and choose a plan while you build and test the video, in case no browser could open. Tell them it just needs to be done before the final recording.
 3. Build and test the video as normal (`npx screenci test`) while they sign in.
 4. For the final recording, run `npx screenci record` yourself (no special flag). If the user already signed in it records immediately; otherwise it prints the link, waits, and records automatically once they finish. Do not hand this step back to the user. If sign-in does not happen before the timeout, `record` exits non-zero and reprints the still-valid link: re-surface it, ask the user to sign in, and run `npx screenci record` again.
 

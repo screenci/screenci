@@ -15,6 +15,7 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | `screenci init [name]`             | Scaffold a ScreenCI project                              |
 | `screenci test [playwrightArgs]`   | Run `.screenci.ts` files locally without final recording |
 | `screenci record [playwrightArgs]` | Record videos and upload results when configured         |
+| `screenci login`                   | Open the sign-in link in your browser (best-effort)      |
 | `screenci info`                    | Print the last record run's URLs and render status       |
 | `screenci make-public <videoId>`   | Enable public delivery for a video                       |
 | `screenci make-private <videoId>`  | Disable public delivery for a video                      |
@@ -291,6 +292,44 @@ the project page in the app, see
 Without a connected repository the command reports that GitHub is not connected.
 Targeted (`--grep`) runs need the workflow to declare a `grep` input; projects
 scaffolded by `screenci init` include it.
+
+## `screenci login`
+
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+```bash
+npx screenci login
+```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+pnpm exec screenci login
+```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn screenci login
+```
+
+  </TabItem>
+</Tabs>
+
+Opens the project's sign-in link in your default browser, and prints it as a
+fallback when no browser can open (for example on a headless server). It reuses
+the link `init` already created (or a still-valid one from an earlier run), or
+creates a fresh one, so a later `screenci record` reuses the same link.
+
+`login` does **not** wait for sign-in to finish: it returns immediately so you
+can keep authoring and run `screenci test` while you sign in. Run it right after
+`init` to get sign-in started early, then `screenci record` (which waits for
+sign-in) records once you finish. If sign-in already completed, `login` saves
+`SCREENCI_SECRET` and exits. Under CI, set `SCREENCI_SECRET` instead, which skips
+sign-in entirely.
 
 ## `screenci info`
 

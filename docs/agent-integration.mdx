@@ -20,7 +20,7 @@ or a URL so the agent has context to work from, for example
 
 ## What the agent does
 
-The brief walks the agent through three steps:
+The brief walks the agent through these steps:
 
 1. **Scaffold the project.** It runs `npm init screenci@latest -- --yes` at the
    repository root. The `--yes` flag is required so the command runs
@@ -28,11 +28,18 @@ The brief walks the agent through three steps:
    to the repository root directory name. This installs the `screenci` package,
    scaffolds `screenci.config.ts` and `videos/`, and installs the `screenci`
    agent skill at the repository root.
-2. **Author a video** for the flow you described, including narration via
+2. **Kick off sign-in in parallel.** Right after init, it runs
+   `npx screenci login`, which opens the sign-in link in your browser (and
+   prints it as a fallback). This does not block: the agent keeps working while
+   you sign in. Only the final recording needs sign-in, so getting it in front
+   of you early means `record` will not have to wait.
+3. **Author a video** for the flow you described, including narration via
    `video.narration({...})`, with setup wrapped in `hide()` and the demo
    driven with visible clicks.
-3. **Verify, then record.** It runs `npx screenci test` until the script is
-   green, then `npx screenci record` to capture the final video.
+4. **Verify, then record.** It runs `npx screenci test` until the script is
+   green, then `npx screenci record` to capture the final video. If you have not
+   finished signing in yet, `record` waits for it and continues automatically
+   once you do.
 
 ## How the agent gathers context
 
@@ -51,13 +58,19 @@ see [Playwright codegen](/docs/video-script-basics#generate-a-first-draft-with-c
 
 ## Signing in
 
-Only the final recording needs sign-in, not authoring or testing. When sign-in is
-needed, `npx screenci record` prints a sign-in link, waits for it, and records
-automatically once you finish, so the agent surfaces the link to whoever can sign
-in and then keeps the command running. Waiting is the default off-CI; if it times
-out before sign-in, `record` exits non-zero (the link stays valid, so rerun once
-signed in). Under CI (`CI=true`) it does not wait, so set `SCREENCI_SECRET` ahead
-of time for CI runs (this also skips sign-in entirely anywhere).
+Only the final recording needs sign-in, not authoring or testing. Run
+`npx screenci login` right after init to open the sign-in link in your browser
+(it prints the link too, in case no browser can open). The command returns
+immediately, so the agent keeps authoring and testing while you sign in. The
+link stays valid for 24 hours, and a later `record` reuses it.
+
+When sign-in is still pending, `npx screenci record` prints the same link, waits
+for it, and records automatically once you finish, so the agent surfaces the link
+to whoever can sign in and then keeps the command running. Waiting is the default
+off-CI; if it times out before sign-in, `record` exits non-zero (the link stays
+valid, so rerun once signed in). Under CI (`CI=true`) it does not wait, so set
+`SCREENCI_SECRET` ahead of time for CI runs (this also skips sign-in entirely
+anywhere).
 
 The upload contains the raw recording, not your source code. See
 [Overview](/docs) for how recording and rendering are split.

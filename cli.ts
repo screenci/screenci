@@ -64,6 +64,7 @@ import type {
   LinkSessionStatus,
   PersistedLinkSessionSpec,
 } from './src/linkSession.js'
+import { openUrlInBrowser } from './src/openBrowser.js'
 
 // Re-export the environment-aware URL helpers so existing importers (and tests)
 // can keep importing them from the CLI entrypoint.
@@ -2548,11 +2549,101 @@ export async function ensureScreenciSecret(
   }
 }
 
+/**
+ * `screenci login`: get a sign-in link in front of a human as early as
+ * possible. It reuses the link `init` (or a prior run) persisted, or creates a
+ * fresh one, tries to open it in the browser best-effort, and always prints it
+ * as a fallback. It does NOT wait for sign-in to finish: the agent can run this,
+ * keep authoring and `test`ing, then `record` (which blocks for sign-in) once
+ * the script is green. If sign-in already completed, it saves the secret and
+ * exits.
+ */
+export async function runLogin(configPath?: string): Promise<void> {
+  const { resolvedConfigPath } = await loadScreenCIConfigAndEnv(configPath)
+
+  if (process.env.SCREENCI_SECRET) {
+    logger.info(
+      `Already signed in (SCREENCI_SECRET is set). Run ${pc.cyan(getSuggestedScreenciCommand('record'))} to record.`
+    )
+    return
+  }
+
+  const environment = getScreenCIEnvironment()
+  const apiUrl = getCliLinkSessionApiUrl()
+  const appUrl = getDevFrontendUrl()
+  const envFilePath = await resolveProjectEnvFilePath(resolvedConfigPath)
+  const projectDir = dirname(resolvedConfigPath)
+  const specPath = getLinkSessionFilePath(projectDir)
+  const linkSessionContext = { environment, envFilePath, resolvedConfigPath }
+
+  const createSpec = async (): Promise<PersistedLinkSessionSpec> => {
+    const created = await createLinkSessionSpec({
+      apiUrl,
+      appUrl,
+      ...linkSessionContext,
+    })
+    await writePersistedLinkSessionSpec(specPath, created)
+    return created
+  }
+
+  try {
+    // Reuse a still-valid persisted session so login and a later record share
+    // the same link; otherwise create and persist a fresh one.
+    const stored = await readPersistedLinkSessionSpec(specPath)
+    let spec =
+      stored && isStoredLinkSessionReusable(stored, linkSessionContext)
+        ? stored
+        : await createSpec()
+
+    // If sign-in already completed (e.g. between runs) save the secret and stop:
+    // there is nothing left to open. Recreate a stale session before opening so
+    // the link we hand off is valid.
+    const result = await pollLinkSessionOnce(spec)
+    if (result.status === 'completed' && result.secret) {
+      process.env.SCREENCI_SECRET = result.secret
+      await persistScreenCISecret(envFilePath, result.secret)
+      deletePersistedLinkSessionSpec(specPath)
+      logger.info(`Already signed in. Saved SCREENCI_SECRET to ${envFilePath}.`)
+      return
+    }
+    if (
+      result.status === 'expired' ||
+      result.status === 'consumed' ||
+      result.status === 'invalid'
+    ) {
+      deletePersistedLinkSessionSpec(specPath)
+      spec = await createSpec()
+    }
+
+    const opened = await openUrlInBrowser(spec.appUrl)
+    if (opened.opened) {
+      logger.info(
+        `Opening the sign-in link in your browser:\n${pc.cyan(spec.appUrl)}`
+      )
+    } else {
+      logger.info(
+        `Could not open a browser automatically (${opened.reason}). Open this link to sign in:\n${pc.cyan(spec.appUrl)}`
+      )
+    }
+    logger.info(
+      `The link stays valid for 24 hours. You can keep authoring and run ${pc.cyan(getSuggestedScreenciCommand('test'))} while you sign in. Then run ${pc.cyan(getSuggestedScreenciCommand('record'))}, which waits for sign-in and records once you finish.`
+    )
+  } catch (err) {
+    // Login is a best-effort convenience: never fail the run on a network or
+    // browser hiccup. record can still create and wait on the link later.
+    const msg = err instanceof Error ? err.message : String(err)
+    logger.warn(`Could not start sign-in: ${msg}`)
+    logger.info(
+      `You can sign in later: ${pc.cyan(getSuggestedScreenciCommand('record'))} prints a link and waits for sign-in. In CI, set SCREENCI_SECRET (from ${getScreenCISecretsUrl()}).`
+    )
+  }
+}
+
 export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
     logger.error(
-      'Available commands: record, test, info, make-public, make-private, init'
+      'Available commands: record, test, login, info, make-public, make-private, init'
     )
     process.exit(1)
   }
@@ -2833,6 +2924,16 @@ export async function main() {
       logger.info(
         `Tests passed. Run ${pc.cyan(recordCommand)} to render the videos.`
       )
+    })
+
+  program
+    .command('login')
+    .description(
+      'Open the sign-in link in your browser (best-effort) so recording can finish later'
+    )
+    .option('-c, --config <path>', 'path to screenci.config.ts')
+    .action(async (options: Record<string, unknown>) => {
+      await runLogin(options['config'] as string | undefined)
     })
 
   program

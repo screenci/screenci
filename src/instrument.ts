@@ -1111,7 +1111,7 @@ export function instrumentLocator(locator: Locator): Locator {
     options?: Parameters<Locator['scrollIntoViewIfNeeded']>[0] & {
       easing?: Easing
       duration?: number
-      /** 0–1: fraction of output dimensions visible in the zoomed viewport (default 0.65) */
+      /** 0–1: fraction of output dimensions visible in the zoomed viewport (default 0.72) */
       amount?: number
       /** 0–1: visibility bias inside the zoomed viewport; 0 = barely fit, 1 = centered. */
       centering?: number

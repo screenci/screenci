@@ -213,7 +213,7 @@ describe('autoZoom', () => {
       })
       await vi.runAllTimersAsync()
       await p
-      expect(amountDuringFn).toBe(0.65)
+      expect(amountDuringFn).toBe(0.72)
     })
 
     it('defaults post zoom delay when no option given', async () => {

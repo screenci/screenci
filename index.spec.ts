@@ -20,6 +20,7 @@ describe('public api surface', () => {
       'resizeRecording',
       'resolveLocaleForLanguage',
       'screenshot',
+      'selected',
       'setOverlayCss',
       'showNarration',
       'speed',

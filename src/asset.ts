@@ -213,13 +213,101 @@ export type OverlayConfig =
 export const MAX_AUDIO_LEVEL = 4
 
 /**
+ * Placement options accepted by {@link selected}. These are the subset of
+ * {@link OverlayCommon} that apply to a render dependency: the embedded output
+ * is a finished still or clip, so source-only fields (`over`/`margin`/`animate`/
+ * `css`/`capturePadding`) do not apply.
+ */
+export type DependencyOverlayOptions = Pick<
+  OverlayCommon,
+  | 'relativeTo'
+  | 'x'
+  | 'y'
+  | 'width'
+  | 'height'
+  | 'aspectRatio'
+  | 'fill'
+  | 'durationMs'
+>
+
+/** Brand identifying a {@link selected} render-dependency overlay input. */
+const DEPENDENCY_INPUT_BRAND = '__screenciSelectedDependency' as const
+
+/**
+ * The overlay input produced by {@link selected}. It embeds another render's
+ * output (a video or screenshot) as an overlay rather than a local file. The
+ * `name` identifies the target render (project-unique); `config` carries
+ * placement. The medium and concrete output are resolved by the backend.
+ */
+export type DependencyOverlayInput = {
+  readonly [DEPENDENCY_INPUT_BRAND]: true
+  /** Project-unique name of the target video/screenshot to embed. */
+  name: string
+  /** Placement options for the embedded overlay. */
+  config: DependencyOverlayOptions
+}
+
+/**
+ * Embed another render's output as an overlay (a "render dependency"). Pass the
+ * project-unique `name` of a video or screenshot; screenci embeds that target's
+ * selected render for the matching language (falling back to its latest finished
+ * render before anything is selected). When the target's selection changes, this
+ * recording's dependents automatically re-render to embed the new output.
+ *
+ * No local file is read for a `selected(...)` overlay: the medium and concrete
+ * output are looked up by the backend at render time. Screenshots may only embed
+ * other screenshots; videos may embed either.
+ *
+ * @example
+ * ```ts
+ * video.overlays({ intro: selected('Intro Clip') })(
+ *   'Full Demo',
+ *   async ({ page, overlays }) => {
+ *     await overlays.intro()
+ *     await page.goto('/dashboard')
+ *   }
+ * )
+ * ```
+ */
+export function selected(
+  name: string,
+  options?: DependencyOverlayOptions
+): DependencyOverlayInput {
+  if (typeof name !== 'string' || name.trim().length === 0) {
+    throw new Error(
+      '[screenci] selected(name) requires the non-empty name of a video or screenshot to embed.'
+    )
+  }
+  return {
+    [DEPENDENCY_INPUT_BRAND]: true,
+    name,
+    config: options ?? {},
+  }
+}
+
+function isDependencyOverlayInput(
+  value: unknown
+): value is DependencyOverlayInput {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as Record<string, unknown>)[DEPENDENCY_INPUT_BRAND] === true
+  )
+}
+
+/**
  * A value accepted by {@link createOverlays} for each key:
  *
  * - a `string` file path (`.html`/`.svg`/`.png`/`.mp4`),
- * - a React element, or
- * - an {@link OverlayConfig} object.
+ * - a React element,
+ * - an {@link OverlayConfig} object, or
+ * - a {@link selected} render dependency.
  */
-export type OverlayInput = string | ReactElementLike | OverlayConfig
+export type OverlayInput =
+  | string
+  | ReactElementLike
+  | OverlayConfig
+  | DependencyOverlayInput
 
 /**
  * A factory that builds an {@link OverlayConfig} from caller-supplied props.
@@ -472,6 +560,12 @@ function buildOverlayController(
   name: string,
   input: OverlayInputOrFactory
 ): OverlayController | ((props: unknown) => OverlayController) {
+  // A render dependency (selected(...)) embeds another render's output. It is a
+  // plain (branded) object, so it is matched before the generic config path,
+  // which would otherwise reject it for having no path/element/html.
+  if (isDependencyOverlayInput(input)) {
+    return createDependencyOverlayController(name, input)
+  }
   // A factory is the only callable input. React elements and config objects are
   // plain objects, so this branch never captures them. The config (and its
   // validation) is built per call so props can vary placement and content.
@@ -1022,6 +1116,47 @@ function createStudioAssetController(name: string): OverlayController {
   )
 }
 
+/**
+ * Builds the controller for a {@link selected} render-dependency overlay. No
+ * local file is read: the controller emits an `assetStart` carrying the target's
+ * name (an {@link OverlayDependencyRef}); the backend resolves it to a concrete
+ * output at render time. Placement is fixed (no `over`), so it is resolved up
+ * front. A blocking call needs a duration (from the call or config); a
+ * `start()`/`end()` window needs none.
+ */
+function createDependencyOverlayController(
+  name: string,
+  input: DependencyOverlayInput
+): OverlayController {
+  // `over`/`margin` are not in DependencyOverlayOptions, so placement is always
+  // fixed here (an embedded render has no live element to size against).
+  const placement = resolveOverlayPlacement(name, input.config)
+  const fullScreen = input.config.fill === 'screen'
+  return createAssetControllerCore(
+    name,
+    () => Promise.resolve(),
+    (recorder, mode) => {
+      let durationMs: number | undefined
+      if (mode.type === 'blocking') {
+        durationMs = mode.durationMs ?? input.config.durationMs
+        if (durationMs === undefined) {
+          throw new Error(
+            `[screenci] Dependency overlay "${name}" needs a duration: pass one to the call (overlays.${name}(1000)), set durationMs in the config, or drive it with .start()/.end().`
+          )
+        }
+        validateDurationMs(name, `dependency overlay "${name}"`, durationMs)
+      }
+      recorder.addAssetStart(name, {
+        kind: 'dependency',
+        dependency: { name: input.name },
+        ...(durationMs !== undefined && { durationMs }),
+        fullScreen,
+        ...(placement !== undefined && { placement }),
+      })
+    }
+  )
+}
+
 /** A file-backed overlay resolved from {@link OverlayConfig} for recording. */
 type ResolvedFileOverlay =
   | {
@@ -1361,7 +1496,7 @@ function validatePlacement(name: string, placement: OverlayPlacement): void {
  */
 function resolveOverlayPlacement(
   name: string,
-  config: OverlayConfig
+  config: OverlayCommon
 ): OverlayPlacement | undefined {
   if (config.fill === 'screen') {
     return { fullScreen: true }

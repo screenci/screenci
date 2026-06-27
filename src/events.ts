@@ -409,6 +409,41 @@ export type AnimationAssetStartEvent = {
 }
 
 /**
+ * Reference to another render (a video or screenshot) embedded as an overlay.
+ * The target is named by its project-unique `name` (declared via `selected(name)`
+ * in the SDK). The medium and concrete output are resolved by the backend at
+ * dispatch time, so the recording never restates them.
+ */
+export type OverlayDependencyRef = {
+  /** Project-unique name of the target video/screenshot to embed. */
+  name: string
+}
+
+/**
+ * An overlay that embeds another render's output (a "render dependency",
+ * declared with `selected(name)`). At record time no local file exists, so this
+ * event carries an {@link OverlayDependencyRef} instead of a `path`/`fileHash`.
+ * The backend resolves the target's selected (or latest FINISHED) output for the
+ * matching language at dispatch time and replaces this with a concrete
+ * hash-based {@link ImageAssetStartEvent}/{@link VideoAssetStartEvent}, so the
+ * renderer never sees this variant.
+ *
+ * It behaves like an {@link ImageAssetStartEvent} on the timeline (a blocking
+ * call holds a frozen frame for `durationMs`; `start()`/`end()` drives a live
+ * window). `durationMs` is omitted when driven by `start()`/`end()`.
+ */
+export type DependencyAssetStartEvent = {
+  type: 'assetStart'
+  timeMs: number
+  name: string
+  kind: 'dependency'
+  dependency: OverlayDependencyRef
+  durationMs?: number
+  fullScreen: boolean
+  placement?: OverlayPlacement
+}
+
+/**
  * End marker for an asset overlay driven by `start()`/`end()`. The asset is
  * visible from its `assetStart` until this event (a live overlay over the
  * recording, no frozen frame). `reason` mirrors cue ends: `'wait'` for an
@@ -431,6 +466,7 @@ export type AssetStartEvent =
   | ImageAssetStartEvent
   | VideoAssetStartEvent
   | AnimationAssetStartEvent
+  | DependencyAssetStartEvent
 
 /**
  * The resolved markup and render parameters captured during the test for a
@@ -482,6 +518,7 @@ export type AssetStartPayload =
   | Omit<ImageAssetStartEvent, 'type' | 'timeMs' | 'name'>
   | Omit<VideoAssetStartEvent, 'type' | 'timeMs' | 'name'>
   | Omit<AnimationAssetStartEvent, 'type' | 'timeMs' | 'name'>
+  | Omit<DependencyAssetStartEvent, 'type' | 'timeMs' | 'name'>
 
 /**
  * Studio-managed overlay declared via `video.studio({ overlays: [...] })`. The
@@ -1307,6 +1344,20 @@ export class EventRecorder implements IEventRecorder {
         kind: 'animation',
         path: asset.path,
         ...(asset.fileHash !== undefined && { fileHash: asset.fileHash }),
+        ...(asset.durationMs !== undefined && { durationMs: asset.durationMs }),
+        fullScreen: asset.fullScreen,
+        ...(asset.placement !== undefined && { placement: asset.placement }),
+      })
+      return
+    }
+
+    if (asset.kind === 'dependency') {
+      this.events.push({
+        type: 'assetStart',
+        timeMs,
+        name,
+        kind: 'dependency',
+        dependency: asset.dependency,
         ...(asset.durationMs !== undefined && { durationMs: asset.durationMs }),
         fullScreen: asset.fullScreen,
         ...(asset.placement !== undefined && { placement: asset.placement }),

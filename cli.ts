@@ -694,12 +694,28 @@ async function uploadRecordingCandidate(
       videoId?: string
       studio?: UploadStudioInfo
       plan?: OrgPlan
+      dependencyErrors?: Array<{
+        targetName: string
+        reason: string
+        detail: string
+      }>
     }
     const { recordingId } = startBody
     projectId = startBody.projectId
     videoId = startBody.videoId ?? null
     plan = startBody.plan ?? null
     const studio = startBody.studio
+
+    // Render-dependency validation failures are reported even on a successful
+    // upload so the author sees them at record time (the dependent will hold or
+    // fail distinctly until they are fixed).
+    if (startBody.dependencyErrors && startBody.dependencyErrors.length > 0) {
+      for (const depError of startBody.dependencyErrors) {
+        logger.warn(
+          `Render dependency issue for "${videoName}": ${depError.detail}`
+        )
+      }
+    }
 
     if (verbose) {
       logger.info(`recordingId=${recordingId} projectId=${projectId}`)
@@ -1262,6 +1278,9 @@ export async function collectUploadAssets(
       // Studio assets have no local file — they are uploaded from the Studio
       // page and merged into the recording by the backend.
       if ('studio' in event && event.studio === true) continue
+      // Render dependencies (selected(...)) have no local file: the backend
+      // resolves the target render's output and injects it at dispatch time.
+      if ('dependency' in event) continue
       if (assets.has(`name:${event.name}`)) continue
       const resolvedFile = await readRecordingFile(
         event.path,

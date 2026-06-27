@@ -1029,6 +1029,51 @@ describe('EventRecorder', () => {
     })
   })
 
+  describe('addAssetStart with a dependency', () => {
+    it('records a dependency assetStart with no path or fileHash', () => {
+      recorder.start()
+      now = 1500
+      recorder.addAssetStart('intro', {
+        kind: 'dependency',
+        dependency: { name: 'Intro Clip' },
+        durationMs: 1200,
+        fullScreen: false,
+      })
+
+      const start = recorder.getEvents().find((e) => e.type === 'assetStart')
+      expect(start).toEqual({
+        type: 'assetStart',
+        timeMs: 500,
+        name: 'intro',
+        kind: 'dependency',
+        dependency: { name: 'Intro Clip' },
+        durationMs: 1200,
+        fullScreen: false,
+      })
+      expect(start).not.toHaveProperty('path')
+      expect(start).not.toHaveProperty('fileHash')
+    })
+
+    it('omits durationMs for a live (start/end) dependency window and keeps placement', () => {
+      recorder.start()
+      recorder.addAssetStart('logo', {
+        kind: 'dependency',
+        dependency: { name: 'Logo Still' },
+        fullScreen: false,
+        placement: { relativeTo: 'recording', x: 10, y: 20, width: 100 },
+      })
+
+      const start = recorder.getEvents().find((e) => e.type === 'assetStart')
+      expect(start).toMatchObject({
+        kind: 'dependency',
+        dependency: { name: 'Logo Still' },
+        fullScreen: false,
+        placement: { relativeTo: 'recording', x: 10, y: 20, width: 100 },
+      })
+      expect(start).not.toHaveProperty('durationMs')
+    })
+  })
+
   describe('transition snapping', () => {
     it('snaps assetStart to hideEnd when they are back-to-back within a few ms (hide + overlay)', () => {
       recorder.start()

@@ -124,18 +124,30 @@ export const docsManifest = [
     description:
       'Add intro clips, corner logos, transitions, and timed overlays to ScreenCI recordings from files, HTML, or React.',
     prev: 'docs/guides/audio',
+    next: 'docs/guides/dependencies',
+  },
+  {
+    source: 'dependencies.md',
+    slug: 'docs/guides/dependencies',
+    section: 'Fixtures',
+    order: 5,
+    navLabel: 'Render dependencies',
+    title: 'Render Dependencies',
+    description:
+      'Embed one render inside another with selected(name): reuse intro clips and logo stills across videos and screenshots, and have dependents re-render automatically when the target selection changes.',
+    prev: 'docs/guides/overlays',
     next: 'docs/guides/languages',
   },
   {
     source: 'languages.md',
     slug: 'docs/guides/languages',
     section: 'Fixtures',
-    order: 5,
+    order: 6,
     navLabel: 'Languages',
     title: 'Languages',
     description:
       'Record per-language video versions from one script: set browser locale automatically, localize narration, values, overlays, and audio, and control the recording mode.',
-    prev: 'docs/guides/overlays',
+    prev: 'docs/guides/dependencies',
     next: 'docs/guides/camera-and-zooming',
   },
   {

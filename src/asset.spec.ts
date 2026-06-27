@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url'
 import {
   createOverlays,
   buildStudioOverlays,
+  selected,
   setActiveAssetRecorder,
   setAssetSleepFn,
   validateRegisteredAssetPaths,
@@ -1404,6 +1405,127 @@ describe('buildStudioOverlays', () => {
       )
 
       expect(recorder.addStudioAssetStart).toHaveBeenCalledWith('intro')
+    } finally {
+      await rm(tempDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('selected (render dependency overlays)', () => {
+  let recorder: IEventRecorder
+
+  beforeEach(() => {
+    recorder = createMockRecorder()
+    setActiveAssetRecorder(recorder)
+  })
+
+  afterEach(() => {
+    setActiveAssetRecorder(NOOP_EVENT_RECORDER)
+  })
+
+  it('produces a branded dependency input carrying the target name', () => {
+    const input = selected('Intro Clip')
+    expect(input.name).toBe('Intro Clip')
+    expect(input.config).toEqual({})
+  })
+
+  it('rejects an empty target name', () => {
+    expect(() => selected('')).toThrow(/non-empty name/)
+    expect(() => selected('   ')).toThrow(/non-empty name/)
+  })
+
+  it('records a dependency assetStart with a duration when blocking', async () => {
+    const overlays = createOverlays({ intro: selected('Intro Clip') })
+
+    await overlays.intro(1200)
+
+    expect(recorder.addAssetStart).toHaveBeenCalledOnce()
+    expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
+      kind: 'dependency',
+      dependency: { name: 'Intro Clip' },
+      durationMs: 1200,
+      fullScreen: false,
+    })
+  })
+
+  it('uses the config duration when no call duration is given', async () => {
+    const overlays = createOverlays({
+      intro: selected('Intro Clip', { durationMs: 800 }),
+    })
+
+    await overlays.intro()
+
+    expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
+      kind: 'dependency',
+      dependency: { name: 'Intro Clip' },
+      durationMs: 800,
+      fullScreen: false,
+    })
+  })
+
+  it('throws when a blocking dependency overlay has no duration', async () => {
+    const overlays = createOverlays({ intro: selected('Intro Clip') })
+
+    await expect(overlays.intro()).rejects.toThrow(/needs a duration/)
+  })
+
+  it('passes fill: screen as a fullScreen placement and omits duration for live windows', async () => {
+    const overlays = createOverlays({
+      intro: selected('Intro Clip', { fill: 'screen' }),
+    })
+
+    await overlays.intro.start()
+    await overlays.intro.end()
+
+    expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
+      kind: 'dependency',
+      dependency: { name: 'Intro Clip' },
+      fullScreen: true,
+      placement: { fullScreen: true },
+    })
+    expect(recorder.addAssetEnd).toHaveBeenCalledWith('intro', 'wait')
+  })
+
+  it('resolves placement fields into a positioned overlay', async () => {
+    const overlays = createOverlays({
+      logo: selected('Logo Still', {
+        x: 96,
+        y: 96,
+        width: 240,
+        durationMs: 1000,
+      }),
+    })
+
+    await overlays.logo()
+
+    expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
+      kind: 'dependency',
+      dependency: { name: 'Logo Still' },
+      durationMs: 1000,
+      fullScreen: false,
+      placement: { relativeTo: 'recording', x: 96, y: 96, width: 240 },
+    })
+  })
+
+  it('does not read any local file for a dependency overlay', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'screenci-dep-overlay-'))
+    const overlays = createOverlays({ intro: selected('Intro Clip') })
+
+    try {
+      await runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({
+          recorder,
+          testFilePath: join(tempDir, 'demo.screenci.ts'),
+        }),
+        () => overlays.intro(500)
+      )
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
+        kind: 'dependency',
+        dependency: { name: 'Intro Clip' },
+        durationMs: 500,
+        fullScreen: false,
+      })
     } finally {
       await rm(tempDir, { recursive: true, force: true })
     }

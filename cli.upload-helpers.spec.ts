@@ -455,6 +455,31 @@ describe('CLI', () => {
       expect(loggerWarnSpy).not.toHaveBeenCalled()
     })
 
+    it('skips render-dependency asset events when collecting upload assets', async () => {
+      const { collectUploadAssets } = await import('./cli')
+
+      const assets = await collectUploadAssets(
+        {
+          events: [
+            { type: 'videoStart', timeMs: 0 },
+            {
+              type: 'assetStart',
+              timeMs: 100,
+              name: 'intro',
+              kind: 'dependency',
+              dependency: { name: 'Intro Clip' },
+              durationMs: 1000,
+              fullScreen: false,
+            },
+          ],
+        } as unknown as RecordingData,
+        '/project'
+      )
+
+      expect(assets).toEqual([])
+      expect(loggerWarnSpy).not.toHaveBeenCalled()
+    })
+
     it('should pause stdin when removing the upload abort listener', async () => {
       const { attachUploadAbortStdinListener } = await import('./cli')
       const input = new EventEmitter() as EventEmitter & {

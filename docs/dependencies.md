@@ -68,7 +68,11 @@ If you record a dependent before its target has any finished render, the depende
 
 ## Language matching
 
-A dependency embeds the target's output for the **same language** as the dependent render. When the target has no render for that language, screenci falls back to the default language.
+A dependency embeds the target's output for the **same language** as the dependent render. The fallback is deliberately strict to avoid embedding the wrong language:
+
+- If the target has a render for the dependent's language, that one is embedded.
+- If it does not, but the target only has renders in a **single language**, that one is embedded (there is no ambiguity).
+- If the target has renders in **multiple languages** and none match, the dependent render **fails** with a language-mismatch error. Render the target in the matching language, or keep it single-language.
 
 ## Edge cases
 

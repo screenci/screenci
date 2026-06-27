@@ -706,13 +706,13 @@ async function uploadRecordingCandidate(
     plan = startBody.plan ?? null
     const studio = startBody.studio
 
-    // Render-dependency validation failures are reported even on a successful
-    // upload so the author sees them at record time (the dependent will hold or
-    // fail distinctly until they are fixed).
+    // Render-dependency validation failures are reported on the upload response
+    // so the author sees them at record time. These are enforced server-side:
+    // the render for this video fails with the dependency error until fixed.
     if (startBody.dependencyErrors && startBody.dependencyErrors.length > 0) {
       for (const depError of startBody.dependencyErrors) {
-        logger.warn(
-          `Render dependency issue for "${videoName}": ${depError.detail}`
+        logger.error(
+          `Render dependency error in "${videoName}": ${depError.detail}. This render will fail until it is fixed.`
         )
       }
     }

@@ -9,6 +9,7 @@ An overlay can come from a file (`.html`, `.svg`, `.png`, or `.mp4`), a React el
 - [how to define overlays](#define-overlays)
 - [how to position and size overlays](#positioning)
 - [how blocking and start/end timing work](#timing-and-control-flow)
+- [how to embed another render as an overlay](#render-dependencies)
 - [how to organize files for maintainable projects](#file-organization)
 
 ## Define overlays
@@ -16,8 +17,9 @@ An overlay can come from a file (`.html`, `.svg`, `.png`, or `.mp4`), a React el
 `video.overlays(...)` takes a map. Each value is one of:
 
 - a **file path** string (`.html`, `.svg`, `.png`, `.mp4`),
-- a **React element**, or
-- a **config object** (`{ path | element | html, ...placement }`).
+- a **React element**,
+- a **config object** (`{ path | element | html, ...placement }`), or
+- a **`selected(name)`** render dependency, which embeds another video or screenshot's output (see [Render dependencies](./dependencies.md)).
 
 A config object draws its content from exactly one source: a file `path`, a React `element`, or an inline `html` fragment.
 
@@ -426,6 +428,26 @@ Other timing notes:
 - overlays stay on top of the recording while the underlying screen continues
 
 That means you do not need separate timing math just to line an intro clip up with the next step.
+
+## Render dependencies
+
+Instead of a file, an overlay value can be `selected(name)`, which embeds another video or screenshot's rendered output as the overlay. Use it to reuse a separately-maintained intro clip or logo still across many renders and keep them in sync: when the embedded render's selection changes, every render that depends on it re-renders automatically.
+
+```ts
+import { video, selected } from 'screenci'
+
+video.overlays({ intro: selected('Intro Clip') })(
+  'Full Demo',
+  async ({ page, overlays }) => {
+    await overlays.intro() // embeds the "Intro Clip" render
+    await page.goto('/dashboard')
+  }
+)
+```
+
+A `selected(...)` overlay is driven and positioned like any other overlay, but reads no local file: the medium and concrete output are resolved by the service at render time. Screenshots may only embed other screenshots; videos may embed either, one level deep. Render dependencies are a Business tier feature.
+
+See [Render dependencies](./dependencies.md) for the full guide: declaring dependencies, selection and automatic re-renders, the waiting state, language matching, and edge cases.
 
 ## File organization
 

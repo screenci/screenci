@@ -131,7 +131,7 @@ export function startScreenAudioCapture(
 
   const args = [
     '-loglevel',
-    'quiet',
+    'error',
     ...inputArgs,
     '-i',
     device,
@@ -141,13 +141,19 @@ export function startScreenAudioCapture(
     outputPath,
   ]
 
-  // Use piped stdin so we can send 'q' for a clean shutdown on all platforms.
+  // Pipe stdin (for 'q' shutdown) and stderr (for error capture on failure).
+  // stdout is not needed.
   const proc = deps.spawn(ffmpegPath, args, {
-    stdio: ['pipe', 'ignore', 'ignore'],
+    stdio: ['pipe', 'ignore', 'pipe'],
   })
 
   let spawnError: Error | null = null
   let exited = false
+  let stderrOutput = ''
+
+  proc.stderr?.on('data', (chunk: Buffer) => {
+    stderrOutput += chunk.toString()
+  })
 
   // Settle callbacks waiting in stop() when the process exits.
   type Settler = (err: Error | null) => void
@@ -161,7 +167,16 @@ export function startScreenAudioCapture(
     )
   })
 
-  proc.once('exit', () => {
+  proc.once('exit', (code: number | null) => {
+    if (code !== 0 && code !== null && spawnError === null) {
+      const detail = stderrOutput.trim()
+      spawnError = new Error(
+        `[screenci] captureAudio: ffmpeg exited with code ${code}` +
+          (detail ? `. FFmpeg output: ${detail}` : '') +
+          `. Check that the audio device is available.` +
+          ` See ${SCREEN_AUDIO_DOCS_URL} for setup instructions.`
+      )
+    }
     exited = true
     for (const settle of exitSettlers) settle(spawnError)
     exitSettlers.length = 0

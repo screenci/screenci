@@ -111,6 +111,7 @@ import {
 } from './screenAudio.js'
 import type { ScreenAudioCapture } from './screenAudio.js'
 import {
+  assertPulseAudioAvailable,
   createNullSink,
   unloadNullSink,
   workerSinkName,
@@ -654,6 +655,7 @@ const _videoBase = base.extend<
     // routed into it via PULSE_SINK and the recorder captures its monitor.
     let sink: NullSink | null = null
     if (audioActive) {
+      await assertPulseAudioAvailable()
       sink = await createNullSink(workerSinkName())
       if (sink) {
         setActiveCaptureDevice(sink.monitorSource)

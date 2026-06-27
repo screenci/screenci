@@ -1,10 +1,48 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
+  assertPulseAudioAvailable,
   createNullSink,
   unloadNullSink,
   workerSinkName,
   type SinkDeps,
 } from './screenAudioSink.js'
+
+describe('assertPulseAudioAvailable', () => {
+  it('resolves when both pulseaudio and pactl are present', async () => {
+    const run = vi.fn().mockResolvedValue({ stdout: 'pulseaudio 15.0\n' })
+    await expect(assertPulseAudioAvailable({ run })).resolves.toBeUndefined()
+    expect(run).toHaveBeenCalledWith('pulseaudio', ['--version'])
+    expect(run).toHaveBeenCalledWith('pactl', ['--version'])
+  })
+
+  it('throws when pulseaudio is missing', async () => {
+    const run = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('spawn pulseaudio ENOENT'))
+    await expect(assertPulseAudioAvailable({ run })).rejects.toThrow(
+      /"pulseaudio" is not installed/
+    )
+  })
+
+  it('throws when pactl is missing', async () => {
+    const run = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: 'pulseaudio 15.0\n' })
+      .mockRejectedValueOnce(new Error('spawn pactl ENOENT'))
+    await expect(assertPulseAudioAvailable({ run })).rejects.toThrow(
+      /"pactl" is not installed/
+    )
+  })
+
+  it('mentions the package to install in the error', async () => {
+    const run = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('spawn pulseaudio ENOENT'))
+    await expect(assertPulseAudioAvailable({ run })).rejects.toThrow(
+      /Install the "pulseaudio" package/
+    )
+  })
+})
 
 describe('workerSinkName', () => {
   it('derives a per-process sink name from the pid', () => {

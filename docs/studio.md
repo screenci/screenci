@@ -45,6 +45,7 @@ expose the Studio-managed controllers and values alongside any defined in code.
 - [how to manage overlays from Studio](#studio-overlays-from-code)
 - [how to manage background audio from Studio](#studio-audio-from-code)
 - [how to defer render and record options to Studio](#studio-render-and-record-options)
+- [how to manage languages from Studio](#studio-languages-from-code)
 
 ## Editing in Studio
 
@@ -320,11 +321,45 @@ video.narration(['intro']).overlays(['logo'])(
 Until the video is configured in Studio, uploads render with the default options
 (or are held together with studio narration, if both are used).
 
-The recorded **language set** is managed separately via `video.languages(...)`.
-Pass `'studio'` to let the web app own the set on the business-gated languages
-page (which drives a re-record), an array to fix the languages in code
-(`video.languages(['en', 'fi'])`), or an object for full recording-localization
-config. There is no `recordOptions.languages`.
+The recorded **language set** is managed separately via `video.languages(...)`:
+see [Studio languages from code](#studio-languages-from-code) below. There is no
+`recordOptions.languages`.
+
+## Studio languages from code
+
+Pass `'studio'` to `video.languages(...)` to hand the recorded language set to
+the web app. The **Languages** section on the Studio page shows the current set
+and lets you add or remove languages:
+
+```ts
+import { video } from 'screenci'
+
+video.narration(['intro']).languages('studio')(
+  'Product tour',
+  async ({ page, narration }) => {
+    await narration.intro()
+    await page.goto('/dashboard')
+  }
+)
+```
+
+Adding a language triggers a re-record: the Languages section shows a
+**Re-record this video** button that queues a new recording pass from the web
+when the project is connected to GitHub. The new pass reuses the same Studio
+narration, overlays, and audio configuration. Removing a language takes effect
+on the next upload without re-recording.
+
+Unlike narration text and overlays (applied at render time), the language set
+changes the captured recording itself, so adding a language always requires a
+new recording pass.
+
+Use `'studio'` together with studio-declared narration
+(`video.narration([...])`) so both the narration content and the language set
+are owned by the web app. Combined with `use({ recordOptions: 'studio' })`, the
+web app controls the full recording configuration.
+
+To fix languages in code instead, pass an array (`video.languages(['en', 'fi'])`)
+or a config object. See [Languages](./languages.md) for the full language API.
 
 ## Tier requirements
 

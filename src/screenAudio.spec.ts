@@ -11,7 +11,7 @@ import { EventEmitter } from 'events'
 import ffmpegStatic from 'ffmpeg-static'
 
 const ffmpegPath = (ffmpegStatic as unknown as string | null) ?? 'ffmpeg'
-import { Writable } from 'stream'
+import { Readable, Writable } from 'stream'
 
 describe('isScreenAudioSupported', () => {
   it('is true only on linux', () => {
@@ -104,6 +104,7 @@ describe('resolvePlatformAudioArgs', () => {
 function makeFakeProc(opts: { failSpawn?: boolean } = {}) {
   const emitter = new EventEmitter() as NodeJS.EventEmitter & {
     stdin: Writable | null
+    stderr: Readable | null
     kill: (signal?: string) => void
   }
   const stdinWrites: string[] = []
@@ -113,6 +114,7 @@ function makeFakeProc(opts: { failSpawn?: boolean } = {}) {
       cb()
     },
   })
+  emitter.stderr = new Readable({ read() {} })
   emitter.kill = vi.fn()
 
   if (opts.failSpawn) {
@@ -185,6 +187,46 @@ describe('startScreenAudioCapture', () => {
     process.nextTick(() => proc.emit('exit', 0))
 
     await expect(stopPromise).rejects.toThrow(/audio file was not written/)
+  })
+
+  it('rejects when ffmpeg exits with a non-zero code', async () => {
+    const { proc } = makeFakeProc()
+
+    const deps: ScreenAudioDeps = {
+      spawn: vi
+        .fn()
+        .mockReturnValue(
+          proc
+        ) as unknown as typeof import('child_process').spawn,
+      readFile: vi.fn(),
+    }
+
+    const capture = startScreenAudioCapture('/tmp/audio.wav', deps)
+    const stopPromise = capture.stop()
+    proc.stderr?.push('No such device: screenci_123.monitor\n')
+    process.nextTick(() => proc.emit('exit', 1))
+
+    await expect(stopPromise).rejects.toThrow(/exited with code 1/)
+  })
+
+  it('includes ffmpeg stderr output in the exit-code error', async () => {
+    const { proc } = makeFakeProc()
+
+    const deps: ScreenAudioDeps = {
+      spawn: vi
+        .fn()
+        .mockReturnValue(
+          proc
+        ) as unknown as typeof import('child_process').spawn,
+      readFile: vi.fn(),
+    }
+
+    const capture = startScreenAudioCapture('/tmp/audio.wav', deps)
+    const stopPromise = capture.stop()
+    proc.stderr?.push('Connection refused\n')
+    process.nextTick(() => proc.emit('exit', 1))
+
+    await expect(stopPromise).rejects.toThrow(/Connection refused/)
   })
 
   it('passes the platform audio args to ffmpeg', () => {

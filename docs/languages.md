@@ -195,6 +195,32 @@ A localized video builder supports the usual run modifiers, chained before the
 call: `.only(...)`, `.skip`, `.fixme`, and `.fail`. The in-body conditional
 `video.skip(condition, reason)` still exists separately for skipping mid-test.
 
+## Managing languages from Studio
+
+Pass `'studio'` to `video.languages(...)` to let the web app own the recorded
+language set. This is a Business tier feature managed on the Studio page.
+
+```ts
+import { video } from 'screenci'
+
+video.narration(['intro']).languages('studio')(
+  'Product tour',
+  async ({ page, narration }) => {
+    await narration.intro()
+    await page.goto('/dashboard')
+  }
+)
+```
+
+The **Languages** section on the Studio page lists the current recorded
+languages and lets you add or remove them. Adding a language triggers a
+re-record: the section shows a **Re-record this video** button that queues a
+fresh recording pass from the web when the project is connected to GitHub. The
+new pass reuses the same Studio narration, overlays, and audio configuration.
+
+To fix languages in code instead, pass an array or config object as shown in the
+sections above. See [Studio](./studio.md) for the full Studio guide.
+
 ## Available languages
 
 The language-major forms (`video.narration(...)`, `video.values(...)`) and

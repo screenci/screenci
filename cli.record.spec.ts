@@ -1930,6 +1930,94 @@ describe('CLI', () => {
       ).toBe(false)
     })
 
+    it('reports absolute asset paths relative to the cwd in failure messages', async () => {
+      const cwd = '/home/runner/work/repo/repo/apps/demo'
+      const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
+      const absoluteAssetPath = `${cwd}/.screenci/Demo/generated/ring.png`
+
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({
+            events: [
+              {
+                type: 'assetStart',
+                timeMs: 0,
+                name: 'ring',
+                kind: 'image',
+                path: absoluteAssetPath,
+                durationMs: 1200,
+                fullScreen: false,
+              },
+            ],
+            metadata: { videoName: 'Demo' },
+          })
+        }
+        if (pathString.endsWith('ring.png')) {
+          return Buffer.from('ring-bytes')
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') ||
+          path.endsWith('recording.mp4') ||
+          path.endsWith('ring.png')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        if (url.endsWith('/asset/stream')) {
+          return {
+            ok: false,
+            status: 500,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue('{"error":"Upload failed"}'),
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+
+      const { uploadRecordings } = await import('./cli')
+
+      const result = await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      // The failure message uses the cwd-relative path, not the absolute one.
+      expect(result.failedVideoMessages).toEqual([
+        {
+          videoName: 'Demo',
+          message:
+            'Failed to upload asset .screenci/Demo/generated/ring.png: 500 {"error":"Upload failed"}',
+        },
+      ])
+
+      cwdSpy.mockRestore()
+    })
+
     it('resolves asset paths relative to the recording source file during upload', async () => {
       mockReaddir.mockResolvedValue(['demo-video'])
       mockReadFile.mockImplementation(async (path: string | URL) => {
@@ -2834,6 +2922,21 @@ describe('CLI', () => {
       expect(loggerWarnSpy).toHaveBeenCalledWith(
         'Not all recordings succeeded to upload. Failed videos: Failed Demo. Some videos may be missing from the project.'
       )
+
+      // Failure warnings (stderr) must be emitted before the "Results available
+      // at:" line (stdout) so the URL stays directly under its message: in
+      // non-TTY CI logs stdout is buffered while stderr flushes immediately, so
+      // warnings logged afterwards would otherwise split the message from its URL.
+      const lastWarnOrder = Math.max(...loggerWarnSpy.mock.invocationCallOrder)
+      const resultsInfoCall = loggerInfoSpy.mock.calls.findIndex((call) =>
+        stripVTControlCharacters(String(call[0])).includes(
+          'Results available at:'
+        )
+      )
+      expect(resultsInfoCall).toBeGreaterThanOrEqual(0)
+      expect(
+        loggerInfoSpy.mock.invocationCallOrder[resultsInfoCall]
+      ).toBeGreaterThan(lastWarnOrder)
     })
 
     it('formats expressive narration tier failures with a fix suggestion', async () => {

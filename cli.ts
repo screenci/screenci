@@ -1582,7 +1582,7 @@ async function uploadAssets(
         if (!checkRes.ok) {
           const text = await checkRes.text()
           throw new UploadAssetError(
-            `Failed to check asset ${asset.path}: ${checkRes.status} ${text}${hint401(checkRes.status, secret)}`
+            `Failed to check asset ${displayAssetPath(asset.path)}: ${checkRes.status} ${text}${hint401(checkRes.status, secret)}`
           )
         }
 
@@ -1597,7 +1597,7 @@ async function uploadAssets(
 
       if (!asset.fileBuffer || !asset.contentType) {
         throw new UploadAssetError(
-          `Asset bytes not available for upload and backend does not have it yet: ${asset.path}`
+          `Asset bytes not available for upload and backend does not have it yet: ${displayAssetPath(asset.path)}`
         )
       }
 
@@ -1633,7 +1633,7 @@ async function uploadAssets(
           )
         } else {
           throw new UploadAssetError(
-            `Failed to upload asset ${asset.path}: ${res.status} ${text}${hint401(res.status, secret)}`
+            `Failed to upload asset ${displayAssetPath(asset.path)}: ${res.status} ${text}${hint401(res.status, secret)}`
           )
         }
       } else {
@@ -1649,7 +1649,7 @@ async function uploadAssets(
         throw err
       }
       throw new UploadAssetError(
-        `Network error uploading asset ${asset.path}: ${err instanceof Error ? err.message : String(err)}`
+        `Network error uploading asset ${displayAssetPath(asset.path)}: ${err instanceof Error ? err.message : String(err)}`
       )
     }
   }
@@ -2821,6 +2821,25 @@ export async function main() {
             if (recordId !== null) {
               await saveLastRecordId(screenciDir, recordId)
             }
+            // Emit upload-failure warnings (stderr) before the results block.
+            // logger.info writes to stdout, logger.warn to stderr; in non-TTY CI
+            // logs stdout is block-buffered while stderr flushes immediately, so
+            // warnings printed after the "Results available at:" line would split
+            // it from its URL. Reporting failures first keeps the URL directly
+            // under its message.
+            if (hadFailures) {
+              for (const failedVideo of failedVideoMessages) {
+                logger.warn(
+                  formatFailedVideoMessage(
+                    failedVideo.videoName,
+                    failedVideo.message
+                  )
+                )
+              }
+              logger.warn(
+                `Not all recordings succeeded to upload. Failed videos: ${failedVideoNames.join(', ') || 'unknown'}. Some videos may be missing from the project.`
+              )
+            }
             if (recordId !== null && projectId !== null) {
               const recordUrl = `${appUrl}/record/${recordId}`
               await writeGitHubProjectOutput(recordUrl)
@@ -2867,21 +2886,8 @@ export async function main() {
                 )
               }
             }
-            if (hadFailures) {
-              for (const failedVideo of failedVideoMessages) {
-                logger.warn(
-                  formatFailedVideoMessage(
-                    failedVideo.videoName,
-                    failedVideo.message
-                  )
-                )
-              }
-              logger.warn(
-                `Not all recordings succeeded to upload. Failed videos: ${failedVideoNames.join(', ') || 'unknown'}. Some videos may be missing from the project.`
-              )
-              if (playwrightFailure === null) {
-                throw new PartialUploadError()
-              }
+            if (hadFailures && playwrightFailure === null) {
+              throw new PartialUploadError()
             }
           }
         } catch (err) {

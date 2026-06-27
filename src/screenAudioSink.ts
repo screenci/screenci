@@ -1,5 +1,6 @@
 import { execFile as nodeExecFile } from 'child_process'
 import { promisify } from 'util'
+import { SCREEN_AUDIO_DOCS_URL } from './screenAudio.js'
 
 const execFileAsync = promisify(nodeExecFile)
 
@@ -58,6 +59,30 @@ export async function createNullSink(
     return { moduleId, sinkName: name, monitorSource: `${name}.monitor` }
   } catch {
     return null
+  }
+}
+
+/**
+ * Verifies that `pulseaudio` and `pactl` (pulseaudio-utils) are installed and
+ * in PATH. Throws immediately with an actionable message if either is missing,
+ * so callers fail fast rather than silently falling back to the default device.
+ */
+export async function assertPulseAudioAvailable(
+  deps: SinkDeps = defaultDeps
+): Promise<void> {
+  for (const [bin, pkg] of [
+    ['pulseaudio', 'pulseaudio'] as const,
+    ['pactl', 'pulseaudio-utils'] as const,
+  ]) {
+    try {
+      await deps.run(bin, ['--version'])
+    } catch {
+      throw new Error(
+        `[screenci] captureAudio: "${bin}" is not installed or not in PATH. ` +
+          `Install the "${pkg}" package and try again. ` +
+          `See ${SCREEN_AUDIO_DOCS_URL} for setup instructions.`
+      )
+    }
   }
 }
 

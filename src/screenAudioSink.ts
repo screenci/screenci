@@ -63,26 +63,36 @@ export async function createNullSink(
 }
 
 /**
- * Verifies that `pulseaudio` and `pactl` (pulseaudio-utils) are installed and
- * in PATH. Throws immediately with an actionable message if either is missing,
- * so callers fail fast rather than silently falling back to the default device.
+ * Verifies that screen-audio capture can actually run on this machine: the
+ * `pactl` control tool is in PATH and a PulseAudio-compatible server is
+ * reachable. Throws an actionable error otherwise, so captureAudio fails fast
+ * instead of producing a recording that silently lacks the isolated audio it
+ * promises.
+ *
+ * Only `pactl` plus a running pulse server are required. The `pulseaudio` daemon
+ * binary itself is NOT needed: PipeWire systems provide the pulse server and
+ * `pactl` (via pipewire-pulse) without it, and capture works there.
  */
-export async function assertPulseAudioAvailable(
+export async function assertScreenAudioCaptureReady(
   deps: SinkDeps = defaultDeps
 ): Promise<void> {
-  for (const [bin, pkg] of [
-    ['pulseaudio', 'pulseaudio'] as const,
-    ['pactl', 'pulseaudio-utils'] as const,
-  ]) {
-    try {
-      await deps.run(bin, ['--version'])
-    } catch {
-      throw new Error(
-        `[screenci] captureAudio: "${bin}" is not installed or not in PATH. ` +
-          `Install the "${pkg}" package and try again. ` +
-          `See ${SCREEN_AUDIO_DOCS_URL} for setup instructions.`
-      )
-    }
+  try {
+    await deps.run('pactl', ['--version'])
+  } catch {
+    throw new Error(
+      `[screenci] captureAudio: "pactl" is not installed or not in PATH. ` +
+        `Install "pulseaudio-utils" (or "pipewire-pulse") and try again. ` +
+        `See ${SCREEN_AUDIO_DOCS_URL} for setup instructions.`
+    )
+  }
+  try {
+    await deps.run('pactl', ['info'])
+  } catch {
+    throw new Error(
+      `[screenci] captureAudio: no PulseAudio/PipeWire server is reachable ` +
+        `(\`pactl info\` failed). Start one (for example "pulseaudio --start") ` +
+        `and try again. See ${SCREEN_AUDIO_DOCS_URL} for setup instructions.`
+    )
   }
 }
 

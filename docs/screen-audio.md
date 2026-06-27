@@ -45,10 +45,16 @@ This happens automatically, with no setup, and means:
 - It is **parallel-safe**: each worker captures its own sink, so recordings do
   not bleed into each other.
 
-It requires a running PulseAudio/PipeWire server and the `pactl` tool (present on
-typical Linux desktops; in CI, install `pulseaudio` and run `pulseaudio
---start`). If a sink cannot be created, screenci warns and falls back to the
-default device (audible and not isolated).
+It requires the `pactl` control tool and a running PulseAudio/PipeWire server
+(present on typical Linux desktops; in CI, install `pulseaudio` and run
+`pulseaudio --start`). The `pulseaudio` daemon binary itself is not required:
+PipeWire systems provide the pulse server and `pactl` (via `pipewire-pulse`)
+without it, and capture works there.
+
+Because captureAudio promises **isolated** audio, it must succeed or the run
+fails: if `pactl` or a reachable server is missing, the dedicated sink cannot be
+created, or you are on macOS/Windows, screenci stops the recording with an
+actionable error rather than shipping a video that silently lacks its audio.
 
 ## Quick start
 

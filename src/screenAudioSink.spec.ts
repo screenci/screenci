@@ -1,45 +1,44 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
-  assertPulseAudioAvailable,
+  assertScreenAudioCaptureReady,
   createNullSink,
   unloadNullSink,
   workerSinkName,
   type SinkDeps,
 } from './screenAudioSink.js'
 
-describe('assertPulseAudioAvailable', () => {
-  it('resolves when both pulseaudio and pactl are present', async () => {
-    const run = vi.fn().mockResolvedValue({ stdout: 'pulseaudio 15.0\n' })
-    await expect(assertPulseAudioAvailable({ run })).resolves.toBeUndefined()
-    expect(run).toHaveBeenCalledWith('pulseaudio', ['--version'])
+describe('assertScreenAudioCaptureReady', () => {
+  it('resolves when pactl is present and a server is reachable', async () => {
+    const run = vi.fn().mockResolvedValue({ stdout: 'pactl 15.0\n' })
+    await expect(
+      assertScreenAudioCaptureReady({ run })
+    ).resolves.toBeUndefined()
     expect(run).toHaveBeenCalledWith('pactl', ['--version'])
+    expect(run).toHaveBeenCalledWith('pactl', ['info'])
   })
 
-  it('throws when pulseaudio is missing', async () => {
-    const run = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('spawn pulseaudio ENOENT'))
-    await expect(assertPulseAudioAvailable({ run })).rejects.toThrow(
-      /"pulseaudio" is not installed/
-    )
+  it('does not require the pulseaudio daemon binary', async () => {
+    // PipeWire systems have pactl + a server but no `pulseaudio` binary; capture
+    // works there, so the probe must never invoke `pulseaudio`.
+    const run = vi.fn().mockResolvedValue({ stdout: 'ok' })
+    await assertScreenAudioCaptureReady({ run })
+    expect(run).not.toHaveBeenCalledWith('pulseaudio', expect.anything())
   })
 
-  it('throws when pactl is missing', async () => {
-    const run = vi
-      .fn()
-      .mockResolvedValueOnce({ stdout: 'pulseaudio 15.0\n' })
-      .mockRejectedValueOnce(new Error('spawn pactl ENOENT'))
-    await expect(assertPulseAudioAvailable({ run })).rejects.toThrow(
+  it('throws when pactl is not installed', async () => {
+    const run = vi.fn().mockRejectedValueOnce(new Error('spawn pactl ENOENT'))
+    await expect(assertScreenAudioCaptureReady({ run })).rejects.toThrow(
       /"pactl" is not installed/
     )
   })
 
-  it('mentions the package to install in the error', async () => {
+  it('throws when no pulse server is reachable', async () => {
     const run = vi
       .fn()
-      .mockRejectedValueOnce(new Error('spawn pulseaudio ENOENT'))
-    await expect(assertPulseAudioAvailable({ run })).rejects.toThrow(
-      /Install the "pulseaudio" package/
+      .mockResolvedValueOnce({ stdout: 'pactl 15.0\n' }) // --version succeeds
+      .mockRejectedValueOnce(new Error('Connection refused')) // info fails
+    await expect(assertScreenAudioCaptureReady({ run })).rejects.toThrow(
+      /no PulseAudio\/PipeWire server is reachable/
     )
   })
 })

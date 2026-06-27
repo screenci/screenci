@@ -111,7 +111,7 @@ import {
 } from './screenAudio.js'
 import type { ScreenAudioCapture } from './screenAudio.js'
 import {
-  assertPulseAudioAvailable,
+  assertScreenAudioCaptureReady,
   createNullSink,
   unloadNullSink,
   workerSinkName,
@@ -645,28 +645,41 @@ const _videoBase = base.extend<
 
   browser: async ({ playwright }, use) => {
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
-    // Audio capture only runs on Linux; elsewhere we leave the browser in the
-    // normal muted launch and warn (see the per-video capture site below).
-    const audioActive =
-      shouldRecord && isCaptureAudioEnabled() && isScreenAudioSupported()
+    // captureAudio requires isolated capture (a per-worker null sink). It must
+    // succeed or the run fails, so a recording never silently ships without the
+    // isolated audio it promises.
+    const captureAudioRequested = shouldRecord && isCaptureAudioEnabled()
+
+    // Isolated capture is Linux-only (macOS/Windows cannot isolate the browser's
+    // audio from the rest of the machine). Requested on an unsupported platform:
+    // fail fast rather than recording silently.
+    if (captureAudioRequested && !isScreenAudioSupported()) {
+      throw new Error(
+        screenAudioUnsupportedMessage() ??
+          '[screenci] captureAudio is not supported on this platform.'
+      )
+    }
+
+    const audioActive = captureAudioRequested && isScreenAudioSupported()
 
     // Give this worker a dedicated null sink so capture is silent on the host,
     // isolated from other apps, and safe under parallel workers. The browser is
     // routed into it via PULSE_SINK and the recorder captures its monitor.
     let sink: NullSink | null = null
     if (audioActive) {
-      await assertPulseAudioAvailable()
+      // Requires `pactl` and a reachable pulse server (PulseAudio or PipeWire);
+      // the pulseaudio daemon binary itself is not needed. Throws if unavailable.
+      await assertScreenAudioCaptureReady()
       sink = await createNullSink(workerSinkName())
-      if (sink) {
-        setActiveCaptureDevice(sink.monitorSource)
-      } else {
-        logger.warn(
-          `captureAudio: could not create a dedicated audio sink (is pactl ` +
-            `available?). Falling back to the default device, so recording ` +
-            `audio will play out loud and may include other apps' sound. ` +
+      if (!sink) {
+        throw new Error(
+          `[screenci] captureAudio: could not create an isolated audio sink ` +
+            `(\`pactl load-module module-null-sink\` failed). Isolated ` +
+            `recording is required, so the run is stopped. ` +
             `See ${SCREEN_AUDIO_DOCS_URL}`
         )
       }
+      setActiveCaptureDevice(sink.monitorSource)
     }
 
     const launchOptions = getChromiumLaunchOptions(shouldRecord, audioActive)
@@ -686,11 +699,6 @@ const _videoBase = base.extend<
     if (sink) {
       await unloadNullSink(sink)
       setActiveCaptureDevice(null)
-    }
-    // End-of-run reminder on platforms where capture was skipped.
-    const unsupported = screenAudioUnsupportedMessage()
-    if (shouldRecord && isCaptureAudioEnabled() && unsupported !== null) {
-      logger.warn(unsupported)
     }
   },
 

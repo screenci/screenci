@@ -12,8 +12,9 @@ export const SCREEN_AUDIO_DOCS_URL =
  * Screen audio capture is supported on Linux only. macOS and Windows have no
  * way to route just the recording browser into an isolated capture device
  * without third-party tooling, so capturing there would either pick up every
- * app's sound or require muting the whole machine. On those platforms screenci
- * skips capture and warns instead of writing a misleading track.
+ * app's sound or require muting the whole machine. Because captureAudio promises
+ * isolated audio, screenci fails fast on those platforms instead of writing a
+ * misleading (or silent) track.
  */
 export function isScreenAudioSupported(
   platform: NodeJS.Platform = process.platform
@@ -22,8 +23,9 @@ export function isScreenAudioSupported(
 }
 
 /**
- * Warning shown (at run start and end) when audio capture is requested on a
- * platform where it is not supported. Returns `null` on supported platforms.
+ * Message used when audio capture is requested on a platform where it is not
+ * supported: an early heads-up warning at config load, and the error the
+ * recording fixture throws. Returns `null` on supported platforms.
  */
 export function screenAudioUnsupportedMessage(
   platform: NodeJS.Platform = process.platform
@@ -33,8 +35,8 @@ export function screenAudioUnsupportedMessage(
   }
   return (
     `[screenci] captureAudio is only supported on Linux. ` +
-    `This run on "${platform}" will record no audio (the video will be silent ` +
-    `where screen audio was expected). See ${SCREEN_AUDIO_DOCS_URL}`
+    `This run on "${platform}" cannot capture isolated screen audio, so the ` +
+    `recording is stopped. See ${SCREEN_AUDIO_DOCS_URL}`
   )
 }
 

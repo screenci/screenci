@@ -56,6 +56,30 @@ fails: if `pactl` or a reachable server is missing, the dedicated sink cannot be
 created, or you are on macOS/Windows, screenci stops the recording with an
 actionable error rather than shipping a video that silently lacks its audio.
 
+### Choosing the ffmpeg binary
+
+Capture shells out to ffmpeg, defaulting to the bundled `ffmpeg-static` build.
+On Linux that build (the static johnvansickle builds) ships without `libpulse`,
+so it cannot read the per-worker monitor and fails with
+`Unknown input format: 'pulse'` even though a PulseAudio or PipeWire server is
+running and `pactl` works. The bundled `alsa` input cannot bridge to pulse
+either: loading the host's ALSA pulse plugin into the binary's own bundled
+libasound crashes on an ABI mismatch.
+
+screenci handles this automatically: when the bundled binary lacks the `pulse`
+demuxer, it falls back to a system `ffmpeg` on `PATH` that provides it. So on a
+typical Linux desktop (or a CI runner with `ffmpeg` installed) audio capture
+works with no extra configuration. Install one with your package manager, e.g.
+`sudo apt-get install -y ffmpeg`.
+
+To force a specific binary, set `SCREENCI_FFMPEG_PATH`, which always wins:
+
+```bash
+SCREENCI_FFMPEG_PATH=/usr/bin/ffmpeg pnpm screenci record
+```
+
+Verify a binary has the input with `ffmpeg -hide_banner -formats | grep pulse`.
+
 ## Quick start
 
 ```ts

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
+  resolveCaptureFfmpegPath,
   resolvePlatformAudioArgs,
   startScreenAudioCapture,
   isScreenAudioSupported,
@@ -32,6 +33,77 @@ describe('screenAudioUnsupportedMessage', () => {
     expect(mac).toContain('darwin')
 
     expect(screenAudioUnsupportedMessage('win32')).toContain('win32')
+  })
+})
+
+describe('resolveCaptureFfmpegPath', () => {
+  const probeNever = () => false
+  const probeAlways = () => true
+
+  it('prefers SCREENCI_FFMPEG_PATH when set, without probing', () => {
+    const probe = vi.fn().mockReturnValue(false)
+    expect(
+      resolveCaptureFfmpegPath({
+        env: { SCREENCI_FFMPEG_PATH: '/opt/ffmpeg' },
+        platform: 'linux',
+        probeDemuxerSupport: probe,
+      })
+    ).toBe('/opt/ffmpeg')
+    expect(probe).not.toHaveBeenCalled()
+  })
+
+  it('ignores a blank override', () => {
+    expect(
+      resolveCaptureFfmpegPath({
+        env: { SCREENCI_FFMPEG_PATH: '   ' },
+        platform: 'darwin',
+        probeDemuxerSupport: probeNever,
+      })
+    ).toBe(ffmpegPath)
+  })
+
+  it('uses the bundled binary on non-linux without probing', () => {
+    const probe = vi.fn().mockReturnValue(false)
+    expect(
+      resolveCaptureFfmpegPath({
+        env: {},
+        platform: 'darwin',
+        probeDemuxerSupport: probe,
+      })
+    ).toBe(ffmpegPath)
+    expect(probe).not.toHaveBeenCalled()
+  })
+
+  it('keeps the bundled binary on linux when it supports pulse', () => {
+    expect(
+      resolveCaptureFfmpegPath({
+        env: {},
+        platform: 'linux',
+        probeDemuxerSupport: probeAlways,
+      })
+    ).toBe(ffmpegPath)
+  })
+
+  it('falls back to a system ffmpeg when the bundled binary lacks pulse', () => {
+    const probe = vi.fn((path: string) => path === 'ffmpeg')
+    expect(
+      resolveCaptureFfmpegPath({
+        env: {},
+        platform: 'linux',
+        probeDemuxerSupport: probe,
+      })
+    ).toBe('ffmpeg')
+    expect(probe).toHaveBeenCalledWith(ffmpegPath, 'pulse')
+  })
+
+  it('keeps the bundled binary when neither has pulse (clear error downstream)', () => {
+    expect(
+      resolveCaptureFfmpegPath({
+        env: {},
+        platform: 'linux',
+        probeDemuxerSupport: probeNever,
+      })
+    ).toBe(ffmpegPath)
   })
 })
 
@@ -236,6 +308,9 @@ describe('startScreenAudioCapture', () => {
     const deps: ScreenAudioDeps = {
       spawn: spawnMock as unknown as typeof import('child_process').spawn,
       readFile: vi.fn(),
+      // Pin the binary so the assertion does not depend on host ffmpeg
+      // detection (resolveCaptureFfmpegPath is covered separately above).
+      ffmpegPath,
     }
 
     startScreenAudioCapture('/out.wav', deps)

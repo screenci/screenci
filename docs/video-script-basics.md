@@ -144,6 +144,31 @@ API reference: [hide()](/docs/reference/api/functions/hide). See also [Page
 Instrumentation](/docs/guides/page-instrumentation) for how visible actions are
 captured.
 
+### Positions: holding narration and overlays until a point in the video
+
+Narration cues and overlays can take a string position so they land at an
+absolute point in the finished video, instead of a relative duration. This is
+handy in long stretches (for example a recorded playback) where hand-computing
+`page.waitForTimeout` deltas is brittle.
+
+```ts
+// Narration: start the line and hold its window until the position.
+await narration.intro('0:10') // until 10 seconds in
+await narration.outro('56%') // until 56% through the video
+
+// Overlays: keep the (static) overlay on screen until the position.
+await overlays.tip('0:10') // until 10 seconds in
+await overlays.tip('2s') // seconds (fractions allowed: '5.51s')
+```
+
+Accepted forms: `'<n>s'` seconds, `'m:ss(.f)'` / `'h:mm:ss(.f)'` timecodes, and
+`'<n>%'` percentages. A bare number stays a relative length (overlay duration in
+ms). Positions are resolved against the finished render, so they are correct
+against the actual video, and narration audio is never cut (the window extends to
+let a line finish). Percentages are not supported on `.mp4` or animated overlays,
+whose length is fixed. See [Narration](/docs/guides/narration) and
+[Overlays](/docs/guides/overlays).
+
 ### `autoZoom()`
 
 Use `autoZoom()` when the camera should follow a visible interaction

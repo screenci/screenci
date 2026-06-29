@@ -392,6 +392,22 @@ await overlays.badge() // uses the config durationMs
 await overlays.badge(2000) // or override the duration in milliseconds
 ```
 
+**Until a position** keeps the overlay on a frozen frame until an absolute point
+in the finished video, instead of a relative duration. Pass a string position:
+
+```ts
+await overlays.tip('0:10') // visible until 10 seconds in
+await overlays.tip('2s') // seconds (fractions allowed: '5.51s')
+await overlays.tip('1:02:03.5') // h:mm:ss(.f) timecode
+await overlays.tip('56%') // until 56% through the video
+```
+
+Positions are resolved against the finished render, so they line up with the
+actual video. Supported for image, HTML, and React (static) overlays, and for
+embedded-render overlays. They are not supported for `.mp4` or animated overlays,
+whose length is fixed (use `start()`/`end()` for those). A position at or before
+where the overlay appears is ignored with a warning.
+
 **`start()` / `end()`** keeps the overlay on screen while the page keeps being
 driven underneath, so it stays live over your real interactions:
 

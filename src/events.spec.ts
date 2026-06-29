@@ -521,7 +521,7 @@ describe('EventRecorder', () => {
       )
       // narration defaults
       expect((ro.narration as Record<string, unknown>).size).toBe(0.3)
-      expect((ro.narration as Record<string, unknown>).roundness).toBe(0)
+      expect((ro.narration as Record<string, unknown>).roundness).toBe(0.2)
       expect((ro.narration as Record<string, unknown>).shape).toBe('rounded')
       expect((ro.narration as Record<string, unknown>).corner).toBe(
         'bottom-right'

@@ -371,7 +371,9 @@ type UploadAssetKind = 'overlay' | 'audio' | 'clip' | 'voice'
 const UPLOAD_ASSET_LABEL: Record<UploadAssetKind, string> = {
   overlay: 'Overlay',
   audio: 'Audio',
-  clip: 'Clip',
+  // A `videoCueStart` asset: a media file placed on the narration timeline
+  // (e.g. via `narration({ en: { intro: { media } } })`).
+  clip: 'Narration',
   voice: 'Voice',
 }
 

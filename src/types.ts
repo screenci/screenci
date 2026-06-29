@@ -255,7 +255,7 @@ export const RENDER_OPTIONS_DEFAULTS = {
   },
   narration: {
     size: 0.3,
-    roundness: 0,
+    roundness: 0.2,
     shape: 'rounded' as const,
     corner: 'bottom-right' as const,
     padding: 0.04,

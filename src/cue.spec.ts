@@ -217,6 +217,55 @@ describe('createNarration', () => {
     )
   })
 
+  it('passes an absolute string position as an outputMs anchor', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro('0:05')
+
+    expect(recorder.addCueStart).toHaveBeenCalledWith(
+      '',
+      'intro',
+      undefined,
+      expect.anything(),
+      undefined,
+      { outputMs: 5000 }
+    )
+  })
+
+  it('passes a percentage string position as a percent anchor', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro('50%')
+
+    expect(recorder.addCueStart).toHaveBeenCalledWith(
+      '',
+      'intro',
+      undefined,
+      expect.anything(),
+      undefined,
+      { percent: 0.5 }
+    )
+  })
+
+  it('does not pass an anchor for a plain (no-arg) cue call', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro()
+
+    expect(recorder.addCueStart).toHaveBeenCalledWith(
+      '',
+      'intro',
+      undefined,
+      expect.anything()
+    )
+  })
+
+  it('throws on an invalid string position', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await expect(cues.intro('soon')).rejects.toThrow(/invalid position/)
+  })
+
   it('throws when a cue name is reused in one recording', async () => {
     const first = createNarration({
       voice: { name: voices.Ava },

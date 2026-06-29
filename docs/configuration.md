@@ -205,7 +205,7 @@ Set shared `renderOptions` under `use` when you want consistent output styling:
 
 - `output.background`
 - `recording.size`, `recording.roundness`, `recording.dropShadow`
-- `narration.corner`, `narration.padding`, `narration.size`
+- `narration.corner`, `narration.padding`, `narration.size`, `narration.roundness` (0 = square, 1 = circle; defaults to 0.2)
 - `mouse.size`, `mouse.style` (`'white'` or `'black'` cursor)
 - `mouse.motionBlur` and `zoom.motionBlur` (motion blur strength, see below)
 

@@ -73,6 +73,21 @@ Use the cue markers intentionally:
 That is the main tool for overlapping speech with UI motion without losing
 control of the timeline.
 
+### Holding a cue until a position
+
+Pass a string position to hold the cue window until an absolute point in the
+finished video, instead of only until its audio ends:
+
+- `await narration.key('0:10')` holds until 10 seconds in.
+- `await narration.key('2s')` / `'5.51s'` use seconds (fractions allowed).
+- `await narration.key('1:02:03.5')` uses an `h:mm:ss(.f)` timecode.
+- `await narration.key('56%')` holds until 56% through the video.
+
+Positions are resolved against the finished render, so they line up with the
+actual video. The audio is never cut: if a line runs longer than the position,
+the window extends so it always finishes. A position that lands before the line
+even starts is ignored with a warning.
+
 Keep cues small. In practice, one sentence per cue is the safest default for
 timing, overlap control, and subtitle readability.
 
@@ -420,6 +435,24 @@ per cue, so unchanged cues are reused and only changed narration is synthesized
 again. Smaller cues keep the timeline easier to control and further reduce API
 cost when you revise only part of the script.
 
+### Automatic voice cleanup
+
+ElevenLabs accounts cap how many custom (cloned) voices they can hold. To keep
+that cap from silently filling up, ScreenCI cleans up after itself:
+
+- It only acts when a clone would otherwise fail because the account is at its
+  custom-voice limit. At that point ScreenCI deletes cloned voices it created but
+  no longer uses, then retries the clone.
+- It only ever deletes voices it created, named `ScreenCI:<language>:<file>` (for
+  example `ScreenCI:en:my-voice.mp3`), that are no longer referenced by any of
+  your renders. Your own voices and ElevenLabs premade voices are never touched.
+- Cleanup always works against the live voice list of the account behind the API
+  key used for that run, so it stays correct even if different runs use different
+  ElevenLabs accounts.
+
+As elsewhere, ScreenCI does not store your API key. It is used live only to clone,
+synthesize, list, and delete its own voices for your render.
+
 ### Clone a voice from an audio sample
 
 Instead of a `voiceId` from your account, you can clone a voice from a local
@@ -497,12 +530,15 @@ voices you are licensed to reproduce, in line with the ElevenLabs
 [voice cloning terms](https://elevenlabs.io/docs/product-guides/voices/voice-cloning).
 
 > **Note:** Your ElevenLabs account has a limit on how many custom voices it can
-> hold (the cap depends on your plan). When that limit is reached, cloning a new
-> voice fails and the render fails with it. If a render fails for this reason,
-> open the [Voices page](https://elevenlabs.io/app/voice-lab) in your ElevenLabs
-> account, delete custom voices you no longer need to free up slots, then re-run
-> the render. ScreenCI names cloned voices `ScreenCI:<language>:<file>` (for
-> example `ScreenCI:en:my-voice.mp3`), so they are easy to spot in the list.
+> hold (the cap depends on your plan). When that limit is reached, ScreenCI first
+> tries to free space automatically by deleting its own unused cloned voices and
+> retrying (see [Automatic voice cleanup](#automatic-voice-cleanup)). That only
+> removes voices named `ScreenCI:<language>:<file>` (for example
+> `ScreenCI:en:my-voice.mp3`) that ScreenCI no longer uses. If the account is
+> still full of other voices ScreenCI does not manage, the render fails. In that
+> case open the [Voices page](https://elevenlabs.io/app/voice-lab) in your
+> ElevenLabs account, delete custom voices you no longer need to free up slots,
+> then re-run the render.
 
 ## Manage narration from Studio
 

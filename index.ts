@@ -44,6 +44,7 @@ export type { ScreenCIPage, ScreenCILocator } from './src/types.js'
 // names is Studio-owned, an object carries code values. It surfaces through the
 // injected `narration` fixture.
 export type { NarrationCue, Cues, TopLevelVoiceConfig } from './src/cue.js'
+export type { TimelineOffset } from './src/timelineOffset.js'
 export type { LangNarrationOverride } from './src/voiceConfig.js'
 export type {
   EachVariant,

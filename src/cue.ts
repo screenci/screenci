@@ -2,10 +2,12 @@ import type {
   IEventRecorder,
   CueTranslation,
   RecordingCustomVoiceRef,
+  TimelineAnchorInput,
   VideoCueTranslation,
   VideoCueTranslationFile,
   VoiceLanguageMeta,
 } from './events.js'
+import { parseTimelineOffset, type TimelineOffset } from './timelineOffset.js'
 import {
   supportedLanguages,
   voices,
@@ -210,10 +212,22 @@ async function endActiveCue(): Promise<void> {
  * await page.goto('/dashboard')
  * await narration.nextStep.start()
  * await narration.nextStep.end()
+ *
+ * // Hold the cue until an absolute position in the final video:
+ * await narration.outro('1:05')   // until 1 minute 5 seconds
+ * await narration.outro('90%')    // until 90% through
  * ```
  */
 export type NarrationCue = {
+  /** No argument: play the line and block until its audio finishes. */
   (): Promise<void>
+  /**
+   * String position: start the line now and hold the cue window until this
+   * absolute point in the final video (a `'<n>s'`/timecode position, or a
+   * `'<n>%'` fraction). The audio is never cut: if it runs longer than the
+   * position, the window extends to let it finish.
+   */
+  (until: TimelineOffset): Promise<void>
   start(): Promise<void>
   end(): Promise<void>
 }
@@ -395,13 +409,65 @@ export function assertNarrationLanguagesMatch(
   )
 }
 
+/**
+ * Resolves a string narration position into the anchor passed to the recorder.
+ * Returns `undefined` for a no-arg call. Throws on a non-string value so a stray
+ * number (which narration does not accept) fails loudly instead of crashing in
+ * the parser.
+ */
+/**
+ * Builds the optional trailing `volume`/`until` arguments for the cue recorder
+ * methods. Kept positional and minimal (omit a trailing arg rather than pass
+ * `undefined`) so the recorded events, and the call shape itself, stay identical
+ * to before whenever no position or volume is set.
+ */
+type CueTrailingArgs = [
+  volume?: number | undefined,
+  until?: TimelineAnchorInput,
+]
+
+function cueTrailingArgs(
+  volume: number | undefined,
+  until: TimelineAnchorInput | undefined
+): CueTrailingArgs {
+  const tail: CueTrailingArgs = []
+  if (until !== undefined) {
+    tail[0] = volume
+    tail[1] = until
+  } else if (volume !== undefined) {
+    tail[0] = volume
+  }
+  return tail
+}
+
+function resolveCueAnchor(
+  until: TimelineOffset | undefined
+): TimelineAnchorInput | undefined {
+  if (until === undefined) return undefined
+  if (typeof until !== 'string') {
+    throw new Error(
+      `narration positions must be a string such as '0:05' or '56%', got ${typeof until}`
+    )
+  }
+  const parsed = parseTimelineOffset(until)
+  return parsed.kind === 'percent'
+    ? { percent: parsed.fraction }
+    : { outputMs: parsed.ms }
+}
+
 function createCueController(
   name: string,
-  emitStart: (recorder: IEventRecorder) => void | Promise<void>
+  emitStart: (
+    recorder: IEventRecorder,
+    until?: TimelineAnchorInput
+  ) => void | Promise<void>
 ): NarrationCue {
   let didRegisterName = false
 
-  const start = async (startedWithExplicitStart = true): Promise<void> => {
+  const start = async (
+    startedWithExplicitStart = true,
+    until?: TimelineAnchorInput
+  ): Promise<void> => {
     if (isInsideHide()) throw new Error('Cannot start narration inside hide()')
     const recorder = getRuntimeCueRecorder()
     const context = getScreenCIRuntimeContext()
@@ -413,7 +479,7 @@ function createCueController(
     const run = createActiveCueRun(startedWithExplicitStart)
     context.cue.activeCueName = name
     context.cue.activeCueRun = run
-    await emitStart(recorder)
+    await emitStart(recorder, until)
   }
 
   const end = async (): Promise<void> => {
@@ -433,8 +499,8 @@ function createCueController(
     await run.finished
   }
 
-  const cue = (async (): Promise<void> => {
-    await start(false)
+  const cue = (async (until?: TimelineOffset): Promise<void> => {
+    await start(false, resolveCueAnchor(until))
     sleepForCueFrameGap()
     await end()
   }) as NarrationCue
@@ -458,9 +524,9 @@ export function buildStudioNarrationCues(
 ): Record<string, NarrationCue> {
   const result: Record<string, NarrationCue> = {}
   for (const name of names) {
-    result[name] = createCueController(name, (recorder) => {
+    result[name] = createCueController(name, (recorder, until) => {
       sleepForCueFrameGap()
-      recorder.addStudioCueStart(name)
+      recorder.addStudioCueStart(name, until)
     })
   }
   return result
@@ -698,7 +764,7 @@ function buildCuesFromInput(
     }
 
     if (hasFileEntry) {
-      result[keyStr] = createCueController(keyStr, async (recorder) => {
+      result[keyStr] = createCueController(keyStr, async (recorder, until) => {
         const testFilePath = getScreenCIRuntimeContext().testFilePath
         for (const lang of langs) {
           recorder.registerVoiceForLang(lang, resolvedVoiceMeta.get(lang)!)
@@ -749,13 +815,11 @@ function buildCuesFromInput(
           undefined,
           undefined,
           videoTranslations,
-          // Spread so the volume arg is omitted entirely (not passed as
-          // undefined) when no per-cue volume was set.
-          ...(cueVolume !== undefined ? [cueVolume] : [])
+          ...cueTrailingArgs(cueVolume, until)
         )
       })
     } else {
-      result[keyStr] = createCueController(keyStr, async (recorder) => {
+      result[keyStr] = createCueController(keyStr, async (recorder, until) => {
         for (const lang of langs) {
           recorder.registerVoiceForLang(lang, resolvedVoiceMeta.get(lang)!)
         }
@@ -795,9 +859,7 @@ function buildCuesFromInput(
           keyStr,
           undefined,
           textTranslations,
-          // Spread so the volume arg is omitted entirely (not passed as
-          // undefined) when no per-cue volume was set.
-          ...(cueVolume !== undefined ? [cueVolume] : [])
+          ...cueTrailingArgs(cueVolume, until)
         )
       })
     }
@@ -905,9 +967,9 @@ export function buildLocalizedNarrationCues(
 
   for (const cueName of narration.cueNames) {
     if (studioSet.has(cueName)) {
-      result[cueName] = createCueController(cueName, (recorder) => {
+      result[cueName] = createCueController(cueName, (recorder, until) => {
         sleepForCueFrameGap()
-        recorder.addStudioCueStart(cueName)
+        recorder.addStudioCueStart(cueName, until)
       })
       continue
     }
@@ -948,72 +1010,82 @@ export function buildLocalizedNarrationCues(
     }
 
     if (hasFileEntry) {
-      result[cueName] = createCueController(cueName, async (recorder) => {
-        const testFilePath = getScreenCIRuntimeContext().testFilePath
-        const resolved = new Map(langs.map((lang) => [lang, resolveLang(lang)]))
-        for (const lang of langs) {
-          recorder.registerVoiceForLang(lang, resolved.get(lang)!.meta)
+      result[cueName] = createCueController(
+        cueName,
+        async (recorder, until) => {
+          const testFilePath = getScreenCIRuntimeContext().testFilePath
+          const resolved = new Map(
+            langs.map((lang) => [lang, resolveLang(lang)])
+          )
+          for (const lang of langs) {
+            recorder.registerVoiceForLang(lang, resolved.get(lang)!.meta)
+          }
+          const videoTranslations: Record<string, VideoCueTranslation> = {}
+          for (const lang of langs) {
+            const { value, voice, meta } = resolved.get(lang)!
+            if (value.kind === 'text') {
+              videoTranslations[lang] = {
+                text: value.text,
+                voice: await toRecordedVoice(voice),
+                ...translationVoiceFields(meta),
+                ...(value.language !== undefined &&
+                  value.language !== lang && { language: value.language }),
+              }
+            } else {
+              videoTranslations[lang] = await entryToVideoTranslation(
+                testFilePath,
+                {
+                  path: value.path,
+                  ...(value.subtitle !== undefined && {
+                    subtitle: value.subtitle,
+                  }),
+                }
+              )
+            }
+          }
+          sleepForCueFrameGap()
+          recorder.addVideoCueStart(
+            cueName,
+            undefined,
+            undefined,
+            undefined,
+            videoTranslations,
+            ...cueTrailingArgs(cueVolume, until)
+          )
         }
-        const videoTranslations: Record<string, VideoCueTranslation> = {}
-        for (const lang of langs) {
-          const { value, voice, meta } = resolved.get(lang)!
-          if (value.kind === 'text') {
-            videoTranslations[lang] = {
+      )
+    } else {
+      result[cueName] = createCueController(
+        cueName,
+        async (recorder, until) => {
+          const resolved = new Map(
+            langs.map((lang) => [lang, resolveLang(lang)])
+          )
+          for (const lang of langs) {
+            recorder.registerVoiceForLang(lang, resolved.get(lang)!.meta)
+          }
+          const textTranslations: Record<string, CueTranslation> = {}
+          for (const lang of langs) {
+            const { value, voice, meta } = resolved.get(lang)!
+            if (value.kind !== 'text') continue
+            textTranslations[lang] = {
               text: value.text,
               voice: await toRecordedVoice(voice),
               ...translationVoiceFields(meta),
               ...(value.language !== undefined &&
                 value.language !== lang && { language: value.language }),
             }
-          } else {
-            videoTranslations[lang] = await entryToVideoTranslation(
-              testFilePath,
-              {
-                path: value.path,
-                ...(value.subtitle !== undefined && {
-                  subtitle: value.subtitle,
-                }),
-              }
-            )
           }
+          sleepForCueFrameGap()
+          recorder.addCueStart(
+            '',
+            cueName,
+            undefined,
+            textTranslations,
+            ...cueTrailingArgs(cueVolume, until)
+          )
         }
-        sleepForCueFrameGap()
-        recorder.addVideoCueStart(
-          cueName,
-          undefined,
-          undefined,
-          undefined,
-          videoTranslations,
-          ...(cueVolume !== undefined ? [cueVolume] : [])
-        )
-      })
-    } else {
-      result[cueName] = createCueController(cueName, async (recorder) => {
-        const resolved = new Map(langs.map((lang) => [lang, resolveLang(lang)]))
-        for (const lang of langs) {
-          recorder.registerVoiceForLang(lang, resolved.get(lang)!.meta)
-        }
-        const textTranslations: Record<string, CueTranslation> = {}
-        for (const lang of langs) {
-          const { value, voice, meta } = resolved.get(lang)!
-          if (value.kind !== 'text') continue
-          textTranslations[lang] = {
-            text: value.text,
-            voice: await toRecordedVoice(voice),
-            ...translationVoiceFields(meta),
-            ...(value.language !== undefined &&
-              value.language !== lang && { language: value.language }),
-          }
-        }
-        sleepForCueFrameGap()
-        recorder.addCueStart(
-          '',
-          cueName,
-          undefined,
-          textTranslations,
-          ...(cueVolume !== undefined ? [cueVolume] : [])
-        )
-      })
+      )
     }
   }
 

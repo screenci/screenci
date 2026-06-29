@@ -1,6 +1,12 @@
 import type { Locator } from '@playwright/test'
 import type { NormalizedFeature } from './declare.js'
-import type { IEventRecorder, OverlayPlacement } from './events.js'
+import {
+  timelineAnchorFields,
+  type IEventRecorder,
+  type OverlayPlacement,
+  type TimelineAnchorInput,
+} from './events.js'
+import { parseTimelineOffset, type TimelineOffset } from './timelineOffset.js'
 import { overlayRect } from './overlayRect.js'
 import { captureCallerFile } from './callerFile.js'
 import { access, readFile } from 'fs/promises'
@@ -475,7 +481,15 @@ async function validateAssetPath(
  * ```
  */
 export type OverlayController = {
+  /** Number (or omitted): hold the overlay for `durationMs` (a relative length). */
   (durationMs?: number): Promise<void>
+  /**
+   * String position: keep the overlay visible until this absolute point in the
+   * final video (a `'<n>s'`/timecode position, or a `'<n>%'` fraction). Supported
+   * for image, HTML/React (static), and embedded-render overlays; not for `.mp4`
+   * or animated overlays, whose length is fixed.
+   */
+  (until: TimelineOffset): Promise<void>
   start(): Promise<void>
   end(): Promise<void>
 }
@@ -1023,8 +1037,25 @@ export function buildOverlays(
 }
 
 type AssetStartMode =
-  | { type: 'blocking'; durationMs?: number }
+  | { type: 'blocking'; durationMs?: number; until?: TimelineAnchorInput }
   | { type: 'live' }
+
+/**
+ * Resolves a string overlay position into the anchor recorded on the asset start.
+ * Throws on a non-string value so callers that meant a numeric duration are not
+ * silently misrouted into the parser.
+ */
+function resolveOverlayAnchor(until: TimelineOffset): TimelineAnchorInput {
+  if (typeof until !== 'string') {
+    throw new Error(
+      `overlay positions must be a string such as '0:10' or '56%', got ${typeof until}`
+    )
+  }
+  const parsed = parseTimelineOffset(until)
+  return parsed.kind === 'percent'
+    ? { percent: parsed.fraction }
+    : { outputMs: parsed.ms }
+}
 
 function createActiveAssetRun(
   startedWithExplicitStart: boolean
@@ -1089,14 +1120,15 @@ function createAssetControllerCore(
     await run.finished
   }
 
-  const controller = (async (durationMs?: number): Promise<void> => {
-    // A blocking overlay holds a frozen frame for a fixed duration. It never
-    // registers a live run and never ends overlays that are already live, so it
-    // can run while other overlays stay composited across the frozen frame.
-    const mode: AssetStartMode = {
-      type: 'blocking',
-      ...(durationMs !== undefined && { durationMs }),
-    }
+  const controller = (async (arg?: number | string): Promise<void> => {
+    // A blocking overlay holds a frozen frame. A number sets a fixed length; a
+    // string sets an absolute position to stay visible until (resolved at render).
+    // It never registers a live run and never ends overlays that are already
+    // live, so it can run while other overlays stay composited across the frame.
+    const mode: AssetStartMode =
+      typeof arg === 'string'
+        ? { type: 'blocking', until: resolveOverlayAnchor(arg) }
+        : { type: 'blocking', ...(arg !== undefined && { durationMs: arg }) }
     await validate()
     await prepare?.(mode)
     const recorder = getRuntimeAssetRecorder()
@@ -1137,19 +1169,25 @@ function createDependencyOverlayController(
     () => Promise.resolve(),
     (recorder, mode) => {
       let durationMs: number | undefined
+      let until: TimelineAnchorInput | undefined
       if (mode.type === 'blocking') {
-        durationMs = mode.durationMs ?? input.config.durationMs
-        if (durationMs === undefined) {
-          throw new Error(
-            `[screenci] Dependency overlay "${name}" needs a duration: pass one to the call (overlays.${name}(1000)), set durationMs in the config, or drive it with .start()/.end().`
-          )
+        if (mode.until !== undefined) {
+          until = mode.until
+        } else {
+          durationMs = mode.durationMs ?? input.config.durationMs
+          if (durationMs === undefined) {
+            throw new Error(
+              `[screenci] Dependency overlay "${name}" needs a duration: pass one to the call (overlays.${name}(1000)), a string position (overlays.${name}('0:05')), set durationMs in the config, or drive it with .start()/.end().`
+            )
+          }
+          validateDurationMs(name, `dependency overlay "${name}"`, durationMs)
         }
-        validateDurationMs(name, `dependency overlay "${name}"`, durationMs)
       }
       recorder.addAssetStart(name, {
         kind: 'dependency',
         dependency: { name: input.name },
         ...(durationMs !== undefined && { durationMs }),
+        ...timelineAnchorFields(until),
         fullScreen,
         ...(placement !== undefined && { placement }),
       })
@@ -1229,20 +1267,26 @@ function createRenderedOverlayController(
       // undefined (a fill-the-recording overlay emits no placement).
       if (skipped || resolvedHtml === undefined) return
       let durationMsForEvent: number | undefined
+      let until: TimelineAnchorInput | undefined
       if (mode.type === 'blocking') {
-        durationMsForEvent = mode.durationMs ?? durationMs
-        if (durationMsForEvent === undefined) {
-          throw new Error(
-            `[screenci] Overlay "${name}" needs a duration: pass one to the call (overlays.${name}(1000)), set durationMs in the config, or drive it with .start()/.end().`
-          )
+        if (mode.until !== undefined) {
+          until = mode.until
+        } else {
+          durationMsForEvent = mode.durationMs ?? durationMs
+          if (durationMsForEvent === undefined) {
+            throw new Error(
+              `[screenci] Overlay "${name}" needs a duration: pass one to the call (overlays.${name}(1000)), a string position (overlays.${name}('0:05')), set durationMs in the config, or drive it with .start()/.end().`
+            )
+          }
+          validateDurationMs(name, `overlay "${name}"`, durationMsForEvent)
         }
-        validateDurationMs(name, `overlay "${name}"`, durationMsForEvent)
       }
       recorder.addPendingAssetStart(name, {
         kind: 'image',
         ...(durationMsForEvent !== undefined && {
           durationMs: durationMsForEvent,
         }),
+        ...timelineAnchorFields(until),
         fullScreen,
         ...(resolvedPlacement !== undefined && {
           placement: resolvedPlacement,
@@ -1302,6 +1346,11 @@ function createAnimatedOverlayController(
 
   const resolveDurationMs = (mode: AssetStartMode): number => {
     if (mode.type === 'blocking') {
+      if (mode.until !== undefined) {
+        throw new Error(
+          `[screenci] Animated overlay "${name}" cannot use a string position (overlays.${name}('0:10')); its capture length must be fixed. Pass a durationMs, or drive it with .start()/.end() (with durationMs in the config).`
+        )
+      }
       const durationMs = mode.durationMs ?? configDurationMs
       if (durationMs === undefined) {
         throw new Error(
@@ -1656,24 +1705,36 @@ function toRecordedFileStart(
 ): Parameters<IEventRecorder['addAssetStart']>[1] {
   if (resolved.kind === 'image') {
     let durationMs: number | undefined
+    let until: TimelineAnchorInput | undefined
     if (mode.type === 'blocking') {
-      durationMs = mode.durationMs ?? resolved.durationMs
-      if (durationMs === undefined) {
-        throw new Error(
-          `[screenci] Overlay "${name}" (${resolved.path}) needs a duration: pass one to the call (overlays.${name}(1000)), set durationMs in the config, or drive it with .start()/.end().`
-        )
+      if (mode.until !== undefined) {
+        until = mode.until
+      } else {
+        durationMs = mode.durationMs ?? resolved.durationMs
+        if (durationMs === undefined) {
+          throw new Error(
+            `[screenci] Overlay "${name}" (${resolved.path}) needs a duration: pass one to the call (overlays.${name}(1000)), a string position (overlays.${name}('0:05')), set durationMs in the config, or drive it with .start()/.end().`
+          )
+        }
+        validateDurationMs(name, resolved.path, durationMs)
       }
-      validateDurationMs(name, resolved.path, durationMs)
     }
     return {
       kind: 'image',
       path: resolved.path,
       ...(durationMs !== undefined && { durationMs }),
+      ...timelineAnchorFields(until),
       fullScreen: resolved.fullScreen,
       ...(resolved.placement !== undefined && {
         placement: resolved.placement,
       }),
     }
+  }
+
+  if (mode.type === 'blocking' && mode.until !== undefined) {
+    throw new Error(
+      `[screenci] Overlay "${name}" (${resolved.path}) is a video and cannot use a string position (overlays.${name}('0:10')); a video overlay plays for its natural length. Drive it with .start()/.end() to control its window.`
+    )
   }
 
   return {

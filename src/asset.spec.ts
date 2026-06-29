@@ -105,6 +105,40 @@ describe('createOverlays', () => {
       })
     })
 
+    it('records an absolute string position as an outputMs anchor', async () => {
+      const overlays = createOverlays({ logo: { path: './logo.png' } })
+
+      await overlays.logo('0:10')
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
+        kind: 'image',
+        path: './logo.png',
+        untilOutputMs: 10000,
+        fullScreen: false,
+      })
+    })
+
+    it('records a percentage string position as a percent anchor', async () => {
+      const overlays = createOverlays({ logo: { path: './logo.png' } })
+
+      await overlays.logo('56%')
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
+        kind: 'image',
+        path: './logo.png',
+        untilPercent: 0.56,
+        fullScreen: false,
+      })
+    })
+
+    it('rejects a string position on a video overlay', async () => {
+      const overlays = createOverlays({ clip: { path: './clip.mp4' } })
+
+      await expect(overlays.clip('0:10')).rejects.toThrow(
+        /is a video and cannot use a string position/
+      )
+    })
+
     it('accepts a bare string path', async () => {
       const overlays = createOverlays({ logo: './logo.png' })
 
@@ -250,7 +284,7 @@ describe('createOverlays', () => {
       const overlays = createOverlays({ logo: { path: './logo.png' } })
 
       await expect(overlays.logo()).rejects.toThrow(
-        '[screenci] Overlay "logo" (./logo.png) needs a duration: pass one to the call (overlays.logo(1000)), set durationMs in the config, or drive it with .start()/.end().'
+        '[screenci] Overlay "logo" (./logo.png) needs a duration: pass one to the call (overlays.logo(1000)), a string position (overlays.logo(\'0:05\')), set durationMs in the config, or drive it with .start()/.end().'
       )
     })
 

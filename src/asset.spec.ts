@@ -1287,7 +1287,10 @@ describe('createOverlays', () => {
       )
     })
 
-    it('omits durationMs for a live start()/end()-driven animation', async () => {
+    it('emits the capture durationMs for a live start()/end()-driven animation', async () => {
+      // The renderer needs the capture length to play a live animated overlay
+      // out to its natural end, so it is emitted for live overlays too (not just
+      // blocking ones).
       const overlays = createOverlays({
         badge: {
           element: createElement('div', null, 'hi'),
@@ -1304,7 +1307,7 @@ describe('createOverlays', () => {
         durationMs?: number
       }
       expect(payload.kind).toBe('animation')
-      expect(payload.durationMs).toBeUndefined()
+      expect(payload.durationMs).toBe(1000)
     })
 
     it('throws when driven with start() and no config duration', async () => {

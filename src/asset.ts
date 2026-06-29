@@ -148,11 +148,11 @@ type OverlayVideoFields = {
   /**
    * Playback-rate multiplier for `.mp4` overlays. `2` plays the clip (and its
    * audio) twice as fast, `0.5` at half speed; `1` (the default) is the natural
-   * rate. Works like {@link speed} for a recording. For a blocking overlay
-   * (`await overlays.clip()`) this also shortens or lengthens the window it
-   * holds, so later content shifts; a live overlay (`start()`/`end()`) keeps
-   * its window and just plays the source faster/slower inside it. Mutually
-   * exclusive with {@link time}. Video overlays only.
+   * rate. Works like {@link speed} for a recording. It sets how long the (sped)
+   * clip plays for, whether driven by a blocking call (`await overlays.clip()`)
+   * or a live `start()`/`end()` window, since both play the clip out to its end
+   * (see {@link OverlayController}); use it (or {@link time}) to make a clip run
+   * shorter. Mutually exclusive with {@link time}. Video overlays only.
    */
   speed?: number
   /**
@@ -518,6 +518,14 @@ async function validateAssetPath(
  * (blocking). Use `start()`/`end()` to keep the overlay on screen while the page
  * is driven underneath.
  *
+ * For an overlay with an intrinsic length (a `.mp4` video, an embedded video
+ * dependency, or an animated HTML/React clip), `end()` lets the clip finish: if
+ * the media outlasts the live window, the remainder plays out over a frozen
+ * frame before the timeline continues, rather than being cut. To show less of
+ * such a clip, trim it (`start`/`end`/`speed`/`time`, or `selected(..., { end })`)
+ * rather than ending early. Length-less overlays (image, inline `html`, React)
+ * end exactly at `end()`.
+ *
  * Overlays may overlap: several can be live at once (interleaved, not just
  * nested), and a blocking overlay can run while others stay live. Each overlay
  * you `start()` must be `end()`ed before the video function returns, and the
@@ -564,7 +572,15 @@ export type OverlayController = {
    * monotonic (each at or after the previous timeline point).
    */
   until(position: TimelineOffset): Promise<void>
+  /** Show the overlay live over the recording (non-blocking); pair with `end()`. */
   start(): Promise<void>
+  /**
+   * Stop a live overlay. For a length-less overlay (image/HTML/React) it ends
+   * immediately. For an overlay with an intrinsic length (video / dependency /
+   * animated) whose media has not finished, the clip plays out to its natural
+   * end over a frozen frame before the timeline continues; trim the source to
+   * show less instead of ending early.
+   */
   end(): Promise<void>
 }
 
@@ -1539,7 +1555,11 @@ function createAnimatedOverlayController(
       if (skipped || resolved === undefined) return
       recorder.addPendingAssetStart(name, {
         kind: 'animation',
-        ...(mode.type === 'blocking' && { durationMs: resolved.durationMs }),
+        // Always carry the capture length, for blocking and live overlays alike.
+        // A live animated overlay plays out to this length (the renderer holds a
+        // frozen-frame tail when it is longer than the start()/end() window), so
+        // it needs the duration even when an assetEnd also bounds the window.
+        durationMs: resolved.durationMs,
         fullScreen,
         ...(resolved.placement !== undefined && {
           placement: resolved.placement,

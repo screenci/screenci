@@ -502,6 +502,13 @@ export type AnimationAssetStartEvent = {
   kind: 'animation'
   path: string
   fileHash?: string
+  /**
+   * Capture length of the animation. Present for both blocking and live
+   * (`start()`/`end()`) overlays: a live animated overlay plays out to this
+   * length, so the renderer needs it even though a paired assetEnd also bounds
+   * the window. (Optional only for forward/backward compatibility with older
+   * recordings, which omitted it for live overlays.)
+   */
   durationMs?: number
   fullScreen: boolean
   placement?: OverlayPlacement
@@ -533,7 +540,10 @@ export type OverlayDependencyRef = {
  *
  * It behaves like an {@link ImageAssetStartEvent} on the timeline (a blocking
  * call holds a frozen frame for `durationMs`; `start()`/`end()` drives a live
- * window). `durationMs` is omitted when driven by `start()`/`end()`.
+ * window). `durationMs` is omitted when driven by `start()`/`end()`. When the
+ * target resolves to a VIDEO, a live window plays the clip out to its natural
+ * end (the renderer probes the resolved output's length), so the embedded video
+ * is never cut short by an early end().
  */
 export type DependencyAssetStartEvent = {
   type: 'assetStart'
@@ -565,8 +575,11 @@ export type DependencyAssetStartEvent = {
 /**
  * End marker for an asset overlay driven by `start()`/`end()`. The asset is
  * visible from its `assetStart` until this event (a live overlay over the
- * recording, no frozen frame). `reason` mirrors cue ends: `'wait'` for an
- * explicit `end()`, `'auto'` when this one was auto-ended.
+ * recording, no frozen frame). For an overlay with an intrinsic length (a video
+ * or animated clip) whose media outlasts this window, the renderer plays the
+ * remainder out over a frozen-frame tail, so end() lets the clip finish rather
+ * than cutting it. `reason` mirrors cue ends: `'wait'` for an explicit `end()`,
+ * `'auto'` when this one was auto-ended.
  *
  * `name` identifies which overlay this end belongs to. Because overlays may
  * overlap (several live at once, interleaved rather than nested), ends are

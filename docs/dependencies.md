@@ -39,7 +39,7 @@ video.overlays({
 })
 ```
 
-A blocking dependency overlay holds for its natural length with a bare `overlays.name()` when the target is a video; a screenshot target has no natural length, so give it a duration (`.for(...)`, `.until(...)`, or a `duration` config) or drive it with `start()`/`end()`.
+A blocking dependency overlay holds for its natural length with a bare `overlays.name()` when the target is a video; a screenshot target has no natural length, so give it a duration (`.for(...)`, `.until(...)`, or a `duration` config) or drive it with `start()`/`end()`. When the target is a video, a `start()`/`end()` window also plays the embedded render out to its natural end: if it is longer than the window, the remainder plays over a frozen frame rather than being cut, so `end()` lets it finish. Trim it (`start`/`end`) to embed only a slice.
 
 A dependency also accepts `crop` (both video and screenshot targets) and `start`/`end` (video targets only), the same way a file overlay does:
 

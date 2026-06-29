@@ -67,7 +67,7 @@ Rules:
 - Image, HTML, and React overlays do not support `volume`.
 - `.mp4` overlays may provide `volume` (a linear gain). `1` (the default) plays the source at its natural level, `0` mutes it, and values above `1` boost it (e.g. `2` is twice as loud, up to `4`).
 - `.mp4` overlays use the file's natural duration and must not provide a `duration`.
-- `.mp4` overlays may provide `speed` or `time` to play the clip (and its audio) faster or slower. `speed` is a multiplier (`2` plays it twice as fast, `0.5` at half speed); `time` is a target playback duration in ms (the clip is sped up or slowed down to play over exactly that long). Set at most one. For a blocking call (`await overlays.intro()`) this also changes how long the overlay holds, so later content shifts; for a live overlay (`start()`/`end()`) the window stays put and only the playback rate changes. Image, HTML, and React overlays do not support `speed`/`time`.
+- `.mp4` overlays may provide `speed` or `time` to play the clip (and its audio) faster or slower. `speed` is a multiplier (`2` plays it twice as fast, `0.5` at half speed); `time` is a target playback duration in ms (the clip is sped up or slowed down to play over exactly that long). Set at most one. This sets how long the (sped) clip plays for, since both a blocking call (`await overlays.intro()`) and a live `start()`/`end()` window play the clip out to its end; later content shifts to make room. Use it (or trimming) to make a clip run shorter. Image, HTML, and React overlays do not support `speed`/`time`.
 
 ### Cropping a file overlay
 
@@ -271,8 +271,9 @@ How the animation is triggered and how long it runs:
 - **Length.** You set the length explicitly: use `.for('2s')` on the call or set
   `duration` in the config. When you drive an animated overlay with
   `start()`/`end()`, `duration` is required in the config (the capture length is
-  otherwise unknown); if the live window outlasts the clip, its last frame is
-  held.
+  otherwise unknown). If the live window outlasts the clip, its last frame is
+  held; if the clip outlasts the window, `end()` plays the remaining animation out
+  over a frozen frame before the timeline continues.
 - **`fps`** sets the capture frame rate (defaults to `30`) and only applies with
   `animate: true`.
 
@@ -475,6 +476,14 @@ await page.click('#next')
 await page.fill('#email', 'demo@example.com')
 await overlays.badge.end()
 ```
+
+For an overlay with an intrinsic length (a `.mp4` video, an embedded video
+dependency, or an [animated](#animated-overlays) HTML/React clip), `end()` lets
+the clip finish: if the media is longer than the live window, the remainder plays
+out over a frozen frame before the timeline continues, so the clip is never cut
+short by ending early. To show less of such a clip, trim it (`start`/`end`,
+`speed`/`time`, or `selected(..., { end })`) instead of calling `end()` sooner.
+Length-less overlays (image, inline `html`, React) end exactly at `end()`.
 
 Overlays can overlap. Several can be live at the same time, and a blocking
 overlay can run while others stay live, so you can layer them freely:

@@ -11,6 +11,7 @@ import {
   setSleepFn,
   validateCustomVoiceRefs,
   assertNarrationLanguagesMatch,
+  resetMissingNarrationAssetWarnings,
 } from './cue.js'
 import * as screenci from '../index.js'
 import { hide, setActiveHideRecorder } from './hide.js'
@@ -755,6 +756,8 @@ describe('createNarration', () => {
     })
 
     it('supports cue objects with text and media fields', async () => {
+      resetMissingNarrationAssetWarnings()
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
       const cues = createNarration({
         voice: { name: voices.Ava },
         en: {
@@ -768,9 +771,31 @@ describe('createNarration', () => {
         },
       })
 
-      await expect(cues.intro.start()).rejects.toThrow(
-        'Asset file not found: /tmp/intro-en.mp4'
+      // The media file is missing locally, so it is recorded without a hash
+      // (recovered from a previous upload at upload time) rather than failing.
+      await runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({
+          testFilePath: fileURLToPath(import.meta.url),
+        }),
+        async () => {
+          setActiveCueRecorder(recorder)
+          await expect(cues.intro.start()).resolves.toBeUndefined()
+        }
       )
+
+      const translations = (
+        recorder.addVideoCueStart as ReturnType<typeof vi.fn>
+      ).mock.calls[0]?.[4] as Record<string, unknown>
+      expect(translations.en).toEqual({
+        assetPath: '/tmp/intro-en.mp4',
+        subtitle: 'Intro subtitle',
+      })
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Locally missing narration media: /tmp/intro-en.mp4'
+        )
+      )
+      warnSpy.mockRestore()
     })
 
     it('allows custom voice refs before validation and resolves them at start', async () => {

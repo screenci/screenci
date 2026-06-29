@@ -8,6 +8,22 @@ export const SCREENCI_RECORD_OPTIONS_ENV = 'SCREENCI_RECORD_OPTIONS'
 export const SCREENCI_DISABLE_RECORDING_TIMINGS_ENV =
   'SCREENCI_DISABLE_RECORDING_TIMINGS'
 export const SCREENCI_DEBUG_TIMING_ENV = 'SCREENCI_DEBUG_TIMING'
+export const SCREENCI_UPLOAD_EXISTING_ENV = 'UPLOAD_EXISTING'
+
+/**
+ * When set, `screenci record` skips the Playwright recording run entirely and
+ * re-uploads whatever is already on disk under `.screenci`. Useful for resending
+ * the most recent local recordings when only the upload failed, without paying
+ * to re-record. Internal/debug-only: not surfaced as a documented flag.
+ */
+export function isUploadExistingEnabled(
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  return (
+    env[SCREENCI_UPLOAD_EXISTING_ENV] === 'true' ||
+    env[SCREENCI_UPLOAD_EXISTING_ENV] === '1'
+  )
+}
 
 /**
  * When set, screenci logs a per-phase timing breakdown for each interaction so

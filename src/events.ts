@@ -288,12 +288,16 @@ export type ValuesDeclareEvent = {
 
 /** File-based video cue translation. assetPath is present only in the local
  *  recording phase (for CLI upload) and is stripped before submitting to the backend. */
-export type VideoCueTranslationFile = {
-  assetHash: string
-  /** Local file path — present only during recording; stripped from submitted data. */
-  assetPath?: string
-  subtitle?: string
-}
+/**
+ * A file-based video cue translation. During recording it carries the local
+ * `assetPath` (with `assetHash` present only when the file was found locally);
+ * the path is stripped before submission, leaving just `assetHash`. The
+ * recovered-from-a-previous-upload case is the recording-phase shape with no
+ * `assetHash` yet (filled in from a previous upload before submission).
+ */
+export type VideoCueTranslationFile =
+  | { assetPath: string; assetHash?: string; subtitle?: string }
+  | { assetHash: string; assetPath?: string; subtitle?: string }
 /** TTS-based video cue translation — generates audio via text-to-speech. */
 export type VideoCueTranslationTTS = {
   text: string

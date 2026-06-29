@@ -83,10 +83,30 @@ export async function validateCustomVoiceRefs(
   // pre-validate here.
 }
 
+const warnedMissingAssetPaths = new Set<string>()
+
+function warnMissingNarrationAsset(assetPath: string): void {
+  if (warnedMissingAssetPaths.has(assetPath)) return
+  warnedMissingAssetPaths.add(assetPath)
+  logger.warn(
+    `Locally missing narration media: ${assetPath}. It will be reused from a previous upload of this video if available, otherwise the upload fails.`
+  )
+}
+
+export function resetMissingNarrationAssetWarnings(): void {
+  warnedMissingAssetPaths.clear()
+}
+
+/**
+ * Hashes a narration media file for upload and caching. Returns undefined when
+ * the file is absent locally: the asset is then recovered from a previous upload
+ * of this video (matched by path) at upload time, so a gitignored media file
+ * does not have to be committed. See resolveMissingUploadAssets in cli.ts.
+ */
 async function resolveAssetFileHash(
   assetPath: string,
   testFilePath: string | null
-): Promise<string> {
+): Promise<string | undefined> {
   const candidates = [assetPath]
   if (testFilePath !== null) {
     const testDir = dirname(testFilePath)
@@ -102,7 +122,7 @@ async function resolveAssetFileHash(
     }
   }
 
-  throw new Error(`Asset file not found: ${assetPath}`)
+  return undefined
 }
 
 async function toRecordedVoice(
@@ -110,8 +130,14 @@ async function toRecordedVoice(
 ): Promise<VoiceKey | RecordingCustomVoiceRef> {
   if (!isCustomVoiceRef(voice)) return voice
   const testFilePath = getScreenCIRuntimeContext().testFilePath
+  // A custom voice sample is read at record time to identify it for cloning, so
+  // unlike narration media it must be present locally.
+  const assetHash = await resolveAssetFileHash(voice.path, testFilePath)
+  if (assetHash === undefined) {
+    throw new Error(`Asset file not found: ${voice.path}`)
+  }
   return {
-    assetHash: await resolveAssetFileHash(voice.path, testFilePath),
+    assetHash,
     assetPath: voice.path,
   }
 }
@@ -873,8 +899,10 @@ async function entryToVideoTranslation(
 ): Promise<VideoCueTranslationFile> {
   const path = typeof entry === 'string' ? entry : entry.path
   const subtitle = typeof entry === 'string' ? undefined : entry.subtitle
+  const assetHash = await resolveAssetFileHash(path, testFilePath)
+  if (assetHash === undefined) warnMissingNarrationAsset(path)
   return {
-    assetHash: await resolveAssetFileHash(path, testFilePath),
+    ...(assetHash !== undefined && { assetHash }),
     assetPath: path,
     ...(subtitle !== undefined && { subtitle }),
   }

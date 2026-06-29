@@ -150,6 +150,11 @@ speech is generated. Changing it never regenerates the audio, and it is not a
 per-language setting: when more than one language sets a volume for the same cue,
 the first one wins.
 
+A `media` file is uploaded the first time you record with it present and reused
+on later runs, so you do not have to commit the file. If it is missing locally,
+ScreenCI reuses the version uploaded for this video (matched by file path). See
+[Asset files do not need to be committed](/docs/ci-setup#asset-files-do-not-need-to-be-committed).
+
 ## Voice per language and per cue
 
 The default voice for every language is set once with `renderOptions.narration.voice`

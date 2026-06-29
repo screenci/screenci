@@ -55,6 +55,12 @@ the file and placement for each name configured in the ScreenCI web app. See
 For per-language overlay files (e.g. a translated badge image), see
 [Languages](/docs/guides/languages).
 
+Overlay files (`.png`, `.mp4`, `.svg`) are uploaded the first time you record
+with them present and reused on later runs, so you do not have to commit the
+files. If a file is missing locally, ScreenCI reuses the version uploaded for
+this video (matched by the overlay's name). See
+[Asset files do not need to be committed](/docs/ci-setup#asset-files-do-not-need-to-be-committed).
+
 Rules:
 
 - HTML, React, `.svg`, and `.png` overlays need a `durationMs` for the blocking call form (set it in the config or pass it to the call, for example `await overlays.logo(1200)`). You can omit it when driving the overlay with `start()`/`end()`.

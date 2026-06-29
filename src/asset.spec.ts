@@ -12,7 +12,9 @@ import {
   setAssetSleepFn,
   validateRegisteredAssetPaths,
   resetRegisteredAssetPaths,
+  resetMissingOverlayWarnings,
 } from './asset.js'
+import { logger } from './logger.js'
 import {
   setAnimatedHtmlRasterizer,
   setHtmlRasterizer,
@@ -232,23 +234,36 @@ describe('createOverlays', () => {
       })
     })
 
-    it('fails when the overlay file is missing relative to the active test file', async () => {
+    it('reuses a missing overlay file from a previous upload instead of failing', async () => {
       const tempDir = await mkdtemp(join(tmpdir(), 'screenci-overlay-spec-'))
+      resetMissingOverlayWarnings()
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
       const overlays = createOverlays({
         logo: { path: './missing.png', durationMs: 1200 },
       })
 
       try {
-        await expect(
-          runWithScreenCIRuntimeContext(
-            createScreenCIRuntimeContext({
-              recorder,
-              testFilePath: join(tempDir, 'demo.screenci.ts'),
-            }),
-            () => overlays.logo()
-          )
-        ).rejects.toThrow('Asset file not found: ./missing.png')
+        await runWithScreenCIRuntimeContext(
+          createScreenCIRuntimeContext({
+            recorder,
+            testFilePath: join(tempDir, 'demo.screenci.ts'),
+          }),
+          () => overlays.logo()
+        )
+
+        // The overlay is recorded with no fileHash; the upload step recovers its
+        // identity from a previous upload of this video.
+        expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
+          kind: 'image',
+          path: './missing.png',
+          durationMs: 1200,
+          fullScreen: false,
+        })
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining('Locally missing overlay: ./missing.png')
+        )
       } finally {
+        warnSpy.mockRestore()
         await rm(tempDir, { recursive: true, force: true })
       }
     })
@@ -1598,8 +1613,10 @@ describe('validateRegisteredAssetPaths', () => {
     }
   })
 
-  it('throws "Asset file not found" when a registered file is missing', async () => {
+  it('warns but does not throw when a registered file is missing', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'screenci-asset-validate-'))
+    resetMissingOverlayWarnings()
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
     try {
       await writeFile(join(tempDir, 'logo.png'), 'png')
       const missing = join(tempDir, 'intro.mp4')
@@ -1608,10 +1625,16 @@ describe('validateRegisteredAssetPaths', () => {
         intro: { path: missing, fill: 'screen' },
       })
 
-      await expect(validateRegisteredAssetPaths(ownerFile)).rejects.toThrow(
-        `Asset file not found: ${missing}`
+      // A missing overlay file is recovered from a previous upload at upload
+      // time, so recording does not fail here.
+      await expect(
+        validateRegisteredAssetPaths(ownerFile)
+      ).resolves.toBeUndefined()
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`Locally missing overlay: ${missing}`)
       )
     } finally {
+      warnSpy.mockRestore()
       await rm(tempDir, { recursive: true, force: true })
     }
   })

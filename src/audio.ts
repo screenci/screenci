@@ -5,6 +5,7 @@ import { createHash } from 'crypto'
 import { dirname, resolve } from 'path'
 import { captureCallerFile } from './callerFile.js'
 import { isInsideHide } from './hide.js'
+import { logger } from './logger.js'
 import { MAX_AUDIO_LEVEL, validateSpeedTime } from './asset.js'
 import {
   getScreenCIRuntimeContext,
@@ -127,30 +128,47 @@ export function resetRegisteredAudioPaths(): void {
   registeredAudio.length = 0
 }
 
+const warnedMissingAudioPaths = new Set<string>()
+
+function warnMissingAudio(path: string): void {
+  if (warnedMissingAudioPaths.has(path)) return
+  warnedMissingAudioPaths.add(path)
+  logger.warn(
+    `Locally missing audio: ${path}. It will be reused from a previous upload of this video if available, otherwise the upload fails.`
+  )
+}
+
+export function resetMissingAudioWarnings(): void {
+  warnedMissingAudioPaths.clear()
+}
+
 /**
  * Validates the audio files declared by the `.screenci` script at
  * {@link testFilePath} (plus any unattributed registrations), resolving each
- * as-is and relative to that file. Throws "Audio file not found" on the first
- * missing file. Wired into the record flow so missing audio is caught before
- * the test body runs. Tracks attributed to a different test file are skipped.
+ * as-is and relative to that file. A missing file is not fatal: it is reused
+ * from a previous upload of this video (matched by path) at upload time, so a
+ * gitignored audio file does not have to be committed. Tracks attributed to a
+ * different test file are skipped.
  */
 export async function validateRegisteredAudioPaths(
   testFilePath: string | null
 ): Promise<void> {
   for (const { ownerFile, path } of registeredAudio) {
     if (ownerFile !== null && ownerFile !== testFilePath) continue
-    await resolveExistingAudioPath(path, testFilePath)
+    if ((await resolveExistingAudioPath(path, testFilePath)) === null) {
+      warnMissingAudio(path)
+    }
   }
 }
 
 /**
  * Resolves an audio file path to an existing path, trying it as-is and relative
- * to the test file. Throws "Audio file not found" when no candidate exists.
+ * to the test file. Returns null when no candidate exists.
  */
 async function resolveExistingAudioPath(
   path: string,
   testFilePath: string | null
-): Promise<string> {
+): Promise<string | null> {
   const candidates = [path]
   if (testFilePath !== null) {
     candidates.push(resolve(dirname(testFilePath), path))
@@ -163,7 +181,7 @@ async function resolveExistingAudioPath(
       // try next candidate
     }
   }
-  throw new Error(`[screenci] Audio file not found: ${path}`)
+  return null
 }
 
 export function setActiveAudioRecorder(recorder: IEventRecorder | null): void {
@@ -184,14 +202,15 @@ function hasAudioExtension(path: string): boolean {
 
 /**
  * Resolves an audio file path (as-is or relative to the test file) and returns
- * its absolute path plus a SHA-256 hash for upload/caching. Throws when the file
- * does not exist.
+ * its path plus a SHA-256 hash for upload/caching. When the file is absent the
+ * hash is undefined: the track is recovered from a previous upload of this video
+ * (matched by path) at upload time, so a gitignored audio file need not be
+ * committed.
  */
 async function resolveAudioFile(
-  name: string,
   path: string,
   testFilePath: string | null
-): Promise<{ path: string; fileHash: string }> {
+): Promise<{ path: string; fileHash?: string }> {
   const candidates = [path]
   if (testFilePath !== null) {
     candidates.push(resolve(dirname(testFilePath), path))
@@ -207,7 +226,8 @@ async function resolveAudioFile(
       // try next candidate
     }
   }
-  throw new Error(`[screenci] Audio file not found for "${name}": ${path}`)
+  warnMissingAudio(path)
+  return { path }
 }
 
 function normalizeAudioConfig(name: string, input: AudioInput): AudioConfig {
@@ -383,10 +403,10 @@ function buildAudioController(
 
   const buildPayload = async (): Promise<AudioStartPayload> => {
     const testFilePath = getScreenCIRuntimeContext().testFilePath
-    const resolved = await resolveAudioFile(name, config.path, testFilePath)
+    const resolved = await resolveAudioFile(config.path, testFilePath)
     return {
       path: resolved.path,
-      fileHash: resolved.fileHash,
+      ...(resolved.fileHash !== undefined && { fileHash: resolved.fileHash }),
       volume: config.volume ?? 1,
       repeat: config.repeat ?? false,
       ...(config.speed !== undefined && { speed: config.speed }),

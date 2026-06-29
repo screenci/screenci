@@ -9,6 +9,7 @@ deterministic CI environment.
 - [what the generated workflow does](#generated-workflow)
 - [which secret is required](#required-secret)
 - [how to keep CI recordings predictable](#keep-recordings-deterministic)
+- [why asset files do not need to be committed](#asset-files-do-not-need-to-be-committed)
 
 ## Generated workflow
 
@@ -116,6 +117,42 @@ For faster, smoother recordings:
     },
   },
   ```
+
+## Asset files do not need to be committed
+
+Overlay images and videos, background audio, and narration media (the files you
+reference with `video.overlays(...)`, `video.audio(...)`, and narration `media`
+cues) are uploaded to ScreenCI the first time you record with the files present. On
+later runs they are reused: ScreenCI matches each asset to the version uploaded
+for the same video (by file path, or by overlay name) and reuses it.
+
+That means you do not have to commit these (often large) media files to the
+repository. The `screenci init` scaffold gitignores the `recordings/assets/`
+folder for exactly this reason. A typical flow:
+
+1. Record locally once with the asset files present. The recording uploads them.
+2. Keep the files out of git (or delete them). The committed `.screenci.ts`
+   scripts still reference them by path.
+3. On CI, the files are absent. Recording does not fail: each missing asset is
+   logged (for example `Locally missing overlay, reusing the previously uploaded
+version`) and reused from the previous upload.
+
+If a referenced file is missing locally **and** no previously uploaded version
+exists for that video (for example a brand new overlay that has never been
+recorded with its file present), the upload fails with a clear message telling
+you to record once with the file present, or to commit it. This keeps a video
+from silently rendering without an overlay, audio track, or narration clip.
+
+Notes:
+
+- The match is per video and per project. Record a video at least once with each
+  asset present so a version exists to reuse.
+- Overlays are matched by their declared name, so renaming an overlay (or its
+  file) means the next record needs the file present again.
+- Custom voice sample files are the exception: they are read locally at record
+  time to identify the voice, so keep those committed or present.
+- This is independent of `.screenci/`, which is always gitignored and holds the
+  local recording output.
 
 ## Trigger recordings remotely
 

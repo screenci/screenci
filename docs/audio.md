@@ -53,3 +53,9 @@ Studio page instead of keeping them in the repository. See
 
 For per-language audio tracks (e.g. a locale-specific music bed), see
 [Languages](/docs/guides/languages).
+
+Audio files are uploaded the first time you record with them present and reused
+on later runs, so you do not have to commit the files. If a file is missing
+locally, ScreenCI reuses the version uploaded for this video (matched by file
+path). See
+[Asset files do not need to be committed](/docs/ci-setup#asset-files-do-not-need-to-be-committed).

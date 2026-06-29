@@ -165,11 +165,12 @@ export type CueEndEvent = {
   reason?: 'auto' | 'wait'
 }
 
-export type VideoCueTranslationFile = {
-  assetHash: string
-  assetPath?: string
-  subtitle?: string
-}
+// During recording this carries the local assetPath (assetHash present only when
+// the file was found locally); the path is stripped before submission, leaving
+// just assetHash.
+export type VideoCueTranslationFile =
+  | { assetPath: string; assetHash?: string; subtitle?: string }
+  | { assetHash: string; assetPath?: string; subtitle?: string }
 
 export type VideoCueTranslationTTS = {
   text: string

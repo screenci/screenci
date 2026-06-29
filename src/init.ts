@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import { existsSync, readFileSync, realpathSync, rmSync } from 'fs'
-import { appendFile, mkdir, readFile, writeFile } from 'fs/promises'
+import { appendFile, copyFile, mkdir, readFile, writeFile } from 'fs/promises'
 import { basename, delimiter, dirname, relative, resolve, sep } from 'path'
 import { fileURLToPath } from 'url'
 import { Command, CommanderError } from 'commander'
@@ -927,6 +927,34 @@ async function ensureSupportedYarnVersion(cwd: string): Promise<void> {
   }
 }
 
+// Resolve the bundled template logo PNG. It ships under the package's
+// `templates/` directory (declared in package.json "files"), so the same lookup
+// must work both from `src/init.ts` during tests and from the compiled
+// `dist/src/init.js` once published. tsc copies no binary assets, so resolve the
+// asset by an absolute path relative to this module's location, trying both
+// depths and returning the first that exists (mirroring the bundled-shim lookup
+// in cli.ts).
+export function resolveBundledLogoPath(): string {
+  const currentFileDir = dirname(fileURLToPath(import.meta.url))
+  const relativeAssetPath = ['templates', 'recordings', 'assets', 'logo.png']
+  const candidates = [
+    // From src/init.ts (tests): packages/screenci/templates/...
+    resolve(currentFileDir, '..', ...relativeAssetPath),
+    // From dist/src/init.js (published): packages/screenci/templates/...
+    resolve(currentFileDir, '..', '..', ...relativeAssetPath),
+  ]
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate
+    }
+  }
+
+  // Fall back to the src-relative path so callers get a clear ENOENT pointing at
+  // the expected location if the asset is somehow missing.
+  return candidates[0] ?? resolve(currentFileDir, '..', ...relativeAssetPath)
+}
+
 async function readCurrentScreenciVersion(): Promise<string> {
   const currentFileDir = dirname(fileURLToPath(import.meta.url))
   const packageJsonPaths = [
@@ -952,12 +980,20 @@ async function readCurrentScreenciVersion(): Promise<string> {
   return 'latest'
 }
 
-function generateGitignore(packageManager: PackageManager = 'npm'): string {
+export function generateGitignore(
+  packageManager: PackageManager = 'npm'
+): string {
   const yarnSection = packageManager === 'yarn' ? '\n# Yarn\n.yarn/\n' : ''
   return `# ScreenCI
 .screenci
 .playwright-cli/
 .env
+
+# Video asset media (overlays, audio, narration clips). These are uploaded to
+# the ScreenCI backend on first record and reused on later runs (CI included),
+# so the large media files do not need to be committed. Delete this rule if you
+# prefer to commit them.
+recordings/assets/
 
 # Playwright
 node_modules/
@@ -1248,20 +1284,32 @@ export function generateExampleVideo(): string {
 // The default voice (how narration is spoken) for every language.
 video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
 
-// Localized narration cues by language. The fixture exposes them as markers.
-video.narration({
-  en: {
-    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
-  },
-  es: {
-    docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
-  },
-})('How to find docs', async ({ page, narration }) => {
+// Localized narration cues by language, plus a brand intro overlay. The fixture
+// exposes narration markers and overlay controllers to the body.
+//
+// The logo image (recordings/assets/logo.png) is gitignored: it is uploaded to
+// the ScreenCI backend on the first record and reused on later runs (CI
+// included), so the binary does not need to be committed.
+video
+  .overlays({
+    logo: { path: './assets/logo.png', fill: 'recording', durationMs: 2000 },
+  })
+  .narration({
+    en: {
+      docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
+    },
+    es: {
+      docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
+    },
+  })('How to find docs', async ({ page, narration, overlays }) => {
   // Run setup without showing these actions in the final recording.
   await hide(async () => {
     await page.goto('https://screenci.com/')
     await page.waitForLoadState('networkidle')
   })
+
+  // Open with a brief brand intro card before the walkthrough begins.
+  await overlays.logo(2000)
 
   // Play the matching narration line for this step.
   await narration.docs()
@@ -1576,6 +1624,13 @@ export async function runInit(
   try {
     await mkdir(resolve(islandDir, 'recordings'), { recursive: true })
     islandCreated = true
+
+    // Ship the brand intro logo used by the example script. It lands in the
+    // gitignored assets folder: the example uploads it to the backend on first
+    // record and reuses it afterwards, so it need not be committed.
+    const assetsDir = resolve(islandDir, 'recordings', 'assets')
+    await mkdir(assetsDir, { recursive: true })
+    await copyFile(resolveBundledLogoPath(), resolve(assetsDir, 'logo.png'))
 
     await writeFile(
       resolve(islandDir, 'screenci.config.ts'),

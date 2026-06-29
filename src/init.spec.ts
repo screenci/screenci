@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -7,10 +15,12 @@ import {
   createInitLinkSession,
   generateConfig,
   generateExampleVideo,
+  generateGitignore,
   generateIslandReadme,
   generateIslandTsconfig,
   generateReactExampleVideo,
   parsePnpmVersionSupport,
+  resolveBundledLogoPath,
   toIslandPackageName,
 } from './init.js'
 
@@ -119,13 +129,60 @@ describe('generateExampleVideo', () => {
     expect(source).toContain(
       `video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })`
     )
-    expect(source)
-      .toContain(`// Localized narration cues by language. The fixture exposes them as markers.
-video.narration({
-  en: {`)
+    expect(source).toContain(`  .narration({
+    en: {`)
     // The all-languages default voice lives in use, not in the per-feature spec.
     expect(source).not.toContain('video.localize(')
     expect(source).not.toContain('createNarration')
+  })
+
+  it('declares a logo overlay and shows it as an intro card', () => {
+    const source = generateExampleVideo()
+    // The overlay is declared from the bundled, gitignored asset path.
+    expect(source).toContain('video\n  .overlays({')
+    expect(source).toContain(
+      "logo: { path: './assets/logo.png', fill: 'recording', durationMs: 2000 }"
+    )
+    // The body receives the overlay controllers and opens with the logo card.
+    expect(source).toContain(
+      "})('How to find docs', async ({ page, narration, overlays }) => {"
+    )
+    expect(source).toContain('await overlays.logo(2000)')
+    // A comment explains the asset is gitignored and need not be committed.
+    expect(source).toContain('is gitignored')
+  })
+})
+
+describe('generateGitignore', () => {
+  it('ignores the video asset media folder with an explanatory comment', () => {
+    const gitignore = generateGitignore()
+    expect(gitignore).toContain('recordings/assets/')
+    expect(gitignore).toContain('uploaded to')
+    // The path must match where the scaffold writes assets.
+    expect(gitignore).toContain('# Video asset media')
+  })
+})
+
+describe('resolveBundledLogoPath', () => {
+  it('resolves to an existing, non-empty logo.png', () => {
+    const logoPath = resolveBundledLogoPath()
+    expect(existsSync(logoPath)).toBe(true)
+    expect(path.basename(logoPath)).toBe('logo.png')
+    expect(statSync(logoPath).size).toBeGreaterThan(0)
+  })
+
+  it('copies a non-empty logo.png into recordings/assets (as the scaffold does)', () => {
+    const tempDir = mkdtempSync(path.join(tmpdir(), 'screenci-logo-'))
+    try {
+      const assetsDir = path.join(tempDir, 'recordings', 'assets')
+      mkdirSync(assetsDir, { recursive: true })
+      const target = path.join(assetsDir, 'logo.png')
+      copyFileSync(resolveBundledLogoPath(), target)
+      expect(existsSync(target)).toBe(true)
+      expect(statSync(target).size).toBeGreaterThan(0)
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true })
+    }
   })
 })
 

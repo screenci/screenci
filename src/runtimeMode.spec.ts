@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isTimingDebugEnabled,
+  isUploadExistingEnabled,
   mergeStudioRecordOptions,
   parseRecordOptions,
   parseRequestedLanguages,
@@ -52,6 +53,22 @@ describe('runtimeMode', () => {
 
     expect(shouldSimulateRecordingTimings(env)).toBe(true)
     expect(resolveRecordingTimingDuration(500, env)).toBe(500)
+  })
+
+  it('enables upload-existing only when UPLOAD_EXISTING is truthy', () => {
+    expect(isUploadExistingEnabled({} as NodeJS.ProcessEnv)).toBe(false)
+    expect(
+      isUploadExistingEnabled({ UPLOAD_EXISTING: 'true' } as NodeJS.ProcessEnv)
+    ).toBe(true)
+    expect(
+      isUploadExistingEnabled({ UPLOAD_EXISTING: '1' } as NodeJS.ProcessEnv)
+    ).toBe(true)
+    expect(
+      isUploadExistingEnabled({ UPLOAD_EXISTING: '0' } as NodeJS.ProcessEnv)
+    ).toBe(false)
+    expect(
+      isUploadExistingEnabled({ UPLOAD_EXISTING: 'false' } as NodeJS.ProcessEnv)
+    ).toBe(false)
   })
 })
 

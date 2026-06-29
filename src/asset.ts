@@ -9,6 +9,7 @@ import {
 import { parseTimelineOffset, type TimelineOffset } from './timelineOffset.js'
 import { overlayRect } from './overlayRect.js'
 import { captureCallerFile } from './callerFile.js'
+import { logger } from './logger.js'
 import { access, readFile } from 'fs/promises'
 import { dirname, resolve } from 'path'
 import { resolveRecordingTimingDuration } from './runtimeMode.js'
@@ -443,11 +444,32 @@ async function resolveExistingAssetPath(
   throw new Error(`Asset file not found: ${assetPath}`)
 }
 
+const warnedMissingOverlayPaths = new Set<string>()
+
+export function resetMissingOverlayWarnings(): void {
+  warnedMissingOverlayPaths.clear()
+}
+
+/**
+ * Checks that an overlay file exists. A missing file is not fatal: the overlay
+ * is recovered from a previous upload of this video (matched by name/path) at
+ * upload time, so a gitignored overlay file does not have to be committed. The
+ * overlay is composited by the renderer, not into the local recording, so a
+ * missing file does not change what is captured locally.
+ */
 async function validateAssetPath(
   assetPath: string,
   testFilePath: string | null
 ): Promise<void> {
-  await resolveExistingAssetPath(assetPath, testFilePath)
+  try {
+    await resolveExistingAssetPath(assetPath, testFilePath)
+  } catch {
+    if (warnedMissingOverlayPaths.has(assetPath)) return
+    warnedMissingOverlayPaths.add(assetPath)
+    logger.warn(
+      `Locally missing overlay: ${assetPath}. It will be reused from a previous upload of this video if available, otherwise the upload fails.`
+    )
+  }
 }
 
 /**

@@ -503,6 +503,285 @@ describe('CLI', () => {
     })
   })
 
+  describe('locally missing assets', () => {
+    const HASH_A = 'a'.repeat(64)
+    const HASH_B = 'b'.repeat(64)
+    const HASH_C = 'c'.repeat(64)
+    const HASH_D = 'd'.repeat(64)
+
+    it('marks a locally missing overlay for resolution from a previous upload', async () => {
+      const { collectUploadAssets } = await import('./cli')
+      mockReadFile.mockRejectedValue(new Error('ENOENT'))
+
+      const assets = await collectUploadAssets(
+        {
+          events: [
+            {
+              type: 'assetStart',
+              timeMs: 0,
+              name: 'logo',
+              kind: 'image',
+              path: './assets/logo.png',
+              fullScreen: false,
+            },
+          ],
+        } as unknown as RecordingData,
+        '/project'
+      )
+
+      expect(assets).toEqual([
+        {
+          kind: 'overlay',
+          fileHash: '',
+          path: './assets/logo.png',
+          name: 'logo',
+          size: 0,
+          needsResolve: true,
+        },
+      ])
+    })
+
+    it('treats a missing audio track with a known hash as already uploaded', async () => {
+      const { collectUploadAssets } = await import('./cli')
+      mockReadFile.mockRejectedValue(new Error('ENOENT'))
+
+      const assets = await collectUploadAssets(
+        {
+          events: [
+            {
+              type: 'audioStart',
+              timeMs: 0,
+              name: 'music',
+              path: './assets/music.mp3',
+              fileHash: HASH_A,
+              volume: 1,
+              repeat: false,
+            },
+          ],
+        } as unknown as RecordingData,
+        '/project'
+      )
+
+      expect(assets).toEqual([
+        {
+          kind: 'audio',
+          fileHash: HASH_A,
+          path: './assets/music.mp3',
+          size: 0,
+          assumedUploaded: true,
+        },
+      ])
+    })
+
+    it('marks a missing audio track without a hash for resolution', async () => {
+      const { collectUploadAssets } = await import('./cli')
+      mockReadFile.mockRejectedValue(new Error('ENOENT'))
+
+      const assets = await collectUploadAssets(
+        {
+          events: [
+            {
+              type: 'audioStart',
+              timeMs: 0,
+              name: 'music',
+              path: './assets/music.mp3',
+              volume: 1,
+              repeat: false,
+            },
+          ],
+        } as unknown as RecordingData,
+        '/project'
+      )
+
+      expect(assets).toEqual([
+        {
+          kind: 'audio',
+          fileHash: '',
+          path: './assets/music.mp3',
+          size: 0,
+          needsResolve: true,
+        },
+      ])
+    })
+
+    it('fills a resolved audio hash by path when annotating', async () => {
+      const { annotateRecordingDataWithAssetHashes } = await import('./cli')
+
+      const result = annotateRecordingDataWithAssetHashes(
+        {
+          events: [
+            {
+              type: 'audioStart',
+              timeMs: 0,
+              name: 'music',
+              path: './assets/music.mp3',
+              volume: 1,
+              repeat: false,
+            },
+          ],
+        } as unknown as RecordingData,
+        [
+          {
+            kind: 'audio',
+            fileHash: HASH_B,
+            path: './assets/music.mp3',
+            size: 10,
+            assumedUploaded: true,
+          },
+        ]
+      )
+
+      expect(result.events[0]).toMatchObject({
+        type: 'audioStart',
+        fileHash: HASH_B,
+      })
+    })
+
+    it('fills a resolved narration hash by path and strips the path', async () => {
+      const { annotateRecordingDataWithAssetHashes } = await import('./cli')
+
+      const result = annotateRecordingDataWithAssetHashes(
+        {
+          events: [
+            {
+              type: 'videoCueStart',
+              timeMs: 0,
+              name: 'intro',
+              translations: {
+                en: { assetPath: './assets/clip.mp4', subtitle: 'Hi' },
+              },
+            },
+          ],
+        } as unknown as RecordingData,
+        [
+          {
+            kind: 'clip',
+            fileHash: HASH_C,
+            path: './assets/clip.mp4',
+            size: 5,
+            assumedUploaded: true,
+          },
+        ]
+      )
+
+      const event = result.events[0] as {
+        translations: Record<string, unknown>
+      }
+      expect(event.translations.en).toEqual({
+        assetHash: HASH_C,
+        subtitle: 'Hi',
+      })
+    })
+
+    it('resolves missing assets against a previous upload and reports the rest', async () => {
+      const { resolveMissingUploadAssets } = await import('./cli')
+      const assets = [
+        {
+          kind: 'overlay' as const,
+          fileHash: '',
+          path: './assets/logo.png',
+          name: 'logo',
+          size: 0,
+          needsResolve: true,
+        },
+        {
+          kind: 'audio' as const,
+          fileHash: '',
+          path: './assets/music.mp3',
+          size: 0,
+          needsResolve: true,
+        },
+      ]
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({
+          resolved: [
+            {
+              path: './assets/logo.png',
+              name: 'logo',
+              fileHash: HASH_D,
+              size: 11,
+              contentType: 'image/png',
+            },
+            {
+              path: './assets/music.mp3',
+              name: null,
+              fileHash: null,
+              size: null,
+              contentType: null,
+            },
+          ],
+        }),
+        text: vi.fn().mockResolvedValue(''),
+      })
+
+      const unresolved = await resolveMissingUploadAssets(
+        assets,
+        'My Project',
+        'My Video',
+        'https://api.example.com',
+        'secret',
+        new AbortController().signal
+      )
+
+      expect(assets[0]).toEqual({
+        kind: 'overlay',
+        fileHash: HASH_D,
+        path: './assets/logo.png',
+        name: 'logo',
+        size: 11,
+        contentType: 'image/png',
+        needsResolve: false,
+        assumedUploaded: true,
+      })
+      expect(unresolved).toEqual([assets[1]])
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.com/cli/upload/resolve-assets',
+        expect.objectContaining({ method: 'POST' })
+      )
+    })
+
+    it('skips the resolve request when nothing is missing', async () => {
+      const { resolveMissingUploadAssets } = await import('./cli')
+      const unresolved = await resolveMissingUploadAssets(
+        [
+          {
+            kind: 'overlay',
+            fileHash: HASH_A,
+            path: './assets/logo.png',
+            name: 'logo',
+            size: 10,
+          },
+        ],
+        'My Project',
+        'My Video',
+        'https://api.example.com',
+        'secret',
+        new AbortController().signal
+      )
+      expect(unresolved).toEqual([])
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
+
+    it('formats an actionable message for unresolved assets', async () => {
+      const { formatUnresolvedAssetMessage } = await import('./cli')
+      const message = formatUnresolvedAssetMessage('My Video', [
+        {
+          kind: 'overlay',
+          fileHash: '',
+          path: './assets/logo.png',
+          name: 'logo',
+          size: 0,
+        },
+      ])
+      expect(message).toContain('missing locally and no previously uploaded')
+      expect(message).toContain('Overlay: ./assets/logo.png')
+      expect(message).toContain('Record once with these files present')
+    })
+  })
+
   describe('withUploadRetry', () => {
     it('returns the result when the first attempt succeeds', async () => {
       const { withUploadRetry } = await import('./cli')

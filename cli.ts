@@ -39,6 +39,7 @@ import {
   SCREENCI_LANGUAGES_ENV,
   SCREENCI_VALUES_OVERRIDES_ENV,
   SCREENCI_RECORD_OPTIONS_ENV,
+  isUploadExistingEnabled,
 } from './src/runtimeMode.js'
 import { DEFAULT_RECORD_UPLOAD_POLICY } from './src/defaults.js'
 import type { VoiceKey } from './src/voices.js'
@@ -389,6 +390,16 @@ type PreparedUploadAsset = {
   // Used for per-recording ephemeral captures (screen audio) that are never
   // shared across recordings and must not be silently skipped.
   alwaysUpload?: boolean
+  // The local file was absent when assets were collected, so its bytes (and, for
+  // overlays, its content hash) are not available. The asset's identity must be
+  // recovered from a previous upload of this video (matched by path/name) before
+  // the recording is started. Once recovered, fileHash/size/contentType are
+  // filled in and `assumedUploaded` is set. See resolveMissingUploadAssets.
+  needsResolve?: boolean
+  // Set once a missing local file has been matched to a previously uploaded
+  // asset. The asset is referenced by its known hash with no local bytes; the
+  // backend existence check confirms it is still stored.
+  assumedUploaded?: boolean
 }
 
 type UploadCandidate = {
@@ -592,10 +603,14 @@ async function loadUploadCandidate(
     resolve(screenciDir, '..')
   )
 
+  // The recording data is annotated with asset hashes later, in
+  // uploadRecordingCandidate, after any locally missing assets have been
+  // resolved against a previous upload. Annotating here would strip the asset
+  // paths the resolve step needs to match on.
   return {
     entry,
     videoName,
-    data: annotateRecordingDataWithAssetHashes(data, preparedUploadAssets),
+    data,
     preparedUploadAssets,
   }
 }
@@ -617,7 +632,7 @@ async function uploadRecordingCandidate(
   recordId: string,
   expectedScreenshotCount: number
 ): Promise<UploadJobResult> {
-  const { entry, videoName, data, preparedUploadAssets } = candidate
+  const { entry, videoName, data: rawData, preparedUploadAssets } = candidate
   let projectId: string | null = null
   let videoId: string | null = null
   let plan: OrgPlan | null = null
@@ -627,9 +642,9 @@ async function uploadRecordingCandidate(
     // A screenshot recording uploads its raw page capture (always a PNG) through
     // the same recording endpoint a video uses; the renderer reads those bytes as
     // the capture. Videos upload recording.mp4. Output kind defaults to 'video'.
-    const isScreenshot = data.output === 'screenshot'
+    const isScreenshot = rawData.output === 'screenshot'
     const recordingFileName = isScreenshot
-      ? (data.screenshot?.path ?? 'screenshot.png')
+      ? (rawData.screenshot?.path ?? 'screenshot.png')
       : 'recording.mp4'
     const recordingContentType = isScreenshot ? 'image/png' : 'video/mp4'
     const recordingPath = resolve(screenciDir, entry, recordingFileName)
@@ -644,6 +659,36 @@ async function uploadRecordingCandidate(
         recordId,
       }
     }
+
+    // Locally missing assets (e.g. gitignored media on CI) carry no bytes and,
+    // for overlays, no hash. Recover their identity from a previous upload of
+    // this video before starting, so the recording data references them by hash
+    // and the backend existence check confirms they are still stored.
+    const unresolved = await resolveMissingUploadAssets(
+      preparedUploadAssets,
+      projectName,
+      videoName,
+      apiUrl,
+      secret,
+      uploadAbort.signal,
+      progressReporter
+    )
+    if (unresolved.length > 0) {
+      progressReporter.complete(progressIndex, 'failure')
+      return {
+        projectId: null,
+        videoId: null,
+        hadFailure: true,
+        videoName,
+        failureMessage: formatUnresolvedAssetMessage(videoName, unresolved),
+        recordId,
+      }
+    }
+
+    const data = annotateRecordingDataWithAssetHashes(
+      rawData,
+      preparedUploadAssets
+    )
 
     const recordingHash = await hashFile(recordingPath)
     const startResponse = await withUploadRetry(
@@ -1235,23 +1280,32 @@ async function prepareCustomVoiceAssets(
       const existingHash = refs.find(
         (ref) => typeof ref.assetHash === 'string'
       )?.assetHash
-      if (!existingHash) {
-        throw new Error(
-          `Custom voice file not found and no cached assetHash available: ${voicePath}`
-        )
+      if (existingHash) {
+        // The recording already carries this voice's content hash, so reference
+        // it by that hash. The backend check confirms it is still stored.
+        for (const ref of refs) {
+          ref.assetHash = existingHash
+        }
+        preparedAssets.push({
+          kind: 'voice',
+          fileHash: existingHash,
+          path: voicePath,
+          size: 0,
+          contentType: contentTypeForPath(voicePath),
+          assumedUploaded: true,
+        })
+        continue
       }
-      logger.warn(
-        `Custom voice file not found locally, assuming previously uploaded recording asset is valid: ${voicePath}`
-      )
-      for (const ref of refs) {
-        ref.assetHash = existingHash
-      }
+      // No cached hash either. Recover the voice's identity from a previous
+      // upload of this video, matched by path. resolveMissingUploadAssets fills
+      // in the hash and writes it back onto the cue refs.
       preparedAssets.push({
         kind: 'voice',
-        fileHash: existingHash,
+        fileHash: '',
         path: voicePath,
         size: 0,
         contentType: contentTypeForPath(voicePath),
+        needsResolve: true,
       })
       continue
     }
@@ -1310,7 +1364,16 @@ export async function collectUploadAssets(
         sourceFilePath
       )
       if (resolvedFile === null) {
-        logger.warn(`Overlay file not found, skipping upload: ${event.path}`)
+        // The local file is gone (e.g. gitignored media on CI). Reference it so
+        // its identity can be recovered from a previous upload of this video.
+        assets.set(`name:${event.name}`, {
+          kind: 'overlay',
+          fileHash: '',
+          path: event.path,
+          name: event.name,
+          size: 0,
+          needsResolve: true,
+        })
         continue
       }
       const { buffer: fileBuffer, resolvedPath } = resolvedFile
@@ -1329,19 +1392,48 @@ export async function collectUploadAssets(
     if (event.type === 'audioStart') {
       // Studio audio tracks have no local file.
       if ('studio' in event && event.studio === true) continue
-      if (!event.fileHash || assets.has(`hash:${event.fileHash}`)) continue
+      // Prefer the record-time content hash as the dedup key; a missing local
+      // file may have been emitted without one, so fall back to the path.
+      const dedupKey = event.fileHash
+        ? `hash:${event.fileHash}`
+        : `path:${event.path}`
+      if (assets.has(dedupKey)) continue
       const resolvedFile = await readRecordingFile(
         event.path,
         configDir,
         sourceFilePath
       )
       if (resolvedFile === null) {
-        logger.warn(`Audio file not found, skipping upload: ${event.path}`)
+        // The local file is gone. If the recording still carries its content
+        // hash, reference it by that hash (the backend check confirms it is
+        // stored). Otherwise recover its identity from a previous upload by path.
+        // Captured screen audio (`__screen`) is per-recording and can never be
+        // recovered from a prior upload, so it is simply skipped when missing.
+        if (event.fileHash) {
+          assets.set(dedupKey, {
+            kind: 'audio',
+            fileHash: event.fileHash,
+            path: event.path,
+            size: 0,
+            assumedUploaded: true,
+            ...(event.name === '__screen' && { alwaysUpload: true }),
+          })
+        } else if (event.name !== '__screen') {
+          assets.set(dedupKey, {
+            kind: 'audio',
+            fileHash: '',
+            path: event.path,
+            size: 0,
+            needsResolve: true,
+          })
+        }
         continue
       }
-      assets.set(`hash:${event.fileHash}`, {
+      assets.set(dedupKey, {
         kind: 'audio',
-        fileHash: event.fileHash,
+        fileHash:
+          event.fileHash ??
+          createHash('sha256').update(resolvedFile.buffer).digest('hex'),
         path: event.path,
         size: resolvedFile.buffer.byteLength,
         fileBuffer: resolvedFile.buffer,
@@ -1370,44 +1462,86 @@ export async function collectUploadAssets(
           fileHash: event.assetHash,
           path: event.assetPath ?? event.assetHash,
           size: resolvedFile?.buffer.byteLength ?? 0,
-          ...(resolvedFile !== null && {
-            fileBuffer: resolvedFile.buffer,
-            contentType: contentTypeForPath(resolvedFile.resolvedPath),
-          }),
+          ...(resolvedFile !== null
+            ? {
+                fileBuffer: resolvedFile.buffer,
+                contentType: contentTypeForPath(resolvedFile.resolvedPath),
+              }
+            : { assumedUploaded: true }),
         })
+      } else if (
+        typeof event.assetHash !== 'string' &&
+        typeof event.assetPath === 'string' &&
+        !assets.has(`path:${event.assetPath}`)
+      ) {
+        // The media file was gone at record time, so it carries no hash. Recover
+        // its identity from a previous upload of this video, matched by path.
+        const resolvedFile = await readRecordingFile(
+          event.assetPath,
+          configDir,
+          sourceFilePath
+        )
+        if (resolvedFile === null) {
+          assets.set(`path:${event.assetPath}`, {
+            kind: 'clip',
+            fileHash: '',
+            path: event.assetPath,
+            size: 0,
+            needsResolve: true,
+          })
+        }
       }
 
       // Multi-language: each translation carries its own hash
       if (event.translations) {
         for (const translation of Object.values(event.translations)) {
-          if (
-            typeof translation === 'object' &&
-            translation !== null &&
+          if (typeof translation !== 'object' || translation === null) continue
+          const assetHash =
             'assetHash' in translation &&
-            typeof translation.assetHash === 'string' &&
-            !assets.has(`hash:${translation.assetHash}`)
-          ) {
+            typeof translation.assetHash === 'string'
+              ? translation.assetHash
+              : undefined
+          const assetPath =
+            'assetPath' in translation &&
+            typeof translation.assetPath === 'string'
+              ? translation.assetPath
+              : undefined
+          if (assetHash !== undefined) {
+            if (assets.has(`hash:${assetHash}`)) continue
             const resolvedFile =
-              'assetPath' in translation &&
-              typeof translation.assetPath === 'string'
-                ? await readRecordingFile(
-                    translation.assetPath,
-                    configDir,
-                    sourceFilePath
-                  )
+              assetPath !== undefined
+                ? await readRecordingFile(assetPath, configDir, sourceFilePath)
                 : null
-            assets.set(`hash:${translation.assetHash}`, {
+            assets.set(`hash:${assetHash}`, {
               kind: 'clip',
-              fileHash: translation.assetHash,
-              path:
-                (translation as { assetPath?: string }).assetPath ??
-                translation.assetHash,
+              fileHash: assetHash,
+              path: assetPath ?? assetHash,
               size: resolvedFile?.buffer.byteLength ?? 0,
-              ...(resolvedFile !== null && {
-                fileBuffer: resolvedFile.buffer,
-                contentType: contentTypeForPath(resolvedFile.resolvedPath),
-              }),
+              ...(resolvedFile !== null
+                ? {
+                    fileBuffer: resolvedFile.buffer,
+                    contentType: contentTypeForPath(resolvedFile.resolvedPath),
+                  }
+                : { assumedUploaded: true }),
             })
+          } else if (
+            assetPath !== undefined &&
+            !assets.has(`path:${assetPath}`)
+          ) {
+            const resolvedFile = await readRecordingFile(
+              assetPath,
+              configDir,
+              sourceFilePath
+            )
+            if (resolvedFile === null) {
+              assets.set(`path:${assetPath}`, {
+                kind: 'clip',
+                fileHash: '',
+                path: assetPath,
+                size: 0,
+                needsResolve: true,
+              })
+            }
           }
         }
       }
@@ -1422,10 +1556,18 @@ export async function collectUploadAssets(
 }
 
 export function stripVoicePath(
-  voice: VoiceKey | RecordingCustomVoiceRef
+  voice: VoiceKey | RecordingCustomVoiceRef,
+  byPath?: Map<string, string>
 ): VoiceKey | RecordingCustomVoiceRef {
   if (typeof voice !== 'string') {
-    return { assetHash: voice.assetHash }
+    // A voice recovered from a previous upload has no record-time assetHash; fill
+    // it in from the resolved-by-path map before the path is dropped.
+    const assetHash =
+      voice.assetHash ??
+      (byPath !== undefined && typeof voice.assetPath === 'string'
+        ? byPath.get(voice.assetPath)
+        : undefined)
+    return { assetHash: assetHash as string }
   }
   return voice
 }
@@ -1434,16 +1576,31 @@ export function annotateRecordingDataWithAssetHashes(
   data: RecordingData,
   assets: PreparedUploadAsset[]
 ): RecordingData {
+  // Overlays are matched to their hash by name; every other asset kind (audio,
+  // narration clip, custom voice) is matched by its file path. Skip placeholder
+  // hashes that were never resolved so a missing entry stays untouched.
   const byName = new Map<string, string>()
+  const byPath = new Map<string, string>()
   for (const asset of assets) {
+    if (asset.fileHash.length === 0) continue
     if (typeof asset.name === 'string') byName.set(asset.name, asset.fileHash)
+    byPath.set(asset.path, asset.fileHash)
   }
 
   return {
     ...data,
     events: data.events.map((event) => {
       if (event.type === 'assetStart') {
-        const fileHash = byName.get(event.name)
+        if ('studio' in event || 'dependency' in event) return event
+        const fileHash = byName.get(event.name) ?? event.fileHash
+        return fileHash ? { ...event, fileHash } : event
+      }
+
+      if (event.type === 'audioStart') {
+        // Studio audio tracks carry no local path; leave them untouched.
+        if (!('path' in event)) return event
+        if (event.fileHash) return event
+        const fileHash = byPath.get(event.path)
         return fileHash ? { ...event, fileHash } : event
       }
 
@@ -1457,7 +1614,7 @@ export function annotateRecordingDataWithAssetHashes(
               language,
               {
                 ...translation,
-                voice: stripVoicePath(translation.voice),
+                voice: stripVoicePath(translation.voice, byPath),
               } as typeof translation,
             ]
           })
@@ -1467,14 +1624,23 @@ export function annotateRecordingDataWithAssetHashes(
 
       if (event.type !== 'videoCueStart') return event
 
-      // Strip assetPath from translations — hash was already computed during recording
+      // Strip assetPath from translations. The hash was either computed during
+      // recording or recovered from a previous upload (matched by that path).
       if (event.translations) {
         const translations = Object.fromEntries(
           Object.entries(event.translations).map(([language, translation]) => {
-            if ('assetHash' in translation) {
-              const { assetPath: _removed, ...rest } =
-                translation as VideoCueTranslationFile
-              return [language, rest]
+            if ('assetHash' in translation || 'assetPath' in translation) {
+              const file = translation as VideoCueTranslationFile
+              const assetHash =
+                file.assetHash ??
+                (file.assetPath !== undefined
+                  ? byPath.get(file.assetPath)
+                  : undefined)
+              const { assetPath: _removed, ...rest } = file
+              return [
+                language,
+                assetHash !== undefined ? { ...rest, assetHash } : rest,
+              ]
             }
             if ('voice' in translation) {
               return [
@@ -1482,7 +1648,7 @@ export function annotateRecordingDataWithAssetHashes(
                 {
                   ...translation,
                   ...(translation.voice !== undefined
-                    ? { voice: stripVoicePath(translation.voice) }
+                    ? { voice: stripVoicePath(translation.voice, byPath) }
                     : {}),
                 },
               ]
@@ -1493,10 +1659,16 @@ export function annotateRecordingDataWithAssetHashes(
         return { ...event, translations }
       }
 
-      // Single-language: strip assetPath, keep assetHash
-      if (typeof event.assetHash === 'string') {
+      // Single-language: keep the assetHash (recovering it by path if needed) and
+      // drop the now-redundant assetPath.
+      const assetHash =
+        event.assetHash ??
+        (typeof event.assetPath === 'string'
+          ? byPath.get(event.assetPath)
+          : undefined)
+      if (typeof assetHash === 'string') {
         const { assetPath: _removed, ...rest } = event
-        return rest
+        return { ...rest, assetHash }
       }
 
       return event
@@ -1578,6 +1750,120 @@ export function displayAssetPath(assetPath: string): string {
   return rel.length > 0 ? rel : assetPath
 }
 
+type ResolveAssetRef = { path: string; name?: string | null; kind: string }
+
+type ResolveAssetResult = {
+  path: string
+  name?: string | null
+  fileHash: string | null
+  size: number | null
+  contentType: string | null
+}
+
+/**
+ * The backend's response to a resolve-assets request. Each entry is aligned to
+ * the request's `assets` array; a null `fileHash` means no previously uploaded
+ * version of that asset was found for this video.
+ */
+export type ResolveAssetsResponse = { resolved: ResolveAssetResult[] }
+
+/**
+ * Recovers the identity of assets whose local file was absent during collection
+ * (no bytes, and for overlays no hash) by matching them, by path or name,
+ * against a previous upload of the same video. Each resolved asset is mutated in
+ * place: its `fileHash`, `size`, and `contentType` are filled in and it is
+ * flagged `assumedUploaded` so the later existence check confirms the bytes are
+ * still stored rather than trying to upload absent bytes.
+ *
+ * Returns the assets that could not be resolved (no previous version), so the
+ * caller can fail the recording with actionable guidance.
+ */
+export async function resolveMissingUploadAssets(
+  assets: PreparedUploadAsset[],
+  projectName: string,
+  videoName: string,
+  apiUrl: string,
+  secret: string,
+  signal: AbortSignal,
+  progressReporter?: { info: (message: string) => void }
+): Promise<PreparedUploadAsset[]> {
+  const pending = assets.filter((asset) => asset.needsResolve === true)
+  if (pending.length === 0) return []
+
+  const refs: ResolveAssetRef[] = pending.map((asset) => ({
+    path: asset.path,
+    ...(typeof asset.name === 'string' ? { name: asset.name } : {}),
+    kind: asset.kind,
+  }))
+
+  const res = await withUploadRetry(
+    () =>
+      fetch(`${apiUrl}/cli/upload/resolve-assets`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-ScreenCI-Secret': secret,
+        },
+        body: JSON.stringify({ projectName, videoName, assets: refs }),
+        signal,
+      }),
+    signal
+  )
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new UploadAssetError(
+      `Failed to resolve previously uploaded assets for "${videoName}": ${res.status} ${text}${hint401(res.status, secret)}`
+    )
+  }
+
+  const body = (await res.json()) as ResolveAssetsResponse
+  const resolved = Array.isArray(body.resolved) ? body.resolved : []
+  const logInfo = (message: string) => {
+    if (progressReporter) progressReporter.info(message)
+    else logger.info(message)
+  }
+
+  const unresolved: PreparedUploadAsset[] = []
+  pending.forEach((asset, index) => {
+    const match = resolved[index]
+    if (match && typeof match.fileHash === 'string') {
+      asset.fileHash = match.fileHash
+      asset.size = match.size ?? 0
+      if (typeof match.contentType === 'string') {
+        asset.contentType = match.contentType
+      }
+      asset.needsResolve = false
+      asset.assumedUploaded = true
+      logInfo(
+        `${pc.green('✔')} Locally missing ${UPLOAD_ASSET_LABEL[asset.kind].toLowerCase()}, reusing the previously uploaded version: ${displayAssetPath(asset.path)}`
+      )
+    } else {
+      unresolved.push(asset)
+    }
+  })
+
+  return unresolved
+}
+
+/**
+ * Builds the failure message shown when locally missing assets have no
+ * previously uploaded version to reuse.
+ */
+export function formatUnresolvedAssetMessage(
+  videoName: string,
+  unresolved: PreparedUploadAsset[]
+): string {
+  const list = unresolved
+    .map((asset) => `  - ${UPLOAD_ASSET_LABEL[asset.kind]}: ${asset.path}`)
+    .join('\n')
+  return [
+    `Some asset files are missing locally and no previously uploaded version was found for "${videoName}":`,
+    list,
+    'Record once with these files present so they are uploaded, or commit them so they are available here.',
+  ].join('\n')
+}
+
 async function uploadAssets(
   assets: PreparedUploadAsset[],
   apiUrl: string,
@@ -1630,13 +1916,22 @@ async function uploadAssets(
         const checkBody = (await checkRes.json()) as { exists: boolean }
         if (checkBody.exists) {
           logInfo(
-            `${pc.green('✔')} ${label} already exists: ${displayAssetPath(asset.path)}`
+            asset.assumedUploaded
+              ? `${pc.green('✔')} Locally missing ${label.toLowerCase()}, already uploaded: ${displayAssetPath(asset.path)}`
+              : `${pc.green('✔')} ${label} already exists: ${displayAssetPath(asset.path)}`
           )
           continue
         }
       }
 
       if (!asset.fileBuffer || !asset.contentType) {
+        // A locally missing asset matched a previous upload by path/name, but its
+        // bytes are not in this environment's storage. There is nothing to push.
+        if (asset.assumedUploaded) {
+          throw new UploadAssetError(
+            `${label} is missing locally and its previously uploaded bytes are no longer stored: ${displayAssetPath(asset.path)}. Record once with the file present so it is uploaded again, or commit the file.`
+          )
+        }
         throw new UploadAssetError(
           `Asset bytes not available for upload and backend does not have it yet: ${displayAssetPath(asset.path)}`
         )
@@ -2701,6 +2996,173 @@ export async function runLogin(configPath?: string): Promise<void> {
   }
 }
 
+// Uploads the recordings already written under `.screenci` for the resolved
+// config. Shared by `record` (after a Playwright run) and `retry` (which
+// re-sends the existing recordings without re-running Playwright). A non-null
+// `playwrightFailure` means the preceding record run had failures, which tunes
+// the messaging and the upload policy; `retry` always passes null.
+async function uploadRecordedVideosForConfig(
+  configPath: string | undefined,
+  playwrightFailure: Error | null,
+  verbose: boolean
+): Promise<void> {
+  // After recording, upload results to API if configured. `run` already
+  // resolved the config (or exited), so this best-effort lookup only acts
+  // when a flat config is present in/under the current directory.
+  const resolution = findScreenCIConfig(configPath)
+  if (resolution.kind !== 'found') return
+
+  const resolvedConfigPath = resolution.path
+  try {
+    const screenciConfig =
+      await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
+    loadEnvFile(
+      screenciConfig.envFile
+        ? resolve(dirname(resolvedConfigPath), screenciConfig.envFile)
+        : resolve(dirname(resolvedConfigPath), '.env'),
+      true
+    )
+    const apiUrl = getDevBackendUrl()
+    const appUrl = getDevFrontendUrl()
+    const secret = process.env.SCREENCI_SECRET
+    const uploadPolicy = resolveRecordUploadPolicy(screenciConfig)
+    const configDir = dirname(resolvedConfigPath)
+    const screenciDir = resolve(configDir, '.screenci')
+    const completedRecordingCount = await countCompletedRecordings(screenciDir)
+    if (playwrightFailure !== null && completedRecordingCount === 0) {
+      logger.info('All recordings failed.')
+    } else if (!secret) {
+      logger.info(
+        `No SCREENCI_SECRET configured for uploads. Rerun ${getSuggestedScreenciCommand('record')} or add it to the project env file.`
+      )
+    } else if (
+      playwrightFailure !== null &&
+      uploadPolicy === 'all-or-nothing'
+    ) {
+      logger.info(
+        'Some recordings failed, skipping upload because record.upload is "all-or-nothing".'
+      )
+    } else {
+      if (playwrightFailure !== null && uploadPolicy === 'passed-only') {
+        logger.warn('Some recordings failed, uploading successful videos only.')
+      }
+      let uploadResult: {
+        projectId: string | null
+        recordId: string | null
+        hadFailures: boolean
+        failedVideoNames: string[]
+        failedVideoMessages: Array<{ videoName: string; message: string }>
+        studioNotices: StudioUploadNotice[]
+        plan: OrgPlan | null
+      } = {
+        projectId: null,
+        recordId: null,
+        hadFailures: false,
+        failedVideoNames: [],
+        failedVideoMessages: [],
+        studioNotices: [],
+        plan: null,
+      }
+      try {
+        uploadResult = await uploadRecordings(
+          screenciDir,
+          screenciConfig.projectName,
+          apiUrl,
+          secret,
+          undefined,
+          verbose
+        )
+      } catch (err) {
+        if (isUploadCancelledError(err)) {
+          process.exit(130)
+        }
+        throw err
+      }
+      const {
+        projectId,
+        recordId,
+        hadFailures,
+        failedVideoNames,
+        failedVideoMessages,
+        studioNotices,
+        plan,
+      } = uploadResult
+      // Remember this run so `screenci info` can report exactly it.
+      if (recordId !== null) {
+        await saveLastRecordId(screenciDir, recordId)
+      }
+      // Emit upload-failure warnings (stderr) before the results block.
+      // logger.info writes to stdout, logger.warn to stderr; in non-TTY CI
+      // logs stdout is block-buffered while stderr flushes immediately, so
+      // warnings printed after the "Results available at:" line would split
+      // it from its URL. Reporting failures first keeps the URL directly
+      // under its message.
+      if (hadFailures) {
+        for (const failedVideo of failedVideoMessages) {
+          logger.warn(
+            formatFailedVideoMessage(failedVideo.videoName, failedVideo.message)
+          )
+        }
+        logger.warn(
+          `Not all recordings succeeded to upload. Failed videos: ${failedVideoNames.join(', ') || 'unknown'}. Some videos may be missing from the project.`
+        )
+      }
+      if (recordId !== null && projectId !== null) {
+        const recordUrl = `${appUrl}/record/${recordId}`
+        await writeGitHubProjectOutput(recordUrl)
+        logger.info('')
+        logger.info(
+          playwrightFailure !== null
+            ? 'Recording partially succeeded, rendering in progress. Results available at:'
+            : 'Recording finished, rendering in progress. Results available at:'
+        )
+        logger.info(pc.cyan(recordUrl))
+      } else if (projectId !== null) {
+        const projectUrl = `${appUrl}/project/${projectId}`
+        await writeGitHubProjectOutput(projectUrl)
+        logger.info('')
+        logger.info(
+          playwrightFailure !== null
+            ? 'Recording partially succeeded, rendering in progress. Results available at:'
+            : 'Recording finished, rendering in progress. Results available at:'
+        )
+        logger.info(pc.cyan(projectUrl))
+      }
+      if (projectId !== null && plan !== 'business') {
+        logger.info('')
+        logger.info(
+          'Upgrade for more renders, more active videos, and expressive narration:'
+        )
+        logger.info(pc.cyan(`${appUrl}/select-plan`))
+      }
+      for (const notice of studioNotices) {
+        if ('held' in notice.studio) {
+          logger.info('')
+          logger.info(
+            `Rendering for "${notice.videoName}" is on hold. Configure it in Studio:`
+          )
+          if (projectId !== null && notice.videoId !== null) {
+            logger.info(
+              pc.cyan(formatStudioUrl(appUrl, projectId, notice.videoId))
+            )
+          }
+        } else if (notice.studio.applied) {
+          logger.info('')
+          logger.info(`Studio configuration applied for "${notice.videoName}".`)
+        }
+      }
+      if (hadFailures && playwrightFailure === null) {
+        throw new PartialUploadError()
+      }
+    }
+  } catch (err) {
+    if (isPartialUploadError(err)) {
+      throw err
+    }
+    logger.warn('Failed to load config for upload:', err)
+  }
+}
+
 export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
@@ -2755,189 +3217,45 @@ export async function main() {
 
       let playwrightFailure: Error | null = null
 
-      try {
-        await run(
-          'record',
-          parsed.otherArgs,
-          parsed.configPath,
-          parsed.verbose,
-          false,
-          parsed.pollAuth,
-          parsed.languages,
-          parsed.noPollAuth
-        )
-      } catch (error) {
-        if (!(error instanceof Error)) throw error
-        if (error.message.startsWith('Playwright exited with code ')) {
-          playwrightFailure = new RecordFailureHintError(error)
-        } else {
-          throw new RecordFailureHintError(error)
+      // UPLOAD_EXISTING re-sends the recordings already on disk under `.screenci`
+      // without re-running Playwright (resend the last local run when only the
+      // upload failed). We skip the recording run and fall straight through to
+      // the upload below, treating the on-disk recordings as the complete set.
+      const uploadExisting = isUploadExistingEnabled()
+
+      if (!uploadExisting) {
+        try {
+          await run(
+            'record',
+            parsed.otherArgs,
+            parsed.configPath,
+            parsed.verbose,
+            false,
+            parsed.pollAuth,
+            parsed.languages,
+            parsed.noPollAuth
+          )
+        } catch (error) {
+          if (!(error instanceof Error)) throw error
+          if (error.message.startsWith('Playwright exited with code ')) {
+            playwrightFailure = new RecordFailureHintError(error)
+          } else {
+            throw new RecordFailureHintError(error)
+          }
         }
+      } else {
+        logger.info(
+          'UPLOAD_EXISTING set: skipping Playwright recording and re-uploading existing .screenci recordings.'
+        )
       }
 
       if (process.env.SCREENCI_RECORDING === 'true') return
 
-      // After recording, upload results to API if configured. `run` already
-      // resolved the config (or exited), so this best-effort lookup only acts
-      // when a flat config is present in/under the current directory.
-      const resolution = findScreenCIConfig(parsed.configPath)
-      if (resolution.kind === 'found') {
-        const resolvedConfigPath = resolution.path
-        try {
-          const screenciConfig =
-            await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
-          loadEnvFile(
-            screenciConfig.envFile
-              ? resolve(dirname(resolvedConfigPath), screenciConfig.envFile)
-              : resolve(dirname(resolvedConfigPath), '.env'),
-            true
-          )
-          const apiUrl = getDevBackendUrl()
-          const appUrl = getDevFrontendUrl()
-          const secret = process.env.SCREENCI_SECRET
-          const uploadPolicy = resolveRecordUploadPolicy(screenciConfig)
-          const configDir = dirname(resolvedConfigPath)
-          const screenciDir = resolve(configDir, '.screenci')
-          const completedRecordingCount =
-            await countCompletedRecordings(screenciDir)
-          if (playwrightFailure !== null && completedRecordingCount === 0) {
-            logger.info('All recordings failed.')
-          } else if (!secret) {
-            logger.info(
-              `No SCREENCI_SECRET configured for uploads. Rerun ${getSuggestedScreenciCommand('record')} or add it to the project env file.`
-            )
-          } else if (
-            playwrightFailure !== null &&
-            uploadPolicy === 'all-or-nothing'
-          ) {
-            logger.info(
-              'Some recordings failed, skipping upload because record.upload is "all-or-nothing".'
-            )
-          } else {
-            if (playwrightFailure !== null && uploadPolicy === 'passed-only') {
-              logger.warn(
-                'Some recordings failed, uploading successful videos only.'
-              )
-            }
-            let uploadResult: {
-              projectId: string | null
-              recordId: string | null
-              hadFailures: boolean
-              failedVideoNames: string[]
-              failedVideoMessages: Array<{ videoName: string; message: string }>
-              studioNotices: StudioUploadNotice[]
-              plan: OrgPlan | null
-            } = {
-              projectId: null,
-              recordId: null,
-              hadFailures: false,
-              failedVideoNames: [],
-              failedVideoMessages: [],
-              studioNotices: [],
-              plan: null,
-            }
-            try {
-              uploadResult = await uploadRecordings(
-                screenciDir,
-                screenciConfig.projectName,
-                apiUrl,
-                secret
-              )
-            } catch (err) {
-              if (isUploadCancelledError(err)) {
-                process.exit(130)
-              }
-              throw err
-            }
-            const {
-              projectId,
-              recordId,
-              hadFailures,
-              failedVideoNames,
-              failedVideoMessages,
-              studioNotices,
-              plan,
-            } = uploadResult
-            // Remember this run so `screenci info` can report exactly it.
-            if (recordId !== null) {
-              await saveLastRecordId(screenciDir, recordId)
-            }
-            // Emit upload-failure warnings (stderr) before the results block.
-            // logger.info writes to stdout, logger.warn to stderr; in non-TTY CI
-            // logs stdout is block-buffered while stderr flushes immediately, so
-            // warnings printed after the "Results available at:" line would split
-            // it from its URL. Reporting failures first keeps the URL directly
-            // under its message.
-            if (hadFailures) {
-              for (const failedVideo of failedVideoMessages) {
-                logger.warn(
-                  formatFailedVideoMessage(
-                    failedVideo.videoName,
-                    failedVideo.message
-                  )
-                )
-              }
-              logger.warn(
-                `Not all recordings succeeded to upload. Failed videos: ${failedVideoNames.join(', ') || 'unknown'}. Some videos may be missing from the project.`
-              )
-            }
-            if (recordId !== null && projectId !== null) {
-              const recordUrl = `${appUrl}/record/${recordId}`
-              await writeGitHubProjectOutput(recordUrl)
-              logger.info('')
-              logger.info(
-                playwrightFailure !== null
-                  ? 'Recording partially succeeded, rendering in progress. Results available at:'
-                  : 'Recording finished, rendering in progress. Results available at:'
-              )
-              logger.info(pc.cyan(recordUrl))
-            } else if (projectId !== null) {
-              const projectUrl = `${appUrl}/project/${projectId}`
-              await writeGitHubProjectOutput(projectUrl)
-              logger.info('')
-              logger.info(
-                playwrightFailure !== null
-                  ? 'Recording partially succeeded, rendering in progress. Results available at:'
-                  : 'Recording finished, rendering in progress. Results available at:'
-              )
-              logger.info(pc.cyan(projectUrl))
-            }
-            if (projectId !== null && plan !== 'business') {
-              logger.info('')
-              logger.info(
-                'Upgrade for more renders, more active videos, and expressive narration:'
-              )
-              logger.info(pc.cyan(`${appUrl}/select-plan`))
-            }
-            for (const notice of studioNotices) {
-              if ('held' in notice.studio) {
-                logger.info('')
-                logger.info(
-                  `Rendering for "${notice.videoName}" is on hold — configure it in Studio:`
-                )
-                if (projectId !== null && notice.videoId !== null) {
-                  logger.info(
-                    pc.cyan(formatStudioUrl(appUrl, projectId, notice.videoId))
-                  )
-                }
-              } else if (notice.studio.applied) {
-                logger.info('')
-                logger.info(
-                  `Studio configuration applied for "${notice.videoName}".`
-                )
-              }
-            }
-            if (hadFailures && playwrightFailure === null) {
-              throw new PartialUploadError()
-            }
-          }
-        } catch (err) {
-          if (isPartialUploadError(err)) {
-            throw err
-          }
-          logger.warn('Failed to load config for upload:', err)
-        }
-      }
+      await uploadRecordedVideosForConfig(
+        parsed.configPath,
+        playwrightFailure,
+        parsed.verbose
+      )
 
       if (playwrightFailure !== null) {
         throw playwrightFailure

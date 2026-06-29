@@ -8,7 +8,9 @@ import {
   buildStudioAudioTracks,
   validateRegisteredAudioPaths,
   resetRegisteredAudioPaths,
+  resetMissingAudioWarnings,
 } from './audio.js'
+import { logger } from './logger.js'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
 import {
@@ -231,13 +233,24 @@ describe('createAudio', () => {
     ).toThrow('must provide a finite volume')
   })
 
-  it('throws when the audio file is missing', async () => {
+  it('records a missing audio file without a hash for upload-time recovery', async () => {
+    resetMissingAudioWarnings()
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
     await run(async () => {
       const audio = createAudio({ theme: './gone.mp3' })
-      await expect(audio.theme()).rejects.toThrow(
-        'Audio file not found for "theme": ./gone.mp3'
+      await expect(audio.theme()).resolves.toBeUndefined()
+      // No fileHash is recorded; the track is recovered from a previous upload
+      // of this video at upload time.
+      expect(recorder.addAudioStart).toHaveBeenCalledWith('theme', {
+        path: './gone.mp3',
+        volume: 1,
+        repeat: false,
+      })
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Locally missing audio: ./gone.mp3')
       )
     })
+    warnSpy.mockRestore()
   })
 
   it('is a no-op against the noop recorder outside a recording', async () => {
@@ -344,8 +357,10 @@ describe('validateRegisteredAudioPaths', () => {
     }
   })
 
-  it('throws "Audio file not found" when a registered file is missing', async () => {
+  it('warns but does not throw when a registered file is missing', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'screenci-audio-validate-'))
+    resetMissingAudioWarnings()
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
     try {
       await writeFile(join(tempDir, 'theme.mp3'), 'mp3')
       const missing = join(tempDir, 'sting.wav')
@@ -354,10 +369,15 @@ describe('validateRegisteredAudioPaths', () => {
         sting: missing,
       })
 
-      await expect(validateRegisteredAudioPaths(ownerFile)).rejects.toThrow(
-        `Audio file not found: ${missing}`
+      // A missing audio file is recovered from a previous upload at upload time.
+      await expect(
+        validateRegisteredAudioPaths(ownerFile)
+      ).resolves.toBeUndefined()
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`Locally missing audio: ${missing}`)
       )
     } finally {
+      warnSpy.mockRestore()
       await rm(tempDir, { recursive: true, force: true })
     }
   })

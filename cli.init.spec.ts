@@ -20,6 +20,7 @@ const mockStat = vi.fn()
 const mockCreateReadStream = vi.fn()
 const mockAppendFile = vi.fn()
 const mockWriteFile = vi.fn()
+const mockCopyFile = vi.fn()
 const mockMkdir = vi.fn()
 const mockInput = vi.fn()
 const mockConfirm = vi.fn()
@@ -214,6 +215,7 @@ vi.mock('fs', () => ({
 
 vi.mock('fs/promises', () => ({
   appendFile: mockAppendFile,
+  copyFile: mockCopyFile,
   readdir: mockReaddir,
   readFile: mockReadFile,
   stat: mockStat,
@@ -221,6 +223,7 @@ vi.mock('fs/promises', () => ({
   mkdir: mockMkdir,
   default: {
     appendFile: mockAppendFile,
+    copyFile: mockCopyFile,
     readdir: mockReaddir,
     readFile: mockReadFile,
     stat: mockStat,
@@ -262,6 +265,7 @@ describe('CLI', () => {
     mockSpawn.mockReset()
     mockAppendFile.mockResolvedValue(undefined)
     mockWriteFile.mockResolvedValue(undefined)
+    mockCopyFile.mockResolvedValue(undefined)
     mockMkdir.mockResolvedValue(undefined)
     mockReaddir.mockResolvedValue([])
     mockReadFileSync.mockImplementation(() => {
@@ -421,6 +425,17 @@ describe('CLI', () => {
         {
           recursive: true,
         }
+      )
+      // The brand intro logo is copied into the (gitignored) assets folder.
+      expect(mockMkdir).toHaveBeenCalledWith(
+        '/workspace/my-app/screenci/recordings/assets',
+        {
+          recursive: true,
+        }
+      )
+      expect(mockCopyFile).toHaveBeenCalledWith(
+        expect.stringContaining('logo.png'),
+        '/workspace/my-app/screenci/recordings/assets/logo.png'
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/my-app/screenci/screenci.config.ts',

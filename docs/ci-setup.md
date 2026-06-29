@@ -32,6 +32,64 @@ as a repository secret, from
 [app.screenci.com/secrets](https://app.screenci.com/secrets). The workflow fails
 early if it is missing.
 
+## Recording your own app
+
+If your videos navigate to a locally-running app via `webServer` in
+`screenci.config.ts`, the generated workflow needs two extra steps so the app
+is built and reachable when `screenci record` runs.
+
+### Update `screenci.config.ts`
+
+In CI, use a static serve command (`npm run preview` for Vite, or your
+framework's equivalent) instead of the dev server. The dev server's dependencies
+live in the root `node_modules`, which the generated workflow does not install
+by default. A built bundle also records more deterministically than a
+hot-reloading dev server.
+
+```ts
+webServer: {
+  command: process.env.CI ? 'npm run preview' : 'npm run dev',
+  cwd: '..', // path from screenci/ to the project root
+  url: process.env.CI ? 'http://localhost:4173' : 'http://localhost:5173',
+  reuseExistingServer: !process.env.CI,
+  timeout: 120_000,
+},
+use: {
+  baseURL: process.env.CI ? 'http://localhost:4173' : 'http://localhost:5173',
+},
+```
+
+The port split (`4173` for `vite preview`, `5173` for `vite dev`) is the Vite
+default. Adjust both values to match your framework's preview and dev ports.
+
+### Update the generated workflow
+
+Add install and build steps for the root app before the screenci install step,
+and extend `cache-dependency-path` to include the root lockfile:
+
+```yaml
+- uses: actions/setup-node@v6
+  with:
+    node-version: 24
+    cache: npm
+    cache-dependency-path: |
+      package-lock.json
+      screenci/package-lock.json
+
+- name: Install app dependencies
+  run: npm ci
+
+- name: Build app
+  run: npm run build
+
+- name: Install dependencies
+  working-directory: screenci
+  run: npm ci
+```
+
+The `cache-dependency-path` list tells `actions/setup-node` to include the root
+lockfile in its cache key, so restoring the cache reflects both dependency trees.
+
 ## Keep recordings deterministic
 
 ScreenCI records the browser in real time, so the recording reflects the CI

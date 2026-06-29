@@ -292,6 +292,28 @@ projects in the same file.
 For the Playwright side of the config model, see
 [Configuration](https://playwright.dev/docs/test-configuration).
 
+#### `webServer` in CI
+
+When your videos navigate to a locally-running app, use a static serve command
+in CI instead of the dev server. The dev server's dependencies live in the root
+`node_modules`, which the generated CI workflow does not install by default.
+
+```ts
+webServer: {
+  command: process.env.CI ? 'npm run preview' : 'npm run dev',
+  cwd: '..', // path from screenci/ to the project root
+  url: process.env.CI ? 'http://localhost:4173' : 'http://localhost:5173',
+  reuseExistingServer: !process.env.CI,
+  timeout: 120_000,
+},
+use: {
+  baseURL: process.env.CI ? 'http://localhost:4173' : 'http://localhost:5173',
+},
+```
+
+You also need to add root-app install and build steps to `.github/workflows/screenci.yaml`.
+See [Recording your own app](/docs/ci-setup#recording-your-own-app) in the CI setup guide.
+
 ## Per-file overrides
 
 Use `video.use()` when one file needs different defaults:

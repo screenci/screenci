@@ -205,6 +205,23 @@ describe('createAudio', () => {
     )
   })
 
+  it('accepts every supported audio extension', () => {
+    for (const ext of [
+      '.mp3',
+      '.wav',
+      '.m4a',
+      '.aac',
+      '.ogg',
+      '.flac',
+      '.opus',
+      '.mp4',
+    ]) {
+      expect(() =>
+        createAudio({ track: { path: `./clip${ext}` } })
+      ).not.toThrow('must use one of')
+    }
+  })
+
   it('rejects a volume outside the allowed range', () => {
     expect(() =>
       createAudio({ theme: { path: './music.mp3', volume: 9 } })

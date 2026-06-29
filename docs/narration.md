@@ -453,10 +453,14 @@ video.narration({
 })
 ```
 
-The `path` is resolved relative to your video script. The sample can be an
-`.mp3` audio file or an `.mp4` video file. ScreenCI uploads the sample and
-creates the cloned voice once, then reuses it: the clone is keyed by the sample
-and language, so the same file does not get re-cloned on later runs.
+The `path` is resolved relative to your video script. The sample can be an audio
+file (`.mp3`, `.wav`, `.m4a`, `.aac`, `.ogg`, `.flac`, `.opus`) or a video file
+(`.mp4`, `.mov`, `.webm`, `.mkv`, `.avi`); for a video, the audio track is used.
+A voice clone only needs audio, so when the sample is a video (or a large file),
+ScreenCI extracts just the audio to a compact file before uploading. ScreenCI
+uploads the sample and creates the cloned voice once, then reuses it: the clone
+is keyed by the sample and language, so the same file does not get re-cloned on
+later runs.
 
 A cloned voice is an ElevenLabs voice, so it accepts the same
 `eleven_multilingual_v2` controls as `voices.elevenlabs(...)`, and can be set as

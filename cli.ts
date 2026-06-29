@@ -65,6 +65,7 @@ import type {
   PersistedLinkSessionSpec,
 } from './src/linkSession.js'
 import { openUrlInBrowser } from './src/openBrowser.js'
+import { maybeExtractVoiceSampleAudio } from './src/voiceSampleAudio.js'
 
 // Re-export the environment-aware URL helpers so existing importers (and tests)
 // can keep importing them from the CLI entrypoint.
@@ -355,7 +356,13 @@ function contentTypeForPath(filePath: string): string {
   return contentTypeMap[ext] ?? 'application/octet-stream'
 }
 
-type CustomVoiceRefLike = { assetHash: string; assetPath: string }
+type CustomVoiceRefLike = {
+  assetHash: string
+  assetPath: string
+  // SHA-256 of the original sample file. The backend keys the clone cache on
+  // this so re-encoded uploads (audio extracted from a video) do not re-clone.
+  sampleHash?: string
+}
 
 /** What an uploaded file actually is, used to label it in the upload log. */
 type UploadAssetKind = 'overlay' | 'audio' | 'clip' | 'voice'
@@ -1248,17 +1255,30 @@ async function prepareCustomVoiceAssets(
     }
 
     const { buffer: fileBuffer, resolvedPath } = resolvedFile
-    const assetHash = createHash('sha256').update(fileBuffer).digest('hex')
-    const contentType = contentTypeForPath(resolvedPath)
+    // Identify the voice by the ORIGINAL file, so the clone cache survives any
+    // re-encode of the uploaded bytes (see backend resolveCustomVoice).
+    const sampleHash = createHash('sha256').update(fileBuffer).digest('hex')
+    // A voice clone only needs audio, and the clone service caps samples at
+    // ~11 MB. For video containers (or any oversized file) strip to a small MP3
+    // before upload; otherwise upload the audio unchanged.
+    const extracted = await maybeExtractVoiceSampleAudio(
+      resolvedPath,
+      fileBuffer.byteLength
+    )
+    const uploadBuffer = extracted?.buffer ?? fileBuffer
+    const contentType =
+      extracted?.contentType ?? contentTypeForPath(resolvedPath)
+    const assetHash = createHash('sha256').update(uploadBuffer).digest('hex')
     for (const ref of refs) {
       ref.assetHash = assetHash
+      ref.sampleHash = sampleHash
     }
     preparedAssets.push({
       kind: 'voice',
       fileHash: assetHash,
       path: voicePath,
-      size: fileBuffer.byteLength,
-      fileBuffer,
+      size: uploadBuffer.byteLength,
+      fileBuffer: uploadBuffer,
       contentType,
     })
   }

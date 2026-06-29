@@ -22,7 +22,8 @@ import {
  * point it is started until it is ended (or until the end of the video).
  */
 export type AudioConfig = {
-  /** File path: `.mp3`, `.wav`, `.m4a`, `.aac`, or an audio-only `.mp4`. */
+  /** File path to an audio file: `.mp3`, `.wav`, `.m4a`, `.aac`, `.ogg`,
+   *  `.flac`, `.opus`, or an audio-only `.mp4`. */
   path: string
   /**
    * Linear gain. `1` (the default) plays the source at its natural level, `0`
@@ -88,7 +89,16 @@ export type AudioTracks<T extends Record<string, AudioInput>> = {
   [K in keyof T]: AudioController
 }
 
-const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.aac', '.mp4'] as const
+const AUDIO_EXTENSIONS = [
+  '.mp3',
+  '.wav',
+  '.m4a',
+  '.aac',
+  '.ogg',
+  '.flac',
+  '.opus',
+  '.mp4',
+] as const
 
 /**
  * Audio file paths registered by `createAudio` at module load, each attributed

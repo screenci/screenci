@@ -2,8 +2,9 @@
 
 `video.audio(...)` adds background music or sound effects that mix under the
 recording and any narration. It takes a map of named tracks, each a file path or
-a config object, and accepts `.mp3`, `.wav`, `.m4a`, `.aac`, or an audio-only
-`.mp4`. The body receives the track controllers via the injected `audio` fixture:
+a config object, and accepts `.mp3`, `.wav`, `.m4a`, `.aac`, `.ogg`, `.flac`,
+`.opus`, or an audio-only `.mp4`. The body receives the track controllers via the
+injected `audio` fixture:
 
 ```ts
 import { video } from 'screenci'

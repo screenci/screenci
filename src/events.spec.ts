@@ -882,10 +882,42 @@ describe('EventRecorder', () => {
         expect(parsed.metadata?.studio).toBeUndefined()
       })
 
+      it('sets metadata.studio.languages when the language set is web-owned', async () => {
+        recorder = new EventRecorder(undefined, undefined, {
+          renderOptions: false,
+          recordOptions: false,
+          languages: true,
+        })
+        recorder.start()
+        await recorder.writeToFile(tmpDir, 'Test Video')
+
+        const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+        const parsed: RecordingData = JSON.parse(content)
+        expect(parsed.metadata?.studio).toEqual({ languages: true })
+      })
+
+      it('does not set metadata.studio.languages for a code-defined language set', async () => {
+        recorder = new EventRecorder(undefined, undefined, {
+          renderOptions: false,
+          recordOptions: false,
+          languages: false,
+        })
+        recorder.start()
+        recorder.addCueStart('', 'greeting', undefined, {
+          en: { text: 'Hello', voice: voices.Ava },
+        })
+        await recorder.writeToFile(tmpDir, 'Test Video')
+
+        const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+        const parsed: RecordingData = JSON.parse(content)
+        expect(parsed.metadata?.studio).toBeUndefined()
+      })
+
       it('combines all studio flags', async () => {
         recorder = new EventRecorder(undefined, undefined, {
           renderOptions: true,
           recordOptions: true,
+          languages: true,
         })
         recorder.start()
         recorder.addStudioCueStart('intro')
@@ -901,6 +933,7 @@ describe('EventRecorder', () => {
           narration: true,
           assets: true,
           audio: true,
+          languages: true,
         })
       })
 

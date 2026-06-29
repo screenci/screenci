@@ -1757,18 +1757,24 @@ export class EventRecorder implements IEventRecorder {
         'studio' in event &&
         event.studio === true
     )
+    // Whether the language set is web-owned (`video.languages('studio')`). The
+    // web uses this to decide a video may have languages added/rendered from the
+    // app (code-defined language sets cannot be changed from the web).
+    const studioLanguages = this.studioOptions.languages === true
     const studio: RecordingMetadata['studio'] =
       studioRenderOptions ||
       studioRecordOptions ||
       studioNarration ||
       studioAssets ||
-      studioAudio
+      studioAudio ||
+      studioLanguages
         ? {
             ...(studioRenderOptions && { renderOptions: true }),
             ...(studioRecordOptions && { recordOptions: true }),
             ...(studioNarration && { narration: true }),
             ...(studioAssets && { assets: true }),
             ...(studioAudio && { audio: true }),
+            ...(studioLanguages && { languages: true }),
           }
         : undefined
 

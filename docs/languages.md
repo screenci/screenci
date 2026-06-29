@@ -212,14 +212,23 @@ video.narration(['intro']).languages('studio')(
 )
 ```
 
-The **Languages** section on the Studio page lists the current recorded
-languages and lets you add or remove them. Adding a language triggers a
-re-record: the section shows a **Re-record this video** button that queues a
-fresh recording pass from the web when the project is connected to GitHub. The
-new pass reuses the same Studio narration, overlays, and audio configuration.
+The **Languages** section on the Studio page lists the current languages and
+lets you add or remove them. Adding a language opens a short guided setup: fill
+in that language's narration (a checklist tracks what is still missing), then
+render. The render reuses the existing capture with the new narration, so you do
+not have to re-record just to get a narrated version in another language.
 
-To fix languages in code instead, pass an array or config object as shown in the
-sections above. See [Studio](./studio.md) for the full Studio guide.
+On-screen text **values** for a newly added language start as a read-only copy
+of an existing language (English if present, otherwise the first alphabetically)
+because text is captured while the video records, not at render time. To
+localize that text, edit the values and re-record the language version once it
+exists. The re-record reuses the same Studio narration, overlays, and audio
+configuration, and runs from the web when the project is connected to GitHub.
+
+Adding languages from the web requires `video.languages('studio')`: a
+code-defined language set (an array or config object, as shown in the sections
+above) is fixed by your test code and cannot be changed from the app. See
+[Studio](./studio.md) for the full Studio guide.
 
 ## Available languages
 

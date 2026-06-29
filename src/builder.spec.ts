@@ -96,6 +96,20 @@ describe('expandRegistrations', () => {
     expect(regs[0]?.recordingLocalize.pending).toBe(true)
   })
 
+  it('combines a studio-owned set with shared mode (one web-owned pass)', () => {
+    const regs = expandRegistrations({
+      baseTitle: 'Tour',
+      // The object form is how 'studio' combines with options like shared mode;
+      // `.languages('studio')` shorthand defaults to per-language mode.
+      state: state(langs({ languages: 'studio', mode: 'shared' })),
+      requestedLanguages: ['en', 'fi'],
+    })
+    expect(regs).toHaveLength(1)
+    expect(regs[0]).toMatchObject({ leafTitle: 'Tour', language: null })
+    expect(regs[0]?.recordingLocalize.studioOwned).toBe(true)
+    expect(regs[0]?.recordingLocalize.mode).toBe('shared')
+  })
+
   it('intersects per-language passes with the --languages filter', () => {
     const regs = expandRegistrations({
       baseTitle: 'T',

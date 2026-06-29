@@ -792,6 +792,7 @@ const _videoBase = base.extend<
       _screenciValues,
       _screenciVideoName,
       _screenciSourceFile,
+      _screenciRecordingLocalize,
     },
     use,
     testInfo
@@ -812,6 +813,9 @@ const _videoBase = base.extend<
     const recorder = new EventRecorder(renderOptionsObj, recordOptions, {
       renderOptions: studioRender,
       recordOptions: studioRecord,
+      // Web-owned language set: stamped into metadata.studio.languages so the app
+      // knows this video may have languages added/rendered from Studio.
+      languages: _screenciRecordingLocalize?.studioOwned ?? false,
     })
     // Declared `values` fields (and the active language's seeds) emitted once at
     // recording start so the backend/Studio learn them.

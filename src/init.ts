@@ -1217,9 +1217,6 @@ jobs:
 
       - name: Install dependencies
         working-directory: ${islandWorkflowPath}
-        env:
-          HUSKY: 0
-          npm_config_strict_dep_builds: false
         run: ${commands.frozenInstallCommand}
 
       # Capturing system audio (enableCaptureAudio + recordOptions.captureAudio,

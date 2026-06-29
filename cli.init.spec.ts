@@ -791,8 +791,8 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         'cache-dependency-path: screenci/pnpm-lock.yaml'
       )
-      expect(workflowCall?.[1]).toContain('HUSKY: 0')
-      expect(workflowCall?.[1]).toContain('npm_config_strict_dep_builds: false')
+      expect(workflowCall?.[1]).not.toContain('HUSKY: 0')
+      expect(workflowCall?.[1]).not.toContain('npm_config_strict_dep_builds')
       expect(workflowCall?.[1]).toContain('run: pnpm install --frozen-lockfile')
       expect(workflowCall?.[1]).not.toContain('actions/cache@v5')
       expect(workflowCall?.[1]).toContain(

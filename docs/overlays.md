@@ -109,8 +109,10 @@ You can build the same overlay three ways, and all of them honor the same
 [placement](#positioning) fields (`x`, `y`, `width`/`height`, `relativeTo`),
 `duration`, `animate`, `css`, and `capturePadding`:
 
-- **An `.html` file** (`path`): authored as a standalone `.html` file and passed
-  like any other file path.
+- **An `.html` file** (`path`): authored in a separate file and passed like any
+  other file path. The file contains the overlay markup body, not a full browser
+  document; screenci reads the file and injects its contents into the same
+  overlay wrapper used for inline `html`.
 - **A React element** (`element`): passed straight in as JSX. `react` and
   `react-dom` are optional peer dependencies imported lazily, so installing
   screenci never pulls React into your project unless you actually use an
@@ -136,12 +138,15 @@ video.overlays({
 })
 ```
 
-The `html` value must be a **single-rooted fragment**, not a full document.
-screenci wraps your markup in its own document before rasterizing, so
-`<!doctype>`, `<html>`, `<head>`, and `<body>` tags are rejected (a full document
-would nest documents and break the capture). The fragment must also contain
-exactly one top-level element (wrap multiple nodes in one container), so it sizes
-and positions predictably. Write only the content, exactly as you would inside a
+For both `.html` files and inline `html`, write a **single-rooted fragment**, not
+a full document. screenci wraps your markup in its own document before
+rasterizing, so do not include `<!doctype>`, `<html>`, `<head>`, or `<body>` tags
+(a full document would nest documents and break the capture). Inline `html` is
+validated and rejects those tags; `.html` file contents are read from disk and
+wrapped the same way, so keep them to the same fragment shape even though the
+file path variant is not pre-validated. The fragment must also contain exactly
+one top-level element (wrap multiple nodes in one container), so it sizes and
+positions predictably. Write only the content, exactly as you would inside a
 React element:
 
 ```tsx
@@ -161,7 +166,20 @@ React element:
 }
 ```
 
-To style an inline fragment with `className`, inject a stylesheet with `css` or
+The same fragment rule applies when the markup lives in a file:
+
+```html
+<!-- assets/callout.html -->
+<div class="callout">Saved</div>
+```
+
+Because an `.html` overlay file is read and inserted into screenci's wrapper, it
+is not loaded as a page URL from its own directory. Prefer inline styles, the
+`css` option, `setOverlayCss`, or absolute/data URLs for referenced assets;
+relative `<link>`, `<script>`, and `<img>` URLs are not resolved relative to the
+`.html` file path.
+
+To style a fragment with `className`, inject a stylesheet with `css` or
 `setOverlayCss`, exactly as for `.html` files and React elements (see
 [Styling with className](#styling-with-classname-and-tailwind)).
 

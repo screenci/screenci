@@ -11,6 +11,17 @@ const ffmpegPath = ffmpegStatic as unknown as string | null
 
 const OVERLAY_ROOT_ID = 'screenci-overlay-root'
 
+/**
+ * Name of the cross-run overlay cache directory, kept as a sibling of the
+ * per-recording directories under `.screenci`. Rendered overlays are keyed by
+ * their deterministic input hash here so unchanged overlays are served byte for
+ * byte from a previous run (skipping both the browser render and a fresh,
+ * non-deterministic encode that would otherwise change the upload hash and force
+ * a re-upload every run). The CLI's recording-directory wipe must preserve this
+ * directory, so the name is shared from here.
+ */
+export const OVERLAY_CACHE_DIR_NAME = '.overlay-cache'
+
 // Render overlays at 2x pixel density so the PNG carries more detail than the
 // on-screen overlay size. The renderer then downscales it to the placement box,
 // which keeps text and edges crisp. 2x keeps overlays sharp at typical sizes
@@ -231,7 +242,7 @@ async function renderOverlay(
     css,
     html,
   })
-  const cacheDir = join(dirname(recordingDir), '.overlay-cache')
+  const cacheDir = join(dirname(recordingDir), OVERLAY_CACHE_DIR_NAME)
   const pngPath = join(cacheDir, `${inputHash}.png`)
   const metaPath = join(cacheDir, `${inputHash}.json`)
 
@@ -557,7 +568,7 @@ async function renderAnimatedOverlay(
     css: request.css ?? '',
     html: request.html,
   })
-  const cacheDir = join(dirname(recordingDir), '.overlay-cache')
+  const cacheDir = join(dirname(recordingDir), OVERLAY_CACHE_DIR_NAME)
   const clipPath = join(cacheDir, `${inputHash}.mp4`)
   const metaPath = join(cacheDir, `${inputHash}.anim.json`)
 

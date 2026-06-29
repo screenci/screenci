@@ -153,4 +153,59 @@ describe('createOverlays type constraints', () => {
     // @ts-expect-error the factory requires its props argument
     overlays.note()
   })
+
+  it('accepts crop on an image and video file overlay', () => {
+    createOverlays({
+      logo: {
+        path: './logo.png',
+        duration: '1s',
+        crop: { x: 0, y: 0, width: 100, height: 80 },
+      },
+      clip: {
+        path: './clip.mp4',
+        crop: { x: 10, y: 20, width: 200, height: 100 },
+      },
+    })
+  })
+
+  it('accepts start/end on a video file overlay', () => {
+    createOverlays({
+      clip: { path: './clip.mp4', start: '2s', end: '50%' },
+    })
+  })
+
+  it('rejects crop on a React element overlay', () => {
+    createOverlays({
+      // @ts-expect-error crop only applies to image/video file overlays
+      badge: {
+        element: createElement('div', null, 'x'),
+        crop: { x: 0, y: 0, width: 1, height: 1 },
+      },
+    })
+  })
+
+  it('rejects crop on an inline html overlay', () => {
+    createOverlays({
+      // @ts-expect-error crop only applies to image/video file overlays
+      note: {
+        html: '<div>x</div>',
+        duration: '1s',
+        crop: { x: 0, y: 0, width: 1, height: 1 },
+      },
+    })
+  })
+
+  it('rejects start/end on a React element overlay', () => {
+    createOverlays({
+      // @ts-expect-error start only applies to .mp4 file overlays
+      badge: { element: createElement('div', null, 'x'), start: '1s' },
+    })
+  })
+
+  it('rejects start/end on an inline html overlay', () => {
+    createOverlays({
+      // @ts-expect-error end only applies to .mp4 file overlays
+      note: { html: '<div>x</div>', duration: '1s', end: '1s' },
+    })
+  })
 })

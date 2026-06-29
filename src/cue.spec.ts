@@ -221,7 +221,7 @@ describe('createNarration', () => {
   it('passes an absolute string position as an outputMs anchor', async () => {
     const cues = createNarration(singleLangInput)
 
-    await cues.intro('0:05')
+    await cues.intro.until('0:05')
 
     expect(recorder.addCueStart).toHaveBeenCalledWith(
       '',
@@ -236,7 +236,7 @@ describe('createNarration', () => {
   it('passes a percentage string position as a percent anchor', async () => {
     const cues = createNarration(singleLangInput)
 
-    await cues.intro('50%')
+    await cues.intro.until('50%')
 
     expect(recorder.addCueStart).toHaveBeenCalledWith(
       '',
@@ -264,7 +264,7 @@ describe('createNarration', () => {
   it('throws on an invalid string position', async () => {
     const cues = createNarration(singleLangInput)
 
-    await expect(cues.intro('soon')).rejects.toThrow(/invalid position/)
+    expect(() => cues.intro.until('soon')).toThrow(/invalid position/)
   })
 
   it('throws when a cue name is reused in one recording', async () => {
@@ -795,6 +795,43 @@ describe('createNarration', () => {
           'Locally missing narration media: /tmp/intro-en.mp4'
         )
       )
+      warnSpy.mockRestore()
+    })
+
+    it('puts crop and source trim inside the video cue translation', async () => {
+      resetMissingNarrationAssetWarnings()
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+      const cues = createNarration({
+        voice: { name: voices.Ava },
+        en: {
+          intro: {
+            media: '/tmp/intro-trim.mp4',
+            crop: { x: 4, y: 8, width: 120, height: 90 },
+            start: '1s',
+            end: '90%',
+          },
+        },
+      })
+
+      await runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({
+          testFilePath: fileURLToPath(import.meta.url),
+        }),
+        async () => {
+          setActiveCueRecorder(recorder)
+          await expect(cues.intro.start()).resolves.toBeUndefined()
+        }
+      )
+
+      const translations = (
+        recorder.addVideoCueStart as ReturnType<typeof vi.fn>
+      ).mock.calls[0]?.[4] as Record<string, unknown>
+      expect(translations.en).toEqual({
+        assetPath: '/tmp/intro-trim.mp4',
+        crop: { x: 4, y: 8, width: 120, height: 90 },
+        sourceStart: { ms: 1000 },
+        sourceEnd: { percent: 0.9 },
+      })
       warnSpy.mockRestore()
     })
 

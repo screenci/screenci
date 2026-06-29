@@ -36,7 +36,7 @@ video.overlays({
 })('Overview', async ({ page, overlays }) => {
   await overlays.intro()
   await page.goto('/dashboard')
-  await overlays.logo(1200)
+  await overlays.logo.for('1.2s')
 })
 ```
 
@@ -63,17 +63,51 @@ this video (matched by the overlay's name). See
 
 Rules:
 
-- HTML, React, `.svg`, and `.png` overlays need a `durationMs` for the blocking call form (set it in the config or pass it to the call, for example `await overlays.logo(1200)`). You can omit it when driving the overlay with `start()`/`end()`.
+- HTML, React, `.svg`, and `.png` overlays need a length: give them a relative `.for('1.2s')`, an absolute `.until('0:05')`/`.until('56%')`, a `duration` config string, or drive them with `start()`/`end()`. A bare `overlays.logo()` is invalid for these (it only works for a video or render dependency, which holds for its natural length).
 - Image, HTML, and React overlays do not support `volume`.
 - `.mp4` overlays may provide `volume` (a linear gain). `1` (the default) plays the source at its natural level, `0` mutes it, and values above `1` boost it (e.g. `2` is twice as loud, up to `4`).
-- `.mp4` overlays use the file's natural duration and must not provide `durationMs`.
+- `.mp4` overlays use the file's natural duration and must not provide a `duration`.
 - `.mp4` overlays may provide `speed` or `time` to play the clip (and its audio) faster or slower. `speed` is a multiplier (`2` plays it twice as fast, `0.5` at half speed); `time` is a target playback duration in ms (the clip is sped up or slowed down to play over exactly that long). Set at most one. For a blocking call (`await overlays.intro()`) this also changes how long the overlay holds, so later content shifts; for a live overlay (`start()`/`end()`) the window stays put and only the playback rate changes. Image, HTML, and React overlays do not support `speed`/`time`.
+
+### Cropping a file overlay
+
+Image (`.svg`/`.png`) and video (`.mp4`) overlays accept a `crop` rectangle that selects a region of the **source file**, in the source's own pixels (top-left origin), just like Playwright's `page.screenshot({ clip })`. The cropped region is then placed and scaled like any other overlay. `crop` is not supported for `.html`/inline `html`/React `element`/`over` overlays.
+
+```ts
+const overlays = createOverlays({
+  // Show only the left panel of a wide screen recording.
+  panel: { path: 'demo.mp4', crop: { x: 0, y: 0, width: 960, height: 1080 } },
+  // Crop a badge out of a sprite sheet and place it top-right.
+  badge: {
+    path: 'sprites.png',
+    crop: { x: 128, y: 0, width: 96, height: 96 },
+    x: 1740,
+    y: 64,
+    width: 96,
+  },
+})
+```
+
+`x`, `y` must be `>= 0` and `width`, `height` `> 0`.
+
+### Trimming a video overlay (`start` / `end`)
+
+`.mp4` overlays accept `start` and `end` time strings to play only a slice of the source: a late start and/or an early end. Both are absolute positions in the **source clip**, expressed as a time string: `'2s'`/`'1.5s'`, a `'0:02'`/`'0:02.5'` timecode, or `'50%'` of the source duration. `start` must come before `end`. Trimming shortens how long the overlay occupies the timeline (before any `speed`/`time`).
+
+```ts
+const overlays = createOverlays({
+  // Play seconds 2 through the halfway point of the source clip.
+  clip: { path: 'demo.mp4', start: '0:02', end: '50%' },
+})
+```
+
+`start`/`end` apply to `.mp4` overlays only (images have no timeline).
 
 ### HTML and React overlays
 
 You can build the same overlay three ways, and all of them honor the same
 [placement](#positioning) fields (`x`, `y`, `width`/`height`, `relativeTo`),
-`durationMs`, `animate`, `css`, and `capturePadding`:
+`duration`, `animate`, `css`, and `capturePadding`:
 
 - **An `.html` file** (`path`): authored as a standalone `.html` file and passed
   like any other file path.
@@ -137,7 +171,7 @@ Instead of a static value, an overlay can be a **factory** `(props) => config`.
 The factory runs each time you call the overlay, so its content **and** its
 placement can depend on values you only know at runtime. Call
 `overlays.name(props)` to get a controller, then drive it the usual way
-(`(durationMs)`, `start()`, `end()`):
+(`.for(...)`, `.until(...)`, `start()`, `end()`):
 
 ```tsx
 video.overlays({
@@ -156,7 +190,7 @@ video.overlays({
     width: 288,
   }),
 })('Overview', async ({ page, overlays }) => {
-  await overlays.note({ text: 'Saved' })(1200) // blocking, 1.2s
+  await overlays.note({ text: 'Saved' }).for('1.2s') // blocking, 1.2s
 
   // For start()/end(), capture the controller so the props appear once.
   const badge = overlays.badge({ label: 'New' })
@@ -194,14 +228,14 @@ video.overlays({
   intro: {
     element: <Intro />,
     animate: true,
-    durationMs: 1500,
+    duration: '1.5s',
     fill: 'screen',
   },
   // An animated .html overlay, captured at 60fps.
   hint: {
     path: 'assets/callout.html',
     animate: true,
-    durationMs: 1200,
+    duration: '1.2s',
     fps: 60,
   },
 })('Overview', async ({ page, overlays }) => {
@@ -216,11 +250,11 @@ How the animation is triggered and how long it runs:
   frame at a time), so playback matches exactly what you author. Animate with
   `transform`/`opacity`; the overlay is captured at its initial layout box, so
   use `capturePadding` (below) to give the motion room.
-- **Length.** You set the length explicitly: pass it to the blocking call
-  (`await overlays.intro(2000)`) or set `durationMs` in the config. When you
-  drive an animated overlay with `start()`/`end()`, `durationMs` is required in
-  the config (the capture length is otherwise unknown); if the live window
-  outlasts the clip, its last frame is held.
+- **Length.** You set the length explicitly: use `.for('2s')` on the call or set
+  `duration` in the config. When you drive an animated overlay with
+  `start()`/`end()`, `duration` is required in the config (the capture length is
+  otherwise unknown); if the live window outlasts the clip, its last frame is
+  held.
 - **`fps`** sets the capture frame rate (defaults to `30`) and only applies with
   `animate: true`.
 
@@ -246,10 +280,10 @@ video.overlays({
     element: (
       <div className="rounded-2xl bg-sky-500 px-6 py-4 text-white">New</div>
     ),
-    durationMs: 1500,
+    duration: '1.5s',
   },
   // Or scope CSS to a single overlay:
-  hint: { path: 'callout.html', css: '.callout{color:#fff}', durationMs: 1500 },
+  hint: { path: 'callout.html', css: '.callout{color:#fff}', duration: '1.5s' },
 })('Overview', async ({ page, overlays }) => {
   // ...
 })
@@ -273,7 +307,7 @@ video.overlays({
   intro: {
     element: <Intro />, // slides/rotates in
     animate: true,
-    durationMs: 1500,
+    duration: '1.5s',
     capturePadding: 80, // room on every side for the motion
     width: 768, // placement sizes the padded box, so make it a bit wider
   },
@@ -299,7 +333,7 @@ video.overlays({
   // Top-left badge, 288 px wide (on a 1920x1080 recording).
   badge: {
     path: 'assets/badge.png',
-    durationMs: 1500,
+    duration: '1.5s',
     x: 96,
     y: 96,
     width: 288,
@@ -307,7 +341,7 @@ video.overlays({
   // A banner across the full output frame, sized by height.
   label: {
     path: 'assets/label.svg',
-    durationMs: 1500,
+    duration: '1.5s',
     relativeTo: 'screen',
     x: 192,
     y: 864,
@@ -394,18 +428,18 @@ Every controller supports two timing styles.
 script continues:
 
 ```ts
-await overlays.badge() // uses the config durationMs
-await overlays.badge(2000) // or override the duration in milliseconds
+await overlays.badge() // uses the config duration
+await overlays.badge.for('2s') // or override the duration
 ```
 
 **Until a position** keeps the overlay on a frozen frame until an absolute point
 in the finished video, instead of a relative duration. Pass a string position:
 
 ```ts
-await overlays.tip('0:10') // visible until 10 seconds in
-await overlays.tip('2s') // seconds (fractions allowed: '5.51s')
-await overlays.tip('1:02:03.5') // h:mm:ss(.f) timecode
-await overlays.tip('56%') // until 56% through the video
+await overlays.tip.until('0:10') // visible until 10 seconds in
+await overlays.tip.until('2s') // seconds (fractions allowed: '5.51s')
+await overlays.tip.until('1:02:03.5') // h:mm:ss(.f) timecode
+await overlays.tip.until('56%') // until 56% through the video
 ```
 
 Positions are resolved against the finished render, so they line up with the
@@ -431,7 +465,7 @@ overlay can run while others stay live, so you can layer them freely:
 await overlays.badge.start()
 await overlays.logo.start() // both live now
 await page.click('#next')
-await overlays.tip(1500) // blocking overlay, badge and logo stay composited
+await overlays.tip.for('1.5s') // blocking overlay, badge and logo stay composited
 await overlays.badge.end() // end each one independently, in any order
 await overlays.logo.end()
 ```
@@ -491,5 +525,5 @@ Keep reusable brand assets separate from throwaway experiment files so the proje
 - Use overlays sparingly.
 - Mute overlays that should not compete with narration.
 - Keep intros and transitions short.
-- Prefer short `durationMs` values for image overlays so they do not stall the timeline longer than needed.
+- Prefer short `.for(...)` (or `duration`) values for image overlays so they do not stall the timeline longer than needed.
 - Prefer consistent placement and sizing across videos in the same series.

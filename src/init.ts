@@ -1292,7 +1292,7 @@ video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
 // included), so the binary does not need to be committed.
 video
   .overlays({
-    logo: { path: './assets/logo.png', fill: 'recording', durationMs: 2000 },
+    logo: { path: './assets/logo.png', fill: 'recording', duration: '2s' },
   })
   .narration({
     en: {
@@ -1309,7 +1309,7 @@ video
   })
 
   // Open with a brief brand intro card before the walkthrough begins.
-  await overlays.logo(2000)
+  await overlays.logo.for('2s')
 
   // Play the matching narration line for this step.
   await narration.docs()
@@ -1362,13 +1362,13 @@ video
     // depend on runtime values. Pass an 'over' locator and screenci reads the
     // element's box at recording time, sizing the ring to it (plus the margin).
     // 'animate' plays the ring's CSS animation back in the video; animated
-    // start()/end() overlays need a durationMs.
+    // start()/end() overlays need a duration (the capture length).
     highlight: (target: Locator) => ({
       element: <Highlight />,
       over: target,
       margin: 8,
       animate: true,
-      durationMs: 1500,
+      duration: '1.5s',
     }),
   })
   .narration({

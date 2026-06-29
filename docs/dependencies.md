@@ -27,7 +27,7 @@ video.overlays({ intro: selected('Intro Clip') })(
 )
 ```
 
-A dependency overlay is driven exactly like any other overlay: call it for a blocking window (`await overlays.intro(1200)`), or drive a live window with `start()`/`end()`. It accepts the same placement options as a file overlay (`x`/`y`/`width`/`height`/`relativeTo`/`aspectRatio`/`fill`), so you can frame it anywhere in the output.
+A dependency overlay is driven exactly like any other overlay: call it for a blocking window (`await overlays.intro.for('1.2s')`), hold it until a position (`await overlays.intro.until('0:05')`), let a bare `await overlays.intro()` hold it for its natural length, or drive a live window with `start()`/`end()`. It accepts the same placement options as a file overlay (`x`/`y`/`width`/`height`/`relativeTo`/`aspectRatio`/`fill`), so you can frame it anywhere in the output.
 
 ```ts
 video.overlays({
@@ -39,7 +39,26 @@ video.overlays({
 })
 ```
 
-Because no local file is involved, a blocking dependency overlay needs a duration (from the call or the config), just like an image overlay. A live `start()`/`end()` window needs none.
+A blocking dependency overlay holds for its natural length with a bare `overlays.name()` when the target is a video; a screenshot target has no natural length, so give it a duration (`.for(...)`, `.until(...)`, or a `duration` config) or drive it with `start()`/`end()`.
+
+A dependency also accepts `crop` (both video and screenshot targets) and `start`/`end` (video targets only), the same way a file overlay does:
+
+```ts
+video.overlays({
+  // Reframe and trim an embedded video render.
+  demo: selected('Full Demo', {
+    crop: { x: 0, y: 0, width: 1280, height: 720 },
+    start: '2s',
+    end: '50%',
+  }),
+  // Crop a region of an embedded screenshot (no start/end: a screenshot has no timeline).
+  shot: selected('Dashboard Shot', {
+    crop: { x: 64, y: 64, width: 800, height: 600 },
+  }),
+})
+```
+
+Setting `start`/`end` on a dependency that resolves to a screenshot is rejected when the target medium is known.
 
 ## What can depend on what
 

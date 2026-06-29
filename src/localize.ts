@@ -1,5 +1,8 @@
 import { supportedLanguages, type Lang } from './voices.js'
 import type { LangNarrationOverride } from './voiceConfig.js'
+import type { OverlayCrop, SourceTrimPoint } from './events.js'
+import type { TimelineOffset } from './timelineOffset.js'
+import { validateCrop, resolveSourceTrim } from './sourceTrim.js'
 
 /**
  * A voice configuration used inside a `localize` spec. Allows a `seed` (it can
@@ -29,11 +32,19 @@ export type LocalizeMode = 'per-language' | 'shared'
  *   key is `cue` (not `text`) so it never collides with the injected `text` fields.
  * - `{ media | path, subtitle?, volume? }`: a pre-recorded audio file.
  */
+type LocalizeNarrationMediaFields = {
+  subtitle?: string
+  volume?: number
+  crop?: OverlayCrop
+  start?: TimelineOffset
+  end?: TimelineOffset
+  language?: never
+}
 export type LocalizeNarrationValue =
   | string
   | { cue: string; voice?: VoiceConfig; language?: Lang; volume?: number }
-  | { media: string; subtitle?: string; volume?: number; language?: never }
-  | { path: string; subtitle?: string; volume?: number; language?: never }
+  | ({ media: string } & LocalizeNarrationMediaFields)
+  | ({ path: string } & LocalizeNarrationMediaFields)
 
 /** Seeded narration: language -> (cue name -> value). */
 export type NarrationByLang = Partial<
@@ -90,7 +101,15 @@ export type NormalizedCueValue =
       language?: Lang
       volume?: number
     }
-  | { kind: 'media'; path: string; subtitle?: string; volume?: number }
+  | {
+      kind: 'media'
+      path: string
+      subtitle?: string
+      volume?: number
+      crop?: OverlayCrop
+      sourceStart?: SourceTrimPoint
+      sourceEnd?: SourceTrimPoint
+    }
 
 export type NormalizedNarration = {
   /** Every cue name: seeded then Studio, in declared order. */
@@ -177,11 +196,21 @@ export function normalizeCueValue(
     )
   }
   const path = 'media' in value ? value.media : value.path
+  const label = `localize() narration cue "${name}" media "${path}"`
+  if (value.crop !== undefined) validateCrop(label, value.crop)
+  const { sourceStart, sourceEnd } = resolveSourceTrim(
+    label,
+    value.start,
+    value.end
+  )
   return {
     kind: 'media',
     path,
     ...(value.subtitle !== undefined && { subtitle: value.subtitle }),
     ...(value.volume !== undefined && { volume: value.volume }),
+    ...(value.crop !== undefined && { crop: value.crop }),
+    ...(sourceStart !== undefined && { sourceStart }),
+    ...(sourceEnd !== undefined && { sourceEnd }),
   }
 }
 

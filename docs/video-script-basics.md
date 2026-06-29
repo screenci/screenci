@@ -65,7 +65,7 @@ video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
 // included), so the binary does not need to be committed.
 video
   .overlays({
-    logo: { path: './assets/logo.png', fill: 'recording', durationMs: 2000 },
+    logo: { path: './assets/logo.png', fill: 'recording', duration: '2s' },
   })
   .narration({
     en: {
@@ -82,7 +82,7 @@ video
   })
 
   // Open with a brief brand intro card before the walkthrough begins.
-  await overlays.logo(2000)
+  await overlays.logo.for('2s')
 
   // Play the matching narration line for this step.
   await narration.docs()
@@ -165,17 +165,17 @@ handy in long stretches (for example a recorded playback) where hand-computing
 
 ```ts
 // Narration: start the line and hold its window until the position.
-await narration.intro('0:10') // until 10 seconds in
-await narration.outro('56%') // until 56% through the video
+await narration.intro.until('0:10') // until 10 seconds in
+await narration.outro.until('56%') // until 56% through the video
 
 // Overlays: keep the (static) overlay on screen until the position.
-await overlays.tip('0:10') // until 10 seconds in
-await overlays.tip('2s') // seconds (fractions allowed: '5.51s')
+await overlays.tip.until('0:10') // until 10 seconds in
+await overlays.tip.until('2s') // seconds (fractions allowed: '5.51s')
 ```
 
-Accepted forms: `'<n>s'` seconds, `'m:ss(.f)'` / `'h:mm:ss(.f)'` timecodes, and
-`'<n>%'` percentages. A bare number stays a relative length (overlay duration in
-ms). Positions are resolved against the finished render, so they are correct
+Accepted forms for `.until(...)`: `'<n>s'` seconds, `'m:ss(.f)'` /
+`'h:mm:ss(.f)'` timecodes, and `'<n>%'` percentages. For a relative length
+instead, use `.for('<n>s')`. Positions are resolved against the finished render, so they are correct
 against the actual video, and narration audio is never cut (the window extends to
 let a line finish). Percentages are not supported on `.mp4` or animated overlays,
 whose length is fixed. See [Narration](/docs/guides/narration) and

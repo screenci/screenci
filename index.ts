@@ -82,6 +82,7 @@ export type {
   OverlayControllerFor,
   ReactElementLike,
   OverlayPlacement,
+  OverlayCrop,
   DependencyOverlayInput,
   DependencyOverlayOptions,
 } from './src/asset.js'

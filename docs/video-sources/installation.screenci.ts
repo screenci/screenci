@@ -11,7 +11,7 @@ video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
 // included), so the binary does not need to be committed.
 video
   .overlays({
-    logo: { path: './assets/logo.png', fill: 'recording', durationMs: 2000 },
+    logo: { path: './assets/logo.png', fill: 'recording', duration: '2s' },
   })
   .narration({
     en: {
@@ -28,7 +28,7 @@ video
   })
 
   // Open with a brief brand intro card before the walkthrough begins.
-  await overlays.logo(2000)
+  await overlays.logo.for('2s')
 
   // Play the matching narration line for this step.
   await narration.docs()

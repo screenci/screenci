@@ -366,6 +366,30 @@ describe('CLI', () => {
     processExitSpy?.mockRestore()
     loadEnvFileSpy?.mockRestore()
   })
+
+  describe('clearRecordingDirectories', () => {
+    it('wipes per-recording directories but preserves the overlay cache and link session', async () => {
+      const { clearRecordingDirectories } = await import('./cli')
+      const dir = '/project/.screenci'
+      mockReaddirSync.mockReturnValue([
+        'My Video [en]',
+        'My Screenshot [en]',
+        '.overlay-cache',
+        'link-session.json',
+      ] as unknown as string[])
+
+      clearRecordingDirectories(dir)
+
+      const removed = mockRmSync.mock.calls.map((call) => call[0] as string)
+      expect(removed).toContain('/project/.screenci/My Video [en]')
+      expect(removed).toContain('/project/.screenci/My Screenshot [en]')
+      // The cross-run overlay cache and the link session survive the wipe so
+      // unchanged overlays are not re-rendered, re-encoded, and re-uploaded.
+      expect(removed).not.toContain('/project/.screenci/.overlay-cache')
+      expect(removed).not.toContain('/project/.screenci/link-session.json')
+    })
+  })
+
   describe('record command', () => {
     beforeEach(() => {
       process.env.SCREENCI_SECRET = 'test-secret'

@@ -226,6 +226,27 @@ export function timelineAnchorFields(
     : { untilPercent: until.percent }
 }
 
+/**
+ * A crop rectangle in the SOURCE file's own pixels (top-left origin), applied to
+ * a file overlay (image/video), a narration video, or an embedded render
+ * dependency before it is placed/scaled. Mirrors Playwright's
+ * `page.screenshot({ clip })` shape.
+ */
+export type OverlayCrop = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/**
+ * A source-trim point: a late start / early end into a source media file. Exactly
+ * one form is provided: a concrete offset in milliseconds (from a `'2s'`/timecode
+ * string), or a fraction of the SOURCE duration (`0.5` for `'50%'`) resolved
+ * against the probed source length at render time.
+ */
+export type SourceTrimPoint = { ms: number } | { percent: number }
+
 export type CueStartEvent = {
   type: 'cueStart'
   timeMs: number
@@ -295,9 +316,20 @@ export type ValuesDeclareEvent = {
  * recovered-from-a-previous-upload case is the recording-phase shape with no
  * `assetHash` yet (filled in from a previous upload before submission).
  */
+/**
+ * Source crop/trim shared by a file-based narration video cue translation. `crop`
+ * reframes the source before the square tile crop; `sourceStart`/`sourceEnd` trim
+ * the played slice of the source.
+ */
+type VideoCueTranslationMedia = {
+  subtitle?: string
+  crop?: OverlayCrop
+  sourceStart?: SourceTrimPoint
+  sourceEnd?: SourceTrimPoint
+}
 export type VideoCueTranslationFile =
-  | { assetPath: string; assetHash?: string; subtitle?: string }
-  | { assetHash: string; assetPath?: string; subtitle?: string }
+  | ({ assetPath: string; assetHash?: string } & VideoCueTranslationMedia)
+  | ({ assetHash: string; assetPath?: string } & VideoCueTranslationMedia)
 /** TTS-based video cue translation — generates audio via text-to-speech. */
 export type VideoCueTranslationTTS = {
   text: string
@@ -405,6 +437,8 @@ export type ImageAssetStartEvent = {
   durationMs?: number
   fullScreen: boolean
   placement?: OverlayPlacement
+  /** Crop rect in the source image's own pixels, applied before placement/scale. */
+  crop?: OverlayCrop
   /**
    * Absolute output position (ms) the overlay should remain visible until (from a
    * string position like `'0:10'`). Resolved into a frozen-frame hold at render
@@ -428,6 +462,12 @@ export type VideoAssetStartEvent = {
   audio: number
   fullScreen: boolean
   placement?: OverlayPlacement
+  /** Crop rect in the source video's own pixels, applied before placement/scale. */
+  crop?: OverlayCrop
+  /** Late start into the source video (a `'2s'`/timecode offset or `'50%'` fraction of source). */
+  sourceStart?: SourceTrimPoint
+  /** Early end into the source video (a `'2s'`/timecode offset or `'50%'` fraction of source). */
+  sourceEnd?: SourceTrimPoint
   /**
    * Playback-rate multiplier for the overlay video (and its audio). `2` plays
    * it twice as fast, `0.5` at half speed. Omitted plays at the natural rate.
@@ -504,6 +544,18 @@ export type DependencyAssetStartEvent = {
   durationMs?: number
   fullScreen: boolean
   placement?: OverlayPlacement
+  /**
+   * Crop rect in the resolved output's own pixels, applied (for both a video and
+   * a screenshot dependency) before placement/scale.
+   */
+  crop?: OverlayCrop
+  /**
+   * Late start into the embedded VIDEO (rejected by the backend for a screenshot
+   * dependency, which has no timeline).
+   */
+  sourceStart?: SourceTrimPoint
+  /** Early end into the embedded VIDEO (video dependencies only). */
+  sourceEnd?: SourceTrimPoint
   /** See {@link ImageAssetStartEvent.untilOutputMs}. */
   untilOutputMs?: number
   /** See {@link ImageAssetStartEvent.untilPercent}. */
@@ -1410,6 +1462,7 @@ export class EventRecorder implements IEventRecorder {
         ...(asset.durationMs !== undefined && { durationMs: asset.durationMs }),
         fullScreen: asset.fullScreen,
         ...(asset.placement !== undefined && { placement: asset.placement }),
+        ...(asset.crop !== undefined && { crop: asset.crop }),
         ...(asset.untilOutputMs !== undefined && {
           untilOutputMs: asset.untilOutputMs,
         }),
@@ -1451,6 +1504,11 @@ export class EventRecorder implements IEventRecorder {
         ...(asset.durationMs !== undefined && { durationMs: asset.durationMs }),
         fullScreen: asset.fullScreen,
         ...(asset.placement !== undefined && { placement: asset.placement }),
+        ...(asset.crop !== undefined && { crop: asset.crop }),
+        ...(asset.sourceStart !== undefined && {
+          sourceStart: asset.sourceStart,
+        }),
+        ...(asset.sourceEnd !== undefined && { sourceEnd: asset.sourceEnd }),
         ...(asset.untilOutputMs !== undefined && {
           untilOutputMs: asset.untilOutputMs,
         }),
@@ -1471,6 +1529,11 @@ export class EventRecorder implements IEventRecorder {
       audio: asset.audio,
       fullScreen: asset.fullScreen,
       ...(asset.placement !== undefined && { placement: asset.placement }),
+      ...(asset.crop !== undefined && { crop: asset.crop }),
+      ...(asset.sourceStart !== undefined && {
+        sourceStart: asset.sourceStart,
+      }),
+      ...(asset.sourceEnd !== undefined && { sourceEnd: asset.sourceEnd }),
       ...(asset.untilOutputMs !== undefined && {
         untilOutputMs: asset.untilOutputMs,
       }),

@@ -65,6 +65,7 @@ import type {
   LinkSessionStatus,
   PersistedLinkSessionSpec,
 } from './src/linkSession.js'
+import { OVERLAY_CACHE_DIR_NAME } from './src/htmlRasterizer.js'
 import { openUrlInBrowser } from './src/openBrowser.js'
 import { maybeExtractVoiceSampleAudio } from './src/voiceSampleAudio.js'
 
@@ -1132,10 +1133,15 @@ function forwardChildSignals(
   }
 }
 
-function clearRecordingDirectories(dir: string): void {
+export function clearRecordingDirectories(dir: string): void {
   mkdirSync(dir, { recursive: true })
   for (const entry of readdirSync(dir)) {
     if (entry === SCREENCI_LINK_SESSION_FILE) continue
+    // Preserve the cross-run overlay cache: it lives as a sibling of the
+    // per-recording directories so unchanged overlays are served byte for byte
+    // from a previous run. Wiping it would re-render and re-encode every overlay
+    // each run, changing their content hashes and forcing a re-upload.
+    if (entry === OVERLAY_CACHE_DIR_NAME) continue
     rmSync(resolve(dir, entry), { recursive: true, force: true })
   }
 }

@@ -1,13 +1,16 @@
 import type {
   IEventRecorder,
   CueTranslation,
+  OverlayCrop,
   RecordingCustomVoiceRef,
+  SourceTrimPoint,
   TimelineAnchorInput,
   VideoCueTranslation,
   VideoCueTranslationFile,
   VoiceLanguageMeta,
 } from './events.js'
 import { parseTimelineOffset, type TimelineOffset } from './timelineOffset.js'
+import { validateCrop, resolveSourceTrim } from './sourceTrim.js'
 import {
   supportedLanguages,
   voices,
@@ -240,20 +243,20 @@ async function endActiveCue(): Promise<void> {
  * await narration.nextStep.end()
  *
  * // Hold the cue until an absolute position in the final video:
- * await narration.outro('1:05')   // until 1 minute 5 seconds
- * await narration.outro('90%')    // until 90% through
+ * await narration.outro.until('1:05')   // until 1 minute 5 seconds
+ * await narration.outro.until('90%')    // until 90% through
  * ```
  */
 export type NarrationCue = {
   /** No argument: play the line and block until its audio finishes. */
   (): Promise<void>
   /**
-   * String position: start the line now and hold the cue window until this
-   * absolute point in the final video (a `'<n>s'`/timecode position, or a
-   * `'<n>%'` fraction). The audio is never cut: if it runs longer than the
-   * position, the window extends to let it finish.
+   * Start the line now and hold the cue window until this absolute point in the
+   * final video (a `'<n>s'`/timecode position, or a `'<n>%'` fraction). The audio
+   * is never cut: if it runs longer than the position, the window extends to let
+   * it finish. Successive `.until(...)` targets must be monotonic.
    */
-  (until: TimelineOffset): Promise<void>
+  until(position: TimelineOffset): Promise<void>
   start(): Promise<void>
   end(): Promise<void>
 }
@@ -270,10 +273,21 @@ export type NarrationCue = {
  */
 type NarrationVolume = { volume?: number }
 
+/**
+ * Source crop/trim for a file-based narration cue (`media`/`path`). `crop`
+ * reframes the source video before the square tile crop; `start`/`end` trim the
+ * played slice (time strings: `'2s'`/`'0:02'`/`'50%'` of the source).
+ */
+type NarrationMediaFields = {
+  subtitle?: string
+  crop?: OverlayCrop
+  start?: TimelineOffset
+  end?: TimelineOffset
+}
 type NarrationCueObject =
   | ({ text: string } & NarrationVolume)
-  | ({ media: string; subtitle?: string } & NarrationVolume)
-  | ({ path: string; subtitle?: string } & NarrationVolume)
+  | ({ media: string } & NarrationMediaFields & NarrationVolume)
+  | ({ path: string } & NarrationMediaFields & NarrationVolume)
 
 /** A single narration cue value in a multi-language map. */
 export type CueMapValue = string | NarrationCueObject
@@ -525,12 +539,18 @@ function createCueController(
     await run.finished
   }
 
-  const cue = (async (until?: TimelineOffset): Promise<void> => {
-    await start(false, resolveCueAnchor(until))
+  const block = async (until?: TimelineAnchorInput): Promise<void> => {
+    await start(false, until)
     sleepForCueFrameGap()
     await end()
+  }
+
+  const cue = (async (): Promise<void> => {
+    await block()
   }) as NarrationCue
 
+  cue.until = (position: TimelineOffset): Promise<void> =>
+    block(resolveCueAnchor(position))
   cue.start = start
   cue.end = end
   return cue
@@ -560,7 +580,15 @@ export function buildStudioNarrationCues(
 
 type NormalizedCueMapValue =
   | { type: 'text'; text: string; volume?: number }
-  | { type: 'file'; path: string; subtitle?: string; volume?: number }
+  | {
+      type: 'file'
+      path: string
+      subtitle?: string
+      volume?: number
+      crop?: OverlayCrop
+      sourceStart?: SourceTrimPoint
+      sourceEnd?: SourceTrimPoint
+    }
 
 const RESERVED_LANGUAGE_METADATA_KEYS = new Set<LanguageMetadataKey>(['voice'])
 const SUPPORTED_LANGUAGE_SET = new Set<Lang>(supportedLanguages)
@@ -593,11 +621,22 @@ function normalizeCueMapValue(value: CueMapValue): NormalizedCueMapValue {
 
   const mediaPath = 'media' in value ? value.media : value.path
 
+  const label = `Narration cue media "${mediaPath}"`
+  if (value.crop !== undefined) validateCrop(label, value.crop)
+  const { sourceStart, sourceEnd } = resolveSourceTrim(
+    label,
+    value.start,
+    value.end
+  )
+
   return {
     type: 'file',
     path: mediaPath,
     ...(value.subtitle !== undefined && { subtitle: value.subtitle }),
     ...(value.volume !== undefined && { volume: value.volume }),
+    ...(value.crop !== undefined && { crop: value.crop }),
+    ...(sourceStart !== undefined && { sourceStart }),
+    ...(sourceEnd !== undefined && { sourceEnd }),
   }
 }
 
@@ -830,6 +869,13 @@ function buildCuesFromInput(
               {
                 path: val.path,
                 ...(val.subtitle !== undefined && { subtitle: val.subtitle }),
+                ...(val.crop !== undefined && { crop: val.crop }),
+                ...(val.sourceStart !== undefined && {
+                  sourceStart: val.sourceStart,
+                }),
+                ...(val.sourceEnd !== undefined && {
+                  sourceEnd: val.sourceEnd,
+                }),
               }
             )
           }
@@ -895,16 +941,30 @@ function buildCuesFromInput(
 
 async function entryToVideoTranslation(
   testFilePath: string | null,
-  entry: string | { path: string; subtitle?: string }
+  entry:
+    | string
+    | {
+        path: string
+        subtitle?: string
+        crop?: OverlayCrop
+        sourceStart?: SourceTrimPoint
+        sourceEnd?: SourceTrimPoint
+      }
 ): Promise<VideoCueTranslationFile> {
   const path = typeof entry === 'string' ? entry : entry.path
   const subtitle = typeof entry === 'string' ? undefined : entry.subtitle
+  const crop = typeof entry === 'string' ? undefined : entry.crop
+  const sourceStart = typeof entry === 'string' ? undefined : entry.sourceStart
+  const sourceEnd = typeof entry === 'string' ? undefined : entry.sourceEnd
   const assetHash = await resolveAssetFileHash(path, testFilePath)
   if (assetHash === undefined) warnMissingNarrationAsset(path)
   return {
     ...(assetHash !== undefined && { assetHash }),
     assetPath: path,
     ...(subtitle !== undefined && { subtitle }),
+    ...(crop !== undefined && { crop }),
+    ...(sourceStart !== undefined && { sourceStart }),
+    ...(sourceEnd !== undefined && { sourceEnd }),
   }
 }
 
@@ -1066,6 +1126,13 @@ export function buildLocalizedNarrationCues(
                   path: value.path,
                   ...(value.subtitle !== undefined && {
                     subtitle: value.subtitle,
+                  }),
+                  ...(value.crop !== undefined && { crop: value.crop }),
+                  ...(value.sourceStart !== undefined && {
+                    sourceStart: value.sourceStart,
+                  }),
+                  ...(value.sourceEnd !== undefined && {
+                    sourceEnd: value.sourceEnd,
                   }),
                 }
               )

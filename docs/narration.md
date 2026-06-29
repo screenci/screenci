@@ -78,10 +78,10 @@ control of the timeline.
 Pass a string position to hold the cue window until an absolute point in the
 finished video, instead of only until its audio ends:
 
-- `await narration.key('0:10')` holds until 10 seconds in.
-- `await narration.key('2s')` / `'5.51s'` use seconds (fractions allowed).
-- `await narration.key('1:02:03.5')` uses an `h:mm:ss(.f)` timecode.
-- `await narration.key('56%')` holds until 56% through the video.
+- `await narration.key.until('0:10')` holds until 10 seconds in.
+- `await narration.key.until('2s')` / `'5.51s'` use seconds (fractions allowed).
+- `await narration.key.until('1:02:03.5')` uses an `h:mm:ss(.f)` timecode.
+- `await narration.key.until('56%')` holds until 56% through the video.
 
 Positions are resolved against the finished render, so they line up with the
 actual video. The audio is never cut: if a line runs longer than the position,
@@ -154,6 +154,29 @@ A `media` file is uploaded the first time you record with it present and reused
 on later runs, so you do not have to commit the file. If it is missing locally,
 ScreenCI reuses the version uploaded for this video (matched by file path). See
 [Asset files do not need to be committed](/docs/ci-setup#asset-files-do-not-need-to-be-committed).
+
+### Crop and trim a media cue
+
+A `media`/`path` cue that is a **video** (a talking-head or webcam clip shown as a
+corner tile) accepts `crop`, `start`, and `end`:
+
+```ts
+clip: {
+  media: '/webcam.mp4',
+  // Reframe the source onto the speaker's face (source pixels, top-left origin).
+  crop: { x: 320, y: 80, width: 720, height: 720 },
+  // Play only seconds 2 through the halfway point of the source.
+  start: '0:02',
+  end: '50%',
+}
+```
+
+`crop` selects a region of the source video in its own pixels; the tile keeps its
+square shape (the crop reframes the source first, then the usual square fit
+applies). `start`/`end` trim the played slice of the source: each is a time string
+(`'2s'`/`'1.5s'`, a `'0:02'` timecode, or `'50%'` of the source duration), and
+`start` must come before `end`. Both the picture and the spoken audio are trimmed
+together.
 
 ## Voice per language and per cue
 

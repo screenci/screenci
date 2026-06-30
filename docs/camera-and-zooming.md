@@ -93,29 +93,19 @@ for the exported zoom helpers.
 
 ## Scrolling a target into view
 
-Interactions (`click()`, `tap()`, `hover()`, `fill()`, `check()`, `selectOption()`, `selectText()`, `dragTo()`, ...) scroll their target into view before acting, so the action is always on camera. When you are not zoomed in:
+Interactions (`click()`, `tap()`, `hover()`, `fill()`, `check()`, `selectOption()`, `selectText()`, `dragTo()`, ...) scroll their target into view before acting, so the action is always on camera:
 
 - a target that is **already fully on screen does not scroll at all**, so a visible button or field never jumps under the cursor, and
-- a target that is **off screen** scrolls into view and lands at a gentle position near the top of the frame (rather than being yanked to dead center).
+- a target that is **off screen** scrolls only the **minimum needed** to bring it into the frame (like `scrollIntoViewIfNeeded`). It lands just inside view rather than being pulled across the page to the center or top, so a control near the bottom of a long page is not yanked upward.
 
-Tune where an off-screen target lands with `centering` (a `0-1` value) inside `autoZoomOptions`:
+`centering` (a `0-1` value: `0` edge-aligned, `1` dead center) shapes how the **camera frames** a target when you are zoomed, with manual `zoomTo()` or inside `autoZoom()`, not the bare scroll. The page itself always scrolls only as far as needed to reveal the target; the zoom then composes it.
 
 ```ts
-// Default: off-screen targets land gently (0.2); visible targets do not move.
-await page.getByRole('button', { name: 'Save' }).click()
-
-// Pull an off-screen target all the way to center as it scrolls in.
+// Center the followed target inside the zoom (autoZoom defaults to 1 already).
 await page.getByRole('button', { name: 'Save' }).click({
   autoZoomOptions: { centering: 1 },
 })
-
-// Edge-align an off-screen target.
-await page.getByLabel('Email').fill('jane@example.com', {
-  autoZoomOptions: { centering: 0 },
-})
 ```
-
-`centering` is `0` for edge-aligned, `1` for dead center; the default for a non-zoomed interaction is `0.2`, and it only affects targets that actually need scrolling. Inside `autoZoom()` the same `centering` controls how the camera frames each followed interaction instead (where the default is `1`).
 
 ## Recording size
 

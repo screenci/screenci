@@ -567,7 +567,9 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     const result = await promise
 
-    expect(result.elementRect?.y).toBeCloseTo(340, 0)
+    // Not zoomed (idle interaction), so amount is forced to 1 and the passed
+    // centering is honored: centering 0 edge-aligns the rect to the top.
+    expect(result.elementRect?.y).toBeCloseTo(0, 0)
   })
 
   it('uses halfway placement when centering is 0.5 and achievable', async () => {
@@ -581,7 +583,60 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     const result = await promise
 
+    // centering 0.5 lands the rect at (viewport - rect) * 0.5 / ... = 170px.
+    expect(result.elementRect?.y).toBeCloseTo(170, 0)
+  })
+
+  it('uses the gentle scroll-centering default (0.2) for a plain interaction', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2200 },
+    })
+
+    // No centering passed: an idle interaction (no zoom) should not yank the
+    // target to dead center. The default 0.2 lands it at (720 - 40) * 0.2 / 2
+    // = 68px from the top instead of 340.
+    const promise = changeFocus(locator)
+    await vi.runAllTimersAsync()
+    const result = await promise
+
+    expect(result.elementRect?.y).toBeCloseTo(68, 0)
+  })
+
+  it('lets an explicit centering override the gentle scroll default', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2200 },
+    })
+
+    // Passing centering 1 on a plain interaction opts back into dead-center
+    // scrolling (the old default), proving the default is adjustable.
+    const promise = changeFocus(locator, { centering: 1 })
+    await vi.runAllTimersAsync()
+    const result = await promise
+
     expect(result.elementRect?.y).toBeCloseTo(340, 0)
+  })
+
+  it('does not scroll a plain interaction whose target is already fully visible', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 400, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2200 },
+    })
+
+    // The rect sits entirely within the viewport. The gentle default (0.2) would
+    // otherwise pull it up to y 68, but a visible target must not move: no
+    // scroll, and the rect stays exactly where it was.
+    const promise = changeFocus(locator)
+    await vi.runAllTimersAsync()
+    const result = await promise
+
+    expect(result.elementRect?.y).toBeCloseTo(400, 0)
+    expect(result.scroll).toBeUndefined()
+    expect(locator.__scrollToCalls).toHaveLength(0)
   })
 
   it('clamps oversized rect framing when centered placement is impossible', async () => {
@@ -702,6 +757,8 @@ describe('changeFocus', () => {
       scrollSize: { width: 1280, height: 2000 },
     })
 
+    // The rect is already fully within the viewport, so a plain interaction
+    // skips the scroll entirely regardless of centering.
     const promise = changeFocus(locator, { amount: 0.5, centering: 0 })
     await vi.runAllTimersAsync()
     const result = await promise
@@ -913,7 +970,10 @@ describe('changeFocus', () => {
 
     expect(locator.__nestedScrollTops.length).toBeGreaterThan(0)
     expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
-    expect(result.elementRect?.y).toBeCloseTo(340, 0)
+    // No explicit centering: a plain interaction uses the gentle scroll default
+    // (0.2), landing the rect at (720 - 40) * 0.2 / 2 = 68px from the top rather
+    // than dead center.
+    expect(result.elementRect?.y).toBeCloseTo(68, 0)
   })
 
   it('does not scroll nested containers when the locator is already visible', async () => {

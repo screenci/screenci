@@ -602,8 +602,14 @@ const _videoBase = base.extend<
   },
 
   narration: async (
-    { _screenciNarration, _screenciRecordingLocalize, renderOptions },
-    use
+    {
+      _screenciNarration,
+      _screenciRecordingLocalize,
+      renderOptions,
+      _screenciSourceFile,
+    },
+    use,
+    testInfo
   ) => {
     const { obj: renderOptionsObj, studio: studioRender } =
       resolveStudioRenderOptions(renderOptions)
@@ -611,7 +617,11 @@ const _videoBase = base.extend<
       buildNarrationMarkers(
         _screenciNarration,
         _screenciRecordingLocalize?.languages ?? [],
-        narrationVoiceConfigFromRenderOptions(renderOptionsObj, studioRender)
+        narrationVoiceConfigFromRenderOptions(renderOptionsObj, studioRender),
+        undefined,
+        // Pre-warm media-cue hashes before recording so a video cue's start()
+        // does not pay the file read on the timeline.
+        _screenciSourceFile ?? testInfo.file
       )
     )
   },
@@ -626,8 +636,20 @@ const _videoBase = base.extend<
     await use(buildOverlays(_screenciOverlays, _screenciLanguage))
   },
 
-  audio: async ({ _screenciAudio, _screenciLanguage }, use) => {
-    await use(buildAudio(_screenciAudio, _screenciLanguage))
+  audio: async (
+    { _screenciAudio, _screenciLanguage, _screenciSourceFile },
+    use,
+    testInfo
+  ) => {
+    // Pre-warm audio-track hashes before recording so a track's start() does not
+    // pay the file read on the timeline.
+    await use(
+      buildAudio(
+        _screenciAudio,
+        _screenciLanguage,
+        _screenciSourceFile ?? testInfo.file
+      )
+    )
   },
   recordingFinalizationQueue: [
     async ({}, use) => {

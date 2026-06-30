@@ -26,6 +26,17 @@ export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
 }
 
 /**
+ * Centering used when an interaction (click, tap, hover, fill, ...) scrolls an
+ * OFF-SCREEN target into view WITHOUT zooming. A target that is already fully
+ * visible is never scrolled (see isRectFullyWithinViewport in changeFocus); this
+ * value only decides where an off-screen target lands once a scroll is needed.
+ * Unlike the zoomed case (which centers tightly), a plain interaction lands the
+ * target gently near the top instead of dead center. `0` edge-aligns, `1` fully
+ * centers. Override per interaction with `autoZoomOptions: { centering }`.
+ */
+export const DEFAULT_SCROLL_CENTERING = 0.2
+
+/**
  * Default cursor move duration for click-like actions, in milliseconds.
  */
 export const DEFAULT_CLICK_MOUSE_MOVE_DURATION: number = 900

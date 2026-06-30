@@ -87,6 +87,32 @@ Do not mix `autoZoom()` and manual zooming at the same time. In practice, that m
 
 for the exported zoom helpers.
 
+## Scrolling a target into view
+
+Interactions (`click()`, `tap()`, `hover()`, `fill()`, `check()`, `selectOption()`, `selectText()`, `dragTo()`, ...) scroll their target into view before acting, so the action is always on camera. When you are not zoomed in:
+
+- a target that is **already fully on screen does not scroll at all**, so a visible button or field never jumps under the cursor, and
+- a target that is **off screen** scrolls into view and lands at a gentle position near the top of the frame (rather than being yanked to dead center).
+
+Tune where an off-screen target lands with `centering` (a `0-1` value) inside `autoZoomOptions`:
+
+```ts
+// Default: off-screen targets land gently (0.2); visible targets do not move.
+await page.getByRole('button', { name: 'Save' }).click()
+
+// Pull an off-screen target all the way to center as it scrolls in.
+await page.getByRole('button', { name: 'Save' }).click({
+  autoZoomOptions: { centering: 1 },
+})
+
+// Edge-align an off-screen target.
+await page.getByLabel('Email').fill('jane@example.com', {
+  autoZoomOptions: { centering: 0 },
+})
+```
+
+`centering` is `0` for edge-aligned, `1` for dead center; the default for a non-zoomed interaction is `0.2`, and it only affects targets that actually need scrolling. Inside `autoZoom()` the same `centering` controls how the camera frames each followed interaction instead (where the default is `1`).
+
 ## Recording size
 
 By default the recording fills the output frame ("full screen"). `resizeRecording()` shrinks it to a fraction of the frame so the styled background shows around it, which is useful for a deliberate "step back" moment. `resetRecordingSize()` returns to full screen.

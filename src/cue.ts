@@ -28,9 +28,11 @@ import { isCustomVoiceRef } from './customVoiceRef.js'
 import { MAX_AUDIO_LEVEL } from './asset.js'
 import { isInsideHide } from './hide.js'
 import { logger } from './logger.js'
-import { readFile } from 'fs/promises'
-import { createHash } from 'crypto'
-import { dirname, resolve } from 'path'
+import {
+  assetCandidatePaths,
+  hashAssetFile,
+  prewarmAssetFile,
+} from './assetHash.js'
 import {
   getScreenCIRuntimeContext,
   getRuntimeCueRecorder,
@@ -110,22 +112,11 @@ async function resolveAssetFileHash(
   assetPath: string,
   testFilePath: string | null
 ): Promise<string | undefined> {
-  const candidates = [assetPath]
-  if (testFilePath !== null) {
-    const testDir = dirname(testFilePath)
-    candidates.push(resolve(testDir, assetPath))
-  }
-
-  for (const candidate of candidates) {
-    try {
-      const fileBuffer = await readFile(candidate)
-      return createHash('sha256').update(fileBuffer).digest('hex')
-    } catch {
-      // try next candidate
-    }
-  }
-
-  return undefined
+  // Cached + pre-warmable: see assetHash.ts. When the file was pre-warmed before
+  // the recording clock started, this returns the cached hash without a disk read
+  // so the cue's start() lands right after the previous action instead of trailing
+  // it by the file-read latency.
+  return hashAssetFile(assetCandidatePaths(assetPath, testFilePath))
 }
 
 async function toRecordedVoice(
@@ -1043,12 +1034,41 @@ function translationVoiceFields(
  * recorder filters to the active language). Studio-managed cues emit studio cue
  * starts whose content is owned by Studio.
  */
+/**
+ * Pre-warm (hash) every file-backed narration cue's media before recording, so a
+ * video cue's start() reuses the cached hash rather than reading the file on the
+ * timeline. Walks each language's seeded cues and pre-warms the media path of
+ * every file entry. Fire-and-forget per path (see {@link prewarmAssetFile}).
+ */
+function prewarmNarrationMedia(
+  narration: NonNullable<NormalizedNarration>,
+  anchorFile: string
+): void {
+  for (const langCues of Object.values(narration.seedByLang)) {
+    for (const value of Object.values(langCues ?? {})) {
+      if (value.kind === 'media') {
+        prewarmAssetFile(value.path, anchorFile)
+      }
+    }
+  }
+}
+
 export function buildLocalizedNarrationCues(
   narration: NormalizedNarration,
   voiceByLang: Partial<Record<string, LangNarrationOverride>>,
-  defaultVoice: TopLevelVoiceConfig | LangNarrationOverride | undefined
+  defaultVoice: TopLevelVoiceConfig | LangNarrationOverride | undefined,
+  // The `.screenci` script media paths are resolved relative to. When provided,
+  // every file-backed cue's media is pre-warmed (hashed) now, before the
+  // recording clock starts, so the cue's start() reuses the cached hash instead
+  // of paying the file read on the timeline. Omitted (no pre-warm) outside the
+  // recording fixture, where the anchor and timing do not apply.
+  anchorFile?: string
 ): Record<string, NarrationCue> {
   if (narration === null) return {}
+
+  if (anchorFile !== undefined) {
+    prewarmNarrationMedia(narration, anchorFile)
+  }
 
   const studioSet = new Set(narration.studioNames)
   const result: Record<string, NarrationCue> = {}

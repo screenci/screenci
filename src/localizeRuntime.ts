@@ -70,10 +70,19 @@ export function buildNarrationMarkers(
   narration: NormalizedFeature<LocalizeNarrationValue> | null | undefined,
   languages: string[],
   defaultVoice?: TopLevelVoiceConfig,
-  voiceByLang: Partial<Record<string, VoiceConfig>> = {}
+  voiceByLang: Partial<Record<string, VoiceConfig>> = {},
+  // The `.screenci` script that media paths resolve against. When provided, the
+  // file-backed cues' media is pre-warmed (hashed) up front so their start()
+  // does not pay the read on the recording timeline. Omitted outside recording.
+  anchorFile?: string
 ): NarrationMarkers {
   const normalized = featureToNormalizedNarration(narration ?? null, languages)
-  return buildLocalizedNarrationCues(normalized, voiceByLang, defaultVoice)
+  return buildLocalizedNarrationCues(
+    normalized,
+    voiceByLang,
+    defaultVoice,
+    anchorFile
+  )
 }
 
 /**

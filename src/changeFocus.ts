@@ -3,7 +3,7 @@ import type { ElementRect, FocusChangeEvent } from './events.js'
 import { evaluateEasingAtT } from './easing.js'
 import {
   DEFAULT_CLICK_MOUSE_MOVE_DURATION,
-  DEFAULT_ZOOM_OPTIONS,
+  DEFAULT_SCROLL_CENTERING,
 } from './defaults.js'
 import type { AutoZoomOptions, Easing } from './types.js'
 import {
@@ -139,6 +139,23 @@ function positionsDiffer(start: number, target: number): boolean {
 
 function clampToRange(value: number, range: AxisRange): number {
   return clamp(value, range.min, range.max)
+}
+
+/**
+ * Whether a viewport-coordinate rect (from getBoundingClientRect) sits entirely
+ * inside the viewport. Used to skip the auto-scroll for a plain interaction
+ * whose target is already fully on screen: a visible element should not move.
+ */
+function isRectFullyWithinViewport(
+  rect: ElementRect,
+  viewport: ViewportSize
+): boolean {
+  return (
+    rect.x >= 0 &&
+    rect.y >= 0 &&
+    rect.x + rect.width <= viewport.width &&
+    rect.y + rect.height <= viewport.height
+  )
 }
 
 function shiftRect(
@@ -1331,7 +1348,11 @@ function resolveFocusOptions(params: {
         : {
             ...resolvedAutoZoomOptions,
             amount: 1,
-            centering: DEFAULT_ZOOM_OPTIONS.centering,
+            // Not a zoom: just scroll the target into view. Use the gentle
+            // scroll-centering default (not the tight zoom default) so an
+            // already-visible element is not yanked to dead center on every
+            // click. An explicit `centering` on the interaction still wins.
+            centering: params.options.centering ?? DEFAULT_SCROLL_CENTERING,
           }
   const currentZoomEnd = currentZoomViewport?.end ?? {
     pointPx: { x: 0, y: 0 },
@@ -1342,6 +1363,11 @@ function resolveFocusOptions(params: {
   }
 
   if (
+    // Only when actually zooming in (amount < 1): zooming in from a full
+    // viewport should center the target tightly. A plain interaction (amount
+    // === 1, no zoom) keeps its gentle scroll-centering instead of snapping to
+    // dead center.
+    focusOptions.amount < 1 &&
     currentZoomViewport !== undefined &&
     currentZoomEnd.pointPx.x === 0 &&
     currentZoomEnd.pointPx.y === 0 &&
@@ -1409,53 +1435,63 @@ export async function changeFocus(
         }
   )
 
-  const plan = shouldSuppressAutoScroll
-    ? {
-        finalLocatorRect: snapshot.locatorRect,
-        ancestorScrollPlans: [],
-        pageScrollPlan: {
-          startY: snapshot.page.scrollY,
-          startX: snapshot.page.scrollX,
-          targetY: snapshot.page.scrollY,
-          targetX: snapshot.page.scrollX,
-        },
-        scrollNeeded: false,
-        zoomNeeded: false,
-        finalFocusPoint: {
-          x: snapshot.locatorRect.x + snapshot.locatorRect.width / 2,
-          y: snapshot.locatorRect.y + snapshot.locatorRect.height / 2,
-        },
-        optimalOffset: { x: 0, y: 0 },
-        targetViewport: resolveFixedFocusViewportSize(
-          snapshot.viewportSize,
-          focusOptions.amount
-        ),
-        targetRectPositionInZoomViewport: resolveTargetRectPosition({
-          containerSize: resolveFixedFocusViewportSize(
+  // Minimal-visible: a plain interaction (not zooming) should not scroll a
+  // target that is already fully on screen. Only off-screen targets scroll,
+  // landing at the gentle scroll-centering position. Zoom paths
+  // (autoZoom/zoomTo) still reframe as usual.
+  const skipScrollForVisibleTarget =
+    !shouldApplyZoom &&
+    !shouldSuppressAutoScroll &&
+    isRectFullyWithinViewport(snapshot.locatorRect, snapshot.viewportSize)
+
+  const plan =
+    shouldSuppressAutoScroll || skipScrollForVisibleTarget
+      ? {
+          finalLocatorRect: snapshot.locatorRect,
+          ancestorScrollPlans: [],
+          pageScrollPlan: {
+            startY: snapshot.page.scrollY,
+            startX: snapshot.page.scrollX,
+            targetY: snapshot.page.scrollY,
+            targetX: snapshot.page.scrollX,
+          },
+          scrollNeeded: false,
+          zoomNeeded: false,
+          finalFocusPoint: {
+            x: snapshot.locatorRect.x + snapshot.locatorRect.width / 2,
+            y: snapshot.locatorRect.y + snapshot.locatorRect.height / 2,
+          },
+          optimalOffset: { x: 0, y: 0 },
+          targetViewport: resolveFixedFocusViewportSize(
             snapshot.viewportSize,
             focusOptions.amount
           ),
-          rect: snapshot.locatorRect,
-          amount: 1,
-          centering: focusOptions.centering,
-        }),
-      }
-    : combineFocusPlan({
-        snapshot,
-        targetViewport: shouldApplyZoom
-          ? resolveLocatorFocusViewport({
-              viewport: snapshot.viewportSize,
-              rect: snapshot.locatorRect,
-              amount: focusOptions.amount,
-              padding: focusOptions.padding,
-            })
-          : resolveFixedFocusViewportSize(
+          targetRectPositionInZoomViewport: resolveTargetRectPosition({
+            containerSize: resolveFixedFocusViewportSize(
               snapshot.viewportSize,
               focusOptions.amount
             ),
-        centering: focusOptions.centering,
-        currentZoomEnd,
-      })
+            rect: snapshot.locatorRect,
+            amount: 1,
+            centering: focusOptions.centering,
+          }),
+        }
+      : combineFocusPlan({
+          snapshot,
+          targetViewport: shouldApplyZoom
+            ? resolveLocatorFocusViewport({
+                viewport: snapshot.viewportSize,
+                rect: snapshot.locatorRect,
+                amount: focusOptions.amount,
+                padding: focusOptions.padding,
+              })
+            : resolveFixedFocusViewportSize(
+                snapshot.viewportSize,
+                focusOptions.amount
+              ),
+          centering: focusOptions.centering,
+          currentZoomEnd,
+        })
 
   const mouseTarget: Point = mouseMove?.targetPosInElement
     ? {

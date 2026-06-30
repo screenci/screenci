@@ -10,6 +10,15 @@ import type { LocalizeNarrationValue } from './localize.js'
 import { setActiveCueRecorder, setSleepFn } from './cue.js'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import { voices } from './voices.js'
+import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { createHash } from 'crypto'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import {
+  assetCandidatePaths,
+  hashAssetFile,
+  resetAssetHashCache,
+} from './assetHash.js'
 
 const text = (arg: Parameters<typeof normalizeFeature<string>>[1]) =>
   normalizeFeature<string>('text', arg)
@@ -140,6 +149,60 @@ describe('buildNarrationMarkers', () => {
 
   it('returns an empty object when there is no narration', () => {
     expect(buildNarrationMarkers(undefined, ['en'])).toEqual({})
+  })
+
+  it('pre-warms file-cue media hashes when an anchor file is given', async () => {
+    resetAssetHashCache()
+    const dir = await mkdtemp(join(tmpdir(), 'screenci-narr-prewarm-'))
+    try {
+      const media = join(dir, 'pitch.mov')
+      await writeFile(media, 'pitch-audio')
+      const anchor = join(dir, 'video.screenci.ts')
+
+      // Building with an anchor file should pre-warm the file cue's media.
+      buildNarrationMarkers(
+        narr({ en: { pitch: { path: media } } }),
+        ['en'],
+        undefined,
+        {},
+        anchor
+      )
+      // Let the fire-and-forget read settle (the same cached promise).
+      const warmed = await hashAssetFile(assetCandidatePaths(media, anchor))
+      expect(warmed).toBe(
+        createHash('sha256').update('pitch-audio').digest('hex')
+      )
+
+      // Changing the file must not change the result: the build pre-warmed it,
+      // so a later lookup is served from cache without re-reading.
+      await writeFile(media, 'different-content')
+      expect(await hashAssetFile(assetCandidatePaths(media, anchor))).toBe(
+        warmed
+      )
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+      resetAssetHashCache()
+    }
+  })
+
+  it('does not pre-warm when no anchor file is given', async () => {
+    resetAssetHashCache()
+    const dir = await mkdtemp(join(tmpdir(), 'screenci-narr-noprewarm-'))
+    try {
+      const media = join(dir, 'pitch.mov')
+      await writeFile(media, 'first')
+      // No anchor: the build must not warm the cache.
+      buildNarrationMarkers(narr({ en: { pitch: { path: media } } }), ['en'])
+      await Promise.resolve()
+      // A fresh hash reads the current (changed) content, proving no warm entry.
+      await writeFile(media, 'second')
+      expect(await hashAssetFile(assetCandidatePaths(media, null))).toBe(
+        createHash('sha256').update('second').digest('hex')
+      )
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+      resetAssetHashCache()
+    }
   })
 
   describe('voice cascade', () => {

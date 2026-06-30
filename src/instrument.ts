@@ -1148,6 +1148,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveEasing?: Easing
       beforeClickPause?: number
       selectDuration?: number
+      autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
     const {
@@ -1156,6 +1157,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveEasing = 'ease-in-out',
       beforeClickPause = DEFAULT_PRE_CLICK_PAUSE_MS,
       selectDuration,
+      autoZoomOptions,
       ...selectOpts
     } = options ?? {}
 
@@ -1183,7 +1185,7 @@ export function instrumentLocator(locator: Locator): Locator {
       },
       false,
       'tripleBefore',
-      undefined,
+      autoZoomOptions,
       undefined,
       undefined,
       beforeClickPause,
@@ -1211,6 +1213,7 @@ export function instrumentLocator(locator: Locator): Locator {
       dragDuration?: number
       dragSpeed?: number
       dragEasing?: Easing
+      autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
     const {
@@ -1223,6 +1226,7 @@ export function instrumentLocator(locator: Locator): Locator {
       dragEasing = 'ease-in-out',
       sourcePosition,
       targetPosition,
+      autoZoomOptions,
     } = options ?? {}
 
     assertDurationOrSpeed(moveDuration, moveSpeed, 'dragTo move')
@@ -1254,7 +1258,7 @@ export function instrumentLocator(locator: Locator): Locator {
         ? { x: targetRectPreview.width / 2, y: targetRectPreview.height / 2 }
         : undefined)
 
-    const sourceFocusChange = await changeFocus(locator, undefined, {
+    const sourceFocusChange = await changeFocus(locator, autoZoomOptions, {
       targetPosInElement: sourcePosition,
       ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
       ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),

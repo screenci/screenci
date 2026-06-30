@@ -250,6 +250,19 @@ test.describe('click instrumentation', () => {
     expect(await scrollY(page)).toBeGreaterThan(0)
   })
 
+  test('does not scroll when clicking an already-visible element', async ({
+    page,
+  }) => {
+    expect(await scrollY(page)).toBe(0)
+
+    await clickableLocator(page.locator('#click-button')).click({
+      moveDuration: 50,
+    })
+
+    // The button is already on screen, so a plain click must not move the page.
+    expect(await scrollY(page)).toBe(0)
+  })
+
   test('actually clicks an off-screen button after scrolling', async ({
     page,
   }) => {

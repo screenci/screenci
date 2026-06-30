@@ -1,9 +1,13 @@
 import type { NormalizedFeature } from './declare.js'
 import type { IEventRecorder, AudioStartPayload } from './events.js'
-import { access, readFile } from 'fs/promises'
-import { createHash } from 'crypto'
+import { access } from 'fs/promises'
 import { dirname, resolve } from 'path'
 import { captureCallerFile } from './callerFile.js'
+import {
+  assetCandidatePaths,
+  hashAssetFile,
+  prewarmAssetFile,
+} from './assetHash.js'
 import { isInsideHide } from './hide.js'
 import { logger } from './logger.js'
 import { MAX_AUDIO_LEVEL, validateSpeedTime } from './asset.js'
@@ -211,23 +215,15 @@ async function resolveAudioFile(
   path: string,
   testFilePath: string | null
 ): Promise<{ path: string; fileHash?: string }> {
-  const candidates = [path]
-  if (testFilePath !== null) {
-    candidates.push(resolve(dirname(testFilePath), path))
+  // Cached + pre-warmable (see assetHash.ts): when the track was pre-warmed
+  // before the recording clock started, the hash is returned without a disk read
+  // so the audio start() does not pay the read on the timeline.
+  const fileHash = await hashAssetFile(assetCandidatePaths(path, testFilePath))
+  if (fileHash === undefined) {
+    warnMissingAudio(path)
+    return { path }
   }
-  for (const candidate of candidates) {
-    try {
-      const fileBuffer = await readFile(candidate)
-      return {
-        path,
-        fileHash: createHash('sha256').update(fileBuffer).digest('hex'),
-      }
-    } catch {
-      // try next candidate
-    }
-  }
-  warnMissingAudio(path)
-  return { path }
+  return { path, fileHash }
 }
 
 function normalizeAudioConfig(name: string, input: AudioInput): AudioConfig {
@@ -317,7 +313,12 @@ export function buildStudioAudioTracks(
  */
 export function buildAudio(
   feature: NormalizedFeature<AudioInput> | null | undefined,
-  language: string | undefined
+  language: string | undefined,
+  // The `.screenci` script audio paths resolve against. When provided, each code
+  // track's file is pre-warmed (hashed) up front so its start() reuses the cached
+  // hash instead of reading the file on the recording timeline. Omitted (no
+  // pre-warm) outside the recording fixture.
+  anchorFile?: string
 ): Record<string, AudioController> {
   const result: Record<string, AudioController> = {}
   if (!feature) return result
@@ -329,6 +330,12 @@ export function buildAudio(
       (language !== undefined ? feature.byLang[language]?.[name] : undefined) ??
       feature.shared[name]
     if (input === undefined) continue
+    if (anchorFile !== undefined) {
+      prewarmAssetFile(
+        typeof input === 'string' ? input : input.path,
+        anchorFile
+      )
+    }
     result[name] = buildAudioController(name, input)
   }
   return result

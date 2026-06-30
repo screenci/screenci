@@ -47,7 +47,11 @@ function featureToNormalizedNarration(
     {}
   for (const lang of languages) {
     const cues: Record<string, NormalizedCueValue> = {}
-    for (const name of feature.codeNames) {
+    // Seed every named cue that has a value: code-owned cues and seeded Studio
+    // cues (`studio({...})`). Blank Studio cues (`studio([...])`) have no value, so
+    // they carry no seed (the web app owns their text). `buildLocalizedNarrationCues`
+    // short-circuits Studio names, so a seed here is backend-facing metadata only.
+    for (const name of feature.names) {
       const value = feature.byLang[lang]?.[name] ?? feature.shared[name]
       if (value !== undefined) cues[name] = normalizeCueValue(name, value)
     }
@@ -110,9 +114,14 @@ export function buildValues(
 export type ValuesDeclaration = {
   /** Every field name (code then Studio-managed), in declared order. */
   fields: string[]
-  /** Studio-managed field names (array form, no code seed). */
+  /** Studio-managed field names (`studio([...])`/`studio({...})`). */
   studioFields: string[]
-  /** Code seeds keyed `{ [language]: { [field]: value } }`. Omitted when empty. */
+  /**
+   * Seeds keyed `{ [language]: { [field]: value } }`: code-owned fields and seeded
+   * Studio fields (`studio({...})`). A seeded Studio field appears in both
+   * `studioFields` (the web app owns it) and `seed` (its initial value). Omitted
+   * when empty.
+   */
   seed?: Record<string, Record<string, string>>
 }
 
@@ -137,8 +146,10 @@ export function buildValuesDeclaration(
       ...feature.shared,
       ...(feature.byLang[language] ?? {}),
     }
+    // Seed every named field that has a value: code-owned fields and seeded Studio
+    // fields (`studio({...})`). Blank Studio fields (`studio([...])`) have no value.
     const codeSeed: Record<string, string> = {}
-    for (const field of feature.codeNames) {
+    for (const field of feature.names) {
       if (merged[field] !== undefined) codeSeed[field] = merged[field]!
     }
     if (Object.keys(codeSeed).length > 0) {

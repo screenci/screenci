@@ -18,6 +18,13 @@ import {
   type FeatureArg,
   type NormalizedFeature,
 } from './declare.js'
+import {
+  STUDIO,
+  isStudioMarker,
+  type StudioNames,
+  type StudioPending,
+  type StudioSeeded,
+} from './studio.js'
 
 /**
  * One variant in a generic `video.each(...)` fan-out. Each variant produces a
@@ -41,23 +48,73 @@ export type LocalizeMode = 'shared' | 'per-language'
  * drives the registration-time fan-out (one Playwright test per language), so it
  * lives on a builder method rather than in `recordOptions` (a run-time option).
  *
- * `languages` may be `'studio'`, meaning the set is owned by the ScreenCI web app
- * and injected at record time through the same channel as `--languages`. When the
- * web has selected none yet, the set is empty and the render stays pending (the
- * recording still runs so its declared schema reaches the backend to be filled).
+ * `languages` may be `'studio'` (set via `video.languages(studio())`), meaning the
+ * set is owned by the ScreenCI web app and injected at record time through the same
+ * channel as `--languages`. When the web has selected none yet and there is no
+ * `studioSeed`, the set is empty and the render stays pending (the recording still
+ * runs so its declared schema reaches the backend to be filled). A `studioSeed`
+ * (from `video.languages(studio(['en', 'fi']))`) supplies the initial set the web
+ * app starts from but may change.
  */
 export type RecordingLocalize = {
   languages: readonly Lang[] | 'studio'
   mode?: LocalizeMode
   locales?: Partial<Record<Lang, string>>
   browserLocale?: boolean
+  /** Initial web-owned set when `languages === 'studio'` (`studio(['en', ...])`). */
+  studioSeed?: readonly Lang[]
 }
 
-/** The argument accepted by `video.languages(...)`. */
-export type LanguagesArg = 'studio' | readonly Lang[] | RecordingLocalize
+/**
+ * The capture config for `video.languages(...)`. Code-owns the set when passed
+ * directly; the web app owns it (and may edit these fields later) when wrapped in
+ * `studio({ ... })`. `languages` may be omitted to infer the set from the
+ * per-feature keys (e.g. `narration({ en, fi })`), the usual pairing with
+ * `mode: 'shared'`.
+ */
+export type LanguagesConfig = {
+  languages?: readonly Lang[]
+  mode?: LocalizeMode
+  locales?: Partial<Record<Lang, string>>
+  browserLocale?: boolean
+}
+
+/**
+ * The argument accepted by `video.languages(...)`:
+ *
+ * - `['en', 'fi']` or `{ languages, mode, ... }`: code owns the config.
+ * - `studio()`: the web app owns the set (nothing seeded, render pending).
+ * - `studio(['en', 'fi'])`: the web app owns the set, seeded with these languages.
+ * - `studio({ languages, mode, ... })`: the web app owns the whole config, seeded
+ *   with these values (it can edit the set, and later the mode/locales, from the
+ *   web).
+ */
+export type LanguagesArg =
+  | StudioPending
+  | StudioNames
+  | StudioSeeded<LanguagesConfig>
+  | readonly Lang[]
+  | LanguagesConfig
 
 function normalizeLanguagesArg(arg: LanguagesArg): RecordingLocalize {
-  if (arg === 'studio') return { languages: 'studio' }
+  if (isStudioMarker(arg)) {
+    // `studio({ languages, mode, ... })`: the seed is a whole config the web app
+    // starts from and owns. `studio()` / `studio(['en', ...])`: the names are the
+    // seed languages (empty => pending until the web selects a set).
+    const cfg = (arg.seed as LanguagesConfig | undefined) ?? {
+      languages: arg.names as readonly Lang[],
+    }
+    return {
+      languages: 'studio',
+      ...(cfg.languages !== undefined &&
+        cfg.languages.length > 0 && { studioSeed: cfg.languages }),
+      ...(cfg.mode !== undefined && { mode: cfg.mode }),
+      ...(cfg.locales !== undefined && { locales: cfg.locales }),
+      ...(cfg.browserLocale !== undefined && {
+        browserLocale: cfg.browserLocale,
+      }),
+    }
+  }
   if (Array.isArray(arg)) return { languages: arg as readonly Lang[] }
   return arg as RecordingLocalize
 }
@@ -94,7 +151,7 @@ export type ResolvedRecordingLocalize = {
   mode: LocalizeMode
   browserLocale: boolean
   locales?: Partial<Record<Lang, string>>
-  /** Whether the set is owned by the web app (`video.languages('studio')`). */
+  /** Whether the set is owned by the web app (`video.languages(studio())`). */
   studioOwned: boolean
   /** Studio-owned set with nothing selected yet: record for metadata, do not render. */
   pending: boolean
@@ -129,8 +186,9 @@ function featureLanguages(state: BuilderState): string[] {
 
 /**
  * Resolve the recorded language set at registration time. Priority:
- * 1. `video.languages('studio')` -> the web-owned set, injected via the
- *    `--languages` channel (`requestedLanguages`); empty => pending.
+ * 1. `video.languages(studio())` -> the web-owned set, injected via the
+ *    `--languages` channel (`requestedLanguages`), falling back to the
+ *    `studioSeed` (`studio(['en', ...])`); empty => pending.
  * 2. explicit `video.languages([...])`.
  * 3. union of per-feature language keys (e.g. `narration({ fr })` -> French).
  * 4. default `['en']`.
@@ -146,7 +204,7 @@ export function resolveRecordingLocalize(
   const localesPatch = rl?.locales !== undefined ? { locales: rl.locales } : {}
 
   if (rl?.languages === 'studio') {
-    const languages = requestedLanguages ?? []
+    const languages = [...(requestedLanguages ?? rl.studioSeed ?? [])]
     return {
       languages,
       mode,
@@ -191,13 +249,19 @@ export function resolveRecordingLocalize(
 /**
  * Warn about per-feature values declared for a language outside the recorded set
  * (e.g. `narration({ fr })` while the set is `[fi]`): the value is ignored.
+ *
+ * Skipped when the set is Studio-owned (`video.languages(studio(...))`): there the
+ * per-feature languages are seeds the web app can use once it selects or adds a
+ * language, so a language not in the current (possibly empty) web set is expected,
+ * not a mistake.
  */
 function warnUnusedLanguages(
   state: BuilderState,
   resolved: ResolvedRecordingLocalize
 ): void {
+  if (resolved.studioOwned) return
   const active = new Set(resolved.languages)
-  const source = resolved.studioOwned ? 'web' : 'video.languages()'
+  const source = 'video.languages()'
   const langList = resolved.languages.join(', ') || '(none)'
   const features: [string, NormalizedFeature<unknown> | null][] = [
     ['Narration', state.narration],
@@ -279,13 +343,21 @@ export function expandRegistrations(params: {
 
     if (singlePass) {
       // A single explicitly-declared language is tagged `[lang]`; the implicit
-      // `['en']` default (a plain video) stays language-agnostic.
+      // `['en']` default (a plain video) stays language-agnostic (no `[en]` tag).
       const onlyLang =
         resolved.explicit &&
         resolved.mode === 'per-language' &&
         resolved.languages.length === 1
           ? resolved.languages[0]!
           : null
+      // Locale: an explicitly tagged single language uses its locale; the implicit
+      // default records one round pinned to en-US (the `['en']` default) while
+      // staying language-agnostic. Shared / pending passes leave the locale unset.
+      const localeLang =
+        onlyLang ??
+        (!resolved.explicit && resolved.languages.length === 1
+          ? resolved.languages[0]!
+          : null)
       const describeTitle = onlyLang
         ? `${variantLabel}${onlyLang}`.trim()
         : resolved.mode === 'shared' || resolved.pending
@@ -297,8 +369,8 @@ export function expandRegistrations(params: {
         leafTitle: onlyLang ? `${videoName} [${onlyLang}]` : videoName,
         language: onlyLang,
         locale:
-          onlyLang && resolved.browserLocale
-            ? resolveLocaleForLanguage(onlyLang, resolved.locales)
+          localeLang && resolved.browserLocale
+            ? resolveLocaleForLanguage(localeLang, resolved.locales)
             : null,
       })
       continue
@@ -427,9 +499,10 @@ type UnionToIntersection<U> = (
   : never
 
 /**
- * The content names declared by a {@link FeatureArg}. Array elements for the
- * studio form; for objects, the union of content-major top-level keys (those that
- * are not language codes or `default`) and the language-major inner keys.
+ * The content names declared by a {@link FeatureArg}. For a Studio marker
+ * (`studio([...])`/`studio({...})`) the declared names (or the seed's names); for
+ * objects, the union of content-major top-level keys (those that are not language
+ * codes or `default`) and the language-major inner keys.
  */
 type LangKey = Lang | 'default'
 
@@ -441,8 +514,17 @@ type LangMajorNamesOf<A> = NonNullable<
   }[keyof A & LangKey]
 >
 
-export type FeatureNamesOf<A> = A extends readonly string[]
-  ? A[number]
+/** Names declared by a Studio marker's `names` tuple. */
+type StudioNamesOf<A> = A extends { readonly names: infer N }
+  ? N extends readonly string[]
+    ? N[number]
+    : never
+  : never
+
+export type FeatureNamesOf<A> = A extends { readonly [STUDIO]: true }
+  ? A extends { readonly seed: infer S }
+    ? FeatureNamesOf<S>
+    : StudioNamesOf<A>
   : A extends object
     ? Extract<Exclude<keyof A, LangKey>, string> | LangMajorNamesOf<A>
     : never
@@ -462,8 +544,10 @@ export type FeatureNamesOf<A> = A extends readonly string[]
  * inference adds to the source literal, so the resolved value type stays
  * identical to the old `Record` form (only navigability is gained).
  *
- * The array (Studio) form has no declaring object in code (its content lives in
- * the web app), so it keeps the plain `Record` mapping and is not navigable.
+ * The blank Studio form (`studio([...])`) has no declaring object in code (its
+ * content lives in the web app), so it keeps the plain `Record` mapping and is not
+ * navigable. A seeded Studio form (`studio({...})`) recurses into its seed object,
+ * so it stays navigable like the content-major form.
  */
 type ContentMajorControllers<A, V> = {
   -readonly [K in keyof A as K extends LangKey
@@ -479,8 +563,10 @@ type LangMajorControllers<A, V> = UnionToIntersection<
   }[Extract<keyof A, LangKey>]
 >
 
-type FeatureControllers<A, V> = A extends readonly string[]
-  ? Record<A[number], V>
+type FeatureControllers<A, V> = A extends { readonly [STUDIO]: true }
+  ? A extends { readonly seed: infer S }
+    ? FeatureControllers<S, V>
+    : Record<StudioNamesOf<A>, V>
   : [Extract<Exclude<keyof A, LangKey>, string>] extends [never]
     ? LangMajorControllers<A, V>
     : ContentMajorControllers<A, V>
@@ -508,8 +594,10 @@ type OverlayLangMajorControllers<A> = UnionToIntersection<
   }[Extract<keyof A, LangKey>]
 >
 
-type OverlayControllers<A> = A extends readonly string[]
-  ? Record<A[number], OverlayController>
+type OverlayControllers<A> = A extends { readonly [STUDIO]: true }
+  ? A extends { readonly seed: infer S }
+    ? OverlayControllers<S>
+    : Record<StudioNamesOf<A>, OverlayController>
   : [Extract<Exclude<keyof A, LangKey>, string>] extends [never]
     ? OverlayLangMajorControllers<A>
     : OverlayContentMajorControllers<A>
@@ -566,7 +654,7 @@ export interface MediaBuilder<Args, O = object> extends BuilderTerminal<
   Args,
   O
 > {
-  /** Declare narration cues: Studio-owned (array) or code values (object). */
+  /** Declare narration cues: Studio-owned (`studio([...])`) or code values (object). */
   narration<const A extends FeatureArg<LocalizeNarrationValue>>(
     arg: A
   ): MediaBuilder<Args, O & NarrationOverrideFor<Args, A>>

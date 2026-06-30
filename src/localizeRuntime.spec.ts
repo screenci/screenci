@@ -6,6 +6,7 @@ import {
   narrationVoiceConfigFromRenderOptions,
 } from './localizeRuntime.js'
 import { normalizeFeature } from './declare.js'
+import { studio } from './studio.js'
 import type { LocalizeNarrationValue } from './localize.js'
 import { setActiveCueRecorder, setSleepFn } from './cue.js'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
@@ -64,8 +65,18 @@ describe('buildValues', () => {
   })
 
   it('returns an empty string per field for unset studio-managed (array) text', () => {
-    const t = text(['heading'])
+    const t = text(studio(['heading']))
     expect(buildValues(t, 'en', null)).toEqual({ heading: '' })
+  })
+
+  it('falls back to the seed for an unset seeded studio field, but a Studio edit wins', () => {
+    const t = text(studio({ heading: 'Hi' }))
+    // No override: the seed renders, so the first capture is not blank.
+    expect(buildValues(t, 'en', null)).toEqual({ heading: 'Hi' })
+    // A Studio edit overrides the seed.
+    expect(buildValues(t, 'en', { en: { heading: 'Edited' } })).toEqual({
+      heading: 'Edited',
+    })
   })
 
   it('returns an empty object when there is no text', () => {
@@ -82,7 +93,7 @@ describe('buildValues', () => {
   })
 
   it('resolves Studio-managed text from overrides', () => {
-    const t = text(['heading'])
+    const t = text(studio(['heading']))
     expect(buildValues(t, 'en', { en: { heading: 'From Studio' } })).toEqual({
       heading: 'From Studio',
     })
@@ -110,10 +121,21 @@ describe('buildValuesDeclaration', () => {
   })
 
   it('declares a studio-managed (array) field with no seed', () => {
-    const t = text(['heading'])
+    const t = text(studio(['heading']))
     expect(buildValuesDeclaration(t, 'en')).toEqual({
       fields: ['heading'],
       studioFields: ['heading'],
+    })
+  })
+
+  it('declares a seeded studio field in both studioFields and the seed', () => {
+    // studio({...}) is web-owned (studioFields) but carries an initial value so the
+    // backend can pre-fill it; a Studio edit later wins over the seed.
+    const t = text(studio({ heading: 'Hi' }))
+    expect(buildValuesDeclaration(t, 'en')).toEqual({
+      fields: ['heading'],
+      studioFields: ['heading'],
+      seed: { en: { heading: 'Hi' } },
     })
   })
 
@@ -143,7 +165,7 @@ describe('buildNarrationMarkers', () => {
   })
 
   it('builds studio (array) narration cues', () => {
-    const markers = buildNarrationMarkers(narr(['alert']), ['en'])
+    const markers = buildNarrationMarkers(narr(studio(['alert'])), ['en'])
     expect(Object.keys(markers)).toEqual(['alert'])
   })
 

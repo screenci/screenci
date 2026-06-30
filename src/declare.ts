@@ -1,4 +1,9 @@
 import { ScreenciError } from './errors.js'
+import {
+  isStudioMarker,
+  type StudioNames,
+  type StudioSeeded,
+} from './studio.js'
 import { supportedLanguages, type Lang } from './voices.js'
 
 /**
@@ -6,15 +11,18 @@ import { supportedLanguages, type Lang } from './voices.js'
  * `overlays`/`audio` (and the `screenshot` subset). The argument *shape* decides
  * ownership and localization:
  *
- * - **Array of names** (`['intro', 'cta']`): the names are Studio/web-owned. Their
- *   content is configured in the ScreenCI web app; code only declares that they
- *   exist.
+ * - **Studio-owned** (`studio(['intro', 'cta'])`): the names are owned by the
+ *   ScreenCI web app. Their content is configured there; code only declares that
+ *   they exist. `studio({ intro: 'Hi' })` additionally seeds initial values the
+ *   web app starts from but may override.
  * - **Content-major object** (`{ intro: 'Hi' }`): a flat `name -> value` map of
  *   code-defined values, shared across every language.
  * - **Language-major object** (`{ fr: { intro: 'Salut' }, default: { intro: 'Hi' } }`):
  *   top-level keys are language codes (plus an optional `default`). Each language
  *   maps `name -> value`; `default` supplies the shared fallback for any name a
  *   language omits.
+ *
+ * A bare array (`['intro']`) is no longer accepted: wrap it with `studio([...])`.
  *
  * Disambiguation (see {@link isLanguageKey}): an object is treated as
  * language-major iff *every* top-level key is a supported language code or the
@@ -23,7 +31,8 @@ import { supportedLanguages, type Lang } from './voices.js'
  * {@link normalizeFeature}).
  */
 export type FeatureArg<V> =
-  | readonly string[]
+  | StudioNames
+  | StudioSeeded<ContentMajor<V> | LanguageMajor<V>>
   | ContentMajor<V>
   | LanguageMajor<V>
 
@@ -74,17 +83,39 @@ export function normalizeFeature<V>(
   feature: string,
   arg: FeatureArg<V>
 ): NormalizedFeature<V> {
-  if (Array.isArray(arg)) {
-    const studioNames = [...(arg as readonly string[])]
-    assertUniqueNames(feature, studioNames)
-    return {
-      names: studioNames,
-      studioNames,
-      codeNames: [],
-      shared: {},
-      byLang: {},
-      languages: [],
+  if (isStudioMarker(arg)) {
+    if (arg.seed === undefined && arg.names.length === 0) {
+      throw new ScreenciError(
+        `${feature}(studio()) needs names: studio() with no keys is only valid ` +
+          `for video.languages(studio()). Pass studio(['name', ...]) to declare ` +
+          `${feature} names, or studio({ name: value }) to also seed them.`
+      )
     }
+    if (arg.seed === undefined) {
+      const studioNames = [...arg.names]
+      assertUniqueNames(feature, studioNames)
+      return {
+        names: studioNames,
+        studioNames,
+        codeNames: [],
+        shared: {},
+        byLang: {},
+        languages: [],
+      }
+    }
+    // Seeded: normalize the seed object exactly like a code-owned declaration,
+    // then re-tag every resolved name as Studio-owned. The shared/byLang values
+    // are the web app's starting point; a seed never clobbers a Studio edit.
+    const inner = normalizeFeature<V>(feature, arg.seed as FeatureArg<V>)
+    return { ...inner, studioNames: inner.names, codeNames: [] }
+  }
+
+  if (Array.isArray(arg)) {
+    throw new ScreenciError(
+      `${feature}([...]) bare arrays are no longer Studio-owned. Wrap the names ` +
+        `with studio([...]) to defer them to the web app, e.g. ` +
+        `video.${feature}(studio(${JSON.stringify(arg)})).`
+    )
   }
 
   const obj = arg as Record<string, unknown>

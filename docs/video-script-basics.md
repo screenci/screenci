@@ -43,8 +43,8 @@ have a deployed URL and want this automated, point a coding agent at it with the
 
 The generated starter video keeps the same Playwright-style structure, but it
 uses a ScreenCI-instrumented page and locators so visible interactions are
-captured with the right metadata for recording. See [Page
-Instrumentation](/docs/page-instrumentation). Use it as the baseline shape for
+captured with the right metadata for recording. See [Animated
+Interactions](/docs/guides/animated-interactions). Use it as the baseline shape for
 most ScreenCI videos, then adjust the visible flow, narration cues (via
 `video.narration`), and zoom
 behavior for your specific walkthrough.
@@ -152,8 +152,8 @@ await time(1000, async () => {
 // - Narration cue audio is not retimed; these only remap the recording timeline.
 ```
 
-API reference: [hide()](/docs/reference/api/functions/hide). See also [Page
-Instrumentation](/docs/guides/page-instrumentation) for how visible actions are
+API reference: [hide()](/docs/reference/api/functions/hide). See also [Animated
+Interactions](/docs/guides/animated-interactions) for how visible actions are
 captured.
 
 ### Positions: holding narration and overlays until a point in the video
@@ -248,8 +248,9 @@ only), `values` field values, `overlays` controllers, and the active `language`.
   per-language narration
 - a flat object of cue name to text (for example `{ intro: 'Hi' }`) = shared
   across all languages
-- an array of cue names (for example `['intro']`) = name-only cues where Studio
-  (the web editor) owns the text
+- `studio([...])` with cue names (for example `studio(['intro'])`) = name-only
+  cues where Studio (the web editor) owns the text. Pass an object to
+  `studio({...})` instead to seed Studio with starting text it then owns.
 
 Other parts of the spec:
 
@@ -293,9 +294,11 @@ control, makes revisions less brittle, and should save API cost when a TTS
 provider such as ElevenLabs only needs to regenerate one changed sentence.
 
 To control which languages are recorded, chain `video.languages(...)` (accepts
-`'studio'`, an array of language codes, or `{ languages, mode }`). For example,
+keyless `studio()` for a web-owned set, a plain array of language codes, or
+`{ languages, mode }`). For example,
 `video.narration({...}).languages({ mode: 'shared' })` records a single shared
-narration track instead of one per language.
+narration track instead of one per language. A video with no `.languages(...)`
+call records one language-agnostic round pinned to the `en-US` browser locale.
 
 #### Overlays
 
@@ -315,11 +318,12 @@ video.overlays({
 ```
 
 For Studio-owned overlays (declared by name, with the web editor owning their
-content), pass an array of names: `video.overlays(['logo'])`. You can combine
-this with the array form of narration, for example
-`video.narration(['intro']).overlays(['logo'])`.
+content), wrap the names in `studio([...])`: `video.overlays(studio(['logo']))`.
+You can combine this with the `studio(...)` form of narration, for example
+`video.narration(studio(['intro'])).overlays(studio(['logo']))`. Pass an object
+to `studio({...})` to seed Studio with starting content it then owns.
 
 To let Studio own the render options for a video, declare it through
-`use({ renderOptions: 'studio' })`.
+`use({ renderOptions: studio() })` (or `studio({...})` to seed them).
 
 API reference: [voices](/docs/reference/api/variables/voices)

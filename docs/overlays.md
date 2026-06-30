@@ -4,13 +4,40 @@ Overlays let you place additional media on top of the recording timeline. Use th
 
 An overlay can come from a file (`.html`, `.svg`, `.png`, or `.mp4`), a React element, an inline HTML fragment, or an inline config object. HTML (file or inline) and React elements are rendered to a transparent PNG at recording time and then behave exactly like an image overlay, or, with `animate: true`, are captured as a transparent animated clip (see [Animated overlays](#animated-overlays)).
 
+Overlays can be owned by code or handed to [Studio](./studio.md) (the web app where non-developers swap the assets); see [the three ways to declare overlays](#three-ways-to-declare-overlays) below.
+
 #### You will learn
 
+- [how to declare overlays three ways](#three-ways-to-declare-overlays)
 - [how to define overlays](#define-overlays)
 - [how to position and size overlays](#positioning)
 - [how blocking and start/end timing work](#timing-and-control-flow)
 - [how to embed another render as an overlay](#render-dependencies)
 - [how to organize files for maintainable projects](#file-organization)
+
+## Three ways to declare overlays
+
+There are three ways to declare overlays. The same three forms apply to [`narration`](./narration.md), [`values`](./values.md), and [`audio`](./audio.md). See the [Studio guide](./studio.md) for how the web editing works.
+
+**1. Code-owned.** You point each overlay at a file, element, or config.
+
+```ts
+video.overlays({ logo: { path: 'assets/logo.png', x: 96, y: 96, width: 288 } })
+```
+
+**2. Studio-owned (blank).** Wrap the overlay names in `studio([...])`: the names exist in code (so the body can call `overlays.logo`), but [Studio](./studio.md) owns the files and display options.
+
+```ts
+import { video, studio } from 'screenci'
+
+video.overlays(studio(['intro', 'logo']))
+```
+
+**3. Studio-owned (seeded).** Pass overlays to `studio({...})`: Studio starts from them but owns them, so an edit in Studio always wins over the seed.
+
+```ts
+video.overlays(studio({ logo: { path: 'assets/logo.png', width: 288 } }))
+```
 
 ## Define overlays
 
@@ -46,10 +73,14 @@ delivered to the body through the injected `overlays` fixture. The same pattern
 works for screenshots:
 `screenshot.overlays({...})('Title', async ({ page, crop, overlays }) => {...})`.
 
-On the Business tier you can also declare overlay names as an **array** and
-upload the files plus display options on the Studio page instead of keeping them
-in the repository: `video.overlays(['intro', 'logo'])`. The array form leaves
-the file and placement for each name configured in the ScreenCI web app. See
+On the Business tier you can also declare overlay names by wrapping them in
+`studio([...])` (imported from `screenci`) and upload the files plus display
+options on the Studio page instead of keeping them in the repository:
+`video.overlays(studio(['intro', 'logo']))`. This form leaves the file and
+placement for each name configured in the ScreenCI web app. You can also seed the
+web app with starting files and options by passing an object to `studio({...})`:
+the web app starts from those values but owns them, so a seed is used only until
+the overlay is edited in Studio. See
 [Studio](./studio.md#studio-overlays-from-code).
 
 For per-language overlay files (e.g. a translated badge image), see

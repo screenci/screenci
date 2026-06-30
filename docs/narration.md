@@ -4,14 +4,18 @@ ScreenCI narration is cue-based. You attach a script to a video with
 `video.narration(...)`, then place named cue markers into the visible flow where
 speech should start, overlap, and end.
 
-The spoken text lives in `video.narration(...)`. You can pass it two shapes. The
-**language-major** form is keyed by language code (`{ en: {...} }`),
-with per-language cues. The **content-major** form is a flat map of cue names
-(`{ intro: 'Hi' }`) that applies to every language. The disambiguation is purely
-structural: an object is language-major if every top-level key is a supported
-language code or the literal `default`; otherwise it is content-major. There is
-no `languages:` wrapper, and a content name may not be a bare language code or
-`default`.
+The spoken text lives in `video.narration(...)`, owned by code or handed to
+[Studio](./studio.md) (the web app where non-developers edit it without touching
+the test). See [the three ways to declare narration](#three-ways-to-declare-narration)
+just below.
+
+When you own it in code you can pass it two shapes. The **language-major** form is
+keyed by language code (`{ en: {...} }`), with per-language cues. The
+**content-major** form is a flat map of cue names (`{ intro: 'Hi' }`) that applies
+to every language. The disambiguation is purely structural: an object is
+language-major if every top-level key is a supported language code or the literal
+`default`; otherwise it is content-major. There is no `languages:` wrapper, and a
+content name may not be a bare language code or `default`.
 
 The default voice is set once with `renderOptions.narration.voice`, in
 `screenci.config.ts` or `video.use(...)`. A per-cue `voice` (inside the narration
@@ -31,6 +35,36 @@ and Starter users should stay with the default consistent narration flow.
 - [how to use ElevenLabs voices](#elevenlabs-voices)
 
 <!-- screenci-doc-video:docs/guides/narration -->
+
+## Three ways to declare narration
+
+There are three ways to declare narration. The same three forms apply to
+[`values`](./values.md), [`overlays`](./overlays.md), and [`audio`](./audio.md).
+See the [Studio guide](./studio.md) for how the web editing works.
+
+**1. Code-owned.** You write the text. Changing it re-records.
+
+```ts
+video.narration({ en: { intro: 'Welcome.' } })
+```
+
+**2. Studio-owned (blank).** Wrap the cue names in `studio([...])`: the names
+exist in code (so the body can call `narration.intro`), but [Studio](./studio.md)
+owns the text. Chain `.languages([...])`, since there is no text to infer the set
+from.
+
+```ts
+import { video, studio } from 'screenci'
+
+video.narration(studio(['intro', 'outro'])).languages(['en'])
+```
+
+**3. Studio-owned (seeded).** Pass values to `studio({...})`: Studio starts from
+them but owns them, so an edit in Studio always wins over the seed.
+
+```ts
+video.narration(studio({ intro: 'Welcome.' }))
+```
 
 ## Attach a narration script
 
@@ -573,15 +607,15 @@ voices you are licensed to reproduce, in line with the ElevenLabs
 ## Manage narration from Studio
 
 On the Business tier you can manage narration text from the web app instead of
-code. Pass the **array** form of `video.narration([...])` (cue names only) and
-let Studio own the spoken text per language:
+code. Wrap the cue names in `studio([...])` (imported from `screenci`) and let
+Studio own the spoken text per language:
 
 ```ts
-import { video } from 'screenci'
+import { video, studio } from 'screenci'
 
 video
-  // Studio fills in the text per language for these cue names (array form).
-  .narration(['intro', 'save'])
+  // Studio fills in the text per language for these cue names (the studio(...) form).
+  .narration(studio(['intro', 'save']))
   .languages(['en', 'fi'])('Settings', async ({ page, narration }) => {
   await narration.intro()
   await page.goto('/settings')
@@ -589,9 +623,13 @@ video
 })
 ```
 
-Studio cue names are language-agnostic (declared once). Because the array form
-carries no code values, declare the recorded set with `video.languages([...])`,
-since there is no seeded text to infer it from. You can also let the web own the
-set itself with `video.languages('studio')`. The same array form works for
-values via `video.values([...])`. The markers still carry timing the same way; only the
-text lives in Studio. See [Studio](/docs/guides/studio).
+Studio cue names are language-agnostic (declared once). Because the blank
+`studio([...])` form carries no code values, declare the recorded set with
+`video.languages([...])`, since there is no seeded text to infer it from. You can
+also seed the web app with starting text by passing an object to `studio({...})`
+(for example `video.narration(studio({ intro: 'Welcome' }))`): the web app starts
+from those values but owns them, so the seed is used only until the cue is edited
+in Studio. You can also let the web own the language set itself with
+`video.languages(studio())`. The same `studio(...)` form works for values via
+`video.values(studio([...]))`. The markers still carry timing the same way; only
+the text lives in Studio. See [Studio](/docs/guides/studio).

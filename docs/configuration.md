@@ -124,6 +124,14 @@ No other environment variable is forwarded. Your app secrets, database URLs, and
 any other entries in the env file stay on your machine. ScreenCI does not store
 raw API keys from your env file.
 
+The uploaded `recording.mp4` is a screen capture, so secrets that are visible
+**on the page** would be uploaded with it. To keep on-screen secrets out of the
+recording, mask them with
+[`redact`](/docs/guides/redact), which
+hides the content in the browser before the frame is captured. List
+always-secret elements under `recordOptions.redact` to mask them from the first
+frame.
+
 Keep adding local runtime secrets here as needed. `screenci.config.ts` only
 points to the env file. The actual secret values belong in `.env` or whatever
 file you set via `envFile`.
@@ -150,6 +158,9 @@ Set shared `recordOptions` under `use`:
 - `fps`
 - `performance` (see below)
 - `encoder` (see below)
+- `redact`: CSS selectors masked from the first frame so on-screen secrets never
+  enter the recording. See
+  [redacting sensitive content](/docs/guides/redact).
 
 These values determine the recording viewport, so they are the supported way to
 control recording size.
@@ -234,9 +245,9 @@ Use project-wide render defaults for branding and layout consistency, then
 override only the files that need a different look.
 
 On the Business tier you can defer render options to the web app entirely with
-`use({ renderOptions: 'studio' })` (and the record options with
-`recordOptions: 'studio'`). They are then managed on the Studio page. See
-[Studio](/docs/guides/studio).
+`use({ renderOptions: studio() })` (and the record options with
+`recordOptions: studio()`, or seed either with `studio({...})`). They are then
+managed on the Studio page. See [Studio](/docs/guides/studio).
 
 ### Example: shared `use` defaults
 

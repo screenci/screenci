@@ -40,10 +40,15 @@ export type {
   ResolvedCropPadding,
 } from './src/crop.js'
 export type { ScreenCIPage, ScreenCILocator } from './src/types.js'
-// Narration is declared per-builder with `video.narration(...)`: an array of
-// names is Studio-owned, an object carries code values. It surfaces through the
+// Narration is declared per-builder with `video.narration(...)`: `studio([...])`
+// is Studio-owned, an object carries code values. It surfaces through the
 // injected `narration` fixture.
 export type { NarrationCue, Cues, TopLevelVoiceConfig } from './src/cue.js'
+// `studio(...)` defers a feature/language declaration to the ScreenCI web app:
+// `studio(['name'])` blank names, `studio({ name: value })` seeded, `studio()`
+// keyless (languages only).
+export { studio } from './src/studio.js'
+export type { StudioMarker, StudioPending } from './src/studio.js'
 export type { TimelineOffset } from './src/timelineOffset.js'
 export type { LangNarrationOverride } from './src/voiceConfig.js'
 export type {
@@ -52,6 +57,7 @@ export type {
   VideoBuilder,
   LocalizeMode,
   LanguagesArg,
+  LanguagesConfig,
   RecordingLocalize,
 } from './src/builder.js'
 export type { FeatureArg } from './src/declare.js'
@@ -61,6 +67,8 @@ export {
   DEFAULT_LANGUAGE_LOCALES,
 } from './src/locales.js'
 export { hide } from './src/hide.js'
+export { redact, unredactAll } from './src/redact.js'
+export type { RedactOptions, RedactStyle, RedactHandle } from './src/types.js'
 export { speed } from './src/speed.js'
 export { time } from './src/time.js'
 export { autoZoom } from './src/autoZoom.js'

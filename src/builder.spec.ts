@@ -7,6 +7,7 @@ import {
   type RecordingLocalize,
 } from './builder.js'
 import { normalizeFeature } from './declare.js'
+import { studio } from './studio.js'
 import type { LocalizeNarrationValue } from './localize.js'
 
 function state(partial: Partial<BuilderState> = {}): BuilderState {
@@ -31,18 +32,20 @@ const langs = (rl: RecordingLocalize): Partial<BuilderState> => ({
 })
 
 describe('expandRegistrations', () => {
-  it('produces a single language-agnostic test when not localized', () => {
+  it('produces a single language-agnostic test pinned to en-US when not localized', () => {
     const regs = expandRegistrations({
       baseTitle: 'Demo',
       state: state(),
       requestedLanguages: null,
     })
     expect(regs).toHaveLength(1)
+    // The implicit default records one round; it stays language-agnostic (no `[en]`
+    // tag) but pins the browser locale to en-US for deterministic capture.
     expect(regs[0]).toMatchObject({
       leafTitle: 'Demo',
       videoName: 'Demo',
       language: null,
-      locale: null,
+      locale: 'en-US',
     })
   })
 
@@ -85,6 +88,25 @@ describe('expandRegistrations', () => {
     })
   })
 
+  it('infers the language set for a shared config that omits languages', () => {
+    const regs = expandRegistrations({
+      baseTitle: 'Tour',
+      state: state({
+        narration: narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } }),
+        // video.languages({ mode: 'shared' }): languages inferred from narration.
+        ...langs({ mode: 'shared' } as RecordingLocalize),
+      }),
+      requestedLanguages: null,
+    })
+    expect(regs).toHaveLength(1)
+    expect(regs[0]).toMatchObject({ leafTitle: 'Tour', language: null })
+    expect(regs[0]?.recordingLocalize.mode).toBe('shared')
+    expect([...(regs[0]?.recordingLocalize.languages ?? [])].sort()).toEqual([
+      'en',
+      'fi',
+    ])
+  })
+
   it('records a single pending pass for a studio-owned set with none selected', () => {
     const regs = expandRegistrations({
       baseTitle: 'Pending',
@@ -94,6 +116,30 @@ describe('expandRegistrations', () => {
     expect(regs).toHaveLength(1)
     expect(regs[0]).toMatchObject({ leafTitle: 'Pending', language: null })
     expect(regs[0]?.recordingLocalize.pending).toBe(true)
+  })
+
+  it('renders a studio-seeded set until the web app changes it', () => {
+    const regs = expandRegistrations({
+      baseTitle: 'Seeded',
+      // video.languages(studio(['en', 'fi'])) -> web-owned, seeded with en + fi.
+      state: state(langs({ languages: 'studio', studioSeed: ['en', 'fi'] })),
+      requestedLanguages: null,
+    })
+    expect(regs.map((r) => [r.leafTitle, r.language])).toEqual([
+      ['Seeded [en]', 'en'],
+      ['Seeded [fi]', 'fi'],
+    ])
+    expect(regs.every((r) => r.recordingLocalize.studioOwned)).toBe(true)
+    expect(regs.every((r) => r.recordingLocalize.pending)).toBe(false)
+  })
+
+  it('a studio injection overrides the seed', () => {
+    const regs = expandRegistrations({
+      baseTitle: 'Seeded',
+      state: state(langs({ languages: 'studio', studioSeed: ['en', 'fi'] })),
+      requestedLanguages: ['de'],
+    })
+    expect(regs.map((r) => r.language)).toEqual(['de'])
   })
 
   it('combines a studio-owned set with shared mode (one web-owned pass)', () => {
@@ -229,13 +275,43 @@ describe('createVideoBuilder registration', () => {
     expect(calls.uses[0]).not.toHaveProperty('locale')
   })
 
-  it('supports the (title, details, body) signature', () => {
+  it('studio({ languages, mode }) is web-owned and seeded with the config', () => {
     const { test, calls } = createTestSink()
-    createVideoBuilder(test).values(['h']).languages(['en'])(
-      'Tagged',
-      { tag: '@critical' },
+    createVideoBuilder(test)
+      .narration({ en: { intro: 'Hi' } })
+      .languages(studio({ languages: ['en', 'fi'], mode: 'shared' }))(
+      'Tour',
       async () => {}
     )
+    expect(calls.tests).toEqual(['Tour'])
+    expect(calls.uses[0]?._screenciRecordingLocalize).toMatchObject({
+      studioOwned: true,
+      mode: 'shared',
+      languages: ['en', 'fi'],
+    })
+  })
+
+  it('studio({ mode }) is web-owned with no seeded set (mode only)', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test).languages(studio({ mode: 'shared' }))(
+      'Tour',
+      async () => {}
+    )
+    // Web owns the set (none seeded => pending), shared mode is the seed. 'mode'
+    // is a config key, never treated as a language.
+    expect(calls.uses[0]?._screenciRecordingLocalize).toMatchObject({
+      studioOwned: true,
+      pending: true,
+      mode: 'shared',
+      languages: [],
+    })
+  })
+
+  it('supports the (title, details, body) signature', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test)
+      .values(studio(['h']))
+      .languages(['en'])('Tagged', { tag: '@critical' }, async () => {})
     expect(calls.tests).toEqual(['Tagged [en]'])
   })
 
@@ -244,16 +320,25 @@ describe('createVideoBuilder registration', () => {
     process.env.SCREENCI_LANGUAGES = 'de'
     try {
       const { test, calls } = createTestSink()
-      createVideoBuilder(test).values(['h']).languages(['en', 'fi'])(
-        'T',
-        async () => {}
-      )
+      createVideoBuilder(test)
+        .values(studio(['h']))
+        .languages(['en', 'fi'])('T', async () => {})
       expect(calls.tests).toEqual([])
       expect(warn).toHaveBeenCalledOnce()
     } finally {
       if (original === undefined) delete process.env.SCREENCI_LANGUAGES
       else process.env.SCREENCI_LANGUAGES = original
     }
+  })
+
+  it('does not warn about per-feature languages when the set is studio-owned', () => {
+    const { test } = createTestSink()
+    // languages(studio({ mode })) is web-owned with no seeded set: the narration
+    // languages are seeds for the web, not unused mistakes, so no warning fires.
+    createVideoBuilder(test)
+      .narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })
+      .languages(studio({ mode: 'shared' }))('Tour', async () => {})
+    expect(warn).not.toHaveBeenCalled()
   })
 
   it('rejects duplicate each-variant keys', () => {
@@ -266,7 +351,9 @@ describe('createVideoBuilder registration', () => {
   it('throws when a screenshot declares narration (silent medium)', () => {
     const { test } = createTestSink()
     expect(() =>
-      createVideoBuilder(test, new Set(['values', 'overlays'])).narration(['x'])
+      createVideoBuilder(test, new Set(['values', 'overlays'])).narration(
+        studio(['x'])
+      )
     ).toThrow(/not available for this medium/)
   })
 

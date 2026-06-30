@@ -1814,14 +1814,17 @@ export class EventRecorder implements IEventRecorder {
     const filePath = join(dir, 'data.json')
 
     // Studio mode: render options come from the Studio page. data.json still
-    // gets fully-resolved defaults (so it always validates and renders), and
+    // gets a fully-resolved set (so it always validates and renders), and
     // metadata.studio.renderOptions marks the deferral for the backend.
     const studioRenderOptions = this.studioOptions.renderOptions
     const studioRecordOptions = this.studioOptions.recordOptions
 
-    // Resolve all defaults so data.json always contains a complete set of
-    // render options.
-    const ro = studioRenderOptions ? undefined : this.renderOptions
+    // Resolve all defaults so data.json always contains a complete set of render
+    // options. `this.renderOptions` is undefined for a blank deferral
+    // (`renderOptions: studio()`) and the seed for a seeded one
+    // (`renderOptions: studio({ ... })`), so a seed renders as the starting point
+    // while the Studio flag still marks it web-owned (the web app overrides it).
+    const ro = this.renderOptions
     const resolved: ResolvedRenderOptions = {
       recording: {
         size: ro?.recording?.size ?? RENDER_OPTIONS_DEFAULTS.recording.size,
@@ -1941,7 +1944,7 @@ export class EventRecorder implements IEventRecorder {
         'studio' in event &&
         event.studio === true
     )
-    // Whether the language set is web-owned (`video.languages('studio')`). The
+    // Whether the language set is web-owned (`video.languages(studio())`). The
     // web uses this to decide a video may have languages added/rendered from the
     // app (code-defined language sets cannot be changed from the web).
     const studioLanguages = this.studioOptions.languages === true

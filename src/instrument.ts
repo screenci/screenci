@@ -17,8 +17,14 @@ import type {
   MouseWaitEvent,
 } from './events.js'
 import { NOOP_EVENT_RECORDER } from './events.js'
-import type { AutoZoomOptions, Easing, ScreenCIPage } from './types.js'
+import type {
+  AutoZoomOptions,
+  Easing,
+  RedactOptions,
+  ScreenCIPage,
+} from './types.js'
 import { isInsideHide } from './hide.js'
+import { redact } from './redact.js'
 import { changeFocus, type MouseMoveRequest } from './changeFocus.js'
 import { DEFAULT_CLICK_MOUSE_MOVE_DURATION } from './defaults.js'
 import {
@@ -161,6 +167,22 @@ async function appendPostTypingSettleWait(
 ): Promise<void> {
   if (!shouldSimulateRecordingTimings()) return
   await appendMouseWait(innerEvents, DEFAULT_POST_TYPING_SETTLE_PAUSE_MS)
+}
+
+/**
+ * Apply a per-action redact mask to a typing target before the value is typed,
+ * so a secret entered via `fill`/`pressSequentially` is never captured in the
+ * clear. The mask is persistent: the value stays masked for the rest of the
+ * video (a transient unmask would leak it). Skipped inside `hide()`, where the
+ * whole section is cut from the recording anyway.
+ */
+async function applyActionRedact(
+  locator: Locator,
+  redactOption: boolean | RedactOptions | undefined
+): Promise<void> {
+  if (!redactOption || isInsideHide()) return
+  const options = redactOption === true ? undefined : redactOption
+  await redact(locator, options)
 }
 
 const LOCATOR_RETURN_METHODS = [
@@ -526,6 +548,7 @@ export function instrumentLocator(locator: Locator): Locator {
     autoZoomOptions?: AutoZoomOptions
     hideMouse?: boolean
     position?: { x: number; y: number }
+    redact?: boolean | RedactOptions
   }
 
   const originalPressSequentially = locator.pressSequentially.bind(locator)
@@ -546,6 +569,7 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       hideMouse: _hideMouse,
       position,
+      redact: redactOption,
       ...pressOptions
     } = options ?? {}
 
@@ -555,6 +579,8 @@ export function instrumentLocator(locator: Locator): Locator {
         pressOptions as Parameters<Locator['pressSequentially']>[1]
       )
     }
+
+    await applyActionRedact(locator, redactOption)
 
     const innerEvents: ClickActionResult['innerEvents'] = []
     let elementRect: ElementRect | undefined = undefined
@@ -621,6 +647,7 @@ export function instrumentLocator(locator: Locator): Locator {
       timeout?: number
       position?: { x: number; y: number }
       hideMouse?: boolean
+      redact?: boolean | RedactOptions
       autoZoomOptions?: AutoZoomOptions
     }
   ) => {
@@ -636,6 +663,7 @@ export function instrumentLocator(locator: Locator): Locator {
         duration: _duration,
         position: _position,
         hideMouse: _hideMouse,
+        redact: _redact,
         autoZoomOptions: _autoZoomOptions,
         ...fillOptions
       } = options ?? {}
@@ -656,7 +684,12 @@ export function instrumentLocator(locator: Locator): Locator {
       hideMouse: _hideMouse,
       autoZoomOptions,
       position,
+      redact: redactOption,
     } = options ?? {}
+
+    // Mask the field before any character is typed so the secret is never
+    // captured in the clear.
+    await applyActionRedact(locator, redactOption)
 
     const innerEvents: ClickActionResult['innerEvents'] = []
     let elementRect: ElementRect | undefined = undefined

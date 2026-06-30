@@ -1,4 +1,4 @@
-# Page Instrumentation
+# Animated Interactions
 
 ScreenCI instruments the Playwright `page` used inside `video()` so visible
 browser interactions behave like a recording instead of a robotic test run.
@@ -174,5 +174,6 @@ await page.mouse.click(640, 360, { fake: true })
 ## Related pages
 
 - [Video Script Basics](/docs/video-script-basics)
+- [Redact Sensitive Content](/docs/guides/redact)
 - [Camera and Zooming](/docs/guides/camera-and-zooming)
 - [Narration](/docs/guides/narration)

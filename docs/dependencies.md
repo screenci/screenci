@@ -18,6 +18,12 @@ Pass `selected(name)` as an overlay value. The `name` is the project-unique titl
 ```ts
 import { video, selected } from 'screenci'
 
+// The target: a standalone clip, maintained on its own.
+video('Intro Clip', async ({ page }) => {
+  await page.goto('/welcome')
+})
+
+// The dependent: embeds whatever "Intro Clip" currently renders to.
 video.overlays({ intro: selected('Intro Clip') })(
   'Full Demo',
   async ({ page, overlays }) => {

@@ -5,6 +5,9 @@ from a single script. You declare the languages once and ScreenCI records a
 separate pass per language, setting the browser locale automatically so a
 self-localizing app renders in the right language without extra work from you.
 
+A plain video with no `.languages(...)` call records one round that stays
+language-agnostic (no `[en]` tag), pinned to the `en-US` browser locale.
+
 Narration, values, overlays, and audio each accept the same per-language object
 form. The language set is inferred from the union of all feature keys, so adding
 a language to any one of them is enough to produce a version. TypeScript validates
@@ -199,13 +202,14 @@ call: `.only(...)`, `.skip`, `.fixme`, and `.fail`. The in-body conditional
 
 ## Managing languages from Studio
 
-Pass `'studio'` to `video.languages(...)` to let the web app own the recorded
-language set. This is a Business tier feature managed on the Studio page.
+Pass keyless `studio()` to `video.languages(...)` to let the web app own the
+recorded language set. This is a Business tier feature managed on the Studio
+page.
 
 ```ts
-import { video } from 'screenci'
+import { video, studio } from 'screenci'
 
-video.narration(['intro']).languages('studio')(
+video.narration(studio(['intro'])).languages(studio())(
   'Product tour',
   async ({ page, narration }) => {
     await narration.intro()
@@ -213,6 +217,17 @@ video.narration(['intro']).languages('studio')(
   }
 )
 ```
+
+With keyless `studio()`, nothing is seeded, so rendering is held until the web
+app selects a language set. To start from an initial set the web app can still
+change, seed it: `video.languages(studio(['en', 'fi']))` renders en and fi until
+the web app edits the set. To seed the capture options too, wrap a config in
+`studio({ ... })`, for example
+`video.languages(studio({ languages: ['en', 'fi'], mode: 'shared' }))`.
+
+The web app can edit the language **set** but not `mode`, `locales`, or
+`browserLocale` yet, so set those to their final values in code up front: they are
+seeded once and used for every render until web editing of them ships.
 
 The **Languages** section on the Studio page lists the current languages and
 lets you add or remove them. Adding a language opens a short guided setup: fill
@@ -227,10 +242,11 @@ localize that text, edit the values and re-record the language version once it
 exists. The re-record reuses the same Studio narration, overlays, and audio
 configuration, and runs from the web when the project is connected to GitHub.
 
-Adding languages from the web requires `video.languages('studio')`: a
-code-defined language set (an array or config object, as shown in the sections
-above) is fixed by your test code and cannot be changed from the app. See
-[Studio](./studio.md) for the full Studio guide.
+Adding languages from the web requires `video.languages(studio())` (or a seeded
+`video.languages(studio(['en', 'fi']))`): a code-defined language set (a plain
+array or config object, as shown in the sections above) is fixed by your test
+code and cannot be changed from the app. See [Studio](./studio.md) for the full
+Studio guide.
 
 ## Available languages
 

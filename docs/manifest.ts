@@ -64,15 +64,15 @@ export const docsManifest = [
     description:
       'Understand the generated GitHub Actions workflow, required secrets, and how to keep CI recordings deterministic.',
     prev: 'docs/video-script-basics',
-    next: 'docs/guides/page-instrumentation',
+    next: 'docs/guides/animated-interactions',
   },
   {
-    source: 'page-instrumentation.md',
-    slug: 'docs/guides/page-instrumentation',
+    source: 'animated-interactions.md',
+    slug: 'docs/guides/animated-interactions',
     section: 'Guides',
     order: 1,
-    navLabel: 'Page instrumentation',
-    title: 'Page Instrumentation',
+    navLabel: 'Animated interactions',
+    title: 'Animated Interactions',
     description:
       'Understand how ScreenCI instruments the Playwright page so visible actions like clicks, typing, mouse movement, and scrolling are animated.',
     prev: 'docs/ci-setup',
@@ -87,7 +87,7 @@ export const docsManifest = [
     title: 'Narration',
     description:
       'Attach spoken cues to a video, overlap narration with visible UI motion, choose voices, use speech markup, and connect ElevenLabs for custom voices.',
-    prev: 'docs/guides/page-instrumentation',
+    prev: 'docs/guides/animated-interactions',
     next: 'docs/guides/values',
   },
   {
@@ -182,7 +182,7 @@ export const docsManifest = [
     navLabel: 'Studio',
     title: 'Studio',
     description:
-      'Remix render options, narration text, voices, overlays, and languages from the web app, or manage them entirely in Studio with array-form declarations like video.narration([...]). Business tier.',
+      'Remix render options, narration text, voices, overlays, and languages from the web app, or manage them entirely in Studio with studio(...) declarations like video.narration(studio([...])). Business tier.',
     prev: 'docs/guides/screenshots',
     next: 'docs/guides/public-urls-and-embeds',
   },
@@ -196,25 +196,37 @@ export const docsManifest = [
     description:
       'Enable public delivery for a video, understand stable language-specific URLs, and embed ScreenCI outputs in other sites.',
     prev: 'docs/guides/studio',
+    next: 'docs/guides/redact',
+  },
+  {
+    source: 'redact.md',
+    slug: 'docs/guides/redact',
+    section: 'Guides',
+    order: 6,
+    navLabel: 'Redact sensitive content',
+    title: 'Redact Sensitive Content',
+    description:
+      'Keep secrets out of a recording with redact: mask locators, typed values, and always-secret elements in the page before the frame is captured, so they are never uploaded.',
+    prev: 'docs/guides/public-urls-and-embeds',
     next: 'docs/guides/screen-audio',
   },
   {
     source: 'screen-audio.md',
     slug: 'docs/guides/screen-audio',
     section: 'Guides',
-    order: 6,
+    order: 7,
     navLabel: 'Screen audio',
     title: 'Screen Audio',
     description:
       'Capture system audio alongside the screen recording and mix it into the rendered video. Linux only, with an automatic, isolated per-worker capture sink.',
-    prev: 'docs/guides/public-urls-and-embeds',
+    prev: 'docs/guides/redact',
     next: 'docs/guides/update-screenci',
   },
   {
     source: 'update-screenci.mdx',
     slug: 'docs/guides/update-screenci',
     section: 'Guides',
-    order: 7,
+    order: 8,
     navLabel: 'Update ScreenCI',
     title: 'Update ScreenCI',
     description:

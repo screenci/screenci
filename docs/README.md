@@ -18,7 +18,7 @@ reference material to drill into.
 
 ### Guides
 
-- [Page Instrumentation](./page-instrumentation.md)
+- [Animated Interactions](./animated-interactions.md)
 - [Narration](./narration.md)
 - [Text](./text.md)
 - [Audio](./audio.md)
@@ -27,6 +27,7 @@ reference material to drill into.
 - [Camera and Zooming](./camera-and-zooming.md)
 - [Studio](./studio.md)
 - [Public URLs and Embeds](./public-urls-and-embeds.md)
+- [Redact Sensitive Content](./redact.md)
 - [Update ScreenCI](./update-screenci.mdx)
 
 ### Reference

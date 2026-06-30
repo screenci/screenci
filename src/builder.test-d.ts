@@ -1,5 +1,6 @@
 import { describe, it, expectTypeOf } from 'vitest'
 import { video } from './video.js'
+import { studio } from './studio.js'
 import type { NarrationCue } from './cue.js'
 import type { OverlayController } from './asset.js'
 import type { AudioController } from './audio.js'
@@ -61,10 +62,67 @@ describe('builder fixture controllers', () => {
     })
   })
 
-  it('studio/array form keeps the declared names', () => {
-    video.narration(['intro', 'cta'])('t', async ({ narration }) => {
+  it('studio(names) form keeps the declared names', () => {
+    video.narration(studio(['intro', 'cta']))('t', async ({ narration }) => {
       expectTypeOf(narration.intro).toEqualTypeOf<NarrationCue>()
       expectTypeOf<keyof typeof narration>().toEqualTypeOf<'intro' | 'cta'>()
+    })
+  })
+
+  it('studio(seed) form keeps the seeded names and value type', () => {
+    video.narration(studio({ intro: 'Hi', cta: 'Buy' }))(
+      't',
+      async ({ narration }) => {
+        expectTypeOf(narration.intro).toEqualTypeOf<NarrationCue>()
+        expectTypeOf<keyof typeof narration>().toEqualTypeOf<'intro' | 'cta'>()
+      }
+    )
+  })
+
+  it('rejects keyless studio() for a content feature', () => {
+    // @ts-expect-error studio() with no names is only valid for video.languages().
+    video.narration(studio())('t', async () => {})
+  })
+
+  it('accepts languages({ mode }) without an explicit set (inferred from keys)', () => {
+    video
+      .languages({ mode: 'shared' })
+      .narration(studio({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } }))(
+      't',
+      async () => {}
+    )
+  })
+
+  it('accepts the four canonical languages forms', () => {
+    // Code-owned.
+    video.languages(['en', 'fi'])('t', async () => {})
+    video.languages({ languages: ['en', 'fi'], mode: 'shared' })(
+      't',
+      async () => {}
+    )
+    // Web-owned: blank, seeded set, or seeded whole config (set + mode).
+    video.languages(studio()).narration(studio(['intro']))('t', async () => {})
+    video.languages(studio(['en', 'fi']))('t', async () => {})
+    video.languages(studio({ languages: ['en', 'fi'], mode: 'shared' }))(
+      't',
+      async () => {}
+    )
+    // studio({ mode }) is valid: web owns the set, shared mode is seeded.
+    video.languages(studio({ mode: 'shared' })).narration(studio(['intro']))(
+      't',
+      async () => {}
+    )
+  })
+
+  it('rejects an invalid value inside a studio languages config', () => {
+    // @ts-expect-error languages must be an array of codes, not a bare string.
+    video.languages(studio({ languages: 'en' }))('t', async () => {})
+  })
+
+  it('overlays: studio(names) maps each name to a controller', () => {
+    video.overlays(studio(['logo', 'badge']))('t', async ({ overlays }) => {
+      expectTypeOf(overlays.logo).toEqualTypeOf<OverlayController>()
+      expectTypeOf<keyof typeof overlays>().toEqualTypeOf<'logo' | 'badge'>()
     })
   })
 })

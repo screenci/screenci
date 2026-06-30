@@ -7,6 +7,7 @@ import {
 } from './events.js'
 import type { AutoZoomOptions, RecordOptions, RenderOptions } from './types.js'
 import type { ScreenshotCropRecord } from './crop.js'
+import type { ResolvedRedactStyle } from './redactController.js'
 
 export type CurrentZoomViewport = {
   focusPoint: { x: number; y: number }
@@ -119,6 +120,17 @@ export type ScreenCIRuntimeContext = {
    * resizes. Resets to 1 with each fresh recording context.
    */
   recordingSize: { current: number }
+  /**
+   * Client-side redaction state. `controllerInstalled` guards the one-time
+   * `addInitScript` install of the in-page mask controller; `activeMasks` maps
+   * each live mask id to its resolved style so masks can be cleaned up at the
+   * end of a recording. Redaction is purely client side, so nothing here is
+   * serialized to `data.json`.
+   */
+  redact: {
+    controllerInstalled: boolean
+    activeMasks: Map<string, ResolvedRedactStyle>
+  }
 }
 
 const runtimeContextStorage = new AsyncLocalStorage<ScreenCIRuntimeContext>()
@@ -171,6 +183,10 @@ export function createScreenCIRuntimeContext(
       currentZoomViewport: null,
     },
     recordingSize: { current: 1 },
+    redact: {
+      controllerInstalled: false,
+      activeMasks: new Map<string, ResolvedRedactStyle>(),
+    },
   }
 }
 
@@ -300,6 +316,16 @@ export function resetAssetRuntimeState(): void {
 export function resetAudioRuntimeState(): void {
   const context = getScreenCIRuntimeContext()
   context.audio.activeRuns.clear()
+}
+
+export function getRuntimeRedactState(): ScreenCIRuntimeContext['redact'] {
+  return getScreenCIRuntimeContext().redact
+}
+
+export function resetRedactRuntimeState(): void {
+  const context = getScreenCIRuntimeContext()
+  context.redact.controllerInstalled = false
+  context.redact.activeMasks.clear()
 }
 
 export function pushRuntimeTimelineBlock(block: TimelineBlockState): void {

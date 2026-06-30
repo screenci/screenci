@@ -23,6 +23,8 @@ import type {
   VideoEncoderPreset,
 } from './types.js'
 import type { Page } from '@playwright/test'
+import { ScreenciError } from './errors.js'
+import { isStudioMarker, type StudioMarker } from './studio.js'
 export { getDimensions } from './dimensions.js'
 import { getDimensions, getViewportCenter } from './dimensions.js'
 import { resetCueChain } from './cue.js'
@@ -93,6 +95,7 @@ import {
   setRuntimeHideRecorder,
   setRuntimePage,
 } from './runtimeContext.js'
+import { installRedactController } from './redact.js'
 import { escapeFileSystemPathSegment } from './fileSystemName.js'
 import {
   resolveRecordingTimingDuration,
@@ -120,11 +123,22 @@ import type { NullSink } from './screenAudioSink.js'
 
 export const POST_VIDEO_PAUSE = 500
 
+/** The old `'studio'` string sentinel is retired: use `studio()` / `studio({...})`. */
+function assertNotLegacyStudioString(value: unknown, option: string): void {
+  if (value === 'studio') {
+    throw new ScreenciError(
+      `use({ ${option}: 'studio' }) is no longer supported. Use ${option}: studio() ` +
+        `to hand the options to the web app, or studio({ ... }) to seed them, ` +
+        `imported from 'screenci'.`
+    )
+  }
+}
+
 /**
  * The record options actually used for the capture: when record options are
- * deferred to Studio (`use({ recordOptions: 'studio' })`), the values fetched
- * before recording (keyed by video name) override the code-declared aspect
- * ratio, quality, and fps. Otherwise the code values are used as-is.
+ * deferred to Studio (`use({ recordOptions: studio() })`), the values fetched
+ * before recording (keyed by video name) override the base (seeded or default)
+ * aspect ratio, quality, and fps. Otherwise the code values are used as-is.
  */
 export function resolveEffectiveRecordOptions(
   recordOptions: RecordOptions,
@@ -139,28 +153,47 @@ export function resolveEffectiveRecordOptions(
 }
 
 /**
- * Resolve the `recordOptions` option, which may be the `'studio'` sentinel
- * (`use({ recordOptions: 'studio' })`) deferring the capture options to the web
- * app. Returns the base options to record with (defaults when deferred) and
- * whether the bag is Studio-managed.
+ * Resolve the `recordOptions` option, which may be `studio()` / `studio({...})`
+ * (`use({ recordOptions: studio() })`) deferring the capture options to the web
+ * app. Returns the base options to record with (the seed merged over defaults
+ * when seeded, plain defaults when blank) and whether the bag is Studio-managed.
  */
 export function resolveStudioRecordOptions(
-  recordOptions: RecordOptions | 'studio'
+  recordOptions: RecordOptions | StudioMarker<Partial<RecordOptions>>
 ): { base: RecordOptions; studio: boolean } {
-  const studio = recordOptions === 'studio'
-  return { base: studio ? DEFAULT_VIDEO_OPTIONS : recordOptions, studio }
+  assertNotLegacyStudioString(recordOptions, 'recordOptions')
+  if (isStudioMarker(recordOptions)) {
+    const seed = recordOptions.seed
+    return {
+      base: seed
+        ? { ...DEFAULT_VIDEO_OPTIONS, ...seed }
+        : DEFAULT_VIDEO_OPTIONS,
+      studio: true,
+    }
+  }
+  return { base: recordOptions, studio: false }
 }
 
 /**
- * Resolve the `renderOptions` option, which may be the `'studio'` sentinel
- * deferring the render options to the web app. Returns the code render options
- * (`undefined` when deferred) and whether they are Studio-managed.
+ * Resolve the `renderOptions` option, which may be `studio()` / `studio({...})`
+ * deferring the render options to the web app. Returns the render options to use
+ * as the starting point (the seed when seeded, `undefined` when blank) and
+ * whether they are Studio-managed.
  */
 export function resolveStudioRenderOptions(
-  renderOptions: RenderOptions | 'studio' | undefined
+  renderOptions:
+    | RenderOptions
+    | StudioMarker<Partial<RenderOptions>>
+    | undefined
 ): { obj: RenderOptions | undefined; studio: boolean } {
-  const studio = renderOptions === 'studio'
-  return { obj: studio ? undefined : renderOptions, studio }
+  assertNotLegacyStudioString(renderOptions, 'renderOptions')
+  if (isStudioMarker(renderOptions)) {
+    return {
+      obj: renderOptions.seed as RenderOptions | undefined,
+      studio: true,
+    }
+  }
+  return { obj: renderOptions, studio: false }
 }
 
 type DeferredRecordingStop = {
@@ -515,8 +548,11 @@ export async function withActiveRecordingContext<T>(params: {
 }
 
 type VideoFixtureOptions = {
-  recordOptions: RecordOptions | 'studio'
-  renderOptions: RenderOptions | 'studio' | undefined
+  recordOptions: RecordOptions | StudioMarker<Partial<RecordOptions>>
+  renderOptions:
+    | RenderOptions
+    | StudioMarker<Partial<RenderOptions>>
+    | undefined
   /**
    * Active language for this recording pass, set by `video.languages(...)` in
    * per-language mode. `undefined` in shared mode and single-language videos.
@@ -870,6 +906,11 @@ const _videoBase = base.extend<
       })
       bindStillCaptureToPage(page)
       await setupMouseTracking(page, recorder)
+      await installRedactController(
+        page,
+        runtimeContext.redact,
+        recordOptions.redact
+      )
       recorder.start()
       await withActiveRecordingContext({
         runtimeContext,
@@ -921,6 +962,11 @@ const _videoBase = base.extend<
     })
 
     await setupMouseTracking(page, recorder)
+    await installRedactController(
+      page,
+      runtimeContext.redact,
+      recordOptions.redact
+    )
 
     // Navigate to blank page to ensure window is ready and rendered
     await page.goto('about:blank')
@@ -1166,18 +1212,19 @@ interface Video extends VideoCallSignatures {
    */
   narration: MediaBuilder<VideoArgs>['narration']
 
-  /** Declare on-screen values fields (array = Studio-owned, object = code values). */
+  /** Declare on-screen values fields (`studio([...])` = Studio-owned, object = code values). */
   values: MediaBuilder<VideoArgs>['values']
 
-  /** Declare overlays (array = Studio-owned, object = code values/factories). */
+  /** Declare overlays (`studio([...])` = Studio-owned, object = code values/factories). */
   overlays: MediaBuilder<VideoArgs>['overlays']
 
-  /** Declare background-audio tracks (array = Studio-owned, object = code values). */
+  /** Declare background-audio tracks (`studio([...])` = Studio-owned, object = code values). */
   audio: MediaBuilder<VideoArgs>['audio']
 
   /**
-   * Declare the recorded language set / capture mode. Pass `'studio'` to let the
-   * ScreenCI web app own the set, an array `['en', 'fi']`, or an options object.
+   * Declare the recorded language set / capture mode. Pass `studio()` to let the
+   * ScreenCI web app own the set (`studio(['en', 'fi'])` to seed it), an array
+   * `['en', 'fi']`, or an options object.
    */
   languages: MediaBuilder<VideoArgs>['languages']
 

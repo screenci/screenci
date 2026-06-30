@@ -429,6 +429,20 @@ export type RecordOptions = {
    * @default 0
    */
   captureAudio?: number
+
+  /**
+   * CSS selectors whose matching elements are masked from the very first frame,
+   * before any page script runs. Use this for elements that are always secret
+   * (API keys, account numbers) so there is no window where they could be
+   * captured in the clear.
+   *
+   * The mask is applied client side in the live DOM, so the obscured pixels
+   * never enter `recording.mp4` and are never uploaded. For masking that starts
+   * at a specific moment, use the `redact()` helper instead.
+   *
+   * @example ['.api-key', '[data-sensitive]']
+   */
+  redact?: string[]
 }
 
 /**
@@ -557,6 +571,45 @@ export type ScreenCILocatorPostClickMoveOptions = CursorMoveTimingOption & {
   padding?: number
 }
 
+/**
+ * How a redacted region is drawn over the page. The mask is an opaque panel
+ * applied client side in the live DOM, so the obscured pixels never enter the
+ * recording and are never uploaded, and it cannot leak under any renderer.
+ *
+ * By default the panel is filled with a color sampled from the surface beneath
+ * it, so it blends in as a clean block. Set `color` for a fixed fill, or `css`
+ * to fully style the panel.
+ */
+export type RedactStyle = {
+  /**
+   * Opaque fill color, e.g. '#111' or 'black'. Omit to sample a color from the
+   * surface underneath the element.
+   */
+  color?: string
+  /** Corner radius of the mask in px (default 12). */
+  radius?: number
+  /** CSS box-shadow for the mask, or `false` to disable it. */
+  shadow?: string | false
+  /**
+   * Extra CSS applied to the mask panel for full custom styling, e.g.
+   * `'background: repeating-linear-gradient(45deg,#222 0 6px,#333 6px 12px)'`.
+   * Applied last, so it overrides the defaults. Keep the panel opaque, or the
+   * content underneath may show through.
+   */
+  css?: string
+}
+
+/** Options for {@link redact} and the per-action `redact` switch. */
+export type RedactOptions = {
+  style?: RedactStyle
+}
+
+/** Handle returned by a persistent {@link redact} call. */
+export type RedactHandle = {
+  /** Remove this mask, revealing the element again. */
+  unredact(): Promise<void>
+}
+
 export type ScreenCILocatorFillOptions = ScreenCILocatorClickOptions & {
   /**
    * When `true`, forces the pre-type click animation even if the target input
@@ -570,6 +623,13 @@ export type ScreenCILocatorFillOptions = ScreenCILocatorClickOptions & {
   position?: { x: number; y: number }
   /** Hide the cursor while typing; shown again on the next mouse move. */
   hideMouse?: boolean
+  /**
+   * Mask the typed value in the recording so the secret never enters
+   * `recording.mp4`. The mask is applied before the first character is typed,
+   * so the value is never captured in the clear. Pass `true` for the default
+   * mask, or `RedactOptions` to customize it.
+   */
+  redact?: boolean | RedactOptions
   click?: false | ScreenCILocatorClickOptions
   postClickMove?: ScreenCILocatorPostClickMoveOptions
   autoZoomOptions?: AutoZoomOptions
@@ -590,6 +650,12 @@ export type ScreenCILocatorPressSequentiallyOptions = Omit<
     position?: { x: number; y: number }
     /** Hide the cursor while typing; shown again on the next mouse move. */
     hideMouse?: boolean
+    /**
+     * Mask the typed value in the recording so the secret never enters
+     * `recording.mp4`. Applied before the first character is typed. Pass `true`
+     * for the default mask, or `RedactOptions` to customize it.
+     */
+    redact?: boolean | RedactOptions
     autoZoomOptions?: AutoZoomOptions
   }
 

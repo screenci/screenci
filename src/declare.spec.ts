@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { normalizeFeature, isLanguageKey } from './declare.js'
+import { studio } from './studio.js'
 
 describe('isLanguageKey', () => {
   it('treats supported language codes and "default" as language keys', () => {
@@ -15,8 +16,8 @@ describe('isLanguageKey', () => {
 })
 
 describe('normalizeFeature', () => {
-  it('array form declares Studio-owned names', () => {
-    const n = normalizeFeature<string>('narration', ['intro', 'cta'])
+  it('studio(names) declares blank Studio-owned names', () => {
+    const n = normalizeFeature<string>('narration', studio(['intro', 'cta']))
     expect(n.studioNames).toEqual(['intro', 'cta'])
     expect(n.codeNames).toEqual([])
     expect(n.names).toEqual(['intro', 'cta'])
@@ -25,8 +26,44 @@ describe('normalizeFeature', () => {
     expect(n.languages).toEqual([])
   })
 
+  it('studio(seed) declares seeded Studio-owned names (web wins, code seeds)', () => {
+    const n = normalizeFeature<string>(
+      'narration',
+      studio({ intro: 'Hi', cta: 'Buy' })
+    )
+    // Studio-owned (the web app owns the content), but seeded with initial values.
+    expect(n.studioNames).toEqual(['intro', 'cta'])
+    expect(n.codeNames).toEqual([])
+    expect(n.names).toEqual(['intro', 'cta'])
+    expect(n.shared).toEqual({ intro: 'Hi', cta: 'Buy' })
+    expect(n.byLang).toEqual({})
+  })
+
+  it('studio(language-major seed) keeps per-language seed values', () => {
+    const n = normalizeFeature<string>(
+      'narration',
+      studio({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })
+    )
+    expect(n.studioNames).toEqual(['intro'])
+    expect(n.byLang).toEqual({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })
+  })
+
   it('rejects duplicate Studio names', () => {
-    expect(() => normalizeFeature('narration', ['a', 'a'])).toThrow(/Duplicate/)
+    expect(() => normalizeFeature('narration', studio(['a', 'a']))).toThrow(
+      /Duplicate/
+    )
+  })
+
+  it('rejects a bare array (the Studio-owned array form is retired)', () => {
+    expect(() =>
+      normalizeFeature<string>('narration', ['intro'] as never)
+    ).toThrow(/bare arrays are no longer Studio-owned/)
+  })
+
+  it('rejects keyless studio() for a content feature', () => {
+    expect(() => normalizeFeature<string>('narration', studio())).toThrow(
+      /only valid for video\.languages/
+    )
   })
 
   it('content-major object declares shared code values', () => {

@@ -352,7 +352,7 @@ export type RecordingMetadata = {
     renderOptions?: boolean
     narration?: boolean
     assets?: boolean
-    /** Web-owned language set (`video.languages('studio')`): the app may add and
+    /** Web-owned language set (`video.languages(studio())`): the app may add and
      *  render languages for this video. Absent for code-defined language sets. */
     languages?: boolean
   }

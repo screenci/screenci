@@ -47,6 +47,8 @@ expose the Studio-managed controllers and values alongside any defined in code.
 - [how to defer render and record options to Studio](#studio-render-and-record-options)
 - [how to manage languages from Studio](#studio-languages-from-code)
 
+<!-- screenci-doc-video:docs/guides/studio -->
+
 ## Editing in Studio
 
 Open a video in the web app and choose **Open in Studio**. Studio shows the

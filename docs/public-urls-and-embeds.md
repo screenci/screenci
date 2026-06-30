@@ -11,6 +11,8 @@ Public URLs give a ScreenCI video a stable delivery surface outside the app. Onc
 - [where to use them](#good-use-cases)
 - [how they relate to the public delivery API](#whats-next)
 
+<!-- screenci-doc-video:docs/guides/public-urls-and-embeds -->
+
 ## What public URLs look like
 
 Public delivery starts from a stable base:

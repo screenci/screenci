@@ -10,6 +10,8 @@ form. The language set is inferred from the union of all feature keys, so adding
 a language to any one of them is enough to produce a version. TypeScript validates
 that every language covers the same cues, which catches drift early.
 
+<!-- screenci-doc-video:docs/guides/languages -->
+
 ## Add languages
 
 Add languages by keeping the same cue keys under each language code in

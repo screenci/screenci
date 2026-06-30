@@ -44,6 +44,32 @@ export const docsVideoRegistry = {
     sourcePath:
       'screenci/docs/video-sources/locator-highlight-still.screenci.ts',
   },
+  // The narrated walkthroughs below are authored but not yet recorded: they have
+  // no publicId, so the page injects an invisible placeholder until the video is
+  // recorded and published, then a publicId is added here (see videos.ts docs).
+  // The four app demos record the authenticated app via shared auth
+  // (SCREENCI_APP_STORAGE_STATE); camera-and-zooming records the public site.
+  'docs/guides/narration': {
+    sourcePath: 'screenci/docs/video-sources/narration.screenci.ts',
+    showSource: false,
+  },
+  'docs/guides/camera-and-zooming': {
+    sourcePath: 'screenci/docs/video-sources/camera-and-zooming.screenci.ts',
+    showSource: false,
+  },
+  'docs/guides/languages': {
+    sourcePath: 'screenci/docs/video-sources/languages.screenci.ts',
+    showSource: false,
+  },
+  'docs/guides/studio': {
+    sourcePath: 'screenci/docs/video-sources/studio.screenci.ts',
+    showSource: false,
+  },
+  'docs/guides/public-urls-and-embeds': {
+    sourcePath:
+      'screenci/docs/video-sources/public-urls-and-embeds.screenci.ts',
+    showSource: false,
+  },
 } as const satisfies Record<string, DocVideo>
 
 export function getDocVideo(slug: string): DocVideo | null {

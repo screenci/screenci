@@ -10,6 +10,8 @@ ScreenCI has two camera styles: `autoZoom()` for sections where the camera shoul
 - [how to keep camera motion readable](#manual-zoom)
 - [how to shrink the recording to show the background](#recording-size)
 
+<!-- screenci-doc-video:docs/guides/camera-and-zooming -->
+
 ## Automatic zoom
 
 ```ts

@@ -447,39 +447,95 @@ export type FeatureNamesOf<A> = A extends readonly string[]
     ? Extract<Exclude<keyof A, LangKey>, string> | LangMajorNamesOf<A>
     : never
 
-/** The overlay controller type for a single declared name. */
-type OverlayControllerForName<A, K extends string> = A extends readonly string[]
-  ? OverlayController
-  : K extends keyof A
-    ? OverlayControllerFor<A[K]>
-    : OverlayController
+/**
+ * Builds a feature's fixture controller map so each declared name is a *real*
+ * property mapped homomorphically from the object that declared it, rather than
+ * a synthesized `Record<Union, V>` entry.
+ *
+ * Why this matters: `Record<FeatureNamesOf<A>, V>` collapses the names into a
+ * string-literal union and then re-synthesizes fresh properties, which severs
+ * the link back to the literal that declared each name. An editor then has no
+ * source location to jump to, so control-clicking `narration.intro` cannot land
+ * on the `intro:` line. A homomorphic map (`[K in keyof Src]`) keeps each
+ * property's declaration symbol, which is exactly what "Go to Definition"
+ * follows. The `-readonly`/`-?` modifiers drop the modifiers that `const`
+ * inference adds to the source literal, so the resolved value type stays
+ * identical to the old `Record` form (only navigability is gained).
+ *
+ * The array (Studio) form has no declaring object in code (its content lives in
+ * the web app), so it keeps the plain `Record` mapping and is not navigable.
+ */
+type ContentMajorControllers<A, V> = {
+  -readonly [K in keyof A as K extends LangKey
+    ? never
+    : Extract<K, string>]-?: V
+}
+
+type LangMajorControllers<A, V> = UnionToIntersection<
+  {
+    [L in Extract<keyof A, LangKey>]: A[L] extends Record<string, unknown>
+      ? { -readonly [K in keyof A[L] as Extract<K, string>]-?: V }
+      : never
+  }[Extract<keyof A, LangKey>]
+>
+
+type FeatureControllers<A, V> = A extends readonly string[]
+  ? Record<A[number], V>
+  : [Extract<Exclude<keyof A, LangKey>, string>] extends [never]
+    ? LangMajorControllers<A, V>
+    : ContentMajorControllers<A, V>
+
+/**
+ * Overlays mirror {@link FeatureControllers} but resolve each name's controller
+ * type from its declared input (`OverlayControllerFor<A[K]>`), so the precise
+ * controller variant is preserved alongside navigability. Language-major and
+ * Studio names fall back to the broad {@link OverlayController}, matching the
+ * prior behavior.
+ */
+type OverlayContentMajorControllers<A> = {
+  -readonly [K in keyof A as K extends LangKey
+    ? never
+    : Extract<K, string>]-?: OverlayControllerFor<A[K]>
+}
+
+type OverlayLangMajorControllers<A> = UnionToIntersection<
+  {
+    [L in Extract<keyof A, LangKey>]: A[L] extends Record<string, unknown>
+      ? {
+          -readonly [K in keyof A[L] as Extract<K, string>]-?: OverlayController
+        }
+      : never
+  }[Extract<keyof A, LangKey>]
+>
+
+type OverlayControllers<A> = A extends readonly string[]
+  ? Record<A[number], OverlayController>
+  : [Extract<Exclude<keyof A, LangKey>, string>] extends [never]
+    ? OverlayLangMajorControllers<A>
+    : OverlayContentMajorControllers<A>
 
 type NarrationOverrideFor<Args, A> = 'narration' extends keyof Args
   ? [FeatureNamesOf<A>] extends [never]
     ? object
-    : { narration: Record<FeatureNamesOf<A>, NarrationCue> }
+    : { narration: FeatureControllers<A, NarrationCue> }
   : object
 
 type ValuesOverrideFor<Args, A> = 'values' extends keyof Args
   ? [FeatureNamesOf<A>] extends [never]
     ? object
-    : { values: Record<FeatureNamesOf<A>, string> }
+    : { values: FeatureControllers<A, string> }
   : object
 
 type OverlayOverrideFor<Args, A> = 'overlays' extends keyof Args
   ? [FeatureNamesOf<A>] extends [never]
     ? object
-    : {
-        overlays: {
-          [K in FeatureNamesOf<A>]: OverlayControllerForName<A, K>
-        }
-      }
+    : { overlays: OverlayControllers<A> }
   : object
 
 type AudioOverrideFor<Args, A> = 'audio' extends keyof Args
   ? [FeatureNamesOf<A>] extends [never]
     ? object
-    : { audio: Record<FeatureNamesOf<A>, AudioController> }
+    : { audio: FeatureControllers<A, AudioController> }
   : object
 
 type MergeArgs<Args, O> = {

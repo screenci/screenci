@@ -30,6 +30,8 @@ and Starter users should stay with the default consistent narration flow.
 - [how to use inline speech markup](#inline-speech-markup)
 - [how to use ElevenLabs voices](#elevenlabs-voices)
 
+<!-- screenci-doc-video:docs/guides/narration -->
+
 ## Attach a narration script
 
 Attach the narration script with `video.narration(...)`. The body receives a

@@ -148,6 +148,15 @@ export type Registration = {
 export type ResolvedRecordingLocalize = {
   /** Every language this video records (the resolved set). */
   languages: string[]
+  /**
+   * Every language this video *defines* (the full code-defined / web-owned set),
+   * independent of the `--languages` render filter. `languages` is the subset
+   * actually rendered this run; `availableLanguages` is the complete set so the
+   * app knows which languages exist even when only some were rendered. A render
+   * restricted to `--languages fr` still reports `de`, `en`, ... here, so the app
+   * does not treat them as removed-from-code.
+   */
+  availableLanguages: string[]
   mode: LocalizeMode
   browserLocale: boolean
   locales?: Partial<Record<Lang, string>>
@@ -186,13 +195,15 @@ function featureLanguages(state: BuilderState): string[] {
 
 /**
  * Resolve the recorded language set at registration time. Priority:
- * 1. `video.languages(studio())` -> the web-owned set, injected via the
- *    `--languages` channel (`requestedLanguages`), falling back to the
- *    `studioSeed` (`studio(['en', ...])`); empty => pending.
+ * 1. `video.languages(studio())` -> web-owned: the UNION of the web's current
+ *    selection (`requestedLanguages`, injected at record time), the `studioSeed`
+ *    (`studio(['en', ...])`), and the per-feature language keys defined in code.
+ *    Empty (none anywhere) => pending.
  * 2. explicit `video.languages([...])`.
  * 3. union of per-feature language keys (e.g. `narration({ fr })` -> French).
  * 4. default `['en']`.
- * The `requestedLanguages` filter (CLI / studio injection) intersects 2-4.
+ * The `requestedLanguages` filter (CLI / studio injection) intersects 2-4; for the
+ * web-owned set (1) it is unioned in instead, since the web only adds languages.
  */
 export function resolveRecordingLocalize(
   state: BuilderState,
@@ -204,9 +215,24 @@ export function resolveRecordingLocalize(
   const localesPatch = rl?.locales !== undefined ? { locales: rl.locales } : {}
 
   if (rl?.languages === 'studio') {
-    const languages = [...(requestedLanguages ?? rl.studioSeed ?? [])]
+    // The web app owns the set, but the recorded languages are the union of:
+    // the web's current selection (`requestedLanguages`, fetched/injected at
+    // record time), the code seed (`studio(['en', ...])`), and the per-feature
+    // languages defined in code (e.g. `narration({ en, fi })`). So a studio-owned
+    // video still records every language its code defines, plus whatever the web
+    // added, even on the first run before anything is configured in the web.
+    const languages = [
+      ...new Set([
+        ...(requestedLanguages ?? []),
+        ...(rl.studioSeed ?? []),
+        ...featureLanguages(state),
+      ]),
+    ]
     return {
       languages,
+      // Studio-owned sets render every language they record, so the available
+      // set is the recorded set (the union above).
+      availableLanguages: languages,
       mode,
       browserLocale,
       ...localesPatch,
@@ -237,6 +263,10 @@ export function resolveRecordingLocalize(
       : declared.filter((lang) => requestedLanguages.includes(lang))
   return {
     languages,
+    // The full declared set, regardless of the `--languages` render filter. The
+    // app reads this so a code-defined language that simply was not rendered this
+    // run is not mistaken for one removed from code.
+    availableLanguages: declared,
     mode,
     browserLocale,
     ...localesPatch,
@@ -249,19 +279,13 @@ export function resolveRecordingLocalize(
 /**
  * Warn about per-feature values declared for a language outside the recorded set
  * (e.g. `narration({ fr })` while the set is `[fi]`): the value is ignored.
- *
- * Skipped when the set is Studio-owned (`video.languages(studio(...))`): there the
- * per-feature languages are seeds the web app can use once it selects or adds a
- * language, so a language not in the current (possibly empty) web set is expected,
- * not a mistake.
  */
 function warnUnusedLanguages(
   state: BuilderState,
   resolved: ResolvedRecordingLocalize
 ): void {
-  if (resolved.studioOwned) return
   const active = new Set(resolved.languages)
-  const source = 'video.languages()'
+  const source = resolved.studioOwned ? 'web' : 'video.languages()'
   const langList = resolved.languages.join(', ') || '(none)'
   const features: [string, NormalizedFeature<unknown> | null][] = [
     ['Narration', state.narration],

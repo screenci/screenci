@@ -750,6 +750,35 @@ describe('EventRecorder', () => {
       expect(cue.translations).toBeUndefined()
     })
 
+    it('stamps the full available set even when one language is rendered', async () => {
+      // A `--languages fi` run records only fi, but availableLanguages keeps the
+      // full declared set so the app does not gray out the unrendered languages.
+      recorder.start()
+      recorder.setActiveLanguage('fi')
+      recorder.setAvailableLanguages(['en', 'fi', 'de'])
+      recorder.addCueStart('', 'greeting', undefined, {
+        fi: { text: 'Hei', voice: voices.Ava },
+      })
+      await recorder.writeToFile(tmpDir, 'Test Video')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed: RecordingData = JSON.parse(content)
+      expect(parsed.metadata?.languages).toEqual(['fi'])
+      expect(parsed.metadata?.availableLanguages).toEqual(['de', 'en', 'fi'])
+    })
+
+    it('omits availableLanguages when no language set is declared', async () => {
+      recorder.start()
+      recorder.addCueStart('', 'greeting', undefined, {
+        en: { text: 'Hello', voice: voices.Ava },
+      })
+      await recorder.writeToFile(tmpDir, 'Test Video')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed: RecordingData = JSON.parse(content)
+      expect(parsed.metadata?.availableLanguages).toBeUndefined()
+    })
+
     it('does not write metadata.voices even when voices are registered', async () => {
       recorder.start()
       recorder.registerVoiceForLang('en', { name: 'Ava' })

@@ -888,6 +888,14 @@ export type RecordingMetadata = {
   screenciVersion: string
   /** Language codes present in multi-language cues, e.g. `['en', 'de']`. Omitted when no multi-language cues are used. */
   languages?: string[]
+  /**
+   * Every language this video defines (the full code-defined / web-owned set),
+   * independent of the `--languages` render filter. While `languages` is the
+   * subset rendered in this recording, `availableLanguages` is the complete set,
+   * so the app can tell a code-defined language that simply was not rendered this
+   * run apart from one removed from code. Omitted when no language set is declared.
+   */
+  availableLanguages?: string[]
   sourceFilePath?: string
   /**
    * Which parts of this recording opted into Studio configuration via
@@ -1002,6 +1010,13 @@ export interface IEventRecorder {
    */
   setActiveLanguage(lang: string | null): void
   /**
+   * Records the full set of languages this video defines (the code-defined or
+   * web-owned set), independent of which subset was rendered this run. Stamped
+   * into `metadata.availableLanguages` so the app knows a code-defined language
+   * exists even when a `--languages` filter rendered only some of them.
+   */
+  setAvailableLanguages(languages: string[]): void
+  /**
    * Records an input action. Inner event timestamps are absolute (e.g. Date.now())
    * and are converted to recording-relative milliseconds internally.
    * Throws if the event's time span overlaps with any previously recorded input event.
@@ -1018,7 +1033,8 @@ export interface IEventRecorder {
     cueConfig?: CueConfig,
     translations?: Record<string, CueTranslation>,
     volume?: number,
-    until?: TimelineAnchorInput
+    until?: TimelineAnchorInput,
+    studio?: boolean
   ): void
   /** Records a studio-mode cue start — text and voice are configured in Studio. */
   addStudioCueStart(name: string, until?: TimelineAnchorInput): void
@@ -1040,7 +1056,8 @@ export interface IEventRecorder {
     subtitle?: string,
     translations?: Record<string, VideoCueTranslation>,
     volume?: number,
-    until?: TimelineAnchorInput
+    until?: TimelineAnchorInput,
+    studio?: boolean
   ): void
   addAssetStart(name: string, asset: AssetStartPayload): void
   /**
@@ -1117,6 +1134,7 @@ export interface IEventRecorder {
 export const NOOP_EVENT_RECORDER: IEventRecorder = {
   start(): void {},
   setActiveLanguage(): void {},
+  setAvailableLanguages(): void {},
   addInput(): void {},
   addCueStart(): void {},
   addStudioCueStart(): void {},
@@ -1171,6 +1189,8 @@ export class EventRecorder implements IEventRecorder {
   private readonly pendingOverlays: PendingOverlay[] = []
   private startTime: number | null = null
   private activeLanguage: string | null = null
+  /** Full code-defined / web-owned language set, for metadata.availableLanguages. */
+  private availableLanguages: string[] = []
   private readonly recordOptions: RecordOptions | undefined
   private readonly renderOptions: RenderOptions | undefined
   /** Which option groups are deferred to Studio (`video.studio({...})`). */
@@ -1193,6 +1213,10 @@ export class EventRecorder implements IEventRecorder {
 
   setActiveLanguage(lang: string | null): void {
     this.activeLanguage = lang
+  }
+
+  setAvailableLanguages(languages: string[]): void {
+    this.availableLanguages = languages
   }
 
   /**
@@ -1383,7 +1407,8 @@ export class EventRecorder implements IEventRecorder {
     cueConfig?: CueConfig,
     translations?: Record<string, CueTranslation>,
     volume?: number,
-    until?: TimelineAnchorInput
+    until?: TimelineAnchorInput,
+    studio?: boolean
   ): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
@@ -1395,6 +1420,9 @@ export class EventRecorder implements IEventRecorder {
       ...(cueConfig !== undefined && { cueConfig }),
       ...(translations !== undefined && { translations }),
       ...(volume !== undefined && { volume }),
+      // A seeded studio cue carries its seed translations AND the studio marker, so
+      // it renders from the seed yet stays web-editable (a Studio edit overrides it).
+      ...(studio === true && { studio: true as const }),
       ...timelineAnchorFields(until),
     })
   }
@@ -1444,7 +1472,8 @@ export class EventRecorder implements IEventRecorder {
     subtitle?: string,
     translations?: Record<string, VideoCueTranslation>,
     volume?: number,
-    until?: TimelineAnchorInput
+    until?: TimelineAnchorInput,
+    studio?: boolean
   ): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
@@ -1457,6 +1486,8 @@ export class EventRecorder implements IEventRecorder {
       ...(subtitle !== undefined && { subtitle }),
       ...(translations !== undefined && { translations }),
       ...(volume !== undefined && { volume }),
+      // Seeded studio media cue: keeps its seed translations and the studio marker.
+      ...(studio === true && { studio: true as const }),
       ...timelineAnchorFields(until),
     })
   }
@@ -1926,6 +1957,15 @@ export class EventRecorder implements IEventRecorder {
         : languageSet.size > 0
           ? [...languageSet].sort()
           : undefined
+    // The full code-defined / web-owned set, regardless of which subset was
+    // rendered this run (`--languages`). The app unions this across a video's
+    // recordings to know every defined language, so one not rendered this run is
+    // not mistaken for one removed from code. Omitted for plain videos that
+    // declare no language set (availableLanguages stays empty).
+    const availableLanguages =
+      this.availableLanguages.length > 0
+        ? [...new Set(this.availableLanguages)].sort()
+        : undefined
 
     const git = getGitMetadata()
 
@@ -1979,6 +2019,7 @@ export class EventRecorder implements IEventRecorder {
         videoName,
         screenciVersion: SCREENCI_VERSION,
         ...(languages !== undefined && { languages }),
+        ...(availableLanguages !== undefined && { availableLanguages }),
         ...(sourceFilePath !== undefined && { sourceFilePath }),
         ...(git.commit !== undefined && { commit: git.commit }),
         ...(git.isDirty !== undefined && { isDirty: git.isDirty }),

@@ -65,6 +65,8 @@ Manual framing is better when:
 
 `zoomTo()` accepts either a locator or an explicit viewport point like `{ x, y }`. Use a locator when you want framing to stay tied to a real UI target. Use a point when you want a very deliberate composition or pan that is not attached to the next clickable element.
 
+When you `zoomTo()` a locator, the page scrolls only the minimum needed to bring the target into the frame, then the zoom centers it. A target that is already on screen is barely moved (it zooms essentially in place) instead of the page scrolling it across, so zooming a control near the bottom of a long page no longer yanks it up toward the top.
+
 Manual zoom becomes more useful when one focused sequence has multiple camera beats:
 
 - zoom to one panel

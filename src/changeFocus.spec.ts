@@ -553,10 +553,14 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     const result = await promise
 
-    expect(result.elementRect?.y).toBeCloseTo(340, 0)
+    // Minimal-scroll default: a plain interaction (amount forced to 1, focus
+    // window == full viewport) scrolls a below-fold rect only to the focus
+    // window's bottom edge, not to center. Window = [0, 720 - 40 = 680], and
+    // the rect at y 900 clamps to 680. centering no longer moves page scroll.
+    expect(result.elementRect?.y).toBeCloseTo(680, 0)
   })
 
-  it('uses start-edge placement when centering is 0 and achievable', async () => {
+  it('brings a below-fold target only to the focus window edge when centering is 0', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
@@ -567,12 +571,13 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     const result = await promise
 
-    // Not zoomed (idle interaction), so amount is forced to 1 and the passed
-    // centering is honored: centering 0 edge-aligns the rect to the top.
-    expect(result.elementRect?.y).toBeCloseTo(0, 0)
+    // Minimal scroll: not zoomed, so the focus window is the full viewport.
+    // The rect at y 900 is below the window, so it clamps to the bottom edge
+    // 720 - 40 = 680 regardless of centering.
+    expect(result.elementRect?.y).toBeCloseTo(680, 0)
   })
 
-  it('uses halfway placement when centering is 0.5 and achievable', async () => {
+  it('brings a below-fold target only to the focus window edge when centering is 0.5', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
@@ -583,41 +588,43 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     const result = await promise
 
-    // centering 0.5 lands the rect at (viewport - rect) * 0.5 / ... = 170px.
-    expect(result.elementRect?.y).toBeCloseTo(170, 0)
+    // Minimal scroll: focus window is the full viewport (not zoomed), so the
+    // below-fold rect clamps to the bottom edge 680 regardless of centering.
+    expect(result.elementRect?.y).toBeCloseTo(680, 0)
   })
 
-  it('uses the gentle scroll-centering default (0.2) for a plain interaction', async () => {
+  it('scrolls a below-fold plain-interaction target only to the focus window edge', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
       scrollSize: { width: 1280, height: 2200 },
     })
 
-    // No centering passed: an idle interaction (no zoom) should not yank the
-    // target to dead center. The default 0.2 lands it at (720 - 40) * 0.2 / 2
-    // = 68px from the top instead of 340.
+    // No centering passed: an idle interaction (no zoom) scrolls the minimum
+    // needed to reveal the target. Focus window == viewport, so the rect at
+    // y 900 lands at the bottom edge 720 - 40 = 680, not pulled to center.
     const promise = changeFocus(locator)
     await vi.runAllTimersAsync()
     const result = await promise
 
-    expect(result.elementRect?.y).toBeCloseTo(68, 0)
+    expect(result.elementRect?.y).toBeCloseTo(680, 0)
   })
 
-  it('lets an explicit centering override the gentle scroll default', async () => {
+  it('keeps page scroll minimal even when an explicit centering is passed', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
       scrollSize: { width: 1280, height: 2200 },
     })
 
-    // Passing centering 1 on a plain interaction opts back into dead-center
-    // scrolling (the old default), proving the default is adjustable.
+    // Page scroll is minimal-only now: even an explicit centering 1 on a plain
+    // interaction only scrolls the below-fold rect to the focus window edge
+    // (680). The zoom output framing, not page scroll, is what centers.
     const promise = changeFocus(locator, { centering: 1 })
     await vi.runAllTimersAsync()
     const result = await promise
 
-    expect(result.elementRect?.y).toBeCloseTo(340, 0)
+    expect(result.elementRect?.y).toBeCloseTo(680, 0)
   })
 
   it('does not scroll a plain interaction whose target is already fully visible', async () => {
@@ -869,13 +876,76 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     await promise
 
+    // Minimal page scroll brings the y 900 rect only to the focus window's
+    // bottom edge (viewport y 500) rather than recentering the page. The zoom
+    // then centers that position in its 360-tall window: origin = 500 - (360 -
+    // 40) / 2 = 340, clamped to [0, 360]. Old recenter behavior gave y 360.
     expect(result?.zoom?.end).toEqual({
-      pointPx: { x: 0, y: 360 },
+      pointPx: { x: 0, y: 340 },
       size: { widthPx: 640, heightPx: 360 },
     })
   })
 
-  it('scrolls only by the residual amount zoom cannot absorb', async () => {
+  it('zooms a near-bottom-of-page target essentially in place instead of scrolling to the top', async () => {
+    // A small target sits near the bottom of a long page (viewport y 700,
+    // scrollY 0, page 4000 tall). The old recenter behavior would have pulled it
+    // up to the focus window center (scrolling the page ~330px). The new minimal
+    // scroll only nudges it to the focus window's bottom edge (628), a 72px
+    // scroll, then the zoom centers the output.
+    const locator = makeLocatorMock({
+      rect: { x: 300, y: 700, width: 200, height: 60 },
+      viewport: { width: 1280, height: 800 },
+      scrollSize: { width: 2000, height: 4000 },
+    })
+    let result: Awaited<ReturnType<typeof changeFocus>> | undefined
+
+    const promise = autoZoom(
+      async () => {
+        result = await changeFocus(locator, { amount: 0.72 })
+      },
+      { amount: 0.72, duration: 1000, postZoomDelay: 0 }
+    )
+
+    await vi.runAllTimersAsync()
+    await promise
+
+    // Focus window on y is [112, 112 + (576 - 60) = 628]. The rect at viewport y
+    // 700 clamps to the bottom edge 628, so the page scrolls only 72px, not the
+    // large recenter scroll. X is already inside its window, so left stays 0.
+    const finalScrollCall = locator.__scrollToCalls.at(-1)
+    expect(finalScrollCall?.top).toBeCloseTo(72, 0)
+    expect(finalScrollCall?.left).toBeCloseTo(0, 0)
+    expect(result?.elementRect?.y).toBeCloseTo(628, 0)
+  })
+
+  it('does not page scroll a zoom target already inside the focus window', async () => {
+    // The rect sits within the focus window already (viewport y 300, focus
+    // window [200, 540] for amount 0.5), even though the page has plenty of room
+    // to scroll. Minimal scroll means zero page scroll: only the zoom moves.
+    const locator = makeLocatorMock({
+      rect: { x: 300, y: 300, width: 200, height: 60 },
+      viewport: { width: 1280, height: 800 },
+      scrollSize: { width: 1280, height: 4000 },
+    })
+    let result: Awaited<ReturnType<typeof changeFocus>> | undefined
+
+    const promise = autoZoom(
+      async () => {
+        result = await changeFocus(locator, { amount: 0.5, centering: 1 })
+      },
+      { amount: 0.5, centering: 1, duration: 1000, postZoomDelay: 0 }
+    )
+
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(locator.__scrollToCalls).toHaveLength(0)
+    expect(result?.scroll).toBeUndefined()
+    expect(result?.elementRect?.y).toBeCloseTo(300, 0)
+    expect(result?.zoom).toBeDefined()
+  })
+
+  it('scrolls only the minimum needed to bring the target into the focus window', async () => {
     const locator = makeLocatorMock({
       rect: { x: 1400, y: 520, width: 420, height: 80 },
       viewport: { width: 1920, height: 1080 },
@@ -904,8 +974,12 @@ describe('changeFocus', () => {
 
     expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
     const finalScrollCall = locator.__scrollToCalls.at(-1)
-    expect(finalScrollCall?.left).toBeCloseTo(170, 0)
-    expect(result?.elementRect?.x).toBeCloseTo(1230, 0)
+    // Minimal scroll: focus window on x is [480, 480 + (960 - 420) = 1020]. The
+    // rect at viewport x 1400 clamps to the window's right edge 1020, so the
+    // page scrolls left = 1400 - 1020 = 380. The rect then sits at viewport x
+    // 1020, which the zoom centers without residual (optimalOffset 0).
+    expect(finalScrollCall?.left).toBeCloseTo(380, 0)
+    expect(result?.elementRect?.x).toBeCloseTo(1020, 0)
     expect(result?.zoom?.optimalOffset).toEqual({ x: 0, y: 0 })
   })
 
@@ -945,8 +1019,9 @@ describe('changeFocus', () => {
     // would emit.
     expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
     expect(locator.__scrollToCalls.length).toBeLessThanOrEqual(10)
-    // The final scroll position is still reached exactly.
-    expect(locator.__scrollToCalls.at(-1)?.left).toBeCloseTo(170, 0)
+    // The final scroll position is still reached exactly. Minimal scroll brings
+    // the rect to the focus window's right edge: left = 1400 - 1020 = 380.
+    expect(locator.__scrollToCalls.at(-1)?.left).toBeCloseTo(380, 0)
   })
 
   it('scrolls nested containers when ancestor clipping requires it', async () => {
@@ -970,10 +1045,10 @@ describe('changeFocus', () => {
 
     expect(locator.__nestedScrollTops.length).toBeGreaterThan(0)
     expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
-    // No explicit centering: a plain interaction uses the gentle scroll default
-    // (0.2), landing the rect at (720 - 40) * 0.2 / 2 = 68px from the top rather
-    // than dead center.
-    expect(result.elementRect?.y).toBeCloseTo(68, 0)
+    // No explicit centering: a plain interaction now scrolls the minimum needed.
+    // After the nested container reveals the element, the page scroll clamps it
+    // to the focus window's bottom edge (720 - 40 = 680), not to center.
+    expect(result.elementRect?.y).toBeCloseTo(680, 0)
   })
 
   it('does not scroll nested containers when the locator is already visible', async () => {

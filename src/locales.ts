@@ -48,6 +48,7 @@ export const DEFAULT_LANGUAGE_LOCALES: Partial<Record<Lang, string>> = {
   bg: 'bg-BG',
   ca: 'ca-ES',
   cmn: 'zh-CN',
+  yue: 'zh-HK',
 }
 
 /**

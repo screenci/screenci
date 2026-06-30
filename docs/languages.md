@@ -152,6 +152,11 @@ Per-language videos record only the requested languages, so a run never produces
 more than you asked for. A shared-mode recording is a single capture and is not
 split by this filter.
 
+The filter only restricts which languages are recorded and rendered this run, not
+which languages your video declares. Every recording still reports the full
+code-defined language set, so the app keeps showing the languages you did not
+render this time (rather than treating them as removed from code).
+
 ### Localized screenshots
 
 `screenshot.values` supports localized `values` (a still is silent, so it takes
@@ -251,85 +256,126 @@ Studio guide.
 ## Available languages
 
 The language-major forms (`video.narration(...)`, `video.values(...)`) and
-`video.languages(...)` accept the following supported language keys:
+`video.languages(...)` accept the supported language keys below.
+
+For the built-in voices, narration coverage depends on the voice's `modelType`
+(see [Narration](./narration.md#model-type)). The **consistent** model (the
+default) and the **expressive** model cover different language sets: most
+languages work with either, some are available only with the expressive model,
+and Cantonese (`yue`) is available only with the consistent model. Narrating a
+language with a model that does not cover it fails at record time with a message
+telling you which `modelType` to use.
+
+The per-model split applies only to the built-in voices. Your own
+[ElevenLabs voices](./narration.md#elevenlabs-voices) (including a voice you
+record and clone from a sample) are multilingual and cover every key in either
+table, so any language below works with them regardless of `modelType`.
+
+(`values` and other non-narration features also work for every key regardless of
+model, since they carry no synthesized speech.)
+
+### Available with any model
+
+These narrate with both the consistent (default) and expressive models:
+
+| Language         | Key   |
+| ---------------- | ----- |
+| Arabic           | `ar`  |
+| Bengali          | `bn`  |
+| Bulgarian        | `bg`  |
+| Croatian         | `hr`  |
+| Czech            | `cs`  |
+| Danish           | `da`  |
+| Dutch            | `nl`  |
+| English          | `en`  |
+| Estonian         | `et`  |
+| Finnish          | `fi`  |
+| French           | `fr`  |
+| German           | `de`  |
+| Greek            | `el`  |
+| Gujarati         | `gu`  |
+| Hebrew           | `he`  |
+| Hindi            | `hi`  |
+| Hungarian        | `hu`  |
+| Indonesian       | `id`  |
+| Italian          | `it`  |
+| Japanese         | `ja`  |
+| Kannada          | `kn`  |
+| Korean           | `ko`  |
+| Latvian          | `lv`  |
+| Lithuanian       | `lt`  |
+| Malayalam        | `ml`  |
+| Mandarin         | `cmn` |
+| Marathi          | `mr`  |
+| Norwegian Bokmal | `nb`  |
+| Polish           | `pl`  |
+| Portuguese       | `pt`  |
+| Punjabi          | `pa`  |
+| Romanian         | `ro`  |
+| Russian          | `ru`  |
+| Serbian          | `sr`  |
+| Slovak           | `sk`  |
+| Slovenian        | `sl`  |
+| Spanish          | `es`  |
+| Swahili          | `sw`  |
+| Swedish          | `sv`  |
+| Tamil            | `ta`  |
+| Telugu           | `te`  |
+| Thai             | `th`  |
+| Turkish          | `tr`  |
+| Ukrainian        | `uk`  |
+| Urdu             | `ur`  |
+| Vietnamese       | `vi`  |
+
+### Expressive model only
+
+With the built-in voices these narrate only with `modelType: 'expressive'` (a
+Business-tier feature). They also work with your own ElevenLabs or sample-cloned
+voice (which is multilingual), and for non-narration features (`values`, locale
+selection) they behave like any other key. Only the default consistent built-in
+model cannot narrate them.
 
 | Language          | Key   |
 | ----------------- | ----- |
 | Afrikaans         | `af`  |
+| Albanian          | `sq`  |
 | Amharic           | `am`  |
-| Arabic            | `ar`  |
+| Armenian          | `hy`  |
 | Azerbaijani       | `az`  |
+| Basque            | `eu`  |
 | Belarusian        | `be`  |
-| Bulgarian         | `bg`  |
-| Bengali           | `bn`  |
+| Burmese           | `my`  |
 | Catalan           | `ca`  |
 | Cebuano           | `ceb` |
-| Mandarin          | `cmn` |
-| Czech             | `cs`  |
-| Danish            | `da`  |
-| German            | `de`  |
-| Greek             | `el`  |
-| English           | `en`  |
-| Spanish           | `es`  |
-| Estonian          | `et`  |
-| Basque            | `eu`  |
-| Persian           | `fa`  |
-| Finnish           | `fi`  |
 | Filipino          | `fil` |
-| French            | `fr`  |
 | Galician          | `gl`  |
-| Gujarati          | `gu`  |
-| Hebrew            | `he`  |
-| Hindi             | `hi`  |
-| Croatian          | `hr`  |
-| Haitian Creole    | `ht`  |
-| Hungarian         | `hu`  |
-| Armenian          | `hy`  |
-| Indonesian        | `id`  |
-| Icelandic         | `is`  |
-| Italian           | `it`  |
-| Japanese          | `ja`  |
-| Javanese          | `jv`  |
 | Georgian          | `ka`  |
-| Kannada           | `kn`  |
-| Korean            | `ko`  |
+| Haitian Creole    | `ht`  |
+| Icelandic         | `is`  |
+| Javanese          | `jv`  |
 | Konkani           | `kok` |
+| Lao               | `lo`  |
 | Latin             | `la`  |
 | Luxembourgish     | `lb`  |
-| Lao               | `lo`  |
-| Lithuanian        | `lt`  |
-| Latvian           | `lv`  |
+| Macedonian        | `mk`  |
 | Maithili          | `mai` |
 | Malagasy          | `mg`  |
-| Macedonian        | `mk`  |
-| Malayalam         | `ml`  |
-| Mongolian         | `mn`  |
-| Marathi           | `mr`  |
 | Malay             | `ms`  |
-| Burmese           | `my`  |
-| Norwegian Bokmal  | `nb`  |
+| Mongolian         | `mn`  |
 | Nepali            | `ne`  |
-| Dutch             | `nl`  |
 | Norwegian Nynorsk | `nn`  |
 | Odia              | `or`  |
-| Punjabi           | `pa`  |
-| Polish            | `pl`  |
 | Pashto            | `ps`  |
-| Portuguese        | `pt`  |
-| Romanian          | `ro`  |
-| Russian           | `ru`  |
+| Persian           | `fa`  |
 | Sindhi            | `sd`  |
 | Sinhala           | `si`  |
-| Slovak            | `sk`  |
-| Slovenian         | `sl`  |
-| Albanian          | `sq`  |
-| Serbian           | `sr`  |
-| Swedish           | `sv`  |
-| Swahili           | `sw`  |
-| Tamil             | `ta`  |
-| Telugu            | `te`  |
-| Thai              | `th`  |
-| Turkish           | `tr`  |
-| Ukrainian         | `uk`  |
-| Urdu              | `ur`  |
-| Vietnamese        | `vi`  |
+
+### Consistent model only
+
+Cantonese narrates only with the consistent (default) model. Selecting
+`modelType: 'expressive'` for it fails at record time. It also works with your
+own ElevenLabs or sample-cloned voice.
+
+| Language  | Key   |
+| --------- | ----- |
+| Cantonese | `yue` |

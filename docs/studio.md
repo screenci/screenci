@@ -183,13 +183,12 @@ video.narration(
 })
 ```
 
-> **Seeded narration is still held on the first upload today.** The narration text
-> is Studio-owned, so the render waits for the video to be configured in Studio
-> even when a seed is provided (the backend does not yet pre-fill from the seed).
-> If you want the video to render immediately without a Studio step, define the
-> narration in code with a plain object instead, `video.narration({ en: {...} })`,
-> which is not Studio-owned and renders right away. Use seeded `studio({...})`
-> narration when you want Studio to own the text but give editors a starting point.
+Because the seed already carries the narration text, a seeded `studio({...})`
+declaration is **not held** on the first upload: it renders straight away from the
+seed, while staying Studio-owned so editors can change it later (a Studio edit
+wins over the seed). A blank `studio([...])` declaration carries no text, so it is
+still held until someone fills it in. If you want narration that is never
+Studio-owned, define it in code with a plain object, `video.narration({ en: {...} })`.
 
 To define narration values in code instead, pass a plain object with
 language-code keys: `video.narration({ en: {...}, fi: {...} })`. See

@@ -889,6 +889,17 @@ const _videoBase = base.extend<
     // translations and stamps metadata so the upload becomes a single language
     // version. `null` (shared / single-language) keeps every language.
     recorder.setActiveLanguage(_screenciLanguage ?? null)
+    // Stamp the full declared language set (regardless of the `--languages`
+    // render filter), but only when a set was explicitly declared. A plain video
+    // with the implicit `['en']` default records no availableLanguages, so the
+    // app does not treat it as a managed language set. The app unions this across
+    // a video's recordings to know every code-defined language even when only a
+    // subset was rendered this run.
+    if (_screenciRecordingLocalize?.explicit === true) {
+      recorder.setAvailableLanguages(
+        _screenciRecordingLocalize.availableLanguages ?? []
+      )
+    }
 
     // Per-language passes use a unique test title (so each gets its own
     // recording directory) but share one `videoName` so they group as language

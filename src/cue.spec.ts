@@ -31,6 +31,7 @@ function createMockRecorder(): IEventRecorder {
   return {
     start: vi.fn(),
     setActiveLanguage: vi.fn(),
+    setAvailableLanguages: vi.fn(),
     addInput: vi.fn(),
     addCueStart: vi.fn(),
     addStudioCueStart: vi.fn(),

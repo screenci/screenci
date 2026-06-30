@@ -1074,18 +1074,25 @@ export function buildLocalizedNarrationCues(
   const result: Record<string, NarrationCue> = {}
 
   for (const cueName of narration.cueNames) {
-    if (studioSet.has(cueName)) {
+    const isStudio = studioSet.has(cueName)
+
+    // Languages that seed this cue, with the per-(cue, language) voice resolved.
+    const langs = Object.keys(narration.seedByLang).filter(
+      (lang) => narration.seedByLang[lang as Lang]?.[cueName] !== undefined
+    )
+
+    // A blank studio cue (`studio([...])`, no seed) is text-less: the web app
+    // fills it and the render is held until then. A seeded studio cue
+    // (`studio({...})`) falls through and emits its seed translations like a code
+    // cue, but tagged `studio` so the web app can still override it (a Studio edit
+    // wins over the seed) and so the render is not held.
+    if (isStudio && langs.length === 0) {
       result[cueName] = createCueController(cueName, (recorder, until) => {
         sleepForCueFrameGap()
         recorder.addStudioCueStart(cueName, until)
       })
       continue
     }
-
-    // Languages that seed this cue, with the per-(cue, language) voice resolved.
-    const langs = Object.keys(narration.seedByLang).filter(
-      (lang) => narration.seedByLang[lang as Lang]?.[cueName] !== undefined
-    )
 
     let hasFileEntry = false
     // Volume is per-cue (a render-time mix property): the first language that
@@ -1165,7 +1172,9 @@ export function buildLocalizedNarrationCues(
             undefined,
             undefined,
             videoTranslations,
-            ...cueTrailingArgs(cueVolume, until)
+            cueVolume,
+            until,
+            isStudio
           )
         }
       )
@@ -1197,7 +1206,9 @@ export function buildLocalizedNarrationCues(
             cueName,
             undefined,
             textTranslations,
-            ...cueTrailingArgs(cueVolume, until)
+            cueVolume,
+            until,
+            isStudio
           )
         }
       )

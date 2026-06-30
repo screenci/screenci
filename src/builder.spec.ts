@@ -133,13 +133,31 @@ describe('expandRegistrations', () => {
     expect(regs.every((r) => r.recordingLocalize.pending)).toBe(false)
   })
 
-  it('a studio injection overrides the seed', () => {
+  it('merges a web injection with the seed (the web only adds languages)', () => {
     const regs = expandRegistrations({
       baseTitle: 'Seeded',
       state: state(langs({ languages: 'studio', studioSeed: ['en', 'fi'] })),
+      // The web app has 'de' selected; the seed keeps en + fi, so all three record.
       requestedLanguages: ['de'],
     })
-    expect(regs.map((r) => r.language)).toEqual(['de'])
+    expect(regs.map((r) => r.language).sort()).toEqual(['de', 'en', 'fi'])
+    expect(regs.every((r) => r.recordingLocalize.studioOwned)).toBe(true)
+  })
+
+  it('records code-defined feature languages for a studio-owned set on first run', () => {
+    const regs = expandRegistrations({
+      baseTitle: 'Tour',
+      // languages(studio()) with no web selection, but narration defines en + fi:
+      // both record (merged in) even before anything is configured in the web.
+      state: state({
+        ...langs({ languages: 'studio' }),
+        narration: narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } }),
+      }),
+      requestedLanguages: null,
+    })
+    expect(regs.map((r) => r.language).sort()).toEqual(['en', 'fi'])
+    expect(regs.every((r) => r.recordingLocalize.studioOwned)).toBe(true)
+    expect(regs.every((r) => r.recordingLocalize.pending)).toBe(false)
   })
 
   it('combines a studio-owned set with shared mode (one web-owned pass)', () => {
@@ -163,6 +181,22 @@ describe('expandRegistrations', () => {
       requestedLanguages: ['fi'],
     })
     expect(regs.map((r) => r.language)).toEqual(['fi'])
+  })
+
+  it('keeps the full declared set in availableLanguages under a --languages filter', () => {
+    // Only fi is rendered, but the recorded availableLanguages stays the full
+    // code-defined set so the app does not gray out en/de as removed-from-code.
+    const regs = expandRegistrations({
+      baseTitle: 'T',
+      state: state(langs({ languages: ['en', 'fi', 'de'] })),
+      requestedLanguages: ['fi'],
+    })
+    expect(regs.map((r) => r.language)).toEqual(['fi'])
+    expect(regs[0]?.recordingLocalize.availableLanguages).toEqual([
+      'en',
+      'fi',
+      'de',
+    ])
   })
 
   it('registers nothing when the filter excludes every declared language', () => {
@@ -331,14 +365,19 @@ describe('createVideoBuilder registration', () => {
     }
   })
 
-  it('does not warn about per-feature languages when the set is studio-owned', () => {
-    const { test } = createTestSink()
-    // languages(studio({ mode })) is web-owned with no seeded set: the narration
-    // languages are seeds for the web, not unused mistakes, so no warning fires.
+  it('records code languages for a studio-owned set, so no unused warning fires', () => {
+    const { test, calls } = createTestSink()
+    // languages(studio({ mode })) is web-owned; the narration languages are merged
+    // into the recorded set, so they are genuinely used (no "unused" warning).
     createVideoBuilder(test)
       .narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })
       .languages(studio({ mode: 'shared' }))('Tour', async () => {})
     expect(warn).not.toHaveBeenCalled()
+    expect(calls.uses[0]?._screenciRecordingLocalize).toMatchObject({
+      studioOwned: true,
+      mode: 'shared',
+      languages: ['en', 'fi'],
+    })
   })
 
   it('rejects duplicate each-variant keys', () => {

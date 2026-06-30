@@ -47,7 +47,9 @@ This happens automatically, with no setup, and means:
 
 It requires the `pactl` control tool and a running PulseAudio/PipeWire server
 (present on typical Linux desktops; in CI, install `pulseaudio` and run
-`pulseaudio --start`). The `pulseaudio` daemon binary itself is not required:
+`pulseaudio --start --exit-idle-time=-1`, so the server stays up for the whole
+job instead of exiting after ~20s idle). The `pulseaudio` daemon binary itself
+is not required:
 PipeWire systems provide the pulse server and `pactl` (via `pipewire-pulse`)
 without it, and capture works there.
 
@@ -132,7 +134,10 @@ it (no default sink or manual sink needed, screenci manages them):
   run: |
     sudo apt-get update
     sudo apt-get install -y pulseaudio
-    pulseaudio --start
+    # --exit-idle-time=-1 keeps the daemon alive for the whole job. Without
+    # it PulseAudio exits after ~20s idle, which can kill the server before
+    # the first captureAudio client connects and make `pactl` fail.
+    pulseaudio --start --exit-idle-time=-1
 ```
 
 ## Interaction with narration and other audio

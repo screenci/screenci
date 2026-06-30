@@ -166,8 +166,12 @@ export type ElevenLabsVoiceKey = `elevenlabs:${string}`
 export type VoiceKey = ModelVoiceKey | ElevenLabsVoiceKey
 
 // DOCS_SYNC:
-// Keep the "Available languages" section in docs/languages.md
-// in sync with this source of truth.
+// Keep the "Available languages" section in docs/languages.md in sync with this
+// source of truth. This is the full set the `Lang` type accepts; narration
+// coverage is split by model (the consistent model covers a subset, the
+// expressive model covers all of these). The per-model split lives in the
+// backend (apps/backend/src/cues/languageCodes.ts) and is mirrored into the
+// two tables in docs/languages.md.
 const supportedBaseLanguageCodes = [
   'ar',
   'bn',
@@ -204,6 +208,7 @@ const supportedBaseLanguageCodes = [
   'ca',
   'ceb',
   'cmn',
+  'yue',
   'hr',
   'cs',
   'da',

@@ -364,3 +364,67 @@ describe('buildNarrationMarkers', () => {
     })
   })
 })
+
+describe('seeded vs blank studio narration cues', () => {
+  let cueStarts: Array<{
+    name: string
+    translations?: Record<string, unknown>
+    studio?: boolean
+  }>
+  let studioCueStarts: string[]
+  let recorder: IEventRecorder
+
+  beforeEach(() => {
+    cueStarts = []
+    studioCueStarts = []
+    recorder = {
+      ...NOOP_EVENT_RECORDER,
+      addCueStart: vi.fn(
+        (
+          _t: string,
+          name: string,
+          _c: unknown,
+          translations: never,
+          _v: unknown,
+          _u: unknown,
+          studio?: boolean
+        ) => {
+          cueStarts.push({ name, translations, studio })
+        }
+      ),
+      addStudioCueStart: vi.fn((name: string) => {
+        studioCueStarts.push(name)
+      }),
+      addCueEnd: vi.fn(),
+    }
+    setSleepFn(() => {})
+    setActiveCueRecorder(recorder)
+  })
+
+  afterEach(() => {
+    setActiveCueRecorder(NOOP_EVENT_RECORDER)
+    setSleepFn(() => {})
+  })
+
+  it('emits seed translations tagged studio (renders from seed, stays web-editable)', async () => {
+    const markers = buildNarrationMarkers(
+      narr(studio({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })),
+      ['en', 'fi']
+    )
+    await markers.intro()
+    expect(studioCueStarts).toEqual([])
+    expect(cueStarts).toHaveLength(1)
+    expect(cueStarts[0]?.studio).toBe(true)
+    expect(Object.keys(cueStarts[0]?.translations ?? {}).sort()).toEqual([
+      'en',
+      'fi',
+    ])
+  })
+
+  it('emits a text-less studio cue for a blank studio declaration', async () => {
+    const markers = buildNarrationMarkers(narr(studio(['intro'])), ['en'])
+    await markers.intro()
+    expect(cueStarts).toEqual([])
+    expect(studioCueStarts).toEqual(['intro'])
+  })
+})

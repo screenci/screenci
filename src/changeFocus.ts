@@ -432,6 +432,43 @@ export function resolveTargetRectPositionForViewport(params: {
   }
 }
 
+function resolveNearestTargetRectStartForAxis(params: {
+  currentStart: number
+  containerSize: number
+  rectSize: number
+  focusSize: number
+}): number {
+  const { currentStart, containerSize, rectSize, focusSize } = params
+  const focusWindowStart = Math.max(0, (containerSize - focusSize) / 2)
+  if (rectSize <= focusSize) {
+    const focusWindowEnd = focusWindowStart + (focusSize - rectSize)
+    return clamp(currentStart, focusWindowStart, focusWindowEnd)
+  }
+  return focusWindowStart + focusSize / 2 - rectSize / 2
+}
+
+function resolveNearestTargetRectPositionForViewport(params: {
+  containerSize: ViewportSize
+  rect: ElementRect
+  focusViewport: ViewportSize
+}): Point {
+  const { containerSize, rect, focusViewport } = params
+  return {
+    x: resolveNearestTargetRectStartForAxis({
+      currentStart: rect.x,
+      containerSize: containerSize.width,
+      rectSize: rect.width,
+      focusSize: focusViewport.width,
+    }),
+    y: resolveNearestTargetRectStartForAxis({
+      currentStart: rect.y,
+      containerSize: containerSize.height,
+      rectSize: rect.height,
+      focusSize: focusViewport.height,
+    }),
+  }
+}
+
 async function captureFocusSnapshot(locator: Locator): Promise<FocusSnapshot> {
   return locator.evaluate((element) => {
     const doc = element.ownerDocument
@@ -903,9 +940,6 @@ function resolvePagePlan(params: {
     projectedRect: ElementRect
   }
   targetRectPositionInViewport: Point
-  targetViewport: ViewportSize
-  targetRectPositionInZoomViewport: Point
-  currentZoomEnd: NonNullable<FocusChangeEvent['zoom']>['end']
 }): {
   plan: PageScrollPlan
   finalLocatorRect: ElementRect
@@ -924,55 +958,15 @@ function resolvePagePlan(params: {
     }
   }
 
-  const zoomTargetWithoutPageScroll =
-    params.currentZoomEnd !== undefined
-      ? resolveZoomTarget({
-          locatorRect: params.ancestorResult.projectedRect,
-          viewport: params.snapshot.viewportSize,
-          targetViewport: params.targetViewport,
-          targetRectPositionInZoomViewport:
-            params.targetRectPositionInZoomViewport,
-          currentZoomEnd: params.currentZoomEnd,
-        })
-      : resolveZoomTarget({
-          locatorRect: params.ancestorResult.projectedRect,
-          viewport: params.snapshot.viewportSize,
-          targetViewport: params.targetViewport,
-          targetRectPositionInZoomViewport:
-            params.targetRectPositionInZoomViewport,
-        })
-  const zoomOptimalOffsetWithoutPageScroll =
-    zoomTargetWithoutPageScroll?.optimalOffset
-  const pageScrollCanBeSkipped =
-    zoomOptimalOffsetWithoutPageScroll !== undefined &&
-    Math.round(zoomOptimalOffsetWithoutPageScroll.x) === 0 &&
-    Math.round(zoomOptimalOffsetWithoutPageScroll.y) === 0
-  const pageResult = buildPageScrollPlan(
+  // Scroll the page only the minimum needed to bring the target into the focus
+  // window (like scrollIntoViewIfNeeded). The zoom output still frames/centers
+  // the element, but the page scroll itself stays minimal so an already-visible
+  // element does not get yanked across the page.
+  const resolvedPageResult = buildPageScrollPlan(
     params.snapshot,
     params.ancestorResult,
-    {
-      targetRectPositionInViewport: params.targetRectPositionInViewport,
-      ...(zoomOptimalOffsetWithoutPageScroll !== undefined
-        ? {
-            residualOnly: {
-              x: zoomOptimalOffsetWithoutPageScroll.x,
-              y: zoomOptimalOffsetWithoutPageScroll.y,
-            },
-          }
-        : {}),
-    }
+    { targetRectPositionInViewport: params.targetRectPositionInViewport }
   )
-  const resolvedPageResult = pageScrollCanBeSkipped
-    ? {
-        plan: {
-          startY: params.snapshot.page.scrollY,
-          startX: params.snapshot.page.scrollX,
-          targetY: params.snapshot.page.scrollY,
-          targetX: params.snapshot.page.scrollX,
-        },
-        finalLocatorRect: params.ancestorResult.projectedRect,
-      }
-    : pageResult
 
   return {
     ...resolvedPageResult,
@@ -1032,12 +1026,14 @@ export function combineFocusPlan(params: {
       targetRectStartInViewport: initialTargetRectPositionInViewport.y,
     }),
   })
-  const targetRectPositionInViewport = resolveTargetRectPositionForViewport({
-    containerSize: params.snapshot.viewportSize,
-    rect: ancestorResult.projectedRect,
-    focusViewport: params.targetViewport,
-    centering: params.centering,
-  })
+  // Page scroll uses the nearest in-window position (minimal scroll), not the
+  // centered position, so an already-visible target is barely moved.
+  const targetRectPositionInViewport =
+    resolveNearestTargetRectPositionForViewport({
+      containerSize: params.snapshot.viewportSize,
+      rect: ancestorResult.projectedRect,
+      focusViewport: params.targetViewport,
+    })
   // Resolve where the locator rect should sit inside the zoom viewport itself.
   const targetRectPositionInZoomViewport = resolveTargetRectPositionForViewport(
     {
@@ -1047,14 +1043,11 @@ export function combineFocusPlan(params: {
       centering: params.centering,
     }
   )
-  // Use page scroll only for the framing residual that zoom cannot absorb.
+  // Scroll the page only enough to bring the target into the focus window.
   const resolvedPageResult = resolvePagePlan({
     snapshot: params.snapshot,
     ancestorResult,
     targetRectPositionInViewport,
-    targetViewport: params.targetViewport,
-    targetRectPositionInZoomViewport,
-    currentZoomEnd: params.currentZoomEnd,
   })
 
   // Recompute the final zoom target after any page scroll has been applied.

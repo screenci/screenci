@@ -252,6 +252,7 @@ Behavior:
 - caches the pending auth session in `.screenci/link-session.json`, so rerunning `record` reuses the same link until it expires or completes
 - uploads successful recordings when `SCREENCI_SECRET` is available
 - prints a project URL after upload when rendering has been started remotely
+- prints any informational notices returned by the service in cyan after upload (occasional, non-error status messages such as maintenance or timing notes). These never affect the exit code
 - new accounts start on the Free plan automatically (no plan selection step); after upload `record` prints an upgrade link for higher render and active-video limits and expressive narration, except on the Business plan where the upgrade link is omitted
 
 Relevant options:

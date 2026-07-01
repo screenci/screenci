@@ -1126,6 +1126,7 @@ describe('CLI', () => {
         hadFailures: false,
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
+        notices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
         plan: null,
@@ -1190,6 +1191,63 @@ describe('CLI', () => {
       )
 
       expect(result.elevenLabsKeyMissingVideos).toEqual(['Demo'])
+    })
+
+    it('surfaces informational notices from the upload response', async () => {
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('record-upload.config.ts')) {
+          return "export default { projectName: 'Test Project' }"
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('test-fixtures/record-upload.config.ts') ||
+          path.endsWith('data.json') ||
+          path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+              notices: ['Heads up: rendering may take a little longer today.'],
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+
+      const { uploadRecordings } = await import('./cli')
+
+      const result = await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(result.notices).toEqual([
+        'Heads up: rendering may take a little longer today.',
+      ])
     })
 
     it('prints the result URL and an upgrade mention after a successful record', async () => {
@@ -1761,6 +1819,7 @@ describe('CLI', () => {
         hadFailures: false,
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
+        notices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
         plan: null,
@@ -1799,6 +1858,7 @@ describe('CLI', () => {
         hadFailures: true,
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
+        notices: [],
         failedVideoNames: ['Demo'],
         failedVideoMessages: [
           {
@@ -1892,6 +1952,7 @@ describe('CLI', () => {
         hadFailures: false,
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
+        notices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
         plan: null,
@@ -1996,6 +2057,7 @@ describe('CLI', () => {
         hadFailures: true,
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
+        notices: [],
         failedVideoNames: ['Demo'],
         failedVideoMessages: [
           {
@@ -2094,7 +2156,7 @@ describe('CLI', () => {
         {
           videoName: 'Demo',
           message:
-            'Failed to upload asset .screenci/Demo/generated/ring.png: 500 {"error":"Upload failed"}',
+            'Failed to upload asset .screenci/Demo/generated/ring.png: 500 Upload failed',
         },
       ])
 
@@ -2204,6 +2266,7 @@ describe('CLI', () => {
         hadFailures: false,
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
+        notices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
         plan: null,
@@ -2412,6 +2475,7 @@ describe('CLI', () => {
         hadFailures: true,
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
+        notices: [],
         failedVideoNames: ['Failed Demo'],
         failedVideoMessages: [
           {
@@ -2485,6 +2549,7 @@ describe('CLI', () => {
         hadFailures: false,
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
+        notices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
         plan: null,
@@ -2558,6 +2623,7 @@ describe('CLI', () => {
         hadFailures: false,
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
+        notices: [],
         failedVideoNames: [],
         failedVideoMessages: [],
         plan: null,
@@ -2662,6 +2728,7 @@ describe('CLI', () => {
           hadFailures: false,
           studioNotices: [],
           elevenLabsKeyMissingVideos: [],
+          notices: [],
           failedVideoNames: [],
           failedVideoMessages: [],
           plan: null,

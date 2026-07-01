@@ -383,6 +383,30 @@ describe('CLI', () => {
       )
     })
 
+    it('extracts the error field from a backend JSON body', async () => {
+      const { extractBackendError } = await import('./cli')
+
+      expect(
+        extractBackendError(JSON.stringify({ error: 'Upload failed' }))
+      ).toBe('Upload failed')
+    })
+
+    it('falls back to the raw text when the body is not JSON', async () => {
+      const { extractBackendError } = await import('./cli')
+
+      expect(extractBackendError('Internal Server Error')).toBe(
+        'Internal Server Error'
+      )
+    })
+
+    it('falls back to the raw text when JSON has no error field', async () => {
+      const { extractBackendError } = await import('./cli')
+
+      expect(extractBackendError(JSON.stringify({ message: 'nope' }))).toBe(
+        JSON.stringify({ message: 'nope' })
+      )
+    })
+
     it('surfaces a fully discounted render cap error from the backend', async () => {
       const { formatUploadStartFailureMessage } = await import('./cli')
 

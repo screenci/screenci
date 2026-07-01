@@ -441,6 +441,8 @@ type UploadJobResult = {
   plan?: OrgPlan
   /** The video needs an ElevenLabs/custom voice but the org has no key stored. */
   elevenLabsKeyMissing?: boolean
+  /** Informational, non-error messages from the backend, printed in cyan. */
+  notices?: string[]
 }
 
 type UploadProgressStatus = 'success' | 'failure' | 'cancelled'
@@ -753,6 +755,7 @@ async function uploadRecordingCandidate(
         detail: string
       }>
       elevenLabsKeyMissing?: boolean
+      notices?: string[]
     }
     const { recordingId } = startBody
     projectId = startBody.projectId
@@ -831,7 +834,7 @@ async function uploadRecordingCandidate(
         videoId,
         hadFailure: true,
         videoName,
-        failureMessage: `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${text}${hint401(recordingResponse.status, secret)}`,
+        failureMessage: `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${extractBackendError(text)}${hint401(recordingResponse.status, secret)}`,
         recordId,
         ...(plan !== null && { plan }),
       }
@@ -850,6 +853,12 @@ async function uploadRecordingCandidate(
       ...(startBody.elevenLabsKeyMissing === true && {
         elevenLabsKeyMissing: true,
       }),
+      ...(Array.isArray(startBody.notices) &&
+        startBody.notices.length > 0 && {
+          notices: startBody.notices.filter(
+            (notice): notice is string => typeof notice === 'string'
+          ),
+        }),
     }
   } catch (err) {
     if (isUploadCancelledError(err)) {
@@ -1690,6 +1699,25 @@ function hint401(status: number, secret: string): string {
   return `\nThe secret may have been deleted. Check your secrets at ${frontendUrl}/secrets`
 }
 
+/**
+ * Reduces a backend error response to its human-readable message. Backend
+ * failures reply with a JSON body like `{"error":"..."}`; this returns just the
+ * `error` string so failures print the message, not the raw JSON. Non-JSON or
+ * shapeless bodies fall back to the original text unchanged.
+ */
+export function extractBackendError(responseText: string): string {
+  if (responseText.trim().length === 0) return responseText
+  try {
+    const parsed = JSON.parse(responseText) as { error?: unknown }
+    if (typeof parsed.error === 'string' && parsed.error.trim().length > 0) {
+      return parsed.error
+    }
+  } catch {
+    // Not JSON: fall back to the raw response text.
+  }
+  return responseText
+}
+
 export function formatUploadStartFailureMessage(
   videoName: string,
   status: number,
@@ -1821,7 +1849,7 @@ export async function resolveMissingUploadAssets(
   if (!res.ok) {
     const text = await res.text()
     throw new UploadAssetError(
-      `Failed to resolve previously uploaded assets for "${videoName}": ${res.status} ${text}${hint401(res.status, secret)}`
+      `Failed to resolve previously uploaded assets for "${videoName}": ${res.status} ${extractBackendError(text)}${hint401(res.status, secret)}`
     )
   }
 
@@ -1917,7 +1945,7 @@ async function uploadAssets(
         if (!checkRes.ok) {
           const text = await checkRes.text()
           throw new UploadAssetError(
-            `Failed to check asset ${displayAssetPath(asset.path)}: ${checkRes.status} ${text}${hint401(checkRes.status, secret)}`
+            `Failed to check asset ${displayAssetPath(asset.path)}: ${checkRes.status} ${extractBackendError(text)}${hint401(checkRes.status, secret)}`
           )
         }
 
@@ -1977,7 +2005,7 @@ async function uploadAssets(
           )
         } else {
           throw new UploadAssetError(
-            `Failed to upload asset ${displayAssetPath(asset.path)}: ${res.status} ${text}${hint401(res.status, secret)}`
+            `Failed to upload asset ${displayAssetPath(asset.path)}: ${res.status} ${extractBackendError(text)}${hint401(res.status, secret)}`
           )
         }
       } else {
@@ -2014,6 +2042,7 @@ export async function uploadRecordings(
   failedVideoMessages: Array<{ videoName: string; message: string }>
   studioNotices: StudioUploadNotice[]
   elevenLabsKeyMissingVideos: string[]
+  notices: string[]
   plan: OrgPlan | null
 }> {
   const uploadAbort = createUploadAbortController('upload')
@@ -2031,6 +2060,7 @@ export async function uploadRecordings(
       failedVideoMessages: [],
       studioNotices: [],
       elevenLabsKeyMissingVideos: [],
+      notices: [],
       plan: null,
     }
   }
@@ -2060,6 +2090,7 @@ export async function uploadRecordings(
         failedVideoMessages: [],
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
+        notices: [],
         plan: null,
       }
     }
@@ -2127,6 +2158,10 @@ export async function uploadRecordings(
         : []
     )
 
+    const notices = results.flatMap((result) =>
+      !result.hadFailure && result.notices !== undefined ? result.notices : []
+    )
+
     return {
       projectId: firstProjectId,
       recordId,
@@ -2135,6 +2170,7 @@ export async function uploadRecordings(
       failedVideoMessages,
       studioNotices,
       elevenLabsKeyMissingVideos,
+      notices,
       plan: resolvedPlan,
     }
   } finally {
@@ -2536,7 +2572,7 @@ async function updateVideoVisibility(
   if (!res.ok) {
     const text = await res.text()
     throw new Error(
-      `Failed to ${isPublic ? 'make public' : 'make private'}: ${res.status} ${text}${hint401(res.status, secret)}`
+      `Failed to ${isPublic ? 'make public' : 'make private'}: ${res.status} ${extractBackendError(text)}${hint401(res.status, secret)}`
     )
   }
 
@@ -2591,7 +2627,7 @@ async function triggerRemoteRun(
   if (!res.ok) {
     const text = await res.text()
     throw new Error(
-      `Failed to trigger remote run: ${res.status} ${text}${hint401(res.status, secret)}`
+      `Failed to trigger remote run: ${res.status} ${extractBackendError(text)}${hint401(res.status, secret)}`
     )
   }
 
@@ -2672,7 +2708,7 @@ async function printInfo(configPath?: string): Promise<void> {
   if (!res.ok) {
     const text = await res.text()
     throw new Error(
-      `Failed to fetch info: ${res.status} ${text}${hint401(res.status, secret)}`
+      `Failed to fetch info: ${res.status} ${extractBackendError(text)}${hint401(res.status, secret)}`
     )
   }
 
@@ -3079,6 +3115,7 @@ async function uploadRecordedVideosForConfig(
         failedVideoMessages: Array<{ videoName: string; message: string }>
         studioNotices: StudioUploadNotice[]
         elevenLabsKeyMissingVideos: string[]
+        notices: string[]
         plan: OrgPlan | null
       } = {
         projectId: null,
@@ -3088,6 +3125,7 @@ async function uploadRecordedVideosForConfig(
         failedVideoMessages: [],
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
+        notices: [],
         plan: null,
       }
       try {
@@ -3113,6 +3151,7 @@ async function uploadRecordedVideosForConfig(
         failedVideoMessages,
         studioNotices,
         elevenLabsKeyMissingVideos,
+        notices,
         plan,
       } = uploadResult
       // Remember this run so `screenci info` can report exactly it.
@@ -3155,6 +3194,12 @@ async function uploadRecordedVideosForConfig(
             : 'Recording finished, rendering in progress. Results available at:'
         )
         logger.info(pc.cyan(projectUrl))
+      }
+      if (notices.length > 0) {
+        logger.info('')
+        for (const notice of notices) {
+          logger.notice(notice)
+        }
       }
       if (projectId !== null && plan !== 'business') {
         logger.info('')

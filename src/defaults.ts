@@ -39,6 +39,17 @@ export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
 export const DEFAULT_SCROLL_CENTERING = 0.2
 
 /**
+ * Comfort-band inset used when `autoZoom` frames the interacted element (as
+ * opposed to `zoomTo`, which centers at `1`). Placement uses the same
+ * direction-aware comfort band as every other focus operation: the target is
+ * moved only as far as needed to enter the band, so it settles slightly toward
+ * the edge it came from rather than dead center. `0.6` keeps auto-zoom framing
+ * tight while leaving a little breathing room on the entering side. Override per
+ * zoom with `autoZoomOptions: { centering }`.
+ */
+export const DEFAULT_AUTO_ZOOM_CENTERING = 0.6
+
+/**
  * Default cursor move duration for click-like actions, in milliseconds.
  */
 export const DEFAULT_CLICK_MOUSE_MOVE_DURATION: number = 900

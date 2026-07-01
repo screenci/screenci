@@ -559,7 +559,7 @@ describe('changeFocus', () => {
     expect(result.elementRect?.y).toBeCloseTo(340, 0)
   })
 
-  it('uses start-edge placement when centering is 0 and achievable', async () => {
+  it('uses the far band edge when centering is 0', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
@@ -570,12 +570,12 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     const result = await promise
 
-    // An explicit centering is now honored even when framing without zoom, so
-    // centering 0 edge-aligns the target at the top rather than centering it.
-    expect(result.elementRect?.y).toBeCloseTo(0, 0)
+    // centering 0 makes the comfort band the full slack range [0, 680], so an
+    // off-screen-below target is minimally revealed at the far edge.
+    expect(result.elementRect?.y).toBeCloseTo(680, 0)
   })
 
-  it('uses halfway placement when centering is 0.5 and achievable', async () => {
+  it('uses the far edge of a halfway-inset band when centering is 0.5', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
@@ -586,9 +586,9 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     const result = await promise
 
-    // centering 0.5 lands the target halfway between the top edge (0) and the
-    // centered position (340).
-    expect(result.elementRect?.y).toBeCloseTo(170, 0)
+    // centering 0.5 creates the comfort band [170, 510], so an
+    // off-screen-below target is minimally revealed at the far edge.
+    expect(result.elementRect?.y).toBeCloseTo(510, 0)
   })
 
   it('clamps oversized rect framing when centered placement is impossible', async () => {
@@ -766,7 +766,6 @@ describe('changeFocus', () => {
         pointPx: { x: 0, y: 0 },
         size: { widthPx: 1280, heightPx: 720 },
       },
-      useDirectionAwareBand: true,
     })
 
     expect(plan.finalLocatorRect.y).toBeCloseTo(68, 0)
@@ -794,7 +793,6 @@ describe('changeFocus', () => {
         pointPx: { x: 0, y: 0 },
         size: { widthPx: 1280, heightPx: 720 },
       },
-      useDirectionAwareBand: true,
     })
 
     expect(plan.finalLocatorRect.y).toBeCloseTo(68, 0)
@@ -865,22 +863,22 @@ describe('changeFocus', () => {
     expect(result.zoom).toBeUndefined()
   })
 
-  it('honors an explicit centering with fixed placement, not the band', async () => {
+  it('uses explicit centering as the direction-aware band inset', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
       scrollSize: { width: 1280, height: 2200 },
     })
 
-    // An explicit centering (here 0.2) keeps the fixed-target placement rather
-    // than the direction-aware band, so an off-screen-below target still lands
-    // high (near the top) at the fixed position 0.2 * 680 / 2 = 68, not near the
-    // bottom (612) the band would produce.
+    // An explicit centering (here 0.2) controls the band inset. An
+    // off-screen-below target still settles at the far edge of that band, so it
+    // lands near the bottom it entered from instead of snapping to the fixed
+    // position near the top.
     const promise = changeFocus(locator, { amount: 0.5, centering: 0.2 })
     await vi.runAllTimersAsync()
     const result = await promise
 
-    expect(result.elementRect?.y).toBeCloseTo(68, 0)
+    expect(result.elementRect?.y).toBeCloseTo(612, 0)
     expect(result.zoom).toBeUndefined()
   })
 

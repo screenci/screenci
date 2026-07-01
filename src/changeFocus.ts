@@ -2,6 +2,7 @@ import type { Locator } from '@playwright/test'
 import type { ElementRect, FocusChangeEvent } from './events.js'
 import { evaluateEasingAtT } from './easing.js'
 import {
+  DEFAULT_AUTO_ZOOM_CENTERING,
   DEFAULT_CLICK_MOUSE_MOVE_DURATION,
   DEFAULT_SCROLL_CENTERING,
 } from './defaults.js'
@@ -661,57 +662,30 @@ function projectRectFromAncestorPlans(
   )
 }
 
-function resolveProjectedRectAcceptableRangeForAxis(params: {
-  pageScrollStart: number
-  pageScrollMax: number
-  viewportSize: number
-  targetViewportSize: number
-  targetRectStartInViewport: number
-}): AxisRange {
-  const {
-    pageScrollStart,
-    pageScrollMax,
-    viewportSize,
-    targetViewportSize,
-    targetRectStartInViewport,
-  } = params
-  const maxZoomOrigin = Math.max(0, viewportSize - targetViewportSize)
-
-  return {
-    min: targetRectStartInViewport - pageScrollStart,
-    max:
-      targetRectStartInViewport +
-      maxZoomOrigin +
-      (pageScrollMax - pageScrollStart),
-  }
-}
-
 function resolveAcceptableRangeForAxis(params: {
   pageScrollStart: number
   pageScrollMax: number
   viewportSize: number
   targetViewportSize: number
-  targetRectStartInViewport: number
-  band?: AxisRange | undefined
+  band: AxisRange
 }): AxisRange {
-  if (params.band !== undefined) {
-    // Acceptable projected-rect positions are exactly those page scroll can
-    // bring INTO the comfort band. Below the band (current > bandMax) scrolls
-    // up to `bandMax`, above it (current < bandMin) scrolls down to `bandMin`,
-    // and anything already inside stays put.
-    return {
-      min: params.band.min - params.pageScrollStart,
-      max: params.band.max + (params.pageScrollMax - params.pageScrollStart),
-    }
-  }
+  // Acceptable projected-rect positions are those that page scroll AND zoom
+  // framing can bring INTO the comfort band. Below the band scrolls up toward
+  // `bandMax`, above it scrolls down toward `bandMin`, and anything already
+  // reachable inside stays put. The zoom viewport can additionally shift framing
+  // by up to `maxZoomOrigin`, widening the range on both ends for a zoom.
+  const maxZoomOrigin = Math.max(
+    0,
+    params.viewportSize - params.targetViewportSize
+  )
 
-  return resolveProjectedRectAcceptableRangeForAxis({
-    pageScrollStart: params.pageScrollStart,
-    pageScrollMax: params.pageScrollMax,
-    viewportSize: params.viewportSize,
-    targetViewportSize: params.targetViewportSize,
-    targetRectStartInViewport: params.targetRectStartInViewport,
-  })
+  return {
+    min: params.band.min - params.pageScrollStart - maxZoomOrigin,
+    max:
+      params.band.max +
+      maxZoomOrigin +
+      (params.pageScrollMax - params.pageScrollStart),
+  }
 }
 
 function refineAncestorPlansForProjectedRectRange(params: {
@@ -1061,30 +1035,21 @@ export function combineFocusPlan(params: {
   targetViewport: ViewportSize
   centering: number
   currentZoomEnd: NonNullable<FocusChangeEvent['zoom']>['end']
-  useDirectionAwareBand?: boolean
 }): UnifiedFocusPlan {
-  // Direction-aware band (default plain no-zoom interaction only): treat
-  // `centering` as a symmetric comfort-band inset and scroll the MINIMUM needed
-  // to bring the target into that band. Off-screen-below targets rest near the
-  // bottom, off-screen-above near the top, and already-comfortable targets are
-  // left where they are. Explicit centering and zoom framing keep the fixed
-  // placement below.
-  const band = params.useDirectionAwareBand
-    ? resolveTargetRectBandForViewport({
-        containerSize: params.snapshot.viewportSize,
-        rect: params.snapshot.locatorRect,
-        focusViewport: params.targetViewport,
-        centering: params.centering,
-      })
-    : undefined
-  // Resolve the desired zoom viewport and where the visible locator rect should sit inside it.
-  const initialTargetRectPositionInViewport =
-    resolveTargetRectPositionForViewport({
-      containerSize: params.snapshot.viewportSize,
-      rect: params.snapshot.locatorRect,
-      focusViewport: params.targetViewport,
-      centering: params.centering,
-    })
+  // Unified placement: treat `centering` as a symmetric comfort-band inset and
+  // move the target the MINIMUM needed to bring it into that band. The band is
+  // computed against the focus window (`targetViewport`): the full viewport for
+  // a plain no-zoom scroll, or the zoom viewport for a zoom (where the slack is
+  // small, so the band is naturally tight). Targets entering from below rest
+  // near the bottom, from above near the top, already-comfortable ones do not
+  // move, and `centering === 1` (or an oversized target) collapses the band to
+  // dead center.
+  const band = resolveTargetRectBandForViewport({
+    containerSize: params.snapshot.viewportSize,
+    rect: params.snapshot.locatorRect,
+    focusViewport: params.targetViewport,
+    centering: params.centering,
+  })
   // Reveal the locator through nested scroll containers using minimal scrolling,
   // plus only the extra needed when page scroll and zoom would otherwise be unable to frame it.
   const ancestorResult = buildAncestorScrollPlans({
@@ -1097,8 +1062,7 @@ export function combineFocusPlan(params: {
       ),
       viewportSize: params.snapshot.viewportSize.width,
       targetViewportSize: params.targetViewport.width,
-      targetRectStartInViewport: initialTargetRectPositionInViewport.x,
-      band: band?.x,
+      band: band.x,
     }),
     projectedRectRangeY: resolveAcceptableRangeForAxis({
       pageScrollStart: params.snapshot.page.scrollY,
@@ -1108,40 +1072,35 @@ export function combineFocusPlan(params: {
       ),
       viewportSize: params.snapshot.viewportSize.height,
       targetViewportSize: params.targetViewport.height,
-      targetRectStartInViewport: initialTargetRectPositionInViewport.y,
-      band: band?.y,
+      band: band.y,
     }),
   })
-  const targetRectPositionInViewport =
-    band !== undefined
-      ? {
-          // Land the projected rect at the clamp of its CURRENT position into
-          // the band, so page scroll is the minimal direction-aware reveal.
-          x: clampToRange(ancestorResult.projectedRect.x, band.x),
-          y: clampToRange(ancestorResult.projectedRect.y, band.y),
-        }
-      : resolveTargetRectPositionForViewport({
-          containerSize: params.snapshot.viewportSize,
-          rect: ancestorResult.projectedRect,
-          focusViewport: params.targetViewport,
-          centering: params.centering,
-        })
+  // Land the projected rect at the clamp of its CURRENT position into the band,
+  // so page scroll (and zoom framing) is a minimal direction-aware reveal.
+  const targetRectPositionInViewport = {
+    x: clampToRange(ancestorResult.projectedRect.x, band.x),
+    y: clampToRange(ancestorResult.projectedRect.y, band.y),
+  }
   // Resolve where the locator rect should sit inside the zoom viewport itself.
-  // In the band case there is no zoom (targetViewport === viewport), so the
-  // zoom-viewport placement must agree with the band clamp; otherwise the zoom
-  // framing residual would override the direction-aware minimal reveal.
-  const targetRectPositionInZoomViewport =
-    band !== undefined
-      ? {
-          x: clampToRange(ancestorResult.projectedRect.x, band.x),
-          y: clampToRange(ancestorResult.projectedRect.y, band.y),
-        }
-      : resolveTargetRectPositionForViewport({
-          containerSize: params.targetViewport,
-          rect: ancestorResult.projectedRect,
-          focusViewport: params.targetViewport,
-          centering: params.centering,
-        })
+  // The zoom viewport is the focus window, centered inside the full viewport at
+  // `focusWindowStart`, so the zoom-local band position is the viewport-space
+  // band position minus that offset. When there is no zoom the offset is 0 and
+  // this coincides with the viewport-space band; when zooming, the smaller zoom
+  // window makes the band tight (centering 1 stays exactly centered).
+  const focusWindowStart = {
+    x: Math.max(
+      0,
+      (params.snapshot.viewportSize.width - params.targetViewport.width) / 2
+    ),
+    y: Math.max(
+      0,
+      (params.snapshot.viewportSize.height - params.targetViewport.height) / 2
+    ),
+  }
+  const targetRectPositionInZoomViewport = {
+    x: targetRectPositionInViewport.x - focusWindowStart.x,
+    y: targetRectPositionInViewport.y - focusWindowStart.y,
+  }
   // Use page scroll only for the framing residual that zoom cannot absorb.
   const resolvedPageResult = resolvePagePlan({
     snapshot: params.snapshot,
@@ -1417,7 +1376,6 @@ function resolveFocusOptions(params: {
 }): {
   focusOptions: ReturnType<typeof resolveAutoZoomOptions>
   currentZoomEnd: NonNullable<FocusChangeEvent['zoom']>['end']
-  useDirectionAwareBand: boolean
   timing: {
     duration: number
     easing: Easing
@@ -1429,22 +1387,23 @@ function resolveFocusOptions(params: {
   )
   const currentZoomViewport = params.state.currentZoomViewport
 
-  // Only the plain no-zoom interaction branch below (amount forced to 1) uses
-  // the direction-aware comfort band, and only when the caller did not request
-  // an explicit centering. An explicit centering keeps the fixed placement.
-  const isPlainNoZoomInteraction =
-    !params.state.insideAutoZoom &&
-    !(
-      params.state.mode === 'manual' &&
-      currentZoomViewport !== null &&
-      !params.allowStandaloneZoom
-    ) &&
-    !params.allowStandaloneZoom
-  const useDirectionAwareBand =
-    isPlainNoZoomInteraction && params.options.centering === undefined
+  // Placement is a single unified model: every focus operation resolves the
+  // target into a direction-aware comfort band (see combineFocusPlan). Only the
+  // centering VALUE fed to the band varies by operation:
+  //   - autoZoom framing: DEFAULT_AUTO_ZOOM_CENTERING (0.6), a tight band.
+  //   - zoomTo / standalone or active manual zoom: 1 (center).
+  //   - plain no-zoom interaction: the configured scroll-centering (0.2).
+  // An explicit per-call (or per-autoZoom) `centering` always overrides the
+  // default and is itself run through the band.
+  const hasExplicitCentering =
+    params.options.centering !== undefined ||
+    params.state.options.centering !== undefined
+  const autoZoomCentering = hasExplicitCentering
+    ? resolvedAutoZoomOptions.centering
+    : DEFAULT_AUTO_ZOOM_CENTERING
 
   const focusOptions = params.state.insideAutoZoom
-    ? resolvedAutoZoomOptions
+    ? { ...resolvedAutoZoomOptions, centering: autoZoomCentering }
     : params.state.mode === 'manual' &&
         currentZoomViewport !== null &&
         !params.allowStandaloneZoom
@@ -1461,7 +1420,7 @@ function resolveFocusOptions(params: {
             // Not a zoom: just scroll the target into view. Honor an explicitly
             // requested centering so the caller can place the target; otherwise
             // use the gentle configured scroll-centering (default
-            // DEFAULT_SCROLL_CENTERING) as a direction-aware comfort-band inset
+            // DEFAULT_SCROLL_CENTERING) as the direction-aware comfort-band inset
             // so an already-visible element is not yanked around on every click.
             centering:
               params.options.centering ??
@@ -1476,29 +1435,9 @@ function resolveFocusOptions(params: {
     },
   }
 
-  if (
-    // Only when actually zooming in (amount < 1): zooming in from a full
-    // viewport should center the target tightly. A plain interaction (amount
-    // === 1, no zoom) keeps its gentle scroll-centering instead of snapping to
-    // dead center.
-    focusOptions.amount < 1 &&
-    params.options.centering === undefined &&
-    currentZoomViewport !== undefined &&
-    currentZoomEnd.pointPx.x === 0 &&
-    currentZoomEnd.pointPx.y === 0 &&
-    currentZoomEnd.size.widthPx === params.viewportSize.width &&
-    currentZoomEnd.size.heightPx === params.viewportSize.height
-  ) {
-    // Only force centering when the caller did not request one, so an explicit
-    // centering (e.g. scrollIntoViewIfNeeded({ centering: 0.2 })) is honored even
-    // at full frame.
-    focusOptions.centering = 1
-  }
-
   return {
     focusOptions,
     currentZoomEnd,
-    useDirectionAwareBand,
     timing: {
       duration: resolveRecordingTimingDuration(focusOptions.duration),
       easing: focusOptions.easing,
@@ -1536,7 +1475,6 @@ export async function changeFocus(
   const {
     focusOptions,
     currentZoomEnd,
-    useDirectionAwareBand,
     timing: focusTiming,
   } = resolveFocusOptions(
     mouseMove !== undefined
@@ -1601,7 +1539,6 @@ export async function changeFocus(
             ),
         centering: focusOptions.centering,
         currentZoomEnd,
-        useDirectionAwareBand: useDirectionAwareBand && !shouldApplyZoom,
       })
 
   const mouseTarget: Point = mouseMove?.targetPosInElement

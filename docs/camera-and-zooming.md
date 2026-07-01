@@ -8,6 +8,7 @@ ScreenCI has two camera styles: `autoZoom()` for sections where the camera shoul
 - [when to use manual framing](#manual-zoom)
 - [how to direct attention with multiple zooms](#manual-zoom)
 - [how to keep camera motion readable](#manual-zoom)
+- [how targets are placed in frame](#comfort-band-placement)
 - [how to shrink the recording to show the background](#recording-size)
 
 <!-- screenci-doc-video:docs/guides/camera-and-zooming -->
@@ -65,16 +66,6 @@ Manual framing is better when:
 
 `zoomTo()` accepts either a locator or an explicit viewport point like `{ x, y }`. Use a locator when you want framing to stay tied to a real UI target. Use a point when you want a very deliberate composition or pan that is not attached to the next clickable element.
 
-To place a target without zooming, `scrollIntoViewIfNeeded()` also accepts framing options, `centering` (`0`-`1`), plus `amount`, `duration`, and `easing`. `centering: 0` reveals the target at the top of the frame, `1` centers it, and something like `0.2` keeps it high with context below:
-
-```ts
-await page
-  .getByPlaceholder('Style prompt')
-  .scrollIntoViewIfNeeded({ centering: 0.2 })
-```
-
-Plain interactions (a `click()`, `fill()`, `scrollIntoViewIfNeeded()`, etc. that are not zooming) auto-scroll their target into view with a **direction-aware minimal reveal**: the target is scrolled only as far as needed to bring it into a comfort band, so the motion follows the direction it enters from. Scroll down to reach a target below the fold and it rests near the bottom of the frame; scroll up to a target above the fold and it rests near the top; a target that is already comfortably visible is not scrolled at all. `recordOptions.scrollCentering` (`0`-`1`, default `0.2`) sets the band inset: `0` reveals the target right at the nearest edge (a pure minimal reveal), `1` always centers it, and the default `0.2` keeps a comfortable margin at the framing edges. An explicit per-call `centering` (via `scrollIntoViewIfNeeded({ centering })` or an interaction's zoom options) opts out of the band and uses fixed placement instead (for example `centering: 0.2` always lands the target high, regardless of scroll direction), and `zoomTo()`/`autoZoom()` keep their own tight fixed centering.
-
 Manual zoom becomes more useful when one focused sequence has multiple camera beats:
 
 - zoom to one panel
@@ -98,6 +89,36 @@ Do not mix `autoZoom()` and manual zooming at the same time. In practice, that m
 - do not start `autoZoom()` while a manual zoom is still active
 
 for the exported zoom helpers.
+
+## Comfort-band placement
+
+Every focus operation, whether it is a plain scroll, a `zoomTo()`, or an `autoZoom()` frame, uses one unified placement model: a **direction-aware comfort band**. The target is moved only as far as needed to bring it into the band, so the motion follows the direction it enters from. A target reached by scrolling down rests near the bottom of the frame; one reached by scrolling up rests near the top; a target that is already comfortably framed does not move at all.
+
+To place a target without zooming, `scrollIntoViewIfNeeded()` accepts framing options, `centering` (`0`-`1`), plus `amount`, `duration`, and `easing`:
+
+```ts
+await page
+  .getByPlaceholder('Style prompt')
+  .scrollIntoViewIfNeeded({ centering: 0.2 })
+```
+
+`centering` (`0`-`1`) sets the band inset:
+
+- `0` reveals the target right at the nearest edge (a pure minimal reveal),
+- `1` collapses the band to a single point, so the target is always centered,
+- anything in between keeps a proportional margin at the framing edges.
+
+A target larger than the frame is always centered, regardless of `centering`.
+
+For a zoom the focus window is the (smaller) zoom viewport, so the band is naturally tight: `centering: 1` centers exactly, and lower values nudge the target slightly toward the edge it came from.
+
+The default `centering` varies by operation, and any explicit `centering` you pass overrides it (and is itself run through the band, so it stays direction-aware):
+
+| Operation                                                     | Default centering                               |
+| ------------------------------------------------------------- | ----------------------------------------------- |
+| Plain scroll (`click`, `fill`, `scrollIntoViewIfNeeded`, ...) | `recordOptions.scrollCentering` (default `0.2`) |
+| `zoomTo()` / manual zoom                                      | `1` (center)                                    |
+| `autoZoom()` framing                                          | `0.6` (a tight direction-aware band)            |
 
 ## Recording size
 

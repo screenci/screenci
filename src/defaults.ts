@@ -27,14 +27,15 @@ export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
 
 /**
  * Comfort-band inset used when a plain interaction (click, tap, hover, fill, ...)
- * scrolls a target into view WITHOUT zooming. Rather than pulling the target to
- * a fixed position, the target is scrolled the MINIMUM needed to bring it into a
- * comfort band, which is naturally direction-aware: a target reached by scrolling
- * down rests near the bottom, one reached by scrolling up rests near the top, and
- * an already-comfortable target is not scrolled at all. `0` reveals the target at
- * the nearest edge (pure minimal reveal), `1` always centers it, and `0.2` keeps
- * a comfortable margin at the framing edges. An explicit per-interaction
- * `autoZoomOptions: { centering }` opts out of the band and uses fixed placement.
+ * scrolls a target into view WITHOUT zooming. Placement uses the single unified
+ * direction-aware comfort band shared by every focus operation: the target is
+ * moved the MINIMUM needed to bring it into the band, so a target reached by
+ * scrolling down rests near the bottom, one reached by scrolling up rests near
+ * the top, and an already-comfortable target is not moved at all. `0` reveals the
+ * target at the nearest edge (pure minimal reveal), `1` collapses the band so it
+ * always centers, and `0.2` keeps a comfortable margin at the framing edges. An
+ * explicit per-interaction `autoZoomOptions: { centering }` overrides this value
+ * and is itself run through the band (so it stays direction-aware).
  */
 export const DEFAULT_SCROLL_CENTERING = 0.2
 

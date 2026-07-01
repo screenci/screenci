@@ -981,7 +981,7 @@ describe('changeFocus', () => {
     expect(result?.zoom?.optimalOffset?.y).toBe(0)
   })
 
-  it('forces centering to 1 when the current zoom already fills the viewport and no centering is requested', async () => {
+  it('uses the direction-aware autoZoom band default (0.6) when no centering is requested', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },
       viewport: { width: 1280, height: 720 },
@@ -1001,7 +1001,8 @@ describe('changeFocus', () => {
           viewportSize: { width: 1280, height: 720 },
           optimalOffset: { x: 0, y: 0 },
         })
-        // No explicit centering: framing at full frame defaults to centered.
+        // No explicit centering: autoZoom framing uses the direction-aware band
+        // at DEFAULT_AUTO_ZOOM_CENTERING (0.6), not dead center.
         result = await changeFocus(locator, { amount: 0.5 })
       },
       { amount: 0.5, duration: 300, postZoomDelay: 0 }
@@ -1014,6 +1015,11 @@ describe('changeFocus', () => {
       pointPx: { x: 0, y: 360 },
       size: { widthPx: 640, heightPx: 360 },
     })
+    // The 640x360 zoom viewport sits at the bottom (y 360..720). Within it the
+    // band slack is 360 - 40 = 320 and centering 0.6 gives bandMax = 320 * 0.7 =
+    // 224, so the off-screen-below target rests at 360 + 224 = 584, slightly
+    // toward the bottom rather than dead center (which would be 520).
+    expect(result?.elementRect?.y).toBeCloseTo(584, 0)
   })
 
   it('respects an explicit centering even when the current zoom fills the viewport', async () => {
@@ -1036,7 +1042,8 @@ describe('changeFocus', () => {
           viewportSize: { width: 1280, height: 720 },
           optimalOffset: { x: 0, y: 0 },
         })
-        // Explicit centering is honored instead of being forced to center.
+        // Explicit centering is honored (and run through the band): centering 0
+        // makes the band the full slack, so the target rests at the far edge.
         result = await changeFocus(locator, { amount: 0.5, centering: 0 })
       },
       { amount: 0.5, centering: 0, duration: 300, postZoomDelay: 0 }
@@ -1047,6 +1054,36 @@ describe('changeFocus', () => {
 
     expect(result?.zoom?.end).toEqual({
       pointPx: { x: 20, y: 360 },
+      size: { widthPx: 640, heightPx: 360 },
+    })
+    // centering 0 → band is the full slack [0, 320] in the zoom viewport, so the
+    // off-screen-below target rests at the far edge: 360 + 320 = 680.
+    expect(result?.elementRect?.y).toBeCloseTo(680, 0)
+  })
+
+  it('zoomTo keeps its default centering of 1 (band collapses to center)', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2000 },
+    })
+
+    // A standalone zoom (allowStandaloneZoom = true, e.g. zoomTo) defaults to
+    // centering 1, which collapses the band to the centered position. The
+    // 640x360 zoom viewport sits at the bottom (y 360..720) and the target is
+    // centered within it: 360 + (360 - 40) / 2 = 520.
+    const promise = changeFocus(
+      locator,
+      { amount: 0.5, duration: 300, postZoomDelay: 0 },
+      undefined,
+      true
+    )
+    await vi.runAllTimersAsync()
+    const result = await promise
+
+    expect(result.elementRect?.y).toBeCloseTo(520, 0)
+    expect(result.zoom?.end).toEqual({
+      pointPx: { x: 0, y: 360 },
       size: { widthPx: 640, heightPx: 360 },
     })
   })

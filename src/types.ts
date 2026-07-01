@@ -443,6 +443,23 @@ export type RecordOptions = {
    * @example ['.api-key', '[data-sensitive]']
    */
   redact?: string[]
+
+  /**
+   * Vertical framing bias (0–1) used when a plain interaction (a `click()`,
+   * `fill()`, `scrollIntoViewIfNeeded()`, etc. that is not zooming) scrolls its
+   * target into view.
+   *
+   * `0` reveals the target just inside the top edge, `1` places it dead center,
+   * and the default `0.2` frames it gently toward the upper third so
+   * already-visible elements are not yanked to the center on every click.
+   *
+   * This only affects plain scroll reveals. Zooming (`zoomTo`/`autoZoom`) keeps
+   * its tight centering, and an explicit per-call `centering` (via
+   * `autoZoomOptions` or `scrollIntoViewIfNeeded({ centering })`) always wins.
+   *
+   * @default 0.2
+   */
+  scrollCentering?: number
 }
 
 /**

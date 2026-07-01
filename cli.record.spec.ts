@@ -1125,6 +1125,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: false,
         studioNotices: [],
+        elevenLabsKeyMissingVideos: [],
         failedVideoNames: [],
         failedVideoMessages: [],
         plan: null,
@@ -1134,6 +1135,61 @@ describe('CLI', () => {
         expect.stringContaining('/repo/.screenci/demo-video/data.json'),
         'utf-8'
       )
+    })
+
+    it('surfaces a missing-ElevenLabs-key video from the upload response', async () => {
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('record-upload.config.ts')) {
+          return "export default { projectName: 'Test Project' }"
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('test-fixtures/record-upload.config.ts') ||
+          path.endsWith('data.json') ||
+          path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+              elevenLabsKeyMissing: true,
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+
+      const { uploadRecordings } = await import('./cli')
+
+      const result = await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        'test-secret'
+      )
+
+      expect(result.elevenLabsKeyMissingVideos).toEqual(['Demo'])
     })
 
     it('prints the result URL and an upgrade mention after a successful record', async () => {
@@ -1397,7 +1453,9 @@ describe('CLI', () => {
       ).toBe('https://app.screenci.test/project/project_1/video/video_2?studio')
     })
 
-    it('forwards ELEVENLABS_API_KEY during upload requests when configured', async () => {
+    it('never forwards an ElevenLabs key: the key lives only in the app now', async () => {
+      // Even if a legacy ELEVENLABS_API_KEY is present in the environment, the
+      // CLI must not send it: the key is stored (encrypted) in the app instead.
       process.env.ELEVENLABS_API_KEY = 'elevenlabs-byok-key'
       mockReaddir.mockResolvedValue(['demo-video'])
       mockReadFile.mockImplementation(async (path: string | URL) => {
@@ -1459,24 +1517,21 @@ describe('CLI', () => {
         'test-secret'
       )
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.screenci.test/cli/upload/start',
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            'X-ScreenCI-Secret': 'test-secret',
-            'X-ElevenLabs-Api-Key': 'elevenlabs-byok-key',
-          }),
-        })
+      const startCall = mockFetch.mock.calls.find(
+        ([url]) => String(url) === 'https://api.screenci.test/cli/upload/start'
       )
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.screenci.test/cli/upload/recording_123/recording',
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            'X-ScreenCI-Secret': 'test-secret',
-            'X-ElevenLabs-Api-Key': 'elevenlabs-byok-key',
-          }),
-        })
+      const recordingCall = mockFetch.mock.calls.find(
+        ([url]) =>
+          String(url) ===
+          'https://api.screenci.test/cli/upload/recording_123/recording'
       )
+      expect(startCall?.[1].headers).not.toHaveProperty('X-ElevenLabs-Api-Key')
+      expect(recordingCall?.[1].headers).not.toHaveProperty(
+        'X-ElevenLabs-Api-Key'
+      )
+      expect(startCall?.[1].headers).toMatchObject({
+        'X-ScreenCI-Secret': 'test-secret',
+      })
     })
 
     it('does not forward arbitrary env vars (e.g. user app secrets) to the service', async () => {
@@ -1705,6 +1760,7 @@ describe('CLI', () => {
         recordId: null,
         hadFailures: false,
         studioNotices: [],
+        elevenLabsKeyMissingVideos: [],
         failedVideoNames: [],
         failedVideoMessages: [],
         plan: null,
@@ -1742,6 +1798,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: true,
         studioNotices: [],
+        elevenLabsKeyMissingVideos: [],
         failedVideoNames: ['Demo'],
         failedVideoMessages: [
           {
@@ -1834,6 +1891,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: false,
         studioNotices: [],
+        elevenLabsKeyMissingVideos: [],
         failedVideoNames: [],
         failedVideoMessages: [],
         plan: null,
@@ -1937,6 +1995,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: true,
         studioNotices: [],
+        elevenLabsKeyMissingVideos: [],
         failedVideoNames: ['Demo'],
         failedVideoMessages: [
           {
@@ -2144,6 +2203,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: false,
         studioNotices: [],
+        elevenLabsKeyMissingVideos: [],
         failedVideoNames: [],
         failedVideoMessages: [],
         plan: null,
@@ -2351,6 +2411,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: true,
         studioNotices: [],
+        elevenLabsKeyMissingVideos: [],
         failedVideoNames: ['Failed Demo'],
         failedVideoMessages: [
           {
@@ -2423,6 +2484,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: false,
         studioNotices: [],
+        elevenLabsKeyMissingVideos: [],
         failedVideoNames: [],
         failedVideoMessages: [],
         plan: null,
@@ -2495,6 +2557,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: false,
         studioNotices: [],
+        elevenLabsKeyMissingVideos: [],
         failedVideoNames: [],
         failedVideoMessages: [],
         plan: null,
@@ -2598,6 +2661,7 @@ describe('CLI', () => {
           recordId: expect.any(String),
           hadFailures: false,
           studioNotices: [],
+          elevenLabsKeyMissingVideos: [],
           failedVideoNames: [],
           failedVideoMessages: [],
           plan: null,

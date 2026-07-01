@@ -7,6 +7,7 @@ Unlike a file overlay, a dependency is a live link: when the target's selected r
 #### You will learn
 
 - [how to declare a dependency with `selected(...)`](#declare-a-dependency)
+- [how to carry an embedded target's subtitles up with `inheritSubtitles`](#inheriting-subtitles)
 - [which renders can depend on which](#what-can-depend-on-what)
 - [how selection drives automatic re-renders](#selection-and-re-renders)
 - [what happens before the target has a finished render](#waiting-on-a-dependency)
@@ -65,6 +66,21 @@ video.overlays({
 ```
 
 Setting `start`/`end` on a dependency that resolves to a screenshot is rejected when the target medium is known.
+
+## Inheriting subtitles
+
+An embedded video always plays the target's audio. By default its narration subtitles stay with the target and are not shown in the surrounding video. Pass `inheritSubtitles: true` to also carry them up:
+
+```ts
+video.overlays({
+  intro: selected('Intro Clip', { inheritSubtitles: true }),
+})('Full Demo', async ({ page, overlays }) => {
+  await overlays.intro() // plays the clip's audio and shows its subtitles
+  await page.goto('/dashboard')
+})
+```
+
+When on, the target's narration subtitles are added to the surrounding video's subtitle track (its VTT file) for the window the embed plays. This applies only where the surrounding video has no competing narration of its own during that window: if the dependent is narrating over the embed, its own subtitles win and the inherited ones are left out for that stretch. The subtitles are matched to the surrounding render's language the same way the embedded output is (see below). Off by default.
 
 ## What can depend on what
 

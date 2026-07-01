@@ -141,23 +141,6 @@ function clampToRange(value: number, range: AxisRange): number {
   return clamp(value, range.min, range.max)
 }
 
-/**
- * Whether a viewport-coordinate rect (from getBoundingClientRect) sits entirely
- * inside the viewport. Used to skip the auto-scroll for a plain interaction
- * whose target is already fully on screen: a visible element should not move.
- */
-function isRectFullyWithinViewport(
-  rect: ElementRect,
-  viewport: ViewportSize
-): boolean {
-  return (
-    rect.x >= 0 &&
-    rect.y >= 0 &&
-    rect.x + rect.width <= viewport.width &&
-    rect.y + rect.height <= viewport.height
-  )
-}
-
 function shiftRect(
   rect: ElementRect,
   deltaX: number,
@@ -391,6 +374,58 @@ function resolveTargetRectStartForAxis(params: {
   return focusWindowStart + focusSize / 2 - rectSize / 2
 }
 
+function resolveTargetRectBandForAxis(params: {
+  containerSize: number
+  rectSize: number
+  focusSize: number
+  centering: number
+}): AxisRange {
+  const { containerSize, rectSize, focusSize, centering } = params
+  const focusWindowStart = Math.max(0, (containerSize - focusSize) / 2)
+
+  if (rectSize >= focusSize) {
+    // Target taller/wider than the focus window: fall back to the centered
+    // placement (a degenerate band whose min and max both center the rect).
+    const centered = focusWindowStart + focusSize / 2 - rectSize / 2
+    return { min: centered, max: centered }
+  }
+
+  const slack = focusSize - rectSize
+  // Treat `centering` as a symmetric comfort-band inset. The band's top edge
+  // lines up with the fixed-target placement (`resolveTargetRectStartForAxis`),
+  // and the bottom edge extends the acceptable landing zone toward the far edge
+  // the target enters from, so the eventual clamp is a direction-aware minimal
+  // reveal. `centering = 0` accepts the whole slack (pure minimal reveal);
+  // `centering = 1` collapses the band to the centered position.
+  return {
+    min: focusWindowStart + (slack * centering) / 2,
+    max: focusWindowStart + slack * (1 - centering / 2),
+  }
+}
+
+function resolveTargetRectBandForViewport(params: {
+  containerSize: ViewportSize
+  rect: ElementRect
+  focusViewport: ViewportSize
+  centering: number
+}): { x: AxisRange; y: AxisRange } {
+  const { containerSize, rect, focusViewport, centering } = params
+  return {
+    x: resolveTargetRectBandForAxis({
+      containerSize: containerSize.width,
+      rectSize: rect.width,
+      focusSize: focusViewport.width,
+      centering,
+    }),
+    y: resolveTargetRectBandForAxis({
+      containerSize: containerSize.height,
+      rectSize: rect.height,
+      focusSize: focusViewport.height,
+      centering,
+    }),
+  }
+}
+
 export function resolveTargetRectPosition(params: {
   containerSize: ViewportSize
   rect: ElementRect
@@ -428,43 +463,6 @@ export function resolveTargetRectPositionForViewport(params: {
       rectSize: rect.height,
       focusSize: focusViewport.height,
       centering,
-    }),
-  }
-}
-
-function resolveNearestTargetRectStartForAxis(params: {
-  currentStart: number
-  containerSize: number
-  rectSize: number
-  focusSize: number
-}): number {
-  const { currentStart, containerSize, rectSize, focusSize } = params
-  const focusWindowStart = Math.max(0, (containerSize - focusSize) / 2)
-  if (rectSize <= focusSize) {
-    const focusWindowEnd = focusWindowStart + (focusSize - rectSize)
-    return clamp(currentStart, focusWindowStart, focusWindowEnd)
-  }
-  return focusWindowStart + focusSize / 2 - rectSize / 2
-}
-
-function resolveNearestTargetRectPositionForViewport(params: {
-  containerSize: ViewportSize
-  rect: ElementRect
-  focusViewport: ViewportSize
-}): Point {
-  const { containerSize, rect, focusViewport } = params
-  return {
-    x: resolveNearestTargetRectStartForAxis({
-      currentStart: rect.x,
-      containerSize: containerSize.width,
-      rectSize: rect.width,
-      focusSize: focusViewport.width,
-    }),
-    y: resolveNearestTargetRectStartForAxis({
-      currentStart: rect.y,
-      containerSize: containerSize.height,
-      rectSize: rect.height,
-      focusSize: focusViewport.height,
     }),
   }
 }
@@ -686,6 +684,34 @@ function resolveProjectedRectAcceptableRangeForAxis(params: {
       maxZoomOrigin +
       (pageScrollMax - pageScrollStart),
   }
+}
+
+function resolveAcceptableRangeForAxis(params: {
+  pageScrollStart: number
+  pageScrollMax: number
+  viewportSize: number
+  targetViewportSize: number
+  targetRectStartInViewport: number
+  band?: AxisRange | undefined
+}): AxisRange {
+  if (params.band !== undefined) {
+    // Acceptable projected-rect positions are exactly those page scroll can
+    // bring INTO the comfort band. Below the band (current > bandMax) scrolls
+    // up to `bandMax`, above it (current < bandMin) scrolls down to `bandMin`,
+    // and anything already inside stays put.
+    return {
+      min: params.band.min - params.pageScrollStart,
+      max: params.band.max + (params.pageScrollMax - params.pageScrollStart),
+    }
+  }
+
+  return resolveProjectedRectAcceptableRangeForAxis({
+    pageScrollStart: params.pageScrollStart,
+    pageScrollMax: params.pageScrollMax,
+    viewportSize: params.viewportSize,
+    targetViewportSize: params.targetViewportSize,
+    targetRectStartInViewport: params.targetRectStartInViewport,
+  })
 }
 
 function refineAncestorPlansForProjectedRectRange(params: {
@@ -940,6 +966,9 @@ function resolvePagePlan(params: {
     projectedRect: ElementRect
   }
   targetRectPositionInViewport: Point
+  targetViewport: ViewportSize
+  targetRectPositionInZoomViewport: Point
+  currentZoomEnd: NonNullable<FocusChangeEvent['zoom']>['end']
 }): {
   plan: PageScrollPlan
   finalLocatorRect: ElementRect
@@ -958,15 +987,55 @@ function resolvePagePlan(params: {
     }
   }
 
-  // Scroll the page only the minimum needed to bring the target into the focus
-  // window (like scrollIntoViewIfNeeded). The zoom output still frames/centers
-  // the element, but the page scroll itself stays minimal so an already-visible
-  // element does not get yanked across the page.
-  const resolvedPageResult = buildPageScrollPlan(
+  const zoomTargetWithoutPageScroll =
+    params.currentZoomEnd !== undefined
+      ? resolveZoomTarget({
+          locatorRect: params.ancestorResult.projectedRect,
+          viewport: params.snapshot.viewportSize,
+          targetViewport: params.targetViewport,
+          targetRectPositionInZoomViewport:
+            params.targetRectPositionInZoomViewport,
+          currentZoomEnd: params.currentZoomEnd,
+        })
+      : resolveZoomTarget({
+          locatorRect: params.ancestorResult.projectedRect,
+          viewport: params.snapshot.viewportSize,
+          targetViewport: params.targetViewport,
+          targetRectPositionInZoomViewport:
+            params.targetRectPositionInZoomViewport,
+        })
+  const zoomOptimalOffsetWithoutPageScroll =
+    zoomTargetWithoutPageScroll?.optimalOffset
+  const pageScrollCanBeSkipped =
+    zoomOptimalOffsetWithoutPageScroll !== undefined &&
+    Math.round(zoomOptimalOffsetWithoutPageScroll.x) === 0 &&
+    Math.round(zoomOptimalOffsetWithoutPageScroll.y) === 0
+  const pageResult = buildPageScrollPlan(
     params.snapshot,
     params.ancestorResult,
-    { targetRectPositionInViewport: params.targetRectPositionInViewport }
+    {
+      targetRectPositionInViewport: params.targetRectPositionInViewport,
+      ...(zoomOptimalOffsetWithoutPageScroll !== undefined
+        ? {
+            residualOnly: {
+              x: zoomOptimalOffsetWithoutPageScroll.x,
+              y: zoomOptimalOffsetWithoutPageScroll.y,
+            },
+          }
+        : {}),
+    }
   )
+  const resolvedPageResult = pageScrollCanBeSkipped
+    ? {
+        plan: {
+          startY: params.snapshot.page.scrollY,
+          startX: params.snapshot.page.scrollX,
+          targetY: params.snapshot.page.scrollY,
+          targetX: params.snapshot.page.scrollX,
+        },
+        finalLocatorRect: params.ancestorResult.projectedRect,
+      }
+    : pageResult
 
   return {
     ...resolvedPageResult,
@@ -992,24 +1061,35 @@ export function combineFocusPlan(params: {
   targetViewport: ViewportSize
   centering: number
   currentZoomEnd: NonNullable<FocusChangeEvent['zoom']>['end']
+  useDirectionAwareBand?: boolean
 }): UnifiedFocusPlan {
-  // Resolve where the visible locator rect should sit. Use the nearest in-window
-  // position (minimal scroll), not the centered position, so the acceptable range
-  // that drives nested-container (and page) scrolling keeps an already-visible
-  // target where it is instead of pulling it toward the middle. This is what keeps
-  // an app whose content scrolls inside an inner container (not the window) from
-  // yanking a near-edge field to the top/bottom of that container.
+  // Direction-aware band (default plain no-zoom interaction only): treat
+  // `centering` as a symmetric comfort-band inset and scroll the MINIMUM needed
+  // to bring the target into that band. Off-screen-below targets rest near the
+  // bottom, off-screen-above near the top, and already-comfortable targets are
+  // left where they are. Explicit centering and zoom framing keep the fixed
+  // placement below.
+  const band = params.useDirectionAwareBand
+    ? resolveTargetRectBandForViewport({
+        containerSize: params.snapshot.viewportSize,
+        rect: params.snapshot.locatorRect,
+        focusViewport: params.targetViewport,
+        centering: params.centering,
+      })
+    : undefined
+  // Resolve the desired zoom viewport and where the visible locator rect should sit inside it.
   const initialTargetRectPositionInViewport =
-    resolveNearestTargetRectPositionForViewport({
+    resolveTargetRectPositionForViewport({
       containerSize: params.snapshot.viewportSize,
       rect: params.snapshot.locatorRect,
       focusViewport: params.targetViewport,
+      centering: params.centering,
     })
   // Reveal the locator through nested scroll containers using minimal scrolling,
   // plus only the extra needed when page scroll and zoom would otherwise be unable to frame it.
   const ancestorResult = buildAncestorScrollPlans({
     snapshot: params.snapshot,
-    projectedRectRangeX: resolveProjectedRectAcceptableRangeForAxis({
+    projectedRectRangeX: resolveAcceptableRangeForAxis({
       pageScrollStart: params.snapshot.page.scrollX,
       pageScrollMax: Math.max(
         0,
@@ -1018,8 +1098,9 @@ export function combineFocusPlan(params: {
       viewportSize: params.snapshot.viewportSize.width,
       targetViewportSize: params.targetViewport.width,
       targetRectStartInViewport: initialTargetRectPositionInViewport.x,
+      band: band?.x,
     }),
-    projectedRectRangeY: resolveProjectedRectAcceptableRangeForAxis({
+    projectedRectRangeY: resolveAcceptableRangeForAxis({
       pageScrollStart: params.snapshot.page.scrollY,
       pageScrollMax: Math.max(
         0,
@@ -1028,30 +1109,47 @@ export function combineFocusPlan(params: {
       viewportSize: params.snapshot.viewportSize.height,
       targetViewportSize: params.targetViewport.height,
       targetRectStartInViewport: initialTargetRectPositionInViewport.y,
+      band: band?.y,
     }),
   })
-  // Page scroll uses the nearest in-window position (minimal scroll), not the
-  // centered position, so an already-visible target is barely moved.
   const targetRectPositionInViewport =
-    resolveNearestTargetRectPositionForViewport({
-      containerSize: params.snapshot.viewportSize,
-      rect: ancestorResult.projectedRect,
-      focusViewport: params.targetViewport,
-    })
+    band !== undefined
+      ? {
+          // Land the projected rect at the clamp of its CURRENT position into
+          // the band, so page scroll is the minimal direction-aware reveal.
+          x: clampToRange(ancestorResult.projectedRect.x, band.x),
+          y: clampToRange(ancestorResult.projectedRect.y, band.y),
+        }
+      : resolveTargetRectPositionForViewport({
+          containerSize: params.snapshot.viewportSize,
+          rect: ancestorResult.projectedRect,
+          focusViewport: params.targetViewport,
+          centering: params.centering,
+        })
   // Resolve where the locator rect should sit inside the zoom viewport itself.
-  const targetRectPositionInZoomViewport = resolveTargetRectPositionForViewport(
-    {
-      containerSize: params.targetViewport,
-      rect: ancestorResult.projectedRect,
-      focusViewport: params.targetViewport,
-      centering: params.centering,
-    }
-  )
-  // Scroll the page only enough to bring the target into the focus window.
+  // In the band case there is no zoom (targetViewport === viewport), so the
+  // zoom-viewport placement must agree with the band clamp; otherwise the zoom
+  // framing residual would override the direction-aware minimal reveal.
+  const targetRectPositionInZoomViewport =
+    band !== undefined
+      ? {
+          x: clampToRange(ancestorResult.projectedRect.x, band.x),
+          y: clampToRange(ancestorResult.projectedRect.y, band.y),
+        }
+      : resolveTargetRectPositionForViewport({
+          containerSize: params.targetViewport,
+          rect: ancestorResult.projectedRect,
+          focusViewport: params.targetViewport,
+          centering: params.centering,
+        })
+  // Use page scroll only for the framing residual that zoom cannot absorb.
   const resolvedPageResult = resolvePagePlan({
     snapshot: params.snapshot,
     ancestorResult,
     targetRectPositionInViewport,
+    targetViewport: params.targetViewport,
+    targetRectPositionInZoomViewport,
+    currentZoomEnd: params.currentZoomEnd,
   })
 
   // Recompute the final zoom target after any page scroll has been applied.
@@ -1319,6 +1417,7 @@ function resolveFocusOptions(params: {
 }): {
   focusOptions: ReturnType<typeof resolveAutoZoomOptions>
   currentZoomEnd: NonNullable<FocusChangeEvent['zoom']>['end']
+  useDirectionAwareBand: boolean
   timing: {
     duration: number
     easing: Easing
@@ -1329,6 +1428,20 @@ function resolveFocusOptions(params: {
     params.options
   )
   const currentZoomViewport = params.state.currentZoomViewport
+
+  // Only the plain no-zoom interaction branch below (amount forced to 1) uses
+  // the direction-aware comfort band, and only when the caller did not request
+  // an explicit centering. An explicit centering keeps the fixed placement.
+  const isPlainNoZoomInteraction =
+    !params.state.insideAutoZoom &&
+    !(
+      params.state.mode === 'manual' &&
+      currentZoomViewport !== null &&
+      !params.allowStandaloneZoom
+    ) &&
+    !params.allowStandaloneZoom
+  const useDirectionAwareBand =
+    isPlainNoZoomInteraction && params.options.centering === undefined
 
   const focusOptions = params.state.insideAutoZoom
     ? resolvedAutoZoomOptions
@@ -1345,11 +1458,15 @@ function resolveFocusOptions(params: {
         : {
             ...resolvedAutoZoomOptions,
             amount: 1,
-            // Not a zoom: just scroll the target into view. Use the gentle
-            // scroll-centering default (not the tight zoom default) so an
-            // already-visible element is not yanked to dead center on every
-            // click. An explicit `centering` on the interaction still wins.
-            centering: params.options.centering ?? DEFAULT_SCROLL_CENTERING,
+            // Not a zoom: just scroll the target into view. Honor an explicitly
+            // requested centering so the caller can place the target; otherwise
+            // use the gentle configured scroll-centering (default
+            // DEFAULT_SCROLL_CENTERING) as a direction-aware comfort-band inset
+            // so an already-visible element is not yanked around on every click.
+            centering:
+              params.options.centering ??
+              params.state.scrollCentering ??
+              DEFAULT_SCROLL_CENTERING,
           }
   const currentZoomEnd = currentZoomViewport?.end ?? {
     pointPx: { x: 0, y: 0 },
@@ -1365,18 +1482,23 @@ function resolveFocusOptions(params: {
     // === 1, no zoom) keeps its gentle scroll-centering instead of snapping to
     // dead center.
     focusOptions.amount < 1 &&
+    params.options.centering === undefined &&
     currentZoomViewport !== undefined &&
     currentZoomEnd.pointPx.x === 0 &&
     currentZoomEnd.pointPx.y === 0 &&
     currentZoomEnd.size.widthPx === params.viewportSize.width &&
     currentZoomEnd.size.heightPx === params.viewportSize.height
   ) {
+    // Only force centering when the caller did not request one, so an explicit
+    // centering (e.g. scrollIntoViewIfNeeded({ centering: 0.2 })) is honored even
+    // at full frame.
     focusOptions.centering = 1
   }
 
   return {
     focusOptions,
     currentZoomEnd,
+    useDirectionAwareBand,
     timing: {
       duration: resolveRecordingTimingDuration(focusOptions.duration),
       easing: focusOptions.easing,
@@ -1414,6 +1536,7 @@ export async function changeFocus(
   const {
     focusOptions,
     currentZoomEnd,
+    useDirectionAwareBand,
     timing: focusTiming,
   } = resolveFocusOptions(
     mouseMove !== undefined
@@ -1432,63 +1555,54 @@ export async function changeFocus(
         }
   )
 
-  // Minimal-visible: a plain interaction (not zooming) should not scroll a
-  // target that is already fully on screen. Only off-screen targets scroll,
-  // landing at the gentle scroll-centering position. Zoom paths
-  // (autoZoom/zoomTo) still reframe as usual.
-  const skipScrollForVisibleTarget =
-    !shouldApplyZoom &&
-    !shouldSuppressAutoScroll &&
-    isRectFullyWithinViewport(snapshot.locatorRect, snapshot.viewportSize)
-
-  const plan =
-    shouldSuppressAutoScroll || skipScrollForVisibleTarget
-      ? {
-          finalLocatorRect: snapshot.locatorRect,
-          ancestorScrollPlans: [],
-          pageScrollPlan: {
-            startY: snapshot.page.scrollY,
-            startX: snapshot.page.scrollX,
-            targetY: snapshot.page.scrollY,
-            targetX: snapshot.page.scrollX,
-          },
-          scrollNeeded: false,
-          zoomNeeded: false,
-          finalFocusPoint: {
-            x: snapshot.locatorRect.x + snapshot.locatorRect.width / 2,
-            y: snapshot.locatorRect.y + snapshot.locatorRect.height / 2,
-          },
-          optimalOffset: { x: 0, y: 0 },
-          targetViewport: resolveFixedFocusViewportSize(
+  const plan = shouldSuppressAutoScroll
+    ? {
+        finalLocatorRect: snapshot.locatorRect,
+        ancestorScrollPlans: [],
+        pageScrollPlan: {
+          startY: snapshot.page.scrollY,
+          startX: snapshot.page.scrollX,
+          targetY: snapshot.page.scrollY,
+          targetX: snapshot.page.scrollX,
+        },
+        scrollNeeded: false,
+        zoomNeeded: false,
+        finalFocusPoint: {
+          x: snapshot.locatorRect.x + snapshot.locatorRect.width / 2,
+          y: snapshot.locatorRect.y + snapshot.locatorRect.height / 2,
+        },
+        optimalOffset: { x: 0, y: 0 },
+        targetViewport: resolveFixedFocusViewportSize(
+          snapshot.viewportSize,
+          focusOptions.amount
+        ),
+        targetRectPositionInZoomViewport: resolveTargetRectPosition({
+          containerSize: resolveFixedFocusViewportSize(
             snapshot.viewportSize,
             focusOptions.amount
           ),
-          targetRectPositionInZoomViewport: resolveTargetRectPosition({
-            containerSize: resolveFixedFocusViewportSize(
+          rect: snapshot.locatorRect,
+          amount: 1,
+          centering: focusOptions.centering,
+        }),
+      }
+    : combineFocusPlan({
+        snapshot,
+        targetViewport: shouldApplyZoom
+          ? resolveLocatorFocusViewport({
+              viewport: snapshot.viewportSize,
+              rect: snapshot.locatorRect,
+              amount: focusOptions.amount,
+              padding: focusOptions.padding,
+            })
+          : resolveFixedFocusViewportSize(
               snapshot.viewportSize,
               focusOptions.amount
             ),
-            rect: snapshot.locatorRect,
-            amount: 1,
-            centering: focusOptions.centering,
-          }),
-        }
-      : combineFocusPlan({
-          snapshot,
-          targetViewport: shouldApplyZoom
-            ? resolveLocatorFocusViewport({
-                viewport: snapshot.viewportSize,
-                rect: snapshot.locatorRect,
-                amount: focusOptions.amount,
-                padding: focusOptions.padding,
-              })
-            : resolveFixedFocusViewportSize(
-                snapshot.viewportSize,
-                focusOptions.amount
-              ),
-          centering: focusOptions.centering,
-          currentZoomEnd,
-        })
+        centering: focusOptions.centering,
+        currentZoomEnd,
+        useDirectionAwareBand: useDirectionAwareBand && !shouldApplyZoom,
+      })
 
   const mouseTarget: Point = mouseMove?.targetPosInElement
     ? {

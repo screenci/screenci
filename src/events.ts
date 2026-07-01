@@ -527,6 +527,15 @@ export type AnimationAssetStartEvent = {
 export type OverlayDependencyRef = {
   /** Project-unique name of the target video/screenshot to embed. */
   name: string
+  /**
+   * When `true`, the embedded target's narration subtitles are also served as
+   * subtitles of the surrounding video (via its VTT track) for the window the
+   * embed plays, but only where the surrounding video has no competing narration
+   * of its own. Omitted (the default) embeds the target's audio without carrying
+   * its subtitles up. Resolved by the backend, which owns the VTT track; the
+   * renderer never sees this field. Only present when enabled.
+   */
+  inheritSubtitles?: true
 }
 
 /**

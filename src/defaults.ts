@@ -26,13 +26,15 @@ export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
 }
 
 /**
- * Centering used when an interaction (click, tap, hover, fill, ...) scrolls an
- * OFF-SCREEN target into view WITHOUT zooming. A target that is already fully
- * visible is never scrolled (see isRectFullyWithinViewport in changeFocus); this
- * value only decides where an off-screen target lands once a scroll is needed.
- * Unlike the zoomed case (which centers tightly), a plain interaction lands the
- * target gently near the top instead of dead center. `0` edge-aligns, `1` fully
- * centers. Override per interaction with `autoZoomOptions: { centering }`.
+ * Comfort-band inset used when a plain interaction (click, tap, hover, fill, ...)
+ * scrolls a target into view WITHOUT zooming. Rather than pulling the target to
+ * a fixed position, the target is scrolled the MINIMUM needed to bring it into a
+ * comfort band, which is naturally direction-aware: a target reached by scrolling
+ * down rests near the bottom, one reached by scrolling up rests near the top, and
+ * an already-comfortable target is not scrolled at all. `0` reveals the target at
+ * the nearest edge (pure minimal reveal), `1` always centers it, and `0.2` keeps
+ * a comfortable margin at the framing edges. An explicit per-interaction
+ * `autoZoomOptions: { centering }` opts out of the band and uses fixed placement.
  */
 export const DEFAULT_SCROLL_CENTERING = 0.2
 

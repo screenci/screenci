@@ -85,10 +85,13 @@ Use this as a menu, not a template you must fill out. Most projects only need
   runtime variables your ScreenCI workflow needs.
 - If `envFile` is configured, ScreenCI loads it automatically.
 - If `envFile` is omitted, ScreenCI falls back to the project `.env`.
+- `envFile` is resolved by evaluating the config the same way Playwright does,
+  so it can be dynamic (e.g. a ternary that picks `.env.local` when
+  `SCREENCI_ENVIRONMENT === 'local'` and `.env` otherwise).
 
-For example, keep `SCREENCI_SECRET` there, and keep any local BYOK secrets such
-as `ELEVENLABS_API_KEY` there when your local ScreenCI or backend setup depends
-on them. ScreenCI does not store raw API keys from your env file.
+For example, keep `SCREENCI_SECRET` there. Your ElevenLabs key is not stored in
+your env file: add it on the Secrets page in the app instead (see
+[Narration](/docs/guides/narration#elevenlabs-voices)).
 
 ### Example: `.env` file
 
@@ -96,7 +99,6 @@ A typical local env file looks like this:
 
 ```bash
 SCREENCI_SECRET=sc_live_your_project_secret
-ELEVENLABS_API_KEY=sk_your_elevenlabs_key
 YOUR_PRIVATE_SECRET=your_own_app_secret
 ```
 
@@ -104,21 +106,16 @@ Common cases:
 
 - `SCREENCI_SECRET` authenticates `screenci record`, `screenci info`, and
   public visibility commands.
-- `ELEVENLABS_API_KEY` is required when your narration uses
-  `voices.elevenlabs({ voiceId })` or custom voice assets.
 - Any other variables (for example `YOUR_PRIVATE_SECRET`) are yours to use
   inside your own app or test setup. ScreenCI reads them from the env file into
   `process.env` like any normal environment variable, but never transmits them.
 
 ### What ScreenCI sends to the service
 
-Only two values are ever sent to the ScreenCI service, and only as request
-headers on upload and command calls:
-
-- `SCREENCI_SECRET`, as the `X-ScreenCI-Secret` header, to authenticate your
-  project.
-- `ELEVENLABS_API_KEY`, as the `X-ElevenLabs-Api-Key` header, and only when your
-  narration actually uses ElevenLabs voices.
+Only `SCREENCI_SECRET` is ever sent to the ScreenCI service, as the
+`X-ScreenCI-Secret` header on upload and command calls, to authenticate your
+project. Your ElevenLabs key is never sent from your machine: it is stored
+encrypted in the app and used server-side at render time.
 
 No other environment variable is forwarded. Your app secrets, database URLs, and
 any other entries in the env file stay on your machine. ScreenCI does not store

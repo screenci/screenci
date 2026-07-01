@@ -9,6 +9,7 @@ import {
   setAutoZoomState,
   setCurrentZoomViewport,
 } from './autoZoom.js'
+import { DEFAULT_SCROLL_CENTERING } from './defaults.js'
 import { resetZoom, zoomTo } from './manualZoom.js'
 
 type MockDoc = {
@@ -130,6 +131,7 @@ describe('manual zoom', () => {
       mode: 'idle',
       options: {},
       currentZoomViewport: null,
+      scrollCentering: DEFAULT_SCROLL_CENTERING,
     })
     setCurrentZoomViewport(null)
     setActiveAutoZoomRecorder(NOOP_EVENT_RECORDER)

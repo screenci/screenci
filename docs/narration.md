@@ -413,19 +413,15 @@ consistent voices.
 
 ## ElevenLabs voices
 
-ElevenLabs voices require the ScreenCI Business tier and use your own
-ElevenLabs API key. Keep `ELEVENLABS_API_KEY` in your configured `envFile` or
-project `.env`. See [Configuration](/docs/reference/configuration). ScreenCI
-loads that file automatically for local commands, and ScreenCI does not store
-the raw API key or use it for anything except synthesizing narration for your
-videos.
+ElevenLabs voices require the ScreenCI Business tier and use your own ElevenLabs
+API key. Add your key once on the **Secrets** page in the ScreenCI app. It is
+encrypted at rest and used only to synthesize narration for your videos. The app
+never shows the stored key again, only whether one is set, and every render
+(from the CLI or the app) uses it. You do not set an ElevenLabs key locally.
 
-For example, your project `.env` can contain:
-
-```dotenv
-SCREENCI_SECRET=added_by_npx_screenci_record
-ELEVENLABS_API_KEY=your_elevenlabs_api_key
-```
+Without a key, a render that uses an ElevenLabs or custom voice is blocked with a
+link to the Secrets page, and `screenci record` warns at record time that the
+render will fail until you add one.
 
 Use `voices.elevenlabs({ voiceId })` when you want to target a specific
 ElevenLabs voice from your own account. Set it as the default voice in `use`, or
@@ -514,14 +510,17 @@ that cap from silently filling up, ScreenCI cleans up after itself:
   key used for that run, so it stays correct even if different runs use different
   ElevenLabs accounts.
 
-As elsewhere, ScreenCI does not store your API key. It is used live only to clone,
-synthesize, list, and delete its own voices for your render.
+Your ElevenLabs key is stored only in the app (encrypted at rest) and never
+returned to the browser. It is used live at render time to clone, synthesize,
+list, and delete its own voices, and is never written to your project or env
+files.
 
 ### Clone a voice from an audio sample
 
 Instead of a `voiceId` from your account, you can clone a voice from a local
 audio or video sample using ElevenLabs Instant Voice Cloning. This also requires
-the Business tier and your own `ELEVENLABS_API_KEY` (see the setup above).
+the Business tier and your ElevenLabs key on the Secrets page (see the setup
+above).
 
 Use the same `voices.elevenlabs(...)` helper, but pass `{ path }` instead of
 `{ voiceId }`:

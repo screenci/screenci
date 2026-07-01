@@ -6,6 +6,7 @@ import {
   type ElementRect,
 } from './events.js'
 import type { AutoZoomOptions, RecordOptions, RenderOptions } from './types.js'
+import { DEFAULT_SCROLL_CENTERING } from './defaults.js'
 import type { ScreenshotCropRecord } from './crop.js'
 import type { ResolvedRedactStyle } from './redactController.js'
 
@@ -25,6 +26,13 @@ export type AutoZoomState = {
   mode: 'idle' | 'auto' | 'manual'
   options: AutoZoomOptions
   currentZoomViewport: CurrentZoomViewport | null
+  /**
+   * Vertical framing bias (0–1) applied when a plain interaction scrolls its
+   * target into view without zooming. Populated once at record init from
+   * `recordOptions.scrollCentering` (default `DEFAULT_SCROLL_CENTERING`). An
+   * explicit per-call `centering` still overrides this.
+   */
+  scrollCentering: number
 }
 
 export type ActiveCueRun = {
@@ -181,6 +189,8 @@ export function createScreenCIRuntimeContext(
       mode: 'idle',
       options: {},
       currentZoomViewport: null,
+      scrollCentering:
+        overrides.recordOptions?.scrollCentering ?? DEFAULT_SCROLL_CENTERING,
     },
     recordingSize: { current: 1 },
     redact: {

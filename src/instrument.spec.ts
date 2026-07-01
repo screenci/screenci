@@ -751,6 +751,9 @@ describe('instrumentLocator', () => {
       vi.runAllTimersAsync(),
     ])
 
+    // Plain interaction with the direction-aware comfort band: a 40px rect at
+    // y=200 is already inside the band (68..612 for a 720 viewport), so it is
+    // not scrolled and a click at position {8, 8} lands at (108, 208).
     expect(getMousePosition(page)).toEqual({ x: 108, y: 208 })
   })
 
@@ -764,6 +767,9 @@ describe('instrumentLocator', () => {
 
     await Promise.all([locator.click(), vi.runAllTimersAsync()])
 
+    // The click lands at the element center. An 80x40 rect at y=200 is already
+    // inside the comfort band (68..612), so it is not scrolled and its center
+    // stays at (140, 220).
     expect(getMousePosition(page)).toEqual({ x: 140, y: 220 })
   })
 
@@ -784,6 +790,7 @@ describe('instrumentLocator', () => {
       vi.runAllTimersAsync(),
     ])
 
+    // Already inside the comfort band (68..612): no scroll, center stays at 220.
     expect(getMousePosition(page)).toEqual({ x: 140, y: 220 })
   })
 
@@ -886,6 +893,7 @@ describe('instrumentLocator', () => {
       vi.runAllTimersAsync(),
     ])
 
+    // Already inside the comfort band (68..612): no scroll, center stays at 220.
     expect(getMousePosition(page)).toEqual({ x: 140, y: 220 })
   })
 
@@ -896,8 +904,11 @@ describe('instrumentLocator', () => {
     const page = makePageMock()
     await instrumentPage(page)
 
+    // Place the element already at its gentle-centering resting position (a 40px
+    // rect rests with its top at 0.2 * (720 - 40) / 2 = 68) so no scroll is
+    // introduced and the pre-click pause is measured cleanly.
     const locator = makeLocatorMock(
-      { x: 100, y: 200, width: 80, height: 40 },
+      { x: 100, y: 68, width: 80, height: 40 },
       page
     )
     instrumentLocator(locator)
@@ -1562,6 +1573,7 @@ describe('instrumentLocator', () => {
       (event): event is FocusChangeEvent => event.type === 'focusChange'
     )
 
+    // Already inside the comfort band (68..612): no scroll, center stays at 220.
     expect(focusChange).toMatchObject({ x: 140, y: 220 })
   })
 
@@ -1629,6 +1641,8 @@ describe('instrumentLocator', () => {
 
     await Promise.all([locator.check(), vi.runAllTimersAsync()])
 
+    // An 18px rect at y=200 is already inside the comfort band (68..613), so it
+    // is not scrolled and its center stays at (109, 209).
     expect(getMousePosition(page)).toEqual({ x: 109, y: 209 })
     const check = recordedInputEvents[0]!
     expect(check.events.some((e) => e.type === 'mouseDown')).toBe(true)
@@ -1650,6 +1664,7 @@ describe('instrumentLocator', () => {
 
     await Promise.all([locator.uncheck(), vi.runAllTimersAsync()])
 
+    // Already inside the comfort band (68..613): no scroll, center stays at 209.
     expect(getMousePosition(page)).toEqual({ x: 109, y: 209 })
     const uncheck = recordedInputEvents[0]!
     expect(uncheck.events.some((e) => e.type === 'mouseDown')).toBe(true)
@@ -1663,8 +1678,11 @@ describe('instrumentLocator', () => {
     const page = makePageMock()
     await instrumentPage(page)
 
+    // Place the element already at its gentle-centering resting position (a 40px
+    // rect rests with its top at 0.2 * (720 - 40) / 2 = 68) so no scroll is
+    // introduced and the pre-click pause is measured cleanly.
     const locator = makeLocatorMock(
-      { x: 100, y: 200, width: 80, height: 40 },
+      { x: 100, y: 68, width: 80, height: 40 },
       page
     )
     instrumentLocator(locator)
@@ -1704,6 +1722,7 @@ describe('instrumentLocator', () => {
 
     await Promise.all([locator.tap(), vi.runAllTimersAsync()])
 
+    // Already inside the comfort band (68..612): no scroll, center stays at 220.
     expect(getMousePosition(page)).toEqual({ x: 140, y: 220 })
     const tap = recordedInputEvents[0]!
     expect(tap.events.some((e) => e.type === 'mouseDown')).toBe(true)

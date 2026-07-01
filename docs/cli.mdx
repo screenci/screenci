@@ -558,12 +558,15 @@ These commands support `--config <path>`:
 - public delivery changes
 
 If `envFile` is configured in `screenci.config.ts`, the CLI loads it
-automatically. Otherwise it falls back to the project `.env`.
+automatically. Otherwise it falls back to the project `.env`. The CLI resolves
+`envFile` by evaluating the config the same way Playwright does, so a dynamic
+value like `envFile: isLocal ? '.env.local' : '.env'` picks the right file at
+run time.
 
-That env file is the recommended place to keep local ScreenCI secrets and other
-runtime variables your setup needs. For example, if your local workflow depends
-on an ElevenLabs BYOK key, keep `ELEVENLABS_API_KEY` there instead of hardcoding
-it elsewhere. ScreenCI does not store raw API keys from that file.
+That env file is the recommended place to keep `SCREENCI_SECRET` and other
+runtime variables your setup needs. Your ElevenLabs key is not kept here: add it
+on the Secrets page in the app instead (see
+[Narration](/docs/guides/narration#elevenlabs-voices)).
 
 ## Related pages
 

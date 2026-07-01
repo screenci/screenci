@@ -439,6 +439,8 @@ type UploadJobResult = {
   recordId: string
   studio?: UploadStudioInfo
   plan?: OrgPlan
+  /** The video needs an ElevenLabs/custom voice but the org has no key stored. */
+  elevenLabsKeyMissing?: boolean
 }
 
 type UploadProgressStatus = 'success' | 'failure' | 'cancelled'
@@ -622,7 +624,6 @@ async function uploadRecordingCandidate(
   projectName: string,
   apiUrl: string,
   secret: string,
-  elevenLabsApiKey: string | undefined,
   verbose: boolean,
   uploadAbort: ReturnType<typeof createUploadAbortController>,
   progressReporter: {
@@ -699,9 +700,6 @@ async function uploadRecordingCandidate(
           headers: {
             'Content-Type': 'application/json',
             'X-ScreenCI-Secret': secret,
-            ...(elevenLabsApiKey
-              ? { 'X-ElevenLabs-Api-Key': elevenLabsApiKey }
-              : {}),
           },
           body: JSON.stringify({
             projectName,
@@ -754,6 +752,7 @@ async function uploadRecordingCandidate(
         reason: string
         detail: string
       }>
+      elevenLabsKeyMissing?: boolean
     }
     const { recordingId } = startBody
     projectId = startBody.projectId
@@ -771,6 +770,9 @@ async function uploadRecordingCandidate(
         )
       }
     }
+
+    // The missing-ElevenLabs-key warning is surfaced once in the final summary
+    // (see uploadRecordings), where it is not overwritten by the upload spinner.
 
     if (verbose) {
       logger.info(`recordingId=${recordingId} projectId=${projectId}`)
@@ -811,9 +813,6 @@ async function uploadRecordingCandidate(
             'Content-Type': recordingContentType,
             'Content-Length': String(fileStat.size),
             'X-ScreenCI-Secret': secret,
-            ...(elevenLabsApiKey
-              ? { 'X-ElevenLabs-Api-Key': elevenLabsApiKey }
-              : {}),
           },
           body: stream as unknown as BodyInit,
           signal: uploadAbort.signal,
@@ -848,6 +847,9 @@ async function uploadRecordingCandidate(
       recordId,
       ...(studio !== undefined && { studio }),
       ...(plan !== null && { plan }),
+      ...(startBody.elevenLabsKeyMissing === true && {
+        elevenLabsKeyMissing: true,
+      }),
     }
   } catch (err) {
     if (isUploadCancelledError(err)) {
@@ -2011,6 +2013,7 @@ export async function uploadRecordings(
   failedVideoNames: string[]
   failedVideoMessages: Array<{ videoName: string; message: string }>
   studioNotices: StudioUploadNotice[]
+  elevenLabsKeyMissingVideos: string[]
   plan: OrgPlan | null
 }> {
   const uploadAbort = createUploadAbortController('upload')
@@ -2027,6 +2030,7 @@ export async function uploadRecordings(
       failedVideoNames: [],
       failedVideoMessages: [],
       studioNotices: [],
+      elevenLabsKeyMissingVideos: [],
       plan: null,
     }
   }
@@ -2036,7 +2040,6 @@ export async function uploadRecordings(
   }
 
   let firstProjectId: string | null = null
-  const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY?.trim() || undefined
 
   try {
     const candidates = (
@@ -2056,6 +2059,7 @@ export async function uploadRecordings(
         failedVideoNames: [],
         failedVideoMessages: [],
         studioNotices: [],
+        elevenLabsKeyMissingVideos: [],
         plan: null,
       }
     }
@@ -2081,7 +2085,6 @@ export async function uploadRecordings(
             projectName,
             apiUrl,
             secret,
-            elevenLabsApiKey,
             verbose,
             uploadAbort,
             progressReporter,
@@ -2118,6 +2121,12 @@ export async function uploadRecordings(
         : []
     )
 
+    const elevenLabsKeyMissingVideos = results.flatMap((result) =>
+      !result.hadFailure && result.elevenLabsKeyMissing === true
+        ? [result.videoName]
+        : []
+    )
+
     return {
       projectId: firstProjectId,
       recordId,
@@ -2125,6 +2134,7 @@ export async function uploadRecordings(
       failedVideoNames,
       failedVideoMessages,
       studioNotices,
+      elevenLabsKeyMissingVideos,
       plan: resolvedPlan,
     }
   } finally {
@@ -2285,24 +2295,33 @@ async function loadEnvFileFromConfigSource(
   warnOnFailure: boolean
 ): Promise<void> {
   try {
-    const screenciConfig = await tryReadConfigFromSource(resolvedConfigPath)
-    loadEnvFile(
-      screenciConfig.envFile
-        ? resolve(dirname(resolvedConfigPath), screenciConfig.envFile)
-        : resolve(dirname(resolvedConfigPath), '.env'),
-      warnOnFailure
-    )
+    const envFilePath =
+      (await resolveConfiguredEnvFilePath(resolvedConfigPath)) ??
+      resolve(dirname(resolvedConfigPath), '.env')
+    loadEnvFile(envFilePath, warnOnFailure)
   } catch {
     // Config import may require Playwright context or dynamic values. Continue with
     // the existing process env; Playwright will still load the config normally.
   }
 }
 
-async function resolveConfiguredEnvFilePath(
+// Resolve `envFile` the way Playwright resolves a config value: by evaluating
+// the config module, not by scraping its source text. A dynamic
+// `envFile: isLocal ? '.env.local' : '.env'` only has a real value once the
+// module runs, so evaluating it lets local and prod setups pick the right file
+// (scraping the source can only see a plain string literal, and silently falls
+// back to `.env`). The environment the expression depends on (e.g.
+// SCREENCI_ENVIRONMENT, set by the `screenci:*:local` scripts) is already in
+// place before this runs, so the CLI resolves the same file Playwright will
+// when it later evaluates the same config. `loadRecordConfigWithoutPlaywright
+// Collision` only falls back to static source parsing if the module cannot be
+// imported.
+export async function resolveConfiguredEnvFilePath(
   resolvedConfigPath: string
 ): Promise<string | undefined> {
   try {
-    const screenciConfig = await tryReadConfigFromSource(resolvedConfigPath)
+    const screenciConfig =
+      await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
     if (!screenciConfig.envFile) return undefined
 
     return resolve(dirname(resolvedConfigPath), screenciConfig.envFile)
@@ -3059,6 +3078,7 @@ async function uploadRecordedVideosForConfig(
         failedVideoNames: string[]
         failedVideoMessages: Array<{ videoName: string; message: string }>
         studioNotices: StudioUploadNotice[]
+        elevenLabsKeyMissingVideos: string[]
         plan: OrgPlan | null
       } = {
         projectId: null,
@@ -3067,6 +3087,7 @@ async function uploadRecordedVideosForConfig(
         failedVideoNames: [],
         failedVideoMessages: [],
         studioNotices: [],
+        elevenLabsKeyMissingVideos: [],
         plan: null,
       }
       try {
@@ -3091,6 +3112,7 @@ async function uploadRecordedVideosForConfig(
         failedVideoNames,
         failedVideoMessages,
         studioNotices,
+        elevenLabsKeyMissingVideos,
         plan,
       } = uploadResult
       // Remember this run so `screenci info` can report exactly it.
@@ -3156,6 +3178,16 @@ async function uploadRecordedVideosForConfig(
           logger.info('')
           logger.info(`Studio configuration applied for "${notice.videoName}".`)
         }
+      }
+      if (elevenLabsKeyMissingVideos.length > 0) {
+        const names = elevenLabsKeyMissingVideos
+          .map((name) => `"${name}"`)
+          .join(', ')
+        logger.info('')
+        logger.error(
+          `${names} ${elevenLabsKeyMissingVideos.length === 1 ? 'uses' : 'use'} an ElevenLabs or custom voice, but your organization has no ElevenLabs API key, so ${elevenLabsKeyMissingVideos.length === 1 ? 'its render' : 'those renders'} will fail. Add your key on the Secrets page:`
+        )
+        logger.info(pc.cyan(getScreenCISecretsUrl()))
       }
       if (hadFailures && playwrightFailure === null) {
         throw new PartialUploadError()

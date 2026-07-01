@@ -65,7 +65,15 @@ Manual framing is better when:
 
 `zoomTo()` accepts either a locator or an explicit viewport point like `{ x, y }`. Use a locator when you want framing to stay tied to a real UI target. Use a point when you want a very deliberate composition or pan that is not attached to the next clickable element.
 
-When you `zoomTo()` a locator, the page scrolls only the minimum needed to bring the target into the frame, then the zoom centers it. A target that is already on screen is barely moved (it zooms essentially in place) instead of the page scrolling it across, so zooming a control near the bottom of a long page no longer yanks it up toward the top.
+To place a target without zooming, `scrollIntoViewIfNeeded()` also accepts framing options, `centering` (`0`-`1`), plus `amount`, `duration`, and `easing`. `centering: 0` reveals the target at the top of the frame, `1` centers it, and something like `0.2` keeps it high with context below:
+
+```ts
+await page
+  .getByPlaceholder('Style prompt')
+  .scrollIntoViewIfNeeded({ centering: 0.2 })
+```
+
+Plain interactions (a `click()`, `fill()`, `scrollIntoViewIfNeeded()`, etc. that are not zooming) auto-scroll their target into view with a **direction-aware minimal reveal**: the target is scrolled only as far as needed to bring it into a comfort band, so the motion follows the direction it enters from. Scroll down to reach a target below the fold and it rests near the bottom of the frame; scroll up to a target above the fold and it rests near the top; a target that is already comfortably visible is not scrolled at all. `recordOptions.scrollCentering` (`0`-`1`, default `0.2`) sets the band inset: `0` reveals the target right at the nearest edge (a pure minimal reveal), `1` always centers it, and the default `0.2` keeps a comfortable margin at the framing edges. An explicit per-call `centering` (via `scrollIntoViewIfNeeded({ centering })` or an interaction's zoom options) opts out of the band and uses fixed placement instead (for example `centering: 0.2` always lands the target high, regardless of scroll direction), and `zoomTo()`/`autoZoom()` keep their own tight fixed centering.
 
 Manual zoom becomes more useful when one focused sequence has multiple camera beats:
 
@@ -90,22 +98,6 @@ Do not mix `autoZoom()` and manual zooming at the same time. In practice, that m
 - do not start `autoZoom()` while a manual zoom is still active
 
 for the exported zoom helpers.
-
-## Scrolling a target into view
-
-Interactions (`click()`, `tap()`, `hover()`, `fill()`, `check()`, `selectOption()`, `selectText()`, `dragTo()`, ...) scroll their target into view before acting, so the action is always on camera:
-
-- a target that is **already fully on screen does not scroll at all**, so a visible button or field never jumps under the cursor, and
-- a target that is **off screen** scrolls only the **minimum needed** to bring it into the frame (like `scrollIntoViewIfNeeded`). It lands just inside view rather than being pulled across the page to the center or top, so a control near the bottom of a long page is not yanked upward.
-
-`centering` (a `0-1` value: `0` edge-aligned, `1` dead center) shapes how the **camera frames** a target when you are zoomed, with manual `zoomTo()` or inside `autoZoom()`, not the bare scroll. The page itself always scrolls only as far as needed to reveal the target; the zoom then composes it.
-
-```ts
-// Center the followed target inside the zoom (autoZoom defaults to 1 already).
-await page.getByRole('button', { name: 'Save' }).click({
-  autoZoomOptions: { centering: 1 },
-})
-```
 
 ## Recording size
 

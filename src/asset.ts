@@ -274,6 +274,14 @@ export type DependencyOverlayOptions = Pick<
   start?: TimelineOffset
   /** Early end into the embedded VIDEO (video dependencies only). */
   end?: TimelineOffset
+  /**
+   * Also carry the embedded target's narration subtitles up into the surrounding
+   * video. The embed always plays the target's audio; with this on, the target's
+   * subtitles are additionally shown as subtitles of the surrounding video (in
+   * its VTT track) for the window the embed plays, wherever the surrounding video
+   * has no competing narration of its own. Defaults to `false`.
+   */
+  inheritSubtitles?: boolean
 }
 
 /** Brand identifying a {@link selected} render-dependency overlay input. */
@@ -303,6 +311,11 @@ export type DependencyOverlayInput = {
  * No local file is read for a `selected(...)` overlay: the medium and concrete
  * output are looked up by the backend at render time. Screenshots may only embed
  * other screenshots; videos may embed either.
+ *
+ * The embed plays the target's audio. Pass `{ inheritSubtitles: true }` to also
+ * carry the target's narration subtitles up into the surrounding video's subtitle
+ * track for the window it plays, wherever the surrounding video has no competing
+ * narration of its own (off by default).
  *
  * @example
  * ```ts
@@ -1357,7 +1370,12 @@ function createDependencyOverlayController(
       }
       recorder.addAssetStart(name, {
         kind: 'dependency',
-        dependency: { name: input.name },
+        dependency: {
+          name: input.name,
+          ...(input.config.inheritSubtitles === true && {
+            inheritSubtitles: true,
+          }),
+        },
         ...(durationMs !== undefined && { durationMs }),
         ...timelineAnchorFields(until),
         fullScreen,

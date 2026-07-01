@@ -383,6 +383,22 @@ describe('CLI', () => {
       )
     })
 
+    it('surfaces a fully discounted render cap error from the backend', async () => {
+      const { formatUploadStartFailureMessage } = await import('./cli')
+
+      const message =
+        'Your starter plan is on a promotional 100% discount, which includes 100 renders. You have used 100, so this request exceeds the included renders. A fully discounted plan does not include additional renders. Start a paid subscription at https://app.screenci.com/billing or email support@screenci.com to raise your limit.'
+
+      expect(
+        formatUploadStartFailureMessage(
+          'Example video',
+          403,
+          JSON.stringify({ error: message }),
+          'test-secret'
+        )
+      ).toBe(message)
+    })
+
     it('adds a fix suggestion to expressive narration tier failures', async () => {
       const { formatFailedVideoMessage } = await import('./cli')
 

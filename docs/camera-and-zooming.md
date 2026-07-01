@@ -120,6 +120,10 @@ The default `centering` varies by operation, and any explicit `centering` you pa
 | `zoomTo()` / manual zoom                                      | `1` (center)                                    |
 | `autoZoom()` framing                                          | `0.6` (a tight direction-aware band)            |
 
+## Overlays and zoom
+
+By default [overlays](/docs/guides/overlays) are burned into the scene: when the camera zooms or pans, an overlay moves and scales with the recording underneath it, so a ring placed `over` an element stays glued to that element as you zoom into it. Set `pinToScreen: true` on an overlay to keep it fixed in screen space instead (a corner logo or badge that should stay put through a zoom). See [Overlays and zoom](/docs/guides/overlays#overlays-and-zoom-pintoscreen).
+
 ## Recording size
 
 By default the recording fills the output frame ("full screen"). `resizeRecording()` shrinks it to a fraction of the frame so the styled background shows around it, which is useful for a deliberate "step back" moment. `resetRecordingSize()` returns to full screen.

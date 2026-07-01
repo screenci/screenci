@@ -154,6 +154,55 @@ describe('createOverlays', () => {
       })
     })
 
+    it('emits pinToScreen on an image overlay when set', async () => {
+      const overlays = createOverlays({
+        logo: { path: './logo.png', duration: '1s', pinToScreen: true },
+      })
+
+      await overlays.logo()
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
+        kind: 'image',
+        path: './logo.png',
+        durationMs: 1000,
+        fullScreen: false,
+        pinToScreen: true,
+      })
+    })
+
+    it('emits pinToScreen on a video overlay when set', async () => {
+      const overlays = createOverlays({
+        clip: { path: './clip.mp4', pinToScreen: true },
+      })
+
+      await overlays.clip()
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('clip', {
+        kind: 'video',
+        path: './clip.mp4',
+        audio: 1,
+        fullScreen: false,
+        pinToScreen: true,
+      })
+    })
+
+    it('omits pinToScreen when it is false (byte-identical default)', async () => {
+      const overlays = createOverlays({
+        logo: { path: './logo.png', duration: '1s', pinToScreen: false },
+      })
+
+      await overlays.logo()
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
+        kind: 'image',
+        path: './logo.png',
+        durationMs: 1000,
+        fullScreen: false,
+      })
+      const call = vi.mocked(recorder.addAssetStart).mock.calls[0]?.[1]
+      expect(call).not.toHaveProperty('pinToScreen')
+    })
+
     it('passes fill: screen as a fullScreen placement', async () => {
       const overlays = createOverlays({
         intro: { path: './intro.mp4', volume: 0.5, fill: 'screen' },

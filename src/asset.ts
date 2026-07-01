@@ -134,6 +134,14 @@ type OverlayCommon = {
    * `.mp4` videos); rejected for `.html`/inline `html`/React `element`/`over`.
    */
   crop?: OverlayCrop
+  /**
+   * Keep the overlay stuck to the screen while the camera zooms: it stays at a
+   * fixed position and size in the output frame, unaffected by zoom. Useful for
+   * HUD-style elements (a corner logo, a persistent badge). By default (unset)
+   * an overlay is "burned" into the scene, so it moves and scales with the
+   * recording as the camera zooms and pans.
+   */
+  pinToScreen?: boolean
 }
 
 /** Fields that only apply to a `.mp4` video overlay (a file `path`). */
@@ -266,6 +274,7 @@ export type DependencyOverlayOptions = Pick<
   | 'fill'
   | 'duration'
   | 'crop'
+  | 'pinToScreen'
 > & {
   /**
    * Late start into the embedded VIDEO (a `'2s'`/timecode/`'50%'` position).
@@ -727,6 +736,7 @@ function buildOverlayFromConfig(
     hasPath,
   })
   const fullScreen = config.fill === 'screen'
+  const pinToScreen = config.pinToScreen === true
   const animate = config.animate === true
   // Parse the relative `duration` string into ms once; reused by every branch.
   const configDurationMs = resolveConfigDuration(name, config.duration)
@@ -781,6 +791,7 @@ function buildOverlayFromConfig(
         getMarkup,
         placementSource,
         fullScreen,
+        pinToScreen,
         config.fps,
         configDurationMs,
         renderOpts
@@ -791,6 +802,7 @@ function buildOverlayFromConfig(
       getMarkup,
       placementSource,
       fullScreen,
+      pinToScreen,
       configDurationMs,
       renderOpts
     )
@@ -845,6 +857,7 @@ function buildOverlayFromConfig(
         getMarkup,
         placementSource,
         fullScreen,
+        pinToScreen,
         config.fps,
         configDurationMs,
         renderOpts
@@ -855,6 +868,7 @@ function buildOverlayFromConfig(
       getMarkup,
       placementSource,
       fullScreen,
+      pinToScreen,
       configDurationMs,
       renderOpts
     )
@@ -876,6 +890,7 @@ function buildOverlayFromConfig(
       path,
       ...(placement !== undefined && { placement }),
       fullScreen,
+      ...(pinToScreen && { pinToScreen: true }),
       ...(configDurationMs !== undefined && { durationMs: configDurationMs }),
       ...(config.crop !== undefined && { crop: config.crop }),
     })
@@ -912,6 +927,7 @@ function buildOverlayFromConfig(
       path,
       ...(placement !== undefined && { placement }),
       fullScreen,
+      ...(pinToScreen && { pinToScreen: true }),
       ...(config.volume !== undefined && { audio: config.volume }),
       ...(config.speed !== undefined && { speed: config.speed }),
       ...(config.time !== undefined && { time: config.time }),
@@ -1341,6 +1357,7 @@ function createDependencyOverlayController(
   // fixed here (an embedded render has no live element to size against).
   const placement = resolveOverlayPlacement(name, input.config)
   const fullScreen = input.config.fill === 'screen'
+  const pinToScreen = input.config.pinToScreen === true
   const configDurationMs = resolveConfigDuration(name, input.config.duration)
   if (input.config.crop !== undefined) {
     validateCrop(`Dependency overlay "${name}"`, input.config.crop)
@@ -1379,6 +1396,7 @@ function createDependencyOverlayController(
         ...(durationMs !== undefined && { durationMs }),
         ...timelineAnchorFields(until),
         fullScreen,
+        ...(pinToScreen && { pinToScreen: true }),
         ...(placement !== undefined && { placement }),
         ...(input.config.crop !== undefined && { crop: input.config.crop }),
         ...(sourceStart !== undefined && { sourceStart }),
@@ -1395,6 +1413,7 @@ type ResolvedFileOverlay =
       path: string
       placement?: OverlayPlacement
       fullScreen: boolean
+      pinToScreen?: boolean
       durationMs?: number
       crop?: OverlayCrop
     }
@@ -1403,6 +1422,7 @@ type ResolvedFileOverlay =
       path: string
       placement?: OverlayPlacement
       fullScreen: boolean
+      pinToScreen?: boolean
       audio?: number
       speed?: number
       time?: number
@@ -1444,6 +1464,7 @@ function createRenderedOverlayController(
   getMarkup: () => Promise<string>,
   placementSource: PlacementSource,
   fullScreen: boolean,
+  pinToScreen: boolean,
   durationMs?: number,
   renderOpts: OverlayRenderOpts = {}
 ): OverlayController {
@@ -1485,6 +1506,7 @@ function createRenderedOverlayController(
         }),
         ...timelineAnchorFields(until),
         fullScreen,
+        ...(pinToScreen && { pinToScreen: true }),
         ...(resolvedPlacement !== undefined && {
           placement: resolvedPlacement,
         }),
@@ -1532,6 +1554,7 @@ function createAnimatedOverlayController(
   getMarkup: () => Promise<string>,
   placementSource: PlacementSource,
   fullScreen: boolean,
+  pinToScreen: boolean,
   fps: number | undefined,
   configDurationMs: number | undefined,
   renderOpts: OverlayRenderOpts = {}
@@ -1579,6 +1602,7 @@ function createAnimatedOverlayController(
         // it needs the duration even when an assetEnd also bounds the window.
         durationMs: resolved.durationMs,
         fullScreen,
+        ...(pinToScreen && { pinToScreen: true }),
         ...(resolved.placement !== undefined && {
           placement: resolved.placement,
         }),
@@ -1926,6 +1950,7 @@ function toRecordedFileStart(
       ...(durationMs !== undefined && { durationMs }),
       ...timelineAnchorFields(until),
       fullScreen: resolved.fullScreen,
+      ...(resolved.pinToScreen && { pinToScreen: true }),
       ...(resolved.placement !== undefined && {
         placement: resolved.placement,
       }),
@@ -1949,6 +1974,7 @@ function toRecordedFileStart(
     path: resolved.path,
     audio: resolved.audio ?? 1,
     fullScreen: resolved.fullScreen,
+    ...(resolved.pinToScreen && { pinToScreen: true }),
     ...(resolved.placement !== undefined && { placement: resolved.placement }),
     ...(resolved.speed !== undefined && { speed: resolved.speed }),
     ...(resolved.time !== undefined && { time: resolved.time }),

@@ -409,6 +409,30 @@ video.overlays({
 
 When no placement field is set, the overlay fills the recording area (the renderer resolves this, since it knows the recording size). To fill explicitly, set `fill`: `'recording'` fills the recording area (the same as omitting placement), and `'screen'` fills the entire output frame.
 
+### Overlays and zoom (`pinToScreen`)
+
+By default an overlay is "burned" into the scene: when the camera zooms or pans (a `zoomTo`, an auto-zoom, or a `selected()` clip's own motion), the overlay moves and scales with the recording underneath it. So a ring placed `over` an element stays glued to that element as you zoom into it, and a badge anchored to part of the recording tracks that part.
+
+Set `pinToScreen: true` to keep an overlay stuck to the screen instead: it holds a fixed position and size in the output frame, unaffected by zoom. Use it for HUD-style elements that should stay put, such as a persistent corner logo or a watermark-like badge:
+
+```tsx
+video.overlays({
+  // Stays in the corner at a fixed size, even while the recording zooms.
+  cornerLogo: (p: { x: number; y: number }) => ({
+    path: 'assets/logo.png',
+    relativeTo: 'screen',
+    x: p.x,
+    y: p.y,
+    width: 120,
+    pinToScreen: true,
+  }),
+})('Overview', async ({ page, overlays }) => {
+  // ...
+})
+```
+
+`pinToScreen` is orthogonal to placement: it works with `relativeTo: 'recording'` / `'screen'`, a `fill` overlay, or an `over` element. It only affects how the overlay behaves under zoom (whether it is burned into the scene or fixed to the screen).
+
 ### Positioning over a live element
 
 To frame or circle a real element, give a [programmatic overlay](#programmatic-overlays-props)

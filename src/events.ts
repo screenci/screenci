@@ -436,6 +436,8 @@ export type ImageAssetStartEvent = {
   fileHash?: string
   durationMs?: number
   fullScreen: boolean
+  /** Keep the overlay fixed in screen space during zoom (composited after zoom). */
+  pinToScreen?: boolean
   placement?: OverlayPlacement
   /** Crop rect in the source image's own pixels, applied before placement/scale. */
   crop?: OverlayCrop
@@ -461,6 +463,8 @@ export type VideoAssetStartEvent = {
   fileHash?: string
   audio: number
   fullScreen: boolean
+  /** Keep the overlay fixed in screen space during zoom (composited after zoom). */
+  pinToScreen?: boolean
   placement?: OverlayPlacement
   /** Crop rect in the source video's own pixels, applied before placement/scale. */
   crop?: OverlayCrop
@@ -511,6 +515,8 @@ export type AnimationAssetStartEvent = {
    */
   durationMs?: number
   fullScreen: boolean
+  /** Keep the overlay fixed in screen space during zoom (composited after zoom). */
+  pinToScreen?: boolean
   placement?: OverlayPlacement
   /** See {@link ImageAssetStartEvent.untilOutputMs}. */
   untilOutputMs?: number
@@ -562,6 +568,8 @@ export type DependencyAssetStartEvent = {
   dependency: OverlayDependencyRef
   durationMs?: number
   fullScreen: boolean
+  /** Keep the overlay fixed in screen space during zoom (composited after zoom). */
+  pinToScreen?: boolean
   placement?: OverlayPlacement
   /**
    * Crop rect in the resolved output's own pixels, applied (for both a video and
@@ -652,6 +660,8 @@ export type PendingAssetStart = {
   kind: 'image' | 'animation'
   durationMs?: number
   fullScreen: boolean
+  /** Keep the overlay fixed in screen space during zoom (composited after zoom). */
+  pinToScreen?: boolean
   placement?: OverlayPlacement
   /** See {@link ImageAssetStartEvent.untilOutputMs}. */
   untilOutputMs?: number

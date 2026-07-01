@@ -329,11 +329,13 @@ These narrate with both the consistent (default) and expressive models:
 
 ### Expressive model only
 
-With the built-in voices these narrate only with `modelType: 'expressive'` (a
-Business-tier feature). They also work with your own ElevenLabs or sample-cloned
-voice (which is multilingual), and for non-narration features (`values`, locale
-selection) they behave like any other key. Only the default consistent built-in
-model cannot narrate them.
+With the built-in voices these narrate only with `modelType: 'expressive'`, so
+they **require the Business tier** (the expressive model is a Business-tier
+feature). On Free and Starter, recording one of these languages fails at record
+time with a message to upgrade. They also work with your own ElevenLabs or
+sample-cloned voice (which is multilingual, also Business-tier), and for
+non-narration features (`values`, locale selection) they behave like any other
+key.
 
 | Language          | Key   |
 | ----------------- | ----- |

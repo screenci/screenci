@@ -993,13 +993,17 @@ export function combineFocusPlan(params: {
   centering: number
   currentZoomEnd: NonNullable<FocusChangeEvent['zoom']>['end']
 }): UnifiedFocusPlan {
-  // Resolve the desired zoom viewport and where the visible locator rect should sit inside it.
+  // Resolve where the visible locator rect should sit. Use the nearest in-window
+  // position (minimal scroll), not the centered position, so the acceptable range
+  // that drives nested-container (and page) scrolling keeps an already-visible
+  // target where it is instead of pulling it toward the middle. This is what keeps
+  // an app whose content scrolls inside an inner container (not the window) from
+  // yanking a near-edge field to the top/bottom of that container.
   const initialTargetRectPositionInViewport =
-    resolveTargetRectPositionForViewport({
+    resolveNearestTargetRectPositionForViewport({
       containerSize: params.snapshot.viewportSize,
       rect: params.snapshot.locatorRect,
       focusViewport: params.targetViewport,
-      centering: params.centering,
     })
   // Reveal the locator through nested scroll containers using minimal scrolling,
   // plus only the extra needed when page scroll and zoom would otherwise be unable to frame it.

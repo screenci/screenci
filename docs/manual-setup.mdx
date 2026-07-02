@@ -51,6 +51,19 @@ yarn create screenci
 If that does not work, install [Node.js 18 or newer](https://nodejs.org/en/download),
 which comes with npm.
 
+To connect the project automatically, append the one-time setup token shown on
+your [Get Started page](https://app.screenci.com/get-started) (it appears in the
+copyable command there). init exchanges it for your `SCREENCI_SECRET` and writes
+it into `screenci/.env`:
+
+```bash
+npm init screenci@latest otp_your_token
+```
+
+Without a token, init just scaffolds the project and you set `SCREENCI_SECRET`
+by hand (see [Record the final result](#record-the-final-result)). The secret is
+shared across your organization, so the same value connects every project.
+
 ## What initializing creates
 
 ScreenCI scaffolds a **self-contained `screenci/` directory** with its own

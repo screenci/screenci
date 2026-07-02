@@ -70,7 +70,9 @@ The one-time setup token connects the project without a browser sign-in. Copy it
 immediately. The token is single-use and short-lived.
 
 No token to hand? Copy `SCREENCI_SECRET` from your secrets page into
-`screenci/.env` (this is also the value you set for CI runs). If the secret is
+`screenci/.env` (this is also the value you set for CI runs). The secret is
+shared across your organization, so the same value connects every project, and
+the Get Started page can mint a fresh command for each new one. If the secret is
 missing, `record` prints guidance and exits without recording.
 
 The upload contains the raw recording, not your source code. See

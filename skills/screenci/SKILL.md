@@ -135,7 +135,7 @@ await autoZoom(async () => {
 `screenci record` needs a `SCREENCI_SECRET`. There is no browser sign-in; connect the project one of two ways:
 
 1. **One-time setup token.** If the user gave you a token (`otp_...`), run `npm init screenci@latest <token> -- --yes`. Init exchanges the token for the org's `SCREENCI_SECRET` and writes it into `screenci/.env`, so `record` uploads immediately on the free tier. The token is single-use and short-lived.
-2. **Secrets page.** If you have no token (or it was already used or expired), ask the user to copy `SCREENCI_SECRET` from their ScreenCI secrets page into `screenci/.env`. Relay this and keep building and testing the video while they do it. Only the final `record` needs the secret.
+2. **Get Started page or secrets page.** If you have no token (or it was already used or expired), ask the user to open their ScreenCI **Get Started** page and copy the shown init command (it embeds a fresh one-time token), or to copy `SCREENCI_SECRET` from their **secrets page** into `screenci/.env`. The org secret is shared across projects, so either works for a new project. Relay this and keep building and testing the video while they do it. Only the final `record` needs the secret.
 
 If `SCREENCI_SECRET` is missing when you run `record`, it prints guidance and exits **non-zero** without recording. That is a setup step, not a code problem: get the secret into `screenci/.env` (token or secrets page) and run `npx screenci record` again. Do not hand the `record` step back to the user otherwise.
 

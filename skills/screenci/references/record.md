@@ -23,8 +23,8 @@ npx screenci record -c screenci.config.ts
 
 `record` needs `SCREENCI_SECRET`, and there is no browser sign-in. Get it in place before the final recording (it does not block authoring or testing):
 
-- If the user has a one-time setup token (`otp_...`), run `npm init screenci@latest <token> -- --yes`; init writes `SCREENCI_SECRET` into `screenci/.env`.
-- Otherwise ask the user to copy `SCREENCI_SECRET` from their secrets page into `screenci/.env`.
+- If the user has a one-time setup token (`otp_...`), run `npm init screenci@latest <token> -- --yes`; init writes `SCREENCI_SECRET` into `screenci/.env`. A fresh token is on the user's Get Started page.
+- Otherwise ask the user to copy `SCREENCI_SECRET` from their secrets page into `screenci/.env`. The org secret is shared across projects.
 
 ## Runtime Behavior
 

@@ -11,9 +11,9 @@ import { setUpInitSecret } from './src/init.js'
 import { logger } from './src/logger.js'
 
 describe('looksLikeInitOtp', () => {
-  it('uses the scotp_ prefix to recognize an init one-time password', () => {
-    expect(INIT_OTP_PREFIX).toBe('scotp_')
-    expect(looksLikeInitOtp('scotp_abc123')).toBe(true)
+  it('uses the otp_ prefix to recognize an init one-time password', () => {
+    expect(INIT_OTP_PREFIX).toBe('otp_')
+    expect(looksLikeInitOtp('otp_abc123')).toBe(true)
   })
 
   it('treats a plain project name as not an OTP', () => {
@@ -43,7 +43,7 @@ describe('exchangeInitOtp', () => {
         makeResponse({ status: 'completed', secret: 'sec_abc' })
       )
 
-    const result = await exchangeInitOtp('scotp_token', {
+    const result = await exchangeInitOtp('otp_token', {
       backendUrl: 'https://api.example.com',
       fetchImpl: asFetch(fetchImpl),
     })
@@ -54,7 +54,7 @@ describe('exchangeInitOtp', () => {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ otp: 'scotp_token' }),
+        body: JSON.stringify({ otp: 'otp_token' }),
       }
     )
   })
@@ -64,7 +64,7 @@ describe('exchangeInitOtp', () => {
       .fn()
       .mockResolvedValue(makeResponse({ status: 'consumed' }, false))
 
-    const result = await exchangeInitOtp('scotp_token', {
+    const result = await exchangeInitOtp('otp_token', {
       fetchImpl: asFetch(fetchImpl),
     })
 
@@ -77,7 +77,7 @@ describe('exchangeInitOtp', () => {
       .fn()
       .mockResolvedValue(makeResponse({ status: 'expired' }, false))
 
-    const result = await exchangeInitOtp('scotp_token', {
+    const result = await exchangeInitOtp('otp_token', {
       fetchImpl: asFetch(fetchImpl),
     })
 
@@ -90,7 +90,7 @@ describe('exchangeInitOtp', () => {
       .fn()
       .mockResolvedValue(makeResponse({ status: 'whatever' }, false))
 
-    const result = await exchangeInitOtp('scotp_token', {
+    const result = await exchangeInitOtp('otp_token', {
       fetchImpl: asFetch(fetchImpl),
     })
 
@@ -101,7 +101,7 @@ describe('exchangeInitOtp', () => {
   it('never throws when fetch rejects, returning the error message as the reason', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error('network down'))
 
-    const result = await exchangeInitOtp('scotp_token', {
+    const result = await exchangeInitOtp('otp_token', {
       fetchImpl: asFetch(fetchImpl),
     })
 
@@ -135,7 +135,7 @@ describe('setUpInitSecret', () => {
     stubFetch(fetchSpy)
     const dir = await makeTempDir()
 
-    const outcome = await setUpInitSecret(dir, 'scotp_token', {
+    const outcome = await setUpInitSecret(dir, 'otp_token', {
       env: { SCREENCI_SECRET: 'existing-secret' },
     })
 
@@ -164,7 +164,7 @@ describe('setUpInitSecret', () => {
     )
     const dir = await makeTempDir()
 
-    const outcome = await setUpInitSecret(dir, 'scotp_token', { env: {} })
+    const outcome = await setUpInitSecret(dir, 'otp_token', { env: {} })
 
     expect(outcome).toBe('ready')
     const envContents = await readFile(join(dir, '.env'), 'utf-8')
@@ -182,7 +182,7 @@ describe('setUpInitSecret', () => {
     const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
     const dir = await makeTempDir()
 
-    const outcome = await setUpInitSecret(dir, 'scotp_token', { env: {} })
+    const outcome = await setUpInitSecret(dir, 'otp_token', { env: {} })
 
     expect(outcome).toBe('manual')
     expect(warnSpy).toHaveBeenCalledWith(

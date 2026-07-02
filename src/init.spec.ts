@@ -55,7 +55,7 @@ describe('setUpInitSecret', () => {
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const outcome = await setUpInitSecret(islandDir, 'scotp_init-token', {
+    const outcome = await setUpInitSecret(islandDir, 'otp_init-token', {
       env: {},
     })
 
@@ -76,7 +76,7 @@ describe('setUpInitSecret', () => {
     const fetchMock = vi.fn()
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const outcome = await setUpInitSecret(islandDir, 'scotp_init-token', {
+    const outcome = await setUpInitSecret(islandDir, 'otp_init-token', {
       env: { SCREENCI_SECRET: 'already-set' },
     })
 
@@ -105,7 +105,7 @@ describe('setUpInitSecret', () => {
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const outcome = await setUpInitSecret(islandDir, 'scotp_init-token', {
+    const outcome = await setUpInitSecret(islandDir, 'otp_init-token', {
       env: {},
     })
 

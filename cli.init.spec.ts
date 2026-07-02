@@ -1297,11 +1297,11 @@ describe('CLI', () => {
     })
 
     it('exchanges an init OTP positional for a secret and writes it to the island .env', async () => {
-      // A leading positional carrying the scotp_ prefix is a one-time setup
+      // A leading positional carrying the otp_ prefix is a one-time setup
       // token, not the project name: init exchanges it for the org secret and
       // the project keeps the default name.
       delete process.env.SCREENCI_SECRET
-      process.argv = ['node', 'cli.js', 'init', 'scotp_TESTTOKEN', '-y']
+      process.argv = ['node', 'cli.js', 'init', 'otp_TESTTOKEN', '-y']
       process.env.SCREENCI_INIT_CWD = '/workspace/my-app'
       mockExistsSync.mockReturnValue(false)
       mockFetch.mockImplementation(async (input: string | URL) => {
@@ -1339,7 +1339,7 @@ describe('CLI', () => {
       )
       expect(configCall).toBeDefined()
       expect(configCall![1]).toContain('"my-app"')
-      expect(configCall![1]).not.toContain('scotp_TESTTOKEN')
+      expect(configCall![1]).not.toContain('otp_TESTTOKEN')
     })
 
     it('prints manual secret guidance and creates no secret when no OTP is given', async () => {

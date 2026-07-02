@@ -15,7 +15,7 @@ const SCREENCI_DEVELOPMENT_FRONTEND_URL = 'https://dev.app.screenci.com'
 
 // Init OTPs are prefixed so the CLI can tell a one-time setup token apart from
 // a project name passed as the same `init`/`create-screenci` positional.
-export const INIT_OTP_PREFIX = 'scotp_'
+export const INIT_OTP_PREFIX = 'otp_'
 
 export type ScreenCIEnvironment =
   (typeof SCREENCI_ENVIRONMENT_OPTION_VALUES)[number]

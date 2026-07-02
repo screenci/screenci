@@ -123,7 +123,7 @@ await autoZoom(async () => {
 
 ## Command Notes
 
-- `screenci init` (or `npm init screenci`) scaffolds a new project. It can be run at any time, but if the project is already initialized it fails on purpose: it exits with an error like `screenci/ already exists`. That is expected, not a problem to fix. Do not delete the existing project to force a re-init. Continue working with the project that is already there. If the user gives you a one-time setup token (it looks like `scotp_...`), pass it as the first argument (`npm init screenci@latest scotp_... -- --yes`) and init connects the project by writing `SCREENCI_SECRET` into `screenci/.env`.
+- `screenci init` (or `npm init screenci`) scaffolds a new project. It can be run at any time, but if the project is already initialized it fails on purpose: it exits with an error like `screenci/ already exists`. That is expected, not a problem to fix. Do not delete the existing project to force a re-init. Continue working with the project that is already there. If the user gives you a one-time setup token (it looks like `otp_...`), pass it as the first argument (`npm init screenci@latest otp_... -- --yes`) and init connects the project by writing `SCREENCI_SECRET` into `screenci/.env`.
 - `screenci record` runs the recording flow with local Playwright.
 - `screenci test <playwright args...>` forwards most Playwright test arguments unchanged, while still using `screenci.config.ts`.
 
@@ -131,7 +131,7 @@ await autoZoom(async () => {
 
 `screenci record` needs a `SCREENCI_SECRET`. There is no browser sign-in; connect the project one of two ways:
 
-1. **One-time setup token.** If the user gave you a token (`scotp_...`), run `npm init screenci@latest <token> -- --yes`. Init exchanges the token for the org's `SCREENCI_SECRET` and writes it into `screenci/.env`, so `record` uploads immediately on the free tier. The token is single-use and short-lived.
+1. **One-time setup token.** If the user gave you a token (`otp_...`), run `npm init screenci@latest <token> -- --yes`. Init exchanges the token for the org's `SCREENCI_SECRET` and writes it into `screenci/.env`, so `record` uploads immediately on the free tier. The token is single-use and short-lived.
 2. **Secrets page.** If you have no token (or it was already used or expired), ask the user to copy `SCREENCI_SECRET` from their ScreenCI secrets page into `screenci/.env`. Relay this and keep building and testing the video while they do it. Only the final `record` needs the secret.
 
 If `SCREENCI_SECRET` is missing when you run `record`, it prints guidance and exits **non-zero** without recording. That is a setup step, not a code problem: get the secret into `screenci/.env` (token or secrets page) and run `npx screenci record` again. Do not hand the `record` step back to the user otherwise.

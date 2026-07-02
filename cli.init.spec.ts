@@ -762,6 +762,18 @@ describe('CLI', () => {
         'run: npx playwright install --only-shell chromium'
       )
       expect(workflowCall?.[1]).not.toContain('--with-deps')
+      // Nested island: carries commented hints for recording a locally-built
+      // parent app (extend the cache path, install + build the app), keyed to
+      // the detected package manager.
+      expect(workflowCall?.[1]).toContain(
+        '#     package-lock.json\n          #     screenci/package-lock.json'
+      )
+      expect(workflowCall?.[1]).toContain(
+        '#   - name: Install app dependencies'
+      )
+      expect(workflowCall?.[1]).toContain('#     run: npm ci')
+      expect(workflowCall?.[1]).toContain('#   - name: Build app')
+      expect(workflowCall?.[1]).toContain('#     run: npm run build')
     })
 
     it('supports pnpm init flows end to end', async () => {
@@ -814,6 +826,11 @@ describe('CLI', () => {
         'run: pnpm exec playwright install --only-shell chromium'
       )
       expect(workflowCall?.[1]).toContain('pnpm exec screenci record')
+      // The commented local-app build hint tracks the detected package manager.
+      expect(workflowCall?.[1]).toContain(
+        '#     run: pnpm install --frozen-lockfile'
+      )
+      expect(workflowCall?.[1]).toContain('#     run: pnpm run build')
       // Targeted recordings: optional `grep` input forwarded to record.
       expect(workflowCall?.[1]).toContain('SCREENCI_GREP: ${{ inputs.grep }}')
       expect(workflowCall?.[1]).toContain(

@@ -1215,6 +1215,36 @@ function generateGithubAction(
     islandWorkflowPath === '.'
       ? commands.lockfileName
       : `${islandWorkflowPath}/${commands.lockfileName}`
+
+  // When the island is nested (e.g. `screenci/`), the repo has a parent app
+  // that videos may record locally. The generated workflow stays island-only by
+  // default (correct when recording a remote URL), but carries commented hints
+  // so an agent or human can wire up a local app build without reconstructing it
+  // from https://screenci.com/integrate.md. When the island is the repo root
+  // there is no separate app, so the hints are omitted.
+  const isNested = islandWorkflowPath !== '.'
+  const rootLockfile = commands.lockfileName
+  const cacheHint = isNested
+    ? `
+          # To also record this project's own locally-built app, cache its
+          # lockfile too by listing both paths here:
+          #   cache-dependency-path: |
+          #     ${rootLockfile}
+          #     ${cacheDependencyPath}`
+    : ''
+  const appBuildHint = isNested
+    ? `
+      # If your videos navigate to this project's own dev server, install and
+      # build the app before recording. Uncomment and adjust the build command
+      # and ports to match your framework. See https://screenci.com/docs.
+      #   - name: Install app dependencies
+      #     run: ${commands.frozenInstallCommand}
+      #   - name: Build app
+      #     run: ${commands.installCommand} run build
+
+`
+    : '\n'
+
   return `name: ScreenCI
 
 on:
@@ -1248,10 +1278,9 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: ${commands.cacheName}
+          cache: ${commands.cacheName}${cacheHint}
           cache-dependency-path: ${cacheDependencyPath}
-
-      - name: Install dependencies
+${appBuildHint}      - name: Install dependencies
         working-directory: ${islandWorkflowPath}
         run: ${commands.frozenInstallCommand}
 

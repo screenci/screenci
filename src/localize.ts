@@ -64,11 +64,12 @@ export type ValuesByLang = Partial<Record<Lang, Record<string, string>>>
 export type LocalizeVoiceSpec = Partial<Record<Lang, VoiceConfig>>
 
 /**
- * The localization spec passed to `video.localize(...)` / `screenshot.localize(...)`.
+ * The internal localization spec assembled from the per-feature builders
+ * (`video.narration(...)`, `video.values(...)`, `video.languages(...)`).
  *
  * `narration` and `values` are seeded per-language maps (keys must be identical
  * across languages, enforced by TypeScript). Studio-managed cue/field names are
- * declared separately via `video.studio({...})`. `voice` co-locates per-language
+ * declared separately via `studio({...})`. `voice` co-locates per-language
  * narration voice overrides with the content; the all-languages default comes
  * from `use`.
  */
@@ -192,11 +193,11 @@ export function normalizeCueValue(
   }
   if (!('media' in value) && !('path' in value)) {
     throw new Error(
-      `localize(): narration cue "${name}" must be a string, a { cue } object, or a { media | path } object.`
+      `video.narration(): cue "${name}" must be a string, a { cue } object, or a { media | path } object.`
     )
   }
   const path = 'media' in value ? value.media : value.path
-  const label = `localize() narration cue "${name}" media "${path}"`
+  const label = `video.narration() cue "${name}" media "${path}"`
   if (value.crop !== undefined) validateCrop(label, value.crop)
   const { sourceStart, sourceEnd } = resolveSourceTrim(
     label,
@@ -245,7 +246,7 @@ function assertIdenticalSeededKeys(
     if (missing.length > 0) parts.push(`missing ${missing.join(', ')}`)
     if (extra.length > 0) parts.push(`unexpected ${extra.join(', ')}`)
     throw new Error(
-      `localize(): ${label} for "${lang}" must declare the same keys as every other language (${seededNames.join(
+      `video.${label}() for "${lang}" must declare the same keys as every other language (${seededNames.join(
         ', '
       )}): ${parts.join('; ')}.`
     )

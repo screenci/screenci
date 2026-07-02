@@ -71,18 +71,18 @@ but remap its rendered duration.
 
 ## Authoring helpers
 
-| Export           | What it does                                                 |
-| ---------------- | ------------------------------------------------------------ |
-| `defineConfig`   | Wraps Playwright config with ScreenCI defaults               |
-| `video`          | Declares a video recording test                              |
-| `video.localize` | Declares localized narration / text and records per language |
-| `hide`           | Cuts setup or cleanup out of the visible recording           |
-| `autoZoom`       | Smooth camera follow for an interaction block                |
-| `zoomTo`         | Manual camera framing for a locator or point                 |
-| `resetZoom`      | Returns from manual framing to the full viewport             |
-| `createOverlays` | Inserts timed media overlays into the recording timeline     |
-| `voices`         | Available voice constants such as `voices.Ava`               |
-| `modelTypes`     | Narration model constants                                    |
+| Export            | What it does                                                 |
+| ----------------- | ------------------------------------------------------------ |
+| `defineConfig`    | Wraps Playwright config with ScreenCI defaults               |
+| `video`           | Declares a video recording test                              |
+| `video.narration` | Declares narration cues (per language or shared) for a video |
+| `hide`            | Cuts setup or cleanup out of the visible recording           |
+| `autoZoom`        | Smooth camera follow for an interaction block                |
+| `zoomTo`          | Manual camera framing for a locator or point                 |
+| `resetZoom`       | Returns from manual framing to the full viewport             |
+| `createOverlays`  | Inserts timed media overlays into the recording timeline     |
+| `voices`          | Available voice constants such as `voices.Ava`               |
+| `modelTypes`      | Narration model constants                                    |
 
 See the [docs](https://screenci.com/docs) for configuration, narration,
 camera, and CI setup.

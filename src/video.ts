@@ -591,9 +591,9 @@ type VideoRuntimeFixtures = {
    */
   language: string | undefined
   /**
-   * Narration markers keyed by the cue names declared in `video.localize(...)`.
+   * Narration markers keyed by the cue names declared in `video.narration(...)`.
    * Each marker records timing (`()`, `.start()`, `.end()`); the text is owned by
-   * the localize spec / Studio and is never exposed here.
+   * the narration spec / Studio and is never exposed here.
    */
   narration: NarrationMarkers
   /**
@@ -1295,15 +1295,13 @@ interface Video extends VideoCallSignatures {
  * ```ts
  * import { video, voices } from 'screenci'
  *
- * // Voice is a render option; the localized text is declared with localize.
+ * // Voice is a render option; the narration text is declared with video.narration.
  * video.use({ renderOptions: { narration: { voice: { name: voices.Ava } } } })
  *
- * video.localize({
- *   narration: {
- *     en: {
- *       homepage: 'User navigates to homepage.',
- *       signup: 'Clicks the sign up button.',
- *     },
+ * video.narration({
+ *   en: {
+ *     homepage: 'User navigates to homepage.',
+ *     signup: 'Clicks the sign up button.',
  *   },
  * })('Tutorial', async ({ page, narration }) => {
  *   await page.goto('https://example.com')

@@ -68,7 +68,7 @@ describe('normalizeLocalizeSpec', () => {
         narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
         values: { en: { heading: 'H' } },
       })
-    ).toThrow(/values for "fi" must declare the same keys.*missing heading/)
+    ).toThrow(/values\(\) for "fi" must declare the same keys.*missing heading/)
   })
 
   it('throws when seeded languages have different keys', () => {
@@ -76,7 +76,9 @@ describe('normalizeLocalizeSpec', () => {
       normalizeLocalizeSpec({
         narration: { en: { intro: 'Hi', outro: 'Bye' }, fi: { intro: 'Moi' } },
       })
-    ).toThrow(/narration for "fi" must declare the same keys.*missing outro/)
+    ).toThrow(
+      /narration\(\) for "fi" must declare the same keys.*missing outro/
+    )
   })
 
   it('throws when a spec has nothing to localize', () => {

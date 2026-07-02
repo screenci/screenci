@@ -12,7 +12,6 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  createInitLinkSession,
   generateConfig,
   generateExampleVideo,
   generateGitignore,
@@ -21,6 +20,7 @@ import {
   generateReactExampleVideo,
   parsePnpmVersionSupport,
   resolveBundledLogoPath,
+  setUpInitSecret,
   toIslandPackageName,
 } from './init.js'
 
@@ -32,12 +32,12 @@ describe('generateConfig', () => {
   })
 })
 
-describe('createInitLinkSession', () => {
+describe('setUpInitSecret', () => {
   const originalFetch = global.fetch
   let islandDir: string
 
   beforeEach(() => {
-    islandDir = mkdtempSync(path.join(tmpdir(), 'screenci-init-link-'))
+    islandDir = mkdtempSync(path.join(tmpdir(), 'screenci-init-secret-'))
   })
 
   afterEach(() => {
@@ -46,54 +46,57 @@ describe('createInitLinkSession', () => {
     vi.restoreAllMocks()
   })
 
-  it('creates and persists a sign-in session, returning the sign-in URL', async () => {
+  it("exchanges the init OTP and writes the secret to the island .env, returning 'ready'", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      status: 201,
-      json: async () => ({
-        token: 'init-token-123',
-        createdAt: '2026-06-18T10:00:00.000Z',
-        expiresAt: '2026-06-19T10:00:00.000Z',
-      }),
+      status: 200,
+      json: async () => ({ status: 'completed', secret: 'sec_init_123' }),
       text: async () => '',
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const url = await createInitLinkSession(islandDir, { env: {} })
+    const outcome = await setUpInitSecret(islandDir, 'scotp_init-token', {
+      env: {},
+    })
 
-    expect(url).toContain('/cli-auth?session=init-token-123')
-
-    const specPath = path.join(islandDir, '.screenci', 'link-session.json')
-    expect(existsSync(specPath)).toBe(true)
-    const spec = JSON.parse(readFileSync(specPath, 'utf-8')) as {
-      token: string
-      resolvedConfigPath: string
-      envFilePath: string
-    }
-    expect(spec.token).toBe('init-token-123')
-    // Paths must match what `record` resolves later so the session is reusable.
-    expect(spec.resolvedConfigPath).toBe(
-      path.resolve(islandDir, 'screenci.config.ts')
+    expect(outcome).toBe('ready')
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/cli-link/exchange'),
+      expect.objectContaining({ method: 'POST' })
     )
-    expect(spec.envFilePath).toBe(path.resolve(islandDir, '.env'))
+    // The secret lands in the .env path that `record` resolves later.
+    const envPath = path.join(islandDir, '.env')
+    expect(existsSync(envPath)).toBe(true)
+    expect(readFileSync(envPath, 'utf-8')).toContain(
+      'SCREENCI_SECRET=sec_init_123'
+    )
   })
 
-  it('skips session creation when a secret is already configured', async () => {
+  it("returns 'ready' without exchanging when a secret is already configured", async () => {
     const fetchMock = vi.fn()
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const url = await createInitLinkSession(islandDir, {
+    const outcome = await setUpInitSecret(islandDir, 'scotp_init-token', {
       env: { SCREENCI_SECRET: 'already-set' },
     })
 
-    expect(url).toBeNull()
+    expect(outcome).toBe('ready')
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(
-      existsSync(path.join(islandDir, '.screenci', 'link-session.json'))
-    ).toBe(false)
+    expect(existsSync(path.join(islandDir, '.env'))).toBe(false)
   })
 
-  it('is best-effort: returns null without throwing when session creation fails', async () => {
+  it("returns 'manual' without a secret when no OTP is provided", async () => {
+    const fetchMock = vi.fn()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const outcome = await setUpInitSecret(islandDir, undefined, { env: {} })
+
+    expect(outcome).toBe('manual')
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(existsSync(path.join(islandDir, '.env'))).toBe(false)
+  })
+
+  it("is best-effort: returns 'manual' without throwing when the OTP exchange fails", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 500,
@@ -102,12 +105,12 @@ describe('createInitLinkSession', () => {
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const url = await createInitLinkSession(islandDir, { env: {} })
+    const outcome = await setUpInitSecret(islandDir, 'scotp_init-token', {
+      env: {},
+    })
 
-    expect(url).toBeNull()
-    expect(
-      existsSync(path.join(islandDir, '.screenci', 'link-session.json'))
-    ).toBe(false)
+    expect(outcome).toBe('manual')
+    expect(existsSync(path.join(islandDir, '.env'))).toBe(false)
   })
 })
 

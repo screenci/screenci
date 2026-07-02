@@ -15,7 +15,6 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | `screenci init [name]`             | Scaffold a ScreenCI project                              |
 | `screenci test [playwrightArgs]`   | Run `.screenci.ts` files locally without final recording |
 | `screenci record [playwrightArgs]` | Record videos and upload results when configured         |
-| `screenci login`                   | Open the sign-in link in your browser (best-effort)      |
 | `screenci info`                    | Print the last record run's URLs and render status       |
 | `screenci make-public <videoId>`   | Enable public delivery for a video                       |
 | `screenci make-private <videoId>`  | Disable public delivery for a video                      |
@@ -50,6 +49,25 @@ yarn create screenci
 
 The project name defaults to the repository root directory name.
 
+### One-time setup token
+
+`init` accepts a one-time setup token as its positional argument. Copy it (and
+the ready-to-run command) from the Get Started or secrets page in the ScreenCI
+app:
+
+```bash
+npm init screenci@latest scotp_your_one_time_token
+```
+
+With a token, `init` exchanges it for your organization's `SCREENCI_SECRET` and
+writes it into `screenci/.env`, so you can `screenci record` immediately on the
+free tier. The token is single-use and short-lived; a used or expired token
+falls back to the manual path below without failing the scaffold.
+
+Without a token, `init` scaffolds the project and tells you to copy
+`SCREENCI_SECRET` from your secrets page into `screenci/.env` before your first
+record.
+
 When using `npm init`, pass extra initializer flags after `--`:
 
 ```bash
@@ -72,12 +90,6 @@ Common options:
 Interactive defaults create the GitHub Actions workflow, install
 dependencies, install Chromium, skip OS dependency installation, install the
 ScreenCI skill, and install optional `playwright-cli` support.
-
-On a fresh init (when `SCREENCI_SECRET` is not already set) the command also
-prints a sign-in link, valid for 24 hours, and caches it in
-`screenci/.screenci/link-session.json`. Sign in early using that link so the
-final recording does not have to wait: a later `screenci record` reuses the same
-session.
 
 Use this command in [Manual Setup & First Video](/docs/manual-setup).
 
@@ -246,21 +258,16 @@ Behavior:
 
 - enables recording timing
 - writes local output into `.screenci/`
-- when `SCREENCI_SECRET` is missing, `record` waits for browser sign-in by default and continues recording once it completes. This is the default at an interactive terminal and in a plain non-interactive session (no terminal, no CI), so a coding agent does not need a flag. It prints the link, polls (every 2 seconds interactively, every 5 seconds otherwise) up to a timeout (15 minutes interactively, 5 minutes otherwise, overridable with `SCREENCI_POLL_AUTH_TIMEOUT_MS` in milliseconds), and continues automatically once sign-in completes. If the timeout elapses first, `record` exits **non-zero** with the link still valid, so rerun it once signed in
-- under CI (`CI=true`), or with `SCREENCI_NONINTERACTIVE=1` or `--no-poll-auth`, `record` does **not** wait: it prints the sign-in link and exits cleanly (exit code `0`), so you can sign in in the browser and rerun `record`, which detects the completed session and continues. A clean exit that printed a sign-in link is a handoff, not a finished recording
-- set `SCREENCI_SECRET` ahead of time (env var or project `.env`) to skip sign-in entirely (the zero-prompt path for CI and automated tooling)
-- caches the pending auth session in `.screenci/link-session.json`, so rerunning `record` reuses the same link until it expires or completes
-- uploads successful recordings when `SCREENCI_SECRET` is available
+- requires `SCREENCI_SECRET` (from the project `.env` or the environment). Set it up by running `init` with a one-time setup token, or by copying the secret from your secrets page into `screenci/.env`. If it is missing, `record` prints guidance (pointing at your secrets page) and exits **non-zero** without recording
+- uploads successful recordings once `SCREENCI_SECRET` is available
 - prints a project URL after upload when rendering has been started remotely
 - prints any informational notices returned by the service in cyan after upload (occasional, non-error status messages such as maintenance or timing notes). These never affect the exit code
-- new accounts start on the Free plan automatically (no plan selection step); after upload `record` prints an upgrade link for higher render and active-video limits and expressive narration, except on the Business plan where the upgrade link is omitted
+- new accounts start on the Free plan automatically (no plan selection step). Free renders include a ScreenCI watermark; after upload `record` prints an upgrade link (which removes the watermark and raises render and active-video limits and enables expressive narration), except on the Business plan where the upgrade link is omitted
 
 Relevant options:
 
 - `-c, --config <path>`
 - `-v, --verbose`
-- `--poll-auth` (force waiting for sign-in; now the default off-CI, kept for backwards compatibility)
-- `--no-poll-auth` (do not wait for sign-in: print the link and exit cleanly if not signed in; the default under CI)
 - `--remote` (trigger the project's GitHub Actions recording workflow instead of recording locally, see below)
 
 Important restriction:
@@ -292,44 +299,6 @@ the project page in the app, see
 Without a connected repository the command reports that GitHub is not connected.
 Targeted (`--grep`) runs need the workflow to declare a `grep` input; projects
 scaffolded by `screenci init` include it.
-
-## `screenci login`
-
-<Tabs syncKey="package-manager">
-  <TabItem label="npm">
-
-```bash
-npx screenci login
-```
-
-  </TabItem>
-  <TabItem label="pnpm">
-
-```bash
-pnpm exec screenci login
-```
-
-  </TabItem>
-  <TabItem label="yarn">
-
-```bash
-yarn screenci login
-```
-
-  </TabItem>
-</Tabs>
-
-Opens the project's sign-in link in your default browser, and prints it as a
-fallback when no browser can open (for example on a headless server). It reuses
-the link `init` already created (or a still-valid one from an earlier run), or
-creates a fresh one, so a later `screenci record` reuses the same link.
-
-`login` does **not** wait for sign-in to finish: it returns immediately so you
-can keep authoring and run `screenci test` while you sign in. Run it right after
-`init` to get sign-in started early, then `screenci record` (which waits for
-sign-in) records once you finish. If sign-in already completed, `login` saves
-`SCREENCI_SECRET` and exits. Under CI, set `SCREENCI_SECRET` instead, which skips
-sign-in entirely.
 
 ## `screenci info`
 

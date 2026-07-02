@@ -1,12 +1,10 @@
-import { mkdirSync, rmSync } from 'fs'
 import { readFile, writeFile } from 'fs/promises'
-import { dirname, resolve } from 'path'
-import { logger } from './logger.js'
 
-// Shared CLI link-session logic used by both the `screenci` CLI (record/test)
-// and `screenci init`. Keeping it here lets init pre-create a sign-in session
-// and persist it so a later `record` reuses the same link, without init having
-// to import the CLI entrypoint (which would create a circular dependency).
+// Shared CLI helpers for resolving the ScreenCI environment/URLs and for the
+// init one-time-password (OTP) handoff. `screenci init` receives an OTP as its
+// positional argument, swaps it for the org's default secret via
+// `POST /cli-link/exchange`, and writes SCREENCI_SECRET into the project `.env`
+// so `record` can upload immediately, no browser sign-in required.
 
 const SCREENCI_ENVIRONMENT_VARIABLE = 'SCREENCI_ENVIRONMENT'
 const SCREENCI_ENVIRONMENT_OPTION_VALUES = ['local', 'dev', 'prod'] as const
@@ -15,28 +13,12 @@ const SCREENCI_PRODUCTION_FRONTEND_URL = 'https://app.screenci.com'
 const SCREENCI_DEVELOPMENT_BACKEND_URL = 'https://dev.api.screenci.com'
 const SCREENCI_DEVELOPMENT_FRONTEND_URL = 'https://dev.app.screenci.com'
 
-export const SCREENCI_LINK_SESSION_FILE = 'link-session.json'
+// Init OTPs are prefixed so the CLI can tell a one-time setup token apart from
+// a project name passed as the same `init`/`create-screenci` positional.
+export const INIT_OTP_PREFIX = 'scotp_'
 
 export type ScreenCIEnvironment =
   (typeof SCREENCI_ENVIRONMENT_OPTION_VALUES)[number]
-
-export type LinkSessionStatus =
-  | 'pending'
-  | 'completed'
-  | 'consumed'
-  | 'expired'
-  | 'invalid'
-
-export type PersistedLinkSessionSpec = {
-  token: string
-  appUrl: string
-  pollUrl: string
-  createdAt: string
-  expiresAt: string
-  environment: ScreenCIEnvironment
-  resolvedConfigPath?: string
-  envFilePath: string
-}
 
 function isMissingFileError(err: unknown): boolean {
   return (
@@ -101,94 +83,102 @@ export function getDevFrontendUrl(): string {
 }
 
 export function getCliLinkSessionApiUrl(): string {
-  // The `/cli-link/session` routes are Convex HTTP actions served from the same
-  // backend host as the `/cli/*` upload endpoints. We hit that host directly
-  // rather than the frontend: the frontend only forwards these routes via the
-  // vite dev-server proxy, which does not exist on the hosted dev/prod frontend
-  // (a POST there returns 405). The CLI runs under Node, so there is no CORS
-  // constraint that would require going through the frontend origin.
+  // The `/cli-link/*` routes are proxied by the backend to the upstream Convex
+  // service, so the CLI targets the backend host directly (the CLI runs under
+  // Node, so there is no CORS constraint to route around the frontend origin).
   return getDevBackendUrl()
 }
 
-export function getLinkSessionFilePath(projectDir: string): string {
-  return resolve(projectDir, '.screenci', SCREENCI_LINK_SESSION_FILE)
+export function getScreenCISecretsUrl(): string {
+  return `${getDevFrontendUrl()}/secrets`
 }
 
-export async function readPersistedLinkSessionSpec(
-  specPath: string
-): Promise<PersistedLinkSessionSpec | null> {
+export function looksLikeInitOtp(value: string): boolean {
+  return value.startsWith(INIT_OTP_PREFIX)
+}
+
+export type ExchangeInitOtpResult =
+  | { ok: true; secret: string }
+  | { ok: false; reason: string }
+
+/**
+ * Exchanges a one-time init token for the org's default SCREENCI_SECRET. The
+ * token maps to a single-use, short-lived session, so a used or expired token
+ * resolves to `{ ok: false }` and the caller falls back to guiding the user to
+ * copy their secret from the secrets page. Never throws.
+ */
+export async function exchangeInitOtp(
+  otp: string,
+  options: { backendUrl?: string; fetchImpl?: typeof fetch } = {}
+): Promise<ExchangeInitOtpResult> {
+  const backendUrl = options.backendUrl ?? getDevBackendUrl()
+  const fetchImpl = options.fetchImpl ?? fetch
+
   try {
-    const raw = await readFile(specPath, 'utf-8')
-    return JSON.parse(raw) as PersistedLinkSessionSpec
-  } catch (error) {
-    if (!isMissingFileError(error)) {
-      logger.warn(`Ignoring invalid stored link session at ${specPath}.`)
-      rmSync(specPath, { force: true })
+    const response = await fetchImpl(`${backendUrl}/cli-link/exchange`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ otp }),
+    })
+
+    const body = (await response.json().catch(() => ({}))) as {
+      status?: string
+      secret?: string
     }
-    return null
+
+    if (response.ok && body.status === 'completed' && body.secret) {
+      return { ok: true, secret: body.secret }
+    }
+
+    if (body.status === 'consumed') {
+      return { ok: false, reason: 'This setup token has already been used.' }
+    }
+    if (body.status === 'expired') {
+      return { ok: false, reason: 'This setup token has expired.' }
+    }
+    return { ok: false, reason: 'This setup token is invalid.' }
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : String(err),
+    }
   }
 }
 
-export async function writePersistedLinkSessionSpec(
-  specPath: string,
-  spec: PersistedLinkSessionSpec
+/**
+ * Writes (or replaces) the `SCREENCI_SECRET=` line in the given env file,
+ * preserving the position of an existing entry and any surrounding lines.
+ */
+export async function persistScreenCISecret(
+  envFilePath: string,
+  secret: string
 ): Promise<void> {
-  mkdirSync(dirname(specPath), { recursive: true })
-  await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`)
-}
+  const nextLine = `SCREENCI_SECRET=${secret}`
 
-export function deletePersistedLinkSessionSpec(specPath: string): void {
-  rmSync(specPath, { force: true })
-}
-
-export function isStoredLinkSessionReusable(
-  spec: PersistedLinkSessionSpec,
-  options: {
-    environment: ScreenCIEnvironment
-    resolvedConfigPath?: string
-    envFilePath: string
-  }
-): boolean {
-  return (
-    spec.environment === options.environment &&
-    spec.envFilePath === options.envFilePath &&
-    spec.resolvedConfigPath === options.resolvedConfigPath &&
-    spec.expiresAt > new Date().toISOString()
-  )
-}
-
-export async function createLinkSessionSpec(options: {
-  apiUrl: string
-  appUrl: string
-  environment: ScreenCIEnvironment
-  resolvedConfigPath?: string
-  envFilePath: string
-}): Promise<PersistedLinkSessionSpec> {
-  const response = await fetch(`${options.apiUrl}/cli-link/session`, {
-    method: 'POST',
-  })
-
-  if (!response.ok) {
-    const text = await response.text()
-    throw new Error(`Failed to create link session: ${response.status} ${text}`)
+  try {
+    const existing = await readFile(envFilePath, 'utf-8')
+    const lines = existing === '' ? [] : existing.split(/\r?\n/)
+    const firstSecretIndex = lines.findIndex((line) =>
+      line.startsWith('SCREENCI_SECRET=')
+    )
+    const linesWithoutSecret = lines.filter(
+      (line) => !line.startsWith('SCREENCI_SECRET=')
+    )
+    const finalLines =
+      firstSecretIndex >= 0
+        ? [
+            ...linesWithoutSecret.slice(0, firstSecretIndex),
+            nextLine,
+            ...linesWithoutSecret.slice(firstSecretIndex),
+          ]
+        : [...linesWithoutSecret, nextLine]
+    let nextContent = finalLines.join('\n')
+    if (!nextContent.endsWith('\n')) nextContent += '\n'
+    await writeFile(envFilePath, nextContent)
+    return
+  } catch (err) {
+    if (!isMissingFileError(err)) throw err
   }
 
-  const body = (await response.json()) as {
-    token: string
-    createdAt: string
-    expiresAt: string
-  }
-
-  return {
-    token: body.token,
-    appUrl: `${options.appUrl}/cli-auth?session=${encodeURIComponent(body.token)}`,
-    pollUrl: `${options.apiUrl}/cli-link/session?token=${encodeURIComponent(body.token)}`,
-    createdAt: body.createdAt,
-    expiresAt: body.expiresAt,
-    environment: options.environment,
-    ...(options.resolvedConfigPath
-      ? { resolvedConfigPath: options.resolvedConfigPath }
-      : {}),
-    envFilePath: options.envFilePath,
-  }
+  await writeFile(envFilePath, `${nextLine}\n`)
 }

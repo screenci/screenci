@@ -30,20 +30,20 @@ package.json
 ## Notes
 
 - `init` can be run at any time, but it is non-destructive and will not re-initialize an existing project. If the project is already initialized (a `screenci/` directory already exists), it fails on purpose and exits with an error like `screenci/ already exists`. That is expected. Do not delete the existing project to force a re-init: continue working with the project that is already there.
-- On a fresh init, the command also prints a sign-in link (valid for 24 hours) and caches it in `screenci/.screenci/link-session.json`. Right after init, run `screenci login` (see below): it opens this link in the user's browser and prints it, without waiting, so sign-in can start while the video is being built. Sign-in only needs to be completed before the final recording, and a later `screenci record` reuses this same link.
-- Prefer `--yes` for non-interactive setup. Without it, the command prompts for setup choices and defaults the project name to the current directory name when none is provided.
+- `init` accepts a one-time setup token as its first positional argument (it looks like `scotp_...`, copied from the Get Started or secrets page). With a token, init exchanges it for the org's `SCREENCI_SECRET` and writes it into `screenci/.env`, so `record` uploads immediately on the free tier. The token is single-use and short-lived; a used or expired token falls back to the manual path without failing the scaffold.
+- Without a token, init tells you to copy `SCREENCI_SECRET` from the secrets page into `screenci/.env` before the first record. There is no browser sign-in.
+- Prefer `--yes` for non-interactive setup. Without it, the command prompts for setup choices and defaults the project name to the current directory name when none is provided. A positional that looks like a setup token is treated as the token, not the project name.
 - The name is used as the ScreenCI project display name. Files are always created in the current directory.
 - `--yes` accepts the defaults.
 - `--agent <name>` is passed to the selected skills install command.
 - `--verbose` shows more setup output.
-- `record` bootstraps `SCREENCI_SECRET` on first run if it is missing.
+- `record` requires `SCREENCI_SECRET`; it does not bootstrap it.
 - `record` uses local Playwright.
 
 ## Typical Flow
 
 ```bash
-npm init screenci "My Project" -- --yes
-npx screenci login  # open the sign-in link in the browser (returns immediately)
-npx screenci test   # verify the video works while the user signs in
-npx screenci record # capture the final recording (waits for sign-in if pending)
+npm init screenci@latest scotp_your_token -- --yes  # connects the project (writes SCREENCI_SECRET)
+npx screenci test   # verify the video works
+npx screenci record # capture the final recording and upload
 ```

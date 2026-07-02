@@ -49,24 +49,12 @@ import {
   formatDuplicateTitlesMessage,
 } from './src/titleValidation.js'
 import {
-  createLinkSessionSpec,
-  deletePersistedLinkSessionSpec,
   getCliLinkSessionApiUrl,
   getDevBackendUrl,
   getDevFrontendUrl,
-  getLinkSessionFilePath,
-  getScreenCIEnvironment,
-  isStoredLinkSessionReusable,
-  readPersistedLinkSessionSpec,
-  SCREENCI_LINK_SESSION_FILE,
-  writePersistedLinkSessionSpec,
-} from './src/linkSession.js'
-import type {
-  LinkSessionStatus,
-  PersistedLinkSessionSpec,
+  getScreenCISecretsUrl,
 } from './src/linkSession.js'
 import { OVERLAY_CACHE_DIR_NAME } from './src/htmlRasterizer.js'
-import { openUrlInBrowser } from './src/openBrowser.js'
 import { maybeExtractVoiceSampleAudio } from './src/voiceSampleAudio.js'
 
 // Re-export the environment-aware URL helpers so existing importers (and tests)
@@ -80,20 +68,6 @@ const SCREENCI_RECORD_DOCS_URL =
 // Records the recordId of the most recent `screenci record` upload so
 // `screenci info` can report exactly the run that was just made.
 const SCREENCI_LAST_RECORD_FILE = 'last-record.json'
-const SCREENCI_LINK_SESSION_POLL_INTERVAL_MS = 2_000
-// `record --poll` keeps a non-interactive session (an agent or CI) waiting for
-// sign-in. We poll on a slower cadence than the interactive loop so a long wait
-// for a human to click the link does not hammer the backend.
-const SCREENCI_LINK_SESSION_POLL_FLAG_INTERVAL_MS = 5_000
-// A waiting `record` does not wait forever: after this long without a completed
-// sign-in we stop polling so a non-interactive agent run does not hang. The link
-// stays valid, so the command can be rerun. The default can be overridden with
-// SCREENCI_POLL_AUTH_TIMEOUT_MS (milliseconds).
-const SCREENCI_LINK_SESSION_POLL_FLAG_TIMEOUT_MS = 5 * 60 * 1_000
-// An interactive `record` (a human at a terminal) waits longer before giving up,
-// since a person may take a while to open the link and finish signing in. Also
-// overridable with SCREENCI_POLL_AUTH_TIMEOUT_MS.
-const SCREENCI_LINK_SESSION_INTERACTIVE_TIMEOUT_MS = 15 * 60 * 1_000
 const require = createRequire(import.meta.url)
 
 type PlaywrightListReportSuite = {
@@ -475,18 +449,6 @@ class RecordFailureHintError extends Error {
     super(cause.message)
     this.name = cause.name
     this.cause = cause
-  }
-}
-
-// Thrown when we wait for a browser sign-in and the deadline passes before it
-// completes. The link stays valid, so the message tells the user to sign in and
-// rerun. A timed-out sign-in means recording did not happen, so the caller maps
-// this to a non-zero exit (it is a failure, not the clean print-and-exit handoff
-// used by CI).
-export class SignInTimeoutError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'SignInTimeoutError'
   }
 }
 
@@ -1158,7 +1120,6 @@ function forwardChildSignals(
 export function clearRecordingDirectories(dir: string): void {
   mkdirSync(dir, { recursive: true })
   for (const entry of readdirSync(dir)) {
-    if (entry === SCREENCI_LINK_SESSION_FILE) continue
     // Preserve the cross-run overlay cache: it lives as a sibling of the
     // per-recording directories so unchanged overlays are served byte for byte
     // from a previous run. Wiping it would re-render and re-encode every overlay
@@ -2220,10 +2181,6 @@ async function countCompletedRecordings(screenciDir: string): Promise<number> {
   ).length
 }
 
-function getScreenCISecretsUrl(): string {
-  return `${getDevFrontendUrl()}/secrets`
-}
-
 async function writeGitHubProjectOutput(projectUrl: string): Promise<void> {
   const githubOutput = process.env.GITHUB_OUTPUT
   if (!githubOutput) return
@@ -2533,10 +2490,7 @@ async function loadRecordConfigWithoutPlaywrightCollision(
   }
 }
 
-async function requireScreenCISecret(
-  configPath?: string,
-  opts: { interactive?: boolean; pollAuth?: boolean; noPollAuth?: boolean } = {}
-): Promise<{
+export async function requireScreenCISecret(configPath?: string): Promise<{
   resolvedConfigPath: string
   screenciConfig: ScreenCIConfig
   secret: string
@@ -2544,33 +2498,15 @@ async function requireScreenCISecret(
 }> {
   const { resolvedConfigPath, screenciConfig } =
     await loadScreenCIConfigAndEnv(configPath)
-  let secret: string | undefined
-  try {
-    secret =
-      process.env.SCREENCI_SECRET ??
-      (await ensureScreenciSecret(resolvedConfigPath, opts))
-  } catch (err) {
-    // A waited-out sign-in means recording did not happen: print the (already
-    // formatted) message and exit non-zero so the failure is loud, instead of
-    // looking like a successful run.
-    if (err instanceof SignInTimeoutError) {
-      logger.error(err.message)
-      process.exit(1)
-    }
-    throw err
-  }
+  const secret = process.env.SCREENCI_SECRET
   if (!secret) {
-    // In a non-interactive session ensureScreenciSecret already printed the
-    // sign-in link and the next step, so we exit without repeating guidance.
-    // A pending sign-in is an expected handoff (surface the link, then rerun),
-    // not a failure, so exit cleanly (0) to avoid flagging the run as red.
-    if (opts.interactive === false) {
-      process.exit(0)
-    }
+    // No browser sign-in flow: the secret comes from an init one-time token or
+    // from the secrets page. Guide the user to either path and exit non-zero.
     const envFilePath = await resolveProjectEnvFilePath(resolvedConfigPath)
     logger.error(
-      `No SCREENCI_SECRET configured. Rerun ${pc.cyan(getSuggestedScreenciCommand('record'))} or add SCREENCI_SECRET manually to ${envFilePath} by following the guide at ${pc.cyan(SCREENCI_RECORD_DOCS_URL)}.`
+      `No SCREENCI_SECRET configured. Copy your secret from ${pc.cyan(getScreenCISecretsUrl())} into ${envFilePath}, or re-run init with a one-time setup token from ${pc.cyan(getScreenCISecretsUrl())}.`
     )
+    logScreenCISecretGuide()
     process.exit(1)
   }
 
@@ -2587,9 +2523,7 @@ async function updateVideoVisibility(
   isPublic: boolean,
   configPath?: string
 ): Promise<void> {
-  const { secret, apiUrl } = await requireScreenCISecret(configPath, {
-    interactive: detectInteractiveSession(),
-  })
+  const { secret, apiUrl } = await requireScreenCISecret(configPath)
   const method = isPublic ? 'PUT' : 'DELETE'
   const res = await fetch(`${apiUrl}/cli/public-video/${videoId}`, {
     method,
@@ -2635,10 +2569,8 @@ async function triggerRemoteRun(
   grep?: string,
   languages?: string
 ): Promise<void> {
-  const { screenciConfig, secret, apiUrl } = await requireScreenCISecret(
-    configPath,
-    { interactive: detectInteractiveSession() }
-  )
+  const { screenciConfig, secret, apiUrl } =
+    await requireScreenCISecret(configPath)
 
   const res = await fetch(`${apiUrl}/cli/trigger-run`, {
     method: 'POST',
@@ -2720,9 +2652,7 @@ async function readLastRecordId(screenciDir: string): Promise<string | null> {
 // returned. The server does the merge; the CLI just passes the recordId.
 async function printInfo(configPath?: string): Promise<void> {
   const { resolvedConfigPath, screenciConfig, secret, apiUrl } =
-    await requireScreenCISecret(configPath, {
-      interactive: detectInteractiveSession(),
-    })
+    await requireScreenCISecret(configPath)
 
   const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
   const recordId = await readLastRecordId(screenciDir)
@@ -2743,347 +2673,6 @@ async function printInfo(configPath?: string): Promise<void> {
 
   const data = await res.json()
   process.stdout.write(`${JSON.stringify(data, null, 2)}\n`)
-}
-
-async function persistScreenCISecret(
-  envFilePath: string,
-  secret: string
-): Promise<void> {
-  const nextLine = `SCREENCI_SECRET=${secret}`
-
-  try {
-    const existing = await readFile(envFilePath, 'utf-8')
-    const lines = existing === '' ? [] : existing.split(/\r?\n/)
-    const firstSecretIndex = lines.findIndex((line) =>
-      line.startsWith('SCREENCI_SECRET=')
-    )
-    const linesWithoutSecret = lines.filter(
-      (line) => !line.startsWith('SCREENCI_SECRET=')
-    )
-    const finalLines =
-      firstSecretIndex >= 0
-        ? [
-            ...linesWithoutSecret.slice(0, firstSecretIndex),
-            nextLine,
-            ...linesWithoutSecret.slice(firstSecretIndex),
-          ]
-        : [...linesWithoutSecret, nextLine]
-    let nextContent = finalLines.join('\n')
-    if (!nextContent.endsWith('\n')) nextContent += '\n'
-    await writeFile(envFilePath, nextContent)
-    return
-  } catch (err) {
-    if (!isMissingFileError(err)) throw err
-  }
-
-  await writeFile(envFilePath, `${nextLine}\n`)
-}
-
-async function pollLinkSessionOnce(
-  spec: PersistedLinkSessionSpec
-): Promise<{ status: LinkSessionStatus; secret?: string }> {
-  const response = await fetch(spec.pollUrl)
-  const body = (await response.json()) as {
-    status?: LinkSessionStatus
-    secret?: string
-  }
-  const status = body.status ?? 'invalid'
-
-  if (status === 'completed' && body.secret) {
-    return { status, secret: body.secret }
-  }
-
-  if (status === 'pending' && new Date().toISOString() >= spec.expiresAt) {
-    return { status: 'expired' }
-  }
-
-  return { status }
-}
-
-function getAuthPollTimeoutMs(defaultMs: number): number {
-  const raw = process.env.SCREENCI_POLL_AUTH_TIMEOUT_MS
-  if (raw === undefined) return defaultMs
-  const parsed = Number(raw)
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultMs
-}
-
-async function pollLinkSession(
-  spec: PersistedLinkSessionSpec,
-  pollIntervalMs: number = SCREENCI_LINK_SESSION_POLL_INTERVAL_MS,
-  deadlineEpochMs?: number
-): Promise<{ status: LinkSessionStatus | 'timed-out'; secret?: string }> {
-  for (;;) {
-    const result = await pollLinkSessionOnce(spec)
-
-    if (result.status === 'completed' && result.secret) {
-      return result
-    }
-
-    if (
-      result.status === 'expired' ||
-      result.status === 'consumed' ||
-      result.status === 'invalid'
-    ) {
-      return result
-    }
-
-    // Stop before sleeping again once the optional deadline has passed so
-    // `--poll-auth` cannot block forever waiting for a human to sign in.
-    if (deadlineEpochMs !== undefined && Date.now() >= deadlineEpochMs) {
-      return { status: 'timed-out' }
-    }
-
-    await new Promise((resolveDelay) =>
-      setTimeout(resolveDelay, pollIntervalMs)
-    )
-  }
-}
-
-export async function ensureScreenciSecret(
-  resolvedConfigPath?: string,
-  opts: {
-    interactive?: boolean
-    pollAuth?: boolean
-    noPollAuth?: boolean
-  } = {}
-): Promise<string | undefined> {
-  const interactive = opts.interactive ?? true
-  const pollAuth = opts.pollAuth ?? false
-  const noPollAuth = opts.noPollAuth ?? false
-  const existingSecret = process.env.SCREENCI_SECRET
-  if (existingSecret) return existingSecret
-
-  try {
-    const environment = getScreenCIEnvironment()
-    const apiUrl = getCliLinkSessionApiUrl()
-    const appUrl = getDevFrontendUrl()
-    const envFilePath = resolvedConfigPath
-      ? await resolveProjectEnvFilePath(resolvedConfigPath)
-      : resolve(process.cwd(), '.env')
-    const projectDir = resolvedConfigPath
-      ? dirname(resolvedConfigPath)
-      : process.cwd()
-    const specPath = getLinkSessionFilePath(projectDir)
-    const linkSessionContext = {
-      environment,
-      envFilePath,
-      ...(resolvedConfigPath ? { resolvedConfigPath } : {}),
-    }
-
-    const ensureSpec = async (): Promise<PersistedLinkSessionSpec> => {
-      const storedSpec = await readPersistedLinkSessionSpec(specPath)
-      const spec =
-        storedSpec &&
-        isStoredLinkSessionReusable(storedSpec, linkSessionContext)
-          ? storedSpec
-          : await createLinkSessionSpec({
-              apiUrl,
-              appUrl,
-              ...linkSessionContext,
-            })
-
-      if (spec !== storedSpec) {
-        await writePersistedLinkSessionSpec(specPath, spec)
-      }
-
-      return spec
-    }
-
-    const saveCompletedSecret = async (secret: string): Promise<string> => {
-      process.env.SCREENCI_SECRET = secret
-      await persistScreenCISecret(envFilePath, secret)
-      deletePersistedLinkSessionSpec(specPath)
-      logger.info(`Successfully saved SCREENCI_SECRET to ${envFilePath}`)
-      return secret
-    }
-
-    // Decide whether this run waits for a browser sign-in or just prints the
-    // link and hands off. A human at a terminal always waits. A plain
-    // non-interactive run (a coding agent: no terminal, no CI) also waits by
-    // default, so `npx screenci record` records without needing a flag. CI and
-    // an explicit SCREENCI_NONINTERACTIVE never wait (CI must not hang and is
-    // expected to provide SCREENCI_SECRET), and `--no-poll-auth` opts back into
-    // that print-and-exit handoff. `--poll-auth` forces waiting and is kept for
-    // backwards compatibility (it is the default for agents now).
-    const isCI = process.env.CI === 'true'
-    const nonInteractiveForced = process.env.SCREENCI_NONINTERACTIVE === '1'
-    const waitForSignIn = noPollAuth
-      ? false
-      : interactive || pollAuth || (!isCI && !nonInteractiveForced)
-    const pollIntervalMs = interactive
-      ? SCREENCI_LINK_SESSION_POLL_INTERVAL_MS
-      : SCREENCI_LINK_SESSION_POLL_FLAG_INTERVAL_MS
-    const timeoutMs = getAuthPollTimeoutMs(
-      interactive
-        ? SCREENCI_LINK_SESSION_INTERACTIVE_TIMEOUT_MS
-        : SCREENCI_LINK_SESSION_POLL_FLAG_TIMEOUT_MS
-    )
-
-    // Check the current/stored session once. If sign-in already completed (for
-    // example between runs) we pick up the secret immediately. Recreate a stale
-    // session and check once more before deciding to wait or hand off.
-    let spec = await ensureSpec()
-    let result = await pollLinkSessionOnce(spec)
-    if (
-      result.status === 'expired' ||
-      result.status === 'consumed' ||
-      result.status === 'invalid'
-    ) {
-      deletePersistedLinkSessionSpec(specPath)
-      spec = await ensureSpec()
-      result = await pollLinkSessionOnce(spec)
-    }
-    if (result.status === 'completed' && result.secret) {
-      return await saveCompletedSecret(result.secret)
-    }
-
-    if (!waitForSignIn) {
-      // CI / SCREENCI_NONINTERACTIVE / --no-poll-auth: print the link and hand
-      // off without waiting. The caller exits cleanly (0); a pending sign-in
-      // here is an expected handoff, not a failure.
-      logger.info(
-        `Sign-in required to record. Open this link to sign in:\n${pc.cyan(spec.appUrl)}\n` +
-          `This session won't wait for sign-in. After signing in, rerun ${pc.cyan(getSuggestedScreenciCommand('record'))} to record. In CI, set SCREENCI_SECRET (from ${getScreenCISecretsUrl()}) to record without an interactive sign-in.`
-      )
-      return undefined
-    }
-
-    // Wait for sign-in: print the link, then poll until the human finishes and
-    // continue recording automatically once the secret lands. We re-print the
-    // link on every (re)created session so the latest valid link is always
-    // visible. We do not wait forever: after the timeout we throw so the caller
-    // exits non-zero (a timed-out sign-in means nothing was recorded). The link
-    // stays valid for a rerun.
-    const timeoutMinutes = Math.max(1, Math.round(timeoutMs / 60_000))
-    const intervalSeconds = Math.max(1, Math.round(pollIntervalMs / 1_000))
-    const deadlineEpochMs = Date.now() + timeoutMs
-    for (;;) {
-      logger.info(
-        `Sign-in required to record. Open this link to sign in:\n${pc.cyan(spec.appUrl)}\n` +
-          `Waiting for sign-in (checking every ${intervalSeconds} seconds, up to ${timeoutMinutes} minutes). Recording continues automatically once you finish.`
-      )
-      const polled = await pollLinkSession(
-        spec,
-        pollIntervalMs,
-        deadlineEpochMs
-      )
-      if (polled.status === 'completed' && polled.secret) {
-        return await saveCompletedSecret(polled.secret)
-      }
-      if (polled.status === 'timed-out' || Date.now() >= deadlineEpochMs) {
-        throw new SignInTimeoutError(
-          `Timed out after ${timeoutMinutes} minutes waiting for sign-in. The link is still valid:\n${pc.cyan(spec.appUrl)}\n` +
-            `After signing in, rerun ${pc.cyan(getSuggestedScreenciCommand('record'))} to record.`
-        )
-      }
-      // Session went stale (expired/consumed/invalid) before sign-in: recreate
-      // and keep waiting until the deadline.
-      deletePersistedLinkSessionSpec(specPath)
-      spec = await ensureSpec()
-    }
-  } catch (err) {
-    // A timed-out sign-in is a deliberate, already-formatted failure: let it
-    // propagate so the caller can exit non-zero rather than swallowing it as a
-    // generic auth error.
-    if (err instanceof SignInTimeoutError) throw err
-    const msg = err instanceof Error ? err.message : String(err)
-    logger.warn(`Authentication failed: ${msg}`)
-    logger.info(
-      `You can add SCREENCI_SECRET manually to ${resolvedConfigPath ? await resolveProjectEnvFilePath(resolvedConfigPath) : '.env'} later. Get it from ${getScreenCISecretsUrl()}.`
-    )
-    logScreenCISecretGuide()
-    return undefined
-  }
-}
-
-/**
- * `screenci login`: get a sign-in link in front of a human as early as
- * possible. It reuses the link `init` (or a prior run) persisted, or creates a
- * fresh one, tries to open it in the browser best-effort, and always prints it
- * as a fallback. It does NOT wait for sign-in to finish: the agent can run this,
- * keep authoring and `test`ing, then `record` (which blocks for sign-in) once
- * the script is green. If sign-in already completed, it saves the secret and
- * exits.
- */
-export async function runLogin(configPath?: string): Promise<void> {
-  const { resolvedConfigPath } = await loadScreenCIConfigAndEnv(configPath)
-
-  if (process.env.SCREENCI_SECRET) {
-    logger.info(
-      `Already signed in (SCREENCI_SECRET is set). Run ${pc.cyan(getSuggestedScreenciCommand('record'))} to record.`
-    )
-    return
-  }
-
-  const environment = getScreenCIEnvironment()
-  const apiUrl = getCliLinkSessionApiUrl()
-  const appUrl = getDevFrontendUrl()
-  const envFilePath = await resolveProjectEnvFilePath(resolvedConfigPath)
-  const projectDir = dirname(resolvedConfigPath)
-  const specPath = getLinkSessionFilePath(projectDir)
-  const linkSessionContext = { environment, envFilePath, resolvedConfigPath }
-
-  const createSpec = async (): Promise<PersistedLinkSessionSpec> => {
-    const created = await createLinkSessionSpec({
-      apiUrl,
-      appUrl,
-      ...linkSessionContext,
-    })
-    await writePersistedLinkSessionSpec(specPath, created)
-    return created
-  }
-
-  try {
-    // Reuse a still-valid persisted session so login and a later record share
-    // the same link; otherwise create and persist a fresh one.
-    const stored = await readPersistedLinkSessionSpec(specPath)
-    let spec =
-      stored && isStoredLinkSessionReusable(stored, linkSessionContext)
-        ? stored
-        : await createSpec()
-
-    // If sign-in already completed (e.g. between runs) save the secret and stop:
-    // there is nothing left to open. Recreate a stale session before opening so
-    // the link we hand off is valid.
-    const result = await pollLinkSessionOnce(spec)
-    if (result.status === 'completed' && result.secret) {
-      process.env.SCREENCI_SECRET = result.secret
-      await persistScreenCISecret(envFilePath, result.secret)
-      deletePersistedLinkSessionSpec(specPath)
-      logger.info(`Already signed in. Saved SCREENCI_SECRET to ${envFilePath}.`)
-      return
-    }
-    if (
-      result.status === 'expired' ||
-      result.status === 'consumed' ||
-      result.status === 'invalid'
-    ) {
-      deletePersistedLinkSessionSpec(specPath)
-      spec = await createSpec()
-    }
-
-    const opened = await openUrlInBrowser(spec.appUrl)
-    if (opened.opened) {
-      logger.info(
-        `Opening the sign-in link in your browser:\n${pc.cyan(spec.appUrl)}`
-      )
-    } else {
-      logger.info(
-        `Could not open a browser automatically (${opened.reason}). Open this link to sign in:\n${pc.cyan(spec.appUrl)}`
-      )
-    }
-    logger.info(
-      `The link stays valid for 24 hours. You can keep authoring and run ${pc.cyan(getSuggestedScreenciCommand('test'))} while you sign in. Then run ${pc.cyan(getSuggestedScreenciCommand('record'))}, which waits for sign-in and records once you finish.`
-    )
-  } catch (err) {
-    // Login is a best-effort convenience: never fail the run on a network or
-    // browser hiccup. record can still create and wait on the link later.
-    const msg = err instanceof Error ? err.message : String(err)
-    logger.warn(`Could not start sign-in: ${msg}`)
-    logger.info(
-      `You can sign in later: ${pc.cyan(getSuggestedScreenciCommand('record'))} prints a link and waits for sign-in. In CI, set SCREENCI_SECRET (from ${getScreenCISecretsUrl()}).`
-    )
-  }
 }
 
 // Uploads the recordings already written under `.screenci` for the resolved
@@ -3123,7 +2712,7 @@ async function uploadRecordedVideosForConfig(
       logger.info('All recordings failed.')
     } else if (!secret) {
       logger.info(
-        `No SCREENCI_SECRET configured for uploads. Rerun ${getSuggestedScreenciCommand('record')} or add it to the project env file.`
+        `No SCREENCI_SECRET configured for uploads. Copy your secret from ${getScreenCISecretsUrl()} into the project env file, then rerun ${getSuggestedScreenciCommand('record')}.`
       )
     } else if (
       playwrightFailure !== null &&
@@ -3232,9 +2821,15 @@ async function uploadRecordedVideosForConfig(
       }
       if (projectId !== null && plan !== 'business') {
         logger.info('')
-        logger.info(
-          'Upgrade for more renders, more active videos, and expressive narration:'
-        )
+        if (plan === 'free') {
+          logger.info(
+            'You are on the free tier, so this render includes a ScreenCI watermark. Upgrade to remove it and get more renders, more active videos, and expressive narration:'
+          )
+        } else {
+          logger.info(
+            'Upgrade for more renders, more active videos, and expressive narration:'
+          )
+        }
         logger.info(pc.cyan(`${appUrl}/select-plan`))
       }
       for (const notice of studioNotices) {
@@ -3279,7 +2874,7 @@ export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
     logger.error(
-      'Available commands: record, test, login, info, make-public, make-private, init'
+      'Available commands: record, test, info, make-public, make-private, init'
     )
     process.exit(1)
   }
@@ -3294,14 +2889,6 @@ export async function main() {
     .command('record [playwrightArgs...]')
     .description('Record videos using Playwright')
     .option('-v, --verbose', 'verbose output')
-    .option(
-      '--poll-auth',
-      'wait for sign-in before recording (now the default off-CI; kept for backwards compatibility)'
-    )
-    .option(
-      '--no-poll-auth',
-      'do not wait for sign-in: print the link and exit cleanly if not signed in (the default under CI)'
-    )
     .option(
       '--remote',
       'trigger the GitHub Actions recording workflow for this project remotely instead of recording locally'
@@ -3343,9 +2930,7 @@ export async function main() {
             parsed.configPath,
             parsed.verbose,
             false,
-            parsed.pollAuth,
-            parsed.languages,
-            parsed.noPollAuth
+            parsed.languages
           )
         } catch (error) {
           if (!(error instanceof Error)) throw error
@@ -3422,16 +3007,6 @@ export async function main() {
       logger.info(
         `Tests passed. Run ${pc.cyan(recordCommand)} to render the videos.`
       )
-    })
-
-  program
-    .command('login')
-    .description(
-      'Open the sign-in link in your browser (best-effort) so recording can finish later'
-    )
-    .option('-c, --config <path>', 'path to screenci.config.ts')
-    .action(async (options: Record<string, unknown>) => {
-      await runLogin(options['config'] as string | undefined)
     })
 
   program
@@ -3545,16 +3120,12 @@ function getSubcommandArgv(command: string): string[] {
 export function parseRecordCliArgs(args: string[]): {
   configPath: string | undefined
   verbose: boolean
-  pollAuth: boolean
-  noPollAuth: boolean
   remote: boolean
   languages: string | undefined
   otherArgs: string[]
 } {
   let configPath: string | undefined
   let verbose = false
-  let pollAuth = false
-  let noPollAuth = false
   let remote = false
   let languages: string | undefined
   const otherArgs: string[] = []
@@ -3586,10 +3157,6 @@ export function parseRecordCliArgs(args: string[]): {
       languages = arg.slice(arg.indexOf('=') + 1)
     } else if (arg === '--verbose' || arg === '-v') {
       verbose = true
-    } else if (arg === '--poll-auth') {
-      pollAuth = true
-    } else if (arg === '--no-poll-auth') {
-      noPollAuth = true
     } else if (arg === '--remote') {
       remote = true
     } else {
@@ -3600,8 +3167,6 @@ export function parseRecordCliArgs(args: string[]): {
   return {
     configPath,
     verbose,
-    pollAuth,
-    noPollAuth,
     remote,
     languages,
     otherArgs,
@@ -3680,10 +3245,8 @@ async function fetchTextOverridesEnv(
   verbose: boolean
 ): Promise<Record<string, string>> {
   try {
-    const { screenciConfig, secret, apiUrl } = await requireScreenCISecret(
-      configPath,
-      { interactive: false }
-    )
+    const { screenciConfig, secret, apiUrl } =
+      await requireScreenCISecret(configPath)
     const params = new URLSearchParams({
       projectName: screenciConfig.projectName,
     })
@@ -3738,10 +3301,8 @@ async function fetchRecordOptionsEnv(
   verbose: boolean
 ): Promise<Record<string, string>> {
   try {
-    const { screenciConfig, secret, apiUrl } = await requireScreenCISecret(
-      configPath,
-      { interactive: false }
-    )
+    const { screenciConfig, secret, apiUrl } =
+      await requireScreenCISecret(configPath)
     const params = new URLSearchParams({
       projectName: screenciConfig.projectName,
     })
@@ -3788,9 +3349,7 @@ async function run(
   customConfigPath?: string,
   verbose = false,
   mockRecord = false,
-  pollAuth = false,
-  languages?: string,
-  noPollAuth = false
+  languages?: string
 ) {
   const configPath = resolveScreenCIConfigPathOrExit(customConfigPath)
 
@@ -3800,13 +3359,7 @@ async function run(
 
   // Only validate args for record command
   if (command === 'record') {
-    if (!process.env.SCREENCI_SECRET) {
-      await requireScreenCISecret(configPath, {
-        interactive: detectInteractiveSession(),
-        pollAuth,
-        noPollAuth,
-      })
-    }
+    await requireScreenCISecret(configPath)
     validateArgs(additionalArgs)
     const screenciDir = resolve(dirname(configPath), '.screenci')
     clearRecordingDirectories(screenciDir)

@@ -50,7 +50,6 @@ describe('public api surface', () => {
 
   it('only exports the supported init helpers from the init entrypoint', () => {
     expect(Object.keys(initModule).sort()).toEqual([
-      'createInitLinkSession',
       'detectPackageManagerFromLockfile',
       'detectPackageManagerFromPackageJson',
       'detectPnpmWorkspace',
@@ -67,6 +66,7 @@ describe('public api surface', () => {
       'resolveBundledLogoPath',
       'runCreateScreenciCli',
       'runInit',
+      'setUpInitSecret',
       'toIslandPackageName',
     ])
   })

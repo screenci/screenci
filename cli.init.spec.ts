@@ -1277,7 +1277,7 @@ describe('CLI', () => {
       )
       expect(rawMessages).not.toContain(`  ${pc.cyan('npx screenci login')}`)
       expect(messages).toContain(
-        '    Records locally and pauses for first-time ScreenCI setup if needed.'
+        '    Records locally and uploads the result to ScreenCI.'
       )
       expect(rawMessages).toContain(
         'Visit ' +
@@ -1293,6 +1293,79 @@ describe('CLI', () => {
       )
       expect(messages).toContain(
         '  - ./screenci/screenci.config.ts - ScreenCI configuration'
+      )
+    })
+
+    it('exchanges an init OTP positional for a secret and writes it to the island .env', async () => {
+      // A leading positional carrying the scotp_ prefix is a one-time setup
+      // token, not the project name: init exchanges it for the org secret and
+      // the project keeps the default name.
+      delete process.env.SCREENCI_SECRET
+      process.argv = ['node', 'cli.js', 'init', 'scotp_TESTTOKEN', '-y']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-app'
+      mockExistsSync.mockReturnValue(false)
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli-link/exchange')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi
+              .fn()
+              .mockResolvedValue({ status: 'completed', secret: 'sec_xyz' }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      // The exchanged secret is persisted into the island .env for record.
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/screenci/.env',
+        'SCREENCI_SECRET=sec_xyz\n'
+      )
+      // The project name falls back to the directory default, never the token.
+      const configCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          call[0] === '/workspace/my-app/screenci/screenci.config.ts'
+      )
+      expect(configCall).toBeDefined()
+      expect(configCall![1]).toContain('"my-app"')
+      expect(configCall![1]).not.toContain('scotp_TESTTOKEN')
+    })
+
+    it('prints manual secret guidance and creates no secret when no OTP is given', async () => {
+      delete process.env.SCREENCI_SECRET
+      process.argv = ['node', 'cli.js', 'init', '-y']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-app'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      const messages = loggerInfoSpy.mock.calls.map((call) =>
+        stripVTControlCharacters(String(call[0]))
+      )
+      // Manual path: guide the user to copy the secret from the secrets page.
+      expect(
+        messages.some(
+          (message) =>
+            message.includes('https://app.screenci.com/secrets') &&
+            message.includes('screenci/.env')
+        )
+      ).toBe(true)
+      // No OTP means no secret is written into the island .env.
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        '/workspace/my-app/screenci/.env',
+        expect.stringContaining('SCREENCI_SECRET=')
       )
     })
 

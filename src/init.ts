@@ -10,12 +10,10 @@ import ora from 'ora'
 import pc from 'picocolors'
 import { logger } from './logger.js'
 import {
-  createLinkSessionSpec,
-  getCliLinkSessionApiUrl,
-  getDevFrontendUrl,
-  getLinkSessionFilePath,
-  getScreenCIEnvironment,
-  writePersistedLinkSessionSpec,
+  exchangeInitOtp,
+  getScreenCISecretsUrl,
+  looksLikeInitOtp,
+  persistScreenCISecret,
 } from './linkSession.js'
 
 const PLAYWRIGHT_TEST_VERSION = '^1.59.0'
@@ -1095,47 +1093,43 @@ async function installInitDependencies(
   }
 }
 
-/**
- * Pre-creates a CLI sign-in link during init and persists it into the new
- * project's `.screenci/link-session.json`, so the user can sign in while their
- * first video is being authored and a later `screenci record` reuses the same
- * link (it just polls and continues once sign-in completes).
- *
- * Best-effort: a network failure here must never fail `init`. If a secret is
- * already configured there is nothing to sign in for, so we skip silently.
- *
- * Returns the sign-in URL when one was created, otherwise null.
- */
-export async function createInitLinkSession(
-  islandDir: string,
-  options: { env?: NodeJS.ProcessEnv } = {}
-): Promise<string | null> {
-  const env = options.env ?? process.env
-  if (env.SCREENCI_SECRET) return null
+// How the new project is set up to authenticate: `ready` means a
+// SCREENCI_SECRET is already configured (an init OTP was exchanged, or the env
+// already had one); `manual` means the user still needs to copy their secret
+// from the secrets page into the project `.env`.
+export type InitSecretOutcome = 'ready' | 'manual'
 
-  try {
-    // The generated config sets `envFile: '.env'`, so the env file and config
-    // paths here match what `screenci record` resolves later. Keeping them in
-    // sync lets record treat the persisted session as reusable.
-    const resolvedConfigPath = resolve(islandDir, 'screenci.config.ts')
-    const envFilePath = resolve(islandDir, '.env')
-    const spec = await createLinkSessionSpec({
-      apiUrl: getCliLinkSessionApiUrl(),
-      appUrl: getDevFrontendUrl(),
-      environment: getScreenCIEnvironment(),
-      resolvedConfigPath,
-      envFilePath,
-    })
-    await writePersistedLinkSessionSpec(getLinkSessionFilePath(islandDir), spec)
-    return spec.appUrl
-  } catch (err) {
+/**
+ * Turns an init one-time password into a persisted SCREENCI_SECRET.
+ *
+ * When init is run with an OTP (minted by the Get Started page), we exchange it
+ * for the org's default secret and write it into the new project's `.env`, so
+ * `screenci record` can upload right away on the free tier. A missing, used, or
+ * expired OTP degrades gracefully to the manual "copy your secret from the
+ * secrets page" path. Never throws: setup guidance is always better than a
+ * failed scaffold.
+ */
+export async function setUpInitSecret(
+  islandDir: string,
+  initOtp: string | undefined,
+  options: { env?: NodeJS.ProcessEnv } = {}
+): Promise<InitSecretOutcome> {
+  const env = options.env ?? process.env
+  if (env.SCREENCI_SECRET) return 'ready'
+  if (!initOtp) return 'manual'
+
+  const result = await exchangeInitOtp(initOtp)
+  if (!result.ok) {
     logger.warn(
-      `Could not pre-create a sign-in link (you can still sign in when you run record): ${
-        err instanceof Error ? err.message : String(err)
-      }`
+      `Could not use the one-time setup token: ${result.reason} You can still finish setup manually.`
     )
-    return null
+    return 'manual'
   }
+
+  // The generated config sets `envFile: '.env'`, so this matches what
+  // `screenci record` resolves later.
+  await persistScreenCISecret(resolve(islandDir, '.env'), result.secret)
+  return 'ready'
 }
 
 function printInitNextSteps(
@@ -1143,7 +1137,7 @@ function printInitNextSteps(
   islandDirName: string,
   packageManager: PackageManager,
   withReact: boolean,
-  signInUrl: string | null
+  secretOutcome: InitSecretOutcome
 ): void {
   const resolvedProjectDir = realpathSync(projectDir)
   const commands = getPackageManagerCommand(packageManager)
@@ -1161,9 +1155,7 @@ function printInitNextSteps(
   logger.info('    Tests your video scripts in interactive UI mode.')
   logger.info('')
   logger.info(`  ${pc.cyan(`${commands.screenciRun} record`)}`)
-  logger.info(
-    '    Records locally and pauses for first-time ScreenCI setup if needed.'
-  )
+  logger.info('    Records locally and uploads the result to ScreenCI.')
   logger.info('')
   logger.info('We suggest that you begin by typing:')
   logger.info('')
@@ -1185,17 +1177,20 @@ function printInitNextSteps(
   logger.info(
     `  - ./${islandDirName}/README.md - Project commands and docs link`
   )
-  if (signInUrl) {
-    logger.info('')
+  logger.info('')
+  if (secretOutcome === 'ready') {
     logger.info(
-      'Sign in now (the link stays valid for 24 hours) so recording can finish later without waiting:'
-    )
-    logger.info(`    ${pc.cyan(signInUrl)}`)
-    logger.info(
-      `Tip: run ${pc.cyan(`${commands.screenciRun} login`)} to open this link in your browser.`
+      `${pc.green('✔')} You're set up on the free tier. Run ${pc.cyan(`${commands.screenciRun} record`)} to render your first video.`
     )
     logger.info(
-      'You can keep building your video while this is open. Sign-in must be done before the final recording; running record will reuse this link.'
+      'Free renders include a ScreenCI watermark. Upgrade any time to remove it.'
+    )
+  } else {
+    logger.info(
+      `Before your first ${pc.cyan(`${commands.screenciRun} record`)}, add your SCREENCI_SECRET:`
+    )
+    logger.info(
+      `Copy it from ${pc.cyan(getScreenCISecretsUrl())} into ${pc.cyan(`${islandDirName}/.env`)}.`
     )
   }
   logger.info('')
@@ -1552,7 +1547,15 @@ export async function runInit(
     await ensureSupportedYarnVersion(initCwd)
   }
 
+  // The single positional is an init one-time password when it carries the OTP
+  // prefix; otherwise it is the project name (backward-friendly). An OTP is
+  // exchanged for the org secret after scaffolding.
   let projectName = projectNameArg?.trim()
+  let initOtp: string | undefined
+  if (projectName && looksLikeInitOtp(projectName)) {
+    initOtp = projectName
+    projectName = undefined
+  }
 
   if (!projectName) {
     projectName = yes ? getDefaultInitProjectName() : await promptProjectName()
@@ -1772,14 +1775,14 @@ export async function runInit(
     process.off('exit', removePartialIsland)
   }
 
-  const signInUrl = await createInitLinkSession(islandDir)
+  const secretOutcome = await setUpInitSecret(islandDir, initOtp)
 
   printInitNextSteps(
     islandDir,
     islandDirName,
     packageManager,
     shouldAddReactOverlays,
-    signInUrl
+    secretOutcome
   )
 }
 

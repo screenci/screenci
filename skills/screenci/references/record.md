@@ -19,19 +19,20 @@ npx screenci record -c screenci.config.ts
 - Saves output under `.screenci/<video-name>/`
 - Produces at least `recording.mp4` and `data.json`
 
-## Sign In Early
+## Connect Before Recording
 
-Sign-in only blocks the final recording, not authoring or testing. Get it going up front: run `npx screenci login` to open the sign-in link in the user's browser (it also prints the link and returns immediately without waiting), then surface that link to the user and ask them to sign in while you build the video. The link is valid for 24 hours. For the final recording, run `npx screenci record` (no flag): off-CI it waits and records as soon as sign-in completes. Attempting it before they finish does no harm: it reprints the link, and if the timeout elapses it exits non-zero with the link still valid, so re-prompt and run again.
+`record` needs `SCREENCI_SECRET`, and there is no browser sign-in. Get it in place before the final recording (it does not block authoring or testing):
+
+- If the user has a one-time setup token (`scotp_...`), run `npm init screenci@latest <token> -- --yes`; init writes `SCREENCI_SECRET` into `screenci/.env`.
+- Otherwise ask the user to copy `SCREENCI_SECRET` from their secrets page into `screenci/.env`.
 
 ## Runtime Behavior
 
 - Recording runs with local Playwright.
-- When `SCREENCI_SECRET` is missing, `screenci record` waits for browser sign-in by default and continues once it completes. This is the default at an interactive terminal and in a plain non-interactive session (no terminal, no CI), so an agent does not need a flag. It prints the link, polls (every 2 seconds interactively, every 5 seconds otherwise) up to a timeout (15 minutes interactively, 5 minutes otherwise), then saves the secret and records. If the timeout elapses first, it exits **non-zero** with the link still valid, so re-surface the link and rerun once signed in. Override the timeout with `SCREENCI_POLL_AUTH_TIMEOUT_MS` (milliseconds).
-- Under CI (`CI=true`), or with `SCREENCI_NONINTERACTIVE=1` or `--no-poll-auth`, `screenci record` does not wait: it prints the sign-in link and exits cleanly with exit code 0 without recording. A clean exit here is a handoff, not a finished recording, so do not treat exit code 0 as "recording done" when the output contains a sign-in link. Set `SCREENCI_SECRET` ahead of time (the expected CI setup) to record without an interactive sign-in.
-- `--poll-auth` still forces waiting and is kept for backwards compatibility, but is no longer needed off-CI where waiting is already the default.
-- Pending auth state is cached in `.screenci/link-session.json`, so rerunning `record` reuses the same link until it expires or completes.
+- `SCREENCI_SECRET` is required (from `screenci/.env` or the environment). If it is missing, `screenci record` prints guidance (pointing at the secrets page) and exits **non-zero** without recording. Get the secret in place and rerun. This is a setup step, not a code problem.
+- New accounts start on the free tier; free renders include a ScreenCI watermark, and after upload `record` prints an upgrade link that removes it.
 - Playwright arguments can be passed through after the command.
-- When API configuration and `SCREENCI_SECRET` are available, uploads may run after recording.
+- When API configuration and `SCREENCI_SECRET` are available, uploads run after recording.
 
 ## Recommended Workflow
 

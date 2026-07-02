@@ -8,10 +8,12 @@ and records it.
 
 ## Start with one paste
 
-Paste this into Claude Code, Codex, Cursor, or any other coding agent:
+Copy the ready-made prompt (with your one-time setup token) from the Get Started
+page in the ScreenCI app, or paste this into Claude Code, Codex, Cursor, or any
+other coding agent:
 
 ```text
-Integrate ScreenCI by fetching https://screenci.com/integrate.md and following its steps, then add a screenci video about <feature>
+Integrate ScreenCI by fetching https://screenci.com/integrate.md and following its steps (use the one-time setup token scotp_your_token when it runs init), then add a screenci video about <feature>
 ```
 
 Replace `<feature>` with whatever you want the video to show off. Add `@files`
@@ -22,24 +24,22 @@ or a URL so the agent has context to work from, for example
 
 The brief walks the agent through these steps:
 
-1. **Scaffold the project.** It runs `npm init screenci@latest -- --yes` at the
-   repository root. The `--yes` flag is required so the command runs
-   non-interactively instead of blocking on prompts, defaulting the project name
-   to the repository root directory name. This installs the `screenci` package,
-   scaffolds `screenci.config.ts` and `videos/`, and installs the `screenci`
-   agent skill at the repository root.
-2. **Kick off sign-in in parallel.** Right after init, it runs
-   `npx screenci login`, which opens the sign-in link in your browser (and
-   prints it as a fallback). This does not block: the agent keeps working while
-   you sign in. Only the final recording needs sign-in, so getting it in front
-   of you early means `record` will not have to wait.
-3. **Author a video** for the flow you described, including narration via
+1. **Scaffold and connect the project.** It runs
+   `npm init screenci@latest <setup-token> -- --yes` at the repository root. The
+   one-time setup token is exchanged for your organization's `SCREENCI_SECRET`,
+   which init writes into `screenci/.env`, so the project is connected on the
+   free tier with no browser sign-in. The `--yes` flag runs the command
+   non-interactively (defaulting the project name to the repository root
+   directory name). This installs the `screenci` package, scaffolds
+   `screenci.config.ts` and `videos/`, and installs the `screenci` agent skill
+   at the repository root. Without a token, the agent instead tells you to copy
+   `SCREENCI_SECRET` from your secrets page into `screenci/.env`.
+2. **Author a video** for the flow you described, including narration via
    `video.narration({...})`, with setup wrapped in `hide()` and the demo
    driven with visible clicks.
-4. **Verify, then record.** It runs `npx screenci test` until the script is
-   green, then `npx screenci record` to capture the final video. If you have not
-   finished signing in yet, `record` waits for it and continues automatically
-   once you do.
+3. **Verify, then record.** It runs `npx screenci test` until the script is
+   green, then `npx screenci record` to capture the final video. Free renders
+   include a ScreenCI watermark; upgrading removes it.
 
 ## How the agent gathers context
 
@@ -56,21 +56,17 @@ To write an accurate script, the agent works from whatever context you give it:
 If you would rather generate a first draft yourself before involving an agent,
 see [Playwright codegen](/docs/video-script-basics#generate-a-first-draft-with-codegen).
 
-## Signing in
+## Connecting the project
 
-Only the final recording needs sign-in, not authoring or testing. Run
-`npx screenci login` right after init to open the sign-in link in your browser
-(it prints the link too, in case no browser can open). The command returns
-immediately, so the agent keeps authoring and testing while you sign in. The
-link stays valid for 24 hours, and a later `record` reuses it.
+The one-time setup token connects the project without a browser sign-in. Copy it
+(and the ready-to-run command) from the Get Started page, then run
+`npm init screenci@latest <setup-token>`. Init exchanges it for your
+`SCREENCI_SECRET` and writes it into `screenci/.env`, so `record` uploads
+immediately. The token is single-use and short-lived.
 
-When sign-in is still pending, `npx screenci record` prints the same link, waits
-for it, and records automatically once you finish, so the agent surfaces the link
-to whoever can sign in and then keeps the command running. Waiting is the default
-off-CI; if it times out before sign-in, `record` exits non-zero (the link stays
-valid, so rerun once signed in). Under CI (`CI=true`) it does not wait, so set
-`SCREENCI_SECRET` ahead of time for CI runs (this also skips sign-in entirely
-anywhere).
+No token to hand? Copy `SCREENCI_SECRET` from your secrets page into
+`screenci/.env` (this is also the value you set for CI runs). If the secret is
+missing, `record` prints guidance and exits without recording.
 
 The upload contains the raw recording, not your source code. See
 [Overview](/docs) for how recording and rendering are split.

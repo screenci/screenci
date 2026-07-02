@@ -250,8 +250,35 @@ configuration, and runs from the web when the project is connected to GitHub.
 Adding languages from the web requires `video.languages(studio())` (or a seeded
 `video.languages(studio(['en', 'fi']))`): a code-defined language set (a plain
 array or config object, as shown in the sections above) is fixed by your test
-code and cannot be changed from the app. See [Studio](./studio.md) for the full
-Studio guide.
+code. To add an ad-hoc language to a code-defined video from the web without
+changing your code, use a one-off language (below). See [Studio](./studio.md) for
+the full Studio guide.
+
+## One-off languages
+
+When a video's languages are defined in code (a plain array or config object,
+not `studio()`), you can still add a single language from the web as a **one-off
+language**. It renders and serves like any other language version, but it is not
+part of your code, so re-recording in CI never updates it automatically. This
+mirrors a Studio [one-off version](./studio.md#saved-edits-vs-one-off-renders),
+but at the language level. One-off languages are a Business tier feature.
+
+On the video's page, use the **Add a one-off language** picker in the Language
+versions section (it also works for screenshots). Picking a language opens that
+language's page with the same guided setup as a Studio-managed language: fill in
+its narration (auto-translated from an existing language, with a checklist for
+what is still missing), then render. The render reuses the existing capture with
+the new narration, so you do not have to re-record.
+
+A one-off language is marked with a purple **One-off** badge in the language list
+and a banner on its page, both noting that it is not in your code and will not
+auto-update. Because it is not declared in code, a CI re-record of the video
+leaves it untouched: it is only ever re-rendered when you explicitly render it
+again from its page.
+
+To make a one-off language permanent (so CI keeps it up to date), add it to your
+code: either list it in `video.languages([...])` or switch the video to
+`video.languages(studio())` to manage the whole set from the web.
 
 ## Available languages
 

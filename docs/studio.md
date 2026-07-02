@@ -120,6 +120,11 @@ Studio separates changes that stick from changes that do not:
   likewise for `values`, `overlays`, or `audio`, or set
   `use({ renderOptions: studio() })` / `use({ recordOptions: studio() })`).
 
+The same idea applies to languages: a
+[one-off language](./languages.md#one-off-languages) adds a single language from
+the web to a code-defined video without changing your code, and CI never
+auto-updates it.
+
 ## Studio narration from code
 
 Wrap an **array of cue names** in `studio([...])` and pass it to

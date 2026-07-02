@@ -419,9 +419,12 @@ encrypted at rest and used only to synthesize narration for your videos. The app
 never shows the stored key again, only whether one is set, and every render
 (from the CLI or the app) uses it. You do not set an ElevenLabs key locally.
 
-Without a key, a render that uses an ElevenLabs or custom voice is blocked with a
-link to the Secrets page, and `screenci record` warns at record time that the
-render will fail until you add one.
+Without a key, a video that uses an ElevenLabs or custom voice cannot render.
+`screenci record` fails that video at record time: its render is marked failed
+right away (rather than being queued only to die during synthesis), the CLI
+prints an error with a link to the Secrets page, and the command exits non-zero.
+Other videos in the same run are unaffected. Add your key on the Secrets page and
+record again.
 
 Use `voices.elevenlabs({ voiceId })` when you want to target a specific
 ElevenLabs voice from your own account. Set it as the default voice in `use`, or

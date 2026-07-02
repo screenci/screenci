@@ -1138,7 +1138,7 @@ describe('CLI', () => {
       )
     })
 
-    it('surfaces a missing-ElevenLabs-key video from the upload response', async () => {
+    it('hard-fails a video whose upload is rejected for a missing ElevenLabs key', async () => {
       mockReaddir.mockResolvedValue(['demo-video'])
       mockReadFile.mockImplementation(async (path: string | URL) => {
         const pathString = String(path)
@@ -1159,18 +1159,21 @@ describe('CLI', () => {
           path.endsWith('data.json') ||
           path.endsWith('recording.mp4')
       )
+      // The backend fails the render immediately and replies with an error so
+      // the CLI hard-fails at record time instead of surfacing a soft warning.
+      const errorBody = JSON.stringify({
+        error:
+          'No ElevenLabs API key is available. Add one on the Secrets page (https://app.screenci.com/secrets).',
+        elevenLabsKeyMissing: true,
+      })
       mockFetch.mockImplementation(async (input: string | URL) => {
         const url = String(input)
         if (url.endsWith('/cli/upload/start')) {
           return {
-            ok: true,
-            status: 200,
-            json: vi.fn().mockResolvedValue({
-              recordingId: 'recording_123',
-              projectId: 'project_123',
-              elevenLabsKeyMissing: true,
-            }),
-            text: vi.fn().mockResolvedValue(''),
+            ok: false,
+            status: 422,
+            json: vi.fn().mockResolvedValue(JSON.parse(errorBody)),
+            text: vi.fn().mockResolvedValue(errorBody),
           }
         }
         return {
@@ -1191,6 +1194,11 @@ describe('CLI', () => {
       )
 
       expect(result.elevenLabsKeyMissingVideos).toEqual(['Demo'])
+      expect(result.hadFailures).toBe(true)
+      expect(result.failedVideoNames).toContain('Demo')
+      // The dedicated missing-key error is surfaced once (via the summary), not
+      // duplicated as a generic upload-failure message.
+      expect(result.failedVideoMessages).toEqual([])
     })
 
     it('surfaces informational notices from the upload response', async () => {

@@ -728,6 +728,20 @@ async function uploadRecordingCandidate(
     if (!startResponse.ok) {
       const text = await startResponse.text()
       progressReporter.complete(progressIndex, 'failure')
+      // A missing ElevenLabs key fails the render server-side and is reported
+      // once in the final summary (see uploadRecordings) as a dedicated error
+      // with the Secrets link, so it carries the flag instead of a generic
+      // upload-failure message that would duplicate it.
+      if (responseFlagsElevenLabsKeyMissing(text)) {
+        return {
+          projectId: null,
+          videoId: null,
+          hadFailure: true,
+          elevenLabsKeyMissing: true,
+          videoName,
+          recordId,
+        }
+      }
       return {
         projectId: null,
         videoId: null,
@@ -754,7 +768,6 @@ async function uploadRecordingCandidate(
         reason: string
         detail: string
       }>
-      elevenLabsKeyMissing?: boolean
       notices?: string[]
     }
     const { recordingId } = startBody
@@ -774,8 +787,9 @@ async function uploadRecordingCandidate(
       }
     }
 
-    // The missing-ElevenLabs-key warning is surfaced once in the final summary
-    // (see uploadRecordings), where it is not overwritten by the upload spinner.
+    // A missing ElevenLabs key is a hard failure returned as an error response
+    // (handled in the !startResponse.ok branch above), surfaced once in the
+    // final summary where it is not overwritten by the upload spinner.
 
     if (verbose) {
       logger.info(`recordingId=${recordingId} projectId=${projectId}`)
@@ -850,9 +864,6 @@ async function uploadRecordingCandidate(
       recordId,
       ...(studio !== undefined && { studio }),
       ...(plan !== null && { plan }),
-      ...(startBody.elevenLabsKeyMissing === true && {
-        elevenLabsKeyMissing: true,
-      }),
       ...(Array.isArray(startBody.notices) &&
         startBody.notices.length > 0 && {
           notices: startBody.notices.filter(
@@ -1718,6 +1729,26 @@ export function extractBackendError(responseText: string): string {
   return responseText
 }
 
+/**
+ * Whether an upload-start error body flags a missing ElevenLabs key. The backend
+ * fails the render immediately and replies with `{ elevenLabsKeyMissing: true }`
+ * so the CLI can surface the dedicated Secrets-link error instead of a generic
+ * upload failure. Non-JSON or shapeless bodies are treated as not flagged.
+ */
+export function responseFlagsElevenLabsKeyMissing(
+  responseText: string
+): boolean {
+  if (responseText.trim().length === 0) return false
+  try {
+    const parsed = JSON.parse(responseText) as {
+      elevenLabsKeyMissing?: unknown
+    }
+    return parsed.elevenLabsKeyMissing === true
+  } catch {
+    return false
+  }
+}
+
 export function formatUploadStartFailureMessage(
   videoName: string,
   status: number,
@@ -2153,9 +2184,7 @@ export async function uploadRecordings(
     )
 
     const elevenLabsKeyMissingVideos = results.flatMap((result) =>
-      !result.hadFailure && result.elevenLabsKeyMissing === true
-        ? [result.videoName]
-        : []
+      result.elevenLabsKeyMissing === true ? [result.videoName] : []
     )
 
     const notices = results.flatMap((result) =>

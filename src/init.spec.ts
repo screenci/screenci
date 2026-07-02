@@ -124,14 +124,14 @@ describe('generateExampleVideo', () => {
     expect(generateExampleVideo()).toBe(installationVideoSource)
   })
 
-  it('sets the default voice via use and declares localized narration', () => {
+  it('declares localized narration and relies on the built-in default voice', () => {
     const source = generateExampleVideo()
-    expect(source).toContain(
-      `video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })`
-    )
     expect(source).toContain(`  .narration({
     en: {`)
-    // The all-languages default voice lives in use, not in the per-feature spec.
+    // Narration defaults to the built-in voice (Sophie), so the example carries no
+    // redundant voice config and does not import `voices`.
+    expect(source).not.toContain('video.use({')
+    expect(source).not.toContain('voices')
     expect(source).not.toContain('video.localize(')
     expect(source).not.toContain('createNarration')
   })
@@ -141,15 +141,13 @@ describe('generateExampleVideo', () => {
     // The overlay is declared from the bundled, gitignored asset path.
     expect(source).toContain('video\n  .overlays({')
     expect(source).toContain(
-      "logo: { path: './assets/logo.png', fill: 'recording', duration: '2s' }"
+      "logo: { path: './assets/logo.png', duration: '2s' }"
     )
     // The body receives the overlay controllers and opens with the logo card.
     expect(source).toContain(
       "})('How to find docs', async ({ page, narration, overlays }) => {"
     )
     expect(source).toContain("await overlays.logo.for('2s')")
-    // A comment explains the asset is gitignored and need not be committed.
-    expect(source).toContain('is gitignored')
   })
 })
 
@@ -205,9 +203,7 @@ describe('generateIslandTsconfig', () => {
 describe('generateReactExampleVideo', () => {
   it('declares overlays via video.overlays from the main entry point', () => {
     const source = generateReactExampleVideo()
-    expect(source).toContain(
-      "import { autoZoom, hide, video, voices } from 'screenci'"
-    )
+    expect(source).toContain("import { autoZoom, hide, video } from 'screenci'")
     expect(source).toContain('video\n  .overlays({')
     expect(source).not.toContain('createOverlays')
   })

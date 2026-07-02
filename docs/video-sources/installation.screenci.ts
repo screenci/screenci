@@ -1,17 +1,8 @@
-import { autoZoom, hide, video, voices } from 'screenci'
+import { autoZoom, hide, video } from 'screenci'
 
-// The default voice (how narration is spoken) for every language.
-video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
-
-// Localized narration cues by language, plus a brand intro overlay. The fixture
-// exposes narration markers and overlay controllers to the body.
-//
-// The logo image (recordings/assets/logo.png) is gitignored: it is uploaded to
-// the ScreenCI backend on the first record and reused on later runs (CI
-// included), so the binary does not need to be committed.
 video
   .overlays({
-    logo: { path: './assets/logo.png', fill: 'recording', duration: '2s' },
+    logo: { path: './assets/logo.png', duration: '2s' },
   })
   .narration({
     en: {

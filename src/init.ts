@@ -1279,20 +1279,11 @@ jobs:
 }
 
 export function generateExampleVideo(): string {
-  return `import { autoZoom, hide, video, voices } from 'screenci'
+  return `import { autoZoom, hide, video } from 'screenci'
 
-// The default voice (how narration is spoken) for every language.
-video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
-
-// Localized narration cues by language, plus a brand intro overlay. The fixture
-// exposes narration markers and overlay controllers to the body.
-//
-// The logo image (recordings/assets/logo.png) is gitignored: it is uploaded to
-// the ScreenCI backend on the first record and reused on later runs (CI
-// included), so the binary does not need to be committed.
 video
   .overlays({
-    logo: { path: './assets/logo.png', fill: 'recording', duration: '2s' },
+    logo: { path: './assets/logo.png', duration: '2s' },
   })
   .narration({
     en: {
@@ -1324,7 +1315,7 @@ video
 
 export function generateReactExampleVideo(): string {
   return `import type { Locator } from '@playwright/test'
-import { autoZoom, hide, video, voices } from 'screenci'
+import { autoZoom, hide, video } from 'screenci'
 
 // A code-defined overlay: any React element renderable to static markup works.
 // This ring fills its box and pulses, so it reads as a highlight around the
@@ -1351,11 +1342,6 @@ function Highlight() {
   )
 }
 
-// The default voice (how narration is spoken) for every language.
-video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
-
-// Localized narration cues by language, plus a code-defined overlay. The
-// fixtures expose narration markers and overlay controllers to the body.
 video
   .overlays({
     // A programmatic overlay: the factory runs each call, so placement can

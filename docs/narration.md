@@ -411,10 +411,25 @@ better the result. Unrecognized or unsupported directives are silently ignored.
 These tags are stripped from subtitles and throw a runtime error if used with
 consistent voices.
 
+## Voices and plans
+
+Built-in model voices are available on every plan. Free and Starter narrate with
+the built-in voice or your own self-recorded voice (a clone from an audio sample,
+see [Clone a voice from an audio sample](#clone-a-voice-from-an-audio-sample)).
+Hosted ElevenLabs voices (`voices.elevenlabs({ voiceId })`, a voice id from your
+ElevenLabs account) require the Business tier. Both hosted voices and clones use
+your own ElevenLabs API key.
+
+Free and Starter also render a single narration language across the whole
+organization; multiple languages require Business. See
+[One language per plan](/docs/guides/languages#one-language-per-plan).
+
 ## ElevenLabs voices
 
-ElevenLabs voices require the ScreenCI Business tier and use your own ElevenLabs
-API key. Add your key once on the **Secrets** page in the ScreenCI app. It is
+Hosted ElevenLabs voices (`voices.elevenlabs({ voiceId })`) require the ScreenCI
+Business tier and use your own ElevenLabs API key. (A self-recorded clone works
+on every plan, see below.) Add your key once on the **Secrets** page in the
+ScreenCI app. It is
 encrypted at rest and used only to synthesize narration for your videos. The app
 never shows the stored key again, only whether one is set, and every render
 (from the CLI or the app) uses it. You do not set an ElevenLabs key locally.
@@ -521,9 +536,10 @@ files.
 ### Clone a voice from an audio sample
 
 Instead of a `voiceId` from your account, you can clone a voice from a local
-audio or video sample using ElevenLabs Instant Voice Cloning. This also requires
-the Business tier and your ElevenLabs key on the Secrets page (see the setup
-above).
+audio or video sample using ElevenLabs Instant Voice Cloning. A self-recorded
+clone is available on every plan (it does not require the Business tier that
+hosted ElevenLabs voices do), but it still uses your ElevenLabs key on the
+Secrets page (see the setup above).
 
 Use the same `voices.elevenlabs(...)` helper, but pass `{ path }` instead of
 `{ voiceId }`:

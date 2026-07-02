@@ -15,6 +15,28 @@ that every language covers the same cues, which catches drift early.
 
 <!-- screenci-doc-video:docs/guides/languages -->
 
+## One language per plan
+
+Multiple languages are a Business feature. On the Free and Starter plans, your
+organization renders a single narration language across all of its videos and
+screenshots:
+
+- An upload that declares more than one language is blocked.
+- Once your organization has rendered one language, an upload in a different
+  language is blocked until you delete the videos and versions in the first
+  language. This keeps the limit at one language in total, not one per video.
+- A per-cue language override (see
+  [Speak a cue in a different language](/docs/guides/narration#speak-a-cue-in-a-different-language))
+  counts as a language too, so it cannot be used to slip a second spoken language
+  past the limit.
+
+Free and Starter narrate that one language with the built-in voice or your own
+self-recorded voice. See
+[Voices and plans](/docs/guides/narration#voices-and-plans).
+
+Upgrade to Business to render as many languages as you like. When an upload is
+blocked, `screenci record` prints the reason and a link back to this section.
+
 ## Add languages
 
 Add languages by keeping the same cue keys under each language code in

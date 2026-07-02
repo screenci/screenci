@@ -6,6 +6,11 @@ publishes an agent-readable integration brief at
 describe the flow you want, and the agent scaffolds ScreenCI, authors a video,
 and records it.
 
+The brief comes in a variant per package manager, so the agent only ever sees
+your manager's commands: `/integrate.md` (npm), `/integrate-pnpm.md` (pnpm), and
+`/integrate-yarn.md` (yarn). The Get Started page hands you the matching prompt
+for your selection.
+
 ## Start with one paste
 
 Copy the ready-made prompt (with your one-time setup token) from the Get Started
@@ -13,7 +18,7 @@ page in the ScreenCI app, or paste this into Claude Code, Codex, Cursor, or any
 other coding agent:
 
 ```text
-Integrate ScreenCI by fetching https://screenci.com/integrate.md and following its steps (use the one-time setup token otp_your_token when it runs init), then add a screenci video about <feature>
+Integrate ScreenCI by fetching https://screenci.com/integrate.md and following its steps (use one-time token otp_your_token), then add a screenci video about <feature>
 ```
 
 Replace `<feature>` with whatever you want the video to show off. Add `@files`

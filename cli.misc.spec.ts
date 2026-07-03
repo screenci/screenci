@@ -864,6 +864,128 @@ describe('CLI', () => {
     })
   })
 
+  describe('delete command', () => {
+    // The delete flow makes two calls: GET /cli/video/:id for the name shown in
+    // the prompt, then DELETE /cli/video/:id. Distinguish them by method.
+    const setupDeleteFetch = (
+      opts: {
+        summaryStatus?: number
+        deleteStatus?: number
+        name?: string
+      } = {}
+    ) => {
+      const {
+        summaryStatus = 200,
+        deleteStatus = 200,
+        name = 'My Video',
+      } = opts
+      mockFetch.mockImplementation(
+        async (_url: string | URL, init?: { method?: string }) => {
+          const method = init?.method ?? 'GET'
+          if (method === 'DELETE') {
+            return {
+              ok: deleteStatus >= 200 && deleteStatus < 300,
+              status: deleteStatus,
+              json: vi
+                .fn()
+                .mockResolvedValue({ success: true, videoId: 'video_123' }),
+              text: vi.fn().mockResolvedValue(''),
+            }
+          }
+          return {
+            ok: summaryStatus >= 200 && summaryStatus < 300,
+            status: summaryStatus,
+            json: vi.fn().mockResolvedValue({ id: 'video_123', name }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+      )
+    }
+
+    const runDelete = async (extraArgs: string[] = []) => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'delete',
+        'video_123',
+        ...extraArgs,
+        '--config',
+        'test-fixtures/screenci.config.ts',
+      ]
+      process.env.SCREENCI_SECRET = 'test-secret'
+      const { main } = await import('./cli')
+      await main()
+    }
+
+    it('confirms with the video name, then deletes', async () => {
+      setupDeleteFetch({ name: 'Login Flow' })
+      mockConfirm.mockResolvedValue(true)
+
+      await runDelete()
+
+      // Confirmation prompt shows the resolved name.
+      expect(mockConfirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Login Flow'),
+        })
+      )
+      // The summary lookup and the destructive DELETE both fire.
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/cli/video/video_123'),
+        expect.objectContaining({
+          method: 'GET',
+          headers: { 'X-ScreenCI-Secret': 'test-secret' },
+        })
+      )
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/cli/video/video_123'),
+        expect.objectContaining({
+          method: 'DELETE',
+          headers: { 'X-ScreenCI-Secret': 'test-secret' },
+        })
+      )
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        'Deleted: Login Flow (video_123)'
+      )
+    })
+
+    it('skips the prompt with --yes', async () => {
+      setupDeleteFetch()
+
+      await runDelete(['--yes'])
+
+      expect(mockConfirm).not.toHaveBeenCalled()
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/cli/video/video_123'),
+        expect.objectContaining({ method: 'DELETE' })
+      )
+    })
+
+    it('aborts without deleting when the prompt is declined', async () => {
+      setupDeleteFetch()
+      mockConfirm.mockResolvedValue(false)
+
+      await runDelete()
+
+      const deleteCalled = mockFetch.mock.calls.some(
+        ([, init]) =>
+          (init as { method?: string } | undefined)?.method === 'DELETE'
+      )
+      expect(deleteCalled).toBe(false)
+      expect(loggerInfoSpy).toHaveBeenCalledWith('Aborted.')
+    })
+
+    it('reports a 404 as video not found and never prompts', async () => {
+      setupDeleteFetch({ summaryStatus: 404 })
+
+      const error = await runDelete().catch((err) => err)
+
+      expect(error).toBeInstanceOf(Error)
+      expect((error as Error).message).toContain('Video not found: video_123')
+      expect(mockConfirm).not.toHaveBeenCalled()
+    })
+  })
+
   describe('removed retry command', () => {
     it('should report retry as an unknown command', async () => {
       process.argv = ['node', 'cli.js', 'retry']

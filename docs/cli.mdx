@@ -18,6 +18,7 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | `screenci info`                    | Print the last record run's URLs and render status       |
 | `screenci make-public <videoId>`   | Enable public delivery for a video                       |
 | `screenci make-private <videoId>`  | Disable public delivery for a video                      |
+| `screenci delete <videoId>`        | Permanently delete a video and its renders               |
 
 ## `screenci init`
 
@@ -328,7 +329,7 @@ yarn screenci info
 
 Lists **every video in the project** with its public URLs as JSON, keyed by
 video name and language code. It is where you get the remote `videoId` for
-`make-public` and `make-private`.
+`make-public`, `make-private`, and `delete`.
 
 When this machine has recorded a run, `info` also reports that run. Each
 `screenci record` upload stores its unique record id in
@@ -493,6 +494,45 @@ Disables public delivery for a video.
 This is the CLI equivalent of turning off **Enable public URL** in the
 dashboard.
 
+## `screenci delete <videoId>`
+
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
+```bash
+npx screenci delete kh74…
+```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+pnpm exec screenci delete kh74…
+```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn screenci delete kh74…
+```
+
+  </TabItem>
+</Tabs>
+
+Permanently deletes a video and all of its renders. Use the same `videoId` that
+`make-public` and `make-private` accept (copy it from `screenci info`).
+
+This is irreversible, so the command prints the video's name and asks you to
+confirm before deleting. Pass `-y` (or `--yes`) to skip the prompt in CI or
+scripts:
+
+```bash
+npx screenci delete kh74… --yes
+```
+
+You can only delete videos that belong to your own project's organization.
+
 ## What the CLI does not do
 
 The CLI currently covers:
@@ -503,6 +543,7 @@ The CLI currently covers:
 - final capture and upload with `record`
 - per-run URLs and render status with `info`
 - public visibility changes with `make-public` and `make-private`
+- permanent video deletion with `delete`
 
 Manual version pinning is currently handled in the app UI:
 
@@ -519,6 +560,7 @@ These commands support `--config <path>`:
 - `info`
 - `make-public`
 - `make-private`
+- `delete`
 
 `SCREENCI_SECRET` is used for:
 
@@ -526,6 +568,7 @@ These commands support `--config <path>`:
 - uploads
 - per-run URLs and render status (`info`)
 - public delivery changes
+- video deletion (`delete`)
 
 If `envFile` is configured in `screenci.config.ts`, the CLI loads it
 automatically. Otherwise it falls back to the project `.env`. The CLI resolves

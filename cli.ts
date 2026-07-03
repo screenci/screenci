@@ -21,6 +21,7 @@ import {
 } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { Command, CommanderError } from 'commander'
+import { confirm } from '@inquirer/prompts'
 import pc from 'picocolors'
 import { logger } from './src/logger.js'
 import {
@@ -2542,6 +2543,60 @@ async function updateVideoVisibility(
   logger.info(`${isPublic ? 'Made public' : 'Made private'}: ${videoId}`)
 }
 
+// Deletes a video by the same id used for make-public/make-private (from
+// `screenci info`). Resolves the video's name first so the confirmation prompt
+// can show it; `skipConfirm` (from `-y/--yes`) bypasses the prompt for CI.
+async function deleteVideoCommand(
+  videoId: string,
+  skipConfirm: boolean,
+  configPath?: string
+): Promise<void> {
+  const { secret, apiUrl } = await requireScreenCISecret(configPath)
+  const headers = { 'X-ScreenCI-Secret': secret }
+
+  const summaryRes = await fetch(`${apiUrl}/cli/video/${videoId}`, {
+    method: 'GET',
+    headers,
+  })
+
+  if (summaryRes.status === 404) {
+    throw new Error(`Video not found: ${videoId}`)
+  }
+  if (!summaryRes.ok) {
+    const text = await summaryRes.text()
+    throw new Error(
+      `Failed to look up video: ${summaryRes.status} ${extractBackendError(text)}${hint401(summaryRes.status, secret)}`
+    )
+  }
+
+  const { name } = (await summaryRes.json()) as { name: string }
+
+  if (!skipConfirm) {
+    const confirmed = await confirm({
+      message: `Delete video "${name}" (${videoId})? This cannot be undone.`,
+      default: false,
+    })
+    if (!confirmed) {
+      logger.info('Aborted.')
+      return
+    }
+  }
+
+  const res = await fetch(`${apiUrl}/cli/video/${videoId}`, {
+    method: 'DELETE',
+    headers,
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(
+      `Failed to delete: ${res.status} ${extractBackendError(text)}${hint401(res.status, secret)}`
+    )
+  }
+
+  logger.info(`Deleted: ${name} (${videoId})`)
+}
+
 // Extract a `--grep <value>` / `--grep=<value>` from the pass-through args so a
 // remote trigger can forward it as a filter (records only matching videos).
 export function extractGrep(args: string[]): string | undefined {
@@ -2874,7 +2929,7 @@ export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
     logger.error(
-      'Available commands: record, test, info, make-public, make-private, init'
+      'Available commands: record, test, info, make-public, make-private, delete, init'
     )
     process.exit(1)
   }
@@ -3043,6 +3098,21 @@ export async function main() {
       await updateVideoVisibility(
         id,
         false,
+        options['config'] as string | undefined
+      )
+    })
+
+  program
+    .command('delete <id>')
+    .description(
+      'Delete a video and its renders; get the id from screenci info'
+    )
+    .option('-c, --config <path>', 'path to screenci.config.ts')
+    .option('-y, --yes', 'skip the confirmation prompt')
+    .action(async (id: string, options: Record<string, unknown>) => {
+      await deleteVideoCommand(
+        id,
+        (options['yes'] as boolean | undefined) ?? false,
         options['config'] as string | undefined
       )
     })

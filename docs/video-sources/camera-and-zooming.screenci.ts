@@ -37,8 +37,9 @@ video.narration({
   },
 })('Camera and zooming', async ({ page, narration }) => {
   await hide(async () => {
+    // The landing page autoplays the hero video, so `networkidle` never settles;
+    // goto already waits for the load event.
     await page.goto('https://screenci.com/')
-    await page.waitForLoadState('networkidle')
   })
 
   // autoZoom follows the interaction automatically as it opens the docs.

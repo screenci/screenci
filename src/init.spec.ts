@@ -127,10 +127,15 @@ describe('generateExampleVideo', () => {
     expect(generateExampleVideo()).toBe(installationVideoSource)
   })
 
-  it('declares localized narration and relies on the built-in default voice', () => {
+  it('declares single-language narration and relies on the built-in default voice', () => {
     const source = generateExampleVideo()
+    // Content-major (language-agnostic) narration: a single language works on
+    // every plan, since multiple languages are a Business feature.
     expect(source).toContain(`  .narration({
-    en: {`)
+    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
+  })`)
+    // No per-language keys: the example does not declare a second language.
+    expect(source).not.toContain('    es: {')
     // Narration defaults to the built-in voice (Sophie), so the example carries no
     // redundant voice config and does not import `voices`.
     expect(source).not.toContain('video.use({')

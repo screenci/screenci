@@ -9,12 +9,7 @@ video.use({
 })
 
 video.narration({
-  en: {
-    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
-  },
-  es: {
-    docs: 'Aqui es donde encontrar la documentacion de ScreenCI [pronounce: screen see eye].',
-  },
+  docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
 })('Landing light', async ({ page, narration }) => {
   await hide(async () => {
     await page.goto('https://screenci.com/')

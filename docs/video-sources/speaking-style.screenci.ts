@@ -1,38 +1,7 @@
 import { hide, video, voices } from 'screenci'
 
-video.use({
-  renderOptions: {
-    recording: {
-      size: 0.85,
-      shape: 'rounded',
-      roundness: 0.05,
-      dropShadow:
-        'drop-shadow(0 22px 49px rgba(0,0,0,0.28)) drop-shadow(0 6px 15px rgba(0,0,0,0.17))',
-    },
-    narration: {
-      voice: {
-        name: voices.Nora,
-        style: 'Clear and professional product narrator.',
-      },
-      size: 0.3,
-      shape: 'rounded',
-      roundness: 0,
-      corner: 'bottom-right',
-      padding: 0.04,
-      dropShadow: 1,
-    },
-    output: {
-      aspectRatio: '16:9',
-      quality: '1080p',
-      background: {
-        backgroundCss: 'linear-gradient(313deg, #ffffff 0%, #d6d6d6 100%)',
-      },
-    },
-  },
-})
-
-// Each cue carries its own style prompt, so the voice adapts its delivery per
-// line without any audio editing.
+// Each cue carries its own style prompt, so the same voice adapts its delivery
+// per line without any audio editing.
 video.narration({
   en: {
     hook: {
@@ -43,14 +12,14 @@ video.narration({
       },
     },
     explain: {
-      cue: 'You write a style prompt alongside the text. The same voice reads the line, but the delivery follows the prompt you wrote.',
+      cue: 'You write a style prompt alongside the text, and the delivery follows it.',
       voice: {
         name: voices.Nora,
         style: 'Measured and instructional, making a point clearly.',
       },
     },
     reveal: {
-      cue: 'One script can have a calm explainer, then shift to an excited reveal, all in the same render.',
+      cue: 'One script can shift from a calm explainer to an excited reveal, in the same render.',
       voice: {
         name: voices.Nora,
         style: 'Energetic and enthusiastic, building into a reveal.',

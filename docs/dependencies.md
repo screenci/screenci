@@ -2,6 +2,8 @@
 
 A render dependency lets one render embed another render's output as an overlay. Use it to drop a separately-maintained intro clip into a larger demo, reuse a branded logo still across many videos, or compose a long walkthrough out of smaller, independently-maintained pieces, and have every dependent stay in sync automatically.
 
+This is what lets different teams own different parts of a video. One team can maintain the branded intro, another the product walkthrough, and a third a shared logo still, each as its own render in its own file. Whoever owns the full demo just references those pieces with `selected(...)`, and every dependent re-renders on its own whenever an embedded part is updated, so no team has to hand-assemble the others' work.
+
 Unlike a file overlay, a dependency is a live link: when the target's selected render changes, every render that depends on it re-renders to embed the new output.
 
 #### You will learn

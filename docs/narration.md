@@ -28,6 +28,12 @@ A language whose only built-in voice is the expressive model uses it
 automatically on every plan, so Free and Starter can narrate it without setting
 `modelType`.
 
+Recording yourself is always possible on every tier: you can supply your own
+recorded audio for any cue with a [`media` file](#balance-narration-volume), or
+narrate in your own [self-recorded voice clone](#clone-a-voice-from-an-audio-sample).
+Neither needs the Business tier (only hosted ElevenLabs library voices do), so
+you never have to use a synthesized voice if you would rather use your own.
+
 #### You will learn
 
 - [how to attach a narration script](#attach-a-narration-script)

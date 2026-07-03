@@ -4,6 +4,13 @@ Studio lets your team remix videos from the ScreenCI web app: change render
 options, narration text, and voices without touching code or re-running the
 recording. Studio is available on the Business tier.
 
+It is built for teamwork: developers create the video in code once, and
+teammates who never touch the repo can then swap assets, rewrite narration,
+retune voices, and adjust overlays and render options in the browser, then ship
+a new version themselves. Each feature is opted in independently (see below), so
+you choose exactly which parts a video hands to the web and which stay owned in
+code.
+
 There are two ways to use it:
 
 - **Opt in from code.** Wrap a feature's names in `studio(...)`, imported from

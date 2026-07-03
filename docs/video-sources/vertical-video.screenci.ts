@@ -14,8 +14,8 @@ video.use({
 
 video('Vertical video', async ({ page }) => {
   await hide(async () => {
-    await page.goto('https://screenci.com/')
-    await page.waitForLoadState('networkidle')
+    await page.goto('https://screenci.com/', { waitUntil: 'domcontentloaded' })
+    await page.getByRole('heading', { level: 1 }).first().waitFor()
   })
 
   await page.waitForTimeout(4500)

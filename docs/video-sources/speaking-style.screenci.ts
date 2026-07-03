@@ -35,8 +35,10 @@ video.narration({
   },
 })('Per-cue speaking style', async ({ page, narration }) => {
   await hide(async () => {
-    await page.goto('https://screenci.com/docs/guides/narration')
-    await page.waitForLoadState('networkidle')
+    await page.goto('https://screenci.com/docs/guides/narration', {
+      waitUntil: 'domcontentloaded',
+    })
+    await page.getByRole('heading').first().waitFor()
   })
 
   await narration.hook()

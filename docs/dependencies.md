@@ -111,11 +111,27 @@ If you record a dependent before its target has any finished render, the depende
 
 ## Language matching
 
-A dependency embeds the target's output for the **same language** as the dependent render. The fallback is deliberately strict to avoid embedding the wrong language:
+By default a dependency embeds the target's output for the **same language** as the dependent render. The fallback is deliberately strict to avoid embedding the wrong language:
 
 - If the target has a render for the dependent's language, that one is embedded.
 - If it does not, but the target only has renders in a **single language**, that one is embedded (there is no ambiguity).
 - If the target has renders in **multiple languages** and none match, the dependent render **fails** with a language-mismatch error. Render the target in the matching language, or keep it single-language.
+
+### Pinning a language
+
+Pass a `language` to embed a **fixed** language of the target, regardless of which language the surrounding render is in. This is useful when a clip should always appear in one language (for example a shared intro), even inside videos rendered in other languages:
+
+```ts
+// Always embed the Finnish intro, whatever language the demo renders in.
+video.overlays({ intro: selected('Intro Clip', { language: 'fi' }) })(
+  'Full Demo',
+  async ({ overlays }) => {
+    await overlays.intro()
+  }
+)
+```
+
+A pinned language never falls back to another one: if the target has **no** finished render in the pinned language, the dependent render **fails explicitly** with an error listing the languages the target does have. Render the target in the pinned language to resolve it.
 
 ## Edge cases
 

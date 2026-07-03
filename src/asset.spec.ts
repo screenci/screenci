@@ -1993,6 +1993,58 @@ describe('overlay crop and source trim', () => {
     })
   })
 
+  it('omits language from the ref by default', async () => {
+    const input = selected('Intro Clip')
+    expect(input.config.language).toBeUndefined()
+
+    const overlays = createOverlays({ intro: input })
+    await overlays.intro.for('1s')
+
+    expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
+      kind: 'dependency',
+      dependency: { name: 'Intro Clip' },
+      durationMs: 1000,
+      fullScreen: false,
+    })
+  })
+
+  it('pins the language on the dependency ref when provided', async () => {
+    const overlays = createOverlays({
+      intro: selected('Intro Clip', { language: 'fi' }),
+    })
+
+    await overlays.intro.for('1s')
+
+    expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
+      kind: 'dependency',
+      dependency: { name: 'Intro Clip', language: 'fi' },
+      durationMs: 1000,
+      fullScreen: false,
+    })
+  })
+
+  it('carries both a pinned language and inheritSubtitles on the ref', async () => {
+    const overlays = createOverlays({
+      intro: selected('Intro Clip', {
+        language: 'fi',
+        inheritSubtitles: true,
+      }),
+    })
+
+    await overlays.intro.for('1s')
+
+    expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
+      kind: 'dependency',
+      dependency: {
+        name: 'Intro Clip',
+        language: 'fi',
+        inheritSubtitles: true,
+      },
+      durationMs: 1000,
+      fullScreen: false,
+    })
+  })
+
   it('records a source start on a selected() video dependency', async () => {
     const overlays = createOverlays({
       intro: selected('Clip', { start: '2s' }),

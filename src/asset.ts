@@ -291,6 +291,17 @@ export type DependencyOverlayOptions = Pick<
    * has no competing narration of its own. Defaults to `false`.
    */
   inheritSubtitles?: boolean
+  /**
+   * Pin the embed to a specific language of the target (a language code such as
+   * `'fi'`), independent of the surrounding render's language. Use this to embed
+   * a fixed-language version of the target no matter which language the
+   * surrounding video is rendered in. When the target has no finished render in
+   * this language, the dependent render FAILS explicitly (the error lists the
+   * languages the target does have) rather than falling back to another one.
+   * Omit to inherit the surrounding render's language (embedding the target's
+   * output for the matching language, or its single language when unambiguous).
+   */
+  language?: string
 }
 
 /** Brand identifying a {@link selected} render-dependency overlay input. */
@@ -326,6 +337,11 @@ export type DependencyOverlayInput = {
  * track for the window it plays, wherever the surrounding video has no competing
  * narration of its own (off by default).
  *
+ * By default the embed follows the surrounding render's language. Pass
+ * `{ language: 'fi' }` to pin a specific language of the target instead: the
+ * dependent render then fails explicitly (listing the target's available
+ * languages) when the target has no finished render in that language.
+ *
  * @example
  * ```ts
  * video.overlays({ intro: selected('Intro Clip') })(
@@ -333,6 +349,17 @@ export type DependencyOverlayInput = {
  *   async ({ page, overlays }) => {
  *     await overlays.intro()
  *     await page.goto('/dashboard')
+ *   }
+ * )
+ * ```
+ *
+ * @example
+ * ```ts
+ * // Always embed the Finnish intro, whatever language the demo renders in.
+ * video.overlays({ intro: selected('Intro Clip', { language: 'fi' }) })(
+ *   'Full Demo',
+ *   async ({ overlays }) => {
+ *     await overlays.intro()
  *   }
  * )
  * ```
@@ -1389,6 +1416,9 @@ function createDependencyOverlayController(
         kind: 'dependency',
         dependency: {
           name: input.name,
+          ...(input.config.language !== undefined && {
+            language: input.config.language,
+          }),
           ...(input.config.inheritSubtitles === true && {
             inheritSubtitles: true,
           }),

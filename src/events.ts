@@ -534,6 +534,16 @@ export type OverlayDependencyRef = {
   /** Project-unique name of the target video/screenshot to embed. */
   name: string
   /**
+   * Pin the embed to a specific language of the target, independent of the
+   * surrounding render's language. When set, the backend resolves the target's
+   * output strictly for this language and fails the dependent render if the
+   * target has no finished render in it (listing the languages it does have),
+   * rather than inheriting the dependent's language or falling back to a single
+   * available language. Omitted (the default) inherits the surrounding render's
+   * language. Only present when a language was pinned.
+   */
+  language?: string
+  /**
    * When `true`, the embedded target's narration subtitles are also served as
    * subtitles of the surrounding video (via its VTT track) for the window the
    * embed plays, but only where the surrounding video has no competing narration

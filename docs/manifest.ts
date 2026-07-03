@@ -132,7 +132,7 @@ export const docsManifest = [
     section: 'Fixtures',
     order: 5,
     navLabel: 'Render dependencies',
-    title: 'Render Dependencies',
+    title: 'Render dependencies',
     description:
       'Embed one render inside another with selected(name): reuse intro clips and logo stills across videos and screenshots, and have dependents re-render automatically when the target selection changes.',
     prev: 'docs/guides/overlays',

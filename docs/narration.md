@@ -22,8 +22,11 @@ The default voice is set once with `renderOptions.narration.voice`, in
 value) is the most specific override. Changing the voice re-renders without
 re-recording; changing the spoken text re-records.
 
-`style` prompts and `modelType: 'expressive'` require the Business tier. Free
-and Starter users should stay with the default consistent narration flow.
+`style` prompts require the Business tier, as does choosing `modelType:
+'expressive'` for a language that also has a consistent voice (a tone upgrade).
+A language whose only built-in voice is the expressive model uses it
+automatically on every plan, so Free and Starter can narrate it without setting
+`modelType`.
 
 #### You will learn
 
@@ -353,7 +356,10 @@ need to choose between consistency and expressiveness.
 
 - `consistent` is the safer default for docs and product walkthroughs
 - `expressive` is useful when you want a more natural, less uniform delivery
-- `expressive` and `style` prompts require the Business tier
+- choosing `expressive` for a language that also has a consistent voice, and
+  `style` prompts, require the Business tier
+- a language whose only built-in voice is the expressive model uses it
+  automatically on every plan, no `modelType` needed
 
 ## Inline speech markup
 
@@ -419,6 +425,12 @@ see [Clone a voice from an audio sample](#clone-a-voice-from-an-audio-sample)).
 Hosted ElevenLabs voices (`voices.elevenlabs({ voiceId })`, a voice id from your
 ElevenLabs account) require the Business tier. Both hosted voices and clones use
 your own ElevenLabs API key.
+
+The consistent model is the default, and the expressive model is selected
+automatically for a language that has no consistent voice (its only built-in
+option), on every plan. Choosing the expressive model as a tone upgrade for a
+language that also has a consistent voice, and `style` prompts, require the
+Business tier.
 
 Free and Starter also render a single narration language across the whole
 organization; multiple languages require Business. See

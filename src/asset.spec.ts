@@ -287,7 +287,7 @@ describe('createOverlays', () => {
     it('reuses a missing overlay file from a previous upload instead of failing', async () => {
       const tempDir = await mkdtemp(join(tmpdir(), 'screenci-overlay-spec-'))
       resetMissingOverlayWarnings()
-      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+      const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => {})
       const overlays = createOverlays({
         logo: { path: './missing.png', duration: '1.2s' },
       })
@@ -309,11 +309,11 @@ describe('createOverlays', () => {
           durationMs: 1200,
           fullScreen: false,
         })
-        expect(warnSpy).toHaveBeenCalledWith(
+        expect(infoSpy).toHaveBeenCalledWith(
           expect.stringContaining('Locally missing overlay: ./missing.png')
         )
       } finally {
-        warnSpy.mockRestore()
+        infoSpy.mockRestore()
         await rm(tempDir, { recursive: true, force: true })
       }
     })
@@ -1672,10 +1672,10 @@ describe('validateRegisteredAssetPaths', () => {
     }
   })
 
-  it('warns but does not throw when a registered file is missing', async () => {
+  it('notes but does not throw when a registered file is missing', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'screenci-asset-validate-'))
     resetMissingOverlayWarnings()
-    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => {})
     try {
       await writeFile(join(tempDir, 'logo.png'), 'png')
       const missing = join(tempDir, 'intro.mp4')
@@ -1689,11 +1689,11 @@ describe('validateRegisteredAssetPaths', () => {
       await expect(
         validateRegisteredAssetPaths(ownerFile)
       ).resolves.toBeUndefined()
-      expect(warnSpy).toHaveBeenCalledWith(
+      expect(infoSpy).toHaveBeenCalledWith(
         expect.stringContaining(`Locally missing overlay: ${missing}`)
       )
     } finally {
-      warnSpy.mockRestore()
+      infoSpy.mockRestore()
       await rm(tempDir, { recursive: true, force: true })
     }
   })

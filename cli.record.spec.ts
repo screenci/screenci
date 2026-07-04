@@ -5,6 +5,11 @@ import { EventEmitter } from 'events'
 import { Readable } from 'stream'
 import { stripVTControlCharacters } from 'util'
 import { logger } from './src/logger.js'
+// Not a static top-level import: `./src/anonSession.js` imports `fs`, and a
+// static import here would resolve it before this file's own mock* variables
+// (below) initialize, breaking the `vi.mock('fs', ...)` hoisting below. Each
+// test instead destructures `secretCredential` off the same dynamic
+// `await import('./cli')` it already uses for the function under test.
 
 const mockSpawn = vi.fn()
 const mockExec = vi.fn()
@@ -393,21 +398,23 @@ describe('CLI', () => {
       process.env.SCREENCI_SECRET = 'test-secret'
     })
 
-    it('exits non-zero when SCREENCI_SECRET is missing', async () => {
+    it('runs Playwright and does not exit when SCREENCI_SECRET is missing', async () => {
       delete process.env.SCREENCI_SECRET
       process.argv = ['node', 'cli.js', 'record']
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
 
       const { main } = await import('./cli')
 
-      await expect(main()).rejects.toThrow('process.exit called')
+      // No account is required to record: without a secret, the upload step
+      // (not tested here) falls back to an anonymous trial session, so
+      // record must still start Playwright rather than hard-exiting.
+      await main()
 
-      // No browser sign-in flow: a missing secret is a hard error that points
-      // the user at the secrets page and never starts Playwright.
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('SCREENCI_SECRET')
-      )
-      expect(processExitSpy).toHaveBeenCalledWith(1)
-      expect(mockSpawn).not.toHaveBeenCalled()
+      expect(processExitSpy).not.toHaveBeenCalled()
+      expect(mockSpawn).toHaveBeenCalled()
     })
 
     it('loads SCREENCI_SECRET from the project .env when envFile is not configured', async () => {
@@ -646,13 +653,13 @@ describe('CLI', () => {
         return mockChildProcess as unknown as ChildProcess
       })
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       expect(result).toEqual({
@@ -719,13 +726,13 @@ describe('CLI', () => {
         }
       })
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       expect(result.elevenLabsKeyMissingVideos).toEqual(['Demo'])
@@ -779,13 +786,13 @@ describe('CLI', () => {
         }
       })
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       expect(result.notices).toEqual([
@@ -970,13 +977,13 @@ describe('CLI', () => {
         }
       })
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       expect(result.studioNotices).toEqual([
@@ -1028,13 +1035,13 @@ describe('CLI', () => {
         }
       })
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       expect(result.studioNotices).toEqual([
@@ -1109,13 +1116,13 @@ describe('CLI', () => {
         }
       })
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       const startCall = mockFetch.mock.calls.find(
@@ -1181,13 +1188,13 @@ describe('CLI', () => {
         }
       })
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       const sentHeaders = mockFetch.mock.calls.flatMap((call) => {
@@ -1347,13 +1354,13 @@ describe('CLI', () => {
         path.endsWith('recording.mp4')
       )
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       expect(result).toEqual({
@@ -1386,13 +1393,13 @@ describe('CLI', () => {
         path.endsWith('data.json')
       )
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       expect(result).toEqual({
@@ -1480,13 +1487,13 @@ describe('CLI', () => {
         }
       )
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       expect(result).toEqual({
@@ -1585,13 +1592,13 @@ describe('CLI', () => {
         }
       })
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       expect(result).toEqual({
@@ -1685,13 +1692,13 @@ describe('CLI', () => {
         }
       })
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       // The failure message uses the cwd-relative path, not the absolute one.
@@ -1794,13 +1801,13 @@ describe('CLI', () => {
         }
       )
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       expect(result).toEqual({
@@ -1900,12 +1907,12 @@ describe('CLI', () => {
         }
       )
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
       await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       expect(assetPut).toBeDefined()
@@ -2003,13 +2010,13 @@ describe('CLI', () => {
         }
       })
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       expect(result).toEqual({
@@ -2077,13 +2084,13 @@ describe('CLI', () => {
         }
       })
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       expect(result).toEqual({
@@ -2151,13 +2158,13 @@ describe('CLI', () => {
         }
       })
 
-      const { uploadRecordings } = await import('./cli')
+      const { uploadRecordings, secretCredential } = await import('./cli')
 
       const result = await uploadRecordings(
         '/repo/.screenci',
         'Test Project',
         'https://api.screenci.test',
-        'test-secret'
+        secretCredential('test-secret')
       )
 
       expect(result).toEqual({
@@ -2256,13 +2263,13 @@ describe('CLI', () => {
       process.env.CI = 'true'
 
       try {
-        const { uploadRecordings } = await import('./cli')
+        const { uploadRecordings, secretCredential } = await import('./cli')
 
         const result = await uploadRecordings(
           '/repo/.screenci',
           'Test Project',
           'https://api.screenci.test',
-          'test-secret'
+          secretCredential('test-secret')
         )
 
         expect(result).toEqual({
@@ -2369,13 +2376,13 @@ describe('CLI', () => {
       )
 
       try {
-        const { uploadRecordings } = await import('./cli')
+        const { uploadRecordings, secretCredential } = await import('./cli')
 
         await uploadRecordings(
           '/repo/.screenci',
           'Test Project',
           'https://api.screenci.test',
-          'test-secret'
+          secretCredential('test-secret')
         )
 
         const messages = loggerInfoSpy.mock.calls.map((call) =>
@@ -2499,13 +2506,13 @@ describe('CLI', () => {
       )
 
       try {
-        const { uploadRecordings } = await import('./cli')
+        const { uploadRecordings, secretCredential } = await import('./cli')
 
         await uploadRecordings(
           '/repo/.screenci',
           'Test Project',
           'https://api.screenci.test',
-          'test-secret'
+          secretCredential('test-secret')
         )
 
         const messages = loggerInfoSpy.mock.calls.map((call) =>

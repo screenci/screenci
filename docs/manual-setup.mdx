@@ -51,23 +51,17 @@ yarn create screenci
 If that does not work, install [Node.js 18 or newer](https://nodejs.org/en/download),
 which comes with npm.
 
-To connect the project automatically, append the one-time setup token shown on
-your [Get Started page](https://app.screenci.com/get-started) (it appears in the
-copyable command there, already filled in). init exchanges it for your
-`SCREENCI_SECRET` and writes it into `screenci/.env`:
+No account or setup token is needed: the scaffolded project records immediately
+(see [Record the final result](#record-the-final-result)). If you already have a
+`SCREENCI_SECRET` from an existing account, pass it as an argument and init
+writes it straight into `screenci/.env`:
 
 ```bash
-npm init screenci@latest otp_PASTE_YOUR_TOKEN_HERE
+npm init screenci@latest PASTE_YOUR_SCREENCI_SECRET_HERE
 ```
 
-Replace `otp_PASTE_YOUR_TOKEN_HERE` with the real token from your Get Started
-page. It is a placeholder, not a working token. If you already have your
-`SCREENCI_SECRET`, you can pass that instead of a token and init writes it
-straight into `screenci/.env`.
-
-Without a token, init just scaffolds the project and you set `SCREENCI_SECRET`
-by hand (see [Record the final result](#record-the-final-result)). The secret is
-shared across your organization, so the same value connects every project.
+The secret is shared across your organization, so the same value connects every
+project.
 
 ## What initializing creates
 
@@ -234,13 +228,14 @@ yarn screenci record
   </TabItem>
 </Tabs>
 
-`screenci record` needs `SCREENCI_SECRET`. The quickest way to set it is to run
-`init` with the one-time setup token shown on the Get Started page: it writes the
-secret into `screenci/.env` for you, and you can record right away on the free
-tier. Otherwise, copy `SCREENCI_SECRET` from your secrets page into
-`screenci/.env` (the same value you set for CI runs). If the secret is missing,
-`record` prints guidance and exits with a non-zero status without recording. The
-upload contains the raw recording, not your source code.
+`screenci record` needs no account or secret to work: without one, it uploads
+under a local, anonymous trial session, and prints a link to view the result.
+Open that link, then sign up to keep the video and get a shareable URL.
+
+For an account you already have, copy `SCREENCI_SECRET` from your secrets page
+into `screenci/.env` (the same value you set for CI runs) so recordings upload
+directly to your organization. The upload contains the raw recording, not your
+source code.
 
 Free renders include a ScreenCI watermark. Upgrading removes it (and raises your
 render and active-video limits).

@@ -165,7 +165,11 @@ export type InputEvent = {
 }
 
 export type RecordingCustomVoiceRef = {
-  assetHash: string
+  /**
+   * Absent when the sample was missing locally at record time; recovered from a
+   * previous upload (matched by assetPath) before submission. See stripVoicePath.
+   */
+  assetHash?: string
   /** Present only in recording phase (for CLI upload); stripped from submitted data. */
   assetPath?: string
 }

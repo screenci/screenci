@@ -11,7 +11,7 @@ export type GitMetadata = {
 }
 
 /** Treat common CI environments as always-clean. */
-function isCI(): boolean {
+export function isCI(): boolean {
   const env = process.env
   return Boolean(
     env.CI ||

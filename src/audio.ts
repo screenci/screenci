@@ -9,7 +9,7 @@ import {
   prewarmAssetFile,
 } from './assetHash.js'
 import { isInsideHide } from './hide.js'
-import { logger } from './logger.js'
+import { logMissingAsset } from './missingAssetLog.js'
 import { MAX_AUDIO_LEVEL, validateSpeedTime } from './asset.js'
 import {
   getScreenCIRuntimeContext,
@@ -137,9 +137,7 @@ const warnedMissingAudioPaths = new Set<string>()
 function warnMissingAudio(path: string): void {
   if (warnedMissingAudioPaths.has(path)) return
   warnedMissingAudioPaths.add(path)
-  logger.warn(
-    `Locally missing audio: ${path}. It will be reused from a previous upload of this video if available, otherwise the upload fails.`
-  )
+  logMissingAsset('audio', path)
 }
 
 export function resetMissingAudioWarnings(): void {

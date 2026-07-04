@@ -124,7 +124,7 @@ export type InputEvent = {
 }
 
 export type RecordingCustomVoiceRef = {
-  assetHash: string
+  assetHash?: string
   assetPath?: string
 }
 

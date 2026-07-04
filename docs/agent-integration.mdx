@@ -13,12 +13,11 @@ for your selection.
 
 ## Start with one paste
 
-Copy the ready-made prompt (with your one-time setup token) from the Get Started
-page in the ScreenCI app, or paste this into Claude Code, Codex, Cursor, or any
-other coding agent:
+Copy the ready-made prompt from the Get Started page in the ScreenCI app, or
+paste this into Claude Code, Codex, Cursor, or any other coding agent:
 
 ```text
-Integrate ScreenCI by fetching https://screenci.com/integrate.md and following its steps (use one-time token otp_PASTE_YOUR_TOKEN_HERE), then add a screenci video about <feature>
+Integrate ScreenCI by fetching https://screenci.com/integrate.md and following its steps, then add a screenci video about <feature>
 ```
 
 Replace `<feature>` with whatever you want the video to show off. Add `@files`
@@ -29,22 +28,24 @@ or a URL so the agent has context to work from, for example
 
 The brief walks the agent through these steps:
 
-1. **Scaffold and connect the project.** It runs
-   `npm init screenci@latest <setup-token> -- --yes` at the repository root. The
-   one-time setup token is exchanged for your organization's `SCREENCI_SECRET`,
-   which init writes into `screenci/.env`, so the project is connected on the
-   free tier with no browser sign-in. The `--yes` flag runs the command
-   non-interactively (defaulting the project name to the repository root
-   directory name). This installs the `screenci` package, scaffolds
-   `screenci.config.ts` and `recordings/`, and installs the `screenci` agent skill
-   at the repository root. Without a token, the agent instead tells you to copy
-   `SCREENCI_SECRET` from your secrets page into `screenci/.env`.
+1. **Scaffold the project.** It runs `npm init screenci@latest -- --yes` at the
+   repository root. No account or setup token is needed. The `--yes` flag runs
+   the command non-interactively (defaulting the project name to the repository
+   root directory name). This installs the `screenci` package, scaffolds
+   `screenci.config.ts` and `recordings/`, and installs the `screenci` agent
+   skill at the repository root. If you already have a `SCREENCI_SECRET` from an
+   existing account, the agent passes it as an argument instead, so recordings
+   upload straight to your organization.
 2. **Author a video** for the flow you described, including narration via
    `video.narration({...})`, with setup wrapped in `hide()` and the demo
    driven with visible clicks.
 3. **Verify, then record.** It runs `npx screenci test` until the script is
-   green, then `npx screenci record` to capture the final video. Free renders
-   include a ScreenCI watermark; upgrading removes it.
+   green, then `npx screenci record` to capture the final video. `record`
+   uploads immediately either way: without a `SCREENCI_SECRET`, under a local,
+   anonymous trial session (it prints a link to view the result and sign up to
+   keep it); with one, straight to your organization. Renders without an
+   account, and renders on the free tier, include a ScreenCI watermark;
+   signing up (or upgrading) removes it.
 
 ## How the agent gathers context
 
@@ -64,17 +65,15 @@ see [Playwright codegen](/docs/video-script-basics#generate-a-first-draft-with-c
 
 ## Connecting the project
 
-The one-time setup token connects the project without a browser sign-in. Copy it
-(and the ready-to-run command) from the Get Started page, then run
-`npm init screenci@latest <setup-token>`. Init exchanges it for your
-`SCREENCI_SECRET` and writes it into `screenci/.env`, so `record` uploads
-immediately. The token is single-use and short-lived.
+No account or setup token is needed to record: without a `SCREENCI_SECRET`,
+`record` uploads under a local, anonymous trial session and prints a link where
+you can view the result and sign up to keep it.
 
-No token to hand? Copy `SCREENCI_SECRET` from your secrets page into
-`screenci/.env` (this is also the value you set for CI runs). The secret is
-shared across your organization, so the same value connects every project, and
-the Get Started page can mint a fresh command for each new one. If the secret is
-missing, `record` prints guidance and exits without recording.
+To connect a project to your organization directly, copy `SCREENCI_SECRET` from
+your secrets page into `screenci/.env` (this is also the value you set for CI
+runs), or pass it to `init` as an argument: `npm init screenci@latest
+<SCREENCI_SECRET>`. The secret is shared across your organization, so the same
+value connects every project.
 
 The upload contains the raw recording, not your source code. See
 [Overview](/docs) for how recording and rendering are split.

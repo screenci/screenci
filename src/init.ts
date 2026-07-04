@@ -10,11 +10,7 @@ import ora from 'ora'
 import pc from 'picocolors'
 import { logger } from './logger.js'
 import {
-  exchangeInitOtp,
-  getScreenCIGetStartedUrl,
   getScreenCISecretsUrl,
-  isPlaceholderInitOtp,
-  looksLikeInitOtp,
   looksLikeScreenCISecret,
   persistScreenCISecret,
   verifyScreenCISecret,
@@ -1107,25 +1103,23 @@ async function installInitDependencies(
 }
 
 // How the new project is set up to authenticate: `ready` means a
-// SCREENCI_SECRET is already configured (an init OTP was exchanged, or the env
-// already had one); `manual` means the user still needs to copy their secret
-// from the secrets page into the project `.env`.
+// SCREENCI_SECRET is already configured (a pasted secret was verified, or the
+// env already had one); `manual` means the user still needs to copy their
+// secret from the secrets page, or just run `screenci record` with no secret
+// to try it anonymously first (see anonSession.ts).
 export type InitSecretOutcome = 'ready' | 'manual'
 
 /**
  * Turns init's secret input into a persisted SCREENCI_SECRET.
  *
- * Three inputs are supported. A pasted SCREENCI_SECRET (a bare UUID) is verified
- * against the backend and written into `.env`. An OTP (minted by the Get Started
- * page) is exchanged for the org's default secret and written. Neither present,
- * or a failed exchange, degrades gracefully to the manual "copy your secret from
- * the secrets page" path. A pasted docs placeholder is caught before any network
- * call and redirected to Get Started. Never throws: setup guidance is always
- * better than a failed scaffold.
+ * A pasted SCREENCI_SECRET (a bare UUID) is verified against the backend and
+ * written into `.env`. Neither present, or a failed verification, degrades
+ * gracefully to the manual "copy your secret from the secrets page" path (or
+ * just record anonymously with no secret at all). Never throws: setup
+ * guidance is always better than a failed scaffold.
  */
 export async function setUpInitSecret(
   islandDir: string,
-  initOtp: string | undefined,
   options: {
     env?: NodeJS.ProcessEnv
     pastedSecret?: string
@@ -1137,53 +1131,33 @@ export async function setUpInitSecret(
   if (env.SCREENCI_SECRET) return 'ready'
 
   const envPath = resolve(islandDir, '.env')
+  if (!options.pastedSecret) return 'manual'
+
   // Only include keys that are set: `exactOptionalPropertyTypes` forbids passing
   // an explicit `undefined` for these optional fields.
-  const exchangeOptions = {
+  const verifyOptions = {
     ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
     ...(options.backendUrl ? { backendUrl: options.backendUrl } : {}),
   }
 
-  if (options.pastedSecret) {
-    const verification = await verifyScreenCISecret(
-      options.pastedSecret,
-      exchangeOptions
-    )
-    if (!verification.ok && verification.kind === 'invalid') {
-      logger.warn(
-        `That secret was not recognized. Copy your SCREENCI_SECRET from ${getScreenCISecretsUrl()} and add it to ${envPath} manually.`
-      )
-      return 'manual'
-    }
-    if (!verification.ok) {
-      logger.warn(
-        'Could not verify the secret right now; writing it anyway. `screenci record` will confirm it.'
-      )
-    }
-    // The generated config sets `envFile: '.env'`, so this matches what
-    // `screenci record` resolves later.
-    await persistScreenCISecret(envPath, options.pastedSecret)
-    return 'ready'
-  }
-
-  if (!initOtp) return 'manual'
-
-  if (isPlaceholderInitOtp(initOtp)) {
+  const verification = await verifyScreenCISecret(
+    options.pastedSecret,
+    verifyOptions
+  )
+  if (!verification.ok && verification.kind === 'invalid') {
     logger.warn(
-      `"${initOtp}" is the placeholder from the docs, not a real setup token. Open ${getScreenCIGetStartedUrl()} to copy the real init command, or pass your SCREENCI_SECRET instead.`
+      `That secret was not recognized. Copy your SCREENCI_SECRET from ${getScreenCISecretsUrl()} and add it to ${envPath} manually.`
     )
     return 'manual'
   }
-
-  const result = await exchangeInitOtp(initOtp, exchangeOptions)
-  if (!result.ok) {
+  if (!verification.ok) {
     logger.warn(
-      `Could not use the one-time setup token: ${result.reason} You can still finish setup manually.`
+      'Could not verify the secret right now; writing it anyway. `screenci record` will confirm it.'
     )
-    return 'manual'
   }
-
-  await persistScreenCISecret(envPath, result.secret)
+  // The generated config sets `envFile: '.env'`, so this matches what
+  // `screenci record` resolves later.
+  await persistScreenCISecret(envPath, options.pastedSecret)
   return 'ready'
 }
 
@@ -1555,18 +1529,13 @@ export async function runInit(
     await ensureSupportedYarnVersion(initCwd)
   }
 
-  // The single positional is one of: an init one-time password (carries the OTP
-  // prefix, exchanged for the org secret after scaffolding), a pasted
-  // SCREENCI_SECRET (a bare UUID, written straight to `.env`), or otherwise the
-  // project name (backward-friendly). OTP is checked first because a pasted
-  // placeholder keeps the `otp_` prefix and must be caught on the OTP path.
+  // The single positional is either a pasted SCREENCI_SECRET (a bare UUID,
+  // written straight to `.env`) or otherwise the project name
+  // (backward-friendly). With no secret at all, `screenci record` uploads
+  // anonymously instead (see anonSession.ts) — no setup token is needed.
   let projectName = projectNameArg?.trim()
-  let initOtp: string | undefined
   let pastedSecret: string | undefined
-  if (projectName && looksLikeInitOtp(projectName)) {
-    initOtp = projectName
-    projectName = undefined
-  } else if (projectName && looksLikeScreenCISecret(projectName)) {
+  if (projectName && looksLikeScreenCISecret(projectName)) {
     pastedSecret = projectName
     projectName = undefined
   }
@@ -1818,7 +1787,6 @@ export async function runInit(
 
   const secretOutcome = await setUpInitSecret(
     islandDir,
-    initOtp,
     pastedSecret ? { pastedSecret } : {}
   )
 

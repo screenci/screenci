@@ -28,6 +28,7 @@ import { isCustomVoiceRef } from './customVoiceRef.js'
 import { MAX_AUDIO_LEVEL } from './asset.js'
 import { isInsideHide } from './hide.js'
 import { logger } from './logger.js'
+import { logMissingAsset } from './missingAssetLog.js'
 import {
   assetCandidatePaths,
   hashAssetFile,
@@ -92,9 +93,7 @@ const warnedMissingAssetPaths = new Set<string>()
 function warnMissingNarrationAsset(assetPath: string): void {
   if (warnedMissingAssetPaths.has(assetPath)) return
   warnedMissingAssetPaths.add(assetPath)
-  logger.warn(
-    `Locally missing narration media: ${assetPath}. It will be reused from a previous upload of this video if available, otherwise the upload fails.`
-  )
+  logMissingAsset('narration media', assetPath)
 }
 
 export function resetMissingNarrationAssetWarnings(): void {
@@ -123,11 +122,18 @@ async function toRecordedVoice(
 ): Promise<VoiceKey | RecordingCustomVoiceRef> {
   if (!isCustomVoiceRef(voice)) return voice
   const testFilePath = getScreenCIRuntimeContext().testFilePath
-  // A custom voice sample is read at record time to identify it for cloning, so
-  // unlike narration media it must be present locally.
+  // A custom voice sample identifies a cloned voice for synthesis. When it is
+  // missing locally (e.g. a gitignored sample on CI) we cannot hash it here, but
+  // the clone can still be recovered from a previous upload of this video, matched
+  // by path (see prepareCustomVoiceAssets / resolveMissingUploadAssets in cli.ts).
+  // So warn and emit a path-only ref instead of failing, exactly like narration
+  // media. The upload fails later only if no previous upload exists to reuse.
   const assetHash = await resolveAssetFileHash(voice.path, testFilePath)
   if (assetHash === undefined) {
-    throw new Error(`Asset file not found: ${voice.path}`)
+    warnMissingNarrationAsset(voice.path)
+    return {
+      assetPath: voice.path,
+    }
   }
   return {
     assetHash,

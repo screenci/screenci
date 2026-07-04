@@ -46,23 +46,24 @@ describe('setUpInitSecret', () => {
     vi.restoreAllMocks()
   })
 
-  it("exchanges the init OTP and writes the secret to the island .env, returning 'ready'", async () => {
+  it("verifies a pasted secret and writes it to the island .env, returning 'ready'", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ status: 'completed', secret: 'sec_init_123' }),
+      json: async () => ({ orgId: 'org_123' }),
       text: async () => '',
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const outcome = await setUpInitSecret(islandDir, 'otp_init-token', {
+    const outcome = await setUpInitSecret(islandDir, {
       env: {},
+      pastedSecret: 'sec_init_123',
     })
 
     expect(outcome).toBe('ready')
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/cli-link/exchange'),
-      expect.objectContaining({ method: 'POST' })
+      expect.stringContaining('/cli/whoami'),
+      expect.objectContaining({ method: 'GET' })
     )
     // The secret lands in the .env path that `record` resolves later.
     const envPath = path.join(islandDir, '.env')
@@ -72,12 +73,13 @@ describe('setUpInitSecret', () => {
     )
   })
 
-  it("returns 'ready' without exchanging when a secret is already configured", async () => {
+  it("returns 'ready' without verifying when a secret is already configured", async () => {
     const fetchMock = vi.fn()
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const outcome = await setUpInitSecret(islandDir, 'otp_init-token', {
+    const outcome = await setUpInitSecret(islandDir, {
       env: { SCREENCI_SECRET: 'already-set' },
+      pastedSecret: 'sec_init_123',
     })
 
     expect(outcome).toBe('ready')
@@ -85,28 +87,29 @@ describe('setUpInitSecret', () => {
     expect(existsSync(path.join(islandDir, '.env'))).toBe(false)
   })
 
-  it("returns 'manual' without a secret when no OTP is provided", async () => {
+  it("returns 'manual' without a secret when nothing is pasted", async () => {
     const fetchMock = vi.fn()
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const outcome = await setUpInitSecret(islandDir, undefined, { env: {} })
+    const outcome = await setUpInitSecret(islandDir, { env: {} })
 
     expect(outcome).toBe('manual')
     expect(fetchMock).not.toHaveBeenCalled()
     expect(existsSync(path.join(islandDir, '.env'))).toBe(false)
   })
 
-  it("is best-effort: returns 'manual' without throwing when the OTP exchange fails", async () => {
+  it("returns 'manual' when the pasted secret is not recognized", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
-      status: 500,
+      status: 401,
       json: async () => ({}),
-      text: async () => 'boom',
+      text: async () => 'invalid',
     })
     global.fetch = fetchMock as unknown as typeof fetch
 
-    const outcome = await setUpInitSecret(islandDir, 'otp_init-token', {
+    const outcome = await setUpInitSecret(islandDir, {
       env: {},
+      pastedSecret: 'sec_init_123',
     })
 
     expect(outcome).toBe('manual')

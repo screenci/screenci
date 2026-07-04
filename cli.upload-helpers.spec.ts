@@ -6,6 +6,11 @@ import { Readable } from 'stream'
 import { logger } from './src/logger.js'
 import type { VoiceKey } from './src/voices.js'
 import type { RecordingData } from './src/recording.js'
+// Not a static top-level import: `./src/anonSession.js` imports `fs`, and a
+// static import here would resolve it before this file's own mock* variables
+// (below) initialize, breaking the `vi.mock('fs', ...)` hoisting below. Each
+// test instead destructures `secretCredential` off the same dynamic
+// `await import('./cli')` it already uses for the function under test.
 
 const mockSpawn = vi.fn()
 const mockExec = vi.fn()
@@ -799,7 +804,8 @@ describe('CLI', () => {
     })
 
     it('resolves missing assets against a previous upload and reports the rest', async () => {
-      const { resolveMissingUploadAssets } = await import('./cli')
+      const { resolveMissingUploadAssets, secretCredential } =
+        await import('./cli')
       const assets = [
         {
           kind: 'overlay' as const,
@@ -847,7 +853,7 @@ describe('CLI', () => {
         'My Project',
         'My Video',
         'https://api.example.com',
-        'secret',
+        secretCredential('secret'),
         new AbortController().signal
       )
 
@@ -869,7 +875,8 @@ describe('CLI', () => {
     })
 
     it('skips the resolve request when nothing is missing', async () => {
-      const { resolveMissingUploadAssets } = await import('./cli')
+      const { resolveMissingUploadAssets, secretCredential } =
+        await import('./cli')
       const unresolved = await resolveMissingUploadAssets(
         [
           {
@@ -883,7 +890,7 @@ describe('CLI', () => {
         'My Project',
         'My Video',
         'https://api.example.com',
-        'secret',
+        secretCredential('secret'),
         new AbortController().signal
       )
       expect(unresolved).toEqual([])

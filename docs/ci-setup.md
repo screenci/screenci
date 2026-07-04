@@ -149,8 +149,9 @@ Notes:
   asset present so a version exists to reuse.
 - Overlays are matched by their declared name, so renaming an overlay (or its
   file) means the next record needs the file present again.
-- Custom voice sample files are the exception: they are read locally at record
-  time to identify the voice, so keep those committed or present.
+- Custom voice sample files (the clip you clone a voice from) follow the same
+  rule: record once with the sample present so it uploads, and later runs reuse
+  the cloned voice from that upload even when the file is absent locally.
 - This is independent of `.screenci/`, which is always gitignored and holds the
   local recording output.
 

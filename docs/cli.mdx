@@ -50,27 +50,22 @@ yarn create screenci
 
 The project name defaults to the repository root directory name.
 
-### One-time setup token
+### Connecting to an existing account
 
-`init` accepts a one-time setup token as its positional argument. Copy it (and
-the ready-to-run command) from the Get Started or secrets page in the ScreenCI
-app:
+No account or secret is needed to scaffold or record: without one, `record`
+uploads under a local, anonymous trial session and prints a link to view the
+result, then you sign up to keep it.
+
+To connect the project to an account you already have, pass your
+`SCREENCI_SECRET` (from your secrets page) as `init`'s positional argument, and
+it writes the secret straight into `screenci/.env`:
 
 ```bash
-npm init screenci@latest otp_PASTE_YOUR_TOKEN_HERE
+npm init screenci@latest PASTE_YOUR_SCREENCI_SECRET_HERE
 ```
 
-Replace `otp_PASTE_YOUR_TOKEN_HERE` with the real token from your Get Started
-page (it is a placeholder, not a working token). With a token, `init` exchanges
-it for your organization's `SCREENCI_SECRET` and writes it into `screenci/.env`,
-so you can `screenci record` immediately on the free tier. The token is
-single-use and short-lived; a used or expired token falls back to the manual
-path below without failing the scaffold. You can also pass your `SCREENCI_SECRET`
-directly instead of a token, and `init` writes it straight into `screenci/.env`.
-
-Without a token, `init` scaffolds the project and tells you to copy
-`SCREENCI_SECRET` from your secrets page into `screenci/.env` before your first
-record.
+You can also skip this and copy `SCREENCI_SECRET` into `screenci/.env` by hand
+at any point before recording.
 
 When using `npm init`, pass extra initializer flags after `--`:
 
@@ -279,8 +274,8 @@ Behavior:
 
 - enables recording timing
 - writes local output into `.screenci/`
-- requires `SCREENCI_SECRET` (from the project `.env` or the environment). Set it up by running `init` with a one-time setup token, or by copying the secret from your secrets page into `screenci/.env`. If it is missing, `record` prints guidance (pointing at your secrets page) and exits **non-zero** without recording
-- uploads successful recordings once `SCREENCI_SECRET` is available
+- needs no `SCREENCI_SECRET` to run: without one, it uploads under a local, anonymous trial session and prints a link to view the result. To upload straight to your organization instead, set `SCREENCI_SECRET` (from the project `.env`, the environment, or by running `init` with it) before recording
+- uploads every successful recording, with or without `SCREENCI_SECRET`
 - prints a project URL after upload when rendering has been started remotely
 - prints any informational notices returned by the service in cyan after upload (occasional, non-error status messages such as maintenance or timing notes). These never affect the exit code
 - new accounts start on the Free plan automatically (no plan selection step). Free renders include a ScreenCI watermark; after upload `record` prints an upgrade link (which removes the watermark and raises render and active-video limits, and unlocks multiple languages plus expressive tone control), except on the Business plan where the upgrade link is omitted

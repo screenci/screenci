@@ -2,7 +2,7 @@ import { hide, video } from 'screenci'
 
 video.use({
   renderOptions: {
-    recording: { size: 0.82, shape: 'rounded', roundness: 0.05 },
+    recording: { size: 0.96, shape: 'rounded', roundness: 0.04 },
     output: {
       aspectRatio: '9:16',
       quality: '1080p',

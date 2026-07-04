@@ -593,7 +593,11 @@ A voice clone only needs audio, so when the sample is a video (or a large file),
 ScreenCI extracts just the audio to a compact file before uploading. ScreenCI
 uploads the sample and creates the cloned voice once, then reuses it: the clone
 is keyed by the sample and language, so the same file does not get re-cloned on
-later runs.
+later runs. Because of that, the sample file does not need to stay present after
+the first upload: like overlays and narration media, a later run with the file
+missing locally (for example a gitignored sample on CI) reuses the voice from the
+previous upload instead of failing. See
+[Asset files do not need to be committed](/docs/ci-setup#asset-files-do-not-need-to-be-committed).
 
 A cloned voice is an ElevenLabs voice, so it accepts the same
 `eleven_multilingual_v2` controls as `voices.elevenlabs(...)`, and can be set as

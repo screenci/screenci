@@ -1,10 +1,9 @@
 import { readFile, writeFile } from 'fs/promises'
 
-// Shared CLI helpers for resolving the ScreenCI environment/URLs and for the
-// init one-time-password (OTP) handoff. `screenci init` receives an OTP as its
-// positional argument, swaps it for the org's default secret via
-// `POST /cli-link/exchange`, and writes SCREENCI_SECRET into the project `.env`
-// so `record` can upload immediately, no browser sign-in required.
+// Shared CLI helpers for resolving the ScreenCI environment/URLs and for
+// writing/verifying a SCREENCI_SECRET. `screenci record` with no
+// SCREENCI_SECRET set uploads anonymously instead (see anonSession.ts); this
+// module no longer handles the (removed) init-OTP handoff.
 
 const SCREENCI_ENVIRONMENT_VARIABLE = 'SCREENCI_ENVIRONMENT'
 const SCREENCI_ENVIRONMENT_OPTION_VALUES = ['local', 'dev', 'prod'] as const
@@ -12,20 +11,6 @@ const SCREENCI_PRODUCTION_BACKEND_URL = 'https://api.screenci.com'
 const SCREENCI_PRODUCTION_FRONTEND_URL = 'https://app.screenci.com'
 const SCREENCI_DEVELOPMENT_BACKEND_URL = 'https://dev.api.screenci.com'
 const SCREENCI_DEVELOPMENT_FRONTEND_URL = 'https://dev.app.screenci.com'
-
-// Init OTPs are prefixed so the CLI can tell a one-time setup token apart from
-// a project name passed as the same `init`/`create-screenci` positional.
-export const INIT_OTP_PREFIX = 'otp_'
-
-// Placeholders shown in the docs and agent brief. People and coding agents
-// sometimes paste these verbatim instead of substituting a real token, so init
-// detects them up front and points at the Get Started page (no network round
-// trip). Old variants are kept because cached docs and agents still use them.
-export const INIT_OTP_PLACEHOLDERS = [
-  'otp_your_token',
-  'otp_your_one_time_token',
-  'otp_paste_your_token_here',
-]
 
 // A SCREENCI_SECRET is a bare v4 UUID (no prefix). A user who copies their
 // secret and pastes it as the init positional should get it written to `.env`
@@ -114,64 +99,8 @@ export function getScreenCIGetStartedUrl(): string {
   return `${getDevFrontendUrl()}/get-started`
 }
 
-export function looksLikeInitOtp(value: string): boolean {
-  return value.startsWith(INIT_OTP_PREFIX)
-}
-
-export function isPlaceholderInitOtp(value: string): boolean {
-  return INIT_OTP_PLACEHOLDERS.includes(value.trim().toLowerCase())
-}
-
 export function looksLikeScreenCISecret(value: string): boolean {
   return SCREENCI_SECRET_PATTERN.test(value.trim())
-}
-
-export type ExchangeInitOtpResult =
-  | { ok: true; secret: string }
-  | { ok: false; reason: string }
-
-/**
- * Exchanges a one-time init token for the org's default SCREENCI_SECRET. The
- * token maps to a single-use, short-lived session, so a used or expired token
- * resolves to `{ ok: false }` and the caller falls back to guiding the user to
- * copy their secret from the secrets page. Never throws.
- */
-export async function exchangeInitOtp(
-  otp: string,
-  options: { backendUrl?: string; fetchImpl?: typeof fetch } = {}
-): Promise<ExchangeInitOtpResult> {
-  const backendUrl = options.backendUrl ?? getDevBackendUrl()
-  const fetchImpl = options.fetchImpl ?? fetch
-
-  try {
-    const response = await fetchImpl(`${backendUrl}/cli-link/exchange`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ otp }),
-    })
-
-    const body = (await response.json().catch(() => ({}))) as {
-      status?: string
-      secret?: string
-    }
-
-    if (response.ok && body.status === 'completed' && body.secret) {
-      return { ok: true, secret: body.secret }
-    }
-
-    if (body.status === 'consumed') {
-      return { ok: false, reason: 'This setup token has already been used.' }
-    }
-    if (body.status === 'expired') {
-      return { ok: false, reason: 'This setup token has expired.' }
-    }
-    return { ok: false, reason: 'This setup token is invalid.' }
-  } catch (err) {
-    return {
-      ok: false,
-      reason: err instanceof Error ? err.message : String(err),
-    }
-  }
 }
 
 export type VerifyScreenCISecretResult =

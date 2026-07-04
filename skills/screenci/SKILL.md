@@ -126,24 +126,24 @@ await autoZoom(async () => {
 
 ## Command Notes
 
-- `screenci init` (or `npm init screenci`) scaffolds a new project. It can be run at any time, but if the project is already initialized it fails on purpose: it exits with an error like `screenci/ already exists`. That is expected, not a problem to fix. Do not delete the existing project to force a re-init. Continue working with the project that is already there. If the user gives you a one-time setup token (it looks like `otp_...`), pass it as the first argument (`npm init screenci@latest otp_... -- --yes`) and init connects the project by writing `SCREENCI_SECRET` into `screenci/.env`.
+- `screenci init` (or `npm init screenci`) scaffolds a new project. It can be run at any time, but if the project is already initialized it fails on purpose: it exits with an error like `screenci/ already exists`. That is expected, not a problem to fix. Do not delete the existing project to force a re-init. Continue working with the project that is already there. No account is needed. If the user gives you an existing `SCREENCI_SECRET`, pass it as the first argument (`npm init screenci@latest <SCREENCI_SECRET> -- --yes`) and init connects the project by writing it into `screenci/.env`.
 - `screenci record` runs the recording flow with local Playwright.
 - `screenci test <playwright args...>` forwards most Playwright test arguments unchanged, while still using `screenci.config.ts`.
 
-### Connect the project (do this first)
+### Connecting to an account (optional)
 
-`screenci record` needs a `SCREENCI_SECRET`. There is no browser sign-in; connect the project one of two ways:
+`screenci record` needs no account or setup step: without a `SCREENCI_SECRET`, it uploads under a local, anonymous trial session and prints a link to view the result. Mention this to the user and keep going.
 
-1. **One-time setup token.** If the user gave you a token (`otp_...`), run `npm init screenci@latest <token> -- --yes`. Init exchanges the token for the org's `SCREENCI_SECRET` and writes it into `screenci/.env`, so `record` uploads immediately on the free tier. The token is single-use and short-lived.
-2. **Get Started page or secrets page.** If you have no token (or it was already used or expired), ask the user to open their ScreenCI **Get Started** page and copy the shown init command (it embeds a fresh one-time token), or to copy `SCREENCI_SECRET` from their **secrets page** into `screenci/.env`. The org secret is shared across projects, so either works for a new project. Relay this and keep building and testing the video while they do it. Only the final `record` needs the secret.
+To upload straight to an existing organization instead, connect the project one of two ways:
 
-If `SCREENCI_SECRET` is missing when you run `record`, it prints guidance and exits **non-zero** without recording. That is a setup step, not a code problem: get the secret into `screenci/.env` (token or secrets page) and run `npx screenci record` again. Do not hand the `record` step back to the user otherwise.
+1. **Pass the secret to init.** If the user gave you their `SCREENCI_SECRET`, run `npm init screenci@latest <SCREENCI_SECRET> -- --yes`. Init writes it into `screenci/.env`.
+2. **Secrets page.** Otherwise ask the user to copy `SCREENCI_SECRET` from their **secrets page** into `screenci/.env`. The org secret is shared across projects. Relay this and keep building and testing the video while they do it; only the final `record` needs it.
 
-Free renders include a ScreenCI watermark. Mention that the user can upgrade to remove it.
+Renders without an account, and renders on the free tier, include a ScreenCI watermark. Mention that signing up (or upgrading) removes it.
 
 ## Recording Workflow
 
-1. Start from the existing initialized ScreenCI package. Early on, make sure the project is connected: either init already wrote `SCREENCI_SECRET` from a one-time setup token, or ask the user to copy `SCREENCI_SECRET` from their secrets page into `screenci/.env`. Only the final recording needs it, so keep building while they do it.
+1. Start from the existing initialized ScreenCI package. No connection step is required: `record` works immediately, uploading under an anonymous trial session unless `SCREENCI_SECRET` is set. If the user gave you a secret, make sure it is in `screenci/.env`.
 2. Add or edit `.screenci.ts` files in `recordings/`.
    Remove `recordings/example.screenci.ts` if you are creating new videos and do not need the starter video.
    For narration, declare it on the test with `video.narration({ en: { ... } })` and trigger lines from the `narration` fixture with `await narration.someKey()` when the full line should finish before moving on. Use `await narration.someKey.start()` only when narration should overlap with the next action, and `await narration.someKey.end()` only to close that same active cue later. This is especially important before visible navigation or page changes. Use inline tags like `[pronounce: ...]` and `[short pause]` inside cue text when needed, especially for URLs and domains such as `screenci.com [pronounce: screen see eye dot com]`.
@@ -167,8 +167,9 @@ Free renders include a ScreenCI watermark. Mention that the user can upgrade to 
    ```
 
 3. Run `npx screenci test` until it passes.
-4. For the final recording, run `npx screenci record` yourself. If `SCREENCI_SECRET` is set it records and uploads immediately. If it is missing, `record` exits non-zero with guidance: get the secret into `screenci/.env` (one-time setup token or the secrets page) and run `npx screenci record` again. Do not hand this step back to the user otherwise.
+4. For the final recording, run `npx screenci record` yourself. It records and uploads immediately, with or without `SCREENCI_SECRET` set.
 5. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` for each recorded video.
+6. Report the URL `record` printed (it starts with the app's domain, e.g. `https://app.screenci.com/record/...`) back to the user so they can open it. Without a `SCREENCI_SECRET`, this is also how they view and claim the anonymous trial recording.
 
 ## Specific Tasks
 

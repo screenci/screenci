@@ -19,20 +19,22 @@ npx screenci record -c screenci.config.ts
 - Saves output under `.screenci/<video-name>/`
 - Produces at least `recording.mp4` and `data.json`
 
-## Connect Before Recording
+## Connecting to an Account (optional)
 
-`record` needs `SCREENCI_SECRET`, and there is no browser sign-in. Get it in place before the final recording (it does not block authoring or testing):
+`record` needs no account or setup step: without a `SCREENCI_SECRET`, it uploads under a local, anonymous trial session and prints a link to view the result.
 
-- If the user has a one-time setup token (`otp_...`), run `npm init screenci@latest <token> -- --yes`; init writes `SCREENCI_SECRET` into `screenci/.env`. A fresh token is on the user's Get Started page.
-- Otherwise ask the user to copy `SCREENCI_SECRET` from their secrets page into `screenci/.env`. The org secret is shared across projects.
+To upload straight to an existing organization instead, get `SCREENCI_SECRET` into `screenci/.env` before the final recording (it does not block authoring or testing):
+
+- Pass it to `init` as an argument: `npm init screenci@latest <SCREENCI_SECRET> -- --yes`.
+- Or ask the user to copy `SCREENCI_SECRET` from their secrets page into `screenci/.env`. The org secret is shared across projects.
 
 ## Runtime Behavior
 
 - Recording runs with local Playwright.
-- `SCREENCI_SECRET` is required (from `screenci/.env` or the environment). If it is missing, `screenci record` prints guidance (pointing at the secrets page) and exits **non-zero** without recording. Get the secret in place and rerun. This is a setup step, not a code problem.
-- New accounts start on the free tier; free renders include a ScreenCI watermark, and after upload `record` prints an upgrade link that removes it.
+- `record` uploads every successful recording, with or without `SCREENCI_SECRET` set.
+- Without an account, or on the free tier, renders include a ScreenCI watermark; after upload `record` prints a link that removes it.
 - Playwright arguments can be passed through after the command.
-- When API configuration and `SCREENCI_SECRET` are available, uploads run after recording.
+- After a successful `record`, report the URL it printed (starts with the app's domain, e.g. `https://app.screenci.com/record/...`) back to the user so they can open it. Without a `SCREENCI_SECRET`, this is also how they view and claim the anonymous trial recording.
 
 ## Recommended Workflow
 

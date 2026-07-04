@@ -13,7 +13,7 @@ import { isMouseVisible } from './mouse.js'
 import { validateCrop, resolveSourceTrim } from './sourceTrim.js'
 import { overlayRect } from './overlayRect.js'
 import { captureCallerFile } from './callerFile.js'
-import { logger } from './logger.js'
+import { logMissingAsset } from './missingAssetLog.js'
 import { access, readFile } from 'fs/promises'
 import { dirname, resolve } from 'path'
 import { resolveRecordingTimingDuration } from './runtimeMode.js'
@@ -567,9 +567,7 @@ async function validateAssetPath(
   } catch {
     if (warnedMissingOverlayPaths.has(assetPath)) return
     warnedMissingOverlayPaths.add(assetPath)
-    logger.warn(
-      `Locally missing overlay: ${assetPath}. It will be reused from a previous upload of this video if available, otherwise the upload fails.`
-    )
+    logMissingAsset('overlay', assetPath)
   }
 }
 

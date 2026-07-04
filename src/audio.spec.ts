@@ -235,7 +235,7 @@ describe('createAudio', () => {
 
   it('records a missing audio file without a hash for upload-time recovery', async () => {
     resetMissingAudioWarnings()
-    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => {})
     await run(async () => {
       const audio = createAudio({ theme: './gone.mp3' })
       await expect(audio.theme()).resolves.toBeUndefined()
@@ -246,11 +246,11 @@ describe('createAudio', () => {
         volume: 1,
         repeat: false,
       })
-      expect(warnSpy).toHaveBeenCalledWith(
+      expect(infoSpy).toHaveBeenCalledWith(
         expect.stringContaining('Locally missing audio: ./gone.mp3')
       )
     })
-    warnSpy.mockRestore()
+    infoSpy.mockRestore()
   })
 
   it('is a no-op against the noop recorder outside a recording', async () => {
@@ -357,10 +357,10 @@ describe('validateRegisteredAudioPaths', () => {
     }
   })
 
-  it('warns but does not throw when a registered file is missing', async () => {
+  it('notes but does not throw when a registered file is missing', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'screenci-audio-validate-'))
     resetMissingAudioWarnings()
-    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => {})
     try {
       await writeFile(join(tempDir, 'theme.mp3'), 'mp3')
       const missing = join(tempDir, 'sting.wav')
@@ -373,11 +373,11 @@ describe('validateRegisteredAudioPaths', () => {
       await expect(
         validateRegisteredAudioPaths(ownerFile)
       ).resolves.toBeUndefined()
-      expect(warnSpy).toHaveBeenCalledWith(
+      expect(infoSpy).toHaveBeenCalledWith(
         expect.stringContaining(`Locally missing audio: ${missing}`)
       )
     } finally {
-      warnSpy.mockRestore()
+      infoSpy.mockRestore()
       await rm(tempDir, { recursive: true, force: true })
     }
   })

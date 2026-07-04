@@ -56,13 +56,27 @@ import {
   getDevBackendUrl,
   getDevFrontendUrl,
   getScreenCISecretsUrl,
+  persistScreenCISecret,
 } from './src/linkSession.js'
 import { OVERLAY_CACHE_DIR_NAME } from './src/htmlRasterizer.js'
 import { maybeExtractVoiceSampleAudio } from './src/voiceSampleAudio.js'
+import {
+  type CliCredential,
+  anonCredential,
+  checkAnonSessionStatus,
+  deleteAnonSessionFile,
+  getOrCreateAnonToken,
+  secretCredential,
+} from './src/anonSession.js'
 
 // Re-export the environment-aware URL helpers so existing importers (and tests)
 // can keep importing them from the CLI entrypoint.
 export { getCliLinkSessionApiUrl, getDevBackendUrl, getDevFrontendUrl }
+// Re-exported so test files that mock fs/fs/promises can obtain these via the
+// same dynamic `await import('./cli')` they already use, rather than a static
+// top-level import — a static import of `./src/anonSession.js` (which imports
+// fs) would resolve before the test file's own mock variables initialize.
+export { secretCredential, anonCredential } from './src/anonSession.js'
 
 const SCREENCI_MOCK_RECORD_DOCS_URL =
   'https://screenci.com/docs/reference/cli/#--mock-record'
@@ -336,7 +350,7 @@ function contentTypeForPath(filePath: string): string {
 }
 
 type CustomVoiceRefLike = {
-  assetHash: string
+  assetHash?: string
   assetPath: string
   // SHA-256 of the original sample file. The backend keys the clone cache on
   // this so re-encoded uploads (audio extracted from a video) do not re-clone.
@@ -592,7 +606,7 @@ async function uploadRecordingCandidate(
   screenciDir: string,
   projectName: string,
   apiUrl: string,
-  secret: string,
+  credential: CliCredential,
   verbose: boolean,
   uploadAbort: ReturnType<typeof createUploadAbortController>,
   progressReporter: {
@@ -640,7 +654,7 @@ async function uploadRecordingCandidate(
       projectName,
       videoName,
       apiUrl,
-      secret,
+      credential,
       uploadAbort.signal,
       progressReporter
     )
@@ -668,7 +682,7 @@ async function uploadRecordingCandidate(
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-ScreenCI-Secret': secret,
+            [credential.header]: credential.value,
           },
           body: JSON.stringify({
             projectName,
@@ -718,7 +732,7 @@ async function uploadRecordingCandidate(
           videoName,
           startResponse.status,
           text,
-          secret
+          credential.value
         ),
         recordId,
       }
@@ -768,7 +782,7 @@ async function uploadRecordingCandidate(
     await uploadAssets(
       preparedUploadAssets,
       apiUrl,
-      secret,
+      credential,
       recordingId,
       uploadAbort.signal,
       uploadAbort.throwIfAborted,
@@ -796,7 +810,7 @@ async function uploadRecordingCandidate(
           headers: {
             'Content-Type': recordingContentType,
             'Content-Length': String(fileStat.size),
-            'X-ScreenCI-Secret': secret,
+            [credential.header]: credential.value,
           },
           body: stream as unknown as BodyInit,
           signal: uploadAbort.signal,
@@ -815,7 +829,7 @@ async function uploadRecordingCandidate(
         videoId,
         hadFailure: true,
         videoName,
-        failureMessage: `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${extractBackendError(text)}${hint401(recordingResponse.status, secret)}`,
+        failureMessage: `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${extractBackendError(text)}${hint401(recordingResponse.status, credential.value)}`,
         recordId,
         ...(plan !== null && { plan }),
       }
@@ -1868,7 +1882,7 @@ export async function resolveMissingUploadAssets(
   projectName: string,
   videoName: string,
   apiUrl: string,
-  secret: string,
+  credential: CliCredential,
   signal: AbortSignal,
   progressReporter?: { info: (message: string) => void }
 ): Promise<PreparedUploadAsset[]> {
@@ -1887,7 +1901,7 @@ export async function resolveMissingUploadAssets(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-ScreenCI-Secret': secret,
+          [credential.header]: credential.value,
         },
         body: JSON.stringify({ projectName, videoName, assets: refs }),
         signal,
@@ -1898,7 +1912,7 @@ export async function resolveMissingUploadAssets(
   if (!res.ok) {
     const text = await res.text()
     throw new UploadAssetError(
-      `Failed to resolve previously uploaded assets for "${videoName}": ${res.status} ${extractBackendError(text)}${hint401(res.status, secret)}`
+      `Failed to resolve previously uploaded assets for "${videoName}": ${res.status} ${extractBackendError(text)}${hint401(res.status, credential.value)}`
     )
   }
 
@@ -1952,7 +1966,7 @@ export function formatUnresolvedAssetMessage(
 async function uploadAssets(
   assets: PreparedUploadAsset[],
   apiUrl: string,
-  secret: string,
+  credential: CliCredential,
   recordingId: string,
   signal: AbortSignal,
   throwIfAborted: () => void,
@@ -1977,7 +1991,7 @@ async function uploadAssets(
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'X-ScreenCI-Secret': secret,
+                [credential.header]: credential.value,
               },
               body: JSON.stringify({
                 fileHash: asset.fileHash,
@@ -1994,7 +2008,7 @@ async function uploadAssets(
         if (!checkRes.ok) {
           const text = await checkRes.text()
           throw new UploadAssetError(
-            `Failed to check asset ${displayAssetPath(asset.path)}: ${checkRes.status} ${extractBackendError(text)}${hint401(checkRes.status, secret)}`
+            `Failed to check asset ${displayAssetPath(asset.path)}: ${checkRes.status} ${extractBackendError(text)}${hint401(checkRes.status, credential.value)}`
           )
         }
 
@@ -2036,7 +2050,7 @@ async function uploadAssets(
             headers: {
               'Content-Type': contentType,
               'Content-Length': String(fileBuffer.byteLength),
-              'X-ScreenCI-Secret': secret,
+              [credential.header]: credential.value,
               'X-ScreenCI-File-Hash': asset.fileHash,
               'X-ScreenCI-Asset-Size': String(asset.size),
               'X-ScreenCI-Asset-Path': encodeURIComponent(asset.path),
@@ -2054,7 +2068,7 @@ async function uploadAssets(
           )
         } else {
           throw new UploadAssetError(
-            `Failed to upload asset ${displayAssetPath(asset.path)}: ${res.status} ${extractBackendError(text)}${hint401(res.status, secret)}`
+            `Failed to upload asset ${displayAssetPath(asset.path)}: ${res.status} ${extractBackendError(text)}${hint401(res.status, credential.value)}`
           )
         }
       } else {
@@ -2080,7 +2094,7 @@ export async function uploadRecordings(
   screenciDir: string,
   projectName: string,
   apiUrl: string,
-  secret: string,
+  credential: CliCredential,
   specificEntry?: string,
   verbose = false
 ): Promise<{
@@ -2164,7 +2178,7 @@ export async function uploadRecordings(
             screenciDir,
             projectName,
             apiUrl,
-            secret,
+            credential,
             verbose,
             uploadAbort,
             progressReporter,
@@ -2557,11 +2571,11 @@ export async function requireScreenCISecret(configPath?: string): Promise<{
     await loadScreenCIConfigAndEnv(configPath)
   const secret = process.env.SCREENCI_SECRET
   if (!secret) {
-    // No browser sign-in flow: the secret comes from an init one-time token or
-    // from the secrets page. Guide the user to either path and exit non-zero.
+    // These commands need a real account (unlike `record`, which can upload
+    // anonymously): guide the user to copy their secret and exit non-zero.
     const envFilePath = await resolveProjectEnvFilePath(resolvedConfigPath)
     logger.error(
-      `No SCREENCI_SECRET configured. Copy your secret from ${pc.cyan(getScreenCISecretsUrl())} into ${envFilePath}, or re-run init with a one-time setup token from ${pc.cyan(getScreenCISecretsUrl())}.`
+      `No SCREENCI_SECRET configured. Copy your secret from ${pc.cyan(getScreenCISecretsUrl())} into ${envFilePath}.`
     )
     logScreenCISecretGuide()
     process.exit(1)
@@ -2786,6 +2800,53 @@ async function printInfo(configPath?: string): Promise<void> {
   process.stdout.write(`${JSON.stringify(data, null, 2)}\n`)
 }
 
+/**
+ * Resolves the credential `record`'s upload should authenticate with. A real
+ * SCREENCI_SECRET wins outright. Otherwise, checks the locally stored anon
+ * trial token: `claimed` self-upgrades by writing the real secret into `.env`
+ * and deleting the local anon state (no manual step required); `not_found`/
+ * `expired` nags and starts a fresh trial; `pending` proceeds anonymously.
+ */
+export async function resolveUploadCredential(
+  screenciDir: string,
+  apiUrl: string,
+  envFilePath: string,
+  secretFromEnv: string | undefined
+): Promise<{ credential: CliCredential; usedAnonCredential: boolean }> {
+  if (secretFromEnv) {
+    return {
+      credential: secretCredential(secretFromEnv),
+      usedAnonCredential: false,
+    }
+  }
+
+  const token = await getOrCreateAnonToken(screenciDir)
+  const status = await checkAnonSessionStatus(token, { backendUrl: apiUrl })
+
+  if (status.status === 'claimed') {
+    await persistScreenCISecret(envFilePath, status.secret)
+    await deleteAnonSessionFile(screenciDir)
+    logger.info(
+      'Linked to your ScreenCI account. Future uploads use your API key.'
+    )
+    return {
+      credential: secretCredential(status.secret),
+      usedAnonCredential: false,
+    }
+  }
+
+  if (status.status === 'not_found' || status.status === 'expired') {
+    logger.info(
+      'Your previous trial expired or was already claimed elsewhere. Starting a new one.'
+    )
+    await deleteAnonSessionFile(screenciDir)
+    const freshToken = await getOrCreateAnonToken(screenciDir)
+    return { credential: anonCredential(freshToken), usedAnonCredential: true }
+  }
+
+  return { credential: anonCredential(token), usedAnonCredential: true }
+}
+
 // Uploads the recordings already written under `.screenci` for the resolved
 // config. Shared by `record` (after a Playwright run) and `retry` (which
 // re-sends the existing recordings without re-running Playwright). A non-null
@@ -2814,17 +2875,23 @@ async function uploadRecordedVideosForConfig(
     )
     const apiUrl = getDevBackendUrl()
     const appUrl = getDevFrontendUrl()
-    const secret = process.env.SCREENCI_SECRET
     const uploadPolicy = resolveRecordUploadPolicy(screenciConfig)
     const configDir = dirname(resolvedConfigPath)
     const screenciDir = resolve(configDir, '.screenci')
+    const envFilePath = screenciConfig.envFile
+      ? resolve(configDir, screenciConfig.envFile)
+      : resolve(configDir, '.env')
     const completedRecordingCount = await countCompletedRecordings(screenciDir)
+
+    const { credential, usedAnonCredential } = await resolveUploadCredential(
+      screenciDir,
+      apiUrl,
+      envFilePath,
+      process.env.SCREENCI_SECRET
+    )
+
     if (playwrightFailure !== null && completedRecordingCount === 0) {
       logger.info('All recordings failed.')
-    } else if (!secret) {
-      logger.info(
-        `No SCREENCI_SECRET configured for uploads. Copy your secret from ${getScreenCISecretsUrl()} into the project env file, then rerun ${getSuggestedScreenciCommand('record')}.`
-      )
     } else if (
       playwrightFailure !== null &&
       uploadPolicy === 'all-or-nothing'
@@ -2862,7 +2929,7 @@ async function uploadRecordedVideosForConfig(
           screenciDir,
           screenciConfig.projectName,
           apiUrl,
-          secret,
+          credential,
           undefined,
           verbose
         )
@@ -2923,6 +2990,11 @@ async function uploadRecordedVideosForConfig(
             : 'Recording finished, rendering in progress. Results available at:'
         )
         logger.info(pc.cyan(projectUrl))
+      }
+      if (usedAnonCredential && (recordId !== null || projectId !== null)) {
+        logger.info(
+          'Recorded without an account. Open the link above to view it, and sign up to keep it (by continuing you agree to the Terms).'
+        )
       }
       if (notices.length > 0) {
         logger.info('')
@@ -3372,6 +3444,10 @@ async function fetchTextOverridesEnv(
   languages: string | undefined,
   verbose: boolean
 ): Promise<Record<string, string>> {
+  // Studio config only exists for a real (non-anonymous) org, and record must
+  // still work without an account, so skip the fetch entirely rather than
+  // calling requireScreenCISecret, which would hard-exit without a secret.
+  if (!process.env.SCREENCI_SECRET) return {}
   try {
     const { screenciConfig, secret, apiUrl } =
       await requireScreenCISecret(configPath)
@@ -3428,6 +3504,10 @@ async function fetchRecordOptionsEnv(
   configPath: string,
   verbose: boolean
 ): Promise<Record<string, string>> {
+  // Studio config only exists for a real (non-anonymous) org, and record must
+  // still work without an account, so skip the fetch entirely rather than
+  // calling requireScreenCISecret, which would hard-exit without a secret.
+  if (!process.env.SCREENCI_SECRET) return {}
   try {
     const { screenciConfig, secret, apiUrl } =
       await requireScreenCISecret(configPath)
@@ -3485,9 +3565,10 @@ async function run(
     await loadEnvFileFromConfigSource(configPath, false)
   }
 
-  // Only validate args for record command
+  // Only validate args for record command. No secret is required here: record
+  // can upload anonymously (see resolveUploadCredential), so this must not
+  // hard-exit the way requireScreenCISecret does for account-only commands.
   if (command === 'record') {
-    await requireScreenCISecret(configPath)
     validateArgs(additionalArgs)
     const screenciDir = resolve(dirname(configPath), '.screenci')
     clearRecordingDirectories(screenciDir)

@@ -743,7 +743,7 @@ describe('createNarration', () => {
 
     it('supports cue objects with text and media fields', async () => {
       resetMissingNarrationAssetWarnings()
-      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+      const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => {})
       const cues = createNarration({
         voice: { name: voices.Ava },
         en: {
@@ -776,12 +776,12 @@ describe('createNarration', () => {
         assetPath: '/tmp/intro-en.mp4',
         subtitle: 'Intro subtitle',
       })
-      expect(warnSpy).toHaveBeenCalledWith(
+      expect(infoSpy).toHaveBeenCalledWith(
         expect.stringContaining(
           'Locally missing narration media: /tmp/intro-en.mp4'
         )
       )
-      warnSpy.mockRestore()
+      infoSpy.mockRestore()
     })
 
     it('puts crop and source trim inside the video cue translation', async () => {
@@ -869,6 +869,58 @@ describe('createNarration', () => {
       } finally {
         rmSync(tempDir, { recursive: true, force: true })
       }
+    })
+
+    it('records a path-only ref and notes when a custom voice sample is missing locally', async () => {
+      resetMissingNarrationAssetWarnings()
+      const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => {})
+
+      // Sample file does not exist locally (e.g. gitignored on CI). The clone is
+      // recovered from a previous upload at upload time, so recording must not fail.
+      const customVoice = {
+        path: './missing-voice-sample.mp3',
+      } as CustomVoiceRef
+      const cues = createNarration({
+        voice: { name: voices.Ava },
+        en: {
+          intro: 'Hello world',
+        },
+        fi: {
+          voice: { name: customVoice },
+          intro: 'Hei maailma',
+        },
+      })
+
+      await runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({
+          testFilePath: fileURLToPath(import.meta.url),
+        }),
+        async () => {
+          setActiveCueRecorder(recorder)
+          await expect(cues.intro.start()).resolves.toBeUndefined()
+        }
+      )
+
+      expect(recorder.addCueStart).toHaveBeenCalledWith(
+        '',
+        'intro',
+        undefined,
+        {
+          en: { text: 'Hello world', voice: voices.Ava },
+          fi: {
+            text: 'Hei maailma',
+            voice: {
+              assetPath: './missing-voice-sample.mp3',
+            },
+          },
+        }
+      )
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Locally missing narration media: ./missing-voice-sample.mp3'
+        )
+      )
+      infoSpy.mockRestore()
     })
   })
 

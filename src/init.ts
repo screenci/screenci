@@ -1410,7 +1410,7 @@ video
   // Run setup without showing these actions in the final recording.
   await hide(async () => {
     await page.goto('https://screenci.com/')
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('load')
   })
 
   // Play the narration line for this step.

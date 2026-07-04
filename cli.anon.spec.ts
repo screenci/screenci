@@ -39,11 +39,9 @@ describe('resolveUploadCredential', () => {
   })
 
   it('mints and uses an anon token when the session is pending', async () => {
-    global.fetch = vi
-      .fn()
-      .mockResolvedValue({
-        json: async () => ({ status: 'pending' }),
-      }) as unknown as typeof fetch
+    global.fetch = vi.fn().mockResolvedValue({
+      json: async () => ({ status: 'pending' }),
+    }) as unknown as typeof fetch
 
     const { resolveUploadCredential } = await import('./cli')
     const result = await resolveUploadCredential(
@@ -82,11 +80,9 @@ describe('resolveUploadCredential', () => {
   })
 
   it('nags and starts a fresh trial when the session expired', async () => {
-    global.fetch = vi
-      .fn()
-      .mockResolvedValue({
-        json: async () => ({ status: 'expired' }),
-      }) as unknown as typeof fetch
+    global.fetch = vi.fn().mockResolvedValue({
+      json: async () => ({ status: 'expired' }),
+    }) as unknown as typeof fetch
 
     const { resolveUploadCredential } = await import('./cli')
     const result = await resolveUploadCredential(
@@ -106,11 +102,9 @@ describe('resolveUploadCredential', () => {
   })
 
   it('nags and starts a fresh trial when the session is not found', async () => {
-    global.fetch = vi
-      .fn()
-      .mockResolvedValue({
-        json: async () => ({ status: 'not_found' }),
-      }) as unknown as typeof fetch
+    global.fetch = vi.fn().mockResolvedValue({
+      json: async () => ({ status: 'not_found' }),
+    }) as unknown as typeof fetch
 
     const { resolveUploadCredential } = await import('./cli')
     const result = await resolveUploadCredential(

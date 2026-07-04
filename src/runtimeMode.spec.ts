@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   isTimingDebugEnabled,
   isUploadExistingEnabled,
@@ -9,6 +9,10 @@ import {
   resolveRecordingTimingDuration,
   shouldSimulateRecordingTimings,
 } from './runtimeMode.js'
+import {
+  createScreenCIRuntimeContext,
+  setActiveScreenCIRuntimeContext,
+} from './runtimeContext.js'
 
 describe('runtimeMode', () => {
   it('enables timing debug only when SCREENCI_DEBUG_TIMING is set', () => {
@@ -53,6 +57,33 @@ describe('runtimeMode', () => {
 
     expect(shouldSimulateRecordingTimings(env)).toBe(true)
     expect(resolveRecordingTimingDuration(500, env)).toBe(500)
+  })
+
+  describe('screenshot capture', () => {
+    afterEach(() => {
+      setActiveScreenCIRuntimeContext(null)
+    })
+
+    it('collapses every recording-timing pause to zero for screenshots', () => {
+      const env = { SCREENCI_RECORDING: 'true' } as NodeJS.ProcessEnv
+      setActiveScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({ captureKind: 'screenshot' })
+      )
+
+      // Timings are otherwise enabled for a real recording, but a still keeps
+      // only the final frame so the pause is zeroed.
+      expect(shouldSimulateRecordingTimings(env)).toBe(true)
+      expect(resolveRecordingTimingDuration(500, env)).toBe(0)
+    })
+
+    it('keeps recording-timing pauses for video captures', () => {
+      const env = { SCREENCI_RECORDING: 'true' } as NodeJS.ProcessEnv
+      setActiveScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({ captureKind: 'video' })
+      )
+
+      expect(resolveRecordingTimingDuration(500, env)).toBe(500)
+    })
   })
 
   it('enables upload-existing only when UPLOAD_EXISTING is truthy', () => {

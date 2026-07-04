@@ -246,6 +246,28 @@ viewport resolution (the video pipeline does not upscale device pixels), so reco
 at a higher `recordOptions.quality` for crisp stills, or use a standalone
 `screenshot()` test when you need a higher DPI than the video.
 
+## Animations and speed
+
+A still keeps only the final frame, so screenci does no animating to reach it.
+Its own interaction animations (the cursor glide, the typing effect, the click
+press, and the pacing pauses between actions) are all made instant for
+screenshots, so a still runs as fast as the raw page interactions rather than
+paying for motion that is never seen. Videos keep their pacing.
+
+screenci also disables the **app's own** CSS animations and transitions while the
+body drives the page. This is controlled by `recordOptions.disableAnimations`,
+which **defaults to `true` for screenshots** and `false` for video (where motion
+is usually the point). Override it either way: set `false` on a screenshot that
+needs a mid-animation state, or `true` on a video to strip its animations.
+
+```ts
+screenshot.use({
+  recordOptions: {
+    disableAnimations: false, // keep the app's animations while capturing
+  },
+})
+```
+
 ## Render options
 
 Every visual choice is a render option, editable later in Studio. The

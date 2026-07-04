@@ -215,7 +215,30 @@ Set shared `renderOptions` under `use` when you want consistent output styling:
 - `recording.size`, `recording.roundness`, `recording.dropShadow`
 - `narration.corner`, `narration.padding`, `narration.size`, `narration.roundness` (0 = square, 1 = circle; defaults to 0.2)
 - `mouse.size`, `mouse.style` (`'white'` or `'black'` cursor)
+- `mouse.image` (custom cursor image, see below)
 - `mouse.motionBlur` and `zoom.motionBlur` (motion blur strength, see below)
+
+### Custom mouse
+
+By default the cursor is the built-in arrow, coloured by `mouse.style`
+(`'white'` or `'black'`). To use your own cursor graphic instead, point
+`mouse.image` at a local image, relative to your config directory:
+
+```ts
+renderOptions: {
+  mouse: { image: './assets/my-cursor.png', size: 0.05 },
+}
+```
+
+The image is uploaded alongside the recording, and drawn in both video and
+screenshot output. It replaces the built-in cursor entirely, so `mouse.style`
+is ignored when `image` is set. A few things to know:
+
+- Use a **PNG**.
+- The image's **top-left corner is the pointer hotspot**, matching the
+  built-in cursors.
+- `mouse.size` scales it (as a fraction of the output height, aspect ratio
+  preserved), and `mouse.motionBlur` and the click animation still apply.
 
 ### Motion blur
 

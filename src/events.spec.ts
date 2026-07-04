@@ -550,6 +550,31 @@ describe('EventRecorder', () => {
       expect((ro.zoom as Record<string, unknown>).motionBlur).toBe(0.8)
     })
 
+    it('omits mouse.image by default', async () => {
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed: RecordingData = JSON.parse(content)
+      const ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.mouse as Record<string, unknown>).image).toBeUndefined()
+    })
+
+    it('passes through a custom cursor image path', async () => {
+      recorder = new EventRecorder({
+        mouse: { image: './assets/my-cursor.png' },
+      })
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed: RecordingData = JSON.parse(content)
+      const ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.mouse as Record<string, unknown>).image).toBe(
+        './assets/my-cursor.png'
+      )
+    })
+
     it('merges explicit values with defaults', async () => {
       recorder = new EventRecorder({ recording: { size: 0.8 } })
       recorder.start()

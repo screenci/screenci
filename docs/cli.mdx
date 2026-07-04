@@ -57,13 +57,16 @@ the ready-to-run command) from the Get Started or secrets page in the ScreenCI
 app:
 
 ```bash
-npm init screenci@latest otp_your_one_time_token
+npm init screenci@latest otp_PASTE_YOUR_TOKEN_HERE
 ```
 
-With a token, `init` exchanges it for your organization's `SCREENCI_SECRET` and
-writes it into `screenci/.env`, so you can `screenci record` immediately on the
-free tier. The token is single-use and short-lived; a used or expired token
-falls back to the manual path below without failing the scaffold.
+Replace `otp_PASTE_YOUR_TOKEN_HERE` with the real token from your Get Started
+page (it is a placeholder, not a working token). With a token, `init` exchanges
+it for your organization's `SCREENCI_SECRET` and writes it into `screenci/.env`,
+so you can `screenci record` immediately on the free tier. The token is
+single-use and short-lived; a used or expired token falls back to the manual
+path below without failing the scaffold. You can also pass your `SCREENCI_SECRET`
+directly instead of a token, and `init` writes it straight into `screenci/.env`.
 
 Without a token, `init` scaffolds the project and tells you to copy
 `SCREENCI_SECRET` from your secrets page into `screenci/.env` before your first
@@ -81,16 +84,33 @@ variable (set automatically when you run `pnpm create` or `yarn create`), lockfi
 presence (`pnpm-lock.yaml`, `yarn.lock`), or the `packageManager` field in
 `package.json`. Use `--package-manager` to override.
 
+To keep setup fast, `init` only prompts for the choices that genuinely vary:
+the project name, whether to add the GitHub Actions workflow, and whether to
+install AI agent skills (the ScreenCI skill plus `playwright-cli`). Everything
+else is applied at a sensible default and can be steered with a flag.
+
 Common options:
 
-- `-y, --yes` accepts all defaults
+- `-y, --yes` accepts all defaults and skips every prompt
 - `--package-manager <npm|pnpm|yarn>` overrides auto-detected package manager
 - `--agent <name>` passes an agent name to the selected skills install command
 - `-v, --verbose` prints underlying command output
 
-Interactive defaults create the GitHub Actions workflow, install
-dependencies, install Chromium, skip OS dependency installation, install the
-ScreenCI skill, and install optional `playwright-cli` support.
+Flags to override an auto-applied default without going interactive:
+
+- `--no-github-workflow` skips the GitHub Actions workflow (and its prompt)
+- `--no-skills` skips both AI agent skills (and their prompt)
+- `--no-playwright-cli` keeps the ScreenCI skill but drops `playwright-cli`
+  (the skill and the `@playwright/cli` dev dependency)
+- `--no-react` skips React overlay support (react/react-dom, JSX, the `.tsx`
+  example)
+- `--no-playwright-browsers` skips installing the Chromium shell
+- `--playwright-os-deps` installs Playwright operating system dependencies
+  (off by default because it may require sudo)
+
+Applied defaults: create the GitHub Actions workflow, install dependencies,
+add React overlay support, install the Chromium shell, skip OS dependency
+installation, and install the AI agent skills (ScreenCI + `playwright-cli`).
 
 Use this command in [Manual Setup & First Video](/docs/manual-setup).
 
@@ -103,7 +123,7 @@ Run videos locally without the final recording pipeline:
 
 ```bash
 npx screenci test
-npx screenci test videos/onboarding.screenci.ts
+npx screenci test recordings/onboarding.screenci.ts
 npx screenci test --grep "billing"
 npx screenci test --ui
 ```
@@ -113,7 +133,7 @@ npx screenci test --ui
 
 ```bash
 pnpm exec screenci test
-pnpm exec screenci test videos/onboarding.screenci.ts
+pnpm exec screenci test recordings/onboarding.screenci.ts
 pnpm exec screenci test --grep "billing"
 pnpm exec screenci test --ui
 ```
@@ -123,7 +143,7 @@ pnpm exec screenci test --ui
 
 ```bash
 yarn screenci test
-yarn screenci test videos/onboarding.screenci.ts
+yarn screenci test recordings/onboarding.screenci.ts
 yarn screenci test --grep "billing"
 yarn screenci test --ui
 ```
@@ -208,7 +228,7 @@ Record final output:
 
 ```bash
 npx screenci record
-npx screenci record videos/onboarding.screenci.ts
+npx screenci record recordings/onboarding.screenci.ts
 npx screenci record --grep "billing"
 npx screenci record --project=chromium
 ```
@@ -218,7 +238,7 @@ npx screenci record --project=chromium
 
 ```bash
 pnpm exec screenci record
-pnpm exec screenci record videos/onboarding.screenci.ts
+pnpm exec screenci record recordings/onboarding.screenci.ts
 pnpm exec screenci record --grep "billing"
 pnpm exec screenci record --project=chromium
 ```
@@ -228,7 +248,7 @@ pnpm exec screenci record --project=chromium
 
 ```bash
 yarn screenci record
-yarn screenci record videos/onboarding.screenci.ts
+yarn screenci record recordings/onboarding.screenci.ts
 yarn screenci record --grep "billing"
 yarn screenci record --project=chromium
 ```

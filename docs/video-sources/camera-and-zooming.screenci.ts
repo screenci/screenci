@@ -24,7 +24,7 @@ video.use({
 
 // Camera walkthrough for the Camera and Zooming guide. It records the public
 // marketing site (screenci.com), so it needs no login. The mirror in
-// screenci/videos strips the screenci.com origin so the gotos route through the
+// screenci/recordings strips the screenci.com origin so the gotos route through the
 // configured baseURL.
 video.narration({
   en: {

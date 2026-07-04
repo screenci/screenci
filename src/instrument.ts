@@ -71,6 +71,7 @@ import {
 import {
   getRuntimeClickRecorder,
   setRuntimeClickRecorder,
+  isScreenshotCapture,
 } from './runtimeContext.js'
 
 const pageClickRecorders = new WeakMap<object, IEventRecorder>()
@@ -716,7 +717,10 @@ export function instrumentLocator(locator: Locator): Locator {
         }
       })
 
-      const duration = options?.duration ?? 1000
+      // A still keeps only the final frame, so spreading the keystrokes over a
+      // typing animation is wasted time. Type instantly for screenshots (the
+      // field still ends up filled), matching the instant cursor move.
+      const duration = isScreenshotCapture() ? 0 : (options?.duration ?? 1000)
       const delay = value.length > 0 ? duration / value.length : 0
       await locator.page().keyboard.type(value, { delay })
     }

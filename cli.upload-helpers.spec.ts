@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { ChildProcess } from 'child_process'
+import { createHash } from 'crypto'
 import { EventEmitter } from 'events'
 import { Readable } from 'stream'
 import { logger } from './src/logger.js'
@@ -480,6 +481,78 @@ describe('CLI', () => {
       expect(loggerWarnSpy).not.toHaveBeenCalled()
     })
 
+    it('collects a custom cursor image referenced by renderOptions.mouse.image', async () => {
+      const { collectUploadAssets } = await import('./cli')
+      const cursorBytes = Buffer.from('cursor-png-bytes')
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        if (String(path).endsWith('my-cursor.png')) return cursorBytes
+        return ''
+      })
+
+      const assets = await collectUploadAssets(
+        {
+          events: [{ type: 'videoStart', timeMs: 0 }],
+          renderOptions: { mouse: { image: './assets/my-cursor.png' } },
+        } as unknown as RecordingData,
+        '/project'
+      )
+
+      expect(assets).toEqual([
+        {
+          kind: 'cursor',
+          fileHash: createHash('sha256').update(cursorBytes).digest('hex'),
+          path: './assets/my-cursor.png',
+          size: cursorBytes.byteLength,
+          fileBuffer: cursorBytes,
+          contentType: 'image/png',
+        },
+      ])
+    })
+
+    it('marks a locally missing custom cursor image for resolution', async () => {
+      const { collectUploadAssets } = await import('./cli')
+      mockReadFile.mockRejectedValue(new Error('ENOENT'))
+
+      const assets = await collectUploadAssets(
+        {
+          events: [{ type: 'videoStart', timeMs: 0 }],
+          renderOptions: { mouse: { image: './assets/my-cursor.png' } },
+        } as unknown as RecordingData,
+        '/project'
+      )
+
+      expect(assets).toEqual([
+        {
+          kind: 'cursor',
+          fileHash: '',
+          path: './assets/my-cursor.png',
+          size: 0,
+          needsResolve: true,
+        },
+      ])
+    })
+
+    it('does not re-collect a custom cursor image that is already uploaded', async () => {
+      const { collectUploadAssets } = await import('./cli')
+
+      const assets = await collectUploadAssets(
+        {
+          events: [{ type: 'videoStart', timeMs: 0 }],
+          renderOptions: {
+            mouse: {
+              image: {
+                assetPath: './assets/my-cursor.png',
+                fileHash: 'x'.repeat(64),
+              },
+            },
+          },
+        } as unknown as RecordingData,
+        '/project'
+      )
+
+      expect(assets).toEqual([])
+    })
+
     it('should pause stdin when removing the upload abort listener', async () => {
       const { attachUploadAbortStdinListener } = await import('./cli')
       const input = new EventEmitter() as EventEmitter & {
@@ -671,6 +744,58 @@ describe('CLI', () => {
         assetHash: HASH_C,
         subtitle: 'Hi',
       })
+    })
+
+    it('rewrites a custom cursor image path to { assetPath, fileHash } when annotating', async () => {
+      const { annotateRecordingDataWithAssetHashes } = await import('./cli')
+
+      const result = annotateRecordingDataWithAssetHashes(
+        {
+          events: [{ type: 'videoStart', timeMs: 0 }],
+          renderOptions: {
+            mouse: {
+              size: 0.05,
+              style: 'white',
+              image: './assets/my-cursor.png',
+            },
+          },
+        } as unknown as RecordingData,
+        [
+          {
+            kind: 'cursor',
+            fileHash: HASH_D,
+            path: './assets/my-cursor.png',
+            size: 12,
+            assumedUploaded: true,
+          },
+        ]
+      )
+
+      expect(result.renderOptions.mouse).toEqual({
+        size: 0.05,
+        style: 'white',
+        image: { assetPath: './assets/my-cursor.png', fileHash: HASH_D },
+      })
+    })
+
+    it('leaves a cursor image untouched when no matching upload hash is found', async () => {
+      const { annotateRecordingDataWithAssetHashes } = await import('./cli')
+
+      const result = annotateRecordingDataWithAssetHashes(
+        {
+          events: [{ type: 'videoStart', timeMs: 0 }],
+          renderOptions: {
+            mouse: {
+              size: 0.05,
+              style: 'white',
+              image: './assets/my-cursor.png',
+            },
+          },
+        } as unknown as RecordingData,
+        []
+      )
+
+      expect(result.renderOptions.mouse.image).toBe('./assets/my-cursor.png')
     })
 
     it('resolves missing assets against a previous upload and reports the rest', async () => {

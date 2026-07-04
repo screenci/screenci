@@ -26,7 +26,9 @@ import pc from 'picocolors'
 import { logger } from './src/logger.js'
 import {
   determinePackageManager,
+  initToggleOptionsFromCommander,
   parsePackageManager,
+  registerInitToggleOptions,
   runInit,
 } from './src/init.js'
 import type {
@@ -342,7 +344,7 @@ type CustomVoiceRefLike = {
 }
 
 /** What an uploaded file actually is, used to label it in the upload log. */
-type UploadAssetKind = 'overlay' | 'audio' | 'clip' | 'voice'
+type UploadAssetKind = 'overlay' | 'audio' | 'clip' | 'voice' | 'cursor'
 
 /** Human label per upload kind, shown as `<label> uploaded: <path>`. */
 const UPLOAD_ASSET_LABEL: Record<UploadAssetKind, string> = {
@@ -352,6 +354,8 @@ const UPLOAD_ASSET_LABEL: Record<UploadAssetKind, string> = {
   // (e.g. via `narration({ en: { intro: { media } } })`).
   clip: 'Narration',
   voice: 'Voice',
+  // A custom cursor image set via `renderOptions.mouse.image`.
+  cursor: 'Cursor',
 }
 
 type PreparedUploadAsset = {
@@ -1542,6 +1546,41 @@ export async function collectUploadAssets(
     assets.set(`path:${asset.path}`, asset)
   }
 
+  // Custom cursor image (`renderOptions.mouse.image`). Unlike overlays it is not
+  // referenced by a timeline event, so it is collected here. It is a local path
+  // only before upload; a `{ assetPath, fileHash }` value has already been
+  // uploaded (e.g. re-running the CLI on annotated data) and needs no work.
+  const cursorImage = data.renderOptions?.mouse?.image
+  if (typeof cursorImage === 'string' && !assets.has(`path:${cursorImage}`)) {
+    const resolvedFile = await readRecordingFile(
+      cursorImage,
+      configDir,
+      sourceFilePath
+    )
+    if (resolvedFile === null) {
+      // The local file is gone (e.g. gitignored on CI). Reference it by path so
+      // its identity can be recovered from a previous upload of this video.
+      assets.set(`path:${cursorImage}`, {
+        kind: 'cursor',
+        fileHash: '',
+        path: cursorImage,
+        size: 0,
+        needsResolve: true,
+      })
+    } else {
+      assets.set(`path:${cursorImage}`, {
+        kind: 'cursor',
+        fileHash: createHash('sha256')
+          .update(resolvedFile.buffer)
+          .digest('hex'),
+        path: cursorImage,
+        size: resolvedFile.buffer.byteLength,
+        fileBuffer: resolvedFile.buffer,
+        contentType: contentTypeForPath(resolvedFile.resolvedPath),
+      })
+    }
+  }
+
   return [...assets.values()]
 }
 
@@ -1577,8 +1616,25 @@ export function annotateRecordingDataWithAssetHashes(
     byPath.set(asset.path, asset.fileHash)
   }
 
+  // Rewrite a custom cursor image (`renderOptions.mouse.image`) from its local
+  // path to `{ assetPath, fileHash }` so the renderer can resolve it by content
+  // hash. Leave it untouched when it is already an object or has no known hash.
+  const renderOptions = ((): RecordingData['renderOptions'] => {
+    const ro = data.renderOptions
+    const mouse = ro?.mouse
+    const image = mouse?.image
+    if (mouse === undefined || typeof image !== 'string') return ro
+    const fileHash = byPath.get(image)
+    if (fileHash === undefined) return ro
+    return {
+      ...ro,
+      mouse: { ...mouse, image: { assetPath: image, fileHash } },
+    }
+  })()
+
   return {
     ...data,
+    renderOptions,
     events: data.events.map((event) => {
       if (event.type === 'assetStart') {
         if ('studio' in event || 'dependency' in event) return event
@@ -3118,7 +3174,7 @@ export async function main() {
     })
 
   // init command
-  program
+  const initCommand = program
     .command('init [name]')
     .description('Initialize a new screenci project')
     .option(
@@ -3131,20 +3187,22 @@ export async function main() {
     )
     .option('-y, --yes', 'accept init defaults')
     .option('-v, --verbose', 'verbose output')
-    .action(
-      async (name: string | undefined, options: Record<string, unknown>) => {
-        const agent = options['agent'] as string | undefined
-        await runInit(name, {
-          verbose: (options['verbose'] as boolean | undefined) ?? false,
-          yes: (options['yes'] as boolean | undefined) ?? false,
-          packageManager: parsePackageManager(
-            options['packageManager'] as string | undefined,
-            process.env['SCREENCI_INIT_CWD'] ?? process.cwd()
-          ),
-          ...(agent !== undefined ? { agent } : {}),
-        })
-      }
-    )
+  registerInitToggleOptions(initCommand)
+  initCommand.action(
+    async (name: string | undefined, options: Record<string, unknown>) => {
+      const agent = options['agent'] as string | undefined
+      await runInit(name, {
+        verbose: (options['verbose'] as boolean | undefined) ?? false,
+        yes: (options['yes'] as boolean | undefined) ?? false,
+        packageManager: parsePackageManager(
+          options['packageManager'] as string | undefined,
+          process.env['SCREENCI_INIT_CWD'] ?? process.cwd()
+        ),
+        ...(agent !== undefined ? { agent } : {}),
+        ...initToggleOptionsFromCommander(options),
+      })
+    }
+  )
 
   try {
     await program.parseAsync(process.argv)

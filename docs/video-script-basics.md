@@ -56,7 +56,7 @@ import { autoZoom, hide, video } from 'screenci'
 
 video
   .overlays({
-    logo: { path: './assets/logo.png', duration: '2s' },
+    logo: { path: './assets/logo.png', duration: '2s', hideMouse: true },
   })
   .narration({
     docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',

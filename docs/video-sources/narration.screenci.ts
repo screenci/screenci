@@ -36,10 +36,11 @@ video
   })('Narration walkthrough', async ({ page, narration, overlays }) => {
   // Studio lives behind auth (SCREENCI_APP_STORAGE_STATE, see screenci.config.ts).
   // Skip rather than stall on the login page when the session is not configured.
-  video.skip(
-    !process.env.SCREENCI_APP_STORAGE_STATE,
-    'Requires SCREENCI_APP_STORAGE_STATE (a logged-in app session).'
-  )
+  if (!process.env.SCREENCI_APP_STORAGE_STATE) {
+    throw new Error(
+      'Not logged in. Record via `scripts/screenci.sh docs <env> record` (it signs in first), or set SCREENCI_APP_STORAGE_STATE to a Playwright storageState.'
+    )
+  }
 
   // Open a finished video's Studio page without showing the navigation.
   await hide(async () => {

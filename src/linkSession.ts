@@ -17,6 +17,23 @@ const SCREENCI_DEVELOPMENT_FRONTEND_URL = 'https://dev.app.screenci.com'
 // a project name passed as the same `init`/`create-screenci` positional.
 export const INIT_OTP_PREFIX = 'otp_'
 
+// Placeholders shown in the docs and agent brief. People and coding agents
+// sometimes paste these verbatim instead of substituting a real token, so init
+// detects them up front and points at the Get Started page (no network round
+// trip). Old variants are kept because cached docs and agents still use them.
+export const INIT_OTP_PLACEHOLDERS = [
+  'otp_your_token',
+  'otp_your_one_time_token',
+  'otp_paste_your_token_here',
+]
+
+// A SCREENCI_SECRET is a bare v4 UUID (no prefix). A user who copies their
+// secret and pastes it as the init positional should get it written to `.env`
+// instead of a project literally named after the secret. The v4-specific shape
+// makes it unmistakable from a real project name.
+const SCREENCI_SECRET_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 export type ScreenCIEnvironment =
   (typeof SCREENCI_ENVIRONMENT_OPTION_VALUES)[number]
 
@@ -93,8 +110,20 @@ export function getScreenCISecretsUrl(): string {
   return `${getDevFrontendUrl()}/secrets`
 }
 
+export function getScreenCIGetStartedUrl(): string {
+  return `${getDevFrontendUrl()}/get-started`
+}
+
 export function looksLikeInitOtp(value: string): boolean {
   return value.startsWith(INIT_OTP_PREFIX)
+}
+
+export function isPlaceholderInitOtp(value: string): boolean {
+  return INIT_OTP_PLACEHOLDERS.includes(value.trim().toLowerCase())
+}
+
+export function looksLikeScreenCISecret(value: string): boolean {
+  return SCREENCI_SECRET_PATTERN.test(value.trim())
 }
 
 export type ExchangeInitOtpResult =
@@ -140,6 +169,52 @@ export async function exchangeInitOtp(
   } catch (err) {
     return {
       ok: false,
+      reason: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
+export type VerifyScreenCISecretResult =
+  | { ok: true; orgId: string }
+  | { ok: false; kind: 'invalid' | 'unreachable'; reason: string }
+
+/**
+ * Verifies a pasted SCREENCI_SECRET against the backend so init can confirm it
+ * before writing `.env`. `GET /cli/whoami` is gated by the same secret
+ * middleware as every other `/cli/*` route: a valid secret returns the org id,
+ * an unknown one returns 401. Never throws; a network failure resolves to
+ * `unreachable` so the caller can accept the secret optimistically (record
+ * verifies it later) rather than block scaffolding.
+ */
+export async function verifyScreenCISecret(
+  secret: string,
+  options: { backendUrl?: string; fetchImpl?: typeof fetch } = {}
+): Promise<VerifyScreenCISecretResult> {
+  const backendUrl = options.backendUrl ?? getDevBackendUrl()
+  const fetchImpl = options.fetchImpl ?? fetch
+
+  try {
+    const response = await fetchImpl(`${backendUrl}/cli/whoami`, {
+      method: 'GET',
+      headers: { 'X-ScreenCI-Secret': secret },
+    })
+
+    if (response.ok) {
+      const body = (await response.json().catch(() => ({}))) as {
+        orgId?: string
+      }
+      return { ok: true, orgId: body.orgId ?? '' }
+    }
+
+    return {
+      ok: false,
+      kind: 'invalid',
+      reason: 'This secret was not recognized.',
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      kind: 'unreachable',
       reason: err instanceof Error ? err.message : String(err),
     }
   }

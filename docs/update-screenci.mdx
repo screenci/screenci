@@ -154,7 +154,7 @@ In practice, unless you have a deliberate compatibility reason not to, use the c
 After an upgrade, confirm that the project still matches current expectations:
 
 - `screenci.config.ts` still uses the expected option names
-- `videos/*.screenci.ts` still compile without deprecated imports
+- `recordings/*.screenci.ts` still compile without deprecated imports
 - the GitHub Actions workflow still matches your package manager and lockfile
 - local `.env` loading still behaves the same way
 
@@ -211,6 +211,6 @@ If your team uses AI-assisted authoring, check that the tooling still matches th
 - reinstall skills or local helpers after package upgrades when they are part of your normal setup
 - update Playwright-based inspection tooling when browser automation starts failing
 - keep prompt instructions aligned with the current docs structure
-- make sure generated scripts still target `screenci/videos/*.screenci.ts` and use the current ScreenCI helpers
+- make sure generated scripts still target `screenci/recordings/*.screenci.ts` and use the current ScreenCI helpers
 
 This should be the last step, not the first one. The core upgrade check here is still `screenci test`.

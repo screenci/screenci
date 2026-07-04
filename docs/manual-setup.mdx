@@ -53,12 +53,17 @@ which comes with npm.
 
 To connect the project automatically, append the one-time setup token shown on
 your [Get Started page](https://app.screenci.com/get-started) (it appears in the
-copyable command there). init exchanges it for your `SCREENCI_SECRET` and writes
-it into `screenci/.env`:
+copyable command there, already filled in). init exchanges it for your
+`SCREENCI_SECRET` and writes it into `screenci/.env`:
 
 ```bash
-npm init screenci@latest otp_your_token
+npm init screenci@latest otp_PASTE_YOUR_TOKEN_HERE
 ```
+
+Replace `otp_PASTE_YOUR_TOKEN_HERE` with the real token from your Get Started
+page. It is a placeholder, not a working token. If you already have your
+`SCREENCI_SECRET`, you can pass that instead of a token and init writes it
+straight into `screenci/.env`.
 
 Without a token, init just scaffolds the project and you set `SCREENCI_SECRET`
 by hand (see [Record the final result](#record-the-final-result)). The secret is
@@ -76,7 +81,7 @@ screenci/                   # Self-contained ScreenCI project
   tsconfig.json             # Minimal TypeScript config so editors type-check the project
   package.json              # Its own package.json (own dependencies + scripts)
   package-lock.json         # Or pnpm-lock.yaml / yarn.lock, depending on package manager
-  videos/
+  recordings/
     example.screenci.ts        # Minimal starter video
 .github/workflows/
   screenci.yaml             # Optional workflow (at the repo root, scoped to screenci/)
@@ -98,7 +103,7 @@ because that is where they are discovered:
   agents pick them up. See
   [Vercel Skills](https://github.com/vercel-labs/skills#readme).
 
-The starter video source is generated at `screenci/videos/example.screenci.ts` and looks
+The starter video source is generated at `screenci/recordings/example.screenci.ts` and looks
 like this. For an explanation of how it works, see [Video Script
 Basics](/docs/video-script-basics#generated-starter-video):
 
@@ -109,7 +114,7 @@ import { autoZoom, hide, video } from 'screenci'
 
 video
   .overlays({
-    logo: { path: './assets/logo.png', duration: '2s' },
+    logo: { path: './assets/logo.png', duration: '2s', hideMouse: true },
   })
   .narration({
     docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
@@ -205,7 +210,7 @@ yarn screenci test --ui
 
 ## Record the final result
 
-When you are ready to record the videos in the `screenci/videos/` directory, run:
+When you are ready to record the videos in the `screenci/recordings/` directory, run:
 
 <Tabs syncKey="package-manager">
   <TabItem label="npm">

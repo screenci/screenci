@@ -25,6 +25,10 @@ import type {
 import type { Page } from '@playwright/test'
 import { ScreenciError } from './errors.js'
 import { isStudioMarker, type StudioMarker } from './studio.js'
+import {
+  installAnimationDisabling,
+  resolveDisableAnimations,
+} from './disableAnimations.js'
 export { getDimensions } from './dimensions.js'
 import { getDimensions, getViewportCenter } from './dimensions.js'
 import { resetCueChain } from './cue.js'
@@ -917,6 +921,9 @@ const _videoBase = base.extend<
       })
       bindStillCaptureToPage(page)
       await setupMouseTracking(page, recorder)
+      if (resolveDisableAnimations(recordOptions.disableAnimations, 'video')) {
+        await installAnimationDisabling(page)
+      }
       await installRedactController(
         page,
         runtimeContext.redact,
@@ -973,6 +980,9 @@ const _videoBase = base.extend<
     })
 
     await setupMouseTracking(page, recorder)
+    if (resolveDisableAnimations(recordOptions.disableAnimations, 'video')) {
+      await installAnimationDisabling(page)
+    }
     await installRedactController(
       page,
       runtimeContext.redact,

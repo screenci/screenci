@@ -650,6 +650,10 @@ describe('CLI', () => {
           default: 'demo-app',
         })
       )
+      // The wizard now asks only the decisions that genuinely vary: project
+      // name, the GitHub workflow, and the combined AI skills. React, Playwright
+      // browsers, and OS deps are auto-applied at their defaults (steerable via
+      // flags), so they are no longer prompted.
       expect(mockInput.mock.calls.map((call) => call[0])).toEqual([
         expect.objectContaining({
           message: 'Project name:',
@@ -657,32 +661,12 @@ describe('CLI', () => {
         }),
         expect.objectContaining({
           message: 'Add a GitHub Actions workflow? (Y/n)',
-          default: 'y',
+          default: 'Y',
         }),
         expect.objectContaining({
           message:
-            'Add React overlay support (installs react/react-dom, enables JSX, adds a .tsx example)? (Y/n)',
-          default: 'y',
-        }),
-        expect.objectContaining({
-          message:
-            "Install Playwright browsers (can be done manually via 'npx playwright install --only-shell chromium')? (Y/n)",
-          default: 'y',
-        }),
-        expect.objectContaining({
-          message:
-            "Install Playwright operating system dependencies (might require sudo / root and can be done manually via 'npx playwright install-deps chromium')? (y/N)",
-          default: 'n',
-        }),
-        expect.objectContaining({
-          message:
-            "Install the ScreenCI skill for AI agents (can be done manually via 'npx skills add screenci/screenci --skill screenci -y')? (Y/n)",
-          default: 'y',
-        }),
-        expect.objectContaining({
-          message:
-            "Install playwright-cli for URL-based browser inspection (can be done manually via 'npx skills add screenci/screenci --skill playwright-cli -y && npm install --save-dev @playwright/cli')? (Y/n)",
-          default: 'y',
+            "Install AI agent skills (ScreenCI + playwright-cli) for your coding agent (can be done manually via 'npx skills add screenci/screenci --skill screenci --skill playwright-cli -y')? (Y/n)",
+          default: 'Y',
         }),
       ])
     })
@@ -1087,24 +1071,24 @@ describe('CLI', () => {
       )
     })
 
-    it('adds @playwright/cli only when selected', async () => {
+    it('adds @playwright/cli only when the AI skills prompt is accepted', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockReturnValue(false)
+      // Project name comes from argv. Order is now: github workflow, AI skills.
       mockInput
-        .mockResolvedValueOnce('')
-        .mockResolvedValueOnce('')
-        .mockResolvedValueOnce('')
-        .mockResolvedValueOnce('')
-        .mockResolvedValueOnce('n')
+        .mockResolvedValueOnce('') // github workflow
+        .mockResolvedValueOnce('n') // AI skills -> declined
 
       const { main } = await import('./cli')
       await main()
 
-      expect(mockSpawn).not.toHaveBeenCalledWith(
-        'npm',
-        ['install', '--save-dev', '@playwright/cli@latest'],
-        expect.anything()
+      // Declining the AI skills prompt drops @playwright/cli from the dev batch.
+      expectNpmDevInstalls(
+        mockSpawn,
+        '/workspace/my-project/screenci',
+        '0.0.32',
+        false
       )
     })
 
@@ -1128,22 +1112,26 @@ describe('CLI', () => {
       )
     })
 
-    it('keeps ScreenCI skill and playwright-cli prompts separate', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
+    it('installs the ScreenCI skill but drops playwright-cli with --no-playwright-cli', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--no-playwright-cli',
+      ]
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockReturnValue(false)
-      // Project name comes from argv, so it is not prompted.
+      // Project name comes from argv. Order is now: github workflow, AI skills.
       mockInput
-        .mockResolvedValueOnce('') // github workflow
-        .mockResolvedValueOnce('') // react overlays
-        .mockResolvedValueOnce('') // playwright browsers
-        .mockResolvedValueOnce('') // playwright OS deps
-        .mockResolvedValueOnce('n') // screenci skill
-        .mockResolvedValueOnce('y') // playwright-cli skill
+        .mockResolvedValueOnce('') // github workflow -> default yes
+        .mockResolvedValueOnce('') // AI skills -> default yes
 
       const { main } = await import('./cli')
       await main()
 
+      // The AI skills prompt was accepted, but --no-playwright-cli keeps only
+      // the ScreenCI skill.
       expect(mockSpawn).toHaveBeenCalledWith(
         'npm',
         [
@@ -1155,27 +1143,17 @@ describe('CLI', () => {
           'add',
           'screenci/screenci',
           '--skill',
-          'playwright-cli',
+          'screenci',
           '-y',
         ],
         expect.objectContaining({ cwd: '/workspace/my-project', stdio: 'pipe' })
       )
-      // playwright-cli is installed in the shared-flag batch alongside the
-      // other dev dependencies.
-      expect(mockSpawn).toHaveBeenCalledWith(
-        'npm',
-        [
-          'install',
-          '--save-dev',
-          '@playwright/test@^1.59.0',
-          '@types/node@^25.9.1',
-          '@playwright/cli@latest',
-          ...REACT_INSTALL_PACKAGES,
-        ],
-        expect.objectContaining({
-          cwd: '/workspace/my-project/screenci',
-          stdio: 'pipe',
-        })
+      // @playwright/cli is dropped from the dev-dependency batch.
+      expectNpmDevInstalls(
+        mockSpawn,
+        '/workspace/my-project/screenci',
+        '0.0.32',
+        false
       )
     })
 
@@ -1224,18 +1202,16 @@ describe('CLI', () => {
       )
     })
 
-    it('runs install-deps without sudo when selected', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
+    it('runs install-deps without sudo with --playwright-os-deps', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--playwright-os-deps',
+      ]
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockReturnValue(false)
-      // Project name comes from argv, so it is not prompted.
-      mockInput
-        .mockResolvedValueOnce('') // github workflow
-        .mockResolvedValueOnce('') // react overlays
-        .mockResolvedValueOnce('') // playwright browsers
-        .mockResolvedValueOnce('y') // playwright OS deps
-        .mockResolvedValueOnce('') // screenci skill
-        .mockResolvedValueOnce('') // playwright-cli skill
 
       const { main } = await import('./cli')
       await main()
@@ -1401,19 +1377,12 @@ describe('CLI', () => {
           stdio: 'pipe',
         })
       )
+      // The combined AI-skills prompt carries pnpm-flavored manual commands.
       expect(mockInput.mock.calls.map((call) => call[0])).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             message:
-              "Install the ScreenCI skill for AI agents (can be done manually via 'pnpm dlx skills add screenci/screenci --skill screenci -y')? (Y/n)",
-          }),
-          expect.objectContaining({
-            message:
-              "Install Playwright browsers (can be done manually via 'pnpm exec playwright install --only-shell chromium')? (Y/n)",
-          }),
-          expect.objectContaining({
-            message:
-              "Install playwright-cli for URL-based browser inspection (can be done manually via 'pnpm dlx skills add screenci/screenci --skill playwright-cli -y && pnpm add --save-dev @playwright/cli')? (Y/n)",
+              "Install AI agent skills (ScreenCI + playwright-cli) for your coding agent (can be done manually via 'pnpm dlx skills add screenci/screenci --skill screenci --skill playwright-cli -y')? (Y/n)",
           }),
         ])
       )
@@ -1907,6 +1876,115 @@ describe('CLI', () => {
 
       const { main } = await import('./cli')
       await expect(main()).rejects.toThrow('process.exit called')
+    })
+
+    it('skips React overlays with --no-react', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project', '--no-react']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      // No .tsx example is scaffolded.
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        '/workspace/my-project/screenci/recordings/example-react.screenci.tsx',
+        expect.any(String)
+      )
+      // tsconfig does not enable the automatic JSX runtime.
+      const tsconfigCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          call[0] === '/workspace/my-project/screenci/tsconfig.json'
+      )
+      expect(tsconfigCall?.[1]).not.toContain('react-jsx')
+      // react/react-dom are dropped from the dev-dependency batch.
+      expectNpmDevInstalls(
+        mockSpawn,
+        '/workspace/my-project/screenci',
+        '0.0.32',
+        true,
+        false
+      )
+    })
+
+    it('skips Playwright browser install with --no-playwright-browsers', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--no-playwright-browsers',
+      ]
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpawn).not.toHaveBeenCalledWith(
+        'npx',
+        ['playwright', 'install', '--only-shell', 'chromium'],
+        expect.anything()
+      )
+    })
+
+    it('skips the workflow and its prompt with --no-github-workflow', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--no-github-workflow',
+      ]
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      // The workflow file is not written.
+      const workflowCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          typeof call[0] === 'string' && call[0].endsWith('screenci.yaml')
+      )
+      expect(workflowCall).toBeUndefined()
+      // The GitHub workflow question is never asked; only the AI skills prompt
+      // fires (project name comes from argv).
+      expect(mockInput.mock.calls.map((call) => call[0])).toEqual([
+        expect.objectContaining({
+          message: expect.stringContaining('Install AI agent skills'),
+        }),
+      ])
+    })
+
+    it('skips both AI skills and their prompt with --no-skills', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project', '--no-skills']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      // No skills install command runs.
+      expect(mockSpawn).not.toHaveBeenCalledWith(
+        'npm',
+        expect.arrayContaining(['skills', 'add', 'screenci/screenci']),
+        expect.anything()
+      )
+      // @playwright/cli is dropped from the dev-dependency batch.
+      expectNpmDevInstalls(
+        mockSpawn,
+        '/workspace/my-project/screenci',
+        '0.0.32',
+        false
+      )
+      // The AI skills question is never asked; only the GitHub workflow prompt
+      // fires (project name comes from argv).
+      expect(mockInput.mock.calls.map((call) => call[0])).toEqual([
+        expect.objectContaining({
+          message: 'Add a GitHub Actions workflow? (Y/n)',
+        }),
+      ])
     })
   })
 

@@ -433,6 +433,31 @@ video.overlays({
 
 `pinToScreen` is orthogonal to placement: it works with `relativeTo: 'recording'` / `'screen'`, a `fill` overlay, or an `over` element. It only affects how the overlay behaves under zoom (whether it is burned into the scene or fixed to the screen).
 
+### Hiding the cursor (`hideMouse`)
+
+Set `hideMouse: true` to hide the mouse cursor while an overlay is displayed, and restore its prior visibility when the overlay ends. This is handy for full-screen intro or outro cards, where a stray cursor sitting on top of the card looks unpolished:
+
+```tsx
+video.overlays({
+  logo: {
+    path: 'assets/logo.png',
+    fill: 'screen',
+    duration: '2s',
+    hideMouse: true,
+  },
+})('Product demo', async ({ page, overlays }) => {
+  // The cursor is hidden for the 2s card, then reappears for the walkthrough.
+  await overlays.logo.for('2s')
+  // ...
+})
+```
+
+`hideMouse` works for both blocking overlays (`.for()` / `.until()`) and live overlays driven with `start()` / `end()`. It is placement-agnostic, so it applies to every overlay variant. A few details:
+
+- Overlapping `hideMouse` overlays keep the cursor hidden until the last one ends.
+- A cursor that is already hidden (for example via `page.mouse.hide()`) is left hidden when the overlay ends, rather than forced back on.
+- It has no effect on screenshots, whose cursor is hidden by default (see `renderOptions.screenshot.mouse.show`).
+
 ### Positioning over a live element
 
 To frame or circle a real element, give a [programmatic overlay](#programmatic-overlays-props)

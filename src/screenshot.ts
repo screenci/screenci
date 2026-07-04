@@ -36,6 +36,10 @@ import {
 } from './contextOptions.js'
 import { resolveCrop } from './crop.js'
 import type { CropTarget, CropOptions } from './crop.js'
+import {
+  installAnimationDisabling,
+  resolveDisableAnimations,
+} from './disableAnimations.js'
 import { getMousePosition } from './mouse.js'
 import { getRuntimePage, setRuntimeCrop } from './runtimeContext.js'
 import { ScreenciError } from './errors.js'
@@ -287,6 +291,11 @@ const _screenshotBase = base.extend<
     if (!shouldRecord) {
       // Preview run (`screenci test`): exercise the body without capturing.
       const page = await context.newPage()
+      if (
+        resolveDisableAnimations(recordOptions.disableAnimations, 'screenshot')
+      ) {
+        await installAnimationDisabling(page)
+      }
       const runtimeContext = createScreenCIRuntimeContext({
         recorder,
         page,
@@ -329,6 +338,11 @@ const _screenshotBase = base.extend<
     await mkdir(screenshotDir, { recursive: true })
 
     const page = await context.newPage()
+    if (
+      resolveDisableAnimations(recordOptions.disableAnimations, 'screenshot')
+    ) {
+      await installAnimationDisabling(page)
+    }
     const runtimeContext = createScreenCIRuntimeContext({
       recorder,
       page,

@@ -1,4 +1,5 @@
 import type { AspectRatio, FPS, Quality } from './types.js'
+import { isScreenshotCapture } from './runtimeContext.js'
 
 export const SCREENCI_RECORDING_ENV = 'SCREENCI_RECORDING'
 export const SCREENCI_MOCK_RECORD_ENV = 'SCREENCI_MOCK_RECORD'
@@ -69,6 +70,12 @@ export function resolveRecordingTimingDuration(
   durationMs: number,
   env: NodeJS.ProcessEnv = process.env
 ): number {
+  // A screenshot keeps only the final frame, so every simulated recording-timing
+  // pause (cursor beats, click holds, post-zoom settle, overlay frame gaps) is
+  // wasted wall-clock. Collapse them all to zero for stills, matching the instant
+  // cursor move; videos keep their pacing. This is the single choke point every
+  // recording-timing wait flows through.
+  if (isScreenshotCapture()) return 0
   return shouldSimulateRecordingTimings(env) ? durationMs : 0
 }
 

@@ -5,7 +5,10 @@ import { join } from 'path'
 import {
   INIT_OTP_PREFIX,
   exchangeInitOtp,
+  isPlaceholderInitOtp,
   looksLikeInitOtp,
+  looksLikeScreenCISecret,
+  verifyScreenCISecret,
 } from './src/linkSession.js'
 import { setUpInitSecret } from './src/init.js'
 import { logger } from './src/logger.js'
@@ -20,6 +23,95 @@ describe('looksLikeInitOtp', () => {
     expect(looksLikeInitOtp('my-project')).toBe(false)
     expect(looksLikeInitOtp('screenci')).toBe(false)
     expect(looksLikeInitOtp('')).toBe(false)
+  })
+})
+
+describe('isPlaceholderInitOtp', () => {
+  it('recognizes the docs placeholders (case-insensitively, trimmed)', () => {
+    expect(isPlaceholderInitOtp('otp_your_token')).toBe(true)
+    expect(isPlaceholderInitOtp('otp_your_one_time_token')).toBe(true)
+    expect(isPlaceholderInitOtp('otp_PASTE_YOUR_TOKEN_HERE')).toBe(true)
+    expect(isPlaceholderInitOtp('  otp_paste_your_token_here  ')).toBe(true)
+  })
+
+  it('treats a real-looking token as not a placeholder', () => {
+    expect(isPlaceholderInitOtp('otp_abc123def456')).toBe(false)
+    expect(isPlaceholderInitOtp('my-project')).toBe(false)
+  })
+})
+
+describe('looksLikeScreenCISecret', () => {
+  it('recognizes a bare v4 UUID (the SCREENCI_SECRET shape), trimmed', () => {
+    expect(
+      looksLikeScreenCISecret('3f9c2b1a-7d4e-4a2b-9c8f-1e2d3a4b5c6d')
+    ).toBe(true)
+    expect(
+      looksLikeScreenCISecret('  3F9C2B1A-7D4E-4A2B-9C8F-1E2D3A4B5C6D  ')
+    ).toBe(true)
+  })
+
+  it('rejects OTPs, project names, and non-v4 UUIDs', () => {
+    expect(looksLikeScreenCISecret('otp_abc123')).toBe(false)
+    expect(looksLikeScreenCISecret('my-project')).toBe(false)
+    // v1 UUID (version nibble is 1, not 4)
+    expect(
+      looksLikeScreenCISecret('3f9c2b1a-7d4e-1a2b-9c8f-1e2d3a4b5c6d')
+    ).toBe(false)
+  })
+})
+
+describe('verifyScreenCISecret', () => {
+  function asFetch(fn: ReturnType<typeof vi.fn>): typeof fetch {
+    return fn as unknown as typeof fetch
+  }
+
+  it('GETs /cli/whoami with the secret header and returns the org id on 200', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ orgId: 'org_123' }),
+    })
+
+    const result = await verifyScreenCISecret('the-secret', {
+      backendUrl: 'https://api.example.com',
+      fetchImpl: asFetch(fetchImpl),
+    })
+
+    expect(result).toEqual({ ok: true, orgId: 'org_123' })
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.example.com/cli/whoami',
+      {
+        method: 'GET',
+        headers: { 'X-ScreenCI-Secret': 'the-secret' },
+      }
+    )
+  })
+
+  it("reports 'invalid' when the backend rejects the secret", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 401, json: async () => ({}) })
+
+    const result = await verifyScreenCISecret('nope', {
+      fetchImpl: asFetch(fetchImpl),
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.kind).toBe('invalid')
+  })
+
+  it("reports 'unreachable' when fetch rejects (so the caller can accept optimistically)", async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new Error('network down'))
+
+    const result = await verifyScreenCISecret('the-secret', {
+      fetchImpl: asFetch(fetchImpl),
+    })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.kind).toBe('unreachable')
+      expect(result.reason).toBe('network down')
+    }
   })
 })
 
@@ -187,6 +279,83 @@ describe('setUpInitSecret', () => {
     expect(outcome).toBe('manual')
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('one-time setup token')
+    )
+  })
+
+  it("returns 'manual' without a network call and warns when the OTP is the docs placeholder", async () => {
+    const fetchSpy = vi.fn()
+    stubFetch(fetchSpy)
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+    const dir = await makeTempDir()
+
+    const outcome = await setUpInitSecret(dir, 'otp_PASTE_YOUR_TOKEN_HERE', {
+      env: {},
+    })
+
+    expect(outcome).toBe('manual')
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('placeholder'))
+  })
+
+  it("verifies a pasted secret, writes it to <islandDir>/.env, and returns 'ready'", async () => {
+    stubFetch(
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ orgId: 'org_123' }),
+      })
+    )
+    const dir = await makeTempDir()
+    const secret = '3f9c2b1a-7d4e-4a2b-9c8f-1e2d3a4b5c6d'
+
+    const outcome = await setUpInitSecret(dir, undefined, {
+      env: {},
+      pastedSecret: secret,
+    })
+
+    expect(outcome).toBe('ready')
+    const envContents = await readFile(join(dir, '.env'), 'utf-8')
+    expect(envContents).toContain(`SCREENCI_SECRET=${secret}`)
+  })
+
+  it("returns 'manual' and warns when the pasted secret is rejected", async () => {
+    stubFetch(
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: async () => ({}),
+      })
+    )
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+    const dir = await makeTempDir()
+
+    const outcome = await setUpInitSecret(dir, undefined, {
+      env: {},
+      pastedSecret: '3f9c2b1a-7d4e-4a2b-9c8f-1e2d3a4b5c6d',
+    })
+
+    expect(outcome).toBe('manual')
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('not recognized')
+    )
+  })
+
+  it("writes the pasted secret optimistically and returns 'ready' when verification is unreachable", async () => {
+    stubFetch(vi.fn().mockRejectedValue(new Error('network down')))
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+    const dir = await makeTempDir()
+    const secret = '3f9c2b1a-7d4e-4a2b-9c8f-1e2d3a4b5c6d'
+
+    const outcome = await setUpInitSecret(dir, undefined, {
+      env: {},
+      pastedSecret: secret,
+    })
+
+    expect(outcome).toBe('ready')
+    const envContents = await readFile(join(dir, '.env'), 'utf-8')
+    expect(envContents).toContain(`SCREENCI_SECRET=${secret}`)
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Could not verify the secret')
     )
   })
 })

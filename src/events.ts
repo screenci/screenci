@@ -1914,6 +1914,10 @@ export class EventRecorder implements IEventRecorder {
       mouse: {
         size: ro?.mouse?.size ?? RENDER_OPTIONS_DEFAULTS.mouse.size,
         style: ro?.mouse?.style ?? RENDER_OPTIONS_DEFAULTS.mouse.style,
+        // Custom cursor image is opt-in (no default). Passed through as the raw
+        // config path here; the CLI hashes and rewrites it to
+        // `{ assetPath, fileHash }` during upload.
+        ...(ro?.mouse?.image !== undefined && { image: ro.mouse.image }),
         motionBlur:
           ro?.mouse?.motionBlur ?? RENDER_OPTIONS_DEFAULTS.mouse.motionBlur,
       },

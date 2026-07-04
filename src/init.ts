@@ -11,9 +11,13 @@ import pc from 'picocolors'
 import { logger } from './logger.js'
 import {
   exchangeInitOtp,
+  getScreenCIGetStartedUrl,
   getScreenCISecretsUrl,
+  isPlaceholderInitOtp,
   looksLikeInitOtp,
+  looksLikeScreenCISecret,
   persistScreenCISecret,
+  verifyScreenCISecret,
 } from './linkSession.js'
 
 const PLAYWRIGHT_TEST_VERSION = '^1.59.0'
@@ -30,6 +34,15 @@ export type InitOptions = {
   yes: boolean
   packageManager: PackageManager
   agent?: string
+  // Each optional flag defaults to the "accept" behavior when left unset, so the
+  // init wizard stays low-friction. They exist so scripts / CI can opt out of an
+  // auto-applied default without dropping to a fully interactive session.
+  githubWorkflow?: boolean // --no-github-workflow -> false
+  skills?: boolean // --no-skills -> false (skips both AI skills + their prompt)
+  playwrightCli?: boolean // --no-playwright-cli -> false
+  react?: boolean // --no-react -> false
+  playwrightBrowsers?: boolean // --no-playwright-browsers -> false
+  playwrightOsDeps?: boolean // --playwright-os-deps -> true
 }
 
 const MIN_SUPPORTED_PNPM_VERSION = '10.26.0'
@@ -1100,25 +1113,69 @@ async function installInitDependencies(
 export type InitSecretOutcome = 'ready' | 'manual'
 
 /**
- * Turns an init one-time password into a persisted SCREENCI_SECRET.
+ * Turns init's secret input into a persisted SCREENCI_SECRET.
  *
- * When init is run with an OTP (minted by the Get Started page), we exchange it
- * for the org's default secret and write it into the new project's `.env`, so
- * `screenci record` can upload right away on the free tier. A missing, used, or
- * expired OTP degrades gracefully to the manual "copy your secret from the
- * secrets page" path. Never throws: setup guidance is always better than a
- * failed scaffold.
+ * Three inputs are supported. A pasted SCREENCI_SECRET (a bare UUID) is verified
+ * against the backend and written into `.env`. An OTP (minted by the Get Started
+ * page) is exchanged for the org's default secret and written. Neither present,
+ * or a failed exchange, degrades gracefully to the manual "copy your secret from
+ * the secrets page" path. A pasted docs placeholder is caught before any network
+ * call and redirected to Get Started. Never throws: setup guidance is always
+ * better than a failed scaffold.
  */
 export async function setUpInitSecret(
   islandDir: string,
   initOtp: string | undefined,
-  options: { env?: NodeJS.ProcessEnv } = {}
+  options: {
+    env?: NodeJS.ProcessEnv
+    pastedSecret?: string
+    fetchImpl?: typeof fetch
+    backendUrl?: string
+  } = {}
 ): Promise<InitSecretOutcome> {
   const env = options.env ?? process.env
   if (env.SCREENCI_SECRET) return 'ready'
+
+  const envPath = resolve(islandDir, '.env')
+  // Only include keys that are set: `exactOptionalPropertyTypes` forbids passing
+  // an explicit `undefined` for these optional fields.
+  const exchangeOptions = {
+    ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+    ...(options.backendUrl ? { backendUrl: options.backendUrl } : {}),
+  }
+
+  if (options.pastedSecret) {
+    const verification = await verifyScreenCISecret(
+      options.pastedSecret,
+      exchangeOptions
+    )
+    if (!verification.ok && verification.kind === 'invalid') {
+      logger.warn(
+        `That secret was not recognized. Copy your SCREENCI_SECRET from ${getScreenCISecretsUrl()} and add it to ${envPath} manually.`
+      )
+      return 'manual'
+    }
+    if (!verification.ok) {
+      logger.warn(
+        'Could not verify the secret right now; writing it anyway. `screenci record` will confirm it.'
+      )
+    }
+    // The generated config sets `envFile: '.env'`, so this matches what
+    // `screenci record` resolves later.
+    await persistScreenCISecret(envPath, options.pastedSecret)
+    return 'ready'
+  }
+
   if (!initOtp) return 'manual'
 
-  const result = await exchangeInitOtp(initOtp)
+  if (isPlaceholderInitOtp(initOtp)) {
+    logger.warn(
+      `"${initOtp}" is the placeholder from the docs, not a real setup token. Open ${getScreenCIGetStartedUrl()} to copy the real init command, or pass your SCREENCI_SECRET instead.`
+    )
+    return 'manual'
+  }
+
+  const result = await exchangeInitOtp(initOtp, exchangeOptions)
   if (!result.ok) {
     logger.warn(
       `Could not use the one-time setup token: ${result.reason} You can still finish setup manually.`
@@ -1126,9 +1183,7 @@ export async function setUpInitSecret(
     return 'manual'
   }
 
-  // The generated config sets `envFile: '.env'`, so this matches what
-  // `screenci record` resolves later.
-  await persistScreenCISecret(resolve(islandDir, '.env'), result.secret)
+  await persistScreenCISecret(envPath, result.secret)
   return 'ready'
 }
 
@@ -1307,15 +1362,16 @@ export function generateExampleVideo(): string {
 
 video
   .overlays({
-    logo: { path: './assets/logo.png', duration: '2s' },
+    logo: { path: './assets/logo.png', duration: '2s', hideMouse: true },
   })
   .narration({
     docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
   })('How to find docs', async ({ page, narration, overlays }) => {
   // Run setup without showing these actions in the final recording.
   await hide(async () => {
+    // The landing page autoplays the hero video, so \`networkidle\` never settles;
+    // goto already waits for the load event.
     await page.goto('https://screenci.com/')
-    await page.waitForLoadState('networkidle')
   })
 
   // Open with a brief brand intro card before the walkthrough begins.
@@ -1427,7 +1483,8 @@ async function promptYesNo(
 ): Promise<boolean> {
   const answer = await input({
     message,
-    default: defaultValue ? 'y' : 'n',
+    // Capitalize the default so it reads as the recommended answer (Y/N).
+    default: defaultValue ? 'Y' : 'N',
     validate: (value) => {
       const normalized = value.trim().toLowerCase()
       if (
@@ -1452,54 +1509,17 @@ async function promptInitGithubActionWorkflow(): Promise<boolean> {
   return promptYesNo('Add a GitHub Actions workflow? (Y/n)', true)
 }
 
-async function promptInitReactOverlays(): Promise<boolean> {
-  return promptYesNo(
-    'Add React overlay support (installs react/react-dom, enables JSX, adds a .tsx example)? (Y/n)',
-    true
-  )
-}
-
-async function promptInitPlaywrightBrowsersForPackageManager(
-  packageManager: PackageManager
-): Promise<boolean> {
-  const commands = getPackageManagerCommand(packageManager)
-  return promptYesNo(
-    `Install Playwright browsers (can be done manually via '${commands.playwrightRun} install --only-shell chromium')? (Y/n)`,
-    true
-  )
-}
-
-async function promptInitPlaywrightOsDependenciesForPackageManager(
-  packageManager: PackageManager
-): Promise<boolean> {
-  const commands = getPackageManagerCommand(packageManager)
-  return promptYesNo(
-    `Install Playwright operating system dependencies (might require sudo / root and can be done manually via '${commands.playwrightRun} install-deps chromium')? (y/N)`,
-    false
-  )
-}
-
-async function promptInitScreenCISkill(
+async function promptInitAiSkills(
   packageManager: PackageManager,
   agent?: string
 ): Promise<boolean> {
-  return promptYesNo(
-    `Install the ScreenCI skill for AI agents (can be done manually via '${getSkillsManualCommand(packageManager, ['screenci'], agent)}')? (Y/n)`,
-    true
+  const manualCommand = getSkillsManualCommand(
+    packageManager,
+    ['screenci', 'playwright-cli'],
+    agent
   )
-}
-
-async function promptInitPlaywrightCliSkillForPackageManager(
-  packageManager: PackageManager,
-  agent?: string
-): Promise<boolean> {
-  const cmds = getPackageManagerCommand(packageManager)
-  const installPlaywrightCli = [
-    cmds.installCommand,
-    ...cmds.installArgs('@playwright/cli'),
-  ].join(' ')
   return promptYesNo(
-    `Install playwright-cli for URL-based browser inspection (can be done manually via '${getSkillsManualCommand(packageManager, ['playwright-cli'], agent)} && ${installPlaywrightCli}')? (Y/n)`,
+    `Install AI agent skills (ScreenCI + playwright-cli) for your coding agent (can be done manually via '${manualCommand}')? (Y/n)`,
     true
   )
 }
@@ -1537,13 +1557,19 @@ export async function runInit(
     await ensureSupportedYarnVersion(initCwd)
   }
 
-  // The single positional is an init one-time password when it carries the OTP
-  // prefix; otherwise it is the project name (backward-friendly). An OTP is
-  // exchanged for the org secret after scaffolding.
+  // The single positional is one of: an init one-time password (carries the OTP
+  // prefix, exchanged for the org secret after scaffolding), a pasted
+  // SCREENCI_SECRET (a bare UUID, written straight to `.env`), or otherwise the
+  // project name (backward-friendly). OTP is checked first because a pasted
+  // placeholder keeps the `otp_` prefix and must be caught on the OTP path.
   let projectName = projectNameArg?.trim()
   let initOtp: string | undefined
+  let pastedSecret: string | undefined
   if (projectName && looksLikeInitOtp(projectName)) {
     initOtp = projectName
+    projectName = undefined
+  } else if (projectName && looksLikeScreenCISecret(projectName)) {
+    pastedSecret = projectName
     projectName = undefined
   }
 
@@ -1558,22 +1584,49 @@ export async function runInit(
 
   const githubWorkflowsDir = resolve(repoRoot, '.github', 'workflows')
   const githubActionPath = resolve(githubWorkflowsDir, 'screenci.yaml')
-  const shouldAddGithubActionWorkflow = yes
-    ? true
-    : await promptInitGithubActionWorkflow()
-  const shouldAddReactOverlays = yes ? true : await promptInitReactOverlays()
+
+  // Only the decisions that genuinely vary between users are prompted for
+  // (project name above, the GitHub workflow, and the combined AI skills). The
+  // rest are auto-applied at their safe default and can be steered with flags,
+  // so the common path stays a couple of questions instead of seven.
+  const shouldAddGithubActionWorkflow =
+    options.githubWorkflow === false
+      ? false
+      : yes
+        ? true
+        : await promptInitGithubActionWorkflow()
+
+  const shouldAddReactOverlays = yes ? true : options.react !== false
   const shouldInstallPlaywrightBrowsers = yes
     ? true
-    : await promptInitPlaywrightBrowsersForPackageManager(packageManager)
+    : options.playwrightBrowsers !== false
   const shouldInstallPlaywrightOsDependencies = yes
     ? false
-    : await promptInitPlaywrightOsDependenciesForPackageManager(packageManager)
-  const shouldInstallScreenCISkill = yes
-    ? true
-    : await promptInitScreenCISkill(packageManager, agent)
-  const shouldInstallPlaywrightCli = yes
-    ? true
-    : await promptInitPlaywrightCliSkillForPackageManager(packageManager, agent)
+    : options.playwrightOsDeps === true
+
+  // The two agent skills are decided together (one prompt). `--no-skills` skips
+  // both without asking; `--no-playwright-cli` keeps the ScreenCI skill but drops
+  // playwright-cli (skill + the `@playwright/cli` dev dependency).
+  const shouldInstallAiSkills =
+    options.skills === false
+      ? false
+      : yes
+        ? true
+        : await promptInitAiSkills(packageManager, agent)
+  const shouldInstallScreenCISkill = shouldInstallAiSkills
+  const shouldInstallPlaywrightCli =
+    shouldInstallAiSkills && options.playwrightCli !== false
+
+  // Surface the auto-applied choices so they are discoverable without reading
+  // docs, and point at the flag that flips each one.
+  if (!yes) {
+    logger.info(
+      'Using defaults (override with flags): ' +
+        `React overlays ${shouldAddReactOverlays ? 'on' : 'off'} (--no-react), ` +
+        `Playwright browsers ${shouldInstallPlaywrightBrowsers ? 'on' : 'off'} (--no-playwright-browsers), ` +
+        `OS deps ${shouldInstallPlaywrightOsDependencies ? 'on' : 'off'} (--playwright-os-deps).`
+    )
+  }
 
   // The workflow lives at the repo root. If one already exists, skip it (do not
   // overwrite, do not fail) so re-running init stays non-destructive.
@@ -1765,7 +1818,11 @@ export async function runInit(
     process.off('exit', removePartialIsland)
   }
 
-  const secretOutcome = await setUpInitSecret(islandDir, initOtp)
+  const secretOutcome = await setUpInitSecret(
+    islandDir,
+    initOtp,
+    pastedSecret ? { pastedSecret } : {}
+  )
 
   printInitNextSteps(
     islandDir,
@@ -1789,6 +1846,58 @@ function handleCreateCommanderError(err: unknown): void {
   process.exit(1)
 }
 
+/**
+ * Registers the shared `init` toggle flags on a commander program/command.
+ * Both entry points (`create-screenci` and `screenci init`) must expose the
+ * exact same flag set, so it lives in one place.
+ */
+export function registerInitToggleOptions<T extends Command>(target: T): T {
+  return target
+    .option('--no-github-workflow', 'skip adding the GitHub Actions workflow')
+    .option(
+      '--no-skills',
+      'skip installing AI agent skills (ScreenCI + playwright-cli)'
+    )
+    .option(
+      '--no-playwright-cli',
+      'skip the playwright-cli skill and @playwright/cli dependency'
+    )
+    .option('--no-react', 'skip React overlay support (react/react-dom, JSX)')
+    .option('--no-playwright-browsers', 'skip installing Playwright browsers')
+    .option(
+      '--playwright-os-deps',
+      'install Playwright operating system dependencies (may require sudo)'
+    )
+}
+
+/**
+ * Maps the commander-parsed toggle flags onto `InitOptions`. Negatable flags
+ * (`--no-*`) default to `true` in commander, so they are always defined;
+ * `--playwright-os-deps` is only defined when passed. Undefined values are
+ * omitted to satisfy `exactOptionalPropertyTypes`.
+ */
+export function initToggleOptionsFromCommander(
+  options: Record<string, unknown>
+): Partial<InitOptions> {
+  const bool = (key: string): boolean | undefined =>
+    typeof options[key] === 'boolean' ? (options[key] as boolean) : undefined
+  const result: Partial<InitOptions> = {}
+  const githubWorkflow = bool('githubWorkflow')
+  if (githubWorkflow !== undefined) result.githubWorkflow = githubWorkflow
+  const skills = bool('skills')
+  if (skills !== undefined) result.skills = skills
+  const playwrightCli = bool('playwrightCli')
+  if (playwrightCli !== undefined) result.playwrightCli = playwrightCli
+  const react = bool('react')
+  if (react !== undefined) result.react = react
+  const playwrightBrowsers = bool('playwrightBrowsers')
+  if (playwrightBrowsers !== undefined)
+    result.playwrightBrowsers = playwrightBrowsers
+  const playwrightOsDeps = bool('playwrightOsDeps')
+  if (playwrightOsDeps !== undefined) result.playwrightOsDeps = playwrightOsDeps
+  return result
+}
+
 export async function runCreateScreenciCli(
   argv: string[] = process.argv
 ): Promise<void> {
@@ -1808,6 +1917,7 @@ export async function runCreateScreenciCli(
   )
   program.option('-y, --yes', 'accept init defaults')
   program.option('-v, --verbose', 'verbose output')
+  registerInitToggleOptions(program)
   program.action(
     async (name: string | undefined, options: Record<string, unknown>) => {
       const agent = options['agent'] as string | undefined
@@ -1819,6 +1929,7 @@ export async function runCreateScreenciCli(
           getInitProjectRoot()
         ),
         ...(agent !== undefined ? { agent } : {}),
+        ...initToggleOptionsFromCommander(options),
       })
     }
   )

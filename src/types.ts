@@ -188,8 +188,19 @@ export type RenderOptions = {
   mouse?: {
     /** 0-1: 0=missing, 1=height of video */
     size?: number
-    /** Cursor colour. Defaults to `'white'`. */
+    /** Cursor colour. Defaults to `'white'`. Ignored when `image` is set. */
     style?: 'white' | 'black'
+    /**
+     * Path to a custom cursor image, relative to the config directory. When set,
+     * it replaces the built-in `style` cursor in both video and screenshot
+     * output. The image is uploaded alongside the recording like any other
+     * asset.
+     *
+     * PNG is recommended (the video pipeline may lack an SVG decoder). The
+     * image's top-left corner is the pointer hotspot, matching the built-in
+     * cursors, and it is scaled by `size` (aspect ratio preserved).
+     */
+    image?: string
     /**
      * Cursor motion blur, 0-1. Defaults to `0.5`; `0` disables it. The value is
      * the shutter open time as a fraction of one output frame interval, so a
@@ -301,6 +312,12 @@ export type ResolvedRenderOptions = {
   mouse: {
     size: number
     style: 'white' | 'black'
+    /**
+     * Custom cursor image. On disk (pre-upload) this is the raw config path; the
+     * CLI rewrites it to `{ assetPath, fileHash }` after upload so the renderer
+     * can resolve it by content hash. Absent when no custom cursor is set.
+     */
+    image?: string | { assetPath: string; fileHash: string }
     motionBlur: number
   }
   zoom: {
@@ -460,6 +477,23 @@ export type RecordOptions = {
    * @default 0.2
    */
   scrollCentering?: number
+
+  /**
+   * Neutralize CSS animations and transitions while the page is driven, so
+   * every interaction lands on its element's end state instead of waiting for an
+   * animation to settle.
+   *
+   * When unset this defaults to `true` for screenshots and `false` for video. A
+   * still has no timeline, so animating the UI only slows the interactions that
+   * drive the page into position (each Playwright action waits for its target to
+   * stop moving). Video is left animated because motion is usually the point.
+   *
+   * Override it to opt back in or out: set `false` on a screenshot that needs a
+   * mid-animation state, or `true` on a video to strip animations.
+   *
+   * @default true for screenshots, false for video
+   */
+  disableAnimations?: boolean
 }
 
 /**

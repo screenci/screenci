@@ -9,56 +9,45 @@ allowed-tools:
 
 # ScreenCI Video and Guide Skill
 
-Use this skill when the task is about ScreenCI video recording workflows in an existing project, or updating `.screenci.ts` files and `screenci.config.ts`.
+Use this skill when the task is about ScreenCI video recording in an existing project: creating a video, showing a flow as a video, or editing `.screenci.ts` / `screenci.config.ts` files.
 
-Trigger this skill when the user asks to:
+Routing:
 
-- create a video
-- show a flow as a video
-- create a guide/demo video
-
-Routing rules:
-
-- If the user provides a URL for video context, always use the `playwright-cli` skill first. It drives a real browser from the CLI (navigate, snapshot, click, type) so you can discover the actual page flow, stable selectors, and cookie/consent steps before editing the ScreenCI script.
-- If the user provides source code for the target page/component, that usually means browser exploration is not required first.
-- If the request is only about application/source-code changes (not recording or `.screenci.ts` updates), do not use this skill.
+- If the user gives a URL for video context, use the `playwright-cli` skill first to discover the real page flow, stable selectors, and cookie/consent steps before editing the script.
+- If the user gives source code for the target page, browser exploration is usually not needed first.
+- If the request is only about application/source-code changes (not recording), do not use this skill.
 
 ## Quick Start
 
-Assume the project is already initialized. Add or edit video scripts in `recordings/`.
-
-If you are creating new videos, remove the starter `recordings/example.screenci.ts` file.
+The project is already initialized. Add or edit scripts in `recordings/`. If you are creating new videos, remove the starter `recordings/example.screenci.ts`.
 
 ```bash
 # verify repeatedly until green
 npx screenci test
 
-# run only some tests with normal Playwright filters
+# run a subset with normal Playwright filters
 npx screenci test recordings/signup.screenci.ts --grep "fills billing details"
 
 # only record after tests pass
 npx screenci record
 ```
 
-`npx screenci test` accepts normal `playwright test` argument syntax after `test`. ScreenCI still injects its resolved `screenci.config.ts` automatically. `--config` / `-c` and `--verbose` / `-v` are reserved for the ScreenCI CLI itself rather than being forwarded to Playwright.
+`test` forwards normal `playwright test` arguments and still injects the resolved `screenci.config.ts`. `--config`/`-c` and `--verbose`/`-v` are reserved for the ScreenCI CLI, not forwarded to Playwright.
 
 ## What ScreenCI Adds
 
-ScreenCI uses Playwright-style `.screenci.ts` files and adds recording-specific helpers:
+ScreenCI uses Playwright-style `.screenci.ts` files plus recording helpers:
 
 - `video()` declares one output video per test.
-- `hide()` removes setup and loading sections from the final recording.
-- `autoZoom()` follows navigation, click-driven, and broader interaction sequences with smooth camera motion. Use it sparingly, and start with its default options unless the user explicitly asks for different zoom behavior or the flow clearly needs a targeted override.
-- `zoomTo()` and `resetZoom()` are better for forms and other steady editing sections where the camera should stay fixed while the user types, selects, toggles, and confirms within one area.
-- `video.narration({ ... })` is mandatory for every video: declare narration in every `.screenci.ts` file and include spoken narration throughout the demo. Pass either a flat object of cue name to text (shared across all languages) or an object keyed by language (`en`, `es`, ...) of cue name to text. The opening narration should first state the purpose of the video, then continue with the explanation or walkthrough. The body receives the `narration` marker object: call `await narration.key()` for the common case where the full line should run before moving on. Use `await narration.key.start()` when narration should overlap with the next action, and `await narration.key.end()` only to close that same active cue later, especially before visible navigation or route changes. Voice is a render option, not part of the narration spec: set a default (and optional per-language overrides) with `video.use({ renderOptions: { narration: { voice: { name: voices.Ava } } } })` or in `screenci.config.ts`.
-- Narration text can include inline speech-control tags such as `[pronounce: screen see eye]`, `[short pause]`, `[medium pause]`, and `[long pause]` when a word needs guided pronunciation or an intentional pause. When narration includes a URL or domain name, add a pronunciation guide or rewrite the line so it will be spoken clearly. Example: `screenci.com [pronounce: screen see eye dot com]`.
-
-Example:
+- `hide()` cuts setup and loading sections from the final recording.
+- `autoZoom()` follows navigation and click-driven flows with smooth camera motion. Use it for movement between targets.
+- `zoomTo()` / `resetZoom()` hold a fixed frame for forms and steady editing sections.
+- `video.narration({ ... })` is mandatory (see below).
 
 ```ts
 import { video, voices } from 'screenci'
 
-// Voice is a render option (how narration is spoken).
+// Voice is a render option (how narration is spoken), not part of the narration spec.
 video.use({ renderOptions: { narration: { voice: { name: voices.Ava } } } })
 
 video.narration({
@@ -82,40 +71,39 @@ video.narration({
 })
 ```
 
+### Narration
+
+- Declare `video.narration({ ... })` on every video and speak throughout the demo. Pass a flat `cue -> text` object (shared across languages) or one keyed by language (`en`, `es`, ...).
+- The opening line must state the video's purpose, then continue with the walkthrough.
+- Trigger cues from the `narration` fixture: `await narration.key()` runs the full line before moving on. Use `await narration.key.start()` when narration should overlap the next action, and `await narration.key.end()` to close that cue later, especially before visible navigation or route changes.
+- Use inline speech tags when needed: `[pronounce: ...]`, `[short pause]`, `[medium pause]`, `[long pause]`. Always guide pronunciation for URLs and domains, e.g. `screenci.com [pronounce: screen see eye dot com]`.
+
 ## Required Conventions
 
-**Every video MUST follow these conventions:**
+Every video MUST follow these:
 
-- **Narration on every video (required, no exceptions)** — always declare `video.narration({ ... })` and add narration to every `.screenci.ts` file. Videos without narration are not acceptable.
-- **Open with the video's purpose** — the first spoken narration should clearly state what the video is for before moving into the step-by-step explanation.
-- **Guide pronunciation for URLs and domains** — if narration says a URL, domain, product name, or other term that a voice model might read incorrectly, add a `[pronounce: ...]` hint or phrase it in a clearly spoken way.
-- **Start on the requested page** — the visible video should always begin on the page the user requested.
-- **Hide initial setup** — the initial page load should almost always be wrapped in `hide()`. Keep authentication, navigation to the starting page, loading spinners, cookie banner dismissal, and any other non-demo boilerplate inside that hidden block so they are cut from the final recording. After the initial navigation, explicitly try to find and click any cookie consent or cookie policy accept button there if one appears.
-- **Navigate visibly with clicks** — after hidden setup, move through the demo by clicking real links and buttons instead of calling `page.goto()`.
-- **Prefer mouse-driven selection after typing** — when typing into search boxes, comboboxes, autocomplete fields, command menus, or similar UI, prefer clicking the visible result or CTA with the mouse instead of submitting with keyboard actions like `press('Enter')` when a clickable target is available. Example: after `await searchBox.fill('product')`, prefer `await page.getByRole('link', { name: 'Specific Product' }).click()`.
-- **Prefer native Playwright APIs over `page.evaluate()`** — when Playwright or locator methods already support an interaction, use them directly instead of DOM scripting. For example, prefer `await locator.blur()` over `await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) { document.activeElement.blur() } })`.
-- **Prefer manual zoom for forms and steady editing sections** — when the demo focuses on filling a form, editing settings, or working within one stable panel, prefer `zoomTo()` before the sequence and `resetZoom()` after it instead of `autoZoom()`. This keeps the framing stable while the user types, selects, toggles, and saves.
-- **Use autoZoom for navigation and click-driven flows** — prefer `autoZoom()` for visible navigation, opening menus, moving across lists, stepping through dialogs, clicking through dashboards, or other flows where the camera should follow movement between targets.
-- **Use autoZoom sparingly on large page areas** — do not default to `autoZoom()` for every form or page section. Keep usage sparse, and make sure each `autoZoom()` block is justified by movement between targets rather than by simple text entry alone.
-- **End autoZoom before page changes** — it is better to let an `autoZoom()` block finish before a navigation/page change. Staying zoomed during navigation is confusing. Start a new `autoZoom()` block on the next page/section when needed.
-- **Prefer default action options** — for `autoZoom()` and locator actions such as `click()`, `fill()`, `pressSequentially()`, `check()`, `uncheck()`, `selectOption()`, `selectText()`, and similar helpers, start with ScreenCI's default options. In particular, do not add a separate `locator.click()` before `locator.fill()` or `locator.pressSequentially()` just to focus the field: those actions already move to the field, click it, and then type by default. Do not add custom `zoom`, `click`, `position`, timing, or other locator-action overrides unless the user asks for them or the recording flow clearly needs a specific adjustment.
+- **Narration on every video, no exceptions.** Videos without narration are not acceptable.
+- **Open with the video's purpose** before the step-by-step.
+- **Start on the requested page.** The visible video begins on the page the user asked for.
+- **Hide initial setup.** Wrap page load, auth, navigation to the start page, loading spinners, and cookie-banner dismissal in `hide()`. After the initial navigation, find and click any cookie consent accept button inside that hidden block.
+- **Navigate visibly with clicks** after hidden setup, not `page.goto()`.
+- **Prefer mouse-driven selection after typing** into search boxes, comboboxes, autocomplete, or command menus: click the visible result rather than `press('Enter')` when a clickable target exists.
+- **Prefer native Playwright APIs over `page.evaluate()`** when a locator method already covers the interaction (e.g. `locator.blur()`).
+- **Prefer default action options.** For `autoZoom()` and locator actions (`click`, `fill`, `pressSequentially`, `check`, `selectOption`, ...), start with ScreenCI's defaults. Do not add a separate `click()` before `fill()`/`pressSequentially()` just to focus, and do not add `zoom`/`click`/`position`/timing overrides unless the user asks or the flow clearly needs it.
 
-## Zooming Guide
+## Zooming
 
-Prefer stable manual zoom for edit-heavy sections:
+Prefer stable manual zoom for edit-heavy sections; use `autoZoom()` for movement between targets, and let each `autoZoom()` block finish before a navigation or page change (start a new block on the next page). Keep `autoZoom()` usage sparse: justify each block by movement between targets, not simple text entry.
 
 ```ts
+// Forms and steady editing: fixed frame.
 await zoomTo(page.getByRole('form', { name: /profile settings/i }))
 await page.getByLabel('Name').fill('Jane Doe')
-await page.getByLabel('Email').fill('jane@example.com')
 await page.getByRole('checkbox', { name: 'Email notifications' }).check()
 await page.getByRole('button', { name: 'Save changes' }).click()
 await resetZoom()
-```
 
-Prefer `autoZoom()` for movement between targets:
-
-```ts
+// Navigation and click-driven flows: follow the movement.
 await autoZoom(async () => {
   await page.getByRole('link', { name: 'Reports' }).click()
   await page.getByRole('button', { name: 'Open filters' }).click()
@@ -124,53 +112,29 @@ await autoZoom(async () => {
 })
 ```
 
-## Command Notes
+## Connecting to an Account (optional)
 
-- `screenci init` (or `npm init screenci`) scaffolds a new project. It can be run at any time, but if the project is already initialized it fails on purpose: it exits with an error like `screenci/ already exists`. That is expected, not a problem to fix. Do not delete the existing project to force a re-init. Continue working with the project that is already there. No account is needed. If the user gives you an existing `SCREENCI_SECRET`, pass it as the first argument (`npm init screenci@latest <SCREENCI_SECRET> -- --yes`) and init connects the project by writing it into `screenci/.env`.
-- `screenci record` runs the recording flow with local Playwright.
-- `screenci test <playwright args...>` forwards most Playwright test arguments unchanged, while still using `screenci.config.ts`.
+`record` needs no account: without a `SCREENCI_SECRET` it uploads under a local, anonymous trial session and prints a link to view the result. Mention this and keep going.
 
-### Connecting to an account (optional)
+To upload straight to an existing organization, get `SCREENCI_SECRET` into `screenci/.env` before the final `record` (it does not block authoring or testing):
 
-`screenci record` needs no account or setup step: without a `SCREENCI_SECRET`, it uploads under a local, anonymous trial session and prints a link to view the result. Mention this to the user and keep going.
-
-To upload straight to an existing organization instead, connect the project one of two ways:
-
-1. **Pass the secret to init.** If the user gave you their `SCREENCI_SECRET`, run `npm init screenci@latest <SCREENCI_SECRET> -- --yes`. Init writes it into `screenci/.env`.
-2. **Secrets page.** Otherwise ask the user to copy `SCREENCI_SECRET` from their **secrets page** into `screenci/.env`. The org secret is shared across projects. Relay this and keep building and testing the video while they do it; only the final `record` needs it.
+1. **Pass it to init:** `npm init screenci@latest <SCREENCI_SECRET> -- --yes` writes it into `screenci/.env`.
+2. **Secrets page:** ask the user to copy `SCREENCI_SECRET` from their secrets page into `screenci/.env`. The org secret is shared across projects. Keep building and testing while they do it; only `record` needs it.
 
 Renders without an account, and renders on the free tier, include a ScreenCI watermark. Mention that signing up (or upgrading) removes it.
 
 ## Recording Workflow
 
-1. Start from the existing initialized ScreenCI package. No connection step is required: `record` works immediately, uploading under an anonymous trial session unless `SCREENCI_SECRET` is set. If the user gave you a secret, make sure it is in `screenci/.env`.
-2. Add or edit `.screenci.ts` files in `recordings/`.
-   Remove `recordings/example.screenci.ts` if you are creating new videos and do not need the starter video.
-   For narration, declare it on the test with `video.narration({ en: { ... } })` and trigger lines from the `narration` fixture with `await narration.someKey()` when the full line should finish before moving on. Use `await narration.someKey.start()` only when narration should overlap with the next action, and `await narration.someKey.end()` only to close that same active cue later. This is especially important before visible navigation or page changes. Use inline tags like `[pronounce: ...]` and `[short pause]` inside cue text when needed, especially for URLs and domains such as `screenci.com [pronounce: screen see eye dot com]`.
-   Example:
+1. Add or edit `.screenci.ts` files in `recordings/` (remove `example.screenci.ts` if creating new videos).
+2. Run `npx screenci test` until it passes. Fix selectors/flow/narration and rerun until green.
+3. Run `npx screenci record` yourself once tests pass. Do not stop and ask the user to record. It uploads immediately, with or without `SCREENCI_SECRET`.
+4. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` per video.
+5. Report the URL `record` printed (starts with the app's domain, e.g. `https://app.screenci.com/record/...`) so the user can open it. Without a `SCREENCI_SECRET`, this is also how they view and claim the anonymous trial recording.
 
-   ```ts
-   video.narration({
-     en: {
-       intro: 'This video shows how to export a monthly sales report.',
-       filters:
-         'First, we set the report range and select the sales channel filters.',
-       export: 'Then we export the report and wait for the download to start.',
-     },
-   })('Export sales report', async ({ page, narration }) => {
-     await narration.intro()
-     await narration.filters()
-     await narration.export.start()
-     await page.getByRole('button', { name: 'Export CSV' }).click()
-     await narration.export.end()
-   })
-   ```
-
-3. Run `npx screenci test` until it passes.
-4. For the final recording, run `npx screenci record` yourself. It records and uploads immediately, with or without `SCREENCI_SECRET` set.
-5. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` for each recorded video.
-6. Report the URL `record` printed (it starts with the app's domain, e.g. `https://app.screenci.com/record/...`) back to the user so they can open it. Without a `SCREENCI_SECRET`, this is also how they view and claim the anonymous trial recording.
+`screenci init` (or `npm init screenci`) scaffolds a new project and fails on purpose if one already exists (`screenci/ already exists`). That is expected: keep working with the existing project, do not delete it to re-init.
 
 ## Specific Tasks
 
 - **Recording videos** [references/record.md](references/record.md)
+  </content>
+  </invoke>

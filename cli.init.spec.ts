@@ -1291,7 +1291,7 @@ describe('CLI', () => {
           ' for more information.'
       )
       expect(messages).toContain(
-        'Recording an anonymous trial (without a secret) agrees to the Terms: https://screenci.com/legal/tos'
+        'Recording during an anonymous trial agrees to the Terms: https://screenci.com/legal/tos'
       )
       expect(messages).toContain('You can now run these commands:')
       expect(messages).toContain('We suggest that you begin by typing:')

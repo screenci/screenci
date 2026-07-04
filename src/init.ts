@@ -1208,7 +1208,7 @@ function printInitNextSteps(
     `Visit ${pc.cyan('https://screenci.com/docs')} for more information.`
   )
   logger.info(
-    `Recording an anonymous trial (without a secret) agrees to the Terms: ${pc.cyan(SCREENCI_TERMS_URL)}`
+    `Recording during an anonymous trial agrees to the Terms: ${pc.cyan(SCREENCI_TERMS_URL)}`
   )
   logger.info('')
   logger.info('Happy hacking! 🎥')

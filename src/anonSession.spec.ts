@@ -184,7 +184,7 @@ describe('formatAnonTermsNotice', () => {
   it('is a single line that includes the Terms URL', () => {
     const notice = formatAnonTermsNotice()
     expect(notice).toContain(SCREENCI_TERMS_URL)
-    expect(notice).toContain('agree to the Terms')
+    expect(notice).toContain('agrees to the Terms')
     expect(notice).not.toContain('\n')
   })
 

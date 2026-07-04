@@ -13,7 +13,7 @@ describe('skill guidance', () => {
     const skill = readPackageFile('skills/screenci/SKILL.md')
 
     expect(skill).toContain(
-      'explicitly try to find and click any cookie consent or cookie policy accept button there if one appears'
+      'find and click any cookie consent accept button inside that hidden block'
     )
   })
 
@@ -21,8 +21,8 @@ describe('skill guidance', () => {
     const skill = readPackageFile('skills/playwright-cli/SKILL.md')
 
     expect(skill).toContain(
-      'explicitly check whether a cookie consent or cookie policy banner appeared'
+      'check whether a cookie consent or\n  cookie policy banner appeared'
     )
-    expect(skill).toContain('inside the initial `hide()` block')
+    expect(skill).toContain('inside its initial\n  `hide()` block')
   })
 })

@@ -232,6 +232,30 @@ export const docsManifest = [
     description:
       'Upgrade the screenci package, refresh Playwright when needed, and verify that existing videos still behave as expected.',
     prev: 'docs/guides/screen-audio',
+    next: 'docs/guides/version-history',
+  },
+  {
+    source: 'version-history.md',
+    slug: 'docs/guides/version-history',
+    section: 'Guides',
+    order: 9,
+    navLabel: 'Version history',
+    title: 'Version History',
+    description:
+      'Every render is kept as a version. Select which one a public URL serves, roll back to an earlier render, and understand per-language retention. Paid feature.',
+    prev: 'docs/guides/update-screenci',
+    next: 'docs/guides/organisation',
+  },
+  {
+    source: 'organisation.md',
+    slug: 'docs/guides/organisation',
+    section: 'Guides',
+    order: 10,
+    navLabel: 'Organisation & SSO',
+    title: 'Organisation & SSO',
+    description:
+      'Manage organisation members and roles, and enforce single sign-on with SAML through your own identity provider. SSO and member management are a Business feature.',
+    prev: 'docs/guides/version-history',
     next: 'docs/reference/cli',
   },
   {
@@ -243,7 +267,7 @@ export const docsManifest = [
     title: 'CLI',
     description:
       'Command reference for screenci init, test, record, project info, and public delivery commands.',
-    prev: 'docs/guides/update-screenci',
+    prev: 'docs/guides/organisation',
     next: 'docs/reference/configuration',
   },
   {

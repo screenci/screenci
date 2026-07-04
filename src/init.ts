@@ -15,6 +15,7 @@ import {
   persistScreenCISecret,
   verifyScreenCISecret,
 } from './linkSession.js'
+import { SCREENCI_TERMS_URL } from './anonSession.js'
 
 const PLAYWRIGHT_TEST_VERSION = '^1.59.0'
 const PLAYWRIGHT_CLI_VERSION = 'latest'
@@ -594,10 +595,10 @@ export function generateIslandTsconfig(withReact = false): string {
   // server auto-discovers @types/node, which is unreliable under pnpm's isolated
   // node_modules layout.
   //
-  // `jsx: 'react-jsx'` is added only when React overlays are scaffolded so the
-  // `.screenci.tsx` example type-checks with the automatic JSX runtime. It is the
-  // one piece of React setup a published package cannot do for the user, so the
-  // scaffold owns it.
+  // `jsx: 'react-jsx'` is added only when React overlay support is scaffolded
+  // so user-authored `.screenci.tsx` files type-check with the automatic JSX
+  // runtime. It is the one piece of React setup a published package cannot do
+  // for the user, so the scaffold owns it.
   return (
     JSON.stringify(
       {
@@ -653,14 +654,20 @@ export function generateIslandReadme(
   const scripts = getIslandScriptInvocations(packageManager)
   return `# ${projectName}
 
-ScreenCI video scripts for this project. Edit the \`*.screenci.ts\` files in
-\`recordings/\` to script your recordings.
+Check \`recordings/\` for videos and screenshots, and \`screenci.config.ts\`
+for configuration.
 
 ## Commands
 
 - \`${scripts.test}\` tests your video scripts fast locally.
 - \`${scripts.testUi}\` tests your video scripts in interactive UI mode.
 - \`${scripts.record}\` records and pauses for first-time setup if needed.
+
+## Recording without an account
+
+Note: before signing up, you can record once for free. Just run
+\`${scripts.record}\` with no SCREENCI_SECRET and your first video uploads
+anonymously. Sign up to claim it and keep recording.
 
 ## Learn more
 
@@ -1038,7 +1045,7 @@ async function installInitDependencies(
       : []),
     // React element overlays render via react/react-dom, which are optional
     // peer deps imported lazily by createOverlays. Install them (and their
-    // types) so the .tsx example resolves and records out of the box.
+    // types) so user-authored `.screenci.tsx` files resolve out of the box.
     ...(includeReact
       ? [
           `react@${REACT_VERSION}`,
@@ -1147,7 +1154,6 @@ function printInitNextSteps(
   projectDir: string,
   islandDirName: string,
   packageManager: PackageManager,
-  withReact: boolean,
   secretOutcome: InitSecretOutcome
 ): void {
   const resolvedProjectDir = realpathSync(projectDir)
@@ -1173,15 +1179,8 @@ function printInitNextSteps(
   logger.info(`    ${pc.cyan(`cd ${islandDirName}`)}`)
   logger.info(`    ${pc.cyan(`${commands.screenciRun} test`)}`)
   logger.info('')
-  logger.info('And check out the following files:')
-  logger.info(
-    `  - ./${islandDirName}/recordings/example.screenci.ts - Example video script`
-  )
-  if (withReact) {
-    logger.info(
-      `  - ./${islandDirName}/recordings/example-react.screenci.tsx - React overlay example`
-    )
-  }
+  logger.info('And check out:')
+  logger.info(`  - ./${islandDirName}/recordings/ - Videos and screenshots`)
   logger.info(
     `  - ./${islandDirName}/screenci.config.ts - ScreenCI configuration`
   )
@@ -1207,6 +1206,9 @@ function printInitNextSteps(
   logger.info('')
   logger.info(
     `Visit ${pc.cyan('https://screenci.com/docs')} for more information.`
+  )
+  logger.info(
+    `Recording an anonymous trial (without a secret) agrees to the Terms: ${pc.cyan(SCREENCI_TERMS_URL)}`
   )
   logger.info('')
   logger.info('Happy hacking! 🎥')
@@ -1318,7 +1320,7 @@ export function generateExampleVideo(): string {
 
 video
   .overlays({
-    logo: { path: './assets/logo.png', duration: '2s', hideMouse: true },
+    logo: { path: './assets/logo.png', duration: '2s', overMouse: true },
   })
   .narration({
     docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
@@ -1651,13 +1653,6 @@ export async function runInit(
       resolve(islandDir, 'recordings', 'example.screenci.ts'),
       generateExampleVideo()
     )
-    if (shouldAddReactOverlays) {
-      await writeFile(
-        resolve(islandDir, 'recordings', 'example-react.screenci.tsx'),
-        generateReactExampleVideo()
-      )
-    }
-
     if (packageManager === 'pnpm') {
       // Resolve (and gate on) the pnpm version before writing the workspace
       // file so the build-approval key matches the installed pnpm.
@@ -1760,13 +1755,7 @@ export async function runInit(
     pastedSecret ? { pastedSecret } : {}
   )
 
-  printInitNextSteps(
-    islandDir,
-    islandDirName,
-    packageManager,
-    shouldAddReactOverlays,
-    secretOutcome
-  )
+  printInitNextSteps(islandDir, islandDirName, packageManager, secretOutcome)
 }
 
 function handleCreateCommanderError(err: unknown): void {

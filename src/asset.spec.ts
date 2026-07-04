@@ -19,14 +19,13 @@ import {
   setAnimatedHtmlRasterizer,
   setHtmlRasterizer,
 } from './htmlRasterizer.js'
-import type { Locator, Page } from '@playwright/test'
+import type { Locator } from '@playwright/test'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
 import {
   createScreenCIRuntimeContext,
   runWithScreenCIRuntimeContext,
 } from './runtimeContext.js'
-import { setMouseVisible } from './mouse.js'
 
 /** A minimal Locator stand-in exposing the box + viewport overlayRect reads. */
 function fakeLocator(
@@ -2063,163 +2062,86 @@ describe('overlay crop and source trim', () => {
   })
 })
 
-describe('overlay hideMouse', () => {
-  /** A fake page whose instrumented cursor controls are spies. */
-  function fakePageWithMouse(): {
-    page: Page
-    hide: ReturnType<typeof vi.fn>
-    show: ReturnType<typeof vi.fn>
-  } {
-    const hide = vi.fn()
-    const show = vi.fn()
-    const page = { mouse: { hide, show } } as unknown as Page
-    return { page, hide, show }
-  }
-
-  /** Runs `fn` inside a fresh recording context wired to `page` and `recorder`. */
+describe('overlay overMouse', () => {
+  /** Runs `fn` inside a fresh recording context wired to `recorder`. */
   function runInContext(
-    page: Page | null,
     recorder: IEventRecorder,
-    captureKind: 'video' | 'screenshot',
     fn: () => Promise<void>
   ): Promise<void> {
     const context = createScreenCIRuntimeContext({
       recorder,
-      page,
-      captureKind,
+      page: null,
+      captureKind: 'video',
     })
     return runWithScreenCIRuntimeContext(context, fn)
   }
 
-  it('hides the cursor before the assetStart and shows it after (blocking)', async () => {
+  it('emits overMouse on a blocking image overlay when set', async () => {
     const recorder = createMockRecorder()
-    const { page, hide, show } = fakePageWithMouse()
-    setMouseVisible(page, true)
 
-    await runInContext(page, recorder, 'video', async () => {
+    await runInContext(recorder, async () => {
       const overlays = createOverlays({
-        logo: { path: './logo.png', duration: '2s', hideMouse: true },
+        logo: { path: './logo.png', duration: '2s', overMouse: true },
       })
       await overlays.logo.for('2s')
     })
 
-    expect(hide).toHaveBeenCalledOnce()
-    expect(show).toHaveBeenCalledOnce()
-    // Order is load-bearing: hide -> assetStart -> show, so the renderer's
-    // frozen hold is bracketed by the hide/show in the final timeline.
-    const hideOrder = hide.mock.invocationCallOrder[0]!
-    const startOrder = (recorder.addAssetStart as ReturnType<typeof vi.fn>).mock
-      .invocationCallOrder[0]!
-    const showOrder = show.mock.invocationCallOrder[0]!
-    expect(hideOrder).toBeLessThan(startOrder)
-    expect(startOrder).toBeLessThan(showOrder)
+    expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
+      kind: 'image',
+      path: './logo.png',
+      durationMs: 2000,
+      fullScreen: false,
+      overMouse: true,
+    })
   })
 
-  it('does not touch the cursor when hideMouse is absent', async () => {
+  it('emits overMouse on a video overlay when set', async () => {
     const recorder = createMockRecorder()
-    const { page, hide, show } = fakePageWithMouse()
-    setMouseVisible(page, true)
 
-    await runInContext(page, recorder, 'video', async () => {
+    await runInContext(recorder, async () => {
+      const overlays = createOverlays({
+        clip: { path: './clip.mp4', overMouse: true },
+      })
+      await overlays.clip()
+    })
+
+    expect(recorder.addAssetStart).toHaveBeenCalledWith('clip', {
+      kind: 'video',
+      path: './clip.mp4',
+      audio: 1,
+      fullScreen: false,
+      overMouse: true,
+    })
+  })
+
+  it('omits overMouse when it is absent (byte-identical default)', async () => {
+    const recorder = createMockRecorder()
+
+    await runInContext(recorder, async () => {
       const overlays = createOverlays({
         logo: { path: './logo.png', duration: '2s' },
       })
       await overlays.logo.for('2s')
     })
 
-    expect(hide).not.toHaveBeenCalled()
-    expect(show).not.toHaveBeenCalled()
+    const call = vi.mocked(recorder.addAssetStart).mock.calls[0]?.[1]
+    expect(call).not.toHaveProperty('overMouse')
   })
 
-  it('leaves an already-hidden cursor hidden (no hide, no show)', async () => {
+  it('emits overMouse on a live overlay driven with start()', async () => {
     const recorder = createMockRecorder()
-    const { page, hide, show } = fakePageWithMouse()
-    // The cursor was already hidden (e.g. via page.mouse.hide()) before the overlay.
-    setMouseVisible(page, false)
 
-    await runInContext(page, recorder, 'video', async () => {
+    await runInContext(recorder, async () => {
       const overlays = createOverlays({
-        logo: { path: './logo.png', duration: '2s', hideMouse: true },
-      })
-      await overlays.logo.for('2s')
-    })
-
-    expect(hide).not.toHaveBeenCalled()
-    expect(show).not.toHaveBeenCalled()
-  })
-
-  it('hides on start() and shows on end() for a live overlay', async () => {
-    const recorder = createMockRecorder()
-    const { page, hide, show } = fakePageWithMouse()
-    setMouseVisible(page, true)
-
-    await runInContext(page, recorder, 'video', async () => {
-      const overlays = createOverlays({
-        logo: { path: './logo.png', hideMouse: true },
+        logo: { path: './logo.png', overMouse: true },
       })
       await overlays.logo.start()
-      expect(hide).toHaveBeenCalledOnce()
-      expect(show).not.toHaveBeenCalled()
       await overlays.logo.end()
     })
 
-    expect(hide).toHaveBeenCalledOnce()
-    expect(show).toHaveBeenCalledOnce()
-  })
-
-  it('keeps the cursor hidden until the last overlapping overlay ends', async () => {
-    const recorder = createMockRecorder()
-    const { page, hide, show } = fakePageWithMouse()
-    setMouseVisible(page, true)
-
-    await runInContext(page, recorder, 'video', async () => {
-      const overlays = createOverlays({
-        a: { path: './a.png', hideMouse: true },
-        b: { path: './b.png', hideMouse: true },
-      })
-      await overlays.a.start()
-      await overlays.b.start()
-      // Second overlay does not hide again (already hidden by the first).
-      expect(hide).toHaveBeenCalledOnce()
-
-      await overlays.a.end()
-      // First end does not show: overlay b still wants the cursor hidden.
-      expect(show).not.toHaveBeenCalled()
-
-      await overlays.b.end()
-      expect(show).toHaveBeenCalledOnce()
-    })
-  })
-
-  it('is a no-op in screenshot capture mode', async () => {
-    const recorder = createMockRecorder()
-    const { page, hide, show } = fakePageWithMouse()
-    setMouseVisible(page, true)
-
-    await runInContext(page, recorder, 'screenshot', async () => {
-      const overlays = createOverlays({
-        logo: { path: './logo.png', duration: '2s', hideMouse: true },
-      })
-      await overlays.logo.for('2s')
-    })
-
-    expect(hide).not.toHaveBeenCalled()
-    expect(show).not.toHaveBeenCalled()
-  })
-
-  it('does not throw when there is no active page', async () => {
-    const recorder = createMockRecorder()
-
-    await expect(
-      runInContext(null, recorder, 'video', async () => {
-        const overlays = createOverlays({
-          logo: { path: './logo.png', duration: '2s', hideMouse: true },
-        })
-        await overlays.logo.for('2s')
-      })
-    ).resolves.toBeUndefined()
-
-    // The overlay itself is still recorded even when the cursor cannot be moved.
-    expect(recorder.addAssetStart).toHaveBeenCalledOnce()
+    expect(recorder.addAssetStart).toHaveBeenCalledWith(
+      'logo',
+      expect.objectContaining({ overMouse: true })
+    )
   })
 })

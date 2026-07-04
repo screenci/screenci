@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ANON_TOKEN_HEADER,
   SECRET_HEADER,
+  SCREENCI_TERMS_URL,
   anonCredential,
   checkAnonSessionStatus,
   deleteAnonSessionFile,
   evaluateAnonRecordingGate,
+  formatAnonTermsNotice,
   getOrCreateAnonToken,
   secretCredential,
 } from './anonSession.js'
@@ -175,5 +177,18 @@ describe('credential helpers', () => {
       header: ANON_TOKEN_HEADER,
       value: 'token-a',
     })
+  })
+})
+
+describe('formatAnonTermsNotice', () => {
+  it('is a single line that includes the Terms URL', () => {
+    const notice = formatAnonTermsNotice()
+    expect(notice).toContain(SCREENCI_TERMS_URL)
+    expect(notice).toContain('agree to the Terms')
+    expect(notice).not.toContain('\n')
+  })
+
+  it('points at the canonical Terms URL', () => {
+    expect(SCREENCI_TERMS_URL).toBe('https://screenci.com/legal/tos')
   })
 })

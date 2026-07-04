@@ -457,6 +457,10 @@ describe('CLI', () => {
         '/workspace/my-app/screenci/recordings/example.screenci.ts',
         expect.stringContaining("await page.goto('https://screenci.com/')")
       )
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        '/workspace/my-app/screenci/recordings/example-react.screenci.tsx',
+        expect.any(String)
+      )
       const tsconfigCall = mockWriteFile.mock.calls.find(
         (call: unknown[]) =>
           call[0] === '/workspace/my-app/screenci/tsconfig.json'
@@ -1286,12 +1290,15 @@ describe('CLI', () => {
           pc.cyan('https://screenci.com/docs') +
           ' for more information.'
       )
+      expect(messages).toContain(
+        'Recording an anonymous trial (without a secret) agrees to the Terms: https://screenci.com/legal/tos'
+      )
       expect(messages).toContain('You can now run these commands:')
       expect(messages).toContain('We suggest that you begin by typing:')
       expect(messages).toContain('    cd screenci')
       expect(messages).toContain('    npx screenci test')
       expect(messages).toContain(
-        '  - ./screenci/recordings/example.screenci.ts - Example video script'
+        '  - ./screenci/recordings/ - Videos and screenshots'
       )
       expect(messages).toContain(
         '  - ./screenci/screenci.config.ts - ScreenCI configuration'
@@ -1903,7 +1910,7 @@ describe('CLI', () => {
       await expect(main()).rejects.toThrow('process.exit called')
     })
 
-    it('skips React overlays with --no-react', async () => {
+    it('skips React overlay support with --no-react', async () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project', '--no-react']
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockReturnValue(false)
@@ -1911,7 +1918,7 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       await main()
 
-      // No .tsx example is scaffolded.
+      // The scaffold no longer writes a .tsx example file.
       expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/my-project/screenci/recordings/example-react.screenci.tsx',
         expect.any(String)

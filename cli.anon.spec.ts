@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { logger } from './src/logger.js'
-import { SECRET_HEADER, ANON_TOKEN_HEADER } from './src/anonSession.js'
+import {
+  SECRET_HEADER,
+  ANON_TOKEN_HEADER,
+  SCREENCI_TERMS_URL,
+} from './src/anonSession.js'
 
 describe('resolveUploadCredential', () => {
   let screenciDir: string
@@ -110,6 +114,7 @@ describe('ensureAnonRecordingAllowedOrExit', () => {
   beforeEach(() => {
     screenciDir = mkdtempSync(path.join(tmpdir(), 'screenci-anon-gate-'))
     vi.spyOn(logger, 'error').mockImplementation(() => {})
+    vi.spyOn(logger, 'info').mockImplementation(() => {})
     // Throw so the function stops at process.exit like the real process would,
     // instead of falling through past it in the test.
     exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
@@ -137,9 +142,13 @@ describe('ensureAnonRecordingAllowedOrExit', () => {
 
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(exitSpy).not.toHaveBeenCalled()
+    // The secret path is fully signed-in; no anonymous Terms notice is printed.
+    expect(logger.info).not.toHaveBeenCalledWith(
+      expect.stringContaining(SCREENCI_TERMS_URL)
+    )
   })
 
-  it('allows a first-run (server has not seen the token) without exiting', async () => {
+  it('allows a first-run (server has not seen the token) without exiting, and prints the Terms notice up front', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       json: async () => ({ status: 'not_found' }),
     }) as unknown as typeof fetch
@@ -153,6 +162,47 @@ describe('ensureAnonRecordingAllowedOrExit', () => {
     )
 
     expect(exitSpy).not.toHaveBeenCalled()
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining(SCREENCI_TERMS_URL)
+    )
+  })
+
+  it('prints the Terms notice up front on a pending, unused trial', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      json: async () => ({ status: 'pending', used: false }),
+    }) as unknown as typeof fetch
+
+    const { ensureAnonRecordingAllowedOrExit } = await import('./cli')
+    await ensureAnonRecordingAllowedOrExit(
+      screenciDir,
+      'https://api.example.com',
+      'https://app.example.com',
+      undefined
+    )
+
+    expect(exitSpy).not.toHaveBeenCalled()
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining(SCREENCI_TERMS_URL)
+    )
+  })
+
+  it('does not print the Terms notice for a claimed session (already accepted on sign-up)', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      json: async () => ({ status: 'claimed', secret: 'sec_real' }),
+    }) as unknown as typeof fetch
+
+    const { ensureAnonRecordingAllowedOrExit } = await import('./cli')
+    await ensureAnonRecordingAllowedOrExit(
+      screenciDir,
+      'https://api.example.com',
+      'https://app.example.com',
+      undefined
+    )
+
+    expect(exitSpy).not.toHaveBeenCalled()
+    expect(logger.info).not.toHaveBeenCalledWith(
+      expect.stringContaining(SCREENCI_TERMS_URL)
+    )
   })
 
   it('blocks and exits before recording when the one free trial is already used', async () => {

@@ -9,7 +9,6 @@ import {
   type TimelineAnchorInput,
 } from './events.js'
 import { parseTimelineOffset, type TimelineOffset } from './timelineOffset.js'
-import { isMouseVisible } from './mouse.js'
 import { validateCrop, resolveSourceTrim } from './sourceTrim.js'
 import { overlayRect } from './overlayRect.js'
 import { captureCallerFile } from './callerFile.js'
@@ -31,7 +30,6 @@ import {
   getRuntimeRecordingDir,
   setRuntimeAssetRecorder,
   resetAssetRuntimeState,
-  isScreenshotCapture,
   type ActiveAssetRun,
 } from './runtimeContext.js'
 
@@ -145,15 +143,16 @@ type OverlayCommon = {
    */
   pinToScreen?: boolean
   /**
-   * Hide the synthetic mouse cursor while this overlay is displayed, restoring
-   * its prior visibility when the overlay ends. Useful for full-screen intro or
-   * outro cards where a cursor would be a distraction. Placement-agnostic, so it
-   * works for every overlay variant. Overlapping `hideMouse` overlays keep the
-   * cursor hidden until the last one ends, and a cursor already hidden (for
-   * example via `page.mouse.hide()`) is left hidden. Has no effect on
+   * Draw this overlay ABOVE the synthetic mouse cursor, so the cursor passes
+   * underneath it instead of on top. The cursor stays visible everywhere else in
+   * the frame; only where the overlay sits does the overlay cover it. Useful for
+   * full-screen intro or outro cards (the cursor disappears behind the card) and
+   * for HUD elements like a corner logo the cursor should slide under.
+   * Placement-agnostic, so it works for every overlay variant. Overlapping
+   * `overMouse` overlays each draw above the cursor. Has no effect on
    * screenshots, whose cursor is hidden by default.
    */
-  hideMouse?: boolean
+  overMouse?: boolean
 }
 
 /** Fields that only apply to a `.mp4` video overlay (a file `path`). */
@@ -287,7 +286,7 @@ export type DependencyOverlayOptions = Pick<
   | 'duration'
   | 'crop'
   | 'pinToScreen'
-  | 'hideMouse'
+  | 'overMouse'
 > & {
   /**
    * Late start into the embedded VIDEO (a `'2s'`/timecode/`'50%'` position).
@@ -775,7 +774,7 @@ function buildOverlayFromConfig(
   })
   const fullScreen = config.fill === 'screen'
   const pinToScreen = config.pinToScreen === true
-  const hideMouse = config.hideMouse === true
+  const overMouse = config.overMouse === true
   const animate = config.animate === true
   // Parse the relative `duration` string into ms once; reused by every branch.
   const configDurationMs = resolveConfigDuration(name, config.duration)
@@ -831,7 +830,7 @@ function buildOverlayFromConfig(
         placementSource,
         fullScreen,
         pinToScreen,
-        hideMouse,
+        overMouse,
         config.fps,
         configDurationMs,
         renderOpts
@@ -843,7 +842,7 @@ function buildOverlayFromConfig(
       placementSource,
       fullScreen,
       pinToScreen,
-      hideMouse,
+      overMouse,
       configDurationMs,
       renderOpts
     )
@@ -899,7 +898,7 @@ function buildOverlayFromConfig(
         placementSource,
         fullScreen,
         pinToScreen,
-        hideMouse,
+        overMouse,
         config.fps,
         configDurationMs,
         renderOpts
@@ -911,7 +910,7 @@ function buildOverlayFromConfig(
       placementSource,
       fullScreen,
       pinToScreen,
-      hideMouse,
+      overMouse,
       configDurationMs,
       renderOpts
     )
@@ -928,19 +927,16 @@ function buildOverlayFromConfig(
       validateCrop(`Overlay "${name}" (${path})`, config.crop)
     }
     registerAssetPath(path)
-    return createFileOverlayController(
-      name,
-      {
-        kind: 'image',
-        path,
-        ...(placement !== undefined && { placement }),
-        fullScreen,
-        ...(pinToScreen && { pinToScreen: true }),
-        ...(configDurationMs !== undefined && { durationMs: configDurationMs }),
-        ...(config.crop !== undefined && { crop: config.crop }),
-      },
-      hideMouse
-    )
+    return createFileOverlayController(name, {
+      kind: 'image',
+      path,
+      ...(placement !== undefined && { placement }),
+      fullScreen,
+      ...(pinToScreen && { pinToScreen: true }),
+      ...(overMouse && { overMouse: true }),
+      ...(configDurationMs !== undefined && { durationMs: configDurationMs }),
+      ...(config.crop !== undefined && { crop: config.crop }),
+    })
   }
 
   if (extension === '.mp4') {
@@ -969,23 +965,20 @@ function buildOverlayFromConfig(
       config.end
     )
     registerAssetPath(path)
-    return createFileOverlayController(
-      name,
-      {
-        kind: 'video',
-        path,
-        ...(placement !== undefined && { placement }),
-        fullScreen,
-        ...(pinToScreen && { pinToScreen: true }),
-        ...(config.volume !== undefined && { audio: config.volume }),
-        ...(config.speed !== undefined && { speed: config.speed }),
-        ...(config.time !== undefined && { time: config.time }),
-        ...(config.crop !== undefined && { crop: config.crop }),
-        ...(sourceStart !== undefined && { sourceStart }),
-        ...(sourceEnd !== undefined && { sourceEnd }),
-      },
-      hideMouse
-    )
+    return createFileOverlayController(name, {
+      kind: 'video',
+      path,
+      ...(placement !== undefined && { placement }),
+      fullScreen,
+      ...(pinToScreen && { pinToScreen: true }),
+      ...(overMouse && { overMouse: true }),
+      ...(config.volume !== undefined && { audio: config.volume }),
+      ...(config.speed !== undefined && { speed: config.speed }),
+      ...(config.time !== undefined && { time: config.time }),
+      ...(config.crop !== undefined && { crop: config.crop }),
+      ...(sourceStart !== undefined && { sourceStart }),
+      ...(sourceEnd !== undefined && { sourceEnd }),
+    })
   }
 
   throw new Error(
@@ -1287,8 +1280,7 @@ function resolveConfigDuration(
 }
 
 function createActiveAssetRun(
-  startedWithExplicitStart: boolean,
-  hideMouse: boolean
+  startedWithExplicitStart: boolean
 ): ActiveAssetRun {
   let resolve!: () => void
   const finished = new Promise<void>((resolveFn) => {
@@ -1298,7 +1290,6 @@ function createActiveAssetRun(
     finished,
     resolveFinished: resolve,
     startedWithExplicitStart,
-    hideMouse,
   }
 }
 
@@ -1314,57 +1305,7 @@ function endLiveAsset(name: string, reason: 'auto' | 'wait'): void {
   getRuntimeAssetRecorder().addAssetEnd(name, reason)
   sleepForAssetFrameGap()
   context.asset.activeRuns.delete(name)
-  if (run.hideMouse) performOverlayMouseShow()
   run.resolveFinished()
-}
-
-/** The instrumented cursor visibility controls added to `page.mouse` at record
- *  time (see instrument.ts). They are absent on Playwright's own Mouse type. */
-type MouseVisibilityControls = { show: () => void; hide: () => void }
-
-/**
- * Hide the cursor for a `hideMouse` overlay, ref-counted so overlapping overlays
- * only hide once. Reuses the instrumented `page.mouse.hide()`, which records the
- * `mouseHide` event on the shared recorder. When emitted before a blocking
- * overlay's `assetStart`, that event brackets the frozen hold in the rendered
- * timeline (the show emitted after `assetStart` lands past the hold).
- */
-function performOverlayMouseHide(): void {
-  // Stills hide the cursor by default (see renderOptions.screenshot.mouse.show)
-  // and have no timeline to bracket, so hideMouse is a no-op for screenshots.
-  if (isScreenshotCapture()) return
-  const page = getRuntimePage()
-  if (page === null) return
-  const state = getScreenCIRuntimeContext().asset.mouseHide
-  state.count += 1
-  // Only the first overlay in an overlapping group changes visibility.
-  if (state.count !== 1) return
-  // A cursor already hidden (e.g. via page.mouse.hide()) is left as-is, and we
-  // remember not to force it back on when the overlay ends.
-  if (!isMouseVisible(page)) {
-    state.hiddenByOverlay = false
-    return
-  }
-  state.hiddenByOverlay = true
-  ;(page.mouse as unknown as MouseVisibilityControls).hide()
-}
-
-/**
- * Restore the cursor when a `hideMouse` overlay ends. Only acts once the
- * ref-count returns to 0, and only if an overlay was the one that hid it (so a
- * cursor that was already hidden stays hidden).
- */
-function performOverlayMouseShow(): void {
-  if (isScreenshotCapture()) return
-  const page = getRuntimePage()
-  if (page === null) return
-  const state = getScreenCIRuntimeContext().asset.mouseHide
-  if (state.count === 0) return
-  state.count -= 1
-  if (state.count !== 0) return
-  if (!state.hiddenByOverlay) return
-  state.hiddenByOverlay = false
-  ;(page.mouse as unknown as MouseVisibilityControls).show()
 }
 
 function createAssetControllerCore(
@@ -1379,11 +1320,9 @@ function createAssetControllerCore(
      * known.
      */
     prepare?: (mode: AssetStartMode) => Promise<void>
-    /** Hide the cursor while the overlay is displayed (the `hideMouse` config). */
-    hideMouse?: boolean
   } = {}
 ): OverlayController {
-  const { prepare, hideMouse = false } = options
+  const { prepare } = options
   const start = async (startedWithExplicitStart = true): Promise<void> => {
     await validate()
     await prepare?.({ type: 'live' })
@@ -1394,9 +1333,8 @@ function createAssetControllerCore(
         `[screenci] Overlay "${name}" is already started. Call end() for it before starting it again.`
       )
     }
-    const run = createActiveAssetRun(startedWithExplicitStart, hideMouse)
+    const run = createActiveAssetRun(startedWithExplicitStart)
     context.asset.activeRuns.set(name, run)
-    if (hideMouse) performOverlayMouseHide()
     emitStart(recorder, { type: 'live' })
   }
 
@@ -1419,12 +1357,7 @@ function createAssetControllerCore(
     await validate()
     await prepare?.(mode)
     const recorder = getRuntimeAssetRecorder()
-    // Order is load-bearing: the mouseHide must precede the assetStart and the
-    // mouseShow follow it, so the renderer's frozen hold (inserted at the
-    // assetStart) is bracketed by the hide/show in the final timeline.
-    if (hideMouse) performOverlayMouseHide()
     emitStart(recorder, mode)
-    if (hideMouse) performOverlayMouseShow()
   }
 
   const controller = (async (): Promise<void> => {
@@ -1519,13 +1452,13 @@ function createDependencyOverlayController(
         ...timelineAnchorFields(until),
         fullScreen,
         ...(pinToScreen && { pinToScreen: true }),
+        ...(input.config.overMouse === true && { overMouse: true }),
         ...(placement !== undefined && { placement }),
         ...(input.config.crop !== undefined && { crop: input.config.crop }),
         ...(sourceStart !== undefined && { sourceStart }),
         ...(sourceEnd !== undefined && { sourceEnd }),
       })
-    },
-    { hideMouse: input.config.hideMouse === true }
+    }
   )
 }
 
@@ -1537,6 +1470,7 @@ type ResolvedFileOverlay =
       placement?: OverlayPlacement
       fullScreen: boolean
       pinToScreen?: boolean
+      overMouse?: boolean
       durationMs?: number
       crop?: OverlayCrop
     }
@@ -1546,6 +1480,7 @@ type ResolvedFileOverlay =
       placement?: OverlayPlacement
       fullScreen: boolean
       pinToScreen?: boolean
+      overMouse?: boolean
       audio?: number
       speed?: number
       time?: number
@@ -1556,8 +1491,7 @@ type ResolvedFileOverlay =
 
 function createFileOverlayController(
   name: string,
-  resolved: ResolvedFileOverlay,
-  hideMouse: boolean
+  resolved: ResolvedFileOverlay
 ): OverlayController {
   return createAssetControllerCore(
     name,
@@ -1569,8 +1503,7 @@ function createFileOverlayController(
     },
     (recorder, mode) => {
       recorder.addAssetStart(name, toRecordedFileStart(name, resolved, mode))
-    },
-    { hideMouse }
+    }
   )
 }
 
@@ -1590,7 +1523,7 @@ function createRenderedOverlayController(
   placementSource: PlacementSource,
   fullScreen: boolean,
   pinToScreen: boolean,
-  hideMouse: boolean,
+  overMouse: boolean,
   durationMs?: number,
   renderOpts: OverlayRenderOpts = {}
 ): OverlayController {
@@ -1633,6 +1566,7 @@ function createRenderedOverlayController(
         ...timelineAnchorFields(until),
         fullScreen,
         ...(pinToScreen && { pinToScreen: true }),
+        ...(overMouse && { overMouse: true }),
         ...(resolvedPlacement !== undefined && {
           placement: resolvedPlacement,
         }),
@@ -1662,7 +1596,6 @@ function createRenderedOverlayController(
         resolvedHtml =
           sizePx !== undefined ? sizeWrapMarkup(markup, sizePx) : markup
       },
-      hideMouse,
     }
   )
 }
@@ -1684,7 +1617,7 @@ function createAnimatedOverlayController(
   placementSource: PlacementSource,
   fullScreen: boolean,
   pinToScreen: boolean,
-  hideMouse: boolean,
+  overMouse: boolean,
   fps: number | undefined,
   configDurationMs: number | undefined,
   renderOpts: OverlayRenderOpts = {}
@@ -1733,6 +1666,7 @@ function createAnimatedOverlayController(
         durationMs: resolved.durationMs,
         fullScreen,
         ...(pinToScreen && { pinToScreen: true }),
+        ...(overMouse && { overMouse: true }),
         ...(resolved.placement !== undefined && {
           placement: resolved.placement,
         }),
@@ -1765,7 +1699,6 @@ function createAnimatedOverlayController(
           ...(placement !== undefined && { placement }),
         }
       },
-      hideMouse,
     }
   )
 }
@@ -2084,6 +2017,7 @@ function toRecordedFileStart(
       ...timelineAnchorFields(until),
       fullScreen: resolved.fullScreen,
       ...(resolved.pinToScreen && { pinToScreen: true }),
+      ...(resolved.overMouse && { overMouse: true }),
       ...(resolved.placement !== undefined && {
         placement: resolved.placement,
       }),
@@ -2108,6 +2042,7 @@ function toRecordedFileStart(
     audio: resolved.audio ?? 1,
     fullScreen: resolved.fullScreen,
     ...(resolved.pinToScreen && { pinToScreen: true }),
+    ...(resolved.overMouse && { overMouse: true }),
     ...(resolved.placement !== undefined && { placement: resolved.placement }),
     ...(resolved.speed !== undefined && { speed: resolved.speed }),
     ...(resolved.time !== undefined && { time: resolved.time }),

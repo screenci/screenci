@@ -19,6 +19,22 @@ export const ANON_SESSION_FILE = 'anon-session.json'
 export const ANON_TOKEN_HEADER = 'X-ScreenCI-Anon-Token'
 export const SECRET_HEADER = 'X-ScreenCI-Secret'
 
+// Canonical Terms of Service URL. Hardcoded like the docs links elsewhere in
+// the CLI (the legal pages are not environment-specific). Anonymous trial
+// recordings upload to our servers without an account, so the CLI surfaces this
+// up front (before recording) and again in the post-upload summary. Signed-in
+// users accept the versioned Terms server-side in the web app instead.
+export const SCREENCI_TERMS_URL = 'https://screenci.com/legal/tos'
+
+/**
+ * Single-line browsewrap notice shown on the anonymous trial path. Kept pure
+ * (no logger dependency) so it is trivially unit-testable and reusable in both
+ * the up-front record gate and the post-upload summary.
+ */
+export function formatAnonTermsNotice(): string {
+  return `By recording an anonymous ScreenCI trial you agree to the Terms: ${SCREENCI_TERMS_URL}`
+}
+
 export type CliCredential =
   | { header: typeof SECRET_HEADER; value: string }
   | { header: typeof ANON_TOKEN_HEADER; value: string }

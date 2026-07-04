@@ -45,12 +45,6 @@ export type ActiveAssetRun = {
   finished: Promise<void>
   resolveFinished: () => void
   startedWithExplicitStart: boolean
-  /**
-   * Whether this overlay requested `hideMouse`. Stored on the run so the cursor
-   * is restored when the overlay ends, whether via an explicit `end()` or the
-   * auto-end when the recording finishes.
-   */
-  hideMouse: boolean
 }
 
 export type ActiveAudioRun = {
@@ -117,14 +111,6 @@ export type ScreenCIRuntimeContext = {
      * slot. Blocking overlays (`overlays.x(ms)`) never register here.
      */
     activeRuns: Map<string, ActiveAssetRun>
-    /**
-     * Ref-counted state for the `hideMouse` overlay option. `count` tracks how
-     * many displayed overlays currently want the cursor hidden (overlays can
-     * overlap); the cursor is restored only when it returns to 0.
-     * `hiddenByOverlay` records whether an overlay was the one that actually hid
-     * the cursor, so an already-hidden cursor is left hidden on restore.
-     */
-    mouseHide: { count: number; hiddenByOverlay: boolean }
   }
   audio: {
     /**
@@ -194,7 +180,6 @@ export function createScreenCIRuntimeContext(
     },
     asset: {
       activeRuns: new Map<string, ActiveAssetRun>(),
-      mouseHide: { count: 0, hiddenByOverlay: false },
     },
     audio: {
       activeRuns: new Map<string, ActiveAudioRun>(),
@@ -336,8 +321,6 @@ export function resetCueRuntimeState(): void {
 export function resetAssetRuntimeState(): void {
   const context = getScreenCIRuntimeContext()
   context.asset.activeRuns.clear()
-  context.asset.mouseHide.count = 0
-  context.asset.mouseHide.hiddenByOverlay = false
 }
 
 export function resetAudioRuntimeState(): void {

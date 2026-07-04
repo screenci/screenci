@@ -149,7 +149,7 @@ You can build the same overlay three ways, and all of them honor the same
   screenci never pulls React into your project unless you actually use an
   element. `screenci init` offers to set this up for you (it installs
   `react`/`react-dom`, enables `"jsx": "react-jsx"` in the scaffolded
-  `tsconfig.json`, and adds a `.tsx` example). To wire it up by hand, install the
+  `tsconfig.json`). To wire it up by hand, install the
   packages, set `"jsx": "react-jsx"` in your tsconfig, and author the overlay in
   a `.screenci.tsx` file.
 - **An inline HTML fragment** (`html`): a string of plain HTML, with no React
@@ -433,9 +433,9 @@ video.overlays({
 
 `pinToScreen` is orthogonal to placement: it works with `relativeTo: 'recording'` / `'screen'`, a `fill` overlay, or an `over` element. It only affects how the overlay behaves under zoom (whether it is burned into the scene or fixed to the screen).
 
-### Hiding the cursor (`hideMouse`)
+### Drawing above the cursor (`overMouse`)
 
-Set `hideMouse: true` to hide the mouse cursor while an overlay is displayed, and restore its prior visibility when the overlay ends. This is handy for full-screen intro or outro cards, where a stray cursor sitting on top of the card looks unpolished:
+Set `overMouse: true` to draw an overlay **above** the mouse cursor, so the cursor passes underneath it instead of on top. The cursor stays visible everywhere else in the frame; only where the overlay sits does the overlay cover it. This is handy for full-screen intro or outro cards (the cursor disappears behind the card) and for HUD elements like a corner logo the cursor should slide under:
 
 ```tsx
 video.overlays({
@@ -443,19 +443,19 @@ video.overlays({
     path: 'assets/logo.png',
     fill: 'screen',
     duration: '2s',
-    hideMouse: true,
+    overMouse: true,
   },
 })('Product demo', async ({ page, overlays }) => {
-  // The cursor is hidden for the 2s card, then reappears for the walkthrough.
+  // The cursor slides under the 2s card, then sits on top again for the walkthrough.
   await overlays.logo.for('2s')
   // ...
 })
 ```
 
-`hideMouse` works for both blocking overlays (`.for()` / `.until()`) and live overlays driven with `start()` / `end()`. It is placement-agnostic, so it applies to every overlay variant. A few details:
+`overMouse` works for both blocking overlays (`.for()` / `.until()`) and live overlays driven with `start()` / `end()`. It is placement-agnostic, so it applies to every overlay variant. A few details:
 
-- Overlapping `hideMouse` overlays keep the cursor hidden until the last one ends.
-- A cursor that is already hidden (for example via `page.mouse.hide()`) is left hidden when the overlay ends, rather than forced back on.
+- The overlay keeps its placement: a `pinToScreen` overlay stays fixed in screen space, a burned overlay still moves and scales with the camera during zoom. `overMouse` only changes its stacking order relative to the cursor.
+- Overlapping `overMouse` overlays each draw above the cursor.
 - It has no effect on screenshots, whose cursor is hidden by default (see `renderOptions.screenshot.mouse.show`).
 
 ### Positioning over a live element

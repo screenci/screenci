@@ -67,8 +67,10 @@ import {
   checkAnonSessionStatus,
   deleteAnonSessionFile,
   evaluateAnonRecordingGate,
+  formatAnonTermsNotice,
   getOrCreateAnonToken,
   secretCredential,
+  SCREENCI_TERMS_URL,
 } from './src/anonSession.js'
 
 // Re-export the environment-aware URL helpers so existing importers (and tests)
@@ -2868,7 +2870,15 @@ export async function ensureAnonRecordingAllowedOrExit(
   const token = await getOrCreateAnonToken(screenciDir)
   const status = await checkAnonSessionStatus(token, { backendUrl: apiUrl })
   const gate = evaluateAnonRecordingGate(status)
-  if (gate.allowed) return
+  if (gate.allowed) {
+    // Surface the Terms up front, before Playwright records and before any
+    // upload. Skip a `claimed` session: that user already accepted the
+    // versioned Terms when they signed up (the upload path self-upgrades).
+    if (status.status !== 'claimed') {
+      logger.info(pc.cyan(formatAnonTermsNotice()))
+    }
+    return
+  }
 
   const intro =
     gate.reason === 'expired'
@@ -3028,7 +3038,7 @@ async function uploadRecordedVideosForConfig(
       }
       if (usedAnonCredential && (recordId !== null || projectId !== null)) {
         logger.info(
-          'Recorded without an account. Open the link above to view it, and sign up to keep it (by continuing you agree to the Terms).'
+          `Recorded without an account. Open the link above to view it, and sign up to keep it (by continuing you agree to the Terms: ${SCREENCI_TERMS_URL}).`
         )
       }
       if (notices.length > 0) {

@@ -442,6 +442,8 @@ export type ImageAssetStartEvent = {
   fullScreen: boolean
   /** Keep the overlay fixed in screen space during zoom (composited after zoom). */
   pinToScreen?: boolean
+  /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
+  overMouse?: boolean
   placement?: OverlayPlacement
   /** Crop rect in the source image's own pixels, applied before placement/scale. */
   crop?: OverlayCrop
@@ -469,6 +471,8 @@ export type VideoAssetStartEvent = {
   fullScreen: boolean
   /** Keep the overlay fixed in screen space during zoom (composited after zoom). */
   pinToScreen?: boolean
+  /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
+  overMouse?: boolean
   placement?: OverlayPlacement
   /** Crop rect in the source video's own pixels, applied before placement/scale. */
   crop?: OverlayCrop
@@ -521,6 +525,8 @@ export type AnimationAssetStartEvent = {
   fullScreen: boolean
   /** Keep the overlay fixed in screen space during zoom (composited after zoom). */
   pinToScreen?: boolean
+  /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
+  overMouse?: boolean
   placement?: OverlayPlacement
   /** See {@link ImageAssetStartEvent.untilOutputMs}. */
   untilOutputMs?: number
@@ -584,6 +590,8 @@ export type DependencyAssetStartEvent = {
   fullScreen: boolean
   /** Keep the overlay fixed in screen space during zoom (composited after zoom). */
   pinToScreen?: boolean
+  /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
+  overMouse?: boolean
   placement?: OverlayPlacement
   /**
    * Crop rect in the resolved output's own pixels, applied (for both a video and
@@ -676,6 +684,8 @@ export type PendingAssetStart = {
   fullScreen: boolean
   /** Keep the overlay fixed in screen space during zoom (composited after zoom). */
   pinToScreen?: boolean
+  /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
+  overMouse?: boolean
   placement?: OverlayPlacement
   /** See {@link ImageAssetStartEvent.untilOutputMs}. */
   untilOutputMs?: number

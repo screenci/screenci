@@ -152,7 +152,7 @@ describe('generateExampleVideo', () => {
     // The overlay is declared from the bundled, gitignored asset path.
     expect(source).toContain('video\n  .overlays({')
     expect(source).toContain(
-      "logo: { path: './assets/logo.png', duration: '2s', hideMouse: true }"
+      "logo: { path: './assets/logo.png', duration: '2s', overMouse: true }"
     )
     // The body receives the overlay controllers and opens with the logo card.
     expect(source).toContain(
@@ -243,9 +243,9 @@ describe('generateReactExampleVideo', () => {
   })
 
   it('uses a distinct video title so it can coexist with the base example', () => {
-    // Both examples are scaffolded into one project when React overlays are
-    // enabled. Their video titles must differ, or the per-language leaf titles
-    // collide and `screenci test` rejects the run as duplicate titles.
+    // The React source can still be reused alongside the base example. Their
+    // titles must differ, or the per-language leaf titles collide and
+    // `screenci test` rejects the run as duplicate titles.
     expect(generateExampleVideo()).toContain("'How to find docs'")
     expect(generateReactExampleVideo()).toContain(
       "'How to find docs with overlays'"
@@ -257,6 +257,12 @@ describe('generateReactExampleVideo', () => {
 describe('generateIslandReadme', () => {
   it('titles the readme with the project name', () => {
     expect(generateIslandReadme('My Demo', 'npm')).toContain('# My Demo')
+  })
+
+  it('points users at recordings and the config file', () => {
+    expect(generateIslandReadme('Demo', 'npm')).toContain(
+      'Check `recordings/` for videos and screenshots, and `screenci.config.ts`\nfor configuration.'
+    )
   })
 
   it('uses npm run-script invocations for npm', () => {
@@ -278,6 +284,12 @@ describe('generateIslandReadme', () => {
     expect(readme).toContain('`yarn test` tests')
     expect(readme).toContain('`yarn test --ui` tests')
     expect(readme).toContain('`yarn record` records')
+  })
+
+  it('notes that the first recording works without an account', () => {
+    const readme = generateIslandReadme('Demo', 'npm')
+    expect(readme).toContain('before signing up, you can record once for free')
+    expect(readme).toContain('anonymously')
   })
 
   it('links to the docs', () => {

@@ -87,15 +87,16 @@ export async function getOrCreateAnonToken(
 export type AnonSessionStatus =
   | { status: 'not_found' }
   | { status: 'expired' }
-  | { status: 'pending' }
+  // `used`: this session already consumed its one free trial recording.
+  | { status: 'pending'; used: boolean }
   | { status: 'claimed'; secret: string }
 
 /**
- * Checks the server-side status of a locally stored anon token before every
- * upload attempt: still pending (proceed anonymously), claimed (the CLI
- * should self-upgrade to the real secret), or expired/not found (start a
- * fresh trial). Defaults to `pending` on a network failure so a transient
- * outage doesn't block an otherwise-working anonymous upload.
+ * Checks the server-side status of a locally stored anon token: still pending
+ * (with `used` telling whether the one free trial recording is already spent),
+ * claimed (the CLI should self-upgrade to the real secret), or expired/not
+ * found. Defaults to a fresh, unused `pending` on a network failure so a
+ * transient outage doesn't block an otherwise-working first anonymous upload.
  */
 export async function checkAnonSessionStatus(
   token: string,
@@ -113,6 +114,7 @@ export async function checkAnonSessionStatus(
     const body = (await response.json().catch(() => ({}))) as {
       status?: string
       secret?: string
+      used?: boolean
     }
 
     if (body.status === 'claimed' && typeof body.secret === 'string') {
@@ -120,8 +122,33 @@ export async function checkAnonSessionStatus(
     }
     if (body.status === 'expired') return { status: 'expired' }
     if (body.status === 'not_found') return { status: 'not_found' }
-    return { status: 'pending' }
+    return { status: 'pending', used: body.used === true }
   } catch {
-    return { status: 'pending' }
+    return { status: 'pending', used: false }
   }
+}
+
+export type AnonRecordingGate =
+  | { allowed: true }
+  | { allowed: false; reason: 'used' | 'expired' }
+
+/**
+ * Decides whether a fresh anonymous `record` is allowed to START, given the
+ * session's current status. An anonymous trial gets exactly one recording:
+ * once it is used (a pending session that already spent its trial) or the
+ * session has expired, a second recording is refused up front so the user is
+ * told to sign up before anything renders, rather than silently minting a new
+ * trial or only failing after the whole recording ran. A first-run token the
+ * server has not seen yet (`not_found`), a pending-but-unused session, and a
+ * `claimed` session (the upload path self-upgrades to the real secret) all
+ * proceed.
+ */
+export function evaluateAnonRecordingGate(
+  status: AnonSessionStatus
+): AnonRecordingGate {
+  if (status.status === 'expired') return { allowed: false, reason: 'expired' }
+  if (status.status === 'pending' && status.used) {
+    return { allowed: false, reason: 'used' }
+  }
+  return { allowed: true }
 }

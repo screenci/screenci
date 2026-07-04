@@ -8,6 +8,7 @@ import {
   anonCredential,
   checkAnonSessionStatus,
   deleteAnonSessionFile,
+  evaluateAnonRecordingGate,
   getOrCreateAnonToken,
   secretCredential,
 } from './anonSession.js'
@@ -51,7 +52,7 @@ describe('getOrCreateAnonToken', () => {
 })
 
 describe('checkAnonSessionStatus', () => {
-  it('returns pending when the server reports pending', async () => {
+  it('returns pending (unused) when the server reports pending with no usage', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       json: async () => ({ status: 'pending' }),
     })
@@ -59,7 +60,7 @@ describe('checkAnonSessionStatus', () => {
       fetchImpl: fetchImpl as unknown as typeof fetch,
       backendUrl: 'https://api.example.com',
     })
-    expect(result).toEqual({ status: 'pending' })
+    expect(result).toEqual({ status: 'pending', used: false })
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://api.example.com/cli/anon-session-status',
       expect.objectContaining({
@@ -67,6 +68,16 @@ describe('checkAnonSessionStatus', () => {
         body: JSON.stringify({ token: 'token-a' }),
       })
     )
+  })
+
+  it('carries used:true when the pending session already spent its trial', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      json: async () => ({ status: 'pending', used: true }),
+    })
+    const result = await checkAnonSessionStatus('token-a', {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    })
+    expect(result).toEqual({ status: 'pending', used: true })
   })
 
   it('returns claimed with the secret when the server reports claimed', async () => {
@@ -86,7 +97,7 @@ describe('checkAnonSessionStatus', () => {
     const result = await checkAnonSessionStatus('token-a', {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })
-    expect(result).toEqual({ status: 'pending' })
+    expect(result).toEqual({ status: 'pending', used: false })
   })
 
   it('returns expired when the server reports expired', async () => {
@@ -109,12 +120,45 @@ describe('checkAnonSessionStatus', () => {
     expect(result).toEqual({ status: 'not_found' })
   })
 
-  it('defaults to pending on a network failure so a transient outage does not block uploads', async () => {
+  it('defaults to pending (unused) on a network failure so a transient outage does not block the first upload', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error('network down'))
     const result = await checkAnonSessionStatus('token-a', {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })
-    expect(result).toEqual({ status: 'pending' })
+    expect(result).toEqual({ status: 'pending', used: false })
+  })
+})
+
+describe('evaluateAnonRecordingGate', () => {
+  it('allows a first-run token the server has not seen yet', () => {
+    expect(evaluateAnonRecordingGate({ status: 'not_found' })).toEqual({
+      allowed: true,
+    })
+  })
+
+  it('allows a pending session that has not spent its trial', () => {
+    expect(
+      evaluateAnonRecordingGate({ status: 'pending', used: false })
+    ).toEqual({ allowed: true })
+  })
+
+  it('blocks a pending session that already spent its one free trial', () => {
+    expect(
+      evaluateAnonRecordingGate({ status: 'pending', used: true })
+    ).toEqual({ allowed: false, reason: 'used' })
+  })
+
+  it('blocks an expired session rather than silently starting a new trial', () => {
+    expect(evaluateAnonRecordingGate({ status: 'expired' })).toEqual({
+      allowed: false,
+      reason: 'expired',
+    })
+  })
+
+  it('allows a claimed session (the upload path self-upgrades to the real secret)', () => {
+    expect(
+      evaluateAnonRecordingGate({ status: 'claimed', secret: 'sec_1' })
+    ).toEqual({ allowed: true })
   })
 })
 

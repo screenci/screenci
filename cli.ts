@@ -65,6 +65,7 @@ import {
   anonCredential,
   checkAnonSessionStatus,
   deleteAnonSessionFile,
+  evaluateAnonRecordingGate,
   getOrCreateAnonToken,
   secretCredential,
 } from './src/anonSession.js'
@@ -2804,8 +2805,12 @@ async function printInfo(configPath?: string): Promise<void> {
  * Resolves the credential `record`'s upload should authenticate with. A real
  * SCREENCI_SECRET wins outright. Otherwise, checks the locally stored anon
  * trial token: `claimed` self-upgrades by writing the real secret into `.env`
- * and deleting the local anon state (no manual step required); `not_found`/
- * `expired` nags and starts a fresh trial; `pending` proceeds anonymously.
+ * and deleting the local anon state (no manual step required); every other
+ * status proceeds with the anon token. Whether an anonymous recording is
+ * allowed to start at all is decided before recording (see
+ * `ensureAnonRecordingAllowedOrExit`), so this function does not re-gate or
+ * silently mint a new trial here; the server-side one-call cap remains the
+ * final backstop.
  */
 export async function resolveUploadCredential(
   screenciDir: string,
@@ -2835,16 +2840,41 @@ export async function resolveUploadCredential(
     }
   }
 
-  if (status.status === 'not_found' || status.status === 'expired') {
-    logger.info(
-      'Your previous trial expired or was already claimed elsewhere. Starting a new one.'
-    )
-    await deleteAnonSessionFile(screenciDir)
-    const freshToken = await getOrCreateAnonToken(screenciDir)
-    return { credential: anonCredential(freshToken), usedAnonCredential: true }
-  }
-
   return { credential: anonCredential(token), usedAnonCredential: true }
+}
+
+/**
+ * Pre-recording gate for anonymous trials. Runs before Playwright so a spent
+ * or expired trial never wastes a full recording only to be refused at upload.
+ * With a real SCREENCI_SECRET present this is a no-op. Otherwise it checks the
+ * local anon token's server status and, when the one free trial is already
+ * used or the session has expired, prints a sign-up message and exits without
+ * recording. A first-run, pending-unused, or claimed session proceeds (the
+ * upload path handles the claimed self-upgrade).
+ */
+export async function ensureAnonRecordingAllowedOrExit(
+  screenciDir: string,
+  apiUrl: string,
+  appUrl: string,
+  secretFromEnv: string | undefined
+): Promise<void> {
+  if (secretFromEnv) return
+
+  const token = await getOrCreateAnonToken(screenciDir)
+  const status = await checkAnonSessionStatus(token, { backendUrl: apiUrl })
+  const gate = evaluateAnonRecordingGate(status)
+  if (gate.allowed) return
+
+  const intro =
+    gate.reason === 'expired'
+      ? 'Your free ScreenCI trial has expired.'
+      : "You've already used your one free ScreenCI trial recording."
+  logger.error(
+    `${intro}\n` +
+      `Sign up to keep recording (no watermark, no limits): ${pc.cyan(appUrl)}\n` +
+      'After signing up, re-run this command in the same folder and it links automatically.'
+  )
+  process.exit(1)
 }
 
 // Uploads the recordings already written under `.screenci` for the resolved
@@ -3572,6 +3602,15 @@ async function run(
     validateArgs(additionalArgs)
     const screenciDir = resolve(dirname(configPath), '.screenci')
     clearRecordingDirectories(screenciDir)
+    // Refuse a second anonymous trial recording before Playwright runs, so a
+    // spent or expired trial never wastes a full render only to be rejected at
+    // upload. No-op when a real SCREENCI_SECRET is set (env is loaded above).
+    await ensureAnonRecordingAllowedOrExit(
+      screenciDir,
+      getDevBackendUrl(),
+      getDevFrontendUrl(),
+      process.env.SCREENCI_SECRET
+    )
   }
 
   // Studio text-field overrides are injected for the record command only: they

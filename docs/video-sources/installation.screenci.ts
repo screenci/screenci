@@ -9,8 +9,6 @@ video
   })('How to find docs', async ({ page, narration, overlays }) => {
   // Run setup without showing these actions in the final recording.
   await hide(async () => {
-    // The landing page autoplays the hero video, so `networkidle` never settles;
-    // goto already waits for the load event.
     await page.goto('https://screenci.com/')
   })
 

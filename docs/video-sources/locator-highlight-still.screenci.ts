@@ -10,8 +10,6 @@ screenshot.overlays({
     margin: 6,
   }),
 })('Locator highlight', async ({ page, overlays }) => {
-  // The landing page autoplays the hero video, so `networkidle` never settles;
-  // goto already waits for the load event.
   await page.goto('https://screenci.com/')
 
   const cta = page.getByRole('link', { name: 'View Documentation' })

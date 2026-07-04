@@ -9,7 +9,12 @@ import { getDevBackendUrl } from './linkSession.js'
 // The token lives only in `.screenci/anon-session.json` and, server-side, in
 // the anonymousSessions table (never printed or embedded in any URL).
 
-const ANON_SESSION_FILE = 'anon-session.json'
+// The anon session token file lives directly inside `.screenci/`, alongside
+// the per-recording directories. It must survive the per-run wipe of that
+// directory (see clearRecordingDirectories), or every `record` would mint a
+// fresh trial and the one-recording cap, claim, and auto-graduate would all
+// break. Exported so the wipe can preserve it by name.
+export const ANON_SESSION_FILE = 'anon-session.json'
 
 export const ANON_TOKEN_HEADER = 'X-ScreenCI-Anon-Token'
 export const SECRET_HEADER = 'X-ScreenCI-Secret'

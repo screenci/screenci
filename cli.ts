@@ -62,6 +62,7 @@ import { OVERLAY_CACHE_DIR_NAME } from './src/htmlRasterizer.js'
 import { maybeExtractVoiceSampleAudio } from './src/voiceSampleAudio.js'
 import {
   type CliCredential,
+  ANON_SESSION_FILE,
   anonCredential,
   checkAnonSessionStatus,
   deleteAnonSessionFile,
@@ -1145,6 +1146,10 @@ export function clearRecordingDirectories(dir: string): void {
     // from a previous run. Wiping it would re-render and re-encode every overlay
     // each run, changing their content hashes and forcing a re-upload.
     if (entry === OVERLAY_CACHE_DIR_NAME) continue
+    // Preserve the anon trial token: it identifies one continuous trial across
+    // runs. Wiping it would mint a fresh trial every record, so the one-record
+    // cap, the claim, and the auto-graduate to a real secret would all break.
+    if (entry === ANON_SESSION_FILE) continue
     rmSync(resolve(dir, entry), { recursive: true, force: true })
   }
 }

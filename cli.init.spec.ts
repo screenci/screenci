@@ -660,15 +660,41 @@ describe('CLI', () => {
           default: 'demo-app',
         }),
         expect.objectContaining({
-          message: 'Add a GitHub Actions workflow? (Y/n)',
+          message: 'Add a GitHub Actions CI workflow? (Y/n)',
           default: 'Y',
         }),
         expect.objectContaining({
           message:
-            "Install AI agent skills (ScreenCI + playwright-cli) for your coding agent (can be done manually via 'npx skills add screenci/screenci --skill screenci --skill playwright-cli -y')? (Y/n)",
+            'Install AI agent skills (ScreenCI + playwright-cli) for your coding agent? (Y/n)',
           default: 'Y',
         }),
       ])
+    })
+
+    it('does not print the auto-applied defaults summary in normal mode', async () => {
+      process.argv = ['node', 'cli.js', 'init']
+      process.env.SCREENCI_INIT_CWD = '/workspace/demo-app'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerInfoSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('Using defaults (override with flags):')
+      )
+    })
+
+    it('prints the auto-applied defaults summary in verbose mode', async () => {
+      process.argv = ['node', 'cli.js', 'init', '--verbose']
+      process.env.SCREENCI_INIT_CWD = '/workspace/demo-app'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        'Using defaults (override with flags): React overlays on (--no-react), Playwright browsers on (--no-playwright-browsers), OS deps off (--playwright-os-deps).'
+      )
     })
 
     it('uses default answers with --yes', async () => {
@@ -1375,12 +1401,13 @@ describe('CLI', () => {
           stdio: 'pipe',
         })
       )
-      // The combined AI-skills prompt carries pnpm-flavored manual commands.
+      // The combined AI-skills prompt avoids package-manager-specific install
+      // commands; the actual install command is still package-manager aware.
       expect(mockInput.mock.calls.map((call) => call[0])).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             message:
-              "Install AI agent skills (ScreenCI + playwright-cli) for your coding agent (can be done manually via 'pnpm dlx skills add screenci/screenci --skill screenci --skill playwright-cli -y')? (Y/n)",
+              'Install AI agent skills (ScreenCI + playwright-cli) for your coding agent? (Y/n)',
           }),
         ])
       )
@@ -1980,7 +2007,7 @@ describe('CLI', () => {
       // fires (project name comes from argv).
       expect(mockInput.mock.calls.map((call) => call[0])).toEqual([
         expect.objectContaining({
-          message: 'Add a GitHub Actions workflow? (Y/n)',
+          message: 'Add a GitHub Actions CI workflow? (Y/n)',
         }),
       ])
     })

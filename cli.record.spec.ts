@@ -391,6 +391,23 @@ describe('CLI', () => {
       // not re-rendered, re-encoded, and re-uploaded.
       expect(removed).not.toContain('/project/.screenci/.overlay-cache')
     })
+
+    it('preserves the anon trial token so one trial spans runs (cap/claim/graduate stay intact)', async () => {
+      const { clearRecordingDirectories } = await import('./cli')
+      const dir = '/project/.screenci'
+      mockReaddirSync.mockReturnValue([
+        'My Video [en]',
+        'anon-session.json',
+      ] as unknown as string[])
+
+      clearRecordingDirectories(dir)
+
+      const removed = mockRmSync.mock.calls.map((call) => call[0] as string)
+      expect(removed).toContain('/project/.screenci/My Video [en]')
+      // Wiping this would mint a fresh trial every record, bypassing the
+      // one-record cap and breaking the claim / auto-graduate detection.
+      expect(removed).not.toContain('/project/.screenci/anon-session.json')
+    })
   })
 
   describe('record command', () => {

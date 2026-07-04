@@ -548,24 +548,6 @@ function buildPlaywrightSpawnArgs(
   return ['npx', 'playwright', ...playwrightArgs]
 }
 
-function getSkillsManualCommand(
-  packageManager: PackageManager,
-  skills: string[],
-  agent?: string
-): string {
-  const prefix =
-    packageManager === 'pnpm'
-      ? ['pnpm', 'dlx']
-      : packageManager === 'yarn'
-        ? ['yarn', 'dlx']
-        : ['npx']
-  return [...prefix, 'skills', 'add', 'screenci/screenci']
-    .concat(agent ? ['--agent', agent] : [])
-    .concat(skills.flatMap((skillName) => ['--skill', skillName]))
-    .concat(['-y'])
-    .join(' ')
-}
-
 /**
  * Turn a human project name into a valid npm package name for the island's own
  * package.json. We use the project name (the repository root directory name by
@@ -1478,20 +1460,12 @@ async function promptYesNo(
 }
 
 async function promptInitGithubActionWorkflow(): Promise<boolean> {
-  return promptYesNo('Add a GitHub Actions workflow? (Y/n)', true)
+  return promptYesNo('Add a GitHub Actions CI workflow? (Y/n)', true)
 }
 
-async function promptInitAiSkills(
-  packageManager: PackageManager,
-  agent?: string
-): Promise<boolean> {
-  const manualCommand = getSkillsManualCommand(
-    packageManager,
-    ['screenci', 'playwright-cli'],
-    agent
-  )
+async function promptInitAiSkills(): Promise<boolean> {
   return promptYesNo(
-    `Install AI agent skills (ScreenCI + playwright-cli) for your coding agent (can be done manually via '${manualCommand}')? (Y/n)`,
+    'Install AI agent skills (ScreenCI + playwright-cli) for your coding agent? (Y/n)',
     true
   )
 }
@@ -1575,18 +1549,14 @@ export async function runInit(
   // both without asking; `--no-playwright-cli` keeps the ScreenCI skill but drops
   // playwright-cli (skill + the `@playwright/cli` dev dependency).
   const shouldInstallAiSkills =
-    options.skills === false
-      ? false
-      : yes
-        ? true
-        : await promptInitAiSkills(packageManager, agent)
+    options.skills === false ? false : yes ? true : await promptInitAiSkills()
   const shouldInstallScreenCISkill = shouldInstallAiSkills
   const shouldInstallPlaywrightCli =
     shouldInstallAiSkills && options.playwrightCli !== false
 
-  // Surface the auto-applied choices so they are discoverable without reading
-  // docs, and point at the flag that flips each one.
-  if (!yes) {
+  // In verbose mode, surface the auto-applied choices and the flag that flips
+  // each one without adding noise to the normal interactive path.
+  if (verbose && !yes) {
     logger.info(
       'Using defaults (override with flags): ' +
         `React overlays ${shouldAddReactOverlays ? 'on' : 'off'} (--no-react), ` +

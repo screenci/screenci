@@ -7,6 +7,14 @@ allowed-tools:
   - Bash(npm:*)
 ---
 
+<!--
+  Adapted from the "playwright-cli" skill in the Microsoft Playwright CLI project
+  (https://github.com/microsoft/playwright-cli), Copyright (c) Microsoft Corporation,
+  licensed under the Apache License, Version 2.0. Modified by ScreenCI.
+  Full license and attribution: see THIRD_PARTY_NOTICES.md and
+  licenses/microsoft-playwright-cli-APACHE-2.0.txt in the screenci package.
+-->
+
 # Browser Automation with playwright-cli
 
 ## When Inspecting Pages For ScreenCI

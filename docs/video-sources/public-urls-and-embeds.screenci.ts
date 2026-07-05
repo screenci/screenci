@@ -14,7 +14,7 @@ const appUrl = process.env.SCREENCI_APP_URL ?? 'https://app.screenci.com/'
 // the Public URLs and Embeds guide. It opens a finished video and highlights the
 // Enable public URL switch that mints stable, language-specific delivery URLs.
 // Recording needs a logged-in session: set SCREENCI_APP_STORAGE_STATE (see
-// screenci.config.ts). The navigation mirrors studio.screenci.ts up to the video
+// screenci.config.ts). The navigation mirrors the Editor walkthrough up to the video
 // page.
 //
 // The logo intro (assets/logo.png) is gitignored: it is uploaded on the first

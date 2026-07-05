@@ -3,19 +3,19 @@ import {
   resolveStudioRecordOptions,
   resolveStudioRenderOptions,
 } from './video.js'
-import { studio } from './studio.js'
+import { editable } from './studio.js'
 import { DEFAULT_VIDEO_OPTIONS } from './defaults.js'
 
-describe('studio() option resolution', () => {
-  it('treats recordOptions: studio() as deferred, recording with defaults', () => {
-    const { base, studio: isStudio } = resolveStudioRecordOptions(studio())
+describe('editable() option resolution', () => {
+  it('treats recordOptions: editable() as deferred, recording with defaults', () => {
+    const { base, studio: isStudio } = resolveStudioRecordOptions(editable())
     expect(isStudio).toBe(true)
     expect(base).toEqual(DEFAULT_VIDEO_OPTIONS)
   })
 
-  it('seeds recordOptions with studio({...}) merged over defaults', () => {
+  it('seeds recordOptions with editable({...}) merged over defaults', () => {
     const { base, studio: isStudio } = resolveStudioRecordOptions(
-      studio({ aspectRatio: '9:16' })
+      editable({ aspectRatio: '9:16' })
     )
     expect(isStudio).toBe(true)
     expect(base).toEqual({ ...DEFAULT_VIDEO_OPTIONS, aspectRatio: '9:16' })
@@ -28,15 +28,15 @@ describe('studio() option resolution', () => {
     expect(base).toBe(code)
   })
 
-  it('treats renderOptions: studio() as deferred (no seed render options)', () => {
-    const { obj, studio: isStudio } = resolveStudioRenderOptions(studio())
+  it('treats renderOptions: editable() as deferred (no seed render options)', () => {
+    const { obj, studio: isStudio } = resolveStudioRenderOptions(editable())
     expect(isStudio).toBe(true)
     expect(obj).toBeUndefined()
   })
 
-  it('returns the seed for renderOptions: studio({...}), still Studio-managed', () => {
+  it('returns the seed for renderOptions: editable({...}), still Studio-managed', () => {
     const seed = { output: { aspectRatio: '9:16' as const } }
-    const { obj, studio: isStudio } = resolveStudioRenderOptions(studio(seed))
+    const { obj, studio: isStudio } = resolveStudioRenderOptions(editable(seed))
     expect(isStudio).toBe(true)
     expect(obj).toEqual(seed)
   })

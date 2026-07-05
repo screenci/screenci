@@ -4,6 +4,8 @@ import type {
   Browser,
   Locator,
   FrameLocator,
+  Route,
+  Request,
 } from '@playwright/test'
 import type {
   IEventRecorder,
@@ -112,6 +114,176 @@ function getActiveClickRecorder(page?: object): IEventRecorder {
 }
 
 const instrumented = new WeakSet<object>()
+type RouteHandler = (
+  route: Route,
+  request: Request
+) => Promise<unknown> | unknown
+type RouteFulfillOptions = Parameters<Route['fulfill']>[0]
+
+const routeHandlerWrappers = new WeakMap<
+  object,
+  WeakMap<RouteHandler, RouteHandler>
+>()
+
+const JAVASCRIPT_CONTENT_TYPES = new Set([
+  'application/ecmascript',
+  'application/javascript',
+  'application/x-javascript',
+  'text/ecmascript',
+  'text/javascript',
+])
+
+function getHeaderValue(
+  headers: Record<string, string> | undefined,
+  name: string
+): string | undefined {
+  if (!headers) return undefined
+  const lowerName = name.toLowerCase()
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === lowerName) return value
+  }
+  return undefined
+}
+
+function normalizeContentType(contentType: string): string {
+  return contentType.split(';', 1)[0]!.trim().toLowerCase()
+}
+
+function inferContentTypeFromPath(path: string): string | undefined {
+  const normalizedPath = path.split(/[?#]/, 1)[0] ?? path
+  const ext = normalizedPath.match(/\.([^.\\/]+)$/)?.[1]?.toLowerCase()
+  switch (ext) {
+    case 'cjs':
+    case 'js':
+    case 'jsx':
+    case 'mjs':
+    case 'ts':
+    case 'tsx':
+      return 'text/javascript'
+    case 'css':
+      return 'text/css'
+    case 'html':
+    case 'htm':
+      return 'text/html'
+    case 'json':
+      return 'application/json'
+    default:
+      return undefined
+  }
+}
+
+function resolveFulfillContentType(
+  options: RouteFulfillOptions
+): string | undefined {
+  if (!options) return undefined
+  const explicit =
+    options.contentType ?? getHeaderValue(options.headers, 'content-type')
+  if (explicit) return explicit
+  if ('json' in options && options.json !== undefined) return 'application/json'
+  if (options.path) return inferContentTypeFromPath(options.path)
+  return getHeaderValue(options.response?.headers(), 'content-type')
+}
+
+function expectedContentTypeForRequest(
+  request: Request
+): { label: string; accepts: (contentType: string) => boolean } | null {
+  switch (request.resourceType()) {
+    case 'script':
+      return {
+        label: 'a JavaScript MIME type',
+        accepts: (contentType) =>
+          JAVASCRIPT_CONTENT_TYPES.has(normalizeContentType(contentType)),
+      }
+    case 'stylesheet':
+      return {
+        label: 'text/css',
+        accepts: (contentType) =>
+          normalizeContentType(contentType) === 'text/css',
+      }
+    case 'document':
+      return {
+        label: 'text/html',
+        accepts: (contentType) => {
+          const normalized = normalizeContentType(contentType)
+          return (
+            normalized === 'text/html' || normalized === 'application/xhtml+xml'
+          )
+        },
+      }
+    default:
+      return null
+  }
+}
+
+function assertRouteFulfillMatchesBrowserResource(
+  request: Request,
+  options: RouteFulfillOptions,
+  source: 'page.route' | 'browserContext.route'
+): void {
+  const status = options?.status ?? 200
+  if (status === 204 || status === 304 || status >= 300) return
+
+  const expected = expectedContentTypeForRequest(request)
+  if (expected === null) return
+
+  const contentType = resolveFulfillContentType(options)
+  if (contentType !== undefined && expected.accepts(contentType)) return
+
+  const resourceType = request.resourceType()
+  const renderedContentType =
+    contentType === undefined ? 'no content type' : contentType
+
+  throw new Error(
+    `[screenci] ${source} fulfilled a ${resourceType} request for ${request.url()} ` +
+      `with ${renderedContentType}. Browser ${resourceType} loads are not API requests ` +
+      `and must be fulfilled with ${expected.label}. This usually means a broad route ` +
+      `glob intercepted an app asset, for example a Vite module. Narrow API mocks to ` +
+      `an absolute URL such as http://localhost:5173/api/... or call route.fallback() ` +
+      `when request.resourceType() is not 'fetch' or 'xhr'.`
+  )
+}
+
+function guardRouteFulfill(
+  route: Route,
+  request: Request,
+  source: 'page.route' | 'browserContext.route'
+): Route {
+  const originalFulfill = route.fulfill.bind(route)
+  ;(route as Route).fulfill = async (
+    options?: RouteFulfillOptions
+  ): Promise<void> => {
+    assertRouteFulfillMatchesBrowserResource(request, options, source)
+    await originalFulfill(options)
+  }
+  return route
+}
+
+function wrapRouteHandler(
+  target: object,
+  handler: RouteHandler,
+  source: 'page.route' | 'browserContext.route'
+): RouteHandler {
+  let targetWrappers = routeHandlerWrappers.get(target)
+  if (!targetWrappers) {
+    targetWrappers = new WeakMap()
+    routeHandlerWrappers.set(target, targetWrappers)
+  }
+
+  let wrapped = targetWrappers.get(handler)
+  if (!wrapped) {
+    wrapped = (route, request) =>
+      handler(guardRouteFulfill(route, request, source), request)
+    targetWrappers.set(handler, wrapped)
+  }
+  return wrapped
+}
+
+function unwrapRouteHandler(
+  target: object,
+  handler: RouteHandler
+): RouteHandler {
+  return routeHandlerWrappers.get(target)?.get(handler) ?? handler
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) =>
@@ -1535,6 +1707,41 @@ export async function instrumentPage(page: Page): Promise<Page> {
     return page.locator(selector).click(options)
   }
 
+  const originalWaitForTimeout = page.waitForTimeout.bind(page)
+  page.waitForTimeout = (async (timeout: number): Promise<void> => {
+    await originalWaitForTimeout(resolveRecordingTimingDuration(timeout))
+  }) as Page['waitForTimeout']
+
+  const originalRoute = page.route.bind(page)
+  page.route = (async (
+    url: Parameters<Page['route']>[0],
+    handler: Parameters<Page['route']>[1],
+    options?: Parameters<Page['route']>[2]
+  ) => {
+    return originalRoute(
+      url,
+      wrapRouteHandler(
+        page,
+        handler as RouteHandler,
+        'page.route'
+      ) as typeof handler,
+      options
+    )
+  }) as Page['route']
+
+  const originalUnroute = page.unroute.bind(page)
+  page.unroute = (async (
+    url: Parameters<Page['unroute']>[0],
+    handler?: Parameters<Page['unroute']>[1]
+  ) => {
+    return originalUnroute(
+      url,
+      handler
+        ? (unwrapRouteHandler(page, handler as RouteHandler) as typeof handler)
+        : undefined
+    )
+  }) as Page['unroute']
+
   // Instrument page.mouse to record mouse moves and visibility toggles.
   const originalMouse = page.mouse
   const originalMove = originalMouse.move.bind(originalMouse)
@@ -2009,6 +2216,39 @@ export async function instrumentPage(page: Page): Promise<Page> {
 export function instrumentContext(context: BrowserContext): BrowserContext {
   if (instrumented.has(context)) return context
   instrumented.add(context)
+
+  const originalRoute = context.route.bind(context)
+  context.route = (async (
+    url: Parameters<BrowserContext['route']>[0],
+    handler: Parameters<BrowserContext['route']>[1],
+    options?: Parameters<BrowserContext['route']>[2]
+  ) => {
+    return originalRoute(
+      url,
+      wrapRouteHandler(
+        context,
+        handler as RouteHandler,
+        'browserContext.route'
+      ) as typeof handler,
+      options
+    )
+  }) as BrowserContext['route']
+
+  const originalUnroute = context.unroute.bind(context)
+  context.unroute = (async (
+    url: Parameters<BrowserContext['unroute']>[0],
+    handler?: Parameters<BrowserContext['unroute']>[1]
+  ) => {
+    return originalUnroute(
+      url,
+      handler
+        ? (unwrapRouteHandler(
+            context,
+            handler as RouteHandler
+          ) as typeof handler)
+        : undefined
+    )
+  }) as BrowserContext['unroute']
 
   const originalNewPage = context.newPage.bind(context)
   context.newPage = async (...args: Parameters<BrowserContext['newPage']>) => {

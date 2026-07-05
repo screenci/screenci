@@ -1311,6 +1311,9 @@ describe('CLI', () => {
       expect(messages).toContain(
         'Recording during an anonymous trial agrees to the Terms: https://screenci.com/legal/tos'
       )
+      expect(rawMessages).toContain(
+        'Recording during an anonymous trial agrees to the Terms: https://screenci.com/legal/tos'
+      )
       expect(messages).toContain('You can now run these commands:')
       expect(messages).toContain('We suggest that you begin by typing:')
       expect(messages).toContain('    cd screenci')

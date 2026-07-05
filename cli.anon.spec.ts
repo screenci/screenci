@@ -13,6 +13,7 @@ import {
   SECRET_HEADER,
   ANON_TOKEN_HEADER,
   SCREENCI_TERMS_URL,
+  formatAnonTermsNotice,
 } from './src/anonSession.js'
 
 describe('resolveUploadCredential', () => {
@@ -168,9 +169,7 @@ describe('ensureAnonRecordingAllowedOrExit', () => {
     )
 
     expect(exitSpy).not.toHaveBeenCalled()
-    expect(logger.info).toHaveBeenCalledWith(
-      expect.stringContaining(SCREENCI_TERMS_URL)
-    )
+    expect(logger.info).toHaveBeenCalledWith(formatAnonTermsNotice())
   })
 
   it('prints the Terms notice up front on a pending, unused trial', async () => {
@@ -187,9 +186,7 @@ describe('ensureAnonRecordingAllowedOrExit', () => {
     )
 
     expect(exitSpy).not.toHaveBeenCalled()
-    expect(logger.info).toHaveBeenCalledWith(
-      expect.stringContaining(SCREENCI_TERMS_URL)
-    )
+    expect(logger.info).toHaveBeenCalledWith(formatAnonTermsNotice())
   })
 
   it('does not print the Terms notice for a claimed session (already accepted on sign-up)', async () => {
@@ -211,9 +208,9 @@ describe('ensureAnonRecordingAllowedOrExit', () => {
     )
   })
 
-  it('blocks and exits before recording when the one free trial is already used', async () => {
+  it('blocks and exits before recording when all free trial recordings are used', async () => {
     global.fetch = vi.fn().mockResolvedValue({
-      json: async () => ({ status: 'pending', used: true }),
+      json: async () => ({ status: 'pending', used: true, remaining: 0 }),
     }) as unknown as typeof fetch
 
     const { ensureAnonRecordingAllowedOrExit } = await import('./cli')
@@ -228,21 +225,21 @@ describe('ensureAnonRecordingAllowedOrExit', () => {
 
     expect(exitSpy).toHaveBeenCalledWith(1)
     expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining('already used your one free ScreenCI trial')
+      expect.stringContaining('used all your free ScreenCI trial recordings')
     )
     expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining('https://app.example.com')
     )
   })
 
-  it('prints the previous anonymous recording URL when the one free trial is already used', async () => {
+  it('prints the previous anonymous recording URL when all free trial recordings are used', async () => {
     const recordUrl = 'https://app.example.com/record/record_123'
     writeFileSync(
       path.join(screenciDir, 'anon-session.json'),
       `${JSON.stringify({ token: 'anon-token', recordUrl }, null, 2)}\n`
     )
     global.fetch = vi.fn().mockResolvedValue({
-      json: async () => ({ status: 'pending', used: true }),
+      json: async () => ({ status: 'pending', used: true, remaining: 0 }),
     }) as unknown as typeof fetch
 
     const { ensureAnonRecordingAllowedOrExit } = await import('./cli')

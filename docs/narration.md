@@ -5,7 +5,7 @@ ScreenCI narration is cue-based. You attach a script to a video with
 speech should start, overlap, and end.
 
 The spoken text lives in `video.narration(...)`, owned by code or handed to
-[Studio](./studio.md) (the web app where non-developers edit it without touching
+[Editor](./editor.md) (the web app where non-developers edit it without touching
 the test). See [the three ways to declare narration](#three-ways-to-declare-narration)
 just below.
 
@@ -49,7 +49,7 @@ you never have to use a synthesized voice if you would rather use your own.
 
 There are three ways to declare narration. The same three forms apply to
 [`values`](./values.md), [`overlays`](./overlays.md), and [`audio`](./audio.md).
-See the [Studio guide](./studio.md) for how the web editing works.
+See the [Editor guide](./editor.md) for how the web editing works.
 
 **1. Code-owned.** You write the text. Changing it re-records.
 
@@ -57,22 +57,22 @@ See the [Studio guide](./studio.md) for how the web editing works.
 video.narration({ en: { intro: 'Welcome.' } })
 ```
 
-**2. Studio-owned (blank).** Wrap the cue names in `studio([...])`: the names
-exist in code (so the body can call `narration.intro`), but [Studio](./studio.md)
+**2. Editor-owned (blank).** Wrap the cue names in `editable([...])`: the names
+exist in code (so the body can call `narration.intro`), but [Editor](./editor.md)
 owns the text. Chain `.languages([...])`, since there is no text to infer the set
 from.
 
 ```ts
-import { video, studio } from 'screenci'
+import { video, editable } from 'screenci'
 
-video.narration(studio(['intro', 'outro'])).languages(['en'])
+video.narration(editable(['intro', 'outro'])).languages(['en'])
 ```
 
-**3. Studio-owned (seeded).** Pass values to `studio({...})`: Studio starts from
-them but owns them, so an edit in Studio always wins over the seed.
+**3. Editor-owned (seeded).** Pass values to `editable({...})`: Editor starts from
+them but owns them, so an edit in Editor always wins over the seed.
 
 ```ts
-video.narration(studio({ intro: 'Welcome.' }))
+video.narration(editable({ intro: 'Welcome.' }))
 ```
 
 ## Attach a narration script
@@ -644,18 +644,18 @@ voices you are licensed to reproduce, in line with the ElevenLabs
 > ElevenLabs account, delete custom voices you no longer need to free up slots,
 > then re-run the render.
 
-## Manage narration from Studio
+## Manage narration from Editor
 
-On the Business tier you can manage narration text from the web app instead of
-code. Wrap the cue names in `studio([...])` (imported from `screenci`) and let
-Studio own the spoken text per language:
+You can manage narration text from the web app instead of code. Wrap the cue
+names in `editable([...])` (imported from `screenci`) and let Editor own the
+spoken text per language:
 
 ```ts
-import { video, studio } from 'screenci'
+import { video, editable } from 'screenci'
 
 video
-  // Studio fills in the text per language for these cue names (the studio(...) form).
-  .narration(studio(['intro', 'save']))
+  // Editor fills in the text per language for these cue names (the editable(...) form).
+  .narration(editable(['intro', 'save']))
   .languages(['en', 'fi'])('Settings', async ({ page, narration }) => {
   await narration.intro()
   await page.goto('/settings')
@@ -663,13 +663,13 @@ video
 })
 ```
 
-Studio cue names are language-agnostic (declared once). Because the blank
-`studio([...])` form carries no code values, declare the recorded set with
+Editor cue names are language-agnostic (declared once). Because the blank
+`editable([...])` form carries no code values, declare the recorded set with
 `video.languages([...])`, since there is no seeded text to infer it from. You can
-also seed the web app with starting text by passing an object to `studio({...})`
-(for example `video.narration(studio({ intro: 'Welcome' }))`): the web app starts
+also seed the web app with starting text by passing an object to `editable({...})`
+(for example `video.narration(editable({ intro: 'Welcome' }))`): the web app starts
 from those values but owns them, so the seed is used only until the cue is edited
-in Studio. You can also let the web own the language set itself with
-`video.languages(studio())`. The same `studio(...)` form works for values via
-`video.values(studio([...]))`. The markers still carry timing the same way; only
-the text lives in Studio. See [Studio](/docs/guides/studio).
+in Editor. You can also let the web own the language set itself with
+`video.languages(editable())`. The same `editable(...)` form works for values via
+`video.values(editable([...]))`. The markers still carry timing the same way; only
+the text lives in Editor. See [Editor](/docs/guides/editor).

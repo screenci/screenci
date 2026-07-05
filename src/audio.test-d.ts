@@ -40,7 +40,7 @@ describe('createAudio type constraints', () => {
 
 describe('buildStudioAudioTracks type constraints', () => {
   // Studio-managed audio names are typed to the exact names by the
-  // `video.studio({ audio: [...] })` builder (see index.test-d.ts). The
+  // `video.audio(editable([...]))` builder (see index.test-d.ts). The
   // internal helper returns a generic record of AudioController controllers.
   it('returns a record of AudioController controllers', () => {
     const music = buildStudioAudioTracks(['theme', 'sting'])

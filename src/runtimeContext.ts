@@ -122,13 +122,6 @@ export type ScreenCIRuntimeContext = {
   }
   autoZoom: AutoZoomState
   /**
-   * Tracks the recording's current display size (0-1 fraction of the frame; 1 =
-   * full screen) as toggled by `resizeRecording()`/`resetRecordingSize()`. Used
-   * to no-op a reset that is already at full screen and to detect redundant
-   * resizes. Resets to 1 with each fresh recording context.
-   */
-  recordingSize: { current: number }
-  /**
    * Client-side redaction state. `controllerInstalled` guards the one-time
    * `addInitScript` install of the in-page mask controller; `activeMasks` maps
    * each live mask id to its resolved style so masks can be cleaned up at the
@@ -192,7 +185,6 @@ export function createScreenCIRuntimeContext(
       scrollCentering:
         overrides.recordOptions?.scrollCentering ?? DEFAULT_SCROLL_CENTERING,
     },
-    recordingSize: { current: 1 },
     redact: {
       controllerInstalled: false,
       activeMasks: new Map<string, ResolvedRedactStyle>(),
@@ -378,12 +370,4 @@ export function getRuntimeAutoZoomState(): AutoZoomState {
 
 export function setRuntimeAutoZoomState(state: AutoZoomState): void {
   getScreenCIRuntimeContext().autoZoom = state
-}
-
-export function getRuntimeRecordingSize(): number {
-  return getScreenCIRuntimeContext().recordingSize.current
-}
-
-export function setRuntimeRecordingSize(size: number): void {
-  getScreenCIRuntimeContext().recordingSize.current = size
 }

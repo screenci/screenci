@@ -11,10 +11,10 @@ video.use({
 const appUrl = process.env.SCREENCI_APP_URL ?? 'https://app.screenci.com/'
 
 // Languages walkthrough recorded against the ScreenCI app (app.screenci.com) for
-// the Languages guide. It shows the Studio Languages section where teammates add
-// or remove recorded languages without touching code. Studio lives behind auth,
-// so recording this needs a logged-in session: set SCREENCI_APP_STORAGE_STATE
-// (see screenci.config.ts). The navigation mirrors studio.screenci.ts.
+// the Languages guide. It shows the Editor Languages section where teammates add
+// or remove recorded languages without touching code. The Editor requires auth
+// to record, so set SCREENCI_APP_STORAGE_STATE (see screenci.config.ts). The
+// navigation mirrors editor.screenci.ts.
 //
 // The logo intro (assets/logo.png) is gitignored: it is uploaded on the first
 // record and reused on later runs (CI included).
@@ -25,19 +25,19 @@ video
   .narration({
     en: {
       intro: 'One script records a separate version for each language.',
-      studio: 'On the Business tier, manage the language set from Studio.',
+      editor: 'Manage the language set from the web editor.',
       add: 'Adding a language fills in its narration, then renders from the same capture.',
       outro: 'No translation drift: every language covers the same cues.',
     },
   })('Languages walkthrough', async ({ page, narration, overlays }) => {
-  // Studio lives behind auth (SCREENCI_APP_STORAGE_STATE, see screenci.config.ts).
+  // The Editor requires auth (SCREENCI_APP_STORAGE_STATE, see screenci.config.ts).
   if (!process.env.SCREENCI_APP_STORAGE_STATE) {
     throw new Error(
       'Not logged in. Record via `scripts/screenci.sh docs <env> record` (it signs in first), or set SCREENCI_APP_STORAGE_STATE to a Playwright storageState.'
     )
   }
 
-  // Open a finished video's Studio page without showing the navigation.
+  // Open a finished video's Editor page without showing the navigation.
   await hide(async () => {
     await page.goto(appUrl)
     await page.waitForLoadState('networkidle')
@@ -55,15 +55,15 @@ video
       .first()
       .click()
     await page
-      .getByRole('heading', { name: /^studio$/i })
+      .getByRole('heading', { name: /^editor$/i })
       .waitFor({ timeout: 30000 })
   })
 
   await overlays.logo.for('2s')
   await narration.intro()
 
-  // Frame the Studio Languages section while explaining web-managed languages.
-  await narration.studio.start()
+  // Frame the Editor Languages section while explaining web-managed languages.
+  await narration.editor.start()
   const languagesHeading = page
     .getByRole('heading', { name: /languages/i })
     .first()
@@ -72,7 +72,7 @@ video
     await page.waitForTimeout(900)
     await resetZoom()
   }
-  await narration.studio.end()
+  await narration.editor.end()
 
   await narration.add()
   await narration.outro()

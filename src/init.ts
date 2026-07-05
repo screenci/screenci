@@ -1240,7 +1240,7 @@ function printInitNextSteps(
     `Visit ${pc.cyan('https://screenci.com/docs')} for more information.`
   )
   logger.info(
-    `Recording during an anonymous trial agrees to the Terms: ${pc.cyan(SCREENCI_TERMS_URL)}`
+    `Recording during an anonymous trial agrees to the Terms: ${SCREENCI_TERMS_URL}`
   )
   logger.info('')
   logger.info('Happy hacking! 🎥')
@@ -1380,29 +1380,27 @@ export function generateExampleScreenshot(): string {
   return `import type { Locator } from '@playwright/test'
 import { screenshot } from 'screenci'
 
-screenshot.describe('Example screenshot', () => {
-  // use() takes the same options for \`screenshot\` and \`video\` as Playwright test.
-  // https://playwright.dev/docs/emulation#color-scheme-and-media
-  screenshot.use({
-    colorScheme: 'dark',
-  })
+// use() takes the same options for \`screenshot\` and \`video\` as Playwright test.
+// https://playwright.dev/docs/emulation#color-scheme-and-media
+screenshot.use({
+  colorScheme: 'dark',
+})
 
-  // A branded still that rings one element, using a plain HTML overlay page (see
-  // ./assets/ring.html) so it needs no React dependency.
-  screenshot.overlays({
-    ring: (target: Locator) => ({
-      path: './assets/ring.html',
-      over: target,
-      margin: 8,
-    }),
-  })('Where to find docs', async ({ page, overlays }) => {
-    await page.goto('https://screenci.com/')
-    await page.waitForLoadState('load')
+// A branded still that rings one element, using a plain HTML overlay page (see
+// ./assets/ring.html) so it needs no React dependency.
+screenshot.overlays({
+  ring: (target: Locator) => ({
+    path: './assets/ring.html',
+    over: target,
+    margin: 8,
+  }),
+})('Where to find docs', async ({ page, overlays }) => {
+  await page.goto('https://screenci.com/')
+  await page.waitForLoadState('load')
 
-    await overlays
-      .ring(page.getByRole('link', { name: 'View Documentation' }))
-      .start()
-  })
+  await overlays
+    .ring(page.getByRole('link', { name: 'View Documentation' }))
+    .start()
 })
 `
 }
@@ -1411,27 +1409,25 @@ export function generateReactExampleScreenshot(): string {
   return `import type { Locator } from '@playwright/test'
 import { screenshot } from 'screenci'
 
-screenshot.describe('Example screenshot', () => {
-  // use() takes the same options for \`screenshot\` and \`video\` as Playwright test.
-  // https://playwright.dev/docs/emulation#color-scheme-and-media
-  screenshot.use({
-    colorScheme: 'dark',
-  })
+// use() takes the same options for \`screenshot\` and \`video\` as Playwright test.
+// https://playwright.dev/docs/emulation#color-scheme-and-media
+screenshot.use({
+  colorScheme: 'dark',
+})
 
-  screenshot.overlays({
-    ring: (target: Locator) => ({
-      path: './assets/Ring.tsx',
-      over: target,
-      margin: 8,
-    }),
-  })('Where to find docs', async ({ page, overlays }) => {
-    await page.goto('https://screenci.com/')
-    await page.waitForLoadState('load')
+screenshot.overlays({
+  ring: (target: Locator) => ({
+    path: './assets/Ring.tsx',
+    over: target,
+    margin: 8,
+  }),
+})('Where to find docs', async ({ page, overlays }) => {
+  await page.goto('https://screenci.com/')
+  await page.waitForLoadState('load')
 
-    await overlays
-      .ring(page.getByRole('link', { name: 'View Documentation' }))
-      .start()
-  })
+  await overlays
+    .ring(page.getByRole('link', { name: 'View Documentation' }))
+    .start()
 })
 `
 }

@@ -1,6 +1,6 @@
 import { describe, it, expectTypeOf } from 'vitest'
 import { video } from './video.js'
-import { studio } from './studio.js'
+import { editable } from './studio.js'
 import type { NarrationCue } from './cue.js'
 import type { OverlayController } from './asset.js'
 import type { AudioController } from './audio.js'
@@ -62,15 +62,15 @@ describe('builder fixture controllers', () => {
     })
   })
 
-  it('studio(names) form keeps the declared names', () => {
-    video.narration(studio(['intro', 'cta']))('t', async ({ narration }) => {
+  it('editable(names) form keeps the declared names', () => {
+    video.narration(editable(['intro', 'cta']))('t', async ({ narration }) => {
       expectTypeOf(narration.intro).toEqualTypeOf<NarrationCue>()
       expectTypeOf<keyof typeof narration>().toEqualTypeOf<'intro' | 'cta'>()
     })
   })
 
-  it('studio(seed) form keeps the seeded names and value type', () => {
-    video.narration(studio({ intro: 'Hi', cta: 'Buy' }))(
+  it('editable(seed) form keeps the seeded names and value type', () => {
+    video.narration(editable({ intro: 'Hi', cta: 'Buy' }))(
       't',
       async ({ narration }) => {
         expectTypeOf(narration.intro).toEqualTypeOf<NarrationCue>()
@@ -79,15 +79,15 @@ describe('builder fixture controllers', () => {
     )
   })
 
-  it('rejects keyless studio() for a content feature', () => {
-    // @ts-expect-error studio() with no names is only valid for video.languages().
-    video.narration(studio())('t', async () => {})
+  it('rejects keyless editable() for a content feature', () => {
+    // @ts-expect-error editable() with no names is only valid for video.languages().
+    video.narration(editable())('t', async () => {})
   })
 
   it('accepts languages({ mode }) without an explicit set (inferred from keys)', () => {
     video
       .languages({ mode: 'shared' })
-      .narration(studio({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } }))(
+      .narration(editable({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } }))(
       't',
       async () => {}
     )
@@ -101,26 +101,28 @@ describe('builder fixture controllers', () => {
       async () => {}
     )
     // Web-owned: blank, seeded set, or seeded whole config (set + mode).
-    video.languages(studio()).narration(studio(['intro']))('t', async () => {})
-    video.languages(studio(['en', 'fi']))('t', async () => {})
-    video.languages(studio({ languages: ['en', 'fi'], mode: 'shared' }))(
+    video.languages(editable()).narration(editable(['intro']))(
       't',
       async () => {}
     )
-    // studio({ mode }) is valid: web owns the set, shared mode is seeded.
-    video.languages(studio({ mode: 'shared' })).narration(studio(['intro']))(
+    video.languages(editable(['en', 'fi']))('t', async () => {})
+    video.languages(editable({ languages: ['en', 'fi'], mode: 'shared' }))(
       't',
       async () => {}
     )
+    // editable({ mode }) is valid: web owns the set, shared mode is seeded.
+    video
+      .languages(editable({ mode: 'shared' }))
+      .narration(editable(['intro']))('t', async () => {})
   })
 
   it('rejects an invalid value inside a studio languages config', () => {
     // @ts-expect-error languages must be an array of codes, not a bare string.
-    video.languages(studio({ languages: 'en' }))('t', async () => {})
+    video.languages(editable({ languages: 'en' }))('t', async () => {})
   })
 
-  it('overlays: studio(names) maps each name to a controller', () => {
-    video.overlays(studio(['logo', 'badge']))('t', async ({ overlays }) => {
+  it('overlays: editable(names) maps each name to a controller', () => {
+    video.overlays(editable(['logo', 'badge']))('t', async ({ overlays }) => {
       expectTypeOf(overlays.logo).toEqualTypeOf<OverlayController>()
       expectTypeOf<keyof typeof overlays>().toEqualTypeOf<'logo' | 'badge'>()
     })

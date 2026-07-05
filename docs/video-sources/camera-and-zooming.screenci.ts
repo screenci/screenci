@@ -1,13 +1,4 @@
-import {
-  autoZoom,
-  hide,
-  resetRecordingSize,
-  resetZoom,
-  resizeRecording,
-  video,
-  voices,
-  zoomTo,
-} from 'screenci'
+import { autoZoom, hide, resetZoom, video, voices, zoomTo } from 'screenci'
 
 video.use({
   renderOptions: {
@@ -32,7 +23,6 @@ video.narration({
     manual:
       'zoomTo [pronounce: zoom to] frames an exact target before you interact with it.',
     pan: 'Give it a point instead of an element for a deliberate pan.',
-    step: 'resizeRecording [pronounce: resize recording] steps back to reveal the styled background.',
     outro: 'Treat the camera as direction, not decoration.',
   },
 })('Camera and zooming', async ({ page, narration }) => {
@@ -60,13 +50,6 @@ video.narration({
   await page.waitForTimeout(900)
   await resetZoom()
   await narration.pan.end()
-
-  // Step the recording back to show the styled background, then restore it.
-  await narration.step.start()
-  await resizeRecording(0.8)
-  await page.waitForTimeout(900)
-  await resetRecordingSize()
-  await narration.step.end()
 
   await narration.outro()
 })

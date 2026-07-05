@@ -1,8 +1,8 @@
-# Studio
+# Editor
 
-Studio lets your team remix videos from the ScreenCI web app: change render
+Editor lets your team remix videos from the ScreenCI web app: change render
 options, narration text, and voices without touching code or re-running the
-recording. Studio is available on the Business tier.
+recording.
 
 It is built for teamwork: developers create the video in code once, and
 teammates who never touch the repo can then swap assets, rewrite narration,
@@ -13,82 +13,82 @@ code.
 
 There are two ways to use it:
 
-- **Opt in from code.** Wrap a feature's names in `studio(...)`, imported from
+- **Opt in from code.** Wrap a feature's names in `editable(...)`, imported from
   `screenci`, so the web app owns their content while the names stay in code.
   Declaring the feature with a plain object keeps it in code instead. That is the
-  whole mental model, and it is independent per video and per feature: hand Studio
-  one feature and leave the rest in code, with no all-or-nothing switch. Studio
+  whole mental model, and it is independent per video and per feature: hand Editor
+  one feature and leave the rest in code, with no all-or-nothing switch. Editor
   edits autosave and apply automatically to every later upload.
 
-- **Render a one-off version.** Any video can be opened in Studio and rendered
+- **Render a one-off version.** Any video can be opened in Editor and rendered
   as a one-off, overriding any code-defined narration, overlays, or render
   options for a single render. One-off renders are not saved and do not change
   what future uploads render.
 
 The `video.narration`, `video.values`, `video.overlays`, and `video.audio`
-`studio(...)` declarations type the matching fixtures to exactly those names, so a
+`editable(...)` declarations type the matching fixtures to exactly those names, so a
 typo is a compile error. The fixtures (`narration`, `values`, `overlays`, `audio`
-in the test body) expose the Studio-managed controllers and values alongside any
+in the test body) expose the Editor-managed controllers and values alongside any
 defined in code.
 
-The `studio(...)` forms at a glance:
+The `editable(...)` forms at a glance:
 
 ```ts
-import { video, studio } from 'screenci'
+import { video, editable } from 'screenci'
 
-// Studio owns the content; the names still live in code.
-video.narration(studio(['intro', 'outro']))
-video.values(studio(['cta']))
-video.overlays(studio(['intro', 'logo']))
-video.audio(studio(['theme', 'sting']))
+// Editor owns the content; the names still live in code.
+video.narration(editable(['intro', 'outro']))
+video.values(editable(['cta']))
+video.overlays(editable(['intro', 'logo']))
+video.audio(editable(['theme', 'sting']))
 
 // Plain object instead: the content stays owned in code.
 video.narration({ en: { intro: 'Welcome', outro: 'Thanks' } })
 
-// Seed Studio with starting content (an edit in Studio wins over the seed).
-video.narration(studio({ intro: 'Welcome' }))
-video.values(studio({ cta: 'Get started' }))
+// Seed Editor with starting content (an edit in Editor wins over the seed).
+video.narration(editable({ intro: 'Welcome' }))
+video.values(editable({ cta: 'Get started' }))
 
-// Languages: hand the whole set to Studio, or seed an initial set.
-video.languages(studio()) // or studio(['en', 'fi'])
+// Languages: hand the whole set to Editor, or seed an initial set.
+video.languages(editable()) // or editable(['en', 'fi'])
 
 // Render / record options: defer for the whole file with use().
-video.use({ renderOptions: studio(), recordOptions: studio() })
-video.use({ renderOptions: studio({ output: { aspectRatio: '9:16' } }) })
+video.use({ renderOptions: editable(), recordOptions: editable() })
+video.use({ renderOptions: editable({ output: { aspectRatio: '9:16' } }) })
 ```
 
 #### You will learn
 
-- [how to edit and render a video in Studio](#editing-in-studio)
+- [how to edit and render a video in Editor](#editing-in-editor)
 - [how saved edits and one-off renders differ](#saved-edits-vs-one-off-renders)
-- [how to manage narration from Studio](#studio-narration-from-code)
-- [how to use uploaded media as narration](#narration-media-from-studio)
-- [how to manage on-screen values from Studio](#studio-values-from-code)
-- [how to manage overlays from Studio](#studio-overlays-from-code)
-- [how to manage background audio from Studio](#studio-audio-from-code)
-- [how to defer render and record options to Studio](#studio-render-and-record-options)
-- [how to manage languages from Studio](#studio-languages-from-code)
+- [how to manage narration from Editor](#editor-narration-from-code)
+- [how to use uploaded media as narration](#narration-media-from-editor)
+- [how to manage on-screen values from Editor](#editor-values-from-code)
+- [how to manage overlays from Editor](#editor-overlays-from-code)
+- [how to manage background audio from Editor](#editor-audio-from-code)
+- [how to defer render and record options to Editor](#editor-render-and-record-options)
+- [how to manage languages from Editor](#editor-languages-from-code)
 
-<!-- screenci-doc-video:docs/guides/studio -->
+<!-- screenci-doc-video:docs/guides/editor -->
 
-## Editing in Studio
+## Editing in Editor
 
-Open a video in the web app and choose **Open in Studio**. Studio shows the
+Open a video in the web app and choose **Open in Editor**. Editor shows the
 narration, voices, overlays, audio, and render options the video uses. Items you
-opted into from code by wrapping their names in `studio(...)`
-(`video.narration(studio([...]))`, `video.values(studio([...]))`,
-`video.overlays(studio([...]))`, `video.audio(studio([...]))`, plus the
-`renderOptions: studio()` / `recordOptions: studio()` deferrals) are editable;
+opted into from code by wrapping their names in `editable(...)`
+(`video.narration(editable([...]))`, `video.values(editable([...]))`,
+`video.overlays(editable([...]))`, `video.audio(editable([...]))`, plus the
+`renderOptions: editable()` / `recordOptions: editable()` deferrals) are editable;
 anything defined in code is shown read-only and marked with a **code** badge.
 
 Click a **code** badge to see how to edit that value: it shows the exact
-declaration to opt the feature in for saved edits (the `studio(...)` form, for
-example `video.narration(studio([...]))`), links to that feature's guide, and
+declaration to opt the feature in for saved edits (the `editable(...)` form, for
+example `video.narration(editable([...]))`), links to that feature's guide, and
 offers to create a one-off version to change it just once. Each section also has
-a **How to edit from Studio** link to the matching guide below.
+a **How to edit from Editor** link to the matching guide below.
 
 Edits autosave: a status line shows **Saving...** and then **All changes
-saved**. The saved set is this video's Studio configuration, and it is applied
+saved**. The saved set is this video's Editor configuration, and it is applied
 automatically to every later upload (see [Saved edits vs one-off
 renders](#saved-edits-vs-one-off-renders)).
 
@@ -96,53 +96,53 @@ Pick a language at the top, then choose **Render** to render a new version in
 that language from the same recording. Rendering is per language: switch the
 language and render again to update another localized version.
 
-Studio versions are marked with a **Studio** badge in the version list, and the
+Editor versions are marked with an **Editor** badge in the version list, and the
 version page shows exactly which values were changed compared to the
 code-specified ones.
 
 ## Saved edits vs one-off renders
 
-Studio separates changes that stick from changes that do not:
+Editor separates changes that stick from changes that do not:
 
-- **Saved edits** to studio-declared items (anything wrapped in `studio(...)`:
-  `video.narration(studio([...]))`, `video.values(studio([...]))`,
-  `video.overlays(studio([...]))`, `video.audio(studio([...]))`, plus the
-  `renderOptions: studio()` / `recordOptions: studio()` deferrals) autosave into
-  the video's Studio
+- **Saved edits** to app-editable items (anything wrapped in `editable(...)`:
+  `video.narration(editable([...]))`, `video.values(editable([...]))`,
+  `video.overlays(editable([...]))`, `video.audio(editable([...]))`, plus the
+  `renderOptions: editable()` / `recordOptions: editable()` deferrals) autosave into
+  the video's Editor
   configuration. That configuration is reused automatically on every later
-  upload, so CI keeps rendering with your Studio values instead of the code
+  upload, so CI keeps rendering with your Editor values instead of the code
   defaults. When this happens the CLI prints a line in the upload output, so it
   is visible in CI logs:
 
   ```
-  Studio configuration applied for "Checkout walkthrough".
+  Editor configuration applied for "Checkout walkthrough".
   ```
 
 - **One-off renders** let you change anything, including values defined in code.
   Choose **Create one-off version**, confirm the prompt, edit freely, then
   **Render one-off** to produce a single version. One-off renders are not saved
   and never change what future uploads render. To make a code-defined value
-  editable in the normal, saved flow instead, wrap its names in `studio(...)`
-  (switch `video.narration({...})` to `video.narration(studio([...]))`, and
+  editable in the normal, saved flow instead, wrap its names in `editable(...)`
+  (switch `video.narration({...})` to `video.narration(editable([...]))`, and
   likewise for `values`, `overlays`, or `audio`, or set
-  `use({ renderOptions: studio() })` / `use({ recordOptions: studio() })`).
+  `use({ renderOptions: editable() })` / `use({ recordOptions: editable() })`).
 
 The same idea applies to languages: a
 [one-off language](./languages.md#one-off-languages) adds a single language from
 the web to a code-defined video without changing your code, and CI never
 auto-updates it.
 
-## Studio narration from code
+## Editor narration from code
 
-Wrap an **array of cue names** in `studio([...])` and pass it to
+Wrap an **array of cue names** in `editable([...])` and pass it to
 `video.narration(...)` to declare the cue keys in code while the narration text,
-languages, and voices are configured in Studio. Chain `.languages([...])` to set
+languages, and voices are configured in Editor. Chain `.languages([...])` to set
 the language list, since there is no text in code to infer it from:
 
 ```ts
-import { video, studio } from 'screenci'
+import { video, editable } from 'screenci'
 
-video.narration(studio(['intro', 'checkout', 'outro'])).languages(['en'])(
+video.narration(editable(['intro', 'checkout', 'outro'])).languages(['en'])(
   'Checkout walkthrough',
   async ({ page, narration }) => {
     await narration.intro()
@@ -160,34 +160,34 @@ explicit `start()` and `end()`, and automatic sequencing between consecutive
 cues. TypeScript knows the declared names, so `narration.typo` is a compile
 error.
 
-For each cue, Studio exposes the same voice controls available in code (model
+For each cue, Editor exposes the same voice controls available in code (model
 type, style, accent, and pacing) plus a per-cue volume, alongside the narration
 text and language list.
 
-On the **first upload** of a studio-mode video, rendering is held until
-someone fills in the narration on the Studio page. The CLI prints the hold
-together with a direct link to Studio:
+On the **first upload** of a app-editable video, rendering is held until
+someone fills in the narration on the Editor page. The CLI prints the hold
+together with a direct link to Editor:
 
 ```
-Rendering for "Checkout walkthrough" is on hold. Configure it in Studio:
-https://app.screenci.com/project/<projectId>/video/<videoId>?studio
+Rendering for "Checkout walkthrough" is on hold. Configure it in Editor:
+https://app.screenci.com/project/<projectId>/video/<videoId>?editor
 ```
 
 After the video has been configured once, subsequent uploads reuse the saved
-Studio configuration and render automatically.
+Editor configuration and render automatically.
 
 To start the web app from seed values instead of blank cues, pass an object to
-`studio({...})`. The web app starts from those values but still owns them: once a
-cue is edited in Studio, that Studio value wins and the seed never clobbers it.
+`editable({...})`. The web app starts from those values but still owns them: once a
+cue is edited in Editor, that Editor value wins and the seed never clobbers it.
 The seed object takes the same shapes as a code-owned narration object, either
 content-major (`{ intro: 'Welcome' }`) or language-major
 (`{ en: { intro: 'Welcome' }, fi: { intro: 'Tervetuloa' } }`):
 
 ```ts
-import { video, studio } from 'screenci'
+import { video, editable } from 'screenci'
 
 video.narration(
-  studio({ intro: 'Welcome', checkout: 'Add an item to the cart.' })
+  editable({ intro: 'Welcome', checkout: 'Add an item to the cart.' })
 )('Checkout walkthrough', async ({ page, narration }) => {
   await narration.intro()
   await page.goto('/checkout')
@@ -195,20 +195,20 @@ video.narration(
 })
 ```
 
-Because the seed already carries the narration text, a seeded `studio({...})`
+Because the seed already carries the narration text, a seeded `editable({...})`
 declaration is **not held** on the first upload: it renders straight away from the
-seed, while staying Studio-owned so editors can change it later (a Studio edit
-wins over the seed). A blank `studio([...])` declaration carries no text, so it is
+seed, while staying Editor-owned so editors can change it later (an Editor edit
+wins over the seed). A blank `editable([...])` declaration carries no text, so it is
 still held until someone fills it in. If you want narration that is never
-Studio-owned, define it in code with a plain object, `video.narration({ en: {...} })`.
+Editor-owned, define it in code with a plain object, `video.narration({ en: {...} })`.
 
 To define narration values in code instead, pass a plain object with
 language-code keys: `video.narration({ en: {...}, fi: {...} })`. See
 [Narration](/docs/guides/narration) for the full narration API.
 
-## Narration media from Studio
+## Narration media from Editor
 
-Any editable narration entry in Studio can use an uploaded media file instead
+Any editable narration entry in Editor can use an uploaded media file instead
 of synthesized speech, the web equivalent of a code narration cue's
 `{ media: './intro.mp4' }` entry. Switch a cue's entry from **Text** to
 **Media**, upload an `.mp4` file, and optionally provide a subtitle used for
@@ -216,7 +216,7 @@ captions.
 
 This works per language, so one language can use an uploaded recording while
 the others keep text-to-speech. Entries whose media file is specified in code
-stay read-only in Studio.
+stay read-only in Editor.
 
 ### Media subtitles
 
@@ -226,20 +226,20 @@ file. When you provide one, that text is used instead. Either way, captions are
 timed from the detected speech, so they appear only while the line is actually
 spoken (not during any leading silence or music).
 
-## Studio values from code
+## Editor values from code
 
 On-screen values injected through the `values` fixture can be managed from
-Studio. Wrap an **array of field names** in `studio([...])` to keep the value in
-Studio, or pass a plain object with language-code keys to define the values in
+Editor. Wrap an **array of field names** in `editable([...])` to keep the value in
+Editor, or pass a plain object with language-code keys to define the values in
 code and override them per language on the web. You can also seed the web app by
-passing an object to `studio({...})` (content-major like
+passing an object to `editable({...})` (content-major like
 `{ cta: 'Get started' }`, or language-major like
 `{ en: { cta: 'Get started' }, fi: { cta: 'Aloita' } }`): the web app starts from
 those values but owns them, so a seed is used only until the field is edited in
-Studio.
+Editor.
 
 ```ts
-video.values(studio(['cta'])).values({
+video.values(editable(['cta'])).values({
   en: { heading: 'Dashboard' },
   fi: { heading: 'Hallinta' },
 })('Landing', async ({ page, values }) => {
@@ -248,18 +248,18 @@ video.values(studio(['cta'])).values({
 })
 ```
 
-To seed the web app instead, pass an object to `studio({...})`:
+To seed the web app instead, pass an object to `editable({...})`:
 
 ```ts
-video.values(studio({ cta: 'Get started' }))
+video.values(editable({ cta: 'Get started' }))
 ```
 
 The video's **Values** section lists each declared field; set its value per
-language. A Studio-managed `values` field that has not been set yet is the empty
-string, so the first recording still succeeds and registers the field in Studio.
+language. An Editor-managed `values` field that has not been set yet is the empty
+string, so the first recording still succeeds and registers the field in Editor.
 
 Unlike narration, voices, and overlays (which are applied when a version
-renders), on-screen values are captured into the recording itself. Studio cannot
+renders), on-screen values are captured into the recording itself. Editor cannot
 re-render them: saved values are injected by `screenci record` and take effect
 on the **next recording**, not when you click **Render** and not on a one-off.
 So the flow is: record once (unset fields capture blank), set the copy in the
@@ -270,21 +270,21 @@ links you to connect GitHub first).
 
 See [Values](/docs/guides/values) for the code-side `values` fixture.
 
-## Studio overlays from code
+## Editor overlays from code
 
-Wrap an **array of overlay names** in `studio([...])` and pass it to
+Wrap an **array of overlay names** in `editable([...])` and pass it to
 `video.overlays(...)` to declare the names in code while the files and display
-options are configured in Studio. You can also seed the web app with starting
-files and options by passing an object to `studio({...})` (the same overlay
+options are configured in Editor. You can also seed the web app with starting
+files and options by passing an object to `editable({...})` (the same overlay
 shapes you would define in code, content-major or language-major): the web app
 starts from those values but owns them, so a seed is used only until the overlay
-is edited in Studio. The declared names are exposed through the injected
+is edited in Editor. The declared names are exposed through the injected
 `overlays` fixture:
 
 ```ts
-import { video, studio } from 'screenci'
+import { video, editable } from 'screenci'
 
-video.overlays(studio(['intro', 'logo']))(
+video.overlays(editable(['intro', 'logo']))(
   'Product demo',
   async ({ page, overlays }) => {
     await overlays.intro()
@@ -294,43 +294,43 @@ video.overlays(studio(['intro', 'logo']))(
 )
 ```
 
-To seed the web app instead, pass an object to `studio({...})` (the same overlay
+To seed the web app instead, pass an object to `editable({...})` (the same overlay
 shapes you would define in code):
 
 ```ts
-video.overlays(studio({ logo: { path: 'assets/logo.png', width: 288 } }))
+video.overlays(editable({ logo: { path: 'assets/logo.png', width: 288 } }))
 ```
 
 Calling a controller marks the point in the timeline, exactly like overlays
 whose files are defined in code. The file (`.svg`, `.png`, or `.mp4`),
 full-screen mode, overlay duration for images, and audio level for videos are
-all set on the Studio page. The audio level is a linear-gain slider: `1` (the
+all set on the Editor page. The audio level is a linear-gain slider: `1` (the
 default) plays the video at its natural level, `0` mutes it, and values above
 `1` boost it (up to `4`). Video overlays also have **speed** and **time**
 controls: speed plays the clip faster or slower (a multiplier), and time fits it
 to a target playback duration in ms. Set at most one.
 TypeScript knows the declared names, so `overlays.typo` is a compile error.
 
-Like studio narration, the first upload of a video that declares Studio overlays
-is held until every declared overlay has a file configured in Studio. The CLI
+Like editable narration, the first upload of a video that declares Editor overlays
+is held until every declared overlay has a file configured in Editor. The CLI
 prints a direct link. Later uploads reuse the saved configuration. See
 [Overlays](./overlays.md) for how overlays behave on the timeline.
 
-## Studio audio from code
+## Editor audio from code
 
-Wrap an **array of track names** in `studio([...])` and pass it to
+Wrap an **array of track names** in `editable([...])` and pass it to
 `video.audio(...)` to declare the background-audio names in code while the file,
-volume, and repeat are configured in Studio. You can also seed the web app with
-starting files and options by passing an object to `studio({...})` (the same
+volume, and repeat are configured in Editor. You can also seed the web app with
+starting files and options by passing an object to `editable({...})` (the same
 audio shapes you would define in code, content-major or language-major): the web
 app starts from those values but owns them, so a seed is used only until the
-track is edited in Studio. The declared names are exposed through the injected
+track is edited in Editor. The declared names are exposed through the injected
 `audio` fixture:
 
 ```ts
-import { video, studio } from 'screenci'
+import { video, editable } from 'screenci'
 
-video.audio(studio(['theme', 'sting']))(
+video.audio(editable(['theme', 'sting']))(
   'Product demo',
   async ({ page, audio }) => {
     await audio.theme() // plays under the whole video
@@ -342,17 +342,17 @@ video.audio(studio(['theme', 'sting']))(
 )
 ```
 
-To seed the web app instead, pass an object to `studio({...})` (the same audio
+To seed the web app instead, pass an object to `editable({...})` (the same audio
 shapes you would define in code):
 
 ```ts
-video.audio(studio({ theme: { path: 'assets/bg.mp3', volume: 0.3 } }))
+video.audio(editable({ theme: { path: 'assets/bg.mp3', volume: 0.3 } }))
 ```
 
 Calling a controller marks the point in the timeline, exactly like audio tracks
 whose files are defined in code: a bare call plays from that point to the end of
 the video, while `start()`/`end()` bound the track to a span. The audio file, the
-volume, and whether the track loops to fill its span are all set on the Studio
+volume, and whether the track loops to fill its span are all set on the Editor
 page. The volume is a linear-gain slider: `1` (the default) plays the source at
 its natural level, `0` mutes it, and values above `1` boost it (up to `4`).
 Tracks also have **speed** and **time** controls: speed plays the track faster
@@ -360,53 +360,53 @@ or slower (a multiplier), and time fits it to a target playback duration in ms.
 Set at most one.
 TypeScript knows the declared names, so `audio.typo` is a compile error.
 
-Like studio overlays, the first upload of a video that declares Studio audio is
-held until every declared track has a file configured in Studio. The CLI prints
+Like editable overlays, the first upload of a video that declares Editor audio is
+held until every declared track has a file configured in Editor. The CLI prints
 a direct link. Later uploads reuse the saved configuration. See
 [Background audio](./overlays.md) for how audio behaves on the
 timeline.
 
-## Studio render and record options
+## Editor render and record options
 
 Render and record options follow the same three forms as the feature
-declarations, via `studio()` in `video.use(...)`:
+declarations, via `editable()` in `video.use(...)`:
 
 ```ts
-import { video, studio } from 'screenci'
+import { video, editable } from 'screenci'
 
-// 1. Code-owned (unchanged): Studio shows these read-only.
+// 1. Code-owned (unchanged): Editor shows these read-only.
 video.use({ renderOptions: { recording: { size: 0.85 } } })
 
-// 2. Studio-owned, blank: the web app starts from the system defaults.
-video.use({ renderOptions: studio() })
+// 2. Editor-owned, blank: the web app starts from the system defaults.
+video.use({ renderOptions: editable() })
 
-// 3. Studio-owned, seeded: the web app starts from your values but owns them.
-video.use({ renderOptions: studio({ output: { aspectRatio: '9:16' } }) })
+// 3. Editor-owned, seeded: the web app starts from your values but owns them.
+video.use({ renderOptions: editable({ output: { aspectRatio: '9:16' } }) })
 ```
 
-Use the seeded form to hand the format to Studio starting from your tuned code
-values rather than from system defaults. A Studio edit always wins over the seed.
+Use the seeded form to hand the format to Editor starting from your tuned code
+values rather than from system defaults. An Editor edit always wins over the seed.
 
-Unlike studio narration (where a blank declaration holds the first render until
+Unlike editable narration (where a blank declaration holds the first render until
 someone fills the text), blank render options are **not** held: they fall back to
 the system defaults, which is a valid render. The seed is purely an editing
 starting point, not a way to avoid a blank render.
 
-Set `use({ renderOptions: studio() })` to manage render options from Studio
+Set `use({ renderOptions: editable() })` to manage render options from Editor
 instead of code. Render options are applied when the version renders:
 
 ```ts
 import { video } from 'screenci'
 
-video.use({ renderOptions: studio() })
+video.use({ renderOptions: editable() })
 
 video('Product demo', async ({ page }) => {
   await page.goto('/dashboard')
 })
 ```
 
-Set `use({ recordOptions: studio() })` to defer the record options (aspect
-ratio, quality, fps) to Studio as well. Unlike render options, record options
+Set `use({ recordOptions: editable() })` to defer the record options (aspect
+ratio, quality, fps) to Editor as well. Unlike render options, record options
 change the captured viewport and encode, so they take effect on the **next
 recording**, not when you click **Render**. They are fetched before the recording
 runs and applied to that capture (later uploads reuse the saved values). Like the
@@ -414,23 +414,23 @@ Values section, the Recording options section shows this reminder inline with a
 **Re-record this video** button:
 
 ```ts
-video.use({ renderOptions: studio(), recordOptions: studio() })
+video.use({ renderOptions: editable(), recordOptions: editable() })
 
 video('Product demo', async ({ page }) => {
   await page.goto('/dashboard')
 })
 ```
 
-These deferrals combine with the `studio(...)` declarations and `.each()` like
+These deferrals combine with the `editable(...)` declarations and `.each()` like
 any other per-video configuration. For example, defer the record options while
-handing narration and overlays to Studio:
+handing narration and overlays to Editor:
 
 ```ts
-import { video, studio } from 'screenci'
+import { video, editable } from 'screenci'
 
-video.use({ recordOptions: studio() })
+video.use({ recordOptions: editable() })
 
-video.narration(studio(['intro'])).overlays(studio(['logo']))(
+video.narration(editable(['intro'])).overlays(editable(['logo']))(
   'Product demo',
   async ({ page, narration, overlays }) => {
     await narration.intro()
@@ -440,30 +440,30 @@ video.narration(studio(['intro'])).overlays(studio(['logo']))(
 )
 ```
 
-Until the video is configured in Studio, uploads render with the default options
-(or are held together with studio narration, if both are used).
+Until the video is configured in Editor, uploads render with the default options
+(or are held together with editable narration, if both are used).
 
 The recorded **language set** is managed separately via `video.languages(...)`:
-see [Studio languages from code](#studio-languages-from-code) below. There is no
+see [Editor languages from code](#editor-languages-from-code) below. There is no
 `recordOptions.languages`.
 
-## Studio languages from code
+## Editor languages from code
 
 > **Set `mode`, `locales`, and `browserLocale` correctly in code up front.** When
-> you hand languages to Studio, the web app can add and remove languages, but it
+> you hand languages to Editor, the web app can add and remove languages, but it
 > cannot yet edit `mode`, `locales`, or `browserLocale`. Those fields are seeded
 > from code once and used for every render until web editing of them ships, so
-> give them their final values now (via `studio({ languages, mode, locales,
+> give them their final values now (via `editable({ languages, mode, locales,
 browserLocale })`). Only the language **set** is editable from the web today.
 
-Pass keyless `studio()` to `video.languages(...)` to hand the recorded language
-set to the web app. The **Languages** section on the Studio page shows the
+Pass keyless `editable()` to `video.languages(...)` to hand the recorded language
+set to the web app. The **Languages** section on the Editor page shows the
 current set and lets you add or remove languages:
 
 ```ts
-import { video, studio } from 'screenci'
+import { video, editable } from 'screenci'
 
-video.narration(studio(['intro'])).languages(studio())(
+video.narration(editable(['intro'])).languages(editable())(
   'Product tour',
   async ({ page, narration }) => {
     await narration.intro()
@@ -472,33 +472,33 @@ video.narration(studio(['intro'])).languages(studio())(
 )
 ```
 
-With keyless `studio()`, nothing is seeded, so rendering is held until the web
+With keyless `editable()`, nothing is seeded, so rendering is held until the web
 app selects a language set. To start from an initial set the web app can still
 change, seed it with an array of language codes:
 
 ```ts
-import { video, studio } from 'screenci'
+import { video, editable } from 'screenci'
 
 // Renders en and fi until the web app edits the set.
-video.languages(studio(['en', 'fi']))
+video.languages(editable(['en', 'fi']))
 ```
 
 To seed the capture options too (so the web app starts from them and owns the
-whole config), wrap a config object in `studio({ ... })`:
+whole config), wrap a config object in `editable({ ... })`:
 
 ```ts
 // Web-owned, seeded with the set and shared mode.
-video.languages(studio({ languages: ['en', 'fi'], mode: 'shared' }))
+video.languages(editable({ languages: ['en', 'fi'], mode: 'shared' }))
 ```
 
-The `studio({ ... })` config accepts the same `languages`, `mode`, `locales`, and
+The `editable({ ... })` config accepts the same `languages`, `mode`, `locales`, and
 `browserLocale` fields as the code-owned config form. As noted above, the web app
 can edit the language set but not `mode` / `locales` / `browserLocale` yet, so set
 those to their final values here.
 
 Adding a language triggers a re-record: the Languages section shows a
 **Re-record this video** button that queues a new recording pass from the web
-when the project is connected to GitHub. The new pass reuses the same Studio
+when the project is connected to GitHub. The new pass reuses the same Editor
 narration, overlays, and audio configuration. Removing a language takes effect
 on the next upload without re-recording.
 
@@ -506,18 +506,12 @@ Unlike narration text and overlays (applied at render time), the language set
 changes the captured recording itself, so adding a language always requires a
 new recording pass.
 
-Use `studio()` together with studio-declared narration
-(`video.narration(studio([...]))`) so both the narration content and the language
-set are owned by the web app. Combined with `use({ recordOptions: studio() })`,
+Use `editable()` together with app-editable narration
+(`video.narration(editable([...]))`) so both the narration content and the language
+set are owned by the web app. Combined with `use({ recordOptions: editable() })`,
 the web app controls the full recording configuration.
 
 To fix languages in code instead, pass a plain array
 (`video.languages(['en', 'fi'])`) or a config object. A plain array of codes is a
-code-defined fixed set, not a studio seed, so do not wrap it in `studio()`. See
-[Languages](./languages.md) for the full language API.
-
-## Tier requirements
-
-Studio requires the **Business** tier. Uploads that opt into studio mode from
-code are rejected at upload start on other tiers, and the Studio page shows an
-upgrade prompt instead of the editor.
+code-defined fixed set, not an editable seed, so do not wrap it in `editable()`.
+See [Languages](./languages.md) for the full language API.

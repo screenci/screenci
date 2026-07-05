@@ -1,8 +1,8 @@
 import { ScreenciError } from './errors.js'
 import {
-  isStudioMarker,
-  type StudioNames,
-  type StudioSeeded,
+  isEditableMarker,
+  type EditableNames,
+  type EditableSeeded,
 } from './studio.js'
 import { supportedLanguages, type Lang } from './voices.js'
 
@@ -11,9 +11,9 @@ import { supportedLanguages, type Lang } from './voices.js'
  * `overlays`/`audio` (and the `screenshot` subset). The argument *shape* decides
  * ownership and localization:
  *
- * - **Studio-owned** (`studio(['intro', 'cta'])`): the names are owned by the
+ * - **Editor-owned** (`editable(['intro', 'cta'])`): the names are owned by the
  *   ScreenCI web app. Their content is configured there; code only declares that
- *   they exist. `studio({ intro: 'Hi' })` additionally seeds initial values the
+ *   they exist. `editable({ intro: 'Hi' })` additionally seeds initial values the
  *   web app starts from but may override.
  * - **Content-major object** (`{ intro: 'Hi' }`): a flat `name -> value` map of
  *   code-defined values, shared across every language.
@@ -22,7 +22,7 @@ import { supportedLanguages, type Lang } from './voices.js'
  *   maps `name -> value`; `default` supplies the shared fallback for any name a
  *   language omits.
  *
- * A bare array (`['intro']`) is no longer accepted: wrap it with `studio([...])`.
+ * A bare array (`['intro']`) is no longer accepted: wrap it with `editable([...])`.
  *
  * Disambiguation (see {@link isLanguageKey}): an object is treated as
  * language-major iff *every* top-level key is a supported language code or the
@@ -31,8 +31,8 @@ import { supportedLanguages, type Lang } from './voices.js'
  * {@link normalizeFeature}).
  */
 export type FeatureArg<V> =
-  | StudioNames
-  | StudioSeeded<ContentMajor<V> | LanguageMajor<V>>
+  | EditableNames
+  | EditableSeeded<ContentMajor<V> | LanguageMajor<V>>
   | ContentMajor<V>
   | LanguageMajor<V>
 
@@ -47,7 +47,7 @@ export type LanguageMajor<V> = {
 /**
  * The normalized form every feature collapses to. Both object spellings produce a
  * `shared` map (the all-languages / `default` values) plus a `byLang` overrides
- * map; the array form produces `studioNames` only.
+ * map; the editable name form produces `studioNames` only.
  */
 export type NormalizedFeature<V> = {
   /** All declared content names, in declaration order (studio names for arrays). */
@@ -83,12 +83,12 @@ export function normalizeFeature<V>(
   feature: string,
   arg: FeatureArg<V>
 ): NormalizedFeature<V> {
-  if (isStudioMarker(arg)) {
+  if (isEditableMarker(arg)) {
     if (arg.seed === undefined && arg.names.length === 0) {
       throw new ScreenciError(
-        `${feature}(studio()) needs names: studio() with no keys is only valid ` +
-          `for video.languages(studio()). Pass studio(['name', ...]) to declare ` +
-          `${feature} names, or studio({ name: value }) to also seed them.`
+        `${feature}(editable()) needs names: editable() with no keys is only valid ` +
+          `for video.languages(editable()). Pass editable(['name', ...]) to declare ` +
+          `${feature} names, or editable({ name: value }) to also seed them.`
       )
     }
     if (arg.seed === undefined) {
@@ -104,7 +104,7 @@ export function normalizeFeature<V>(
       }
     }
     // Seeded: normalize the seed object exactly like a code-owned declaration,
-    // then re-tag every resolved name as Studio-owned. The shared/byLang values
+    // then re-tag every resolved name as editor-owned. The shared/byLang values
     // are the web app's starting point; a seed never clobbers a Studio edit.
     const inner = normalizeFeature<V>(feature, arg.seed as FeatureArg<V>)
     return { ...inner, studioNames: inner.names, codeNames: [] }
@@ -112,9 +112,9 @@ export function normalizeFeature<V>(
 
   if (Array.isArray(arg)) {
     throw new ScreenciError(
-      `${feature}([...]) bare arrays are no longer Studio-owned. Wrap the names ` +
-        `with studio([...]) to defer them to the web app, e.g. ` +
-        `video.${feature}(studio(${JSON.stringify(arg)})).`
+      `${feature}([...]) bare arrays are no longer editor-owned. Wrap the names ` +
+        `with editable([...]) to defer them to the web app, e.g. ` +
+        `video.${feature}(editable(${JSON.stringify(arg)})).`
     )
   }
 

@@ -6,7 +6,7 @@ import {
   narrationVoiceConfigFromRenderOptions,
 } from './localizeRuntime.js'
 import { normalizeFeature } from './declare.js'
-import { studio } from './studio.js'
+import { editable } from './studio.js'
 import type { LocalizeNarrationValue } from './localize.js'
 import { setActiveCueRecorder, setSleepFn } from './cue.js'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
@@ -65,12 +65,12 @@ describe('buildValues', () => {
   })
 
   it('returns an empty string per field for unset studio-managed (array) text', () => {
-    const t = text(studio(['heading']))
+    const t = text(editable(['heading']))
     expect(buildValues(t, 'en', null)).toEqual({ heading: '' })
   })
 
   it('falls back to the seed for an unset seeded studio field, but a Studio edit wins', () => {
-    const t = text(studio({ heading: 'Hi' }))
+    const t = text(editable({ heading: 'Hi' }))
     // No override: the seed renders, so the first capture is not blank.
     expect(buildValues(t, 'en', null)).toEqual({ heading: 'Hi' })
     // A Studio edit overrides the seed.
@@ -93,7 +93,7 @@ describe('buildValues', () => {
   })
 
   it('resolves Studio-managed text from overrides', () => {
-    const t = text(studio(['heading']))
+    const t = text(editable(['heading']))
     expect(buildValues(t, 'en', { en: { heading: 'From Studio' } })).toEqual({
       heading: 'From Studio',
     })
@@ -121,7 +121,7 @@ describe('buildValuesDeclaration', () => {
   })
 
   it('declares a studio-managed (array) field with no seed', () => {
-    const t = text(studio(['heading']))
+    const t = text(editable(['heading']))
     expect(buildValuesDeclaration(t, 'en')).toEqual({
       fields: ['heading'],
       studioFields: ['heading'],
@@ -129,9 +129,9 @@ describe('buildValuesDeclaration', () => {
   })
 
   it('declares a seeded studio field in both studioFields and the seed', () => {
-    // studio({...}) is web-owned (studioFields) but carries an initial value so the
+    // editable({...}) is web-owned (studioFields) but carries an initial value so the
     // backend can pre-fill it; a Studio edit later wins over the seed.
-    const t = text(studio({ heading: 'Hi' }))
+    const t = text(editable({ heading: 'Hi' }))
     expect(buildValuesDeclaration(t, 'en')).toEqual({
       fields: ['heading'],
       studioFields: ['heading'],
@@ -165,7 +165,7 @@ describe('buildNarrationMarkers', () => {
   })
 
   it('builds studio (array) narration cues', () => {
-    const markers = buildNarrationMarkers(narr(studio(['alert'])), ['en'])
+    const markers = buildNarrationMarkers(narr(editable(['alert'])), ['en'])
     expect(Object.keys(markers)).toEqual(['alert'])
   })
 
@@ -408,7 +408,7 @@ describe('seeded vs blank studio narration cues', () => {
 
   it('emits seed translations tagged studio (renders from seed, stays web-editable)', async () => {
     const markers = buildNarrationMarkers(
-      narr(studio({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })),
+      narr(editable({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })),
       ['en', 'fi']
     )
     await markers.intro()
@@ -422,7 +422,7 @@ describe('seeded vs blank studio narration cues', () => {
   })
 
   it('emits a text-less studio cue for a blank studio declaration', async () => {
-    const markers = buildNarrationMarkers(narr(studio(['intro'])), ['en'])
+    const markers = buildNarrationMarkers(narr(editable(['intro'])), ['en'])
     await markers.intro()
     expect(cueStarts).toEqual([])
     expect(studioCueStarts).toEqual(['intro'])

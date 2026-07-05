@@ -69,7 +69,7 @@ export type LocalizeVoiceSpec = Partial<Record<Lang, VoiceConfig>>
  *
  * `narration` and `values` are seeded per-language maps (keys must be identical
  * across languages, enforced by TypeScript). Studio-managed cue/field names are
- * declared separately via `studio({...})`. `voice` co-locates per-language
+ * declared separately via `editable({...})`. `voice` co-locates per-language
  * narration voice overrides with the content; the all-languages default comes
  * from `use`.
  */
@@ -78,7 +78,8 @@ export type LocalizeSpec = {
   voice?: LocalizeVoiceSpec
   /**
    * Explicit language set. Required when there are no seeded maps (e.g. every
-   * cue/field is Studio-managed via `video.studio({...})`).
+   * cue/field is app-editable via `video.narration(editable([...]))` /
+   * `video.values(editable([...]))`).
    */
   languages?: readonly string[]
   /** Spoken narration (video only): seeded per-language map. */
@@ -359,7 +360,7 @@ export function normalizeLocalizeSpec(spec: LocalizeSpec): NormalizedLocalize {
 
   if (narration === null && values === null && !hasExplicitLanguages) {
     throw new Error(
-      'localize(): nothing to localize. Provide narration and/or values (seeded maps), or pass `languages: [...]` when every cue/field is Studio-managed via video.studio({...}).'
+      'localize(): nothing to localize. Provide narration and/or values (seeded maps), or pass `languages: [...]` when every cue/field is app-editable via video.narration(editable([...])) / video.values(editable([...])).'
     )
   }
 

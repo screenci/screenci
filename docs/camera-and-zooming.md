@@ -138,25 +138,17 @@ By default [overlays](/docs/guides/overlays) are burned into the scene: when the
 
 ## Recording size
 
-By default the recording fills the output frame ("full screen"). `resizeRecording()` shrinks it to a fraction of the frame so the styled background shows around it, which is useful for a deliberate "step back" moment. `resetRecordingSize()` returns to full screen.
-
 ```ts
-import { resetRecordingSize, resizeRecording, video } from 'screenci'
+import { video } from 'screenci'
 
-video('Pricing overview', async ({ page }) => {
-  await page.goto('/pricing')
-
-  await resizeRecording(0.8)
-  await page.getByRole('button', { name: 'Compare plans' }).click()
-  await page.waitForTimeout(800)
-
-  await resetRecordingSize()
+video.use({
+  renderOptions: {
+    recording: { size: 0.8 },
+  },
 })
 ```
 
-`size` is a `0-1` fraction of the frame: `1` is full screen, `0.8` shows the recording at 80% of the frame, centered. The switch is an instant cut, in effect from the call until `resetRecordingSize()` (or the end of the video). `resetRecordingSize()` is a no-op when the recording is already full screen.
-
-This is the timeline version of the static `recording.size` render option: set `recording.size` in `renderOptions` to start the whole video at a fixed size, or call `resizeRecording()` to change size at a specific beat. The same base size set in `renderOptions` applies until the first `resizeRecording()` call.
+By default the recording fills the output frame ("full screen"). Set `recording.size` in `renderOptions` when the whole video should sit inside the styled background. `size` is a `0-1` fraction of the frame: `1` is full screen, `0.8` shows the recording at 80% of the frame, centered.
 
 Keep size and zoom separate: hold a steady recording size across any `zoomTo()`/`autoZoom()` sequence rather than resizing while the camera is zoomed in.
 

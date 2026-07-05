@@ -11,11 +11,11 @@ An overlay always comes from a **file `path`**, and the extension selects what i
 
 A `.tsx` or `.html` page is rendered to a transparent PNG at recording time and then behaves exactly like an image overlay, or, with `animate: true`, is captured as a transparent animated clip (see [Animated overlays](#animated-overlays)).
 
-Overlays can be owned by code or handed to [Studio](./studio.md) (the web app where non-developers swap the assets); see [the three ways to declare overlays](#three-ways-to-declare-overlays) below.
+Overlays can be owned by code or handed to [Editor](./editor.md) (the web app where non-developers swap the assets); see [the three ways to declare overlays](#three-ways-to-declare-overlays) below.
 
 #### You will learn
 
-- [how to declare overlays (code- or Studio-owned)](#three-ways-to-declare-overlays)
+- [how to declare overlays (code- or Editor-owned)](#three-ways-to-declare-overlays)
 - [how to define overlays](#define-overlays)
 - [how to position and size overlays](#positioning)
 - [how blocking and start/end timing work](#timing-and-control-flow)
@@ -24,7 +24,7 @@ Overlays can be owned by code or handed to [Studio](./studio.md) (the web app wh
 
 ## Three ways to declare overlays
 
-There are three ways to declare overlays. The same three forms apply to [`narration`](./narration.md), [`values`](./values.md), and [`audio`](./audio.md). See the [Studio guide](./studio.md) for how the web editing works.
+There are three ways to declare overlays. The same three forms apply to [`narration`](./narration.md), [`values`](./values.md), and [`audio`](./audio.md). See the [Editor guide](./editor.md) for how the web editing works.
 
 **1. Code-owned.** You point each overlay at a file, element, or config.
 
@@ -32,18 +32,18 @@ There are three ways to declare overlays. The same three forms apply to [`narrat
 video.overlays({ logo: { path: 'assets/logo.png', x: 96, y: 96, width: 288 } })
 ```
 
-**2. Studio-owned (blank).** Wrap the overlay names in `studio([...])`: the names exist in code (so the body can call `overlays.logo`), but [Studio](./studio.md) owns the files and display options.
+**2. Editor-owned (blank).** Wrap the overlay names in `editable([...])`: the names exist in code (so the body can call `overlays.logo`), but [Editor](./editor.md) owns the files and display options.
 
 ```ts
-import { video, studio } from 'screenci'
+import { video, editable } from 'screenci'
 
-video.overlays(studio(['intro', 'logo']))
+video.overlays(editable(['intro', 'logo']))
 ```
 
-**3. Studio-owned (seeded).** Pass overlays to `studio({...})`: Studio starts from them but owns them, so an edit in Studio always wins over the seed.
+**3. Editor-owned (seeded).** Pass overlays to `editable({...})`: Editor starts from them but owns them, so an edit in Editor always wins over the seed.
 
 ```ts
-video.overlays(studio({ logo: { path: 'assets/logo.png', width: 288 } }))
+video.overlays(editable({ logo: { path: 'assets/logo.png', width: 288 } }))
 ```
 
 ## Define overlays
@@ -83,15 +83,15 @@ delivered to the body through the injected `overlays` fixture. The same pattern
 works for screenshots:
 `screenshot.overlays({...})('Title', async ({ page, crop, overlays }) => {...})`.
 
-On the Business tier you can also declare overlay names by wrapping them in
-`studio([...])` (imported from `screenci`) and upload the files plus display
-options on the Studio page instead of keeping them in the repository:
-`video.overlays(studio(['intro', 'logo']))`. This form leaves the file and
+You can also declare overlay names by wrapping them in `editable([...])`
+(imported from `screenci`) and upload the files plus display options on the
+Editor page instead of keeping them in the repository:
+`video.overlays(editable(['intro', 'logo']))`. This form leaves the file and
 placement for each name configured in the ScreenCI web app. You can also seed the
-web app with starting files and options by passing an object to `studio({...})`:
+web app with starting files and options by passing an object to `editable({...})`:
 the web app starts from those values but owns them, so a seed is used only until
-the overlay is edited in Studio. See
-[Studio](./studio.md#studio-overlays-from-code).
+the overlay is edited in Editor. See
+[Editor](./editor.md#editor-overlays-from-code).
 
 For per-language overlay files (e.g. a translated badge image), see
 [Languages](/docs/guides/languages).

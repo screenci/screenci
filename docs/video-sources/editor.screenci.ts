@@ -10,33 +10,33 @@ video.use({
 
 const appUrl = process.env.SCREENCI_APP_URL ?? 'https://app.screenci.com/'
 
-// Studio walkthrough recorded against the ScreenCI app (app.screenci.com), for
-// the "Remix in Studio on the web" tile on the landing page. Studio lives behind
-// auth, so recording this needs a logged-in session: set SCREENCI_APP_STORAGE_STATE
+// Editor walkthrough recorded against the ScreenCI app (app.screenci.com). The
+// Editor requires a logged-in session to record: set SCREENCI_APP_STORAGE_STATE
 // to a Playwright storageState JSON (see screenci.config.ts). The walkthrough is
-// self-contained: it opens the first project and video, then enters Studio.
+// self-contained: it opens the first project and video, then enters Editor.
 video.narration({
   en: {
-    intro: 'Open any finished video in Studio to edit it right in the browser.',
-    edit: 'Review render options in the Studio panel, then render a new version. No code, no re-recording.',
+    intro:
+      'Open any finished video in the web editor to change it right in the browser.',
+    edit: 'Review render options in the Editor, then render a new version. No code, no re-recording.',
   },
   es: {
     intro:
-      'Abre cualquier video terminado en Studio para editarlo directamente en el navegador.',
-    edit: 'Revisa las opciones de render en el panel de Studio y genera una nueva version. Sin codigo y sin volver a grabar.',
+      'Abre cualquier video terminado en el editor web para editarlo directamente en el navegador.',
+    edit: 'Revisa las opciones de render en el Editor y genera una nueva version. Sin codigo y sin volver a grabar.',
   },
-})('Studio web editing', async ({ page, narration }) => {
-  // Studio lives behind auth, so this recording only works with a logged-in
+})('Editor web editing', async ({ page, narration }) => {
+  // The Editor requires auth, so this recording only works with a logged-in
   // session (SCREENCI_APP_STORAGE_STATE, see screenci.config.ts). When it is not
-  // configured (e.g. CI without the session secret), skip instead of timing out
-  // on the login page.
+  // configured (e.g. CI without the session secret), fail before timing out on
+  // the login page.
   if (!process.env.SCREENCI_APP_STORAGE_STATE) {
     throw new Error(
       'Not logged in. Record via `scripts/screenci.sh docs <env> record` (it signs in first), or set SCREENCI_APP_STORAGE_STATE to a Playwright storageState.'
     )
   }
 
-  // Navigate from the dashboard into Studio without showing it in the recording.
+  // Navigate from the dashboard into Editor without showing it in the recording.
   await hide(async () => {
     await page.goto(appUrl)
     await page.waitForLoadState('networkidle')
@@ -46,7 +46,7 @@ video.narration({
       .waitFor({ timeout: 30000 })
     await page.getByTestId('projects-list').getByRole('link').first().click()
 
-    // Open the first video, then its first language page where Studio is shown
+    // Open the first video, then its first language page where Editor is shown
     // inline below the preview.
     await page.locator('a[href*="/video/"]').first().click()
     await page
@@ -57,16 +57,16 @@ video.narration({
       .first()
       .click()
     await page
-      .getByRole('heading', { name: /^studio$/i })
+      .getByRole('heading', { name: /^editor$/i })
       .waitFor({ timeout: 30000 })
   })
 
   await narration.intro()
 
-  // Show the Studio panel without depending on a specific video having editable
+  // Show the Editor panel without depending on a specific video having editable
   // narration cues in the seeded dev data.
   await narration.edit.start()
-  await zoomTo(page.getByRole('heading', { name: /^studio$/i }))
+  await zoomTo(page.getByRole('heading', { name: /^editor$/i }))
   await page.waitForTimeout(900)
   await resetZoom()
   await narration.edit.end()

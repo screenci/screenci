@@ -19,11 +19,11 @@ import {
   type NormalizedFeature,
 } from './declare.js'
 import {
-  STUDIO,
-  isStudioMarker,
-  type StudioNames,
-  type StudioPending,
-  type StudioSeeded,
+  EDITABLE,
+  isEditableMarker,
+  type EditableNames,
+  type EditablePending,
+  type EditableSeeded,
 } from './studio.js'
 
 /**
@@ -48,12 +48,12 @@ export type LocalizeMode = 'shared' | 'per-language'
  * drives the registration-time fan-out (one Playwright test per language), so it
  * lives on a builder method rather than in `recordOptions` (a run-time option).
  *
- * `languages` may be `'studio'` (set via `video.languages(studio())`), meaning the
+ * `languages` may be `'studio'` (set via `video.languages(editable())`), meaning the
  * set is owned by the ScreenCI web app and injected at record time through the same
  * channel as `--languages`. When the web has selected none yet and there is no
  * `studioSeed`, the set is empty and the render stays pending (the recording still
  * runs so its declared schema reaches the backend to be filled). A `studioSeed`
- * (from `video.languages(studio(['en', 'fi']))`) supplies the initial set the web
+ * (from `video.languages(editable(['en', 'fi']))`) supplies the initial set the web
  * app starts from but may change.
  */
 export type RecordingLocalize = {
@@ -61,14 +61,14 @@ export type RecordingLocalize = {
   mode?: LocalizeMode
   locales?: Partial<Record<Lang, string>>
   browserLocale?: boolean
-  /** Initial web-owned set when `languages === 'studio'` (`studio(['en', ...])`). */
+  /** Initial web-owned set when `languages === 'studio'` (`editable(['en', ...])`). */
   studioSeed?: readonly Lang[]
 }
 
 /**
  * The capture config for `video.languages(...)`. Code-owns the set when passed
  * directly; the web app owns it (and may edit these fields later) when wrapped in
- * `studio({ ... })`. `languages` may be omitted to infer the set from the
+ * `editable({ ... })`. `languages` may be omitted to infer the set from the
  * per-feature keys (e.g. `narration({ en, fi })`), the usual pairing with
  * `mode: 'shared'`.
  */
@@ -83,23 +83,23 @@ export type LanguagesConfig = {
  * The argument accepted by `video.languages(...)`:
  *
  * - `['en', 'fi']` or `{ languages, mode, ... }`: code owns the config.
- * - `studio()`: the web app owns the set (nothing seeded, render pending).
- * - `studio(['en', 'fi'])`: the web app owns the set, seeded with these languages.
- * - `studio({ languages, mode, ... })`: the web app owns the whole config, seeded
+ * - `editable()`: the web app owns the set (nothing seeded, render pending).
+ * - `editable(['en', 'fi'])`: the web app owns the set, seeded with these languages.
+ * - `editable({ languages, mode, ... })`: the web app owns the whole config, seeded
  *   with these values (it can edit the set, and later the mode/locales, from the
  *   web).
  */
 export type LanguagesArg =
-  | StudioPending
-  | StudioNames
-  | StudioSeeded<LanguagesConfig>
+  | EditablePending
+  | EditableNames
+  | EditableSeeded<LanguagesConfig>
   | readonly Lang[]
   | LanguagesConfig
 
 function normalizeLanguagesArg(arg: LanguagesArg): RecordingLocalize {
-  if (isStudioMarker(arg)) {
-    // `studio({ languages, mode, ... })`: the seed is a whole config the web app
-    // starts from and owns. `studio()` / `studio(['en', ...])`: the names are the
+  if (isEditableMarker(arg)) {
+    // `editable({ languages, mode, ... })`: the seed is a whole config the web app
+    // starts from and owns. `editable()` / `editable(['en', ...])`: the names are the
     // seed languages (empty => pending until the web selects a set).
     const cfg = (arg.seed as LanguagesConfig | undefined) ?? {
       languages: arg.names as readonly Lang[],
@@ -160,9 +160,9 @@ export type ResolvedRecordingLocalize = {
   mode: LocalizeMode
   browserLocale: boolean
   locales?: Partial<Record<Lang, string>>
-  /** Whether the set is owned by the web app (`video.languages(studio())`). */
+  /** Whether the set is owned by the web app (`video.languages(editable())`). */
   studioOwned: boolean
-  /** Studio-owned set with nothing selected yet: record for metadata, do not render. */
+  /** Web-owned set with nothing selected yet: record for metadata, do not render. */
   pending: boolean
   /**
    * Whether the languages were explicitly declared (via `video.languages(...)`,
@@ -195,9 +195,9 @@ function featureLanguages(state: BuilderState): string[] {
 
 /**
  * Resolve the recorded language set at registration time. Priority:
- * 1. `video.languages(studio())` -> web-owned: the UNION of the web's current
+ * 1. `video.languages(editable())` -> web-owned: the UNION of the web's current
  *    selection (`requestedLanguages`, injected at record time), the `studioSeed`
- *    (`studio(['en', ...])`), and the per-feature language keys defined in code.
+ *    (`editable(['en', ...])`), and the per-feature language keys defined in code.
  *    Empty (none anywhere) => pending.
  * 2. explicit `video.languages([...])`.
  * 3. union of per-feature language keys (e.g. `narration({ fr })` -> French).
@@ -217,7 +217,7 @@ export function resolveRecordingLocalize(
   if (rl?.languages === 'studio') {
     // The web app owns the set, but the recorded languages are the union of:
     // the web's current selection (`requestedLanguages`, fetched/injected at
-    // record time), the code seed (`studio(['en', ...])`), and the per-feature
+    // record time), the code seed (`editable(['en', ...])`), and the per-feature
     // languages defined in code (e.g. `narration({ en, fi })`). So a studio-owned
     // video still records every language its code defines, plus whatever the web
     // added, even on the first run before anything is configured in the web.
@@ -317,7 +317,7 @@ function warnUnusedLanguages(
  * - `'shared'` mode yields one test carrying every language (overdubbed at
  *   render); the `--languages` filter does not split a shared recording.
  * - `'per-language'` mode yields one test per resolved language.
- * - A studio-owned set with nothing selected yet yields one pending test that
+ * - A web-owned set with nothing selected yet yields one pending test that
  *   records (so its schema reaches the backend) but renders nothing.
  */
 export function expandRegistrations(params: {
@@ -524,7 +524,7 @@ type UnionToIntersection<U> = (
 
 /**
  * The content names declared by a {@link FeatureArg}. For a Studio marker
- * (`studio([...])`/`studio({...})`) the declared names (or the seed's names); for
+ * (`editable([...])`/`editable({...})`) the declared names (or the seed's names); for
  * objects, the union of content-major top-level keys (those that are not language
  * codes or `default`) and the language-major inner keys.
  */
@@ -539,16 +539,16 @@ type LangMajorNamesOf<A> = NonNullable<
 >
 
 /** Names declared by a Studio marker's `names` tuple. */
-type StudioNamesOf<A> = A extends { readonly names: infer N }
+type EditableNamesOf<A> = A extends { readonly names: infer N }
   ? N extends readonly string[]
     ? N[number]
     : never
   : never
 
-export type FeatureNamesOf<A> = A extends { readonly [STUDIO]: true }
+export type FeatureNamesOf<A> = A extends { readonly [EDITABLE]: true }
   ? A extends { readonly seed: infer S }
     ? FeatureNamesOf<S>
-    : StudioNamesOf<A>
+    : EditableNamesOf<A>
   : A extends object
     ? Extract<Exclude<keyof A, LangKey>, string> | LangMajorNamesOf<A>
     : never
@@ -568,9 +568,9 @@ export type FeatureNamesOf<A> = A extends { readonly [STUDIO]: true }
  * inference adds to the source literal, so the resolved value type stays
  * identical to the old `Record` form (only navigability is gained).
  *
- * The blank Studio form (`studio([...])`) has no declaring object in code (its
+ * The blank Studio form (`editable([...])`) has no declaring object in code (its
  * content lives in the web app), so it keeps the plain `Record` mapping and is not
- * navigable. A seeded Studio form (`studio({...})`) recurses into its seed object,
+ * navigable. A seeded Studio form (`editable({...})`) recurses into its seed object,
  * so it stays navigable like the content-major form.
  */
 type ContentMajorControllers<A, V> = {
@@ -587,10 +587,10 @@ type LangMajorControllers<A, V> = UnionToIntersection<
   }[Extract<keyof A, LangKey>]
 >
 
-type FeatureControllers<A, V> = A extends { readonly [STUDIO]: true }
+type FeatureControllers<A, V> = A extends { readonly [EDITABLE]: true }
   ? A extends { readonly seed: infer S }
     ? FeatureControllers<S, V>
-    : Record<StudioNamesOf<A>, V>
+    : Record<EditableNamesOf<A>, V>
   : [Extract<Exclude<keyof A, LangKey>, string>] extends [never]
     ? LangMajorControllers<A, V>
     : ContentMajorControllers<A, V>
@@ -618,10 +618,10 @@ type OverlayLangMajorControllers<A> = UnionToIntersection<
   }[Extract<keyof A, LangKey>]
 >
 
-type OverlayControllers<A> = A extends { readonly [STUDIO]: true }
+type OverlayControllers<A> = A extends { readonly [EDITABLE]: true }
   ? A extends { readonly seed: infer S }
     ? OverlayControllers<S>
-    : Record<StudioNamesOf<A>, OverlayController>
+    : Record<EditableNamesOf<A>, OverlayController>
   : [Extract<Exclude<keyof A, LangKey>, string>] extends [never]
     ? OverlayLangMajorControllers<A>
     : OverlayContentMajorControllers<A>
@@ -678,7 +678,7 @@ export interface MediaBuilder<Args, O = object> extends BuilderTerminal<
   Args,
   O
 > {
-  /** Declare narration cues: Studio-owned (`studio([...])`) or code values (object). */
+  /** Declare narration cues: editor-owned (`editable([...])`) or code values (object). */
   narration<const A extends FeatureArg<LocalizeNarrationValue>>(
     arg: A
   ): MediaBuilder<Args, O & NarrationOverrideFor<Args, A>>

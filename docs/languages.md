@@ -227,16 +227,15 @@ A localized video builder supports the usual run modifiers, chained before the
 call: `.only(...)`, `.skip`, `.fixme`, and `.fail`. The in-body conditional
 `video.skip(condition, reason)` still exists separately for skipping mid-test.
 
-## Managing languages from Studio
+## Managing languages from Editor
 
-Pass keyless `studio()` to `video.languages(...)` to let the web app own the
-recorded language set. This is a Business tier feature managed on the Studio
-page.
+Pass keyless `editable()` to `video.languages(...)` to let the web app own the
+recorded language set.
 
 ```ts
-import { video, studio } from 'screenci'
+import { video, editable } from 'screenci'
 
-video.narration(studio(['intro'])).languages(studio())(
+video.narration(editable(['intro'])).languages(editable())(
   'Product tour',
   async ({ page, narration }) => {
     await narration.intro()
@@ -245,18 +244,18 @@ video.narration(studio(['intro'])).languages(studio())(
 )
 ```
 
-With keyless `studio()`, nothing is seeded, so rendering is held until the web
+With keyless `editable()`, nothing is seeded, so rendering is held until the web
 app selects a language set. To start from an initial set the web app can still
-change, seed it: `video.languages(studio(['en', 'fi']))` renders en and fi until
+change, seed it: `video.languages(editable(['en', 'fi']))` renders en and fi until
 the web app edits the set. To seed the capture options too, wrap a config in
-`studio({ ... })`, for example
-`video.languages(studio({ languages: ['en', 'fi'], mode: 'shared' }))`.
+`editable({ ... })`, for example
+`video.languages(editable({ languages: ['en', 'fi'], mode: 'shared' }))`.
 
 The web app can edit the language **set** but not `mode`, `locales`, or
 `browserLocale` yet, so set those to their final values in code up front: they are
 seeded once and used for every render until web editing of them ships.
 
-The **Languages** section on the Studio page lists the current languages and
+The **Languages** section on the Editor page lists the current languages and
 lets you add or remove them. Adding a language opens a short guided setup: fill
 in that language's narration (a checklist tracks what is still missing), then
 render. The render reuses the existing capture with the new narration, so you do
@@ -266,28 +265,28 @@ On-screen text **values** for a newly added language start as a read-only copy
 of an existing language (English if present, otherwise the first alphabetically)
 because text is captured while the video records, not at render time. To
 localize that text, edit the values and re-record the language version once it
-exists. The re-record reuses the same Studio narration, overlays, and audio
+exists. The re-record reuses the same Editor narration, overlays, and audio
 configuration, and runs from the web when the project is connected to GitHub.
 
-Adding languages from the web requires `video.languages(studio())` (or a seeded
-`video.languages(studio(['en', 'fi']))`): a code-defined language set (a plain
+Adding languages from the web requires `video.languages(editable())` (or a seeded
+`video.languages(editable(['en', 'fi']))`): a code-defined language set (a plain
 array or config object, as shown in the sections above) is fixed by your test
 code. To add an ad-hoc language to a code-defined video from the web without
-changing your code, use a one-off language (below). See [Studio](./studio.md) for
-the full Studio guide.
+changing your code, use a one-off language (below). See [Editor](./editor.md) for
+the full Editor guide.
 
 ## One-off languages
 
 When a video's languages are defined in code (a plain array or config object,
-not `studio()`), you can still add a single language from the web as a **one-off
+not `editable()`), you can still add a single language from the web as a **one-off
 language**. It renders and serves like any other language version, but it is not
 part of your code, so re-recording in CI never updates it automatically. This
-mirrors a Studio [one-off version](./studio.md#saved-edits-vs-one-off-renders),
-but at the language level. One-off languages are a Business tier feature.
+mirrors an Editor [one-off version](./editor.md#saved-edits-vs-one-off-renders),
+but at the language level.
 
 On the video's page, use the **Add a one-off language** picker in the Language
 versions section (it also works for screenshots). Picking a language opens that
-language's page with the same guided setup as a Studio-managed language: fill in
+language's page with the same guided setup as an Editor-managed language: fill in
 its narration (auto-translated from an existing language, with a checklist for
 what is still missing), then render. The render reuses the existing capture with
 the new narration, so you do not have to re-record.
@@ -300,7 +299,7 @@ again from its page.
 
 To make a one-off language permanent (so CI keeps it up to date), add it to your
 code: either list it in `video.languages([...])` or switch the video to
-`video.languages(studio())` to manage the whole set from the web.
+`video.languages(editable())` to manage the whole set from the web.
 
 ## Available languages
 

@@ -20,7 +20,7 @@ re-recording.
 
 A version is one finished render of a video: the encoded media, its thumbnail,
 and the exact render options, narration, and overlays used to produce it. Because
-each render is preserved, you can change something in Studio, render again, and
+each render is preserved, you can change something in Editor, render again, and
 still fall back to the previous look if you prefer it.
 
 Versions are tracked **per language**: an English render and a German render of

@@ -193,7 +193,7 @@ describe('createNarration type constraints', () => {
 
 describe('buildStudioNarrationCues type constraints', () => {
   // Studio-managed narration names are typed to the exact names by the
-  // `video.studio({ narration: [...] })` builder (see index.test-d.ts). The
+  // `video.narration(editable([...]))` builder (see index.test-d.ts). The
   // internal helper returns a generic record of NarrationCue controllers.
   it('returns a record of NarrationCue controllers', () => {
     const narration = buildStudioNarrationCues(['intro', 'checkout', 'outro'])

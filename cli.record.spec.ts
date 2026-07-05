@@ -817,7 +817,7 @@ describe('CLI', () => {
       ])
     })
 
-    it('prints the result URL and an upgrade mention after a successful record', async () => {
+    it('prints the result URL without an upgrade mention for free plans', async () => {
       process.argv = [
         'node',
         'cli.js',
@@ -854,6 +854,7 @@ describe('CLI', () => {
             json: vi.fn().mockResolvedValue({
               recordingId: 'recording_123',
               projectId: 'project_123',
+              plan: 'free',
             }),
             text: vi.fn().mockResolvedValue(''),
           }
@@ -880,8 +881,11 @@ describe('CLI', () => {
       expect(messages).toContain(
         'Recording finished, rendering in progress. Results available at:'
       )
+      expect(
+        messages.some((message) => message.includes('ScreenCI watermark'))
+      ).toBe(false)
       expect(messages.some((message) => message.includes('/select-plan'))).toBe(
-        true
+        false
       )
     })
 
@@ -1152,7 +1156,7 @@ describe('CLI', () => {
 
       expect(
         formatStudioUrl('https://app.screenci.test', 'project_1', 'video_2')
-      ).toBe('https://app.screenci.test/project/project_1/video/video_2?studio')
+      ).toBe('https://app.screenci.test/project/project_1/video/video_2?editor')
     })
 
     it('never forwards an ElevenLabs key: the key lives only in the app now', async () => {

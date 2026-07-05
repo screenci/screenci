@@ -10,6 +10,7 @@ import {
   checkAnonSessionStatus,
   deleteAnonSessionFile,
   evaluateAnonRecordingGate,
+  formatAnonRecordingsLeft,
   formatAnonTermsNotice,
   getOrCreateAnonToken,
   readAnonSessionRecordUrl,
@@ -70,7 +71,7 @@ describe('getOrCreateAnonToken', () => {
 })
 
 describe('checkAnonSessionStatus', () => {
-  it('returns pending (unused) when the server reports pending with no usage', async () => {
+  it('returns pending with the full allowance when the server reports pending with no usage', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       json: async () => ({ status: 'pending' }),
     })
@@ -78,7 +79,7 @@ describe('checkAnonSessionStatus', () => {
       fetchImpl: fetchImpl as unknown as typeof fetch,
       backendUrl: 'https://api.example.com',
     })
-    expect(result).toEqual({ status: 'pending', used: false })
+    expect(result).toEqual({ status: 'pending', used: false, remaining: 3 })
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://api.example.com/cli/anon-session-status',
       expect.objectContaining({
@@ -88,14 +89,24 @@ describe('checkAnonSessionStatus', () => {
     )
   })
 
-  it('carries used:true when the pending session already spent its trial', async () => {
+  it('carries the remaining recording count the server reports', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
-      json: async () => ({ status: 'pending', used: true }),
+      json: async () => ({ status: 'pending', used: false, remaining: 1 }),
     })
     const result = await checkAnonSessionStatus('token-a', {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })
-    expect(result).toEqual({ status: 'pending', used: true })
+    expect(result).toEqual({ status: 'pending', used: false, remaining: 1 })
+  })
+
+  it('carries used:true (0 remaining) when the pending session spent its trial', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      json: async () => ({ status: 'pending', used: true, remaining: 0 }),
+    })
+    const result = await checkAnonSessionStatus('token-a', {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    })
+    expect(result).toEqual({ status: 'pending', used: true, remaining: 0 })
   })
 
   it('returns claimed with the secret when the server reports claimed', async () => {
@@ -115,7 +126,7 @@ describe('checkAnonSessionStatus', () => {
     const result = await checkAnonSessionStatus('token-a', {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })
-    expect(result).toEqual({ status: 'pending', used: false })
+    expect(result).toEqual({ status: 'pending', used: false, remaining: 3 })
   })
 
   it('returns expired when the server reports expired', async () => {
@@ -143,7 +154,7 @@ describe('checkAnonSessionStatus', () => {
     const result = await checkAnonSessionStatus('token-a', {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })
-    expect(result).toEqual({ status: 'pending', used: false })
+    expect(result).toEqual({ status: 'pending', used: false, remaining: 3 })
   })
 })
 
@@ -156,13 +167,17 @@ describe('evaluateAnonRecordingGate', () => {
 
   it('allows a pending session that has not spent its trial', () => {
     expect(
-      evaluateAnonRecordingGate({ status: 'pending', used: false })
+      evaluateAnonRecordingGate({
+        status: 'pending',
+        used: false,
+        remaining: 2,
+      })
     ).toEqual({ allowed: true })
   })
 
-  it('blocks a pending session that already spent its one free trial', () => {
+  it('blocks a pending session that has spent all its free trial recordings', () => {
     expect(
-      evaluateAnonRecordingGate({ status: 'pending', used: true })
+      evaluateAnonRecordingGate({ status: 'pending', used: true, remaining: 0 })
     ).toEqual({ allowed: false, reason: 'used' })
   })
 
@@ -177,6 +192,22 @@ describe('evaluateAnonRecordingGate', () => {
     expect(
       evaluateAnonRecordingGate({ status: 'claimed', secret: 'sec_1' })
     ).toEqual({ allowed: true })
+  })
+})
+
+describe('formatAnonRecordingsLeft', () => {
+  it('pluralizes multiple remaining recordings', () => {
+    expect(formatAnonRecordingsLeft(3)).toContain(
+      '3 free trial recordings left'
+    )
+  })
+
+  it('uses the singular for exactly one remaining recording', () => {
+    expect(formatAnonRecordingsLeft(1)).toContain('1 free trial recording left')
+  })
+
+  it('reports the last recording being spent', () => {
+    expect(formatAnonRecordingsLeft(0)).toContain('last free trial recording')
   })
 })
 

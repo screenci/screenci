@@ -121,7 +121,7 @@ To upload straight to an existing organization, get `SCREENCI_SECRET` into `scre
 1. **Pass it to init:** `npm init screenci@latest <SCREENCI_SECRET> -- --yes` writes it into `screenci/.env`.
 2. **Secrets page:** ask the user to copy `SCREENCI_SECRET` from their secrets page into `screenci/.env`. The org secret is shared across projects. Keep building and testing while they do it; only `record` needs it.
 
-Renders without an account, and renders on the free tier, include a ScreenCI watermark. Mention that signing up (or upgrading) removes it.
+Renders without an account, and renders on the free tier, include a ScreenCI watermark. Do not add a separate upgrade upsell after `record`; report the result URL unless the user asks about plans or watermark removal.
 
 ## Recording Workflow
 

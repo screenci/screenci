@@ -67,6 +67,7 @@ import {
   checkAnonSessionStatus,
   deleteAnonSessionFile,
   evaluateAnonRecordingGate,
+  formatAnonRecordingsLeft,
   formatAnonTermsNotice,
   getOrCreateAnonToken,
   readAnonSessionRecordUrl,
@@ -421,9 +422,9 @@ export function formatStudioUrl(
   projectId: string,
   videoId: string
 ): string {
-  // The video hub resolves `?studio` to the right language page and scrolls it
-  // to Studio, so we never need to guess the language in the printed link.
-  return `${appUrl}/project/${projectId}/video/${videoId}?studio`
+  // The video hub resolves `?editor` to the right language page and scrolls it
+  // to Editor, so we never need to guess the language in the printed link.
+  return `${appUrl}/project/${projectId}/video/${videoId}?editor`
 }
 
 type OrgPlan = 'free' | 'starter' | 'business'
@@ -2876,7 +2877,7 @@ export async function ensureAnonRecordingAllowedOrExit(
     // upload. Skip a `claimed` session: that user already accepted the
     // versioned Terms when they signed up (the upload path self-upgrades).
     if (status.status !== 'claimed') {
-      logger.info(pc.cyan(formatAnonTermsNotice()))
+      logger.info(formatAnonTermsNotice())
     }
     return
   }
@@ -2884,7 +2885,7 @@ export async function ensureAnonRecordingAllowedOrExit(
   const intro =
     gate.reason === 'expired'
       ? 'Your free ScreenCI trial has expired.'
-      : "You've already used your one free ScreenCI trial recording."
+      : "You've used all your free ScreenCI trial recordings."
   const previousRecordUrl =
     gate.reason === 'used' ? await readAnonSessionRecordUrl(screenciDir) : null
   logger.error(
@@ -3058,6 +3059,15 @@ async function uploadRecordedVideosForConfig(
           )
         }
         logger.info(`Recorded without an account. Sign up to keep it.`)
+        // Report how many trial recordings remain after this run. Best-effort:
+        // checkAnonSessionStatus never throws (it falls back on failure), so a
+        // transient outage just shows the optimistic remaining count.
+        const postStatus = await checkAnonSessionStatus(credential.value, {
+          backendUrl: apiUrl,
+        })
+        if (postStatus.status === 'pending') {
+          logger.info(formatAnonRecordingsLeft(postStatus.remaining))
+        }
       }
       if (notices.length > 0) {
         logger.info('')
@@ -3065,17 +3075,11 @@ async function uploadRecordedVideosForConfig(
           logger.notice(notice)
         }
       }
-      if (projectId !== null && plan !== 'business') {
+      if (projectId !== null && plan === 'starter') {
         logger.info('')
-        if (plan === 'free') {
-          logger.info(
-            'You are on the free tier, so this render includes a ScreenCI watermark. Upgrade to remove it and get more renders, more active videos, and expressive narration:'
-          )
-        } else {
-          logger.info(
-            'Upgrade for more renders, more active videos, and expressive narration:'
-          )
-        }
+        logger.info(
+          'Upgrade for more renders, more active videos, and expressive narration:'
+        )
         logger.info(pc.cyan(`${appUrl}/select-plan`))
       }
       for (const notice of studioNotices) {

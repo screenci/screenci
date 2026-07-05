@@ -15,6 +15,7 @@ refine the script structure and ScreenCI-specific APIs.
 - [how to generate a first draft with codegen](#generate-a-first-draft-with-codegen)
 - [how a ScreenCI video differs from a Playwright test](#screenci-video-vs-playwright-test)
 - [how to configure ScreenCI](#configure-screenci)
+- [how to mock API requests safely in SPAs](#mock-api-requests-in-spas)
 - [which core ScreenCI APIs to use](#core-screenci-apis)
 
 ## Generate a first draft with codegen
@@ -99,6 +100,41 @@ export default defineConfig({
 ```
 
 See [Configuration](/docs/reference/configuration).
+
+## Mock API requests in SPAs
+
+When a video mocks API calls with `page.route()`, prefer exact API URLs or
+absolute URL prefixes instead of broad globs. In Vite and other SPA dev servers,
+module files are also normal browser requests; a broad route can accidentally
+match `/src/...` module URLs and fulfill them with JSON, leaving React with an
+empty root and little browser output.
+
+```ts
+const apiBase = 'http://localhost:5173/api'
+
+await page.route(`${apiBase}/recipes`, async (route) => {
+  await route.fulfill({
+    json: [{ id: 'pasta', name: 'Pasta' }],
+  })
+})
+```
+
+If you must use a broad matcher, let non-API browser resources continue:
+
+```ts
+await page.route('**/*recipes*', async (route, request) => {
+  if (request.resourceType() !== 'fetch' && request.resourceType() !== 'xhr') {
+    await route.fallback()
+    return
+  }
+
+  await route.fulfill({ json: [{ id: 'pasta', name: 'Pasta' }] })
+})
+```
+
+ScreenCI also fails fast if a route fulfills a document, stylesheet, or script
+request with the wrong content type, which usually means a mock intended for an
+API endpoint intercepted an app asset.
 
 ## Core ScreenCI APIs
 
@@ -233,9 +269,9 @@ only), `values` field values, `overlays` controllers, and the active `language`.
   per-language narration
 - a flat object of cue name to text (for example `{ intro: 'Hi' }`) = shared
   across all languages
-- `studio([...])` with cue names (for example `studio(['intro'])`) = name-only
-  cues where Studio (the web editor) owns the text. Pass an object to
-  `studio({...})` instead to seed Studio with starting text it then owns.
+- `editable([...])` with cue names (for example `editable(['intro'])`) = name-only
+  cues where Editor (the web editor) owns the text. Pass an object to
+  `editable({...})` instead to seed Editor with starting text it then owns.
 
 Other parts of the spec:
 
@@ -279,7 +315,7 @@ control, makes revisions less brittle, and should save API cost when a TTS
 provider such as ElevenLabs only needs to regenerate one changed sentence.
 
 To control which languages are recorded, chain `video.languages(...)` (accepts
-keyless `studio()` for a web-owned set, a plain array of language codes, or
+keyless `editable()` for a web-owned set, a plain array of language codes, or
 `{ languages, mode }`). For example,
 `video.narration({...}).languages({ mode: 'shared' })` records a single shared
 narration track instead of one per language. A video with no `.languages(...)`
@@ -302,13 +338,13 @@ video.overlays({
 })
 ```
 
-For Studio-owned overlays (declared by name, with the web editor owning their
-content), wrap the names in `studio([...])`: `video.overlays(studio(['logo']))`.
-You can combine this with the `studio(...)` form of narration, for example
-`video.narration(studio(['intro'])).overlays(studio(['logo']))`. Pass an object
-to `studio({...})` to seed Studio with starting content it then owns.
+For Editor-owned overlays (declared by name, with the web editor owning their
+content), wrap the names in `editable([...])`: `video.overlays(editable(['logo']))`.
+You can combine this with the `editable(...)` form of narration, for example
+`video.narration(editable(['intro'])).overlays(editable(['logo']))`. Pass an object
+to `editable({...})` to seed Editor with starting content it then owns.
 
-To let Studio own the render options for a video, declare it through
-`use({ renderOptions: studio() })` (or `studio({...})` to seed them).
+To let Editor own the render options for a video, declare it through
+`use({ renderOptions: editable() })` (or `editable({...})` to seed them).
 
 API reference: [voices](/docs/reference/api/variables/voices)

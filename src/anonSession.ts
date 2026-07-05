@@ -136,11 +136,25 @@ export async function readAnonSessionRecordUrl(
   return existing?.recordUrl ?? null
 }
 
+// How many separate `screenci record` runs an anonymous trial may upload before
+// it must sign up. Kept in sync with ANON_MAX_RECORDINGS server-side.
+export const ANON_MAX_RECORDINGS = 3
+
+/** A short "N recordings left" phrase for the anonymous trial. */
+export function formatAnonRecordingsLeft(remaining: number): string {
+  if (remaining <= 0) {
+    return 'That was your last free trial recording. Sign up to record more.'
+  }
+  return `${remaining} free trial recording${
+    remaining === 1 ? '' : 's'
+  } left. Sign up to record without limits.`
+}
+
 export type AnonSessionStatus =
   | { status: 'not_found' }
   | { status: 'expired' }
-  // `used`: this session already consumed its one free trial recording.
-  | { status: 'pending'; used: boolean }
+  // `used`: all trial recordings are spent. `remaining`: how many are left.
+  | { status: 'pending'; used: boolean; remaining: number }
   | { status: 'claimed'; secret: string }
 
 /**
@@ -167,6 +181,7 @@ export async function checkAnonSessionStatus(
       status?: string
       secret?: string
       used?: boolean
+      remaining?: number
     }
 
     if (body.status === 'claimed' && typeof body.secret === 'string') {
@@ -174,9 +189,15 @@ export async function checkAnonSessionStatus(
     }
     if (body.status === 'expired') return { status: 'expired' }
     if (body.status === 'not_found') return { status: 'not_found' }
-    return { status: 'pending', used: body.used === true }
+    const remaining =
+      typeof body.remaining === 'number'
+        ? body.remaining
+        : body.used === true
+          ? 0
+          : ANON_MAX_RECORDINGS
+    return { status: 'pending', used: remaining <= 0, remaining }
   } catch {
-    return { status: 'pending', used: false }
+    return { status: 'pending', used: false, remaining: ANON_MAX_RECORDINGS }
   }
 }
 
@@ -186,13 +207,13 @@ export type AnonRecordingGate =
 
 /**
  * Decides whether a fresh anonymous `record` is allowed to START, given the
- * session's current status. An anonymous trial gets exactly one recording:
- * once it is used (a pending session that already spent its trial) or the
- * session has expired, a second recording is refused up front so the user is
- * told to sign up before anything renders, rather than silently minting a new
+ * session's current status. An anonymous trial gets up to ANON_MAX_RECORDINGS
+ * recordings: once all are used (a pending session that has spent its trial) or
+ * the session has expired, a further recording is refused up front so the user
+ * is told to sign up before anything renders, rather than silently minting a new
  * trial or only failing after the whole recording ran. A first-run token the
- * server has not seen yet (`not_found`), a pending-but-unused session, and a
- * `claimed` session (the upload path self-upgrades to the real secret) all
+ * server has not seen yet (`not_found`), a pending session with recordings left,
+ * and a `claimed` session (the upload path self-upgrades to the real secret) all
  * proceed.
  */
 export function evaluateAnonRecordingGate(

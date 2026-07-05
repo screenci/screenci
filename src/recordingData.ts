@@ -262,7 +262,7 @@ export type VideoAssetStartEvent = {
 export type AssetStartEvent = ImageAssetStartEvent | VideoAssetStartEvent
 
 /**
- * Studio-managed overlay declared via `video.studio({ overlays: [...] })`. The
+ * Studio-managed overlay declared via `video.overlays(editable([...]))`. The
  * file and display options are configured in Studio, so the recording only marks
  * the timeline point.
  */
@@ -352,7 +352,7 @@ export type RecordingMetadata = {
     renderOptions?: boolean
     narration?: boolean
     assets?: boolean
-    /** Web-owned language set (`video.languages(studio())`): the app may add and
+    /** Web-owned language set (`video.languages(editable())`): the app may add and
      *  render languages for this video. Absent for code-defined language sets. */
     languages?: boolean
   }

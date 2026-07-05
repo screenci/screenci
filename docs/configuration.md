@@ -264,10 +264,10 @@ renderOptions: {
 Use project-wide render defaults for branding and layout consistency, then
 override only the files that need a different look.
 
-On the Business tier you can defer render options to the web app entirely with
-`use({ renderOptions: studio() })` (and the record options with
-`recordOptions: studio()`, or seed either with `studio({...})`). They are then
-managed on the Studio page. See [Studio](/docs/guides/studio).
+You can defer render options to the web app entirely with
+`use({ renderOptions: editable() })` (and the record options with
+`recordOptions: editable()`, or seed either with `editable({...})`). They are
+then managed on the Editor page. See [Editor](/docs/guides/editor).
 
 ### Example: shared `use` defaults
 

@@ -537,7 +537,7 @@ function createCueController(
 
 /**
  * Builds narration controllers for Studio-managed cues declared via
- * `video.studio({ narration: [...] })`. Their text and voice are configured on
+ * `video.narration(editable([...]))`. Their text and voice are configured on
  * the ScreenCI Studio page instead of in code. Each name becomes a cue with the
  * same behavior as a seeded narration cue (callable, with `start()`/`end()`);
  * languages, narration text, and voice all come from Studio.
@@ -1064,9 +1064,9 @@ export function buildLocalizedNarrationCues(
       (lang) => narration.seedByLang[lang as Lang]?.[cueName] !== undefined
     )
 
-    // A blank studio cue (`studio([...])`, no seed) is text-less: the web app
+    // A blank studio cue (`editable([...])`, no seed) is text-less: the web app
     // fills it and the render is held until then. A seeded studio cue
-    // (`studio({...})`) falls through and emits its seed translations like a code
+    // (`editable({...})`) falls through and emits its seed translations like a code
     // cue, but tagged `studio` so the web app can still override it (a Studio edit
     // wins over the seed) and so the render is not held.
     if (isStudio && langs.length === 0) {

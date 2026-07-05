@@ -1,5 +1,6 @@
 import { describe, it, expectTypeOf } from 'vitest'
 import { video } from './video.js'
+import { editable } from './studio.js'
 import { voices } from './voices.js'
 import type { NarrationCue } from './cue.js'
 
@@ -31,16 +32,19 @@ describe('video.localize typed fixtures', () => {
   })
 
   it('unions seeded names with studio-managed names', () => {
-    video.studio({ narration: ['alert'], values: ['tagline'] }).localize({
-      narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
-      values: { en: { heading: 'H' }, fi: { heading: 'O' } },
-    })('T', async ({ narration, values }) => {
-      // Seeded and Studio-managed names are both present.
+    video
+      .narration(editable(['alert']))
+      .values(editable(['tagline']))
+      .localize({
+        narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
+        values: { en: { heading: 'H' }, fi: { heading: 'O' } },
+      })('T', async ({ narration, values }) => {
+      // Seeded and app-editable names are both present.
       expectTypeOf(narration.intro).toEqualTypeOf<NarrationCue>()
       expectTypeOf(narration.alert).toEqualTypeOf<NarrationCue>()
       // Seeded field: always populated per-language.
       expectTypeOf(values.heading).toEqualTypeOf<string>()
-      // Studio-managed field: empty string until set in Studio.
+      // App-editable field: empty string until set in the web editor.
       expectTypeOf(values.tagline).toEqualTypeOf<string>()
     })
   })

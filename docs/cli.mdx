@@ -149,6 +149,12 @@ yarn screenci test --ui
 Use this during normal authoring. Most trailing arguments are forwarded to
 Playwright.
 
+Plain `screenci test` disables recording-style waits so authoring runs stay
+fast. That includes ScreenCI cursor/camera pauses and
+`page.waitForTimeout(...)`, which is collapsed to `0ms`. Use Playwright locator
+or load-state waits for real application readiness. Use `--mock-record` when you
+need to preview the same pacing that `screenci record` will capture.
+
 Common Playwright examples that also work here:
 
 <Tabs syncKey="package-manager">
@@ -279,7 +285,7 @@ Behavior:
 - uploads every successful recording, with or without `SCREENCI_SECRET`
 - prints a project URL after upload when rendering has been started remotely
 - prints any informational notices returned by the service in cyan after upload (occasional, non-error status messages such as maintenance or timing notes). These never affect the exit code
-- new accounts start on the Free plan automatically (no plan selection step). Free renders include a ScreenCI watermark; after upload `record` prints an upgrade link (which removes the watermark and raises render and active-video limits, and unlocks multiple languages plus expressive tone control), except on the Business plan where the upgrade link is omitted
+- new accounts start on the Free plan automatically (no plan selection step). Free renders include a ScreenCI watermark; paid plans remove it and raise render and active-video limits, and unlock multiple languages plus expressive tone control
 
 Relevant options:
 

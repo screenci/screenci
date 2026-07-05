@@ -48,7 +48,7 @@ function featureToNormalizedNarration(
   for (const lang of languages) {
     const cues: Record<string, NormalizedCueValue> = {}
     // Seed every named cue that has a value: code-owned cues and seeded Studio
-    // cues (`studio({...})`). Blank Studio cues (`studio([...])`) have no value, so
+    // cues (`editable({...})`). Blank Studio cues (`editable([...])`) have no value, so
     // they carry no seed (the web app owns their text). `buildLocalizedNarrationCues`
     // short-circuits Studio names, so a seed here is backend-facing metadata only.
     for (const name of feature.names) {
@@ -90,9 +90,9 @@ export function buildNarrationMarkers(
 }
 
 /**
- * Resolve the `values` fields for the active language: a Studio override wins
+ * Resolve the `values` fields for the active language: an Editor override wins
  * over the per-language seed, which wins over the shared value, then the empty
- * string (Studio-owned fields stay empty until set in the web app).
+ * string (editor-owned fields stay empty until set in the web app).
  */
 export function buildValues(
   feature: NormalizedFeature<string> | null | undefined,
@@ -114,11 +114,11 @@ export function buildValues(
 export type ValuesDeclaration = {
   /** Every field name (code then Studio-managed), in declared order. */
   fields: string[]
-  /** Studio-managed field names (`studio([...])`/`studio({...})`). */
+  /** Studio-managed field names (`editable([...])`/`editable({...})`). */
   studioFields: string[]
   /**
    * Seeds keyed `{ [language]: { [field]: value } }`: code-owned fields and seeded
-   * Studio fields (`studio({...})`). A seeded Studio field appears in both
+   * Studio fields (`editable({...})`). A seeded Studio field appears in both
    * `studioFields` (the web app owns it) and `seed` (its initial value). Omitted
    * when empty.
    */
@@ -147,7 +147,7 @@ export function buildValuesDeclaration(
       ...(feature.byLang[language] ?? {}),
     }
     // Seed every named field that has a value: code-owned fields and seeded Studio
-    // fields (`studio({...})`). Blank Studio fields (`studio([...])`) have no value.
+    // fields (`editable({...})`). Blank Studio fields (`editable([...])`) have no value.
     const codeSeed: Record<string, string> = {}
     for (const field of feature.names) {
       if (merged[field] !== undefined) codeSeed[field] = merged[field]!

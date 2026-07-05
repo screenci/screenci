@@ -24,7 +24,7 @@ import type {
 } from './types.js'
 import type { Page } from '@playwright/test'
 import { ScreenciError } from './errors.js'
-import { isStudioMarker, type StudioMarker } from './studio.js'
+import { isEditableMarker, type EditableMarker } from './studio.js'
 import {
   installAnimationDisabling,
   resolveDisableAnimations,
@@ -127,12 +127,12 @@ import type { NullSink } from './screenAudioSink.js'
 
 export const POST_VIDEO_PAUSE = 500
 
-/** The old `'studio'` string sentinel is retired: use `studio()` / `studio({...})`. */
+/** The old `'studio'` string sentinel is retired: use `editable()` / `editable({...})`. */
 function assertNotLegacyStudioString(value: unknown, option: string): void {
   if (value === 'studio') {
     throw new ScreenciError(
-      `use({ ${option}: 'studio' }) is no longer supported. Use ${option}: studio() ` +
-        `to hand the options to the web app, or studio({ ... }) to seed them, ` +
+      `use({ ${option}: 'studio' }) is no longer supported. Use ${option}: editable() ` +
+        `to hand the options to the web app, or editable({ ... }) to seed them, ` +
         `imported from 'screenci'.`
     )
   }
@@ -140,7 +140,7 @@ function assertNotLegacyStudioString(value: unknown, option: string): void {
 
 /**
  * The record options actually used for the capture: when record options are
- * deferred to Studio (`use({ recordOptions: studio() })`), the values fetched
+ * deferred to Studio (`use({ recordOptions: editable() })`), the values fetched
  * before recording (keyed by video name) override the base (seeded or default)
  * aspect ratio, quality, and fps. Otherwise the code values are used as-is.
  */
@@ -157,16 +157,16 @@ export function resolveEffectiveRecordOptions(
 }
 
 /**
- * Resolve the `recordOptions` option, which may be `studio()` / `studio({...})`
- * (`use({ recordOptions: studio() })`) deferring the capture options to the web
+ * Resolve the `recordOptions` option, which may be `editable()` / `editable({...})`
+ * (`use({ recordOptions: editable() })`) deferring the capture options to the web
  * app. Returns the base options to record with (the seed merged over defaults
  * when seeded, plain defaults when blank) and whether the bag is Studio-managed.
  */
 export function resolveStudioRecordOptions(
-  recordOptions: RecordOptions | StudioMarker<Partial<RecordOptions>>
+  recordOptions: RecordOptions | EditableMarker<Partial<RecordOptions>>
 ): { base: RecordOptions; studio: boolean } {
   assertNotLegacyStudioString(recordOptions, 'recordOptions')
-  if (isStudioMarker(recordOptions)) {
+  if (isEditableMarker(recordOptions)) {
     const seed = recordOptions.seed
     return {
       base: seed
@@ -179,7 +179,7 @@ export function resolveStudioRecordOptions(
 }
 
 /**
- * Resolve the `renderOptions` option, which may be `studio()` / `studio({...})`
+ * Resolve the `renderOptions` option, which may be `editable()` / `editable({...})`
  * deferring the render options to the web app. Returns the render options to use
  * as the starting point (the seed when seeded, `undefined` when blank) and
  * whether they are Studio-managed.
@@ -187,11 +187,11 @@ export function resolveStudioRecordOptions(
 export function resolveStudioRenderOptions(
   renderOptions:
     | RenderOptions
-    | StudioMarker<Partial<RenderOptions>>
+    | EditableMarker<Partial<RenderOptions>>
     | undefined
 ): { obj: RenderOptions | undefined; studio: boolean } {
   assertNotLegacyStudioString(renderOptions, 'renderOptions')
-  if (isStudioMarker(renderOptions)) {
+  if (isEditableMarker(renderOptions)) {
     return {
       obj: renderOptions.seed as RenderOptions | undefined,
       studio: true,
@@ -552,10 +552,10 @@ export async function withActiveRecordingContext<T>(params: {
 }
 
 type VideoFixtureOptions = {
-  recordOptions: RecordOptions | StudioMarker<Partial<RecordOptions>>
+  recordOptions: RecordOptions | EditableMarker<Partial<RecordOptions>>
   renderOptions:
     | RenderOptions
-    | StudioMarker<Partial<RenderOptions>>
+    | EditableMarker<Partial<RenderOptions>>
     | undefined
   /**
    * Active language for this recording pass, set by `video.languages(...)` in
@@ -616,7 +616,7 @@ type VideoRuntimeFixtures = {
   >
   /**
    * Background-audio controllers for the Studio-managed track names declared in
-   * `video.studio({ audio: [...] })`. Each is callable with `start()`/`end()`;
+   * `video.audio(editable([...]))`. Each is callable with `start()`/`end()`;
    * the file, volume, and repeat come from Studio. Empty when none are declared.
    */
   audio: Record<string, AudioController>
@@ -1233,18 +1233,18 @@ interface Video extends VideoCallSignatures {
    */
   narration: MediaBuilder<VideoArgs>['narration']
 
-  /** Declare on-screen values fields (`studio([...])` = Studio-owned, object = code values). */
+  /** Declare on-screen values fields (`editable([...])` = editor-owned, object = code values). */
   values: MediaBuilder<VideoArgs>['values']
 
-  /** Declare overlays (`studio([...])` = Studio-owned, object = code values/factories). */
+  /** Declare overlays (`editable([...])` = editor-owned, object = code values/factories). */
   overlays: MediaBuilder<VideoArgs>['overlays']
 
-  /** Declare background-audio tracks (`studio([...])` = Studio-owned, object = code values). */
+  /** Declare background-audio tracks (`editable([...])` = editor-owned, object = code values). */
   audio: MediaBuilder<VideoArgs>['audio']
 
   /**
-   * Declare the recorded language set / capture mode. Pass `studio()` to let the
-   * ScreenCI web app own the set (`studio(['en', 'fi'])` to seed it), an array
+   * Declare the recorded language set / capture mode. Pass `editable()` to let the
+   * ScreenCI web app own the set (`editable(['en', 'fi'])` to seed it), an array
    * `['en', 'fi']`, or an options object.
    */
   languages: MediaBuilder<VideoArgs>['languages']

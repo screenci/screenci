@@ -28,7 +28,7 @@ describe('normalizeLocalizeSpec', () => {
   })
 
   it('accepts a spec with only languages (every cue/field is Studio-managed)', () => {
-    // Studio-managed names are now declared via video.studio({...}), not on the
+    // Studio-managed names are now declared via editable feature calls, not on the
     // localize spec. A spec carrying just `languages` is valid: it sets the
     // language set and leaves narration/values null (the fixtures merge the
     // Studio-managed cues/fields in from the studio declaration).

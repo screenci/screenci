@@ -98,7 +98,7 @@ export const docsManifest = [
     navLabel: 'Values',
     title: 'Values',
     description:
-      'Inject per-language page content with video.values() for apps that do not self-localize, and let Studio manage field values without code changes.',
+      'Inject per-language page content with video.values() for apps that do not self-localize, and let the web editor manage field values without code changes.',
     prev: 'docs/guides/narration',
     next: 'docs/guides/audio',
   },
@@ -110,7 +110,7 @@ export const docsManifest = [
     navLabel: 'Audio',
     title: 'Audio',
     description:
-      'Add background music or sound effects to a video with video.audio(), control volume and looping, and let Studio manage track files.',
+      'Add background music or sound effects to a video with video.audio(), control volume and looping, and let the web editor manage track files.',
     prev: 'docs/guides/values',
     next: 'docs/guides/overlays',
   },
@@ -172,17 +172,17 @@ export const docsManifest = [
     description:
       'Capture branded still screenshots with the screenshot() fixture: crop to a component, set quality and dark mode, and frame the shot on a background with overlays.',
     prev: 'docs/guides/camera-and-zooming',
-    next: 'docs/guides/studio',
+    next: 'docs/guides/editor',
   },
   {
-    source: 'studio.md',
-    slug: 'docs/guides/studio',
+    source: 'editor.md',
+    slug: 'docs/guides/editor',
     section: 'Guides',
     order: 4,
-    navLabel: 'Studio',
-    title: 'Studio',
+    navLabel: 'Editor',
+    title: 'Editor',
     description:
-      'Remix render options, narration text, voices, overlays, and languages from the web app, or manage them entirely in Studio with studio(...) declarations like video.narration(studio([...])). Business tier.',
+      'Remix render options, narration text, voices, overlays, and languages from the web app, or manage them in the web editor with editable(...) declarations like video.narration(editable([...])).',
     prev: 'docs/guides/screenshots',
     next: 'docs/guides/public-urls-and-embeds',
   },
@@ -195,7 +195,7 @@ export const docsManifest = [
     title: 'Public URLs and Embeds',
     description:
       'Enable public delivery for a video, understand stable language-specific URLs, and embed ScreenCI outputs in other sites.',
-    prev: 'docs/guides/studio',
+    prev: 'docs/guides/editor',
     next: 'docs/guides/redact',
   },
   {

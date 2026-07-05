@@ -52,15 +52,15 @@ export type {
   ScreenCILocatorDragToOptions,
   ScreenCILocatorSelectOptionOptions,
 } from './src/types.js'
-// Narration is declared per-builder with `video.narration(...)`: `studio([...])`
-// is Studio-owned, an object carries code values. It surfaces through the
+// Narration is declared per-builder with `video.narration(...)`: `editable([...])`
+// is owned by the web editor, an object carries code values. It surfaces through the
 // injected `narration` fixture.
 export type { NarrationCue, Cues, TopLevelVoiceConfig } from './src/cue.js'
-// `studio(...)` defers a feature/language declaration to the ScreenCI web app:
-// `studio(['name'])` blank names, `studio({ name: value })` seeded, `studio()`
+// `editable(...)` defers a feature/language declaration to the ScreenCI web app:
+// `editable(['name'])` blank names, `editable({ name: value })` seeded, `editable()`
 // keyless (languages only).
-export { studio } from './src/studio.js'
-export type { StudioMarker, StudioPending } from './src/studio.js'
+export { editable } from './src/studio.js'
+export type { EditableMarker, EditablePending } from './src/studio.js'
 export type { TimelineOffset } from './src/timelineOffset.js'
 export type { LangNarrationOverride } from './src/voiceConfig.js'
 export type {
@@ -85,11 +85,6 @@ export { speed } from './src/speed.js'
 export { time } from './src/time.js'
 export { autoZoom } from './src/autoZoom.js'
 export { zoomTo, resetZoom } from './src/manualZoom.js'
-export {
-  resizeRecording,
-  resetRecordingSize,
-  type ResizeRecordingOptions,
-} from './src/recordingSize.js'
 export { hideNarration, showNarration } from './src/narrationVisibility.js'
 export { MAX_AUDIO_LEVEL, selected } from './src/asset.js'
 export type {

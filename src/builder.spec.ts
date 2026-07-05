@@ -7,7 +7,7 @@ import {
   type RecordingLocalize,
 } from './builder.js'
 import { normalizeFeature } from './declare.js'
-import { studio } from './studio.js'
+import { editable } from './studio.js'
 import type { LocalizeNarrationValue } from './localize.js'
 
 function state(partial: Partial<BuilderState> = {}): BuilderState {
@@ -121,7 +121,7 @@ describe('expandRegistrations', () => {
   it('renders a studio-seeded set until the web app changes it', () => {
     const regs = expandRegistrations({
       baseTitle: 'Seeded',
-      // video.languages(studio(['en', 'fi'])) -> web-owned, seeded with en + fi.
+      // video.languages(editable(['en', 'fi'])) -> web-owned, seeded with en + fi.
       state: state(langs({ languages: 'studio', studioSeed: ['en', 'fi'] })),
       requestedLanguages: null,
     })
@@ -147,7 +147,7 @@ describe('expandRegistrations', () => {
   it('records code-defined feature languages for a studio-owned set on first run', () => {
     const regs = expandRegistrations({
       baseTitle: 'Tour',
-      // languages(studio()) with no web selection, but narration defines en + fi:
+      // languages(editable()) with no web selection, but narration defines en + fi:
       // both record (merged in) even before anything is configured in the web.
       state: state({
         ...langs({ languages: 'studio' }),
@@ -309,11 +309,11 @@ describe('createVideoBuilder registration', () => {
     expect(calls.uses[0]).not.toHaveProperty('locale')
   })
 
-  it('studio({ languages, mode }) is web-owned and seeded with the config', () => {
+  it('editable({ languages, mode }) is web-owned and seeded with the config', () => {
     const { test, calls } = createTestSink()
     createVideoBuilder(test)
       .narration({ en: { intro: 'Hi' } })
-      .languages(studio({ languages: ['en', 'fi'], mode: 'shared' }))(
+      .languages(editable({ languages: ['en', 'fi'], mode: 'shared' }))(
       'Tour',
       async () => {}
     )
@@ -325,9 +325,9 @@ describe('createVideoBuilder registration', () => {
     })
   })
 
-  it('studio({ mode }) is web-owned with no seeded set (mode only)', () => {
+  it('editable({ mode }) is web-owned with no seeded set (mode only)', () => {
     const { test, calls } = createTestSink()
-    createVideoBuilder(test).languages(studio({ mode: 'shared' }))(
+    createVideoBuilder(test).languages(editable({ mode: 'shared' }))(
       'Tour',
       async () => {}
     )
@@ -344,7 +344,7 @@ describe('createVideoBuilder registration', () => {
   it('supports the (title, details, body) signature', () => {
     const { test, calls } = createTestSink()
     createVideoBuilder(test)
-      .values(studio(['h']))
+      .values(editable(['h']))
       .languages(['en'])('Tagged', { tag: '@critical' }, async () => {})
     expect(calls.tests).toEqual(['Tagged [en]'])
   })
@@ -355,7 +355,7 @@ describe('createVideoBuilder registration', () => {
     try {
       const { test, calls } = createTestSink()
       createVideoBuilder(test)
-        .values(studio(['h']))
+        .values(editable(['h']))
         .languages(['en', 'fi'])('T', async () => {})
       expect(calls.tests).toEqual([])
       expect(warn).toHaveBeenCalledOnce()
@@ -367,11 +367,11 @@ describe('createVideoBuilder registration', () => {
 
   it('records code languages for a studio-owned set, so no unused warning fires', () => {
     const { test, calls } = createTestSink()
-    // languages(studio({ mode })) is web-owned; the narration languages are merged
+    // languages(editable({ mode })) is web-owned; the narration languages are merged
     // into the recorded set, so they are genuinely used (no "unused" warning).
     createVideoBuilder(test)
       .narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })
-      .languages(studio({ mode: 'shared' }))('Tour', async () => {})
+      .languages(editable({ mode: 'shared' }))('Tour', async () => {})
     expect(warn).not.toHaveBeenCalled()
     expect(calls.uses[0]?._screenciRecordingLocalize).toMatchObject({
       studioOwned: true,
@@ -391,7 +391,7 @@ describe('createVideoBuilder registration', () => {
     const { test } = createTestSink()
     expect(() =>
       createVideoBuilder(test, new Set(['values', 'overlays'])).narration(
-        studio(['x'])
+        editable(['x'])
       )
     ).toThrow(/not available for this medium/)
   })

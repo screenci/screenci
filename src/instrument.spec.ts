@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { Locator, Page, FrameLocator } from '@playwright/test'
+import type {
+  Locator,
+  Page,
+  FrameLocator,
+  Request,
+  Route,
+} from '@playwright/test'
 import type {
   IEventRecorder,
   ElementRect,
@@ -143,6 +149,9 @@ function makePageMock(): PageMock {
     keyboard: {
       type: vi.fn().mockResolvedValue(undefined),
     },
+    waitForTimeout: vi.fn().mockResolvedValue(undefined),
+    route: vi.fn().mockResolvedValue(undefined),
+    unroute: vi.fn().mockResolvedValue(undefined),
     on: vi.fn((event: string, cb: (page: Page) => void) => {
       if (event === 'popup') popupListeners.push(cb)
     }),
@@ -174,6 +183,26 @@ function makePageMock(): PageMock {
   mock._locatorMock = locatorMock
 
   return pageMock
+}
+
+function makeRequestMock(params: {
+  url: string
+  resourceType: string
+}): Request {
+  return {
+    url: vi.fn(() => params.url),
+    resourceType: vi.fn(() => params.resourceType),
+  } as unknown as Request
+}
+
+function makeRouteMock(): { route: Route; fulfill: ReturnType<typeof vi.fn> } {
+  const fulfill = vi.fn().mockResolvedValue(undefined)
+  return {
+    route: {
+      fulfill,
+    } as unknown as Route,
+    fulfill,
+  }
 }
 
 function makeLocatorMock(
@@ -377,6 +406,101 @@ afterEach(() => {
 })
 
 describe('instrumentPage', () => {
+  it('collapses page.waitForTimeout during plain screenci test runs', async () => {
+    process.env.SCREENCI_DISABLE_RECORDING_TIMINGS = 'true'
+    const page = makePageMock()
+    const originalWaitForTimeout = page.waitForTimeout as ReturnType<
+      typeof vi.fn
+    >
+
+    await instrumentPage(page)
+    await page.waitForTimeout(750)
+
+    expect(originalWaitForTimeout).toHaveBeenCalledWith(0)
+  })
+
+  it('keeps page.waitForTimeout duration during mock-record runs', async () => {
+    process.env.SCREENCI_DISABLE_RECORDING_TIMINGS = 'true'
+    process.env.SCREENCI_MOCK_RECORD = 'true'
+    const page = makePageMock()
+    const originalWaitForTimeout = page.waitForTimeout as ReturnType<
+      typeof vi.fn
+    >
+
+    await instrumentPage(page)
+    await page.waitForTimeout(750)
+
+    expect(originalWaitForTimeout).toHaveBeenCalledWith(750)
+  })
+
+  it('fails fast when a route mock fulfills a module request with JSON', async () => {
+    const page = makePageMock()
+    const originalRoute = page.route as ReturnType<typeof vi.fn>
+    const handler = vi.fn(async (route: Route) => {
+      await route.fulfill({ json: { recipes: [] } })
+    })
+
+    await instrumentPage(page)
+    await page.route('**/api/recipes', handler)
+
+    const wrappedHandler = originalRoute.mock.calls[0]![1] as (
+      route: Route,
+      request: Request
+    ) => Promise<void>
+    const request = makeRequestMock({
+      url: 'http://localhost:5173/src/pages/recipes/RecipeList.tsx',
+      resourceType: 'script',
+    })
+    const { route, fulfill } = makeRouteMock()
+
+    await expect(wrappedHandler(route, request)).rejects.toThrow(
+      /fulfilled a script request/
+    )
+    expect(fulfill).not.toHaveBeenCalled()
+  })
+
+  it('allows route mocks to fulfill fetch requests with JSON', async () => {
+    const page = makePageMock()
+    const originalRoute = page.route as ReturnType<typeof vi.fn>
+    const handler = vi.fn(async (route: Route) => {
+      await route.fulfill({ json: { recipes: [] } })
+    })
+
+    await instrumentPage(page)
+    await page.route('http://localhost:5173/api/recipes', handler)
+
+    const wrappedHandler = originalRoute.mock.calls[0]![1] as (
+      route: Route,
+      request: Request
+    ) => Promise<void>
+    const request = makeRequestMock({
+      url: 'http://localhost:5173/api/recipes',
+      resourceType: 'fetch',
+    })
+    const { route, fulfill } = makeRouteMock()
+
+    await expect(wrappedHandler(route, request)).resolves.toBeUndefined()
+    expect(fulfill).toHaveBeenCalledWith({ json: { recipes: [] } })
+  })
+
+  it('removes the wrapped route handler when unroute receives the original handler', async () => {
+    const page = makePageMock()
+    const originalRoute = page.route as ReturnType<typeof vi.fn>
+    const originalUnroute = page.unroute as ReturnType<typeof vi.fn>
+    const handler = vi.fn()
+
+    await instrumentPage(page)
+    await page.route('**/api/recipes', handler)
+    await page.unroute('**/api/recipes', handler)
+
+    const wrappedHandler = originalRoute.mock.calls[0]![1]
+    expect(wrappedHandler).not.toBe(handler)
+    expect(originalUnroute).toHaveBeenCalledWith(
+      '**/api/recipes',
+      wrappedHandler
+    )
+  })
+
   it('records bare page.mouse.move with default duration', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)

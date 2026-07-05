@@ -25,7 +25,7 @@ reference material to drill into.
 - [Overlays](./overlays.md)
 - [Languages](./languages.md)
 - [Camera and Zooming](./camera-and-zooming.md)
-- [Studio](./studio.md)
+- [Editor](./editor.md)
 - [Public URLs and Embeds](./public-urls-and-embeds.md)
 - [Redact Sensitive Content](./redact.md)
 - [Update ScreenCI](./update-screenci.mdx)

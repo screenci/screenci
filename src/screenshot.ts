@@ -11,7 +11,7 @@ import type {
 import { mkdir, rm } from 'fs/promises'
 import { join, relative } from 'path'
 import type { RecordOptions, RenderOptions, ScreenCIPage } from './types.js'
-import type { StudioMarker } from './studio.js'
+import type { EditableMarker } from './studio.js'
 import {
   buildOverlays,
   type OverlayController,
@@ -76,10 +76,10 @@ export type CropFixture = (
 const SCREENSHOT_FILE_NAME = 'screenshot.png'
 
 type ScreenshotFixtureOptions = {
-  recordOptions: RecordOptions | StudioMarker<Partial<RecordOptions>>
+  recordOptions: RecordOptions | EditableMarker<Partial<RecordOptions>>
   renderOptions:
     | RenderOptions
-    | StudioMarker<Partial<RenderOptions>>
+    | EditableMarker<Partial<RenderOptions>>
     | undefined
   /** Active language for this pass; see {@link video} for details. Internal. */
   _screenciLanguage: string | undefined
@@ -484,15 +484,15 @@ interface Screenshot extends ScreenshotCallSignatures {
    * language, and the body receives the active `language` and `values` fields.
    * Chainable with `.each(...)`.
    */
-  /** Declare on-screen values fields (array = Studio-owned, object = code values). */
+  /** Declare on-screen values fields (`editable([...])` = editor-owned, object = code values). */
   values: MediaBuilder<ScreenshotArgs>['values']
 
-  /** Declare overlays (`studio([...])` = Studio-owned, object = code values/factories). */
+  /** Declare overlays (`editable([...])` = editor-owned, object = code values/factories). */
   overlays: MediaBuilder<ScreenshotArgs>['overlays']
 
   /**
-   * Declare the recorded language set / capture mode. Pass `studio()` to let the
-   * web app own the set (`studio(['en', 'fi'])` to seed it), an array
+   * Declare the recorded language set / capture mode. Pass `editable()` to let the
+   * web app own the set (`editable(['en', 'fi'])` to seed it), an array
    * `['en', 'fi']`, or an options object.
    */
   languages: MediaBuilder<ScreenshotArgs>['languages']

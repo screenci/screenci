@@ -14,11 +14,11 @@ to the state you want. Three things make them worth reaching for:
 - **Automatic updates** when the product changes: re-record locally, in CI, or
   from the ScreenCI UI, and every hosted URL serves the latest accepted shot.
 - **Web editable** like videos: every render option (crop padding, background,
-  frame, overlays) is adjustable later in Studio in the browser, with no
+  frame, overlays) is adjustable later in Editor in the browser, with no
   re-recording needed.
 
 A screenshot is captured directly from the page (no video is recorded), then
-served from that hosted URL with the same versioning and Studio editing as
+served from that hosted URL with the same versioning and Editor editing as
 videos. By default the output is the bare crop. Add a `margin` and/or an output
 `aspectRatio` and the shot is composited on your configured background with a
 rounded frame and shadow (see [Render options](#render-options)).
@@ -130,14 +130,14 @@ await crop(page.getByTestId('chart'), {
 ```
 
 The crop comes only from your `crop()` call (or `page.screenshot({ crop })` inside
-a video). It is recorded as `renderOptions.screenshot.crop` and edited in Studio,
+a video). It is recorded as `renderOptions.screenshot.crop` and edited in Editor,
 not set in config. How it edits depends on the target:
 
-- A **locator** crop is bound to the element: its box is locked in Studio (it
+- A **locator** crop is bound to the element: its box is locked in Editor (it
   re-resolves from the locator every time you re-render), while the `padding`
   around it stays adjustable.
 - An **explicit region** crop has no element to track, so it is a free rectangle
-  you can drag and resize in Studio.
+  you can drag and resize in Editor.
 
 To force a fixed output shape (a square or social card), set the output
 `aspectRatio` in [render options](#render-options) rather than reshaping the crop.
@@ -222,7 +222,7 @@ comes from `renderOptions.mouse.style` (`'white'` or `'black'`) and its size fro
 `renderOptions.mouse.size` (a fraction of the output height). Setting `show: true`
 has no effect when the body never moved the cursor (there is no position to draw),
 so a still that never touches the mouse never shows one. Like every render option,
-`show` is editable later in Studio without re-recording.
+`show` is editable later in Editor without re-recording.
 
 ## Quality and appearance
 
@@ -272,7 +272,7 @@ screenshot.use({
 
 ## Render options
 
-Every visual choice is a render option, editable later in Studio. The
+Every visual choice is a render option, editable later in Editor. The
 configurable screenshot-only options (`format`, `margin`, `aspectRatio`) live
 under `renderOptions.screenshot`; the background, frame roundness, and shadow are
 shared with video and stay under `renderOptions.output` and

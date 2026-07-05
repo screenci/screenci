@@ -159,9 +159,9 @@ export type RenderOptions = {
     /** 0-1: 1=mask size equals shorter side of output */
     size?: number
     /**
-     * Narration size when the recording is shrunk via `resizeRecording()`.
+     * Narration size when the recording is smaller than the full frame.
      * When set, the narration bubble scales down and tightens into its corner
-     * in sync with the recording size transition. Omit to keep a fixed size.
+     * with the recording size. Omit to keep a fixed size.
      * 0-1: same units as `size`.
      */
     sizeZoomed?: number
@@ -1129,9 +1129,18 @@ export type ScreenCIScreenshotOptions = NonNullable<
 
 export type ScreenCIPage = Omit<
   Page,
-  'click' | 'mouse' | 'screenshot' | LocatorReturnMethodNames
+  'click' | 'mouse' | 'screenshot' | 'waitForTimeout' | LocatorReturnMethodNames
 > & {
   mouse: ScreenCIMouse
+  /**
+   * Waits in the recording timeline. Plain `screenci test` collapses this to
+   * 0ms so authoring runs stay fast; `screenci record` and
+   * `screenci test --mock-record` keep the requested duration.
+   *
+   * Use Playwright locator/action waits for application readiness instead of
+   * relying on this as a real polling delay.
+   */
+  waitForTimeout(...args: Parameters<Page['waitForTimeout']>): Promise<void>
   /**
    * Captures a screenshot. Inside a `video()` recording this also writes a
    * branded still as a separate screenshot recording named "<video title> -
@@ -1261,8 +1270,8 @@ export type ScreenCIConfig = Omit<
   use?: Omit<NonNullable<PlaywrightTestConfig['use']>, 'trace'> & {
     recordOptions?: RecordOptions
     /**
-     * Render options. To configure them in Studio (Business tier), use
-     * `video.studio({ renderOptions: true })` per video instead.
+     * Render options. To configure them in Editor, use
+     * `video.use({ renderOptions: editable() })` per video instead.
      */
     renderOptions?: RenderOptions
     /**
@@ -1294,8 +1303,8 @@ export type ScreenCIConfig = Omit<
     use?: Omit<NonNullable<Project['use']>, 'trace'> & {
       recordOptions?: RecordOptions
       /**
-       * Render options. To configure them in Studio (Business tier), use
-       * `video.studio({ renderOptions: true })` per video instead.
+       * Render options. To configure them in Editor, use
+       * `video.use({ renderOptions: editable() })` per video instead.
        */
       renderOptions?: RenderOptions
       /**

@@ -13,7 +13,7 @@ import type {
 } from './types.js'
 import { RENDER_OPTIONS_DEFAULTS } from './types.js'
 import type { ScreenshotCropRecord } from './crop.js'
-import type { StudioOptionFlags } from './studio.js'
+import type { EditableOptionFlags } from './studio.js'
 import type { VoiceKey } from './voices.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { getGitMetadata } from './git.js'
@@ -702,7 +702,7 @@ export type AssetStartPayload =
   | Omit<DependencyAssetStartEvent, 'type' | 'timeMs' | 'name'>
 
 /**
- * Studio-managed overlay declared via `video.studio({ overlays: [...] })`. The
+ * Studio-managed overlay declared via `video.overlays(editable([...]))`. The
  * file and display options are configured in Studio, so the recording only marks
  * the timeline point.
  */
@@ -773,7 +773,7 @@ export type AudioEndEvent = {
 
 /**
  * Studio-managed background audio track declared via
- * `video.studio({ audio: [...] })`. The file, volume, and repeat are configured
+ * `video.audio(editable([...]))`. The file, volume, and repeat are configured
  * in Studio, so the recording only marks the timeline point (mirrors
  * {@link StudioAssetStartEvent} for overlays).
  */
@@ -839,32 +839,6 @@ export type AutoZoomEndEvent = {
 }
 
 /**
- * Marks the timeline point where the recording shrinks to a limited size,
- * revealing the styled background around it. `size` is a 0-1 fraction of the
- * full frame (1 = full screen). The transition takes `duration` ms with the
- * given `easing`; when `duration` is 0 or omitted the change is an instant cut.
- * Emitted by `resizeRecording()`.
- */
-export type RecordingSizeStartEvent = {
-  type: 'recordingSizeStart'
-  timeMs: number
-  size: number
-  /** Transition duration in milliseconds. 0 or omitted = instant cut. */
-  duration?: number
-  /** Easing function for the transition. */
-  easing?: Easing
-}
-
-/**
- * Marks the timeline point where the recording returns to full screen
- * (size 1). Emitted by `resetRecordingSize()`.
- */
-export type RecordingSizeEndEvent = {
-  type: 'recordingSizeEnd'
-  timeMs: number
-}
-
-/**
  * Hides the narration (camera PIP) from this point on. Emitted by `hideNarration()`.
  */
 export type NarrationHideEvent = {
@@ -901,8 +875,6 @@ export type RecordingEvent =
   | TimeEndEvent
   | AutoZoomStartEvent
   | AutoZoomEndEvent
-  | RecordingSizeStartEvent
-  | RecordingSizeEndEvent
   | NarrationHideEvent
   | NarrationShowEvent
 
@@ -943,8 +915,8 @@ export type RecordingMetadata = {
   availableLanguages?: string[]
   sourceFilePath?: string
   /**
-   * Which parts of this recording opted into Studio configuration via
-   * `video.studio({...})`. `renderOptions`/`recordOptions` are set when those
+   * Which parts of this recording opted into web-editor configuration via
+   * `editable(...)`. `renderOptions`/`recordOptions` are set when those
    * option groups are deferred; `narration` when the recording contains
    * Studio-managed (name-only) narration cues; `assets` for Studio overlays;
    * `audio` for Studio background-audio tracks.
@@ -1155,11 +1127,6 @@ export interface IEventRecorder {
   addTimeEnd(): void
   addAutoZoomStart(options?: AutoZoomOptions): void
   addAutoZoomEnd(options?: AutoZoomOptions): void
-  addRecordingSizeStart(
-    size: number,
-    options?: { duration?: number; easing?: Easing }
-  ): void
-  addRecordingSizeEnd(): void
   addNarrationHide(): void
   addNarrationShow(): void
   /**
@@ -1208,8 +1175,6 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addTimeEnd(): void {},
   addAutoZoomStart(): void {},
   addAutoZoomEnd(): void {},
-  addRecordingSizeStart(): void {},
-  addRecordingSizeEnd(): void {},
   addNarrationHide(): void {},
   addNarrationShow(): void {},
   registerVoiceForLang(): void {},
@@ -1238,13 +1203,13 @@ export class EventRecorder implements IEventRecorder {
   private availableLanguages: string[] = []
   private readonly recordOptions: RecordOptions | undefined
   private readonly renderOptions: RenderOptions | undefined
-  /** Which option groups are deferred to Studio (`video.studio({...})`). */
-  private readonly studioOptions: StudioOptionFlags
+  /** Which option groups are deferred to Studio (`video.use({ ...: editable() })`). */
+  private readonly studioOptions: EditableOptionFlags
 
   constructor(
     renderOptions?: RenderOptions,
     recordOptions?: RecordOptions,
-    studioOptions?: StudioOptionFlags
+    studioOptions?: EditableOptionFlags
   ) {
     this.recordOptions = recordOptions
     this.renderOptions = renderOptions
@@ -1550,6 +1515,8 @@ export class EventRecorder implements IEventRecorder {
         ...(asset.fileHash !== undefined && { fileHash: asset.fileHash }),
         ...(asset.durationMs !== undefined && { durationMs: asset.durationMs }),
         fullScreen: asset.fullScreen,
+        ...(asset.pinToScreen === true && { pinToScreen: true }),
+        ...(asset.overMouse === true && { overMouse: true }),
         ...(asset.placement !== undefined && { placement: asset.placement }),
         ...(asset.crop !== undefined && { crop: asset.crop }),
         ...(asset.untilOutputMs !== undefined && {
@@ -1572,6 +1539,8 @@ export class EventRecorder implements IEventRecorder {
         ...(asset.fileHash !== undefined && { fileHash: asset.fileHash }),
         ...(asset.durationMs !== undefined && { durationMs: asset.durationMs }),
         fullScreen: asset.fullScreen,
+        ...(asset.pinToScreen === true && { pinToScreen: true }),
+        ...(asset.overMouse === true && { overMouse: true }),
         ...(asset.placement !== undefined && { placement: asset.placement }),
         ...(asset.untilOutputMs !== undefined && {
           untilOutputMs: asset.untilOutputMs,
@@ -1592,6 +1561,8 @@ export class EventRecorder implements IEventRecorder {
         dependency: asset.dependency,
         ...(asset.durationMs !== undefined && { durationMs: asset.durationMs }),
         fullScreen: asset.fullScreen,
+        ...(asset.pinToScreen === true && { pinToScreen: true }),
+        ...(asset.overMouse === true && { overMouse: true }),
         ...(asset.placement !== undefined && { placement: asset.placement }),
         ...(asset.crop !== undefined && { crop: asset.crop }),
         ...(asset.sourceStart !== undefined && {
@@ -1617,6 +1588,8 @@ export class EventRecorder implements IEventRecorder {
       ...(asset.fileHash !== undefined && { fileHash: asset.fileHash }),
       audio: asset.audio,
       fullScreen: asset.fullScreen,
+      ...(asset.pinToScreen === true && { pinToScreen: true }),
+      ...(asset.overMouse === true && { overMouse: true }),
       ...(asset.placement !== undefined && { placement: asset.placement }),
       ...(asset.crop !== undefined && { crop: asset.crop }),
       ...(asset.sourceStart !== undefined && {
@@ -1648,6 +1621,8 @@ export class EventRecorder implements IEventRecorder {
         durationMs: pending.durationMs,
       }),
       fullScreen: pending.fullScreen,
+      ...(pending.pinToScreen === true && { pinToScreen: true }),
+      ...(pending.overMouse === true && { overMouse: true }),
       ...(pending.placement !== undefined && { placement: pending.placement }),
       ...(pending.untilOutputMs !== undefined && {
         untilOutputMs: pending.untilOutputMs,
@@ -1844,27 +1819,6 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addRecordingSizeStart(
-    size: number,
-    options?: { duration?: number; easing?: Easing }
-  ): void {
-    if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
-    this.events.push({
-      type: 'recordingSizeStart',
-      timeMs,
-      size,
-      ...(options?.duration !== undefined && { duration: options.duration }),
-      ...(options?.easing !== undefined && { easing: options.easing }),
-    })
-  }
-
-  addRecordingSizeEnd(): void {
-    if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
-    this.events.push({ type: 'recordingSizeEnd', timeMs })
-  }
-
   addNarrationHide(): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
@@ -1897,8 +1851,8 @@ export class EventRecorder implements IEventRecorder {
 
     // Resolve all defaults so data.json always contains a complete set of render
     // options. `this.renderOptions` is undefined for a blank deferral
-    // (`renderOptions: studio()`) and the seed for a seeded one
-    // (`renderOptions: studio({ ... })`), so a seed renders as the starting point
+    // (`renderOptions: editable()`) and the seed for a seeded one
+    // (`renderOptions: editable({ ... })`), so a seed renders as the starting point
     // while the Studio flag still marks it web-owned (the web app overrides it).
     const ro = this.renderOptions
     const resolved: ResolvedRenderOptions = {
@@ -2033,7 +1987,7 @@ export class EventRecorder implements IEventRecorder {
         'studio' in event &&
         event.studio === true
     )
-    // Whether the language set is web-owned (`video.languages(studio())`). The
+    // Whether the language set is web-owned (`video.languages(editable())`). The
     // web uses this to decide a video may have languages added/rendered from the
     // app (code-defined language sets cannot be changed from the web).
     const studioLanguages = this.studioOptions.languages === true

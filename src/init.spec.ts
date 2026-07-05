@@ -264,11 +264,9 @@ describe('generateExampleScreenshot', () => {
     )
   })
 
-  it('configures colorScheme via scoped use() before the screenshot', () => {
+  it('configures colorScheme via use() before the screenshot', () => {
     const source = generateExampleScreenshot()
-    expect(source).toContain(
-      "screenshot.describe('Example screenshot', () => {"
-    )
+    expect(source).not.toContain('screenshot.describe(')
     expect(source).toContain('screenshot.use({')
     expect(source).toContain("colorScheme: 'dark'")
     expect(source.indexOf('screenshot.use({')).toBeLessThan(
@@ -314,11 +312,9 @@ describe('generateReactExampleScreenshot', () => {
     )
   })
 
-  it('configures colorScheme via scoped use() before the screenshot', () => {
+  it('configures colorScheme via use() before the screenshot', () => {
     const source = generateReactExampleScreenshot()
-    expect(source).toContain(
-      "screenshot.describe('Example screenshot', () => {"
-    )
+    expect(source).not.toContain('screenshot.describe(')
     expect(source).toContain('screenshot.use({')
     expect(source).toContain("colorScheme: 'dark'")
     expect(source.indexOf('screenshot.use({')).toBeLessThan(

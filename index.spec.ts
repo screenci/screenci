@@ -39,7 +39,9 @@ describe('public api surface', () => {
 
   it('only exports public runtime voice helpers from the voices entrypoint', () => {
     expect(Object.keys(voicesModule).sort()).toEqual([
+      'defaultBuiltInVoice',
       'modelTypes',
+      'russianBuiltInVoices',
       'supportedLanguages',
       'voices',
     ])

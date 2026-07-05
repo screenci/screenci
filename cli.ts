@@ -2839,7 +2839,7 @@ export async function resolveUploadCredential(
     await persistScreenCISecret(envFilePath, status.secret)
     await deleteAnonSessionFile(screenciDir)
     logger.info(
-      `Your account secret added to ${pathRelative(process.cwd(), envFilePath)}`
+      `Your SCREENCI_SECRET was added to ${pathRelative(process.cwd(), envFilePath)}`
     )
     return {
       credential: secretCredential(status.secret),

@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { POST_HIDE_PAUSE, hide, setActiveHideRecorder } from './hide.js'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
+import { logger } from './logger.js'
+import {
+  createScreenCIRuntimeContext,
+  runWithScreenCIRuntimeContext,
+} from './runtimeContext.js'
 
 function makeRecorder(): IEventRecorder {
   return {
@@ -190,6 +195,43 @@ describe('hide', () => {
       setActiveHideRecorder(recorder)
       await hide(async () => {})
       expect(recorder.addHideStart).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('screenshot capture', () => {
+    beforeEach(() => {
+      // Skip the 350ms tail so the awaited hide resolves immediately.
+      process.env.SCREENCI_DISABLE_RECORDING_TIMINGS = 'true'
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('warns that hide() is a no-op but still runs the callback in a screenshot', async () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+      const called = vi.fn()
+
+      await runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({ captureKind: 'screenshot' }),
+        () => hide(called)
+      )
+
+      expect(warn).toHaveBeenCalledOnce()
+      expect(warn.mock.calls[0]?.[0]).toContain('hide() has no effect')
+      // The wrapped setup still runs; only the "cut from the video" part is moot.
+      expect(called).toHaveBeenCalledOnce()
+    })
+
+    it('does not warn when capturing a video', async () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+
+      await runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({ captureKind: 'video' }),
+        () => hide(() => {})
+      )
+
+      expect(warn).not.toHaveBeenCalled()
     })
   })
 

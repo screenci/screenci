@@ -56,9 +56,11 @@ Screenshots live in the same `*.screenci.ts` files as videos (the `recordingDir`
 a file can contain any mix of `video()` and `screenshot()` calls. A `screenshot()`
 body runs just like a video body; when it returns, the final page state is
 captured. Narration, audio, and camera motion do not apply to a still and are
-ignored. Because only the final frame is kept, cursor moves are instant during a
-screenshot (the cursor still lands at its target); the smooth gliding animation
-is for videos.
+ignored. `hide()` is likewise a no-op: a still keeps only the final frame, so
+there is no timeline to cut a hidden section from (the wrapped setup still runs,
+and screenci warns if you use it). Because only the final frame is kept, cursor
+moves are instant during a screenshot (the cursor still lands at its target);
+the smooth gliding animation is for videos.
 
 #### You will learn
 

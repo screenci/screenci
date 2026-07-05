@@ -457,25 +457,26 @@ describe('CLI', () => {
         '/workspace/my-app/screenci/recordings/example.screenci.ts',
         expect.stringContaining("await page.goto('https://screenci.com/')")
       )
-      // With React overlays on (the default), the code-defined overlay video is
-      // scaffolded as a `.tsx` with an animated highlight ring, alongside the
-      // base logo example above.
+      // With React overlays on (the default), the screenshot example remains a
+      // `.ts` file and rings a locator with a `.tsx` overlay page.
       expect(mockWriteFile).toHaveBeenCalledWith(
-        '/workspace/my-app/screenci/recordings/example-overlays.screenci.tsx',
-        expect.stringContaining('element: <Highlight />')
+        '/workspace/my-app/screenci/recordings/example-screenshot.screenci.ts',
+        expect.stringContaining("path: './assets/Ring.tsx'")
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
-        '/workspace/my-app/screenci/recordings/example-overlays.screenci.tsx',
-        expect.stringContaining("'How to find docs with overlays'")
-      )
-      // With React overlays on (the default), the screenshot example is a `.tsx`
-      // that rings a locator with a React element.
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        '/workspace/my-app/screenci/recordings/example-screenshot.screenci.tsx',
-        expect.stringContaining('element: <Ring />')
+        '/workspace/my-app/screenci/recordings/assets/Ring.tsx',
+        expect.stringContaining('export default function Ring()')
       )
       expect(mockWriteFile).not.toHaveBeenCalledWith(
-        '/workspace/my-app/screenci/recordings/example-screenshot.screenci.ts',
+        '/workspace/my-app/screenci/recordings/example-overlays.screenci.tsx',
+        expect.any(String)
+      )
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        '/workspace/my-app/screenci/recordings/assets/Highlight.tsx',
+        expect.any(String)
+      )
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        '/workspace/my-app/screenci/recordings/example-screenshot.screenci.tsx',
         expect.any(String)
       )
       const tsconfigCall = mockWriteFile.mock.calls.find(
@@ -1941,11 +1942,20 @@ describe('CLI', () => {
         '/workspace/my-project/screenci/recordings/example-overlays.screenci.tsx',
         expect.any(String)
       )
-      // Under --no-react the screenshot example is a `.ts` with a plain HTML/CSS
-      // ring, so it never depends on react/react-dom.
+      // Under --no-react the screenshot example is a `.ts` referencing a plain
+      // `.html` overlay page, so it never depends on react/react-dom.
       expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/my-project/screenci/recordings/example-screenshot.screenci.ts',
-        expect.stringContaining('html: \'<div class="ring"></div>\'')
+        expect.stringContaining("path: './assets/ring.html'")
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-project/screenci/recordings/assets/ring.html',
+        expect.stringContaining('<div class="ring"></div>')
+      )
+      // No .tsx overlay page is scaffolded under --no-react.
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        '/workspace/my-project/screenci/recordings/assets/Ring.tsx',
+        expect.any(String)
       )
       expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/my-project/screenci/recordings/example-screenshot.screenci.tsx',

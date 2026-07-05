@@ -1,4 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -226,6 +232,31 @@ describe('ensureAnonRecordingAllowedOrExit', () => {
     )
     expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining('https://app.example.com')
+    )
+  })
+
+  it('prints the previous anonymous recording URL when the one free trial is already used', async () => {
+    const recordUrl = 'https://app.example.com/record/record_123'
+    writeFileSync(
+      path.join(screenciDir, 'anon-session.json'),
+      `${JSON.stringify({ token: 'anon-token', recordUrl }, null, 2)}\n`
+    )
+    global.fetch = vi.fn().mockResolvedValue({
+      json: async () => ({ status: 'pending', used: true }),
+    }) as unknown as typeof fetch
+
+    const { ensureAnonRecordingAllowedOrExit } = await import('./cli')
+    await expect(
+      ensureAnonRecordingAllowedOrExit(
+        screenciDir,
+        'https://api.example.com',
+        'https://app.example.com',
+        undefined
+      )
+    ).rejects.toThrow('process.exit')
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining(recordUrl)
     )
   })
 

@@ -885,6 +885,83 @@ describe('CLI', () => {
       )
     })
 
+    it('stores the result URL in the anonymous session after a successful anonymous record', async () => {
+      delete process.env.SCREENCI_SECRET
+      process.env.SCREENCI_ENVIRONMENT = 'local'
+      process.argv = [
+        'node',
+        'cli.js',
+        'record',
+        '--config',
+        'test-fixtures/record-upload.config.ts',
+      ]
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('record-upload.config.ts')) {
+          return "export default { projectName: 'Test Project' }"
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('test-fixtures/record-upload.config.ts') ||
+          path.endsWith('data.json') ||
+          path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await main()
+
+      const anonSessionWrites = mockWriteFile.mock.calls.filter((call) =>
+        String(call[0]).endsWith('anon-session.json')
+      )
+      expect(
+        anonSessionWrites.some((call) => {
+          const parsed = JSON.parse(String(call[1])) as {
+            token?: unknown
+            recordUrl?: unknown
+          }
+          return (
+            typeof parsed.token === 'string' &&
+            typeof parsed.recordUrl === 'string' &&
+            parsed.recordUrl.startsWith('http://localhost:5173/record/')
+          )
+        })
+      ).toBe(true)
+    })
+
     it('omits the upgrade mention for business plans', async () => {
       process.argv = [
         'node',

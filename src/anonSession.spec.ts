@@ -12,6 +12,8 @@ import {
   evaluateAnonRecordingGate,
   formatAnonTermsNotice,
   getOrCreateAnonToken,
+  readAnonSessionRecordUrl,
+  saveAnonSessionRecordUrl,
   secretCredential,
 } from './anonSession.js'
 
@@ -39,6 +41,20 @@ describe('getOrCreateAnonToken', () => {
     const first = await getOrCreateAnonToken(screenciDir)
     const second = await getOrCreateAnonToken(screenciDir)
     expect(second).toBe(first)
+  })
+
+  it('stores the successful anonymous recording URL alongside the token', async () => {
+    const token = await getOrCreateAnonToken(screenciDir)
+    const recordUrl = 'https://app.example.com/record/record_123'
+
+    await saveAnonSessionRecordUrl(screenciDir, token, recordUrl)
+
+    expect(await readAnonSessionRecordUrl(screenciDir)).toBe(recordUrl)
+    expect(
+      JSON.parse(
+        readFileSync(path.join(screenciDir, 'anon-session.json'), 'utf-8')
+      )
+    ).toEqual({ token, recordUrl })
   })
 
   it('deleteAnonSessionFile removes the persisted token so a new one is minted', async () => {

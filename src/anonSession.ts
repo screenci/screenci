@@ -51,15 +51,21 @@ function getAnonSessionFilePath(screenciDir: string): string {
   return resolve(screenciDir, ANON_SESSION_FILE)
 }
 
-type AnonSessionFile = { token: string }
+type AnonSessionFile = { token: string; recordUrl?: string }
 
 async function readAnonSessionFile(
   screenciDir: string
-): Promise<string | null> {
+): Promise<AnonSessionFile | null> {
   try {
     const raw = await readFile(getAnonSessionFilePath(screenciDir), 'utf-8')
     const parsed = JSON.parse(raw) as Partial<AnonSessionFile>
-    return typeof parsed.token === 'string' ? parsed.token : null
+    if (typeof parsed.token !== 'string') return null
+    return {
+      token: parsed.token,
+      ...(typeof parsed.recordUrl === 'string'
+        ? { recordUrl: parsed.recordUrl }
+        : {}),
+    }
   } catch {
     return null
   }
@@ -67,12 +73,12 @@ async function readAnonSessionFile(
 
 async function writeAnonSessionFile(
   screenciDir: string,
-  token: string
+  session: AnonSessionFile
 ): Promise<void> {
   mkdirSync(screenciDir, { recursive: true })
   await writeFile(
     getAnonSessionFilePath(screenciDir),
-    `${JSON.stringify({ token } satisfies AnonSessionFile, null, 2)}\n`
+    `${JSON.stringify(session satisfies AnonSessionFile, null, 2)}\n`
   )
 }
 
@@ -98,11 +104,36 @@ export async function getOrCreateAnonToken(
   screenciDir: string
 ): Promise<string> {
   const existing = await readAnonSessionFile(screenciDir)
-  if (existing) return existing
+  if (existing) return existing.token
 
   const token = randomUUID()
-  await writeAnonSessionFile(screenciDir, token)
+  await writeAnonSessionFile(screenciDir, { token })
   return token
+}
+
+/**
+ * Remembers the successful anonymous recording URL locally so a second
+ * anonymous `record` attempt can point back to the trial recording instead of
+ * only showing the sign-up URL.
+ */
+export async function saveAnonSessionRecordUrl(
+  screenciDir: string,
+  token: string,
+  recordUrl: string
+): Promise<void> {
+  const existing = await readAnonSessionFile(screenciDir)
+  await writeAnonSessionFile(screenciDir, {
+    ...(existing?.token === token ? existing : {}),
+    token,
+    recordUrl,
+  })
+}
+
+export async function readAnonSessionRecordUrl(
+  screenciDir: string
+): Promise<string | null> {
+  const existing = await readAnonSessionFile(screenciDir)
+  return existing?.recordUrl ?? null
 }
 
 export type AnonSessionStatus =

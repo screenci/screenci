@@ -69,8 +69,9 @@ import {
   evaluateAnonRecordingGate,
   formatAnonTermsNotice,
   getOrCreateAnonToken,
+  readAnonSessionRecordUrl,
+  saveAnonSessionRecordUrl,
   secretCredential,
-  SCREENCI_TERMS_URL,
 } from './src/anonSession.js'
 
 // Re-export the environment-aware URL helpers so existing importers (and tests)
@@ -2884,8 +2885,13 @@ export async function ensureAnonRecordingAllowedOrExit(
     gate.reason === 'expired'
       ? 'Your free ScreenCI trial has expired.'
       : "You've already used your one free ScreenCI trial recording."
+  const previousRecordUrl =
+    gate.reason === 'used' ? await readAnonSessionRecordUrl(screenciDir) : null
   logger.error(
     `${intro}\n` +
+      (previousRecordUrl
+        ? `Previous recording: ${pc.cyan(previousRecordUrl)}\n`
+        : '') +
       `Sign up to keep recording (no watermark, no limits): ${pc.cyan(appUrl)}\n` +
       'After signing up, re-run this command in the same folder and it links automatically.'
   )
@@ -3015,8 +3021,10 @@ async function uploadRecordedVideosForConfig(
           `Not all recordings succeeded to upload. Failed videos: ${failedVideoNames.join(', ') || 'unknown'}. Some videos may be missing from the project.`
         )
       }
+      let resultUrl: string | null = null
       if (recordId !== null && projectId !== null) {
         const recordUrl = `${appUrl}/record/${recordId}`
+        resultUrl = recordUrl
         await writeGitHubProjectOutput(recordUrl)
         logger.info('')
         logger.info(
@@ -3027,6 +3035,7 @@ async function uploadRecordedVideosForConfig(
         logger.info(pc.cyan(recordUrl))
       } else if (projectId !== null) {
         const projectUrl = `${appUrl}/project/${projectId}`
+        resultUrl = projectUrl
         await writeGitHubProjectOutput(projectUrl)
         logger.info('')
         logger.info(
@@ -3036,10 +3045,19 @@ async function uploadRecordedVideosForConfig(
         )
         logger.info(pc.cyan(projectUrl))
       }
-      if (usedAnonCredential && (recordId !== null || projectId !== null)) {
-        logger.info(
-          `Recorded without an account. Open the link above to view it, and sign up to keep it (by continuing you agree to the Terms: ${SCREENCI_TERMS_URL}).`
-        )
+      if (usedAnonCredential && resultUrl !== null) {
+        try {
+          await saveAnonSessionRecordUrl(
+            screenciDir,
+            credential.value,
+            resultUrl
+          )
+        } catch (err) {
+          logger.warn(
+            `Failed to remember anonymous recording URL: ${err instanceof Error ? err.message : String(err)}`
+          )
+        }
+        logger.info(`Recorded without an account. Sign up to keep it.`)
       }
       if (notices.length > 0) {
         logger.info('')

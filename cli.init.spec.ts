@@ -457,9 +457,16 @@ describe('CLI', () => {
         '/workspace/my-app/screenci/recordings/example.screenci.ts',
         expect.stringContaining("await page.goto('https://screenci.com/')")
       )
-      expect(mockWriteFile).not.toHaveBeenCalledWith(
-        '/workspace/my-app/screenci/recordings/example-react.screenci.tsx',
-        expect.any(String)
+      // With React overlays on (the default), the code-defined overlay video is
+      // scaffolded as a `.tsx` with an animated highlight ring, alongside the
+      // base logo example above.
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/screenci/recordings/example-overlays.screenci.tsx',
+        expect.stringContaining('element: <Highlight />')
+      )
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/screenci/recordings/example-overlays.screenci.tsx',
+        expect.stringContaining("'How to find docs with overlays'")
       )
       // With React overlays on (the default), the screenshot example is a `.tsx`
       // that rings a locator with a React element.
@@ -1928,9 +1935,10 @@ describe('CLI', () => {
       const { main } = await import('./cli')
       await main()
 
-      // The scaffold no longer writes a .tsx example file.
+      // Under --no-react the scaffold writes no .tsx example files, so nothing
+      // depends on react/react-dom.
       expect(mockWriteFile).not.toHaveBeenCalledWith(
-        '/workspace/my-project/screenci/recordings/example-react.screenci.tsx',
+        '/workspace/my-project/screenci/recordings/example-overlays.screenci.tsx',
         expect.any(String)
       )
       // Under --no-react the screenshot example is a `.ts` with a plain HTML/CSS

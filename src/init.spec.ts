@@ -174,12 +174,24 @@ describe('generateExampleVideo', () => {
 })
 
 describe('generateGitignore', () => {
-  it('ignores the video asset media folder with an explanatory comment', () => {
+  it('ignores binary asset media by extension with an explanatory comment', () => {
     const gitignore = generateGitignore()
-    expect(gitignore).toContain('recordings/assets/')
     expect(gitignore).toContain('uploaded to')
-    // The path must match where the scaffold writes assets.
     expect(gitignore).toContain('# Video asset media')
+    // Binary overlay/audio/video media under recordings/assets/ is ignored.
+    for (const extension of ['png', 'jpg', 'jpeg', 'mov', 'mp4', 'mp3']) {
+      expect(gitignore).toContain(`recordings/assets/**/*.${extension}`)
+    }
+  })
+
+  it('does not ignore the whole assets folder or its editable text sources', () => {
+    const gitignore = generateGitignore()
+    // The old rule ignored the entire folder; assets may hold committed HTML,
+    // TSX, and SVG overlay sources, so only binary media is ignored now.
+    expect(gitignore).not.toContain('recordings/assets/\n')
+    for (const textExtension of ['tsx', 'html', 'svg']) {
+      expect(gitignore).not.toContain(`recordings/assets/**/*.${textExtension}`)
+    }
   })
 })
 

@@ -976,20 +976,52 @@ async function readCurrentScreenciVersion(): Promise<string> {
   return 'latest'
 }
 
+// Binary overlay / audio media that ScreenCI uploads to the backend on first
+// record and reuses on later runs. Only true binary formats are listed: HTML,
+// TSX, and SVG overlay sources under recordings/assets/ are editable text and
+// must stay committed, so we ignore by extension instead of the whole folder.
+// Keep in sync with the overlay (.png/.mp4) and audio (see audio.ts) file
+// formats ScreenCI supports.
+const IGNORED_ASSET_MEDIA_EXTENSIONS = [
+  // Images
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  // Video
+  'mp4',
+  'mov',
+  'webm',
+  // Audio
+  'mp3',
+  'wav',
+  'm4a',
+  'aac',
+  'ogg',
+  'flac',
+  'opus',
+] as const
+
 export function generateGitignore(
   packageManager: PackageManager = 'npm'
 ): string {
   const yarnSection = packageManager === 'yarn' ? '\n# Yarn\n.yarn/\n' : ''
+  const assetMediaRules = IGNORED_ASSET_MEDIA_EXTENSIONS.map(
+    (extension) => `recordings/assets/**/*.${extension}`
+  ).join('\n')
   return `# ScreenCI
 .screenci
 .playwright-cli/
 .env
 
-# Video asset media (overlays, audio, narration clips). These are uploaded to
-# the ScreenCI backend on first record and reused on later runs (CI included),
-# so the large media files do not need to be committed. Delete this rule if you
-# prefer to commit them.
-recordings/assets/
+# Video asset media under recordings/assets/: image, video, and audio overlay
+# and soundtrack files. These binary files are uploaded to the ScreenCI backend
+# on first record and reused on later runs (CI included), so the large media do
+# not need to be committed. HTML, TSX, and SVG overlay sources under
+# recordings/assets/ are text and stay committed. Delete these rules to commit
+# the media too.
+${assetMediaRules}
 
 # Playwright
 node_modules/
@@ -1358,15 +1390,17 @@ function Highlight() {
         width: '100%',
         height: '100%',
         boxSizing: 'border-box',
-        border: '4px solid #ec4899',
-        borderRadius: '12px',
-        animation: 'screenci-highlight 1s ease-in-out infinite',
+        border: '3px solid #ec4899',
+        borderRadius: '14px',
+        boxShadow:
+          '0 0 0 4px rgba(236, 72, 153, 0.18), 0 12px 30px rgba(236, 72, 153, 0.28)',
+        animation: 'screenci-highlight 1.4s ease-in-out infinite',
       }}
     >
       <style>{\`
         @keyframes screenci-highlight {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.35; }
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.03); opacity: 0.55; }
         }
       \`}</style>
     </div>
@@ -1434,7 +1468,9 @@ screenshot
           box-sizing: border-box;
           border: 3px solid #ec4899;
           border-radius: 14px;
-          box-shadow: 0 0 0 6px rgba(236, 72, 153, 0.18);
+          box-shadow:
+            0 0 0 6px rgba(236, 72, 153, 0.16),
+            0 14px 34px rgba(236, 72, 153, 0.26);
         }
       \`,
       over: target,
@@ -1472,7 +1508,8 @@ function Ring() {
         boxSizing: 'border-box',
         border: '3px solid #ec4899',
         borderRadius: '14px',
-        boxShadow: '0 0 0 6px rgba(236, 72, 153, 0.18)',
+        boxShadow:
+          '0 0 0 6px rgba(236, 72, 153, 0.16), 0 14px 34px rgba(236, 72, 153, 0.26)',
       }}
     />
   )
@@ -1740,6 +1777,17 @@ export async function runInit(
       resolve(islandDir, 'recordings', 'example.screenci.ts'),
       generateExampleVideo()
     )
+    // With React overlays enabled, also scaffold a code-defined overlay video:
+    // an animated highlight ring drawn from a React element (`.tsx`). It carries
+    // a distinct title so it coexists with the base example above, and shows the
+    // programmatic overlay path the plain logo example does not. Skipped under
+    // `--no-react` so nothing depends on a package the user opted out of.
+    if (shouldAddReactOverlays) {
+      await writeFile(
+        resolve(islandDir, 'recordings', 'example-overlays.screenci.tsx'),
+        generateReactExampleVideo()
+      )
+    }
     // Also scaffold a screenshot example: a branded still that rings one element.
     // With React overlays it renders the ring from a React element (`.tsx`);
     // under `--no-react` it uses a plain HTML/CSS overlay (`.ts`), so the example
@@ -1997,7 +2045,8 @@ export default defineConfig({
       screenshot: { margin: 64 },
       output: {
         background: {
-          backgroundCss: 'linear-gradient(135deg, #fdf2f8 0%, #ede9fe 100%)',
+          backgroundCss:
+            'linear-gradient(160deg, #fce7f3 0%, #ede9fe 50%, #e0e7ff 100%)',
         },
       },
       recording: {

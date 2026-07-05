@@ -29,6 +29,9 @@ describe('buildClientOverlayDocument', () => {
     // The document embeds the bundle and provides the empty overlay root.
     expect(doc).toContain('BUNDLE_OUTPUT')
     expect(doc).toContain('id="screenci-overlay-root"')
+    expect(doc).toContain('"Noto Sans CJK SC"')
+    expect(doc).toContain('"Noto Sans CJK JP"')
+    expect(doc).toContain('"Noto Sans Devanagari"')
     expect(doc.startsWith('<!doctype html>')).toBe(true)
   })
 

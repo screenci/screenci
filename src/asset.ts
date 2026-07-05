@@ -33,6 +33,9 @@ import {
 
 export type { OverlayPlacement, OverlayCrop } from './events.js'
 
+/** A relative overlay length: a time string (`'2s'`, `'0:02'`) or milliseconds. */
+export type OverlayDuration = TimelineOffset | number
+
 /**
  * Placement and capture fields shared by every overlay variant. Placement is
  * flat (not nested) and uses CSS pixels in the recording viewport (the same
@@ -81,16 +84,17 @@ type OverlayCommon = {
    */
   margin?: number
   /**
-   * Default visible length, as a relative time string (`'2s'`, `'0:02'`), used
-   * when the overlay is shown with a bare call (`await overlays.logo()`) or
-   * `.for()` without its own length. Seconds/timecode only (no percentage).
-   * Omit when driving with `start()`/`end()`. Image/HTML/React overlays only.
+   * Default visible length, as a relative time string (`'2s'`, `'0:02'`) or a
+   * number of milliseconds, used when the overlay is shown with a bare call
+   * (`await overlays.logo()`) or `.for()` without its own length.
+   * Seconds/timecode only (no percentage). Omit when driving with
+   * `start()`/`end()`. Image/HTML/React overlays only.
    *
    * For animated overlays (`animate: true`) this is also the capture length: it
    * is required when driving with `start()`/`end()` (the capture length is
    * otherwise unknown).
    */
-  duration?: TimelineOffset
+  duration?: OverlayDuration
   /**
    * Capture the overlay as an animation so its CSS/JS animation plays back in
    * the video (`.html`/`.tsx` page overlays only). The animation is sampled over
@@ -576,12 +580,12 @@ export type OverlayController = {
    */
   (): Promise<void>
   /**
-   * Hold the overlay for a relative length, e.g. `.for('2s')` or `.for('0:02')`.
-   * Seconds and timecodes only; a percentage is rejected (a relative length has
-   * nothing to take a percentage of). Not for `.mp4`/animated overlays, whose
-   * length is fixed.
+   * Hold the overlay for a relative length, e.g. `.for('2s')`, `.for('0:02')`,
+   * or `.for(2000)`. String seconds/timecodes and numeric milliseconds are
+   * accepted; a percentage is rejected (a relative length has nothing to take a
+   * percentage of). Not for `.mp4`/animated overlays, whose length is fixed.
    */
-  for(duration: TimelineOffset): Promise<void>
+  for(duration: OverlayDuration): Promise<void>
   /**
    * Keep the overlay visible until this absolute point in the final video (a
    * `'<n>s'`/timecode position, or a `'<n>%'` fraction). Supported for image,
@@ -627,8 +631,8 @@ export type Overlays<T extends Record<string, OverlayInputOrFactory>> = {
  * `element`, or an inline `html` fragment.
  *
  * Calling a controller shows the overlay in the recording timeline. Image
- * (`.svg`/`.png`), HTML, and React overlays need a `durationMs` (in the config
- * or passed to the blocking call) unless driven with `start()`/`end()`; `.mp4`
+ * (`.svg`/`.png`), HTML, and React overlays need a `duration` (in the config
+ * or passed to `.for(...)`) unless driven with `start()`/`end()`; `.mp4`
  * overlays use their natural duration and default `audio` to `1` (natural level).
  *
  * Placement defaults to the full recording area (`relativeTo: 'recording'`);
@@ -648,13 +652,13 @@ export type Overlays<T extends Record<string, OverlayInputOrFactory>> = {
  * video('Product demo', async ({ page }) => {
  *   await overlays.intro()
  *   await page.goto('/dashboard')
- *   await overlays.logo(1200)
+ *   await overlays.logo.for(1200)
  * })
  * ```
  *
  * A value can also be an {@link OverlayConfigFactory} `(props) => OverlayConfig`,
  * making the overlay programmatic. Calling `overlays.name(props)` builds and
- * returns a controller you then drive with `(durationMs)`, `start()`, or
+ * returns a controller you then drive with `.for(...)`, `start()`, or
  * `end()`. The factory runs (and its config is validated) on each call, so
  * content and placement can depend on runtime values.
  */
@@ -970,14 +974,26 @@ function resolveOverlayAnchor(until: TimelineOffset): TimelineAnchorInput {
 
 /**
  * Resolves a relative length string (`.for('2s')` or a config `duration`) into
- * milliseconds. Seconds and timecodes only: a percentage is rejected because a
- * relative length has nothing to take a percentage of (use `.until('<n>%')` for
- * an absolute position instead).
+ * milliseconds. Numbers are already milliseconds. String seconds and timecodes
+ * are accepted; a percentage is rejected because a relative length has nothing
+ * to take a percentage of (use `.until('<n>%')` for an absolute position
+ * instead).
  */
-function resolveRelativeDuration(value: TimelineOffset, label: string): number {
+function resolveRelativeDuration(
+  value: OverlayDuration,
+  label: string
+): number {
+  if (typeof value === 'number') {
+    if (!isFiniteNonNegative(value)) {
+      throw new Error(
+        `[screenci] ${label} must be a finite number of milliseconds greater than or equal to 0. Received: ${String(value)}.`
+      )
+    }
+    return value
+  }
   if (typeof value !== 'string') {
     throw new Error(
-      `[screenci] ${label} must be a time string such as '2s' or '0:02', got ${typeof value}.`
+      `[screenci] ${label} must be a time string such as '2s' or '0:02', or a number of milliseconds, got ${typeof value}.`
     )
   }
   const parsed = parseTimelineOffset(value)
@@ -989,10 +1005,10 @@ function resolveRelativeDuration(value: TimelineOffset, label: string): number {
   return parsed.ms
 }
 
-/** Parses an optional config `duration` (a relative time string) into ms. */
+/** Parses an optional config `duration` (relative time string or ms number) into ms. */
 function resolveConfigDuration(
   name: string,
-  duration: TimelineOffset | undefined
+  duration: OverlayDuration | undefined
 ): number | undefined {
   if (duration === undefined) return undefined
   return resolveRelativeDuration(duration, `Overlay "${name}" duration`)
@@ -1085,7 +1101,7 @@ function createAssetControllerCore(
     await runBlocking({ type: 'blocking' })
   }) as OverlayController
 
-  controller.for = (duration: TimelineOffset): Promise<void> =>
+  controller.for = (duration: OverlayDuration): Promise<void> =>
     runBlocking({
       type: 'blocking',
       durationMs: resolveRelativeDuration(
@@ -1324,7 +1340,7 @@ function createRenderedOverlayController(
 /**
  * An animated overlay rendered to a transparent clip, from either an HTML file
  * or a React element. The capture length is resolved from the call argument or
- * config `durationMs`; `start()`/`end()` requires a config `durationMs` (the
+ * config `duration`; `start()`/`end()` requires a config `duration` (the
  * capture length is otherwise unknown).
  *
  * Markup and duration are captured during the test; the clip itself is encoded

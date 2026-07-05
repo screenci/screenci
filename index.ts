@@ -90,6 +90,7 @@ export { MAX_AUDIO_LEVEL, selected } from './src/asset.js'
 export type {
   OverlayController,
   OverlayConfig,
+  OverlayDuration,
   TsxOverlayConfig,
   HtmlPageOverlayConfig,
   MediaOverlayConfig,

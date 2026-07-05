@@ -633,7 +633,7 @@ export type ScreenCILocatorPostClickMoveOptions = CursorMoveTimingOption & {
  */
 export type RedactStyle = {
   /**
-   * Opaque fill color, e.g. '#111' or 'black'. Omit to sample a color from the
+   * Opaque fill color, e.g. '#fff3d6'. Omit to sample a color from the
    * surface underneath the element.
    */
   color?: string

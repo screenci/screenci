@@ -1,6 +1,8 @@
 import { dirname } from 'path'
 
 const OVERLAY_ROOT_ID = 'screenci-overlay-root'
+const OVERLAY_FONT_STACK =
+  '"Noto Sans", "Noto Sans CJK SC", "Noto Sans CJK JP", "Noto Sans Devanagari", "Noto Color Emoji", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
 
 /**
  * Bundles a `.tsx` page overlay: an author React component module is bundled for
@@ -112,8 +114,8 @@ export async function buildClientOverlayDocument(
   })
   return (
     '<!doctype html><html><head><meta charset="utf-8"><style>' +
-    'html,body{margin:0;padding:0;background:transparent}' +
-    `#${OVERLAY_ROOT_ID}{display:inline-block}` +
+    `html,body{margin:0;padding:0;background:transparent;font-family:${OVERLAY_FONT_STACK}}` +
+    `#${OVERLAY_ROOT_ID}{display:inline-block;font-family:inherit}` +
     `</style></head><body><div id="${OVERLAY_ROOT_ID}"></div>` +
     `<script>${script}</script></body></html>`
   )

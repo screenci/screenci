@@ -948,6 +948,15 @@ describe('CLI', () => {
 
       await main()
 
+      const messages = loggerInfoSpy.mock.calls.map((call) =>
+        stripVTControlCharacters(String(call[0]))
+      )
+      expect(messages).toContain(
+        'Recorded without an account. 3 free trial recordings left. Sign up to keep it and record without limits.'
+      )
+      expect(messages).not.toContain(
+        'Recorded without an account. Sign up to keep it.'
+      )
       const anonSessionWrites = mockWriteFile.mock.calls.filter((call) =>
         String(call[0]).endsWith('anon-session.json')
       )

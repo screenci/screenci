@@ -10,6 +10,7 @@ import {
   checkAnonSessionStatus,
   deleteAnonSessionFile,
   evaluateAnonRecordingGate,
+  formatAnonPostRecordNotice,
   formatAnonRecordingsLeft,
   formatAnonTermsNotice,
   getOrCreateAnonToken,
@@ -208,6 +209,26 @@ describe('formatAnonRecordingsLeft', () => {
 
   it('reports the last recording being spent', () => {
     expect(formatAnonRecordingsLeft(0)).toContain('last free trial recording')
+  })
+})
+
+describe('formatAnonPostRecordNotice', () => {
+  it('combines anonymous account and plural remaining recording notices', () => {
+    expect(formatAnonPostRecordNotice(2)).toBe(
+      'Recorded without an account. 2 free trial recordings left. Sign up to keep it and record without limits.'
+    )
+  })
+
+  it('uses the singular for exactly one remaining recording', () => {
+    expect(formatAnonPostRecordNotice(1)).toBe(
+      'Recorded without an account. 1 free trial recording left. Sign up to keep it and record without limits.'
+    )
+  })
+
+  it('combines anonymous account and final recording notices', () => {
+    expect(formatAnonPostRecordNotice(0)).toBe(
+      'Recorded without an account. That was your last free trial recording. Sign up to keep it and record more.'
+    )
   })
 })
 

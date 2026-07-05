@@ -10,7 +10,7 @@ describe('createOverlays type constraints', () => {
     createOverlays({
       logo: {
         path: './logo.png',
-        durationMs: 1200,
+        duration: 1200,
         x: 200,
         y: 120,
         width: 600,
@@ -20,7 +20,7 @@ describe('createOverlays type constraints', () => {
 
   it('accepts an .html page overlay', () => {
     createOverlays({
-      note: { path: './note.html', durationMs: 1200, x: 1340, width: 380 },
+      note: { path: './note.html', duration: 1200, x: 1340, width: 380 },
     })
   })
 
@@ -127,8 +127,15 @@ describe('createOverlays type constraints', () => {
 
   it('rejects calling a static-key controller with props', () => {
     const overlays = createOverlays({ logo: './logo.png' })
-    // @ts-expect-error a static overlay controller takes a durationMs, not props
+    overlays.logo.for(1200)
+    // @ts-expect-error a static overlay controller does not take props
     overlays.logo({ text: 'hi' })
+  })
+
+  it('rejects numeric positions for until', () => {
+    const overlays = createOverlays({ logo: './logo.png' })
+    // @ts-expect-error until takes a string timeline position, not a duration
+    overlays.logo.until(1200)
   })
 
   it('rejects calling a factory-key controller without props', () => {

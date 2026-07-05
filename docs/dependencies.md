@@ -36,7 +36,7 @@ video.overlays({ intro: selected('Intro Clip') })(
 )
 ```
 
-A dependency overlay is driven exactly like any other overlay: call it for a blocking window (`await overlays.intro.for('1.2s')`), hold it until a position (`await overlays.intro.until('0:05')`), let a bare `await overlays.intro()` hold it for its natural length, or drive a live window with `start()`/`end()`. It accepts the same placement options as a file overlay (`x`/`y`/`width`/`height`/`relativeTo`/`aspectRatio`/`fill`), so you can frame it anywhere in the output.
+A dependency overlay is driven exactly like any other overlay: call it for a blocking window (`await overlays.intro.for('1.2s')` or `await overlays.intro.for(1200)`), hold it until a position (`await overlays.intro.until('0:05')`), let a bare `await overlays.intro()` hold it for its natural length, or drive a live window with `start()`/`end()`. It accepts the same placement options as a file overlay (`x`/`y`/`width`/`height`/`relativeTo`/`aspectRatio`/`fill`), so you can frame it anywhere in the output.
 
 ```ts
 video.overlays({

@@ -196,11 +196,11 @@ await overlays.tip.until('2s') // seconds (fractions allowed: '5.51s')
 
 Accepted forms for `.until(...)`: `'<n>s'` seconds, `'m:ss(.f)'` /
 `'h:mm:ss(.f)'` timecodes, and `'<n>%'` percentages. For a relative length
-instead, use `.for('<n>s')`. Positions are resolved against the finished render, so they are correct
-against the actual video, and narration audio is never cut (the window extends to
-let a line finish). Percentages are not supported on `.mp4` or animated overlays,
-whose length is fixed. See [Narration](/docs/guides/narration) and
-[Overlays](/docs/guides/overlays).
+instead, use `.for('<n>s')` or `.for(<ms>)`. Positions are resolved against the
+finished render, so they are correct against the actual video, and narration
+audio is never cut (the window extends to let a line finish). Percentages are
+not supported on `.mp4` or animated overlays, whose length is fixed. See
+[Narration](/docs/guides/narration) and [Overlays](/docs/guides/overlays).
 
 ### `autoZoom()`
 

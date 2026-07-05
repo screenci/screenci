@@ -150,6 +150,16 @@ export function formatAnonRecordingsLeft(remaining: number): string {
   } left. Sign up to record without limits.`
 }
 
+/** A single-line notice shown after an anonymous recording succeeds. */
+export function formatAnonPostRecordNotice(remaining: number): string {
+  if (remaining <= 0) {
+    return 'Recorded without an account. That was your last free trial recording. Sign up to keep it and record more.'
+  }
+  return `Recorded without an account. ${remaining} free trial recording${
+    remaining === 1 ? '' : 's'
+  } left. Sign up to keep it and record without limits.`
+}
+
 export type AnonSessionStatus =
   | { status: 'not_found' }
   | { status: 'expired' }

@@ -104,7 +104,7 @@ this video (matched by the overlay's name). See
 
 Rules:
 
-- `.tsx`, `.html`, `.svg`, and `.png` overlays need a length: give them a relative `.for('1.2s')`, an absolute `.until('0:05')`/`.until('56%')`, a `duration` config string, or drive them with `start()`/`end()`. A bare `overlays.logo()` is invalid for these (it only works for a video or render dependency, which holds for its natural length).
+- `.tsx`, `.html`, `.svg`, and `.png` overlays need a length: give them a relative `.for('1.2s')` / `.for(1200)`, an absolute `.until('0:05')`/`.until('56%')`, a `duration` config string or millisecond number, or drive them with `start()`/`end()`. A bare `overlays.logo()` is invalid for these (it only works for a video or render dependency, which holds for its natural length).
 - `.tsx`, `.html`, and image overlays do not support `volume`.
 - `.mp4` overlays may provide `volume` (a linear gain). `1` (the default) plays the source at its natural level, `0` mutes it, and values above `1` boost it (e.g. `2` is twice as loud, up to `4`).
 - `.mp4` overlays use the file's natural duration and must not provide a `duration`.

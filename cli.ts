@@ -67,7 +67,7 @@ import {
   checkAnonSessionStatus,
   deleteAnonSessionFile,
   evaluateAnonRecordingGate,
-  formatAnonRecordingsLeft,
+  formatAnonPostRecordNotice,
   formatAnonTermsNotice,
   getOrCreateAnonToken,
   readAnonSessionRecordUrl,
@@ -3058,7 +3058,6 @@ async function uploadRecordedVideosForConfig(
             `Failed to remember anonymous recording URL: ${err instanceof Error ? err.message : String(err)}`
           )
         }
-        logger.info(`Recorded without an account. Sign up to keep it.`)
         // Report how many trial recordings remain after this run. Best-effort:
         // checkAnonSessionStatus never throws (it falls back on failure), so a
         // transient outage just shows the optimistic remaining count.
@@ -3066,7 +3065,9 @@ async function uploadRecordedVideosForConfig(
           backendUrl: apiUrl,
         })
         if (postStatus.status === 'pending') {
-          logger.info(formatAnonRecordingsLeft(postStatus.remaining))
+          logger.info(formatAnonPostRecordNotice(postStatus.remaining))
+        } else {
+          logger.info(`Recorded without an account. Sign up to keep it.`)
         }
       }
       if (notices.length > 0) {

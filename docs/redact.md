@@ -56,7 +56,7 @@ entered:
 ```ts
 await page.getByLabel('Password').fill('hunter2', { redact: true })
 await page.getByLabel('API key').fill(apiKey, {
-  redact: { style: { color: 'black' } },
+  redact: { style: { color: '#fff3d6', radius: 10 } },
 })
 ```
 
@@ -80,7 +80,7 @@ default it samples its color from the surface underneath. Override it with
 `RedactOptions.style`:
 
 ```ts
-await redact(page.locator('.ssn'), { style: { color: '#111', radius: 6 } })
+await redact(page.locator('.ssn'), { style: { color: '#fff3d6', radius: 10 } })
 await redact(page.locator('.token'), {
   style: {
     css: 'background: repeating-linear-gradient(45deg,#222 0 6px,#333 6px 12px)',

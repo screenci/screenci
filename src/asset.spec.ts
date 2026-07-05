@@ -110,6 +110,21 @@ describe('createOverlays', () => {
       })
     })
 
+    it('accepts config duration as numeric milliseconds', async () => {
+      const overlays = createOverlays({
+        logo: { path: './logo.png', duration: 1200 },
+      })
+
+      await overlays.logo()
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
+        kind: 'image',
+        path: './logo.png',
+        durationMs: 1200,
+        fullScreen: false,
+      })
+    })
+
     it('records an absolute string position as an outputMs anchor', async () => {
       const overlays = createOverlays({ logo: { path: './logo.png' } })
 
@@ -1312,6 +1327,21 @@ describe('selected (render dependency overlays)', () => {
     })
   })
 
+  it('accepts dependency config duration as numeric milliseconds', async () => {
+    const overlays = createOverlays({
+      intro: selected('Intro Clip', { duration: 800 }),
+    })
+
+    await overlays.intro()
+
+    expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
+      kind: 'dependency',
+      dependency: { name: 'Intro Clip' },
+      durationMs: 800,
+      fullScreen: false,
+    })
+  })
+
   it('records a bare dependency call with its natural length (no durationMs)', async () => {
     const overlays = createOverlays({ intro: selected('Intro Clip') })
 
@@ -1490,6 +1520,19 @@ describe('overlay length API (.for / .until)', () => {
       kind: 'image',
       path: './logo.png',
       durationMs: 2000,
+      fullScreen: false,
+    })
+  })
+
+  it('.for(1200) records numeric milliseconds on the asset start', async () => {
+    const overlays = createOverlays({ logo: { path: './logo.png' } })
+
+    await overlays.logo.for(1200)
+
+    expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
+      kind: 'image',
+      path: './logo.png',
+      durationMs: 1200,
       fullScreen: false,
     })
   })

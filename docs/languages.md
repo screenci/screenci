@@ -322,6 +322,11 @@ table, so any language below works with them regardless of `modelType`.
 (`values` and other non-narration features also work for every key regardless of
 model, since they carry no synthesized speech.)
 
+One built-in-voice exception is worth calling out: Russian (`ru`) currently
+supports the built-in names `Ava`, `Daniel`, `Emma`, `Leo`, `Lily`, `Max`,
+`Miles`, and `Nora`. When a shared default also needs to cover Russian, use one
+of those names; the built-in fallback voice is `Ava`.
+
 ### Available with any model
 
 These narrate with both the consistent (default) and expressive models:

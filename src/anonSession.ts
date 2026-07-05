@@ -18,6 +18,7 @@ export const ANON_SESSION_FILE = 'anon-session.json'
 
 export const ANON_TOKEN_HEADER = 'X-ScreenCI-Anon-Token'
 export const SECRET_HEADER = 'X-ScreenCI-Secret'
+export const ANON_MAX_VIDEOS_PER_RECORDING = 3
 
 // Canonical Terms of Service URL. Hardcoded like the docs links elsewhere in
 // the CLI (the legal pages are not environment-specific). Anonymous trial

@@ -155,7 +155,7 @@ describe('generateExampleVideo', () => {
   })`)
     // No per-language keys: the example does not declare a second language.
     expect(source).not.toContain('    es: {')
-    // Narration defaults to the built-in voice (Sophie), so the example carries no
+    // Narration defaults to the built-in voice (Ava), so the example carries no
     // redundant voice config and does not import `voices`.
     expect(source).not.toContain('video.use({')
     expect(source).not.toContain('voices')

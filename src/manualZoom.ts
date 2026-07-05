@@ -2,6 +2,7 @@ import type { Locator, Page } from '@playwright/test'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { ScreenciError } from './errors.js'
 import type { FocusChangeEvent } from './events.js'
+import { isInsideHide } from './hide.js'
 import { changeFocus, resolvePointFocusZoom } from './changeFocus.js'
 import {
   getActiveAutoZoomRecorder,
@@ -157,12 +158,14 @@ export async function zoomTo(
     setZoomMode(
       result.zoom !== undefined || previousMode === 'manual' ? 'manual' : 'idle'
     )
-    recorder.addInput('focusChange', result.elementRect, [result])
+    if (!isInsideHide()) {
+      recorder.addInput('focusChange', result.elementRect, [result])
+    }
     return
   }
 
   const result = await zoomToPoint(target, options)
-  if (result !== undefined) {
+  if (result !== undefined && !isInsideHide()) {
     recorder.addInput('focusChange', undefined, [result])
   }
 }
@@ -228,5 +231,7 @@ export async function resetZoom(options: AutoZoomOptions = {}): Promise<void> {
   })
   setZoomMode('idle')
 
-  recorder.addInput('focusChange', viewport.elementRect, [result])
+  if (!isInsideHide()) {
+    recorder.addInput('focusChange', viewport.elementRect, [result])
+  }
 }

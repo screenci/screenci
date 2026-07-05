@@ -36,6 +36,34 @@ describe('createNarration type constraints', () => {
     })
   })
 
+  it('accepts a shared built-in default that also works for Russian', () => {
+    createNarration({
+      voice: { name: voices.Ava },
+      en: { intro: 'Hello' },
+      ru: { intro: 'Privet' },
+    })
+  })
+
+  it('rejects a shared built-in default that is unavailable for Russian', () => {
+    createNarration({
+      // @ts-expect-error — this built-in voice is not available for Russian
+      voice: { name: voices.Sophie },
+      en: { intro: 'Hello' },
+      ru: { intro: 'Privet' },
+    })
+  })
+
+  it('rejects an unavailable Russian built-in per-language override', () => {
+    createNarration({
+      en: { intro: 'Hello' },
+      ru: {
+        // @ts-expect-error — this built-in voice is not available for Russian
+        voice: { name: voices.Sophie },
+        intro: 'Privet',
+      },
+    })
+  })
+
   it('accepts mixed value types for the same key', () => {
     createNarration({
       voice: { name: voices.Ava },

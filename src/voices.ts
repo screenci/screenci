@@ -25,8 +25,11 @@ export type ModelType = (typeof modelTypes)[keyof typeof modelTypes]
 /**
  * Named voices available for the narration voice (`renderOptions.narration`).
  *
- * Built-in voices are language-agnostic; set a default and override per language
- * with `voices`:
+ * Built-in voices share one public catalog across supported languages. Most work
+ * everywhere; when a language has a smaller built-in subset, TypeScript narrows
+ * the allowed names for that language automatically.
+ *
+ * Set a default and override per language with `voices`:
  *
  * ```ts
  * video.use({
@@ -260,6 +263,38 @@ export const supportedLanguages = supportedBaseLanguageCodes
 
 /** Union of supported language codes, e.g. `'en' | 'fi' | 'cmn'`. */
 export type Lang = SupportedBaseLanguageCode
+
+/**
+ * Built-in voice names available for Russian narration.
+ *
+ * Russian has a smaller built-in voice subset than most supported languages, so
+ * the SDK narrows Russian voice configs to these names.
+ */
+export const russianBuiltInVoices = [
+  voices.Ava,
+  voices.Daniel,
+  voices.Emma,
+  voices.Leo,
+  voices.Lily,
+  voices.Max,
+  voices.Miles,
+  voices.Nora,
+] as const
+
+export type RussianBuiltInVoiceKey = (typeof russianBuiltInVoices)[number]
+
+/**
+ * Built-in voice names available for a given narration language.
+ *
+ * For a language union, this resolves to the shared subset that is valid for
+ * every language in the union.
+ */
+export type BuiltInVoiceKeyForLang<L extends Lang> = 'ru' extends L
+  ? RussianBuiltInVoiceKey
+  : ModelVoiceKey
+
+/** Built-in fallback voice used when no narration voice is configured. */
+export const defaultBuiltInVoice = voices.Ava
 
 /**
  * A reference to a local audio or video file for ElevenLabs Instant Voice Cloning.

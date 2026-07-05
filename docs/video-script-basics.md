@@ -288,7 +288,7 @@ import { video, voices } from 'screenci'
 
 // Voice is a render option (how narration is spoken).
 video.use({
-  renderOptions: { narration: { voice: { name: voices.Sophie } } },
+  renderOptions: { narration: { voice: { name: voices.Ava } } },
 })
 
 // Localized narration cues by language.

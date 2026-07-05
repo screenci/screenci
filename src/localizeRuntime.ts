@@ -4,12 +4,15 @@ import {
   type LocalizeNarrationValue,
   type NormalizedCueValue,
   type NormalizedNarration,
-  type VoiceConfig,
 } from './localize.js'
 import type { NormalizedFeature } from './declare.js'
 import type { Lang } from './voices.js'
 import type { ValuesOverrides } from './runtimeMode.js'
-import type { TopLevelVoiceConfig } from './voiceConfig.js'
+import type {
+  AnyLangNarrationOverride,
+  AnyTopLevelVoiceConfig,
+  TopLevelVoiceConfig,
+} from './voiceConfig.js'
 import type { RenderOptions } from './types.js'
 
 /**
@@ -73,8 +76,8 @@ function featureToNormalizedNarration(
 export function buildNarrationMarkers(
   narration: NormalizedFeature<LocalizeNarrationValue> | null | undefined,
   languages: string[],
-  defaultVoice?: TopLevelVoiceConfig,
-  voiceByLang: Partial<Record<string, VoiceConfig>> = {},
+  defaultVoice?: AnyTopLevelVoiceConfig,
+  voiceByLang: Partial<Record<string, AnyLangNarrationOverride>> = {},
   // The `.screenci` script that media paths resolve against. When provided, the
   // file-backed cues' media is pre-warmed (hashed) up front so their start()
   // does not pay the read on the recording timeline. Omitted outside recording.

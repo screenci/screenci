@@ -10,6 +10,7 @@ import {
   setCurrentZoomViewport,
 } from './autoZoom.js'
 import { DEFAULT_SCROLL_CENTERING } from './defaults.js'
+import { hide, setActiveHideRecorder } from './hide.js'
 import { resetZoom, zoomTo } from './manualZoom.js'
 
 type MockDoc = {
@@ -135,12 +136,14 @@ describe('manual zoom', () => {
     })
     setCurrentZoomViewport(null)
     setActiveAutoZoomRecorder(NOOP_EVENT_RECORDER)
+    setActiveHideRecorder(NOOP_EVENT_RECORDER)
     setActiveZoomPage(null)
   })
 
   afterEach(() => {
     vi.useRealTimers()
     setActiveAutoZoomRecorder(NOOP_EVENT_RECORDER)
+    setActiveHideRecorder(NOOP_EVENT_RECORDER)
     setActiveZoomPage(null)
   })
 
@@ -173,6 +176,36 @@ describe('manual zoom', () => {
     expect(
       events[1]?.type === 'input' ? events[1].events[0]?.type : undefined
     ).toBe('focusChange')
+  })
+
+  it('updates manual zoom inside hide() without recording a focusChange input', async () => {
+    const recorder = new EventRecorder()
+    recorder.start()
+    setActiveAutoZoomRecorder(recorder)
+    setActiveHideRecorder(recorder)
+
+    const locator = makeLocatorMock({
+      rect: { x: 900, y: 500, width: 80, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 720 },
+    })
+
+    const promise = hide(async () => {
+      await zoomTo(locator, {
+        amount: 0.5,
+        centering: 1,
+        duration: 300,
+      })
+    })
+    await vi.runAllTimersAsync()
+    await promise
+
+    const events = recorder.getEvents()
+    expect(events).toHaveLength(3)
+    expect(events[1]).toMatchObject({ type: 'hideStart' })
+    expect(events[2]).toMatchObject({ type: 'hideEnd' })
+    expect(getAutoZoomState().mode).toBe('manual')
+    expect(getAutoZoomState().currentZoomViewport).not.toBeNull()
   })
 
   it('computes a stable point target for zoomTo({ x, y })', async () => {
@@ -282,6 +315,41 @@ describe('manual zoom', () => {
       pointPx: { x: 0, y: 0 },
       size: { widthPx: 1280, heightPx: 720 },
     })
+    expect(getAutoZoomState().mode).toBe('idle')
+  })
+
+  it('resets zoom inside hide() without recording a focusChange input', async () => {
+    const recorder = new EventRecorder()
+    recorder.start()
+    setActiveAutoZoomRecorder(recorder)
+    setActiveHideRecorder(recorder)
+
+    setAutoZoomState({
+      insideAutoZoom: false,
+      mode: 'manual',
+      options: {},
+      scrollCentering: DEFAULT_SCROLL_CENTERING,
+      currentZoomViewport: {
+        focusPoint: { x: 640, y: 360 },
+        viewportSize: { width: 1280, height: 720 },
+        optimalOffset: { x: 0, y: 0 },
+        end: {
+          pointPx: { x: 640, y: 360 },
+          size: { widthPx: 640, heightPx: 360 },
+        },
+      },
+    })
+
+    const promise = hide(async () => {
+      await resetZoom({ duration: 300, postZoomDelay: 0 })
+    })
+    await vi.runAllTimersAsync()
+    await promise
+
+    const events = recorder.getEvents()
+    expect(events).toHaveLength(3)
+    expect(events[1]).toMatchObject({ type: 'hideStart' })
+    expect(events[2]).toMatchObject({ type: 'hideEnd' })
     expect(getAutoZoomState().mode).toBe('idle')
   })
 

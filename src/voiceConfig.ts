@@ -1,5 +1,6 @@
 import type {
-  ModelVoiceKey,
+  Lang,
+  BuiltInVoiceKeyForLang,
   ElevenLabsVoiceKey,
   CustomVoiceRef,
   ModelType,
@@ -34,14 +35,16 @@ type ElevenLabsVoiceConfig = ElevenLabsVoiceSettings & {
   pacing?: never
 }
 
+type BuiltInVoiceName<L extends Lang = Lang> = BuiltInVoiceKeyForLang<L>
+
 /**
  * Default voice shared across all languages. `seed` is not allowed here — use a
  * per-language voice override instead.
  */
-export type TopLevelVoiceConfig =
+export type TopLevelVoiceConfig<L extends Lang = Lang> =
   | ElevenLabsVoiceConfig
   | {
-      name: ModelVoiceKey
+      name: BuiltInVoiceName<L>
       /** Speaking style prompt for expressive synthesis. Business tier only. Implies `expressive` model type. */
       style: string
       /** Can be omitted when `style` is set — `expressive` is implied. Business tier only. */
@@ -59,7 +62,7 @@ export type TopLevelVoiceConfig =
       pacing?: string
     }
   | {
-      name: ModelVoiceKey
+      name: BuiltInVoiceName<L>
       style?: never
       accent?: never
       /** Speaking rate for consistent synthesis. Valid range: 0.25 to 2. */
@@ -76,7 +79,7 @@ export type TopLevelVoiceConfig =
  * use expressive/consistent controls, ElevenLabs voices use the numeric
  * `eleven_multilingual_v2` controls.
  */
-export type LangNarrationOverride =
+export type LangNarrationOverride<L extends Lang = Lang> =
   | (ElevenLabsVoiceConfig & {
       /**
        * Integer seed included in the audio cache key and forwarded to ElevenLabs.
@@ -85,7 +88,7 @@ export type LangNarrationOverride =
       seed?: number
     })
   | {
-      name: ModelVoiceKey
+      name: BuiltInVoiceName<L>
       /**
        * Integer seed included in the audio cache key. A different seed always forces
        * regeneration. Consistent output is not guaranteed across all voice types.
@@ -108,7 +111,7 @@ export type LangNarrationOverride =
       pacing?: string
     }
   | {
-      name: ModelVoiceKey
+      name: BuiltInVoiceName<L>
       /**
        * Integer seed included in the audio cache key. A different seed always forces
        * regeneration. Consistent output is not guaranteed across all voice types.
@@ -121,3 +124,23 @@ export type LangNarrationOverride =
       /** TTS model type — `modelTypes.expressive` or `modelTypes.consistent`. Defaults to `consistent`. */
       modelType?: Exclude<ModelType, 'expressive'> | undefined
     }
+
+/**
+ * Union of every language-specific top-level voice config. Unlike
+ * `TopLevelVoiceConfig<Lang>`, this does not collapse to the Russian-safe
+ * subset; it preserves each language's valid config as a separate branch.
+ */
+export type AnyTopLevelVoiceConfig = {
+  [L in Lang]: TopLevelVoiceConfig<L>
+}[Lang]
+
+/**
+ * Union of every language-specific per-language narration override.
+ *
+ * Useful for normalized runtime shapes that store already-resolved per-language
+ * voice configs without reapplying the shared-subset narrowing used by public
+ * APIs that span multiple languages.
+ */
+export type AnyLangNarrationOverride = {
+  [L in Lang]: LangNarrationOverride<L>
+}[Lang]

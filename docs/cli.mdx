@@ -280,10 +280,11 @@ Behavior:
 
 - enables recording timing
 - writes local output into `.screenci/`
+- holds a per-project run lock at `.screenci/.record.lock` while recording and uploading. If another `screenci record` is already active, the second run exits non-zero instead of sharing the same `.screenci` output. Stale locks are reclaimed automatically when the pid is gone or the lock is older than the maximum run TTL
 - needs no `SCREENCI_SECRET` to run: without one, it uploads under a local, anonymous trial session and prints a link to view the result. Recording an anonymous trial agrees to the [Terms](https://screenci.com/legal/tos), which `record` prints before it starts. To upload straight to your organization instead, set `SCREENCI_SECRET` (from the project `.env`, the environment, or by running `init` with it) before recording
 - gives an anonymous trial exactly one recording. Once that first recording is used (or the trial expires), a second `screenci record` stops before it starts and prints a sign-up link instead of recording again, so no time is spent rendering a video that would only be refused. Sign up to keep recording; once you have, re-running `record` in the same folder links your account automatically and uploads normally. The trial previews expressive narration and up to 3 languages at once; see [Anonymous Trial](/docs/guides/anonymous-trial) for its full limits and what happens to that content after signup
-- uploads every successful recording, with or without `SCREENCI_SECRET`
-- prints a project URL after upload when rendering has been started remotely
+- uploads only the recordings requested by this run (for example the videos matched by `--grep` or `--languages`), with or without `SCREENCI_SECRET`
+- prints a results URL only when the requested recordings uploaded successfully. If a requested video is missing its `recording.mp4` or another upload failure occurs, `record` exits non-zero, does not save `.screenci/last-record.json`, and does not print a success URL for unrelated output
 - prints any informational notices returned by the service in cyan after upload (occasional, non-error status messages such as maintenance or timing notes). These never affect the exit code
 - new accounts start on the Free plan automatically (no plan selection step). Free renders include a ScreenCI watermark; paid plans remove it and raise render and active-video limits, and unlock multiple languages plus expressive tone control
 
@@ -353,8 +354,8 @@ Lists **every video in the project** with its public URLs as JSON, keyed by
 video name and language code. It is where you get the remote `videoId` for
 `make-public`, `make-private`, and `delete`.
 
-When this machine has recorded a run, `info` also reports that run. Each
-`screenci record` upload stores its unique record id in
+When this machine has recorded a successful run, `info` also reports that run.
+Each `screenci record` upload stores its unique record id in
 `.screenci/last-record.json`; `info` then attaches, **only to the videos
 produced by that run**, a per-language `latestRecord` with the run's render
 status and its record-pinned URLs, plus a `latestRecordId` on the video. Videos

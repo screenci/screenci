@@ -12,13 +12,15 @@ import type {
 import { parseTimelineOffset, type TimelineOffset } from './timelineOffset.js'
 import { validateCrop, resolveSourceTrim } from './sourceTrim.js'
 import {
+  defaultBuiltInVoice,
   supportedLanguages,
-  voices,
   type VoiceKey,
   type Lang,
   type CustomVoiceRef,
 } from './voices.js'
 import type {
+  AnyLangNarrationOverride,
+  AnyTopLevelVoiceConfig,
   TopLevelVoiceConfig,
   LangNarrationOverride,
 } from './voiceConfig.js'
@@ -292,13 +294,14 @@ type UnionToIntersection<U> = (
  * Uses each language's key set with CueMapValue values before intersecting,
  * so value types don't conflict (e.g. string vs { path, subtitle } for the same key).
  */
-type LanguageEntryBase = {
-  voice?: LangNarrationOverride
+type LanguageEntryBase<L extends Lang = Lang> = {
+  voice?: LangNarrationOverride<L>
 }
 
 type LanguageMetadataKey = keyof LanguageEntryBase
 
-type NarrationLanguageInput = LanguageEntryBase & Record<string, unknown>
+type NarrationLanguageInput<L extends Lang = Lang> = LanguageEntryBase<L> &
+  Record<string, unknown>
 
 type LanguageEntry<C extends Record<string, CueMapValue>> = LanguageEntryBase &
   C
@@ -331,14 +334,14 @@ type AllCues<M extends Partial<Record<Lang, NarrationLanguageInput>>> =
 type LanguagesMap<M extends Partial<Record<Lang, NarrationLanguageInput>>> =
   M & {
     [L in LanguageRootKeys<M>]-?: {
-      voice?: LangNarrationOverride
+      voice?: LangNarrationOverride<L>
     } & {
       [K in keyof OmitLanguageMetadata<NonNullable<M[L]>>]: CueMapValue
     } & AllCues<M>
   }
 
 type NarrationInput<M extends Partial<Record<Lang, NarrationLanguageInput>>> = {
-  voice?: TopLevelVoiceConfig
+  voice?: TopLevelVoiceConfig<LanguageRootKeys<M>>
 } & LanguagesMap<M>
 
 /**
@@ -392,7 +395,7 @@ export function createNarration<
   const languages = normalizeLanguagesInput(input)
 
   return buildCuesFromInput(
-    input.voice ?? { name: voices.Sophie },
+    input.voice ?? { name: defaultBuiltInVoice },
     languages
   ) as Cues<AllCues<M>>
 }
@@ -649,8 +652,10 @@ function voiceToKeyString(voice: VoiceKey | CustomVoiceRef): string {
   return voice
 }
 
-function normalizeLanguagesInput(
-  input: NarrationInput<Partial<Record<Lang, NarrationLanguageInput>>>
+function normalizeLanguagesInput<
+  M extends Partial<Record<Lang, NarrationLanguageInput>>,
+>(
+  input: NarrationInput<M>
 ): Partial<Record<Lang, LanguageEntry<Record<string, CueMapValue>>>> {
   const languages: Partial<
     Record<Lang, LanguageEntry<Record<string, CueMapValue>>>
@@ -674,7 +679,7 @@ function normalizeLanguagesInput(
 }
 
 function buildCuesFromInput(
-  topVoice: TopLevelVoiceConfig,
+  topVoice: AnyTopLevelVoiceConfig,
   languages: Partial<Record<Lang, LanguageEntry<Record<string, CueMapValue>>>>
 ): Cues<Record<string, CueMapValue>> {
   const langs = Object.keys(languages) as Lang[]
@@ -949,7 +954,7 @@ async function entryToVideoTranslation(
  * provider setting comes from this one config.
  */
 export function resolveVoiceMeta(
-  config: TopLevelVoiceConfig | LangNarrationOverride
+  config: AnyTopLevelVoiceConfig | AnyLangNarrationOverride
 ): { name: VoiceKey | CustomVoiceRef; meta: VoiceLanguageMeta } {
   const name = config.name
   const seed = 'seed' in config ? config.seed : undefined
@@ -1038,8 +1043,8 @@ function prewarmNarrationMedia(
 
 export function buildLocalizedNarrationCues(
   narration: NormalizedNarration,
-  voiceByLang: Partial<Record<string, LangNarrationOverride>>,
-  defaultVoice: TopLevelVoiceConfig | LangNarrationOverride | undefined,
+  voiceByLang: Partial<Record<string, AnyLangNarrationOverride>>,
+  defaultVoice: AnyTopLevelVoiceConfig | AnyLangNarrationOverride | undefined,
   // The `.screenci` script media paths are resolved relative to. When provided,
   // every file-backed cue's media is pre-warmed (hashed) now, before the
   // recording clock starts, so the cue's start() reuses the cached hash instead
@@ -1101,7 +1106,7 @@ export function buildLocalizedNarrationCues(
       const value = narration.seedByLang[lang as Lang]![cueName]!
       const config = (value.kind === 'text' ? value.voice : undefined) ??
         voiceByLang[lang] ??
-        defaultVoice ?? { name: voices.Sophie }
+        defaultVoice ?? { name: defaultBuiltInVoice }
       const { name, meta } = resolveVoiceMeta(config)
       return { value, voice: name, meta }
     }

@@ -26,6 +26,7 @@ const mockCreateReadStream = vi.fn()
 const mockAppendFile = vi.fn()
 const mockWriteFile = vi.fn()
 const mockMkdir = vi.fn()
+const mockRm = vi.fn()
 const mockInput = vi.fn()
 const mockConfirm = vi.fn()
 const mockCreateHttpServer = vi.fn()
@@ -194,6 +195,7 @@ vi.mock('fs', () => ({
 
 vi.mock('fs/promises', () => ({
   appendFile: mockAppendFile,
+  rm: mockRm,
   readdir: mockReaddir,
   readFile: mockReadFile,
   stat: mockStat,
@@ -201,6 +203,7 @@ vi.mock('fs/promises', () => ({
   mkdir: mockMkdir,
   default: {
     appendFile: mockAppendFile,
+    rm: mockRm,
     readdir: mockReaddir,
     readFile: mockReadFile,
     stat: mockStat,
@@ -243,6 +246,7 @@ describe('CLI', () => {
     mockAppendFile.mockResolvedValue(undefined)
     mockWriteFile.mockResolvedValue(undefined)
     mockMkdir.mockResolvedValue(undefined)
+    mockRm.mockResolvedValue(undefined)
     mockReaddir.mockResolvedValue([])
     mockReadFileSync.mockImplementation(() => {
       if (process.env.VITE_APP_BASE_URL === undefined) {
@@ -410,6 +414,130 @@ describe('CLI', () => {
     })
   })
 
+  describe('acquireRecordRunLock', () => {
+    it('refuses a fresh lock whose pid is still alive', async () => {
+      const addSignalListener = vi.fn()
+      const removeSignalListener = vi.fn()
+      const { acquireRecordRunLock } = await import('./cli')
+
+      await expect(
+        acquireRecordRunLock('/repo/.screenci', 'Test Project', {
+          pid: 123,
+          clock: () => new Date('2026-07-05T10:05:00.000Z'),
+          isPidAlive: (pid) => pid === 456,
+          fs: {
+            mkdir: vi.fn().mockResolvedValue(undefined),
+            readFile: vi.fn().mockResolvedValue(
+              JSON.stringify({
+                pid: 456,
+                startedAt: '2026-07-05T10:00:00.000Z',
+                projectName: 'Other Project',
+              })
+            ),
+            writeFile: vi
+              .fn()
+              .mockRejectedValueOnce(
+                Object.assign(new Error('exists'), { code: 'EEXIST' })
+              ),
+            rm: vi.fn().mockResolvedValue(undefined),
+          },
+          addSignalListener,
+          removeSignalListener,
+          removeLockSync: vi.fn(),
+        })
+      ).rejects.toThrow(
+        `Another 'screenci record' is in progress (pid 456, started 2026-07-05T10:00:00.000Z, project "Other Project"). Wait for it or remove .screenci/.record.lock.`
+      )
+
+      expect(addSignalListener).not.toHaveBeenCalled()
+      expect(removeSignalListener).not.toHaveBeenCalled()
+    })
+
+    it('reclaims a stale lock when the pid is dead', async () => {
+      const mockWriteFile = vi
+        .fn()
+        .mockRejectedValueOnce(
+          Object.assign(new Error('exists'), { code: 'EEXIST' })
+        )
+        .mockResolvedValueOnce(undefined)
+      const mockRm = vi.fn().mockResolvedValue(undefined)
+      const { acquireRecordRunLock } = await import('./cli')
+
+      const lock = await acquireRecordRunLock(
+        '/repo/.screenci',
+        'Test Project',
+        {
+          pid: 123,
+          clock: () => new Date('2026-07-05T10:05:00.000Z'),
+          isPidAlive: () => false,
+          fs: {
+            mkdir: vi.fn().mockResolvedValue(undefined),
+            readFile: vi.fn().mockResolvedValue(
+              JSON.stringify({
+                pid: 456,
+                startedAt: '2026-07-05T10:00:00.000Z',
+                projectName: 'Other Project',
+              })
+            ),
+            writeFile: mockWriteFile,
+            rm: mockRm,
+          },
+          addSignalListener: vi.fn(),
+          removeSignalListener: vi.fn(),
+          removeLockSync: vi.fn(),
+        }
+      )
+
+      expect(mockRm).toHaveBeenCalledWith('/repo/.screenci/.record.lock', {
+        force: true,
+      })
+
+      await lock.release()
+    })
+
+    it('reclaims a stale lock when it exceeds the max age', async () => {
+      const mockWriteFile = vi
+        .fn()
+        .mockRejectedValueOnce(
+          Object.assign(new Error('exists'), { code: 'EEXIST' })
+        )
+        .mockResolvedValueOnce(undefined)
+      const mockRm = vi.fn().mockResolvedValue(undefined)
+      const { acquireRecordRunLock } = await import('./cli')
+
+      const lock = await acquireRecordRunLock(
+        '/repo/.screenci',
+        'Test Project',
+        {
+          pid: 123,
+          clock: () => new Date('2026-07-05T20:05:00.000Z'),
+          isPidAlive: () => true,
+          fs: {
+            mkdir: vi.fn().mockResolvedValue(undefined),
+            readFile: vi.fn().mockResolvedValue(
+              JSON.stringify({
+                pid: 456,
+                startedAt: '2026-07-05T10:00:00.000Z',
+                projectName: 'Other Project',
+              })
+            ),
+            writeFile: mockWriteFile,
+            rm: mockRm,
+          },
+          addSignalListener: vi.fn(),
+          removeSignalListener: vi.fn(),
+          removeLockSync: vi.fn(),
+        }
+      )
+
+      expect(mockRm).toHaveBeenCalledWith('/repo/.screenci/.record.lock', {
+        force: true,
+      })
+
+      await lock.release()
+    })
+  })
+
   describe('record command', () => {
     beforeEach(() => {
       process.env.SCREENCI_SECRET = 'test-secret'
@@ -499,6 +627,99 @@ describe('CLI', () => {
           }),
           stdio: 'inherit',
         })
+      )
+    })
+
+    it('fails the run without printing a results URL when only an unrelated sibling recording is uploadable', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'record',
+        '--config',
+        'test-fixtures/record-upload.config.ts',
+        '--grep',
+        'code cut',
+      ]
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('record-upload.config.ts')) {
+          return "export default { projectName: 'Test Project' }"
+        }
+        if (pathString.endsWith('/code-cut/data.json')) {
+          return JSON.stringify({
+            events: [],
+            metadata: { videoName: 'Code Cut' },
+          })
+        }
+        if (pathString.endsWith('/styled-backgrounds/data.json')) {
+          return JSON.stringify({
+            events: [],
+            metadata: { videoName: 'Styled Backgrounds' },
+          })
+        }
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        return ''
+      })
+      mockReaddir.mockResolvedValue(['code-cut', 'styled-backgrounds'])
+      mockExistsSync.mockImplementation((path: string) => {
+        if (path.endsWith('test-fixtures/record-upload.config.ts')) return true
+        if (path.endsWith('/code-cut/data.json')) return true
+        if (path.endsWith('/styled-backgrounds/data.json')) return true
+        if (path.endsWith('/styled-backgrounds/recording.mp4')) return true
+        return false
+      })
+      mockSpawn.mockImplementation((_command: string, args: string[]) => {
+        const child = Object.assign(new EventEmitter(), {
+          unref: vi.fn(),
+          stdout: new EventEmitter(),
+          stderr: new EventEmitter(),
+        }) as unknown as ChildProcess & {
+          stdout: EventEmitter
+          stderr: EventEmitter
+        }
+
+        process.nextTick(() => {
+          if (args.includes('--list')) {
+            child.stdout.emit(
+              'data',
+              JSON.stringify({
+                suites: [{ specs: [{ title: 'Code Cut' }] }],
+              })
+            )
+          }
+          child.emit('close', 0)
+        })
+
+        return child
+      })
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow(
+        'Not all recordings succeeded to upload.'
+      )
+
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('/cli/upload/start'),
+        expect.objectContaining({
+          body: expect.stringContaining('Styled Backgrounds'),
+        })
+      )
+      expect(
+        mockWriteFile.mock.calls.some(
+          ([path]) =>
+            typeof path === 'string' && path.endsWith('last-record.json')
+        )
+      ).toBe(false)
+      expect(
+        loggerInfoSpy.mock.calls.some((call) =>
+          String(call[0]).includes('Results available at:')
+        )
+      ).toBe(false)
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        'Code Cut: Missing recording.mp4 for "Code Cut"'
       )
     })
 
@@ -683,6 +904,7 @@ describe('CLI', () => {
         projectId: 'project_123',
         recordId: expect.any(String),
         hadFailures: false,
+        uploadedVideoNames: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -1474,6 +1696,7 @@ describe('CLI', () => {
         projectId: null,
         recordId: null,
         hadFailures: false,
+        uploadedVideoNames: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -1513,6 +1736,7 @@ describe('CLI', () => {
         projectId: null,
         recordId: expect.any(String),
         hadFailures: true,
+        uploadedVideoNames: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -1607,6 +1831,7 @@ describe('CLI', () => {
         projectId: 'project_123',
         recordId: expect.any(String),
         hadFailures: false,
+        uploadedVideoNames: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -1712,6 +1937,7 @@ describe('CLI', () => {
         projectId: 'project_123',
         recordId: expect.any(String),
         hadFailures: true,
+        uploadedVideoNames: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -1921,6 +2147,7 @@ describe('CLI', () => {
         projectId: 'project_123',
         recordId: expect.any(String),
         hadFailures: false,
+        uploadedVideoNames: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -2130,6 +2357,7 @@ describe('CLI', () => {
         projectId: 'project_123',
         recordId: expect.any(String),
         hadFailures: true,
+        uploadedVideoNames: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -2142,6 +2370,166 @@ describe('CLI', () => {
         ],
         plan: null,
       })
+    })
+
+    it('rejects the whole anonymous upload when the per-recording trial cap is exceeded', async () => {
+      mockReaddir.mockResolvedValue([
+        'demo-video',
+        'second-video',
+        'third-video',
+        'fourth-video',
+      ])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          const videoName = pathString.includes('/second-video/')
+            ? 'Second Demo'
+            : pathString.includes('/third-video/')
+              ? 'Third Demo'
+              : pathString.includes('/fourth-video/')
+                ? 'Fourth Demo'
+                : 'Demo'
+          return JSON.stringify({ events: [], metadata: { videoName } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') || path.endsWith('recording.mp4')
+      )
+
+      const { uploadRecordings, anonCredential } = await import('./cli')
+
+      const result = await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        anonCredential('anon-token')
+      )
+
+      expect(result).toEqual({
+        projectId: null,
+        recordId: null,
+        hadFailures: true,
+        uploadedVideoNames: expect.any(Array),
+        studioNotices: [],
+        elevenLabsKeyMissingVideos: [],
+        notices: [],
+        failedVideoNames: ['Demo', 'Second Demo', 'Third Demo', 'Fourth Demo'],
+        failedVideoMessages: [
+          {
+            videoName: 'Demo',
+            message:
+              'Anonymous trials are capped at 3 videos/screenshots per recording. Split this into smaller runs or sign up to record more in one run.',
+          },
+          {
+            videoName: 'Second Demo',
+            message:
+              'Anonymous trials are capped at 3 videos/screenshots per recording. Split this into smaller runs or sign up to record more in one run.',
+          },
+          {
+            videoName: 'Third Demo',
+            message:
+              'Anonymous trials are capped at 3 videos/screenshots per recording. Split this into smaller runs or sign up to record more in one run.',
+          },
+          {
+            videoName: 'Fourth Demo',
+            message:
+              'Anonymous trials are capped at 3 videos/screenshots per recording. Split this into smaller runs or sign up to record more in one run.',
+          },
+        ],
+        plan: null,
+      })
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('/cli/upload/start'),
+        expect.anything()
+      )
+    })
+
+    it('prints one shared warning when every anonymous failure has the same cap message', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'record',
+        '--config',
+        'test-fixtures/record-upload.config.ts',
+      ]
+      delete process.env.SCREENCI_SECRET
+      mockReaddir.mockResolvedValue([
+        'ru-video',
+        'where-video',
+        'en-video',
+        'fi-video',
+      ])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('record-upload.config.ts')) {
+          return "export default { projectName: 'Test Project' }"
+        }
+        if (pathString.endsWith('data.json')) {
+          const metadata = pathString.includes('/ru-video/')
+            ? { videoName: 'How to find docs', languages: ['ru'] }
+            : pathString.includes('/en-video/')
+              ? { videoName: 'How to find docs', languages: ['en'] }
+              : pathString.includes('/fi-video/')
+                ? { videoName: 'How to find docs', languages: ['fi'] }
+                : { videoName: 'Where to find docs' }
+          return JSON.stringify({ events: [], metadata })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('test-fixtures/record-upload.config.ts') ||
+          path.endsWith('data.json') ||
+          path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/anon-session-status')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              status: 'pending',
+              remaining: 3,
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+      mockSpawn.mockImplementation(() => {
+        process.nextTick(() => mockChildProcess.emit('close', 0))
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow(
+        'Not all recordings succeeded to upload.'
+      )
+
+      const anonCapWarning =
+        'Anonymous trials are capped at 3 videos/screenshots per recording. Split this into smaller runs or sign up to record more in one run.'
+      expect(
+        loggerWarnSpy.mock.calls.filter((call) => call[0] === anonCapWarning)
+      ).toHaveLength(1)
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        "Not all recordings succeeded to upload. Failed videos: 'How to find docs [ru]', 'Where to find docs', 'How to find docs [en]', 'How to find docs [fi]'. Some videos may be missing from the project."
+      )
     })
 
     it('removes uploaded recording directories after successful upload', async () => {
@@ -2204,6 +2592,7 @@ describe('CLI', () => {
         projectId: 'project_123',
         recordId: expect.any(String),
         hadFailures: false,
+        uploadedVideoNames: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -2278,6 +2667,7 @@ describe('CLI', () => {
         projectId: 'project_123',
         recordId: expect.any(String),
         hadFailures: false,
+        uploadedVideoNames: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -2383,6 +2773,7 @@ describe('CLI', () => {
           projectId: 'project_123',
           recordId: expect.any(String),
           hadFailures: false,
+          uploadedVideoNames: expect.any(Array),
           studioNotices: [],
           elevenLabsKeyMissingVideos: [],
           notices: [],
@@ -2732,23 +3123,21 @@ describe('CLI', () => {
         'Failed Demo: Upload limit reached for current plan.'
       )
       expect(loggerWarnSpy).toHaveBeenCalledWith(
-        'Not all recordings succeeded to upload. Failed videos: Failed Demo. Some videos may be missing from the project.'
+        "Not all recordings succeeded to upload. Failed videos: 'Failed Demo'. Some videos may be missing from the project."
       )
 
-      // Failure warnings (stderr) must be emitted before the "Results available
-      // at:" line (stdout) so the URL stays directly under its message: in
-      // non-TTY CI logs stdout is buffered while stderr flushes immediately, so
-      // warnings logged afterwards would otherwise split the message from its URL.
-      const lastWarnOrder = Math.max(...loggerWarnSpy.mock.invocationCallOrder)
       const resultsInfoCall = loggerInfoSpy.mock.calls.findIndex((call) =>
         stripVTControlCharacters(String(call[0])).includes(
           'Results available at:'
         )
       )
-      expect(resultsInfoCall).toBeGreaterThanOrEqual(0)
+      expect(resultsInfoCall).toBe(-1)
       expect(
-        loggerInfoSpy.mock.invocationCallOrder[resultsInfoCall]
-      ).toBeGreaterThan(lastWarnOrder)
+        mockWriteFile.mock.calls.some(
+          ([path]) =>
+            typeof path === 'string' && path.endsWith('last-record.json')
+        )
+      ).toBe(false)
     })
 
     it('formats expressive narration tier failures with a fix suggestion', async () => {

@@ -3,7 +3,7 @@ import { hide, resetZoom, video, voices, zoomTo } from 'screenci'
 video.use({
   renderOptions: {
     narration: {
-      voice: { name: voices.Sophie, style: 'Friendly product guide' },
+      voice: { name: voices.Ava, style: 'Friendly product guide' },
     },
   },
 })

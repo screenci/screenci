@@ -302,7 +302,7 @@ describe('buildNarrationMarkers', () => {
         'en',
       ])
       await markers.intro()
-      expect(voiceOf('en')).toBe(voices.Sophie)
+      expect(voiceOf('en')).toBe(voices.Ava)
     })
   })
 

@@ -20,6 +20,7 @@ const mockCreateReadStream = vi.fn()
 const mockAppendFile = vi.fn()
 const mockWriteFile = vi.fn()
 const mockMkdir = vi.fn()
+const mockRm = vi.fn()
 const mockInput = vi.fn()
 const mockConfirm = vi.fn()
 const mockCreateHttpServer = vi.fn()
@@ -188,6 +189,7 @@ vi.mock('fs', () => ({
 
 vi.mock('fs/promises', () => ({
   appendFile: mockAppendFile,
+  rm: mockRm,
   readdir: mockReaddir,
   readFile: mockReadFile,
   stat: mockStat,
@@ -195,6 +197,7 @@ vi.mock('fs/promises', () => ({
   mkdir: mockMkdir,
   default: {
     appendFile: mockAppendFile,
+    rm: mockRm,
     readdir: mockReaddir,
     readFile: mockReadFile,
     stat: mockStat,
@@ -237,6 +240,7 @@ describe('CLI', () => {
     mockAppendFile.mockResolvedValue(undefined)
     mockWriteFile.mockResolvedValue(undefined)
     mockMkdir.mockResolvedValue(undefined)
+    mockRm.mockResolvedValue(undefined)
     mockReaddir.mockResolvedValue([])
     mockReadFileSync.mockImplementation(() => {
       if (process.env.VITE_APP_BASE_URL === undefined) {

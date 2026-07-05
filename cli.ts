@@ -11,7 +11,15 @@ import {
 } from 'fs'
 import { createHash, randomUUID } from 'crypto'
 import { createRequire } from 'module'
-import { appendFile, readdir, readFile, stat, writeFile } from 'fs/promises'
+import {
+  appendFile,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from 'fs/promises'
 import {
   delimiter,
   dirname,
@@ -62,7 +70,9 @@ import { OVERLAY_CACHE_DIR_NAME } from './src/htmlRasterizer.js'
 import { maybeExtractVoiceSampleAudio } from './src/voiceSampleAudio.js'
 import {
   type CliCredential,
+  ANON_MAX_VIDEOS_PER_RECORDING,
   ANON_SESSION_FILE,
+  ANON_TOKEN_HEADER,
   anonCredential,
   checkAnonSessionStatus,
   deleteAnonSessionFile,
@@ -91,6 +101,8 @@ const SCREENCI_RECORD_DOCS_URL =
 // Records the recordId of the most recent `screenci record` upload so
 // `screenci info` can report exactly the run that was just made.
 const SCREENCI_LAST_RECORD_FILE = 'last-record.json'
+const SCREENCI_RECORD_LOCK_FILE = '.record.lock'
+const SCREENCI_RECORD_LOCK_MAX_AGE_MS = 6 * 60 * 60 * 1000
 const require = createRequire(import.meta.url)
 
 type PlaywrightListReportSuite = {
@@ -105,6 +117,30 @@ type PlaywrightListReport = {
     message?: string
     snippet?: string
   }>
+}
+
+type RecordRunLock = {
+  pid: number
+  startedAt: string
+  projectName: string
+}
+
+type RecordRunLockFs = {
+  mkdir: typeof mkdir
+  readFile: typeof readFile
+  writeFile: typeof writeFile
+  rm: typeof rm
+}
+
+type AcquireRecordRunLockDeps = {
+  fs: RecordRunLockFs
+  clock: () => Date
+  isPidAlive: (pid: number) => boolean
+  pid: number
+  addSignalListener: typeof process.on
+  removeSignalListener: typeof process.off
+  removeLockSync: (lockPath: string) => void
+  maxAgeMs: number
 }
 
 /**
@@ -405,6 +441,7 @@ type PreparedUploadAsset = {
 type UploadCandidate = {
   entry: string
   videoName: string
+  displayVideoName: string
   data: RecordingData
   preparedUploadAssets: PreparedUploadAsset[]
 }
@@ -602,9 +639,40 @@ async function loadUploadCandidate(
   return {
     entry,
     videoName,
+    displayVideoName: videoName,
     data,
     preparedUploadAssets,
   }
+}
+
+function disambiguateUploadCandidateDisplayNames(
+  candidates: UploadCandidate[]
+): UploadCandidate[] {
+  const counts = new Map<string, number>()
+  for (const candidate of candidates) {
+    counts.set(candidate.videoName, (counts.get(candidate.videoName) ?? 0) + 1)
+  }
+
+  return candidates.map((candidate) => {
+    if ((counts.get(candidate.videoName) ?? 0) <= 1) return candidate
+
+    const languages = candidate.data.metadata?.languages
+    if (Array.isArray(languages) && languages.length === 1) {
+      const [language] = languages
+      if (typeof language === 'string' && language.length > 0) {
+        return {
+          ...candidate,
+          displayVideoName: `${candidate.videoName} [${language}]`,
+        }
+      }
+    }
+
+    if (candidate.entry !== candidate.videoName) {
+      return { ...candidate, displayVideoName: candidate.entry }
+    }
+
+    return candidate
+  })
 }
 
 async function uploadRecordingCandidate(
@@ -623,7 +691,13 @@ async function uploadRecordingCandidate(
   recordId: string,
   expectedScreenshotCount: number
 ): Promise<UploadJobResult> {
-  const { entry, videoName, data: rawData, preparedUploadAssets } = candidate
+  const {
+    entry,
+    videoName,
+    displayVideoName,
+    data: rawData,
+    preparedUploadAssets,
+  } = candidate
   let projectId: string | null = null
   let videoId: string | null = null
   let plan: OrgPlan | null = null
@@ -645,8 +719,8 @@ async function uploadRecordingCandidate(
         projectId: null,
         videoId: null,
         hadFailure: true,
-        videoName,
-        failureMessage: `Missing ${recordingFileName} for "${videoName}"`,
+        videoName: displayVideoName,
+        failureMessage: `Missing ${recordingFileName} for "${displayVideoName}"`,
         recordId,
       }
     }
@@ -670,8 +744,11 @@ async function uploadRecordingCandidate(
         projectId: null,
         videoId: null,
         hadFailure: true,
-        videoName,
-        failureMessage: formatUnresolvedAssetMessage(videoName, unresolved),
+        videoName: displayVideoName,
+        failureMessage: formatUnresolvedAssetMessage(
+          displayVideoName,
+          unresolved
+        ),
         recordId,
       }
     }
@@ -725,7 +802,7 @@ async function uploadRecordingCandidate(
           videoId: null,
           hadFailure: true,
           elevenLabsKeyMissing: true,
-          videoName,
+          videoName: displayVideoName,
           recordId,
         }
       }
@@ -733,9 +810,9 @@ async function uploadRecordingCandidate(
         projectId: null,
         videoId: null,
         hadFailure: true,
-        videoName,
+        videoName: displayVideoName,
         failureMessage: formatUploadStartFailureMessage(
-          videoName,
+          displayVideoName,
           startResponse.status,
           text,
           credential.value
@@ -769,7 +846,7 @@ async function uploadRecordingCandidate(
     if (startBody.dependencyErrors && startBody.dependencyErrors.length > 0) {
       for (const depError of startBody.dependencyErrors) {
         logger.error(
-          `Render dependency error in "${videoName}": ${depError.detail}. This render will fail until it is fixed.`
+          `Render dependency error in "${displayVideoName}": ${depError.detail}. This render will fail until it is fixed.`
         )
       }
     }
@@ -834,8 +911,8 @@ async function uploadRecordingCandidate(
         projectId,
         videoId,
         hadFailure: true,
-        videoName,
-        failureMessage: `Failed to upload recording for "${videoName}": ${recordingResponse.status} ${extractBackendError(text)}${hint401(recordingResponse.status, credential.value)}`,
+        videoName: displayVideoName,
+        failureMessage: `Failed to upload recording for "${displayVideoName}": ${recordingResponse.status} ${extractBackendError(text)}${hint401(recordingResponse.status, credential.value)}`,
         recordId,
         ...(plan !== null && { plan }),
       }
@@ -847,7 +924,7 @@ async function uploadRecordingCandidate(
       projectId,
       videoId,
       hadFailure: false,
-      videoName,
+      videoName: displayVideoName,
       recordId,
       ...(studio !== undefined && { studio }),
       ...(plan !== null && { plan }),
@@ -870,7 +947,7 @@ async function uploadRecordingCandidate(
         projectId,
         videoId,
         hadFailure: true,
-        videoName,
+        videoName: displayVideoName,
         failureMessage: err instanceof Error ? err.message : String(err),
         recordId,
         ...(plan !== null && { plan }),
@@ -882,8 +959,8 @@ async function uploadRecordingCandidate(
       projectId,
       videoId,
       hadFailure: true,
-      videoName,
-      failureMessage: `Network error uploading "${videoName}": ${err instanceof Error ? err.message : String(err)}`,
+      videoName: displayVideoName,
+      failureMessage: `Network error uploading "${displayVideoName}": ${err instanceof Error ? err.message : String(err)}`,
       recordId,
       ...(plan !== null && { plan }),
     }
@@ -1830,6 +1907,37 @@ export function formatFailedVideoMessage(
   return `${videoName}: ${message}`
 }
 
+function quoteFailedVideoName(videoName: string): string {
+  return `'${videoName.replaceAll("'", "\\'")}'`
+}
+
+export function formatFailedVideoNamesSummary(videoNames: string[]): string {
+  if (videoNames.length === 0) return 'unknown'
+  return videoNames
+    .map((videoName) => quoteFailedVideoName(videoName))
+    .join(', ')
+}
+
+export function collapseFailedVideoWarnings(
+  failures: Array<{ videoName: string; message: string }>
+): string[] {
+  const byMessage = new Map<string, string[]>()
+
+  for (const failure of failures) {
+    const names = byMessage.get(failure.message)
+    if (names) names.push(failure.videoName)
+    else byMessage.set(failure.message, [failure.videoName])
+  }
+
+  return [...byMessage.entries()].map(([message, videoNames]) => {
+    if (videoNames.length === 1) {
+      return formatFailedVideoMessage(videoNames[0] ?? 'unknown', message)
+    }
+
+    return message
+  })
+}
+
 export function printUploadStartFailureMessage(
   videoName: string,
   status: number,
@@ -2106,11 +2214,13 @@ export async function uploadRecordings(
   apiUrl: string,
   credential: CliCredential,
   specificEntry?: string,
-  verbose = false
+  verbose = false,
+  allowedVideoNames?: readonly string[]
 ): Promise<{
   projectId: string | null
   recordId: string | null
   hadFailures: boolean
+  uploadedVideoNames: string[]
   failedVideoNames: string[]
   failedVideoMessages: Array<{ videoName: string; message: string }>
   studioNotices: StudioUploadNotice[]
@@ -2129,6 +2239,7 @@ export async function uploadRecordings(
       projectId: null,
       recordId: null,
       hadFailures: false,
+      uploadedVideoNames: [],
       failedVideoNames: [],
       failedVideoMessages: [],
       studioNotices: [],
@@ -2145,22 +2256,69 @@ export async function uploadRecordings(
   let firstProjectId: string | null = null
 
   try {
-    const candidates = (
-      await Promise.all(
-        entries.map(async (entry) => {
-          uploadAbort.throwIfAborted()
-          return await loadUploadCandidate(screenciDir, entry, verbose)
-        })
-      )
-    ).filter((candidate): candidate is UploadCandidate => candidate !== null)
+    const candidates = disambiguateUploadCandidateDisplayNames(
+      (
+        await Promise.all(
+          entries.map(async (entry) => {
+            uploadAbort.throwIfAborted()
+            return await loadUploadCandidate(screenciDir, entry, verbose)
+          })
+        )
+      ).filter((candidate): candidate is UploadCandidate => candidate !== null)
+    )
+    const requestedVideoNames =
+      allowedVideoNames !== undefined ? new Set(allowedVideoNames) : null
+    const filteredCandidates =
+      requestedVideoNames === null
+        ? candidates
+        : candidates.filter((candidate) =>
+            requestedVideoNames.has(candidate.videoName)
+          )
 
-    if (candidates.length === 0) {
+    if (filteredCandidates.length === 0) {
+      const missingRequestedVideoNames =
+        requestedVideoNames === null
+          ? []
+          : [...requestedVideoNames].filter(
+              (videoName) =>
+                !candidates.some(
+                  (candidate) => candidate.videoName === videoName
+                )
+            )
       return {
         projectId: null,
         recordId: null,
-        hadFailures: false,
-        failedVideoNames: [],
-        failedVideoMessages: [],
+        hadFailures: missingRequestedVideoNames.length > 0,
+        uploadedVideoNames: [],
+        failedVideoNames: missingRequestedVideoNames,
+        failedVideoMessages: missingRequestedVideoNames.map((videoName) => ({
+          videoName,
+          message: `No recorded output found for "${videoName}"`,
+        })),
+        studioNotices: [],
+        elevenLabsKeyMissingVideos: [],
+        notices: [],
+        plan: null,
+      }
+    }
+
+    if (
+      credential.header === ANON_TOKEN_HEADER &&
+      filteredCandidates.length > ANON_MAX_VIDEOS_PER_RECORDING
+    ) {
+      const failureMessage = `Anonymous trials are capped at ${ANON_MAX_VIDEOS_PER_RECORDING} videos/screenshots per recording. Split this into smaller runs or sign up to record more in one run.`
+      return {
+        projectId: null,
+        recordId: null,
+        hadFailures: true,
+        uploadedVideoNames: [],
+        failedVideoNames: filteredCandidates.map(
+          (candidate) => candidate.displayVideoName
+        ),
+        failedVideoMessages: filteredCandidates.map((candidate) => ({
+          videoName: candidate.displayVideoName,
+          message: failureMessage,
+        })),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -2169,19 +2327,19 @@ export async function uploadRecordings(
     }
 
     const progressReporter = createUploadProgressReporter(
-      candidates.map((candidate) => candidate.videoName),
+      filteredCandidates.map((candidate) => candidate.displayVideoName),
       verbose
     )
 
     // Screenshots from this run render together on one machine; the backend
     // waits for all of them to land before dispatching the batch, so it needs
     // to know how many to expect.
-    const screenshotCount = candidates.filter(
+    const screenshotCount = filteredCandidates.filter(
       (candidate) => candidate.data.output === 'screenshot'
     ).length
 
     const results = await Promise.all(
-      candidates.map(
+      filteredCandidates.map(
         async (candidate, index) =>
           await uploadRecordingCandidate(
             candidate,
@@ -2204,6 +2362,9 @@ export async function uploadRecordings(
     const resolvedPlan =
       results.find((result) => result.plan !== undefined)?.plan ?? null
     const hadFailures = results.some((result) => result.hadFailure)
+    const uploadedVideoNames = results
+      .filter((result) => !result.hadFailure)
+      .map((result) => result.videoName)
     const failedVideoNames = results
       .filter((result) => result.hadFailure)
       .map((result) => result.videoName)
@@ -2237,6 +2398,7 @@ export async function uploadRecordings(
       projectId: firstProjectId,
       recordId,
       hadFailures,
+      uploadedVideoNames,
       failedVideoNames,
       failedVideoMessages,
       studioNotices,
@@ -2267,6 +2429,46 @@ async function writeGitHubProjectOutput(projectUrl: string): Promise<void> {
   if (!githubOutput) return
 
   await appendFile(githubOutput, `screenci_project_url=${projectUrl}\n`)
+}
+
+/**
+ * The builder titles each per-language Playwright test `${videoName} [${lang}]`
+ * (src/builder.ts) so every language pass has a unique test title, while the
+ * shared grouping key it writes to `metadata.videoName` carries NO language
+ * suffix. `screenci record` discovers the videos to expect by their test titles,
+ * but the uploader matches those against each recording's `metadata.videoName`.
+ * Strip the trailing ` [<lang>]` so the requested name matches the recorded one;
+ * otherwise a language-decorated title never matches and every upload reports
+ * "No recorded output found". Only a language-code-shaped bracket is stripped, so
+ * an unrelated trailing bracket in a video name is left intact.
+ */
+export function stripTestTitleLanguageSuffix(title: string): string {
+  // Language codes are lowercase (ISO 639: en, es, zh, ...), with an optional
+  // region subtag (pt-BR). Requiring lowercase avoids stripping unrelated
+  // capitalized brackets like ` [New]`.
+  return title.replace(/ \[[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?\]$/, '')
+}
+
+async function collectRequestedRecordVideoNames(
+  configPath: string,
+  additionalArgs: string[],
+  languages: string | undefined
+): Promise<string[]> {
+  const envForDiscovery = {
+    ...process.env,
+    SCREENCI_CONFIG_DIR: dirname(configPath),
+    SCREENCI_RECORDING: 'true',
+    ...(languages ? { [SCREENCI_LANGUAGES_ENV]: languages } : {}),
+  }
+
+  const titles = await collectDiscoveredTestTitles(
+    configPath,
+    additionalArgs,
+    envForDiscovery
+  )
+  // Requested names are matched against `metadata.videoName` (no language
+  // suffix), so recover the videoName from each per-language test title.
+  return [...new Set(titles.map(stripTestTitleLanguageSuffix))]
 }
 
 async function loadScreenCIConfigAndEnv(configPath?: string): Promise<{
@@ -2738,6 +2940,171 @@ async function triggerRemoteRun(
   )
 }
 
+function getRecordRunLockPath(screenciDir: string): string {
+  return resolve(screenciDir, SCREENCI_RECORD_LOCK_FILE)
+}
+
+function defaultIsPidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+      return false
+    }
+    return true
+  }
+}
+
+function parseRecordRunLock(raw: string): RecordRunLock | null {
+  try {
+    const parsed = JSON.parse(raw) as {
+      pid?: unknown
+      startedAt?: unknown
+      projectName?: unknown
+    }
+    return typeof parsed.pid === 'number' &&
+      Number.isInteger(parsed.pid) &&
+      parsed.pid > 0 &&
+      typeof parsed.startedAt === 'string' &&
+      parsed.startedAt.length > 0 &&
+      typeof parsed.projectName === 'string' &&
+      parsed.projectName.length > 0
+      ? {
+          pid: parsed.pid,
+          startedAt: parsed.startedAt,
+          projectName: parsed.projectName,
+        }
+      : null
+  } catch {
+    return null
+  }
+}
+
+function isRecordRunLockStale(
+  lock: RecordRunLock,
+  now: Date,
+  isPidAlive: (pid: number) => boolean,
+  maxAgeMs: number
+): boolean {
+  const startedAtMs = Date.parse(lock.startedAt)
+  if (Number.isNaN(startedAtMs)) return true
+  if (now.getTime() - startedAtMs > maxAgeMs) return true
+  return !isPidAlive(lock.pid)
+}
+
+function formatRecordRunLockError(lock: RecordRunLock): string {
+  return `Another 'screenci record' is in progress (pid ${lock.pid}, started ${lock.startedAt}, project "${lock.projectName}"). Wait for it or remove .screenci/.record.lock.`
+}
+
+export async function acquireRecordRunLock(
+  screenciDir: string,
+  projectName: string,
+  deps: Partial<AcquireRecordRunLockDeps> = {}
+): Promise<{ release: () => Promise<void> }> {
+  const resolvedDeps: AcquireRecordRunLockDeps = {
+    fs: deps.fs ?? { mkdir, readFile, writeFile, rm },
+    clock: deps.clock ?? (() => new Date()),
+    isPidAlive: deps.isPidAlive ?? defaultIsPidAlive,
+    pid: deps.pid ?? process.pid,
+    addSignalListener: deps.addSignalListener ?? process.on.bind(process),
+    removeSignalListener:
+      deps.removeSignalListener ?? process.off.bind(process),
+    removeLockSync:
+      deps.removeLockSync ??
+      ((lockPath) => {
+        rmSync(lockPath, { force: true })
+      }),
+    maxAgeMs: deps.maxAgeMs ?? SCREENCI_RECORD_LOCK_MAX_AGE_MS,
+  }
+  const lockPath = getRecordRunLockPath(screenciDir)
+  const lock: RecordRunLock = {
+    pid: resolvedDeps.pid,
+    startedAt: resolvedDeps.clock().toISOString(),
+    projectName,
+  }
+
+  await resolvedDeps.fs.mkdir(screenciDir, { recursive: true })
+
+  for (;;) {
+    try {
+      await resolvedDeps.fs.writeFile(
+        lockPath,
+        `${JSON.stringify(lock, null, 2)}\n`,
+        { flag: 'wx' }
+      )
+      break
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !('code' in error) ||
+        error.code !== 'EEXIST'
+      ) {
+        throw error
+      }
+
+      let existingLock: RecordRunLock | null = null
+      try {
+        existingLock = parseRecordRunLock(
+          await resolvedDeps.fs.readFile(lockPath, 'utf-8')
+        )
+      } catch {
+        existingLock = null
+      }
+
+      if (
+        existingLock !== null &&
+        !isRecordRunLockStale(
+          existingLock,
+          resolvedDeps.clock(),
+          resolvedDeps.isPidAlive,
+          resolvedDeps.maxAgeMs
+        )
+      ) {
+        throw new Error(formatRecordRunLockError(existingLock))
+      }
+
+      await resolvedDeps.fs.rm(lockPath, { force: true })
+    }
+  }
+
+  let released = false
+
+  const removeLockSync = () => {
+    if (released) return
+    released = true
+    resolvedDeps.removeSignalListener('SIGINT', handleSigint)
+    resolvedDeps.removeSignalListener('SIGTERM', handleSigterm)
+    try {
+      resolvedDeps.removeLockSync(lockPath)
+    } catch {
+      // best-effort during signal shutdown
+    }
+  }
+
+  const release = async () => {
+    if (released) return
+    released = true
+    resolvedDeps.removeSignalListener('SIGINT', handleSigint)
+    resolvedDeps.removeSignalListener('SIGTERM', handleSigterm)
+    try {
+      await resolvedDeps.fs.rm(lockPath, { force: true })
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  const handleSigint = () => removeLockSync()
+  const handleSigterm = () => removeLockSync()
+
+  resolvedDeps.addSignalListener('SIGINT', handleSigint)
+  resolvedDeps.addSignalListener('SIGTERM', handleSigterm)
+
+  return { release }
+}
+
 function getLastRecordFilePath(screenciDir: string): string {
   return resolve(screenciDir, SCREENCI_LAST_RECORD_FILE)
 }
@@ -2907,7 +3274,8 @@ export async function ensureAnonRecordingAllowedOrExit(
 async function uploadRecordedVideosForConfig(
   configPath: string | undefined,
   playwrightFailure: Error | null,
-  verbose: boolean
+  verbose: boolean,
+  requestedVideoNames?: readonly string[]
 ): Promise<void> {
   // After recording, upload results to API if configured. `run` already
   // resolved the config (or exited), so this best-effort lookup only acts
@@ -2959,6 +3327,7 @@ async function uploadRecordedVideosForConfig(
         projectId: string | null
         recordId: string | null
         hadFailures: boolean
+        uploadedVideoNames: string[]
         failedVideoNames: string[]
         failedVideoMessages: Array<{ videoName: string; message: string }>
         studioNotices: StudioUploadNotice[]
@@ -2969,6 +3338,7 @@ async function uploadRecordedVideosForConfig(
         projectId: null,
         recordId: null,
         hadFailures: false,
+        uploadedVideoNames: [],
         failedVideoNames: [],
         failedVideoMessages: [],
         studioNotices: [],
@@ -2983,7 +3353,8 @@ async function uploadRecordedVideosForConfig(
           apiUrl,
           credential,
           undefined,
-          verbose
+          verbose,
+          requestedVideoNames
         )
       } catch (err) {
         if (isUploadCancelledError(err)) {
@@ -2995,6 +3366,7 @@ async function uploadRecordedVideosForConfig(
         projectId,
         recordId,
         hadFailures,
+        uploadedVideoNames,
         failedVideoNames,
         failedVideoMessages,
         studioNotices,
@@ -3002,8 +3374,14 @@ async function uploadRecordedVideosForConfig(
         notices,
         plan,
       } = uploadResult
+      const requestedUploadSucceeded =
+        !hadFailures &&
+        (requestedVideoNames === undefined ||
+          requestedVideoNames.every((videoName) =>
+            uploadedVideoNames.includes(videoName)
+          ))
       // Remember this run so `screenci info` can report exactly it.
-      if (recordId !== null) {
+      if (recordId !== null && requestedUploadSucceeded) {
         await saveLastRecordId(screenciDir, recordId)
       }
       // Emit upload-failure warnings (stderr) before the results block.
@@ -3013,17 +3391,17 @@ async function uploadRecordedVideosForConfig(
       // it from its URL. Reporting failures first keeps the URL directly
       // under its message.
       if (hadFailures) {
-        for (const failedVideo of failedVideoMessages) {
-          logger.warn(
-            formatFailedVideoMessage(failedVideo.videoName, failedVideo.message)
-          )
+        for (const warning of collapseFailedVideoWarnings(
+          failedVideoMessages
+        )) {
+          logger.warn(warning)
         }
         logger.warn(
-          `Not all recordings succeeded to upload. Failed videos: ${failedVideoNames.join(', ') || 'unknown'}. Some videos may be missing from the project.`
+          `Not all recordings succeeded to upload. Failed videos: ${formatFailedVideoNamesSummary(failedVideoNames)}. Some videos may be missing from the project.`
         )
       }
       let resultUrl: string | null = null
-      if (recordId !== null && projectId !== null) {
+      if (requestedUploadSucceeded && recordId !== null && projectId !== null) {
         const recordUrl = `${appUrl}/record/${recordId}`
         resultUrl = recordUrl
         await writeGitHubProjectOutput(recordUrl)
@@ -3034,7 +3412,7 @@ async function uploadRecordedVideosForConfig(
             : 'Recording finished, rendering in progress. Results available at:'
         )
         logger.info(pc.cyan(recordUrl))
-      } else if (projectId !== null) {
+      } else if (requestedUploadSucceeded && projectId !== null) {
         const projectUrl = `${appUrl}/project/${projectId}`
         resultUrl = projectUrl
         await writeGitHubProjectOutput(projectUrl)
@@ -3165,48 +3543,75 @@ export async function main() {
         return
       }
 
-      let playwrightFailure: Error | null = null
+      validateArgs(parsed.otherArgs)
 
-      // UPLOAD_EXISTING re-sends the recordings already on disk under `.screenci`
-      // without re-running Playwright (resend the last local run when only the
-      // upload failed). We skip the recording run and fall straight through to
-      // the upload below, treating the on-disk recordings as the complete set.
-      const uploadExisting = isUploadExistingEnabled()
-
-      if (!uploadExisting) {
-        try {
-          await run(
-            'record',
-            parsed.otherArgs,
-            parsed.configPath,
-            parsed.verbose,
-            false,
-            parsed.languages
-          )
-        } catch (error) {
-          if (!(error instanceof Error)) throw error
-          if (error.message.startsWith('Playwright exited with code ')) {
-            playwrightFailure = new RecordFailureHintError(error)
-          } else {
-            throw new RecordFailureHintError(error)
-          }
-        }
-      } else {
-        logger.info(
-          'UPLOAD_EXISTING set: skipping Playwright recording and re-uploading existing .screenci recordings.'
-        )
-      }
-
-      if (process.env.SCREENCI_RECORDING === 'true') return
-
-      await uploadRecordedVideosForConfig(
-        parsed.configPath,
-        playwrightFailure,
-        parsed.verbose
+      const resolvedConfigPath = resolveScreenCIConfigPathOrExit(
+        parsed.configPath
+      )
+      await loadEnvFileFromConfigSource(resolvedConfigPath, false)
+      const screenciConfig =
+        await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
+      const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
+      const requestedVideoNames =
+        parsed.otherArgs.length > 0 || parsed.languages !== undefined
+          ? await collectRequestedRecordVideoNames(
+              resolvedConfigPath,
+              parsed.otherArgs,
+              parsed.languages
+            )
+          : undefined
+      const recordRunLock = await acquireRecordRunLock(
+        screenciDir,
+        screenciConfig.projectName
       )
 
-      if (playwrightFailure !== null) {
-        throw playwrightFailure
+      try {
+        let playwrightFailure: Error | null = null
+
+        // UPLOAD_EXISTING re-sends the recordings already on disk under `.screenci`
+        // without re-running Playwright (resend the last local run when only the
+        // upload failed). We skip the recording run and fall straight through to
+        // the upload below, treating the on-disk recordings as the complete set.
+        const uploadExisting = isUploadExistingEnabled()
+
+        if (!uploadExisting) {
+          try {
+            await run(
+              'record',
+              parsed.otherArgs,
+              parsed.configPath,
+              parsed.verbose,
+              false,
+              parsed.languages
+            )
+          } catch (error) {
+            if (!(error instanceof Error)) throw error
+            if (error.message.startsWith('Playwright exited with code ')) {
+              playwrightFailure = new RecordFailureHintError(error)
+            } else {
+              throw new RecordFailureHintError(error)
+            }
+          }
+        } else {
+          logger.info(
+            'UPLOAD_EXISTING set: skipping Playwright recording and re-uploading existing .screenci recordings.'
+          )
+        }
+
+        if (process.env.SCREENCI_RECORDING === 'true') return
+
+        await uploadRecordedVideosForConfig(
+          parsed.configPath,
+          playwrightFailure,
+          parsed.verbose,
+          requestedVideoNames
+        )
+
+        if (playwrightFailure !== null) {
+          throw playwrightFailure
+        }
+      } finally {
+        await recordRunLock.release()
       }
     })
 

@@ -101,6 +101,31 @@ describe('video.localize typed fixtures', () => {
     })('T', async () => {})
   })
 
+  it('rejects an unavailable Russian per-language built-in voice', () => {
+    video.localize({
+      voice: {
+        // @ts-expect-error this built-in voice is not available for Russian
+        ru: { name: voices.Sophie },
+      },
+      narration: { en: { intro: 'Hi' }, ru: { intro: 'Privet' } },
+    })('T', async () => {})
+  })
+
+  it('rejects an unavailable Russian per-cue built-in voice', () => {
+    video.localize({
+      narration: {
+        en: { intro: 'Hi' },
+        ru: {
+          intro: {
+            cue: 'Privet',
+            // @ts-expect-error this built-in voice is not available for Russian
+            voice: { name: voices.Sophie },
+          },
+        },
+      },
+    })('T', async () => {})
+  })
+
   it('accepts a per-cue synthesis language on a { cue } value', () => {
     video.localize({
       narration: {

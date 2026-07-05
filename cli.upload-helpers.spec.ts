@@ -27,6 +27,7 @@ const mockCreateReadStream = vi.fn()
 const mockAppendFile = vi.fn()
 const mockWriteFile = vi.fn()
 const mockMkdir = vi.fn()
+const mockRm = vi.fn()
 const mockInput = vi.fn()
 const mockConfirm = vi.fn()
 const mockCreateHttpServer = vi.fn()
@@ -195,6 +196,7 @@ vi.mock('fs', () => ({
 
 vi.mock('fs/promises', () => ({
   appendFile: mockAppendFile,
+  rm: mockRm,
   readdir: mockReaddir,
   readFile: mockReadFile,
   stat: mockStat,
@@ -202,6 +204,7 @@ vi.mock('fs/promises', () => ({
   mkdir: mockMkdir,
   default: {
     appendFile: mockAppendFile,
+    rm: mockRm,
     readdir: mockReaddir,
     readFile: mockReadFile,
     stat: mockStat,
@@ -244,6 +247,7 @@ describe('CLI', () => {
     mockAppendFile.mockResolvedValue(undefined)
     mockWriteFile.mockResolvedValue(undefined)
     mockMkdir.mockResolvedValue(undefined)
+    mockRm.mockResolvedValue(undefined)
     mockReaddir.mockResolvedValue([])
     mockReadFileSync.mockImplementation(() => {
       if (process.env.VITE_APP_BASE_URL === undefined) {
@@ -966,6 +970,34 @@ describe('CLI', () => {
       const fn = vi.fn().mockRejectedValue(abortErr)
       await expect(withUploadRetry(fn, controller.signal)).rejects.toThrow()
       expect(fn).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('stripTestTitleLanguageSuffix', () => {
+    it('strips a trailing language suffix so titles match metadata.videoName', async () => {
+      const { stripTestTitleLanguageSuffix } = await import('./cli')
+      // Builder titles per-language tests `${videoName} [${lang}]`; the uploaded
+      // recording is keyed by the unsuffixed videoName.
+      expect(
+        stripTestTitleLanguageSuffix('ScreenCI product pitch (code cut) [en]')
+      ).toBe('ScreenCI product pitch (code cut)')
+      expect(stripTestTitleLanguageSuffix('Tour [es]')).toBe('Tour')
+      expect(stripTestTitleLanguageSuffix('Tour [pt-BR]')).toBe('Tour')
+    })
+
+    it('leaves an unsuffixed title and non-language brackets intact', async () => {
+      const { stripTestTitleLanguageSuffix } = await import('./cli')
+      expect(stripTestTitleLanguageSuffix('Tour')).toBe('Tour')
+      // Only a trailing language-code-shaped bracket is stripped.
+      expect(stripTestTitleLanguageSuffix('Dashboard [New]')).toBe(
+        'Dashboard [New]'
+      )
+      expect(stripTestTitleLanguageSuffix('Report [v2]')).toBe('Report [v2]')
+      // A video name that itself ends in `[en]` keeps that, dropping only the
+      // builder-appended language suffix.
+      expect(stripTestTitleLanguageSuffix('Dashboard [en] [en]')).toBe(
+        'Dashboard [en]'
+      )
     })
   })
 })

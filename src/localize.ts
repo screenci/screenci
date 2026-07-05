@@ -1,5 +1,8 @@
 import { supportedLanguages, type Lang } from './voices.js'
-import type { LangNarrationOverride } from './voiceConfig.js'
+import type {
+  AnyLangNarrationOverride,
+  LangNarrationOverride,
+} from './voiceConfig.js'
 import type { OverlayCrop, SourceTrimPoint } from './events.js'
 import type { TimelineOffset } from './timelineOffset.js'
 import { validateCrop, resolveSourceTrim } from './sourceTrim.js'
@@ -9,7 +12,8 @@ import { validateCrop, resolveSourceTrim } from './sourceTrim.js'
  * sit on a per-language or per-cue voice), discriminated by voice name like the
  * narration voice overrides.
  */
-export type VoiceConfig = LangNarrationOverride
+export type VoiceConfig<L extends Lang = Lang> = LangNarrationOverride<L>
+type AnyVoiceConfig = AnyLangNarrationOverride
 
 /**
  * How a localized video/screenshot is recorded.
@@ -40,16 +44,16 @@ type LocalizeNarrationMediaFields = {
   end?: TimelineOffset
   language?: never
 }
-export type LocalizeNarrationValue =
+export type LocalizeNarrationValue<L extends Lang = Lang> =
   | string
-  | { cue: string; voice?: VoiceConfig; language?: Lang; volume?: number }
+  | { cue: string; voice?: VoiceConfig<L>; language?: Lang; volume?: number }
   | ({ media: string } & LocalizeNarrationMediaFields)
   | ({ path: string } & LocalizeNarrationMediaFields)
 
 /** Seeded narration: language -> (cue name -> value). */
-export type NarrationByLang = Partial<
-  Record<Lang, Record<string, LocalizeNarrationValue>>
->
+export type NarrationByLang = Partial<{
+  [L in Lang]: Record<string, LocalizeNarrationValue<L>>
+}>
 
 /** Seeded values: language -> (field name -> string). */
 export type ValuesByLang = Partial<Record<Lang, Record<string, string>>>
@@ -61,7 +65,7 @@ export type ValuesByLang = Partial<Record<Lang, Record<string, string>>>
  * config-for-all-languages form here: the all-languages default belongs in
  * `use`, so the localize `voice` only carries per-language overrides.
  */
-export type LocalizeVoiceSpec = Partial<Record<Lang, VoiceConfig>>
+export type LocalizeVoiceSpec = Partial<{ [L in Lang]: VoiceConfig<L> }>
 
 /**
  * The internal localization spec assembled from the per-feature builders
@@ -99,7 +103,7 @@ export type NormalizedCueValue =
   | {
       kind: 'text'
       text: string
-      voice?: VoiceConfig
+      voice?: AnyVoiceConfig
       language?: Lang
       volume?: number
     }
@@ -143,7 +147,7 @@ export type NormalizedLocalize = {
   narration: NormalizedNarration
   values: NormalizedValues
   /** Per-language localize `voice` overrides (absent language = use config default). */
-  voiceByLang: Partial<Record<Lang, VoiceConfig>>
+  voiceByLang: Partial<Record<Lang, AnyVoiceConfig>>
 }
 
 const SUPPORTED_LANGUAGE_SET = new Set<string>(supportedLanguages)
@@ -176,9 +180,9 @@ function collectSeededNames(
   return out
 }
 
-export function normalizeCueValue(
+export function normalizeCueValue<L extends Lang>(
   name: string,
-  value: LocalizeNarrationValue
+  value: LocalizeNarrationValue<L>
 ): NormalizedCueValue {
   if (typeof value === 'string') {
     return { kind: 'text', text: value }
@@ -322,7 +326,7 @@ function normalizeValues(input: ValuesByLang | undefined): {
 function normalizeVoice(
   voice: LocalizeVoiceSpec | undefined,
   languages: readonly string[]
-): Partial<Record<Lang, VoiceConfig>> {
+): Partial<Record<Lang, AnyVoiceConfig>> {
   if (voice === undefined) return {}
   // Per-language overrides only. Languages omitted from the map fall back to the
   // config/global default voice set via `use`, so the map may be partial; it may
@@ -335,7 +339,7 @@ function normalizeVoice(
       )} that are not part of this localization (${languages.join(', ')}).`
     )
   }
-  const out: Partial<Record<Lang, VoiceConfig>> = {}
+  const out: Partial<Record<Lang, AnyVoiceConfig>> = {}
   for (const [lang, config] of Object.entries(voice)) {
     if (config !== undefined) out[lang as Lang] = config
   }

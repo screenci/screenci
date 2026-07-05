@@ -22,6 +22,11 @@ The default voice is set once with `renderOptions.narration.voice`, in
 value) is the most specific override. Changing the voice re-renders without
 re-recording; changing the spoken text re-records.
 
+Built-in voices are shared across supported narration languages with one current
+exception: for Russian (`ru`), the built-in choices are `Ava`, `Daniel`, `Emma`,
+`Leo`, `Lily`, `Max`, `Miles`, and `Nora`. The built-in fallback voice is `Ava`,
+so an unconfigured video stays valid there too.
+
 `style` prompts require the Business tier, as does choosing `modelType:
 'expressive'` for a language that also has a consistent voice (a tone upgrade).
 A language whose only built-in voice is the expressive model uses it
@@ -86,7 +91,7 @@ config or `video.use(...)` default.
 import { video, voices } from 'screenci'
 
 // The default voice (how the narration is spoken).
-video.use({ renderOptions: { narration: { voice: { name: voices.Sophie } } } })
+video.use({ renderOptions: { narration: { voice: { name: voices.Ava } } } })
 
 video.narration({
   en: {
@@ -146,7 +151,7 @@ import { video, voices } from 'screenci'
 // language. Both are render options set with `use`.
 video.use({
   renderOptions: {
-    narration: { corner: 'top-right', voice: { name: voices.Sophie } },
+    narration: { corner: 'top-right', voice: { name: voices.Ava } },
   },
 })
 
@@ -321,6 +326,10 @@ to regenerate long blocks when only one line changes.
 
 ScreenCI ships with built-in voices that you can use across supported languages
 through the `voices` export.
+
+Russian (`ru`) currently has a smaller built-in subset: `Ava`, `Daniel`, `Emma`,
+`Leo`, `Lily`, `Max`, `Miles`, and `Nora`. Use one of those names whenever a cue
+is spoken in Russian.
 
 | Name       | Gender | Character                      |
 | ---------- | ------ | ------------------------------ |

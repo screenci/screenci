@@ -713,7 +713,7 @@ describe('createNarration', () => {
       )
     })
 
-    it('defaults the top-level voice to Sophie when omitted', async () => {
+    it('defaults the top-level voice to Ava when omitted', async () => {
       const cues = createNarration({
         en: {
           intro: 'Hello world',
@@ -729,15 +729,15 @@ describe('createNarration', () => {
         'intro',
         undefined,
         {
-          en: { text: 'Hello world', voice: voices.Sophie },
-          es: { text: 'Hola mundo', voice: voices.Sophie },
+          en: { text: 'Hello world', voice: voices.Ava },
+          es: { text: 'Hola mundo', voice: voices.Ava },
         }
       )
       expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('en', {
-        name: 'Sophie',
+        name: 'Ava',
       })
       expect(recorder.registerVoiceForLang).toHaveBeenCalledWith('es', {
-        name: 'Sophie',
+        name: 'Ava',
       })
     })
 

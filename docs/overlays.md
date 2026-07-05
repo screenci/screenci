@@ -2,13 +2,20 @@
 
 Overlays let you place additional media on top of the recording timeline. Use them for intros, transitions, corner branding, callouts, or short contextual clips that would be awkward to build inside the browser automation itself.
 
-An overlay can come from a file (`.html`, `.svg`, `.png`, or `.mp4`), a React element, an inline HTML fragment, or an inline config object. HTML (file or inline) and React elements are rendered to a transparent PNG at recording time and then behave exactly like an image overlay, or, with `animate: true`, are captured as a transparent animated clip (see [Animated overlays](#animated-overlays)).
+An overlay always comes from a **file `path`**, and the extension selects what it is:
+
+- **`.tsx`** — a full React page rendered client-side in the browser (hooks, effects, class lifecycle all run). The only variant that accepts `props`. See [.tsx and .html page overlays](#tsx-and-html-page-overlays).
+- **`.html`** — a full standalone HTML document, loaded as-is (its own `<style>`/`<script>` run).
+- **`.svg` / `.png`** — an image.
+- **`.mp4`** — a video.
+
+A `.tsx` or `.html` page is rendered to a transparent PNG at recording time and then behaves exactly like an image overlay, or, with `animate: true`, is captured as a transparent animated clip (see [Animated overlays](#animated-overlays)).
 
 Overlays can be owned by code or handed to [Studio](./studio.md) (the web app where non-developers swap the assets); see [the three ways to declare overlays](#three-ways-to-declare-overlays) below.
 
 #### You will learn
 
-- [how to declare overlays three ways](#three-ways-to-declare-overlays)
+- [how to declare overlays (code- or Studio-owned)](#three-ways-to-declare-overlays)
 - [how to define overlays](#define-overlays)
 - [how to position and size overlays](#positioning)
 - [how blocking and start/end timing work](#timing-and-control-flow)
@@ -43,23 +50,26 @@ video.overlays(studio({ logo: { path: 'assets/logo.png', width: 288 } }))
 
 `video.overlays(...)` takes a map. Each value is one of:
 
-- a **file path** string (`.html`, `.svg`, `.png`, `.mp4`),
-- a **React element**,
-- a **config object** (`{ path | element | html | clientEntry, ...placement }`), where `clientEntry` runs a real React component in the browser (see [Full client-side React](#full-client-side-react-cliententry)), or
+- a **file path** string (`.tsx`, `.html`, `.svg`, `.png`, `.mp4`),
+- a **config object** (`{ path, ...placement }`, plus `props` for a `.tsx` page),
+- a **factory** `(props) => config` (see [Programmatic overlays](#programmatic-overlays-props)), or
 - a **`selected(name)`** render dependency, which embeds another video or screenshot's output (see [Render dependencies](./dependencies.md)).
 
-A config object draws its content from exactly one source: a file `path`, a React `element`, or an inline `html` fragment.
+Content always comes from `path`; the extension selects the variant. Only a `.tsx` page accepts `props`; only `.mp4`/image files accept the video/crop fields.
 
 ```tsx
 import { video } from 'screenci'
-import { Badge } from './Badge'
 
 video.overlays({
   intro: { path: 'assets/intro.mp4', fill: 'screen' }, // full-frame video
-  hint: 'assets/callout.html', // HTML file
-  badge: <Badge label="New" />, // React element
-  note: { html: '<div class="note">Tip</div>', x: 1340, y: 110, width: 380 }, // inline HTML
-  logo: { path: 'assets/logo.png', x: 96, y: 96, width: 288 },
+  hint: 'assets/callout.html', // full HTML page
+  badge: {
+    path: 'overlays/Badge.tsx',
+    props: { label: 'New' },
+    x: 1340,
+    y: 110,
+  }, // React page
+  logo: { path: 'assets/logo.png', x: 96, y: 96, width: 288 }, // image
 })('Overview', async ({ page, overlays }) => {
   await overlays.intro()
   await page.goto('/dashboard')
@@ -94,15 +104,15 @@ this video (matched by the overlay's name). See
 
 Rules:
 
-- HTML, React, `.svg`, and `.png` overlays need a length: give them a relative `.for('1.2s')`, an absolute `.until('0:05')`/`.until('56%')`, a `duration` config string, or drive them with `start()`/`end()`. A bare `overlays.logo()` is invalid for these (it only works for a video or render dependency, which holds for its natural length).
-- Image, HTML, and React overlays do not support `volume`.
+- `.tsx`, `.html`, `.svg`, and `.png` overlays need a length: give them a relative `.for('1.2s')`, an absolute `.until('0:05')`/`.until('56%')`, a `duration` config string, or drive them with `start()`/`end()`. A bare `overlays.logo()` is invalid for these (it only works for a video or render dependency, which holds for its natural length).
+- `.tsx`, `.html`, and image overlays do not support `volume`.
 - `.mp4` overlays may provide `volume` (a linear gain). `1` (the default) plays the source at its natural level, `0` mutes it, and values above `1` boost it (e.g. `2` is twice as loud, up to `4`).
 - `.mp4` overlays use the file's natural duration and must not provide a `duration`.
-- `.mp4` overlays may provide `speed` or `time` to play the clip (and its audio) faster or slower. `speed` is a multiplier (`2` plays it twice as fast, `0.5` at half speed); `time` is a target playback duration in ms (the clip is sped up or slowed down to play over exactly that long). Set at most one. This sets how long the (sped) clip plays for, since both a blocking call (`await overlays.intro()`) and a live `start()`/`end()` window play the clip out to its end; later content shifts to make room. Use it (or trimming) to make a clip run shorter. Image, HTML, and React overlays do not support `speed`/`time`.
+- `.mp4` overlays may provide `speed` or `time` to play the clip (and its audio) faster or slower. `speed` is a multiplier (`2` plays it twice as fast, `0.5` at half speed); `time` is a target playback duration in ms (the clip is sped up or slowed down to play over exactly that long). Set at most one. This sets how long the (sped) clip plays for, since both a blocking call (`await overlays.intro()`) and a live `start()`/`end()` window play the clip out to its end; later content shifts to make room. Use it (or trimming) to make a clip run shorter. `.tsx`, `.html`, and image overlays do not support `speed`/`time`.
 
 ### Cropping a file overlay
 
-Image (`.svg`/`.png`) and video (`.mp4`) overlays accept a `crop` rectangle that selects a region of the **source file**, in the source's own pixels (top-left origin), just like Playwright's `page.screenshot({ clip })`. The cropped region is then placed and scaled like any other overlay. `crop` is not supported for `.html`/inline `html`/React `element`/`over` overlays.
+Image (`.svg`/`.png`) and video (`.mp4`) overlays accept a `crop` rectangle that selects a region of the **source file**, in the source's own pixels (top-left origin), just like Playwright's `page.screenshot({ clip })`. The cropped region is then placed and scaled like any other overlay. `crop` is not supported for `.tsx`/`.html` page overlays.
 
 ```ts
 const overlays = createOverlays({
@@ -134,172 +144,196 @@ const overlays = createOverlays({
 
 `start`/`end` apply to `.mp4` overlays only (images have no timeline).
 
-### HTML and React overlays
+### .tsx and .html page overlays
 
-You can build the same overlay three ways, and all of them honor the same
-[placement](#positioning) fields (`x`, `y`, `width`/`height`, `relativeTo`),
-`duration`, `animate`, `css`, `capturePadding`, and
-[`script`](#driving-overlays-with-javascript-script):
+A custom overlay is a full page you author, in one of two forms:
 
-- **An `.html` file** (`path`): authored in a separate file and passed like any
-  other file path. The file contains the overlay markup body, not a full browser
-  document; screenci reads the file and injects its contents into the same
-  overlay wrapper used for inline `html`.
-- **A React element** (`element`): passed straight in as JSX. `react` and
-  `react-dom` are optional peer dependencies imported lazily, so installing
-  screenci never pulls React into your project unless you actually use an
-  element. `screenci init` offers to set this up for you (it installs
-  `react`/`react-dom`, enables `"jsx": "react-jsx"` in the scaffolded
-  `tsconfig.json`). To wire it up by hand, install the
-  packages, set `"jsx": "react-jsx"` in your tsconfig, and author the overlay in
-  a `.screenci.tsx` file.
-- **An inline HTML fragment** (`html`): a string of plain HTML, with no React
-  dependency and no separate file. Use it for small, one-off overlays you would
-  rather keep next to the script.
+- **A `.tsx` page** (`path` ends in `.tsx`): a module that default-exports a React
+  component, rendered **client-side in the browser** during capture. The full
+  React runtime runs, so hooks and effects, class components with lifecycle and
+  state, inline styles, and `className` all work. It is the only overlay that
+  accepts **`props`**. screenci bundles it with `esbuild` (an optional peer
+  dependency, resolved from your project's `react`/`react-dom`).
+- **A `.html` page** (`path` ends in `.html`): a complete standalone HTML
+  document, loaded as-is. Its own `<style>` and `<script>` run (the script is
+  advanced by the virtual clock when `animate: true`).
+
+Both render to a transparent PNG (or, with `animate: true`, an animated clip),
+then place exactly like an image overlay.
 
 ```tsx
 video.overlays({
-  // From an .html file.
-  hint: { path: 'assets/callout.html', x: 768, y: 864, width: 384 },
-  // From a React element.
-  badge: { element: <Badge label="New" />, x: 1340, y: 110, width: 288 },
-  // From an inline HTML fragment.
-  note: { html: '<div class="note">Saved</div>', x: 1340, y: 110, width: 380 },
-})('Overview', async ({ page, overlays }) => {
-  // ...
+  // A React page, parameterized by props.
+  badge: {
+    path: './overlays/Badge.tsx',
+    props: { label: 'New' },
+    x: 1340,
+    y: 96,
+    width: 240,
+  },
+  // A full HTML page.
+  hint: { path: './overlays/callout.html', x: 768, y: 864, width: 384 },
+})('Overview', async ({ overlays }) => {
+  await overlays.badge.for('1.5s')
+  await overlays.hint.for('1.2s')
 })
 ```
 
-For both `.html` files and inline `html`, write a **single-rooted fragment**, not
-a full document. screenci wraps your markup in its own document before
-rasterizing, so do not include `<!doctype>`, `<html>`, `<head>`, or `<body>` tags
-(a full document would nest documents and break the capture). Inline `html` is
-validated and rejects those tags; `.html` file contents are read from disk and
-wrapped the same way, so keep them to the same fragment shape even though the
-file path variant is not pre-validated. The fragment must also contain exactly
-one top-level element (wrap multiple nodes in one container), so it sizes and
-positions predictably. Write only the content, exactly as you would inside a
-React element:
-
-```tsx
-// Good: a single-rooted fragment.
-{
-  html: '<div class="badge"><span>New</span></div>'
-}
-
-// Rejected: a full document.
-{
-  html: '<!doctype html><html><body><div>New</div></body></html>'
-}
-
-// Rejected: two top-level elements. Wrap them in one container.
-{
-  html: '<div>New</div><div>!</div>'
-}
-```
-
-The same fragment rule applies when the markup lives in a file:
+**Transparent background.** A page overlay owns its whole document, so make its
+background transparent (otherwise it paints an opaque rectangle over the
+recording):
 
 ```html
-<!-- assets/callout.html -->
-<div class="callout">Saved</div>
+<!-- callout.html -->
+<!doctype html>
+<html>
+  <head>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+      }
+      .callout {
+        /* ... */
+      }
+    </style>
+  </head>
+  <body>
+    <div class="callout">Saved</div>
+  </body>
+</html>
 ```
 
-Because an `.html` overlay file is read and inserted into screenci's wrapper, it
-is not loaded as a page URL from its own directory. Prefer inline styles, the
-`css` option, `setOverlayCss`, or absolute/data URLs for referenced assets;
-relative `<link>`, `<script>`, and `<img>` URLs are not resolved relative to the
-`.html` file path.
+A `.tsx` page's generated host document is already transparent; just avoid an
+opaque root element.
 
-To style a fragment with `className`, inject a stylesheet with `css` or
-`setOverlayCss`, exactly as for `.html` files and React elements (see
-[Styling with className](#styling-with-classname-and-tailwind)).
+**Sizing.** The overlay is captured content-sized: screenci screenshots the
+element with `id="screenci-overlay-root"` if the page has one, else the document
+`<body>`. A `.tsx` page mounts into that root for you. For a `.html` page, wrap
+your content in `<div id="screenci-overlay-root">…</div>` for tight sizing (or
+let it fall back to the body box). The `width`/`height` placement then scales that
+captured image onto the frame, so the output size never has to be known when you
+author.
+
+**A `.tsx` page is a full React component.** Author it exactly as you would an app
+component: import React, hooks, helpers, child components. Only serializable
+`props` cross into it (they are JSON-encoded), so pass plain data, not functions
+or elements.
+
+```tsx
+// overlays/Counter.tsx — hooks and effects run during capture
+import { useEffect, useState } from 'react'
+
+export default function Counter({ to }: { to: number }) {
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    const start = Date.now()
+    let raf = 0
+    const tick = () => {
+      const t = Math.min(1, (Date.now() - start) / 2000)
+      setN(Math.round(t * to))
+      if (t < 1) raf = requestAnimationFrame(tick)
+    }
+    tick()
+    return () => cancelAnimationFrame(raf)
+  }, [to])
+  return <div className="counter">{n}</div>
+}
+```
+
+```tsx
+// the recording
+video.overlays({
+  counter: {
+    path: './overlays/Counter.tsx',
+    props: { to: 100 },
+    animate: true,
+    duration: '2s',
+  },
+})('Overview', async ({ overlays }) => {
+  await overlays.counter() // counts 0 -> 100 over 2s
+})
+```
+
+Class components work identically (`this.props`, `this.state`,
+`componentDidMount`, etc.). A `.tsx` page needs `react`, `react-dom`, and
+`esbuild` installed in your project.
 
 ### Programmatic overlays (props)
 
 Instead of a static value, an overlay can be a **factory** `(props) => config`.
-The factory runs each time you call the overlay, so its content **and** its
-placement can depend on values you only know at runtime. Call
-`overlays.name(props)` to get a controller, then drive it the usual way
-(`.for(...)`, `.until(...)`, `start()`, `end()`):
+The factory runs each time you call the overlay, so its `path`, `props`, and
+placement can depend on values you only know at runtime. Call `overlays.name(...)`
+to get a controller, then drive it the usual way (`.for(...)`, `.until(...)`,
+`start()`, `end()`):
 
 ```tsx
 video.overlays({
-  // Props build the markup. Works for inline html (template literal)...
-  note: (p: { text: string }) => ({
-    html: `<div class="note">${p.text}</div>`,
-    x: 1340,
-    y: 110,
-    width: 380,
-  }),
-  // ...and for React elements.
-  badge: (p: { label: string }) => ({
-    element: <Badge label={p.label} />,
-    x: 1340,
+  // Props select the .tsx page's content and its placement.
+  badge: (p: { label: string; x: number }) => ({
+    path: './overlays/Badge.tsx',
+    props: { label: p.label },
+    x: p.x,
     y: 110,
     width: 288,
   }),
 })('Overview', async ({ page, overlays }) => {
-  await overlays.note({ text: 'Saved' }).for('1.2s') // blocking, 1.2s
+  await overlays.badge({ label: 'Saved', x: 1340 }).for('1.2s')
 
   // For start()/end(), capture the controller so the props appear once.
-  const badge = overlays.badge({ label: 'New' })
+  const badge = overlays.badge({ label: 'New', x: 1340 })
   await badge.start()
   await page.click('#next')
   await badge.end()
 })
 ```
 
-This is how an overlay receives props: the factory closes over them and returns
-the config. Calling the overlay (`overlays.badge({ label: 'New' })`) runs the
-factory once and returns a controller; capture that controller and reuse it for
-`start()` and `end()` rather than calling the overlay again, so the props appear
-only once. To position an overlay over a live element, combine a factory with
-[`overlayRect`](#positioning-over-a-live-element) below, which captures a
-locator's position and spreads into the placement (and can be passed as a prop
-so the component draws relative to the element, for example a circle around it).
+To position an overlay over a live element, combine a factory with an `over`
+locator (see [Positioning over a live element](#positioning-over-a-live-element)):
+screenci reads the element's box at recording time and sizes the overlay to it.
 
-> Rendered (HTML/React) and animated overlays are rasterized **after** the test
-> body finishes, not inline while it runs. The resolved markup and parameters are
-> captured during the test; overlays with identical content are then rasterized
-> just once (and unchanged overlays are still served from a cross-run cache). You
-> do not need to record the same overlay repeatedly.
+> Page overlays are rasterized **after** the test body finishes, not inline while
+> it runs. The resolved page (and, for `.tsx`, its bundle and props) is captured
+> during the test; overlays with identical content are then rasterized just once
+> (and unchanged overlays are served from a cross-run cache). You do not need to
+> record the same overlay repeatedly.
 
 ### Animated overlays
 
-By default an HTML or React overlay is captured as a single still frame. Set
-`animate: true` to play its CSS/JS animation back in the video, with the
-transparent background preserved. Only rendered overlays (HTML files, inline
-`html` fragments, and React elements) can animate.
+By default a page overlay is captured as a single still frame. Set `animate: true`
+to play its animation back in the video, with the transparent background
+preserved.
 
 ```tsx
 video.overlays({
-  // A React element that fades/slides in via CSS.
+  // A .tsx page whose effect/CSS animates in.
   intro: {
-    element: <Intro />,
+    path: './overlays/Intro.tsx',
     animate: true,
     duration: '1.5s',
     fill: 'screen',
   },
-  // An animated .html overlay, captured at 60fps.
+  // An animated .html page, captured at 60fps.
   hint: {
-    path: 'assets/callout.html',
+    path: './overlays/callout.html',
     animate: true,
     duration: '1.2s',
     fps: 60,
   },
-})('Overview', async ({ page, overlays }) => {
+})('Overview', async ({ overlays }) => {
   await overlays.intro() // plays the 1.5s animation over a frozen frame
 })
 ```
 
-How the animation is triggered and how long it runs:
+How the animation is driven and how long it runs:
 
-- **Trigger.** The animation starts from its first frame at the moment the
-  overlay appears. Capture is deterministic (a virtual clock is advanced one
-  frame at a time), so playback matches exactly what you author. Animate with
-  `transform`/`opacity`; the overlay is captured at its initial layout box, so
-  use `capturePadding` (below) to give the motion room.
+- **Deterministic clock.** Capture advances a virtual clock one frame at a time,
+  so everything time-based is reproducible: CSS animations/transitions, and a
+  page's `setTimeout`/`setInterval`, `requestAnimationFrame`, `Date.now()`/
+  `performance.now()`, and the Web Animations API (including React effects in a
+  `.tsx` page). Schedule an edit at `t` ms and it lands on the matching frame,
+  every run.
 - **Length.** You set the length explicitly: use `.for('2s')` on the call or set
   `duration` in the config. When you drive an animated overlay with
   `start()`/`end()`, `duration` is required in the config (the capture length is
@@ -308,249 +342,14 @@ How the animation is triggered and how long it runs:
   over a frozen frame before the timeline continues.
 - **`fps`** sets the capture frame rate (defaults to `30`) and only applies with
   `animate: true`.
+- **Reserve room for growth.** The overlay is captured at its initial layout box.
+  If the animation grows the content (adds lines, expands a panel) or moves beyond
+  its box (a `transform` that translates/scales out), size the page's root to its
+  final dimensions up front (or add your own padding), so nothing is clipped.
+  Animating `transform`/`opacity` within the box is free.
 
 Capturing many frames is heavier than a single screenshot, so prefer short
 durations for full-screen animations.
-
-### Driving overlays with JavaScript (`script`)
-
-CSS animation is enough for fades, slides, and loops, but some overlays are
-easier to drive from code: change text on a schedule, step through states, count
-up a number, or lay out from data. Pass a `script` string and screenci injects it
-as a `<script>` at the end of the overlay document `<body>`, so it runs after the
-markup is parsed and can query and mutate the overlay DOM. It works the same for
-**HTML files, inline `html`, and React `element`** overlays.
-
-With `animate: true` the script is advanced by the **same deterministic virtual
-clock** that samples each frame. So `setTimeout`/`setInterval`,
-`requestAnimationFrame`, `Date.now()`/`performance.now()`, and the Web Animations
-API all drive the captured frames reproducibly: schedule an edit at `t` ms and it
-lands on the matching frame, every run. (Without `animate` the script runs once,
-before the single screenshot: useful to compute a final layout, not to animate.)
-
-A React element renders to static markup, so its hooks and effects do **not** run
-during capture; the `script` is where the behavior lives. Author the element as
-the initial DOM and let the script animate it.
-
-```tsx
-video.overlays({
-  // Count 0 -> 100 over 2s, driven by requestAnimationFrame under the clock.
-  counter: {
-    element: (
-      <div id="n" className="counter">
-        0
-      </div>
-    ),
-    css: '.counter{font:700 64px system-ui;color:#fff}',
-    script: `
-      const el = document.getElementById('n')
-      const start = Date.now()
-      function tick() {
-        const t = Math.min(1, (Date.now() - start) / 2000)
-        el.textContent = String(Math.round(t * 100))
-        if (t < 1) requestAnimationFrame(tick)
-      }
-      tick()
-    `,
-    animate: true,
-    duration: '2s', // capture length (see below)
-    fps: 30,
-  },
-  // The same option works for inline html.
-  toast: {
-    html: '<div class="toast">Saving…</div>',
-    css: '.toast{font:600 28px system-ui;color:#fff;background:#111;padding:16px 24px;border-radius:12px}',
-    script: `setTimeout(() => {
-      document.querySelector('.toast').textContent = 'Saved'
-    }, 800)`,
-    animate: true,
-    duration: '1.6s',
-  },
-})('Overview', async ({ page, overlays }) => {
-  await overlays.counter() // plays for the config duration
-})
-```
-
-**Setting the length.** A scripted animation is an animated overlay, so it needs a
-capture length, set exactly the same way as any [animated overlay](#animated-overlays):
-
-- `duration` in the config (as above), or `.for('2s')` on the call, sets the
-  blocking length and the capture length together.
-- Driving it live with `start()`/`end()` requires `duration` in the config (the
-  capture length is otherwise unknown); the live window can be shorter or longer,
-  and the last frame is held or the remainder plays out over a frozen frame.
-- `fps` sets the sampling rate (default `30`).
-
-**Passing data.** Interpolate values into the string, for example
-`` script: `const steps = ${JSON.stringify(steps)}; /* ... */` ``. The script is a
-plain string, so build it however you like (a template literal, a function you
-`.toString()`, a separate file you read in).
-
-**Reserve room for growth.** The overlay is captured at its **initial layout
-box**, frozen on the first frame. If the script grows the content later (adds
-lines, expands a panel), size the container to its final dimensions up front (and
-animate within it), or add [`capturePadding`](#giving-animations-room-capturepadding),
-so nothing is clipped. Animating `transform`/`opacity` stays within the box for
-free.
-
-`script` is rejected for image (`.svg`/`.png`) and `.mp4` file overlays (they are
-not rendered from markup). Global `setOverlayCss` and per-overlay `css` inject
-into `<head>`; `script` injects at the end of `<body>`, after your content.
-
-### Full client-side React (`clientEntry`)
-
-A React `element` overlay is server-rendered to static markup, so its hooks,
-effects, and class lifecycle **do not run** during capture, only the initial
-render is used. When you want the full React runtime, so `useState`/`useEffect`,
-class `render()`/`componentDidMount`/`setState`, inline styles, and `className`
-all work, use `clientEntry`: screenci runs React **in the browser** during
-capture, exactly like a live app.
-
-Point `clientEntry` at a module that default-exports a component, and pass
-serializable `props`. screenci bundles the module for the browser and mounts it
-into the overlay. Write a completely ordinary component, regular imports, JSX,
-hooks, classes, all supported:
-
-```tsx
-// overlays/Menu.tsx
-import { useState, useEffect } from 'react'
-
-export default function Menu({ isActive }: { isActive: boolean }) {
-  const [open, setOpen] = useState(isActive)
-  useEffect(() => {
-    const t = setTimeout(() => setOpen(true), 500) // toggles mid-capture
-    return () => clearTimeout(t)
-  }, [])
-  const className = open ? 'menu menu-active' : 'menu'
-  return (
-    <span className={className} style={{ color: open ? '#0a0' : '#888' }}>
-      Menu
-    </span>
-  )
-}
-```
-
-```tsx
-// the recording
-video.overlays({
-  menu: {
-    clientEntry: './overlays/Menu.tsx', // resolved relative to the recording file
-    props: { isActive: false },
-    css: '.menu{font:600 28px system-ui}',
-    animate: true,
-    duration: '2s',
-    fps: 30,
-    x: 96,
-    y: 96,
-    width: 240,
-  },
-})('Overview', async ({ overlays }) => {
-  await overlays.menu()
-})
-```
-
-Class components work identically, `this.props`, `this.state`, and lifecycle all
-run:
-
-```tsx
-// overlays/Menu.tsx (class form)
-import React from 'react'
-
-export default class Menu extends React.Component<{ isActive: boolean }> {
-  state = { active: this.props.isActive }
-  componentDidMount() {
-    setTimeout(() => this.setState({ active: true }), 500)
-  }
-  render() {
-    let className = 'menu'
-    if (this.state.active) className += ' menu-active'
-    return <span className={className}>Menu</span>
-  }
-}
-```
-
-Details:
-
-- **Determinism.** With `animate: true` the mounted app is advanced by the same
-  virtual clock that samples each frame, so effect timers,
-  `requestAnimationFrame`, and state updates drive the captured frames
-  reproducibly, just like a [`script`](#driving-overlays-with-javascript-script)
-  overlay. Set the length the usual way (`duration`/`.for(...)`, plus `fps`).
-- **esbuild.** Bundling uses `esbuild`, an **optional peer dependency** imported
-  lazily. Install it (`npm install --save-dev esbuild`) to use `clientEntry`;
-  screenci never pulls it in otherwise. `react` and `react-dom` are resolved from
-  your own project.
-- **Props** are serialized to JSON, so pass plain data (no functions or React
-  elements).
-- **Placement, `css`, `capturePadding`** work exactly as for other rendered
-  overlays. `script` is generated for you, so it cannot be combined with
-  `clientEntry`.
-- **Reserve room for growth** just as with a `script` overlay: the overlay is
-  captured at its initial mounted box, so if the component grows later, size it to
-  its final dimensions up front (or use `capturePadding`).
-
-Use a static `element` for content that does not animate (it is lighter, no
-bundler, no browser React), a [`script`](#driving-overlays-with-javascript-script)
-for small vanilla-JS animation, and `clientEntry` when you want to author the
-overlay as a real React component.
-
-### Styling with className (and Tailwind)
-
-By default an HTML/React overlay only sees a tiny CSS reset, so utility classes
-do nothing. Inject a stylesheet with the `css` option (per overlay) or
-`setOverlayCss` (once, for all overlays) and then style with `className`. Pass
-your **compiled** CSS, for example Tailwind's build output:
-
-```tsx
-import { video, setOverlayCss } from 'screenci'
-import { readFileSync } from 'node:fs'
-
-// Compile once (e.g. `npx @tailwindcss/cli -i in.css -o overlay.css`) and inject:
-setOverlayCss(readFileSync('./assets/overlay.css', 'utf-8'))
-
-video.overlays({
-  badge: {
-    element: (
-      <div className="rounded-2xl bg-sky-500 px-6 py-4 text-white">New</div>
-    ),
-    duration: '1.5s',
-  },
-  // Or scope CSS to a single overlay:
-  hint: { path: 'callout.html', css: '.callout{color:#fff}', duration: '1.5s' },
-})('Overview', async ({ page, overlays }) => {
-  // ...
-})
-```
-
-Per-overlay `css` is merged after the global `setOverlayCss`. CSS injection
-works for both static and animated HTML/React overlays. (The Tailwind Play CDN
-is not supported: it relies on runtime JS that the deterministic capture clock
-does not drive.)
-
-### Giving animations room: `capturePadding`
-
-Overlays are captured at their initial layout box, so an animation that
-translates, scales, or rotates beyond that box would be clipped. Set
-`capturePadding` (CSS px) to add transparent padding around the content so the
-motion stays inside the captured frame, instead of building a manual "stage"
-wrapper:
-
-```tsx
-video.overlays({
-  intro: {
-    element: <Intro />, // slides/rotates in
-    animate: true,
-    duration: '1.5s',
-    capturePadding: 80, // room on every side for the motion
-    width: 768, // placement sizes the padded box, so make it a bit wider
-  },
-})('Overview', async ({ page, overlays }) => {
-  // ...
-})
-```
-
-The placement sizes the _padded_ box, so widen it to keep the content the size
-you want. `capturePadding` applies to static and animated HTML/React overlays.
 
 ## Positioning
 
@@ -654,9 +453,9 @@ import type { Locator } from '@playwright/test'
 import { video } from 'screenci'
 
 video.overlays({
-  // The overlay is sized to the element's box; fill it (width/height: 100%).
+  // A .html page whose content fills the element's box (width/height: 100%).
   ring: (target: Locator) => ({
-    html: '<div style="width:100%;height:100%;box-sizing:border-box;border:4px solid #ec4899;border-radius:12px"></div>',
+    path: './overlays/ring.html',
     over: target,
     margin: 8, // optional breathing room around the element
   }),
@@ -669,7 +468,33 @@ video.overlays({
 })
 ```
 
-`over` works with React elements, inline `html`, and `.html` files. It is always
+```html
+<!-- overlays/ring.html -->
+<!doctype html>
+<html>
+  <head>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+      }
+      .ring {
+        width: 100%;
+        height: 100%;
+        box-sizing: border-box;
+        border: 4px solid #ec4899;
+        border-radius: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="ring"></div>
+  </body>
+</html>
+```
+
+`over` works with `.tsx` and `.html` page overlays. It is always
 recording-relative and overrides `x`/`y`/`width`/`height`/`relativeTo`/`fill`.
 Make the content fill its box (`width:100%;height:100%`). Repeated calls with the
 same element box rasterize only once.
@@ -746,7 +571,7 @@ the clip finish: if the media is longer than the live window, the remainder play
 out over a frozen frame before the timeline continues, so the clip is never cut
 short by ending early. To show less of such a clip, trim it (`start`/`end`,
 `speed`/`time`, or `selected(..., { end })`) instead of calling `end()` sooner.
-Length-less overlays (image, inline `html`, React) end exactly at `end()`.
+Length-less overlays (image, `.html`, `.tsx`) end exactly at `end()`.
 
 Overlays can overlap. Several can be live at the same time, and a blocking
 overlay can run while others stay live, so you can layer them freely:

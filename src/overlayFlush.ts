@@ -35,14 +35,10 @@ export async function flushPendingOverlays(
         const result = await rasterizeHtmlOverlay({
           name: request.name,
           html: request.html,
-          css: request.css,
-          cssResolved: true,
-          script: request.script,
           ...(request.awaitMount !== undefined && {
             awaitMount: request.awaitMount,
           }),
           deviceScaleFactor: request.deviceScaleFactor,
-          capturePadding: request.capturePadding,
         })
         resolved = { path: result.path, fileHash: result.fileHash }
       } else {
@@ -51,14 +47,10 @@ export async function flushPendingOverlays(
           html: request.html,
           durationMs: request.durationMs,
           fps: request.fps,
-          css: request.css,
-          cssResolved: true,
-          script: request.script,
           ...(request.awaitMount !== undefined && {
             awaitMount: request.awaitMount,
           }),
           deviceScaleFactor: request.deviceScaleFactor,
-          capturePadding: request.capturePadding,
         })
         resolved = { path: result.path, fileHash: result.fileHash }
       }

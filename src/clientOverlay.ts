@@ -1,12 +1,12 @@
 import { dirname } from 'path'
 
+const OVERLAY_ROOT_ID = 'screenci-overlay-root'
+
 /**
- * Bundles a client-rendered overlay: an author React component module is bundled
- * for the browser and mounted into the overlay root, so the FULL React runtime
- * runs during capture (function components with hooks and effects, class
- * components with lifecycle and state, inline styles, `className`). This is the
- * dynamic counterpart to a static `element`, which is server-rendered to markup
- * with `renderToStaticMarkup` and therefore never runs hooks/effects/lifecycle.
+ * Bundles a `.tsx` page overlay: an author React component module is bundled for
+ * the browser and mounted into the overlay root, so the FULL React runtime runs
+ * during capture (function components with hooks and effects, class components
+ * with lifecycle and state, inline styles, `className`).
  *
  * With `animate: true` the mounted app is advanced by the same deterministic
  * virtual clock that samples each frame, so effect timers / requestAnimationFrame
@@ -21,7 +21,7 @@ export type ClientOverlayBundler = (opts: {
 
 /**
  * esbuild is an optional peer dependency imported lazily, so installing screenci
- * never pulls it in unless a `clientEntry` overlay is actually used.
+ * never pulls it in unless a `.tsx` page overlay is actually used.
  */
 async function esbuildClientBundler(opts: {
   entryPath: string
@@ -32,7 +32,7 @@ async function esbuildClientBundler(opts: {
     esbuild = (await import('esbuild')) as unknown as typeof import('esbuild')
   } catch {
     throw new Error(
-      '[screenci] A `clientEntry` overlay requires the optional peer dependency "esbuild" to bundle the component for the browser. Install it (for example `npm install --save-dev esbuild`).'
+      '[screenci] A `.tsx` page overlay requires the optional peer dependency "esbuild" to bundle the component for the browser. Install it (for example `npm install --save-dev esbuild`).'
     )
   }
 
@@ -43,7 +43,7 @@ async function esbuildClientBundler(opts: {
     `import __Component from ${JSON.stringify(opts.entryPath)}\n` +
     `import { createElement as __createElement } from 'react'\n` +
     `import { createRoot as __createRoot } from 'react-dom/client'\n` +
-    `const __root = document.getElementById('screenci-overlay-root')\n` +
+    `const __root = document.getElementById(${JSON.stringify(OVERLAY_ROOT_ID)})\n` +
     `__createRoot(__root).render(__createElement(__Component, ${opts.propsJson}))\n`
 
   let result
@@ -96,13 +96,25 @@ export function resetClientOverlayBundler(): void {
 }
 
 /**
- * Produces the browser script (an IIFE) that mounts the client overlay entry with
- * the given props. The script is injected into the overlay document like any
- * other overlay `script`; the overlay markup is empty, since React owns the root.
+ * Builds the full overlay document for a `.tsx` page overlay: a minimal
+ * transparent host page with an empty `#screenci-overlay-root` and the bundled
+ * component's IIFE, which mounts the React app into that root with the given
+ * props. The rasterizer loads this document and waits for the mount (awaitMount)
+ * before capturing.
  */
-export function bundleClientOverlay(
+export async function buildClientOverlayDocument(
   entryPath: string,
   props: Record<string, unknown> | undefined
 ): Promise<string> {
-  return bundler({ entryPath, propsJson: JSON.stringify(props ?? {}) })
+  const script = await bundler({
+    entryPath,
+    propsJson: JSON.stringify(props ?? {}),
+  })
+  return (
+    '<!doctype html><html><head><meta charset="utf-8"><style>' +
+    'html,body{margin:0;padding:0;background:transparent}' +
+    `#${OVERLAY_ROOT_ID}{display:inline-block}` +
+    `</style></head><body><div id="${OVERLAY_ROOT_ID}"></div>` +
+    `<script>${script}</script></body></html>`
+  )
 }

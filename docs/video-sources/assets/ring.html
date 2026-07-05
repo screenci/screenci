@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      /* A full overlay page: transparent background (the author's job), with a
+         single ring that fills its box. Used with `over`, so screenci sizes the
+         page to the element's box and the ring lands exactly on it. */
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+      }
+      .ring {
+        width: 100%;
+        height: 100%;
+        box-sizing: border-box;
+        border: 4px solid #ec4899;
+        border-radius: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="ring"></div>
+  </body>
+</html>

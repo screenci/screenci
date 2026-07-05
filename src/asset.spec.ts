@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createElement } from 'react'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -479,96 +478,24 @@ describe('createOverlays', () => {
           broken: { path: './photo.webp' },
         })
       ).toThrow(
-        'Overlay "broken" must use one of: .html, .svg, .png, .mp4. Received: ./photo.webp'
+        'Overlay "broken" must use one of: .tsx, .html, .svg, .png, .mp4. Received: ./photo.webp'
       )
     })
 
-    it('rejects a config with both path and element', () => {
-      expect(() =>
-        createOverlays({
-          broken: {
-            path: './logo.png',
-            element: createElement('div', null, 'x'),
-          } as never,
-        })
-      ).toThrow(
-        'Overlay "broken" must provide only one of "path", "element", "html", or "clientEntry".'
-      )
-    })
-
-    it('rejects a config with both path and html', () => {
-      expect(() =>
-        createOverlays({
-          broken: { path: './logo.png', html: '<div>x</div>' } as never,
-        })
-      ).toThrow(
-        'Overlay "broken" must provide only one of "path", "element", "html", or "clientEntry".'
-      )
-    })
-
-    it('rejects a config with both element and html', () => {
-      expect(() =>
-        createOverlays({
-          broken: {
-            element: createElement('div', null, 'x'),
-            html: '<div>x</div>',
-          } as never,
-        })
-      ).toThrow(
-        'Overlay "broken" must provide only one of "path", "element", "html", or "clientEntry".'
-      )
-    })
-
-    it('rejects a config with no content source', () => {
+    it('rejects a config with no path', () => {
       expect(() => createOverlays({ broken: { width: 200 } as never })).toThrow(
-        'Overlay "broken" must provide a "path", an "element", inline "html", or a "clientEntry".'
+        'Overlay "broken" must provide a "path" (a .tsx, .html, .svg, .png, or .mp4 file).'
       )
     })
 
-    it('rejects empty inline html', () => {
+    it('rejects "props" on a non-.tsx overlay', () => {
       expect(() =>
-        createOverlays({ broken: { html: '   ', duration: '1s' } })
-      ).toThrow('Overlay "broken" inline "html" must not be empty.')
-    })
-
-    it.each(['<!doctype html>', '<html>', '<HEAD>', '<body class="x">'])(
-      'rejects inline html containing the document tag %s',
-      (markup) => {
-        expect(() =>
-          createOverlays({
-            broken: { html: `${markup}<div>x</div>`, duration: '1s' },
-          })
-        ).toThrow('must be a fragment, not a full HTML document')
-      }
-    )
-
-    it.each([
-      ['two sibling elements', '<div>a</div><div>b</div>'],
-      ['two void siblings', '<br><br>'],
-      ['element then text', '<div>a</div>tail'],
-      ['text then element', 'lead<div>a</div>'],
-      ['bare text only', 'just text'],
-    ])('rejects inline html with %s', (_label, markup) => {
-      expect(() =>
-        createOverlays({ broken: { html: markup, duration: '1s' } })
-      ).toThrow('must contain a single root element')
-    })
-
-    it.each([
-      ['a single element', '<div class="note">Tip</div>'],
-      ['a single element with nested children', '<div><span>a</span> b</div>'],
-      ['a single void element', '<img src="x.png" />'],
-      ['a single element with > inside text', '<div>1 > 0</div>'],
-      [
-        'a single element with > inside an attribute',
-        '<div data-q="a>b">c</div>',
-      ],
-      ['a single element with a comment sibling', '<!-- note --><div>a</div>'],
-      ['surrounding whitespace', '   <div>a</div>   '],
-    ])('accepts inline html with %s', (_label, markup) => {
-      expect(() =>
-        createOverlays({ ok: { html: markup, duration: '1s' } })
-      ).not.toThrow()
+        createOverlays({
+          broken: { path: './card.html', props: { x: 1 } } as never,
+        })
+      ).toThrow(
+        'Overlay "broken" (./card.html) cannot use "props": props are only supported for .tsx page overlays.'
+      )
     })
   })
 
@@ -819,7 +746,7 @@ describe('createOverlays', () => {
     })
   })
 
-  describe('HTML file and React element overlays', () => {
+  describe('.html and .tsx page overlays', () => {
     let dir: string
     const fakePage = {} as unknown as Page
 
@@ -830,14 +757,28 @@ describe('createOverlays', () => {
         width: 200,
         height: 50,
       }))
+      setClientOverlayBundler(async () => 'BUNDLE')
     })
 
     afterEach(async () => {
+      resetClientOverlayBundler()
       await rm(dir, { recursive: true, force: true })
     })
 
-    it('reads an .html file and records a deferred image start (markup captured, not yet rasterized)', async () => {
-      await writeFile(join(dir, 'hint.html'), '<div>Click</div>')
+    const withRun = (fn: () => Promise<void>) =>
+      runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({
+          recorder,
+          page: fakePage,
+          recordingDir: dir,
+          testFilePath: join(dir, 'demo.screenci.ts'),
+        }),
+        fn
+      )
+
+    it('reads a full .html document and records a deferred image start (loaded as-is)', async () => {
+      const doc = '<!doctype html><html><body><div>Click</div></body></html>'
+      await writeFile(join(dir, 'hint.html'), doc)
       const rasterize = vi.fn(async () => ({
         buffer: Buffer.from('png'),
         width: 200,
@@ -854,15 +795,7 @@ describe('createOverlays', () => {
         },
       })
 
-      await runWithScreenCIRuntimeContext(
-        createScreenCIRuntimeContext({
-          recorder,
-          page: fakePage,
-          recordingDir: dir,
-          testFilePath: join(dir, 'demo.screenci.ts'),
-        }),
-        () => overlays.hint()
-      )
+      await withRun(() => overlays.hint())
 
       // Deferred: the start is pending (no rasterization happened during the call).
       expect(recorder.addAssetStart).not.toHaveBeenCalled()
@@ -877,186 +810,36 @@ describe('createOverlays', () => {
           request: expect.objectContaining({
             kind: 'image',
             name: 'hint',
-            html: '<div>Click</div>',
+            html: doc,
           }),
         })
       )
     })
 
-    it('renders a React element to an image overlay', async () => {
+    it('bundles a .tsx page into a deferred image request (awaitMount, host document)', async () => {
+      await writeFile(join(dir, 'Badge.tsx'), 'export default () => null')
       const overlays = createOverlays({
-        badge: { element: createElement('div', null, 'New'), duration: '1.2s' },
-      })
-
-      await runWithScreenCIRuntimeContext(
-        createScreenCIRuntimeContext({
-          recorder,
-          page: fakePage,
-          recordingDir: dir,
-        }),
-        () => overlays.badge()
-      )
-
-      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
-        'badge',
-        expect.objectContaining({
-          kind: 'image',
-          durationMs: 1200,
-        })
-      )
-    })
-
-    it('captures the author script in a still (image) overlay request', async () => {
-      const overlays = createOverlays({
-        hint: {
-          html: '<div>Click</div>',
-          duration: '1s',
-          script: 'document.title = "ran"',
+        badge: {
+          path: './Badge.tsx',
+          props: { label: 'New' },
+          duration: '1.2s',
         },
       })
 
-      await runWithScreenCIRuntimeContext(
-        createScreenCIRuntimeContext({
-          recorder,
-          page: fakePage,
-          recordingDir: dir,
-        }),
-        () => overlays.hint()
-      )
+      await withRun(() => overlays.badge())
 
-      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
-        'hint',
-        expect.objectContaining({
-          request: expect.objectContaining({
-            kind: 'image',
-            script: 'document.title = "ran"',
-          }),
-        })
-      )
-    })
-
-    it('accepts a bare React element with default placement', async () => {
-      const overlays = createOverlays({
-        badge: createElement('span', null, 'hi'),
-      })
-
-      await runWithScreenCIRuntimeContext(
-        createScreenCIRuntimeContext({
-          recorder,
-          page: fakePage,
-          recordingDir: dir,
-        }),
-        () => overlays.badge.start()
-      )
-
-      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
-        'badge',
-        expect.not.objectContaining({ placement: expect.anything() })
-      )
-    })
-
-    it('renders Playwright JSX nodes (.screenci.tsx files) by invoking components', async () => {
-      // Playwright transpiles JSX in .screenci.tsx files with its own automatic
-      // runtime, producing `__pw_type` nodes instead of React elements, and a
-      // component's body is pw-jsx too. Simulate that shape.
-      const Badge = (props: { label: string }) => ({
-        __pw_type: 'jsx',
-        type: 'div',
-        props: { className: 'badge', children: props.label },
-        key: null,
-      })
-      const pwElement = {
-        __pw_type: 'jsx',
-        type: Badge,
-        props: { label: 'New' },
-        key: null,
+      const call = vi.mocked(recorder.addPendingAssetStart).mock.calls.at(-1)
+      expect(call?.[0]).toBe('badge')
+      const payload = call?.[1] as {
+        durationMs?: number
+        request: { kind: string; html: string; awaitMount?: boolean }
       }
-
-      const overlays = createOverlays({
-        badge: { element: pwElement, duration: '1s' },
-      })
-
-      await runWithScreenCIRuntimeContext(
-        createScreenCIRuntimeContext({
-          recorder,
-          page: fakePage,
-          recordingDir: dir,
-        }),
-        () => overlays.badge()
-      )
-
-      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
-        'badge',
-        expect.objectContaining({
-          kind: 'image',
-          request: expect.objectContaining({
-            html: '<div class="badge">New</div>',
-          }),
-        })
-      )
-    })
-
-    it('detects a bare Playwright JSX node as an element', async () => {
-      const pwElement = {
-        __pw_type: 'jsx',
-        type: 'span',
-        props: { children: 'hi' },
-        key: null,
-      }
-
-      const overlays = createOverlays({ badge: pwElement })
-
-      await runWithScreenCIRuntimeContext(
-        createScreenCIRuntimeContext({
-          recorder,
-          page: fakePage,
-          recordingDir: dir,
-        }),
-        () => overlays.badge.start()
-      )
-
-      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
-        'badge',
-        expect.objectContaining({
-          kind: 'image',
-          request: expect.objectContaining({ html: '<span>hi</span>' }),
-        })
-      )
-    })
-
-    it('renders an inline html fragment to an image overlay with placement', async () => {
-      const overlays = createOverlays({
-        note: {
-          html: '<div class="note">Tip</div>',
-          duration: '1.4s',
-          x: 1340,
-          y: 110,
-          width: 380,
-        },
-      })
-
-      await runWithScreenCIRuntimeContext(
-        createScreenCIRuntimeContext({
-          recorder,
-          page: fakePage,
-          recordingDir: dir,
-        }),
-        () => overlays.note()
-      )
-
-      // The fragment is captured verbatim (the rasterizer wraps it at flush time).
-      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
-        'note',
-        expect.objectContaining({
-          kind: 'image',
-          durationMs: 1400,
-          fullScreen: false,
-          placement: { relativeTo: 'recording', x: 1340, y: 110, width: 380 },
-          request: expect.objectContaining({
-            html: '<div class="note">Tip</div>',
-          }),
-        })
-      )
+      expect(payload.durationMs).toBe(1200)
+      expect(payload.request.kind).toBe('image')
+      expect(payload.request.awaitMount).toBe(true)
+      // The host document embeds the bundle and the overlay root.
+      expect(payload.request.html).toContain('BUNDLE')
+      expect(payload.request.html).toContain('id="screenci-overlay-root"')
     })
 
     it('is a no-op outside an active recording (no page / recording dir)', async () => {
@@ -1077,10 +860,11 @@ describe('createOverlays', () => {
       expect(recorder.addPendingAssetStart).not.toHaveBeenCalled()
     })
 
-    it('runs the factory per call so props drive content and placement', async () => {
+    it('runs the factory per call so props drive placement', async () => {
+      await writeFile(join(dir, 'ring.html'), '<div class="ring"></div>')
       const overlays = createOverlays({
-        ring: (p: { label: string; x: number }) => ({
-          html: `<div class="ring">${p.label}</div>`,
+        ring: (p: { x: number }) => ({
+          path: './ring.html',
           duration: '1s',
           x: p.x,
           y: 300,
@@ -1088,26 +872,16 @@ describe('createOverlays', () => {
         }),
       })
 
-      await runWithScreenCIRuntimeContext(
-        createScreenCIRuntimeContext({
-          recorder,
-          page: fakePage,
-          recordingDir: dir,
-        }),
-        async () => {
-          await overlays.ring({ label: 'A', x: 100 })()
-          await overlays.ring({ label: 'B', x: 500 })()
-        }
-      )
+      await withRun(async () => {
+        await overlays.ring({ x: 100 })()
+        await overlays.ring({ x: 500 })()
+      })
 
       expect(recorder.addPendingAssetStart).toHaveBeenNthCalledWith(
         1,
         'ring',
         expect.objectContaining({
           placement: { relativeTo: 'recording', x: 100, y: 300, width: 200 },
-          request: expect.objectContaining({
-            html: '<div class="ring">A</div>',
-          }),
         })
       )
       expect(recorder.addPendingAssetStart).toHaveBeenNthCalledWith(
@@ -1115,88 +889,67 @@ describe('createOverlays', () => {
         'ring',
         expect.objectContaining({
           placement: { relativeTo: 'recording', x: 500, y: 300, width: 200 },
-          request: expect.objectContaining({
-            html: '<div class="ring">B</div>',
-          }),
         })
       )
     })
 
-    it('surfaces factory config validation errors at call time', () => {
-      const overlays = createOverlays({
-        bad: () => ({ path: './logo.png', element: createElement('div') }),
-      })
-      expect(() => overlays.bad({})).toThrow(
-        'must provide only one of "path", "element", "html", or "clientEntry"'
-      )
-    })
-
-    it('positions over a locator and sizes the markup to the element box', async () => {
+    it('positions a .html page over a locator and injects the element box size', async () => {
+      await writeFile(join(dir, 'ring.html'), '<div class="ring"></div>')
       const target = fakeLocator(
         { x: 100, y: 50, width: 300, height: 80 },
         { width: 1000, height: 500 }
       )
       const overlays = createOverlays({
-        ring: (loc: Locator) => ({
-          html: '<div class="ring"></div>',
-          over: loc,
-        }),
+        ring: (loc: Locator) => ({ path: './ring.html', over: loc }),
       })
 
-      await runWithScreenCIRuntimeContext(
-        createScreenCIRuntimeContext({
-          recorder,
-          page: fakePage,
-          recordingDir: dir,
-        }),
-        () => overlays.ring(target).for('1s')
-      )
+      await withRun(() => overlays.ring(target).for('1s'))
 
-      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
-        'ring',
-        expect.objectContaining({
-          // Placement comes from the locator box, in CSS px of the recording.
-          placement: { relativeTo: 'recording', x: 100, y: 50, width: 300 },
-          request: expect.objectContaining({
-            // Markup is wrapped in a box sized to the element so the rasterized
-            // PNG carries its aspect ratio.
-            html: '<div style="width:300px;height:80px;box-sizing:border-box"><div class="ring"></div></div>',
-          }),
-        })
-      )
+      const call = vi.mocked(recorder.addPendingAssetStart).mock.calls.at(-1)
+      const payload = call?.[1] as {
+        placement?: unknown
+        request: { html: string }
+      }
+      // Placement comes from the locator box, in CSS px of the recording.
+      expect(payload.placement).toEqual({
+        relativeTo: 'recording',
+        x: 100,
+        y: 50,
+        width: 300,
+      })
+      // The element box size is injected onto the overlay root.
+      expect(payload.request.html).toContain('width:300px;height:80px')
+      expect(payload.request.html).toContain('<div class="ring"></div>')
     })
 
     it('applies margin (px) around the element when positioning over it', async () => {
+      await writeFile(join(dir, 'ring.html'), '<div></div>')
       const target = fakeLocator(
         { x: 100, y: 100, width: 200, height: 200 },
         { width: 1000, height: 1000 }
       )
       const overlays = createOverlays({
         ring: (loc: Locator) => ({
-          html: '<div></div>',
+          path: './ring.html',
           over: loc,
           margin: 20,
         }),
       })
 
-      await runWithScreenCIRuntimeContext(
-        createScreenCIRuntimeContext({
-          recorder,
-          page: fakePage,
-          recordingDir: dir,
-        }),
-        () => overlays.ring(target).for('1s')
-      )
+      await withRun(() => overlays.ring(target).for('1s'))
 
-      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
-        'ring',
-        expect.objectContaining({
-          placement: { relativeTo: 'recording', x: 80, y: 80, width: 240 },
-          request: expect.objectContaining({
-            html: '<div style="width:240px;height:240px;box-sizing:border-box"><div></div></div>',
-          }),
-        })
-      )
+      const call = vi.mocked(recorder.addPendingAssetStart).mock.calls.at(-1)
+      const payload = call?.[1] as {
+        placement?: unknown
+        request: { html: string }
+      }
+      expect(payload.placement).toEqual({
+        relativeTo: 'recording',
+        x: 80,
+        y: 80,
+        width: 240,
+      })
+      expect(payload.request.html).toContain('width:240px;height:240px')
     })
 
     it('rejects over on a non-rendered (image/video) overlay', () => {
@@ -1217,7 +970,7 @@ describe('createOverlays', () => {
       )
       const overlays = createOverlays({
         ring: (loc: Locator) => ({
-          html: '<div></div>',
+          path: './ring.html',
           over: loc,
           width: 300,
         }),
@@ -1228,7 +981,7 @@ describe('createOverlays', () => {
     it('rejects margin without over', () => {
       expect(() =>
         createOverlays({
-          note: { html: '<div></div>', duration: '1s', margin: 10 },
+          note: { path: './note.html', duration: '1s', margin: 10 },
         })
       ).toThrow('"margin" only applies when positioning over a locator')
     })
@@ -1262,16 +1015,17 @@ describe('createOverlays', () => {
         fn
       )
 
-    it('bundles a clientEntry overlay and carries the mount script + awaitMount in the request', async () => {
+    it('bundles a .tsx page and carries the host document + awaitMount in the request', async () => {
       let bundledEntry: string | undefined
       setClientOverlayBundler(async (opts) => {
         bundledEntry = opts.entryPath
         return 'MOUNT_SCRIPT'
       })
       try {
+        await writeFile(join(dir, 'App.tsx'), 'export default () => null')
         const overlays = createOverlays({
           app: {
-            clientEntry: './overlays/App.tsx',
+            path: './App.tsx',
             props: { isActive: true },
             animate: true,
             duration: '1s',
@@ -1281,43 +1035,26 @@ describe('createOverlays', () => {
         await run(() => overlays.app())
 
         // Entry resolves relative to the recording file's directory.
-        expect(bundledEntry).toBe(join(dir, 'overlays', 'App.tsx'))
-        expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
-          'app',
-          expect.objectContaining({
-            kind: 'animation',
-            request: expect.objectContaining({
-              kind: 'animation',
-              html: '',
-              script: 'MOUNT_SCRIPT',
-              awaitMount: true,
-            }),
-          })
-        )
+        expect(bundledEntry).toBe(join(dir, 'App.tsx'))
+        const call = vi.mocked(recorder.addPendingAssetStart).mock.calls.at(-1)
+        expect(call?.[0]).toBe('app')
+        const payload = call?.[1] as {
+          kind: string
+          request: { kind: string; html: string; awaitMount?: boolean }
+        }
+        expect(payload.kind).toBe('animation')
+        expect(payload.request.kind).toBe('animation')
+        expect(payload.request.awaitMount).toBe(true)
+        expect(payload.request.html).toContain('MOUNT_SCRIPT')
       } finally {
         resetClientOverlayBundler()
       }
     })
 
-    it('rejects combining clientEntry with another source', () => {
-      expect(() =>
-        createOverlays({
-          app: {
-            clientEntry: './App.tsx',
-            element: createElement('div', null, 'hi'),
-            duration: '1s',
-          } as never,
-        })
-      ).toThrow('only one of')
-    })
-
     it('records an animation start with the config duration (blocking)', async () => {
+      await writeFile(join(dir, 'intro.html'), '<div>hi</div>')
       const overlays = createOverlays({
-        intro: {
-          element: createElement('div', null, 'hi'),
-          animate: true,
-          duration: '1.5s',
-        },
+        intro: { path: './intro.html', animate: true, duration: '1.5s' },
       })
 
       await run(() => overlays.intro())
@@ -1338,8 +1075,9 @@ describe('createOverlays', () => {
     })
 
     it('uses the blocking call argument as the capture duration', async () => {
+      await writeFile(join(dir, 'intro.html'), '<div>hi</div>')
       const overlays = createOverlays({
-        intro: { element: createElement('div', null, 'hi'), animate: true },
+        intro: { path: './intro.html', animate: true },
       })
 
       await run(() => overlays.intro.for('0.8s'))
@@ -1351,6 +1089,7 @@ describe('createOverlays', () => {
     })
 
     it('does not hide or rasterize during the recording (deferred to flush)', async () => {
+      await writeFile(join(dir, 'intro.html'), '<div>hi</div>')
       const rasterize = vi.fn(async () => ({
         buffer: Buffer.from('mp4'),
         width: 320,
@@ -1358,11 +1097,7 @@ describe('createOverlays', () => {
       }))
       setAnimatedHtmlRasterizer(rasterize)
       const overlays = createOverlays({
-        intro: {
-          element: createElement('div', null, 'hi'),
-          animate: true,
-          duration: '1.5s',
-        },
+        intro: { path: './intro.html', animate: true, duration: '1.5s' },
       })
 
       await run(() => overlays.intro())
@@ -1375,8 +1110,10 @@ describe('createOverlays', () => {
       expect(recorder.addPendingAssetStart).toHaveBeenCalledOnce()
     })
 
-    it('animates an .html file overlay', async () => {
-      await writeFile(join(dir, 'intro.html'), '<div class="fade">hi</div>')
+    it('animates an .html file overlay, loading it as-is', async () => {
+      const doc =
+        '<!doctype html><html><body><div class="fade">hi</div></body></html>'
+      await writeFile(join(dir, 'intro.html'), doc)
       const overlays = createOverlays({
         intro: { path: './intro.html', animate: true, duration: '1s' },
       })
@@ -1388,32 +1125,7 @@ describe('createOverlays', () => {
         expect.objectContaining({
           kind: 'animation',
           durationMs: 1000,
-          request: expect.objectContaining({
-            html: '<div class="fade">hi</div>',
-          }),
-        })
-      )
-    })
-
-    it('animates an inline html fragment overlay', async () => {
-      const overlays = createOverlays({
-        intro: {
-          html: '<div class="fade">hi</div>',
-          animate: true,
-          duration: '1s',
-        },
-      })
-
-      await run(() => overlays.intro())
-
-      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
-        'intro',
-        expect.objectContaining({
-          kind: 'animation',
-          durationMs: 1000,
-          request: expect.objectContaining({
-            html: '<div class="fade">hi</div>',
-          }),
+          request: expect.objectContaining({ html: doc }),
         })
       )
     })
@@ -1422,12 +1134,9 @@ describe('createOverlays', () => {
       // The renderer needs the capture length to play a live animated overlay
       // out to its natural end, so it is emitted for live overlays too (not just
       // blocking ones).
+      await writeFile(join(dir, 'badge.html'), '<div>hi</div>')
       const overlays = createOverlays({
-        badge: {
-          element: createElement('div', null, 'hi'),
-          animate: true,
-          duration: '1s',
-        },
+        badge: { path: './badge.html', animate: true, duration: '1s' },
       })
 
       await run(() => overlays.badge.start())
@@ -1442,8 +1151,9 @@ describe('createOverlays', () => {
     })
 
     it('throws when driven with start() and no config duration', async () => {
+      await writeFile(join(dir, 'badge.html'), '<div>hi</div>')
       const overlays = createOverlays({
-        badge: { element: createElement('div', null, 'hi'), animate: true },
+        badge: { path: './badge.html', animate: true },
       })
 
       await expect(run(() => overlays.badge.start())).rejects.toThrow(
@@ -1452,8 +1162,9 @@ describe('createOverlays', () => {
     })
 
     it('throws when called blocking with no duration anywhere', async () => {
+      await writeFile(join(dir, 'intro.html'), '<div>hi</div>')
       const overlays = createOverlays({
-        intro: { element: createElement('div', null, 'hi'), animate: true },
+        intro: { path: './intro.html', animate: true },
       })
 
       await expect(run(() => overlays.intro())).rejects.toThrow(
@@ -1461,12 +1172,12 @@ describe('createOverlays', () => {
       )
     })
 
-    it('rejects animate on a non-HTML file overlay', () => {
+    it('rejects animate on an image/video file overlay', () => {
       expect(() =>
         createOverlays({
           logo: { path: './logo.png', animate: true, duration: '1s' },
         })
-      ).toThrow('only supported for HTML files and React elements')
+      ).toThrow('only supported for .html and .tsx page overlays')
     })
 
     it('rejects fps without animate', () => {
@@ -1475,100 +1186,6 @@ describe('createOverlays', () => {
           logo: { path: './logo.png', fps: 30, duration: '1s' },
         })
       ).toThrow('only applies to animated overlays')
-    })
-
-    it('captures css and capturePadding in the deferred animation request', async () => {
-      const overlays = createOverlays({
-        intro: {
-          element: createElement('div', null, 'hi'),
-          animate: true,
-          duration: '1s',
-          css: '.card{color:red}',
-          capturePadding: 80,
-        },
-      })
-
-      await run(() => overlays.intro())
-
-      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
-        'intro',
-        expect.objectContaining({
-          request: expect.objectContaining({
-            css: '.card{color:red}',
-            capturePadding: 80,
-          }),
-        })
-      )
-    })
-
-    it('captures the author script in the deferred animation request', async () => {
-      const overlays = createOverlays({
-        intro: {
-          element: createElement('div', null, 'hi'),
-          animate: true,
-          duration: '1s',
-          script: 'window.__ran = true',
-        },
-      })
-
-      await run(() => overlays.intro())
-
-      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
-        'intro',
-        expect.objectContaining({
-          request: expect.objectContaining({
-            script: 'window.__ran = true',
-          }),
-        })
-      )
-    })
-
-    it('defaults the deferred request script to an empty string when unset', async () => {
-      const overlays = createOverlays({
-        intro: {
-          element: createElement('div', null, 'hi'),
-          animate: true,
-          duration: '1s',
-        },
-      })
-
-      await run(() => overlays.intro())
-
-      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
-        'intro',
-        expect.objectContaining({
-          request: expect.objectContaining({ script: '' }),
-        })
-      )
-    })
-
-    it('rejects css/capturePadding on a non-HTML file overlay', () => {
-      expect(() =>
-        createOverlays({
-          logo: { path: './logo.png', css: '.a{}', duration: '1s' },
-        })
-      ).toThrow('only supported for HTML files and React elements')
-    })
-
-    it('rejects script on a non-HTML file overlay', () => {
-      expect(() =>
-        createOverlays({
-          logo: { path: './logo.png', script: 'x()', duration: '1s' },
-        })
-      ).toThrow('only supported for HTML files and React elements')
-    })
-
-    it('rejects a negative capturePadding', () => {
-      expect(() =>
-        createOverlays({
-          intro: {
-            element: createElement('div', null, 'hi'),
-            animate: true,
-            duration: '1s',
-            capturePadding: -5,
-          },
-        })
-      ).toThrow('capturePadding')
     })
   })
 

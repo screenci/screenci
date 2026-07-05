@@ -91,16 +91,18 @@ export {
   type ResizeRecordingOptions,
 } from './src/recordingSize.js'
 export { hideNarration, showNarration } from './src/narrationVisibility.js'
-export { setOverlayCss, MAX_AUDIO_LEVEL, selected } from './src/asset.js'
+export { MAX_AUDIO_LEVEL, selected } from './src/asset.js'
 export type {
   OverlayController,
   OverlayConfig,
+  TsxOverlayConfig,
+  HtmlPageOverlayConfig,
+  MediaOverlayConfig,
   OverlayConfigFactory,
   OverlayInput,
   OverlayInputOrFactory,
   Overlays,
   OverlayControllerFor,
-  ReactElementLike,
   OverlayPlacement,
   OverlayCrop,
   DependencyOverlayInput,

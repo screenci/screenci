@@ -6,22 +6,9 @@ import { video } from 'screenci'
 // pulse keeps the ring landed exactly on the element (no scale, so no capture
 // padding is needed).
 video.overlays({
+  // A full .html page whose CSS pulses the ring; `over` sizes it to the element.
   ring: (target: Locator) => ({
-    html: '<div class="ring"></div>',
-    css: `
-      .ring {
-        width: 100%;
-        height: 100%;
-        box-sizing: border-box;
-        border: 4px solid #ec4899;
-        border-radius: 14px;
-        animation: ring-pulse 2s ease-in-out infinite;
-      }
-      @keyframes ring-pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.3; }
-      }
-    `,
+    path: './assets/ring-animated.html',
     over: target,
     margin: 6,
     animate: true,

@@ -5,37 +5,12 @@ import { hide, modelTypes, video, voices } from 'screenci'
 // however far out you want to go: the expressive model takes styles from a
 // straight product guide all the way to a swashbuckling pirate. The style prompt
 // for each line is overlaid on screen as a text card (one named overlay per
-// style, so each renders its own asset).
+// style, so each renders its own asset). Each card is the same .tsx page overlay
+// (assets/StyleCard.tsx) with a different `text` prop.
 function styleCard(text: string) {
   return {
-    html:
-      '<div class="ss-card">' +
-      '<span class="ss-kicker">Speaking style</span>' +
-      `<span class="ss-text">${text}</span>` +
-      '</div>',
-    css: `
-      .ss-card {
-        display: inline-flex;
-        flex-direction: column;
-        gap: 6px;
-        box-sizing: border-box;
-        padding: 18px 28px;
-        border-radius: 18px;
-        font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-        color: #ffffff;
-        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #ec4899 100%);
-        border: 1px solid rgba(255, 255, 255, 0.28);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
-      }
-      .ss-kicker {
-        font-size: 13px;
-        font-weight: 600;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-        opacity: 0.85;
-      }
-      .ss-text { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
-    `,
+    path: './assets/StyleCard.tsx' as const,
+    props: { text },
     x: 96,
     y: 880,
     width: 1000,

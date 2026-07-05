@@ -4,8 +4,9 @@ import { screenshot } from 'screenci'
 // Rings a single element on the marketing site, then captures a branded still.
 // The Overlays guide animates the same example.
 screenshot.overlays({
+  // A full .html page that fills its box; `over` sizes it to the element.
   ring: (target: Locator) => ({
-    html: '<div style="width:100%;height:100%;box-sizing:border-box;border:4px solid #ec4899;border-radius:14px"></div>',
+    path: './assets/ring.html',
     over: target,
     margin: 6,
   }),

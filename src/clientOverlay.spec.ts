@@ -1,11 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import {
-  bundleClientOverlay,
+  buildClientOverlayDocument,
   setClientOverlayBundler,
   resetClientOverlayBundler,
 } from './clientOverlay.js'
 
-describe('bundleClientOverlay', () => {
+describe('buildClientOverlayDocument', () => {
   afterEach(() => {
     resetClientOverlayBundler()
   })
@@ -17,16 +17,19 @@ describe('bundleClientOverlay', () => {
       return 'BUNDLE_OUTPUT'
     })
 
-    const out = await bundleClientOverlay('/abs/Menu.tsx', {
+    const doc = await buildClientOverlayDocument('/abs/Menu.tsx', {
       isActive: true,
       count: 2,
     })
 
-    expect(out).toBe('BUNDLE_OUTPUT')
     expect(seen).toEqual({
       entryPath: '/abs/Menu.tsx',
       propsJson: '{"isActive":true,"count":2}',
     })
+    // The document embeds the bundle and provides the empty overlay root.
+    expect(doc).toContain('BUNDLE_OUTPUT')
+    expect(doc).toContain('id="screenci-overlay-root"')
+    expect(doc.startsWith('<!doctype html>')).toBe(true)
   })
 
   it('defaults props to an empty object', async () => {
@@ -36,7 +39,7 @@ describe('bundleClientOverlay', () => {
       return ''
     })
 
-    await bundleClientOverlay('/abs/X.tsx', undefined)
+    await buildClientOverlayDocument('/abs/X.tsx', undefined)
 
     expect(seen?.propsJson).toBe('{}')
   })

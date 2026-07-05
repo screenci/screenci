@@ -650,25 +650,19 @@ export type DeferredRasterizeRequest =
   | {
       kind: 'image'
       name: string
+      /** A complete overlay document (`.html` file contents or the bundled `.tsx` host page). */
       html: string
-      css: string
-      /** Author JS injected as a `<script>` at the end of `<body>` (empty when unused). */
-      script: string
-      /** Wait for the overlay root to receive content before capture (client-rendered overlays). */
+      /** Wait for the overlay root to receive content before capture (a `.tsx` page overlay). */
       awaitMount?: boolean
-      capturePadding: number
       deviceScaleFactor: number
     }
   | {
       kind: 'animation'
       name: string
+      /** A complete overlay document (`.html` file contents or the bundled `.tsx` host page). */
       html: string
-      css: string
-      /** Author JS injected as a `<script>`; advanced by the virtual clock while sampling frames (empty when unused). */
-      script: string
-      /** Wait for the overlay root to receive content before the first frame (client-rendered overlays). */
+      /** Wait for the overlay root to receive content before the first frame (a `.tsx` page overlay). */
       awaitMount?: boolean
-      capturePadding: number
       deviceScaleFactor: number
       fps: number
       durationMs: number

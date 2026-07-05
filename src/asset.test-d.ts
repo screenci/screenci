@@ -1,14 +1,9 @@
 import { describe, it, expectTypeOf } from 'vitest'
-import { createElement } from 'react'
 import { createOverlays, type OverlayController } from './asset.js'
 
 describe('createOverlays type constraints', () => {
   it('accepts a bare file path string', () => {
     createOverlays({ logo: './logo.png' })
-  })
-
-  it('accepts a React element value', () => {
-    createOverlays({ badge: createElement('div', null, 'New') })
   })
 
   it('accepts a flat config object with a path', () => {
@@ -23,28 +18,29 @@ describe('createOverlays type constraints', () => {
     })
   })
 
-  it('accepts a flat config object with an element', () => {
+  it('accepts an .html page overlay', () => {
     createOverlays({
-      badge: { element: createElement('span', null, 'hi'), height: 200 },
+      note: { path: './note.html', durationMs: 1200, x: 1340, width: 380 },
     })
   })
 
-  it('accepts a flat config object with inline html', () => {
+  it('accepts a .tsx page overlay with props', () => {
     createOverlays({
-      note: {
-        html: '<div class="note">Tip</div>',
-        durationMs: 1200,
-        x: 1340,
-        y: 110,
-        width: 380,
-      },
+      badge: { path: './Badge.tsx', props: { label: 'New' }, width: 200 },
     })
   })
 
-  it('rejects a non-string inline html value', () => {
+  it('rejects props on a non-.tsx overlay', () => {
     createOverlays({
-      // @ts-expect-error html must be a string fragment
-      note: { html: 123, durationMs: 1200 },
+      // @ts-expect-error props are only supported for .tsx page overlays
+      note: { path: './note.html', props: { label: 'x' } },
+    })
+  })
+
+  it('rejects props on an image overlay', () => {
+    createOverlays({
+      // @ts-expect-error props are only supported for .tsx page overlays
+      logo: { path: './logo.png', props: { label: 'x' } },
     })
   })
 
@@ -63,24 +59,24 @@ describe('createOverlays type constraints', () => {
     createOverlays({ intro: { path: './intro.mp4', volume: 0.5 } })
   })
 
-  it('rejects volume on an inline html overlay', () => {
+  it('accepts crop and start/end on a video file overlay', () => {
     createOverlays({
-      // @ts-expect-error volume only applies to .mp4 file overlays
-      note: { html: '<div>x</div>', durationMs: 1000, volume: 0.5 },
+      clip: {
+        path: './clip.mp4',
+        crop: { x: 10, y: 20, width: 200, height: 100 },
+        start: '2s',
+        end: '50%',
+      },
     })
   })
 
-  it('rejects volume on a React element overlay', () => {
+  it('accepts crop on an image file overlay', () => {
     createOverlays({
-      // @ts-expect-error volume only applies to .mp4 file overlays
-      badge: { element: createElement('div', null, 'x'), volume: 0.5 },
-    })
-  })
-
-  it('rejects mixing two content sources', () => {
-    createOverlays({
-      // @ts-expect-error provide only one of path, element, or html
-      mixed: { path: './logo.png', html: '<div>x</div>' },
+      logo: {
+        path: './logo.png',
+        duration: '1s',
+        crop: { x: 0, y: 0, width: 100, height: 80 },
+      },
     })
   })
 
@@ -105,39 +101,28 @@ describe('createOverlays type constraints', () => {
 
   it('maps a config-factory key to a props-taking controller', () => {
     const overlays = createOverlays({
-      note: (p: { text: string }) => ({
-        html: `<div class="note">${p.text}</div>`,
+      ring: (p: { path: `${string}.html`; x: number }) => ({
+        path: p.path,
+        x: p.x,
       }),
     })
-    expectTypeOf(overlays.note).toEqualTypeOf<
-      (props: { text: string }) => OverlayController
+    expectTypeOf(overlays.ring).toEqualTypeOf<
+      (props: { path: `${string}.html`; x: number }) => OverlayController
     >()
     expectTypeOf(
-      overlays.note({ text: 'hi' })
+      overlays.ring({ path: './ring.html', x: 1 })
     ).toEqualTypeOf<OverlayController>()
   })
 
   it('keeps static keys as plain controllers alongside factory keys', () => {
     const overlays = createOverlays({
       logo: './logo.png',
-      note: (p: { text: string }) => ({ html: `<b>${p.text}</b>` }),
+      note: (p: { x: number }) => ({ path: './note.html', x: p.x }),
     })
     expectTypeOf(overlays.logo).toEqualTypeOf<OverlayController>()
     expectTypeOf(overlays.note).toEqualTypeOf<
-      (props: { text: string }) => OverlayController
+      (props: { x: number }) => OverlayController
     >()
-  })
-
-  it('infers props from a factory using a placement-spreadable shape', () => {
-    const overlays = createOverlays({
-      ring: (p: { rect: { x: number; y: number; width: number } }) => ({
-        element: createElement('div', null, 'ring'),
-        ...p.rect,
-      }),
-    })
-    expectTypeOf(overlays.ring).parameter(0).toEqualTypeOf<{
-      rect: { x: number; y: number; width: number }
-    }>()
   })
 
   it('rejects calling a static-key controller with props', () => {
@@ -148,64 +133,9 @@ describe('createOverlays type constraints', () => {
 
   it('rejects calling a factory-key controller without props', () => {
     const overlays = createOverlays({
-      note: (p: { text: string }) => ({ html: `<b>${p.text}</b>` }),
+      note: (p: { x: number }) => ({ path: './note.html', x: p.x }),
     })
     // @ts-expect-error the factory requires its props argument
     overlays.note()
-  })
-
-  it('accepts crop on an image and video file overlay', () => {
-    createOverlays({
-      logo: {
-        path: './logo.png',
-        duration: '1s',
-        crop: { x: 0, y: 0, width: 100, height: 80 },
-      },
-      clip: {
-        path: './clip.mp4',
-        crop: { x: 10, y: 20, width: 200, height: 100 },
-      },
-    })
-  })
-
-  it('accepts start/end on a video file overlay', () => {
-    createOverlays({
-      clip: { path: './clip.mp4', start: '2s', end: '50%' },
-    })
-  })
-
-  it('rejects crop on a React element overlay', () => {
-    createOverlays({
-      // @ts-expect-error crop only applies to image/video file overlays
-      badge: {
-        element: createElement('div', null, 'x'),
-        crop: { x: 0, y: 0, width: 1, height: 1 },
-      },
-    })
-  })
-
-  it('rejects crop on an inline html overlay', () => {
-    createOverlays({
-      // @ts-expect-error crop only applies to image/video file overlays
-      note: {
-        html: '<div>x</div>',
-        duration: '1s',
-        crop: { x: 0, y: 0, width: 1, height: 1 },
-      },
-    })
-  })
-
-  it('rejects start/end on a React element overlay', () => {
-    createOverlays({
-      // @ts-expect-error start only applies to .mp4 file overlays
-      badge: { element: createElement('div', null, 'x'), start: '1s' },
-    })
-  })
-
-  it('rejects start/end on an inline html overlay', () => {
-    createOverlays({
-      // @ts-expect-error end only applies to .mp4 file overlays
-      note: { html: '<div>x</div>', duration: '1s', end: '1s' },
-    })
   })
 })

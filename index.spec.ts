@@ -22,7 +22,6 @@ describe('public api surface', () => {
       'resolveLocaleForLanguage',
       'screenshot',
       'selected',
-      'setOverlayCss',
       'showNarration',
       'speed',
       'studio',

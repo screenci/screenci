@@ -92,6 +92,16 @@ describe('video.localize typed fixtures', () => {
     })('T', async () => {})
   })
 
+  it('accepts a global renderOptions narration voice outside the Russian subset', () => {
+    video.use({
+      renderOptions: {
+        narration: {
+          voice: { name: voices.Sophie },
+        },
+      },
+    })
+  })
+
   it('accepts a per-cue voice override in the { cue, voice } form', () => {
     video.localize({
       narration: {

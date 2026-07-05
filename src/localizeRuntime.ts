@@ -11,7 +11,6 @@ import type { ValuesOverrides } from './runtimeMode.js'
 import type {
   AnyLangNarrationOverride,
   AnyTopLevelVoiceConfig,
-  TopLevelVoiceConfig,
 } from './voiceConfig.js'
 import type { RenderOptions } from './types.js'
 
@@ -23,7 +22,7 @@ import type { RenderOptions } from './types.js'
 export function narrationVoiceConfigFromRenderOptions(
   renderOptions: RenderOptions | undefined,
   studioRenderOptions: boolean
-): TopLevelVoiceConfig | undefined {
+): AnyTopLevelVoiceConfig | undefined {
   if (studioRenderOptions || renderOptions === undefined) {
     return undefined
   }

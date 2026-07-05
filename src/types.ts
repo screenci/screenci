@@ -7,7 +7,7 @@ import type {
 } from '@playwright/test'
 import type { PerformanceOption } from './performance.js'
 import type { CropTarget, ScreenshotCropRecord } from './crop.js'
-import type { TopLevelVoiceConfig } from './voiceConfig.js'
+import type { AnyTopLevelVoiceConfig } from './voiceConfig.js'
 
 /**
  * Aspect ratio for recording and output.
@@ -183,7 +183,7 @@ export type RenderOptions = {
      * spec (`voice` and per-cue `{ cue, voice }`); this is only the fallback when
      * neither is set.
      */
-    voice?: TopLevelVoiceConfig
+    voice?: AnyTopLevelVoiceConfig
   }
   mouse?: {
     /** 0-1: 0=missing, 1=height of video */

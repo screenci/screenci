@@ -35,6 +35,18 @@ Use it when the viewer should follow a group of related actions, such as filling
 
 For locator targets, ScreenCI compares your chosen zoom `amount` with a padded fit around the target and keeps the larger viewport. The default `padding` is `0.2`, which gives the viewer some breathing room instead of cropping tightly around the element.
 
+Inside an `autoZoom()` block the camera also follows raw cursor gestures. When you move the cursor by hand with `page.mouse.move` (or `page.mouse.click` / `page.mouse.dblclick`), the camera pans to keep the cursor framed, and zooms in on the first move if it was not already zoomed. This means hand-built gestures such as a slider drag composed from `page.mouse.move` / `down` / `up` stay in frame instead of leaving the camera parked on the last element:
+
+```ts
+await autoZoom(async () => {
+  // The camera follows the cursor across the drag.
+  await page.mouse.move(thumbX, thumbY)
+  await page.mouse.down()
+  await page.mouse.move(targetX, targetY)
+  await page.mouse.up()
+})
+```
+
 Use automatic zoom when the camera should react to the flow instead of following a storyboard you planned in advance.
 
 ## Manual zoom

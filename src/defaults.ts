@@ -56,6 +56,17 @@ export const DEFAULT_AUTO_ZOOM_CENTERING = 0.6
 export const DEFAULT_CLICK_MOUSE_MOVE_DURATION: number = 900
 
 /**
+ * Minimum number of intermediate cursor dispatches spread across the drag phase
+ * of `dragTo`. The normal cursor throttle (`DEFAULT_MOUSE_FRAME_SKIP`) keeps
+ * recorded cursor dispatches sparse because the cursor is redrawn at render time,
+ * but a drag needs a denser stream of real mouse-move events so the browser
+ * tracks the gesture (a slider thumb following the pointer, drag-and-drop hit
+ * testing). Applied over the drag duration, so a longer drag still dispatches at
+ * least this many moves. Override per call with `dragTo`'s `dragSteps` option.
+ */
+export const DEFAULT_DRAG_STEPS = 24
+
+/**
  * Default aspect ratio for recording and output
  */
 export const DEFAULT_ASPECT_RATIO: AspectRatio = '16:9'

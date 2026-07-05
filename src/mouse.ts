@@ -373,8 +373,16 @@ export async function performMouseMove(options: {
   targetY: number
   duration: number
   easing: Easing
+  /**
+   * Minimum number of intermediate dispatches to spread across `duration`. When
+   * set, the dispatch interval is the smaller of the configured cursor interval
+   * and `duration / steps`, so a caller (e.g. a drag) can guarantee a denser
+   * stream of real mouse moves than the render-only cursor throttle would give.
+   * Omitted keeps the plain cursor interval.
+   */
+  steps?: number
 }): Promise<{ startMs: number; endMs: number }> {
-  const { page, targetX, targetY, duration, easing } = options
+  const { page, targetX, targetY, duration, easing, steps } = options
   const mouseMoveInternal = getOriginalMouseMove(page, async () => {
     throw new Error('[screenci] Missing original mouse move for page.')
   })
@@ -387,8 +395,14 @@ export async function performMouseMove(options: {
     // move event (start/end/easing), so dispatching the real cursor at 60fps
     // does nothing for smoothness and only loads the renderer. Dispatch at the
     // configured interval instead, time-based so a busy page drops dispatches
-    // rather than stretching the gesture.
-    const intervalMs = getMouseDispatchIntervalMs(page)
+    // rather than stretching the gesture. A caller can request a denser stream
+    // via `steps` (a drag needs the browser to see intermediate moves to track
+    // the gesture); we never dispatch LESS often than the cursor interval.
+    const baseIntervalMs = getMouseDispatchIntervalMs(page)
+    const intervalMs =
+      steps !== undefined && steps > 0
+        ? Math.min(baseIntervalMs, duration / steps)
+        : baseIntervalMs
     for (;;) {
       const elapsedMs = Date.now() - startMs
       const t = Math.min(1, elapsedMs / duration)

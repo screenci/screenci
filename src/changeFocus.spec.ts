@@ -13,6 +13,7 @@ import {
   resolveFixedFocusViewportSize,
   resolveIdealFocusOriginForAxis,
   resolveLocatorFocusViewport,
+  resolvePointFocusZoom,
   resolveScrollAndZoomTimingPlan,
   resolveTargetRectPosition,
 } from './changeFocus.js'
@@ -1550,5 +1551,65 @@ describe('changeFocus', () => {
       width: 120,
       height: 40,
     })
+  })
+})
+
+describe('resolvePointFocusZoom', () => {
+  const viewportSize = { width: 1000, height: 800 }
+  const fullEnd = {
+    pointPx: { x: 0, y: 0 },
+    size: { widthPx: viewportSize.width, heightPx: viewportSize.height },
+  }
+
+  it('frames a point at the given amount, centered when centering is 1', () => {
+    const result = resolvePointFocusZoom({
+      point: { x: 500, y: 400 },
+      viewportSize,
+      amount: 0.5,
+      centering: 1,
+      currentZoomEnd: fullEnd,
+    })
+
+    // amount 0.5 of a 1000x800 viewport => a 500x400 zoom window.
+    expect(result.targetViewport).toEqual({ width: 500, height: 400 })
+    expect(result.zoomTarget).toBeDefined()
+    expect(result.end.size).toEqual({ widthPx: 500, heightPx: 400 })
+    // A centered point sits in the middle: origin = point - half the window.
+    expect(result.end.pointPx).toEqual({ x: 250, y: 200 })
+  })
+
+  it('pans to follow a point that moves within an already-zoomed viewport', () => {
+    const current = {
+      pointPx: { x: 250, y: 200 },
+      size: { widthPx: 500, heightPx: 400 },
+    }
+    const result = resolvePointFocusZoom({
+      point: { x: 800, y: 600 },
+      viewportSize,
+      amount: 0.5,
+      centering: 1,
+      currentZoomEnd: current,
+    })
+
+    // Keeps the same zoom size but pans toward the new point, clamped so the
+    // window stays inside the viewport (max origin is viewport - window).
+    expect(result.end.size).toEqual({ widthPx: 500, heightPx: 400 })
+    expect(result.end.pointPx).toEqual({ x: 500, y: 400 })
+  })
+
+  it('clamps the framing so the zoom window never leaves the viewport', () => {
+    const result = resolvePointFocusZoom({
+      point: { x: 990, y: 790 },
+      viewportSize,
+      amount: 0.5,
+      centering: 1,
+      currentZoomEnd: fullEnd,
+    })
+
+    // A centered window at the corner would overflow; it is clamped to the
+    // bottom-right, and optimalOffset records how far the ideal was shifted.
+    expect(result.end.pointPx).toEqual({ x: 500, y: 400 })
+    expect(result.optimalOffset.x).not.toBe(0)
+    expect(result.optimalOffset.y).not.toBe(0)
   })
 })

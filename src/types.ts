@@ -755,6 +755,13 @@ export type ScreenCILocatorDragToOptions = Omit<
     moveEasing?: Easing
     preDragPause?: number
     dragEasing?: Easing
+    /**
+     * Minimum number of intermediate cursor dispatches spread across the drag,
+     * so the browser sees a dense enough stream of moves to track the gesture
+     * (a slider thumb, drag-and-drop hit testing). Defaults to
+     * `DEFAULT_DRAG_STEPS`. Increase it for a longer or more sensitive drag.
+     */
+    dragSteps?: number
     sourcePosition?: { x: number; y: number }
     targetPosition?: { x: number; y: number }
   }
@@ -1058,6 +1065,7 @@ export type ScreenCILocator = Omit<
    * @param options.preDragPause - Pause after arriving at source before mouseDown in ms (default: 100).
    * @param options.dragDuration - Duration of the drag animation in ms (default: 1000).
    * @param options.dragEasing - Easing for the drag animation (default: 'ease-in-out').
+   * @param options.dragSteps - Minimum intermediate cursor dispatches spread across the drag, so the browser tracks the gesture (default: 24). Raise it for a longer or more sensitive drag.
    * @param options.sourcePosition - Point relative to source element's top-left for the drag start.
    * @param options.targetPosition - Point relative to target element's top-left for the drop.
    */

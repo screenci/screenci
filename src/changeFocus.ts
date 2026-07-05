@@ -468,6 +468,61 @@ export function resolveTargetRectPositionForViewport(params: {
   }
 }
 
+/**
+ * Resolve the zoom placement that frames a bare viewport POINT (as opposed to a
+ * located element). A point has no size, so it is treated as a zero-size rect at
+ * `point`, zoomed to `amount` of the viewport and placed with `centering`. Shared
+ * by `zoomTo({ x, y })` and by the auto-zoom cursor-follow that runs when a raw
+ * `page.mouse.move`/`click` happens inside an `autoZoom()` block.
+ */
+export function resolvePointFocusZoom(params: {
+  point: Point
+  viewportSize: ViewportSize
+  amount: number
+  centering: number
+  currentZoomEnd: NonNullable<FocusChangeEvent['zoom']>['end']
+}): {
+  zoomTarget:
+    | {
+        end: NonNullable<FocusChangeEvent['zoom']>['end']
+        optimalOffset: Point
+      }
+    | undefined
+  targetViewport: ViewportSize
+  end: NonNullable<FocusChangeEvent['zoom']>['end']
+  optimalOffset: Point
+} {
+  const targetViewport = resolveFixedFocusViewportSize(
+    params.viewportSize,
+    params.amount
+  )
+  const zoomTarget = resolveZoomTarget({
+    locatorRect: { x: params.point.x, y: params.point.y, width: 0, height: 0 },
+    viewport: params.viewportSize,
+    targetViewport,
+    targetRectPositionInZoomViewport: resolveTargetRectPosition({
+      containerSize: targetViewport,
+      rect: { x: 0, y: 0, width: 0, height: 0 },
+      amount: 1,
+      centering: params.centering,
+    }),
+    currentZoomEnd: params.currentZoomEnd,
+  })
+  const fullViewportEnd = {
+    pointPx: { x: 0, y: 0 },
+    size: {
+      widthPx: params.viewportSize.width,
+      heightPx: params.viewportSize.height,
+    },
+  }
+  return {
+    zoomTarget,
+    targetViewport,
+    end: zoomTarget?.end ?? fullViewportEnd,
+    optimalOffset: zoomTarget?.optimalOffset ?? { x: 0, y: 0 },
+  }
+}
+
 async function captureFocusSnapshot(locator: Locator): Promise<FocusSnapshot> {
   return locator.evaluate((element) => {
     const doc = element.ownerDocument

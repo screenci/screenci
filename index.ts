@@ -39,7 +39,19 @@ export type {
   ScreenshotCropRecord,
   ResolvedCropPadding,
 } from './src/crop.js'
-export type { ScreenCIPage, ScreenCILocator } from './src/types.js'
+export type {
+  ScreenCIPage,
+  ScreenCILocator,
+  ScreenCILocatorClickOptions,
+  ScreenCILocatorPostClickMoveOptions,
+  ScreenCILocatorFillOptions,
+  ScreenCILocatorPressSequentiallyOptions,
+  ScreenCILocatorCheckOptions,
+  ScreenCILocatorHoverOptions,
+  ScreenCILocatorSelectTextOptions,
+  ScreenCILocatorDragToOptions,
+  ScreenCILocatorSelectOptionOptions,
+} from './src/types.js'
 // Narration is declared per-builder with `video.narration(...)`: `studio([...])`
 // is Studio-owned, an object carries code values. It surfaces through the
 // injected `narration` fixture.

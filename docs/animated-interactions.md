@@ -104,6 +104,23 @@ await page.getByTestId('card').dragTo(page.getByTestId('column'), {
 })
 ```
 
+You can drag to a point inside the target rather than its center with
+`targetPosition` (and `sourcePosition` for where the drag begins), which is how
+you drive a slider by dragging its thumb to a spot along the track:
+
+```ts
+const track = thumb.locator('xpath=ancestor::*[@data-slot="slider"][1]')
+const box = (await track.boundingBox())!
+await thumb.dragTo(track, {
+  targetPosition: { x: box.width * 0.62, y: box.height / 2 },
+})
+```
+
+Throughout the drag, screenci dispatches a dense stream of real cursor moves so
+the browser tracks the gesture (a slider thumb follows the pointer, drag-and-drop
+hit testing fires). The default is `dragSteps: 24` spread across the drag; raise
+it for a longer or more sensitive drag.
+
 ### fill and pressSequentially
 
 `fill` and `pressSequentially` animate a click before typing by default.
@@ -153,6 +170,8 @@ await page.mouse.down()
 await page.mouse.move(400, 300)
 await page.mouse.up()
 ```
+
+Inside an [`autoZoom()`](/docs/guides/camera-and-zooming#automatic-zoom) block these cursor moves also drive the camera: it pans to follow the cursor (and zooms in on the first move), so a hand-built gesture like a slider drag stays framed instead of leaving the camera on the last element.
 
 Each accepts a `duration` (press animation length, default 100ms) and `easing`.
 `click` and `dblclick` also accept the `moveDuration` / `moveSpeed` / `moveEasing`

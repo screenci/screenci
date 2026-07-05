@@ -2,11 +2,7 @@ import type { Locator, Page } from '@playwright/test'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { ScreenciError } from './errors.js'
 import type { FocusChangeEvent } from './events.js'
-import {
-  changeFocus,
-  resolveFixedFocusViewportSize,
-  resolveTargetRectPosition,
-} from './changeFocus.js'
+import { changeFocus, resolvePointFocusZoom } from './changeFocus.js'
 import {
   getActiveAutoZoomRecorder,
   getActiveZoomPage,
@@ -18,7 +14,6 @@ import {
   buildZoomEvent,
   resolveAutoZoomOptions,
   resolveEffectiveDuration,
-  resolveZoomTarget,
 } from './zoom.js'
 import type { AutoZoomOptions } from './types.js'
 import { resolveRecordingTimingDuration } from './runtimeMode.js'
@@ -76,30 +71,17 @@ async function zoomToPoint(
       heightPx: viewportSize.height,
     },
   }
-  const targetViewport = resolveFixedFocusViewportSize(
+  const pointZoom = resolvePointFocusZoom({
+    point,
     viewportSize,
-    resolvedOptions.amount
-  )
-  const pointRect = {
-    x: point.x,
-    y: point.y,
-    width: 0,
-    height: 0,
-  }
-  const zoomTarget = resolveZoomTarget({
-    locatorRect: pointRect,
-    viewport: viewportSize,
-    targetViewport,
-    targetRectPositionInZoomViewport: resolveTargetRectPosition({
-      containerSize: targetViewport,
-      rect: { x: 0, y: 0, width: 0, height: 0 },
-      amount: 1,
-      centering: resolvedOptions.centering,
-    }),
+    amount: resolvedOptions.amount,
+    centering: resolvedOptions.centering,
     currentZoomEnd,
   })
+  const zoomTarget = pointZoom.zoomTarget
 
-  const isZoomOut = targetViewport.width >= currentZoomEnd.size.widthPx
+  const isZoomOut =
+    pointZoom.targetViewport.width >= currentZoomEnd.size.widthPx
   const effectiveDuration = resolveEffectiveDuration(resolvedOptions, isZoomOut)
 
   const focusChangeStartMs = Date.now()

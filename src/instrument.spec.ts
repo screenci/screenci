@@ -407,6 +407,58 @@ describe('instrumentPage', () => {
     expect(originalMove.mock.calls.length).toBeGreaterThan(1)
   })
 
+  it('does not attach a zoom to a bare cursor move outside autoZoom', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const movePromise = page.mouse.move(300, 400)
+    await vi.runAllTimersAsync()
+    await movePromise
+
+    const move = recordedInputEvents[0]!.events[0] as FocusChangeEvent
+    expect(move.zoom).toBeUndefined()
+  })
+
+  it('follows the cursor with a zoom while inside autoZoom', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+    setActiveAutoZoomRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const run = autoZoom(async () => {
+      await page.mouse.move(300, 400)
+    })
+    await vi.runAllTimersAsync()
+    await run
+
+    const focusChanges = recordedInputEvents
+      .filter((event) => event.subType === 'focusChange')
+      .map((event) => event.events[0] as FocusChangeEvent)
+
+    const move = focusChanges.find(
+      (event) => event.x === 300 && event.y === 400
+    )
+    expect(move).toBeDefined()
+    // The camera zoomed IN to frame the cursor: its zoom window is smaller than
+    // the 1280x720 viewport instead of leaving the camera where it was.
+    expect(move!.zoom).toBeDefined()
+    expect(move!.zoom!.end.size.widthPx).toBeGreaterThan(0)
+    expect(move!.zoom!.end.size.widthPx).toBeLessThan(1280)
+
+    // The move established a zoom viewport, so the block zooms back out to the
+    // full viewport when it ends. That zoom-out only fires when a current zoom
+    // viewport exists, confirming the move updated it.
+    const zoomOut = focusChanges.find(
+      (event) => event.zoom?.end.size.widthPx === 1280
+    )
+    expect(zoomOut).toBeDefined()
+  })
+
   it('records page.mouse.down as a mouseDown InputEvent and dispatches the real press', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)

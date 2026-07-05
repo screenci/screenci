@@ -25,8 +25,18 @@ import type {
 } from './types.js'
 import { isInsideHide } from './hide.js'
 import { redact } from './redact.js'
-import { changeFocus, type MouseMoveRequest } from './changeFocus.js'
-import { DEFAULT_CLICK_MOUSE_MOVE_DURATION } from './defaults.js'
+import {
+  changeFocus,
+  resolvePointFocusZoom,
+  type MouseMoveRequest,
+} from './changeFocus.js'
+import { getAutoZoomState, setCurrentZoomViewport } from './autoZoom.js'
+import { buildZoomEvent, resolveAutoZoomOptions } from './zoom.js'
+import {
+  DEFAULT_AUTO_ZOOM_CENTERING,
+  DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+  DEFAULT_DRAG_STEPS,
+} from './defaults.js'
 import {
   CLICK_DURATION_MS,
   assertDurationOrSpeed,
@@ -127,6 +137,72 @@ function withDefaultNoWaitAfter<T extends object>(
     ...options,
     noWaitAfter: true,
   } as T & { noWaitAfter: boolean }
+}
+
+/**
+ * While an `autoZoom()` block is active, a raw cursor move (`page.mouse.move`, or
+ * the cursor-move portion of `page.mouse.click`/`dblclick`) drives the camera as
+ * well: the zoom viewport pans, and on the first move zooms in, to follow the
+ * cursor to `point`. Without this the camera stays parked on the last element a
+ * locator action framed, so gestures composed by hand from `page.mouse.*` (e.g. a
+ * manual drag) leave the cursor to wander out of frame.
+ *
+ * Returns the `zoom` field to attach to the move's `focusChange` event (or
+ * `undefined` when not inside autoZoom, when the viewport is unknown, or when the
+ * framing does not change), and updates the current zoom viewport as a side
+ * effect so the block's later zoom-out starts from the followed point.
+ */
+function resolveAutoZoomCursorFollow(
+  page: Page,
+  point: { x: number; y: number },
+  timing: { startMs: number; endMs: number; duration: number; easing: Easing }
+): FocusChangeEvent['zoom'] | undefined {
+  const state = getAutoZoomState()
+  if (!state.insideAutoZoom) return undefined
+
+  const viewportSize =
+    state.currentZoomViewport?.viewportSize ?? page.viewportSize()
+  if (viewportSize === null) return undefined
+
+  const resolvedOptions = resolveAutoZoomOptions(state, {})
+  // Mirror element framing inside autoZoom: honor an explicit centering, else use
+  // the tight auto-zoom comfort inset. For a zero-size point this places the
+  // cursor near center so it stays framed as it moves.
+  const centering =
+    state.options.centering !== undefined
+      ? resolvedOptions.centering
+      : DEFAULT_AUTO_ZOOM_CENTERING
+  const currentZoomEnd = state.currentZoomViewport?.end ?? {
+    pointPx: { x: 0, y: 0 },
+    size: { widthPx: viewportSize.width, heightPx: viewportSize.height },
+  }
+
+  const pointZoom = resolvePointFocusZoom({
+    point,
+    viewportSize,
+    amount: resolvedOptions.amount,
+    centering,
+    currentZoomEnd,
+  })
+
+  const zoomEvent = buildZoomEvent({
+    target: pointZoom.zoomTarget,
+    currentZoomEnd,
+    zoomTiming: {
+      startMs: timing.startMs,
+      endMs: timing.endMs,
+      ...(timing.duration > 0 ? { easing: timing.easing } : {}),
+    },
+  })
+
+  setCurrentZoomViewport({
+    focusPoint: { x: point.x, y: point.y },
+    end: pointZoom.end,
+    viewportSize,
+    optimalOffset: pointZoom.optimalOffset,
+  })
+
+  return zoomEvent
 }
 
 function buildDefaultClickMouseMoveRequest(options?: {
@@ -1250,6 +1326,7 @@ export function instrumentLocator(locator: Locator): Locator {
       dragDuration?: number
       dragSpeed?: number
       dragEasing?: Easing
+      dragSteps?: number
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
@@ -1261,6 +1338,7 @@ export function instrumentLocator(locator: Locator): Locator {
       dragDuration,
       dragSpeed,
       dragEasing = 'ease-in-out',
+      dragSteps = DEFAULT_DRAG_STEPS,
       sourcePosition,
       targetPosition,
       autoZoomOptions,
@@ -1353,6 +1431,7 @@ export function instrumentLocator(locator: Locator): Locator {
         targetY: toY,
         duration: resolvedDuration,
         easing: dragEasing,
+        steps: dragSteps,
       })
       innerEvents.push({
         type: 'mouseMove',
@@ -1593,6 +1672,11 @@ export async function instrumentPage(page: Page): Promise<Page> {
       duration,
       easing,
     })
+    const zoomEvent = resolveAutoZoomCursorFollow(
+      page,
+      { x, y },
+      { startMs: moveResult.startMs, endMs: moveResult.endMs, duration, easing }
+    )
     const moveEvent: FocusChangeEvent = {
       type: 'focusChange',
       startMs: moveResult.startMs,
@@ -1604,6 +1688,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
         endMs: moveResult.endMs,
         ...(duration > 0 ? { easing } : {}),
       },
+      ...(zoomEvent !== undefined ? { zoom: zoomEvent } : {}),
     }
 
     const activeClickRecorder = getActiveClickRecorder(page)
@@ -1690,6 +1775,16 @@ export async function instrumentPage(page: Page): Promise<Page> {
       duration,
       easing: moveEasing,
     })
+    const zoomEvent = resolveAutoZoomCursorFollow(
+      page,
+      { x, y },
+      {
+        startMs: moveResult.startMs,
+        endMs: moveResult.endMs,
+        duration,
+        easing: moveEasing,
+      }
+    )
     return {
       type: 'focusChange',
       startMs: moveResult.startMs,
@@ -1701,6 +1796,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
         endMs: moveResult.endMs,
         ...(duration > 0 ? { easing: moveEasing } : {}),
       },
+      ...(zoomEvent !== undefined ? { zoom: zoomEvent } : {}),
     }
   }
 

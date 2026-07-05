@@ -247,6 +247,51 @@ describe('mouse helpers', () => {
     expect(fineMove.mock.calls.at(-1)).toEqual([100, 0])
   })
 
+  it('densifies dispatches to at least `steps` when requested', async () => {
+    // A coarse cursor interval alone would dispatch the drag only a handful of
+    // times; `steps` guarantees a denser real move stream so the browser can
+    // track the gesture.
+    const coarse = {}
+    const coarseMove = vi.fn().mockResolvedValue(undefined)
+    setOriginalMouseMove(coarse, coarseMove)
+    setMousePosition(coarse, { x: 0, y: 0 })
+    setPerformanceIntervals(coarse, { mouseMs: 100, scrollMs: 100 })
+    const coarsePromise = performMouseMove({
+      page: coarse,
+      targetX: 100,
+      targetY: 0,
+      duration: 240,
+      easing: 'linear',
+    })
+    await vi.runAllTimersAsync()
+    await coarsePromise
+
+    const dense = {}
+    const denseMove = vi.fn().mockResolvedValue(undefined)
+    setOriginalMouseMove(dense, denseMove)
+    setMousePosition(dense, { x: 0, y: 0 })
+    setPerformanceIntervals(dense, { mouseMs: 100, scrollMs: 100 })
+    const densePromise = performMouseMove({
+      page: dense,
+      targetX: 100,
+      targetY: 0,
+      duration: 240,
+      easing: 'linear',
+      steps: 24,
+    })
+    await vi.runAllTimersAsync()
+    await densePromise
+
+    // Same duration and interval, but `steps` dispatches far more intermediate
+    // moves, and it never dispatches fewer than the plain interval would.
+    expect(denseMove.mock.calls.length).toBeGreaterThan(
+      coarseMove.mock.calls.length
+    )
+    expect(denseMove.mock.calls.length).toBeGreaterThanOrEqual(24)
+    // Both still land exactly on the target.
+    expect(denseMove.mock.calls.at(-1)).toEqual([100, 0])
+  })
+
   it('performs instant mouse movement', async () => {
     const page = {}
     const mouseMoveInternal = vi.fn().mockResolvedValue(undefined)

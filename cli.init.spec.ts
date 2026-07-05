@@ -461,6 +461,16 @@ describe('CLI', () => {
         '/workspace/my-app/screenci/recordings/example-react.screenci.tsx',
         expect.any(String)
       )
+      // With React overlays on (the default), the screenshot example is a `.tsx`
+      // that rings a locator with a React element.
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/screenci/recordings/example-screenshot.screenci.tsx',
+        expect.stringContaining('element: <Ring />')
+      )
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        '/workspace/my-app/screenci/recordings/example-screenshot.screenci.ts',
+        expect.any(String)
+      )
       const tsconfigCall = mockWriteFile.mock.calls.find(
         (call: unknown[]) =>
           call[0] === '/workspace/my-app/screenci/tsconfig.json'
@@ -1921,6 +1931,16 @@ describe('CLI', () => {
       // The scaffold no longer writes a .tsx example file.
       expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/my-project/screenci/recordings/example-react.screenci.tsx',
+        expect.any(String)
+      )
+      // Under --no-react the screenshot example is a `.ts` with a plain HTML/CSS
+      // ring, so it never depends on react/react-dom.
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-project/screenci/recordings/example-screenshot.screenci.ts',
+        expect.stringContaining('html: \'<div class="ring"></div>\'')
+      )
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        '/workspace/my-project/screenci/recordings/example-screenshot.screenci.tsx',
         expect.any(String)
       )
       // tsconfig does not enable the automatic JSX runtime.

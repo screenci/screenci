@@ -13,10 +13,12 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   generateConfig,
+  generateExampleScreenshot,
   generateExampleVideo,
   generateGitignore,
   generateIslandReadme,
   generateIslandTsconfig,
+  generateReactExampleScreenshot,
   generateReactExampleVideo,
   parsePnpmVersionSupport,
   resolveBundledLogoPath,
@@ -29,6 +31,15 @@ describe('generateConfig', () => {
     expect(generateConfig('My Demo')).toContain(
       "encoder: process.env.CI ? 'fast' : 'sharp',"
     )
+  })
+
+  it('sets shared render options (framing) for videos and screenshots', () => {
+    const config = generateConfig('My Demo')
+    expect(config).toContain('renderOptions: {')
+    expect(config).toContain('screenshot: { margin: 64 }')
+    expect(config).toContain('backgroundCss:')
+    expect(config).toContain('roundness: 0.04')
+    expect(config).toContain('dropShadow:')
   })
 })
 
@@ -251,6 +262,77 @@ describe('generateReactExampleVideo', () => {
       "'How to find docs with overlays'"
     )
     expect(generateReactExampleVideo()).not.toContain("'How to find docs'")
+  })
+})
+
+describe('generateExampleScreenshot', () => {
+  it('captures a still with a plain HTML/CSS ring (no React dependency)', () => {
+    const source = generateExampleScreenshot()
+    expect(source).toContain("import { screenshot } from 'screenci'")
+    // HTML overlay, so it works under --no-react without react/react-dom.
+    expect(source).toContain('html: \'<div class="ring"></div>\'')
+    expect(source).not.toContain('element:')
+    expect(source).not.toContain('import React')
+  })
+
+  it('rings a locator and leaves the overlay open in the still', () => {
+    const source = generateExampleScreenshot()
+    expect(source).toContain('over: target')
+    expect(source).toContain(
+      ".ring(page.getByRole('link', { name: 'View Documentation' }))"
+    )
+    expect(source).toContain('.start()')
+    // A still has no timeline, so the ring is never end()ed.
+    expect(source).not.toContain('.end()')
+  })
+
+  it('configures colorScheme via use() and leaves framing to config', () => {
+    const source = generateExampleScreenshot()
+    expect(source).toContain('screenshot.use({')
+    expect(source).toContain("colorScheme: 'dark'")
+    // Framing (margin, background, frame) lives in screenci.config.ts now.
+    expect(source).not.toContain('renderOptions')
+    expect(source).not.toContain('backgroundCss:')
+  })
+
+  it('uses a distinct title so it can coexist with the video example', () => {
+    // Screenshots and videos share the title namespace, so the still must not
+    // reuse the video example's title or `screenci test` rejects the run.
+    expect(generateExampleScreenshot()).toContain("'Where to find docs'")
+    expect(generateExampleScreenshot()).not.toContain("'How to find docs'")
+  })
+})
+
+describe('generateReactExampleScreenshot', () => {
+  it('renders the ring from a React element', () => {
+    const source = generateReactExampleScreenshot()
+    expect(source).toContain("import { screenshot } from 'screenci'")
+    expect(source).toContain('function Ring()')
+    expect(source).toContain('element: <Ring />')
+    // No inline HTML overlay: the React variant renders from the element.
+    expect(source).not.toContain("html: '<div")
+    expect(source).not.toContain('screenci/react')
+  })
+
+  it('rings a locator and leaves the overlay open in the still', () => {
+    const source = generateReactExampleScreenshot()
+    expect(source).toContain('over: target')
+    expect(source).toContain(
+      ".ring(page.getByRole('link', { name: 'View Documentation' }))"
+    )
+    expect(source).toContain('.start()')
+    expect(source).not.toContain('.end()')
+  })
+
+  it('configures colorScheme via use() and leaves framing to config', () => {
+    const source = generateReactExampleScreenshot()
+    expect(source).toContain("colorScheme: 'dark'")
+    expect(source).not.toContain('renderOptions')
+  })
+
+  it('uses a distinct title so it can coexist with the video example', () => {
+    expect(generateReactExampleScreenshot()).toContain("'Where to find docs'")
+    expect(generateReactExampleScreenshot()).not.toContain("'How to find docs'")
   })
 })
 

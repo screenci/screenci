@@ -1417,6 +1417,93 @@ video
 `
 }
 
+export function generateExampleScreenshot(): string {
+  return `import type { Locator } from '@playwright/test'
+import { screenshot } from 'screenci'
+
+// A branded still that rings one element, using a plain HTML/CSS overlay (no
+// React dependency).
+screenshot
+  .overlays({
+    ring: (target: Locator) => ({
+      html: '<div class="ring"></div>',
+      css: \`
+        .ring {
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
+          border: 3px solid #ec4899;
+          border-radius: 14px;
+          box-shadow: 0 0 0 6px rgba(236, 72, 153, 0.18);
+        }
+      \`,
+      over: target,
+      margin: 8,
+    }),
+  })('Where to find docs', async ({ page, overlays }) => {
+  await page.goto('https://screenci.com/')
+  await page.waitForLoadState('load')
+
+  // In a still, start() the ring and leave it open: it stays in the image.
+  await overlays
+    .ring(page.getByRole('link', { name: 'View Documentation' }))
+    .start()
+})
+
+// use() takes the same options for \`screenshot\` and \`video\` as Playwright test.
+// https://playwright.dev/docs/emulation#color-scheme-and-media
+screenshot.use({
+  colorScheme: 'dark',
+})
+`
+}
+
+export function generateReactExampleScreenshot(): string {
+  return `import type { Locator } from '@playwright/test'
+import { screenshot } from 'screenci'
+
+// A code-defined overlay: any React element rendered to static markup works.
+function Ring() {
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        boxSizing: 'border-box',
+        border: '3px solid #ec4899',
+        borderRadius: '14px',
+        boxShadow: '0 0 0 6px rgba(236, 72, 153, 0.18)',
+      }}
+    />
+  )
+}
+
+// A branded still that rings one element with the React overlay above.
+screenshot
+  .overlays({
+    ring: (target: Locator) => ({
+      element: <Ring />,
+      over: target,
+      margin: 8,
+    }),
+  })('Where to find docs', async ({ page, overlays }) => {
+  await page.goto('https://screenci.com/')
+  await page.waitForLoadState('load')
+
+  // In a still, start() the ring and leave it open: it stays in the image.
+  await overlays
+    .ring(page.getByRole('link', { name: 'View Documentation' }))
+    .start()
+})
+
+// use() takes the same options for \`screenshot\` and \`video\` as Playwright test.
+// https://playwright.dev/docs/emulation#color-scheme-and-media
+screenshot.use({
+  colorScheme: 'dark',
+})
+`
+}
+
 function getInitProjectRoot(): string {
   return process.env['SCREENCI_INIT_CWD'] ?? process.cwd()
 }
@@ -1653,6 +1740,22 @@ export async function runInit(
       resolve(islandDir, 'recordings', 'example.screenci.ts'),
       generateExampleVideo()
     )
+    // Also scaffold a screenshot example: a branded still that rings one element.
+    // With React overlays it renders the ring from a React element (`.tsx`);
+    // under `--no-react` it uses a plain HTML/CSS overlay (`.ts`), so the example
+    // never depends on a package the user opted out of.
+    await writeFile(
+      resolve(
+        islandDir,
+        'recordings',
+        shouldAddReactOverlays
+          ? 'example-screenshot.screenci.tsx'
+          : 'example-screenshot.screenci.ts'
+      ),
+      shouldAddReactOverlays
+        ? generateReactExampleScreenshot()
+        : generateExampleScreenshot()
+    )
     if (packageManager === 'pnpm') {
       // Resolve (and gate on) the pnpm version before writing the workspace
       // file so the build-approval key matches the installed pnpm.
@@ -1888,6 +1991,19 @@ export default defineConfig({
       fps: 60,
       // Lightest encode on constrained CI runners; full quality locally.
       encoder: process.env.CI ? 'fast' : 'sharp',
+    },
+    // Shared framing for videos and screenshots
+    renderOptions: {
+      screenshot: { margin: 64 },
+      output: {
+        background: {
+          backgroundCss: 'linear-gradient(135deg, #fdf2f8 0%, #ede9fe 100%)',
+        },
+      },
+      recording: {
+        roundness: 0.04,
+        dropShadow: 'drop-shadow(0 12px 32px rgba(0, 0, 0, 0.22))',
+      },
     },
   },
   projects: [

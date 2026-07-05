@@ -135,6 +135,7 @@ describe('rasterizeHtmlOverlay caching', () => {
       deviceScaleFactor: 2,
       capturePadding: 0,
       css: '',
+      script: '',
       html: '<div>hash-me</div>',
     })
     expect(existsSync(join(base, '.overlay-cache', `${hash}.png`))).toBe(true)
@@ -276,6 +277,7 @@ describe('rasterizeAnimatedHtmlOverlay caching', () => {
       fps: 30,
       durationMs: 1000,
       css: '',
+      script: '',
       html: '<div>hash-me</div>',
     })
     expect(existsSync(join(base, '.overlay-cache', `${hash}.mp4`))).toBe(true)
@@ -300,7 +302,11 @@ describe('overlay css and capturePadding', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
-  const render = (opts: { css?: string; capturePadding?: number }) =>
+  const render = (opts: {
+    css?: string
+    capturePadding?: number
+    script?: string
+  }) =>
     runWithScreenCIRuntimeContext(
       createScreenCIRuntimeContext({ recordingDir: dir }),
       () =>
@@ -313,6 +319,11 @@ describe('overlay css and capturePadding', () => {
     expect(lastRequest?.capturePadding).toBe(40)
   })
 
+  it('passes author script through to the rasterizer', async () => {
+    await render({ script: 'window.__ran = true' })
+    expect(lastRequest?.script).toBe('window.__ran = true')
+  })
+
   it('merges the global default css ahead of the per-overlay css', async () => {
     setOverlayCss('.base{margin:0}')
     await render({ css: '.a{color:red}' })
@@ -323,6 +334,7 @@ describe('overlay css and capturePadding', () => {
     await render({})
     expect(lastRequest?.css).toBeUndefined()
     expect(lastRequest?.capturePadding).toBeUndefined()
+    expect(lastRequest?.script).toBeUndefined()
   })
 })
 
@@ -348,18 +360,24 @@ describe('rasterizeHtmlOverlay caching by css and capturePadding', () => {
     await rm(base, { recursive: true, force: true })
   })
 
-  const render = (opts: { css?: string; capturePadding?: number }) =>
+  const render = (opts: {
+    css?: string
+    capturePadding?: number
+    script?: string
+  }) =>
     runWithScreenCIRuntimeContext(
       createScreenCIRuntimeContext({ recordingDir }),
       () =>
         rasterizeHtmlOverlay({ name: 'badge', html: '<div>x</div>', ...opts })
     )
 
-  it('re-renders when css or capturePadding changes, caches when unchanged', async () => {
+  it('re-renders when css, capturePadding, or script changes, caches when unchanged', async () => {
     await render({})
     await render({ css: '.a{}' }) // css changed -> miss
     await render({ css: '.a{}' }) // same -> hit
     await render({ css: '.a{}', capturePadding: 20 }) // padding changed -> miss
-    expect(calls).toBe(3)
+    await render({ css: '.a{}', capturePadding: 20, script: 'x()' }) // script changed -> miss
+    await render({ css: '.a{}', capturePadding: 20, script: 'x()' }) // same -> hit
+    expect(calls).toBe(4)
   })
 })

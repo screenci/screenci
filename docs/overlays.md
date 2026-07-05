@@ -45,7 +45,7 @@ video.overlays(studio({ logo: { path: 'assets/logo.png', width: 288 } }))
 
 - a **file path** string (`.html`, `.svg`, `.png`, `.mp4`),
 - a **React element**,
-- a **config object** (`{ path | element | html, ...placement }`), or
+- a **config object** (`{ path | element | html | clientEntry, ...placement }`), where `clientEntry` runs a real React component in the browser (see [Full client-side React](#full-client-side-react-cliententry)), or
 - a **`selected(name)`** render dependency, which embeds another video or screenshot's output (see [Render dependencies](./dependencies.md)).
 
 A config object draws its content from exactly one source: a file `path`, a React `element`, or an inline `html` fragment.
@@ -138,7 +138,8 @@ const overlays = createOverlays({
 
 You can build the same overlay three ways, and all of them honor the same
 [placement](#positioning) fields (`x`, `y`, `width`/`height`, `relativeTo`),
-`duration`, `animate`, `css`, and `capturePadding`:
+`duration`, `animate`, `css`, `capturePadding`, and
+[`script`](#driving-overlays-with-javascript-script):
 
 - **An `.html` file** (`path`): authored in a separate file and passed like any
   other file path. The file contains the overlay markup body, not a full browser
@@ -310,6 +311,188 @@ How the animation is triggered and how long it runs:
 
 Capturing many frames is heavier than a single screenshot, so prefer short
 durations for full-screen animations.
+
+### Driving overlays with JavaScript (`script`)
+
+CSS animation is enough for fades, slides, and loops, but some overlays are
+easier to drive from code: change text on a schedule, step through states, count
+up a number, or lay out from data. Pass a `script` string and screenci injects it
+as a `<script>` at the end of the overlay document `<body>`, so it runs after the
+markup is parsed and can query and mutate the overlay DOM. It works the same for
+**HTML files, inline `html`, and React `element`** overlays.
+
+With `animate: true` the script is advanced by the **same deterministic virtual
+clock** that samples each frame. So `setTimeout`/`setInterval`,
+`requestAnimationFrame`, `Date.now()`/`performance.now()`, and the Web Animations
+API all drive the captured frames reproducibly: schedule an edit at `t` ms and it
+lands on the matching frame, every run. (Without `animate` the script runs once,
+before the single screenshot: useful to compute a final layout, not to animate.)
+
+A React element renders to static markup, so its hooks and effects do **not** run
+during capture; the `script` is where the behavior lives. Author the element as
+the initial DOM and let the script animate it.
+
+```tsx
+video.overlays({
+  // Count 0 -> 100 over 2s, driven by requestAnimationFrame under the clock.
+  counter: {
+    element: (
+      <div id="n" className="counter">
+        0
+      </div>
+    ),
+    css: '.counter{font:700 64px system-ui;color:#fff}',
+    script: `
+      const el = document.getElementById('n')
+      const start = Date.now()
+      function tick() {
+        const t = Math.min(1, (Date.now() - start) / 2000)
+        el.textContent = String(Math.round(t * 100))
+        if (t < 1) requestAnimationFrame(tick)
+      }
+      tick()
+    `,
+    animate: true,
+    duration: '2s', // capture length (see below)
+    fps: 30,
+  },
+  // The same option works for inline html.
+  toast: {
+    html: '<div class="toast">Saving…</div>',
+    css: '.toast{font:600 28px system-ui;color:#fff;background:#111;padding:16px 24px;border-radius:12px}',
+    script: `setTimeout(() => {
+      document.querySelector('.toast').textContent = 'Saved'
+    }, 800)`,
+    animate: true,
+    duration: '1.6s',
+  },
+})('Overview', async ({ page, overlays }) => {
+  await overlays.counter() // plays for the config duration
+})
+```
+
+**Setting the length.** A scripted animation is an animated overlay, so it needs a
+capture length, set exactly the same way as any [animated overlay](#animated-overlays):
+
+- `duration` in the config (as above), or `.for('2s')` on the call, sets the
+  blocking length and the capture length together.
+- Driving it live with `start()`/`end()` requires `duration` in the config (the
+  capture length is otherwise unknown); the live window can be shorter or longer,
+  and the last frame is held or the remainder plays out over a frozen frame.
+- `fps` sets the sampling rate (default `30`).
+
+**Passing data.** Interpolate values into the string, for example
+`` script: `const steps = ${JSON.stringify(steps)}; /* ... */` ``. The script is a
+plain string, so build it however you like (a template literal, a function you
+`.toString()`, a separate file you read in).
+
+**Reserve room for growth.** The overlay is captured at its **initial layout
+box**, frozen on the first frame. If the script grows the content later (adds
+lines, expands a panel), size the container to its final dimensions up front (and
+animate within it), or add [`capturePadding`](#giving-animations-room-capturepadding),
+so nothing is clipped. Animating `transform`/`opacity` stays within the box for
+free.
+
+`script` is rejected for image (`.svg`/`.png`) and `.mp4` file overlays (they are
+not rendered from markup). Global `setOverlayCss` and per-overlay `css` inject
+into `<head>`; `script` injects at the end of `<body>`, after your content.
+
+### Full client-side React (`clientEntry`)
+
+A React `element` overlay is server-rendered to static markup, so its hooks,
+effects, and class lifecycle **do not run** during capture, only the initial
+render is used. When you want the full React runtime, so `useState`/`useEffect`,
+class `render()`/`componentDidMount`/`setState`, inline styles, and `className`
+all work, use `clientEntry`: screenci runs React **in the browser** during
+capture, exactly like a live app.
+
+Point `clientEntry` at a module that default-exports a component, and pass
+serializable `props`. screenci bundles the module for the browser and mounts it
+into the overlay. Write a completely ordinary component, regular imports, JSX,
+hooks, classes, all supported:
+
+```tsx
+// overlays/Menu.tsx
+import { useState, useEffect } from 'react'
+
+export default function Menu({ isActive }: { isActive: boolean }) {
+  const [open, setOpen] = useState(isActive)
+  useEffect(() => {
+    const t = setTimeout(() => setOpen(true), 500) // toggles mid-capture
+    return () => clearTimeout(t)
+  }, [])
+  const className = open ? 'menu menu-active' : 'menu'
+  return (
+    <span className={className} style={{ color: open ? '#0a0' : '#888' }}>
+      Menu
+    </span>
+  )
+}
+```
+
+```tsx
+// the recording
+video.overlays({
+  menu: {
+    clientEntry: './overlays/Menu.tsx', // resolved relative to the recording file
+    props: { isActive: false },
+    css: '.menu{font:600 28px system-ui}',
+    animate: true,
+    duration: '2s',
+    fps: 30,
+    x: 96,
+    y: 96,
+    width: 240,
+  },
+})('Overview', async ({ overlays }) => {
+  await overlays.menu()
+})
+```
+
+Class components work identically, `this.props`, `this.state`, and lifecycle all
+run:
+
+```tsx
+// overlays/Menu.tsx (class form)
+import React from 'react'
+
+export default class Menu extends React.Component<{ isActive: boolean }> {
+  state = { active: this.props.isActive }
+  componentDidMount() {
+    setTimeout(() => this.setState({ active: true }), 500)
+  }
+  render() {
+    let className = 'menu'
+    if (this.state.active) className += ' menu-active'
+    return <span className={className}>Menu</span>
+  }
+}
+```
+
+Details:
+
+- **Determinism.** With `animate: true` the mounted app is advanced by the same
+  virtual clock that samples each frame, so effect timers,
+  `requestAnimationFrame`, and state updates drive the captured frames
+  reproducibly, just like a [`script`](#driving-overlays-with-javascript-script)
+  overlay. Set the length the usual way (`duration`/`.for(...)`, plus `fps`).
+- **esbuild.** Bundling uses `esbuild`, an **optional peer dependency** imported
+  lazily. Install it (`npm install --save-dev esbuild`) to use `clientEntry`;
+  screenci never pulls it in otherwise. `react` and `react-dom` are resolved from
+  your own project.
+- **Props** are serialized to JSON, so pass plain data (no functions or React
+  elements).
+- **Placement, `css`, `capturePadding`** work exactly as for other rendered
+  overlays. `script` is generated for you, so it cannot be combined with
+  `clientEntry`.
+- **Reserve room for growth** just as with a `script` overlay: the overlay is
+  captured at its initial mounted box, so if the component grows later, size it to
+  its final dimensions up front (or use `capturePadding`).
+
+Use a static `element` for content that does not animate (it is lighter, no
+bundler, no browser React), a [`script`](#driving-overlays-with-javascript-script)
+for small vanilla-JS animation, and `clientEntry` when you want to author the
+overlay as a real React component.
 
 ### Styling with className (and Tailwind)
 

@@ -37,6 +37,10 @@ export async function flushPendingOverlays(
           html: request.html,
           css: request.css,
           cssResolved: true,
+          script: request.script,
+          ...(request.awaitMount !== undefined && {
+            awaitMount: request.awaitMount,
+          }),
           deviceScaleFactor: request.deviceScaleFactor,
           capturePadding: request.capturePadding,
         })
@@ -49,6 +53,10 @@ export async function flushPendingOverlays(
           fps: request.fps,
           css: request.css,
           cssResolved: true,
+          script: request.script,
+          ...(request.awaitMount !== undefined && {
+            awaitMount: request.awaitMount,
+          }),
           deviceScaleFactor: request.deviceScaleFactor,
           capturePadding: request.capturePadding,
         })

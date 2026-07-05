@@ -17,20 +17,25 @@ import {
   runWithScreenCIRuntimeContext,
 } from './runtimeContext.js'
 
-const imageRequest = (html: string): DeferredRasterizeRequest => ({
+const imageRequest = (html: string, script = ''): DeferredRasterizeRequest => ({
   kind: 'image',
   name: 'ov',
   html,
   css: '',
+  script,
   capturePadding: 0,
   deviceScaleFactor: 2,
 })
 
-const animationRequest = (html: string): DeferredRasterizeRequest => ({
+const animationRequest = (
+  html: string,
+  script = ''
+): DeferredRasterizeRequest => ({
   kind: 'animation',
   name: 'ov',
   html,
   css: '',
+  script,
   capturePadding: 0,
   deviceScaleFactor: 2,
   fps: 30,
@@ -127,6 +132,46 @@ describe('flushPendingOverlays', () => {
       kind: 'image',
       fullScreen: false,
       request: imageRequest('<div>b</div>'),
+    })
+
+    await withRecording(() => flushPendingOverlays(recorder))
+
+    expect(imageCalls).toBe(2)
+    const events = pendingEvents(recorder)
+    expect(events[0]!.path).not.toBe(events[1]!.path)
+  })
+
+  it('passes the author script through to the rasterizer', async () => {
+    let seen: string | undefined
+    setHtmlRasterizer(async (request) => {
+      seen = request.script
+      return { buffer: Buffer.from('png'), width: 10, height: 10 }
+    })
+    const recorder = new EventRecorder()
+    recorder.start()
+    recorder.addPendingAssetStart('ov', {
+      kind: 'image',
+      fullScreen: false,
+      request: imageRequest('<div>x</div>', 'window.__ran = true'),
+    })
+
+    await withRecording(() => flushPendingOverlays(recorder))
+
+    expect(seen).toBe('window.__ran = true')
+  })
+
+  it('rasterizes same markup with differing scripts separately', async () => {
+    const recorder = new EventRecorder()
+    recorder.start()
+    recorder.addPendingAssetStart('a', {
+      kind: 'image',
+      fullScreen: false,
+      request: imageRequest('<div>x</div>', 'a()'),
+    })
+    recorder.addPendingAssetStart('b', {
+      kind: 'image',
+      fullScreen: false,
+      request: imageRequest('<div>x</div>', 'b()'),
     })
 
     await withRecording(() => flushPendingOverlays(recorder))

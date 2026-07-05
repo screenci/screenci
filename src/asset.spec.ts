@@ -19,6 +19,10 @@ import {
   setAnimatedHtmlRasterizer,
   setHtmlRasterizer,
 } from './htmlRasterizer.js'
+import {
+  setClientOverlayBundler,
+  resetClientOverlayBundler,
+} from './clientOverlay.js'
 import type { Locator } from '@playwright/test'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
@@ -488,7 +492,7 @@ describe('createOverlays', () => {
           } as never,
         })
       ).toThrow(
-        'Overlay "broken" must provide only one of "path", "element", or "html".'
+        'Overlay "broken" must provide only one of "path", "element", "html", or "clientEntry".'
       )
     })
 
@@ -498,7 +502,7 @@ describe('createOverlays', () => {
           broken: { path: './logo.png', html: '<div>x</div>' } as never,
         })
       ).toThrow(
-        'Overlay "broken" must provide only one of "path", "element", or "html".'
+        'Overlay "broken" must provide only one of "path", "element", "html", or "clientEntry".'
       )
     })
 
@@ -511,13 +515,13 @@ describe('createOverlays', () => {
           } as never,
         })
       ).toThrow(
-        'Overlay "broken" must provide only one of "path", "element", or "html".'
+        'Overlay "broken" must provide only one of "path", "element", "html", or "clientEntry".'
       )
     })
 
     it('rejects a config with no content source', () => {
       expect(() => createOverlays({ broken: { width: 200 } as never })).toThrow(
-        'Overlay "broken" must provide a "path", an "element", or inline "html".'
+        'Overlay "broken" must provide a "path", an "element", inline "html", or a "clientEntry".'
       )
     })
 
@@ -902,6 +906,35 @@ describe('createOverlays', () => {
       )
     })
 
+    it('captures the author script in a still (image) overlay request', async () => {
+      const overlays = createOverlays({
+        hint: {
+          html: '<div>Click</div>',
+          duration: '1s',
+          script: 'document.title = "ran"',
+        },
+      })
+
+      await runWithScreenCIRuntimeContext(
+        createScreenCIRuntimeContext({
+          recorder,
+          page: fakePage,
+          recordingDir: dir,
+        }),
+        () => overlays.hint()
+      )
+
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
+        'hint',
+        expect.objectContaining({
+          request: expect.objectContaining({
+            kind: 'image',
+            script: 'document.title = "ran"',
+          }),
+        })
+      )
+    })
+
     it('accepts a bare React element with default placement', async () => {
       const overlays = createOverlays({
         badge: createElement('span', null, 'hi'),
@@ -1094,7 +1127,7 @@ describe('createOverlays', () => {
         bad: () => ({ path: './logo.png', element: createElement('div') }),
       })
       expect(() => overlays.bad({})).toThrow(
-        'must provide only one of "path", "element", or "html"'
+        'must provide only one of "path", "element", "html", or "clientEntry"'
       )
     })
 
@@ -1228,6 +1261,55 @@ describe('createOverlays', () => {
         }),
         fn
       )
+
+    it('bundles a clientEntry overlay and carries the mount script + awaitMount in the request', async () => {
+      let bundledEntry: string | undefined
+      setClientOverlayBundler(async (opts) => {
+        bundledEntry = opts.entryPath
+        return 'MOUNT_SCRIPT'
+      })
+      try {
+        const overlays = createOverlays({
+          app: {
+            clientEntry: './overlays/App.tsx',
+            props: { isActive: true },
+            animate: true,
+            duration: '1s',
+          },
+        })
+
+        await run(() => overlays.app())
+
+        // Entry resolves relative to the recording file's directory.
+        expect(bundledEntry).toBe(join(dir, 'overlays', 'App.tsx'))
+        expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
+          'app',
+          expect.objectContaining({
+            kind: 'animation',
+            request: expect.objectContaining({
+              kind: 'animation',
+              html: '',
+              script: 'MOUNT_SCRIPT',
+              awaitMount: true,
+            }),
+          })
+        )
+      } finally {
+        resetClientOverlayBundler()
+      }
+    })
+
+    it('rejects combining clientEntry with another source', () => {
+      expect(() =>
+        createOverlays({
+          app: {
+            clientEntry: './App.tsx',
+            element: createElement('div', null, 'hi'),
+            duration: '1s',
+          } as never,
+        })
+      ).toThrow('only one of')
+    })
 
     it('records an animation start with the config duration (blocking)', async () => {
       const overlays = createOverlays({
@@ -1419,10 +1501,59 @@ describe('createOverlays', () => {
       )
     })
 
+    it('captures the author script in the deferred animation request', async () => {
+      const overlays = createOverlays({
+        intro: {
+          element: createElement('div', null, 'hi'),
+          animate: true,
+          duration: '1s',
+          script: 'window.__ran = true',
+        },
+      })
+
+      await run(() => overlays.intro())
+
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
+        'intro',
+        expect.objectContaining({
+          request: expect.objectContaining({
+            script: 'window.__ran = true',
+          }),
+        })
+      )
+    })
+
+    it('defaults the deferred request script to an empty string when unset', async () => {
+      const overlays = createOverlays({
+        intro: {
+          element: createElement('div', null, 'hi'),
+          animate: true,
+          duration: '1s',
+        },
+      })
+
+      await run(() => overlays.intro())
+
+      expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
+        'intro',
+        expect.objectContaining({
+          request: expect.objectContaining({ script: '' }),
+        })
+      )
+    })
+
     it('rejects css/capturePadding on a non-HTML file overlay', () => {
       expect(() =>
         createOverlays({
           logo: { path: './logo.png', css: '.a{}', duration: '1s' },
+        })
+      ).toThrow('only supported for HTML files and React elements')
+    })
+
+    it('rejects script on a non-HTML file overlay', () => {
+      expect(() =>
+        createOverlays({
+          logo: { path: './logo.png', script: 'x()', duration: '1s' },
         })
       ).toThrow('only supported for HTML files and React elements')
     })

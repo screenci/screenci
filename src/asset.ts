@@ -12,6 +12,7 @@ import { parseTimelineOffset, type TimelineOffset } from './timelineOffset.js'
 import { validateCrop, resolveSourceTrim } from './sourceTrim.js'
 import { overlayRect } from './overlayRect.js'
 import { captureCallerFile } from './callerFile.js'
+import { bundleClientOverlay } from './clientOverlay.js'
 import { logMissingAsset } from './missingAssetLog.js'
 import { access, readFile } from 'fs/promises'
 import { dirname, resolve } from 'path'
@@ -127,6 +128,28 @@ type OverlayCommon = {
    * HTML files and React elements only.
    */
   capturePadding?: number
+  /**
+   * Author JavaScript, injected as a `<script>` at the end of the overlay
+   * document `<body>` so it runs after the content is parsed. It can query and
+   * mutate the overlay DOM to drive the animation from code, an alternative (or
+   * complement) to CSS animation. Works for HTML files, inline `html`, and React
+   * `element` overlays alike; it is rejected for image and `.mp4` file overlays.
+   *
+   * With `animate: true` the script is advanced by the same deterministic
+   * virtual clock that samples each frame, so `setTimeout`/`setInterval`,
+   * `requestAnimationFrame`, `Date.now()`/`performance.now()`, and the Web
+   * Animations API all drive the captured frames reproducibly (schedule an edit
+   * at `t` ms and it lands on the matching frame). Set the capture length the
+   * usual way, with `.for('2s')` or a `duration` in the config (and `fps` for the
+   * frame rate). Without `animate`, the script runs once before the single
+   * screenshot.
+   *
+   * The overlay is captured at its initial layout box, so if the script grows
+   * the content later, reserve the final size up front (or use `capturePadding`)
+   * to avoid clipping. Pass author data by interpolating it into the string
+   * (for example `` `const steps = ${JSON.stringify(steps)}` ``).
+   */
+  script?: string
   /**
    * Crop a rectangle of the SOURCE file before it is placed/scaled, in the
    * source's own pixels (top-left origin), like Playwright's
@@ -250,17 +273,51 @@ export type HtmlOverlayConfig = OverlayCommon & {
 }
 
 /**
+ * An overlay whose React component is rendered CLIENT-SIDE, in the browser,
+ * during capture. Point `clientEntry` at a module that default-exports a React
+ * component; screenci bundles it (with esbuild, an optional peer dependency) and
+ * mounts it into the overlay, so the full React runtime runs: function components
+ * with hooks and effects, class components with lifecycle and state, inline
+ * styles, and `className`. Pass serializable `props` to the component.
+ *
+ * This is the dynamic counterpart to {@link ElementOverlayConfig.element}, which
+ * is server-rendered to static markup (its hooks/effects/lifecycle never run).
+ * With `animate: true` the mounted app is advanced by the deterministic virtual
+ * clock that samples each frame, so effect timers / `requestAnimationFrame` /
+ * state updates drive the captured frames reproducibly. Video-only fields
+ * (`volume`/`speed`/`time`) do not apply, and `script` is generated for you.
+ */
+export type ClientElementOverlayConfig = OverlayCommon & {
+  /** Path to a module that default-exports a React component, resolved relative to the recording file. */
+  clientEntry: string
+  /** Serializable props passed to the component. */
+  props?: Record<string, unknown>
+  path?: never
+  element?: never
+  html?: never
+  script?: never
+  volume?: never
+  speed?: never
+  time?: never
+  start?: never
+  end?: never
+  crop?: never
+}
+
+/**
  * Display options for an overlay. An overlay draws its content from exactly one
  * source, which selects the variant: a file {@link FileOverlayConfig.path}, a
- * React {@link ElementOverlayConfig.element}, or an inline
- * {@link HtmlOverlayConfig.html} fragment. The `path` variant additionally
- * accepts the video-only `volume`/`speed`/`time` fields (for `.mp4` files); the
- * others reject them at compile time.
+ * React {@link ElementOverlayConfig.element}, an inline
+ * {@link HtmlOverlayConfig.html} fragment, or a client-rendered
+ * {@link ClientElementOverlayConfig.clientEntry} module. The `path` variant
+ * additionally accepts the video-only `volume`/`speed`/`time` fields (for `.mp4`
+ * files); the others reject them at compile time.
  */
 export type OverlayConfig =
   | FileOverlayConfig
   | ElementOverlayConfig
   | HtmlOverlayConfig
+  | ClientElementOverlayConfig
 
 /**
  * Upper bound for an audio level (linear gain). `4` is +12 dB, plenty of
@@ -752,15 +809,21 @@ function buildOverlayFromConfig(
   const hasPath = config.path !== undefined
   const hasElement = config.element !== undefined
   const hasHtml = config.html !== undefined
-  const sourceCount = Number(hasPath) + Number(hasElement) + Number(hasHtml)
+  const clientConfig = config as ClientElementOverlayConfig
+  const hasClientEntry = clientConfig.clientEntry !== undefined
+  const sourceCount =
+    Number(hasPath) +
+    Number(hasElement) +
+    Number(hasHtml) +
+    Number(hasClientEntry)
   if (sourceCount > 1) {
     throw new Error(
-      `[screenci] Overlay "${name}" must provide only one of "path", "element", or "html".`
+      `[screenci] Overlay "${name}" must provide only one of "path", "element", "html", or "clientEntry".`
     )
   }
   if (sourceCount === 0) {
     throw new Error(
-      `[screenci] Overlay "${name}" must provide a "path", an "element", or inline "html".`
+      `[screenci] Overlay "${name}" must provide a "path", an "element", inline "html", or a "clientEntry".`
     )
   }
   if (hasHtml) {
@@ -768,7 +831,8 @@ function buildOverlayFromConfig(
   }
 
   const placementSource = resolvePlacementSource(name, config, {
-    hasElement,
+    // A client-rendered overlay behaves like a rendered element for placement.
+    hasElement: hasElement || hasClientEntry,
     hasHtml,
     hasPath,
   })
@@ -803,6 +867,20 @@ function buildOverlayFromConfig(
     ...(config.capturePadding !== undefined && {
       capturePadding: config.capturePadding,
     }),
+    ...(config.script !== undefined && { script: config.script }),
+    // A client-rendered overlay produces its browser bundle lazily (esbuild) and
+    // must wait for React to mount before the box is measured.
+    ...(hasClientEntry && {
+      awaitMount: true,
+      getScript: (): Promise<string> => {
+        const testFilePath = getScreenCIRuntimeContext().testFilePath
+        const entryPath =
+          testFilePath !== null
+            ? resolve(dirname(testFilePath), clientConfig.clientEntry)
+            : resolve(clientConfig.clientEntry)
+        return bundleClientOverlay(entryPath, clientConfig.props)
+      },
+    }),
   }
 
   // speed/time re-time a moving picture, so they only apply to .mp4 video
@@ -816,13 +894,18 @@ function buildOverlayFromConfig(
     )
   }
 
-  // React element or inline HTML fragment: rendered to markup lazily at
-  // recording time. Both follow the identical placement/animate/css/padding
-  // path; only how the markup is produced differs.
-  if (hasElement || hasHtml) {
+  // React element, inline HTML fragment, or a client-rendered entry: rendered to
+  // markup lazily at recording time. All follow the identical
+  // placement/animate/css/padding path; only how the markup (and, for
+  // clientEntry, the mount script) is produced differs. A clientEntry overlay
+  // starts from an empty root; its bundled React app mounts into it via the
+  // generated script (see renderOpts.getScript above).
+  if (hasElement || hasHtml || hasClientEntry) {
     const getMarkup = hasElement
       ? (): Promise<string> => renderElementToMarkup(name, config.element!)
-      : (): Promise<string> => Promise.resolve(config.html!)
+      : hasHtml
+        ? (): Promise<string> => Promise.resolve(config.html!)
+        : (): Promise<string> => Promise.resolve('')
     if (animate) {
       return createAnimatedOverlayController(
         name,
@@ -864,11 +947,13 @@ function buildOverlayFromConfig(
     )
   }
   if (
-    (config.css !== undefined || config.capturePadding !== undefined) &&
+    (config.css !== undefined ||
+      config.capturePadding !== undefined ||
+      config.script !== undefined) &&
     extension !== '.html'
   ) {
     throw new Error(
-      `[screenci] Overlay "${name}" (${path}) cannot use "css" or "capturePadding": they are only supported for HTML files and React elements.`
+      `[screenci] Overlay "${name}" (${path}) cannot use "css", "capturePadding", or "script": they are only supported for HTML files and React elements.`
     )
   }
   // crop applies to image and video files (not rasterized .html); source trim
@@ -1511,6 +1596,16 @@ function createFileOverlayController(
 type OverlayRenderOpts = {
   css?: string
   capturePadding?: number
+  /** A static author script, injected verbatim. */
+  script?: string
+  /**
+   * An async script producer, resolved during the test (used by client-rendered
+   * overlays, whose browser bundle is built with esbuild at resolve time). Takes
+   * precedence over {@link script}.
+   */
+  getScript?: () => Promise<string>
+  /** Wait for the overlay root to mount before capture (client-rendered overlays). */
+  awaitMount?: boolean
 }
 
 /**
@@ -1532,6 +1627,7 @@ function createRenderedOverlayController(
   // rasterization (a browser screenshot) is deferred to after the test so
   // identical overlays render once. See overlayFlush.ts.
   let resolvedHtml: string | undefined
+  let resolvedScript = ''
   let resolvedPlacement: OverlayPlacement | undefined
   let skipped = false
 
@@ -1575,6 +1671,8 @@ function createRenderedOverlayController(
           name,
           html: resolvedHtml,
           css: resolveOverlayCss(renderOpts.css),
+          script: resolvedScript,
+          ...(renderOpts.awaitMount === true && { awaitMount: true }),
           capturePadding: renderOpts.capturePadding ?? 0,
           deviceScaleFactor: DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
         },
@@ -1592,6 +1690,9 @@ function createRenderedOverlayController(
         }
         const { placement, sizePx } = await resolvePlacement(placementSource)
         resolvedPlacement = placement
+        resolvedScript = renderOpts.getScript
+          ? await renderOpts.getScript()
+          : (renderOpts.script ?? '')
         const markup = await getMarkup()
         resolvedHtml =
           sizePx !== undefined ? sizeWrapMarkup(markup, sizePx) : markup
@@ -1623,7 +1724,12 @@ function createAnimatedOverlayController(
   renderOpts: OverlayRenderOpts = {}
 ): OverlayController {
   let resolved:
-    | { html: string; durationMs: number; placement?: OverlayPlacement }
+    | {
+        html: string
+        script: string
+        durationMs: number
+        placement?: OverlayPlacement
+      }
     | undefined
   let skipped = false
 
@@ -1675,6 +1781,8 @@ function createAnimatedOverlayController(
           name,
           html: resolved.html,
           css: resolveOverlayCss(renderOpts.css),
+          script: resolved.script,
+          ...(renderOpts.awaitMount === true && { awaitMount: true }),
           capturePadding: renderOpts.capturePadding ?? 0,
           deviceScaleFactor: DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
           fps: fps ?? DEFAULT_ANIMATION_FPS,
@@ -1692,9 +1800,13 @@ function createAnimatedOverlayController(
         }
         const durationMs = resolveDurationMs(mode)
         const { placement, sizePx } = await resolvePlacement(placementSource)
+        const script = renderOpts.getScript
+          ? await renderOpts.getScript()
+          : (renderOpts.script ?? '')
         const markup = await getMarkup()
         resolved = {
           html: sizePx !== undefined ? sizeWrapMarkup(markup, sizePx) : markup,
+          script,
           durationMs,
           ...(placement !== undefined && { placement }),
         }

@@ -32,7 +32,7 @@ export const DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR = 2
 
 // Bump when anything that affects rasterized output changes (the HTML wrapper,
 // screenshot options, default density) so stale cache entries are invalidated.
-const RASTERIZE_CACHE_VERSION = 2
+const RASTERIZE_CACHE_VERSION = 3
 
 export type HtmlRasterizeResult = {
   /** Absolute path to the written PNG. */
@@ -53,6 +53,21 @@ export type HtmlRasterizeRequest = {
   css?: string
   /** Transparent padding (CSS px) added around the overlay content so animations can move beyond it without clipping. */
   capturePadding?: number
+  /**
+   * Author JavaScript injected as a `<script>` at the end of the overlay
+   * document `<body>`, so it runs after the content is parsed. For animated
+   * overlays it is advanced by the same deterministic virtual clock that samples
+   * each frame, so timers / `requestAnimationFrame` / the Web Animations API
+   * drive the animation reproducibly. For a still overlay it runs once before
+   * the single screenshot.
+   */
+  script?: string
+  /**
+   * Wait for the overlay root to receive child content before measuring its box
+   * and screenshotting. Used by client-rendered overlays, whose React app mounts
+   * asynchronously after the document loads.
+   */
+  awaitMount?: boolean
 }
 
 /**
@@ -111,6 +126,7 @@ export type OverlayRasterizeKeyInput =
       deviceScaleFactor: number
       capturePadding: number
       css: string
+      script: string
       html: string
     }
   | {
@@ -120,6 +136,7 @@ export type OverlayRasterizeKeyInput =
       fps: number
       durationMs: number
       css: string
+      script: string
       html: string
     }
 
@@ -131,16 +148,16 @@ export type OverlayRasterizeKeyInput =
 export function overlayInputHash(input: OverlayRasterizeKeyInput): string {
   const body =
     input.kind === 'image'
-      ? `${RASTERIZE_CACHE_VERSION} ${input.deviceScaleFactor} ${input.capturePadding} ${input.css} ${input.html}`
-      : `${RASTERIZE_CACHE_VERSION} anim ${input.deviceScaleFactor} ${input.capturePadding} ${input.fps} ${input.durationMs} ${input.css} ${input.html}`
+      ? `${RASTERIZE_CACHE_VERSION} ${input.deviceScaleFactor} ${input.capturePadding} ${input.css} ${input.script} ${input.html}`
+      : `${RASTERIZE_CACHE_VERSION} anim ${input.deviceScaleFactor} ${input.capturePadding} ${input.fps} ${input.durationMs} ${input.css} ${input.script} ${input.html}`
   return createHash('sha256').update(body).digest('hex')
 }
 
 function wrapOverlayHtml(
   html: string,
-  options: { css?: string; capturePadding?: number } = {}
+  options: { css?: string; capturePadding?: number; script?: string } = {}
 ): string {
-  const { css, capturePadding } = options
+  const { css, capturePadding, script } = options
   // capturePadding is transparent padding on the root, so the captured box (the
   // element/clip bounding box) grows by it on every side. Animations can then
   // translate/scale/rotate within that margin without being clipped, replacing
@@ -151,11 +168,40 @@ function wrapOverlayHtml(
       : ''
   const userStyle =
     css !== undefined && css.length > 0 ? `<style>${css}</style>` : ''
+  // Author JS runs after the content is parsed (it sits at the end of <body>),
+  // so it can query and mutate the overlay DOM immediately.
+  const userScript =
+    script !== undefined && script.length > 0
+      ? `<script>${script}</script>`
+      : ''
   return (
     '<!doctype html><html><head><meta charset="utf-8"><style>' +
     'html,body{margin:0;padding:0;background:transparent}' +
     `#${OVERLAY_ROOT_ID}{display:inline-block${padding}}` +
-    `</style>${userStyle}</head><body><div id="${OVERLAY_ROOT_ID}">${html}</div></body></html>`
+    `</style>${userStyle}</head><body><div id="${OVERLAY_ROOT_ID}">${html}</div>${userScript}</body></html>`
+  )
+}
+
+/**
+ * Wait for the overlay root to receive child content. Client-rendered overlays
+ * mount their React app asynchronously after `load`, so the root is empty until
+ * the mount commits; measuring or screenshotting before then would capture an
+ * empty box.
+ */
+async function waitForOverlayMount(page: {
+  waitForFunction: (
+    fn: (id: string) => boolean,
+    arg: string,
+    options: { timeout: number }
+  ) => Promise<unknown>
+}): Promise<void> {
+  await page.waitForFunction(
+    (id: string) => {
+      const root = document.getElementById(id)
+      return root !== null && root.childElementCount > 0
+    },
+    OVERLAY_ROOT_ID,
+    { timeout: 30_000 }
   )
 }
 
@@ -189,9 +235,11 @@ async function playwrightHtmlRasterizer(
         ...(request.capturePadding !== undefined && {
           capturePadding: request.capturePadding,
         }),
+        ...(request.script !== undefined && { script: request.script }),
       }),
       { waitUntil: 'load' }
     )
+    if (request.awaitMount === true) await waitForOverlayMount(overlayPage)
     const root = overlayPage.locator(`#${OVERLAY_ROOT_ID}`)
     const box = await root.boundingBox()
     const buffer = await root.screenshot({ omitBackground: true, type: 'png' })
@@ -223,13 +271,17 @@ async function renderOverlay(
   deviceScaleFactor: number,
   html: string,
   css: string,
-  capturePadding: number
+  capturePadding: number,
+  script: string,
+  awaitMount: boolean
 ): Promise<RasterizeOutput> {
   const request: HtmlRasterizeRequest = {
     html,
     deviceScaleFactor,
     ...(css.length > 0 && { css }),
     ...(capturePadding > 0 && { capturePadding }),
+    ...(script.length > 0 && { script }),
+    ...(awaitMount && { awaitMount: true }),
   }
   if (!cacheEnabled) {
     return rasterizer(request)
@@ -240,6 +292,7 @@ async function renderOverlay(
     deviceScaleFactor,
     capturePadding,
     css,
+    script,
     html,
   })
   const cacheDir = join(dirname(recordingDir), OVERLAY_CACHE_DIR_NAME)
@@ -276,6 +329,10 @@ export async function rasterizeHtmlOverlay(opts: {
   deviceScaleFactor?: number
   css?: string
   capturePadding?: number
+  /** Author JS injected as a `<script>` at the end of `<body>` (runs once for a still overlay). */
+  script?: string
+  /** Wait for the overlay root to receive child content before capture (client-rendered overlays). */
+  awaitMount?: boolean
   /**
    * When `true`, `css` is already merged with the global default (see
    * {@link resolveOverlayCss}) and is used verbatim. The deferred flush passes
@@ -299,7 +356,9 @@ export async function rasterizeHtmlOverlay(opts: {
     deviceScaleFactor,
     opts.html,
     css,
-    opts.capturePadding ?? 0
+    opts.capturePadding ?? 0,
+    opts.script ?? '',
+    opts.awaitMount ?? false
   )
   const fileHash = createHash('sha256').update(buffer).digest('hex')
   const dir = join(recordingDir, 'generated')
@@ -360,6 +419,17 @@ export type AnimatedHtmlRasterizeRequest = {
   css?: string
   /** Transparent padding (CSS px) added around the overlay content so the animation can move beyond it without clipping. */
   capturePadding?: number
+  /**
+   * Author JavaScript injected as a `<script>` at the end of `<body>`. Advanced
+   * by the same virtual clock that samples each frame, so its timers /
+   * `requestAnimationFrame` drive the animation deterministically.
+   */
+  script?: string
+  /**
+   * Wait for the overlay root to receive child content before the first frame.
+   * Used by client-rendered overlays, whose React app mounts asynchronously.
+   */
+  awaitMount?: boolean
 }
 
 /**
@@ -385,8 +455,15 @@ export function setAnimatedHtmlRasterizer(fn: AnimatedHtmlRasterizer): void {
 // metadata-only label) so the renderer's CUDA graph never range-converts it and
 // the alpha reaches full opacity — the same recipe NarrationRenderer uses for
 // its shape mask (a limited-range matte caps opacity at ~92%).
+//
+// The leading `format=rgba` normalizes every frame to a 4-channel format up
+// front. Chromium picks a PNG color type per frame from its content, so an
+// animation that becomes fully opaque (or fully transparent) on some frames
+// emits those as 3-channel RGB. Without this, the pixel format would change
+// mid-stream and `alphaextract` would fail to reconfigure ("Error reinitializing
+// filters"), aborting the encode. Forcing rgba guarantees a stable alpha plane.
 const ANIMATION_FILTER_COMPLEX =
-  '[0:v]pad=ceil(iw/2)*2:ceil(ih/2)*2:0:0:color=black@0,split=2[a][b];' +
+  '[0:v]format=rgba,pad=ceil(iw/2)*2:ceil(ih/2)*2:0:0:color=black@0,split=2[a][b];' +
   '[a]format=yuv420p[col];' +
   '[b]alphaextract,scale=in_range=full:out_range=full,format=yuv420p,setparams=range=tv[alp]'
 
@@ -421,9 +498,11 @@ async function captureAnimationFrames(
         ...(request.capturePadding !== undefined && {
           capturePadding: request.capturePadding,
         }),
+        ...(request.script !== undefined && { script: request.script }),
       }),
       { waitUntil: 'load' }
     )
+    if (request.awaitMount === true) await waitForOverlayMount(overlayPage)
     const root = overlayPage.locator(`#${OVERLAY_ROOT_ID}`)
     const box = await root.boundingBox()
     // Capture a fixed clip (the initial layout box) for every frame so the
@@ -566,6 +645,7 @@ async function renderAnimatedOverlay(
     fps: request.fps,
     durationMs: request.durationMs,
     css: request.css ?? '',
+    script: request.script ?? '',
     html: request.html,
   })
   const cacheDir = join(dirname(recordingDir), OVERLAY_CACHE_DIR_NAME)
@@ -605,6 +685,10 @@ export async function rasterizeAnimatedHtmlOverlay(opts: {
   deviceScaleFactor?: number
   css?: string
   capturePadding?: number
+  /** Author JS injected as a `<script>`; advanced by the virtual clock while sampling frames. */
+  script?: string
+  /** Wait for the overlay root to receive child content before the first frame (client-rendered overlays). */
+  awaitMount?: boolean
   /**
    * When `true`, `css` is already merged with the global default (see
    * {@link resolveOverlayCss}) and is used verbatim. The deferred flush passes
@@ -636,6 +720,9 @@ export async function rasterizeAnimatedHtmlOverlay(opts: {
     ...(opts.capturePadding !== undefined && {
       capturePadding: opts.capturePadding,
     }),
+    ...(opts.script !== undefined &&
+      opts.script.length > 0 && { script: opts.script }),
+    ...(opts.awaitMount === true && { awaitMount: true }),
   })
   const fileHash = createHash('sha256').update(buffer).digest('hex')
   const dir = join(recordingDir, 'generated')

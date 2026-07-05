@@ -652,6 +652,10 @@ export type DeferredRasterizeRequest =
       name: string
       html: string
       css: string
+      /** Author JS injected as a `<script>` at the end of `<body>` (empty when unused). */
+      script: string
+      /** Wait for the overlay root to receive content before capture (client-rendered overlays). */
+      awaitMount?: boolean
       capturePadding: number
       deviceScaleFactor: number
     }
@@ -660,6 +664,10 @@ export type DeferredRasterizeRequest =
       name: string
       html: string
       css: string
+      /** Author JS injected as a `<script>`; advanced by the virtual clock while sampling frames (empty when unused). */
+      script: string
+      /** Wait for the overlay root to receive content before the first frame (client-rendered overlays). */
+      awaitMount?: boolean
       capturePadding: number
       deviceScaleFactor: number
       fps: number

@@ -256,6 +256,18 @@ export const docsManifest = [
     description:
       'Manage organisation members and roles, and enforce single sign-on with SAML through your own identity provider. SSO and member management are a Business feature.',
     prev: 'docs/guides/version-history',
+    next: 'docs/guides/anonymous-trial',
+  },
+  {
+    source: 'anonymous-trial.md',
+    slug: 'docs/guides/anonymous-trial',
+    section: 'Guides',
+    order: 11,
+    navLabel: 'Anonymous trial',
+    title: 'Anonymous Trial',
+    description:
+      'Record without an account: what the anonymous trial allows (including a preview of expressive narration and multiple languages), its limits, and what happens to that content after you sign up.',
+    prev: 'docs/guides/organisation',
     next: 'docs/reference/cli',
   },
   {
@@ -267,7 +279,7 @@ export const docsManifest = [
     title: 'CLI',
     description:
       'Command reference for screenci init, test, record, project info, and public delivery commands.',
-    prev: 'docs/guides/organisation',
+    prev: 'docs/guides/anonymous-trial',
     next: 'docs/reference/configuration',
   },
   {

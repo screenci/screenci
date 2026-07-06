@@ -2,14 +2,25 @@
 
 Overlays let you place additional media on top of the recording timeline. Use them for intros, transitions, corner branding, callouts, or short contextual clips that would be awkward to build inside the browser automation itself.
 
-An overlay always comes from a **file `path`**, and the extension selects what it is:
+An overlay's content comes from **exactly one source**: a file `path`, an inline React `element`, inline `jsx`/`solidJsx` component source, or an inline `html` fragment.
 
-- **`.tsx`** — a full React page rendered client-side in the browser (hooks, effects, class lifecycle all run). The only variant that accepts `props`. See [.tsx and .html page overlays](#tsx-and-html-page-overlays).
+For a file `path`, the extension selects what it is:
+
+- **`.tsx`** — a React component module rendered client-side in the browser (hooks, effects, class lifecycle all run). See [Component page overlays](#component-and-html-page-overlays).
+- **`.solid.tsx`** — a Solid component module, same treatment with Solid's compiler.
+- **`.vue`** — a Vue single-file component (its `<style>` block included).
+- **`.svelte`** — a Svelte component (its `<style>` block included).
 - **`.html`** — a full standalone HTML document, loaded as-is (its own `<style>`/`<script>` run).
 - **`.svg` / `.png`** — an image.
 - **`.mp4`** — a video.
 
-A `.tsx` or `.html` page is rendered to a transparent PNG at recording time and then behaves exactly like an image overlay, or, with `animate: true`, is captured as a transparent animated clip (see [Animated overlays](#animated-overlays)).
+The inline variants keep small overlays in the recording file itself (see [Inline overlays](#inline-overlays)):
+
+- **`element`** — a React element (`element: <Badge label="New" />`), rendered in-process to static markup.
+- **`jsx` / `solidJsx`** — the source of a component module as a string, bundled and mounted client-side like a `.tsx`/`.solid.tsx` file.
+- **`html`** — an HTML fragment placed in the overlay root.
+
+Every rendered variant (everything except image/video files) is rendered to a transparent PNG at recording time and then behaves exactly like an image overlay, or, with `animate: true`, is captured as a transparent animated clip (see [Animated overlays](#animated-overlays)).
 
 Overlays can be owned by code or handed to [Editor](./editor.md) (the web app where non-developers swap the assets); see [the three ways to declare overlays](#three-ways-to-declare-overlays) below.
 
@@ -49,11 +60,12 @@ video.overlays(editable({ logo: { path: 'assets/logo.png', width: 288 } }))
 
 `video.overlays(...)` takes a map. Each value is one of:
 
-- a **file path** string (`.tsx`, `.html`, `.svg`, `.png`, `.mp4`),
-- a **config object** (`{ path, ...placement }`, plus `props` for a `.tsx` page),
+- a **file path** string (`.tsx`, `.solid.tsx`, `.vue`, `.svelte`, `.html`, `.svg`, `.png`, `.mp4`),
+- a **React element** (`badge: <Badge label="New" />`, shorthand for `{ element: ... }`),
+- a **config object** (`{ path, ...placement }`, or one of the inline sources `element`/`jsx`/`solidJsx`/`html`),
 - a **factory** `(props) => config` (see [Programmatic overlays](#programmatic-overlays-props)), or
 
-Content always comes from `path`; the extension selects the variant. Only a `.tsx` page accepts `props`; only `.mp4`/image files accept the video/crop fields.
+A config draws its content from exactly one source. Component overlays (`.tsx`/`.solid.tsx`/`.vue`/`.svelte` files, `jsx`/`solidJsx` source) accept serializable `props`; only `.mp4`/image files accept the video/crop fields.
 
 ```tsx
 import { video } from 'screenci'
@@ -66,7 +78,9 @@ video.overlays({
     props: { label: 'New' },
     x: 1340,
     y: 110,
-  }, // React page
+  }, // React component page
+  note: { html: '<div class="note">Tip</div>', x: 1340, y: 320, width: 380 }, // inline fragment
+  stamp: <Stamp label="Beta" />, // inline React element
   logo: { path: 'assets/logo.png', x: 96, y: 96, width: 288 }, // image
 })('Overview', async ({ page, overlays }) => {
   await overlays.intro()
@@ -102,15 +116,15 @@ this video (matched by the overlay's name). See
 
 Rules:
 
-- `.tsx`, `.html`, `.svg`, and `.png` overlays need a length: give them a relative `.for('1.2s')` / `.for(1200)`, an absolute `.until('0:05')`/`.until('56%')`, a `duration` config string or millisecond number, or drive them with `start()`/`end()`. A bare `overlays.logo()` is invalid for these (it only works for a video or render dependency, which holds for its natural length).
-- `.tsx`, `.html`, and image overlays do not support `volume`.
+- every overlay except `.mp4` needs a length: give it a relative `.for('1.2s')` / `.for(1200)`, an absolute `.until('0:05')`/`.until('56%')`, a `duration` config string or millisecond number, or drive it with `start()`/`end()`. A bare `overlays.logo()` is invalid for these (it only works for a video or render dependency, which holds for its natural length).
+- rendered page and image overlays do not support `volume`.
 - `.mp4` overlays may provide `volume` (a linear gain). `1` (the default) plays the source at its natural level, `0` mutes it, and values above `1` boost it (e.g. `2` is twice as loud, up to `4`).
 - `.mp4` overlays use the file's natural duration and must not provide a `duration`.
-- `.mp4` overlays may provide `speed` or `time` to play the clip (and its audio) faster or slower. `speed` is a multiplier (`2` plays it twice as fast, `0.5` at half speed); `time` is a target playback duration in ms (the clip is sped up or slowed down to play over exactly that long). Set at most one. This sets how long the (sped) clip plays for, since both a blocking call (`await overlays.intro()`) and a live `start()`/`end()` window play the clip out to its end; later content shifts to make room. Use it (or trimming) to make a clip run shorter. `.tsx`, `.html`, and image overlays do not support `speed`/`time`.
+- `.mp4` overlays may provide `speed` or `time` to play the clip (and its audio) faster or slower. `speed` is a multiplier (`2` plays it twice as fast, `0.5` at half speed); `time` is a target playback duration in ms (the clip is sped up or slowed down to play over exactly that long). Set at most one. This sets how long the (sped) clip plays for, since both a blocking call (`await overlays.intro()`) and a live `start()`/`end()` window play the clip out to its end; later content shifts to make room. Use it (or trimming) to make a clip run shorter. Rendered page and image overlays do not support `speed`/`time`.
 
 ### Cropping a file overlay
 
-Image (`.svg`/`.png`) and video (`.mp4`) overlays accept a `crop` rectangle that selects a region of the **source file**, in the source's own pixels (top-left origin), just like Playwright's `page.screenshot({ clip })`. The cropped region is then placed and scaled like any other overlay. `crop` is not supported for `.tsx`/`.html` page overlays.
+Image (`.svg`/`.png`) and video (`.mp4`) overlays accept a `crop` rectangle that selects a region of the **source file**, in the source's own pixels (top-left origin), just like Playwright's `page.screenshot({ clip })`. The cropped region is then placed and scaled like any other overlay. `crop` is not supported for rendered page overlays.
 
 ```ts
 const overlays = createOverlays({
@@ -142,16 +156,22 @@ const overlays = createOverlays({
 
 `start`/`end` apply to `.mp4` overlays only (images have no timeline).
 
-### .tsx and .html page overlays
+### Component and .html page overlays
 
 A custom overlay is a full page you author, in one of two forms:
 
-- **A `.tsx` page** (`path` ends in `.tsx`): a module that default-exports a React
-  component, rendered **client-side in the browser** during capture. The full
-  React runtime runs, so hooks and effects, class components with lifecycle and
-  state, inline styles, and `className` all work. It is the only overlay that
-  accepts **`props`**. screenci bundles it with `esbuild` (an optional peer
-  dependency, resolved from your project's `react`/`react-dom`).
+- **A component page** (`path` ends in `.tsx`, `.solid.tsx`, `.vue`, or
+  `.svelte`): a module that default-exports a component, rendered
+  **client-side in the browser** during capture. The full framework runtime
+  runs, so hooks/effects/signals, lifecycle and state, styles, and class
+  bindings all work, and Vue/Svelte `<style>` blocks are carried into the
+  overlay. Component overlays accept serializable **`props`** (declare them
+  with `defineProps` in Vue, `$props()` in Svelte). screenci bundles them with
+  `vite` (an optional peer dependency, resolved from your project together
+  with the framework itself: `react`/`react-dom` for `.tsx`,
+  `solid-js` + `vite-plugin-solid` for `.solid.tsx`,
+  `vue` + `@vitejs/plugin-vue` for `.vue`, and
+  `svelte` (v5+) + `@sveltejs/vite-plugin-svelte` for `.svelte`).
 - **A `.html` page** (`path` ends in `.html`): a complete standalone HTML
   document, loaded as-is. Its own `<style>` and `<script>` run (the script is
   advanced by the virtual clock when `animate: true`).
@@ -256,7 +276,100 @@ video.overlays({
 
 Class components work identically (`this.props`, `this.state`,
 `componentDidMount`, etc.). A `.tsx` page needs `react`, `react-dom`, and
-`esbuild` installed in your project.
+`vite` installed in your project.
+
+The same pattern works in the other frameworks; only the module changes:
+
+```vue
+<!-- overlays/Badge.vue -->
+<script setup>
+defineProps({ label: { type: String, default: 'New' } })
+</script>
+<template>
+  <div class="badge">{{ label }}</div>
+</template>
+<style>
+.badge {
+  /* carried into the overlay automatically */
+}
+</style>
+```
+
+A `.solid.tsx` module default-exports a Solid component (the compound
+extension keeps Solid's JSX compiler away from React `.tsx` files), and a
+`.svelte` module is a regular Svelte 5 component using `$props()`.
+
+### Inline overlays
+
+Small overlays do not need their own file. Three inline sources keep the
+content in the recording file itself:
+
+**`element`** takes a React element and renders it in-process to static
+markup. Because it renders in your recording process, props are baked into the
+JSX and you can close over any test-scope value directly; there is no separate
+`props` field. No client JS runs (hooks and effects do not fire), but CSS
+animations still play under the virtual clock with `animate: true`. A bare
+element is shorthand for the config form:
+
+```tsx
+const label = await page.textContent('#plan') // close over runtime values
+
+video.overlays({
+  badge: <Badge label="New" />, // shorthand
+  plan: { element: <PlanCard name={label} />, x: 1340, y: 110, width: 288 },
+})
+```
+
+**`jsx`** (React) and **`solidJsx`** (Solid) take the source of a component
+module as a string, bundled and mounted client-side exactly like a
+`.tsx`/`.solid.tsx` file, so the full runtime runs (hooks, effects,
+`requestAnimationFrame`). The source is compiled in isolation for the browser:
+it **cannot close over test variables**; pass data through the serializable
+`props` instead. Imports inside the string resolve relative to the recording
+file's directory.
+
+```tsx
+video.overlays({
+  counter: {
+    jsx: `
+      import { useEffect, useState } from 'react'
+      export default function Counter({ to }) {
+        const [n, setN] = useState(0)
+        useEffect(() => { /* animate n towards to */ }, [to])
+        return <div className="counter">{n}</div>
+      }
+    `,
+    props: { to: 100 },
+    animate: true,
+    duration: '2s',
+  },
+})
+```
+
+**`html`** takes an HTML fragment and places it in the overlay root. Include a
+`<style>` tag in the fragment for styling; scripts are not executed (use a
+`.html` file overlay for a page that owns its own scripts).
+
+```tsx
+video.overlays({
+  note: {
+    html: '<div class="note"><style>.note{padding:8px}</style>Tip</div>',
+    x: 1340,
+    y: 110,
+    width: 380,
+  },
+})
+```
+
+Which variant runs client JS:
+
+| Variant                                          | Client JS (hooks/effects) | Closes over test scope | `props` |
+| ------------------------------------------------ | ------------------------- | ---------------------- | ------- |
+| `.tsx` / `.solid.tsx` / `.vue` / `.svelte` files | yes                       | no                     | yes     |
+| `jsx` / `solidJsx` source                        | yes                       | no                     | yes     |
+| `element`                                        | no (static render)        | yes                    | no      |
+| `html` fragment                                  | no (styles only)          | yes (via template)     | no      |
+| `.html` file                                     | yes (its own scripts)     | no                     | no      |
 
 ### Programmatic overlays (props)
 
@@ -292,7 +405,7 @@ locator (see [Positioning over a live element](#positioning-over-a-live-element)
 screenci reads the element's box at recording time and sizes the overlay to it.
 
 > Page overlays are rasterized **after** the test body finishes, not inline while
-> it runs. The resolved page (and, for `.tsx`, its bundle and props) is captured
+> it runs. The resolved page (and, for a component overlay, its bundle and props) is captured
 > during the test; overlays with identical content are then rasterized just once
 > (and unchanged overlays are served from a cross-run cache). You do not need to
 > record the same overlay repeatedly.
@@ -492,7 +605,8 @@ video.overlays({
 </html>
 ```
 
-`over` works with `.tsx` and `.html` page overlays. It is always
+`over` works with every rendered page overlay (component files, `.html`,
+`element`, `jsx`/`solidJsx`, and inline `html`). It is always
 recording-relative and overrides `x`/`y`/`width`/`height`/`relativeTo`/`fill`.
 Make the content fill its box (`width:100%;height:100%`). Repeated calls with the
 same element box rasterize only once.
@@ -569,7 +683,7 @@ the clip finish: if the media is longer than the live window, the remainder play
 out over a frozen frame before the timeline continues, so the clip is never cut
 short by ending early. To show less of such a clip, trim it (`start`/`end` or
 `speed`/`time`) instead of calling `end()` sooner.
-Length-less overlays (image, `.html`, `.tsx`) end exactly at `end()`.
+Length-less overlays (images and non-animated rendered pages) end exactly at `end()`.
 
 Overlays can overlap. Several can be live at the same time, and a blocking
 overlay can run while others stay live, so you can layer them freely:

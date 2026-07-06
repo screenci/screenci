@@ -21,7 +21,13 @@ import {
 import {
   setClientOverlayBundler,
   resetClientOverlayBundler,
+  type ClientOverlayEntry,
 } from './clientOverlay.js'
+import {
+  setElementOverlayRenderer,
+  resetElementOverlayRenderer,
+  type ReactElementLike,
+} from './elementOverlay.js'
 import type { Locator } from '@playwright/test'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
@@ -29,6 +35,16 @@ import {
   createScreenCIRuntimeContext,
   runWithScreenCIRuntimeContext,
 } from './runtimeContext.js'
+
+/** A value carrying the React element runtime brand, as JSX would produce. */
+function fakeReactElement(): ReactElementLike {
+  return {
+    $$typeof: Symbol.for('react.element'),
+    type: 'span',
+    props: {},
+    key: null,
+  } as unknown as ReactElementLike
+}
 
 /** A minimal Locator stand-in exposing the box + viewport overlayRect reads. */
 function fakeLocator(
@@ -493,13 +509,13 @@ describe('createOverlays', () => {
           broken: { path: './photo.webp' },
         })
       ).toThrow(
-        'Overlay "broken" must use one of: .tsx, .html, .svg, .png, .mp4. Received: ./photo.webp'
+        'Overlay "broken" must use one of: .tsx, .solid.tsx, .vue, .svelte, .html, .svg, .png, .mp4. Received: ./photo.webp'
       )
     })
 
     it('rejects a config with no path', () => {
       expect(() => createOverlays({ broken: { width: 200 } as never })).toThrow(
-        'Overlay "broken" must provide a "path" (a .tsx, .html, .svg, .png, or .mp4 file).'
+        'Overlay "broken" must provide exactly one content source: a file "path" (.tsx, .solid.tsx, .vue, .svelte, .html, .svg, .png, or .mp4), a React "element", inline "jsx"/"solidJsx" module source, or an inline "html" fragment.'
       )
     })
 
@@ -509,7 +525,7 @@ describe('createOverlays', () => {
           broken: { path: './card.html', props: { x: 1 } } as never,
         })
       ).toThrow(
-        'Overlay "broken" (./card.html) cannot use "props": props are only supported for .tsx page overlays.'
+        'Overlay "broken" (./card.html) cannot use "props": props are only supported for bundled component overlays (.tsx, .solid.tsx, .vue, .svelte files, or inline jsx/solidJsx source).'
       )
     })
   })
@@ -772,7 +788,7 @@ describe('createOverlays', () => {
         width: 200,
         height: 50,
       }))
-      setClientOverlayBundler(async () => 'BUNDLE')
+      setClientOverlayBundler(async () => ({ js: 'BUNDLE', css: '' }))
     })
 
     afterEach(async () => {
@@ -855,6 +871,163 @@ describe('createOverlays', () => {
       // The host document embeds the bundle and the overlay root.
       expect(payload.request.html).toContain('BUNDLE')
       expect(payload.request.html).toContain('id="screenci-overlay-root"')
+    })
+
+    const lastRequest = () => {
+      const call = vi.mocked(recorder.addPendingAssetStart).mock.calls.at(-1)
+      return call?.[1] as {
+        request: { kind: string; html: string; awaitMount?: boolean }
+      }
+    }
+
+    it.each([
+      ['./Card.solid.tsx', 'solid'],
+      ['./Card.vue', 'vue'],
+      ['./Card.svelte', 'svelte'],
+      ['./Card.tsx', 'react'],
+    ] as const)(
+      'bundles a %s file with the %s framework',
+      async (relPath, framework) => {
+        let seenEntry: ClientOverlayEntry | undefined
+        setClientOverlayBundler(async (opts) => {
+          seenEntry = opts.entry
+          return { js: 'FRAMEWORK_BUNDLE', css: '' }
+        })
+        const fileName = relPath.slice(2)
+        await writeFile(join(dir, fileName), 'component source')
+        const overlays = createOverlays({
+          card: { path: relPath, duration: '1s' } as never,
+        })
+
+        await withRun(() => overlays.card())
+
+        expect(seenEntry).toEqual({
+          kind: 'file',
+          path: join(dir, fileName),
+          framework,
+        })
+        expect(lastRequest().request.awaitMount).toBe(true)
+        expect(lastRequest().request.html).toContain('FRAMEWORK_BUNDLE')
+      }
+    )
+
+    it('bundles inline jsx source with the recording dir as resolveDir', async () => {
+      let seenEntry: ClientOverlayEntry | undefined
+      let seenProps: string | undefined
+      setClientOverlayBundler(async (opts) => {
+        seenEntry = opts.entry
+        seenProps = opts.propsJson
+        return { js: 'INLINE_JSX_BUNDLE', css: '' }
+      })
+      const overlays = createOverlays({
+        badge: {
+          jsx: 'export default () => <b>Hi</b>',
+          props: { label: 'New' },
+          duration: '1s',
+        },
+      })
+
+      await withRun(() => overlays.badge())
+
+      expect(seenEntry).toEqual({
+        kind: 'source',
+        code: 'export default () => <b>Hi</b>',
+        resolveDir: dir,
+        framework: 'react',
+      })
+      expect(seenProps).toBe('{"label":"New"}')
+      expect(lastRequest().request.awaitMount).toBe(true)
+      expect(lastRequest().request.html).toContain('INLINE_JSX_BUNDLE')
+    })
+
+    it('bundles inline solidJsx source with the solid framework', async () => {
+      let seenEntry: ClientOverlayEntry | undefined
+      setClientOverlayBundler(async (opts) => {
+        seenEntry = opts.entry
+        return { js: 'SOLID_BUNDLE', css: '' }
+      })
+      const overlays = createOverlays({
+        badge: { solidJsx: 'export default () => <b>Hi</b>', duration: '1s' },
+      })
+
+      await withRun(() => overlays.badge())
+
+      expect(seenEntry).toMatchObject({ kind: 'source', framework: 'solid' })
+    })
+
+    it('renders an element overlay to static markup (no mount, no awaitMount)', async () => {
+      setElementOverlayRenderer(async () => '<span>Static</span>')
+      try {
+        const overlays = createOverlays({
+          badge: { element: fakeReactElement(), duration: '1s' },
+        })
+
+        await withRun(() => overlays.badge())
+
+        const { request } = lastRequest()
+        expect(request.awaitMount).toBeUndefined()
+        expect(request.html).toContain(
+          '<div id="screenci-overlay-root"><span>Static</span></div>'
+        )
+      } finally {
+        resetElementOverlayRenderer()
+      }
+    })
+
+    it('accepts a bare React element as shorthand for { element }', async () => {
+      setElementOverlayRenderer(async () => '<span>Bare</span>')
+      try {
+        const overlays = createOverlays({
+          badge: fakeReactElement(),
+        })
+
+        await withRun(() => overlays.badge.for('1s'))
+
+        expect(lastRequest().request.html).toContain('<span>Bare</span>')
+      } finally {
+        resetElementOverlayRenderer()
+      }
+    })
+
+    it('wraps an inline html fragment in the host document', async () => {
+      const overlays = createOverlays({
+        note: { html: '<div class="note">Tip</div>', duration: '1s' },
+      })
+
+      await withRun(() => overlays.note())
+
+      const { request } = lastRequest()
+      expect(request.awaitMount).toBeUndefined()
+      expect(request.html).toContain(
+        '<div id="screenci-overlay-root"><div class="note">Tip</div></div>'
+      )
+    })
+
+    it('rejects a config combining several content sources', () => {
+      expect(() =>
+        createOverlays({
+          broken: { path: './x.html', html: '<div/>' } as never,
+        })
+      ).toThrow('several were given')
+    })
+
+    it('rejects "props" on an element overlay with a closure hint', () => {
+      expect(() =>
+        createOverlays({
+          broken: {
+            element: fakeReactElement(),
+            props: { x: 1 },
+          } as never,
+        })
+      ).toThrow('an element renders in-process, so bake props into the JSX')
+    })
+
+    it('rejects an "element" that is not a React element', () => {
+      expect(() =>
+        createOverlays({
+          broken: { element: { type: 'div' } } as never,
+        })
+      ).toThrow('is not a React element')
     })
 
     it('is a no-op outside an active recording (no page / recording dir)', async () => {
@@ -1033,8 +1206,8 @@ describe('createOverlays', () => {
     it('bundles a .tsx page and carries the host document + awaitMount in the request', async () => {
       let bundledEntry: string | undefined
       setClientOverlayBundler(async (opts) => {
-        bundledEntry = opts.entryPath
-        return 'MOUNT_SCRIPT'
+        bundledEntry = opts.entry.kind === 'file' ? opts.entry.path : undefined
+        return { js: 'MOUNT_SCRIPT', css: '' }
       })
       try {
         await writeFile(join(dir, 'App.tsx'), 'export default () => null')
@@ -1192,7 +1365,7 @@ describe('createOverlays', () => {
         createOverlays({
           logo: { path: './logo.png', animate: true, duration: '1s' },
         })
-      ).toThrow('only supported for .html and .tsx page overlays')
+      ).toThrow('only supported for rendered page overlays')
     })
 
     it('rejects fps without animate', () => {

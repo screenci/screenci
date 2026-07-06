@@ -1,8 +1,10 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import {
   buildClientOverlayDocument,
+  buildOverlayHostDocument,
   setClientOverlayBundler,
   resetClientOverlayBundler,
+  type ClientOverlayEntry,
 } from './clientOverlay.js'
 
 describe('buildClientOverlayDocument', () => {
@@ -10,20 +12,23 @@ describe('buildClientOverlayDocument', () => {
     resetClientOverlayBundler()
   })
 
-  it('passes the entry path and JSON-serialized props to the bundler', async () => {
-    let seen: { entryPath: string; propsJson: string } | undefined
+  it('passes the file entry and JSON-serialized props to the bundler', async () => {
+    let seen: { entry: ClientOverlayEntry; propsJson: string } | undefined
     setClientOverlayBundler(async (opts) => {
       seen = opts
-      return 'BUNDLE_OUTPUT'
+      return { js: 'BUNDLE_OUTPUT', css: '' }
     })
 
-    const doc = await buildClientOverlayDocument('/abs/Menu.tsx', {
-      isActive: true,
-      count: 2,
-    })
+    const doc = await buildClientOverlayDocument(
+      { kind: 'file', path: '/abs/Menu.tsx', framework: 'react' },
+      {
+        isActive: true,
+        count: 2,
+      }
+    )
 
     expect(seen).toEqual({
-      entryPath: '/abs/Menu.tsx',
+      entry: { kind: 'file', path: '/abs/Menu.tsx', framework: 'react' },
       propsJson: '{"isActive":true,"count":2}',
     })
     // The document embeds the bundle and provides the empty overlay root.
@@ -35,15 +40,81 @@ describe('buildClientOverlayDocument', () => {
     expect(doc.startsWith('<!doctype html>')).toBe(true)
   })
 
-  it('defaults props to an empty object', async () => {
-    let seen: { entryPath: string; propsJson: string } | undefined
+  it('passes an inline-source entry through with its resolveDir and framework', async () => {
+    let seen: { entry: ClientOverlayEntry; propsJson: string } | undefined
     setClientOverlayBundler(async (opts) => {
       seen = opts
-      return ''
+      return { js: 'JS', css: '' }
     })
 
-    await buildClientOverlayDocument('/abs/X.tsx', undefined)
+    await buildClientOverlayDocument(
+      {
+        kind: 'source',
+        code: 'export default () => null',
+        resolveDir: '/recordings',
+        framework: 'solid',
+      },
+      { label: 'hi' }
+    )
+
+    expect(seen).toEqual({
+      entry: {
+        kind: 'source',
+        code: 'export default () => null',
+        resolveDir: '/recordings',
+        framework: 'solid',
+      },
+      propsJson: '{"label":"hi"}',
+    })
+  })
+
+  it('inlines bundled CSS into the host document', async () => {
+    setClientOverlayBundler(async () => ({
+      js: 'JS_CODE',
+      css: '.badge{color:red}',
+    }))
+
+    const doc = await buildClientOverlayDocument(
+      { kind: 'file', path: '/abs/Badge.vue', framework: 'vue' },
+      undefined
+    )
+
+    expect(doc).toContain('<style>.badge{color:red}</style>')
+    expect(doc).toContain('JS_CODE')
+  })
+
+  it('defaults props to an empty object', async () => {
+    let seen: { entry: ClientOverlayEntry; propsJson: string } | undefined
+    setClientOverlayBundler(async (opts) => {
+      seen = opts
+      return { js: '', css: '' }
+    })
+
+    await buildClientOverlayDocument(
+      { kind: 'file', path: '/abs/X.tsx', framework: 'react' },
+      undefined
+    )
 
     expect(seen?.propsJson).toBe('{}')
+  })
+})
+
+describe('buildOverlayHostDocument', () => {
+  it('wraps root content in the transparent host page', () => {
+    const doc = buildOverlayHostDocument({ rootContent: '<b>Hi</b>' })
+    expect(doc.startsWith('<!doctype html>')).toBe(true)
+    expect(doc).toContain('<div id="screenci-overlay-root"><b>Hi</b></div>')
+    expect(doc).toContain('background:transparent')
+    expect(doc).not.toContain('<script>')
+  })
+
+  it('emits extra CSS and the mount script when given', () => {
+    const doc = buildOverlayHostDocument({
+      css: '.x{opacity:1}',
+      script: 'MOUNT()',
+    })
+    expect(doc).toContain('<style>.x{opacity:1}</style>')
+    expect(doc).toContain('<script>MOUNT()</script>')
+    expect(doc).toContain('<div id="screenci-overlay-root"></div>')
   })
 })

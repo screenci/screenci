@@ -43,6 +43,7 @@ const REACT_INSTALL_PACKAGES = [
   'react-dom@^19.0.0',
   '@types/react@^19.0.0',
   '@types/react-dom@^19.0.0',
+  'vite@^7.0.0',
 ]
 
 function expectNpmDevInstalls(
@@ -2158,7 +2159,7 @@ describe('CLI', () => {
             call[0] === 'cmd.exe' &&
             Array.isArray(call[1]) &&
             (call[1] as string[])[3] ===
-              '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0""'
+              '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0" "vite@^7.0.0""'
         )
         expect(installCall).toEqual([
           'cmd.exe',
@@ -2166,7 +2167,7 @@ describe('CLI', () => {
             '/d',
             '/s',
             '/c',
-            '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0""',
+            '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0" "vite@^7.0.0""',
           ],
           expect.objectContaining({
             cwd: '/workspace/create-app/screenci',
@@ -2268,7 +2269,7 @@ describe('CLI', () => {
         "Running 'npm exec --yes --package=skills -- skills add screenci/screenci --skill screenci --skill playwright-cli -y'..."
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        "Running 'npm install --save-dev @playwright/test@^1.59.0 @types/node@^25.9.1 @playwright/cli@latest react@^19.0.0 react-dom@^19.0.0 @types/react@^19.0.0 @types/react-dom@^19.0.0'..."
+        "Running 'npm install --save-dev @playwright/test@^1.59.0 @types/node@^25.9.1 @playwright/cli@latest react@^19.0.0 react-dom@^19.0.0 @types/react@^19.0.0 @types/react-dom@^19.0.0 vite@^7.0.0'..."
       )
     })
   })

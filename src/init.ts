@@ -20,6 +20,7 @@ import { SCREENCI_TERMS_URL } from './anonSession.js'
 const PLAYWRIGHT_TEST_VERSION = '^1.59.0'
 const PLAYWRIGHT_CLI_VERSION = 'latest'
 const NODE_TYPES_VERSION = '^25.9.1'
+const VITE_VERSION = '^7.0.0'
 const REACT_VERSION = '^19.0.0'
 const REACT_DOM_VERSION = '^19.0.0'
 const REACT_TYPES_VERSION = '^19.0.0'
@@ -1075,15 +1076,16 @@ async function installInitDependencies(
     ...(includePlaywrightCli
       ? [`@playwright/cli@${PLAYWRIGHT_CLI_VERSION}`]
       : []),
-    // React element overlays render via react/react-dom, which are optional
-    // peer deps imported lazily by createOverlays. Install them (and their
-    // types) so user-authored `.screenci.tsx` files resolve out of the box.
+    // React overlays render via react/react-dom and bundle via vite, all
+    // optional peer deps imported lazily by createOverlays. Install them (and
+    // the types) so user-authored `.screenci.tsx` files resolve out of the box.
     ...(includeReact
       ? [
           `react@${REACT_VERSION}`,
           `react-dom@${REACT_DOM_VERSION}`,
           `@types/react@${REACT_TYPES_VERSION}`,
           `@types/react-dom@${REACT_DOM_TYPES_VERSION}`,
+          `vite@${VITE_VERSION}`,
         ]
       : []),
   ]

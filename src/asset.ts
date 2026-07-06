@@ -12,7 +12,17 @@ import { parseTimelineOffset, type TimelineOffset } from './timelineOffset.js'
 import { validateCrop, resolveSourceTrim } from './sourceTrim.js'
 import { overlayRect } from './overlayRect.js'
 import { captureCallerFile } from './callerFile.js'
-import { buildClientOverlayDocument } from './clientOverlay.js'
+import {
+  buildClientOverlayDocument,
+  buildOverlayHostDocument,
+  type ClientOverlayEntry,
+  type OverlayFramework,
+} from './clientOverlay.js'
+import {
+  buildElementOverlayDocument,
+  isReactElement,
+  type ReactElementLike,
+} from './elementOverlay.js'
 import { logMissingAsset } from './missingAssetLog.js'
 import { access, readFile } from 'fs/promises'
 import { dirname, resolve } from 'path'
@@ -174,24 +184,80 @@ type OverlayVideoFields = {
 }
 
 /**
- * A full React page overlay: `path` ends in `.tsx`. The module default-exports a
- * React component that screenci bundles (with esbuild, an optional peer
- * dependency) and renders CLIENT-SIDE in the browser during capture, so the full
- * React runtime runs: function components with hooks and effects, class
+ * The inline content keys an overlay config can use instead of a file `path`.
+ * Every variant marks the keys it does not use as `never`, so a config can draw
+ * its content from exactly one source (enforced at the type level and again at
+ * recording time).
+ */
+type NoInlineContent = {
+  element?: never
+  jsx?: never
+  solidJsx?: never
+  html?: never
+}
+
+/**
+ * A full React page overlay: `path` ends in `.tsx`. The module default-exports
+ * a React component that screenci bundles (with Vite, an optional peer
+ * dependency) and renders CLIENT-SIDE in the browser during capture, so the
+ * full React runtime runs: function components with hooks and effects, class
  * components with lifecycle and state, inline styles, and `className`. With
  * `animate: true` the mounted app is advanced by the deterministic virtual clock
  * that samples each frame, so effect timers / `requestAnimationFrame` / state
  * updates drive the captured frames reproducibly.
  *
- * `props` are passed to the component. They are the ONLY overlay variant that
- * accepts `props`, enforced at the type level by the `.tsx` path suffix.
+ * `props` are passed to the component; they must be JSON-serializable.
  */
-export type TsxOverlayConfig = OverlayCommon & {
-  /** Path to a `.tsx` module that default-exports a React component, resolved relative to the recording file. */
-  path: `${string}.tsx`
-  /** Serializable props passed to the component (a `.tsx` overlay only). */
-  props?: Record<string, unknown>
-}
+export type TsxOverlayConfig = OverlayCommon &
+  NoInlineContent & {
+    /** Path to a `.tsx` module that default-exports a React component, resolved relative to the recording file. */
+    path: `${string}.tsx`
+    /** Serializable props passed to the component. */
+    props?: Record<string, unknown>
+  }
+
+/**
+ * A Solid page overlay: `path` ends in `.solid.tsx`. Works exactly like a
+ * `.tsx` React overlay, but the module default-exports a Solid component and
+ * is compiled with Solid's JSX transform (requires the optional peer
+ * dependencies `solid-js` and `vite-plugin-solid`). The extension is the only
+ * discriminator between React and Solid JSX files.
+ */
+export type SolidOverlayConfig = OverlayCommon &
+  NoInlineContent & {
+    /** Path to a `.solid.tsx` module that default-exports a Solid component, resolved relative to the recording file. */
+    path: `${string}.solid.tsx`
+    /** Serializable props passed to the component. */
+    props?: Record<string, unknown>
+  }
+
+/**
+ * A Vue single-file-component overlay: `path` ends in `.vue`. The component is
+ * bundled with Vite and mounted client-side (`createApp(Component, props)`), so
+ * the full Vue runtime runs, including its `<style>` block (requires the
+ * optional peer dependencies `vue` and `@vitejs/plugin-vue`).
+ */
+export type VueOverlayConfig = OverlayCommon &
+  NoInlineContent & {
+    /** Path to a `.vue` single-file component, resolved relative to the recording file. */
+    path: `${string}.vue`
+    /** Serializable props passed to the component (declare them with `defineProps`). */
+    props?: Record<string, unknown>
+  }
+
+/**
+ * A Svelte component overlay: `path` ends in `.svelte`. The component is
+ * bundled with Vite and mounted client-side (Svelte 5 `mount`), so the full
+ * Svelte runtime runs, including its `<style>` block (requires the optional
+ * peer dependencies `svelte` (v5+) and `@sveltejs/vite-plugin-svelte`).
+ */
+export type SvelteOverlayConfig = OverlayCommon &
+  NoInlineContent & {
+    /** Path to a `.svelte` component, resolved relative to the recording file. */
+    path: `${string}.svelte`
+    /** Serializable props passed to the component (declare them with `$props()`). */
+    props?: Record<string, unknown>
+  }
 
 /**
  * A full HTML page overlay: `path` ends in `.html`. The file is loaded as a
@@ -201,11 +267,12 @@ export type TsxOverlayConfig = OverlayCommon & {
  * tight sizing, wrap the content in `<div id="screenci-overlay-root">`. No
  * `props` (a full page owns its own content).
  */
-export type HtmlPageOverlayConfig = OverlayCommon & {
-  /** Path to a full `.html` document, resolved relative to the recording file. */
-  path: `${string}.html`
-  props?: never
-}
+export type HtmlPageOverlayConfig = OverlayCommon &
+  NoInlineContent & {
+    /** Path to a full `.html` document, resolved relative to the recording file. */
+    path: `${string}.html`
+    props?: never
+  }
 
 /**
  * An image (`.svg`/`.png`) or video (`.mp4`) file overlay. Only this variant
@@ -214,22 +281,102 @@ export type HtmlPageOverlayConfig = OverlayCommon & {
  * `props`.
  */
 export type MediaOverlayConfig = OverlayCommon &
-  OverlayVideoFields & {
+  OverlayVideoFields &
+  NoInlineContent & {
     /** File path: `.svg`/`.png` (image) or `.mp4` (video). */
     path: string
     props?: never
   }
 
 /**
- * Display options for an overlay. Content always comes from a file `path`; the
- * extension selects the variant: `.tsx` (a client-rendered React page, the only
- * variant accepting `props`), `.html` (a full HTML document), or `.svg`/`.png`/
- * `.mp4` (image/video, the only variant accepting the video-only fields).
+ * An inline React element overlay: the value of a JSX expression written
+ * directly in the recording file (`element: <Badge label="New" />`). The
+ * element is rendered in-process to static markup, so props are baked into the
+ * JSX and any test-scope value can be closed over directly; there is no
+ * separate `props` field. No client JS runs, so hooks and effects do not fire;
+ * CSS animations still play under the virtual clock with `animate: true`.
+ */
+export type ElementOverlayConfig = OverlayCommon & {
+  /** A React element rendered to static markup in-process. */
+  element: ReactElementLike
+  path?: never
+  jsx?: never
+  solidJsx?: never
+  html?: never
+  props?: never
+}
+
+/**
+ * An inline React module overlay: `jsx` is the source code of a module that
+ * default-exports a React component, written as a string in the recording
+ * file. It is bundled with Vite and mounted client-side exactly like a `.tsx`
+ * file overlay, so the full React runtime runs (hooks, effects,
+ * `requestAnimationFrame`). The source is compiled in isolation for the
+ * browser: it CANNOT close over test-scope variables; pass data through the
+ * serializable `props` instead. Imports resolve relative to the recording
+ * file's directory.
+ */
+export type JsxOverlayConfig = OverlayCommon & {
+  /** Source of a module default-exporting a React component. */
+  jsx: string
+  /** Serializable props passed to the component. */
+  props?: Record<string, unknown>
+  path?: never
+  element?: never
+  solidJsx?: never
+  html?: never
+}
+
+/**
+ * An inline Solid module overlay: like {@link JsxOverlayConfig}, but the source
+ * default-exports a Solid component and is compiled with Solid's JSX transform
+ * (requires the optional peer dependencies `solid-js` and `vite-plugin-solid`).
+ */
+export type SolidJsxOverlayConfig = OverlayCommon & {
+  /** Source of a module default-exporting a Solid component. */
+  solidJsx: string
+  /** Serializable props passed to the component. */
+  props?: Record<string, unknown>
+  path?: never
+  element?: never
+  jsx?: never
+  html?: never
+}
+
+/**
+ * An inline HTML fragment overlay: `html` is markup placed directly inside the
+ * transparent host document's overlay root. Include a `<style>` tag in the
+ * fragment for styling; scripts are not executed (use a `.html` file overlay
+ * for a page that owns its own scripts).
+ */
+export type InlineHtmlOverlayConfig = OverlayCommon & {
+  /** An HTML fragment placed inside the overlay root. */
+  html: string
+  path?: never
+  element?: never
+  jsx?: never
+  solidJsx?: never
+  props?: never
+}
+
+/**
+ * Display options for an overlay. Content comes from exactly one source: a
+ * file `path` (extension selects the variant: `.tsx` React / `.solid.tsx`
+ * Solid / `.vue` / `.svelte` / `.html` / `.svg` / `.png` / `.mp4`), an inline
+ * React `element`, inline `jsx`/`solidJsx` module source, or an inline `html`
+ * fragment. Only the `.mp4` media variant accepts the video-only fields.
  */
 export type OverlayConfig =
   | TsxOverlayConfig
+  | SolidOverlayConfig
+  | VueOverlayConfig
+  | SvelteOverlayConfig
   | HtmlPageOverlayConfig
   | MediaOverlayConfig
+  | ElementOverlayConfig
+  | JsxOverlayConfig
+  | SolidJsxOverlayConfig
+  | InlineHtmlOverlayConfig
 
 /**
  * Upper bound for an audio level (linear gain). `4` is +12 dB, plenty of
@@ -374,11 +521,16 @@ function isDependencyOverlayInput(
 /**
  * A value accepted by {@link createOverlays} for each key:
  *
- * - a `string` file path (`.tsx`/`.html`/`.svg`/`.png`/`.mp4`),
+ * - a `string` file path (`.tsx`/`.solid.tsx`/`.vue`/`.svelte`/`.html`/`.svg`/`.png`/`.mp4`),
+ * - a React element (`<Badge label="New" />`, shorthand for `{ element }`),
  * - an {@link OverlayConfig} object, or
  * - a {@link selected} render dependency.
  */
-export type OverlayInput = string | OverlayConfig | DependencyOverlayInput
+export type OverlayInput =
+  | string
+  | ReactElementLike
+  | OverlayConfig
+  | DependencyOverlayInput
 
 /**
  * A factory that builds an {@link OverlayConfig} from caller-supplied props.
@@ -692,35 +844,146 @@ function buildOverlayController(
   if (typeof input === 'string') {
     return buildOverlayFromConfig(name, { path: input })
   }
+  // A bare React element (`badge: <Badge />`) is shorthand for `{ element }`.
+  // Matched before the config branch: an element is a plain object too, but
+  // carries the React `$$typeof` brand.
+  if (isReactElement(input)) {
+    return buildOverlayFromConfig(name, { element: input })
+  }
   return buildOverlayFromConfig(name, input)
+}
+
+/**
+ * The resolved content source of an overlay config: which variant it is, plus
+ * the fields that variant needs downstream. `label` names the overlay content
+ * in error messages (the file path, or the inline kind).
+ */
+type OverlayContent =
+  | {
+      kind: 'bundled-file'
+      path: string
+      framework: OverlayFramework
+      label: string
+    }
+  | { kind: 'html-file'; path: string; label: string }
+  | {
+      kind: 'media-file'
+      path: string
+      extension: '.svg' | '.png' | '.mp4'
+      label: string
+    }
+  | { kind: 'element'; element: ReactElementLike; label: string }
+  | {
+      kind: 'inline-source'
+      code: string
+      framework: OverlayFramework
+      label: string
+    }
+  | { kind: 'inline-html'; html: string; label: string }
+
+const CONTENT_SOURCE_HINT =
+  'exactly one content source: a file "path" (.tsx, .solid.tsx, .vue, .svelte, .html, .svg, .png, or .mp4), a React "element", inline "jsx"/"solidJsx" module source, or an inline "html" fragment'
+
+/** Resolves which content variant a config uses, rejecting zero or several sources. */
+function resolveOverlayContent(
+  name: string,
+  config: OverlayConfig
+): OverlayContent {
+  const sources = [
+    config.path,
+    config.element,
+    config.jsx,
+    config.solidJsx,
+    config.html,
+  ].filter((value) => value !== undefined)
+  if (sources.length === 0) {
+    throw new Error(
+      `[screenci] Overlay "${name}" must provide ${CONTENT_SOURCE_HINT}.`
+    )
+  }
+  if (sources.length > 1) {
+    throw new Error(
+      `[screenci] Overlay "${name}" must provide ${CONTENT_SOURCE_HINT}; several were given.`
+    )
+  }
+  if (config.element !== undefined) {
+    if (!isReactElement(config.element)) {
+      throw new Error(
+        `[screenci] Overlay "${name}" has an "element" that is not a React element. Pass the value of a JSX expression, for example element: <Badge />.`
+      )
+    }
+    return { kind: 'element', element: config.element, label: 'element' }
+  }
+  if (config.jsx !== undefined) {
+    return {
+      kind: 'inline-source',
+      code: config.jsx,
+      framework: 'react',
+      label: 'inline jsx',
+    }
+  }
+  if (config.solidJsx !== undefined) {
+    return {
+      kind: 'inline-source',
+      code: config.solidJsx,
+      framework: 'solid',
+      label: 'inline solidJsx',
+    }
+  }
+  if (config.html !== undefined) {
+    return { kind: 'inline-html', html: config.html, label: 'inline html' }
+  }
+  const path = config.path as string
+  const extension = getAssetExtension(path)
+  if (extension === null) {
+    throw new Error(
+      `[screenci] Overlay "${name}" must use one of: .tsx, .solid.tsx, .vue, .svelte, .html, .svg, .png, .mp4. Received: ${path}`
+    )
+  }
+  switch (extension) {
+    case '.solid.tsx':
+      return { kind: 'bundled-file', path, framework: 'solid', label: path }
+    case '.tsx':
+      return { kind: 'bundled-file', path, framework: 'react', label: path }
+    case '.vue':
+      return { kind: 'bundled-file', path, framework: 'vue', label: path }
+    case '.svelte':
+      return { kind: 'bundled-file', path, framework: 'svelte', label: path }
+    case '.html':
+      return { kind: 'html-file', path, label: path }
+    case '.svg':
+    case '.png':
+    case '.mp4':
+      return { kind: 'media-file', path, extension, label: path }
+  }
 }
 
 function buildOverlayFromConfig(
   name: string,
   config: OverlayConfig
 ): OverlayController {
-  if (config.path === undefined) {
-    throw new Error(
-      `[screenci] Overlay "${name}" must provide a "path" (a .tsx, .html, .svg, .png, or .mp4 file).`
-    )
-  }
-  const path = config.path
-  const extension = getAssetExtension(path)
-  if (extension === null) {
-    throw new Error(
-      `[screenci] Overlay "${name}" must use one of: .tsx, .html, .svg, .png, .mp4. Received: ${path}`
-    )
-  }
-  const isRendered = extension === '.tsx' || extension === '.html'
-  const tsxConfig = config as TsxOverlayConfig
+  const content = resolveOverlayContent(name, config)
+  const label = content.label
+  // Every content variant except a media file rasterizes a rendered page.
+  const isRendered = content.kind !== 'media-file'
+  const props = (config as TsxOverlayConfig).props
   // The video-only fields live on MediaOverlayConfig; read them through this
-  // accessor since the union member is selected at runtime by the extension.
+  // accessor since the union member is selected at runtime by the content.
   const media = config as MediaOverlayConfig
 
-  // `props` are a .tsx-page-only concept (enforced at the type level too).
-  if (tsxConfig.props !== undefined && extension !== '.tsx') {
+  // `props` are a bundled-component concept (enforced at the type level too):
+  // the component is compiled for the browser, so data crosses over as
+  // serialized props.
+  const acceptsProps =
+    content.kind === 'bundled-file' || content.kind === 'inline-source'
+  if (props !== undefined && !acceptsProps) {
+    if (content.kind === 'element') {
+      throw new Error(
+        `[screenci] Overlay "${name}" (element) cannot use "props": an element renders in-process, so bake props into the JSX (element: <Badge label={value} />) and close over any test-scope values directly.`
+      )
+    }
     throw new Error(
-      `[screenci] Overlay "${name}" (${path}) cannot use "props": props are only supported for .tsx page overlays.`
+      `[screenci] Overlay "${name}" (${label}) cannot use "props": props are only supported for bundled component overlays (.tsx, .solid.tsx, .vue, .svelte files, or inline jsx/solidJsx source).`
     )
   }
 
@@ -745,54 +1008,44 @@ function buildOverlayFromConfig(
   }
   if (animate && !isRendered) {
     throw new Error(
-      `[screenci] Overlay "${name}" (${path}) cannot animate: "animate" is only supported for .html and .tsx page overlays.`
+      `[screenci] Overlay "${name}" (${label}) cannot animate: "animate" is only supported for rendered page overlays (.html, .tsx, .solid.tsx, .vue, .svelte, element, jsx/solidJsx, or inline html).`
     )
   }
 
+  const isVideoFile =
+    content.kind === 'media-file' && content.extension === '.mp4'
   // speed/time/start/end re-time a moving picture, so they only apply to .mp4
   // video overlays.
-  if (
-    (media.speed !== undefined || media.time !== undefined) &&
-    extension !== '.mp4'
-  ) {
+  if ((media.speed !== undefined || media.time !== undefined) && !isVideoFile) {
     throw new Error(
       `[screenci] Overlay "${name}" only supports speed/time on .mp4 video overlays.`
     )
   }
-  if (
-    (media.start !== undefined || media.end !== undefined) &&
-    extension !== '.mp4'
-  ) {
+  if ((media.start !== undefined || media.end !== undefined) && !isVideoFile) {
     throw new Error(
-      `[screenci] Overlay "${name}" (${path}) cannot use "start"/"end": source trim is only supported for .mp4 video overlays.`
+      `[screenci] Overlay "${name}" (${label}) cannot use "start"/"end": source trim is only supported for .mp4 video overlays.`
     )
   }
   // crop applies to image and video files only (not rendered pages).
   if (media.crop !== undefined && isRendered) {
     throw new Error(
-      `[screenci] Overlay "${name}" (${path}) cannot use "crop": crop is only supported for image (.svg/.png) and video (.mp4) file overlays.`
+      `[screenci] Overlay "${name}" (${label}) cannot use "crop": crop is only supported for image (.svg/.png) and video (.mp4) file overlays.`
     )
   }
 
-  // .tsx (client-rendered React page) and .html (full document) both rasterize
-  // to a transparent PNG (or animated clip). They differ only in how the full
-  // document is produced: a .tsx is bundled and mounts its React app into the
-  // overlay root (so we wait for it to mount before measuring); a .html file is
-  // loaded as-is.
+  // Every rendered variant rasterizes to a transparent PNG (or animated clip).
+  // They differ only in how the full document is produced: a bundled component
+  // (file or inline source) is compiled and mounts its app into the overlay
+  // root (so we wait for it to mount before measuring); an element is rendered
+  // to static markup in-process; a .html file is loaded as-is; an inline html
+  // fragment is wrapped in the host document.
   if (isRendered) {
-    registerAssetPath(path)
-    const awaitMount = extension === '.tsx'
-    const getDocument =
-      extension === '.tsx'
-        ? (): Promise<string> => {
-            const testFilePath = getScreenCIRuntimeContext().testFilePath
-            const entryPath =
-              testFilePath !== null
-                ? resolve(dirname(testFilePath), path)
-                : resolve(path)
-            return buildClientOverlayDocument(entryPath, tsxConfig.props)
-          }
-        : (): Promise<string> => readHtmlOverlayFile(path)
+    if (content.kind === 'bundled-file' || content.kind === 'html-file') {
+      registerAssetPath(content.path)
+    }
+    const awaitMount =
+      content.kind === 'bundled-file' || content.kind === 'inline-source'
+    const getDocument = buildRenderedOverlayGetDocument(content, props)
     const renderOpts: OverlayRenderOpts = awaitMount ? { awaitMount: true } : {}
     if (animate) {
       return createAnimatedOverlayController(
@@ -818,6 +1071,10 @@ function buildOverlayFromConfig(
       renderOpts
     )
   }
+
+  // Only the media-file kind reaches here: every rendered kind returned above.
+  const path = content.path
+  const extension = content.extension
 
   // Image/video file overlays never use `over` (rejected in
   // resolvePlacementSource), so the source is always a concrete placement.
@@ -894,6 +1151,53 @@ function buildOverlayFromConfig(
   throw new Error(
     `[screenci] Overlay "${name}" must use one of: .tsx, .html, .svg, .png, .mp4. Received: ${path}`
   )
+}
+
+/**
+ * Builds the document producer for a rendered overlay variant. Bundled
+ * components and inline source resolve against the active test file at capture
+ * time (not declaration time), matching how `.html` file overlays resolve.
+ */
+function buildRenderedOverlayGetDocument(
+  content: Exclude<OverlayContent, { kind: 'media-file' }>,
+  props: Record<string, unknown> | undefined
+): () => Promise<string> {
+  switch (content.kind) {
+    case 'bundled-file':
+      return (): Promise<string> => {
+        const testFilePath = getScreenCIRuntimeContext().testFilePath
+        const entryPath =
+          testFilePath !== null
+            ? resolve(dirname(testFilePath), content.path)
+            : resolve(content.path)
+        const entry: ClientOverlayEntry = {
+          kind: 'file',
+          path: entryPath,
+          framework: content.framework,
+        }
+        return buildClientOverlayDocument(entry, props)
+      }
+    case 'inline-source':
+      return (): Promise<string> => {
+        const testFilePath = getScreenCIRuntimeContext().testFilePath
+        const resolveDir =
+          testFilePath !== null ? dirname(testFilePath) : resolve('.')
+        const entry: ClientOverlayEntry = {
+          kind: 'source',
+          code: content.code,
+          resolveDir,
+          framework: content.framework,
+        }
+        return buildClientOverlayDocument(entry, props)
+      }
+    case 'html-file':
+      return (): Promise<string> => readHtmlOverlayFile(content.path)
+    case 'element':
+      return (): Promise<string> => buildElementOverlayDocument(content.element)
+    case 'inline-html':
+      return (): Promise<string> =>
+        Promise.resolve(buildOverlayHostDocument({ rootContent: content.html }))
+  }
 }
 
 async function readHtmlOverlayFile(path: string): Promise<string> {
@@ -1264,7 +1568,7 @@ function createRenderedOverlayController(
   renderOpts: OverlayRenderOpts = {}
 ): OverlayController {
   // The document and placement are resolved during the test (cheap: a file read
-  // or an esbuild bundle, plus a boundingBox read for `over`), but rasterization
+  // or a component bundle, plus a boundingBox read for `over`), but rasterization
   // (a browser screenshot) is deferred to after the test so identical overlays
   // render once. See overlayFlush.ts.
   let resolvedHtml: string | undefined
@@ -1448,12 +1752,26 @@ function createAnimatedOverlayController(
 
 function getAssetExtension(
   path: string
-): '.tsx' | '.html' | '.svg' | '.png' | '.mp4' | null {
+):
+  | '.tsx'
+  | '.solid.tsx'
+  | '.vue'
+  | '.svelte'
+  | '.html'
+  | '.svg'
+  | '.png'
+  | '.mp4'
+  | null {
+  // The compound Solid extension is matched first: a `.solid.tsx` path also
+  // ends in `.tsx`, and the longer suffix decides the JSX transform.
+  if (path.toLowerCase().endsWith('.solid.tsx')) return '.solid.tsx'
   const dotIndex = path.lastIndexOf('.')
   if (dotIndex === -1) return null
   const extension = path.slice(dotIndex).toLowerCase()
   if (
     extension === '.tsx' ||
+    extension === '.vue' ||
+    extension === '.svelte' ||
     extension === '.html' ||
     extension === '.svg' ||
     extension === '.png' ||
@@ -1663,7 +1981,7 @@ function resolvePlacementSource(
 
   if (!flags.isRendered) {
     throw new Error(
-      `[screenci] Overlay "${name}" can only use "over" with a .html or .tsx page overlay (the overlay is sized to the element's box).`
+      `[screenci] Overlay "${name}" can only use "over" with a rendered page overlay (.html, .tsx, .solid.tsx, .vue, .svelte, element, jsx/solidJsx, or inline html): the overlay is sized to the element's box.`
     )
   }
   if (config.fill !== undefined) {

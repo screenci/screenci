@@ -111,4 +111,26 @@ describe('timeline blocks', () => {
       'time() cannot be nested inside speed(); only hide() inside speed() or time() is supported'
     )
   })
+
+  it('emits speed end when the block body throws', async () => {
+    await expect(
+      speed(2, async () => {
+        throw new Error('boom')
+      })
+    ).rejects.toThrow('boom')
+
+    expect(recorder.addSpeedStart).toHaveBeenCalledWith(2)
+    expect(recorder.addSpeedEnd).toHaveBeenCalledOnce()
+  })
+
+  it('emits time end when the block body throws', async () => {
+    await expect(
+      time(1000, async () => {
+        throw new Error('boom')
+      })
+    ).rejects.toThrow('boom')
+
+    expect(recorder.addTimeStart).toHaveBeenCalledWith(1000)
+    expect(recorder.addTimeEnd).toHaveBeenCalledOnce()
+  })
 })

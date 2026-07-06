@@ -49,9 +49,12 @@ export async function runTimelineBlock({
       await sleep(POST_HIDE_PAUSE)
     }
   } finally {
-    popRuntimeTimelineBlock(type)
+    try {
+      popRuntimeTimelineBlock(type)
+    } finally {
+      emitEnd(recorder)
+    }
   }
-  emitEnd(recorder)
 }
 
 export function getActiveHideRecorder(): IEventRecorder {

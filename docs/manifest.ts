@@ -132,9 +132,9 @@ export const docsManifest = [
     section: 'Fixtures',
     order: 5,
     navLabel: 'Render dependencies',
-    title: 'Render dependencies',
+    title: 'Render Dependencies',
     description:
-      'Embed one render inside another with selected(name): reuse intro clips and logo stills across videos and screenshots, and have dependents re-render automatically when the target selection changes.',
+      'Reuse another ScreenCI video or screenshot with selected(...): embed its currently selected output, inherit its audio, optionally carry subtitles, and keep dependents updated when the source render changes.',
     prev: 'docs/guides/overlays',
     next: 'docs/guides/languages',
   },
@@ -308,6 +308,23 @@ export const docsManifest = [
   },
 ] as const
 
+const AUDIO_VALUES_DOCS_FLAG = 'SCREENCI_ENABLE_AUDIO_VALUES_DOCS'
+
+export function isAudioValuesDocsEnabled() {
+  return process.env[AUDIO_VALUES_DOCS_FLAG] === 'true'
+}
+
+function isSidebarVisibleDoc(entry: (typeof docsManifest)[number]) {
+  if (
+    entry.slug === 'docs/guides/audio' ||
+    entry.slug === 'docs/guides/values'
+  ) {
+    return isAudioValuesDocsEnabled()
+  }
+
+  return true
+}
+
 export const docsSections = [
   'Getting Started',
   'Fixtures',
@@ -343,6 +360,10 @@ export function getGeneratedDocsManifest() {
   }))
 }
 
+export function getVisibleDocsManifest() {
+  return docsManifest.filter(isSidebarVisibleDoc)
+}
+
 function toSidebarItem(entry: (typeof docsManifest)[number]) {
   return {
     label: entry.navLabel,
@@ -367,6 +388,7 @@ export function getDocsSidebarConfig(
   return docsSections.map((section) => {
     const items: Array<DocsSidebarItem | TypedocSidebarItem> = docsManifest
       .filter((entry) => entry.section === section)
+      .filter(isSidebarVisibleDoc)
       .sort((a, b) => a.order - b.order)
       .map(toSidebarItem)
 

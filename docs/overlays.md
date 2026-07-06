@@ -19,7 +19,6 @@ Overlays can be owned by code or handed to [Editor](./editor.md) (the web app wh
 - [how to define overlays](#define-overlays)
 - [how to position and size overlays](#positioning)
 - [how blocking and start/end timing work](#timing-and-control-flow)
-- [how to embed another render as an overlay](#render-dependencies)
 - [how to organize files for maintainable projects](#file-organization)
 
 ## Three ways to declare overlays
@@ -53,7 +52,6 @@ video.overlays(editable({ logo: { path: 'assets/logo.png', width: 288 } }))
 - a **file path** string (`.tsx`, `.html`, `.svg`, `.png`, `.mp4`),
 - a **config object** (`{ path, ...placement }`, plus `props` for a `.tsx` page),
 - a **factory** `(props) => config` (see [Programmatic overlays](#programmatic-overlays-props)), or
-- a **`selected(name)`** render dependency, which embeds another video or screenshot's output (see [Render dependencies](./dependencies.md)).
 
 Content always comes from `path`; the extension selects the variant. Only a `.tsx` page accepts `props`; only `.mp4`/image files accept the video/crop fields.
 
@@ -393,7 +391,7 @@ When no placement field is set, the overlay fills the recording area (the render
 
 ### Overlays and zoom (`pinToScreen`)
 
-By default an overlay is "burned" into the scene: when the camera zooms or pans (a `zoomTo`, an auto-zoom, or a `selected()` clip's own motion), the overlay moves and scales with the recording underneath it. So a ring placed `over` an element stays glued to that element as you zoom into it, and a badge anchored to part of the recording tracks that part.
+By default an overlay is "burned" into the scene: when the camera zooms or pans (a `zoomTo` or an auto-zoom), the overlay moves and scales with the recording underneath it. So a ring placed `over` an element stays glued to that element as you zoom into it, and a badge anchored to part of the recording tracks that part.
 
 Set `pinToScreen: true` to keep an overlay stuck to the screen instead: it holds a fixed position and size in the output frame, unaffected by zoom. Use it for HUD-style elements that should stay put, such as a persistent corner logo or a watermark-like badge:
 
@@ -569,8 +567,8 @@ For an overlay with an intrinsic length (a `.mp4` video, an embedded video
 dependency, or an [animated](#animated-overlays) HTML/React clip), `end()` lets
 the clip finish: if the media is longer than the live window, the remainder plays
 out over a frozen frame before the timeline continues, so the clip is never cut
-short by ending early. To show less of such a clip, trim it (`start`/`end`,
-`speed`/`time`, or `selected(..., { end })`) instead of calling `end()` sooner.
+short by ending early. To show less of such a clip, trim it (`start`/`end` or
+`speed`/`time`) instead of calling `end()` sooner.
 Length-less overlays (image, `.html`, `.tsx`) end exactly at `end()`.
 
 Overlays can overlap. Several can be live at the same time, and a blocking
@@ -599,26 +597,6 @@ Other timing notes:
 - overlays stay on top of the recording while the underlying screen continues
 
 That means you do not need separate timing math just to line an intro clip up with the next step.
-
-## Render dependencies
-
-Instead of a file, an overlay value can be `selected(name)`, which embeds another video or screenshot's rendered output as the overlay. Use it to reuse a separately-maintained intro clip or logo still across many renders and keep them in sync: when the embedded render's selection changes, every render that depends on it re-renders automatically.
-
-```ts
-import { video, selected } from 'screenci'
-
-video.overlays({ intro: selected('Intro Clip') })(
-  'Full Demo',
-  async ({ page, overlays }) => {
-    await overlays.intro() // embeds the "Intro Clip" render
-    await page.goto('/dashboard')
-  }
-)
-```
-
-A `selected(...)` overlay is driven and positioned like any other overlay, but reads no local file: the medium and concrete output are resolved by the service at render time. Screenshots may only embed other screenshots; videos may embed either, one level deep. Render dependencies are a Business tier feature.
-
-See [Render dependencies](./dependencies.md) for the full guide: declaring dependencies, selection and automatic re-renders, the waiting state, language matching, and edge cases.
 
 ## File organization
 

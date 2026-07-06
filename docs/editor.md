@@ -226,50 +226,6 @@ file. When you provide one, that text is used instead. Either way, captions are
 timed from the detected speech, so they appear only while the line is actually
 spoken (not during any leading silence or music).
 
-## Editor values from code
-
-On-screen values injected through the `values` fixture can be managed from
-Editor. Wrap an **array of field names** in `editable([...])` to keep the value in
-Editor, or pass a plain object with language-code keys to define the values in
-code and override them per language on the web. You can also seed the web app by
-passing an object to `editable({...})` (content-major like
-`{ cta: 'Get started' }`, or language-major like
-`{ en: { cta: 'Get started' }, fi: { cta: 'Aloita' } }`): the web app starts from
-those values but owns them, so a seed is used only until the field is edited in
-Editor.
-
-```ts
-video.values(editable(['cta'])).values({
-  en: { heading: 'Dashboard' },
-  fi: { heading: 'Hallinta' },
-})('Landing', async ({ page, values }) => {
-  await page.getByTestId('heading').fill(values.heading)
-  await page.getByTestId('cta').fill(values.cta)
-})
-```
-
-To seed the web app instead, pass an object to `editable({...})`:
-
-```ts
-video.values(editable({ cta: 'Get started' }))
-```
-
-The video's **Values** section lists each declared field; set its value per
-language. An Editor-managed `values` field that has not been set yet is the empty
-string, so the first recording still succeeds and registers the field in Editor.
-
-Unlike narration, voices, and overlays (which are applied when a version
-renders), on-screen values are captured into the recording itself. Editor cannot
-re-render them: saved values are injected by `screenci record` and take effect
-on the **next recording**, not when you click **Render** and not on a one-off.
-So the flow is: record once (unset fields capture blank), set the copy in the
-Values section, then re-record to capture it. The Values section shows this
-reminder inline, with a **Re-record this video** button that triggers a fresh
-recording from the web when the project is connected to GitHub (otherwise it
-links you to connect GitHub first).
-
-See [Values](/docs/guides/values) for the code-side `values` fixture.
-
 ## Editor overlays from code
 
 Wrap an **array of overlay names** in `editable([...])` and pass it to
@@ -315,56 +271,6 @@ Like editable narration, the first upload of a video that declares Editor overla
 is held until every declared overlay has a file configured in Editor. The CLI
 prints a direct link. Later uploads reuse the saved configuration. See
 [Overlays](./overlays.md) for how overlays behave on the timeline.
-
-## Editor audio from code
-
-Wrap an **array of track names** in `editable([...])` and pass it to
-`video.audio(...)` to declare the background-audio names in code while the file,
-volume, and repeat are configured in Editor. You can also seed the web app with
-starting files and options by passing an object to `editable({...})` (the same
-audio shapes you would define in code, content-major or language-major): the web
-app starts from those values but owns them, so a seed is used only until the
-track is edited in Editor. The declared names are exposed through the injected
-`audio` fixture:
-
-```ts
-import { video, editable } from 'screenci'
-
-video.audio(editable(['theme', 'sting']))(
-  'Product demo',
-  async ({ page, audio }) => {
-    await audio.theme() // plays under the whole video
-    await page.goto('/dashboard')
-    await audio.sting.start()
-    await page.click('#celebrate')
-    await audio.sting.end()
-  }
-)
-```
-
-To seed the web app instead, pass an object to `editable({...})` (the same audio
-shapes you would define in code):
-
-```ts
-video.audio(editable({ theme: { path: 'assets/bg.mp3', volume: 0.3 } }))
-```
-
-Calling a controller marks the point in the timeline, exactly like audio tracks
-whose files are defined in code: a bare call plays from that point to the end of
-the video, while `start()`/`end()` bound the track to a span. The audio file, the
-volume, and whether the track loops to fill its span are all set on the Editor
-page. The volume is a linear-gain slider: `1` (the default) plays the source at
-its natural level, `0` mutes it, and values above `1` boost it (up to `4`).
-Tracks also have **speed** and **time** controls: speed plays the track faster
-or slower (a multiplier), and time fits it to a target playback duration in ms.
-Set at most one.
-TypeScript knows the declared names, so `audio.typo` is a compile error.
-
-Like editable overlays, the first upload of a video that declares Editor audio is
-held until every declared track has a file configured in Editor. The CLI prints
-a direct link. Later uploads reuse the saved configuration. See
-[Background audio](./overlays.md) for how audio behaves on the
-timeline.
 
 ## Editor render and record options
 

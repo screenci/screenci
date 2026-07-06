@@ -86,7 +86,7 @@ export { time } from './src/time.js'
 export { autoZoom } from './src/autoZoom.js'
 export { zoomTo, resetZoom } from './src/manualZoom.js'
 export { hideNarration, showNarration } from './src/narrationVisibility.js'
-export { MAX_AUDIO_LEVEL, selected } from './src/asset.js'
+export { MAX_AUDIO_LEVEL } from './src/asset.js'
 export type {
   OverlayController,
   OverlayConfig,

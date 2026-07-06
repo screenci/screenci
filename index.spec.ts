@@ -20,7 +20,6 @@ describe('public api surface', () => {
       'resetZoom',
       'resolveLocaleForLanguage',
       'screenshot',
-      'selected',
       'showNarration',
       'speed',
       'time',

@@ -44,6 +44,12 @@ ScreenCI uses Playwright-style `.screenci.ts` files plus recording helpers:
 - `zoomTo()` / `resetZoom()` hold a fixed frame for forms and steady editing sections.
 - `video.narration({ ... })` is mandatory (see below).
 
+Use the fixture that matches the requested content instead of working around it:
+
+- `video.values(...)` for app-managed text or localized copy the app does not populate itself.
+- `video.audio(...)` for background music or sound effects that should mix under the recording.
+- `selected(name, options)` inside `video.overlays(...)` when the video should reuse another ScreenCI-made intro, outro, bumper, or screenshot instead of a repository asset file.
+
 ```ts
 import { video, voices } from 'screenci'
 

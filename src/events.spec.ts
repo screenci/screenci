@@ -95,6 +95,40 @@ describe('EventRecorder', () => {
     })
   })
 
+  describe('addSleep', () => {
+    it('records the sleep span starting durationMs before now', () => {
+      recorder.start()
+      now = 1500
+      recorder.addSleep(83, 'frameGap')
+
+      expect(recorder.getEvents().slice(1)).toEqual([
+        { type: 'sleep', timeMs: 417, durationMs: 83, reason: 'frameGap' },
+      ])
+    })
+
+    it('clamps the start to 0 when the sleep spans the recording start', () => {
+      recorder.start()
+      now = 1050
+      recorder.addSleep(100, 'postVideo')
+
+      expect(recorder.getEvents().slice(1)).toEqual([
+        { type: 'sleep', timeMs: 0, durationMs: 100, reason: 'postVideo' },
+      ])
+    })
+
+    it('ignores non-positive durations', () => {
+      recorder.start()
+      recorder.addSleep(0, 'frameGap')
+      recorder.addSleep(-5, 'cueAudio')
+      expect(recorder.getEvents()).toHaveLength(1)
+    })
+
+    it('is a no-op before start', () => {
+      recorder.addSleep(83, 'frameGap')
+      expect(recorder.getEvents()).toHaveLength(0)
+    })
+  })
+
   describe('background audio events', () => {
     it('records an audioStart with path, volume and repeat', () => {
       recorder.start()

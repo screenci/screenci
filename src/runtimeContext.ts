@@ -8,6 +8,7 @@ import {
 import type { AutoZoomOptions, RecordOptions, RenderOptions } from './types.js'
 import { DEFAULT_SCROLL_CENTERING } from './defaults.js'
 import type { ScreenshotCropRecord } from './crop.js'
+import type { CueDurationsMap } from './cueDurations.js'
 import type { ResolvedRedactStyle } from './redactController.js'
 
 export type CurrentZoomViewport = {
@@ -39,6 +40,14 @@ export type ActiveCueRun = {
   finished: Promise<void>
   resolveFinished: () => void
   startedWithExplicitStart: boolean
+  /** Wall-clock time the cueStart event was recorded, for exact-audio pacing. */
+  startedAtMs?: number
+  /**
+   * Known narration audio durations for this cue's video (record-time pacing),
+   * captured from the controller so the cue end can sleep the audio remainder.
+   * Null when pacing is off (shared mode, fast mode, no credentials).
+   */
+  durations?: Promise<CueDurationsMap> | null
 }
 
 export type ActiveAssetRun = {
@@ -77,6 +86,12 @@ export type ScreenCIRuntimeContext = {
   clickRecorder: IEventRecorder
   page: Page | null
   testFilePath: string | null
+  /**
+   * Language of a per-language recording pass, or null in shared and
+   * single-language modes. Gates exact cue-audio pacing: only a per-language
+   * pass knows which language's narration duration to sleep.
+   */
+  activeLanguage: string | null
   /**
    * Per-recording output directory (`.screenci/<title>/`) when recording is
    * active. Generated overlay assets (HTML/React rasterized to PNG) are written
@@ -148,6 +163,7 @@ export function createScreenCIRuntimeContext(
     recordOptions?: RecordOptions | null
     renderOptions?: RenderOptions | undefined
     captureKind?: CaptureKind
+    activeLanguage?: string | null
   } = {}
 ): ScreenCIRuntimeContext {
   const defaultRecorder = overrides.recorder ?? NOOP_EVENT_RECORDER
@@ -160,6 +176,7 @@ export function createScreenCIRuntimeContext(
     clickRecorder: defaultRecorder,
     page: overrides.page ?? null,
     testFilePath: overrides.testFilePath ?? null,
+    activeLanguage: overrides.activeLanguage ?? null,
     recordingDir: overrides.recordingDir ?? null,
     recordOptions: overrides.recordOptions ?? null,
     renderOptions: overrides.renderOptions,
@@ -269,6 +286,10 @@ export function setRuntimePage(page: Page | null): void {
 
 export function getRuntimePage(): Page | null {
   return getScreenCIRuntimeContext().page
+}
+
+export function getRuntimeActiveLanguage(): string | null {
+  return getScreenCIRuntimeContext().activeLanguage
 }
 
 export function getRuntimeRecordingDir(): string | null {

@@ -918,6 +918,7 @@ const _videoBase = base.extend<
         testFilePath,
         recordOptions,
         renderOptions: renderOptionsObj,
+        activeLanguage: _screenciLanguage ?? null,
       })
       bindStillCaptureToPage(page)
       await setupMouseTracking(page, recorder)
@@ -977,6 +978,7 @@ const _videoBase = base.extend<
       recordingDir: videoDir,
       recordOptions,
       renderOptions: renderOptionsObj,
+      activeLanguage: _screenciLanguage ?? null,
     })
 
     await setupMouseTracking(page, recorder)
@@ -1056,6 +1058,7 @@ const _videoBase = base.extend<
 
           // Do not end video abruptly.
           await sleep(POST_VIDEO_PAUSE)
+          recorder.addSleep(POST_VIDEO_PAUSE, 'postVideo')
         },
       })
     } finally {

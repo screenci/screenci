@@ -38,14 +38,32 @@ import {
 } from './assetHash.js'
 import {
   getScreenCIRuntimeContext,
+  getRuntimeActiveLanguage,
   getRuntimeCueRecorder,
   resetCueRuntimeState,
   setRuntimeCueRecorder,
+  type ActiveCueRun,
 } from './runtimeContext.js'
-import { resolveRecordingTimingDuration } from './runtimeMode.js'
+import { performRecordedSleep } from './recordedSleep.js'
+import {
+  fetchCueDurations,
+  type FetchCueDurationsDeps,
+} from './cueDurations.js'
+import {
+  isFastNarrationEnabled,
+  isScreenciRecordingEnabled,
+} from './runtimeMode.js'
+import { getDevBackendUrl } from './linkSession.js'
+import { join } from 'path'
 
-// One frame at 24fps — ensures at least one rendered frame captures each cue state.
+// One frame at 24fps, ensures at least one rendered frame captures each cue state.
 export const ONE_FRAME_MS = 1000 / 24
+
+// Pause the renderer leaves between consecutive narration cues. Must match
+// CUE_BETWEEN_PAUSE_MS in apps/rendering/src/recording/cueTimings.ts (the SDK
+// cannot import from the rendering app): the exact-audio pacing sleep covers
+// audio duration plus this pause so the render-time hold at the cue end is ~0.
+export const CUE_BETWEEN_PAUSE_MS = 500
 
 // Blocking sleep — spin until the elapsed time has passed
 let sleepFn = (ms: number): void => {
@@ -56,12 +74,12 @@ let sleepFn = (ms: number): void => {
 }
 
 function sleepForCueFrameGap(): void {
-  const durationMs = resolveRecordingTimingDuration(2 * ONE_FRAME_MS)
-  if (durationMs <= 0) {
-    return
-  }
-
-  sleepFn(durationMs)
+  performRecordedSleep(
+    getRuntimeCueRecorder(),
+    2 * ONE_FRAME_MS,
+    'frameGap',
+    (ms) => sleepFn(ms)
+  )
 }
 
 export function setSleepFn(fn: (ms: number) => void): void {
@@ -144,10 +162,89 @@ async function toRecordedVoice(
 }
 
 /**
+ * Sleeps the remainder of the active cue's narration audio window (audio
+ * duration plus the inter-cue pause, minus the recording time already elapsed
+ * since cueStart), recorded as a `cueAudio` sleep. Run before the cueEnd event
+ * so the cue window in the recording spans the audio and the render-time hold
+ * at the cue end collapses to ~0. A no-op when the duration is unknown; the
+ * renderer's hold then covers the full audio length as before.
+ */
+async function sleepForCueAudioRemainder(): Promise<void> {
+  const context = getScreenCIRuntimeContext()
+  const run = context.cue.activeCueRun
+  const name = context.cue.activeCueName
+  if (run == null || name === null) return
+  if (run.durations == null || run.startedAtMs === undefined) return
+  const durations = await run.durations
+  const durationMs = durations.get(name)
+  if (durationMs == null) return
+  const elapsedMs = Date.now() - run.startedAtMs
+  const remainderMs = durationMs + CUE_BETWEEN_PAUSE_MS - elapsedMs
+  if (remainderMs <= 0) return
+  performRecordedSleep(getRuntimeCueRecorder(), remainderMs, 'cueAudio', (ms) =>
+    sleepFn(ms)
+  )
+}
+
+// Injectable for tests: overrides the duration fetch dependencies.
+let cueDurationFetchDeps: FetchCueDurationsDeps | undefined
+export function setCueDurationFetchDeps(
+  deps: FetchCueDurationsDeps | undefined
+): void {
+  cueDurationFetchDeps = deps
+}
+
+/**
+ * Whether this run paces cues with real audio durations: a recording pass for
+ * one specific language (per-language mode), not fast mode, with credentials
+ * to reach the backend. Everything else keeps frame-gap pacing and lets the
+ * render-time holds cover the audio.
+ */
+function shouldPaceCueAudio(): boolean {
+  return (
+    isScreenciRecordingEnabled() &&
+    !isFastNarrationEnabled() &&
+    getRuntimeActiveLanguage() !== null &&
+    typeof process.env['SCREENCI_SECRET'] === 'string' &&
+    process.env['SCREENCI_SECRET'] !== ''
+  )
+}
+
+/**
+ * Kicks off the duration lookup for a text cue and attaches it to the active
+ * cue run so the cue's end can sleep the audio remainder. Called from the
+ * cue-start emitters with the exact translations payload they just recorded,
+ * so the backend derives the same cue hash the render will. Best-effort: any
+ * failure resolves to an empty map and the cue falls back to frame-gap pacing.
+ */
+function startCueAudioPacing(
+  name: string,
+  translations: Record<string, unknown>
+): void {
+  const context = getScreenCIRuntimeContext()
+  const run = context.cue.activeCueRun
+  if (run == null) return
+  if (!shouldPaceCueAudio()) {
+    run.durations = null
+    return
+  }
+  const language = getRuntimeActiveLanguage()!
+  const configDir = process.env['SCREENCI_CONFIG_DIR'] ?? process.cwd()
+  run.durations = fetchCueDurations({
+    language,
+    cueEvents: [{ type: 'cueStart', name, translations }],
+    backendUrl: getDevBackendUrl(),
+    secret: process.env['SCREENCI_SECRET']!,
+    cacheDir: join(configDir, '.screenci'),
+    ...(cueDurationFetchDeps !== undefined && { deps: cueDurationFetchDeps }),
+  }).catch(() => new Map<string, number | null>())
+}
+
+/**
  * Auto-ends any currently active cue before starting a new one.
  * Called internally at the start of every narration controller.
  */
-function cueAutoEnd(nextCueName: string): void {
+async function cueAutoEnd(nextCueName: string): Promise<void> {
   const context = getScreenCIRuntimeContext()
   if (context.cue.activeCueRun === null) return
   if (
@@ -158,6 +255,7 @@ function cueAutoEnd(nextCueName: string): void {
       `[screenci] Cue "${context.cue.activeCueName}" was started with .start() and auto-ended when cue "${nextCueName}" started. Call .end() explicitly before starting the next narration cue.`
     )
   }
+  await sleepForCueAudioRemainder()
   context.cueRecorder.addCueEnd('auto')
   sleepForCueFrameGap()
   context.cue.activeCueRun.resolveFinished()
@@ -186,11 +284,7 @@ function createDeferred(): {
   return { promise, resolve }
 }
 
-function createActiveCueRun(startedWithExplicitStart: boolean): {
-  finished: Promise<void>
-  resolveFinished: () => void
-  startedWithExplicitStart: boolean
-} {
+function createActiveCueRun(startedWithExplicitStart: boolean): ActiveCueRun {
   const deferred = createDeferred()
   return {
     finished: deferred.promise,
@@ -204,6 +298,7 @@ async function endActiveCue(): Promise<void> {
   if (context.cue.activeCueRun === null) return
   if (isInsideHide()) throw new Error('Cannot call end() inside hide()')
   const run = context.cue.activeCueRun
+  await sleepForCueAudioRemainder()
   context.cueRecorder.addCueEnd('wait')
   sleepForCueFrameGap()
   run.resolveFinished()
@@ -497,11 +592,16 @@ function createCueController(
       assertUniqueCueName(name)
       didRegisterName = true
     }
-    cueAutoEnd(name)
+    await cueAutoEnd(name)
     const run = createActiveCueRun(startedWithExplicitStart)
     context.cue.activeCueName = name
     context.cue.activeCueRun = run
+    // emitStart may attach exact-audio pacing durations to the active run via
+    // startCueAudioPacing (text cues in per-language recording).
     await emitStart(recorder, until)
+    // The audio window starts at the cueStart event just recorded; the cue end
+    // sleeps the remainder of audio + pause measured from here.
+    run.startedAtMs = Date.now()
   }
 
   const end = async (): Promise<void> => {
@@ -912,6 +1012,7 @@ function buildCuesFromInput(
           textTranslations,
           ...cueTrailingArgs(cueVolume, until)
         )
+        startCueAudioPacing(keyStr, textTranslations)
       })
     }
   }
@@ -1197,6 +1298,7 @@ export function buildLocalizedNarrationCues(
             until,
             isStudio
           )
+          startCueAudioPacing(cueName, textTranslations)
         }
       )
     }

@@ -321,6 +321,23 @@ export type AutoZoomEndEvent = {
   duration: number
 }
 
+/** Why an artificial sleep was performed during recording. */
+export type SleepReason = 'frameGap' | 'cueAudio' | 'postVideo'
+
+/**
+ * Marks a span of recording time that was an artificial sleep rather than real
+ * content. The renderer uses these spans to decide which gaps between
+ * overlays/hides/cues can be snapped away.
+ */
+export type SleepEvent = {
+  type: 'sleep'
+  /** Recording-relative start of the sleep. */
+  timeMs: number
+  /** Actually slept milliseconds, after recording-timing scaling. */
+  durationMs: number
+  reason: SleepReason
+}
+
 export type RecordingEvent =
   | VideoStartEvent
   | InputEvent
@@ -337,6 +354,7 @@ export type RecordingEvent =
   | TimeEndEvent
   | AutoZoomStartEvent
   | AutoZoomEndEvent
+  | SleepEvent
 
 export type RecordingMetadata = {
   videoName: string

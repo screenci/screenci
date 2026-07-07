@@ -50,6 +50,7 @@ import {
   SCREENCI_LANGUAGES_ENV,
   SCREENCI_VALUES_OVERRIDES_ENV,
   SCREENCI_RECORD_OPTIONS_ENV,
+  SCREENCI_FAST_NARRATION_ENV,
   isUploadExistingEnabled,
 } from './src/runtimeMode.js'
 import { DEFAULT_RECORD_UPLOAD_POLICY } from './src/defaults.js'
@@ -3526,6 +3527,10 @@ export async function main() {
       '--languages <langs>',
       'record/render only these languages (comma-separated, e.g. fi,en)'
     )
+    .option(
+      '--fast-narration',
+      'skip narration-length pacing while recording; the render freezes frames for the audio instead'
+    )
     .allowUnknownOption(true)
     .action(async () => {
       const parsed = parseRecordCliArgs(getSubcommandArgv('record'))
@@ -3582,7 +3587,8 @@ export async function main() {
               parsed.configPath,
               parsed.verbose,
               false,
-              parsed.languages
+              parsed.languages,
+              parsed.fastNarration
             )
           } catch (error) {
             if (!(error instanceof Error)) throw error
@@ -3795,11 +3801,13 @@ export function parseRecordCliArgs(args: string[]): {
   verbose: boolean
   remote: boolean
   languages: string | undefined
+  fastNarration: boolean
   otherArgs: string[]
 } {
   let configPath: string | undefined
   let verbose = false
   let remote = false
+  let fastNarration = false
   let languages: string | undefined
   const otherArgs: string[] = []
 
@@ -3832,6 +3840,9 @@ export function parseRecordCliArgs(args: string[]): {
       verbose = true
     } else if (arg === '--remote') {
       remote = true
+    } else if (arg === '--fast-narration') {
+      // screenci-only flag: parsed out so it is not forwarded to Playwright.
+      fastNarration = true
     } else {
       otherArgs.push(arg)
     }
@@ -3842,6 +3853,7 @@ export function parseRecordCliArgs(args: string[]): {
     verbose,
     remote,
     languages,
+    fastNarration,
     otherArgs,
   }
 }
@@ -4030,7 +4042,8 @@ async function run(
   customConfigPath?: string,
   verbose = false,
   mockRecord = false,
-  languages?: string
+  languages?: string,
+  fastNarration = false
 ) {
   const configPath = resolveScreenCIConfigPathOrExit(customConfigPath)
 
@@ -4125,6 +4138,10 @@ async function run(
         : {}),
       ...(command === 'test' && mockRecord
         ? { [SCREENCI_MOCK_RECORD_ENV]: 'true' }
+        : {}),
+      // Skip exact cue-audio pacing sleeps: holds absorb the audio at render.
+      ...(command === 'record' && fastNarration
+        ? { [SCREENCI_FAST_NARRATION_ENV]: 'true' }
         : {}),
     },
   })

@@ -75,6 +75,7 @@ function createMockRecorder(): IEventRecorder {
     addAudioEnd: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),
+    addSleep: vi.fn(),
     addAutoZoomStart: vi.fn(),
     addAutoZoomEnd: vi.fn(),
     registerVoiceForLang: vi.fn(),

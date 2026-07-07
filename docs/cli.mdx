@@ -276,6 +276,20 @@ A shared-mode recording (`{ mode: 'shared' }`) is a single capture and is not
 split by this filter. See
 [Languages](/docs/guides/languages) for the recording API.
 
+### `--fast-narration`
+
+Skip narration-length pacing while recording. By default a per-language
+recording sleeps each cue's real audio length so the recording matches the
+finished video (see
+[How recording pacing works](/docs/guides/narration#how-recording-pacing-works)).
+With this flag the recording keeps only a short gap per cue and finishes as
+fast as the interactions allow; the render freezes a frame for the remaining
+audio instead:
+
+```bash
+npx screenci record --fast-narration
+```
+
 Behavior:
 
 - enables recording timing

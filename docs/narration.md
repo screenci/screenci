@@ -123,6 +123,29 @@ Use the cue markers intentionally:
 That is the main tool for overlapping speech with UI motion without losing
 control of the timeline.
 
+### How recording pacing works
+
+When a recording pass targets one language (the default per-language mode) and
+your project is linked to an account, ScreenCI looks up each cue's real audio
+length before the cue ends and paces the recording to it: `await narration.key()`
+takes as long as the spoken line, and the recording's length matches the
+finished video. This makes freeze-frames (inserted when the audio outlasts the
+recording) the exception rather than the rule.
+
+Pacing is best-effort. When the length is unknown (offline, shared-capture
+multi-language mode, or an unlinked project) the recording keeps only a short
+gap per cue and the render freezes a frame for the remaining audio, exactly as
+before. Editing narration text after recording re-renders without re-recording:
+the render inserts the missing time when a line grew, and trims the paced-in
+extra when a line shrank (never cutting into mouse movement, scrolls, clicks,
+or zooms; a safety buffer is kept around them).
+
+To skip pacing and record as fast as possible, pass `--fast-narration`:
+
+```bash
+npx screenci record --fast-narration
+```
+
 ### Holding a cue until a position
 
 Pass a string position to hold the cue window until an absolute point in the

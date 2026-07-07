@@ -26,7 +26,7 @@ import {
 import { logMissingAsset } from './missingAssetLog.js'
 import { access, readFile } from 'fs/promises'
 import { dirname, resolve } from 'path'
-import { resolveRecordingTimingDuration } from './runtimeMode.js'
+import { performRecordedSleep } from './recordedSleep.js'
 import {
   DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
   DEFAULT_ANIMATION_FPS,
@@ -597,9 +597,12 @@ export function setAssetSleepFn(fn: (ms: number) => void): void {
 }
 
 function sleepForAssetFrameGap(): void {
-  const durationMs = resolveRecordingTimingDuration(2 * ONE_FRAME_MS)
-  if (durationMs <= 0) return
-  sleepFn(durationMs)
+  performRecordedSleep(
+    getRuntimeAssetRecorder(),
+    2 * ONE_FRAME_MS,
+    'frameGap',
+    (ms) => sleepFn(ms)
+  )
 }
 
 export function setActiveAssetRecorder(recorder: IEventRecorder | null): void {

@@ -9,9 +9,11 @@ import {
   setActiveCueRecorder,
   resetCueChain,
   setSleepFn,
+  setCueDurationFetchDeps,
   validateCustomVoiceRefs,
   assertNarrationLanguagesMatch,
   resetMissingNarrationAssetWarnings,
+  CUE_BETWEEN_PAUSE_MS,
 } from './cue.js'
 import * as screenci from '../index.js'
 import { hide, setActiveHideRecorder } from './hide.js'
@@ -25,6 +27,7 @@ import { logger } from './logger.js'
 import {
   createScreenCIRuntimeContext,
   runWithScreenCIRuntimeContext,
+  setActiveScreenCIRuntimeContext,
 } from './runtimeContext.js'
 
 function createMockRecorder(): IEventRecorder {
@@ -44,6 +47,7 @@ function createMockRecorder(): IEventRecorder {
     addSpeedEnd: vi.fn(),
     addTimeStart: vi.fn(),
     addTimeEnd: vi.fn(),
+    addSleep: vi.fn(),
     addAutoZoomStart: vi.fn(),
     addAutoZoomEnd: vi.fn(),
     registerVoiceForLang: vi.fn(),
@@ -1125,5 +1129,130 @@ describe('assertNarrationLanguagesMatch', () => {
     expect(() =>
       assertNarrationLanguagesMatch({ en: {}, de: {} }, ['en'])
     ).toThrow(/unexpected de/)
+  })
+})
+
+describe('exact cue-audio pacing', () => {
+  let recorder: IEventRecorder
+  let sleeps: number[]
+  let originalEnv: NodeJS.ProcessEnv
+  let now: number
+
+  beforeEach(() => {
+    originalEnv = { ...process.env }
+    process.env.SCREENCI_RECORDING = 'true'
+    process.env.SCREENCI_SECRET = 'test-secret'
+    delete process.env.SCREENCI_FAST_NARRATION
+    now = 100_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    sleeps = []
+    recorder = createMockRecorder()
+    setSleepFn((ms) => {
+      sleeps.push(ms)
+      now += ms
+    })
+    setActiveScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ recorder, activeLanguage: 'en' })
+    )
+    setCueDurationFetchDeps({
+      fetchFn: (async () =>
+        Response.json({
+          durations: [
+            { name: 'intro', inputHash: 'h1', durationMs: 2000 },
+            { name: 'outro', inputHash: 'h2', durationMs: null },
+          ],
+        })) as unknown as typeof fetch,
+      readFile: async () => {
+        throw new Error('no cache')
+      },
+      writeFile: async () => {},
+      mkdir: async () => undefined,
+    })
+  })
+
+  afterEach(() => {
+    process.env = originalEnv
+    vi.restoreAllMocks()
+    setCueDurationFetchDeps(undefined)
+    setActiveScreenCIRuntimeContext(null)
+    setActiveCueRecorder(NOOP_EVENT_RECORDER)
+    setSleepFn((ms) => {
+      const end = performance.now() + ms
+      while (performance.now() < end) {}
+    })
+  })
+
+  it('sleeps the audio duration plus the inter-cue pause, recorded as cueAudio', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro()
+
+    // Remainder is measured from cueStart: with the mocked clock only the
+    // in-block frame-gap sleep elapses before the cue end.
+    const frameGapMs = 2 * (1000 / 24)
+    const expectedRemainder = 2000 + CUE_BETWEEN_PAUSE_MS - frameGapMs
+    expect(recorder.addSleep).toHaveBeenCalledWith(
+      expect.closeTo(expectedRemainder, 5),
+      'cueAudio'
+    )
+    expect(sleeps.some((ms) => ms > 1000)).toBe(true)
+  })
+
+  it('falls back to frame gaps when the duration is unknown (null)', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.outro()
+
+    expect(recorder.addSleep).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'cueAudio'
+    )
+  })
+
+  it('skips pacing in fast narration mode', async () => {
+    process.env.SCREENCI_FAST_NARRATION = 'true'
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro()
+
+    expect(recorder.addSleep).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'cueAudio'
+    )
+  })
+
+  it('skips pacing in shared mode (no active language)', async () => {
+    setActiveScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ recorder, activeLanguage: null })
+    )
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro()
+
+    expect(recorder.addSleep).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'cueAudio'
+    )
+  })
+
+  it('falls back to frame gaps when the duration fetch fails', async () => {
+    setCueDurationFetchDeps({
+      fetchFn: (async () => {
+        throw new Error('offline')
+      }) as unknown as typeof fetch,
+      readFile: async () => {
+        throw new Error('no cache')
+      },
+      writeFile: async () => {},
+      mkdir: async () => undefined,
+    })
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro()
+
+    expect(recorder.addSleep).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'cueAudio'
+    )
   })
 })

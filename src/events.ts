@@ -854,6 +854,30 @@ export type NarrationShowEvent = {
   timeMs: number
 }
 
+/** Why an artificial sleep was performed during recording. */
+export type SleepReason =
+  /** Short spin around a cue/asset boundary so at least one frame captures each state. */
+  | 'frameGap'
+  /** Sleep matching the cue's known narration audio duration (record-time pacing). */
+  | 'cueAudio'
+  /** The fixed pause at the end of the video so it does not end abruptly. */
+  | 'postVideo'
+
+/**
+ * Marks a span of recording time that was an artificial sleep rather than real
+ * content. The renderer uses these spans to decide causally which gaps between
+ * overlays/hides/cues can be snapped away, and to know how much cue audio time
+ * was already paced into the recording.
+ */
+export type SleepEvent = {
+  type: 'sleep'
+  /** Recording-relative start of the sleep. */
+  timeMs: number
+  /** Actually slept milliseconds, after recording-timing scaling. */
+  durationMs: number
+  reason: SleepReason
+}
+
 export type RecordingEvent =
   | VideoStartEvent
   | InputEvent
@@ -877,6 +901,7 @@ export type RecordingEvent =
   | AutoZoomEndEvent
   | NarrationHideEvent
   | NarrationShowEvent
+  | SleepEvent
 
 export type VoiceLanguageMeta = {
   /** Voice key string: a built-in voice name or an external voice key. */
@@ -1130,6 +1155,12 @@ export interface IEventRecorder {
   addNarrationHide(): void
   addNarrationShow(): void
   /**
+   * Records an artificial sleep that just finished. `durationMs` is the actually
+   * slept time (after recording-timing scaling); the event's `timeMs` is derived
+   * as the sleep's start, i.e. now minus `durationMs`.
+   */
+  addSleep(durationMs: number, reason: SleepReason): void
+  /**
    * Registers voice metadata seen during recording.
    * Kept for API compatibility; voice settings are stored per cue event.
    */
@@ -1177,6 +1208,7 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addAutoZoomEnd(): void {},
   addNarrationHide(): void {},
   addNarrationShow(): void {},
+  addSleep(): void {},
   registerVoiceForLang(): void {},
   getEvents(): RecordingEvent[] {
     return []
@@ -1829,6 +1861,14 @@ export class EventRecorder implements IEventRecorder {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     this.events.push({ type: 'narrationShow', timeMs })
+  }
+
+  addSleep(durationMs: number, reason: SleepReason): void {
+    if (this.startTime === null) return
+    if (durationMs <= 0) return
+    // Called right after the sleep finished, so the span starts durationMs ago.
+    const timeMs = Math.max(0, Date.now() - this.startTime - durationMs)
+    this.events.push({ type: 'sleep', timeMs, durationMs, reason })
   }
 
   getEvents(): RecordingEvent[] {

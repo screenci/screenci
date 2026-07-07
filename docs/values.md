@@ -72,13 +72,20 @@ object (content-major like `{ cta: 'Get started' }`, or language-major like
 used until the field is edited in Editor, and from then on the Editor value
 wins.
 
-The first recording reports the declared fields so Editor learns them. An unset
-Editor field resolves to the empty string, so that first recording still
-succeeds. Open the video's **Values** section in Editor, set each language's
-value, then re-record: `screenci record` fetches the current values and injects
-them before the run. Because on-screen values are captured into the recording
-(not re-rendered), Editor values always take effect on the next record, never on
-a one-off re-render.
+The first recording reports the declared fields so Editor learns them. Because a
+blank field has no value yet and on-screen values are captured into the frames,
+the video's **first render is held** until you set the values, just like blank
+[narration](./narration.md), [overlays](./overlays.md), and [audio](./audio.md).
+The CLI prints the hold with a direct link to Editor. Open the video's
+**Values** section in Editor, set each language's value, then re-record:
+`screenci record` fetches the current values and injects them before the run.
+Because on-screen values are captured into the recording (not re-rendered),
+Editor values always take effect on the next record, never on a one-off
+re-render.
+
+A field declared with a code value (the object form below) carries its text, so
+it is **not** held: the recording renders straight away from the code value
+while staying editable in Editor.
 
 ## Values in screenshots
 

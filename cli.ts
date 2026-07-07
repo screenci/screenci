@@ -850,6 +850,8 @@ async function uploadRecordingCandidate(
         reason: string
         detail: string
       }>
+      pendingDependencyTargets?: string[]
+      dependencyNotices?: string[]
       notices?: string[]
     }
     const { recordingId } = startBody
@@ -866,6 +868,30 @@ async function uploadRecordingCandidate(
         logger.error(
           `Render dependency error in "${displayVideoName}": ${depError.detail}. This render will fail until it is fixed.`
         )
+      }
+    }
+
+    // A dependency target with no video yet: usually the target is uploading in
+    // this same run, so the render waits for it and is dispatched automatically
+    // once the target has an output. A typo in the name would wait forever, so
+    // name the targets being waited on.
+    if (
+      startBody.pendingDependencyTargets &&
+      startBody.pendingDependencyTargets.length > 0
+    ) {
+      for (const targetName of startBody.pendingDependencyTargets) {
+        logger.info(
+          `"${displayVideoName}" depends on "${targetName}", which has no render yet. It will wait and render automatically once "${targetName}" finishes. If "${targetName}" is not part of this project, check the name.`
+        )
+      }
+    }
+
+    // Dependency warnings, e.g. a target with auto-select off: the dependent
+    // will keep embedding the currently selected render until a new one is
+    // selected manually in the app.
+    if (startBody.dependencyNotices && startBody.dependencyNotices.length > 0) {
+      for (const notice of startBody.dependencyNotices) {
+        logger.warn(`Render dependency in "${displayVideoName}": ${notice}`)
       }
     }
 

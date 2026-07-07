@@ -304,24 +304,22 @@ Other parts of the spec:
 - short, sentence-sized cues instead of paragraph-sized narration blocks
 
 Voice is configured separately as a render option in `renderOptions.narration`
-(via `video.use(...)` or `screenci.config.ts`), with a default `voice` and
-per-language `voices` overrides.
+(via `video.renderOptions(...)` or `screenci.config.ts`), with a default `voice`
+and per-language `voices` overrides.
 
 ```ts
 import { video, voices } from 'screenci'
 
 // Voice is a render option (how narration is spoken).
-video.use({
-  renderOptions: { narration: { voice: { name: voices.Ava } } },
-})
-
-// Localized narration cues by language.
-video.narration({
-  en: { intro: 'Open settings and review the billing details.' },
-  es: {
-    intro: 'Abre la configuracion y revisa los detalles de facturacion.',
-  },
-})('Billing walkthrough', async ({ page, narration }) => {
+video
+  .renderOptions({ narration: { voice: { name: voices.Ava } } })
+  // Localized narration cues by language.
+  .narration({
+    en: { intro: 'Open settings and review the billing details.' },
+    es: {
+      intro: 'Abre la configuracion y revisa los detalles de facturacion.',
+    },
+  })('Billing walkthrough', async ({ page, narration }) => {
   // Play the full cue before continuing.
   await narration.intro()
 
@@ -369,6 +367,6 @@ You can combine this with the `editable(...)` form of narration, for example
 to `editable({...})` to seed Editor with starting content it then owns.
 
 To let Editor own the render options for a video, declare it through
-`use({ renderOptions: editable() })` (or `editable({...})` to seed them).
+`video.renderOptions(editable())` (or `editable({...})` to seed them).
 
 API reference: [voices](/docs/reference/api/variables/voices)

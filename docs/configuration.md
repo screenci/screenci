@@ -19,7 +19,8 @@ The config merges three layers:
 
 1. ScreenCI defaults.
 2. Your project-wide defaults from `screenci.config.ts`.
-3. Per-file overrides from `video.use()`.
+3. Per-file overrides from `video.renderOptions()` / `video.recordOptions()`
+   (and Playwright options from `video.use()`).
 
 ## Common full config
 
@@ -270,8 +271,8 @@ Use project-wide render defaults for branding and layout consistency, then
 override only the files that need a different look.
 
 You can defer render options to the web app entirely with
-`use({ renderOptions: editable() })` (and the record options with
-`recordOptions: editable()`, or seed either with `editable({...})`). They are
+`video.renderOptions(editable())` (and the record options with
+`video.recordOptions(editable())`, or seed either with `editable({...})`). They are
 then managed on the Editor page. See [Editor](/docs/guides/editor).
 
 ### Example: shared `use` defaults
@@ -352,30 +353,34 @@ See [Recording your own app](/docs/ci-setup#recording-your-own-app) in the CI se
 
 ## Per-file overrides
 
-Use `video.use()` when one file needs different defaults:
+Use `video.recordOptions()` / `video.renderOptions()` when one file needs
+different defaults. They return a chainable builder, so chain them into the test
+registration (or into `video.narration(...)` and the other builder methods):
 
 ```ts
 import { video } from 'screenci'
 
-video.use({
-  recordOptions: {
+video
+  .recordOptions({
     // Switch this file to portrait output.
     aspectRatio: '9:16',
     // Capture at a higher resolution for this specific video.
     quality: '1440p',
     fps: 60,
-  },
-  renderOptions: {
+  })
+  .renderOptions({
     narration: {
       // Move narration away from UI that appears in the lower-right corner.
       corner: 'top-right',
     },
-  },
+  })('Portrait walkthrough', async ({ page }) => {
+  await page.goto('/dashboard')
 })
 ```
 
-Reach for `video.use()` when a single script has a different layout, output
-format, or staging target than the rest of the project.
+Reach for these builder methods when a single script has a different layout or
+output format than the rest of the project. For plain Playwright options
+(such as `colorScheme`) use `video.use()` the same way.
 
 ## Default values
 

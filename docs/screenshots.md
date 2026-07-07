@@ -208,11 +208,9 @@ screenshot('Hover state', async ({ page }) => {
   await page.getByRole('button', { name: 'Upgrade' }).hover()
 })
 
-screenshot.use({
-  renderOptions: {
-    screenshot: {
-      mouse: { show: true }, // default is false (no cursor)
-    },
+screenshot.renderOptions({
+  screenshot: {
+    mouse: { show: true }, // default is false (no cursor)
   },
 })
 ```
@@ -233,13 +231,11 @@ or raise it for extra-high-DPI captures. Any Playwright `use` option (such as
 `colorScheme: 'dark'`) is honored too.
 
 ```ts
-screenshot.use({
-  colorScheme: 'dark',
-  recordOptions: {
-    aspectRatio: '16:9',
-    quality: '1440p',
-    deviceScaleFactor: 2, // the default; set to 1 for smaller files
-  },
+screenshot.use({ colorScheme: 'dark' })
+screenshot.recordOptions({
+  aspectRatio: '16:9',
+  quality: '1440p',
+  deviceScaleFactor: 2, // the default; set to 1 for smaller files
 })
 ```
 
@@ -263,10 +259,8 @@ is usually the point). Override it either way: set `false` on a screenshot that
 needs a mid-animation state, or `true` on a video to strip its animations.
 
 ```ts
-screenshot.use({
-  recordOptions: {
-    disableAnimations: false, // keep the app's animations while capturing
-  },
+screenshot.recordOptions({
+  disableAnimations: false, // keep the app's animations while capturing
 })
 ```
 
@@ -289,38 +283,36 @@ and/or an explicit `aspectRatio`. With neither, the output is the bare crop and
 the `output`/`recording` styling below has nowhere to render.
 
 ```ts
-screenshot.use({
-  renderOptions: {
-    screenshot: {
-      // Gap between the framed shot and the canvas edge, in CSS px. A value > 0
-      // creates a background gutter (and gives the shadow and rounded corners room
-      // to render). Defaults to 0: the canvas hugs the shot, no background.
-      margin: 64,
-      // Output canvas aspect ratio. 'auto' (the default) hugs the shot plus the
-      // margin. An explicit ratio ('16:9', '1:1', '9:16', ...) centers the shot in
-      // that canvas and fills the surround with the background, for social cards.
-      aspectRatio: '1:1',
-      // PNG by default (lossless). JPEG is smaller for photo-heavy shots; its
-      // `quality` (1-100, default 90) is the compression level. Low values are
-      // allowed if you want a smaller file.
-      format: { type: 'jpeg', quality: 82 },
-      // Show the cursor at its final recorded position. Defaults to false (no
-      // cursor). Colour/size come from `mouse.style` / `mouse.size` below.
-      mouse: { show: true },
+screenshot.renderOptions({
+  screenshot: {
+    // Gap between the framed shot and the canvas edge, in CSS px. A value > 0
+    // creates a background gutter (and gives the shadow and rounded corners room
+    // to render). Defaults to 0: the canvas hugs the shot, no background.
+    margin: 64,
+    // Output canvas aspect ratio. 'auto' (the default) hugs the shot plus the
+    // margin. An explicit ratio ('16:9', '1:1', '9:16', ...) centers the shot in
+    // that canvas and fills the surround with the background, for social cards.
+    aspectRatio: '1:1',
+    // PNG by default (lossless). JPEG is smaller for photo-heavy shots; its
+    // `quality` (1-100, default 90) is the compression level. Low values are
+    // allowed if you want a smaller file.
+    format: { type: 'jpeg', quality: 82 },
+    // Show the cursor at its final recorded position. Defaults to false (no
+    // cursor). Colour/size come from `mouse.style` / `mouse.size` below.
+    mouse: { show: true },
+  },
+  output: {
+    // Anything behind the framed shot: a CSS color, gradient, or image.
+    background: {
+      backgroundCss:
+        'linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0f3460 100%)',
     },
-    output: {
-      // Anything behind the framed shot: a CSS color, gradient, or image.
-      background: {
-        backgroundCss:
-          'linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0f3460 100%)',
-      },
-    },
-    recording: {
-      // Corner radius of the framed shot, as a fraction (0-1) of its shorter side.
-      roundness: 0.04,
-      // Drop shadow behind the frame (any CSS `drop-shadow(...)` filter).
-      dropShadow: 'drop-shadow(0 12px 32px rgba(0,0,0,0.55))',
-    },
+  },
+  recording: {
+    // Corner radius of the framed shot, as a fraction (0-1) of its shorter side.
+    roundness: 0.04,
+    // Drop shadow behind the frame (any CSS `drop-shadow(...)` filter).
+    dropShadow: 'drop-shadow(0 12px 32px rgba(0,0,0,0.55))',
   },
 })
 ```

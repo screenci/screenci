@@ -7,7 +7,7 @@ import {
   type RecordingLocalize,
 } from './builder.js'
 import { normalizeFeature } from './declare.js'
-import { editable } from './studio.js'
+import { editable, isEditableMarker } from './studio.js'
 import type { LocalizeNarrationValue } from './localize.js'
 
 function state(partial: Partial<BuilderState> = {}): BuilderState {
@@ -16,6 +16,8 @@ function state(partial: Partial<BuilderState> = {}): BuilderState {
     values: null,
     overlays: null,
     audio: null,
+    recordOptions: null,
+    renderOptions: null,
     recordingLocalize: null,
     eachVariants: null,
     features: VIDEO_FEATURES,
@@ -403,5 +405,128 @@ describe('createVideoBuilder registration', () => {
       .only('Focused', async () => {})
     expect(calls.tests).toEqual(['Focused [en]', 'Focused [fi]'])
     expect(only).toEqual(['Focused [en]', 'Focused [fi]'])
+  })
+
+  it('carries a flat recordOptions/renderOptions bag onto every pass', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test)
+      .recordOptions({ aspectRatio: '9:16', quality: '720p' })
+      .renderOptions({ narration: { size: 0.4 } })
+      .narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })(
+      'T',
+      async () => {}
+    )
+    for (const use of calls.uses) {
+      expect(use._screenciRecordOptions).toEqual({
+        aspectRatio: '9:16',
+        quality: '720p',
+      })
+      expect(use._screenciRenderOptions).toEqual({ narration: { size: 0.4 } })
+    }
+  })
+
+  it('merges the language-major default under each per-language override', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test)
+      .recordOptions({
+        default: { aspectRatio: '16:9', quality: '1080p' },
+        fi: { aspectRatio: '4:3' },
+      })
+      .narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })(
+      'T',
+      async () => {}
+    )
+    expect(calls.tests).toEqual(['T [en]', 'T [fi]'])
+    expect(calls.uses[0]?._screenciRecordOptions).toEqual({
+      aspectRatio: '16:9',
+      quality: '1080p',
+    })
+    expect(calls.uses[1]?._screenciRecordOptions).toEqual({
+      aspectRatio: '4:3',
+      quality: '1080p',
+    })
+  })
+
+  it('deep-merges renderOptions groups per language (voice override keeps size)', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test)
+      .renderOptions({
+        default: { narration: { size: 0.3, corner: 'bottom-right' } },
+        fi: { narration: { size: 0.5 } },
+      })
+      .narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })(
+      'T',
+      async () => {}
+    )
+    expect(calls.uses[0]?._screenciRenderOptions).toEqual({
+      narration: { size: 0.3, corner: 'bottom-right' },
+    })
+    expect(calls.uses[1]?._screenciRenderOptions).toEqual({
+      narration: { size: 0.5, corner: 'bottom-right' },
+    })
+  })
+
+  it('infers the language set from recordOptions language keys', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test).recordOptions({
+      default: { quality: '1080p' },
+      en: { aspectRatio: '16:9' },
+      fi: { aspectRatio: '9:16' },
+    })('T', async () => {})
+    expect(calls.tests).toEqual(['T [en]', 'T [fi]'])
+  })
+
+  it('passes an editable recordOptions bag through as a Studio marker', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test).recordOptions(editable({ aspectRatio: '9:16' }))(
+      'T',
+      async () => {}
+    )
+    const marker = calls.uses[0]?._screenciRecordOptions as {
+      seed?: unknown
+    }
+    expect(isEditableMarker(marker)).toBe(true)
+    expect(marker.seed).toEqual({ aspectRatio: '9:16' })
+  })
+
+  it('merges a per-language override into an editable seed, keeping it web-owned', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test)
+      .recordOptions(
+        editable({ default: { quality: '1080p' }, fi: { aspectRatio: '4:3' } })
+      )
+      .narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })(
+      'T',
+      async () => {}
+    )
+    const fiMarker = calls.uses[1]?._screenciRecordOptions as { seed?: unknown }
+    expect(isEditableMarker(fiMarker)).toBe(true)
+    expect(fiMarker.seed).toEqual({ quality: '1080p', aspectRatio: '4:3' })
+  })
+
+  it('applies the each-variant recordOptions patch over the builder options', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test)
+      .recordOptions({ aspectRatio: '16:9', quality: '1080p' })
+      .each([{ key: 'mobile', recordOptions: { aspectRatio: '9:16' } }])(
+      'Landing',
+      async () => {}
+    )
+    expect(calls.uses[0]?._screenciRecordOptions).toEqual({
+      aspectRatio: '9:16',
+      quality: '1080p',
+    })
+  })
+
+  it('throws when per-language options are set with shared mode', () => {
+    const { test } = createTestSink()
+    expect(() =>
+      createVideoBuilder(test)
+        .recordOptions({ default: {}, fi: { aspectRatio: '4:3' } })
+        .languages({ languages: ['en', 'fi'], mode: 'shared' })(
+        'T',
+        async () => {}
+      )
+    ).toThrow(/per-language/)
   })
 })

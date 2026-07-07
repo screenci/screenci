@@ -18,7 +18,7 @@ language-major if every top-level key is a supported language code or the litera
 content name may not be a bare language code or `default`.
 
 The default voice is set once with `renderOptions.narration.voice`, in
-`screenci.config.ts` or `video.use(...)`. A per-cue `voice` (inside the narration
+`screenci.config.ts` or `video.renderOptions(...)`. A per-cue `voice` (inside the narration
 value) is the most specific override. Changing the voice re-renders without
 re-recording; changing the spoken text re-records.
 
@@ -85,20 +85,20 @@ video.narration(editable({ intro: 'Welcome.' }))
 Attach the narration script with `video.narration(...)`. The body receives a
 `narration` object whose markers (`narration.intro()`, `.start()`, `.end()`)
 carry timing only: the text comes from the narration spec, the voice from your
-config or `video.use(...)` default.
+config or `video.renderOptions(...)` default.
 
 ```ts
 import { video, voices } from 'screenci'
 
-// The default voice (how the narration is spoken).
-video.use({ renderOptions: { narration: { voice: { name: voices.Ava } } } })
-
-video.narration({
-  en: {
-    intro: 'Open the settings page.',
-    save: 'Save the changes when you are ready.',
-  },
-})('Settings', async ({ page, narration }) => {
+video
+  // The default voice (how the narration is spoken).
+  .renderOptions({ narration: { voice: { name: voices.Ava } } })
+  .narration({
+    en: {
+      intro: 'Open the settings page.',
+      save: 'Save the changes when you are ready.',
+    },
+  })('Settings', async ({ page, narration }) => {
   await narration.intro()
   await page.goto('/settings')
 
@@ -165,25 +165,23 @@ Keep cues small. In practice, one sentence per cue is the safest default for
 timing, overlap control, and subtitle readability.
 
 If only one file needs a different narration layout, pair `video.narration(...)`
-with `video.use()` instead of changing the whole project:
+with `video.renderOptions()` instead of changing the whole project:
 
 ```ts
 import { video, voices } from 'screenci'
 
-// `corner` is a visual render option; `voice` is the default voice for every
-// language. Both are render options set with `use`.
-video.use({
-  renderOptions: {
+video
+  // `corner` is a visual render option; `voice` is the default voice for every
+  // language. Both are render options set with `renderOptions`.
+  .renderOptions({
     narration: { corner: 'top-right', voice: { name: voices.Ava } },
-  },
-})
-
-video.narration({
-  en: {
-    intro: 'Open the analytics tab.',
-    summary: 'Review the latest numbers.',
-  },
-})('Analytics walkthrough', async ({ page, narration }) => {
+  })
+  .narration({
+    en: {
+      intro: 'Open the analytics tab.',
+      summary: 'Review the latest numbers.',
+    },
+  })('Analytics walkthrough', async ({ page, narration }) => {
   await narration.intro.start()
   await page.getByRole('tab', { name: 'Analytics' }).click()
   await narration.intro.end()
@@ -254,7 +252,7 @@ together.
 ## Voice per language and per cue
 
 The default voice for every language is set once with `renderOptions.narration.voice`
-(in your config or `video.use(...)`). To override the voice for a specific
+(in your config or `video.renderOptions(...)`). To override the voice for a specific
 language or a single line, use the object form of the cue value and pass its own
 `voice` (a per-cue override). When a whole language needs a different voice or
 delivery profile, set that `voice` on each of its cues:
@@ -492,27 +490,25 @@ Other videos in the same run are unaffected. Add your key on the Secrets page an
 record again.
 
 Use `voices.elevenlabs({ voiceId })` when you want to target a specific
-ElevenLabs voice from your own account. Set it as the default voice in `use`, or
-as a per-cue `voice`:
+ElevenLabs voice from your own account. Set it as the default voice with
+`video.renderOptions(...)`, or as a per-cue `voice`:
 
 ```ts
 import { video, voices } from 'screenci'
 
-// The default voice for every language.
-video.use({
-  renderOptions: {
+video
+  // The default voice for every language.
+  .renderOptions({
     narration: {
       voice: { name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }) },
     },
-  },
-})
-
-video.narration({
-  en: {
-    intro: 'Welcome to the dashboard.',
-    details: 'Open settings to review billing details.',
-  },
-})('Billing walkthrough', async ({ page, narration }) => {
+  })
+  .narration({
+    en: {
+      intro: 'Welcome to the dashboard.',
+      details: 'Open settings to review billing details.',
+    },
+  })('Billing walkthrough', async ({ page, narration }) => {
   await narration.intro()
 
   await narration.details.start()
@@ -595,21 +591,19 @@ Use the same `voices.elevenlabs(...)` helper, but pass `{ path }` instead of
 `{ voiceId }`:
 
 ```ts
-// The default voice for every language.
-video.use({
-  renderOptions: {
+video
+  // The default voice for every language.
+  .renderOptions({
     narration: {
       voice: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
     },
-  },
-})
-
-video.narration({
-  en: {
-    intro: 'Welcome to the dashboard.',
-    details: 'Open settings to review billing details.',
-  },
-})('Billing walkthrough', async ({ page, narration }) => {
+  })
+  .narration({
+    en: {
+      intro: 'Welcome to the dashboard.',
+      details: 'Open settings to review billing details.',
+    },
+  })('Billing walkthrough', async ({ page, narration }) => {
   await narration.intro()
 
   await narration.details.start()

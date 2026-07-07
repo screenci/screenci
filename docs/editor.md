@@ -52,9 +52,10 @@ video.values(editable({ cta: 'Get started' }))
 // Languages: hand the whole set to Editor, or seed an initial set.
 video.languages(editable()) // or editable(['en', 'fi'])
 
-// Render / record options: defer for the whole file with use().
-video.use({ renderOptions: editable(), recordOptions: editable() })
-video.use({ renderOptions: editable({ output: { aspectRatio: '9:16' } }) })
+// Render / record options: defer for the whole file with the builder methods.
+video.renderOptions(editable())
+video.recordOptions(editable())
+video.renderOptions(editable({ output: { aspectRatio: '9:16' } }))
 ```
 
 #### You will learn
@@ -78,7 +79,7 @@ narration, voices, overlays, audio, and render options the video uses. Items you
 opted into from code by wrapping their names in `editable(...)`
 (`video.narration(editable([...]))`, `video.values(editable([...]))`,
 `video.overlays(editable([...]))`, `video.audio(editable([...]))`, plus the
-`renderOptions: editable()` / `recordOptions: editable()` deferrals) are editable;
+`video.renderOptions(editable())` / `video.recordOptions(editable())` deferrals) are editable;
 anything defined in code is shown read-only and marked with a **code** badge.
 
 Click a **code** badge to see how to edit that value: it shows the exact
@@ -107,7 +108,7 @@ Editor separates changes that stick from changes that do not:
 - **Saved edits** to app-editable items (anything wrapped in `editable(...)`:
   `video.narration(editable([...]))`, `video.values(editable([...]))`,
   `video.overlays(editable([...]))`, `video.audio(editable([...]))`, plus the
-  `renderOptions: editable()` / `recordOptions: editable()` deferrals) autosave into
+  `video.renderOptions(editable())` / `video.recordOptions(editable())` deferrals) autosave into
   the video's Editor
   configuration. That configuration is reused automatically on every later
   upload, so CI keeps rendering with your Editor values instead of the code
@@ -125,7 +126,7 @@ Editor separates changes that stick from changes that do not:
   editable in the normal, saved flow instead, wrap its names in `editable(...)`
   (switch `video.narration({...})` to `video.narration(editable([...]))`, and
   likewise for `values`, `overlays`, or `audio`, or set
-  `use({ renderOptions: editable() })` / `use({ recordOptions: editable() })`).
+  `video.renderOptions(editable())` / `video.recordOptions(editable())`).
 
 The same idea applies to languages: a
 [one-off language](./languages.md#one-off-languages) adds a single language from
@@ -275,19 +276,19 @@ prints a direct link. Later uploads reuse the saved configuration. See
 ## Editor render and record options
 
 Render and record options follow the same three forms as the feature
-declarations, via `editable()` in `video.use(...)`:
+declarations, via `editable()` in `video.renderOptions(...)`:
 
 ```ts
 import { video, editable } from 'screenci'
 
 // 1. Code-owned (unchanged): Editor shows these read-only.
-video.use({ renderOptions: { recording: { size: 0.85 } } })
+video.renderOptions({ recording: { size: 0.85 } })
 
 // 2. Editor-owned, blank: the web app starts from the system defaults.
-video.use({ renderOptions: editable() })
+video.renderOptions(editable())
 
 // 3. Editor-owned, seeded: the web app starts from your values but owns them.
-video.use({ renderOptions: editable({ output: { aspectRatio: '9:16' } }) })
+video.renderOptions(editable({ output: { aspectRatio: '9:16' } }))
 ```
 
 Use the seeded form to hand the format to Editor starting from your tuned code
@@ -298,20 +299,18 @@ someone fills the text), blank render options are **not** held: they fall back t
 the system defaults, which is a valid render. The seed is purely an editing
 starting point, not a way to avoid a blank render.
 
-Set `use({ renderOptions: editable() })` to manage render options from Editor
+Set `video.renderOptions(editable())` to manage render options from Editor
 instead of code. Render options are applied when the version renders:
 
 ```ts
 import { video } from 'screenci'
 
-video.use({ renderOptions: editable() })
-
-video('Product demo', async ({ page }) => {
+video.renderOptions(editable())('Product demo', async ({ page }) => {
   await page.goto('/dashboard')
 })
 ```
 
-Set `use({ recordOptions: editable() })` to defer the record options (aspect
+Set `video.recordOptions(editable())` to defer the record options (aspect
 ratio, quality, fps) to Editor as well. Unlike render options, record options
 change the captured viewport and encode, so they take effect on the **next
 recording**, not when you click **Render**. They are fetched before the recording
@@ -320,11 +319,12 @@ Values section, the Recording options section shows this reminder inline with a
 **Re-record this video** button:
 
 ```ts
-video.use({ renderOptions: editable(), recordOptions: editable() })
-
-video('Product demo', async ({ page }) => {
-  await page.goto('/dashboard')
-})
+video.renderOptions(editable()).recordOptions(editable())(
+  'Product demo',
+  async ({ page }) => {
+    await page.goto('/dashboard')
+  }
+)
 ```
 
 These deferrals combine with the `editable(...)` declarations and `.each()` like
@@ -334,9 +334,10 @@ handing narration and overlays to Editor:
 ```ts
 import { video, editable } from 'screenci'
 
-video.use({ recordOptions: editable() })
-
-video.narration(editable(['intro'])).overlays(editable(['logo']))(
+video
+  .recordOptions(editable())
+  .narration(editable(['intro']))
+  .overlays(editable(['logo']))(
   'Product demo',
   async ({ page, narration, overlays }) => {
     await narration.intro()
@@ -462,7 +463,7 @@ new recording pass.
 
 Use `editable()` together with app-editable narration
 (`video.narration(editable([...]))`) so both the narration content and the language
-set are owned by the web app. Combined with `use({ recordOptions: editable() })`,
+set are owned by the web app. Combined with `video.recordOptions(editable())`,
 the web app controls the full recording configuration.
 
 To fix languages in code instead, pass a plain array

@@ -141,10 +141,8 @@ By default [overlays](/docs/guides/overlays) are burned into the scene: when the
 ```ts
 import { video } from 'screenci'
 
-video.use({
-  renderOptions: {
-    recording: { size: 0.8 },
-  },
+video.renderOptions({
+  recording: { size: 0.8 },
 })
 ```
 

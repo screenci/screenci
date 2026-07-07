@@ -1257,10 +1257,16 @@ export type ScreenCIConfig = Omit<
    */
   webServer?: PlaywrightTestConfig['webServer']
   use?: Omit<NonNullable<PlaywrightTestConfig['use']>, 'trace'> & {
+    /**
+     * Project-wide default record options. Override per video with
+     * `video.recordOptions(...)`, or hand them to Editor per video with
+     * `video.recordOptions(editable())`.
+     */
     recordOptions?: RecordOptions
     /**
-     * Render options. To configure them in Editor, use
-     * `video.use({ renderOptions: editable() })` per video instead.
+     * Project-wide default render options. Override per video with
+     * `video.renderOptions(...)`, or hand them to Editor per video with
+     * `video.renderOptions(editable())`.
      */
     renderOptions?: RenderOptions
     /**
@@ -1290,10 +1296,16 @@ export type ScreenCIConfig = Omit<
   }
   projects?: (Omit<Project, 'use'> & {
     use?: Omit<NonNullable<Project['use']>, 'trace'> & {
+      /**
+       * Project-wide default record options. Override per video with
+       * `video.recordOptions(...)`, or hand them to Editor per video with
+       * `video.recordOptions(editable())`.
+       */
       recordOptions?: RecordOptions
       /**
-       * Render options. To configure them in Editor, use
-       * `video.use({ renderOptions: editable() })` per video instead.
+       * Project-wide default render options. Override per video with
+       * `video.renderOptions(...)`, or hand them to Editor per video with
+       * `video.renderOptions(editable())`.
        */
       renderOptions?: RenderOptions
       /**

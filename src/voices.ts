@@ -6,11 +6,9 @@
  *
  * @example
  * ```ts
- * video.use({
- *   renderOptions: {
- *     narration: {
- *       voice: { name: voices.Ava, modelType: modelTypes.expressive },
- *     },
+ * video.renderOptions({
+ *   narration: {
+ *     voice: { name: voices.Ava, modelType: modelTypes.expressive },
  *   },
  * })
  * ```
@@ -32,22 +30,18 @@ export type ModelType = (typeof modelTypes)[keyof typeof modelTypes]
  * Set a default and override per language with `voices`:
  *
  * ```ts
- * video.use({
- *   renderOptions: { narration: { voice: { name: voices.Aria } } },
- * })
+ * video.renderOptions({ narration: { voice: { name: voices.Aria } } })
  * ```
  *
  * ElevenLabs voices are passed by provider voice id, or cloned from a local
  * audio/video sample, both via `voices.elevenlabs(...)`:
  *
  * ```ts
- * video.use({
- *   renderOptions: {
- *     narration: {
- *       voice: { name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }) },
- *       voices: {
- *         fi: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
- *       },
+ * video.renderOptions({
+ *   narration: {
+ *     voice: { name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }) },
+ *     voices: {
+ *       fi: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
  *     },
  *   },
  * })
@@ -303,11 +297,9 @@ export const defaultBuiltInVoice = voices.Ava
  *
  * @example
  * ```ts
- * video.use({
- *   renderOptions: {
- *     narration: {
- *       voice: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
- *     },
+ * video.renderOptions({
+ *   narration: {
+ *     voice: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
  *   },
  * })
  * ```

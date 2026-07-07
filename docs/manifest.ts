@@ -76,6 +76,18 @@ export const docsManifest = [
     description:
       'Understand how ScreenCI instruments the Playwright page so visible actions like clicks, typing, mouse movement, and scrolling are animated.',
     prev: 'docs/ci-setup',
+    next: 'docs/guides/keyboard-shortcuts',
+  },
+  {
+    source: 'keyboard-shortcuts.md',
+    slug: 'docs/guides/keyboard-shortcuts',
+    section: 'Guides',
+    order: 2,
+    navLabel: 'Keyboard shortcuts',
+    title: 'Keyboard Shortcuts',
+    description:
+      'Record keyboard shortcuts with page.keyboard.press and show them as animated keycap overlays: control visibility per press, globally, or per shortcut in the editor, and pick a light or dark keycap theme.',
+    prev: 'docs/guides/animated-interactions',
     next: 'docs/guides/narration',
   },
   {
@@ -87,7 +99,7 @@ export const docsManifest = [
     title: 'Narration',
     description:
       'Attach spoken cues to a video, overlap narration with visible UI motion, choose voices, use speech markup, and connect ElevenLabs for custom voices.',
-    prev: 'docs/guides/animated-interactions',
+    prev: 'docs/guides/keyboard-shortcuts',
     next: 'docs/guides/values',
   },
   {
@@ -154,7 +166,7 @@ export const docsManifest = [
     source: 'camera-and-zooming.md',
     slug: 'docs/guides/camera-and-zooming',
     section: 'Guides',
-    order: 2,
+    order: 3,
     navLabel: 'Camera and zooming',
     title: 'Camera and Zooming',
     description:
@@ -166,7 +178,7 @@ export const docsManifest = [
     source: 'screenshots.md',
     slug: 'docs/guides/screenshots',
     section: 'Guides',
-    order: 3,
+    order: 4,
     navLabel: 'Screenshots',
     title: 'Screenshots',
     description:
@@ -178,7 +190,7 @@ export const docsManifest = [
     source: 'editor.md',
     slug: 'docs/guides/editor',
     section: 'Guides',
-    order: 4,
+    order: 5,
     navLabel: 'Editor',
     title: 'Editor',
     description:
@@ -190,7 +202,7 @@ export const docsManifest = [
     source: 'public-urls-and-embeds.md',
     slug: 'docs/guides/public-urls-and-embeds',
     section: 'Guides',
-    order: 5,
+    order: 6,
     navLabel: 'Public URLs and embeds',
     title: 'Public URLs and Embeds',
     description:
@@ -202,7 +214,7 @@ export const docsManifest = [
     source: 'redact.md',
     slug: 'docs/guides/redact',
     section: 'Guides',
-    order: 6,
+    order: 7,
     navLabel: 'Redact sensitive content',
     title: 'Redact Sensitive Content',
     description:
@@ -214,7 +226,7 @@ export const docsManifest = [
     source: 'screen-audio.md',
     slug: 'docs/guides/screen-audio',
     section: 'Guides',
-    order: 7,
+    order: 8,
     navLabel: 'Screen audio',
     title: 'Screen Audio',
     description:
@@ -226,7 +238,7 @@ export const docsManifest = [
     source: 'update-screenci.mdx',
     slug: 'docs/guides/update-screenci',
     section: 'Guides',
-    order: 8,
+    order: 9,
     navLabel: 'Update ScreenCI',
     title: 'Update ScreenCI',
     description:
@@ -238,7 +250,7 @@ export const docsManifest = [
     source: 'version-history.md',
     slug: 'docs/guides/version-history',
     section: 'Guides',
-    order: 9,
+    order: 10,
     navLabel: 'Version history',
     title: 'Version History',
     description:
@@ -250,7 +262,7 @@ export const docsManifest = [
     source: 'organisation.md',
     slug: 'docs/guides/organisation',
     section: 'Guides',
-    order: 10,
+    order: 11,
     navLabel: 'Organisation & SSO',
     title: 'Organisation & SSO',
     description:
@@ -262,7 +274,7 @@ export const docsManifest = [
     source: 'anonymous-trial.md',
     slug: 'docs/guides/anonymous-trial',
     section: 'Guides',
-    order: 11,
+    order: 12,
     navLabel: 'Anonymous trial',
     title: 'Anonymous Trial',
     description:

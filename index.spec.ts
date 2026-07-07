@@ -34,6 +34,8 @@ describe('public api surface', () => {
   it('only exports runtime recording helpers from the recording entrypoint', () => {
     expect(Object.keys(recordingModule).sort()).toEqual([
       'RENDER_OPTIONS_DEFAULTS',
+      'isSingleKeyCombo',
+      'parseKeyCombo',
     ])
   })
 

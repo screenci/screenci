@@ -75,6 +75,7 @@ function makeRecorder() {
         resolveSpecWithoutTracking(spec)
     ),
     addDelay: vi.fn(),
+    addKeyPress: vi.fn(),
     getPerformanceIntervals: vi.fn(() =>
       resolvePerformanceIntervals(undefined)
     ),
@@ -167,6 +168,7 @@ function makePageMock(): PageMock {
     },
     keyboard: {
       type: vi.fn().mockResolvedValue(undefined),
+      press: vi.fn().mockResolvedValue(undefined),
     },
     waitForTimeout: vi.fn().mockResolvedValue(undefined),
     route: vi.fn().mockResolvedValue(undefined),
@@ -339,6 +341,7 @@ function makeLocatorMock(
   const mock = {
     click: vi.fn(),
     fill: vi.fn().mockResolvedValue(undefined),
+    press: vi.fn().mockResolvedValue(undefined),
     pressSequentially: vi.fn().mockResolvedValue(undefined),
     tap: vi.fn().mockResolvedValue(undefined),
     check: vi.fn().mockResolvedValue(undefined),
@@ -600,6 +603,64 @@ describe('instrumentPage', () => {
       (event) => event.zoom?.end.size.widthPx === 1280
     )
     expect(zoomOut).toBeDefined()
+  })
+
+  it('records page.keyboard.press as a keyPress and forwards native options', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    const originalPress = (
+      page as unknown as { keyboard: { press: ReturnType<typeof vi.fn> } }
+    ).keyboard.press
+    await instrumentPage(page)
+
+    await page.keyboard.press('ControlOrMeta+A', { delay: 5, show: true })
+
+    const expectedModifier = process.platform === 'darwin' ? 'Meta' : 'Control'
+    expect(recorder.addKeyPress).toHaveBeenCalledWith(
+      [expectedModifier, 'A'],
+      true
+    )
+    expect(originalPress).toHaveBeenCalledWith('ControlOrMeta+A', { delay: 5 })
+  })
+
+  it('records locator.press as a keyPress and strips the show option', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    const originalPress = (
+      page._locatorMock as unknown as { press: ReturnType<typeof vi.fn> }
+    ).press
+    await instrumentPage(page)
+    const locator = page.locator('#input')
+
+    await locator.press('Shift+Enter', { show: false })
+
+    expect(recorder.addKeyPress).toHaveBeenCalledWith(['Shift', 'Enter'], false)
+    expect(originalPress).toHaveBeenCalledWith('Shift+Enter', {})
+  })
+
+  it('does not record keyboard presses inside hide() but still dispatches them', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    const originalPress = (
+      page as unknown as { keyboard: { press: ReturnType<typeof vi.fn> } }
+    ).keyboard.press
+    await instrumentPage(page)
+
+    await Promise.all([
+      hide(async () => {
+        await page.keyboard.press('A')
+      }),
+      vi.runAllTimersAsync(),
+    ])
+
+    expect(recorder.addKeyPress).not.toHaveBeenCalled()
+    expect(originalPress).toHaveBeenCalledWith('A', {})
   })
 
   it('records page.mouse.down as a mouseDown InputEvent and dispatches the real press', async () => {

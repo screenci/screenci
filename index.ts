@@ -82,6 +82,14 @@ export { timestamp } from './src/timestamp.js'
 export { autoZoom } from './src/autoZoom.js'
 export { zoomTo, resetZoom } from './src/manualZoom.js'
 export { hideNarration, showNarration } from './src/narrationVisibility.js'
+// Per-method defaults of every tracked action option, so the backend/editor can
+// tell an override that restates the default from a real change.
+export { ACTION_PARAM_DEFAULTS } from './src/actionParams.js'
+export type {
+  ActionMethod,
+  ActionParamRecord,
+  ActionParamValue,
+} from './src/actionParams.js'
 export { MAX_AUDIO_LEVEL } from './src/asset.js'
 export type {
   OverlayController,

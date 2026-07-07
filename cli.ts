@@ -77,9 +77,14 @@ import {
   updateActionParamsSnapshot,
 } from './src/actionParamsSnapshot.js'
 import {
-  stubActionOverridesClient,
+  defaultActionOverridesClient,
   type ActionOverridesClient,
 } from './src/actionOverridesClient.js'
+import {
+  buildSyncPrompt,
+  compareWebStateToSnapshot,
+  formatStatusReport,
+} from './src/actionSync.js'
 import { maybeExtractVoiceSampleAudio } from './src/voiceSampleAudio.js'
 import {
   type CliCredential,
@@ -3168,6 +3173,81 @@ async function readLastRecordId(screenciDir: string): Promise<string | null> {
 // that run, a per-language `latestRecord` with render status and record-pinned
 // URLs. Without a local run, only the project-wide listing with `static` URLs is
 // returned. The server does the merge; the CLI just passes the recordId.
+/**
+ * Fetch the web editor's current action-parameter override state and compare
+ * it to the latest local recording snapshot. Shared by `screenci status` and
+ * `screenci sync-prompt`; the client is injected for tests.
+ */
+async function compareEditorStateToSnapshot(
+  configPath: string | undefined,
+  grep: string | undefined,
+  client: ActionOverridesClient
+): Promise<{
+  comparison: ReturnType<typeof compareWebStateToSnapshot>
+  projectName: string
+}> {
+  const { resolvedConfigPath, screenciConfig, secret, apiUrl } =
+    await requireScreenCISecret(configPath)
+  const overrides = await client.fetchActionOverrides({
+    apiUrl,
+    secret,
+    projectName: screenciConfig.projectName,
+  })
+  const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
+  const snapshot = readActionParamsSnapshot(screenciDir)
+  const comparison = compareWebStateToSnapshot(
+    snapshot,
+    overrides,
+    grep !== undefined ? new RegExp(grep) : undefined
+  )
+  return { comparison, projectName: screenciConfig.projectName }
+}
+
+/**
+ * `screenci status`: report how the web editor's action-parameter edits relate
+ * to the latest recorded run (overrides shadowing explicit code values,
+ * defaults changed from the editor, stale overrides).
+ */
+export async function printActionStatus(
+  configPath?: string,
+  grep?: string,
+  client: ActionOverridesClient = defaultActionOverridesClient,
+  log: (message: string) => void = (message) => logger.info(message)
+): Promise<void> {
+  const { comparison } = await compareEditorStateToSnapshot(
+    configPath,
+    grep,
+    client
+  )
+  for (const line of formatStatusReport(comparison)) log(line)
+}
+
+/**
+ * `screenci sync-prompt`: print an agent-ready prompt describing which action
+ * options to change or remove in code so it matches the web editor's edits.
+ */
+export async function printSyncPrompt(
+  configPath?: string,
+  grep?: string,
+  client: ActionOverridesClient = defaultActionOverridesClient,
+  write: (text: string) => void = (text) => process.stdout.write(text)
+): Promise<void> {
+  const { comparison, projectName } = await compareEditorStateToSnapshot(
+    configPath,
+    grep,
+    client
+  )
+  const prompt = buildSyncPrompt(comparison, projectName)
+  if (prompt === null) {
+    write(
+      'Nothing to sync: the web editor has no action-parameter edits that ' +
+        'differ from code.\n'
+    )
+    return
+  }
+  write(`${prompt}\n`)
+}
+
 async function printInfo(configPath?: string): Promise<void> {
   const { resolvedConfigPath, screenciConfig, secret, apiUrl } =
     await requireScreenCISecret(configPath)
@@ -3697,6 +3777,40 @@ export async function main() {
     })
 
   program
+    .command('status')
+    .description(
+      "Compare the web editor's action-parameter edits with the latest recorded run"
+    )
+    .option('-c, --config <path>', 'path to screenci.config.ts')
+    .option(
+      '-g, --grep <regex>',
+      'only include videos whose name matches this regular expression'
+    )
+    .action(async (options: Record<string, unknown>) => {
+      await printActionStatus(
+        options['config'] as string | undefined,
+        options['grep'] as string | undefined
+      )
+    })
+
+  program
+    .command('sync-prompt')
+    .description(
+      'Print an agent-ready prompt to sync code with the web editor edits'
+    )
+    .option('-c, --config <path>', 'path to screenci.config.ts')
+    .option(
+      '-g, --grep <regex>',
+      'only include videos whose name matches this regular expression'
+    )
+    .action(async (options: Record<string, unknown>) => {
+      await printSyncPrompt(
+        options['config'] as string | undefined,
+        options['grep'] as string | undefined
+      )
+    })
+
+  program
     .command('make-public <id>')
     .description(
       'Enable public URLs for a video; get the id from screenci info'
@@ -4053,16 +4167,16 @@ async function fetchRecordOptionsEnv(
 
 /**
  * Fetch the project's current web-editor action-parameter overrides so they can
- * be injected as SCREENCI_ACTION_OVERRIDES before a recording. The backend
- * endpoint is not implemented yet, so the default client is a stub returning no
- * overrides; the interface is injected so tests (and the future real client)
- * plug in without touching the record flow. Best-effort: any failure returns an
- * empty env so the SDK uses the code values.
+ * be injected as SCREENCI_ACTION_OVERRIDES before a recording. The client is
+ * injected so tests plug in fakes; the default hits
+ * `GET /cli/action-overrides` and treats a missing endpoint (404) as "no
+ * overrides". Best-effort: any failure returns an empty env so the SDK uses
+ * the code values.
  */
 export async function fetchActionOverridesEnv(
   configPath: string,
   verbose: boolean,
-  client: ActionOverridesClient = stubActionOverridesClient
+  client: ActionOverridesClient = defaultActionOverridesClient
 ): Promise<Record<string, string>> {
   // Editor overrides only exist for a real (non-anonymous) org, and record must
   // still work without an account, so skip the fetch entirely rather than

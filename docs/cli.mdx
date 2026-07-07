@@ -16,6 +16,8 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | `screenci test [playwrightArgs]`   | Run `.screenci.ts` files locally without final recording |
 | `screenci record [playwrightArgs]` | Record videos and upload results when configured         |
 | `screenci info`                    | Print the last record run's URLs and render status       |
+| `screenci status`                  | Compare Editor action edits with the latest recorded run |
+| `screenci sync-prompt`             | Print an agent prompt to sync code with Editor edits     |
 | `screenci make-public <videoId>`   | Enable public delivery for a video                       |
 | `screenci make-private <videoId>`  | Disable public delivery for a video                      |
 | `screenci delete <videoId>`        | Permanently delete a video and its renders               |
@@ -462,6 +464,36 @@ reaches `finished` (or gate your pipeline on `failed`).
 (for example a fresh checkout that has never run `screenci record`), `info` does
 not fail. It simply omits `latestRecordId` and the `latestRecord` fields and
 prints the project-wide listing with `static` URLs only.
+
+## `screenci status`
+
+Fetches the web Editor's current action-parameter edits and compares them with
+the latest recorded run's snapshot (`.screenci/action-params.json`). Reports
+per video which overrides shadow explicitly code-set values, which change
+defaulted values, which match code (no effect), and which are stale because the
+action no longer exists in the latest recording.
+
+Options:
+
+- `-c, --config <path>`: path to `screenci.config.ts`
+- `-g, --grep <regex>`: only include videos whose name matches the regular
+  expression (same semantics as Playwright's `--grep`)
+
+Requires `SCREENCI_SECRET`. See
+[Action parameter tracking and overrides](/docs/editor#action-parameter-tracking-and-overrides)
+for the full model.
+
+## `screenci sync-prompt`
+
+Prints an agent-ready prompt that describes which action options to change or
+remove in your `.screenci.ts` scripts so code matches the web Editor's edits:
+CHANGE items give the from/to values per locator and call, REMOVE items say
+which explicit option to drop because the Editor reset it to the default, and
+stale overrides are surfaced as warnings. Paste the output to a coding agent,
+apply the edits, then re-record; once code and Editor agree the overrides can
+be cleared.
+
+Takes the same `-c, --config` and `-g, --grep` options as `screenci status`.
 
 ## `screenci make-public <videoId>`
 

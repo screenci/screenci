@@ -52,7 +52,11 @@ import { buildZoomEvent, resolveAutoZoomOptions } from './zoom.js'
 import {
   DEFAULT_AUTO_ZOOM_CENTERING,
   DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+  DEFAULT_DRAG_PRESS_DELAY_MS,
   DEFAULT_DRAG_STEPS,
+  DEFAULT_FILL_TYPING_DURATION_MS,
+  DEFAULT_HOVER_DURATION_MS,
+  DEFAULT_PRE_CLICK_PAUSE_MS,
 } from './defaults.js'
 import {
   CLICK_DURATION_MS,
@@ -109,7 +113,6 @@ import {
 
 const pageClickRecorders = new WeakMap<object, IEventRecorder>()
 
-const DEFAULT_PRE_CLICK_PAUSE_MS = 50
 const DEFAULT_POST_TYPING_SETTLE_PAUSE_MS = CLICK_DURATION_MS / 2
 
 export function setActiveClickRecorder(recorder: IEventRecorder | null): void {
@@ -1239,7 +1242,10 @@ export function instrumentLocator(locator: Locator): Locator {
       ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
       position: { explicit: position, fallback: null },
       noWaitAfter: { explicit: noWaitAfter, fallback: true },
-      duration: { explicit: options?.duration, fallback: 1000 },
+      duration: {
+        explicit: options?.duration,
+        fallback: DEFAULT_FILL_TYPING_DURATION_MS,
+      },
     })
     const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
       effectiveCursorMove(effective)
@@ -1721,7 +1727,7 @@ export function instrumentLocator(locator: Locator): Locator {
       'move.speed': { explicit: move?.speed, fallback: null },
       'move.easing': { explicit: move?.easing, fallback: 'ease-in-out' },
       position: { explicit: position, fallback: null },
-      duration: { explicit: duration, fallback: 1000 },
+      duration: { explicit: duration, fallback: DEFAULT_HOVER_DURATION_MS },
     })
     const moveDuration = asOptionalNumber(effective['move.duration'])
     const moveSpeed = asOptionalNumber(effective['move.speed'])
@@ -1972,7 +1978,7 @@ export function instrumentLocator(locator: Locator): Locator {
     assertDurationOrSpeed(options?.duration, options?.speed, 'dragTo drag')
 
     const effective = applyActionParams(locator, 'dragTo', {
-      ...cursorMoveSpec(move, CLICK_DURATION_MS / 2),
+      ...cursorMoveSpec(move, DEFAULT_DRAG_PRESS_DELAY_MS),
       duration: { explicit: options?.duration, fallback: null },
       speed: { explicit: options?.speed, fallback: null },
       easing: { explicit: options?.easing, fallback: 'ease-in-out' },

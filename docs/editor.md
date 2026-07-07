@@ -448,24 +448,52 @@ explicitly at the call site or came from a default. This provenance is:
 - snapshotted to `.screenci/action-params.json`, which is never wiped between
   runs.
 
+Editor overrides can target both kinds of values: an option you set explicitly
+in code and one that fell back to a default. Overriding a default is the quiet,
+normal case; the Editor shows a small warning marker only when your edit
+shadows an explicitly code-set value.
+
 At the start of `screenci record`, editor overrides fetched from the backend
-are compared against the snapshot, and an info line is printed for each
-override that shadows an explicitly code-set value:
+are compared against the latest local snapshot, and an info line is printed for
+each override that shadows an explicitly code-set value:
 
 ```
 [screenci] editor override shadows code value: <selector> <method> <optionPath>: code <value> -> editor <value> (video: <name>)
 ```
 
-During recording, editor overrides are applied to actions and each application
-prints:
+During recording, editor overrides are applied to actions. Only an override
+that actually changes the value the recording runs with is reported (an
+override that restates the code value is a no-op):
 
 ```
 [screenci] editor override: <selector> <method> <optionPath>: <used> (code: <codeValue>, explicit|default)
 ```
 
-The backend endpoint for fetching action overrides is not live yet; until it
-is, no overrides are fetched, and recordings simply track and report the
-provenance.
+When an override changed a value, the recording's `actionParams` entry carries
+the actually used value in a `used` field next to the code value, so the Editor
+can update its own copy of the options from what the recording really ran with.
+
+The SDK also exports `ACTION_PARAM_DEFAULTS`, the default value of every
+tracked option per action method, so integrations can tell an override that
+merely restates the default from a real change and offer "reset to default".
+
+### Checking and syncing: `status` and `sync-prompt`
+
+Two commands keep code and Editor edits from drifting apart:
+
+- `screenci status` fetches the Editor's current action-parameter edits and
+  compares them with the latest recorded run: which overrides shadow explicit
+  code values, which change defaults, which are stale (the action no longer
+  exists in the latest recording, usually because the code changed).
+- `screenci sync-prompt` prints an agent-ready prompt describing exactly which
+  action options to change or remove in code so it matches the Editor: CHANGE
+  items give the from/to values per locator and call, REMOVE items say which
+  explicit option to drop because the Editor reset it to the default. Stale
+  overrides are included as warnings. Paste the output to a coding agent, apply
+  the edits, re-record, and the overrides can be cleared.
+
+Both accept `-g, --grep <regex>` to filter videos by name (the same semantics
+as Playwright's `--grep`) and `-c, --config <path>`.
 
 ## Migrating from `editable()`
 

@@ -8,9 +8,19 @@
  *
  * Editor overrides arrive keyed by
  * `"<selector>|<method>|<occurrence>|<optionPath>"` and are applied to the
- * action before it runs; every application is logged.
+ * action before it runs. An override that actually changes the used value is
+ * logged and recorded as `used`, so the uploaded recording tells the editor
+ * which values the recording really ran with.
  */
 import { logger } from './logger.js'
+import {
+  DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+  DEFAULT_DRAG_PRESS_DELAY_MS,
+  DEFAULT_DRAG_STEPS,
+  DEFAULT_FILL_TYPING_DURATION_MS,
+  DEFAULT_HOVER_DURATION_MS,
+  DEFAULT_PRE_CLICK_PAUSE_MS,
+} from './defaults.js'
 
 /** The instrumented locator methods that report parameter provenance. */
 export type ActionMethod =
@@ -29,11 +39,17 @@ export type ActionMethod =
 /** Whether a parameter value was set at the call site or fell back to a default. */
 export type ParamSource = 'explicit' | 'default'
 
-/** One recorded parameter: the code value used and where it came from. */
+/** One recorded parameter: the code value, its provenance, and the used value. */
 export type ActionParamValue = {
   /** The code value (JSON-safe; `null` when the code value is undefined). */
   value: unknown
   source: ParamSource
+  /**
+   * The value the recording actually ran with, present only when an editor
+   * override changed it (differs from `value`). The editor reads this to update
+   * its own copy of the options after a recording.
+   */
+  used?: unknown
 }
 
 /**
@@ -65,6 +81,73 @@ export type ActionOverrides = Record<string, unknown>
 /** Editor overrides keyed by video name. */
 export type ActionOverridesByVideo = Record<string, ActionOverrides>
 
+/** The cursor-move option defaults shared by every mouse-driven action. */
+function cursorMoveDefaults(delayAfter: number): Record<string, unknown> {
+  return {
+    // Effective when no `move.speed` is given; with a speed the duration is
+    // derived from the travel distance instead.
+    'move.duration': DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+    'move.speed': null,
+    'move.easing': 'ease-in-out',
+    'move.delayAfter': delayAfter,
+  }
+}
+
+const CLICK_LIKE_DEFAULTS: Record<string, unknown> = {
+  ...cursorMoveDefaults(DEFAULT_PRE_CLICK_PAUSE_MS),
+  position: null,
+  noWaitAfter: true,
+}
+
+/**
+ * The default value of every tracked action option, per method and option
+ * path, exactly as the instrumented actions resolve them (`null` = no default;
+ * the option stays unset unless given). Exported from the SDK so the backend
+ * and web editor can tell an override that merely restates the default from a
+ * real change, and can offer "reset to default".
+ */
+export const ACTION_PARAM_DEFAULTS: Record<
+  ActionMethod,
+  Record<string, unknown>
+> = {
+  click: CLICK_LIKE_DEFAULTS,
+  tap: CLICK_LIKE_DEFAULTS,
+  check: CLICK_LIKE_DEFAULTS,
+  uncheck: CLICK_LIKE_DEFAULTS,
+  selectOption: CLICK_LIKE_DEFAULTS,
+  pressSequentially: CLICK_LIKE_DEFAULTS,
+  fill: {
+    ...CLICK_LIKE_DEFAULTS,
+    duration: DEFAULT_FILL_TYPING_DURATION_MS,
+  },
+  hover: {
+    'move.duration': null,
+    'move.speed': null,
+    'move.easing': 'ease-in-out',
+    position: null,
+    duration: DEFAULT_HOVER_DURATION_MS,
+  },
+  selectText: {
+    ...cursorMoveDefaults(DEFAULT_PRE_CLICK_PAUSE_MS),
+    duration: null,
+  },
+  dragTo: {
+    ...cursorMoveDefaults(DEFAULT_DRAG_PRESS_DELAY_MS),
+    duration: null,
+    speed: null,
+    easing: 'ease-in-out',
+    dragSteps: DEFAULT_DRAG_STEPS,
+    sourcePosition: null,
+    targetPosition: null,
+  },
+  scrollIntoViewIfNeeded: {
+    easing: 'ease-in-out',
+    duration: null,
+    amount: null,
+    centering: null,
+  },
+}
+
 /** The wire/snapshot key of one parameter of one action call. */
 export function actionParamKey(
   selector: string,
@@ -89,6 +172,11 @@ export function normalizeSelector(locator: unknown): string {
 /** JSON-safe copy of a code value: undefined collapses to null. */
 function toRecordedValue(value: unknown): unknown {
   return value === undefined ? null : value
+}
+
+/** JSON-shape equality for override-vs-code comparison (both are JSON-safe). */
+export function jsonEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
 }
 
 /**
@@ -127,9 +215,10 @@ export class ActionParamCollector {
 
   /**
    * Record one action call and return the effective option values: the editor
-   * override when present (logged per application), else the explicit call-site
-   * value, else the default. The stored record always carries the code value
-   * and its provenance, never the override.
+   * override when present, else the explicit call-site value, else the
+   * default. Only an override that actually changes the used value is logged
+   * and stored as `used`; an override equal to the code value is a no-op. The
+   * `value`/`source` fields always describe the code side.
    */
   apply(
     selector: string,
@@ -146,7 +235,8 @@ export class ActionParamCollector {
       const codeValue = explicit !== undefined ? explicit : fallback
       const source: ParamSource =
         explicit !== undefined ? 'explicit' : 'default'
-      params[optionPath] = { value: toRecordedValue(codeValue), source }
+      const recordedCodeValue = toRecordedValue(codeValue)
+      params[optionPath] = { value: recordedCodeValue, source }
 
       const overrideKey = actionParamKey(
         selector,
@@ -155,12 +245,17 @@ export class ActionParamCollector {
         optionPath
       )
       const override = this.overrides[overrideKey]
-      if (override !== undefined && isApplicableOverride(override)) {
+      if (
+        override !== undefined &&
+        isApplicableOverride(override) &&
+        !jsonEqual(override, recordedCodeValue)
+      ) {
         effective[optionPath] = override
+        params[optionPath]!.used = override
         this.log(
           `[screenci] editor override: ${selector} ${method} ${optionPath}: ` +
             `${JSON.stringify(override)} (code: ${JSON.stringify(
-              toRecordedValue(codeValue)
+              recordedCodeValue
             )}, ${source})`
         )
       } else {

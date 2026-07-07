@@ -7,6 +7,7 @@ import * as voicesModule from './src/voices.js'
 describe('public api surface', () => {
   it('only exports public runtime api from the root entrypoint', () => {
     expect(Object.keys(screenci).sort()).toEqual([
+      'ACTION_PARAM_DEFAULTS',
       'DEFAULT_LANGUAGE_LOCALES',
       'MAX_AUDIO_LEVEL',
       'autoZoom',

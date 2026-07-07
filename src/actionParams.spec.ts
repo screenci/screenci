@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  ACTION_PARAM_DEFAULTS,
   ActionParamCollector,
+  type ActionMethod,
   actionParamKey,
   normalizeSelector,
   resolveSpecWithoutTracking,
@@ -104,10 +106,11 @@ describe('ActionParamCollector', () => {
       'move.duration': { explicit: 400, fallback: 900 },
     })
     expect(effective).toEqual({ 'move.duration': 250 })
-    // The record keeps the code value, not the override.
+    // The record keeps the code value plus the actually used value.
     expect(collector.getRecords()[0]!.params['move.duration']).toEqual({
       value: 400,
       source: 'explicit',
+      used: 250,
     })
     expect(log).toHaveBeenCalledTimes(1)
     expect(log.mock.calls[0]![0]).toContain('editor override')
@@ -151,6 +154,23 @@ describe('ActionParamCollector', () => {
     expect(log).not.toHaveBeenCalled()
   })
 
+  it('treats an override equal to the code value as a no-op (no log, no used)', () => {
+    const log = vi.fn()
+    const collector = new ActionParamCollector(
+      { [actionParamKey(SELECTOR, 'click', 0, 'move.duration')]: 400 },
+      log
+    )
+    const effective = collector.apply(SELECTOR, 'click', {
+      'move.duration': { explicit: 400, fallback: 900 },
+    })
+    expect(effective).toEqual({ 'move.duration': 400 })
+    expect(collector.getRecords()[0]!.params['move.duration']).toEqual({
+      value: 400,
+      source: 'explicit',
+    })
+    expect(log).not.toHaveBeenCalled()
+  })
+
   it('accepts structured overrides (e.g. position)', () => {
     const collector = new ActionParamCollector(
       { [actionParamKey(SELECTOR, 'click', 0, 'position')]: { x: 1, y: 2 } },
@@ -160,5 +180,44 @@ describe('ActionParamCollector', () => {
       position: { explicit: undefined, fallback: undefined },
     })
     expect(effective).toEqual({ position: { x: 1, y: 2 } })
+  })
+})
+
+describe('ACTION_PARAM_DEFAULTS', () => {
+  it('exposes the effective defaults of the instrumented actions', () => {
+    expect(ACTION_PARAM_DEFAULTS.click).toEqual({
+      'move.duration': 900,
+      'move.speed': null,
+      'move.easing': 'ease-in-out',
+      'move.delayAfter': 50,
+      position: null,
+      noWaitAfter: true,
+    })
+    expect(ACTION_PARAM_DEFAULTS.fill['duration']).toBe(1000)
+    expect(ACTION_PARAM_DEFAULTS.hover['duration']).toBe(1000)
+    expect(ACTION_PARAM_DEFAULTS.dragTo['dragSteps']).toBe(24)
+    expect(ACTION_PARAM_DEFAULTS.dragTo['move.delayAfter']).toBe(100)
+    expect(ACTION_PARAM_DEFAULTS.scrollIntoViewIfNeeded['easing']).toBe(
+      'ease-in-out'
+    )
+  })
+
+  it('covers every action method', () => {
+    const methods: ActionMethod[] = [
+      'click',
+      'fill',
+      'pressSequentially',
+      'tap',
+      'check',
+      'uncheck',
+      'selectOption',
+      'hover',
+      'dragTo',
+      'selectText',
+      'scrollIntoViewIfNeeded',
+    ]
+    for (const method of methods) {
+      expect(ACTION_PARAM_DEFAULTS[method]).toBeDefined()
+    }
   })
 })

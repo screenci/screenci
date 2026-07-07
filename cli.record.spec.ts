@@ -441,6 +441,124 @@ describe('CLI', () => {
     })
   })
 
+  describe('status and sync-prompt commands', () => {
+    const SNAPSHOT = {
+      version: 1,
+      videos: {
+        'My video': [
+          {
+            selector: "getByRole('button')",
+            method: 'click',
+            occurrence: 0,
+            params: {
+              'move.duration': { value: 400, source: 'explicit' },
+            },
+          },
+        ],
+      },
+    }
+
+    function setupProject(overrides: Record<string, unknown>) {
+      process.env.SCREENCI_SECRET = 'sk-test'
+      mockExistsSync.mockImplementation((path: string) => {
+        if (path.endsWith('screenci.config.ts')) return true
+        if (path.endsWith('action-params.json')) return true
+        return false
+      })
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        if (String(path).endsWith('screenci.config.ts')) {
+          return "export default { projectName: 'Test Project' }"
+        }
+        return ''
+      })
+      mockReadFileSync.mockImplementation((path: string | URL) => {
+        if (String(path).endsWith('action-params.json')) {
+          return JSON.stringify(SNAPSHOT)
+        }
+        return ''
+      })
+      return {
+        fetchActionOverrides: vi.fn(async () => overrides),
+      }
+    }
+
+    it('status reports override kinds against the latest snapshot', async () => {
+      const client = setupProject({
+        'My video': {
+          "getByRole('button')|click|0|move.duration": 250,
+        },
+      })
+      const { printActionStatus } = await import('./cli')
+      const lines: string[] = []
+      await printActionStatus(
+        'test-fixtures/screenci.config.ts',
+        undefined,
+        client,
+        (message) => lines.push(message)
+      )
+      expect(client.fetchActionOverrides).toHaveBeenCalledWith(
+        expect.objectContaining({ projectName: 'Test Project' })
+      )
+      const report = lines.join('\n')
+      expect(report).toContain('Video: My video')
+      expect(report).toContain('override shadows explicit code value')
+      expect(report).toContain('code 400 -> editor 250')
+    })
+
+    it('status reports in-sync when the editor has no overrides', async () => {
+      const client = setupProject({})
+      const { printActionStatus } = await import('./cli')
+      const lines: string[] = []
+      await printActionStatus(
+        'test-fixtures/screenci.config.ts',
+        undefined,
+        client,
+        (message) => lines.push(message)
+      )
+      expect(lines.join('\n')).toContain('in sync')
+    })
+
+    it('sync-prompt prints an agent-ready prompt with change instructions', async () => {
+      const client = setupProject({
+        'My video': {
+          "getByRole('button')|click|0|move.duration": 250,
+        },
+      })
+      const { printSyncPrompt } = await import('./cli')
+      let out = ''
+      await printSyncPrompt(
+        'test-fixtures/screenci.config.ts',
+        undefined,
+        client,
+        (text) => {
+          out += text
+        }
+      )
+      expect(out).toContain('"Test Project"')
+      expect(out).toContain('## Video: My video')
+      expect(out).toContain('CHANGE `move.duration` from 400 to 250')
+    })
+
+    it('sync-prompt respects the grep filter and reports nothing to sync', async () => {
+      const client = setupProject({
+        'My video': {
+          "getByRole('button')|click|0|move.duration": 250,
+        },
+      })
+      const { printSyncPrompt } = await import('./cli')
+      let out = ''
+      await printSyncPrompt(
+        'test-fixtures/screenci.config.ts',
+        '^Other',
+        client,
+        (text) => {
+          out += text
+        }
+      )
+      expect(out).toContain('Nothing to sync')
+    })
+  })
+
   describe('reportActionOverrideCollisions', () => {
     it('prints one line per override shadowing an explicit code value', async () => {
       const { reportActionOverrideCollisions } = await import('./cli')

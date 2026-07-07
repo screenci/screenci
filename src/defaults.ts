@@ -56,6 +56,24 @@ export const DEFAULT_AUTO_ZOOM_CENTERING = 0.6
 export const DEFAULT_CLICK_MOUSE_MOVE_DURATION: number = 900
 
 /**
+ * Default pause between the cursor arriving on the target and the press, in
+ * milliseconds (`move.delayAfter` of click-like actions).
+ */
+export const DEFAULT_PRE_CLICK_PAUSE_MS = 50
+
+/**
+ * Default pause between the cursor arriving on the drag source and the mouse
+ * press, in milliseconds (`move.delayAfter` of `dragTo`).
+ */
+export const DEFAULT_DRAG_PRESS_DELAY_MS = 100
+
+/** Default typing animation duration for `fill`, in milliseconds. */
+export const DEFAULT_FILL_TYPING_DURATION_MS = 1000
+
+/** Default hold duration on the target for `hover`, in milliseconds. */
+export const DEFAULT_HOVER_DURATION_MS = 1000
+
+/**
  * Minimum number of intermediate cursor dispatches spread across the drag phase
  * of `dragTo`. The normal cursor throttle (`DEFAULT_MOUSE_FRAME_SKIP`) keeps
  * recorded cursor dispatches sparse because the cursor is redrawn at render time,

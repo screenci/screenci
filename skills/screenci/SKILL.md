@@ -54,9 +54,7 @@ Use the fixture that matches the requested content instead of working around it:
 import { video, voices } from 'screenci'
 
 // Voice is a render option (how narration is spoken), not part of the narration spec.
-video.use({ renderOptions: { narration: { voice: { name: voices.Ava } } } })
-
-video.narration({
+video.renderOptions({ narration: { voice: { name: voices.Ava } } }).narration({
   en: {
     intro:
       'This video shows how to update your billing details and save the changes.',

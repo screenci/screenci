@@ -10,6 +10,7 @@ import { DEFAULT_SCROLL_CENTERING } from './defaults.js'
 import type { ScreenshotClipRecord } from './clip.js'
 import type { CueDurationsMap } from './cueDurations.js'
 import type { ResolvedRedactStyle } from './redactController.js'
+import type { EditablePosition } from './editableDescriptor.js'
 
 export type CurrentZoomViewport = {
   focusPoint: { x: number; y: number }
@@ -147,6 +148,21 @@ export type ScreenCIRuntimeContext = {
     controllerInstalled: boolean
     activeMasks: Map<string, ResolvedRedactStyle>
   }
+  /**
+   * Position counters for web-editable action descriptors. `seq` is the
+   * absolute position among all editable actions in this recording; the map
+   * counts occurrences per identity key so identical actions get increasing
+   * ordinals. Fresh per runtime context, so each recording starts from zero.
+   */
+  editable: {
+    seq: number
+    ordinalByIdentity: Map<string, number>
+    /**
+     * Web-editor overrides for the active recording, indexed by stable key.
+     * Null when none were injected (plain `test` runs, no stored edits).
+     */
+    overridesByKey: Map<string, Record<string, unknown>> | null
+  }
 }
 
 const runtimeContextStorage = new AsyncLocalStorage<ScreenCIRuntimeContext>()
@@ -205,6 +221,11 @@ export function createScreenCIRuntimeContext(
     redact: {
       controllerInstalled: false,
       activeMasks: new Map<string, ResolvedRedactStyle>(),
+    },
+    editable: {
+      seq: 0,
+      ordinalByIdentity: new Map<string, number>(),
+      overridesByKey: null,
     },
   }
 }
@@ -383,6 +404,43 @@ export function getRuntimeTimelineBlocks(): TimelineBlockState[] {
 
 export function isRuntimeInsideHide(): boolean {
   return hasRuntimeTimelineBlock('hide')
+}
+
+/**
+ * Allocates the next editable-action position for the given identity key:
+ * the recording-wide `seq` and the per-identity `ordinal`, both 0-based.
+ */
+export function nextEditablePosition(identityKey: string): EditablePosition {
+  const state = getScreenCIRuntimeContext().editable
+  const ordinal = state.ordinalByIdentity.get(identityKey) ?? 0
+  state.ordinalByIdentity.set(identityKey, ordinal + 1)
+  const seq = state.seq
+  state.seq += 1
+  return { seq, ordinal }
+}
+
+export function resetEditableRuntimeState(): void {
+  const state = getScreenCIRuntimeContext().editable
+  state.seq = 0
+  state.ordinalByIdentity.clear()
+  state.overridesByKey = null
+}
+
+/**
+ * Binds the active recording's web-editor overrides (indexed by stable key)
+ * so editable actions can resolve them. Pass null to clear.
+ */
+export function setEditableRunOverrides(
+  overridesByKey: Map<string, Record<string, unknown>> | null
+): void {
+  getScreenCIRuntimeContext().editable.overridesByKey = overridesByKey
+}
+
+export function getEditableRunOverrides(): Map<
+  string,
+  Record<string, unknown>
+> | null {
+  return getScreenCIRuntimeContext().editable.overridesByKey
 }
 
 export function getRuntimeAutoZoomState(): AutoZoomState {

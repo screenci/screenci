@@ -21,6 +21,7 @@ import {
   type ActionParamRecord,
   type ActionParamSpec,
 } from './actionParams.js'
+import type { EditableMeta } from './editableDescriptor.js'
 import type { VoiceKey } from './voices.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { getGitMetadata } from './git.js'
@@ -169,6 +170,8 @@ export type InputEvent = {
     | MouseHideEvent
     | MouseWaitEvent
   >
+  /** Web-editor metadata: identity, lock state, and effective option values. */
+  editable?: EditableMeta
 }
 
 export type RecordingCustomVoiceRef = {
@@ -811,6 +814,8 @@ export type SpeedStartEvent = {
   type: 'speedStart'
   timeMs: number
   multiplier: number
+  /** Web-editor metadata: identity, lock state, and effective option values. */
+  editable?: EditableMeta
 }
 
 export type SpeedEndEvent = {
@@ -836,6 +841,8 @@ export type AutoZoomStartEvent = {
   duration: number
   amount: number
   centering?: number
+  /** Web-editor metadata: identity, lock state, and effective option values. */
+  editable?: EditableMeta
 }
 
 export type AutoZoomEndEvent = {
@@ -843,6 +850,20 @@ export type AutoZoomEndEvent = {
   timeMs: number
   easing: string
   duration: number
+}
+
+/**
+ * A recorded pause (`page.waitForTimeout`). The wait already happened during
+ * recording, so the renderer never consumes this event; it exists so the web
+ * editor can show the pause on the timeline and (when editable) let the user
+ * change its duration for the next record.
+ */
+export type DelayEvent = {
+  type: 'delay'
+  timeMs: number
+  durationMs: number
+  /** Web-editor metadata: identity, lock state, and effective option values. */
+  editable?: EditableMeta
 }
 
 /**
@@ -906,6 +927,7 @@ export type RecordingEvent =
   | TimeEndEvent
   | AutoZoomStartEvent
   | AutoZoomEndEvent
+  | DelayEvent
   | NarrationHideEvent
   | NarrationShowEvent
   | SleepEvent
@@ -1079,7 +1101,8 @@ export interface IEventRecorder {
   addInput(
     subType: InputEvent['subType'],
     elementRect: ElementRect | undefined,
-    events: InputEvent['events']
+    events: InputEvent['events'],
+    editable?: EditableMeta
   ): void
   addInput(subType: InputEvent['subType'], events: InputEvent['events']): void
   /**
@@ -1092,6 +1115,12 @@ export interface IEventRecorder {
     method: ActionMethod,
     spec: ActionParamSpec
   ): Record<string, unknown>
+  /**
+   * Records a pause (`page.waitForTimeout`) so the web editor can show and,
+   * when editable, adjust it. The wait itself already happened; the renderer
+   * ignores this event.
+   */
+  addDelay(durationMs: number, editable?: EditableMeta): void
   addCueStart(
     text: string,
     name: string,
@@ -1169,11 +1198,11 @@ export interface IEventRecorder {
   addHideEnd(): void
   /** Resolved cursor/scroll dispatch intervals from `recordOptions.performance`. */
   getPerformanceIntervals(): PerformanceIntervals
-  addSpeedStart(multiplier: number): void
+  addSpeedStart(multiplier: number, editable?: EditableMeta): void
   addSpeedEnd(): void
   addTimeStart(durationMs: number): void
   addTimeEnd(): void
-  addAutoZoomStart(options?: AutoZoomOptions): void
+  addAutoZoomStart(options?: AutoZoomOptions, editable?: EditableMeta): void
   addAutoZoomEnd(options?: AutoZoomOptions): void
   addNarrationHide(): void
   addNarrationShow(): void
@@ -1209,6 +1238,7 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   ): Record<string, unknown> {
     return resolveSpecWithoutTracking(spec)
   },
+  addDelay(): void {},
   addCueStart(): void {},
   addStudioCueStart(): void {},
   addValuesDeclare(): void {},
@@ -1432,7 +1462,8 @@ export class EventRecorder implements IEventRecorder {
   addInput(
     subType: InputEvent['subType'],
     elementRectOrEvents: ElementRect | InputEvent['events'] | undefined,
-    maybeEvents?: InputEvent['events']
+    maybeEvents?: InputEvent['events'],
+    editable?: EditableMeta
   ): void {
     if (this.startTime === null) return
     const events = Array.isArray(elementRectOrEvents)
@@ -1483,7 +1514,19 @@ export class EventRecorder implements IEventRecorder {
       type: 'input',
       subType,
       events: relativeEvents,
+      ...(editable !== undefined && { editable }),
     } as InputEvent)
+  }
+
+  addDelay(durationMs: number, editable?: EditableMeta): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'delay',
+      timeMs,
+      durationMs,
+      ...(editable !== undefined && { editable }),
+    })
   }
 
   addCueStart(
@@ -1812,10 +1855,15 @@ export class EventRecorder implements IEventRecorder {
     )
   }
 
-  addSpeedStart(multiplier: number): void {
+  addSpeedStart(multiplier: number, editable?: EditableMeta): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
-    this.events.push({ type: 'speedStart', timeMs, multiplier })
+    this.events.push({
+      type: 'speedStart',
+      timeMs,
+      multiplier,
+      ...(editable !== undefined && { editable }),
+    })
   }
 
   addSpeedEnd(): void {
@@ -1836,7 +1884,7 @@ export class EventRecorder implements IEventRecorder {
     this.events.push({ type: 'timeEnd', timeMs })
   }
 
-  addAutoZoomStart(options?: AutoZoomOptions): void {
+  addAutoZoomStart(options?: AutoZoomOptions, editable?: EditableMeta): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     const centering = this.normalizeCentering(options)
@@ -1865,6 +1913,7 @@ export class EventRecorder implements IEventRecorder {
       ...(centering !== undefined && {
         centering,
       }),
+      ...(editable !== undefined && { editable }),
     })
   }
 

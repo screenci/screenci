@@ -376,6 +376,18 @@ export type RecordOptions = {
   fps?: FPS
 
   /**
+   * Make actions that use default values in code editable from the web
+   * editor. When enabled (the default), every interaction called without
+   * explicit ScreenCI options (cursor timing, zoom options) is stamped as
+   * web-editable, so its timings can be adjusted from the web timeline and
+   * applied on the next record. An action with any explicit option set in
+   * code is locked as a whole (there are no partially editable actions).
+   *
+   * @default true
+   */
+  implicitEditable?: boolean
+
+  /**
    * Tunes how many output frames screenci skips between cursor and scroll
    * dispatches while recording. Dispatching less often keeps interactions
    * responsive on busy pages / slow CI (each dispatch queues behind the page's
@@ -1093,8 +1105,9 @@ export type ScreenCILocator = Omit<
  * `page.screenshot()` also writes a branded still as a separate screenshot
  * recording; these keys are stripped before delegating to Playwright.
  */
-export type ScreenCIScreenshotOptions = NonNullable<
-  Parameters<Page['screenshot']>[0]
+export type ScreenCIScreenshotOptions = Omit<
+  NonNullable<Parameters<Page['screenshot']>[0]>,
+  'clip'
 > & {
   /** Names the still recording: "<video title> - <name>". */
   name?: string
@@ -1115,7 +1128,7 @@ export type ScreenCIPage = Omit<
    * Use Playwright locator/action waits for application readiness instead of
    * relying on this as a real polling delay.
    */
-  waitForTimeout(...args: Parameters<Page['waitForTimeout']>): Promise<void>
+  waitForTimeout(timeout?: number): Promise<void>
   /**
    * Captures a screenshot. Inside a `video()` recording this also writes a
    * branded still as a separate screenshot recording named "<video title> -
@@ -1243,10 +1256,16 @@ export type ScreenCIConfig = Omit<
    */
   webServer?: PlaywrightTestConfig['webServer']
   use?: Omit<NonNullable<PlaywrightTestConfig['use']>, 'trace'> & {
+    /**
+     * Project-wide default record options. Override per video with
+     * `video.recordOptions(...)`. Code values are the starting point; they
+     * stay editable in the web editor.
+     */
     recordOptions?: RecordOptions
     /**
-     * Render options. Code values are the starting point; they stay editable
-     * in the web editor.
+     * Project-wide default render options. Override per video with
+     * `video.renderOptions(...)`. Code values are the starting point; they
+     * stay editable in the web editor.
      */
     renderOptions?: RenderOptions
     /**
@@ -1276,10 +1295,16 @@ export type ScreenCIConfig = Omit<
   }
   projects?: (Omit<Project, 'use'> & {
     use?: Omit<NonNullable<Project['use']>, 'trace'> & {
+      /**
+       * Project-wide default record options. Override per video with
+       * `video.recordOptions(...)`. Code values are the starting point; they
+       * stay editable in the web editor.
+       */
       recordOptions?: RecordOptions
       /**
-       * Render options. Code values are the starting point; they stay editable
-       * in the web editor.
+       * Project-wide default render options. Override per video with
+       * `video.renderOptions(...)`. Code values are the starting point; they
+       * stay editable in the web editor.
        */
       renderOptions?: RenderOptions
       /**

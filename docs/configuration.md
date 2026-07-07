@@ -19,7 +19,8 @@ The config merges three layers:
 
 1. ScreenCI defaults.
 2. Your project-wide defaults from `screenci.config.ts`.
-3. Per-file overrides from `video.use()`.
+3. Per-file overrides from `video.renderOptions()` / `video.recordOptions()`
+   (and Playwright options from `video.use()`).
 
 ## Common full config
 
@@ -158,6 +159,11 @@ Set shared `recordOptions` under `use`:
 - `redact`: CSS selectors masked from the first frame so on-screen secrets never
   enter the recording. See
   [redacting sensitive content](/docs/guides/redact).
+- `implicitEditable` (default `true`): stamp interactions that use default
+  values in code as editable from the web editor, so their timings (cursor
+  moves, pauses, zoom options) can be adjusted in the browser and applied on
+  the next record. An action with any explicit option set in code stays locked
+  as a whole. Set to `false` to keep every timing owned by code.
 
 These values determine the recording viewport, so they are the supported way to
 control recording size.
@@ -266,7 +272,8 @@ override only the files that need a different look.
 
 Render and record options are always manageable on the Editor page: values
 declared in code (via `use({ renderOptions: {...} })` and
-`use({ recordOptions: {...} })`) are the starting point, and web edits override
+`use({ recordOptions: {...} })`, or per video with `video.renderOptions(...)`
+and `video.recordOptions(...)`) are the starting point, and web edits override
 them. Omit them entirely to start from the system defaults. See
 [Editor](/docs/guides/editor).
 
@@ -348,30 +355,34 @@ See [Recording your own app](/docs/ci-setup#recording-your-own-app) in the CI se
 
 ## Per-file overrides
 
-Use `video.use()` when one file needs different defaults:
+Use `video.recordOptions()` / `video.renderOptions()` when one file needs
+different defaults. They return a chainable builder, so chain them into the test
+registration (or into `video.narration(...)` and the other builder methods):
 
 ```ts
 import { video } from 'screenci'
 
-video.use({
-  recordOptions: {
+video
+  .recordOptions({
     // Switch this file to portrait output.
     aspectRatio: '9:16',
     // Capture at a higher resolution for this specific video.
     quality: '1440p',
     fps: 60,
-  },
-  renderOptions: {
+  })
+  .renderOptions({
     narration: {
       // Move narration away from UI that appears in the lower-right corner.
       corner: 'top-right',
     },
-  },
+  })('Portrait walkthrough', async ({ page }) => {
+  await page.goto('/dashboard')
 })
 ```
 
-Reach for `video.use()` when a single script has a different layout, output
-format, or staging target than the rest of the project.
+Reach for these builder methods when a single script has a different layout or
+output format than the rest of the project. For plain Playwright options
+(such as `colorScheme`) use `video.use()` the same way.
 
 ## Default values
 

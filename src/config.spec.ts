@@ -237,11 +237,16 @@ describe('defineConfig', () => {
       },
     })
 
-    expect(config.use?.recordOptions).toEqual({
+    // Config-level recordOptions are remapped onto the internal option fixture
+    // the video/screenshot fixtures read, so they never collide with the public
+    // Playwright option surface (removed from `video.use`).
+    const use = config.use as Record<string, unknown>
+    expect(use._screenciConfigRecordOptions).toEqual({
       aspectRatio: '16:9',
       quality: '2160p',
       fps: 60,
     })
+    expect(use.recordOptions).toBeUndefined()
   })
 
   it('should accept baseURL in use', () => {
@@ -454,11 +459,13 @@ describe('defineConfig', () => {
       ],
     })
 
-    expect(config.projects?.[0].use?.recordOptions).toEqual({
+    const projectUse = config.projects?.[0].use as Record<string, unknown>
+    expect(projectUse._screenciConfigRecordOptions).toEqual({
       aspectRatio: '9:16',
       quality: '720p',
       fps: 24,
     })
+    expect(projectUse.recordOptions).toBeUndefined()
   })
 
   it('should accept all supported aspect ratios', () => {

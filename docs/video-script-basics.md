@@ -304,24 +304,22 @@ Other parts of the spec:
 - short, sentence-sized cues instead of paragraph-sized narration blocks
 
 Voice is configured separately as a render option in `renderOptions.narration`
-(via `video.use(...)` or `screenci.config.ts`), with a default `voice` and
-per-language `voices` overrides.
+(via `video.renderOptions(...)` or `screenci.config.ts`), with a default `voice`
+and per-language `voices` overrides.
 
 ```ts
 import { video, voices } from 'screenci'
 
 // Voice is a render option (how narration is spoken).
-video.use({
-  renderOptions: { narration: { voice: { name: voices.Ava } } },
-})
-
-// Localized narration cues by language.
-video.narration({
-  en: { intro: 'Open settings and review the billing details.' },
-  es: {
-    intro: 'Abre la configuracion y revisa los detalles de facturacion.',
-  },
-})('Billing walkthrough', async ({ page, narration }) => {
+video
+  .renderOptions({ narration: { voice: { name: voices.Ava } } })
+  // Localized narration cues by language.
+  .narration({
+    en: { intro: 'Open settings and review the billing details.' },
+    es: {
+      intro: 'Abre la configuracion y revisa los detalles de facturacion.',
+    },
+  })('Billing walkthrough', async ({ page, narration }) => {
   // Play the full cue before continuing.
   await narration.intro()
 
@@ -370,10 +368,11 @@ combine this with the bare-array form of narration, for example
 values that stay editable in Editor; an Editor edit wins over the code value.
 
 Render options work the same way: values declared through
-`use({ renderOptions: {...} })` are the starting point, and web edits override
-them. Every recording also tracks which option values its Playwright actions
-used (for example `move.duration` or `position`) and whether each was explicit
-in code or a default, so the web editor can present and override them; see
+`use({ renderOptions: {...} })` or per video with `video.renderOptions(...)`
+are the starting point, and web edits override them. Every recording also
+tracks which option values its Playwright actions used (for example
+`move.duration` or `position`) and whether each was explicit in code or a
+default, so the web editor can present and override them; see
 [Action parameter tracking and overrides](./editor.md#action-parameter-tracking-and-overrides).
 
 API reference: [voices](/docs/reference/api/variables/voices)

@@ -19,10 +19,16 @@ import {
   type ActionParamSpec,
 } from './actionParams.js'
 import {
+  bindClickRecorderToPage,
   setActiveClickRecorder,
   instrumentLocator,
   instrumentPage,
 } from './instrument.js'
+import { resetEditableRuntimeState } from './runtimeContext.js'
+import {
+  getLocatorDescription,
+  type EditableMeta,
+} from './editableDescriptor.js'
 import {
   autoZoom,
   setActiveAutoZoomRecorder,
@@ -33,6 +39,7 @@ import { hide } from './hide.js'
 import { CLICK_DURATION_MS, getMousePosition } from './mouse.js'
 import { SCREENCI_DISABLE_RECORDING_TIMINGS_ENV } from './runtimeMode.js'
 import { logger } from './logger.js'
+import { resolvePerformanceIntervals } from './performance.js'
 
 type DOMClickData = { x: number; y: number; targetRect: ElementRect }
 type ScrollLogicalPosition = 'start' | 'center' | 'end' | 'nearest'
@@ -66,6 +73,10 @@ function makeRecorder() {
     applyActionParams: vi.fn(
       (_selector: string, _method: string, spec: ActionParamSpec) =>
         resolveSpecWithoutTracking(spec)
+    ),
+    addDelay: vi.fn(),
+    getPerformanceIntervals: vi.fn(() =>
+      resolvePerformanceIntervals(undefined)
     ),
     addCueStart: vi.fn(),
     addStudioCueStart: vi.fn(),
@@ -1794,7 +1805,8 @@ describe('instrumentLocator', () => {
       expect.arrayContaining([
         expect.objectContaining({ type: 'mouseDown' }),
         expect.objectContaining({ type: 'mouseUp' }),
-      ])
+      ]),
+      expect.objectContaining({ locked: true, schemaKind: 'cursorMove' })
     )
   })
 
@@ -2298,5 +2310,93 @@ describe('instrumentLocator', () => {
     expect(originalCheck).toHaveBeenCalledTimes(1)
     expect(originalUncheck).toHaveBeenCalledTimes(1)
     expect(originalSelectOption).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('editable descriptor capture', () => {
+  it('captures locator descriptions and stamps editable metadata with ordinals', async () => {
+    resetEditableRuntimeState()
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const first = page.getByRole('button', { name: 'Save' })
+    const second = page.getByRole('button', { name: 'Save' })
+    await Promise.all([first.click(), vi.runAllTimersAsync()])
+    await Promise.all([second.click(), vi.runAllTimersAsync()])
+
+    const addInput = recorder.addInput as ReturnType<typeof vi.fn>
+    const firstMeta = addInput.mock.calls[0]![3] as EditableMeta
+    const secondMeta = addInput.mock.calls[1]![3] as EditableMeta
+    expect(firstMeta.descriptor).toEqual({
+      kind: 'input',
+      subKind: 'click',
+      matcher: 'getByRole(button, name=Save)',
+      ordinal: 0,
+      seq: 0,
+    })
+    expect(secondMeta.descriptor.ordinal).toBe(1)
+    expect(secondMeta.descriptor.seq).toBe(1)
+    expect(firstMeta.locked).toBe(false)
+    expect(firstMeta.schemaKind).toBe('cursorMove')
+    expect(firstMeta.defaults).toMatchObject({
+      moveDuration: DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+      moveEasing: 'ease-in-out',
+    })
+  })
+
+  it('chains descriptions through sync locator methods', async () => {
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const item = page.getByRole('list').nth(2)
+    expect(getLocatorDescription(item)).toBe('getByRole(list) > nth(2)')
+  })
+
+  it('locks the whole action when any explicit option is set in code', async () => {
+    resetEditableRuntimeState()
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+    const locator = makeLocatorMock({ x: 0, y: 0, width: 10, height: 10 }, page)
+    instrumentLocator(locator)
+
+    await Promise.all([
+      (
+        locator as unknown as {
+          click(options?: { move?: { duration?: number } }): Promise<void>
+        }
+      ).click({ move: { duration: 100 } }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const addInput = recorder.addInput as ReturnType<typeof vi.fn>
+    const meta = addInput.mock.calls[0]![3] as EditableMeta
+    expect(meta.locked).toBe(true)
+    expect(meta.defaults).toMatchObject({ moveDuration: 100 })
+  })
+
+  it('records a locked delay event for numeric page.waitForTimeout', async () => {
+    resetEditableRuntimeState()
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+    bindClickRecorderToPage(page, recorder)
+
+    await Promise.all([page.waitForTimeout(250), vi.runAllTimersAsync()])
+
+    const addDelay = recorder.addDelay as ReturnType<typeof vi.fn>
+    expect(addDelay).toHaveBeenCalledTimes(1)
+    const [durationMs, meta] = addDelay.mock.calls[0]! as [number, EditableMeta]
+    expect(durationMs).toBe(250)
+    expect(meta.descriptor.kind).toBe('delay')
+    expect(meta.locked).toBe(true)
+    expect(meta.defaults).toEqual({ durationMs: 250 })
   })
 })

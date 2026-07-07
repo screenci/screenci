@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import type { TestDetails, TestInfo } from '@playwright/test'
-import type { RecordOptions } from './types.js'
+import type { RecordOptions, RenderOptions } from './types.js'
 import type { NarrationCue } from './cue.js'
 import type {
   OverlayController,
@@ -18,6 +18,14 @@ import {
   type FeatureArg,
   type NormalizedFeature,
 } from './declare.js'
+import {
+  normalizeOptionsArg,
+  resolveRecordOptionsForPass,
+  resolveRenderOptionsForPass,
+  type NormalizedOptions,
+  type OptionsArg,
+} from './optionsDeclare.js'
+import { ScreenciError } from './errors.js'
 
 /**
  * One variant in a generic `video.each(...)` fan-out. Each variant produces a
@@ -111,8 +119,16 @@ export type Registration = {
   language: string | null
   /** Browser locale for this pass, or `null` to leave the default. */
   locale: string | null
-  /** Recording options patch for this pass, or `null` for none. */
+  /**
+   * Record options for this pass (declaration base + this language's override
+   * + the `each` variant patch, pre-merged), or `null` for none.
+   */
   recordOptions: Partial<RecordOptions> | null
+  /**
+   * Render options for this pass (declaration base + this language's override,
+   * pre-merged), or `null` for none.
+   */
+  renderOptions: Partial<RenderOptions> | null
   /** Forwarded Playwright `use` options for this pass, or `null` for none. */
   use: Record<string, unknown> | null
   /** Per-feature declarations carried into the fixtures. */
@@ -169,6 +185,9 @@ function featureLanguages(state: BuilderState): string[] {
     state.audio,
   ]) {
     for (const lang of feature?.languages ?? []) set.add(lang)
+  }
+  for (const decl of [state.recordOptions, state.renderOptions]) {
+    for (const lang of decl?.languages ?? []) set.add(lang)
   }
   return [...set]
 }
@@ -282,6 +301,21 @@ function warnUnusedLanguages(
       }
     }
   }
+  const optionDecls: [string, NormalizedOptions<unknown> | null][] = [
+    ['Record options', state.recordOptions],
+    ['Render options', state.renderOptions],
+  ]
+  for (const [label, decl] of optionDecls) {
+    if (decl === null) continue
+    for (const lang of Object.keys(decl.byLang)) {
+      if (active.has(lang)) continue
+      logger.warn(
+        `[screenci] ${label} for language ${lang} are not used at all currently, ` +
+          `reason: only languages [${langList}] defined in ${source}. ` +
+          `See https://screenci.com/docs/localization`
+      )
+    }
+  }
 }
 
 /**
@@ -307,11 +341,41 @@ export function expandRegistrations(params: {
 
   for (const variant of variants) {
     const videoName = variantVideoName(baseTitle, variant)
-    const recordOptions = variant?.recordOptions ?? null
+    const variantPatch = variant?.recordOptions ?? null
     const use = variant?.use ?? null
     const variantLabel = variant === null ? '' : `${variant.key} `
     const resolved = resolveRecordingLocalize(state, params.requestedLanguages)
     warnUnusedLanguages(state, resolved)
+
+    // Per-language options require a per-language capture: a shared recording
+    // is captured once and overdubbed, so a per-language viewport or render
+    // bag is a contradiction. Fail loudly rather than silently ignoring it.
+    if (resolved.mode === 'shared') {
+      for (const [label, decl] of [
+        ['recordOptions', state.recordOptions],
+        ['renderOptions', state.renderOptions],
+      ] as const) {
+        if (decl !== null && Object.keys(decl.byLang).length > 0) {
+          throw new ScreenciError(
+            `${label}({ <language>: ... }) requires mode: 'per-language': a ` +
+              `shared recording is captured once, so per-language options ` +
+              `cannot apply. Remove the per-language keys or drop mode: 'shared'.`
+          )
+        }
+      }
+    }
+
+    const optionsForPass = (language: string | null) => ({
+      recordOptions: resolveRecordOptionsForPass({
+        decl: state.recordOptions,
+        language,
+        variantPatch,
+      }),
+      renderOptions: resolveRenderOptionsForPass({
+        decl: state.renderOptions,
+        language,
+      }),
+    })
 
     // Explicitly-declared languages all filtered out (`--languages`) and not a
     // pending studio set: register nothing for this variant.
@@ -325,7 +389,6 @@ export function expandRegistrations(params: {
 
     const base = {
       videoName,
-      recordOptions,
       use,
       narration: state.narration,
       values: state.values,
@@ -365,6 +428,7 @@ export function expandRegistrations(params: {
           : (variant?.key ?? baseTitle)
       registrations.push({
         ...base,
+        ...optionsForPass(onlyLang),
         describeTitle,
         leafTitle: onlyLang ? `${videoName} [${onlyLang}]` : videoName,
         language: onlyLang,
@@ -379,6 +443,7 @@ export function expandRegistrations(params: {
     for (const lang of resolved.languages) {
       registrations.push({
         ...base,
+        ...optionsForPass(lang),
         describeTitle: `${variantLabel}${lang}`,
         leafTitle: `${videoName} [${lang}]`,
         language: lang,
@@ -401,6 +466,8 @@ const SCREENCI_OVERLAYS_OPTION = '_screenciOverlays'
 const SCREENCI_AUDIO_OPTION = '_screenciAudio'
 const SCREENCI_RECORDING_LOCALIZE_OPTION = '_screenciRecordingLocalize'
 const SCREENCI_SOURCE_FILE_OPTION = '_screenciSourceFile'
+const SCREENCI_RECORD_OPTIONS_OPTION = '_screenciRecordOptions'
+const SCREENCI_RENDER_OPTIONS_OPTION = '_screenciRenderOptions'
 
 /** Absolute path of this module, used to skip our own frames when capturing. */
 const BUILDER_MODULE_PATH = fileURLToPath(import.meta.url)
@@ -467,7 +534,12 @@ function registerOne(
 ): void {
   const useOptions: Record<string, unknown> = {
     ...(reg.use ?? {}),
-    ...(reg.recordOptions !== null ? { recordOptions: reg.recordOptions } : {}),
+    ...(reg.recordOptions !== null
+      ? { [SCREENCI_RECORD_OPTIONS_OPTION]: reg.recordOptions }
+      : {}),
+    ...(reg.renderOptions !== null
+      ? { [SCREENCI_RENDER_OPTIONS_OPTION]: reg.renderOptions }
+      : {}),
     ...(reg.locale !== null ? { locale: reg.locale } : {}),
     [SCREENCI_LANGUAGE_OPTION]: reg.language ?? undefined,
     [SCREENCI_VIDEO_NAME_OPTION]: reg.videoName,
@@ -656,6 +728,18 @@ export interface MediaBuilder<Args, O = object> extends BuilderTerminal<
   ): MediaBuilder<Args, O & AudioOverrideFor<Args, A>>
   /** Declare the recorded language set / capture mode. */
   languages(arg?: LanguagesArg): MediaBuilder<Args, O>
+  /**
+   * Declare capture options (aspect ratio, quality, fps, ...): a flat object
+   * shared across languages, or a language-major object (`{ default, de, ... }`)
+   * with per-language overrides. The values stay editable in the web app.
+   */
+  recordOptions(arg: OptionsArg<RecordOptions>): MediaBuilder<Args, O>
+  /**
+   * Declare render options (framing, narration voice, output, ...): a flat
+   * object shared across languages, or a language-major object with
+   * per-language overrides. The values stay editable in the web app.
+   */
+  renderOptions(arg: OptionsArg<RenderOptions>): MediaBuilder<Args, O>
   /** Produce a separate video per variant (viewport, theme, ...). */
   each(variants: EachVariant[]): MediaBuilder<Args, O>
   only: BuilderTerminal<Args, O>
@@ -690,6 +774,8 @@ export type BuilderState = {
   values: NormalizedFeature<string> | null
   overlays: NormalizedFeature<OverlayInputOrFactory> | null
   audio: NormalizedFeature<AudioInput> | null
+  recordOptions: NormalizedOptions<RecordOptions> | null
+  renderOptions: NormalizedOptions<RenderOptions> | null
   recordingLocalize: RecordingLocalize | null
   eachVariants: EachVariant[] | null
   /** Fixtures this medium supports; declaring an unsupported one throws. */
@@ -701,6 +787,8 @@ const EMPTY_STATE = (features: ReadonlySet<FeatureKey>): BuilderState => ({
   values: null,
   overlays: null,
   audio: null,
+  recordOptions: null,
+  renderOptions: null,
   recordingLocalize: null,
   eachVariants: null,
   features,
@@ -808,6 +896,17 @@ export function createVideoBuilder<Args>(
     withFeature('overlays', arg)) as MediaBuilder<Args>['overlays']
   callable.audio = ((arg: FeatureArg<AudioInput>) =>
     withFeature('audio', arg)) as MediaBuilder<Args>['audio']
+
+  callable.recordOptions = ((arg: OptionsArg<RecordOptions>) =>
+    createVideoBuilder<Args>(test, features, {
+      ...state,
+      recordOptions: normalizeOptionsArg('recordOptions', arg),
+    })) as MediaBuilder<Args>['recordOptions']
+  callable.renderOptions = ((arg: OptionsArg<RenderOptions>) =>
+    createVideoBuilder<Args>(test, features, {
+      ...state,
+      renderOptions: normalizeOptionsArg('renderOptions', arg),
+    })) as MediaBuilder<Args>['renderOptions']
 
   callable.languages = ((arg?: LanguagesArg) =>
     createVideoBuilder<Args>(test, features, {

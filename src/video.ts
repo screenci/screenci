@@ -87,6 +87,7 @@ import {
   isCaptureAudioEnabled,
   resolveCaptureAudioGain,
 } from './browserLaunchOptions.js'
+import { resolveEditableOverridesForVideo } from './editableRuntime.js'
 import {
   createScreenCIRuntimeContext,
   runWithScreenCIRuntimeContext,
@@ -109,6 +110,10 @@ import {
   mergeStudioRecordOptions,
 } from './runtimeMode.js'
 import { ActionParamCollector } from './actionParams.js'
+import {
+  combineRecordOptionsLayers,
+  combineRenderOptionsLayers,
+} from './optionsDeclare.js'
 import { buildScreenCIContextOptions } from './contextOptions.js'
 import { bindStillCaptureToPage } from './stillCapture.js'
 import {
@@ -156,9 +161,10 @@ export function resolveEffectiveRecordOptions(
 }
 
 /**
- * Resolve the `recordOptions` option: the code values merged over the defaults.
- * Every recording's capture options are editable in the web app; the code
- * values are the starting point.
+ * Resolve the `recordOptions` option: the code values merged over the defaults
+ * (config layer plus per-video declaration, pre-combined by the caller). Every
+ * recording's capture options are editable in the web app; the code values are
+ * the starting point.
  */
 export function resolveStudioRecordOptions(
   recordOptions: RecordOptions | Partial<RecordOptions> | undefined
@@ -537,8 +543,22 @@ export async function withActiveRecordingContext<T>(params: {
 }
 
 type VideoFixtureOptions = {
-  recordOptions: RecordOptions | Partial<RecordOptions>
-  renderOptions: RenderOptions | undefined
+  /**
+   * Config-level record options (`use.recordOptions` in `screenci.config`),
+   * remapped by `defineConfig`. The project-wide default layer; per-video
+   * options come from `video.recordOptions(...)`. Internal.
+   */
+  _screenciConfigRecordOptions: RecordOptions
+  /** Config-level render options (`use.renderOptions`). Internal. */
+  _screenciConfigRenderOptions: RenderOptions | undefined
+  /**
+   * Per-video record options declared via `video.recordOptions(...)`, pre-merged
+   * for this pass by the fan-out builder (base + language override + variant
+   * patch). Internal.
+   */
+  _screenciRecordOptions: Partial<RecordOptions> | undefined
+  /** Per-video render options declared via `video.renderOptions(...)`. Internal. */
+  _screenciRenderOptions: Partial<RenderOptions> | undefined
   /**
    * Active language for this recording pass, set by `video.languages(...)` in
    * per-language mode. `undefined` in shared mode and single-language videos.
@@ -609,8 +629,10 @@ const _videoBase = base.extend<
   VideoFixtureOptions & VideoRuntimeFixtures,
   { recordingFinalizationQueue: WorkerFinalizationQueue }
 >({
-  recordOptions: [DEFAULT_VIDEO_OPTIONS, { option: true }],
-  renderOptions: [undefined, { option: true }],
+  _screenciConfigRecordOptions: [DEFAULT_VIDEO_OPTIONS, { option: true }],
+  _screenciConfigRenderOptions: [undefined, { option: true }],
+  _screenciRecordOptions: [undefined, { option: true }],
+  _screenciRenderOptions: [undefined, { option: true }],
   _screenciLanguage: [undefined, { option: true }],
   _screenciVideoName: [undefined, { option: true }],
   _screenciNarration: [undefined, { option: true }],
@@ -628,13 +650,19 @@ const _videoBase = base.extend<
     {
       _screenciNarration,
       _screenciRecordingLocalize,
-      renderOptions,
+      _screenciConfigRenderOptions,
+      _screenciRenderOptions,
       _screenciSourceFile,
     },
     use,
     testInfo
   ) => {
-    const { obj: renderOptionsObj } = resolveStudioRenderOptions(renderOptions)
+    const { obj: renderOptionsObj } = resolveStudioRenderOptions(
+      combineRenderOptionsLayers(
+        _screenciConfigRenderOptions,
+        _screenciRenderOptions
+      )
+    )
     await use(
       buildNarrationMarkers(
         _screenciNarration,
@@ -749,7 +777,8 @@ const _videoBase = base.extend<
   context: async (
     {
       browser,
-      recordOptions,
+      _screenciConfigRecordOptions,
+      _screenciRecordOptions,
       _screenciVideoName,
       colorScheme,
       locale,
@@ -776,8 +805,12 @@ const _videoBase = base.extend<
     // (with web-editor record-option overrides applied); other Playwright
     // `use` options (colorScheme, locale, storageState, ...) are forwarded so
     // they take effect on the context screenci creates.
-    const { base: baseRecordOptions } =
-      resolveStudioRecordOptions(recordOptions)
+    const { base: baseRecordOptions } = resolveStudioRecordOptions(
+      combineRecordOptionsLayers(
+        _screenciConfigRecordOptions,
+        _screenciRecordOptions
+      )
+    )
     const effectiveRecordOptions = resolveEffectiveRecordOptions(
       baseRecordOptions,
       _screenciVideoName ?? testInfo.title
@@ -828,8 +861,10 @@ const _videoBase = base.extend<
   page: async (
     {
       context,
-      recordOptions: codeRecordOptions,
-      renderOptions,
+      _screenciConfigRecordOptions,
+      _screenciConfigRenderOptions,
+      _screenciRecordOptions,
+      _screenciRenderOptions,
       recordingFinalizationQueue,
       _screenciLanguage,
       _screenciValues,
@@ -844,9 +879,18 @@ const _videoBase = base.extend<
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
     // Apply web-editor record-option overrides so the capture, serialized
     // recordOptions, and viewport all use the effective values.
-    const { base: baseRecordOptions } =
-      resolveStudioRecordOptions(codeRecordOptions)
-    const { obj: renderOptionsObj } = resolveStudioRenderOptions(renderOptions)
+    const { base: baseRecordOptions } = resolveStudioRecordOptions(
+      combineRecordOptionsLayers(
+        _screenciConfigRecordOptions,
+        _screenciRecordOptions
+      )
+    )
+    const { obj: renderOptionsObj } = resolveStudioRenderOptions(
+      combineRenderOptionsLayers(
+        _screenciConfigRenderOptions,
+        _screenciRenderOptions
+      )
+    )
     const recordOptions = resolveEffectiveRecordOptions(
       baseRecordOptions,
       _screenciVideoName ?? testInfo.title
@@ -907,6 +951,10 @@ const _videoBase = base.extend<
         renderOptions: renderOptionsObj,
         activeLanguage: _screenciLanguage ?? null,
       })
+      // Web-editor timing overrides for this video (injected by the CLI for
+      // record and mock-record runs; absent for plain test runs).
+      runtimeContext.editable.overridesByKey =
+        resolveEditableOverridesForVideo(videoName)
       bindStillCaptureToPage(page)
       await setupMouseTracking(page, recorder)
       if (resolveDisableAnimations(recordOptions.disableAnimations, 'video')) {
@@ -967,6 +1015,10 @@ const _videoBase = base.extend<
       renderOptions: renderOptionsObj,
       activeLanguage: _screenciLanguage ?? null,
     })
+    // Web-editor timing overrides for this video, fetched by the CLI before
+    // the run and injected via SCREENCI_EDITABLE_OVERRIDES.
+    runtimeContext.editable.overridesByKey =
+      resolveEditableOverridesForVideo(videoName)
 
     await setupMouseTracking(page, recorder)
     if (resolveDisableAnimations(recordOptions.disableAnimations, 'video')) {
@@ -1135,11 +1187,12 @@ interface VideoCallSignatures {
    * @example
    * Configure video options:
    * ```ts
-   * video.use({ recordOptions: { aspectRatio: '16:9', quality: '2160p', fps: 60 } })
-   *
-   * video('4K demo', async ({ page }) => {
-   *   await page.goto('https://example.com')
-   * })
+   * video.recordOptions({ aspectRatio: '16:9', quality: '2160p', fps: 60 })(
+   *   '4K demo',
+   *   async ({ page }) => {
+   *     await page.goto('https://example.com')
+   *   }
+   * )
    * ```
    */
   (title: string, body: VideoBody): void
@@ -1240,6 +1293,40 @@ interface Video extends VideoCallSignatures {
   languages: MediaBuilder<VideoArgs>['languages']
 
   /**
+   * Declare capture options (aspect ratio, quality, fps, ...). A flat object
+   * applies to every language; a language-major object (`{ default, de, ... }`)
+   * overrides per language. Values stay editable in the web app.
+   *
+   * @example
+   * ```ts
+   * video.recordOptions({
+   *   default: { aspectRatio: '16:9' },
+   *   de: { aspectRatio: '4:3' },
+   * })('Landing', async ({ page }) => {
+   *   await page.goto('/')
+   * })
+   * ```
+   */
+  recordOptions: MediaBuilder<VideoArgs>['recordOptions']
+
+  /**
+   * Declare render options (framing, narration voice, output, ...). A flat
+   * object applies to every language; a language-major object overrides per
+   * language. Values stay editable in the web app.
+   *
+   * @example
+   * ```ts
+   * video.renderOptions({
+   *   default: { narration: { voice: { name: voices.Ava } } },
+   *   fi: { narration: { voice: { name: voices.Onni } } },
+   * })('Tutorial', async ({ page }) => {
+   *   await page.goto('/')
+   * })
+   * ```
+   */
+  renderOptions: MediaBuilder<VideoArgs>['renderOptions']
+
+  /**
    * Produce a separate video per variant (viewport, theme, ...). Each variant
    * has its own video identity and history. Chainable with `.languages(...)`.
    *
@@ -1288,7 +1375,8 @@ interface Video extends VideoCallSignatures {
  * ScreenCI video recording test fixture.
  *
  * Extended Playwright test that automatically records browser interactions as video.
- * Configure recording options globally with `video.use()` or in your config file.
+ * Configure capture/render options with `video.recordOptions(...)` /
+ * `video.renderOptions(...)` per video, or project-wide in your config file.
  *
  * @example
  * Basic usage:
@@ -1296,9 +1384,7 @@ interface Video extends VideoCallSignatures {
  * import { video, voices } from 'screenci'
  *
  * // Voice is a render option; the narration text is declared with video.narration.
- * video.use({ renderOptions: { narration: { voice: { name: voices.Ava } } } })
- *
- * video.narration({
+ * video.renderOptions({ narration: { voice: { name: voices.Ava } } }).narration({
  *   en: {
  *     homepage: 'User navigates to homepage.',
  *     signup: 'Clicks the sign up button.',
@@ -1324,4 +1410,6 @@ video.values = _rootBuilder.values
 video.overlays = _rootBuilder.overlays
 video.audio = _rootBuilder.audio
 video.languages = _rootBuilder.languages
+video.recordOptions = _rootBuilder.recordOptions
+video.renderOptions = _rootBuilder.renderOptions
 video.each = _rootBuilder.each

@@ -1,5 +1,8 @@
 import type { Page } from '@playwright/test'
-import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
+import {
+  DEFAULT_AUTO_ZOOM_CENTERING,
+  DEFAULT_ZOOM_OPTIONS,
+} from './defaults.js'
 import { invalidOptionError, ScreenciError } from './errors.js'
 import type { IEventRecorder } from './events.js'
 import type { AutoZoomOptions, Easing } from './types.js'
@@ -10,10 +13,18 @@ import {
   getRuntimeAutoZoomState,
   getRuntimeAutoZoomRecorder,
   getRuntimePage,
+  getRuntimeRecordOptions,
+  nextEditablePosition,
   setRuntimeAutoZoomState,
   setRuntimeAutoZoomRecorder,
   setRuntimePage,
 } from './runtimeContext.js'
+import {
+  buildEditableMeta,
+  editableIdentityKey,
+  type EditableMeta,
+} from './editableDescriptor.js'
+import { applyEditableOverride } from './editableRuntime.js'
 
 function assertAutoZoomUnitIntervalOption(
   value: number,
@@ -95,6 +106,38 @@ function resetAutoZoomState(): void {
 }
 
 /**
+ * Editable metadata for an `autoZoom` block. A plain options object with any
+ * key set locks the whole block against web timeline edits (no partially
+ * editable actions); a bare `autoZoom(fn)` is fully web-editable with the
+ * package defaults. Locked blocks are skipped entirely when
+ * `recordOptions.implicitEditable` is false.
+ */
+function buildAutoZoomEditableMeta(input: {
+  options: AutoZoomOptions | undefined
+  locked: boolean
+}): EditableMeta | undefined {
+  if (input.locked && getRuntimeRecordOptions()?.implicitEditable === false) {
+    return undefined
+  }
+  const identity = {
+    kind: 'autoZoom' as const,
+  }
+  return buildEditableMeta({
+    ...identity,
+    schemaKind: 'autoZoom',
+    locked: input.locked,
+    // Element framing inside autoZoom uses the comfort-band centering, not
+    // the zoomTo centering of DEFAULT_ZOOM_OPTIONS, so display that default.
+    defaults: {
+      ...DEFAULT_ZOOM_OPTIONS,
+      centering: DEFAULT_AUTO_ZOOM_CENTERING,
+      ...(input.options ?? {}),
+    },
+    position: nextEditablePosition(editableIdentityKey(identity)),
+  })
+}
+
+/**
  * Zooms the camera in on interactions inside `fn`, panning to follow each
  * click and fill. After `fn` resolves the camera zooms back out.
  *
@@ -120,7 +163,7 @@ function resetAutoZoomState(): void {
  */
 export async function autoZoom(
   fn: () => Promise<void> | void,
-  options?: AutoZoomOptions
+  codeOptions?: AutoZoomOptions
 ): Promise<void> {
   const currentAutoZoomState = getAutoZoomState()
   if (currentAutoZoomState.insideAutoZoom) {
@@ -131,8 +174,26 @@ export async function autoZoom(
       'Cannot call autoZoom() while manual zoom is active'
     )
   }
+  // A plain options object with any key set locks the block against web
+  // timeline edits; a bare autoZoom(fn) stays fully web-editable.
+  const locked =
+    codeOptions !== undefined &&
+    Object.values(codeOptions).some((value) => value !== undefined)
+  const editable = buildAutoZoomEditableMeta({
+    options: codeOptions,
+    locked,
+  })
+  // Apply only the actual web overrides over the code values (never the full
+  // default set: an unset `centering` must stay unset so element framing
+  // keeps the auto-zoom comfort band rather than dead-centering).
+  applyEditableOverride(editable)
+  const options: AutoZoomOptions | undefined =
+    editable !== undefined && !editable.locked && editable.applied !== undefined
+      ? ({ ...(codeOptions ?? {}), ...editable.applied } as AutoZoomOptions)
+      : codeOptions
+
   const activeRecorder = getRuntimeAutoZoomRecorder()
-  activeRecorder.addAutoZoomStart(options)
+  activeRecorder.addAutoZoomStart(options, editable)
   const resolvedOptions = {
     ...DEFAULT_ZOOM_OPTIONS,
     ...(options ?? {}),

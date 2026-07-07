@@ -89,7 +89,7 @@ describe('localized typed fixtures', () => {
   it('rejects a single voice config for all languages (use `use` instead)', () => {
     const spec: LocalizeSpec = {
       // @ts-expect-error voice must be a per-language map; the all-languages
-      // default belongs in `use` (renderOptions.narration.voice).
+      // default belongs in video.renderOptions (renderOptions.narration.voice).
       voice: { name: voices.Ava },
       narration: { en: { intro: 'Hi' }, fi: { intro: 'Moi' } },
     }
@@ -97,11 +97,9 @@ describe('localized typed fixtures', () => {
   })
 
   it('accepts a global renderOptions narration voice outside the Russian subset', () => {
-    video.use({
-      renderOptions: {
-        narration: {
-          voice: { name: voices.Sophie },
-        },
+    video.renderOptions({
+      narration: {
+        voice: { name: voices.Sophie },
       },
     })
   })

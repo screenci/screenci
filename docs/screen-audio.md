@@ -29,8 +29,8 @@ video's options are known. Capturing audio requires launching it differently
 (unmuted, in Chromium's new headless mode, because the legacy headless shell
 registers an audio stream but never emits samples, producing silence). That
 launch decision therefore has to come from a run-level switch, which is what
-`enableCaptureAudio` is. `captureAudio` can then live wherever you like,
-including on an individual `video.use()`.
+`enableCaptureAudio` is. `captureAudio` is a record option, so it can then live
+wherever you like, including on an individual `video.recordOptions(...)`.
 
 ## Silent and isolated by default
 

@@ -61,6 +61,10 @@ import {
 } from './localizeRuntime.js'
 import { parseActionOverrides, parseValuesOverrides } from './runtimeMode.js'
 import { ActionParamCollector } from './actionParams.js'
+import {
+  combineRecordOptionsLayers,
+  combineRenderOptionsLayers,
+} from './optionsDeclare.js'
 
 /**
  * The `crop` fixture argument. Call it inside a `screenshot()` body to clip the
@@ -76,8 +80,14 @@ export type CropFixture = (
 const SCREENSHOT_FILE_NAME = 'screenshot.png'
 
 type ScreenshotFixtureOptions = {
-  recordOptions: RecordOptions | Partial<RecordOptions>
-  renderOptions: RenderOptions | undefined
+  /** Config-level record options (`use.recordOptions`), remapped by `defineConfig`. Internal. */
+  _screenciConfigRecordOptions: RecordOptions
+  /** Config-level render options (`use.renderOptions`). Internal. */
+  _screenciConfigRenderOptions: RenderOptions | undefined
+  /** Per-still record options declared via `screenshot.recordOptions(...)`. Internal. */
+  _screenciRecordOptions: Partial<RecordOptions> | undefined
+  /** Per-still render options declared via `screenshot.renderOptions(...)`. Internal. */
+  _screenciRenderOptions: Partial<RenderOptions> | undefined
   /** Active language for this pass; see {@link video} for details. Internal. */
   _screenciLanguage: string | undefined
   /** Grouping name written to `metadata.videoName`. Internal. */
@@ -117,8 +127,10 @@ type ScreenshotFixtures = {
 const _screenshotBase = base.extend<
   ScreenshotFixtureOptions & ScreenshotFixtures
 >({
-  recordOptions: [DEFAULT_VIDEO_OPTIONS, { option: true }],
-  renderOptions: [undefined, { option: true }],
+  _screenciConfigRecordOptions: [DEFAULT_VIDEO_OPTIONS, { option: true }],
+  _screenciConfigRenderOptions: [undefined, { option: true }],
+  _screenciRecordOptions: [undefined, { option: true }],
+  _screenciRenderOptions: [undefined, { option: true }],
   _screenciLanguage: [undefined, { option: true }],
   _screenciVideoName: [undefined, { option: true }],
   _screenciValues: [undefined, { option: true }],
@@ -166,7 +178,8 @@ const _screenshotBase = base.extend<
   context: async (
     {
       browser,
-      recordOptions,
+      _screenciConfigRecordOptions,
+      _screenciRecordOptions,
       _screenciVideoName,
       colorScheme,
       locale,
@@ -190,8 +203,12 @@ const _screenshotBase = base.extend<
     use,
     testInfo
   ) => {
-    const { base: baseRecordOptions } =
-      resolveStudioRecordOptions(recordOptions)
+    const { base: baseRecordOptions } = resolveStudioRecordOptions(
+      combineRecordOptionsLayers(
+        _screenciConfigRecordOptions,
+        _screenciRecordOptions
+      )
+    )
     const effectiveRecordOptions = resolveEffectiveRecordOptions(
       baseRecordOptions,
       _screenciVideoName ?? testInfo.title
@@ -246,8 +263,10 @@ const _screenshotBase = base.extend<
   page: async (
     {
       context,
-      recordOptions: codeRecordOptions,
-      renderOptions,
+      _screenciConfigRecordOptions,
+      _screenciConfigRenderOptions,
+      _screenciRecordOptions,
+      _screenciRenderOptions,
       deviceScaleFactor,
       _screenciLanguage,
       _screenciValues,
@@ -258,9 +277,18 @@ const _screenshotBase = base.extend<
     testInfo
   ) => {
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
-    const { base: baseRecordOptions } =
-      resolveStudioRecordOptions(codeRecordOptions)
-    const { obj: renderOptionsObj } = resolveStudioRenderOptions(renderOptions)
+    const { base: baseRecordOptions } = resolveStudioRecordOptions(
+      combineRecordOptionsLayers(
+        _screenciConfigRecordOptions,
+        _screenciRecordOptions
+      )
+    )
+    const { obj: renderOptionsObj } = resolveStudioRenderOptions(
+      combineRenderOptionsLayers(
+        _screenciConfigRenderOptions,
+        _screenciRenderOptions
+      )
+    )
     const recordOptions = resolveEffectiveRecordOptions(
       baseRecordOptions,
       _screenciVideoName ?? testInfo.title
@@ -501,6 +529,21 @@ interface Screenshot extends ScreenshotCallSignatures {
   languages: MediaBuilder<ScreenshotArgs>['languages']
 
   /**
+   * Declare capture options (aspect ratio, quality, deviceScaleFactor, ...). A
+   * flat object applies to every language; a language-major object
+   * (`{ default, de, ... }`) overrides per language. Values stay editable in
+   * the web app.
+   */
+  recordOptions: MediaBuilder<ScreenshotArgs>['recordOptions']
+
+  /**
+   * Declare render options (framing, output, screenshot clip, ...). A flat
+   * object applies to every language; a language-major object overrides per
+   * language. Values stay editable in the web app.
+   */
+  renderOptions: MediaBuilder<ScreenshotArgs>['renderOptions']
+
+  /**
    * Produce a separate screenshot per variant (viewport, theme, ...). Each
    * variant has its own identity and history. Chainable with `.languages(...)`.
    */
@@ -536,7 +579,8 @@ interface Screenshot extends ScreenshotCallSignatures {
  * ScreenCI screenshot test fixture.
  *
  * Extended Playwright test that captures a branded still image of the final page
- * state. Configure capture options with `screenshot.use()` or in your config.
+ * state. Configure Playwright options (colorScheme, ...) with `screenshot.use()`
+ * and capture options with `screenshot.recordOptions(...)`.
  *
  * @example
  * ```ts
@@ -546,16 +590,16 @@ interface Screenshot extends ScreenshotCallSignatures {
  *   badge: { path: '../assets/new-badge.png', x: 0.72, y: 0.06, width: 0.2 },
  * })
  *
- * screenshot.use({
- *   colorScheme: 'dark',
- *   recordOptions: { quality: '1440p', deviceScaleFactor: 2 },
- * })
+ * screenshot.use({ colorScheme: 'dark' })
  *
- * screenshot('Dashboard hero', async ({ page, clip }) => {
- *   await page.goto('https://app.example.com/dashboard')
- *   await overlays.badge()
- *   await clip(page.getByTestId('revenue-card'), { padding: 0.06 })
- * })
+ * screenshot.recordOptions({ quality: '1440p', deviceScaleFactor: 2 })(
+ *   'Dashboard hero',
+ *   async ({ page, clip }) => {
+ *     await page.goto('https://app.example.com/dashboard')
+ *     await overlays.badge()
+ *     await clip(page.getByTestId('revenue-card'), { padding: 0.06 })
+ *   }
+ * )
  * ```
  */
 export const screenshot = _screenshotBase as unknown as Screenshot
@@ -568,4 +612,6 @@ const _screenshotRootBuilder = createVideoBuilder<ScreenshotArgs>(
 screenshot.values = _screenshotRootBuilder.values
 screenshot.overlays = _screenshotRootBuilder.overlays
 screenshot.languages = _screenshotRootBuilder.languages
+screenshot.recordOptions = _screenshotRootBuilder.recordOptions
+screenshot.renderOptions = _screenshotRootBuilder.renderOptions
 screenshot.each = _screenshotRootBuilder.each

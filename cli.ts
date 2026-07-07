@@ -54,6 +54,7 @@ import {
   SCREENCI_FAST_NARRATION_ENV,
   isUploadExistingEnabled,
 } from './src/runtimeMode.js'
+import { SCREENCI_EDITABLE_OVERRIDES_ENV } from './src/editableRuntime.js'
 import { DEFAULT_RECORD_UPLOAD_POLICY } from './src/defaults.js'
 import type { VoiceKey } from './src/voices.js'
 import type { RecordUploadPolicy, ScreenCIConfig } from './src/types.js'
@@ -4090,6 +4091,62 @@ export async function fetchActionOverridesEnv(
 }
 
 /**
+ * Fetch the project's stored web-editor timing overrides (editable actions)
+ * so they can be injected as SCREENCI_EDITABLE_OVERRIDES before a recording
+ * or mock-record run. Best-effort: any failure returns an empty env so the
+ * SDK uses code/default values, and a recording is never blocked by this.
+ */
+async function fetchEditableOverridesEnv(
+  configPath: string,
+  verbose: boolean
+): Promise<Record<string, string>> {
+  // Editor config only exists for a real (non-anonymous) org; skip entirely
+  // without a secret rather than hard-exiting via requireScreenCISecret.
+  if (!process.env.SCREENCI_SECRET) return {}
+  try {
+    const { screenciConfig, secret, apiUrl } =
+      await requireScreenCISecret(configPath)
+    const params = new URLSearchParams({
+      projectName: screenciConfig.projectName,
+    })
+
+    const res = await fetch(
+      `${apiUrl}/cli/editable-overrides?${params.toString()}`,
+      { headers: { 'X-ScreenCI-Secret': secret } }
+    )
+    if (!res.ok) {
+      if (verbose) {
+        logger.warn(
+          `Could not fetch editor timing overrides (${res.status}); using code-declared values.`
+        )
+      }
+      return {}
+    }
+
+    const body = (await res.json()) as { overrides?: unknown }
+    const overrides = body.overrides
+    if (
+      overrides === undefined ||
+      overrides === null ||
+      typeof overrides !== 'object' ||
+      Object.keys(overrides as Record<string, unknown>).length === 0
+    ) {
+      return {}
+    }
+    return { [SCREENCI_EDITABLE_OVERRIDES_ENV]: JSON.stringify(overrides) }
+  } catch (error) {
+    if (verbose) {
+      logger.warn(
+        `Could not fetch editor timing overrides; using code-declared values.${
+          error instanceof Error ? ` (${error.message})` : ''
+        }`
+      )
+    }
+    return {}
+  }
+}
+
+/**
  * Print one info line per editor override that shadows an explicitly code-set
  * action parameter, comparing the fetched overrides against the previous run's
  * snapshot. A missing snapshot (first run) prints nothing.
@@ -4182,6 +4239,14 @@ async function run(
     )
   }
 
+  // Web-editor timing overrides apply whenever recording timings run: record
+  // and `test --mock-record`. Plain test runs skip sleeps/animation, so the
+  // fetch would be wasted there.
+  const editableOverridesEnv =
+    command === 'record' || mockRecord
+      ? await fetchEditableOverridesEnv(configPath, verbose)
+      : {}
+
   const envForChild = { ...process.env }
 
   await validateUniqueDiscoveredTestTitles(configPath, additionalArgs, {
@@ -4194,6 +4259,7 @@ async function run(
     ...textOverridesEnv,
     ...recordOptionsEnv,
     ...actionOverridesEnv,
+    ...editableOverridesEnv,
     ...(command === 'test' && !mockRecord
       ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
       : {}),
@@ -4236,6 +4302,8 @@ async function run(
       ...recordOptionsEnv,
       // Web-editor action-parameter overrides (record only).
       ...actionOverridesEnv,
+      // Web-editor timing overrides (record and test --mock-record).
+      ...editableOverridesEnv,
       ...(command === 'test' && !mockRecord
         ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
         : {}),

@@ -1,13 +1,5 @@
 import { hide, resetZoom, video, voices, zoomTo } from 'screenci'
 
-video.use({
-  renderOptions: {
-    narration: {
-      voice: { name: voices.Ava, style: 'Friendly product guide' },
-    },
-  },
-})
-
 const appUrl = process.env.SCREENCI_APP_URL ?? 'https://app.screenci.com/'
 
 // Languages walkthrough recorded against the ScreenCI app (app.screenci.com) for
@@ -19,6 +11,11 @@ const appUrl = process.env.SCREENCI_APP_URL ?? 'https://app.screenci.com/'
 // The logo intro (assets/logo.png) is gitignored: it is uploaded on the first
 // record and reused on later runs (CI included).
 video
+  .renderOptions({
+    narration: {
+      voice: { name: voices.Ava, style: 'Friendly product guide' },
+    },
+  })
   .overlays({
     logo: { path: './assets/logo.png', fill: 'recording', duration: 2000 },
   })

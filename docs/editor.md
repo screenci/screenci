@@ -56,6 +56,10 @@ video.languages({ languages: ['en', 'fi'], mode: 'shared' }) // seed with captur
 // Render / record options: code values are the starting point, web edits win.
 video.use({ renderOptions: { output: { aspectRatio: '9:16' } } })
 video.use({ recordOptions: { fps: 30 } })
+
+// Or per video with the builder methods (supports per-language overrides).
+video.renderOptions({ output: { aspectRatio: '9:16' } })
+video.recordOptions({ fps: 30 })
 ```
 
 #### You will learn
@@ -264,6 +268,9 @@ import { video } from 'screenci'
 video.use({ renderOptions: { recording: { size: 0.85 } } })
 video.use({ renderOptions: { output: { aspectRatio: '9:16' } } })
 
+// Or per video (supports per-language overrides):
+video.renderOptions({ recording: { size: 0.85 } })
+
 // Or declare nothing: Editor starts from the system defaults.
 ```
 
@@ -291,9 +298,7 @@ values). Like the Values section, the Recording options section shows this
 reminder inline with a **Re-record this video** button:
 
 ```ts
-video.use({ recordOptions: { fps: 30 } })
-
-video('Product demo', async ({ page }) => {
+video.recordOptions({ fps: 30 })('Product demo', async ({ page }) => {
   await page.goto('/dashboard')
 })
 ```
@@ -304,9 +309,7 @@ other per-video configuration:
 ```ts
 import { video } from 'screenci'
 
-video.use({ recordOptions: { fps: 30 } })
-
-video.narration(['intro']).overlays(['logo'])(
+video.recordOptions({ fps: 30 }).narration(['intro']).overlays(['logo'])(
   'Product demo',
   async ({ page, narration, overlays }) => {
     await narration.intro()
@@ -319,6 +322,49 @@ video.narration(['intro']).overlays(['logo'])(
 The recorded **language set** is managed separately via `video.languages(...)`:
 see [Editor languages from code](#editor-languages-from-code) below. There is no
 `recordOptions.languages`.
+
+## Editable timeline actions
+
+Interaction timings, zoom options, speed blocks, and pauses can be edited from
+the web timeline and applied on the next record, without touching code.
+
+By default (`recordOptions.implicitEditable: true`) every interaction that uses
+default values in code is editable from the web: its identity is the captured
+locator description (for example `getByRole(button, name=Save)`) plus its
+position on the timeline. Setting any explicit option in code locks that whole
+action; there are no partially editable actions. Set
+`implicitEditable: false` to keep every timing owned by code.
+
+The main editable action forms:
+
+```ts
+import { autoZoom, speed } from 'screenci'
+
+// Named speed block: the multiplier is owned by the web editor (defaults to 1).
+await speed('intro-speedup', async () => { ... })
+
+// Unnamed editable block, identified by its timeline position.
+await speed(async () => { ... })
+
+// Locked: the multiplier comes from code.
+await speed(3, async () => { ... })
+
+// Bare autoZoom stays fully web-editable, starting from the package defaults.
+await autoZoom(async () => { ... })
+
+// Web-editable pause: defaults to 0ms until edited in the web timeline.
+await page.waitForTimeout()
+
+// Locked pause: the duration comes from code.
+await page.waitForTimeout(500)
+```
+
+Before `screenci record` (and `screenci test --mock-record`) the CLI fetches
+the saved web edits and applies them to the run. Plain `screenci test` skips
+timings entirely, so it neither fetches nor applies them. After each upload the
+stored timeline is reconciled against what was actually recorded: new actions
+appear in place, removed actions disappear, and edits whose action vanished are
+kept as stale entries in the editor for cleanup instead of being dropped.
 
 ## Editor languages from code
 

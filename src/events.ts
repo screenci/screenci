@@ -834,6 +834,17 @@ export type TimeEndEvent = {
   timeMs: number
 }
 
+/**
+ * A named marker at a single point in recording time, emitted by `timestamp()`.
+ * It carries no render behavior: it only labels a moment in the recording so the
+ * web editor can surface it on its own timeline row.
+ */
+export type TimestampEvent = {
+  type: 'timestamp'
+  timeMs: number
+  name: string
+}
+
 export type AutoZoomStartEvent = {
   type: 'autoZoomStart'
   timeMs: number
@@ -925,6 +936,7 @@ export type RecordingEvent =
   | SpeedEndEvent
   | TimeStartEvent
   | TimeEndEvent
+  | TimestampEvent
   | AutoZoomStartEvent
   | AutoZoomEndEvent
   | DelayEvent
@@ -1202,6 +1214,8 @@ export interface IEventRecorder {
   addSpeedEnd(): void
   addTimeStart(durationMs: number): void
   addTimeEnd(): void
+  /** Records a named marker at the current recording time (`timestamp()`). */
+  addTimestamp(name: string): void
   addAutoZoomStart(options?: AutoZoomOptions, editable?: EditableMeta): void
   addAutoZoomEnd(options?: AutoZoomOptions): void
   addNarrationHide(): void
@@ -1264,6 +1278,7 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addSpeedEnd(): void {},
   addTimeStart(): void {},
   addTimeEnd(): void {},
+  addTimestamp(): void {},
   addAutoZoomStart(): void {},
   addAutoZoomEnd(): void {},
   addNarrationHide(): void {},
@@ -1882,6 +1897,12 @@ export class EventRecorder implements IEventRecorder {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     this.events.push({ type: 'timeEnd', timeMs })
+  }
+
+  addTimestamp(name: string): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({ type: 'timestamp', timeMs, name })
   }
 
   addAutoZoomStart(options?: AutoZoomOptions, editable?: EditableMeta): void {

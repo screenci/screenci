@@ -201,6 +201,21 @@ API reference: [hide()](/docs/reference/api/functions/hide). See also [Animated
 Interactions](/docs/guides/animated-interactions) for how visible actions are
 captured.
 
+### `timestamp()`
+
+Marks a named point in the recording. It has no effect on the rendered output:
+it only labels a moment so the web editor can surface it on its own timeline row,
+making it easy to find the exact spot a step happened when reviewing or editing.
+
+```ts
+await timestamp('checkout-opened')
+await page.getByRole('button', { name: 'Pay' }).click()
+await timestamp('payment-done')
+```
+
+The name can be reused; each call is a distinct marker. Markers are read-only in
+the editor (they come from code).
+
 ### Positions: holding narration and overlays until a point in the video
 
 Narration cues and overlays can take a string position so they land at an

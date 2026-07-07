@@ -22,6 +22,7 @@ describe('public api surface', () => {
       'showNarration',
       'speed',
       'time',
+      'timestamp',
       'unredactAll',
       'video',
       'voices',

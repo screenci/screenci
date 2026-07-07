@@ -398,6 +398,42 @@ exists never fails the recording: the event is skipped with a warning
 `timestamp('name')` markers are the most stable anchors: add one in code at a
 meaningful moment and hang web-authored events off it with offsets.
 
+## What is editable from the web
+
+Every recorded action carries identity metadata, so the timeline covers:
+
+- **Interactions**: all pointer actions (click, fill, tap, check, select,
+  hover, selectText, dragTo), with per-part timing (`sleepBefore`, move
+  duration, pre-press pause, typing/hover/drag durations).
+- **Camera**: `autoZoom()` blocks, `zoomTo()`, `resetZoom()`,
+  `scrollIntoViewIfNeeded()`.
+- **Pacing**: `speed()` blocks (multiplier), `time()` blocks (target
+  duration), `page.waitForTimeout()` delays, and named `hide()` spans
+  (visible, read-only). `speed`, `time` and `hide` all accept an optional
+  name as their first argument for a stable identity.
+- **Presentation**: `moveNarration`/`resizeNarration` (corner, size,
+  duration), `resizeRecording`/`hideRecording`/`showRecording` (size,
+  duration), `setBackground` (css, duration), and `redact()` mask styling
+  (color, radius, css).
+- **Hard borders**: `page.goto` navigations are recorded and shown as
+  full-height borders. Their duration is app time: never editable, and
+  timing edits cannot cross them.
+
+The editor can also ADD events without code changes: hides, speedups, time
+remaps, background changes, narration-box changes, and recording changes,
+each anchored to a previous known event plus an offset.
+
+## Resetting web edits
+
+- In the editor: the "pending web edits" strip has a **Reset all** button
+  (clears timing overrides and authored events for the video).
+- From the CLI: `screenci reset-web-edits [--video <name>]` clears the whole
+  project (or one video), so the next record runs purely from code.
+- `screenci sync-prompt` prints agent-ready placement instructions (using
+  the call sites captured at record time) to move web edits INTO code:
+  `CHANGE recordings/pitch.screenci.ts:42: set moveDuration to 150 ...`.
+  After codifying, clear the web layer with `reset-web-edits`.
+
 ## Debugging overrides
 
 Set `SCREENCI_DEBUG_OVERRIDES=1` when running `screenci record` to trace the

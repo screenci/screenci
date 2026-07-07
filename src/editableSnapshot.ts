@@ -28,6 +28,8 @@ export type EditableSnapshotEntry = {
   locked: boolean
   lockedFields?: string[]
   defaults: Record<string, unknown>
+  /** User-code call site, for sync-prompt placement instructions. */
+  source?: { file: string; line: number }
 }
 
 export type EditableSnapshot = {
@@ -73,6 +75,7 @@ type RecordedEditableMeta = {
     name?: unknown
     matcher?: unknown
     ordinal?: unknown
+    source?: unknown
   }
   locked?: unknown
   lockedFields?: unknown
@@ -110,6 +113,18 @@ function toSnapshotEntry(
     }),
     locked: editable.locked === true,
     ...(lockedFields.length > 0 && { lockedFields }),
+    ...(() => {
+      const source = descriptor.source
+      if (
+        typeof source === 'object' &&
+        source !== null &&
+        typeof (source as { file?: unknown }).file === 'string' &&
+        typeof (source as { line?: unknown }).line === 'number'
+      ) {
+        return { source: source as { file: string; line: number } }
+      }
+      return {}
+    })(),
     defaults:
       typeof editable.defaults === 'object' && editable.defaults !== null
         ? (editable.defaults as Record<string, unknown>)
@@ -348,4 +363,85 @@ export function diffEditableOverridesAgainstSnapshot(
     }
   }
   return collisions
+}
+
+/**
+ * Agent-ready placement instructions that move web timeline edits into code.
+ * Each line names the exact call site (from the snapshot's captured source),
+ * the change to make, and why. Ends with a note on ripple scope so the agent
+ * understands which downstream events shift. Returns [] when there is
+ * nothing to codify.
+ */
+export function buildEditablePlacementPrompt(
+  snapshot: EditableSnapshot,
+  overridesByVideo: EditableOverridesByVideo,
+  authoredByVideo: Record<string, AuthoredEventStatusInput[]> = {}
+): string[] {
+  const lines: string[] = []
+  const videoNames = [
+    ...new Set([
+      ...Object.keys(overridesByVideo),
+      ...Object.keys(authoredByVideo),
+    ]),
+  ]
+  for (const videoName of videoNames) {
+    const entries = snapshot.videos[videoName] ?? []
+    const byKey = new Map(entries.map((entry) => [entry.key, entry]))
+    const at = (key: string): string => {
+      const source = byKey.get(key)?.source
+      return source !== undefined
+        ? `${source.file}:${source.line}`
+        : `(source unknown; action key ${key})`
+    }
+    const sectionStart = lines.length
+    for (const override of overridesByVideo[videoName] ?? []) {
+      const entry = byKey.get(override.key)
+      for (const [field, value] of Object.entries(override.values)) {
+        if (value === undefined) continue
+        const codeValue = entry?.defaults[field]
+        if (codeValue === value) continue
+        if (field === 'sleepBefore' && typeof value === 'number' && value > 0) {
+          lines.push(
+            `- INSERT \`await page.waitForTimeout(${Math.round(value)})\` ` +
+              `immediately BEFORE ${at(override.key)} (web start-time edit ` +
+              `on '${override.key}'), then clear the web override.`
+          )
+          continue
+        }
+        lines.push(
+          `- CHANGE ${at(override.key)}: set \`${field}\` to ` +
+            `${JSON.stringify(value)} (editor override ` +
+            `${JSON.stringify(codeValue)} -> ${JSON.stringify(value)} on ` +
+            `'${override.key}'), then clear the web override.`
+        )
+      }
+    }
+    for (const event of authoredByVideo[videoName] ?? []) {
+      const fromAt = at(event.from.ref)
+      const offset = `${event.from.offsetMs >= 0 ? '+' : ''}${event.from.offsetMs}ms`
+      const to = event.to
+      const toText =
+        to !== undefined && 'anchor' in to && to.anchor !== undefined
+          ? `until ${at(to.anchor.ref)}`
+          : to !== undefined && 'durationMs' in to
+            ? `for ${(to as { durationMs?: number }).durationMs}ms`
+            : ''
+      lines.push(
+        `- WRAP the code starting at ${fromAt} (${offset} after that ` +
+          `event) ${toText} in \`${event.kind}(...)\` matching authored ` +
+          `event '${event.id}', then remove the authored event from the web.`
+      )
+    }
+    if (lines.length > sectionStart) {
+      lines.splice(sectionStart, 0, `## Video: ${videoName}`)
+    }
+  }
+  if (lines.length > 0) {
+    lines.push(
+      'Note: the recording is a strict sequence. Any timing change ripples: ' +
+        'everything after the changed action happens earlier/later by the ' +
+        'same amount, up to the next page navigation. Do not reorder actions.'
+    )
+  }
+  return lines
 }

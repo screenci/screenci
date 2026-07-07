@@ -136,7 +136,8 @@ describe('free functions push events through the recorder', () => {
   it('moveNarration emits a narrationUpdate', async () => {
     const r = fakeRecorder()
     await moveNarration('top-right', { padding: { y: 0.05 } }, r)
-    expect(r.pushed).toEqual([
+    // Events now carry web-editable metadata; match the payload structurally.
+    expect(r.pushed).toMatchObject([
       {
         type: 'narrationUpdate',
         timeMs: 0,
@@ -149,7 +150,7 @@ describe('free functions push events through the recorder', () => {
   it('resizeNarration emits a size-only narrationUpdate', async () => {
     const r = fakeRecorder()
     await resizeNarration(0.15, { duration: 400, easing: 'ease-out' }, r)
-    expect(r.pushed).toEqual([
+    expect(r.pushed).toMatchObject([
       {
         type: 'narrationUpdate',
         timeMs: 0,
@@ -170,7 +171,7 @@ describe('free functions push events through the recorder', () => {
     const r = fakeRecorder()
     await hideRecording({ duration: 300 }, r)
     await showRecording(undefined, r)
-    expect(r.pushed).toEqual([
+    expect(r.pushed).toMatchObject([
       {
         type: 'recordingUpdate',
         timeMs: 0,

@@ -240,7 +240,37 @@ export async function resetZoom(options: AutoZoomOptions = {}): Promise<void> {
   }
 
   const recorder = getActiveAutoZoomRecorder()
-  const resolvedOptions = resolveAutoZoomOptions(state, options)
+  // Web-editable like zoomTo: identity is the fixed 'resetZoom' matcher; the
+  // editable fields are the zoom-out easing and duration.
+  const identity = {
+    kind: 'input' as const,
+    subKind: 'focusChange',
+    matcher: 'resetZoom',
+  }
+  const editable = buildEditableMeta({
+    ...identity,
+    schemaKind: 'autoZoom',
+    locked:
+      options.easing !== undefined || options.zoomOutDuration !== undefined,
+    lockedFields: [
+      ...(options.easing !== undefined ? ['easing'] : []),
+      ...(options.zoomOutDuration !== undefined ? ['duration'] : []),
+    ],
+    defaults: {
+      easing: options.easing ?? null,
+      duration: options.zoomOutDuration ?? null,
+    },
+    position: nextEditablePosition(editableIdentityKey(identity)),
+  })
+  const eff = applyEditableOverride(editable)
+  const effectiveOptions: AutoZoomOptions = {
+    ...options,
+    ...(typeof eff.easing === 'string' && { easing: eff.easing as Easing }),
+    ...(typeof eff.duration === 'number' && {
+      zoomOutDuration: eff.duration,
+    }),
+  }
+  const resolvedOptions = resolveAutoZoomOptions(state, effectiveOptions)
   const fullViewportEnd = {
     pointPx: { x: 0, y: 0 },
     size: {
@@ -286,6 +316,6 @@ export async function resetZoom(options: AutoZoomOptions = {}): Promise<void> {
   setZoomMode('idle')
 
   if (!isInsideHide()) {
-    recorder.addInput('focusChange', viewport.elementRect, [result])
+    recorder.addInput('focusChange', viewport.elementRect, [result], editable)
   }
 }

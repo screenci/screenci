@@ -52,7 +52,14 @@ describe('timeline blocks', () => {
   it('records time start/end with duration', async () => {
     await time(1000, async () => {})
 
-    expect(recorder.addTimeStart).toHaveBeenCalledWith(1000)
+    expect(recorder.addTimeStart).toHaveBeenCalledWith(
+      1000,
+      expect.objectContaining({
+        schemaKind: 'time',
+        defaults: { durationMs: 1000 },
+      }),
+      undefined
+    )
     expect(recorder.addTimeEnd).toHaveBeenCalledOnce()
   })
 
@@ -136,7 +143,14 @@ describe('timeline blocks', () => {
       })
     ).rejects.toThrow('boom')
 
-    expect(recorder.addTimeStart).toHaveBeenCalledWith(1000)
+    expect(recorder.addTimeStart).toHaveBeenCalledWith(
+      1000,
+      expect.objectContaining({
+        schemaKind: 'time',
+        defaults: { durationMs: 1000 },
+      }),
+      undefined
+    )
     expect(recorder.addTimeEnd).toHaveBeenCalledOnce()
   })
 })

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   collectEditableFromRecordings,
   diffEditableOverridesAgainstSnapshot,
+  buildEditablePlacementPrompt,
   formatAuthoredStatusReport,
   formatEditableStatusReport,
   mergeEditableSnapshot,
@@ -140,6 +141,80 @@ describe('formatAuthoredStatusReport', () => {
 
   it('returns no lines without authored events', () => {
     expect(formatAuthoredStatusReport(SNAPSHOT, {})).toEqual([])
+  })
+})
+
+describe('buildEditablePlacementPrompt', () => {
+  const SOURCED: EditableSnapshot = {
+    version: 1,
+    videos: {
+      'My video': [
+        {
+          key: 'input|click|getByRole(button)|0',
+          locked: true,
+          lockedFields: ['moveDuration'],
+          defaults: { moveDuration: 400, sleepBefore: 0 },
+          source: { file: 'recordings/pitch.screenci.ts', line: 42 },
+        },
+        {
+          key: 'timestamp||mark|0',
+          locked: true,
+          defaults: {},
+          source: { file: 'recordings/pitch.screenci.ts', line: 50 },
+        },
+      ],
+    },
+  }
+
+  it('emits CHANGE / INSERT / WRAP instructions with call sites', () => {
+    const lines = buildEditablePlacementPrompt(
+      SOURCED,
+      {
+        'My video': [
+          {
+            key: 'input|click|getByRole(button)|0',
+            values: { moveDuration: 150, sleepBefore: 1300 },
+          },
+        ],
+      },
+      {
+        'My video': [
+          {
+            id: 'a1',
+            kind: 'speed',
+            from: { ref: 'timestamp||mark|0', offsetMs: 50 },
+            to: { durationMs: 200 },
+          },
+        ],
+      }
+    )
+    const text = lines.join('\n')
+    expect(text).toContain('## Video: My video')
+    expect(text).toContain(
+      'CHANGE recordings/pitch.screenci.ts:42: set `moveDuration` to 150'
+    )
+    expect(text).toContain(
+      'INSERT `await page.waitForTimeout(1300)` immediately BEFORE recordings/pitch.screenci.ts:42'
+    )
+    expect(text).toContain(
+      'WRAP the code starting at recordings/pitch.screenci.ts:50 (+50ms after that event) for 200ms in `speed(...)`'
+    )
+    expect(text).toContain('ripples')
+  })
+
+  it('returns nothing when there is nothing to codify', () => {
+    expect(buildEditablePlacementPrompt(SOURCED, {}, {})).toEqual([])
+    // An override equal to the code value needs no change.
+    expect(
+      buildEditablePlacementPrompt(SOURCED, {
+        'My video': [
+          {
+            key: 'input|click|getByRole(button)|0',
+            values: { moveDuration: 400 },
+          },
+        ],
+      })
+    ).toEqual([])
   })
 })
 

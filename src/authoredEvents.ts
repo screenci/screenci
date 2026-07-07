@@ -31,12 +31,31 @@ export type EventAnchor = {
 
 export type AuthoredEventEnd = { anchor: EventAnchor } | { durationMs: number }
 
+/** Span kinds need a `to`; point kinds fire once at `from`. */
+export const AUTHORED_SPAN_KINDS = ['hide', 'speed', 'time'] as const
+export const AUTHORED_POINT_KINDS = [
+  'narrationUpdate',
+  'recordingUpdate',
+  'backgroundUpdate',
+] as const
+
+export type AuthoredEventKind =
+  | (typeof AUTHORED_SPAN_KINDS)[number]
+  | (typeof AUTHORED_POINT_KINDS)[number]
+
 export type AuthoredEvent = {
   id: string
-  kind: 'hide' | 'speed'
+  kind: AuthoredEventKind
   from: EventAnchor
-  to: AuthoredEventEnd
-  /** Kind-specific options; speed reads `multiplier` (default 2). */
+  /** Required for span kinds (hide/speed/time); ignored for point kinds. */
+  to?: AuthoredEventEnd
+  /**
+   * Kind-specific options: speed reads `multiplier` (default 2), time reads
+   * `durationMs` (the render-time target), narrationUpdate reads
+   * `corner`/`size`/`visible`/`duration`, recordingUpdate reads
+   * `size`/`visible`/`duration`, backgroundUpdate reads
+   * `backgroundCss`/`duration`.
+   */
   props?: Record<string, unknown>
 }
 
@@ -70,11 +89,14 @@ function isEnd(value: unknown): value is AuthoredEventEnd {
 function isAuthoredEvent(value: unknown): value is AuthoredEvent {
   if (typeof value !== 'object' || value === null) return false
   const event = value as Record<string, unknown>
-  return (
-    typeof event.id === 'string' &&
-    (event.kind === 'hide' || event.kind === 'speed') &&
-    isAnchor(event.from) &&
-    isEnd(event.to)
+  if (typeof event.id !== 'string' || !isAnchor(event.from)) return false
+  if (
+    (AUTHORED_SPAN_KINDS as readonly string[]).includes(event.kind as string)
+  ) {
+    return isEnd(event.to)
+  }
+  return (AUTHORED_POINT_KINDS as readonly string[]).includes(
+    event.kind as string
   )
 }
 
@@ -232,6 +254,76 @@ export function applyAuthoredEvents<T>(
       )
       continue
     }
+    const props = event.props ?? {}
+    const propNumber = (field: string): number | undefined => {
+      const value = props[field]
+      return typeof value === 'number' && Number.isFinite(value)
+        ? value
+        : undefined
+    }
+
+    // Point kinds fire once at the resolved position.
+    if ((AUTHORED_POINT_KINDS as readonly string[]).includes(event.kind)) {
+      const timeMs = Math.max(0, Math.min(fromRaw, recordingEndMs))
+      const duration = propNumber('duration')
+      const transition =
+        duration !== undefined && duration > 0
+          ? { transition: { duration } }
+          : {}
+      if (isOverrideDebugEnabled()) {
+        warn(
+          `[screenci debug] authored ${event.kind} applied at ` +
+            `${Math.round(timeMs)}ms (anchor '${event.from.ref}' ` +
+            `${event.from.offsetMs >= 0 ? '+' : ''}${event.from.offsetMs}ms)`
+        )
+      }
+      if (event.kind === 'backgroundUpdate') {
+        if (typeof props.backgroundCss !== 'string' || !props.backgroundCss) {
+          warn(
+            `[screenci] authored backgroundUpdate skipped: missing backgroundCss`
+          )
+          continue
+        }
+        insertSorted(events, {
+          type: 'backgroundUpdate',
+          timeMs,
+          background: { backgroundCss: props.backgroundCss },
+          ...transition,
+        })
+      } else if (event.kind === 'narrationUpdate') {
+        insertSorted(events, {
+          type: 'narrationUpdate',
+          timeMs,
+          ...(typeof props.corner === 'string' && { corner: props.corner }),
+          ...(propNumber('size') !== undefined && {
+            size: propNumber('size'),
+          }),
+          ...(typeof props.visible === 'boolean' && {
+            visible: props.visible,
+          }),
+          ...transition,
+        })
+      } else {
+        insertSorted(events, {
+          type: 'recordingUpdate',
+          timeMs,
+          ...(propNumber('size') !== undefined && {
+            size: propNumber('size'),
+          }),
+          ...(typeof props.visible === 'boolean' && {
+            visible: props.visible,
+          }),
+          ...transition,
+        })
+      }
+      continue
+    }
+
+    // Span kinds need a resolvable end.
+    if (event.to === undefined) {
+      warn(`[screenci] authored ${event.kind} skipped: missing end`)
+      continue
+    }
     const toRaw =
       'durationMs' in event.to
         ? fromRaw + event.to.durationMs
@@ -271,14 +363,22 @@ export function applyAuthoredEvents<T>(
     if (event.kind === 'hide') {
       insertSorted(events, { type: 'hideStart', timeMs: fromMs })
       insertSorted(events, { type: 'hideEnd', timeMs: toMs })
+    } else if (event.kind === 'time') {
+      // Render-time remap of the span to the target duration.
+      const durationMs = propNumber('durationMs')
+      if (durationMs === undefined || durationMs < 0) {
+        warn(
+          `[screenci] authored time skipped: props.durationMs must be a ` +
+            `non-negative number`
+        )
+        continue
+      }
+      insertSorted(events, { type: 'timeStart', timeMs: fromMs, durationMs })
+      insertSorted(events, { type: 'timeEnd', timeMs: toMs })
     } else {
-      const multiplier = event.props?.multiplier
+      const multiplier = propNumber('multiplier')
       const resolvedMultiplier =
-        typeof multiplier === 'number' &&
-        Number.isFinite(multiplier) &&
-        multiplier > 0
-          ? multiplier
-          : 2
+        multiplier !== undefined && multiplier > 0 ? multiplier : 2
       insertSorted(events, {
         type: 'speedStart',
         timeMs: fromMs,

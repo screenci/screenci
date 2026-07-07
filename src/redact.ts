@@ -6,8 +6,20 @@ import {
   type RedactWindowApi,
   type ResolvedRedactStyle,
 } from './redactController.js'
-import { getRuntimePage, getRuntimeRedactState } from './runtimeContext.js'
+import {
+  getRuntimePage,
+  getRuntimeRedactState,
+  nextEditablePosition,
+} from './runtimeContext.js'
 import { logger } from './logger.js'
+import {
+  buildEditableMeta,
+  editableIdentityKey,
+  getLocatorDescription,
+  type EditableMeta,
+} from './editableDescriptor.js'
+import { applyEditableOverride } from './editableRuntime.js'
+import { getActiveHideRecorder } from './timelineBlock.js'
 
 /** Default corner radius (px) for the mask. */
 export const DEFAULT_REDACT_RADIUS = 12
@@ -87,12 +99,59 @@ export async function installRedactController(
   }
 }
 
+/**
+ * Editable metadata for a redact mask: styling fields are web-editable and
+ * apply at the next record (masks bake into the captured pixels). Identity is
+ * `update|redact|<matcher>`.
+ */
+function buildRedactEditableMeta(
+  matcher: string | undefined,
+  options: RedactOptions | undefined
+): EditableMeta {
+  const style = options?.style
+  const identity = {
+    kind: 'update' as const,
+    subKind: 'redact',
+    ...(matcher !== undefined && { matcher }),
+  }
+  return buildEditableMeta({
+    ...identity,
+    schemaKind: 'redact',
+    locked: style !== undefined,
+    lockedFields: [
+      ...(style?.color !== undefined ? ['color'] : []),
+      ...(style?.radius !== undefined ? ['radius'] : []),
+      ...(style?.css !== undefined ? ['css'] : []),
+    ],
+    defaults: {
+      color: style?.color ?? null,
+      radius: style?.radius ?? DEFAULT_REDACT_RADIUS,
+      css: style?.css ?? null,
+    },
+    position: nextEditablePosition(editableIdentityKey(identity)),
+  })
+}
+
 async function applyRedact(
   locator: Locator,
   options?: RedactOptions
 ): Promise<RedactHandle> {
   const page = locator.page()
-  const resolved = resolveRedactStyle(options)
+  // Web styling overrides merge over the code style before the mask renders.
+  const matcher = getLocatorDescription(locator)
+  const editable = buildRedactEditableMeta(matcher, options)
+  const eff = applyEditableOverride(editable)
+  const effectiveOptions: RedactOptions = {
+    ...options,
+    style: {
+      ...options?.style,
+      ...(typeof eff.color === 'string' && { color: eff.color }),
+      ...(typeof eff.radius === 'number' && { radius: eff.radius }),
+      ...(typeof eff.css === 'string' && { css: eff.css }),
+    },
+  }
+  const resolved = resolveRedactStyle(effectiveOptions)
+  getActiveHideRecorder().addRedact(matcher, editable)
   const id = nextRedactId()
 
   await ensureRedactControllerInstalled(page)

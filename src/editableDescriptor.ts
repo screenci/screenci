@@ -11,13 +11,30 @@
  */
 
 /** Top-level action category. Extend the union when new editables appear. */
-export type EditableActionKind = 'input' | 'autoZoom' | 'speed' | 'delay'
+export type EditableActionKind =
+  | 'input'
+  | 'autoZoom'
+  | 'speed'
+  | 'delay'
+  | 'hide'
+  | 'time'
+  | 'update'
 
 /**
  * Which option form the web editor renders for the action. The `defaults`
  * map's keys define the concrete fields; this picks the panel layout.
  */
-export type EditableSchemaKind = 'cursorMove' | 'autoZoom' | 'speed' | 'delay'
+export type EditableSchemaKind =
+  | 'cursorMove'
+  | 'autoZoom'
+  | 'speed'
+  | 'delay'
+  | 'hide'
+  | 'time'
+  | 'narrationUpdate'
+  | 'recordingUpdate'
+  | 'backgroundUpdate'
+  | 'redact'
 
 export type EditableActionDescriptor = {
   kind: EditableActionKind
@@ -35,6 +52,34 @@ export type EditableActionDescriptor = {
   ordinal: number
   /** Absolute position (0-based) among all editable actions in the recording. */
   seq: number
+  /**
+   * The user-code call site that produced the action, captured from the
+   * stack at instrumentation time. Not part of the stable identity; used by
+   * `screenci sync-prompt` to tell an agent exactly where to place a change.
+   */
+  source?: { file: string; line: number }
+}
+
+/**
+ * The first stack frame outside the screenci package: the user-code call
+ * site of the action being instrumented. Best-effort; returns undefined when
+ * the stack is unavailable or every frame is internal.
+ */
+export function captureCallSite(): { file: string; line: number } | undefined {
+  const stack = new Error().stack
+  if (stack === undefined) return undefined
+  for (const frame of stack.split('\n').slice(1)) {
+    const match = /\(?(\S+?):(\d+):\d+\)?$/.exec(frame.trim())
+    if (match === null) continue
+    let file = match[1]!
+    if (file.startsWith('node:')) continue
+    if (file.includes('node_modules')) continue
+    // Frames inside this package (source or built output).
+    if (/[\\/]screenci[\\/](src|dist)[\\/]/.test(file)) continue
+    file = file.replace(/^file:\/\//, '')
+    return { file, line: Number(match[2]) }
+  }
+  return undefined
 }
 
 /**
@@ -109,6 +154,7 @@ export type BuildEditableMetaInput = {
 }
 
 export function buildEditableMeta(input: BuildEditableMetaInput): EditableMeta {
+  const source = captureCallSite()
   return {
     descriptor: {
       kind: input.kind,
@@ -117,6 +163,7 @@ export function buildEditableMeta(input: BuildEditableMetaInput): EditableMeta {
       ...(input.matcher !== undefined && { matcher: input.matcher }),
       ordinal: input.position.ordinal,
       seq: input.position.seq,
+      ...(source !== undefined && { source }),
     },
     locked: input.locked,
     ...(input.lockedFields !== undefined &&

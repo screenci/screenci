@@ -2311,6 +2311,28 @@ export async function instrumentPage(page: Page): Promise<Page> {
     ).click(options)
   }
 
+  // Record page navigations as hard borders on the editor timeline: their
+  // duration is whatever the app took, so they are never web-editable, and
+  // timing edits cannot cross them. Skipped inside hide() (cut anyway).
+  // Guard: unit-test fakes may omit goto entirely.
+  if (typeof page.goto === 'function') {
+    const originalGoto = page.goto.bind(page)
+    page.goto = (async (
+      url: Parameters<Page['goto']>[0],
+      options?: Parameters<Page['goto']>[1]
+    ) => {
+      const navigationStartMs = Date.now()
+      const response = await originalGoto(url, options)
+      if (!isInsideHide()) {
+        getActiveClickRecorder(page).addNavigation(
+          String(url),
+          navigationStartMs
+        )
+      }
+      return response
+    }) as Page['goto']
+  }
+
   const originalWaitForTimeout = page.waitForTimeout.bind(page)
   page.waitForTimeout = (async (timeout?: number): Promise<void> => {
     // Two forms: a number from code (explicit, overriding it warns) and no

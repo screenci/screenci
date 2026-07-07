@@ -80,6 +80,7 @@ import {
   updateActionParamsSnapshot,
 } from './src/actionParamsSnapshot.js'
 import {
+  buildEditablePlacementPrompt,
   diffEditableOverridesAgainstSnapshot,
   EDITABLE_SNAPSHOT_FILE,
   formatAuthoredStatusReport,
@@ -3343,22 +3344,76 @@ export async function printSyncPrompt(
   configPath?: string,
   grep?: string,
   client: ActionOverridesClient = defaultActionOverridesClient,
-  write: (text: string) => void = (text) => process.stdout.write(text)
+  write: (text: string) => void = (text) => process.stdout.write(text),
+  fetchEditableOverrides: EditableOverridesFetcher = defaultEditableOverridesFetcher
 ): Promise<void> {
-  const { comparison, projectName } = await compareEditorStateToSnapshot(
-    configPath,
-    grep,
-    client
-  )
+  const { comparison, projectName, screenciDir, apiUrl, secret } =
+    await compareEditorStateToSnapshot(configPath, grep, client)
   const prompt = buildSyncPrompt(comparison, projectName)
-  if (prompt === null) {
+
+  // Timeline edits (timing overrides + authored events) become concrete
+  // placement instructions using the call sites captured at record time.
+  let placement: string[] = []
+  try {
+    const { overrides, authored } = await fetchEditableOverrides({
+      apiUrl,
+      secret,
+      projectName,
+    })
+    placement = buildEditablePlacementPrompt(
+      readEditableSnapshot(screenciDir),
+      overrides,
+      authored
+    )
+  } catch {
+    // Best-effort: the action-parameter prompt still prints.
+  }
+
+  if (prompt === null && placement.length === 0) {
     write(
       'Nothing to sync: the web editor has no action-parameter edits that ' +
         'differ from code.\n'
     )
     return
   }
-  write(`${prompt}\n`)
+  if (prompt !== null) write(`${prompt}\n`)
+  if (placement.length > 0) {
+    write(`\n# Timeline edits to move into code\n\n`)
+    write(`${placement.join('\n')}\n`)
+  }
+}
+
+/**
+ * `screenci reset-web-edits`: clears the project's (or one video's) web
+ * timeline edits via the backend, so the next record runs purely from code.
+ * Used by agents after codifying edits from `screenci sync-prompt`.
+ */
+export async function resetWebEdits(
+  configPath?: string,
+  videoName?: string,
+  log: (message: string) => void = (message) => logger.info(message)
+): Promise<void> {
+  const { screenciConfig, secret, apiUrl } =
+    await requireScreenCISecret(configPath)
+  const params = new URLSearchParams({
+    projectName: screenciConfig.projectName,
+  })
+  if (videoName !== undefined) params.set('videoName', videoName)
+  const res = await fetch(`${apiUrl}/cli/reset-editable?${params.toString()}`, {
+    method: 'POST',
+    headers: { 'X-ScreenCI-Secret': secret },
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(
+      `Failed to reset web edits: ${res.status} ${extractBackendError(text)}`
+    )
+  }
+  const body = (await res.json()) as { reset?: number }
+  log(
+    `Cleared web timeline edits for ${body.reset ?? 0} video(s)` +
+      `${videoName !== undefined ? ` (video: ${videoName})` : ''}.`
+  )
 }
 
 async function printInfo(configPath?: string): Promise<void> {
@@ -3903,6 +3958,21 @@ export async function main() {
       await printActionStatus(
         options['config'] as string | undefined,
         options['grep'] as string | undefined
+      )
+    })
+
+  program
+    .command('reset-web-edits')
+    .description(
+      'Clear all web timeline edits (timing overrides and authored events) ' +
+        'for this project, so the next record runs purely from code'
+    )
+    .option('-c, --config <path>', 'path to screenci.config.ts')
+    .option('--video <name>', 'only reset one video by name')
+    .action(async (options: Record<string, unknown>) => {
+      await resetWebEdits(
+        options['config'] as string | undefined,
+        options['video'] as string | undefined
       )
     })
 

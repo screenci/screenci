@@ -6,10 +6,53 @@ import type {
   UpdateTransition,
 } from './events.js'
 import { getActiveHideRecorder } from './timelineBlock.js'
-import { getScreenCIRuntimeContext } from './runtimeContext.js'
+import {
+  getScreenCIRuntimeContext,
+  nextEditablePosition,
+} from './runtimeContext.js'
+import {
+  buildEditableMeta,
+  editableIdentityKey,
+  type EditableMeta,
+  type EditableSchemaKind,
+} from './editableDescriptor.js'
+import { applyEditableOverride } from './editableRuntime.js'
 import { assetCandidatePaths, hashAssetFile } from './assetHash.js'
 import type { Easing, NarrationCorner } from './types.js'
 import { EASING_NAMES } from './types.js'
+
+/**
+ * Editable metadata for a mid-video presentation update (narration box,
+ * recording overlay, background). Identity is `update|<api>`; every value
+ * set in code is a locked field (a web edit shadows it with a warning).
+ */
+function buildUpdateEditableMeta(input: {
+  subKind: string
+  schemaKind: EditableSchemaKind
+  defaults: Record<string, unknown>
+}): EditableMeta {
+  const identity = { kind: 'update' as const, subKind: input.subKind }
+  const lockedFields = Object.entries(input.defaults)
+    .filter(([, value]) => value !== null && value !== undefined)
+    .map(([field]) => field)
+  return buildEditableMeta({
+    ...identity,
+    schemaKind: input.schemaKind,
+    locked: lockedFields.length > 0,
+    lockedFields,
+    defaults: input.defaults,
+    position: nextEditablePosition(editableIdentityKey(identity)),
+  })
+}
+
+/** Numeric override for one field, or undefined. */
+function effNumber(
+  eff: Record<string, unknown>,
+  field: string
+): number | undefined {
+  const value = eff[field]
+  return typeof value === 'number' ? value : undefined
+}
 
 /**
  * Animation options shared by every mid-video overlay update. Omit `duration`
@@ -226,7 +269,28 @@ export async function moveNarration(
   options?: MoveNarrationOptions,
   recorder: IEventRecorder = getActiveHideRecorder()
 ): Promise<void> {
-  recorder.addNarrationUpdate(validateMoveNarration(corner, options))
+  const editable = buildUpdateEditableMeta({
+    subKind: 'moveNarration',
+    schemaKind: 'narrationUpdate',
+    defaults: {
+      corner,
+      size: options?.size ?? null,
+      duration: options?.duration ?? null,
+    },
+  })
+  const eff = applyEditableOverride(editable)
+  const effCorner =
+    typeof eff.corner === 'string' ? (eff.corner as NarrationCorner) : corner
+  const effSize = effNumber(eff, 'size')
+  const effDuration = effNumber(eff, 'duration')
+  recorder.addNarrationUpdate({
+    ...validateMoveNarration(effCorner, {
+      ...options,
+      ...(effSize !== undefined && { size: effSize }),
+      ...(effDuration !== undefined && { duration: effDuration }),
+    }),
+    editable,
+  })
 }
 
 /**
@@ -238,11 +302,23 @@ export async function resizeNarration(
   options?: OverlayTransitionOptions,
   recorder: IEventRecorder = getActiveHideRecorder()
 ): Promise<void> {
-  validateNarrationSize('resizeNarration', size)
-  const transition = validateTransition('resizeNarration', options)
+  const editable = buildUpdateEditableMeta({
+    subKind: 'resizeNarration',
+    schemaKind: 'narrationUpdate',
+    defaults: { size, duration: options?.duration ?? null },
+  })
+  const eff = applyEditableOverride(editable)
+  const effSize = effNumber(eff, 'size') ?? size
+  const effDuration = effNumber(eff, 'duration')
+  validateNarrationSize('resizeNarration', effSize)
+  const transition = validateTransition('resizeNarration', {
+    ...options,
+    ...(effDuration !== undefined && { duration: effDuration }),
+  })
   recorder.addNarrationUpdate({
-    size,
+    size: effSize,
     ...(transition !== undefined && { transition }),
+    editable,
   })
 }
 
@@ -256,11 +332,23 @@ export async function resizeRecording(
   options?: OverlayTransitionOptions,
   recorder: IEventRecorder = getActiveHideRecorder()
 ): Promise<void> {
-  validateRecordingSize('resizeRecording', size)
-  const transition = validateTransition('resizeRecording', options)
+  const editable = buildUpdateEditableMeta({
+    subKind: 'resizeRecording',
+    schemaKind: 'recordingUpdate',
+    defaults: { size, duration: options?.duration ?? null },
+  })
+  const eff = applyEditableOverride(editable)
+  const effSize = effNumber(eff, 'size') ?? size
+  const effDuration = effNumber(eff, 'duration')
+  validateRecordingSize('resizeRecording', effSize)
+  const transition = validateTransition('resizeRecording', {
+    ...options,
+    ...(effDuration !== undefined && { duration: effDuration }),
+  })
   recorder.addRecordingUpdate({
-    size,
+    size: effSize,
     ...(transition !== undefined && { transition }),
+    editable,
   })
 }
 
@@ -274,10 +362,21 @@ export async function hideRecording(
   options?: OverlayTransitionOptions,
   recorder: IEventRecorder = getActiveHideRecorder()
 ): Promise<void> {
-  const transition = validateTransition('hideRecording', options)
+  const editable = buildUpdateEditableMeta({
+    subKind: 'hideRecording',
+    schemaKind: 'recordingUpdate',
+    defaults: { duration: options?.duration ?? null },
+  })
+  const eff = applyEditableOverride(editable)
+  const effDuration = effNumber(eff, 'duration')
+  const transition = validateTransition('hideRecording', {
+    ...options,
+    ...(effDuration !== undefined && { duration: effDuration }),
+  })
   recorder.addRecordingUpdate({
     visible: false,
     ...(transition !== undefined && { transition }),
+    editable,
   })
 }
 
@@ -289,10 +388,21 @@ export async function showRecording(
   options?: OverlayTransitionOptions,
   recorder: IEventRecorder = getActiveHideRecorder()
 ): Promise<void> {
-  const transition = validateTransition('showRecording', options)
+  const editable = buildUpdateEditableMeta({
+    subKind: 'showRecording',
+    schemaKind: 'recordingUpdate',
+    defaults: { duration: options?.duration ?? null },
+  })
+  const eff = applyEditableOverride(editable)
+  const effDuration = effNumber(eff, 'duration')
+  const transition = validateTransition('showRecording', {
+    ...options,
+    ...(effDuration !== undefined && { duration: effDuration }),
+  })
   recorder.addRecordingUpdate({
     visible: true,
     ...(transition !== undefined && { transition }),
+    editable,
   })
 }
 
@@ -311,8 +421,30 @@ export async function setBackground(
   options?: OverlayTransitionOptions,
   recorder: IEventRecorder = getActiveHideRecorder()
 ): Promise<void> {
-  const validated = validateSetBackground(background)
-  const transition = validateTransition('setBackground', options)
+  const editable = buildUpdateEditableMeta({
+    subKind: 'setBackground',
+    schemaKind: 'backgroundUpdate',
+    defaults: {
+      backgroundCss:
+        'backgroundCss' in background ? background.backgroundCss : null,
+      duration: options?.duration ?? null,
+    },
+  })
+  const eff = applyEditableOverride(editable)
+  const effCss =
+    typeof eff.backgroundCss === 'string' && eff.backgroundCss.length > 0
+      ? eff.backgroundCss
+      : undefined
+  const effDuration = effNumber(eff, 'duration')
+  const validated = validateSetBackground(
+    // A css override replaces the background (asset-path backgrounds keep the
+    // asset unless a css override is set).
+    effCss !== undefined ? { backgroundCss: effCss } : background
+  )
+  const transition = validateTransition('setBackground', {
+    ...options,
+    ...(effDuration !== undefined && { duration: effDuration }),
+  })
   let resolved: BackgroundUpdateEvent['background']
   if ('assetPath' in validated) {
     const testFilePath = getScreenCIRuntimeContext().testFilePath
@@ -331,6 +463,7 @@ export async function setBackground(
   recorder.addBackgroundUpdate({
     background: resolved,
     ...(transition !== undefined && { transition }),
+    editable,
   })
 }
 

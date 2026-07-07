@@ -828,6 +828,10 @@ export type AudioStartPayload = Omit<
 export type HideStartEvent = {
   type: 'hideStart'
   timeMs: number
+  /** Optional block name from `hide('name', fn)`. */
+  name?: string
+  /** Web-editor metadata: identity for the timeline (read-only span). */
+  editable?: EditableMeta
 }
 
 export type HideEndEvent = {
@@ -852,6 +856,10 @@ export type TimeStartEvent = {
   type: 'timeStart'
   timeMs: number
   durationMs: number
+  /** Optional block name from `time('name', ms, fn)`. */
+  name?: string
+  /** Web-editor metadata: identity, lock state, and effective duration. */
+  editable?: EditableMeta
 }
 
 export type TimeEndEvent = {
@@ -864,6 +872,31 @@ export type TimeEndEvent = {
  * It carries no render behavior: it only labels a moment in the recording so the
  * web editor can surface it on its own timeline row.
  */
+/**
+ * A `redact()` mask applied during recording. A point marker on the editor
+ * timeline; the mask styling is web-editable and applies at the next record
+ * (masks bake into the captured pixels).
+ */
+export type RedactEvent = {
+  type: 'redact'
+  timeMs: number
+  /** Captured locator description of the masked element(s). */
+  matcher?: string
+  editable?: EditableMeta
+}
+
+/**
+ * A page navigation (`page.goto`). A hard border on the editor timeline: its
+ * duration is whatever the app took, so it is never web-editable, and timing
+ * edits cannot cross it.
+ */
+export type NavigationEvent = {
+  type: 'navigation'
+  timeMs: number
+  endMs: number
+  url: string
+}
+
 export type TimestampEvent = {
   type: 'timestamp'
   timeMs: number
@@ -938,6 +971,8 @@ export type UpdateTransition = {
 export type NarrationUpdateEvent = {
   type: 'narrationUpdate'
   timeMs: number
+  /** Web-editor metadata: identity and effective values (corner/size/duration). */
+  editable?: EditableMeta
   /** Anchor corner. Omitted = unchanged. */
   corner?: NarrationCorner
   /**
@@ -963,6 +998,8 @@ export type NarrationUpdateEvent = {
 export type RecordingUpdateEvent = {
   type: 'recordingUpdate'
   timeMs: number
+  /** Web-editor metadata: identity and effective values (size/duration). */
+  editable?: EditableMeta
   /** Recording size fraction [0, 1], same semantics as `renderOptions.recording.size`. */
   size?: number
   visible?: boolean
@@ -977,6 +1014,8 @@ export type RecordingUpdateEvent = {
 export type BackgroundUpdateEvent = {
   type: 'backgroundUpdate'
   timeMs: number
+  /** Web-editor metadata: identity and effective values (css/duration). */
+  editable?: EditableMeta
   background:
     | { assetPath: string; fileHash?: string }
     | { backgroundCss: string }
@@ -1026,6 +1065,8 @@ export type RecordingEvent =
   | SpeedEndEvent
   | TimeStartEvent
   | TimeEndEvent
+  | NavigationEvent
+  | RedactEvent
   | TimestampEvent
   | AutoZoomStartEvent
   | AutoZoomEndEvent
@@ -1299,13 +1340,17 @@ export interface IEventRecorder {
    * timestamp is always 0 regardless of when it is called.
    */
   addScreenAudioTrack(audio: AudioStartPayload): void
-  addHideStart(): void
+  addHideStart(editable?: EditableMeta, name?: string): void
   addHideEnd(): void
+  /** Records a page navigation span (a hard border on the editor timeline). */
+  addNavigation(url: string, startMs: number): void
+  /** Records a redact() mask marker (styling web-editable, next record). */
+  addRedact(matcher: string | undefined, editable?: EditableMeta): void
   /** Resolved cursor/scroll dispatch intervals from `recordOptions.performance`. */
   getPerformanceIntervals(): PerformanceIntervals
   addSpeedStart(multiplier: number, editable?: EditableMeta): void
   addSpeedEnd(): void
-  addTimeStart(durationMs: number): void
+  addTimeStart(durationMs: number, editable?: EditableMeta, name?: string): void
   addTimeEnd(): void
   /** Records a named marker at the current recording time (`timestamp()`). */
   addTimestamp(name: string): void
@@ -1386,6 +1431,8 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addScreenAudioTrack(): void {},
   addHideStart(): void {},
   addHideEnd(): void {},
+  addNavigation(): void {},
+  addRedact(): void {},
   getPerformanceIntervals(): PerformanceIntervals {
     return resolvePerformanceIntervals(undefined)
   },
@@ -1979,10 +2026,33 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addHideStart(): void {
+  addHideStart(editable?: EditableMeta, name?: string): void {
     if (this.startTime === null) return
     const timeMs = this.snapToAdjacentTransition(Date.now() - this.startTime)
-    this.events.push({ type: 'hideStart', timeMs })
+    this.events.push({
+      type: 'hideStart',
+      timeMs,
+      ...(name !== undefined && { name }),
+      ...(editable !== undefined && { editable }),
+    })
+  }
+
+  addRedact(matcher: string | undefined, editable?: EditableMeta): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'redact',
+      timeMs,
+      ...(matcher !== undefined && { matcher }),
+      ...(editable !== undefined && { editable }),
+    })
+  }
+
+  addNavigation(url: string, startMs: number): void {
+    if (this.startTime === null) return
+    const timeMs = Math.max(0, startMs - this.startTime)
+    const endMs = Date.now() - this.startTime
+    this.events.push({ type: 'navigation', timeMs, endMs, url })
   }
 
   addHideEnd(): void {
@@ -2015,10 +2085,20 @@ export class EventRecorder implements IEventRecorder {
     this.events.push({ type: 'speedEnd', timeMs })
   }
 
-  addTimeStart(durationMs: number): void {
+  addTimeStart(
+    durationMs: number,
+    editable?: EditableMeta,
+    name?: string
+  ): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
-    this.events.push({ type: 'timeStart', timeMs, durationMs })
+    this.events.push({
+      type: 'timeStart',
+      timeMs,
+      durationMs,
+      ...(name !== undefined && { name }),
+      ...(editable !== undefined && { editable }),
+    })
   }
 
   addTimeEnd(): void {

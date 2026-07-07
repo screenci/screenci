@@ -7,6 +7,7 @@ import {
   parseRecordOptions,
   parseRequestedLanguages,
   parseValuesOverrides,
+  parseWebLanguages,
   resolveRecordingTimingDuration,
   shouldSimulateRecordingTimings,
 } from './runtimeMode.js'
@@ -134,6 +135,36 @@ describe('parseRequestedLanguages', () => {
         SCREENCI_LANGUAGES: ' , ,',
       } as NodeJS.ProcessEnv)
     ).toBeNull()
+  })
+})
+
+describe('parseWebLanguages', () => {
+  it('returns null when unset, empty or malformed', () => {
+    expect(parseWebLanguages({} as NodeJS.ProcessEnv)).toBeNull()
+    expect(
+      parseWebLanguages({ SCREENCI_WEB_LANGUAGES: '' } as NodeJS.ProcessEnv)
+    ).toBeNull()
+    expect(
+      parseWebLanguages({
+        SCREENCI_WEB_LANGUAGES: 'not json',
+      } as NodeJS.ProcessEnv)
+    ).toBeNull()
+    expect(
+      parseWebLanguages({ SCREENCI_WEB_LANGUAGES: '42' } as NodeJS.ProcessEnv)
+    ).toBeNull()
+  })
+
+  it('parses a per-video language map, dropping invalid entries', () => {
+    expect(
+      parseWebLanguages({
+        SCREENCI_WEB_LANGUAGES: JSON.stringify({
+          Tutorial: ['fi', 'de'],
+          Bad: 'fi',
+          Mixed: ['en', 7, ''],
+          Empty: [],
+        }),
+      } as NodeJS.ProcessEnv)
+    ).toEqual({ Tutorial: ['fi', 'de'], Mixed: ['en'] })
   })
 })
 

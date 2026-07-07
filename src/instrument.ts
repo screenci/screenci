@@ -30,10 +30,7 @@ import {
   type EditableMeta,
   type EditableSchemaKind,
 } from './editableDescriptor.js'
-import {
-  applyEditableOverride,
-  isImplicitEditableEnabled,
-} from './editableRuntime.js'
+import { applyEditableOverride } from './editableRuntime.js'
 import type {
   AutoZoomOptions,
   Easing,
@@ -564,6 +561,23 @@ function hasExplicitOption(...values: unknown[]): boolean {
 }
 
 /**
+ * Marks action-specific fields as explicitly code-set on an already-built
+ * editable meta (for fields stamped after {@link buildPointerEditableMeta},
+ * like typing/hover/drag durations).
+ */
+function addLockedFields(
+  editable: EditableMeta | undefined,
+  fields: Record<string, unknown>
+): void {
+  if (editable === undefined) return
+  const extra = Object.entries(fields)
+    .filter(([, value]) => value !== undefined)
+    .map(([field]) => field)
+  if (extra.length === 0) return
+  editable.lockedFields = [...(editable.lockedFields ?? []), ...extra]
+}
+
+/**
  * Builds the editable metadata for an instrumented input action: identity
  * from the locator's captured description, position from the runtime
  * counters, and the effective option values this run used. Returns undefined
@@ -576,14 +590,12 @@ function buildInputEditableMeta(
   subKind: InputEvent['subType'],
   options: {
     locked: boolean
+    lockedFields?: string[]
     defaults: Record<string, unknown>
     schemaKind?: EditableSchemaKind
     name?: string | undefined
   }
 ): EditableMeta | undefined {
-  if (!isImplicitEditableEnabled() && options.name === undefined) {
-    return undefined
-  }
   const matcher = getLocatorDescription(locator)
   const identity = {
     kind: 'input' as const,
@@ -595,6 +607,9 @@ function buildInputEditableMeta(
     ...identity,
     schemaKind: options.schemaKind ?? 'cursorMove',
     locked: options.locked,
+    ...(options.lockedFields !== undefined && {
+      lockedFields: options.lockedFields,
+    }),
     defaults: options.defaults,
     position: nextEditablePosition(editableIdentityKey(identity)),
   })
@@ -614,12 +629,23 @@ function buildPointerEditableMeta(
     moveDelayAfter?: number | undefined
     autoZoomOptions?: AutoZoomOptions | undefined
     hasExplicitMove: boolean
+    /** The code-supplied move option, used to mark per-field provenance. */
+    explicitMove?: CursorMoveOption['move']
   }
 ): EditableMeta | undefined {
+  const lockedFields = [
+    ...(values.explicitMove?.duration !== undefined ? ['moveDuration'] : []),
+    ...(values.explicitMove?.speed !== undefined ? ['moveSpeed'] : []),
+    ...(values.explicitMove?.easing !== undefined ? ['moveEasing'] : []),
+    ...(values.explicitMove?.delayAfter !== undefined
+      ? ['moveDelayAfter']
+      : []),
+  ]
   return buildInputEditableMeta(locator, subKind, {
-    // Explicit code options lock the whole action against web timeline edits;
-    // the action-parameter provenance channel still records their values.
+    // Explicit code options mark provenance: web edits still apply, but the
+    // editor and the record run warn that they shadow code values.
     locked: values.hasExplicitMove || values.autoZoomOptions !== undefined,
+    lockedFields,
     defaults: {
       // moveDuration and moveSpeed are mutually exclusive; only default the
       // duration when no speed is in play so a merge never carries both.
@@ -635,9 +661,9 @@ function buildPointerEditableMeta(
 
 /**
  * Cursor timing values shared by the pointer-driven wrappers. When the action
- * is editable and unlocked, the web override (merged over the effective
- * defaults by {@link applyEditableOverride}) replaces the code-side values;
- * a locked or non-editable action keeps them untouched.
+ * is editable, the web override (merged over the effective defaults by
+ * {@link applyEditableOverride}) replaces the code-side values, warning when
+ * it shadows an explicit one; a non-editable action keeps them untouched.
  */
 type CursorTimingValues = {
   moveDuration?: number | undefined
@@ -650,7 +676,7 @@ function resolveCursorTimingOverrides(
   editable: EditableMeta | undefined,
   original: CursorTimingValues
 ): CursorTimingValues {
-  if (editable === undefined || editable.locked) return original
+  if (editable === undefined) return original
   const eff = applyEditableOverride(editable)
   return {
     ...(typeof eff.moveDuration === 'number' && {
@@ -667,16 +693,16 @@ function resolveCursorTimingOverrides(
 }
 
 /**
- * A single numeric override value for an unlocked editable action, for
+ * A single numeric override value for an editable action, for
  * action-specific fields outside {@link CursorTimingValues} (typing duration,
- * hover duration, drag duration). Undefined when locked, not editable, or no
+ * hover duration, drag duration). Undefined when not editable or no
  * numeric override is stored for the key.
  */
 function editableOverrideNumber(
   editable: EditableMeta | undefined,
   key: string
 ): number | undefined {
-  if (editable === undefined || editable.locked) return undefined
+  if (editable === undefined) return undefined
   const value = applyEditableOverride(editable)[key]
   return typeof value === 'number' ? value : undefined
 }
@@ -1038,6 +1064,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined,
+      explicitMove: move,
     })
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
@@ -1136,6 +1163,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined,
+      explicitMove: move,
     })
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
@@ -1263,11 +1291,13 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined || options?.duration !== undefined,
+      explicitMove: move,
     })
     if (editable !== undefined) {
       // Typing spread duration is fill-specific; expose it as an editable
       // field alongside the shared cursor timings.
       editable.defaults.duration = typingDuration
+      addLockedFields(editable, { duration: options?.duration })
     }
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
@@ -1393,6 +1423,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined,
+      explicitMove: move,
     })
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
@@ -1474,6 +1505,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined,
+      explicitMove: move,
     })
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
@@ -1558,6 +1590,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined,
+      explicitMove: move,
     })
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
@@ -1667,6 +1700,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined,
+      explicitMove: move,
     })
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
@@ -1741,12 +1775,14 @@ export function instrumentLocator(locator: Locator): Locator {
       moveEasing,
       autoZoomOptions: options?.autoZoomOptions,
       hasExplicitMove: move !== undefined || options?.duration !== undefined,
+      explicitMove: move,
     })
     if (editable !== undefined) {
       // Hover hold duration is hover-specific; expose it as an editable field
       // alongside the shared cursor timings.
       editable.defaults.duration = hoverDuration
       delete editable.defaults.moveDelayAfter
+      addLockedFields(editable, { duration: options?.duration })
     }
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
@@ -1834,6 +1870,12 @@ export function instrumentLocator(locator: Locator): Locator {
         options?.amount,
         options?.centering
       ),
+      lockedFields: [
+        ...(options?.easing !== undefined ? ['easing'] : []),
+        ...(options?.duration !== undefined ? ['duration'] : []),
+        ...(options?.amount !== undefined ? ['amount'] : []),
+        ...(options?.centering !== undefined ? ['centering'] : []),
+      ],
       schemaKind: 'autoZoom',
       // Unset optional fields are recorded as null so the web editor knows the
       // field exists and may set it (an override key must exist in defaults).
@@ -1845,9 +1887,7 @@ export function instrumentLocator(locator: Locator): Locator {
       },
     })
     const eff =
-      editable !== undefined && !editable.locked
-        ? applyEditableOverride(editable)
-        : undefined
+      editable !== undefined ? applyEditableOverride(editable) : undefined
     const effEasing =
       typeof eff?.easing === 'string' ? (eff.easing as Easing) : easing
     const effDuration =
@@ -1901,10 +1941,12 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined || duration !== undefined,
+      explicitMove: move,
     })
     if (editable !== undefined) {
       // Selection sweep duration is selectText-specific.
       editable.defaults.duration = selectDuration ?? null
+      addLockedFields(editable, { duration })
     }
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
@@ -2007,12 +2049,18 @@ export function instrumentLocator(locator: Locator): Locator {
       hasExplicitMove:
         move !== undefined ||
         hasExplicitOption(duration, speed, options?.easing, options?.dragSteps),
+      explicitMove: move,
     })
     if (editable !== undefined) {
       // Drag-phase fields are dragTo-specific.
       editable.defaults.duration = duration ?? DEFAULT_CLICK_MOUSE_MOVE_DURATION
       editable.defaults.easing = easing
       editable.defaults.dragSteps = dragSteps
+      addLockedFields(editable, {
+        duration,
+        easing: options?.easing,
+        dragSteps: options?.dragSteps,
+      })
     }
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
@@ -2237,21 +2285,18 @@ export async function instrumentPage(page: Page): Promise<Page> {
 
   const originalWaitForTimeout = page.waitForTimeout.bind(page)
   page.waitForTimeout = (async (timeout?: number): Promise<void> => {
-    // Two forms: a number from code (locked against web timeline edits) and
-    // no argument (a web-editable pause defaulting to 0).
+    // Two forms: a number from code (explicit, overriding it warns) and no
+    // argument (a web-editable pause defaulting to 0).
     const requested = typeof timeout === 'number' ? timeout : 0
     const locked = typeof timeout === 'number'
-    const editable = isImplicitEditableEnabled()
-      ? buildEditableMeta({
-          kind: 'delay',
-          schemaKind: 'delay',
-          locked,
-          defaults: { durationMs: requested },
-          position: nextEditablePosition(
-            editableIdentityKey({ kind: 'delay' })
-          ),
-        })
-      : undefined
+    const editable = buildEditableMeta({
+      kind: 'delay',
+      schemaKind: 'delay',
+      locked,
+      ...(locked && { lockedFields: ['durationMs'] }),
+      defaults: { durationMs: requested },
+      position: nextEditablePosition(editableIdentityKey({ kind: 'delay' })),
+    })
     const effDuration =
       editableOverrideNumber(editable, 'durationMs') ?? requested
     // Recorded before the wait so timeMs marks the start of the pause

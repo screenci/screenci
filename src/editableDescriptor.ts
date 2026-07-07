@@ -46,10 +46,17 @@ export type EditableActionDescriptor = {
 export type EditableMeta = {
   descriptor: EditableActionDescriptor
   /**
-   * True when code set any explicit option on the action, locking the whole
-   * action against web edits (there are no partially editable actions).
+   * True when code set any explicit option on the action. Explicit values no
+   * longer block web edits: an override still applies, but the editor and the
+   * CLI surface a warning that it shadows a value set in code.
    */
   locked: boolean
+  /**
+   * The individual fields whose values were set explicitly in code. Used to
+   * warn (in the web editor, at record time and in `screenci status`) when an
+   * override shadows one of them. Absent when nothing was explicit.
+   */
+  lockedFields?: string[]
   schemaKind: EditableSchemaKind
   defaults: Record<string, unknown>
   applied?: Record<string, unknown>
@@ -95,6 +102,7 @@ export type BuildEditableMetaInput = {
   matcher?: string
   schemaKind: EditableSchemaKind
   locked: boolean
+  lockedFields?: string[]
   defaults: Record<string, unknown>
   applied?: Record<string, unknown>
   position: EditablePosition
@@ -111,6 +119,8 @@ export function buildEditableMeta(input: BuildEditableMetaInput): EditableMeta {
       seq: input.position.seq,
     },
     locked: input.locked,
+    ...(input.lockedFields !== undefined &&
+      input.lockedFields.length > 0 && { lockedFields: input.lockedFields }),
     schemaKind: input.schemaKind,
     defaults: input.defaults,
     ...(input.applied !== undefined && { applied: input.applied }),

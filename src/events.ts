@@ -12,6 +12,7 @@ import type {
   ResolvedRenderOptions,
 } from './types.js'
 import { RENDER_OPTIONS_DEFAULTS } from './types.js'
+import { resolveNarrationAudioCleanup } from './narrationAudioCleanup.js'
 import type { ScreenshotClipRecord } from './clip.js'
 import type { StudioOptionFlags } from './studio.js'
 import {
@@ -2007,6 +2008,9 @@ export class EventRecorder implements IEventRecorder {
     // undefined otherwise, so the code values render as the starting point while
     // the Studio flag marks the group web-editable (the web app overrides it).
     const ro = this.renderOptions
+    const narrationAudioCleanup = resolveNarrationAudioCleanup(
+      ro?.narration?.audio
+    )
     const resolved: ResolvedRenderOptions = {
       recording: {
         size: ro?.recording?.size ?? RENDER_OPTIONS_DEFAULTS.recording.size,
@@ -2034,6 +2038,9 @@ export class EventRecorder implements IEventRecorder {
           ro?.narration?.dropShadow,
           RENDER_OPTIONS_DEFAULTS.narration.dropShadow
         ),
+        ...(narrationAudioCleanup !== undefined && {
+          audio: narrationAudioCleanup,
+        }),
       },
       mouse: {
         size: ro?.mouse?.size ?? RENDER_OPTIONS_DEFAULTS.mouse.size,

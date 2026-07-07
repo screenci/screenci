@@ -14,6 +14,10 @@ export type {
   Easing,
   VideoEncoderPreset,
 } from './src/types.js'
+export type {
+  NarrationAudioCleanupOption,
+  ResolvedNarrationAudioCleanup,
+} from './src/narrationAudioCleanup.js'
 
 // Re-export voices
 export { voices, modelTypes } from './src/voices.js'

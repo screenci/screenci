@@ -222,6 +222,51 @@ on later runs, so you do not have to commit the file. If it is missing locally,
 ScreenCI reuses the version uploaded for this video (matched by file path). See
 [Asset files do not need to be committed](/docs/ci-setup#asset-files-do-not-need-to-be-committed).
 
+## Clean up recorded narration audio
+
+Narration you record yourself (a `media`/`path` cue) often carries room noise
+and uneven volume. Opt in to automatic cleanup with
+`renderOptions.narration.audio`:
+
+```ts
+video.renderOptions({
+  narration: { audio: true },
+})('Walkthrough', async ({ page, narration }) => {
+  /* ... */
+})
+```
+
+`audio: true` enables the full chain: background noise reduction (a neural
+noise-reduction filter plus a low-frequency rumble cut) and loudness
+normalization to a consistent target level. It applies only to narration you
+recorded yourself; generated narration, background audio tracks, and captured
+screen audio are never touched. It is off by default.
+
+The object form enables the two steps individually and exposes their tuning
+values:
+
+```ts
+video.renderOptions({
+  narration: {
+    audio: {
+      // Noise reduction mix, 0 (off) to 1 (full). Default 0.85; lower it if
+      // the voice starts to sound processed.
+      denoise: { strength: 0.85 },
+      // Loudness target in LUFS, -30 to -8. Default -16, the common level
+      // for spoken online video.
+      normalize: { level: -16 },
+    },
+  },
+})
+```
+
+Each step also accepts a plain boolean: `{ denoise: true }` cleans noise
+without touching loudness, `{ normalize: true }` levels the volume without
+denoising. Cleanup happens at render time, so changing these options never
+re-uploads or modifies your recording; re-render to hear the effect. A per-cue
+[`volume`](#balance-narration-volume) still applies on top of the normalized
+level.
+
 ### Crop and trim a media cue
 
 A `media`/`path` cue that is a **video** (a talking-head or webcam clip shown as a

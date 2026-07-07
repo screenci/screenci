@@ -8,6 +8,10 @@ import type {
 import type { PerformanceOption } from './performance.js'
 import type { ClipTarget, ScreenshotClipRecord } from './clip.js'
 import type { AnyTopLevelVoiceConfig } from './voiceConfig.js'
+import type {
+  NarrationAudioCleanupOption,
+  ResolvedNarrationAudioCleanup,
+} from './narrationAudioCleanup.js'
 
 /**
  * Aspect ratio for recording and output.
@@ -182,6 +186,18 @@ export type RenderOptions = {
      * neither is set.
      */
     voice?: AnyTopLevelVoiceConfig
+    /**
+     * Cleanup for narration audio you recorded yourself (media-file cues):
+     * background noise reduction and loudness normalization. Off by default.
+     *
+     * - `true` enables the full chain with defaults
+     * - object form enables only the listed sub-features:
+     *   `{ denoise: true | { strength: 0..1 }, normalize: true | { level: LUFS } }`
+     *
+     * Does not affect generated narration, background audio tracks, or
+     * captured screen audio.
+     */
+    audio?: NarrationAudioCleanupOption
   }
   mouse?: {
     /** 0-1: 0=missing, 1=height of video */
@@ -303,6 +319,11 @@ export type ResolvedRenderOptions = {
     dropShadow: number
     corner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
     padding: number
+    /**
+     * Resolved audio cleanup for self-recorded narration cues. Present only
+     * when the user opted in via {@link RenderOptions.narration}.
+     */
+    audio?: ResolvedNarrationAudioCleanup
   }
   mouse: {
     size: number

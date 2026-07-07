@@ -178,7 +178,7 @@ export const docsManifest = [
     source: 'overlay-updates.md',
     slug: 'docs/guides/overlay-updates',
     section: 'Guides',
-    order: 3,
+    order: 4,
     navLabel: 'Mid-video overlay updates',
     title: 'Mid-Video Overlay Updates',
     description:
@@ -190,7 +190,7 @@ export const docsManifest = [
     source: 'screenshots.md',
     slug: 'docs/guides/screenshots',
     section: 'Guides',
-    order: 4,
+    order: 5,
     navLabel: 'Screenshots',
     title: 'Screenshots',
     description:
@@ -202,7 +202,7 @@ export const docsManifest = [
     source: 'editor.md',
     slug: 'docs/guides/editor',
     section: 'Guides',
-    order: 5,
+    order: 6,
     navLabel: 'Editor',
     title: 'Editor',
     description:
@@ -214,7 +214,7 @@ export const docsManifest = [
     source: 'public-urls-and-embeds.md',
     slug: 'docs/guides/public-urls-and-embeds',
     section: 'Guides',
-    order: 6,
+    order: 7,
     navLabel: 'Public URLs and embeds',
     title: 'Public URLs and Embeds',
     description:
@@ -226,7 +226,7 @@ export const docsManifest = [
     source: 'redact.md',
     slug: 'docs/guides/redact',
     section: 'Guides',
-    order: 7,
+    order: 8,
     navLabel: 'Redact sensitive content',
     title: 'Redact Sensitive Content',
     description:
@@ -238,7 +238,7 @@ export const docsManifest = [
     source: 'screen-audio.md',
     slug: 'docs/guides/screen-audio',
     section: 'Guides',
-    order: 8,
+    order: 9,
     navLabel: 'Screen audio',
     title: 'Screen Audio',
     description:
@@ -250,7 +250,7 @@ export const docsManifest = [
     source: 'update-screenci.mdx',
     slug: 'docs/guides/update-screenci',
     section: 'Guides',
-    order: 9,
+    order: 10,
     navLabel: 'Update ScreenCI',
     title: 'Update ScreenCI',
     description:
@@ -262,7 +262,7 @@ export const docsManifest = [
     source: 'version-history.md',
     slug: 'docs/guides/version-history',
     section: 'Guides',
-    order: 10,
+    order: 11,
     navLabel: 'Version history',
     title: 'Version History',
     description:
@@ -274,7 +274,7 @@ export const docsManifest = [
     source: 'organisation.md',
     slug: 'docs/guides/organisation',
     section: 'Guides',
-    order: 11,
+    order: 12,
     navLabel: 'Organisation & SSO',
     title: 'Organisation & SSO',
     description:
@@ -286,7 +286,7 @@ export const docsManifest = [
     source: 'anonymous-trial.md',
     slug: 'docs/guides/anonymous-trial',
     section: 'Guides',
-    order: 12,
+    order: 13,
     navLabel: 'Anonymous trial',
     title: 'Anonymous Trial',
     description:

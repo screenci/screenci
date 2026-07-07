@@ -469,7 +469,6 @@ function getPackageManagerCommand(
         'add',
         '--save-dev',
         ...workspaceFlag,
-        '--allow-build=ffmpeg-static',
         pkg,
       ],
       skillsCommand: 'pnpm',
@@ -1070,8 +1069,8 @@ async function installInitDependencies(
 ): Promise<void> {
   // Packages that share identical install flags are installed in a single
   // command so the package manager resolves the dependency graph once instead
-  // of once per package. ScreenCI stays separate because on pnpm it needs an
-  // extra '--allow-build=ffmpeg-static' flag the others don't carry.
+  // of once per package. ScreenCI stays separate so file/tarball dependency
+  // installs remain isolated from the shared dependency install.
   const sharedPackages = [
     `@playwright/test@${PLAYWRIGHT_TEST_VERSION}`,
     `@types/node@${NODE_TYPES_VERSION}`,

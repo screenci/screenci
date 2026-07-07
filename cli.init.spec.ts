@@ -122,12 +122,7 @@ function expectPnpmDevInstalls(
       ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
       ...(includeReact ? REACT_INSTALL_PACKAGES : []),
     ],
-    [
-      'add',
-      '--save-dev',
-      '--allow-build=ffmpeg-static',
-      `screenci@${screenciVersion}`,
-    ],
+    ['add', '--save-dev', `screenci@${screenciVersion}`],
   ]
 
   expect(pnpmInstallCalls).toEqual(
@@ -973,7 +968,7 @@ describe('CLI', () => {
       )
       expect(mockSpawn).toHaveBeenCalledWith(
         'pnpm',
-        ['add', '--save-dev', '--allow-build=ffmpeg-static', 'screenci@0.0.32'],
+        ['add', '--save-dev', 'screenci@0.0.32'],
         expect.objectContaining({
           cwd: '/workspace/my-project/screenci',
           stdio: 'pipe',
@@ -1472,14 +1467,14 @@ describe('CLI', () => {
           call[0] === 'pnpm' &&
           Array.isArray(call[1]) &&
           call[1][0] === 'add' &&
-          call[1][2] === '--allow-build=ffmpeg-static'
+          call[1].includes('screenci@0.0.32')
       )
 
       expect(pnpmVersionCallIndex).toBeGreaterThanOrEqual(0)
       expect(screenciInstallCallIndex).toBeGreaterThan(pnpmVersionCallIndex)
       expect(mockSpawn).toHaveBeenCalledWith(
         'pnpm',
-        ['add', '--save-dev', '--allow-build=ffmpeg-static', 'screenci@0.0.32'],
+        ['add', '--save-dev', 'screenci@0.0.32'],
         expect.objectContaining({
           cwd: '/workspace/my-project/screenci',
           stdio: 'pipe',

@@ -9,7 +9,7 @@ import type {
 } from './asset.js'
 import type { AudioController, AudioInput } from './audio.js'
 import { resolveLocaleForLanguage } from './locales.js'
-import { parseRequestedLanguages } from './runtimeMode.js'
+import { parseRequestedLanguages, parseWebLanguages } from './runtimeMode.js'
 import { logger } from './logger.js'
 import type { LocalizeNarrationValue, VoiceConfig } from './localize.js'
 import type { Lang } from './voices.js'
@@ -202,10 +202,16 @@ function featureLanguages(state: BuilderState): string[] {
  * 3. default `['en']`.
  * The `requestedLanguages` filter (CLI / studio injection) intersects 2-3; for the
  * web-owned set (1) it is unioned in instead, since the web only adds languages.
+ *
+ * `webLanguages` (the web's stored language set for this video, injected via
+ * `SCREENCI_WEB_LANGUAGES`) is UNIONED in on every path: a language added from
+ * the web is never blocked by code, whether or not `video.languages(...)` was
+ * declared. The `--languages` filter still restricts branch 2-3 afterwards.
  */
 export function resolveRecordingLocalize(
   state: BuilderState,
-  requestedLanguages: string[] | null
+  requestedLanguages: string[] | null,
+  webLanguages: readonly string[] = []
 ): ResolvedRecordingLocalize {
   const rl = state.recordingLocalize
   const mode: LocalizeMode = rl?.mode ?? 'per-language'
@@ -224,6 +230,7 @@ export function resolveRecordingLocalize(
         ...(requestedLanguages ?? []),
         ...(rl.studioSeed ?? []),
         ...featureLanguages(state),
+        ...webLanguages,
       ]),
     ]
     return {
@@ -241,10 +248,12 @@ export function resolveRecordingLocalize(
   }
 
   // No `video.languages(...)` declaration: infer the set from per-feature
-  // language keys, else fall back to the implicit `['en']` default.
+  // language keys, union in the web's stored additions, else fall back to the
+  // implicit `['en']` default. A web-added language makes the set explicit
+  // (the video records per-language versions for it from then on).
   let declared: string[]
   let explicit: boolean
-  const inferred = featureLanguages(state)
+  const inferred = [...new Set([...featureLanguages(state), ...webLanguages])]
   if (inferred.length > 0) {
     declared = inferred
     explicit = true
@@ -334,6 +343,8 @@ export function expandRegistrations(params: {
   baseTitle: string
   state: BuilderState
   requestedLanguages: string[] | null
+  /** Web-added languages per video name (`SCREENCI_WEB_LANGUAGES`). */
+  webLanguagesByVideo?: Record<string, string[]> | null
 }): Registration[] {
   const { baseTitle, state } = params
   const variants: (EachVariant | null)[] = state.eachVariants ?? [null]
@@ -344,7 +355,11 @@ export function expandRegistrations(params: {
     const variantPatch = variant?.recordOptions ?? null
     const use = variant?.use ?? null
     const variantLabel = variant === null ? '' : `${variant.key} `
-    const resolved = resolveRecordingLocalize(state, params.requestedLanguages)
+    const resolved = resolveRecordingLocalize(
+      state,
+      params.requestedLanguages,
+      params.webLanguagesByVideo?.[videoName] ?? []
+    )
     warnUnusedLanguages(state, resolved)
 
     // Per-language options require a per-language capture: a shared recording
@@ -833,6 +848,7 @@ export function createVideoBuilder<Args>(
       baseTitle: title,
       state,
       requestedLanguages: parseRequestedLanguages(),
+      webLanguagesByVideo: parseWebLanguages(),
     })
 
     if (registrations.length === 0) {

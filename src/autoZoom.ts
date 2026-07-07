@@ -13,7 +13,6 @@ import {
   getRuntimeAutoZoomState,
   getRuntimeAutoZoomRecorder,
   getRuntimePage,
-  getRuntimeRecordOptions,
   nextEditablePosition,
   setRuntimeAutoZoomState,
   setRuntimeAutoZoomRecorder,
@@ -106,19 +105,15 @@ function resetAutoZoomState(): void {
 }
 
 /**
- * Editable metadata for an `autoZoom` block. A plain options object with any
- * key set locks the whole block against web timeline edits (no partially
- * editable actions); a bare `autoZoom(fn)` is fully web-editable with the
- * package defaults. Locked blocks are skipped entirely when
- * `recordOptions.implicitEditable` is false.
+ * Editable metadata for an `autoZoom` block. Options set in code are marked
+ * explicit (`lockedFields`): a web edit still applies but warns that it
+ * shadows the code value. A bare `autoZoom(fn)` is fully web-editable with
+ * the package defaults.
  */
 function buildAutoZoomEditableMeta(input: {
   options: AutoZoomOptions | undefined
   locked: boolean
 }): EditableMeta | undefined {
-  if (input.locked && getRuntimeRecordOptions()?.implicitEditable === false) {
-    return undefined
-  }
   const identity = {
     kind: 'autoZoom' as const,
   }
@@ -126,6 +121,9 @@ function buildAutoZoomEditableMeta(input: {
     ...identity,
     schemaKind: 'autoZoom',
     locked: input.locked,
+    lockedFields: Object.entries(input.options ?? {})
+      .filter(([, value]) => value !== undefined)
+      .map(([field]) => field),
     // Element framing inside autoZoom uses the comfort-band centering, not
     // the zoomTo centering of DEFAULT_ZOOM_OPTIONS, so display that default.
     defaults: {
@@ -188,7 +186,7 @@ export async function autoZoom(
   // keeps the auto-zoom comfort band rather than dead-centering).
   applyEditableOverride(editable)
   const options: AutoZoomOptions | undefined =
-    editable !== undefined && !editable.locked && editable.applied !== undefined
+    editable !== undefined && editable.applied !== undefined
       ? ({ ...(codeOptions ?? {}), ...editable.applied } as AutoZoomOptions)
       : codeOptions
 

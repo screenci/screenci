@@ -153,6 +153,49 @@ describe('expandRegistrations', () => {
     expect(regs.every((r) => r.recordingLocalize.studioOwned)).toBe(true)
   })
 
+  it('unions web-added languages into a code-owned video (never blocked by code)', () => {
+    const regs = expandRegistrations({
+      baseTitle: 'Tutorial',
+      state: state({
+        narration: narration({ en: { intro: 'Hi' } }),
+      }),
+      requestedLanguages: null,
+      // A one-off 'fi' added from the web: it records even though code never
+      // declared it and video.languages() was not used.
+      webLanguagesByVideo: { Tutorial: ['fi'] },
+    })
+    expect(regs.map((r) => r.language).sort()).toEqual(['en', 'fi'])
+  })
+
+  it('web-added languages do not affect other videos and respect the --languages filter', () => {
+    const other = expandRegistrations({
+      baseTitle: 'Other',
+      state: state({ narration: narration({ en: { intro: 'Hi' } }) }),
+      requestedLanguages: null,
+      webLanguagesByVideo: { Tutorial: ['fi'] },
+    })
+    expect(other.map((r) => r.language)).toEqual(['en'])
+
+    const filtered = expandRegistrations({
+      baseTitle: 'Tutorial',
+      state: state({ narration: narration({ en: { intro: 'Hi' } }) }),
+      // An explicit filter still restricts the run, web additions included.
+      requestedLanguages: ['en'],
+      webLanguagesByVideo: { Tutorial: ['fi'] },
+    })
+    expect(filtered.map((r) => r.language)).toEqual(['en'])
+  })
+
+  it('unions web languages into a studio-owned seed as well', () => {
+    const regs = expandRegistrations({
+      baseTitle: 'Seeded',
+      state: state(langs({ languages: 'studio', studioSeed: ['en'] })),
+      requestedLanguages: null,
+      webLanguagesByVideo: { Seeded: ['de'] },
+    })
+    expect(regs.map((r) => r.language).sort()).toEqual(['de', 'en'])
+  })
+
   it('records code-defined feature languages for a studio-owned set on first run', () => {
     const regs = expandRegistrations({
       baseTitle: 'Tour',

@@ -114,14 +114,50 @@ describe('applyEditableOverride', () => {
     expect(m.applied).toBeUndefined()
   })
 
-  it('returns plain defaults for locked metas and missing overrides', () => {
+  it('returns plain defaults for missing overrides', () => {
+    const overrides = indexEditableOverrides([
+      { key: 'input|click|getByRole(button)|0', values: { moveDuration: 1 } },
+    ])
+    expect(applyEditableOverride(meta(), new Map())).toEqual(meta().defaults)
+    expect(applyEditableOverride(undefined, overrides)).toEqual({})
+  })
+
+  it('applies overrides over explicit code values and warns per shadowed field', () => {
+    const locked = {
+      ...meta(),
+      locked: true,
+      lockedFields: ['moveDuration'],
+    }
+    const overrides = indexEditableOverrides([
+      {
+        key: 'input|click|getByRole(button)|0',
+        values: { moveDuration: 1, moveEasing: 'linear' },
+      },
+    ])
+    const warnings: string[] = []
+    const merged = applyEditableOverride(locked, overrides, (message) =>
+      warnings.push(message)
+    )
+    expect(merged).toEqual({ moveDuration: 1, moveEasing: 'linear' })
+    expect(locked.applied).toEqual({ moveDuration: 1, moveEasing: 'linear' })
+    // Only the explicitly code-set field warns; the defaulted easing does not.
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain('shadows code value')
+    expect(warnings[0]).toContain('moveDuration')
+    expect(warnings[0]).toContain('900')
+  })
+
+  it('treats every field of a locked meta without lockedFields as explicit', () => {
     const locked = { ...meta(), locked: true }
     const overrides = indexEditableOverrides([
       { key: 'input|click|getByRole(button)|0', values: { moveDuration: 1 } },
     ])
-    expect(applyEditableOverride(locked, overrides)).toEqual(locked.defaults)
-    expect(applyEditableOverride(meta(), new Map())).toEqual(meta().defaults)
-    expect(applyEditableOverride(undefined, overrides)).toEqual({})
+    const warnings: string[] = []
+    const merged = applyEditableOverride(locked, overrides, (message) =>
+      warnings.push(message)
+    )
+    expect(merged).toMatchObject({ moveDuration: 1 })
+    expect(warnings).toHaveLength(1)
   })
 
   it('reads overrides from the runtime context by default', () => {

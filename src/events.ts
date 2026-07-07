@@ -23,6 +23,10 @@ import {
   type ActionParamSpec,
 } from './actionParams.js'
 import type { EditableMeta } from './editableDescriptor.js'
+import {
+  applyAuthoredEvents,
+  resolveAuthoredEventsForVideo,
+} from './authoredEvents.js'
 import type { VoiceKey } from './voices.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { getGitMetadata } from './git.js'
@@ -2260,12 +2264,21 @@ export class EventRecorder implements IEventRecorder {
     // with `[activeLanguage]` so the upload produces a single language version
     // (and the renderer never sees foreign-language translations).
     const activeLanguage = this.activeLanguage
-    const serializedEvents =
+    let serializedEvents =
       activeLanguage !== null
         ? this.events.map((event) =>
             filterEventTranslationsToLanguage(event, activeLanguage)
           )
         : this.events
+
+    // Web-authored hides and speed blocks: anchored to recorded events and
+    // injected by the CLI before the run. Applied here so the uploaded
+    // data.json already carries the resulting event pairs; unresolvable
+    // anchors are skipped with a warning and never fail the recording.
+    const authored = resolveAuthoredEventsForVideo(videoName)
+    if (authored !== null) {
+      serializedEvents = applyAuthoredEvents(serializedEvents, authored)
+    }
 
     const languageSet = new Set<string>()
     for (const event of this.events) {

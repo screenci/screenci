@@ -123,6 +123,42 @@ export function parseRequestedLanguages(
   return languages.length > 0 ? languages : null
 }
 
+/**
+ * Env var carrying the web's per-video language sets, injected by the CLI
+ * before a record run (a JSON map of video name to language codes). Separate
+ * from `SCREENCI_LANGUAGES` (the restricting `--languages` filter): languages
+ * in this map are ADDED to each video's recorded set, so a language added
+ * from the web is never blocked by code.
+ */
+export const SCREENCI_WEB_LANGUAGES_ENV = 'SCREENCI_WEB_LANGUAGES'
+
+/**
+ * Parse the injected web language map. Returns `null` when unset or
+ * malformed; entries with a non-array value or non-string members are
+ * dropped.
+ */
+export function parseWebLanguages(
+  env: NodeJS.ProcessEnv = process.env
+): Record<string, string[]> | null {
+  const raw = env[SCREENCI_WEB_LANGUAGES_ENV]
+  if (raw === undefined || raw.trim().length === 0) return null
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) return null
+    const result: Record<string, string[]> = {}
+    for (const [videoName, languages] of Object.entries(parsed)) {
+      if (!Array.isArray(languages)) continue
+      const valid = languages.filter(
+        (lang): lang is string => typeof lang === 'string' && lang.length > 0
+      )
+      if (valid.length > 0) result[videoName] = valid
+    }
+    return Object.keys(result).length > 0 ? result : null
+  } catch {
+    return null
+  }
+}
+
 /** Per-language values-field overrides: `{ [language]: { [field]: value } }`. */
 export type ValuesOverrides = Record<string, Record<string, string>>
 

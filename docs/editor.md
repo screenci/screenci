@@ -366,6 +366,12 @@ await page.waitForTimeout()
 await page.waitForTimeout(500)
 ```
 
+Pointer actions also expose a web-owned `sleepBefore` field (default 0): the
+SDK sleeps that long after the previous event before the cursor starts
+moving, pushing the action later on the timeline. In the editor, dragging a
+bar's left edge sets it, and the pause shows as a leading "sleep" part of the
+bar.
+
 Before `screenci record` (and `screenci test --mock-record`) the CLI fetches
 the saved web edits and applies them to the run. Plain `screenci test` skips
 timings entirely, so it neither fetches nor applies them. After each upload the
@@ -391,6 +397,21 @@ exists never fails the recording: the event is skipped with a warning
 
 `timestamp('name')` markers are the most stable anchors: add one in code at a
 meaningful moment and hang web-authored events off it with offsets.
+
+## Debugging overrides
+
+Set `SCREENCI_DEBUG_OVERRIDES=1` when running `screenci record` to trace the
+whole loop: the CLI first dumps every override set fetched from the backend
+(timing overrides, action parameters, authored events, text values, record
+options, web-added languages), then the run logs each value again at the
+moment it is applied:
+
+```
+[screenci debug] Editor timing overrides:
+  { "My video": [ { "key": "input|click|locator(#go)|0", "values": { "moveDuration": 150 } } ] }
+[screenci debug] editor override applied: input|click|locator(#go)|0 moveDuration: 900 -> 150
+[screenci debug] authored speed applied: 1770-1970ms (anchor 'mark' +50ms)
+```
 
 ## Editor languages from code
 

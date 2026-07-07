@@ -10,6 +10,7 @@
 import type { EditableMeta } from './editableDescriptor.js'
 import { stableEditableKey } from './editableDescriptor.js'
 import { getEditableRunOverrides } from './runtimeContext.js'
+import { isOverrideDebugEnabled } from './debugFlags.js'
 
 export const SCREENCI_EDITABLE_OVERRIDES_ENV = 'SCREENCI_EDITABLE_OVERRIDES'
 
@@ -102,7 +103,10 @@ export function applyEditableOverride(
   const merged: Record<string, unknown> = { ...meta.defaults }
   for (const [field, value] of Object.entries(override)) {
     if (value === undefined) continue
-    if (!(field in meta.defaults)) continue
+    // Unknown fields never inject options, with one exception: `sleepBefore`
+    // applies to recordings made before the field existed in defaults, so a
+    // web start-time edit works without an intermediate re-record.
+    if (!(field in meta.defaults) && field !== 'sleepBefore') continue
     if (lockedFields.has(field) && meta.defaults[field] !== value) {
       warn(
         `[screenci] editor override shadows code value: ${key} ${field}: ` +
@@ -112,6 +116,12 @@ export function applyEditableOverride(
     }
     merged[field] = value
     applied[field] = value
+    if (isOverrideDebugEnabled()) {
+      warn(
+        `[screenci debug] editor override applied: ${key} ${field}: ` +
+          `${JSON.stringify(meta.defaults[field])} -> ${JSON.stringify(value)}`
+      )
+    }
   }
   if (Object.keys(applied).length > 0) {
     meta.applied = applied

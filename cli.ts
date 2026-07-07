@@ -53,6 +53,7 @@ import {
   SCREENCI_ACTION_OVERRIDES_ENV,
   SCREENCI_FAST_NARRATION_ENV,
   SCREENCI_WEB_LANGUAGES_ENV,
+  isOverrideDebugEnabled,
   isUploadExistingEnabled,
 } from './src/runtimeMode.js'
 import { SCREENCI_EDITABLE_OVERRIDES_ENV } from './src/editableRuntime.js'
@@ -4480,6 +4481,45 @@ export async function fetchWebLanguagesEnv(
 }
 
 /**
+ * Override debug dump (`SCREENCI_DEBUG_OVERRIDES=1`): print every override
+ * set fetched from the backend, decoded from the env vars about to be
+ * injected into the recording run. Pairs with the SDK's per-application
+ * debug lines so a value can be traced from fetch to the action it changed.
+ */
+export function reportFetchedOverridesForDebug(
+  fetchedEnv: Record<string, string>,
+  log: (message: string) => void = (message) => logger.info(message)
+): void {
+  const sections: Array<[string, string]> = [
+    ['Studio text overrides', SCREENCI_VALUES_OVERRIDES_ENV],
+    ['Studio record options', SCREENCI_RECORD_OPTIONS_ENV],
+    ['Editor action-parameter overrides', SCREENCI_ACTION_OVERRIDES_ENV],
+    ['Editor timing overrides', SCREENCI_EDITABLE_OVERRIDES_ENV],
+    ['Web-authored events', SCREENCI_AUTHORED_EVENTS_ENV],
+    ['Web-added languages', SCREENCI_WEB_LANGUAGES_ENV],
+  ]
+  log('[screenci debug] overrides fetched from the backend for this run:')
+  for (const [label, envKey] of sections) {
+    const raw = fetchedEnv[envKey]
+    if (raw === undefined) {
+      // Absent means the backend returned nothing for this channel (or the
+      // fetch failed; failures are warned above). Named so a missing edit is
+      // traceable to "never persisted" rather than "not applied".
+      log(`[screenci debug] ${label}: (none)`)
+      continue
+    }
+    try {
+      log(`[screenci debug] ${label}:`)
+      for (const line of JSON.stringify(JSON.parse(raw), null, 2).split('\n')) {
+        log(`  ${line}`)
+      }
+    } catch {
+      log(`[screenci debug] ${label}: ${raw}`)
+    }
+  }
+}
+
+/**
  * Print one info line per web timing override that shadows an explicitly
  * code-set editable value, comparing the fetched overrides against the
  * previous run's editable snapshot. A missing snapshot (first run) prints
@@ -4548,25 +4588,31 @@ async function run(
     )
   }
 
+  // Override debug mode also turns on fetch warnings, so a failing or absent
+  // backend channel is named instead of silently yielding "(none)".
+  const verboseFetch = verbose || isOverrideDebugEnabled()
+
   // Studio text-field overrides are injected for the record command only: they
   // resolve in the SDK's `text` fixture before the recording runs. `test` (the
   // preview run) keeps code-declared values.
   const textOverridesEnv =
     command === 'record'
-      ? await fetchTextOverridesEnv(configPath, languages, verbose)
+      ? await fetchTextOverridesEnv(configPath, languages, verboseFetch)
       : {}
 
   // Studio record-option overrides are likewise injected for record only: they
   // resolve in the SDK's `recordOptions` fixture before the capture runs.
   const recordOptionsEnv =
-    command === 'record' ? await fetchRecordOptionsEnv(configPath, verbose) : {}
+    command === 'record'
+      ? await fetchRecordOptionsEnv(configPath, verboseFetch)
+      : {}
 
   // Web-editor action-parameter overrides (record only). Before recording,
   // compare them with the previous run's snapshot and print an info line for
   // every override that shadows an explicitly code-set value.
   const actionOverridesEnv =
     command === 'record'
-      ? await fetchActionOverridesEnv(configPath, verbose)
+      ? await fetchActionOverridesEnv(configPath, verboseFetch)
       : {}
   if (command === 'record') {
     reportActionOverrideCollisions(
@@ -4580,7 +4626,7 @@ async function run(
   // fetch would be wasted there.
   const editableOverridesEnv =
     command === 'record' || mockRecord
-      ? await fetchEditableOverridesEnv(configPath, verbose)
+      ? await fetchEditableOverridesEnv(configPath, verboseFetch)
       : {}
   if (command === 'record') {
     reportEditableOverrideCollisions(
@@ -4592,7 +4638,22 @@ async function run(
   // Web-added languages (record only): union into each video's recorded set so
   // a language added from the web is never blocked by code.
   const webLanguagesEnv =
-    command === 'record' ? await fetchWebLanguagesEnv(configPath, verbose) : {}
+    command === 'record'
+      ? await fetchWebLanguagesEnv(configPath, verboseFetch)
+      : {}
+
+  // Override debug mode (`SCREENCI_DEBUG_OVERRIDES=1`): dump everything the
+  // backend supplied for this run before recording starts. The SDK then logs
+  // each value again at the moment it is applied to an action.
+  if (isOverrideDebugEnabled()) {
+    reportFetchedOverridesForDebug({
+      ...textOverridesEnv,
+      ...recordOptionsEnv,
+      ...actionOverridesEnv,
+      ...editableOverridesEnv,
+      ...webLanguagesEnv,
+    })
+  }
 
   const envForChild = { ...process.env }
 

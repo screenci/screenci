@@ -647,6 +647,9 @@ function buildPointerEditableMeta(
     locked: values.hasExplicitMove || values.autoZoomOptions !== undefined,
     lockedFields,
     defaults: {
+      // Pre-action sleep (web-owned, defaults to none): pushes the whole
+      // action later relative to the previous event.
+      sleepBefore: 0,
       // moveDuration and moveSpeed are mutually exclusive; only default the
       // duration when no speed is in play so a merge never carries both.
       ...(values.moveSpeed === undefined && {
@@ -852,15 +855,24 @@ async function performAction(
   beforeClickPause = 0,
   postClickPause = 0,
   shouldHideMouse = false,
-  selectDuration?: number
+  selectDuration?: number,
+  sleepBeforeMs = 0
 ): Promise<ClickActionResult | null> {
+  // Web-editable pre-action sleep: delays the whole action (cursor move
+  // included) so the web timeline can push an action later relative to the
+  // previous event. Recorded as a leading wait so the editor shows it.
+  const preEvents: ClickActionResult['innerEvents'] = []
+  await appendMouseWait(preEvents, sleepBeforeMs)
   const focusChange = await changeFocus(
     locator,
     autoZoomOptions,
     mouseMoveRequest
   )
   const elementRect = focusChange.elementRect
-  const innerEvents: ClickActionResult['innerEvents'] = [focusChange]
+  const innerEvents: ClickActionResult['innerEvents'] = [
+    ...preEvents,
+    focusChange,
+  ]
   const targetPosition =
     position ??
     (elementRect
@@ -1094,7 +1106,9 @@ export function instrumentLocator(locator: Locator): Locator {
       effective.noWaitAfter as boolean,
       timing.moveDelayAfter ?? moveDelayAfter,
       0,
-      false
+      false,
+      undefined,
+      editableOverrideNumber(editable, 'sleepBefore') ?? 0
     )
 
     const activeClickRecorder = getActiveClickRecorder(locator.page())
@@ -1204,7 +1218,9 @@ export function instrumentLocator(locator: Locator): Locator {
         effective.noWaitAfter as boolean,
         timing.moveDelayAfter ?? moveDelayAfter,
         0,
-        _hideMouse ?? false
+        _hideMouse ?? false,
+        undefined,
+        editableOverrideNumber(editable, 'sleepBefore') ?? 0
       )
       innerEvents.push(...(clickActionResult?.innerEvents ?? []))
       elementRect = clickActionResult?.elementRect
@@ -1363,7 +1379,9 @@ export function instrumentLocator(locator: Locator): Locator {
         effective.noWaitAfter as boolean,
         timing.moveDelayAfter ?? moveDelayAfter,
         0,
-        _hideMouse ?? false
+        _hideMouse ?? false,
+        undefined,
+        editableOverrideNumber(editable, 'sleepBefore') ?? 0
       )
       innerEvents.push(...(clickActionResult?.innerEvents ?? []))
       elementRect = clickActionResult?.elementRect
@@ -1450,7 +1468,9 @@ export function instrumentLocator(locator: Locator): Locator {
       effective.noWaitAfter as boolean,
       timing.moveDelayAfter ?? moveDelayAfter,
       0,
-      false
+      false,
+      undefined,
+      editableOverrideNumber(editable, 'sleepBefore') ?? 0
     )
 
     const activeClickRecorder = getActiveClickRecorder(locator.page())
@@ -1535,7 +1555,9 @@ export function instrumentLocator(locator: Locator): Locator {
       effective.noWaitAfter as boolean,
       timing.moveDelayAfter ?? moveDelayAfter,
       0,
-      false
+      false,
+      undefined,
+      editableOverrideNumber(editable, 'sleepBefore') ?? 0
     )
 
     const activeClickRecorder = getActiveClickRecorder(locator.page())
@@ -1620,7 +1642,9 @@ export function instrumentLocator(locator: Locator): Locator {
       effective.noWaitAfter as boolean,
       timing.moveDelayAfter ?? moveDelayAfter,
       0,
-      false
+      false,
+      undefined,
+      editableOverrideNumber(editable, 'sleepBefore') ?? 0
     )
 
     const activeClickRecorder = getActiveClickRecorder(locator.page())
@@ -1728,7 +1752,10 @@ export function instrumentLocator(locator: Locator): Locator {
       effectivePosition,
       effective.noWaitAfter as boolean,
       timing.moveDelayAfter ?? moveDelayAfter,
-      0
+      0,
+      false,
+      undefined,
+      editableOverrideNumber(editable, 'sleepBefore') ?? 0
     )
 
     const activeClickRecorder = getActiveClickRecorder(locator.page())
@@ -1985,7 +2012,8 @@ export function instrumentLocator(locator: Locator): Locator {
       timing.moveDelayAfter ?? moveDelayAfter,
       undefined,
       false,
-      effSelectDuration
+      effSelectDuration,
+      editableOverrideNumber(editable, 'sleepBefore') ?? 0
     )
 
     const locatorRect = selectActionResult?.elementRect

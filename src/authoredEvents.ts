@@ -15,6 +15,7 @@
  */
 import { stableEditableKey } from './editableDescriptor.js'
 import type { EditableMeta } from './editableDescriptor.js'
+import { isOverrideDebugEnabled } from './debugFlags.js'
 
 export const SCREENCI_AUTHORED_EVENTS_ENV = 'SCREENCI_AUTHORED_EVENTS'
 
@@ -259,6 +260,14 @@ export function applyAuthoredEvents<T>(
       )
     }
 
+    if (isOverrideDebugEnabled()) {
+      warn(
+        `[screenci debug] authored ${event.kind} applied: ` +
+          `${Math.round(fromMs)}-${Math.round(toMs)}ms ` +
+          `(anchor '${event.from.ref}' ` +
+          `${event.from.offsetMs >= 0 ? '+' : ''}${event.from.offsetMs}ms)`
+      )
+    }
     if (event.kind === 'hide') {
       insertSorted(events, { type: 'hideStart', timeMs: fromMs })
       insertSorted(events, { type: 'hideEnd', timeMs: toMs })

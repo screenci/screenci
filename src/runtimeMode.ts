@@ -59,6 +59,11 @@ export function isTimingDebugEnabled(
   )
 }
 
+export {
+  isOverrideDebugEnabled,
+  SCREENCI_DEBUG_OVERRIDES_ENV,
+} from './debugFlags.js'
+
 export function isScreenciRecordingEnabled(
   env: NodeJS.ProcessEnv = process.env
 ): boolean {

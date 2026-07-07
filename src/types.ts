@@ -1106,8 +1106,9 @@ export type ScreenCILocator = Omit<
  * `page.screenshot()` also writes a branded still as a separate screenshot
  * recording; these keys are stripped before delegating to Playwright.
  */
-export type ScreenCIScreenshotOptions = NonNullable<
-  Parameters<Page['screenshot']>[0]
+export type ScreenCIScreenshotOptions = Omit<
+  NonNullable<Parameters<Page['screenshot']>[0]>,
+  'clip'
 > & {
   /** Names the still recording: "<video title> - <name>". */
   name?: string

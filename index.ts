@@ -52,15 +52,10 @@ export type {
   ScreenCILocatorDragToOptions,
   ScreenCILocatorSelectOptionOptions,
 } from './src/types.js'
-// Narration is declared per-builder with `video.narration(...)`: `editable([...])`
-// is owned by the web editor, an object carries code values. It surfaces through the
-// injected `narration` fixture.
+// Narration is declared per-builder with `video.narration(...)`: an array declares
+// blank names owned by the web editor, an object carries code values (still
+// editable in the web app). It surfaces through the injected `narration` fixture.
 export type { NarrationCue, Cues, TopLevelVoiceConfig } from './src/cue.js'
-// `editable(...)` defers a feature/language declaration to the ScreenCI web app:
-// `editable(['name'])` blank names, `editable({ name: value })` seeded, `editable()`
-// keyless (languages only).
-export { editable } from './src/studio.js'
-export type { EditableMarker, EditablePending } from './src/studio.js'
 export type { TimelineOffset } from './src/timelineOffset.js'
 export type { LangNarrationOverride } from './src/voiceConfig.js'
 export type {

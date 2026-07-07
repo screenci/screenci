@@ -1,6 +1,5 @@
 import { describe, it, expectTypeOf } from 'vitest'
 import { video } from './video.js'
-import { editable } from './studio.js'
 import type { NarrationCue } from './cue.js'
 import type { OverlayController } from './asset.js'
 import type { AudioController } from './audio.js'
@@ -62,67 +61,58 @@ describe('builder fixture controllers', () => {
     })
   })
 
-  it('editable(names) form keeps the declared names', () => {
-    video.narration(editable(['intro', 'cta']))('t', async ({ narration }) => {
+  it('array (names) form keeps the declared names', () => {
+    video.narration(['intro', 'cta'])('t', async ({ narration }) => {
       expectTypeOf(narration.intro).toEqualTypeOf<NarrationCue>()
       expectTypeOf<keyof typeof narration>().toEqualTypeOf<'intro' | 'cta'>()
     })
   })
 
-  it('editable(seed) form keeps the seeded names and value type', () => {
-    video.narration(editable({ intro: 'Hi', cta: 'Buy' }))(
-      't',
-      async ({ narration }) => {
-        expectTypeOf(narration.intro).toEqualTypeOf<NarrationCue>()
-        expectTypeOf<keyof typeof narration>().toEqualTypeOf<'intro' | 'cta'>()
-      }
-    )
+  it('object seed form keeps the seeded names and value type', () => {
+    video.narration({ intro: 'Hi', cta: 'Buy' })('t', async ({ narration }) => {
+      expectTypeOf(narration.intro).toEqualTypeOf<NarrationCue>()
+      expectTypeOf<keyof typeof narration>().toEqualTypeOf<'intro' | 'cta'>()
+    })
   })
 
-  it('rejects keyless editable() for a content feature', () => {
-    // @ts-expect-error editable() with no names is only valid for video.languages().
-    video.narration(editable())('t', async () => {})
+  it('rejects a missing argument for a content feature', () => {
+    // @ts-expect-error narration requires an argument (names or seed values).
+    video.narration()('t', async () => {})
   })
 
   it('accepts languages({ mode }) without an explicit set (inferred from keys)', () => {
     video
       .languages({ mode: 'shared' })
-      .narration(editable({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } }))(
+      .narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })(
       't',
       async () => {}
     )
   })
 
-  it('accepts the four canonical languages forms', () => {
-    // Code-owned.
+  it('accepts the canonical languages forms (all web-owned)', () => {
+    // Blank: nothing seeded, the web app supplies the set.
+    video.languages().narration(['intro'])('t', async () => {})
+    // Seeded set.
     video.languages(['en', 'fi'])('t', async () => {})
+    // Seeded whole config (set + mode).
     video.languages({ languages: ['en', 'fi'], mode: 'shared' })(
       't',
       async () => {}
     )
-    // Web-owned: blank, seeded set, or seeded whole config (set + mode).
-    video.languages(editable()).narration(editable(['intro']))(
+    // { mode } only is valid: web owns the set, shared mode is seeded.
+    video.languages({ mode: 'shared' }).narration(['intro'])(
       't',
       async () => {}
     )
-    video.languages(editable(['en', 'fi']))('t', async () => {})
-    video.languages(editable({ languages: ['en', 'fi'], mode: 'shared' }))(
-      't',
-      async () => {}
-    )
-    // editable({ mode }) is valid: web owns the set, shared mode is seeded.
-    video
-      .languages(editable({ mode: 'shared' }))
-      .narration(editable(['intro']))('t', async () => {})
   })
 
-  it('rejects an invalid value inside a studio languages config', () => {
+  it('rejects an invalid value inside a languages config', () => {
     // @ts-expect-error languages must be an array of codes, not a bare string.
-    video.languages(editable({ languages: 'en' }))('t', async () => {})
+    video.languages({ languages: 'en' })('t', async () => {})
   })
 
-  it('overlays: editable(names) maps each name to a controller', () => {
-    video.overlays(editable(['logo', 'badge']))('t', async ({ overlays }) => {
+  it('overlays: array (names) maps each name to a controller', () => {
+    video.overlays(['logo', 'badge'])('t', async ({ overlays }) => {
       expectTypeOf(overlays.logo).toEqualTypeOf<OverlayController>()
       expectTypeOf<keyof typeof overlays>().toEqualTypeOf<'logo' | 'badge'>()
     })

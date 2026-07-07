@@ -6,7 +6,7 @@ speech should start, overlap, and end.
 
 The spoken text lives in `video.narration(...)`, owned by code or handed to
 [Editor](./editor.md) (the web app where non-developers edit it without touching
-the test). See [the three ways to declare narration](#three-ways-to-declare-narration)
+the test). See [the two ways to declare narration](#two-ways-to-declare-narration)
 just below.
 
 When you own it in code you can pass it two shapes. The **language-major** form is
@@ -50,34 +50,30 @@ you never have to use a synthesized voice if you would rather use your own.
 
 <!-- screenci-doc-video:docs/guides/narration -->
 
-## Three ways to declare narration
+## Two ways to declare narration
 
-There are three ways to declare narration. The same three forms apply to
-[`values`](./values.md), [`overlays`](./overlays.md), and [`audio`](./audio.md).
-See the [Editor guide](./editor.md) for how the web editing works.
+There are two ways to declare narration, and both are editable in the web app.
+The same two forms apply to [`values`](./values.md),
+[`overlays`](./overlays.md), and [`audio`](./audio.md). See the
+[Editor guide](./editor.md) for how the web editing works.
 
-**1. Code-owned.** You write the text. Changing it re-records.
+**1. Code values.** You write the text; it is used at record time. Changing it
+re-records. The text stays editable in [Editor](./editor.md), and an Editor
+edit wins over the code value from then on.
 
 ```ts
 video.narration({ en: { intro: 'Welcome.' } })
 ```
 
-**2. Editor-owned (blank).** Wrap the cue names in `editable([...])`: the names
-exist in code (so the body can call `narration.intro`), but [Editor](./editor.md)
-owns the text. Chain `.languages([...])`, since there is no text to infer the set
+**2. Editor-owned (blank).** Pass a bare array of cue names: the names exist in
+code (so the body can call `narration.intro`), but [Editor](./editor.md) owns
+the text. Chain `.languages([...])`, since there is no text to infer the set
 from.
 
 ```ts
-import { video, editable } from 'screenci'
+import { video } from 'screenci'
 
-video.narration(editable(['intro', 'outro'])).languages(['en'])
-```
-
-**3. Editor-owned (seeded).** Pass values to `editable({...})`: Editor starts from
-them but owns them, so an edit in Editor always wins over the seed.
-
-```ts
-video.narration(editable({ intro: 'Welcome.' }))
+video.narration(['intro', 'outro']).languages(['en'])
 ```
 
 ## Attach a narration script
@@ -678,16 +674,15 @@ voices you are licensed to reproduce, in line with the ElevenLabs
 
 ## Manage narration from Editor
 
-You can manage narration text from the web app instead of code. Wrap the cue
-names in `editable([...])` (imported from `screenci`) and let Editor own the
-spoken text per language:
+You can manage narration text from the web app instead of code. Pass a bare
+array of cue names and let Editor own the spoken text per language:
 
 ```ts
-import { video, editable } from 'screenci'
+import { video } from 'screenci'
 
 video
-  // Editor fills in the text per language for these cue names (the editable(...) form).
-  .narration(editable(['intro', 'save']))
+  // Editor fills in the text per language for these cue names.
+  .narration(['intro', 'save'])
   .languages(['en', 'fi'])('Settings', async ({ page, narration }) => {
   await narration.intro()
   await page.goto('/settings')
@@ -695,13 +690,13 @@ video
 })
 ```
 
-Editor cue names are language-agnostic (declared once). Because the blank
-`editable([...])` form carries no code values, declare the recorded set with
-`video.languages([...])`, since there is no seeded text to infer it from. You can
-also seed the web app with starting text by passing an object to `editable({...})`
-(for example `video.narration(editable({ intro: 'Welcome' }))`): the web app starts
-from those values but owns them, so the seed is used only until the cue is edited
-in Editor. You can also let the web own the language set itself with
-`video.languages(editable())`. The same `editable(...)` form works for values via
-`video.values(editable([...]))`. The markers still carry timing the same way; only
-the text lives in Editor. See [Editor](/docs/guides/editor).
+Editor cue names are language-agnostic (declared once). Because the bare-array
+form carries no code values, seed the recorded set with
+`video.languages([...])`, since there is no text to infer it from. You can also
+supply starting text from code by passing a plain object (for example
+`video.narration({ intro: 'Welcome' })`): the code values are used until the
+cue is edited in Editor, and from then on the Editor value wins. You can also
+hand the language set itself to the web with `video.languages()` (no argument).
+The same bare-array form works for values via `video.values([...])`. The
+markers still carry timing the same way; only the text lives in Editor. See
+[Editor](/docs/guides/editor).

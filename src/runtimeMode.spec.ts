@@ -3,6 +3,7 @@ import {
   isTimingDebugEnabled,
   isUploadExistingEnabled,
   mergeStudioRecordOptions,
+  parseActionOverrides,
   parseRecordOptions,
   parseRequestedLanguages,
   parseValuesOverrides,
@@ -242,6 +243,43 @@ describe('mergeStudioRecordOptions', () => {
       quality: '720p',
       fps: 60,
       encoder: 'h264',
+    })
+  })
+})
+
+describe('parseActionOverrides', () => {
+  it('returns null when unset or blank', () => {
+    expect(parseActionOverrides({})).toBeNull()
+    expect(parseActionOverrides({ SCREENCI_ACTION_OVERRIDES: '  ' })).toBeNull()
+  })
+
+  it('returns null for malformed JSON or non-object payloads', () => {
+    expect(
+      parseActionOverrides({ SCREENCI_ACTION_OVERRIDES: 'not json' })
+    ).toBeNull()
+    expect(
+      parseActionOverrides({ SCREENCI_ACTION_OVERRIDES: '[1]' })
+    ).toBeNull()
+    expect(
+      parseActionOverrides({ SCREENCI_ACTION_OVERRIDES: '"x"' })
+    ).toBeNull()
+  })
+
+  it('parses per-video override maps and drops non-object entries', () => {
+    const payload = JSON.stringify({
+      'My video': {
+        "getByRole('button')|click|0|move.duration": 250,
+        "getByRole('button')|click|0|position": { x: 1, y: 2 },
+      },
+      broken: 'nope',
+    })
+    expect(
+      parseActionOverrides({ SCREENCI_ACTION_OVERRIDES: payload })
+    ).toEqual({
+      'My video': {
+        "getByRole('button')|click|0|move.duration": 250,
+        "getByRole('button')|click|0|position": { x: 1, y: 2 },
+      },
     })
   })
 })

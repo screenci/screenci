@@ -5,7 +5,7 @@ recording and any narration. It takes a map of named tracks, each a file path or
 a config object, and accepts `.mp3`, `.wav`, `.m4a`, `.aac`, `.ogg`, `.flac`,
 `.opus`, or an audio-only `.mp4`. The tracks can be owned by code or handed to
 [Editor](./editor.md) (the web app where non-developers swap the files); see
-[the three ways to declare audio](#three-ways-to-declare-audio) below. The body
+[the two ways to declare audio](#two-ways-to-declare-audio) below. The body
 receives the track controllers via the injected `audio` fixture:
 
 ```ts
@@ -24,34 +24,29 @@ video.audio({
 })
 ```
 
-## Three ways to declare audio
+## Two ways to declare audio
 
-There are three ways to declare audio. The same three forms apply to
-[`narration`](./narration.md), [`values`](./values.md), and
-[`overlays`](./overlays.md). See the [Editor guide](./editor.md) for how the web
-editing works.
+There are two ways to declare audio, and both are editable in the web app. The
+same two forms apply to [`narration`](./narration.md),
+[`values`](./values.md), and [`overlays`](./overlays.md). See the
+[Editor guide](./editor.md) for how the web editing works.
 
-**1. Code-owned.** You point each track at a file.
+**1. Code values.** You point each track at a file; the code values are used
+until the track is edited in [Editor](./editor.md), and from then on the
+Editor value wins.
 
 ```ts
 video.audio({ theme: { path: 'assets/bg.mp3', volume: 0.3, repeat: true } })
 ```
 
-**2. Editor-owned (blank).** Wrap the track names in `editable([...])`: the names
-exist in code (so the body can call `audio.theme`), but [Editor](./editor.md) owns
+**2. Editor-owned (blank).** Pass a bare array of track names: the names exist
+in code (so the body can call `audio.theme`), but [Editor](./editor.md) owns
 the files and options.
 
 ```ts
-import { video, editable } from 'screenci'
+import { video } from 'screenci'
 
-video.audio(editable(['theme', 'sting']))
-```
-
-**3. Editor-owned (seeded).** Pass tracks to `editable({...})`: Editor starts from
-them but owns them, so an edit in Editor always wins over the seed.
-
-```ts
-video.audio(editable({ theme: { path: 'assets/bg.mp3', volume: 0.3 } }))
+video.audio(['theme', 'sting'])
 ```
 
 Options:
@@ -78,12 +73,11 @@ Timing:
 Unlike overlays, audio tracks have no placement and never hold a frozen frame:
 they simply mix into the soundtrack.
 
-You can also declare track names by wrapping them in `editable([...])` (imported
-from `screenci`) with `video.audio(editable(['theme', 'sting']))` and upload the
-files plus options on the Editor page instead of keeping them in the repository.
-You can also seed the web app with starting files and options by passing an object to `editable({...})`:
-the web app starts from those values but owns them, so a seed is used only until
-the track is edited in Editor. See
+You can also declare track names alone with a bare array,
+`video.audio(['theme', 'sting'])`, and upload the files plus options on the
+Editor page instead of keeping them in the repository. Tracks declared with
+code values stay editable too: the code values are used until the track is
+edited in Editor, and from then on the Editor value wins. See
 [Editor](./editor.md#editor-audio-from-code).
 
 For per-language audio tracks (e.g. a locale-specific music bed), see

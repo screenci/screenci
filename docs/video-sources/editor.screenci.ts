@@ -63,7 +63,7 @@ video.narration({
 
   await narration.intro()
 
-  // Show the Editor panel without depending on a specific video having editable
+  // Show the Editor panel without depending on a specific video having
   // narration cues in the seeded dev data.
   await narration.edit.start()
   await zoomTo(page.getByRole('heading', { name: /^editor$/i }))

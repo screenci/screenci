@@ -269,9 +269,9 @@ only), `values` field values, `overlays` controllers, and the active `language`.
   per-language narration
 - a flat object of cue name to text (for example `{ intro: 'Hi' }`) = shared
   across all languages
-- `editable([...])` with cue names (for example `editable(['intro'])`) = name-only
-  cues where Editor (the web editor) owns the text. Pass an object to
-  `editable({...})` instead to seed Editor with starting text it then owns.
+- a bare array of cue names (for example `['intro']`) = name-only cues where
+  Editor (the web editor) owns the text. Object forms supply code values that
+  stay editable in Editor; an Editor edit wins over the code value.
 
 Other parts of the spec:
 
@@ -314,9 +314,10 @@ place them where they belong in the flow. That gives you cleaner overlap
 control, makes revisions less brittle, and should save API cost when a TTS
 provider such as ElevenLabs only needs to regenerate one changed sentence.
 
-To control which languages are recorded, chain `video.languages(...)` (accepts
-keyless `editable()` for a web-owned set, a plain array of language codes, or
-`{ languages, mode }`). For example,
+To control which languages are recorded, chain `video.languages(...)` (call it
+with no argument for a fully web-owned set, a plain array of language codes as
+a seed, or `{ languages, mode }`). The recorded set is the union of the web
+app's selection, the code seed, and per-feature language keys. For example,
 `video.narration({...}).languages({ mode: 'shared' })` records a single shared
 narration track instead of one per language. A video with no `.languages(...)`
 call records one language-agnostic round pinned to the `en-US` browser locale.
@@ -339,12 +340,16 @@ video.overlays({
 ```
 
 For Editor-owned overlays (declared by name, with the web editor owning their
-content), wrap the names in `editable([...])`: `video.overlays(editable(['logo']))`.
-You can combine this with the `editable(...)` form of narration, for example
-`video.narration(editable(['intro'])).overlays(editable(['logo']))`. Pass an object
-to `editable({...})` to seed Editor with starting content it then owns.
+content), pass a bare array of names: `video.overlays(['logo'])`. You can
+combine this with the bare-array form of narration, for example
+`video.narration(['intro']).overlays(['logo'])`. Object forms supply code
+values that stay editable in Editor; an Editor edit wins over the code value.
 
-To let Editor own the render options for a video, declare it through
-`use({ renderOptions: editable() })` (or `editable({...})` to seed them).
+Render options work the same way: values declared through
+`use({ renderOptions: {...} })` are the starting point, and web edits override
+them. Every recording also tracks which option values its Playwright actions
+used (for example `move.duration` or `position`) and whether each was explicit
+in code or a default, so the web editor can present and override them; see
+[Action parameter tracking and overrides](./editor.md#action-parameter-tracking-and-overrides).
 
 API reference: [voices](/docs/reference/api/variables/voices)

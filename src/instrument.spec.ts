@@ -15,6 +15,10 @@ import type {
 } from './events.js'
 import { NOOP_EVENT_RECORDER } from './events.js'
 import {
+  resolveSpecWithoutTracking,
+  type ActionParamSpec,
+} from './actionParams.js'
+import {
   setActiveClickRecorder,
   instrumentLocator,
   instrumentPage,
@@ -58,6 +62,10 @@ function makeRecorder() {
           events,
         } as InputEvent)
       }
+    ),
+    applyActionParams: vi.fn(
+      (_selector: string, _method: string, spec: ActionParamSpec) =>
+        resolveSpecWithoutTracking(spec)
     ),
     addCueStart: vi.fn(),
     addStudioCueStart: vi.fn(),
@@ -801,6 +809,72 @@ describe('instrumentLocator', () => {
     expect(click.events.some((e) => e.type === 'mouseDown')).toBe(true)
     expect(click.events.some((e) => e.type === 'mouseUp')).toBe(true)
     expect(click.events.some((e) => e.type === 'mouseWait')).toBe(true)
+  })
+
+  it('reports click param provenance: defaults vs explicit call-site values', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const bb = { x: 100, y: 200, width: 80, height: 40 }
+    const locator = makeLocatorMock(bb, page)
+    instrumentLocator(locator)
+    await Promise.all([
+      (
+        locator as unknown as {
+          click(options?: { move?: { duration?: number } }): Promise<void>
+        }
+      ).click({ move: { duration: 400 } }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const applySpy = recorder.applyActionParams as ReturnType<typeof vi.fn>
+    expect(applySpy).toHaveBeenCalledTimes(1)
+    const [, method, spec] = applySpy.mock.calls[0]! as [
+      string,
+      string,
+      ActionParamSpec,
+    ]
+    expect(method).toBe('click')
+    // Explicit at the call site.
+    expect(spec['move.duration']).toEqual({ explicit: 400, fallback: 900 })
+    // Defaults.
+    expect(spec['move.easing']).toEqual({
+      explicit: undefined,
+      fallback: 'ease-in-out',
+    })
+    expect(spec['noWaitAfter']).toEqual({ explicit: undefined, fallback: true })
+  })
+
+  it('uses the effective values returned by applyActionParams (editor override)', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    // Simulate an editor override forcing move.delayAfter to 0.
+    ;(
+      recorder.applyActionParams as ReturnType<typeof vi.fn>
+    ).mockImplementation(
+      (_selector: string, _method: string, spec: ActionParamSpec) => ({
+        ...resolveSpecWithoutTracking(spec),
+        'move.delayAfter': 0,
+      })
+    )
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const bb = { x: 100, y: 200, width: 80, height: 40 }
+    const locator = makeLocatorMock(bb, page)
+    instrumentLocator(locator)
+    await Promise.all([locator.click(), vi.runAllTimersAsync()])
+
+    // The overridden zero delay drops the pre-press mouseWait, proving the
+    // effective (overridden) value was used instead of the code default.
+    expect(recordedInputEvents).toHaveLength(1)
+    expect(
+      recordedInputEvents[0]!.events.some((e) => e.type === 'mouseWait')
+    ).toBe(false)
   })
 
   it('omits the pre-press mouseWait when move.delayAfter is zero', async () => {

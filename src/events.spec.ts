@@ -893,7 +893,11 @@ describe('EventRecorder', () => {
           name: 'intro',
           studio: true,
         })
-        expect(parsed.metadata?.studio).toEqual({ narration: true })
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          recordOptions: true,
+          narration: true,
+        })
         // studio cues have no translations, so no language list is derived
         expect(parsed.metadata?.languages).toBeUndefined()
       })
@@ -929,7 +933,11 @@ describe('EventRecorder', () => {
           name: 'intro',
           studio: true,
         })
-        expect(parsed.metadata?.studio).toEqual({ assets: true })
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          recordOptions: true,
+          assets: true,
+        })
       })
 
       it('records studio audio starts and sets metadata.studio.audio', async () => {
@@ -946,7 +954,11 @@ describe('EventRecorder', () => {
           name: 'theme',
           studio: true,
         })
-        expect(parsed.metadata?.studio).toEqual({ audio: true })
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          recordOptions: true,
+          audio: true,
+        })
       })
 
       it('does not set metadata.studio.audio for regular audio', async () => {
@@ -961,7 +973,11 @@ describe('EventRecorder', () => {
 
         const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
         const parsed: RecordingData = JSON.parse(content)
-        expect(parsed.metadata?.studio).toBeUndefined()
+        // Option groups are always web-editable; the audio flag stays off.
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          recordOptions: true,
+        })
       })
 
       it('sets metadata.studio.languages when the language set is web-owned', async () => {
@@ -1032,10 +1048,13 @@ describe('EventRecorder', () => {
 
         const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
         const parsed: RecordingData = JSON.parse(content)
-        expect(parsed.metadata?.studio).toBeUndefined()
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          recordOptions: true,
+        })
       })
 
-      it('writes no metadata.studio for regular recordings', async () => {
+      it('stamps the option flags into metadata.studio for regular recordings', async () => {
         recorder = new EventRecorder({ recording: { size: 0.8 } })
         recorder.start()
         recorder.addCueStart('', 'greeting', undefined, {
@@ -1045,18 +1064,24 @@ describe('EventRecorder', () => {
 
         const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
         const parsed: RecordingData = JSON.parse(content)
-        expect(parsed.metadata?.studio).toBeUndefined()
+        // Every recording is web-editable: the option flags are always stamped.
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          recordOptions: true,
+        })
       })
 
-      it('defaults both studio flags to false when no studio options are passed', async () => {
+      it('defaults both option flags to true when no studio options are passed', async () => {
         recorder = new EventRecorder()
         recorder.start()
         await recorder.writeToFile(tmpDir, 'Test Video')
 
         const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
         const parsed: RecordingData = JSON.parse(content)
-        // No deferral and no studio events: metadata.studio stays absent.
-        expect(parsed.metadata?.studio).toBeUndefined()
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          recordOptions: true,
+        })
       })
     })
   })

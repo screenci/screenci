@@ -11,7 +11,6 @@ describe('public api surface', () => {
       'MAX_AUDIO_LEVEL',
       'autoZoom',
       'defineConfig',
-      'editable',
       'hide',
       'hideNarration',
       'modelTypes',

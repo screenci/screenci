@@ -85,6 +85,11 @@ import {
   setRuntimeClickRecorder,
   isScreenshotCapture,
 } from './runtimeContext.js'
+import {
+  normalizeSelector,
+  type ActionMethod,
+  type ActionParamSpec,
+} from './actionParams.js'
 
 const pageClickRecorders = new WeakMap<object, IEventRecorder>()
 
@@ -110,6 +115,83 @@ function getActiveClickRecorder(page?: object): IEventRecorder {
   }
 
   return getRuntimeClickRecorder()
+}
+
+/**
+ * Record one instrumented action's option parameters (explicit vs default) on
+ * the active recorder and return the effective values, with any web-editor
+ * overrides applied (each application is logged by the recorder's collector).
+ * Outside a recording the no-op recorder resolves the spec without tracking.
+ */
+function applyActionParams(
+  locator: Locator,
+  method: ActionMethod,
+  spec: ActionParamSpec
+): Record<string, unknown> {
+  return getActiveClickRecorder(locator.page()).applyActionParams(
+    normalizeSelector(locator),
+    method,
+    spec
+  )
+}
+
+/** The shared cursor-move spec entries every mouse-driven action records. */
+function cursorMoveSpec(
+  move: CursorMoveOption['move'],
+  moveDelayAfterFallback: number
+): ActionParamSpec {
+  return {
+    'move.duration': {
+      explicit: move?.duration,
+      // The default duration only applies when no speed is given; with a speed
+      // the duration is derived from the distance instead.
+      fallback:
+        move?.speed === undefined ? DEFAULT_CLICK_MOUSE_MOVE_DURATION : null,
+    },
+    'move.speed': { explicit: move?.speed, fallback: null },
+    'move.easing': { explicit: move?.easing, fallback: 'ease-in-out' },
+    'move.delayAfter': {
+      explicit: move?.delayAfter,
+      fallback: moveDelayAfterFallback,
+    },
+  }
+}
+
+/** Effective cursor-move values back out of an {@link applyActionParams} result. */
+function effectiveCursorMove(effective: Record<string, unknown>): {
+  moveDuration: number | undefined
+  moveSpeed: number | undefined
+  moveEasing: Easing
+  moveDelayAfter: number
+} {
+  const moveSpeed = asOptionalNumber(effective['move.speed'])
+  return {
+    // With an (overridden or explicit) speed the duration must stay unset so
+    // the move derives its duration from the distance.
+    moveDuration:
+      moveSpeed !== undefined
+        ? undefined
+        : asOptionalNumber(effective['move.duration']),
+    moveSpeed,
+    moveEasing: (effective['move.easing'] as Easing) ?? 'ease-in-out',
+    moveDelayAfter: asOptionalNumber(effective['move.delayAfter']) ?? 0,
+  }
+}
+
+function asOptionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined
+}
+
+function asOptionalPoint(value: unknown): { x: number; y: number } | undefined {
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { x?: unknown }).x === 'number' &&
+    typeof (value as { y?: unknown }).y === 'number'
+  ) {
+    return value as { x: number; y: number }
+  }
+  return undefined
 }
 
 const instrumented = new WeakSet<object>()
@@ -758,8 +840,6 @@ export function instrumentLocator(locator: Locator): Locator {
       steps: _steps,
       ...clickOptions
     } = options ?? {}
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
       return originalClick({
@@ -769,7 +849,16 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
-    assertDurationOrSpeed(moveDuration, moveSpeed, 'click move')
+    assertDurationOrSpeed(move?.duration, move?.speed, 'click move')
+
+    const effective = applyActionParams(locator, 'click', {
+      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+      position: { explicit: position, fallback: null },
+      noWaitAfter: { explicit: clickOptions.noWaitAfter, fallback: true },
+    })
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      effectiveCursorMove(effective)
+    const effectivePosition = asOptionalPoint(effective.position)
 
     const { doClick, supportsTrial } = resolveLocatorMouseAction(
       locator,
@@ -778,7 +867,7 @@ export function instrumentLocator(locator: Locator): Locator {
 
     const result = await performAction(
       buildDefaultClickMouseMoveRequest({
-        targetPosInElement: position,
+        targetPosInElement: effectivePosition,
         moveDuration,
         moveSpeed,
         moveEasing,
@@ -788,9 +877,9 @@ export function instrumentLocator(locator: Locator): Locator {
       supportsTrial,
       'singleDuring',
       autoZoomOptions,
-      position,
-      clickOptions.noWaitAfter,
-      moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+      effectivePosition,
+      effective.noWaitAfter as boolean,
+      moveDelayAfter,
       0,
       false
     )
@@ -830,8 +919,6 @@ export function instrumentLocator(locator: Locator): Locator {
       redact: redactOption,
       ...pressOptions
     } = options ?? {}
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
       return originalPressSequentially(
@@ -839,6 +926,15 @@ export function instrumentLocator(locator: Locator): Locator {
         pressOptions as Parameters<Locator['pressSequentially']>[1]
       )
     }
+
+    const effective = applyActionParams(locator, 'pressSequentially', {
+      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+      position: { explicit: position, fallback: null },
+      noWaitAfter: { explicit: noWaitAfter, fallback: true },
+    })
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      effectiveCursorMove(effective)
+    const effectivePosition = asOptionalPoint(effective.position)
 
     await applyActionRedact(locator, redactOption)
 
@@ -856,7 +952,7 @@ export function instrumentLocator(locator: Locator): Locator {
     } else {
       const clickActionResult = await performAction(
         buildDefaultClickMouseMoveRequest({
-          targetPosInElement: position,
+          targetPosInElement: effectivePosition,
           moveDuration,
           moveSpeed,
           moveEasing,
@@ -870,9 +966,9 @@ export function instrumentLocator(locator: Locator): Locator {
         false,
         'singleBefore',
         autoZoomOptions,
-        position,
-        noWaitAfter,
-        moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+        effectivePosition,
+        effective.noWaitAfter as boolean,
+        moveDelayAfter,
         0,
         _hideMouse ?? false
       )
@@ -934,8 +1030,17 @@ export function instrumentLocator(locator: Locator): Locator {
       position,
       redact: redactOption,
     } = options ?? {}
+
+    const effective = applyActionParams(locator, 'fill', {
+      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+      position: { explicit: position, fallback: null },
+      noWaitAfter: { explicit: noWaitAfter, fallback: true },
+      duration: { explicit: options?.duration, fallback: 1000 },
+    })
     const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      resolveCursorMoveOption(move)
+      effectiveCursorMove(effective)
+    const effectivePosition = asOptionalPoint(effective.position)
+    const typingDuration = asOptionalNumber(effective.duration) ?? 1000
 
     // Mask the field before any character is typed so the secret is never
     // captured in the clear.
@@ -969,7 +1074,7 @@ export function instrumentLocator(locator: Locator): Locator {
       // A still keeps only the final frame, so spreading the keystrokes over a
       // typing animation is wasted time. Type instantly for screenshots (the
       // field still ends up filled), matching the instant cursor move.
-      const duration = isScreenshotCapture() ? 0 : (options?.duration ?? 1000)
+      const duration = isScreenshotCapture() ? 0 : typingDuration
       const delay = value.length > 0 ? duration / value.length : 0
       await locator.page().keyboard.type(value, { delay })
     }
@@ -982,7 +1087,7 @@ export function instrumentLocator(locator: Locator): Locator {
     } else {
       const clickActionResult = await performAction(
         buildDefaultClickMouseMoveRequest({
-          targetPosInElement: position,
+          targetPosInElement: effectivePosition,
           moveDuration,
           moveSpeed,
           moveEasing,
@@ -992,9 +1097,9 @@ export function instrumentLocator(locator: Locator): Locator {
         false,
         'singleBefore',
         autoZoomOptions,
-        position,
-        noWaitAfter,
-        moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+        effectivePosition,
+        effective.noWaitAfter as boolean,
+        moveDelayAfter,
         0,
         _hideMouse ?? false
       )
@@ -1031,8 +1136,6 @@ export function instrumentLocator(locator: Locator): Locator {
   ): Promise<void> => {
     const { move, noWaitAfter, position, autoZoomOptions, ...tapOpts } =
       options ?? {}
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
       return originalTap({
@@ -1041,11 +1144,20 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
+    const effective = applyActionParams(locator, 'tap', {
+      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+      position: { explicit: position, fallback: null },
+      noWaitAfter: { explicit: noWaitAfter, fallback: true },
+    })
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      effectiveCursorMove(effective)
+    const effectivePosition = asOptionalPoint(effective.position)
+
     const { doClick, supportsTrial } = resolveLocatorMouseAction(locator, 'tap')
 
     const result = await performAction(
       buildDefaultClickMouseMoveRequest({
-        targetPosInElement: position,
+        targetPosInElement: effectivePosition,
         moveDuration,
         moveSpeed,
         moveEasing,
@@ -1055,9 +1167,9 @@ export function instrumentLocator(locator: Locator): Locator {
       supportsTrial,
       'singleDuring',
       autoZoomOptions,
-      position,
-      noWaitAfter,
-      moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+      effectivePosition,
+      effective.noWaitAfter as boolean,
+      moveDelayAfter,
       0,
       false
     )
@@ -1089,8 +1201,6 @@ export function instrumentLocator(locator: Locator): Locator {
   ): Promise<void> => {
     const { move, noWaitAfter, position, autoZoomOptions, ...checkOpts } =
       options ?? {}
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
       return originalCheck({
@@ -1099,6 +1209,15 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
+    const effective = applyActionParams(locator, 'check', {
+      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+      position: { explicit: position, fallback: null },
+      noWaitAfter: { explicit: noWaitAfter, fallback: true },
+    })
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      effectiveCursorMove(effective)
+    const effectivePosition = asOptionalPoint(effective.position)
+
     const { doClick, supportsTrial } = resolveLocatorMouseAction(
       locator,
       'check'
@@ -1106,7 +1225,7 @@ export function instrumentLocator(locator: Locator): Locator {
 
     const result = await performAction(
       buildDefaultClickMouseMoveRequest({
-        targetPosInElement: position,
+        targetPosInElement: effectivePosition,
         moveDuration,
         moveSpeed,
         moveEasing,
@@ -1116,9 +1235,9 @@ export function instrumentLocator(locator: Locator): Locator {
       supportsTrial,
       'singleDuring',
       autoZoomOptions,
-      position,
-      noWaitAfter,
-      moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+      effectivePosition,
+      effective.noWaitAfter as boolean,
+      moveDelayAfter,
       0,
       false
     )
@@ -1150,8 +1269,6 @@ export function instrumentLocator(locator: Locator): Locator {
   ): Promise<void> => {
     const { move, noWaitAfter, position, autoZoomOptions, ...uncheckOpts } =
       options ?? {}
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
       return originalUncheck({
@@ -1160,6 +1277,15 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
+    const effective = applyActionParams(locator, 'uncheck', {
+      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+      position: { explicit: position, fallback: null },
+      noWaitAfter: { explicit: noWaitAfter, fallback: true },
+    })
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      effectiveCursorMove(effective)
+    const effectivePosition = asOptionalPoint(effective.position)
+
     const { doClick, supportsTrial } = resolveLocatorMouseAction(
       locator,
       'uncheck'
@@ -1167,7 +1293,7 @@ export function instrumentLocator(locator: Locator): Locator {
 
     const result = await performAction(
       buildDefaultClickMouseMoveRequest({
-        targetPosInElement: position,
+        targetPosInElement: effectivePosition,
         moveDuration,
         moveSpeed,
         moveEasing,
@@ -1177,9 +1303,9 @@ export function instrumentLocator(locator: Locator): Locator {
       supportsTrial,
       'singleDuring',
       autoZoomOptions,
-      position,
-      noWaitAfter,
-      moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+      effectivePosition,
+      effective.noWaitAfter as boolean,
+      moveDelayAfter,
       0,
       false
     )
@@ -1233,8 +1359,6 @@ export function instrumentLocator(locator: Locator): Locator {
   ): Promise<string[]> => {
     const { move, noWaitAfter, position, autoZoomOptions, ...selectOpts } =
       options ?? {}
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
       return originalSelectOption(values, {
@@ -1242,6 +1366,15 @@ export function instrumentLocator(locator: Locator): Locator {
         noWaitAfter: noWaitAfter ?? true,
       })
     }
+
+    const effective = applyActionParams(locator, 'selectOption', {
+      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+      position: { explicit: position, fallback: null },
+      noWaitAfter: { explicit: noWaitAfter, fallback: true },
+    })
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      effectiveCursorMove(effective)
+    const effectivePosition = asOptionalPoint(effective.position)
 
     currentSelectValues = values
     currentSelectOptions = selectOpts as Parameters<Locator['selectOption']>[1]
@@ -1252,7 +1385,7 @@ export function instrumentLocator(locator: Locator): Locator {
     )
     const actionResult = await performAction(
       buildDefaultClickMouseMoveRequest({
-        targetPosInElement: position,
+        targetPosInElement: effectivePosition,
         moveDuration,
         moveSpeed,
         moveEasing,
@@ -1262,9 +1395,9 @@ export function instrumentLocator(locator: Locator): Locator {
       supportsTrial,
       'singleDuring',
       autoZoomOptions,
-      position,
-      noWaitAfter,
-      moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+      effectivePosition,
+      effective.noWaitAfter as boolean,
+      moveDelayAfter,
       0
     )
 
@@ -1288,18 +1421,29 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
-    const { move, duration = 1000, position, ...hoverOptions } = options ?? {}
-    const { moveDuration, moveSpeed, moveEasing } =
-      resolveCursorMoveOption(move)
+    const { move, duration, position, ...hoverOptions } = options ?? {}
 
-    assertDurationOrSpeed(moveDuration, moveSpeed, 'hover move')
+    assertDurationOrSpeed(move?.duration, move?.speed, 'hover move')
+
+    const effective = applyActionParams(locator, 'hover', {
+      'move.duration': { explicit: move?.duration, fallback: null },
+      'move.speed': { explicit: move?.speed, fallback: null },
+      'move.easing': { explicit: move?.easing, fallback: 'ease-in-out' },
+      position: { explicit: position, fallback: null },
+      duration: { explicit: duration, fallback: 1000 },
+    })
+    const moveDuration = asOptionalNumber(effective['move.duration'])
+    const moveSpeed = asOptionalNumber(effective['move.speed'])
+    const moveEasing = (effective['move.easing'] as Easing) ?? 'ease-in-out'
+    const effectivePosition = asOptionalPoint(effective.position)
+    const hoverDuration = asOptionalNumber(effective.duration) ?? 1000
 
     const innerEvents: Array<
       FocusChangeEvent | MouseMoveEvent | MouseWaitEvent
     > = []
 
     const mouseMovePlan = {
-      targetPosInElement: position,
+      targetPosInElement: effectivePosition,
       ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
       ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
       easing: moveEasing,
@@ -1317,10 +1461,10 @@ export function instrumentLocator(locator: Locator): Locator {
     const waitStartMs = Date.now()
     await originalHover({
       ...hoverOptions,
-      ...(position ? { position } : {}),
+      ...(effectivePosition ? { position: effectivePosition } : {}),
     })
-    if (duration > 0) {
-      await sleep(duration)
+    if (hoverDuration > 0) {
+      await sleep(hoverDuration)
     }
     const waitFinishMs = Date.now()
 
@@ -1352,12 +1496,16 @@ export function instrumentLocator(locator: Locator): Locator {
       return originalScrollIntoViewIfNeeded(options)
     }
 
-    const {
-      easing = 'ease-in-out',
-      duration,
-      amount,
-      centering,
-    } = options ?? {}
+    const effective = applyActionParams(locator, 'scrollIntoViewIfNeeded', {
+      easing: { explicit: options?.easing, fallback: 'ease-in-out' },
+      duration: { explicit: options?.duration, fallback: null },
+      amount: { explicit: options?.amount, fallback: null },
+      centering: { explicit: options?.centering, fallback: null },
+    })
+    const easing = (effective.easing as Easing) ?? 'ease-in-out'
+    const duration = asOptionalNumber(effective.duration)
+    const amount = asOptionalNumber(effective.amount)
+    const centering = asOptionalNumber(effective.centering)
     const result = await changeFocus(locator, {
       easing,
       ...(duration !== undefined ? { duration } : {}),
@@ -1380,10 +1528,16 @@ export function instrumentLocator(locator: Locator): Locator {
     }
   ): Promise<void> => {
     const { move, duration, autoZoomOptions, ...selectOpts } = options ?? {}
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      resolveCursorMoveOption(move)
 
-    assertDurationOrSpeed(moveDuration, moveSpeed, 'selectText move')
+    assertDurationOrSpeed(move?.duration, move?.speed, 'selectText move')
+
+    const effective = applyActionParams(locator, 'selectText', {
+      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+      duration: { explicit: duration, fallback: null },
+    })
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      effectiveCursorMove(effective)
+    const selectDuration = asOptionalNumber(effective.duration)
 
     const innerEvents: Array<
       | FocusChangeEvent
@@ -1410,10 +1564,10 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       undefined,
       undefined,
-      moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+      moveDelayAfter,
       undefined,
       false,
-      duration
+      selectDuration
     )
 
     const locatorRect = selectActionResult?.elementRect
@@ -1436,21 +1590,32 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
-    const {
-      move,
-      duration,
-      speed,
-      easing = 'ease-in-out',
-      dragSteps = DEFAULT_DRAG_STEPS,
-      sourcePosition,
-      targetPosition,
-      autoZoomOptions,
-    } = options ?? {}
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      resolveCursorMoveOption(move)
+    const { move, sourcePosition, targetPosition, autoZoomOptions } =
+      options ?? {}
 
-    assertDurationOrSpeed(moveDuration, moveSpeed, 'dragTo move')
-    assertDurationOrSpeed(duration, speed, 'dragTo drag')
+    assertDurationOrSpeed(move?.duration, move?.speed, 'dragTo move')
+    assertDurationOrSpeed(options?.duration, options?.speed, 'dragTo drag')
+
+    const effective = applyActionParams(locator, 'dragTo', {
+      ...cursorMoveSpec(move, CLICK_DURATION_MS / 2),
+      duration: { explicit: options?.duration, fallback: null },
+      speed: { explicit: options?.speed, fallback: null },
+      easing: { explicit: options?.easing, fallback: 'ease-in-out' },
+      dragSteps: { explicit: options?.dragSteps, fallback: DEFAULT_DRAG_STEPS },
+      sourcePosition: { explicit: sourcePosition, fallback: null },
+      targetPosition: { explicit: targetPosition, fallback: null },
+    })
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      effectiveCursorMove(effective)
+    const dragSpeed = asOptionalNumber(effective.speed)
+    const duration =
+      dragSpeed !== undefined ? undefined : asOptionalNumber(effective.duration)
+    const speed = dragSpeed
+    const easing = (effective.easing as Easing) ?? 'ease-in-out'
+    const dragSteps =
+      asOptionalNumber(effective.dragSteps) ?? DEFAULT_DRAG_STEPS
+    const effectiveSourcePosition = asOptionalPoint(effective.sourcePosition)
+    const effectiveTargetPosition = asOptionalPoint(effective.targetPosition)
 
     const page = locator.page()
 
@@ -1473,13 +1638,13 @@ export function instrumentLocator(locator: Locator): Locator {
     > = []
 
     const targetPos =
-      targetPosition ??
+      effectiveTargetPosition ??
       (targetRectPreview
         ? { x: targetRectPreview.width / 2, y: targetRectPreview.height / 2 }
         : undefined)
 
     const sourceFocusChange = await changeFocus(locator, autoZoomOptions, {
-      targetPosInElement: sourcePosition,
+      targetPosInElement: effectiveSourcePosition,
       ...(moveDuration !== undefined ? { duration: moveDuration } : {}),
       ...(moveSpeed !== undefined ? { speed: moveSpeed } : {}),
       easing: moveEasing,
@@ -1490,7 +1655,7 @@ export function instrumentLocator(locator: Locator): Locator {
     }
 
     // 2. move.delayAfter + mouseDown
-    await sleep(moveDelayAfter ?? CLICK_DURATION_MS / 2)
+    await sleep(moveDelayAfter)
     const mouseDownStart = Date.now()
     await performMouseDown({
       mouseDownInternal: getOriginalMouseDown(

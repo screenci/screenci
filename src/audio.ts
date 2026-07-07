@@ -288,7 +288,7 @@ export function createAudio<const T extends Record<string, AudioInput>>(
 
 /**
  * Builds audio controllers for Studio-managed tracks declared via
- * `video.audio(editable([...]))`. Each name becomes a callable controller with
+ * `video.audio([...])`. Each name becomes a callable controller with
  * the same timeline behavior as a {@link createAudio} controller, including
  * `start()`/`end()`. The audio file, volume, and repeat all come from Studio.
  *

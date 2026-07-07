@@ -11,7 +11,6 @@ import type {
 import { mkdir, rm } from 'fs/promises'
 import { join, relative } from 'path'
 import type { RecordOptions, RenderOptions, ScreenCIPage } from './types.js'
-import type { EditableMarker } from './studio.js'
 import {
   buildOverlays,
   type OverlayController,
@@ -60,7 +59,8 @@ import {
   buildValues,
   type Values,
 } from './localizeRuntime.js'
-import { parseValuesOverrides } from './runtimeMode.js'
+import { parseActionOverrides, parseValuesOverrides } from './runtimeMode.js'
+import { ActionParamCollector } from './actionParams.js'
 
 /**
  * The `crop` fixture argument. Call it inside a `screenshot()` body to clip the
@@ -76,11 +76,8 @@ export type CropFixture = (
 const SCREENSHOT_FILE_NAME = 'screenshot.png'
 
 type ScreenshotFixtureOptions = {
-  recordOptions: RecordOptions | EditableMarker<Partial<RecordOptions>>
-  renderOptions:
-    | RenderOptions
-    | EditableMarker<Partial<RenderOptions>>
-    | undefined
+  recordOptions: RecordOptions | Partial<RecordOptions>
+  renderOptions: RenderOptions | undefined
   /** Active language for this pass; see {@link video} for details. Internal. */
   _screenciLanguage: string | undefined
   /** Grouping name written to `metadata.videoName`. Internal. */
@@ -193,11 +190,10 @@ const _screenshotBase = base.extend<
     use,
     testInfo
   ) => {
-    const { base: baseRecordOptions, studio: studioRecord } =
+    const { base: baseRecordOptions } =
       resolveStudioRecordOptions(recordOptions)
     const effectiveRecordOptions = resolveEffectiveRecordOptions(
       baseRecordOptions,
-      studioRecord,
       _screenciVideoName ?? testInfo.title
     )
     const aspectRatio =
@@ -262,19 +258,27 @@ const _screenshotBase = base.extend<
     testInfo
   ) => {
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
-    const { base: baseRecordOptions, studio: studioRecord } =
+    const { base: baseRecordOptions } =
       resolveStudioRecordOptions(codeRecordOptions)
-    const { obj: renderOptionsObj, studio: studioRender } =
-      resolveStudioRenderOptions(renderOptions)
+    const { obj: renderOptionsObj } = resolveStudioRenderOptions(renderOptions)
     const recordOptions = resolveEffectiveRecordOptions(
       baseRecordOptions,
-      studioRecord,
       _screenciVideoName ?? testInfo.title
     )
-    const recorder = new EventRecorder(renderOptionsObj, recordOptions, {
-      renderOptions: studioRender,
-      recordOptions: studioRecord,
-    })
+    const videoName = _screenciVideoName ?? testInfo.title
+    // Every capture is web-editable: render/record options are always marked
+    // studio so the app knows it may override them.
+    const recorder = new EventRecorder(
+      renderOptionsObj,
+      recordOptions,
+      {
+        renderOptions: true,
+        recordOptions: true,
+      },
+      // Action-parameter provenance for this capture, with the web editor's
+      // per-action overrides (fetched by the CLI, injected via env) applied.
+      new ActionParamCollector(parseActionOverrides()?.[videoName] ?? {})
+    )
     recorder.setActiveLanguage(_screenciLanguage ?? null)
     // Declared `values` fields (and the active language's seeds) emitted once at
     // recording start so the backend/Studio learn them.
@@ -282,7 +286,6 @@ const _screenshotBase = base.extend<
       _screenciValues,
       _screenciLanguage
     )
-    const videoName = _screenciVideoName ?? testInfo.title
     // Asset paths are authored relative to the user's script. Playwright reports
     // `testInfo.file` as the builder module that registered the test, so prefer
     // the script path captured at the call site.
@@ -484,16 +487,16 @@ interface Screenshot extends ScreenshotCallSignatures {
    * language, and the body receives the active `language` and `values` fields.
    * Chainable with `.each(...)`.
    */
-  /** Declare on-screen values fields (`editable([...])` = editor-owned, object = code values). */
+  /** Declare on-screen values fields (array = blank names, object = code values). */
   values: MediaBuilder<ScreenshotArgs>['values']
 
-  /** Declare overlays (`editable([...])` = editor-owned, object = code values/factories). */
+  /** Declare overlays (array = blank names, object = code values/factories). */
   overlays: MediaBuilder<ScreenshotArgs>['overlays']
 
   /**
-   * Declare the recorded language set / capture mode. Pass `editable()` to let the
-   * web app own the set (`editable(['en', 'fi'])` to seed it), an array
-   * `['en', 'fi']`, or an options object.
+   * Declare the recorded language set / capture mode. The web app owns the set;
+   * pass an array `['en', 'fi']` or an options object to seed it, or call with
+   * no argument to leave the set entirely to the web app.
    */
   languages: MediaBuilder<ScreenshotArgs>['languages']
 

@@ -17,16 +17,11 @@ import type { RenderOptions } from './types.js'
 /**
  * The config/global default narration voice from a recording's render options.
  * Lowest-priority entry in the voice cascade: the per-cue `voice` overrides it.
- * When render options are deferred to Studio there is no code voice here.
  */
 export function narrationVoiceConfigFromRenderOptions(
-  renderOptions: RenderOptions | undefined,
-  studioRenderOptions: boolean
+  renderOptions: RenderOptions | undefined
 ): AnyTopLevelVoiceConfig | undefined {
-  if (studioRenderOptions || renderOptions === undefined) {
-    return undefined
-  }
-  return renderOptions.narration?.voice
+  return renderOptions?.narration?.voice
 }
 
 /** Narration markers keyed by cue name. Markers carry timing, never text. */
@@ -50,7 +45,7 @@ function featureToNormalizedNarration(
   for (const lang of languages) {
     const cues: Record<string, NormalizedCueValue> = {}
     // Seed every named cue that has a value: code-owned cues and seeded Studio
-    // cues (`editable({...})`). Blank Studio cues (`editable([...])`) have no value, so
+    // cues (a seeded object). Blank Studio cues (a names-only array) have no value, so
     // they carry no seed (the web app owns their text). `buildLocalizedNarrationCues`
     // short-circuits Studio names, so a seed here is backend-facing metadata only.
     for (const name of feature.names) {
@@ -116,11 +111,11 @@ export function buildValues(
 export type ValuesDeclaration = {
   /** Every field name (code then Studio-managed), in declared order. */
   fields: string[]
-  /** Studio-managed field names (`editable([...])`/`editable({...})`). */
+  /** Studio-managed field names (a names-only array/a seeded object). */
   studioFields: string[]
   /**
    * Seeds keyed `{ [language]: { [field]: value } }`: code-owned fields and seeded
-   * Studio fields (`editable({...})`). A seeded Studio field appears in both
+   * Studio fields (a seeded object). A seeded Studio field appears in both
    * `studioFields` (the web app owns it) and `seed` (its initial value). Omitted
    * when empty.
    */
@@ -149,7 +144,7 @@ export function buildValuesDeclaration(
       ...(feature.byLang[language] ?? {}),
     }
     // Seed every named field that has a value: code-owned fields and seeded Studio
-    // fields (`editable({...})`). Blank Studio fields (`editable([...])`) have no value.
+    // fields (a seeded object). Blank Studio fields (a names-only array) have no value.
     const codeSeed: Record<string, string> = {}
     for (const field of feature.names) {
       if (merged[field] !== undefined) codeSeed[field] = merged[field]!

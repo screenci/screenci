@@ -229,13 +229,15 @@ call: `.only(...)`, `.skip`, `.fixme`, and `.fail`. The in-body conditional
 
 ## Managing languages from Editor
 
-Pass keyless `editable()` to `video.languages(...)` to let the web app own the
-recorded language set.
+Every declared language set is web-owned: the recorded set is the union of the
+web app's selection, the code seed, and any language keys used by per-language
+features. Call `video.languages()` with no argument to hand the whole set to
+the web app.
 
 ```ts
-import { video, editable } from 'screenci'
+import { video } from 'screenci'
 
-video.narration(editable(['intro'])).languages(editable())(
+video.narration(['intro']).languages()(
   'Product tour',
   async ({ page, narration }) => {
     await narration.intro()
@@ -244,12 +246,12 @@ video.narration(editable(['intro'])).languages(editable())(
 )
 ```
 
-With keyless `editable()`, nothing is seeded, so rendering is held until the web
-app selects a language set. To start from an initial set the web app can still
-change, seed it: `video.languages(editable(['en', 'fi']))` renders en and fi until
-the web app edits the set. To seed the capture options too, wrap a config in
-`editable({ ... })`, for example
-`video.languages(editable({ languages: ['en', 'fi'], mode: 'shared' }))`.
+With no argument, nothing is seeded, so rendering is held until the web app
+selects a language set. To start from an initial set the web app can still
+change, seed it: `video.languages(['en', 'fi'])` records en and fi plus
+whatever the web app adds. To seed the capture options too, pass a config
+object, for example
+`video.languages({ languages: ['en', 'fi'], mode: 'shared' })`.
 
 The web app can edit the language **set** but not `mode`, `locales`, or
 `browserLocale` yet, so set those to their final values in code up front: they are
@@ -268,19 +270,20 @@ localize that text, edit the values and re-record the language version once it
 exists. The re-record reuses the same Editor narration, overlays, and audio
 configuration, and runs from the web when the project is connected to GitHub.
 
-Adding languages from the web requires `video.languages(editable())` (or a seeded
-`video.languages(editable(['en', 'fi']))`): a code-defined language set (a plain
-array or config object, as shown in the sections above) is fixed by your test
-code. To add an ad-hoc language to a code-defined video from the web without
-changing your code, use a one-off language (below). See [Editor](./editor.md) for
-the full Editor guide.
+Adding languages from the web works with any `video.languages(...)`
+declaration, seeded or not: a code seed (a plain array or config object, as
+shown in the sections above) only sets the starting point, and the recorded
+set is the union of the web selection, the code seed, and per-feature
+language keys. For a single language you do not want in the permanent set,
+use a one-off language (below). See [Editor](./editor.md) for the full Editor
+guide.
 
 ## One-off languages
 
-When a video's languages are defined in code (a plain array or config object,
-not `editable()`), you can still add a single language from the web as a **one-off
-language**. It renders and serves like any other language version, but it is not
-part of your code, so re-recording in CI never updates it automatically. This
+You can also add a single language from the web as a **one-off language**
+without touching the saved language set. It renders and serves like any other
+language version, but it is not part of the saved set or your code, so
+re-recording in CI never updates it automatically. This
 mirrors an Editor [one-off version](./editor.md#saved-edits-vs-one-off-renders),
 but at the language level.
 
@@ -297,9 +300,9 @@ auto-update. Because it is not declared in code, a CI re-record of the video
 leaves it untouched: it is only ever re-rendered when you explicitly render it
 again from its page.
 
-To make a one-off language permanent (so CI keeps it up to date), add it to your
-code: either list it in `video.languages([...])` or switch the video to
-`video.languages(editable())` to manage the whole set from the web.
+To make a one-off language permanent (so CI keeps it up to date), either list
+it in the `video.languages([...])` seed in code or add it to the language set
+from the Editor page.
 
 ## Available languages
 

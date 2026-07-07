@@ -182,7 +182,7 @@ export const docsManifest = [
     navLabel: 'Editor',
     title: 'Editor',
     description:
-      'Remix render options, narration text, voices, overlays, and languages from the web app, or manage them in the web editor with editable(...) declarations like video.narration(editable([...])).',
+      'Remix render options, narration text, voices, overlays, and languages from the web app. Everything is editable by default: arrays declare blank editor-owned names, and code values stay editable in the web editor.',
     prev: 'docs/guides/screenshots',
     next: 'docs/guides/public-urls-and-embeds',
   },

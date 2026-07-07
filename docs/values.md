@@ -3,7 +3,7 @@
 `video.values(...)` injects localized strings into the page through the `values`
 fixture, for content the app does not localize itself. The values can be owned by
 code or handed to [Editor](./editor.md) (the web app where non-developers edit
-them); see [the three ways to declare values](#three-ways-to-declare-values)
+them); see [the two ways to declare values](#two-ways-to-declare-values)
 below. Declare a `values` map per language, then read `values.<field>` in the
 body:
 
@@ -23,60 +23,54 @@ video.values({
 The language set is the union of both. Unlike voice (which only re-renders),
 changing injected `values` changes what is captured, so it re-records.
 
-## Three ways to declare values
+## Two ways to declare values
 
-There are three ways to declare values. The same three forms apply to
-[`narration`](./narration.md), [`overlays`](./overlays.md), and
-[`audio`](./audio.md). See the [Editor guide](./editor.md) for how the web editing
-works.
+There are two ways to declare values, and both are editable in the web app. The
+same two forms apply to [`narration`](./narration.md),
+[`overlays`](./overlays.md), and [`audio`](./audio.md). See the
+[Editor guide](./editor.md) for how the web editing works.
 
-**1. Code-owned.** You write the strings. Changing them re-records.
+**1. Code values.** You write the strings; they are used at record time.
+Changing them re-records. They stay editable in Editor, and an Editor edit wins
+over the code value from then on.
 
 ```ts
 video.values({ en: { cta: 'Get started' }, fi: { cta: 'Aloita' } })
 ```
 
-**2. Editor-owned (blank).** Wrap the field names in `editable([...])`: the names
-exist in code (so the body can read `values.cta`), but [Editor](./editor.md) owns
-the strings. An unset field is the empty string until set in Editor.
+**2. Editor-owned (blank).** Pass a bare array of field names: the names exist
+in code (so the body can read `values.cta`), but [Editor](./editor.md) owns the
+strings. An unset field is the empty string until set in Editor.
 
 ```ts
-import { video, editable } from 'screenci'
+import { video } from 'screenci'
 
-video.values(editable(['heading', 'cta']))
+video.values(['heading', 'cta'])
 ```
 
-**3. Editor-owned (seeded).** Pass values to `editable({...})`: Editor starts from
-them but owns them, so an edit in Editor always wins over the seed.
-
-```ts
-video.values(editable({ cta: 'Get started' }))
-```
+Either way the field stays editable in Editor: a code value is used at record
+time until it is edited in the web app, and from then on the Editor value wins.
 
 ## Editor-managed values
 
-A field can instead be owned by ScreenCI Editor: wrap its names in `editable([...])`
-(imported from `screenci`, field names only, no code value) and set its
-per-language value from the web. This suits copy that non-developers maintain
-without editing the test:
+A field can instead start blank and be filled in from ScreenCI Editor: pass a
+bare array of field names (no code value) and set its per-language value from
+the web. This suits copy that non-developers maintain without editing the test:
 
 ```ts
-import { video, editable } from 'screenci'
+import { video } from 'screenci'
 
-video.values(editable(['heading', 'cta']))(
-  'Landing',
-  async ({ page, values }) => {
-    await page.getByTestId('heading').fill(values.heading) // '' until set in Editor
-    await page.getByTestId('cta').fill(values.cta) // '' until set in Editor
-  }
-)
+video.values(['heading', 'cta'])('Landing', async ({ page, values }) => {
+  await page.getByTestId('heading').fill(values.heading) // '' until set in Editor
+  await page.getByTestId('cta').fill(values.cta) // '' until set in Editor
+})
 ```
 
-To start the web app from seed copy instead of blank fields, pass an object to
-`editable({...})` (content-major like `{ cta: 'Get started' }`, or language-major
-like `{ en: { cta: 'Get started' }, fi: { cta: 'Aloita' } }`): the web app starts
-from those values but owns them, so a seed is used only until the field is edited
-in Editor.
+To start the web app from code copy instead of blank fields, pass a plain
+object (content-major like `{ cta: 'Get started' }`, or language-major like
+`{ en: { cta: 'Get started' }, fi: { cta: 'Aloita' } }`): the code values are
+used until the field is edited in Editor, and from then on the Editor value
+wins.
 
 The first recording reports the declared fields so Editor learns them. An unset
 Editor field resolves to the empty string, so that first recording still

@@ -50,6 +50,7 @@ import {
   SCREENCI_LANGUAGES_ENV,
   SCREENCI_VALUES_OVERRIDES_ENV,
   SCREENCI_RECORD_OPTIONS_ENV,
+  SCREENCI_ACTION_OVERRIDES_ENV,
   SCREENCI_FAST_NARRATION_ENV,
   isUploadExistingEnabled,
 } from './src/runtimeMode.js'
@@ -68,6 +69,16 @@ import {
   persistScreenCISecret,
 } from './src/linkSession.js'
 import { OVERLAY_CACHE_DIR_NAME } from './src/htmlRasterizer.js'
+import {
+  ACTION_PARAMS_SNAPSHOT_FILE,
+  diffOverridesAgainstSnapshot,
+  readActionParamsSnapshot,
+  updateActionParamsSnapshot,
+} from './src/actionParamsSnapshot.js'
+import {
+  stubActionOverridesClient,
+  type ActionOverridesClient,
+} from './src/actionOverridesClient.js'
 import { maybeExtractVoiceSampleAudio } from './src/voiceSampleAudio.js'
 import {
   type CliCredential,
@@ -1232,6 +1243,9 @@ export function clearRecordingDirectories(dir: string): void {
     // runs. Wiping it would mint a fresh trial every record, so the one-record
     // cap, the claim, and the auto-graduate to a real secret would all break.
     if (entry === ANON_SESSION_FILE) continue
+    // Preserve the action-parameter snapshot: it must survive so the next run
+    // can diff editor overrides against the previous run's explicit values.
+    if (entry === ACTION_PARAMS_SNAPSHOT_FILE) continue
     rmSync(resolve(dir, entry), { recursive: true, force: true })
   }
 }
@@ -4036,6 +4050,78 @@ async function fetchRecordOptionsEnv(
   }
 }
 
+/**
+ * Fetch the project's current web-editor action-parameter overrides so they can
+ * be injected as SCREENCI_ACTION_OVERRIDES before a recording. The backend
+ * endpoint is not implemented yet, so the default client is a stub returning no
+ * overrides; the interface is injected so tests (and the future real client)
+ * plug in without touching the record flow. Best-effort: any failure returns an
+ * empty env so the SDK uses the code values.
+ */
+export async function fetchActionOverridesEnv(
+  configPath: string,
+  verbose: boolean,
+  client: ActionOverridesClient = stubActionOverridesClient
+): Promise<Record<string, string>> {
+  // Editor overrides only exist for a real (non-anonymous) org, and record must
+  // still work without an account, so skip the fetch entirely rather than
+  // calling requireScreenCISecret, which would hard-exit without a secret.
+  if (!process.env.SCREENCI_SECRET) return {}
+  try {
+    const { screenciConfig, secret, apiUrl } =
+      await requireScreenCISecret(configPath)
+    const overrides = await client.fetchActionOverrides({
+      apiUrl,
+      secret,
+      projectName: screenciConfig.projectName,
+    })
+    if (Object.keys(overrides).length === 0) return {}
+    return { [SCREENCI_ACTION_OVERRIDES_ENV]: JSON.stringify(overrides) }
+  } catch (error) {
+    if (verbose) {
+      logger.warn(
+        `Could not fetch editor action overrides; using code-declared values.${
+          error instanceof Error ? ` (${error.message})` : ''
+        }`
+      )
+    }
+    return {}
+  }
+}
+
+/**
+ * Print one info line per editor override that shadows an explicitly code-set
+ * action parameter, comparing the fetched overrides against the previous run's
+ * snapshot. A missing snapshot (first run) prints nothing.
+ */
+export function reportActionOverrideCollisions(
+  screenciDir: string,
+  actionOverridesEnv: Record<string, string>,
+  log: (message: string) => void = (message) => logger.info(message)
+): void {
+  const raw = actionOverridesEnv[SCREENCI_ACTION_OVERRIDES_ENV]
+  if (raw === undefined) return
+  try {
+    const overridesByVideo: unknown = JSON.parse(raw)
+    if (typeof overridesByVideo !== 'object' || overridesByVideo === null)
+      return
+    const snapshot = readActionParamsSnapshot(screenciDir)
+    for (const collision of diffOverridesAgainstSnapshot(
+      snapshot,
+      overridesByVideo as Record<string, Record<string, unknown>>
+    )) {
+      log(
+        `[screenci] editor override shadows code value: ${collision.selector} ` +
+          `${collision.method} ${collision.optionPath}: ` +
+          `code ${JSON.stringify(collision.codeValue)} -> editor ` +
+          `${JSON.stringify(collision.editorValue)} (video: ${collision.videoName})`
+      )
+    }
+  } catch {
+    // Best-effort reporting; never block a recording.
+  }
+}
+
 async function run(
   command: 'record' | 'test',
   additionalArgs: string[],
@@ -4082,6 +4168,20 @@ async function run(
   const recordOptionsEnv =
     command === 'record' ? await fetchRecordOptionsEnv(configPath, verbose) : {}
 
+  // Web-editor action-parameter overrides (record only). Before recording,
+  // compare them with the previous run's snapshot and print an info line for
+  // every override that shadows an explicitly code-set value.
+  const actionOverridesEnv =
+    command === 'record'
+      ? await fetchActionOverridesEnv(configPath, verbose)
+      : {}
+  if (command === 'record') {
+    reportActionOverrideCollisions(
+      resolve(dirname(configPath), '.screenci'),
+      actionOverridesEnv
+    )
+  }
+
   const envForChild = { ...process.env }
 
   await validateUniqueDiscoveredTestTitles(configPath, additionalArgs, {
@@ -4093,6 +4193,7 @@ async function run(
       : {}),
     ...textOverridesEnv,
     ...recordOptionsEnv,
+    ...actionOverridesEnv,
     ...(command === 'test' && !mockRecord
       ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
       : {}),
@@ -4133,6 +4234,8 @@ async function run(
       ...textOverridesEnv,
       // Studio record-option overrides resolved from the backend (record only).
       ...recordOptionsEnv,
+      // Web-editor action-parameter overrides (record only).
+      ...actionOverridesEnv,
       ...(command === 'test' && !mockRecord
         ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
         : {}),
@@ -4150,6 +4253,10 @@ async function run(
     exitParentOnForward: true,
   })
 
+  // Resolved before the Promise executor, whose `resolve` parameter shadows
+  // the path helper of the same name.
+  const screenciDirForSnapshot = resolve(dirname(configPath), '.screenci')
+
   return new Promise<void>((resolve, reject) => {
     child.on('close', (code, signal) => {
       void (async () => {
@@ -4163,6 +4270,16 @@ async function run(
         if (signal) {
           process.kill(process.pid, signal)
           return
+        }
+        // Snapshot the action parameters of the recordings that were written,
+        // even on a partly failed run (some recordings may have completed).
+        // Best-effort: never fail the record because of the snapshot.
+        if (command === 'record') {
+          try {
+            updateActionParamsSnapshot(screenciDirForSnapshot)
+          } catch {
+            // ignore
+          }
         }
         if (code === 0) {
           resolve()

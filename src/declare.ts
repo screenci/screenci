@@ -1,28 +1,21 @@
 import { ScreenciError } from './errors.js'
-import {
-  isEditableMarker,
-  type EditableNames,
-  type EditableSeeded,
-} from './studio.js'
 import { supportedLanguages, type Lang } from './voices.js'
 
 /**
  * The per-feature declaration argument, shared by `video.narration`/`text`/
- * `overlays`/`audio` (and the `screenshot` subset). The argument *shape* decides
- * ownership and localization:
+ * `overlays`/`audio` (and the `screenshot` subset). Every declaration is editable
+ * in the ScreenCI web app; the argument *shape* decides whether code supplies
+ * values and how they localize:
  *
- * - **Editor-owned** (`editable(['intro', 'cta'])`): the names are owned by the
- *   ScreenCI web app. Their content is configured there; code only declares that
- *   they exist. `editable({ intro: 'Hi' })` additionally seeds initial values the
- *   web app starts from but may override.
+ * - **Names only** (`['intro', 'cta']`): the names exist in code (so the test body
+ *   can reference `narration.intro`), but their content is configured in the web
+ *   app.
  * - **Content-major object** (`{ intro: 'Hi' }`): a flat `name -> value` map of
- *   code-defined values, shared across every language.
+ *   code values, shared across every language. The web app may override them.
  * - **Language-major object** (`{ fr: { intro: 'Salut' }, default: { intro: 'Hi' } }`):
  *   top-level keys are language codes (plus an optional `default`). Each language
  *   maps `name -> value`; `default` supplies the shared fallback for any name a
  *   language omits.
- *
- * A bare array (`['intro']`) is no longer accepted: wrap it with `editable([...])`.
  *
  * Disambiguation (see {@link isLanguageKey}): an object is treated as
  * language-major iff *every* top-level key is a supported language code or the
@@ -31,8 +24,7 @@ import { supportedLanguages, type Lang } from './voices.js'
  * {@link normalizeFeature}).
  */
 export type FeatureArg<V> =
-  | EditableNames
-  | EditableSeeded<ContentMajor<V> | LanguageMajor<V>>
+  | readonly string[]
   | ContentMajor<V>
   | LanguageMajor<V>
 
@@ -47,14 +39,14 @@ export type LanguageMajor<V> = {
 /**
  * The normalized form every feature collapses to. Both object spellings produce a
  * `shared` map (the all-languages / `default` values) plus a `byLang` overrides
- * map; the editable name form produces `studioNames` only.
+ * map; the names-only array form produces `studioNames` only.
  */
 export type NormalizedFeature<V> = {
   /** All declared content names, in declaration order (studio names for arrays). */
   names: string[]
-  /** Studio/web-owned names (array form). Empty for object forms. */
+  /** Names without code values (array form): content lives in the web app. */
   studioNames: string[]
-  /** Code-defined names (object forms). Empty for the array form. */
+  /** Names with code values (object forms). Empty for the array form. */
   codeNames: string[]
   /** Shared/default value per code name. */
   shared: Record<string, V>
@@ -83,39 +75,18 @@ export function normalizeFeature<V>(
   feature: string,
   arg: FeatureArg<V>
 ): NormalizedFeature<V> {
-  if (isEditableMarker(arg)) {
-    if (arg.seed === undefined && arg.names.length === 0) {
-      throw new ScreenciError(
-        `${feature}(editable()) needs names: editable() with no keys is only valid ` +
-          `for video.languages(editable()). Pass editable(['name', ...]) to declare ` +
-          `${feature} names, or editable({ name: value }) to also seed them.`
-      )
-    }
-    if (arg.seed === undefined) {
-      const studioNames = [...arg.names]
-      assertUniqueNames(feature, studioNames)
-      return {
-        names: studioNames,
-        studioNames,
-        codeNames: [],
-        shared: {},
-        byLang: {},
-        languages: [],
-      }
-    }
-    // Seeded: normalize the seed object exactly like a code-owned declaration,
-    // then re-tag every resolved name as editor-owned. The shared/byLang values
-    // are the web app's starting point; a seed never clobbers a Studio edit.
-    const inner = normalizeFeature<V>(feature, arg.seed as FeatureArg<V>)
-    return { ...inner, studioNames: inner.names, codeNames: [] }
-  }
-
   if (Array.isArray(arg)) {
-    throw new ScreenciError(
-      `${feature}([...]) bare arrays are no longer editor-owned. Wrap the names ` +
-        `with editable([...]) to defer them to the web app, e.g. ` +
-        `video.${feature}(editable(${JSON.stringify(arg)})).`
-    )
+    // Names only: the content lives in the web app; code just declares the keys.
+    const studioNames = [...(arg as readonly string[])]
+    assertUniqueNames(feature, studioNames)
+    return {
+      names: studioNames,
+      studioNames,
+      codeNames: [],
+      shared: {},
+      byLang: {},
+      languages: [],
+    }
   }
 
   const obj = arg as Record<string, unknown>

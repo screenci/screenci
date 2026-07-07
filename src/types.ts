@@ -1245,8 +1245,8 @@ export type ScreenCIConfig = Omit<
   use?: Omit<NonNullable<PlaywrightTestConfig['use']>, 'trace'> & {
     recordOptions?: RecordOptions
     /**
-     * Render options. To configure them in Editor, use
-     * `video.use({ renderOptions: editable() })` per video instead.
+     * Render options. Code values are the starting point; they stay editable
+     * in the web editor.
      */
     renderOptions?: RenderOptions
     /**
@@ -1278,8 +1278,8 @@ export type ScreenCIConfig = Omit<
     use?: Omit<NonNullable<Project['use']>, 'trace'> & {
       recordOptions?: RecordOptions
       /**
-       * Render options. To configure them in Editor, use
-       * `video.use({ renderOptions: editable() })` per video instead.
+       * Render options. Code values are the starting point; they stay editable
+       * in the web editor.
        */
       renderOptions?: RenderOptions
       /**

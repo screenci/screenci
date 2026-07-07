@@ -412,6 +412,99 @@ describe('CLI', () => {
       // one-record cap and breaking the claim / auto-graduate detection.
       expect(removed).not.toContain('/project/.screenci/anon-session.json')
     })
+
+    it('preserves the action-params snapshot so the next run can diff editor overrides', async () => {
+      const { clearRecordingDirectories } = await import('./cli')
+      const dir = '/project/.screenci'
+      mockReaddirSync.mockReturnValue([
+        'My Video [en]',
+        'action-params.json',
+      ] as unknown as string[])
+
+      clearRecordingDirectories(dir)
+
+      const removed = mockRmSync.mock.calls.map((call) => call[0] as string)
+      expect(removed).toContain('/project/.screenci/My Video [en]')
+      // Wiping this would lose the previous run's explicit/default provenance,
+      // so override-shadowing warnings could never fire.
+      expect(removed).not.toContain('/project/.screenci/action-params.json')
+    })
+  })
+
+  describe('fetchActionOverridesEnv', () => {
+    it('returns no env without a SCREENCI_SECRET (anonymous record works)', async () => {
+      delete process.env.SCREENCI_SECRET
+      const { fetchActionOverridesEnv } = await import('./cli')
+      await expect(
+        fetchActionOverridesEnv('/project/screenci.config.ts', false)
+      ).resolves.toEqual({})
+    })
+  })
+
+  describe('reportActionOverrideCollisions', () => {
+    it('prints one line per override shadowing an explicit code value', async () => {
+      const { reportActionOverrideCollisions } = await import('./cli')
+      const snapshot = {
+        version: 1,
+        videos: {
+          'My video': [
+            {
+              selector: "getByRole('button')",
+              method: 'click',
+              occurrence: 0,
+              params: {
+                'move.duration': { value: 400, source: 'explicit' },
+                'move.easing': { value: 'ease-in-out', source: 'default' },
+              },
+            },
+          ],
+        },
+      }
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify(snapshot))
+
+      const lines: string[] = []
+      reportActionOverrideCollisions(
+        '/project/.screenci',
+        {
+          SCREENCI_ACTION_OVERRIDES: JSON.stringify({
+            'My video': {
+              "getByRole('button')|click|0|move.duration": 250,
+              "getByRole('button')|click|0|move.easing": 'linear',
+            },
+          }),
+        },
+        (message) => lines.push(message)
+      )
+
+      // Only the explicit code value collides; the defaulted easing does not.
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).toContain('editor override shadows code value')
+      expect(lines[0]).toContain("getByRole('button')")
+      expect(lines[0]).toContain('move.duration')
+      expect(lines[0]).toContain('code 400')
+      expect(lines[0]).toContain('editor 250')
+      expect(lines[0]).toContain('My video')
+    })
+
+    it('prints nothing without fetched overrides or without a snapshot', async () => {
+      const { reportActionOverrideCollisions } = await import('./cli')
+      const lines: string[] = []
+      reportActionOverrideCollisions('/project/.screenci', {}, (message) =>
+        lines.push(message)
+      )
+      mockExistsSync.mockReturnValue(false)
+      reportActionOverrideCollisions(
+        '/project/.screenci',
+        {
+          SCREENCI_ACTION_OVERRIDES: JSON.stringify({
+            'My video': { "getByRole('button')|click|0|move.duration": 250 },
+          }),
+        },
+        (message) => lines.push(message)
+      )
+      expect(lines).toEqual([])
+    })
   })
 
   describe('acquireRecordRunLock', () => {

@@ -264,10 +264,11 @@ renderOptions: {
 Use project-wide render defaults for branding and layout consistency, then
 override only the files that need a different look.
 
-You can defer render options to the web app entirely with
-`use({ renderOptions: editable() })` (and the record options with
-`recordOptions: editable()`, or seed either with `editable({...})`). They are
-then managed on the Editor page. See [Editor](/docs/guides/editor).
+Render and record options are always manageable on the Editor page: values
+declared in code (via `use({ renderOptions: {...} })` and
+`use({ recordOptions: {...} })`) are the starting point, and web edits override
+them. Omit them entirely to start from the system defaults. See
+[Editor](/docs/guides/editor).
 
 ### Example: shared `use` defaults
 

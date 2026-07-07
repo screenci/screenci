@@ -1207,7 +1207,7 @@ async function readHtmlOverlayFile(path: string): Promise<string> {
 
 /**
  * Builds overlay controllers for Studio-managed overlays declared via
- * `video.overlays(editable([...]))`. Their file (`.svg`, `.png`, or `.mp4`),
+ * `video.overlays([...])`. Their file (`.svg`, `.png`, or `.mp4`),
  * placement, image duration, and video audio level are configured on the
  * ScreenCI Studio page instead of in code. Each name becomes a callable overlay
  * controller with the same timeline behavior as a {@link createOverlays}

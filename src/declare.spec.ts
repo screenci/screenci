@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import { normalizeFeature, isLanguageKey } from './declare.js'
-import { editable } from './studio.js'
 
 describe('isLanguageKey', () => {
   it('treats supported language codes and "default" as language keys', () => {
@@ -16,8 +15,8 @@ describe('isLanguageKey', () => {
 })
 
 describe('normalizeFeature', () => {
-  it('editable(names) declares blank editor-owned names', () => {
-    const n = normalizeFeature<string>('narration', editable(['intro', 'cta']))
+  it('array declares blank editor-owned names', () => {
+    const n = normalizeFeature<string>('narration', ['intro', 'cta'])
     expect(n.studioNames).toEqual(['intro', 'cta'])
     expect(n.codeNames).toEqual([])
     expect(n.names).toEqual(['intro', 'cta'])
@@ -26,44 +25,45 @@ describe('normalizeFeature', () => {
     expect(n.languages).toEqual([])
   })
 
-  it('editable(seed) declares seeded editor-owned names (web wins, code seeds)', () => {
-    const n = normalizeFeature<string>(
-      'narration',
-      editable({ intro: 'Hi', cta: 'Buy' })
-    )
-    // Editor-owned (the web app owns the content), but seeded with initial values.
-    expect(n.studioNames).toEqual(['intro', 'cta'])
-    expect(n.codeNames).toEqual([])
+  it('object seed declares code-owned values (web may override)', () => {
+    const n = normalizeFeature<string>('narration', {
+      intro: 'Hi',
+      cta: 'Buy',
+    })
+    // Code supplies the values; every declaration is editable in the web app.
+    expect(n.studioNames).toEqual([])
+    expect(n.codeNames).toEqual(['intro', 'cta'])
     expect(n.names).toEqual(['intro', 'cta'])
     expect(n.shared).toEqual({ intro: 'Hi', cta: 'Buy' })
     expect(n.byLang).toEqual({})
   })
 
-  it('editable(language-major seed) keeps per-language seed values', () => {
-    const n = normalizeFeature<string>(
-      'narration',
-      editable({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })
-    )
-    expect(n.studioNames).toEqual(['intro'])
+  it('language-major seed keeps per-language code values', () => {
+    const n = normalizeFeature<string>('narration', {
+      en: { intro: 'Hi' },
+      fi: { intro: 'Moi' },
+    })
+    expect(n.codeNames).toEqual(['intro'])
+    expect(n.studioNames).toEqual([])
     expect(n.byLang).toEqual({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })
   })
 
-  it('rejects duplicate Studio names', () => {
-    expect(() => normalizeFeature('narration', editable(['a', 'a']))).toThrow(
-      /Duplicate/
-    )
+  it('rejects duplicate names in the array form', () => {
+    expect(() => normalizeFeature('narration', ['a', 'a'])).toThrow(/Duplicate/)
   })
 
-  it('rejects a bare array (the editor-owned array form is retired)', () => {
-    expect(() =>
-      normalizeFeature<string>('narration', ['intro'] as never)
-    ).toThrow(/bare arrays are no longer editor-owned/)
+  it('accepts a single-name bare array (editor-owned)', () => {
+    const n = normalizeFeature<string>('narration', ['intro'])
+    expect(n.studioNames).toEqual(['intro'])
+    expect(n.codeNames).toEqual([])
+    expect(n.shared).toEqual({})
   })
 
-  it('rejects keyless editable() for a content feature', () => {
-    expect(() => normalizeFeature<string>('narration', editable())).toThrow(
-      /only valid for video\.languages/
-    )
+  it('treats an empty array as an empty editor-owned declaration', () => {
+    const n = normalizeFeature<string>('narration', [])
+    expect(n.names).toEqual([])
+    expect(n.studioNames).toEqual([])
+    expect(n.codeNames).toEqual([])
   })
 
   it('content-major object declares shared code values', () => {

@@ -5,6 +5,7 @@ import type {
   ResolvedRenderOptions,
 } from './types.js'
 import type { VoiceKey } from './voices.js'
+import type { ActionParamRecord } from './actionParams.js'
 
 export type VideoStartEvent = {
   type: 'videoStart'
@@ -262,7 +263,7 @@ export type VideoAssetStartEvent = {
 export type AssetStartEvent = ImageAssetStartEvent | VideoAssetStartEvent
 
 /**
- * Studio-managed overlay declared via `video.overlays(editable([...]))`. The
+ * Studio-managed overlay declared via `video.overlays([...])`. The
  * file and display options are configured in Studio, so the recording only marks
  * the timeline point.
  */
@@ -370,7 +371,7 @@ export type RecordingMetadata = {
     renderOptions?: boolean
     narration?: boolean
     assets?: boolean
-    /** Web-owned language set (`video.languages(editable())`): the app may add and
+    /** Web-owned language set (`video.languages(...)`): the app may add and
      *  render languages for this video. Absent for code-defined language sets. */
     languages?: boolean
   }
@@ -381,4 +382,9 @@ export type RecordingData = {
   renderOptions: ResolvedRenderOptions
   recordOptions?: RecordOptions
   metadata?: RecordingMetadata
+  /**
+   * The action parameters used by this recording, with per-parameter
+   * explicit/default provenance, in call order.
+   */
+  actionParams?: ActionParamRecord[]
 }

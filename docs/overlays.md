@@ -22,38 +22,32 @@ The inline variants keep small overlays in the recording file itself (see [Inlin
 
 Every rendered variant (everything except image/video files) is rendered to a transparent PNG at recording time and then behaves exactly like an image overlay, or, with `animate: true`, is captured as a transparent animated clip (see [Animated overlays](#animated-overlays)).
 
-Overlays can be owned by code or handed to [Editor](./editor.md) (the web app where non-developers swap the assets); see [the three ways to declare overlays](#three-ways-to-declare-overlays) below.
+Overlays can be owned by code or handed to [Editor](./editor.md) (the web app where non-developers swap the assets); see [the two ways to declare overlays](#two-ways-to-declare-overlays) below.
 
 #### You will learn
 
-- [how to declare overlays (code- or Editor-owned)](#three-ways-to-declare-overlays)
+- [how to declare overlays (code values or Editor-owned)](#two-ways-to-declare-overlays)
 - [how to define overlays](#define-overlays)
 - [how to position and size overlays](#positioning)
 - [how blocking and start/end timing work](#timing-and-control-flow)
 - [how to organize files for maintainable projects](#file-organization)
 
-## Three ways to declare overlays
+## Two ways to declare overlays
 
-There are three ways to declare overlays. The same three forms apply to [`narration`](./narration.md), [`values`](./values.md), and [`audio`](./audio.md). See the [Editor guide](./editor.md) for how the web editing works.
+There are two ways to declare overlays, and both are editable in the web app. The same two forms apply to [`narration`](./narration.md), [`values`](./values.md), and [`audio`](./audio.md). See the [Editor guide](./editor.md) for how the web editing works.
 
-**1. Code-owned.** You point each overlay at a file, element, or config.
+**1. Code values.** You point each overlay at a file, element, or config. The code values are used until the overlay is edited in [Editor](./editor.md), and from then on the Editor value wins.
 
 ```ts
 video.overlays({ logo: { path: 'assets/logo.png', x: 96, y: 96, width: 288 } })
 ```
 
-**2. Editor-owned (blank).** Wrap the overlay names in `editable([...])`: the names exist in code (so the body can call `overlays.logo`), but [Editor](./editor.md) owns the files and display options.
+**2. Editor-owned (blank).** Pass a bare array of overlay names: the names exist in code (so the body can call `overlays.logo`), but [Editor](./editor.md) owns the files and display options.
 
 ```ts
-import { video, editable } from 'screenci'
+import { video } from 'screenci'
 
-video.overlays(editable(['intro', 'logo']))
-```
-
-**3. Editor-owned (seeded).** Pass overlays to `editable({...})`: Editor starts from them but owns them, so an edit in Editor always wins over the seed.
-
-```ts
-video.overlays(editable({ logo: { path: 'assets/logo.png', width: 288 } }))
+video.overlays(['intro', 'logo'])
 ```
 
 ## Define overlays
@@ -95,14 +89,12 @@ delivered to the body through the injected `overlays` fixture. The same pattern
 works for screenshots:
 `screenshot.overlays({...})('Title', async ({ page, crop, overlays }) => {...})`.
 
-You can also declare overlay names by wrapping them in `editable([...])`
-(imported from `screenci`) and upload the files plus display options on the
-Editor page instead of keeping them in the repository:
-`video.overlays(editable(['intro', 'logo']))`. This form leaves the file and
-placement for each name configured in the ScreenCI web app. You can also seed the
-web app with starting files and options by passing an object to `editable({...})`:
-the web app starts from those values but owns them, so a seed is used only until
-the overlay is edited in Editor. See
+You can also declare overlay names alone with a bare array and upload the files
+plus display options on the Editor page instead of keeping them in the
+repository: `video.overlays(['intro', 'logo'])`. This form leaves the file and
+placement for each name configured in the ScreenCI web app. Overlays declared
+with code values stay editable too: the code values are used until the overlay
+is edited in Editor, and from then on the Editor value wins. See
 [Editor](./editor.md#editor-overlays-from-code).
 
 For per-language overlay files (e.g. a translated badge image), see

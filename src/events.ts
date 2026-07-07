@@ -13,7 +13,14 @@ import type {
 } from './types.js'
 import { RENDER_OPTIONS_DEFAULTS } from './types.js'
 import type { ScreenshotClipRecord } from './clip.js'
-import type { EditableOptionFlags } from './studio.js'
+import type { StudioOptionFlags } from './studio.js'
+import {
+  ActionParamCollector,
+  resolveSpecWithoutTracking,
+  type ActionMethod,
+  type ActionParamRecord,
+  type ActionParamSpec,
+} from './actionParams.js'
 import type { VoiceKey } from './voices.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { getGitMetadata } from './git.js'
@@ -702,7 +709,7 @@ export type AssetStartPayload =
   | Omit<DependencyAssetStartEvent, 'type' | 'timeMs' | 'name'>
 
 /**
- * Studio-managed overlay declared via `video.overlays(editable([...]))`. The
+ * Studio-managed overlay declared via `video.overlays([...])`. The
  * file and display options are configured in Studio, so the recording only marks
  * the timeline point.
  */
@@ -773,7 +780,7 @@ export type AudioEndEvent = {
 
 /**
  * Studio-managed background audio track declared via
- * `video.audio(editable([...]))`. The file, volume, and repeat are configured
+ * `video.audio([...])`. The file, volume, and repeat are configured
  * in Studio, so the recording only marks the timeline point (mirrors
  * {@link StudioAssetStartEvent} for overlays).
  */
@@ -940,11 +947,11 @@ export type RecordingMetadata = {
   availableLanguages?: string[]
   sourceFilePath?: string
   /**
-   * Which parts of this recording opted into web-editor configuration via
-   * `editable(...)`. `renderOptions`/`recordOptions` are set when those
-   * option groups are deferred; `narration` when the recording contains
-   * Studio-managed (name-only) narration cues; `assets` for Studio overlays;
-   * `audio` for Studio background-audio tracks.
+   * Which parts of this recording are web-editor configurable. Every recording
+   * is web-editable, so `renderOptions`/`recordOptions` are always set;
+   * `narration` is set when the recording contains name-only narration cues;
+   * `assets` for name-only overlays; `audio` for name-only background-audio
+   * tracks.
    */
   studio?: {
     renderOptions?: boolean
@@ -1025,6 +1032,12 @@ export type RecordingData = {
   output?: 'video' | 'screenshot'
   /** Capture details. Present only when `output === 'screenshot'`. */
   screenshot?: ScreenshotInfo
+  /**
+   * The action parameters used by this recording, with per-parameter
+   * explicit/default provenance, in call order. The backend reads these to
+   * present the parameters for editing and to key its overrides.
+   */
+  actionParams?: ActionParamRecord[]
 }
 
 /** Extra, output-specific fields written into `data.json`. */
@@ -1069,6 +1082,16 @@ export interface IEventRecorder {
     events: InputEvent['events']
   ): void
   addInput(subType: InputEvent['subType'], events: InputEvent['events']): void
+  /**
+   * Records one instrumented action's option parameters (explicit/default
+   * provenance) and returns the effective values with any web-editor overrides
+   * applied. The no-op recorder resolves the spec without tracking.
+   */
+  applyActionParams(
+    selector: string,
+    method: ActionMethod,
+    spec: ActionParamSpec
+  ): Record<string, unknown>
   addCueStart(
     text: string,
     name: string,
@@ -1179,6 +1202,13 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   setActiveLanguage(): void {},
   setAvailableLanguages(): void {},
   addInput(): void {},
+  applyActionParams(
+    _selector: string,
+    _method: ActionMethod,
+    spec: ActionParamSpec
+  ): Record<string, unknown> {
+    return resolveSpecWithoutTracking(spec)
+  },
   addCueStart(): void {},
   addStudioCueStart(): void {},
   addValuesDeclare(): void {},
@@ -1235,20 +1265,33 @@ export class EventRecorder implements IEventRecorder {
   private availableLanguages: string[] = []
   private readonly recordOptions: RecordOptions | undefined
   private readonly renderOptions: RenderOptions | undefined
-  /** Which option groups are deferred to Studio (`video.use({ ...: editable() })`). */
-  private readonly studioOptions: EditableOptionFlags
+  /** Web-editable option groups stamped into `metadata.studio`. */
+  private readonly studioOptions: StudioOptionFlags
+  /** Per-recording action-parameter provenance and editor overrides. */
+  private readonly actionParams: ActionParamCollector
 
   constructor(
     renderOptions?: RenderOptions,
     recordOptions?: RecordOptions,
-    studioOptions?: EditableOptionFlags
+    studioOptions?: StudioOptionFlags,
+    actionParams?: ActionParamCollector
   ) {
     this.recordOptions = recordOptions
     this.renderOptions = renderOptions
+    // Every recording is web-editable, so option groups default to studio.
     this.studioOptions = studioOptions ?? {
-      renderOptions: false,
-      recordOptions: false,
+      renderOptions: true,
+      recordOptions: true,
     }
+    this.actionParams = actionParams ?? new ActionParamCollector()
+  }
+
+  applyActionParams(
+    selector: string,
+    method: ActionMethod,
+    spec: ActionParamSpec
+  ): Record<string, unknown> {
+    return this.actionParams.apply(selector, method, spec)
   }
 
   registerVoiceForLang(_lang: string, _meta: VoiceLanguageMeta): void {}
@@ -1890,10 +1933,9 @@ export class EventRecorder implements IEventRecorder {
     const studioRecordOptions = this.studioOptions.recordOptions
 
     // Resolve all defaults so data.json always contains a complete set of render
-    // options. `this.renderOptions` is undefined for a blank deferral
-    // (`renderOptions: editable()`) and the seed for a seeded one
-    // (`renderOptions: editable({ ... })`), so a seed renders as the starting point
-    // while the Studio flag still marks it web-owned (the web app overrides it).
+    // options. `this.renderOptions` holds the code values when declared and is
+    // undefined otherwise, so the code values render as the starting point while
+    // the Studio flag marks the group web-editable (the web app overrides it).
     const ro = this.renderOptions
     const resolved: ResolvedRenderOptions = {
       recording: {
@@ -2029,9 +2071,9 @@ export class EventRecorder implements IEventRecorder {
         'studio' in event &&
         event.studio === true
     )
-    // Whether the language set is web-owned (`video.languages(editable())`). The
-    // web uses this to decide a video may have languages added/rendered from the
-    // app (code-defined language sets cannot be changed from the web).
+    // Whether a language set was declared (`video.languages(...)`). The web
+    // uses this to decide a video may have languages added/rendered from the
+    // app.
     const studioLanguages = this.studioOptions.languages === true
     const studio: RecordingMetadata['studio'] =
       studioRenderOptions ||
@@ -2050,6 +2092,7 @@ export class EventRecorder implements IEventRecorder {
           }
         : undefined
 
+    const actionParamRecords = this.actionParams.getRecords()
     const data: RecordingData = {
       events: serializedEvents,
       renderOptions: resolved,
@@ -2059,6 +2102,9 @@ export class EventRecorder implements IEventRecorder {
       ...(options?.output !== undefined && { output: options.output }),
       ...(options?.screenshot !== undefined && {
         screenshot: options.screenshot,
+      }),
+      ...(actionParamRecords.length > 0 && {
+        actionParams: actionParamRecords,
       }),
       metadata: {
         videoName,

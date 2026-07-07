@@ -91,7 +91,7 @@ describe('validateMoveNarration', () => {
         duration: 600,
       })
     ).toEqual({
-      corner: 'top-left',
+      position: 'top-left',
       padding: { x: 0.02, y: 0.06 },
       size: 0.2,
       transition: { durationMs: 600, easing: 'ease-in-out' },
@@ -101,7 +101,7 @@ describe('validateMoveNarration', () => {
   it('accepts a single padding axis (uneven padding)', () => {
     expect(
       validateMoveNarration('bottom-left', { padding: { x: 0.1 } })
-    ).toEqual({ corner: 'bottom-left', padding: { x: 0.1 } })
+    ).toEqual({ position: 'bottom-left', padding: { x: 0.1 } })
   })
 
   it('rejects an empty padding object', () => {
@@ -119,9 +119,9 @@ describe('validateMoveNarration', () => {
     ).toThrow(/padding.y/)
   })
 
-  it('rejects a bad corner', () => {
-    // @ts-expect-error runtime validation of a bad corner name
-    expect(() => validateMoveNarration('center', {})).toThrow(/corner/)
+  it('rejects a bad position', () => {
+    // @ts-expect-error runtime validation of a bad position name
+    expect(() => validateMoveNarration('middle', {})).toThrow(/position/)
   })
 
   it('rejects out-of-range size', () => {
@@ -140,7 +140,7 @@ describe('free functions push events through the recorder', () => {
       {
         type: 'narrationUpdate',
         timeMs: 0,
-        corner: 'top-right',
+        position: 'top-right',
         padding: { y: 0.05 },
       } satisfies NarrationUpdateEvent,
     ])
@@ -301,5 +301,84 @@ describe('EventRecorder update methods', () => {
       })
     }).not.toThrow()
     expect(NOOP_EVENT_RECORDER.getEvents()).toEqual([])
+  })
+})
+
+describe('narration position matrix (center / full-screen)', () => {
+  it('builds a center payload with offset', () => {
+    expect(
+      validateMoveNarration('center', {
+        offset: { x: 0.1, y: -0.05 },
+        size: 0.35,
+        duration: 400,
+      })
+    ).toEqual({
+      position: 'center',
+      offset: { x: 0.1, y: -0.05 },
+      size: 0.35,
+      transition: { durationMs: 400, easing: 'ease-in-out' },
+    })
+  })
+
+  it('builds a full-screen payload with fit', () => {
+    expect(
+      validateMoveNarration('full-screen', { fit: 'cover', duration: 300 })
+    ).toEqual({
+      position: 'full-screen',
+      fit: 'cover',
+      transition: { durationMs: 300, easing: 'ease-in-out' },
+    })
+    // fit defaults at the renderer; the event stays lean.
+    expect(validateMoveNarration('full-screen', {})).toEqual({
+      position: 'full-screen',
+    })
+  })
+
+  it('rejects cross-position options', () => {
+    expect(() =>
+      validateMoveNarration('top-left', { offset: { x: 0.1 } })
+    ).toThrow(/offset/)
+    expect(() =>
+      validateMoveNarration('center', { padding: { x: 0.1 } })
+    ).toThrow(/padding/)
+    expect(() => validateMoveNarration('center', { fit: 'cover' })).toThrow(
+      /fit/
+    )
+    expect(() => validateMoveNarration('full-screen', { size: 0.5 })).toThrow(
+      /size/
+    )
+    expect(() =>
+      validateMoveNarration('full-screen', { offset: { x: 0.1 } })
+    ).toThrow(/offset/)
+    expect(() =>
+      validateMoveNarration('center', { offset: { x: 1.5 } })
+    ).toThrow(/offset.x/)
+  })
+
+  it('rejects consecutive full-screen moves at the recorder', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(0)
+    try {
+      const r = new EventRecorder()
+      r.start()
+      vi.setSystemTime(1000)
+      r.addNarrationUpdate({ position: 'full-screen' })
+      vi.setSystemTime(2000)
+      expect(() =>
+        r.addNarrationUpdate({ position: 'full-screen', fit: 'cover' })
+      ).toThrow(/already full screen/)
+      // Non-position updates during full screen are fine.
+      r.addNarrationUpdate({ size: 0.2 })
+      vi.setSystemTime(3000)
+      // Exit to a corner, then full screen again is allowed.
+      r.addNarrationUpdate({ position: 'bottom-right' })
+      vi.setSystemTime(4000)
+      r.addNarrationUpdate({ position: 'full-screen' })
+      expect(
+        r.getEvents().filter((e) => e.type === 'narrationUpdate')
+      ).toHaveLength(4)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

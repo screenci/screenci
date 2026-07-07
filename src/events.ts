@@ -7,7 +7,8 @@ import type {
   AutoZoomOptions,
   CueConfig,
   Easing,
-  NarrationCorner,
+  NarrationFullScreenFit,
+  NarrationPosition,
   RecordOptions,
   RenderOptions,
   ResolvedRenderOptions,
@@ -938,8 +939,12 @@ export type UpdateTransition = {
 export type NarrationUpdateEvent = {
   type: 'narrationUpdate'
   timeMs: number
-  /** Anchor corner. Omitted = unchanged. */
-  corner?: NarrationCorner
+  /**
+   * Target position. Corner and center moves slide; 'full-screen' appears in
+   * place (the transition is a cross-fade, never a slide) showing the
+   * uncropped source. Omitted = unchanged.
+   */
+  position?: NarrationPosition
   /**
    * Per-axis inset from the anchor corner as a fraction of the shorter output
    * side. Overrides the global `renderOptions.narration.padding` for that axis
@@ -947,6 +952,17 @@ export type NarrationUpdateEvent = {
    * Range [-1, 1]; negative pushes the tile past the edge.
    */
   padding?: { x?: number; y?: number }
+  /**
+   * Signed per-axis displacement from the exact output center, as a fraction
+   * of the shorter output side. Range [-1, 1]. 'center' position only.
+   */
+  offset?: { x?: number; y?: number }
+  /**
+   * Full-screen fit: 'contain' letterboxes with black bars, 'cover' fills
+   * the frame with slight cropping. Defaults to 'contain'. 'full-screen'
+   * position only.
+   */
+  fit?: NarrationFullScreenFit
   /** Tile size as a fraction of the shorter output side, (0, 1]. */
   size?: number
   visible?: boolean
@@ -2135,6 +2151,21 @@ export class EventRecorder implements IEventRecorder {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     this.assertNoUpdateOverlap('narrationUpdate', timeMs)
+    // Consecutive full-screen moves have no meaning (the narration is
+    // already full screen); require an exit to a corner or 'center' first.
+    if (update.position === 'full-screen') {
+      for (let i = this.events.length - 1; i >= 0; i--) {
+        const event = this.events[i]!
+        if (event.type !== 'narrationUpdate') continue
+        if (event.position === undefined) continue
+        if (event.position === 'full-screen') {
+          throw new ScreenciError(
+            'moveNarration: the narration is already full screen. Move it to a corner or center first.'
+          )
+        }
+        break
+      }
+    }
     this.events.push({ type: 'narrationUpdate', timeMs, ...update })
   }
 

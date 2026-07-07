@@ -523,6 +523,18 @@ export type NarrationCorner =
   | 'bottom-left'
   | 'bottom-right'
 
+/**
+ * Narration overlay position: one of the four corners, centered in the
+ * output, or filling the whole frame (uncropped source aspect).
+ */
+export type NarrationPosition = NarrationCorner | 'center' | 'full-screen'
+
+/**
+ * How full-screen narration fits the output frame: 'contain' letterboxes
+ * with black bars, 'cover' fills the frame with slight cropping.
+ */
+export type NarrationFullScreenFit = 'contain' | 'cover'
+
 export type AutoZoomOptions = {
   easing?: Easing
   /** Duration in milliseconds for zoom-in transitions. */

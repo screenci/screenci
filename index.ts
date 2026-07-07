@@ -95,7 +95,11 @@ export type {
   MoveNarrationOptions,
   SetBackgroundInput,
 } from './src/overlayUpdates.js'
-export type { NarrationCorner } from './src/types.js'
+export type {
+  NarrationCorner,
+  NarrationPosition,
+  NarrationFullScreenFit,
+} from './src/types.js'
 export type {
   UpdateTransition,
   NarrationUpdateEvent,

@@ -49,6 +49,41 @@ await resizeNarration(0.35, { duration: 500 })
 `sizeZoomed` render option is ignored from that point on (the explicit size
 wins).
 
+## Center and full screen
+
+Beyond the four corners, `moveNarration` accepts `'center'` and
+`'full-screen'`.
+
+`'center'` places the bubble in the middle of the frame, displaced by an
+optional signed `offset` (per-axis fractions of the shorter output side).
+Center moves slide like corner moves and keep the rounded corners and drop
+shadow. The offset persists for later center moves until overridden.
+
+```ts
+await moveNarration('center', { offset: { x: 0.1, y: -0.05 }, duration: 400 })
+```
+
+`'full-screen'` shows the UNCROPPED narration source over the whole frame,
+at its real aspect ratio (not the square bubble crop). `fit: 'contain'` (the
+default) letterboxes with black bars; `fit: 'cover'` fills the frame with
+slight cropping. No rounded corners or shadow. Full screen never slides:
+the bubble fades out in place while the full-screen video fades in over
+`duration` (omit for an instant switch). Any later move to a corner or
+center exits the same way, restoring the bubble where it was (or at the new
+position you name).
+
+```ts
+await moveNarration('full-screen', { fit: 'cover', duration: 300 })
+// ... the speaker fills the screen ...
+await moveNarration('bottom-right', { duration: 300 })
+```
+
+While full screen is active, `resizeNarration` and padding changes apply
+when the bubble reappears; a second `moveNarration('full-screen')` throws
+(move to a corner or center first). `hideNarration` hides the full-screen
+video too. Full screen covers the recording, overlays, and cursor; only the
+watermark stays above it.
+
 `hideNarration()` and `showNarration()` now take the same options, so the
 bubble can fade out and back in instead of cutting:
 

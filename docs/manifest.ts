@@ -160,25 +160,37 @@ export const docsManifest = [
     description:
       'Choose between autoZoom and manual framing, and use camera direction to guide attention without making the video frantic.',
     prev: 'docs/guides/languages',
+    next: 'docs/guides/overlay-updates',
+  },
+  {
+    source: 'overlay-updates.md',
+    slug: 'docs/guides/overlay-updates',
+    section: 'Guides',
+    order: 3,
+    navLabel: 'Mid-video overlay updates',
+    title: 'Mid-Video Overlay Updates',
+    description:
+      'Move, resize, hide, and show the narration bubble and recording frame mid-video with animated transitions, fade overlays, and change the background with a cut or crossfade.',
+    prev: 'docs/guides/camera-and-zooming',
     next: 'docs/guides/screenshots',
   },
   {
     source: 'screenshots.md',
     slug: 'docs/guides/screenshots',
     section: 'Guides',
-    order: 3,
+    order: 4,
     navLabel: 'Screenshots',
     title: 'Screenshots',
     description:
       'Capture branded still screenshots with the screenshot() fixture: crop to a component, set quality and dark mode, and frame the shot on a background with overlays.',
-    prev: 'docs/guides/camera-and-zooming',
+    prev: 'docs/guides/overlay-updates',
     next: 'docs/guides/editor',
   },
   {
     source: 'editor.md',
     slug: 'docs/guides/editor',
     section: 'Guides',
-    order: 4,
+    order: 5,
     navLabel: 'Editor',
     title: 'Editor',
     description:
@@ -190,7 +202,7 @@ export const docsManifest = [
     source: 'public-urls-and-embeds.md',
     slug: 'docs/guides/public-urls-and-embeds',
     section: 'Guides',
-    order: 5,
+    order: 6,
     navLabel: 'Public URLs and embeds',
     title: 'Public URLs and Embeds',
     description:
@@ -202,7 +214,7 @@ export const docsManifest = [
     source: 'redact.md',
     slug: 'docs/guides/redact',
     section: 'Guides',
-    order: 6,
+    order: 7,
     navLabel: 'Redact sensitive content',
     title: 'Redact Sensitive Content',
     description:
@@ -214,7 +226,7 @@ export const docsManifest = [
     source: 'screen-audio.md',
     slug: 'docs/guides/screen-audio',
     section: 'Guides',
-    order: 7,
+    order: 8,
     navLabel: 'Screen audio',
     title: 'Screen Audio',
     description:
@@ -226,7 +238,7 @@ export const docsManifest = [
     source: 'update-screenci.mdx',
     slug: 'docs/guides/update-screenci',
     section: 'Guides',
-    order: 8,
+    order: 9,
     navLabel: 'Update ScreenCI',
     title: 'Update ScreenCI',
     description:
@@ -238,7 +250,7 @@ export const docsManifest = [
     source: 'version-history.md',
     slug: 'docs/guides/version-history',
     section: 'Guides',
-    order: 9,
+    order: 10,
     navLabel: 'Version history',
     title: 'Version History',
     description:
@@ -250,7 +262,7 @@ export const docsManifest = [
     source: 'organisation.md',
     slug: 'docs/guides/organisation',
     section: 'Guides',
-    order: 10,
+    order: 11,
     navLabel: 'Organisation & SSO',
     title: 'Organisation & SSO',
     description:
@@ -262,7 +274,7 @@ export const docsManifest = [
     source: 'anonymous-trial.md',
     slug: 'docs/guides/anonymous-trial',
     section: 'Guides',
-    order: 11,
+    order: 12,
     navLabel: 'Anonymous trial',
     title: 'Anonymous Trial',
     description:

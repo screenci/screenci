@@ -157,3 +157,9 @@ instead of stepping frame to frame. Tune it with `zoom.motionBlur` in
 `renderOptions` (0-1, default `0.5`, `0` disables it). The cursor has its own
 independent `mouse.motionBlur`. See
 [Configuration](/docs/reference/configuration#motion-blur) for the full reference.
+
+## Mid-video layout changes
+
+The narration bubble, the recording frame, and the background can all change
+mid-video with animated transitions: see
+[Mid-Video Overlay Updates](/docs/guides/overlay-updates).

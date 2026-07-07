@@ -7,6 +7,7 @@ import type {
   AutoZoomOptions,
   CueConfig,
   Easing,
+  NarrationCorner,
   RecordOptions,
   RenderOptions,
   ResolvedRenderOptions,
@@ -458,6 +459,10 @@ export type ImageAssetStartEvent = {
   pinToScreen?: boolean
   /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
   overMouse?: boolean
+  /** Fade-in length (ms) when the overlay appears. Omitted = instant. */
+  fadeInMs?: number
+  /** Fade-out length (ms) when the overlay disappears. Omitted = instant. */
+  fadeOutMs?: number
   placement?: OverlayPlacement
   /** Crop rect in the source image's own pixels, applied before placement/scale. */
   clip?: OverlayClip
@@ -487,6 +492,10 @@ export type VideoAssetStartEvent = {
   pinToScreen?: boolean
   /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
   overMouse?: boolean
+  /** Fade-in length (ms) when the overlay appears. Omitted = instant. */
+  fadeInMs?: number
+  /** Fade-out length (ms) when the overlay disappears. Omitted = instant. */
+  fadeOutMs?: number
   placement?: OverlayPlacement
   /** Crop rect in the source video's own pixels, applied before placement/scale. */
   clip?: OverlayClip
@@ -541,6 +550,10 @@ export type AnimationAssetStartEvent = {
   pinToScreen?: boolean
   /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
   overMouse?: boolean
+  /** Fade-in length (ms) when the overlay appears. Omitted = instant. */
+  fadeInMs?: number
+  /** Fade-out length (ms) when the overlay disappears. Omitted = instant. */
+  fadeOutMs?: number
   placement?: OverlayPlacement
   /** See {@link ImageAssetStartEvent.untilOutputMs}. */
   untilOutputMs?: number
@@ -607,6 +620,10 @@ export type DependencyAssetStartEvent = {
   /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
   overMouse?: boolean
   placement?: OverlayPlacement
+  /** Fade-in length (ms) when the overlay appears. Omitted = instant. */
+  fadeInMs?: number
+  /** Fade-out length (ms) when the overlay disappears. Omitted = instant. */
+  fadeOutMs?: number
   /**
    * Crop rect in the resolved output's own pixels, applied (for both a video and
    * a screenshot dependency) before placement/scale.
@@ -703,6 +720,10 @@ export type PendingAssetStart = {
   /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
   overMouse?: boolean
   placement?: OverlayPlacement
+  /** Fade-in length (ms) when the overlay appears. Omitted = instant. */
+  fadeInMs?: number
+  /** Fade-out length (ms) when the overlay disappears. Omitted = instant. */
+  fadeOutMs?: number
   /** See {@link ImageAssetStartEvent.untilOutputMs}. */
   untilOutputMs?: number
   /** See {@link ImageAssetStartEvent.untilPercent}. */
@@ -897,6 +918,71 @@ export type NarrationShowEvent = {
   timeMs: number
 }
 
+/**
+ * How a mid-video overlay update animates from the previous state to the new
+ * one. Absent transition (or `durationMs: 0`) means an instant switch.
+ */
+export type UpdateTransition = {
+  /** Animation length in milliseconds. 0 = instant. */
+  durationMs: number
+  easing: Easing
+}
+
+/**
+ * Mid-video update of the narration (camera PIP) overlay: move it to another
+ * corner, offset it with per-axis padding, resize it, or toggle visibility,
+ * optionally animated. Emitted by `moveNarration()`/`resizeNarration()` and by
+ * `hideNarration()`/`showNarration()` when a fade is requested. Omitted fields
+ * keep their current effective value (partial diff).
+ */
+export type NarrationUpdateEvent = {
+  type: 'narrationUpdate'
+  timeMs: number
+  /** Anchor corner. Omitted = unchanged. */
+  corner?: NarrationCorner
+  /**
+   * Per-axis inset from the anchor corner as a fraction of the shorter output
+   * side. Overrides the global `renderOptions.narration.padding` for that axis
+   * from this point on; an omitted axis keeps its current effective value.
+   * Range [-1, 1]; negative pushes the tile past the edge.
+   */
+  padding?: { x?: number; y?: number }
+  /** Tile size as a fraction of the shorter output side, (0, 1]. */
+  size?: number
+  visible?: boolean
+  transition?: UpdateTransition
+}
+
+/**
+ * Mid-video update of the recording (browser capture) overlay: resize it or
+ * toggle its visibility, optionally animated. `visible: false` hides ONLY the
+ * overlay; the background, narration, and timeline keep running (unlike
+ * `hide()`, which cuts footage). Emitted by `resizeRecording()`,
+ * `hideRecording()`, and `showRecording()`.
+ */
+export type RecordingUpdateEvent = {
+  type: 'recordingUpdate'
+  timeMs: number
+  /** Recording size fraction [0, 1], same semantics as `renderOptions.recording.size`. */
+  size?: number
+  visible?: boolean
+  transition?: UpdateTransition
+}
+
+/**
+ * Mid-video background change. A transition means a crossfade to the new
+ * background; absent transition means an instant cut. Emitted by
+ * `setBackground()`.
+ */
+export type BackgroundUpdateEvent = {
+  type: 'backgroundUpdate'
+  timeMs: number
+  background:
+    | { assetPath: string; fileHash?: string }
+    | { backgroundCss: string }
+  transition?: UpdateTransition
+}
+
 /** Why an artificial sleep was performed during recording. */
 export type SleepReason =
   /** Short spin around a cue/asset boundary so at least one frame captures each state. */
@@ -946,6 +1032,9 @@ export type RecordingEvent =
   | DelayEvent
   | NarrationHideEvent
   | NarrationShowEvent
+  | NarrationUpdateEvent
+  | RecordingUpdateEvent
+  | BackgroundUpdateEvent
   | SleepEvent
 
 export type VoiceLanguageMeta = {
@@ -1225,6 +1314,28 @@ export interface IEventRecorder {
   addNarrationHide(): void
   addNarrationShow(): void
   /**
+   * Records a mid-video narration overlay update (move/resize/visibility).
+   * Throws when the update lands at the same time as, or inside the running
+   * transition of, the previous narration update.
+   */
+  addNarrationUpdate(
+    update: Omit<NarrationUpdateEvent, 'type' | 'timeMs'>
+  ): void
+  /**
+   * Records a mid-video recording overlay update (resize/visibility).
+   * Same overlap rule as {@link addNarrationUpdate}.
+   */
+  addRecordingUpdate(
+    update: Omit<RecordingUpdateEvent, 'type' | 'timeMs'>
+  ): void
+  /**
+   * Records a mid-video background change. Same overlap rule as
+   * {@link addNarrationUpdate}.
+   */
+  addBackgroundUpdate(
+    update: Omit<BackgroundUpdateEvent, 'type' | 'timeMs'>
+  ): void
+  /**
    * Records an artificial sleep that just finished. `durationMs` is the actually
    * slept time (after recording-timing scaling); the event's `timeMs` is derived
    * as the sleep's start, i.e. now minus `durationMs`.
@@ -1287,6 +1398,9 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addAutoZoomEnd(): void {},
   addNarrationHide(): void {},
   addNarrationShow(): void {},
+  addNarrationUpdate(): void {},
+  addRecordingUpdate(): void {},
+  addBackgroundUpdate(): void {},
   addSleep(): void {},
   registerVoiceForLang(): void {},
   getEvents(): RecordingEvent[] {
@@ -1655,6 +1769,8 @@ export class EventRecorder implements IEventRecorder {
         ...(asset.pinToScreen === true && { pinToScreen: true }),
         ...(asset.overMouse === true && { overMouse: true }),
         ...(asset.placement !== undefined && { placement: asset.placement }),
+        ...(asset.fadeInMs !== undefined && { fadeInMs: asset.fadeInMs }),
+        ...(asset.fadeOutMs !== undefined && { fadeOutMs: asset.fadeOutMs }),
         ...(asset.clip !== undefined && { clip: asset.clip }),
         ...(asset.untilOutputMs !== undefined && {
           untilOutputMs: asset.untilOutputMs,
@@ -1679,6 +1795,8 @@ export class EventRecorder implements IEventRecorder {
         ...(asset.pinToScreen === true && { pinToScreen: true }),
         ...(asset.overMouse === true && { overMouse: true }),
         ...(asset.placement !== undefined && { placement: asset.placement }),
+        ...(asset.fadeInMs !== undefined && { fadeInMs: asset.fadeInMs }),
+        ...(asset.fadeOutMs !== undefined && { fadeOutMs: asset.fadeOutMs }),
         ...(asset.untilOutputMs !== undefined && {
           untilOutputMs: asset.untilOutputMs,
         }),
@@ -1701,6 +1819,8 @@ export class EventRecorder implements IEventRecorder {
         ...(asset.pinToScreen === true && { pinToScreen: true }),
         ...(asset.overMouse === true && { overMouse: true }),
         ...(asset.placement !== undefined && { placement: asset.placement }),
+        ...(asset.fadeInMs !== undefined && { fadeInMs: asset.fadeInMs }),
+        ...(asset.fadeOutMs !== undefined && { fadeOutMs: asset.fadeOutMs }),
         ...(asset.clip !== undefined && { clip: asset.clip }),
         ...(asset.sourceStart !== undefined && {
           sourceStart: asset.sourceStart,
@@ -1728,6 +1848,8 @@ export class EventRecorder implements IEventRecorder {
       ...(asset.pinToScreen === true && { pinToScreen: true }),
       ...(asset.overMouse === true && { overMouse: true }),
       ...(asset.placement !== undefined && { placement: asset.placement }),
+      ...(asset.fadeInMs !== undefined && { fadeInMs: asset.fadeInMs }),
+      ...(asset.fadeOutMs !== undefined && { fadeOutMs: asset.fadeOutMs }),
       ...(asset.clip !== undefined && { clip: asset.clip }),
       ...(asset.sourceStart !== undefined && {
         sourceStart: asset.sourceStart,
@@ -1761,6 +1883,8 @@ export class EventRecorder implements IEventRecorder {
       ...(pending.pinToScreen === true && { pinToScreen: true }),
       ...(pending.overMouse === true && { overMouse: true }),
       ...(pending.placement !== undefined && { placement: pending.placement }),
+      ...(pending.fadeInMs !== undefined && { fadeInMs: pending.fadeInMs }),
+      ...(pending.fadeOutMs !== undefined && { fadeOutMs: pending.fadeOutMs }),
       ...(pending.untilOutputMs !== undefined && {
         untilOutputMs: pending.untilOutputMs,
       }),
@@ -1978,6 +2102,58 @@ export class EventRecorder implements IEventRecorder {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     this.events.push({ type: 'narrationShow', timeMs })
+  }
+
+  /**
+   * Rejects an update that lands at the same time as, or inside the running
+   * transition of, the previous update on the same target. Overlapping
+   * transitions on one overlay have no well-defined animation, so this fails
+   * fast at record time instead of producing a surprising render.
+   */
+  private assertNoUpdateOverlap(
+    target: 'narrationUpdate' | 'recordingUpdate' | 'backgroundUpdate',
+    timeMs: number
+  ): void {
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      const event = this.events[i]!
+      if (event.type !== target) continue
+      const transitionEndMs = event.timeMs + (event.transition?.durationMs ?? 0)
+      if (timeMs <= transitionEndMs) {
+        throw new ScreenciError(
+          `${target} at ${timeMs}ms overlaps the previous update at ` +
+            `${event.timeMs}ms (its transition runs until ${transitionEndMs}ms). ` +
+            `Wait for the transition to finish before the next update.`
+        )
+      }
+      return
+    }
+  }
+
+  addNarrationUpdate(
+    update: Omit<NarrationUpdateEvent, 'type' | 'timeMs'>
+  ): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.assertNoUpdateOverlap('narrationUpdate', timeMs)
+    this.events.push({ type: 'narrationUpdate', timeMs, ...update })
+  }
+
+  addRecordingUpdate(
+    update: Omit<RecordingUpdateEvent, 'type' | 'timeMs'>
+  ): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.assertNoUpdateOverlap('recordingUpdate', timeMs)
+    this.events.push({ type: 'recordingUpdate', timeMs, ...update })
+  }
+
+  addBackgroundUpdate(
+    update: Omit<BackgroundUpdateEvent, 'type' | 'timeMs'>
+  ): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.assertNoUpdateOverlap('backgroundUpdate', timeMs)
+    this.events.push({ type: 'backgroundUpdate', timeMs, ...update })
   }
 
   addSleep(durationMs: number, reason: SleepReason): void {

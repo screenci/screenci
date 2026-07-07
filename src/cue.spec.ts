@@ -788,7 +788,7 @@ describe('createNarration', () => {
       infoSpy.mockRestore()
     })
 
-    it('puts crop and source trim inside the video cue translation', async () => {
+    it('puts clip and source trim inside the video cue translation', async () => {
       resetMissingNarrationAssetWarnings()
       const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
       const cues = createNarration({
@@ -796,8 +796,8 @@ describe('createNarration', () => {
         en: {
           intro: {
             media: '/tmp/intro-trim.mp4',
-            crop: { x: 4, y: 8, width: 120, height: 90 },
-            start: '1s',
+            clip: { x: 4, y: 8, width: 120, height: 90 },
+            start: 1000,
             end: '90%',
           },
         },
@@ -818,7 +818,7 @@ describe('createNarration', () => {
       ).mock.calls[0]?.[4] as Record<string, unknown>
       expect(translations.en).toEqual({
         assetPath: '/tmp/intro-trim.mp4',
-        crop: { x: 4, y: 8, width: 120, height: 90 },
+        clip: { x: 4, y: 8, width: 120, height: 90 },
         sourceStart: { ms: 1000 },
         sourceEnd: { percent: 0.9 },
       })

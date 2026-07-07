@@ -153,8 +153,8 @@ export async function autoZoom(
       ...(options?.centering !== undefined
         ? { centering: options.centering }
         : {}),
-      preZoomDelay: resolvedOptions.preZoomDelay,
-      postZoomDelay: resolvedOptions.postZoomDelay,
+      delay: resolvedOptions.delay,
+      delayAfter: resolvedOptions.delayAfter,
     },
   })
   try {
@@ -203,8 +203,8 @@ export async function autoZoom(
         await sleep(zoomOutDuration)
       }
     }
-    if ((currentAutoZoomState.options.postZoomDelay ?? 0) > 0) {
-      await sleep(currentAutoZoomState.options.postZoomDelay ?? 0)
+    if ((currentAutoZoomState.options.delayAfter ?? 0) > 0) {
+      await sleep(currentAutoZoomState.options.delayAfter ?? 0)
     }
   } finally {
     resetAutoZoomState()

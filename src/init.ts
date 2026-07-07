@@ -1354,7 +1354,7 @@ export function generateExampleVideo(): string {
 
 video
   .overlays({
-    logo: { path: './assets/logo.png', duration: '2s', overMouse: true },
+    logo: { path: './assets/logo.png', duration: 2000, overMouse: true },
   })
   .narration({
     docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
@@ -1365,7 +1365,7 @@ video
   })
 
   // Open with a brief brand intro card before the walkthrough begins.
-  await overlays.logo.for('2s')
+  await overlays.logo.for(2000)
 
   // Play the narration line for this step.
   await narration.docs()

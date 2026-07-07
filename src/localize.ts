@@ -3,9 +3,9 @@ import type {
   AnyLangNarrationOverride,
   LangNarrationOverride,
 } from './voiceConfig.js'
-import type { OverlayCrop, SourceTrimPoint } from './events.js'
+import type { OverlayClip, SourceTrimPoint } from './events.js'
 import type { TimelineOffset } from './timelineOffset.js'
-import { validateCrop, resolveSourceTrim } from './sourceTrim.js'
+import { validateClip, resolveSourceTrim } from './sourceTrim.js'
 
 /**
  * A voice configuration used inside a `localize` spec. Allows a `seed` (it can
@@ -39,7 +39,7 @@ export type LocalizeMode = 'per-language' | 'shared'
 type LocalizeNarrationMediaFields = {
   subtitle?: string
   volume?: number
-  crop?: OverlayCrop
+  clip?: OverlayClip
   start?: TimelineOffset
   end?: TimelineOffset
   language?: never
@@ -112,7 +112,7 @@ export type NormalizedCueValue =
       path: string
       subtitle?: string
       volume?: number
-      crop?: OverlayCrop
+      clip?: OverlayClip
       sourceStart?: SourceTrimPoint
       sourceEnd?: SourceTrimPoint
     }
@@ -203,7 +203,7 @@ export function normalizeCueValue<L extends Lang>(
   }
   const path = 'media' in value ? value.media : value.path
   const label = `video.narration() cue "${name}" media "${path}"`
-  if (value.crop !== undefined) validateCrop(label, value.crop)
+  if (value.clip !== undefined) validateClip(label, value.clip)
   const { sourceStart, sourceEnd } = resolveSourceTrim(
     label,
     value.start,
@@ -214,7 +214,7 @@ export function normalizeCueValue<L extends Lang>(
     path,
     ...(value.subtitle !== undefined && { subtitle: value.subtitle }),
     ...(value.volume !== undefined && { volume: value.volume }),
-    ...(value.crop !== undefined && { crop: value.crop }),
+    ...(value.clip !== undefined && { clip: value.clip }),
     ...(sourceStart !== undefined && { sourceStart }),
     ...(sourceEnd !== undefined && { sourceEnd }),
   }

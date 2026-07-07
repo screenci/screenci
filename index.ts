@@ -32,13 +32,13 @@ export { defineConfig } from './src/config.js'
 export { video } from './src/video.js'
 export { screenshot } from './src/screenshot.js'
 export type {
-  CropTarget,
-  CropRegion,
-  CropOptions,
-  ScreenshotCrop,
-  ScreenshotCropRecord,
-  ResolvedCropPadding,
-} from './src/crop.js'
+  ClipTarget,
+  ClipRegion,
+  ClipOptions,
+  ScreenshotClip,
+  ScreenshotClipRecord,
+  ResolvedClipPadding,
+} from './src/clip.js'
 export type {
   ScreenCIPage,
   ScreenCILocator,
@@ -100,7 +100,7 @@ export type {
   Overlays,
   OverlayControllerFor,
   OverlayPlacement,
-  OverlayCrop,
+  OverlayClip,
   DependencyOverlayInput,
   DependencyOverlayOptions,
 } from './src/asset.js'

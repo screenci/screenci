@@ -21,7 +21,7 @@ const appUrl = process.env.SCREENCI_APP_URL ?? 'https://app.screenci.com/'
 // record and reused on later runs (CI included).
 video
   .overlays({
-    logo: { path: './assets/logo.png', fill: 'recording', duration: '2s' },
+    logo: { path: './assets/logo.png', fill: 'recording', duration: 2000 },
   })
   .narration({
     en: {
@@ -53,7 +53,7 @@ video
       .waitFor({ timeout: 15000 })
   })
 
-  await overlays.logo.for('2s')
+  await overlays.logo.for(2000)
   await narration.intro()
 
   // Frame the public-delivery control, identified by its label text.

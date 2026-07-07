@@ -168,13 +168,13 @@ describe('generateExampleVideo', () => {
     // The overlay is declared from the bundled, gitignored asset path.
     expect(source).toContain('video\n  .overlays({')
     expect(source).toContain(
-      "logo: { path: './assets/logo.png', duration: '2s', overMouse: true }"
+      "logo: { path: './assets/logo.png', duration: 2000, overMouse: true }"
     )
     // The body receives the overlay controllers and opens with the logo card.
     expect(source).toContain(
       "})('How to find docs', async ({ page, narration, overlays }) => {"
     )
-    expect(source).toContain("await overlays.logo.for('2s')")
+    expect(source).toContain('await overlays.logo.for(2000)')
   })
 })
 

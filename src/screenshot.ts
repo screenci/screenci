@@ -34,8 +34,8 @@ import {
   buildScreenCIContextOptions,
   resolveDeviceScaleFactor,
 } from './contextOptions.js'
-import { resolveCrop } from './crop.js'
-import type { CropTarget, CropOptions } from './crop.js'
+import { resolveClip } from './clip.js'
+import type { ClipTarget, ClipOptions } from './clip.js'
 import {
   installAnimationDisabling,
   resolveDisableAnimations,
@@ -63,13 +63,13 @@ import {
 import { parseValuesOverrides } from './runtimeMode.js'
 
 /**
- * The `crop` fixture argument. Call it inside a `screenshot()` body to crop the
+ * The `crop` fixture argument. Call it inside a `screenshot()` body to clip the
  * implicit end-of-body capture to a locator or pixel region. Replaces the
- * old module-level `crop()` function; the crop is recorded per test.
+ * old module-level `crop()` function; the clip is recorded per test.
  */
 export type CropFixture = (
-  target: CropTarget,
-  options?: CropOptions
+  target: ClipTarget,
+  options?: ClipOptions
 ) => Promise<void>
 
 /** File name of the raw page capture written beside `data.json`. */
@@ -98,7 +98,7 @@ type ScreenshotFixtureOptions = {
 }
 
 type ScreenshotFixtures = {
-  crop: CropFixture
+  clip: CropFixture
   /** The language being captured in this pass; `undefined` outside per-language mode. */
   language: string | undefined
   /**
@@ -142,7 +142,7 @@ const _screenshotBase = base.extend<
     await use(buildOverlays(_screenciOverlays, _screenciLanguage))
   },
 
-  crop: async ({}, use) => {
+  clip: async ({}, use) => {
     await use(async (target, options) => {
       const page = getRuntimePage()
       if (page === null) {
@@ -150,7 +150,7 @@ const _screenshotBase = base.extend<
           'crop() requires an active ScreenCI page. Call it inside a screenshot() body.'
         )
       }
-      setRuntimeCrop(await resolveCrop(target, page, options))
+      setRuntimeCrop(await resolveClip(target, page, options))
     })
   },
 
@@ -372,7 +372,7 @@ const _screenshotBase = base.extend<
         path: join(screenshotDir, SCREENSHOT_FILE_NAME),
       })
 
-      const crop = runtimeContext.crop ?? undefined
+      const clip = runtimeContext.clip ?? undefined
       // The cursor lands at its final position even for a still (the move is
       // instant). Record it so the renderer can draw the cursor on the still
       // when `renderOptions.screenshot.mouse.show` is set. Absent when the body
@@ -389,8 +389,8 @@ const _screenshotBase = base.extend<
       }
 
       const configDir = process.env.SCREENCI_CONFIG_DIR ?? process.cwd()
-      // The crop (from the `crop` fixture) is a render option, so it goes into
-      // renderOptions.screenshot.crop (editable in Studio), not ScreenshotInfo.
+      // The clip (from the `crop` fixture) is a render option, so it goes into
+      // renderOptions.screenshot.clip (editable in Studio), not ScreenshotInfo.
       await recorder.writeToFile(
         screenshotDir,
         videoName,
@@ -398,7 +398,7 @@ const _screenshotBase = base.extend<
         {
           output: 'screenshot',
           screenshot,
-          ...(crop !== undefined && { crop }),
+          ...(clip !== undefined && { clip }),
         }
       )
     } finally {
@@ -452,9 +452,9 @@ interface ScreenshotCallSignatures {
    * ```ts
    * import { screenshot } from 'screenci'
    *
-   * screenshot('Dashboard hero', async ({ page, crop }) => {
+   * screenshot('Dashboard hero', async ({ page, clip }) => {
    *   await page.goto('https://app.example.com/dashboard')
-   *   await crop(page.getByTestId('revenue-card'), { padding: 48 })
+   *   await clip(page.getByTestId('revenue-card'), { padding: 48 })
    * })
    * ```
    */
@@ -548,10 +548,10 @@ interface Screenshot extends ScreenshotCallSignatures {
  *   recordOptions: { quality: '1440p', deviceScaleFactor: 2 },
  * })
  *
- * screenshot('Dashboard hero', async ({ page, crop }) => {
+ * screenshot('Dashboard hero', async ({ page, clip }) => {
  *   await page.goto('https://app.example.com/dashboard')
  *   await overlays.badge()
- *   await crop(page.getByTestId('revenue-card'), { padding: 0.06 })
+ *   await clip(page.getByTestId('revenue-card'), { padding: 0.06 })
  * })
  * ```
  */

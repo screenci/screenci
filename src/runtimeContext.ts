@@ -7,7 +7,7 @@ import {
 } from './events.js'
 import type { AutoZoomOptions, RecordOptions, RenderOptions } from './types.js'
 import { DEFAULT_SCROLL_CENTERING } from './defaults.js'
-import type { ScreenshotCropRecord } from './crop.js'
+import type { ScreenshotClipRecord } from './clip.js'
 import type { CueDurationsMap } from './cueDurations.js'
 import type { ResolvedRedactStyle } from './redactController.js'
 
@@ -110,9 +110,9 @@ export type ScreenCIRuntimeContext = {
   /**
    * Crop recorded for the current `screenshot()` fixture capture, or null for the
    * full image. Set via the `crop` fixture argument and read by the fixture at
-   * capture time. Replaces the previous module-global crop state.
+   * capture time. Replaces the previous module-global clip state.
    */
-  crop: ScreenshotCropRecord | null
+  clip: ScreenshotClipRecord | null
   timelineBlocks: TimelineBlockState[]
   cue: {
     activeCueName: string | null
@@ -181,7 +181,7 @@ export function createScreenCIRuntimeContext(
     recordOptions: overrides.recordOptions ?? null,
     renderOptions: overrides.renderOptions,
     captureKind: overrides.captureKind ?? 'video',
-    crop: null,
+    clip: null,
     timelineBlocks: [],
     cue: {
       activeCueName: null,
@@ -316,12 +316,12 @@ export function isScreenshotCapture(): boolean {
   return getRuntimeCaptureKind() === 'screenshot'
 }
 
-export function setRuntimeCrop(crop: ScreenshotCropRecord | null): void {
-  getScreenCIRuntimeContext().crop = crop
+export function setRuntimeCrop(clip: ScreenshotClipRecord | null): void {
+  getScreenCIRuntimeContext().clip = clip
 }
 
-export function getRuntimeCrop(): ScreenshotCropRecord | undefined {
-  return getScreenCIRuntimeContext().crop ?? undefined
+export function getRuntimeCrop(): ScreenshotClipRecord | undefined {
+  return getScreenCIRuntimeContext().clip ?? undefined
 }
 
 export function resetCueRuntimeState(): void {

@@ -12,7 +12,7 @@ import type {
   ResolvedRenderOptions,
 } from './types.js'
 import { RENDER_OPTIONS_DEFAULTS } from './types.js'
-import type { ScreenshotCropRecord } from './crop.js'
+import type { ScreenshotClipRecord } from './clip.js'
 import type { EditableOptionFlags } from './studio.js'
 import type { VoiceKey } from './voices.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
@@ -231,12 +231,12 @@ export function timelineAnchorFields(
 }
 
 /**
- * A crop rectangle in the SOURCE file's own pixels (top-left origin), applied to
+ * A clip rectangle in the SOURCE file's own pixels (top-left origin), applied to
  * a file overlay (image/video), a narration video, or an embedded render
  * dependency before it is placed/scaled. Mirrors Playwright's
  * `page.screenshot({ clip })` shape.
  */
-export type OverlayCrop = {
+export type OverlayClip = {
   x: number
   y: number
   width: number
@@ -327,7 +327,7 @@ export type ValuesDeclareEvent = {
  */
 type VideoCueTranslationMedia = {
   subtitle?: string
-  crop?: OverlayCrop
+  clip?: OverlayClip
   sourceStart?: SourceTrimPoint
   sourceEnd?: SourceTrimPoint
 }
@@ -446,7 +446,7 @@ export type ImageAssetStartEvent = {
   overMouse?: boolean
   placement?: OverlayPlacement
   /** Crop rect in the source image's own pixels, applied before placement/scale. */
-  crop?: OverlayCrop
+  clip?: OverlayClip
   /**
    * Absolute output position (ms) the overlay should remain visible until (from a
    * string position like `'0:10'`). Resolved into a frozen-frame hold at render
@@ -475,7 +475,7 @@ export type VideoAssetStartEvent = {
   overMouse?: boolean
   placement?: OverlayPlacement
   /** Crop rect in the source video's own pixels, applied before placement/scale. */
-  crop?: OverlayCrop
+  clip?: OverlayClip
   /** Late start into the source video (a `'2s'`/timecode offset or `'50%'` fraction of source). */
   sourceStart?: SourceTrimPoint
   /** Early end into the source video (a `'2s'`/timecode offset or `'50%'` fraction of source). */
@@ -597,7 +597,7 @@ export type DependencyAssetStartEvent = {
    * Crop rect in the resolved output's own pixels, applied (for both a video and
    * a screenshot dependency) before placement/scale.
    */
-  crop?: OverlayCrop
+  clip?: OverlayClip
   /**
    * Late start into the embedded VIDEO (rejected by the backend for a screenshot
    * dependency, which has no timeline).
@@ -985,7 +985,7 @@ function readScreenciVersion(): string {
 const SCREENCI_VERSION = readScreenciVersion()
 
 /** Crop rect for a screenshot, in CSS pixels of the recording viewport. */
-export type ScreenshotCrop = {
+export type ScreenshotClip = {
   x: number
   y: number
   width: number
@@ -995,8 +995,8 @@ export type ScreenshotCrop = {
 /**
  * Capture details for a screenshot output. The raw page capture is saved beside
  * `data.json` (as `path`) at `width`×`height` device pixels (the viewport scaled
- * by `deviceScaleFactor`). The crop is a render option
- * (`renderOptions.screenshot.crop`), not a capture detail.
+ * by `deviceScaleFactor`). The clip is a render option
+ * (`renderOptions.screenshot.clip`), not a capture detail.
  */
 export type ScreenshotInfo = {
   path: string
@@ -1005,7 +1005,7 @@ export type ScreenshotInfo = {
   deviceScaleFactor: number
   /**
    * Final cursor position when the still was captured, in CSS px of the
-   * recording viewport (same coordinate space as a crop). Present only when the
+   * recording viewport (same coordinate space as a clip). Present only when the
    * body moved the cursor at least once. The renderer draws the cursor here when
    * `renderOptions.screenshot.mouse.show` is set; absent means there is nothing
    * to draw, so the cursor never appears for a still that never touched it.
@@ -1032,11 +1032,11 @@ export type WriteRecordingOptions = {
   output?: 'video' | 'screenshot'
   screenshot?: ScreenshotInfo
   /**
-   * Crop recorded at capture time (a `crop()` call or `page.screenshot({ crop })`).
-   * Merged into `renderOptions.screenshot.crop`, overriding any crop set in
+   * Crop recorded at capture time (a `crop()` call or `page.screenshot({ clip })`).
+   * Merged into `renderOptions.screenshot.clip`, overriding any clip set in
    * config, so it is editable in Studio afterward.
    */
-  crop?: ScreenshotCropRecord
+  clip?: ScreenshotClipRecord
 }
 
 export interface IEventRecorder {
@@ -1550,7 +1550,7 @@ export class EventRecorder implements IEventRecorder {
         ...(asset.pinToScreen === true && { pinToScreen: true }),
         ...(asset.overMouse === true && { overMouse: true }),
         ...(asset.placement !== undefined && { placement: asset.placement }),
-        ...(asset.crop !== undefined && { crop: asset.crop }),
+        ...(asset.clip !== undefined && { clip: asset.clip }),
         ...(asset.untilOutputMs !== undefined && {
           untilOutputMs: asset.untilOutputMs,
         }),
@@ -1596,7 +1596,7 @@ export class EventRecorder implements IEventRecorder {
         ...(asset.pinToScreen === true && { pinToScreen: true }),
         ...(asset.overMouse === true && { overMouse: true }),
         ...(asset.placement !== undefined && { placement: asset.placement }),
-        ...(asset.crop !== undefined && { crop: asset.crop }),
+        ...(asset.clip !== undefined && { clip: asset.clip }),
         ...(asset.sourceStart !== undefined && {
           sourceStart: asset.sourceStart,
         }),
@@ -1623,7 +1623,7 @@ export class EventRecorder implements IEventRecorder {
       ...(asset.pinToScreen === true && { pinToScreen: true }),
       ...(asset.overMouse === true && { overMouse: true }),
       ...(asset.placement !== undefined && { placement: asset.placement }),
-      ...(asset.crop !== undefined && { crop: asset.crop }),
+      ...(asset.clip !== undefined && { clip: asset.clip }),
       ...(asset.sourceStart !== undefined && {
         sourceStart: asset.sourceStart,
       }),
@@ -1901,22 +1901,24 @@ export class EventRecorder implements IEventRecorder {
         roundness:
           ro?.recording?.roundness ??
           RENDER_OPTIONS_DEFAULTS.recording.roundness,
-        shape: ro?.recording?.shape ?? RENDER_OPTIONS_DEFAULTS.recording.shape,
-        dropShadow:
-          ro?.recording?.dropShadow ??
-          RENDER_OPTIONS_DEFAULTS.recording.dropShadow,
+        dropShadow: normalizeDropShadow(
+          ro?.recording?.dropShadow,
+          RENDER_OPTIONS_DEFAULTS.recording.dropShadow
+        ),
       },
       narration: {
         size: ro?.narration?.size ?? RENDER_OPTIONS_DEFAULTS.narration.size,
+        ...(ro?.narration?.sizeZoomed !== undefined && {
+          sizeZoomed: ro.narration.sizeZoomed,
+        }),
         roundness:
           ro?.narration?.roundness ??
           RENDER_OPTIONS_DEFAULTS.narration.roundness,
-        shape: ro?.narration?.shape ?? RENDER_OPTIONS_DEFAULTS.narration.shape,
         corner:
           ro?.narration?.corner ?? RENDER_OPTIONS_DEFAULTS.narration.corner,
         padding:
           ro?.narration?.padding ?? RENDER_OPTIONS_DEFAULTS.narration.padding,
-        dropShadow: normalizeNarrationDropShadow(
+        dropShadow: normalizeDropShadow(
           ro?.narration?.dropShadow,
           RENDER_OPTIONS_DEFAULTS.narration.dropShadow
         ),
@@ -1945,10 +1947,10 @@ export class EventRecorder implements IEventRecorder {
     }
 
     // Screenshot render group: pass through any configured fields and merge the
-    // record-time crop. The crop is never configurable, so it comes only from a
-    // `crop()` call or `page.screenshot({ crop })`. Present only when something
+    // record-time clip. The clip is never configurable, so it comes only from a
+    // `crop()` call or `page.screenshot({ clip })`. Present only when something
     // is set, so video recordings stay unaffected.
-    const cropOverride = options?.crop
+    const clipOverride = options?.clip
     const screenshotGroup = {
       ...(ro?.screenshot?.format !== undefined && {
         format: ro.screenshot.format,
@@ -1959,7 +1961,7 @@ export class EventRecorder implements IEventRecorder {
       ...(ro?.screenshot?.aspectRatio !== undefined && {
         aspectRatio: ro.screenshot.aspectRatio,
       }),
-      ...(cropOverride !== undefined && { crop: cropOverride }),
+      ...(clipOverride !== undefined && { clip: clipOverride }),
     }
     if (Object.keys(screenshotGroup).length > 0) {
       resolved.screenshot = screenshotGroup
@@ -2129,7 +2131,7 @@ export function filterEventTranslationsToLanguage(
   return event
 }
 
-function normalizeNarrationDropShadow(
+function normalizeDropShadow(
   input: number | undefined,
   fallback: number
 ): number {

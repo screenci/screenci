@@ -59,23 +59,23 @@ describe('createOverlays type constraints', () => {
     createOverlays({ intro: { path: './intro.mp4', volume: 0.5 } })
   })
 
-  it('accepts crop and start/end on a video file overlay', () => {
+  it('accepts clip and start/end on a video file overlay', () => {
     createOverlays({
       clip: {
         path: './clip.mp4',
-        crop: { x: 10, y: 20, width: 200, height: 100 },
-        start: '2s',
+        clip: { x: 10, y: 20, width: 200, height: 100 },
+        start: 2000,
         end: '50%',
       },
     })
   })
 
-  it('accepts crop on an image file overlay', () => {
+  it('accepts clip on an image file overlay', () => {
     createOverlays({
       logo: {
         path: './logo.png',
-        duration: '1s',
-        crop: { x: 0, y: 0, width: 100, height: 80 },
+        duration: 1000,
+        clip: { x: 0, y: 0, width: 100, height: 80 },
       },
     })
   })

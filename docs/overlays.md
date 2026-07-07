@@ -85,7 +85,7 @@ video.overlays({
 })('Overview', async ({ page, overlays }) => {
   await overlays.intro()
   await page.goto('/dashboard')
-  await overlays.logo.for('1.2s')
+  await overlays.logo.for(1200)
 })
 ```
 
@@ -116,7 +116,7 @@ this video (matched by the overlay's name). See
 
 Rules:
 
-- every overlay except `.mp4` needs a length: give it a relative `.for('1.2s')` / `.for(1200)`, an absolute `.until('0:05')`/`.until('56%')`, a `duration` config string or millisecond number, or drive it with `start()`/`end()`. A bare `overlays.logo()` is invalid for these (it only works for a video or render dependency, which holds for its natural length).
+- every overlay except `.mp4` needs a length: give it a relative `.for(1200)` / `.for(1200)`, an absolute `.until('0:05')`/`.until('56%')`, a `duration` config string or millisecond number, or drive it with `start()`/`end()`. A bare `overlays.logo()` is invalid for these (it only works for a video or render dependency, which holds for its natural length).
 - rendered page and image overlays do not support `volume`.
 - `.mp4` overlays may provide `volume` (a linear gain). `1` (the default) plays the source at its natural level, `0` mutes it, and values above `1` boost it (e.g. `2` is twice as loud, up to `4`).
 - `.mp4` overlays use the file's natural duration and must not provide a `duration`.
@@ -192,8 +192,8 @@ video.overlays({
   // A full HTML page.
   hint: { path: './overlays/callout.html', x: 768, y: 864, width: 384 },
 })('Overview', async ({ overlays }) => {
-  await overlays.badge.for('1.5s')
-  await overlays.hint.for('1.2s')
+  await overlays.badge.for(1500)
+  await overlays.hint.for(1200)
 })
 ```
 
@@ -267,7 +267,7 @@ video.overlays({
     path: './overlays/Counter.tsx',
     props: { to: 100 },
     animate: true,
-    duration: '2s',
+    duration: 2000,
   },
 })('Overview', async ({ overlays }) => {
   await overlays.counter() // counts 0 -> 100 over 2s
@@ -341,7 +341,7 @@ video.overlays({
     `,
     props: { to: 100 },
     animate: true,
-    duration: '2s',
+    duration: 2000,
   },
 })
 ```
@@ -390,7 +390,7 @@ video.overlays({
     width: 288,
   }),
 })('Overview', async ({ page, overlays }) => {
-  await overlays.badge({ label: 'Saved', x: 1340 }).for('1.2s')
+  await overlays.badge({ label: 'Saved', x: 1340 }).for(1200)
 
   // For start()/end(), capture the controller so the props appear once.
   const badge = overlays.badge({ label: 'New', x: 1340 })
@@ -422,14 +422,14 @@ video.overlays({
   intro: {
     path: './overlays/Intro.tsx',
     animate: true,
-    duration: '1.5s',
+    duration: 1500,
     fill: 'screen',
   },
   // An animated .html page, captured at 60fps.
   hint: {
     path: './overlays/callout.html',
     animate: true,
-    duration: '1.2s',
+    duration: 1200,
     fps: 60,
   },
 })('Overview', async ({ overlays }) => {
@@ -445,7 +445,7 @@ How the animation is driven and how long it runs:
   `performance.now()`, and the Web Animations API (including React effects in a
   `.tsx` page). Schedule an edit at `t` ms and it lands on the matching frame,
   every run.
-- **Length.** You set the length explicitly: use `.for('2s')` on the call or set
+- **Length.** You set the length explicitly: use `.for(2000)` on the call or set
   `duration` in the config. When you drive an animated overlay with
   `start()`/`end()`, `duration` is required in the config (the capture length is
   otherwise unknown). If the live window outlasts the clip, its last frame is
@@ -476,7 +476,7 @@ video.overlays({
   // Top-left badge, 288 px wide (on a 1920x1080 recording).
   badge: {
     path: 'assets/badge.png',
-    duration: '1.5s',
+    duration: 1500,
     x: 96,
     y: 96,
     width: 288,
@@ -484,7 +484,7 @@ video.overlays({
   // A banner across the full output frame, sized by height.
   label: {
     path: 'assets/label.svg',
-    duration: '1.5s',
+    duration: 1500,
     relativeTo: 'screen',
     x: 192,
     y: 864,
@@ -535,12 +535,12 @@ video.overlays({
   logo: {
     path: 'assets/logo.png',
     fill: 'screen',
-    duration: '2s',
+    duration: 2000,
     overMouse: true,
   },
 })('Product demo', async ({ page, overlays }) => {
   // The cursor slides under the 2s card, then sits on top again for the walkthrough.
-  await overlays.logo.for('2s')
+  await overlays.logo.for(2000)
   // ...
 })
 ```
@@ -648,7 +648,7 @@ script continues:
 
 ```ts
 await overlays.badge() // uses the config duration
-await overlays.badge.for('2s') // or override the duration
+await overlays.badge.for(2000) // or override the duration
 ```
 
 **Until a position** keeps the overlay on a frozen frame until an absolute point
@@ -692,7 +692,7 @@ overlay can run while others stay live, so you can layer them freely:
 await overlays.badge.start()
 await overlays.logo.start() // both live now
 await page.click('#next')
-await overlays.tip.for('1.5s') // blocking overlay, badge and logo stay composited
+await overlays.tip.for(1500) // blocking overlay, badge and logo stay composited
 await overlays.badge.end() // end each one independently, in any order
 await overlays.logo.end()
 ```

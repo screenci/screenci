@@ -86,6 +86,7 @@ import {
   captureRequestedButNotEnabled,
   getChromiumLaunchOptions,
   isCaptureAudioEnabled,
+  resolveCaptureAudioGain,
 } from './browserLaunchOptions.js'
 import {
   createScreenCIRuntimeContext,
@@ -1012,7 +1013,7 @@ const _videoBase = base.extend<
     // Mark the moment the video recording actually begins after the cursor is positioned.
     recorder.start()
 
-    const captureVolume = recordOptions.captureAudio ?? 0
+    const captureVolume = resolveCaptureAudioGain(recordOptions.captureAudio)
     // captureAudio is Linux-only. On macOS/Windows skip capture entirely (a
     // warning was already emitted at run start, and the worker fixture emits one
     // at the end) rather than writing a silent or whole-machine track.

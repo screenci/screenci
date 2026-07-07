@@ -341,7 +341,7 @@ describe('manual zoom', () => {
     })
 
     const promise = hide(async () => {
-      await resetZoom({ duration: 300, postZoomDelay: 0 })
+      await resetZoom({ duration: 300, delayAfter: 0 })
     })
     await vi.runAllTimersAsync()
     await promise

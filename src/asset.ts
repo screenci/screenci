@@ -4,12 +4,12 @@ import {
   timelineAnchorFields,
   type IEventRecorder,
   type OverlayPlacement,
-  type OverlayCrop,
+  type OverlayClip,
   type SourceTrimPoint,
   type TimelineAnchorInput,
 } from './events.js'
 import { parseTimelineOffset, type TimelineOffset } from './timelineOffset.js'
-import { validateCrop, resolveSourceTrim } from './sourceTrim.js'
+import { validateClip, resolveSourceTrim } from './sourceTrim.js'
 import { overlayRect } from './overlayRect.js'
 import { captureCallerFile } from './callerFile.js'
 import {
@@ -41,10 +41,10 @@ import {
   type ActiveAssetRun,
 } from './runtimeContext.js'
 
-export type { OverlayPlacement, OverlayCrop } from './events.js'
+export type { OverlayPlacement, OverlayClip } from './events.js'
 
-/** A relative overlay length: a time string (`'2s'`, `'0:02'`) or milliseconds. */
-export type OverlayDuration = TimelineOffset | number
+/** A relative overlay length, in milliseconds. */
+export type OverlayDuration = number
 
 /**
  * Placement and capture fields shared by every overlay variant. Placement is
@@ -94,11 +94,9 @@ type OverlayCommon = {
    */
   margin?: number
   /**
-   * Default visible length, as a relative time string (`'2s'`, `'0:02'`) or a
-   * number of milliseconds, used when the overlay is shown with a bare call
+   * Default visible length in milliseconds, used when the overlay is shown with a bare call
    * (`await overlays.logo()`) or `.for()` without its own length.
-   * Seconds/timecode only (no percentage). Omit when driving with
-   * `start()`/`end()`. Image/HTML/React overlays only.
+   * Omit when driving with `start()`/`end()`. Image/HTML/React overlays only.
    *
    * For animated overlays (`animate: true`) this is also the capture length: it
    * is required when driving with `start()`/`end()` (the capture length is
@@ -116,12 +114,12 @@ type OverlayCommon = {
   /** Animation capture frame rate. Only valid with `animate`. Defaults to `30`. */
   fps?: number
   /**
-   * Crop a rectangle of the SOURCE file before it is placed/scaled, in the
+   * Clip a rectangle of the SOURCE file before it is placed/scaled, in the
    * source's own pixels (top-left origin), like Playwright's
    * `page.screenshot({ clip })`. File overlays only (`.svg`/`.png` images and
    * `.mp4` videos); rejected for `.html`/inline `html`/React `element`/`over`.
    */
-  crop?: OverlayCrop
+  clip?: OverlayClip
   /**
    * Keep the overlay stuck to the screen while the camera zooms: it stays at a
    * fixed position and size in the output frame, unaffected by zoom. Useful for
@@ -170,15 +168,14 @@ type OverlayVideoFields = {
    */
   time?: number
   /**
-   * Late start into the source video: skip to this point before playing. A time
-   * string only: `'2s'`/`'1.5s'`, a `'0:02'`/`'0:02.5'` timecode, or `'50%'` of
+   * Late start into the source video: skip to this point before playing.
+   * Numbers are ms; strings can be a `'0:02'`/`'0:02.5'` timecode or `'50%'` of
    * the source duration. `.mp4` overlays only.
    */
   start?: TimelineOffset
   /**
-   * Early end into the source video: stop playing at this point. A time string
-   * only (same forms as {@link start}; a percentage is of the source duration).
-   * `.mp4` overlays only.
+   * Early end into the source video: stop playing at this point. Same forms as
+   * {@link start}; a percentage is of the source duration. `.mp4` overlays only.
    */
   end?: TimelineOffset
 }
@@ -400,12 +397,12 @@ export type DependencyOverlayOptions = Pick<
   | 'aspectRatio'
   | 'fill'
   | 'duration'
-  | 'crop'
+  | 'clip'
   | 'pinToScreen'
   | 'overMouse'
 > & {
   /**
-   * Late start into the embedded VIDEO (a `'2s'`/timecode/`'50%'` position).
+   * Late start into the embedded VIDEO (ms number/timecode/`'50%'` position).
    * Video dependencies only; rejected when the target resolves to a screenshot.
    */
   start?: TimelineOffset
@@ -543,7 +540,7 @@ export type OverlayInput =
  * const overlays = createOverlays({
  *   ring: (t: Locator) => ({ path: './ring.html', over: t, margin: 6 }),
  * })
- * await overlays.ring(saveButton).for('1.2s')
+ * await overlays.ring(saveButton).for(1200)
  * ```
  */
 export type OverlayConfigFactory<P = unknown> = (props: P) => OverlayConfig
@@ -735,10 +732,9 @@ export type OverlayController = {
    */
   (): Promise<void>
   /**
-   * Hold the overlay for a relative length, e.g. `.for('2s')`, `.for('0:02')`,
-   * or `.for(2000)`. String seconds/timecodes and numeric milliseconds are
-   * accepted; a percentage is rejected (a relative length has nothing to take a
-   * percentage of). Not for `.mp4`/animated overlays, whose length is fixed.
+   * Hold the overlay for a relative length in milliseconds, e.g. `.for(2000)`.
+   * A percentage is rejected (a relative length has nothing to take a percentage
+   * of). Not for `.mp4`/animated overlays, whose length is fixed.
    */
   for(duration: OverlayDuration): Promise<void>
   /**
@@ -1029,10 +1025,10 @@ function buildOverlayFromConfig(
       `[screenci] Overlay "${name}" (${label}) cannot use "start"/"end": source trim is only supported for .mp4 video overlays.`
     )
   }
-  // crop applies to image and video files only (not rendered pages).
-  if (media.crop !== undefined && isRendered) {
+  // clip applies to image and video files only (not rendered pages).
+  if (media.clip !== undefined && isRendered) {
     throw new Error(
-      `[screenci] Overlay "${name}" (${label}) cannot use "crop": crop is only supported for image (.svg/.png) and video (.mp4) file overlays.`
+      `[screenci] Overlay "${name}" (${label}) cannot use "clip": clip is only supported for image (.svg/.png) and video (.mp4) file overlays.`
     )
   }
 
@@ -1093,8 +1089,8 @@ function buildOverlayFromConfig(
         `[screenci] Overlay "${name}" (${path}) is an image and must not provide volume. Use duration instead.`
       )
     }
-    if (media.crop !== undefined) {
-      validateCrop(`Overlay "${name}" (${path})`, media.crop)
+    if (media.clip !== undefined) {
+      validateClip(`Overlay "${name}" (${path})`, media.clip)
     }
     registerAssetPath(path)
     return createFileOverlayController(name, {
@@ -1105,7 +1101,7 @@ function buildOverlayFromConfig(
       ...(pinToScreen && { pinToScreen: true }),
       ...(overMouse && { overMouse: true }),
       ...(configDurationMs !== undefined && { durationMs: configDurationMs }),
-      ...(media.crop !== undefined && { crop: media.crop }),
+      ...(media.clip !== undefined && { clip: media.clip }),
     })
   }
 
@@ -1126,8 +1122,8 @@ function buildOverlayFromConfig(
       )
     }
     validateSpeedTime(`Overlay "${name}" (${path})`, media.speed, media.time)
-    if (media.crop !== undefined) {
-      validateCrop(`Overlay "${name}" (${path})`, media.crop)
+    if (media.clip !== undefined) {
+      validateClip(`Overlay "${name}" (${path})`, media.clip)
     }
     const { sourceStart, sourceEnd } = resolveSourceTrim(
       `Overlay "${name}" (${path})`,
@@ -1145,7 +1141,7 @@ function buildOverlayFromConfig(
       ...(media.volume !== undefined && { audio: media.volume }),
       ...(media.speed !== undefined && { speed: media.speed }),
       ...(media.time !== undefined && { time: media.time }),
-      ...(media.crop !== undefined && { crop: media.crop }),
+      ...(media.clip !== undefined && { clip: media.clip }),
       ...(sourceStart !== undefined && { sourceStart }),
       ...(sourceEnd !== undefined && { sourceEnd }),
     })
@@ -1263,56 +1259,28 @@ type AssetStartMode =
   | { type: 'live' }
 
 /**
- * Resolves a string overlay position into the anchor recorded on the asset start.
- * Throws on a non-string value so callers that meant a numeric duration are not
- * silently misrouted into the parser.
+ * Resolves an overlay timeline position into the anchor recorded on the asset start.
  */
 function resolveOverlayAnchor(until: TimelineOffset): TimelineAnchorInput {
-  if (typeof until !== 'string') {
-    throw new Error(
-      `overlay positions must be a string such as '0:10' or '56%', got ${typeof until}`
-    )
-  }
   const parsed = parseTimelineOffset(until)
   return parsed.kind === 'percent'
     ? { percent: parsed.fraction }
     : { outputMs: parsed.ms }
 }
 
-/**
- * Resolves a relative length string (`.for('2s')` or a config `duration`) into
- * milliseconds. Numbers are already milliseconds. String seconds and timecodes
- * are accepted; a percentage is rejected because a relative length has nothing
- * to take a percentage of (use `.until('<n>%')` for an absolute position
- * instead).
- */
 function resolveRelativeDuration(
   value: OverlayDuration,
   label: string
 ): number {
-  if (typeof value === 'number') {
-    if (!isFiniteNonNegative(value)) {
-      throw new Error(
-        `[screenci] ${label} must be a finite number of milliseconds greater than or equal to 0. Received: ${String(value)}.`
-      )
-    }
-    return value
-  }
-  if (typeof value !== 'string') {
+  if (!isFiniteNonNegative(value)) {
     throw new Error(
-      `[screenci] ${label} must be a time string such as '2s' or '0:02', or a number of milliseconds, got ${typeof value}.`
+      `[screenci] ${label} must be a finite number of milliseconds greater than or equal to 0. Received: ${String(value)}.`
     )
   }
-  const parsed = parseTimelineOffset(value)
-  if (parsed.kind === 'percent') {
-    throw new Error(
-      `[screenci] ${label} cannot be a percentage ('${value}'); a relative length needs a concrete time like '2s' or '0:02'. Use .until('${value}') for an absolute position.`
-    )
-  }
-  return parsed.ms
+  return value
 }
 
-/** Parses an optional config `duration` (relative time string or ms number) into ms. */
+/** Validates an optional config `duration` (milliseconds). */
 function resolveConfigDuration(
   name: string,
   duration: OverlayDuration | undefined
@@ -1453,8 +1421,8 @@ function createDependencyOverlayController(
   const fullScreen = input.config.fill === 'screen'
   const pinToScreen = input.config.pinToScreen === true
   const configDurationMs = resolveConfigDuration(name, input.config.duration)
-  if (input.config.crop !== undefined) {
-    validateCrop(`Dependency overlay "${name}"`, input.config.crop)
+  if (input.config.clip !== undefined) {
+    validateClip(`Dependency overlay "${name}"`, input.config.clip)
   }
   // start/end are valid only when the target resolves to a VIDEO; the backend
   // rejects them for a screenshot dependency (the medium is unknown until then).
@@ -1496,7 +1464,7 @@ function createDependencyOverlayController(
         ...(pinToScreen && { pinToScreen: true }),
         ...(input.config.overMouse === true && { overMouse: true }),
         ...(placement !== undefined && { placement }),
-        ...(input.config.crop !== undefined && { crop: input.config.crop }),
+        ...(input.config.clip !== undefined && { clip: input.config.clip }),
         ...(sourceStart !== undefined && { sourceStart }),
         ...(sourceEnd !== undefined && { sourceEnd }),
       })
@@ -1514,7 +1482,7 @@ type ResolvedFileOverlay =
       pinToScreen?: boolean
       overMouse?: boolean
       durationMs?: number
-      crop?: OverlayCrop
+      clip?: OverlayClip
     }
   | {
       kind: 'video'
@@ -1526,7 +1494,7 @@ type ResolvedFileOverlay =
       audio?: number
       speed?: number
       time?: number
-      crop?: OverlayCrop
+      clip?: OverlayClip
       sourceStart?: SourceTrimPoint
       sourceEnd?: SourceTrimPoint
     }
@@ -1595,7 +1563,7 @@ function createRenderedOverlayController(
           durationMsForEvent = mode.durationMs ?? durationMs
           if (durationMsForEvent === undefined) {
             throw new Error(
-              `[screenci] Overlay "${name}" needs a length: use .for('2s'), .until('0:05'), set "duration" in the config, or drive it with .start()/.end().`
+              `[screenci] Overlay "${name}" needs a length: use .for(2000), .until('0:05'), set "duration" in the config, or drive it with .start()/.end().`
             )
           }
           validateDurationMs(name, `overlay "${name}"`, durationMsForEvent)
@@ -1679,13 +1647,13 @@ function createAnimatedOverlayController(
     if (mode.type === 'blocking') {
       if (mode.until !== undefined) {
         throw new Error(
-          `[screenci] Animated overlay "${name}" cannot use .until('0:10'); its capture length must be fixed. Use .for('2s'), set "duration" in the config, or drive it with .start()/.end() (with "duration" in the config).`
+          `[screenci] Animated overlay "${name}" cannot use .until('0:10'); its capture length must be fixed. Use .for(2000), set "duration" in the config, or drive it with .start()/.end() (with "duration" in the config).`
         )
       }
       const durationMs = mode.durationMs ?? configDurationMs
       if (durationMs === undefined) {
         throw new Error(
-          `[screenci] Animated overlay "${name}" needs a length: use .for('2s'), set "duration" in the config, or drive it with .start()/.end() (with "duration" in the config).`
+          `[screenci] Animated overlay "${name}" needs a length: use .for(2000), set "duration" in the config, or drive it with .start()/.end() (with "duration" in the config).`
         )
       }
       validateDurationMs(name, `overlay "${name}"`, durationMs)
@@ -1703,7 +1671,7 @@ function createAnimatedOverlayController(
   return createAssetControllerCore(
     name,
     () => Promise.resolve(),
-    (recorder, mode) => {
+    (recorder) => {
       if (skipped || resolved === undefined) return
       recorder.addPendingAssetStart(name, {
         kind: 'animation',
@@ -2078,7 +2046,7 @@ function toRecordedFileStart(
         durationMs = mode.durationMs ?? resolved.durationMs
         if (durationMs === undefined) {
           throw new Error(
-            `[screenci] Overlay "${name}" (${resolved.path}) needs a length: use .for('2s'), .until('0:05'), set "duration" in the config, or drive it with .start()/.end().`
+            `[screenci] Overlay "${name}" (${resolved.path}) needs a length: use .for(2000), .until('0:05'), set "duration" in the config, or drive it with .start()/.end().`
           )
         }
         validateDurationMs(name, resolved.path, durationMs)
@@ -2095,7 +2063,7 @@ function toRecordedFileStart(
       ...(resolved.placement !== undefined && {
         placement: resolved.placement,
       }),
-      ...(resolved.crop !== undefined && { crop: resolved.crop }),
+      ...(resolved.clip !== undefined && { clip: resolved.clip }),
     }
   }
 
@@ -2106,7 +2074,7 @@ function toRecordedFileStart(
   }
   if (mode.type === 'blocking' && mode.durationMs !== undefined) {
     throw new Error(
-      `[screenci] Overlay "${name}" (${resolved.path}) is a video and cannot use .for('2s'); a video overlay plays for its natural length. Use a bare call (overlays.${name}()), speed/time to re-time it, or .start()/.end() to control its window.`
+      `[screenci] Overlay "${name}" (${resolved.path}) is a video and cannot use .for(2000); a video overlay plays for its natural length. Use a bare call (overlays.${name}()), speed/time to re-time it, or .start()/.end() to control its window.`
     )
   }
 
@@ -2120,7 +2088,7 @@ function toRecordedFileStart(
     ...(resolved.placement !== undefined && { placement: resolved.placement }),
     ...(resolved.speed !== undefined && { speed: resolved.speed }),
     ...(resolved.time !== undefined && { time: resolved.time }),
-    ...(resolved.crop !== undefined && { crop: resolved.crop }),
+    ...(resolved.clip !== undefined && { clip: resolved.clip }),
     ...(resolved.sourceStart !== undefined && {
       sourceStart: resolved.sourceStart,
     }),

@@ -803,7 +803,7 @@ describe('instrumentLocator', () => {
     expect(click.events.some((e) => e.type === 'mouseWait')).toBe(true)
   })
 
-  it('omits post-click mouseWait when click postClickPause is zero', async () => {
+  it('omits the pre-press mouseWait when move.delayAfter is zero', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
 
@@ -816,9 +816,9 @@ describe('instrumentLocator', () => {
     await Promise.all([
       (
         locator as unknown as {
-          click(options?: { postClickPause?: number }): Promise<void>
+          click(options?: { move?: { delayAfter?: number } }): Promise<void>
         }
-      ).click({ postClickPause: 0 }),
+      ).click({ move: { delayAfter: 0 } }),
       vi.runAllTimersAsync(),
     ])
 
@@ -1109,7 +1109,7 @@ describe('instrumentLocator', () => {
     expect(down.startMs - focusChange.mouse.endMs).toBe(250)
   })
 
-  it('uses the shorter default post-click pause before fill typing', async () => {
+  it('uses a shorter default move.delayAfter before fill typing', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
 
@@ -1123,7 +1123,10 @@ describe('instrumentLocator', () => {
     instrumentLocator(locator)
 
     await Promise.all([
-      locator.fill('Acme Corporation', { duration: 100, beforeClickPause: 0 }),
+      locator.fill('Acme Corporation', {
+        duration: 100,
+        move: { delayAfter: 100 },
+      }),
       vi.runAllTimersAsync(),
     ])
 
@@ -1143,7 +1146,7 @@ describe('instrumentLocator', () => {
       throw new Error('Expected mouseDown, mouseUp, and mouseWait events')
     }
 
-    expect(wait.startMs - up.endMs).toBe(0)
+    expect(down.startMs - wait.endMs).toBe(0)
     expect(wait.endMs - wait.startMs).toBe(100)
   })
 
@@ -1264,7 +1267,7 @@ describe('instrumentLocator', () => {
     )
   })
 
-  it('keeps custom fill click.postClickPause as a pre-typing wait and still appends the settle pause', async () => {
+  it('keeps custom fill move.delayAfter as a pre-typing wait and still appends the settle pause', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
 
@@ -1280,23 +1283,24 @@ describe('instrumentLocator', () => {
     await Promise.all([
       locator.fill('Acme', {
         duration: 100,
-        beforeClickPause: 0,
-        postClickPause: 240,
+        move: { delayAfter: 240 },
       }),
       vi.runAllTimersAsync(),
     ])
 
     const fill = recordedInputEvents[0]!
     const waits = fill.events.filter((event) => event.type === 'mouseWait')
+    const down = fill.events.find((event) => event.type === 'mouseDown')
     const up = fill.events.find((event) => event.type === 'mouseUp')
 
     expect(waits).toHaveLength(2)
+    expect(down?.type).toBe('mouseDown')
     expect(up?.type).toBe('mouseUp')
-    if (up?.type !== 'mouseUp') {
-      throw new Error('Expected a mouseUp event')
+    if (down?.type !== 'mouseDown' || up?.type !== 'mouseUp') {
+      throw new Error('Expected mouseDown and mouseUp events')
     }
 
-    expect(waits[0]!.startMs - up.endMs).toBe(0)
+    expect(down.startMs - waits[0]!.endMs).toBe(0)
     expect(waits[0]!.endMs - waits[0]!.startMs).toBe(240)
     expect(waits[1]!.endMs - waits[1]!.startMs).toBe(
       DEFAULT_POST_TYPING_SETTLE_PAUSE_MS
@@ -1483,7 +1487,7 @@ describe('instrumentLocator', () => {
           }
         ).click({ moveDuration: 1000 })
       },
-      { duration: 300, postZoomDelay: 0 }
+      { duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1575,7 +1579,7 @@ describe('instrumentLocator', () => {
           }
         ).click({ moveDuration: 1000 })
       },
-      { duration: 300, postZoomDelay: 0 }
+      { duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1612,7 +1616,7 @@ describe('instrumentLocator', () => {
       async () => {
         await locator.check()
       },
-      { duration: 300, postZoomDelay: 0 }
+      { duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1662,7 +1666,7 @@ describe('instrumentLocator', () => {
           ) => Promise<void>
         )('hi', { duration: 100 })
       },
-      { duration: 0, postZoomDelay: 0 }
+      { duration: 0, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1703,7 +1707,7 @@ describe('instrumentLocator', () => {
           postClickPause: 0,
         })
       },
-      { duration: 300, postZoomDelay: 0 }
+      { duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()

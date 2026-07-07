@@ -679,9 +679,9 @@ Visit https://screenci.com/docs for the full documentation.
 function generatePnpmWorkspaceYaml(pnpmMajor: number): string {
   // A nested `pnpm-workspace.yaml` makes pnpm treat the island as its own
   // workspace root, so a surrounding monorepo workspace does not absorb it (no
-  // hoisting, no `-w` install). It also pre-approves the ffmpeg-static build
-  // script so non-interactive installs (e.g. `pnpm install --frozen-lockfile`
-  // in CI) build the bundled binary without prompting.
+  // hoisting, no `-w` install). It also pre-approves dependency build scripts
+  // needed by the scaffold so non-interactive installs (e.g.
+  // `pnpm install --frozen-lockfile` in CI) build without prompting.
   //
   // pnpm 10 and 11 spell this approval differently: pnpm 11 removed
   // `onlyBuiltDependencies` in favour of the `allowBuilds` map. Emit the key
@@ -689,9 +689,11 @@ function generatePnpmWorkspaceYaml(pnpmMajor: number): string {
   const buildApproval =
     pnpmMajor >= 11
       ? `allowBuilds:
+  esbuild: true
   ffmpeg-static: true
 `
       : `onlyBuiltDependencies:
+  - esbuild
   - ffmpeg-static
 `
   return `packages:
@@ -1361,7 +1363,7 @@ video
   })('How to find docs', async ({ page, narration, overlays }) => {
   // Run setup without showing these actions in the final recording.
   await hide(async () => {
-    await page.goto('https://screenci.com/')
+    await page.setContent(landingPageHtml())
   })
 
   // Open with a brief brand intro card before the walkthrough begins.
@@ -1375,6 +1377,30 @@ video
     await page.getByRole('link', { name: 'View Documentation' }).click()
   })
 })
+
+function landingPageHtml(): string {
+  return \`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ScreenCI smoke page</title>
+    <style>
+      body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #111827; color: white; }
+      main { min-height: 100vh; display: grid; place-items: center; text-align: center; }
+      a { color: #111827; background: #fbbf24; padding: 14px 18px; border-radius: 8px; text-decoration: none; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>
+        <h1>ScreenCI</h1>
+        <p>Record docs, onboarding, and changelog walkthroughs from code.</p>
+        <a href="https://screenci.com/docs">View Documentation</a>
+      </div>
+    </main>
+  </body>
+</html>\`
+}
 `
 }
 
@@ -1397,13 +1423,36 @@ screenshot.overlays({
     margin: 8,
   }),
 })('Where to find docs', async ({ page, overlays }) => {
-  await page.goto('https://screenci.com/')
-  await page.waitForLoadState('load')
+  await page.setContent(landingPageHtml())
 
   await overlays
     .ring(page.getByRole('link', { name: 'View Documentation' }))
     .start()
 })
+
+function landingPageHtml(): string {
+  return \`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ScreenCI smoke page</title>
+    <style>
+      body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #111827; color: white; }
+      main { min-height: 100vh; display: grid; place-items: center; text-align: center; }
+      a { color: #111827; background: #fbbf24; padding: 14px 18px; border-radius: 8px; text-decoration: none; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>
+        <h1>ScreenCI</h1>
+        <p>Record docs, onboarding, and changelog walkthroughs from code.</p>
+        <a href="https://screenci.com/docs">View Documentation</a>
+      </div>
+    </main>
+  </body>
+</html>\`
+}
 `
 }
 
@@ -1424,13 +1473,36 @@ screenshot.overlays({
     margin: 8,
   }),
 })('Where to find docs', async ({ page, overlays }) => {
-  await page.goto('https://screenci.com/')
-  await page.waitForLoadState('load')
+  await page.setContent(landingPageHtml())
 
   await overlays
     .ring(page.getByRole('link', { name: 'View Documentation' }))
     .start()
 })
+
+function landingPageHtml(): string {
+  return \`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ScreenCI smoke page</title>
+    <style>
+      body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #111827; color: white; }
+      main { min-height: 100vh; display: grid; place-items: center; text-align: center; }
+      a { color: #111827; background: #fbbf24; padding: 14px 18px; border-radius: 8px; text-decoration: none; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>
+        <h1>ScreenCI</h1>
+        <p>Record docs, onboarding, and changelog walkthroughs from code.</p>
+        <a href="https://screenci.com/docs">View Documentation</a>
+      </div>
+    </main>
+  </body>
+</html>\`
+}
 `
 }
 

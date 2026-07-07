@@ -460,7 +460,7 @@ describe('CLI', () => {
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/my-app/screenci/recordings/example.screenci.ts',
-        expect.stringContaining("await page.goto('https://screenci.com/')")
+        expect.stringContaining('await page.setContent(landingPageHtml())')
       )
       // With React overlays on (the default), the screenshot example remains a
       // `.ts` file and rings a locator with a `.tsx` overlay page.
@@ -1492,7 +1492,7 @@ describe('CLI', () => {
           call[0] === '/workspace/my-project/screenci/pnpm-workspace.yaml'
       )
       expect(workspaceCall?.[1]).toContain(
-        'allowBuilds:\n  ffmpeg-static: true'
+        'allowBuilds:\n  esbuild: true\n  ffmpeg-static: true'
       )
       expect(workspaceCall?.[1]).not.toContain('onlyBuiltDependencies')
       // The flat (host) pnpm-workspace.yaml is never written; only the island's.
@@ -1540,7 +1540,7 @@ describe('CLI', () => {
           call[0] === '/workspace/my-project/screenci/pnpm-workspace.yaml'
       )
       expect(workspaceCall?.[1]).toContain(
-        'onlyBuiltDependencies:\n  - ffmpeg-static'
+        'onlyBuiltDependencies:\n  - esbuild\n  - ffmpeg-static'
       )
       expect(workspaceCall?.[1]).not.toContain('allowBuilds')
     })

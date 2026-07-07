@@ -517,6 +517,24 @@ export type Easing =
   | 'ease-out-strong'
   | 'ease-in-out-strong'
 
+/** Every valid {@link Easing} name, for runtime validation. */
+export const EASING_NAMES: readonly Easing[] = [
+  'linear',
+  'ease-in',
+  'ease-out',
+  'ease-in-out',
+  'ease-in-strong',
+  'ease-out-strong',
+  'ease-in-out-strong',
+]
+
+/** Anchor corner for the narration (camera PIP) overlay. */
+export type NarrationCorner =
+  | 'top-left'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-right'
+
 export type AutoZoomOptions = {
   easing?: Easing
   /** Duration in milliseconds for zoom-in transitions. */

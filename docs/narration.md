@@ -666,6 +666,13 @@ voices you are licensed to reproduce, in line with the ElevenLabs
 > ElevenLabs account, delete custom voices you no longer need to free up slots,
 > then re-run the render.
 
+## Move, resize, hide the bubble mid-video
+
+The narration bubble's corner, padding, size, and visibility can change
+mid-video with animated transitions (`moveNarration`, `resizeNarration`,
+`hideNarration({ duration })`): see
+[Mid-Video Overlay Updates](/docs/guides/overlay-updates).
+
 ## Manage narration from Editor
 
 You can manage narration text from the web app instead of code. Pass a bare

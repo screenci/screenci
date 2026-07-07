@@ -82,6 +82,26 @@ export { timestamp } from './src/timestamp.js'
 export { autoZoom } from './src/autoZoom.js'
 export { zoomTo, resetZoom } from './src/manualZoom.js'
 export { hideNarration, showNarration } from './src/narrationVisibility.js'
+export {
+  moveNarration,
+  resizeNarration,
+  resizeRecording,
+  hideRecording,
+  showRecording,
+  setBackground,
+} from './src/overlayUpdates.js'
+export type {
+  OverlayTransitionOptions,
+  MoveNarrationOptions,
+  SetBackgroundInput,
+} from './src/overlayUpdates.js'
+export type { NarrationCorner } from './src/types.js'
+export type {
+  UpdateTransition,
+  NarrationUpdateEvent,
+  RecordingUpdateEvent,
+  BackgroundUpdateEvent,
+} from './src/events.js'
 // Per-method defaults of every tracked action option, so the backend/editor can
 // tell an override that restates the default from a real change.
 export { ACTION_PARAM_DEFAULTS } from './src/actionParams.js'

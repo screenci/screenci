@@ -397,18 +397,6 @@ export type RecordOptions = {
   fps?: FPS
 
   /**
-   * Make actions that use default values in code editable from the web
-   * editor. When enabled (the default), every interaction called without
-   * explicit ScreenCI options (cursor timing, zoom options) is stamped as
-   * web-editable, so its timings can be adjusted from the web timeline and
-   * applied on the next record. An action with any explicit option set in
-   * code is locked as a whole (there are no partially editable actions).
-   *
-   * @default true
-   */
-  implicitEditable?: boolean
-
-  /**
    * Tunes how many output frames screenci skips between cursor and scroll
    * dispatches while recording. Dispatching less often keeps interactions
    * responsive on busy pages / slow CI (each dispatch queues behind the page's
@@ -537,6 +525,36 @@ export type Easing =
   | 'ease-in-strong'
   | 'ease-out-strong'
   | 'ease-in-out-strong'
+
+/** Every valid {@link Easing} name, for runtime validation. */
+export const EASING_NAMES: readonly Easing[] = [
+  'linear',
+  'ease-in',
+  'ease-out',
+  'ease-in-out',
+  'ease-in-strong',
+  'ease-out-strong',
+  'ease-in-out-strong',
+]
+
+/** Anchor corner for the narration (camera PIP) overlay. */
+export type NarrationCorner =
+  | 'top-left'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-right'
+
+/**
+ * Narration overlay position: one of the four corners, centered in the
+ * output, or filling the whole frame (uncropped source aspect).
+ */
+export type NarrationPosition = NarrationCorner | 'center' | 'full-screen'
+
+/**
+ * How full-screen narration fits the output frame: 'contain' letterboxes
+ * with black bars, 'cover' fills the frame with slight cropping.
+ */
+export type NarrationFullScreenFit = 'contain' | 'cover'
 
 export type AutoZoomOptions = {
   easing?: Easing

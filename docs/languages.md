@@ -294,15 +294,14 @@ its narration (auto-translated from an existing language, with a checklist for
 what is still missing), then render. The render reuses the existing capture with
 the new narration, so you do not have to re-record.
 
-A one-off language is marked with a purple **One-off** badge in the language list
-and a banner on its page, both noting that it is not in your code and will not
-auto-update. Because it is not declared in code, a CI re-record of the video
-leaves it untouched: it is only ever re-rendered when you explicitly render it
-again from its page.
+A one-off language is marked with a purple **One-off** badge in the language
+list and a banner on its page, noting that it is not declared in your code.
+Re-records still pick it up: before a record, the CLI fetches the web-added
+languages and unions them into each video's recorded set, so a language added
+from the web is never blocked by code.
 
-To make a one-off language permanent (so CI keeps it up to date), either list
-it in the `video.languages([...])` seed in code or add it to the language set
-from the Editor page.
+To move a web-added language into code, list it in the
+`video.languages([...])` seed or in a per-feature declaration.
 
 ## Available languages
 

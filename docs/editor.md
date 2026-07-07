@@ -328,12 +328,19 @@ see [Editor languages from code](#editor-languages-from-code) below. There is no
 Interaction timings, zoom options, speed blocks, and pauses can be edited from
 the web timeline and applied on the next record, without touching code.
 
-By default (`recordOptions.implicitEditable: true`) every interaction that uses
-default values in code is editable from the web: its identity is the captured
-locator description (for example `getByRole(button, name=Save)`) plus its
-position on the timeline. Setting any explicit option in code locks that whole
-action; there are no partially editable actions. Set
-`implicitEditable: false` to keep every timing owned by code.
+Every interaction is editable from the web, whether its values come from
+package defaults or from explicit options in code. Its identity is the
+captured locator description (for example `getByRole(button, name=Save)`)
+plus its position on the timeline. Explicit code options do not block edits:
+the editor shows those fields with a `code` marker, and saving an edit over
+one shows a note that it shadows the code value. At the next record the CLI
+prints a matching warning (`editor override shadows code value: ...`), and
+`screenci status` lists every shadowing edit so you can move it into code or
+clear it.
+
+Manual `zoomTo(...)` calls and `scrollIntoViewIfNeeded()` also appear on the
+editor's "Zooms & scrolls" row with editable `easing`, `duration`, `amount`,
+and `centering` fields.
 
 The main editable action forms:
 
@@ -346,7 +353,7 @@ await speed('intro-speedup', async () => { ... })
 // Unnamed editable block, identified by its timeline position.
 await speed(async () => { ... })
 
-// Locked: the multiplier comes from code.
+// Explicit: the multiplier comes from code (a web edit shadows it and warns).
 await speed(3, async () => { ... })
 
 // Bare autoZoom stays fully web-editable, starting from the package defaults.
@@ -355,7 +362,7 @@ await autoZoom(async () => { ... })
 // Web-editable pause: defaults to 0ms until edited in the web timeline.
 await page.waitForTimeout()
 
-// Locked pause: the duration comes from code.
+// Explicit pause: the duration comes from code (a web edit shadows it).
 await page.waitForTimeout(500)
 ```
 
@@ -365,6 +372,25 @@ timings entirely, so it neither fetches nor applies them. After each upload the
 stored timeline is reconciled against what was actually recorded: new actions
 appear in place, removed actions disappear, and edits whose action vanished are
 kept as stale entries in the editor for cleanup instead of being dropped.
+
+## Web-authored events
+
+Hides and speed blocks can also be ADDED from the web timeline, without any
+code change. Hover the timeline and click the small `+` on the ghost marker to
+open the add popover: pick the kind (hide or speedup), an anchor (a previous
+known event, either an interaction or a `timestamp()` marker), an offset in
+milliseconds from that anchor, and a duration (or a second anchor plus its own
+offset for the end). Bars can also be resized by dragging their right edge.
+
+At the next record the CLI fetches the authored events and the SDK inserts the
+matching `hideStart`/`hideEnd` or `speedStart`/`speedEnd` pairs into the
+recorded event stream at the resolved positions. An anchor that no longer
+exists never fails the recording: the event is skipped with a warning
+(`authored hide skipped: anchor ... not found`), the editor shows it under
+"Broken anchors", and `screenci status` reports it with a fix suggestion.
+
+`timestamp('name')` markers are the most stable anchors: add one in code at a
+meaningful moment and hang web-authored events off it with offsets.
 
 ## Editor languages from code
 

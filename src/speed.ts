@@ -1,6 +1,5 @@
 import type { IEventRecorder } from './events.js'
 import {
-  getRuntimeRecordOptions,
   nextEditablePosition,
   setRuntimeHideRecorder,
 } from './runtimeContext.js'
@@ -24,18 +23,15 @@ export function setActiveSpeedRecorder(recorder: IEventRecorder | null): void {
 
 /**
  * Editable metadata for a `speed` block. A numeric multiplier comes from
- * code, so that form is locked; the named (`speed('name', fn)`) and bare
- * (`speed(fn)`) forms are web-editable with a default multiplier of 1.
- * Skipped for the locked form when `recordOptions.implicitEditable` is false.
+ * code and is marked explicit (a web edit shadows it with a warning); the
+ * named (`speed('name', fn)`) and bare (`speed(fn)`) forms are web-editable
+ * with a default multiplier of 1.
  */
 function buildSpeedEditableMeta(input: {
   multiplier: number
   locked: boolean
   name?: string | undefined
 }): EditableMeta | undefined {
-  if (input.locked && getRuntimeRecordOptions()?.implicitEditable === false) {
-    return undefined
-  }
   const identity = {
     kind: 'speed' as const,
     ...(input.name !== undefined && { name: input.name }),
@@ -44,6 +40,7 @@ function buildSpeedEditableMeta(input: {
     ...identity,
     schemaKind: 'speed',
     locked: input.locked,
+    ...(input.locked && { lockedFields: ['multiplier'] }),
     defaults: { multiplier: input.multiplier },
     position: nextEditablePosition(editableIdentityKey(identity)),
   })

@@ -159,11 +159,6 @@ Set shared `recordOptions` under `use`:
 - `redact`: CSS selectors masked from the first frame so on-screen secrets never
   enter the recording. See
   [redacting sensitive content](/docs/guides/redact).
-- `implicitEditable` (default `true`): stamp interactions that use default
-  values in code as editable from the web editor, so their timings (cursor
-  moves, pauses, zoom options) can be adjusted in the browser and applied on
-  the next record. An action with any explicit option set in code stays locked
-  as a whole. Set to `false` to keep every timing owned by code.
 
 These values determine the recording viewport, so they are the supported way to
 control recording size.

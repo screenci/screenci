@@ -429,6 +429,23 @@ describe('CLI', () => {
       // so override-shadowing warnings could never fire.
       expect(removed).not.toContain('/project/.screenci/action-params.json')
     })
+
+    it('preserves the editable-actions snapshot so the next run can diff timing overrides', async () => {
+      const { clearRecordingDirectories } = await import('./cli')
+      const dir = '/project/.screenci'
+      mockReaddirSync.mockReturnValue([
+        'My Video [en]',
+        'editable-actions.json',
+      ] as unknown as string[])
+
+      clearRecordingDirectories(dir)
+
+      const removed = mockRmSync.mock.calls.map((call) => call[0] as string)
+      expect(removed).toContain('/project/.screenci/My Video [en]')
+      // Wiping this would lose the previous run's per-field explicit
+      // provenance, so timing-override shadow warnings could never fire.
+      expect(removed).not.toContain('/project/.screenci/editable-actions.json')
+    })
   })
 
   describe('fetchActionOverridesEnv', () => {
@@ -438,6 +455,201 @@ describe('CLI', () => {
       await expect(
         fetchActionOverridesEnv('/project/screenci.config.ts', false)
       ).resolves.toEqual({})
+    })
+  })
+
+  describe('fetchEditableOverridesEnv', () => {
+    function setupConfig() {
+      process.env.SCREENCI_SECRET = 'sk-test'
+      mockExistsSync.mockImplementation((path: string) =>
+        path.endsWith('screenci.config.ts')
+      )
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        if (String(path).endsWith('screenci.config.ts')) {
+          return "export default { projectName: 'Test Project' }"
+        }
+        return ''
+      })
+    }
+
+    it('returns no env without a SCREENCI_SECRET (anonymous record works)', async () => {
+      delete process.env.SCREENCI_SECRET
+      const { fetchEditableOverridesEnv } = await import('./cli')
+      await expect(
+        fetchEditableOverridesEnv('/project/screenci.config.ts', false)
+      ).resolves.toEqual({})
+    })
+
+    it('injects the fetched override map as SCREENCI_EDITABLE_OVERRIDES', async () => {
+      setupConfig()
+      const overrides = {
+        'My video': [
+          {
+            key: 'input|click|getByRole(button)|0',
+            values: { moveDuration: 1 },
+          },
+        ],
+      }
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => ({
+          ok: true,
+          json: async () => ({ overrides }),
+        }))
+      )
+      const { fetchEditableOverridesEnv } = await import('./cli')
+      await expect(
+        fetchEditableOverridesEnv('test-fixtures/screenci.config.ts', false)
+      ).resolves.toEqual({
+        SCREENCI_EDITABLE_OVERRIDES: JSON.stringify(overrides),
+      })
+      vi.unstubAllGlobals()
+    })
+
+    it('returns no env when the endpoint fails or has no overrides (never blocks record)', async () => {
+      setupConfig()
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => ({ ok: false, status: 500 }))
+      )
+      const { fetchEditableOverridesEnv } = await import('./cli')
+      await expect(
+        fetchEditableOverridesEnv('test-fixtures/screenci.config.ts', false)
+      ).resolves.toEqual({})
+
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => ({ ok: true, json: async () => ({ overrides: {} }) }))
+      )
+      await expect(
+        fetchEditableOverridesEnv('test-fixtures/screenci.config.ts', false)
+      ).resolves.toEqual({})
+
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          throw new Error('offline')
+        })
+      )
+      await expect(
+        fetchEditableOverridesEnv('test-fixtures/screenci.config.ts', false)
+      ).resolves.toEqual({})
+      vi.unstubAllGlobals()
+    })
+  })
+
+  describe('fetchWebLanguagesEnv', () => {
+    it('returns no env without a SCREENCI_SECRET (anonymous record works)', async () => {
+      delete process.env.SCREENCI_SECRET
+      const { fetchWebLanguagesEnv } = await import('./cli')
+      await expect(
+        fetchWebLanguagesEnv('/project/screenci.config.ts', false)
+      ).resolves.toEqual({})
+    })
+
+    it('injects the fetched language map as SCREENCI_WEB_LANGUAGES', async () => {
+      process.env.SCREENCI_SECRET = 'sk-test'
+      mockExistsSync.mockImplementation((path: string) =>
+        path.endsWith('screenci.config.ts')
+      )
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        if (String(path).endsWith('screenci.config.ts')) {
+          return "export default { projectName: 'Test Project' }"
+        }
+        return ''
+      })
+      const languages = { Tutorial: ['fi'] }
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => ({ ok: true, json: async () => ({ languages }) }))
+      )
+      const { fetchWebLanguagesEnv } = await import('./cli')
+      await expect(
+        fetchWebLanguagesEnv('test-fixtures/screenci.config.ts', false)
+      ).resolves.toEqual({
+        SCREENCI_WEB_LANGUAGES: JSON.stringify(languages),
+      })
+
+      // Failures never block a record.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          throw new Error('offline')
+        })
+      )
+      await expect(
+        fetchWebLanguagesEnv('test-fixtures/screenci.config.ts', false)
+      ).resolves.toEqual({})
+      vi.unstubAllGlobals()
+    })
+  })
+
+  describe('reportEditableOverrideCollisions', () => {
+    it('prints one line per override shadowing an explicit code value', async () => {
+      const { reportEditableOverrideCollisions } = await import('./cli')
+      const snapshot = {
+        version: 1,
+        videos: {
+          'My video': [
+            {
+              key: 'input|click|getByRole(button)|0',
+              locked: true,
+              lockedFields: ['moveDuration'],
+              defaults: { moveDuration: 400, moveEasing: 'ease-in-out' },
+            },
+          ],
+        },
+      }
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify(snapshot))
+
+      const lines: string[] = []
+      reportEditableOverrideCollisions(
+        '/project/.screenci',
+        {
+          SCREENCI_EDITABLE_OVERRIDES: JSON.stringify({
+            'My video': [
+              {
+                key: 'input|click|getByRole(button)|0',
+                values: { moveDuration: 250, moveEasing: 'linear' },
+              },
+            ],
+          }),
+        },
+        (message) => lines.push(message)
+      )
+
+      // Only the explicit code value collides; the defaulted easing does not.
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).toContain('editor override shadows code value')
+      expect(lines[0]).toContain('moveDuration')
+      expect(lines[0]).toContain('code 400')
+      expect(lines[0]).toContain('editor 250')
+      expect(lines[0]).toContain('My video')
+    })
+
+    it('prints nothing without fetched overrides or without a snapshot', async () => {
+      const { reportEditableOverrideCollisions } = await import('./cli')
+      const lines: string[] = []
+      reportEditableOverrideCollisions('/project/.screenci', {}, (message) =>
+        lines.push(message)
+      )
+      mockExistsSync.mockReturnValue(false)
+      reportEditableOverrideCollisions(
+        '/project/.screenci',
+        {
+          SCREENCI_EDITABLE_OVERRIDES: JSON.stringify({
+            'My video': [
+              {
+                key: 'input|click|getByRole(button)|0',
+                values: { moveDuration: 250 },
+              },
+            ],
+          }),
+        },
+        (message) => lines.push(message)
+      )
+      expect(lines).toEqual([])
     })
   })
 

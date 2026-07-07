@@ -52,9 +52,11 @@ import {
   SCREENCI_RECORD_OPTIONS_ENV,
   SCREENCI_ACTION_OVERRIDES_ENV,
   SCREENCI_FAST_NARRATION_ENV,
+  SCREENCI_WEB_LANGUAGES_ENV,
   isUploadExistingEnabled,
 } from './src/runtimeMode.js'
 import { SCREENCI_EDITABLE_OVERRIDES_ENV } from './src/editableRuntime.js'
+import { SCREENCI_AUTHORED_EVENTS_ENV } from './src/authoredEvents.js'
 import { DEFAULT_RECORD_UPLOAD_POLICY } from './src/defaults.js'
 import type { VoiceKey } from './src/voices.js'
 import type { RecordUploadPolicy, ScreenCIConfig } from './src/types.js'
@@ -76,6 +78,15 @@ import {
   readActionParamsSnapshot,
   updateActionParamsSnapshot,
 } from './src/actionParamsSnapshot.js'
+import {
+  diffEditableOverridesAgainstSnapshot,
+  EDITABLE_SNAPSHOT_FILE,
+  formatAuthoredStatusReport,
+  formatEditableStatusReport,
+  readEditableSnapshot,
+  updateEditableSnapshot,
+  type AuthoredEventStatusInput,
+} from './src/editableSnapshot.js'
 import {
   defaultActionOverridesClient,
   type ActionOverridesClient,
@@ -1278,6 +1289,9 @@ export function clearRecordingDirectories(dir: string): void {
     // Preserve the action-parameter snapshot: it must survive so the next run
     // can diff editor overrides against the previous run's explicit values.
     if (entry === ACTION_PARAMS_SNAPSHOT_FILE) continue
+    // Preserve the editable-actions snapshot for the same reason: the next run
+    // diffs web timing overrides against the previous run's explicit values.
+    if (entry === EDITABLE_SNAPSHOT_FILE) continue
     rmSync(resolve(dir, entry), { recursive: true, force: true })
   }
 }
@@ -3211,6 +3225,9 @@ async function compareEditorStateToSnapshot(
 ): Promise<{
   comparison: ReturnType<typeof compareWebStateToSnapshot>
   projectName: string
+  screenciDir: string
+  apiUrl: string
+  secret: string
 }> {
   const { resolvedConfigPath, screenciConfig, secret, apiUrl } =
     await requireScreenCISecret(configPath)
@@ -3226,7 +3243,53 @@ async function compareEditorStateToSnapshot(
     overrides,
     grep !== undefined ? new RegExp(grep) : undefined
   )
-  return { comparison, projectName: screenciConfig.projectName }
+  return {
+    comparison,
+    projectName: screenciConfig.projectName,
+    screenciDir,
+    apiUrl,
+    secret,
+  }
+}
+
+/** Fetcher for the web editor's stored timing overrides, injectable in tests. */
+export type EditableOverridesFetcher = (args: {
+  apiUrl: string
+  secret: string
+  projectName: string
+}) => Promise<{
+  overrides: Record<
+    string,
+    Array<{ key: string; values: Record<string, unknown> }>
+  >
+  authored: Record<string, AuthoredEventStatusInput[]>
+}>
+
+const defaultEditableOverridesFetcher: EditableOverridesFetcher = async ({
+  apiUrl,
+  secret,
+  projectName,
+}) => {
+  const params = new URLSearchParams({ projectName })
+  const res = await fetch(`${apiUrl}/cli/editable-overrides?${params}`, {
+    headers: { 'X-ScreenCI-Secret': secret },
+  })
+  if (!res.ok) return { overrides: {}, authored: {} }
+  const body = (await res.json()) as { overrides?: unknown; authored?: unknown }
+  return {
+    overrides:
+      typeof body.overrides === 'object' && body.overrides !== null
+        ? (body.overrides as Awaited<
+            ReturnType<EditableOverridesFetcher>
+          >['overrides'])
+        : {},
+    authored:
+      typeof body.authored === 'object' && body.authored !== null
+        ? (body.authored as Awaited<
+            ReturnType<EditableOverridesFetcher>
+          >['authored'])
+        : {},
+  }
 }
 
 /**
@@ -3238,14 +3301,37 @@ export async function printActionStatus(
   configPath?: string,
   grep?: string,
   client: ActionOverridesClient = defaultActionOverridesClient,
-  log: (message: string) => void = (message) => logger.info(message)
+  log: (message: string) => void = (message) => logger.info(message),
+  fetchEditableOverrides: EditableOverridesFetcher = defaultEditableOverridesFetcher
 ): Promise<void> {
-  const { comparison } = await compareEditorStateToSnapshot(
-    configPath,
-    grep,
-    client
-  )
+  const { comparison, projectName, screenciDir, apiUrl, secret } =
+    await compareEditorStateToSnapshot(configPath, grep, client)
   for (const line of formatStatusReport(comparison)) log(line)
+
+  // Timing overrides and authored events (web timeline edits): best-effort;
+  // the action parameter report above must print even when this fetch fails.
+  try {
+    const { overrides, authored } = await fetchEditableOverrides({
+      apiUrl,
+      secret,
+      projectName,
+    })
+    const snapshot = readEditableSnapshot(screenciDir)
+    const lines = formatEditableStatusReport(snapshot, overrides)
+    if (lines.length > 0) {
+      log('')
+      log('Timing overrides (web timeline edits):')
+      for (const line of lines) log(line)
+    }
+    const authoredLines = formatAuthoredStatusReport(snapshot, authored)
+    if (authoredLines.length > 0) {
+      log('')
+      log('Web-authored events (hides / speed blocks):')
+      for (const line of authoredLines) log(line)
+    }
+  } catch {
+    // ignore: the endpoint may be unavailable
+  }
 }
 
 /**
@@ -4236,7 +4322,7 @@ export async function fetchActionOverridesEnv(
  * or mock-record run. Best-effort: any failure returns an empty env so the
  * SDK uses code/default values, and a recording is never blocked by this.
  */
-async function fetchEditableOverridesEnv(
+export async function fetchEditableOverridesEnv(
   configPath: string,
   verbose: boolean
 ): Promise<Record<string, string>> {
@@ -4263,17 +4349,32 @@ async function fetchEditableOverridesEnv(
       return {}
     }
 
-    const body = (await res.json()) as { overrides?: unknown }
+    const body = (await res.json()) as {
+      overrides?: unknown
+      authored?: unknown
+    }
+    const env: Record<string, string> = {}
     const overrides = body.overrides
     if (
-      overrides === undefined ||
-      overrides === null ||
-      typeof overrides !== 'object' ||
-      Object.keys(overrides as Record<string, unknown>).length === 0
+      overrides !== undefined &&
+      overrides !== null &&
+      typeof overrides === 'object' &&
+      Object.keys(overrides as Record<string, unknown>).length > 0
     ) {
-      return {}
+      env[SCREENCI_EDITABLE_OVERRIDES_ENV] = JSON.stringify(overrides)
     }
-    return { [SCREENCI_EDITABLE_OVERRIDES_ENV]: JSON.stringify(overrides) }
+    // Web-authored hides/speed blocks ride the same payload; injected as their
+    // own env and applied when each recording's data.json is written.
+    const authored = body.authored
+    if (
+      authored !== undefined &&
+      authored !== null &&
+      typeof authored === 'object' &&
+      Object.keys(authored as Record<string, unknown>).length > 0
+    ) {
+      env[SCREENCI_AUTHORED_EVENTS_ENV] = JSON.stringify(authored)
+    }
+    return env
   } catch (error) {
     if (verbose) {
       logger.warn(
@@ -4312,6 +4413,101 @@ export function reportActionOverrideCollisions(
           `${collision.method} ${collision.optionPath}: ` +
           `code ${JSON.stringify(collision.codeValue)} -> editor ` +
           `${JSON.stringify(collision.editorValue)} (video: ${collision.videoName})`
+      )
+    }
+  } catch {
+    // Best-effort reporting; never block a recording.
+  }
+}
+
+/**
+ * Fetch the web's per-video language additions so they can be injected as
+ * SCREENCI_WEB_LANGUAGES before a recording. A language added from the web is
+ * then recorded on every re-record even when code never declared it.
+ * Best-effort: any failure returns an empty env so the run records the
+ * code-declared set, and a recording is never blocked by this.
+ */
+export async function fetchWebLanguagesEnv(
+  configPath: string,
+  verbose: boolean
+): Promise<Record<string, string>> {
+  // Web languages only exist for a real (non-anonymous) org; skip entirely
+  // without a secret rather than hard-exiting via requireScreenCISecret.
+  if (!process.env.SCREENCI_SECRET) return {}
+  try {
+    const { screenciConfig, secret, apiUrl } =
+      await requireScreenCISecret(configPath)
+    const params = new URLSearchParams({
+      projectName: screenciConfig.projectName,
+    })
+
+    const res = await fetch(
+      `${apiUrl}/cli/web-languages?${params.toString()}`,
+      {
+        headers: { 'X-ScreenCI-Secret': secret },
+      }
+    )
+    if (!res.ok) {
+      if (verbose) {
+        logger.warn(
+          `Could not fetch web languages (${res.status}); recording code-declared languages only.`
+        )
+      }
+      return {}
+    }
+
+    const body = (await res.json()) as { languages?: unknown }
+    const languages = body.languages
+    if (
+      languages === undefined ||
+      languages === null ||
+      typeof languages !== 'object' ||
+      Object.keys(languages as Record<string, unknown>).length === 0
+    ) {
+      return {}
+    }
+    return { [SCREENCI_WEB_LANGUAGES_ENV]: JSON.stringify(languages) }
+  } catch (error) {
+    if (verbose) {
+      logger.warn(
+        `Could not fetch web languages; recording code-declared languages only.${
+          error instanceof Error ? ` (${error.message})` : ''
+        }`
+      )
+    }
+    return {}
+  }
+}
+
+/**
+ * Print one info line per web timing override that shadows an explicitly
+ * code-set editable value, comparing the fetched overrides against the
+ * previous run's editable snapshot. A missing snapshot (first run) prints
+ * nothing.
+ */
+export function reportEditableOverrideCollisions(
+  screenciDir: string,
+  editableOverridesEnv: Record<string, string>,
+  log: (message: string) => void = (message) => logger.info(message)
+): void {
+  const raw = editableOverridesEnv[SCREENCI_EDITABLE_OVERRIDES_ENV]
+  if (raw === undefined) return
+  try {
+    const overridesByVideo: unknown = JSON.parse(raw)
+    if (typeof overridesByVideo !== 'object' || overridesByVideo === null)
+      return
+    const snapshot = readEditableSnapshot(screenciDir)
+    for (const collision of diffEditableOverridesAgainstSnapshot(
+      snapshot,
+      overridesByVideo as Parameters<
+        typeof diffEditableOverridesAgainstSnapshot
+      >[1]
+    )) {
+      log(
+        `[screenci] editor override shadows code value: ${collision.key} ` +
+          `${collision.field}: code ${JSON.stringify(collision.codeValue)} ` +
+          `-> editor ${JSON.stringify(collision.editorValue)} ` +
+          `(video: ${collision.videoName})`
       )
     }
   } catch {
@@ -4386,6 +4582,17 @@ async function run(
     command === 'record' || mockRecord
       ? await fetchEditableOverridesEnv(configPath, verbose)
       : {}
+  if (command === 'record') {
+    reportEditableOverrideCollisions(
+      resolve(dirname(configPath), '.screenci'),
+      editableOverridesEnv
+    )
+  }
+
+  // Web-added languages (record only): union into each video's recorded set so
+  // a language added from the web is never blocked by code.
+  const webLanguagesEnv =
+    command === 'record' ? await fetchWebLanguagesEnv(configPath, verbose) : {}
 
   const envForChild = { ...process.env }
 
@@ -4400,6 +4607,7 @@ async function run(
     ...recordOptionsEnv,
     ...actionOverridesEnv,
     ...editableOverridesEnv,
+    ...webLanguagesEnv,
     ...(command === 'test' && !mockRecord
       ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
       : {}),
@@ -4444,6 +4652,8 @@ async function run(
       ...actionOverridesEnv,
       // Web-editor timing overrides (record and test --mock-record).
       ...editableOverridesEnv,
+      // Web-added languages (record only): unioned into each video's set.
+      ...webLanguagesEnv,
       ...(command === 'test' && !mockRecord
         ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
         : {}),
@@ -4485,6 +4695,11 @@ async function run(
         if (command === 'record') {
           try {
             updateActionParamsSnapshot(screenciDirForSnapshot)
+          } catch {
+            // ignore
+          }
+          try {
+            updateEditableSnapshot(screenciDirForSnapshot)
           } catch {
             // ignore
           }

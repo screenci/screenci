@@ -123,14 +123,16 @@ narration fades. The mouse cursor's hide/show remains instant.
   recording, or background) throws if it lands before the previous
   transition has finished. Wait out the transition first (for example
   `await page.waitForTimeout(600)` after a 600 ms move).
-- **Corner roundness scales during resize**: the bubble and frame are
-  rendered once at their largest size and scaled per frame, so the corner
-  radius shrinks and grows proportionally during the animation.
-- **Recording drop shadow**: not rendered while recording resize/visibility
-  updates or background changes are used.
+- **Corner roundness follows the tile**: `roundness` is a fraction of the
+  tile's shorter side, so the corner radius shrinks and grows with the tile
+  during a resize. That keeps the radius correct at every resting size.
+- **Recording drop shadow**: the standard 0-1 `dropShadow` moves and scales
+  with the animated recording frame. A custom CSS-string shadow authored in
+  the editor is not rendered while recording/background updates are used.
 - **Updates inside `hide()` spans**: an animation that would span cut
   footage is clamped, so it completes by the cut instead of animating
   through removed time.
-- **Cursor and zoom geometry** follow the largest recording size on the
-  timeline; prefer keeping pointer-heavy interaction at the recording's
-  largest size.
+- **Cursor**: the pointer rides the recording frame through resizes and
+  hides with it. During zooms combined with recording resize the cursor
+  follows the largest recording size instead; prefer keeping zoomed,
+  pointer-heavy interaction at the recording's largest size.

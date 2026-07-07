@@ -172,6 +172,18 @@ export const docsManifest = [
     description:
       'Choose between autoZoom and manual framing, and use camera direction to guide attention without making the video frantic.',
     prev: 'docs/guides/languages',
+    next: 'docs/guides/overlay-updates',
+  },
+  {
+    source: 'overlay-updates.md',
+    slug: 'docs/guides/overlay-updates',
+    section: 'Guides',
+    order: 3,
+    navLabel: 'Mid-video overlay updates',
+    title: 'Mid-Video Overlay Updates',
+    description:
+      'Move, resize, hide, and show the narration bubble and recording frame mid-video with animated transitions, fade overlays, and change the background with a cut or crossfade.',
+    prev: 'docs/guides/camera-and-zooming',
     next: 'docs/guides/screenshots',
   },
   {
@@ -183,7 +195,7 @@ export const docsManifest = [
     title: 'Screenshots',
     description:
       'Capture branded still screenshots with the screenshot() fixture: crop to a component, set quality and dark mode, and frame the shot on a background with overlays.',
-    prev: 'docs/guides/camera-and-zooming',
+    prev: 'docs/guides/overlay-updates',
     next: 'docs/guides/editor',
   },
   {

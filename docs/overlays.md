@@ -704,6 +704,24 @@ Other timing notes:
 
 That means you do not need separate timing math just to line an intro clip up with the next step.
 
+## Fade in and out
+
+Any overlay fades in or out with `fadeIn` / `fadeOut` (milliseconds) in its
+config. Omitted fades keep the instant appearance.
+
+```ts
+const overlays = video.overlays({
+  logo: {
+    path: './logo.png',
+    width: 200,
+    x: 24,
+    y: 24,
+    fadeIn: 250,
+    fadeOut: 250,
+  },
+})
+```
+
 ## File organization
 
 A simple structure is usually enough:

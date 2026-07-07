@@ -104,6 +104,16 @@ type OverlayCommon = {
    */
   duration?: OverlayDuration
   /**
+   * Fade the overlay in over this many milliseconds when it appears.
+   * Omitted = instant.
+   */
+  fadeIn?: number
+  /**
+   * Fade the overlay out over this many milliseconds when it disappears.
+   * Omitted = instant.
+   */
+  fadeOut?: number
+  /**
    * Capture the overlay as an animation so its CSS/JS animation plays back in
    * the video (`.html`/`.tsx` page overlays only). The animation is sampled over
    * the resolved duration with a transparent background preserved. The page's own
@@ -400,6 +410,8 @@ export type DependencyOverlayOptions = Pick<
   | 'clip'
   | 'pinToScreen'
   | 'overMouse'
+  | 'fadeIn'
+  | 'fadeOut'
 > & {
   /**
    * Late start into the embedded VIDEO (ms number/timecode/`'50%'` position).
@@ -990,6 +1002,8 @@ function buildOverlayFromConfig(
   const fullScreen = config.fill === 'screen'
   const pinToScreen = config.pinToScreen === true
   const overMouse = config.overMouse === true
+  const fadeInMs = validateFadeMs(name, 'fadeIn', config.fadeIn)
+  const fadeOutMs = validateFadeMs(name, 'fadeOut', config.fadeOut)
   const animate = config.animate === true
   // Parse the relative `duration` string into ms once; reused by every branch.
   const configDurationMs = resolveConfigDuration(name, config.duration)
@@ -1054,6 +1068,10 @@ function buildOverlayFromConfig(
         fullScreen,
         pinToScreen,
         overMouse,
+        {
+          ...(fadeInMs !== undefined && { fadeInMs }),
+          ...(fadeOutMs !== undefined && { fadeOutMs }),
+        },
         config.fps,
         configDurationMs,
         renderOpts
@@ -1067,7 +1085,11 @@ function buildOverlayFromConfig(
       pinToScreen,
       overMouse,
       configDurationMs,
-      renderOpts
+      renderOpts,
+      {
+        ...(fadeInMs !== undefined && { fadeInMs }),
+        ...(fadeOutMs !== undefined && { fadeOutMs }),
+      }
     )
   }
 
@@ -1100,6 +1122,8 @@ function buildOverlayFromConfig(
       fullScreen,
       ...(pinToScreen && { pinToScreen: true }),
       ...(overMouse && { overMouse: true }),
+      ...(fadeInMs !== undefined && { fadeInMs }),
+      ...(fadeOutMs !== undefined && { fadeOutMs }),
       ...(configDurationMs !== undefined && { durationMs: configDurationMs }),
       ...(media.clip !== undefined && { clip: media.clip }),
     })
@@ -1138,6 +1162,8 @@ function buildOverlayFromConfig(
       fullScreen,
       ...(pinToScreen && { pinToScreen: true }),
       ...(overMouse && { overMouse: true }),
+      ...(fadeInMs !== undefined && { fadeInMs }),
+      ...(fadeOutMs !== undefined && { fadeOutMs }),
       ...(media.volume !== undefined && { audio: media.volume }),
       ...(media.speed !== undefined && { speed: media.speed }),
       ...(media.time !== undefined && { time: media.time }),
@@ -1463,6 +1489,10 @@ function createDependencyOverlayController(
         fullScreen,
         ...(pinToScreen && { pinToScreen: true }),
         ...(input.config.overMouse === true && { overMouse: true }),
+        ...(validateFadeMs(input.name, 'fadeIn', input.config.fadeIn) !==
+          undefined && { fadeInMs: input.config.fadeIn }),
+        ...(validateFadeMs(input.name, 'fadeOut', input.config.fadeOut) !==
+          undefined && { fadeOutMs: input.config.fadeOut }),
         ...(placement !== undefined && { placement }),
         ...(input.config.clip !== undefined && { clip: input.config.clip }),
         ...(sourceStart !== undefined && { sourceStart }),
@@ -1481,6 +1511,8 @@ type ResolvedFileOverlay =
       fullScreen: boolean
       pinToScreen?: boolean
       overMouse?: boolean
+      fadeInMs?: number
+      fadeOutMs?: number
       durationMs?: number
       clip?: OverlayClip
     }
@@ -1491,6 +1523,8 @@ type ResolvedFileOverlay =
       fullScreen: boolean
       pinToScreen?: boolean
       overMouse?: boolean
+      fadeInMs?: number
+      fadeOutMs?: number
       audio?: number
       speed?: number
       time?: number
@@ -1536,7 +1570,8 @@ function createRenderedOverlayController(
   pinToScreen: boolean,
   overMouse: boolean,
   durationMs?: number,
-  renderOpts: OverlayRenderOpts = {}
+  renderOpts: OverlayRenderOpts = {},
+  fade: { fadeInMs?: number; fadeOutMs?: number } = {}
 ): OverlayController {
   // The document and placement are resolved during the test (cheap: a file read
   // or a component bundle, plus a boundingBox read for `over`), but rasterization
@@ -1578,6 +1613,8 @@ function createRenderedOverlayController(
         fullScreen,
         ...(pinToScreen && { pinToScreen: true }),
         ...(overMouse && { overMouse: true }),
+        ...(fade.fadeInMs !== undefined && { fadeInMs: fade.fadeInMs }),
+        ...(fade.fadeOutMs !== undefined && { fadeOutMs: fade.fadeOutMs }),
         ...(resolvedPlacement !== undefined && {
           placement: resolvedPlacement,
         }),
@@ -1630,6 +1667,7 @@ function createAnimatedOverlayController(
   fullScreen: boolean,
   pinToScreen: boolean,
   overMouse: boolean,
+  fade: { fadeInMs?: number; fadeOutMs?: number },
   fps: number | undefined,
   configDurationMs: number | undefined,
   renderOpts: OverlayRenderOpts = {}
@@ -1683,6 +1721,8 @@ function createAnimatedOverlayController(
         fullScreen,
         ...(pinToScreen && { pinToScreen: true }),
         ...(overMouse && { overMouse: true }),
+        ...(fade.fadeInMs !== undefined && { fadeInMs: fade.fadeInMs }),
+        ...(fade.fadeOutMs !== undefined && { fadeOutMs: fade.fadeOutMs }),
         ...(resolved.placement !== undefined && {
           placement: resolved.placement,
         }),
@@ -2031,6 +2071,24 @@ function injectOverlayRootSize(
   return style + document
 }
 
+/**
+ * Validates an overlay fade length (ms): a finite integer >= 0. Returns the
+ * value, or undefined when unset (or 0, which means instant).
+ */
+function validateFadeMs(
+  name: string,
+  option: 'fadeIn' | 'fadeOut',
+  value: number | undefined
+): number | undefined {
+  if (value === undefined) return undefined
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(
+      `[screenci] Overlay "${name}" option "${option}" must be an integer >= 0 (milliseconds); received ${value}.`
+    )
+  }
+  return value === 0 ? undefined : value
+}
+
 function toRecordedFileStart(
   name: string,
   resolved: ResolvedFileOverlay,
@@ -2063,6 +2121,10 @@ function toRecordedFileStart(
       ...(resolved.placement !== undefined && {
         placement: resolved.placement,
       }),
+      ...(resolved.fadeInMs !== undefined && { fadeInMs: resolved.fadeInMs }),
+      ...(resolved.fadeOutMs !== undefined && {
+        fadeOutMs: resolved.fadeOutMs,
+      }),
       ...(resolved.clip !== undefined && { clip: resolved.clip }),
     }
   }
@@ -2086,6 +2148,8 @@ function toRecordedFileStart(
     ...(resolved.pinToScreen && { pinToScreen: true }),
     ...(resolved.overMouse && { overMouse: true }),
     ...(resolved.placement !== undefined && { placement: resolved.placement }),
+    ...(resolved.fadeInMs !== undefined && { fadeInMs: resolved.fadeInMs }),
+    ...(resolved.fadeOutMs !== undefined && { fadeOutMs: resolved.fadeOutMs }),
     ...(resolved.speed !== undefined && { speed: resolved.speed }),
     ...(resolved.time !== undefined && { time: resolved.time }),
     ...(resolved.clip !== undefined && { clip: resolved.clip }),

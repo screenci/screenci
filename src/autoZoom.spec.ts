@@ -102,7 +102,10 @@ describe('autoZoom', () => {
       const p = autoZoom(() => {})
       await vi.runAllTimersAsync()
       await p
-      expect(recorder.addAutoZoomStart).toHaveBeenCalledWith(undefined)
+      expect(recorder.addAutoZoomStart).toHaveBeenCalledWith(
+        undefined,
+        expect.objectContaining({ locked: false, schemaKind: 'autoZoom' })
+      )
       expect(recorder.addAutoZoomEnd).toHaveBeenCalledWith(undefined)
     })
 
@@ -114,11 +117,14 @@ describe('autoZoom', () => {
       })
       await vi.runAllTimersAsync()
       await p
-      expect(recorder.addAutoZoomStart).toHaveBeenCalledWith({
-        easing: 'ease-in-out',
-        duration: 400,
-        amount: 0.6,
-      })
+      expect(recorder.addAutoZoomStart).toHaveBeenCalledWith(
+        {
+          easing: 'ease-in-out',
+          duration: 400,
+          amount: 0.6,
+        },
+        expect.objectContaining({ locked: true, schemaKind: 'autoZoom' })
+      )
       expect(recorder.addAutoZoomEnd).toHaveBeenCalledWith({
         easing: 'ease-in-out',
         duration: 400,
@@ -130,9 +136,12 @@ describe('autoZoom', () => {
       const p = autoZoom(() => {}, { easing: 'linear' })
       await vi.runAllTimersAsync()
       await p
-      expect(recorder.addAutoZoomStart).toHaveBeenCalledWith({
-        easing: 'linear',
-      })
+      expect(recorder.addAutoZoomStart).toHaveBeenCalledWith(
+        {
+          easing: 'linear',
+        },
+        expect.objectContaining({ locked: true })
+      )
       expect(recorder.addAutoZoomEnd).toHaveBeenCalledWith({ easing: 'linear' })
     })
 
@@ -141,7 +150,8 @@ describe('autoZoom', () => {
       await vi.runAllTimersAsync()
       await p
       expect(recorder.addAutoZoomStart).toHaveBeenCalledWith(
-        expect.objectContaining({ centering: 0.2 })
+        expect.objectContaining({ centering: 0.2 }),
+        expect.objectContaining({ locked: true })
       )
     })
   })

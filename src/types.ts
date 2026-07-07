@@ -8,6 +8,7 @@ import type {
 import type { PerformanceOption } from './performance.js'
 import type { CropTarget, ScreenshotCropRecord } from './crop.js'
 import type { AnyTopLevelVoiceConfig } from './voiceConfig.js'
+import type { EditableAction } from './studio.js'
 
 /**
  * Aspect ratio for recording and output.
@@ -379,6 +380,18 @@ export type RecordOptions = {
    * @default 60
    */
   fps?: FPS
+
+  /**
+   * Make actions that use default values in code editable from the web
+   * editor. When enabled (the default), every interaction called without
+   * explicit ScreenCI options (cursor timing, zoom options) is stamped as
+   * web-editable, so its timings can be adjusted from the web timeline and
+   * applied on the next record. An action with any explicit option set in
+   * code is locked as a whole (there are no partially editable actions).
+   *
+   * @default true
+   */
+  implicitEditable?: boolean
 
   /**
    * Tunes how many output frames screenci skips between cursor and scroll
@@ -1140,7 +1153,7 @@ export type ScreenCIPage = Omit<
    * Use Playwright locator/action waits for application readiness instead of
    * relying on this as a real polling delay.
    */
-  waitForTimeout(...args: Parameters<Page['waitForTimeout']>): Promise<void>
+  waitForTimeout(timeout?: number | EditableAction): Promise<void>
   /**
    * Captures a screenshot. Inside a `video()` recording this also writes a
    * branded still as a separate screenshot recording named "<video title> -

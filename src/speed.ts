@@ -1,6 +1,16 @@
 import type { IEventRecorder } from './events.js'
-import { setRuntimeHideRecorder } from './runtimeContext.js'
+import {
+  getRuntimeRecordOptions,
+  nextEditablePosition,
+  setRuntimeHideRecorder,
+} from './runtimeContext.js'
 import { getActiveHideRecorder, runTimelineBlock } from './timelineBlock.js'
+import {
+  buildEditableMeta,
+  editableIdentityKey,
+  type EditableMeta,
+} from './editableDescriptor.js'
+import { applyEditableOverride } from './editableRuntime.js'
 
 function assertValidSpeedMultiplier(multiplier: number): void {
   if (!Number.isFinite(multiplier) || multiplier <= 0) {
@@ -12,16 +22,89 @@ export function setActiveSpeedRecorder(recorder: IEventRecorder | null): void {
   setRuntimeHideRecorder(recorder)
 }
 
+/**
+ * Editable metadata for a `speed` block. A numeric multiplier comes from
+ * code, so that form is locked; the named (`speed('name', fn)`) and bare
+ * (`speed(fn)`) forms are web-editable with a default multiplier of 1.
+ * Skipped for the locked form when `recordOptions.implicitEditable` is false.
+ */
+function buildSpeedEditableMeta(input: {
+  multiplier: number
+  locked: boolean
+  name?: string | undefined
+}): EditableMeta | undefined {
+  if (input.locked && getRuntimeRecordOptions()?.implicitEditable === false) {
+    return undefined
+  }
+  const identity = {
+    kind: 'speed' as const,
+    ...(input.name !== undefined && { name: input.name }),
+  }
+  return buildEditableMeta({
+    ...identity,
+    schemaKind: 'speed',
+    locked: input.locked,
+    defaults: { multiplier: input.multiplier },
+    position: nextEditablePosition(editableIdentityKey(identity)),
+  })
+}
+
+/**
+ * Speeds up (or slows down) the recording inside `fn` at render time.
+ *
+ * Three forms:
+ *
+ * - `speed(3, fn)`: the multiplier comes from code and is locked against web
+ *   edits.
+ * - `speed('name', fn)`: names the block; the multiplier is owned by the web
+ *   editor (defaults to 1 until edited there).
+ * - `speed(fn)`: unnamed web-editable block, identified by its position on
+ *   the editor timeline.
+ */
+export async function speed(fn: () => Promise<void> | void): Promise<void>
+export async function speed(
+  name: string,
+  fn: () => Promise<void> | void
+): Promise<void>
 export async function speed(
   multiplier: number,
   fn: () => Promise<void> | void
+): Promise<void>
+export async function speed(
+  first: number | string | (() => Promise<void> | void),
+  maybeFn?: () => Promise<void> | void
 ): Promise<void> {
+  const fn = typeof first === 'function' ? first : maybeFn
+  if (fn === undefined) {
+    throw new Error('speed() requires a callback function')
+  }
+
+  const locked = typeof first === 'number'
+  const name = typeof first === 'string' ? first : undefined
+  if (locked) assertValidSpeedMultiplier(first)
+
+  const editable = buildSpeedEditableMeta({
+    multiplier: locked ? first : 1,
+    locked,
+    name,
+  })
+  // Web override for the editable forms; the multiplier defaults to 1 (no
+  // speed change) until edited in the web editor.
+  const effective = applyEditableOverride(editable)
+  const multiplier =
+    typeof effective.multiplier === 'number'
+      ? effective.multiplier
+      : locked
+        ? first
+        : 1
   assertValidSpeedMultiplier(multiplier)
+
   const recorder = getActiveHideRecorder()
   await runTimelineBlock({
     type: 'speed',
     recorder,
-    emitStart: (activeRecorder) => activeRecorder.addSpeedStart(multiplier),
+    emitStart: (activeRecorder) =>
+      activeRecorder.addSpeedStart(multiplier, editable),
     emitEnd: (activeRecorder) => activeRecorder.addSpeedEnd(),
     fn,
     multiplier,

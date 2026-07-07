@@ -87,6 +87,7 @@ import {
   getChromiumLaunchOptions,
   isCaptureAudioEnabled,
 } from './browserLaunchOptions.js'
+import { resolveEditableOverridesForVideo } from './editableRuntime.js'
 import {
   createScreenCIRuntimeContext,
   runWithScreenCIRuntimeContext,
@@ -919,6 +920,10 @@ const _videoBase = base.extend<
         recordOptions,
         renderOptions: renderOptionsObj,
       })
+      // Web-editor timing overrides for this video (injected by the CLI for
+      // record and mock-record runs; absent for plain test runs).
+      runtimeContext.editable.overridesByKey =
+        resolveEditableOverridesForVideo(videoName)
       bindStillCaptureToPage(page)
       await setupMouseTracking(page, recorder)
       if (resolveDisableAnimations(recordOptions.disableAnimations, 'video')) {
@@ -978,6 +983,10 @@ const _videoBase = base.extend<
       recordOptions,
       renderOptions: renderOptionsObj,
     })
+    // Web-editor timing overrides for this video, fetched by the CLI before
+    // the run and injected via SCREENCI_EDITABLE_OVERRIDES.
+    runtimeContext.editable.overridesByKey =
+      resolveEditableOverridesForVideo(videoName)
 
     await setupMouseTracking(page, recorder)
     if (resolveDisableAnimations(recordOptions.disableAnimations, 'video')) {

@@ -59,6 +59,37 @@ export type EditablePending = EditableMarker<undefined> & {
   readonly languagesOnly: true
 }
 
+/**
+ * An app-editable ACTION declaration: names a timeline action (a click's
+ * timing, an `autoZoom` block, a `speed` block, a `page.waitForTimeout`
+ * pause) and/or seeds its default option values, making the whole action
+ * editable from the web timeline. Produced by the `editable('name')` /
+ * `editable('name', { ...defaults })` forms, and by the seeded object form
+ * when passed where options are expected (e.g. `autoZoom(fn, editable({
+ * centering: 0.5 }))`).
+ */
+export type EditableAction<S = unknown> = EditableMarker<S> & {
+  /** Explicit action name shown in the web editor and used for matching. */
+  readonly actionName?: string
+}
+
+/** The explicit action name of an editable marker, when one was given. */
+export function getEditableActionName(
+  marker: EditableMarker
+): string | undefined {
+  return (marker as EditableAction).actionName
+}
+
+/**
+ * The seeded default option values of an editable marker, when given. For an
+ * action marker these are the option defaults the web editor starts from.
+ */
+export function getEditableSeed(
+  marker: EditableMarker
+): Record<string, unknown> | undefined {
+  return marker.seed as Record<string, unknown> | undefined
+}
+
 /** Whether a value was produced by {@link editable}. */
 export function isEditableMarker(value: unknown): value is EditableMarker {
   return (
@@ -84,8 +115,21 @@ export function isEditableMarker(value: unknown): value is EditableMarker {
  *
  * For `video.languages`, the names are language codes: `editable(['en', 'fi'])`
  * seeds the initial set (web-owned, but starts with those languages).
+ *
+ * Two more forms declare an editable timeline ACTION (see
+ * {@link EditableAction}):
+ *
+ * - `editable('name')`: names the action for the web editor; option values
+ *   start from the package defaults.
+ * - `editable('name', { ...defaults })`: names it and seeds default option
+ *   values the web editor starts from.
  */
 export function editable(): EditablePending
+export function editable(name: string): EditableAction<undefined>
+export function editable<const S extends Record<string, unknown>>(
+  name: string,
+  defaults: S
+): EditableAction<S>
 export function editable<const N extends readonly string[]>(
   names: N
 ): EditableNames & { readonly names: N }
@@ -95,9 +139,18 @@ export function editable<
   seed: S
 ): EditableSeeded<S> & { readonly names: readonly (keyof S & string)[] }
 export function editable(
-  arg?: readonly string[] | Record<string, unknown>
+  arg?: string | readonly string[] | Record<string, unknown>,
+  defaults?: Record<string, unknown>
 ): EditableMarker {
   if (arg === undefined) return { [EDITABLE]: true, names: [] }
+  if (typeof arg === 'string') {
+    return {
+      [EDITABLE]: true,
+      names: [],
+      actionName: arg,
+      ...(defaults !== undefined && { seed: defaults }),
+    } as EditableAction
+  }
   if (Array.isArray(arg)) return { [EDITABLE]: true, names: [...arg] }
   return {
     [EDITABLE]: true,

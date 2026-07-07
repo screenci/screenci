@@ -42,7 +42,10 @@ describe('timeline blocks', () => {
   it('records speed start/end with multiplier', async () => {
     await speed(0.5, async () => {})
 
-    expect(recorder.addSpeedStart).toHaveBeenCalledWith(0.5)
+    expect(recorder.addSpeedStart).toHaveBeenCalledWith(
+      0.5,
+      expect.objectContaining({ locked: true, schemaKind: 'speed' })
+    )
     expect(recorder.addSpeedEnd).toHaveBeenCalledOnce()
   })
 
@@ -119,7 +122,10 @@ describe('timeline blocks', () => {
       })
     ).rejects.toThrow('boom')
 
-    expect(recorder.addSpeedStart).toHaveBeenCalledWith(2)
+    expect(recorder.addSpeedStart).toHaveBeenCalledWith(
+      2,
+      expect.objectContaining({ locked: true, schemaKind: 'speed' })
+    )
     expect(recorder.addSpeedEnd).toHaveBeenCalledOnce()
   })
 

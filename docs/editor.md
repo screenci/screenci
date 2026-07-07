@@ -353,6 +353,54 @@ The recorded **language set** is managed separately via `video.languages(...)`:
 see [Editor languages from code](#editor-languages-from-code) below. There is no
 `recordOptions.languages`.
 
+## Editable timeline actions
+
+Interaction timings, zoom options, speed blocks, and pauses can be edited from
+the web timeline and applied on the next record, without touching code.
+
+By default (`recordOptions.implicitEditable: true`) every interaction that uses
+default values in code is editable from the web: its identity is the captured
+locator description (for example `getByRole(button, name=Save)`) plus its
+position on the timeline. Setting any explicit option in code locks that whole
+action; there are no partially editable actions. Set
+`implicitEditable: false` to keep every timing owned by code.
+
+Actions can also be declared editable explicitly with `editable(...)`:
+
+```ts
+import { autoZoom, editable, speed } from 'screenci'
+
+// Named speed block: the multiplier is owned by the web editor (defaults to 1).
+await speed('intro-speedup', async () => { ... })
+
+// Unnamed editable block, identified by its timeline position.
+await speed(async () => { ... })
+
+// Locked: the multiplier comes from code.
+await speed(3, async () => { ... })
+
+// autoZoom stays fully web-editable, starting from the seeded centering.
+await autoZoom(async () => { ... }, editable({ centering: 0.5 }))
+
+// Web-editable pause: defaults to 0ms until edited in the web timeline.
+await page.waitForTimeout()
+
+// Named web-editable pause with a seed duration.
+await page.waitForTimeout(editable('settle', { durationMs: 500 }))
+
+// Editable click timings, named and seeded.
+await page.getByRole('button', { name: 'Save' }).click(
+  editable('save-click', { moveDuration: 600 })
+)
+```
+
+Before `screenci record` (and `screenci test --mock-record`) the CLI fetches
+the saved web edits and applies them to the run. Plain `screenci test` skips
+timings entirely, so it neither fetches nor applies them. After each upload the
+stored timeline is reconciled against what was actually recorded: new actions
+appear in place, removed actions disappear, and edits whose action vanished are
+kept as stale entries in the editor for cleanup instead of being dropped.
+
 ## Editor languages from code
 
 > **Set `mode`, `locales`, and `browserLocale` correctly in code up front.** When

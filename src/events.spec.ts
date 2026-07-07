@@ -95,6 +95,40 @@ describe('EventRecorder', () => {
     })
   })
 
+  describe('addSleep', () => {
+    it('records the sleep span starting durationMs before now', () => {
+      recorder.start()
+      now = 1500
+      recorder.addSleep(83, 'frameGap')
+
+      expect(recorder.getEvents().slice(1)).toEqual([
+        { type: 'sleep', timeMs: 417, durationMs: 83, reason: 'frameGap' },
+      ])
+    })
+
+    it('clamps the start to 0 when the sleep spans the recording start', () => {
+      recorder.start()
+      now = 1050
+      recorder.addSleep(100, 'postVideo')
+
+      expect(recorder.getEvents().slice(1)).toEqual([
+        { type: 'sleep', timeMs: 0, durationMs: 100, reason: 'postVideo' },
+      ])
+    })
+
+    it('ignores non-positive durations', () => {
+      recorder.start()
+      recorder.addSleep(0, 'frameGap')
+      recorder.addSleep(-5, 'cueAudio')
+      expect(recorder.getEvents()).toHaveLength(1)
+    })
+
+    it('is a no-op before start', () => {
+      recorder.addSleep(83, 'frameGap')
+      expect(recorder.getEvents()).toHaveLength(0)
+    })
+  })
+
   describe('background audio events', () => {
     it('records an audioStart with path, volume and repeat', () => {
       recorder.start()
@@ -515,14 +549,12 @@ describe('EventRecorder', () => {
       // recording defaults
       expect((ro.recording as Record<string, unknown>).size).toBe(1.0)
       expect((ro.recording as Record<string, unknown>).roundness).toBe(0)
-      expect((ro.recording as Record<string, unknown>).shape).toBe('rounded')
-      expect((ro.recording as Record<string, unknown>).dropShadow).toBe(
-        'drop-shadow(0 8px 24px rgba(0,0,0,0.5))'
-      )
+      expect((ro.recording as Record<string, unknown>).shape).toBeUndefined()
+      expect((ro.recording as Record<string, unknown>).dropShadow).toBe(1)
       // narration defaults
       expect((ro.narration as Record<string, unknown>).size).toBe(0.3)
       expect((ro.narration as Record<string, unknown>).roundness).toBe(0.2)
-      expect((ro.narration as Record<string, unknown>).shape).toBe('rounded')
+      expect((ro.narration as Record<string, unknown>).shape).toBeUndefined()
       expect((ro.narration as Record<string, unknown>).corner).toBe(
         'bottom-right'
       )
@@ -586,7 +618,7 @@ describe('EventRecorder', () => {
       expect((ro.recording as Record<string, unknown>).size).toBe(0.8)
       // other recording fields still defaulted
       expect((ro.recording as Record<string, unknown>).roundness).toBe(0)
-      expect((ro.recording as Record<string, unknown>).shape).toBe('rounded')
+      expect((ro.recording as Record<string, unknown>).shape).toBeUndefined()
       // output also defaulted
       expect((ro.output as Record<string, unknown>).aspectRatio).toBe('16:9')
       expect((ro.output as Record<string, unknown>).quality).toBe('1080p')
@@ -658,9 +690,7 @@ describe('EventRecorder', () => {
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed: RecordingData = JSON.parse(content)
       const ro = parsed.renderOptions as Record<string, unknown>
-      expect((ro.recording as Record<string, unknown>).dropShadow).toBe(
-        'drop-shadow(0 8px 24px rgba(0,0,0,0.5))'
-      )
+      expect((ro.recording as Record<string, unknown>).dropShadow).toBe(1)
       expect((ro.narration as Record<string, unknown>).dropShadow).toBe(1)
       expect((ro.output as Record<string, unknown>).background).toEqual({
         backgroundCss: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
@@ -669,7 +699,7 @@ describe('EventRecorder', () => {
 
     it('overrides dropShadow and background when explicitly provided', async () => {
       recorder = new EventRecorder({
-        recording: { dropShadow: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' },
+        recording: { dropShadow: 0.2 },
         narration: { dropShadow: 0.2 },
         output: { background: { backgroundCss: '#000' } },
       })
@@ -679,9 +709,7 @@ describe('EventRecorder', () => {
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed: RecordingData = JSON.parse(content)
       const ro = parsed.renderOptions as Record<string, unknown>
-      expect((ro.recording as Record<string, unknown>).dropShadow).toBe(
-        'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
-      )
+      expect((ro.recording as Record<string, unknown>).dropShadow).toBe(0.2)
       expect((ro.narration as Record<string, unknown>).dropShadow).toBe(0.2)
       expect((ro.output as Record<string, unknown>).background).toEqual({
         backgroundCss: '#000',

@@ -642,7 +642,7 @@ describe('changeFocus', () => {
           duration: 300,
         })
       },
-      { amount: 0.65, padding: 0.2, duration: 300, postZoomDelay: 0 }
+      { amount: 0.65, padding: 0.2, duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -667,7 +667,7 @@ describe('changeFocus', () => {
           duration: 300,
         })
       },
-      { amount: 0.65, padding: 0.2, duration: 300, postZoomDelay: 0 }
+      { amount: 0.65, padding: 0.2, duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -692,7 +692,7 @@ describe('changeFocus', () => {
           duration: 300,
         })
       },
-      { amount: 0.65, padding: 0.2, duration: 300, postZoomDelay: 0 }
+      { amount: 0.65, padding: 0.2, duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -932,7 +932,7 @@ describe('changeFocus', () => {
         })
         result = await changeFocus(locator, { amount: 0.5, centering: 1 })
       },
-      { amount: 0.5, centering: 1, duration: 300, postZoomDelay: 0 }
+      { amount: 0.5, centering: 1, duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -970,7 +970,7 @@ describe('changeFocus', () => {
         })
         result = await changeFocus(locator, { amount: 0.5, centering: 1 })
       },
-      { amount: 0.5, centering: 1, duration: 1000, postZoomDelay: 0 }
+      { amount: 0.5, centering: 1, duration: 1000, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1006,7 +1006,7 @@ describe('changeFocus', () => {
         // at DEFAULT_AUTO_ZOOM_CENTERING (0.6), not dead center.
         result = await changeFocus(locator, { amount: 0.5 })
       },
-      { amount: 0.5, duration: 300, postZoomDelay: 0 }
+      { amount: 0.5, duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1047,7 +1047,7 @@ describe('changeFocus', () => {
         // makes the band the full slack, so the target rests at the far edge.
         result = await changeFocus(locator, { amount: 0.5, centering: 0 })
       },
-      { amount: 0.5, centering: 0, duration: 300, postZoomDelay: 0 }
+      { amount: 0.5, centering: 0, duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1075,7 +1075,7 @@ describe('changeFocus', () => {
     // centered within it: 360 + (360 - 40) / 2 = 520.
     const promise = changeFocus(
       locator,
-      { amount: 0.5, duration: 300, postZoomDelay: 0 },
+      { amount: 0.5, duration: 300, delayAfter: 0 },
       undefined,
       true
     )
@@ -1110,7 +1110,7 @@ describe('changeFocus', () => {
         })
         result = await changeFocus(locator, { amount: 0.5, centering: 1 })
       },
-      { amount: 0.5, centering: 1, duration: 1000, postZoomDelay: 0 }
+      { amount: 0.5, centering: 1, duration: 1000, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1145,7 +1145,7 @@ describe('changeFocus', () => {
         })
         await changeFocus(locator, { amount: 0.5, centering: 1 })
       },
-      { amount: 0.5, centering: 1, duration: 1000, postZoomDelay: 0 }
+      { amount: 0.5, centering: 1, duration: 1000, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1262,7 +1262,7 @@ describe('changeFocus', () => {
           }
         )
       },
-      { duration: 300, postZoomDelay: 0 }
+      { duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1298,7 +1298,7 @@ describe('changeFocus', () => {
         })
         result = await changeFocus(locator, { duration: 300 })
       },
-      { duration: 300, postZoomDelay: 0 }
+      { duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1340,7 +1340,7 @@ describe('changeFocus', () => {
           }
         )
       },
-      { duration: 1000, postZoomDelay: 0 }
+      { duration: 1000, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1390,7 +1390,7 @@ describe('changeFocus', () => {
           }
         )
       },
-      { duration: 1000, postZoomDelay: 0 }
+      { duration: 1000, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1426,10 +1426,10 @@ describe('changeFocus', () => {
     let resolved = false
     const promise = autoZoom(
       async () => {
-        await changeFocus(locator, { preZoomDelay: 200, postZoomDelay: 300 })
+        await changeFocus(locator, { delay: 200, delayAfter: 300 })
         resolved = true
       },
-      { duration: 0, preZoomDelay: 200, postZoomDelay: 300, amount: 1 }
+      { duration: 0, delay: 200, delayAfter: 300, amount: 1 }
     )
 
     await vi.advanceTimersByTimeAsync(499)

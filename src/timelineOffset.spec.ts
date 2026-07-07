@@ -5,17 +5,16 @@ import {
 } from './timelineOffset.js'
 
 describe('parseTimelineOffset', () => {
-  const absoluteCases: Array<[string, number]> = [
-    ['0s', 0],
-    ['2s', 2000],
-    ['5.51s', 5510],
+  const absoluteCases: Array<[string | number, number]> = [
+    [0, 0],
+    [2000, 2000],
+    [5510, 5510],
     ['0:00', 0],
     ['0:05.51', 5510],
     ['1:30', 90000],
     ['10:00', 600000],
     ['1:02:03.5', 3723500],
     ['0:00:00', 0],
-    [' 2s ', 2000],
     [' 0:05.51 ', 5510],
   ]
 
@@ -53,7 +52,18 @@ describe('parseTimelineOffset', () => {
     expect(() => parseTimelineOffset('1:5')).toThrow(/invalid timecode/)
   })
 
-  const unrecognized = ['', '   ', 'abc', '%', 's', '5', '-1s', '5 s', '5sec']
+  const unrecognized = [
+    '',
+    '   ',
+    'abc',
+    '%',
+    's',
+    '5',
+    '2s',
+    '-1s',
+    '5 s',
+    '5sec',
+  ]
   it.each(unrecognized)('rejects unrecognized position %j', (input) => {
     expect(() => parseTimelineOffset(input)).toThrow(/invalid position/)
   })

@@ -21,8 +21,8 @@ export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
   amount: 0.72,
   padding: 0.2,
   centering: 1,
-  preZoomDelay: 0,
-  postZoomDelay: 200,
+  delay: 0,
+  delayAfter: 200,
 }
 
 /**

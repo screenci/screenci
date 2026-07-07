@@ -86,19 +86,11 @@ async function zoomToPoint(
   const effectiveDuration = resolveEffectiveDuration(resolvedOptions, isZoomOut)
 
   const focusChangeStartMs = Date.now()
-  if (resolvedOptions.preZoomDelay > 0) {
-    await sleep(resolvedOptions.preZoomDelay)
-  }
-
   const zoomStartMs = Date.now()
   if (effectiveDuration > 0) {
     await sleep(effectiveDuration)
   }
   const zoomEndMs = Date.now()
-
-  if (resolvedOptions.postZoomDelay > 0) {
-    await sleep(resolvedOptions.postZoomDelay)
-  }
   const focusChangeEndMs = Date.now()
 
   const zoomEvent = buildZoomEvent({
@@ -190,17 +182,11 @@ export async function resetZoom(options: AutoZoomOptions = {}): Promise<void> {
   }
   const resetDuration = resolvedOptions.zoomOutDuration
   const focusChangeStartMs = Date.now()
-  if (resolvedOptions.preZoomDelay > 0) {
-    await sleep(resolvedOptions.preZoomDelay)
-  }
   const zoomStartMs = Date.now()
   if (resetDuration > 0) {
     await sleep(resetDuration)
   }
   const zoomEndMs = Date.now()
-  if (resolvedOptions.postZoomDelay > 0) {
-    await sleep(resolvedOptions.postZoomDelay)
-  }
   const focusChangeEndMs = Date.now()
 
   const result: FocusChangeEvent = {

@@ -1,15 +1,15 @@
 import { test, expect } from '@playwright/test'
-import { resolveCrop } from '../src/crop.js'
+import { resolveClip } from '../src/clip.js'
 import { buildScreenCIContextOptions } from '../src/contextOptions.js'
 
-test.describe('resolveCrop', () => {
+test.describe('resolveClip', () => {
   test('resolves a pixel rect for a locator', async ({ page }) => {
     await page.setViewportSize({ width: 1000, height: 800 })
     await page.setContent(
       '<div id="card" style="position:absolute;left:100px;top:80px;width:300px;height:200px;background:#333"></div>'
     )
 
-    const recorded = await resolveCrop(page.locator('#card'), page)
+    const recorded = await resolveClip(page.locator('#card'), page)
 
     expect(recorded.source).toBe('locator')
     expect(recorded.box.x).toBeCloseTo(100, 3)
@@ -21,7 +21,7 @@ test.describe('resolveCrop', () => {
 
   test('resolves an explicit pixel region', async ({ page }) => {
     await page.setViewportSize({ width: 1000, height: 800 })
-    const recorded = await resolveCrop(
+    const recorded = await resolveClip(
       { x: 100, y: 160, width: 800, height: 480 },
       page
     )
@@ -41,7 +41,7 @@ test.describe('resolveCrop', () => {
       '<div id="card" style="position:absolute;left:400px;top:400px;width:200px;height:200px"></div>'
     )
 
-    const recorded = await resolveCrop(page.locator('#card'), page, {
+    const recorded = await resolveClip(page.locator('#card'), page, {
       padding: 20,
     })
 
@@ -61,8 +61,8 @@ test.describe('resolveCrop', () => {
   test('rejects a negative region', async ({ page }) => {
     await page.setViewportSize({ width: 1000, height: 800 })
     await expect(
-      resolveCrop({ x: -1, y: 0, width: 500, height: 500 }, page)
-    ).rejects.toThrow(/crop/)
+      resolveClip({ x: -1, y: 0, width: 500, height: 500 }, page)
+    ).rejects.toThrow(/clip/)
   })
 })
 

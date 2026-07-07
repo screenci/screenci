@@ -48,7 +48,7 @@ describe('builder fixture controllers', () => {
 
   it('overlays: content-major preserves the per-name controller type', () => {
     video.overlays({
-      logo: { path: './logo.png', fill: 'recording', duration: '2s' },
+      logo: { path: './logo.png', fill: 'recording', duration: 2000 },
     })('t', async ({ overlays }) => {
       expectTypeOf(overlays.logo).toEqualTypeOf<OverlayController>()
       expectTypeOf<keyof typeof overlays>().toEqualTypeOf<'logo'>()

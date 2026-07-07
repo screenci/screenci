@@ -1643,8 +1643,8 @@ export async function changeFocus(
   })
 
   const focusChangeStartMs = Date.now()
-  if (focusOptions.preZoomDelay > 0) {
-    await sleep(focusOptions.preZoomDelay)
+  if (focusOptions.delay > 0) {
+    await sleep(focusOptions.delay)
   }
 
   const mousePromise =
@@ -1712,8 +1712,8 @@ export async function changeFocus(
           ...(timing.duration > 0 ? { easing: timing.easing } : {}),
         }
       : undefined
-  if (focusOptions.postZoomDelay > 0) {
-    await sleep(focusOptions.postZoomDelay)
+  if (focusOptions.delayAfter > 0) {
+    await sleep(focusOptions.delayAfter)
   }
   const focusChangeEndMs = Date.now()
   if (isTimingDebugEnabled()) {
@@ -1721,7 +1721,7 @@ export async function changeFocus(
       `[screenci:timing] changeFocus total=${focusChangeEndMs - snapshotStartMs}ms ` +
         `snapshot=${snapshotMs}ms ` +
         `animation=${animationMs}ms (planned ~${Math.round(timing.duration)}ms) ` +
-        `postZoom=${focusOptions.postZoomDelay}ms`
+        `delayAfter=${focusOptions.delayAfter}ms`
     )
   }
   const focusChange = {

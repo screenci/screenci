@@ -1,48 +1,49 @@
 /**
- * Shared validation and parsing for the source `crop` rectangle and the
+ * Shared validation and parsing for the source `clip` rectangle and the
  * `start`/`end` source-trim positions accepted by file overlays, narration video
  * cues, and `selected()` render dependencies.
  *
- * `crop` is a rectangle in the source file's own pixels. `start`/`end` are time
- * strings (`'2s'`, `'0:02'`, `'50%'`): seconds/timecodes resolve to a concrete ms
- * offset into the source, while a percentage stays symbolic (a fraction of the
+ * `clip` is a rectangle in the source file's own pixels. `start`/`end` are
+ * source positions: numbers are milliseconds, timecodes resolve to a concrete
+ * ms offset into the source, and a percentage stays symbolic (a fraction of the
  * SOURCE duration) because the source length is not known until render time.
  */
 import { parseTimelineOffset, type TimelineOffset } from './timelineOffset.js'
-import type { OverlayCrop, SourceTrimPoint } from './events.js'
+import type { OverlayClip, SourceTrimPoint } from './events.js'
 
 /**
- * Validates a {@link OverlayCrop}: every field finite, `x`/`y` non-negative, and
- * `width`/`height` strictly positive. Returns the crop unchanged so callers can
+ * Validates a {@link OverlayClip}: every field finite, `x`/`y` non-negative, and
+ * `width`/`height` strictly positive. Returns the clip unchanged so callers can
  * thread it inline.
  */
-export function validateCrop(label: string, crop: OverlayCrop): OverlayCrop {
-  const { x, y, width, height } = crop
+export function validateClip(label: string, clip: OverlayClip): OverlayClip {
+  const { x, y, width, height } = clip
   const finite = (v: unknown): v is number =>
     typeof v === 'number' && Number.isFinite(v)
   if (!finite(x) || !finite(y) || !finite(width) || !finite(height)) {
     throw new Error(
-      `[screenci] ${label} crop must have finite numeric x, y, width, and height (source pixels). Received: ${JSON.stringify(crop)}`
+      `[screenci] ${label} clip must have finite numeric x, y, width, and height (source pixels). Received: ${JSON.stringify(clip)}`
     )
   }
   if (x < 0 || y < 0) {
-    throw new Error(`[screenci] ${label} crop x and y must be >= 0.`)
+    throw new Error(`[screenci] ${label} clip x and y must be >= 0.`)
   }
   if (width <= 0 || height <= 0) {
-    throw new Error(`[screenci] ${label} crop width and height must be > 0.`)
+    throw new Error(`[screenci] ${label} clip width and height must be > 0.`)
   }
-  return crop
+  return clip
 }
 
-/** Parses a single `start`/`end` time string into a {@link SourceTrimPoint}. */
+/** Parses a single `start`/`end` timeline position into a {@link SourceTrimPoint}. */
 function parseSourceTrimPoint(
   value: TimelineOffset,
   label: string
 ): SourceTrimPoint {
-  if (typeof value !== 'string') {
-    throw new Error(
-      `[screenci] ${label} must be a time string such as '2s', '0:02', or '50%', got ${typeof value}.`
-    )
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value < 0) {
+      throw new Error(`[screenci] ${label} must be >= 0. Received: ${value}.`)
+    }
+    return { ms: value }
   }
   const parsed = parseTimelineOffset(value)
   if (parsed.kind === 'percent') {

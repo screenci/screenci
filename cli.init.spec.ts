@@ -43,6 +43,7 @@ const REACT_INSTALL_PACKAGES = [
   'react-dom@^19.0.0',
   '@types/react@^19.0.0',
   '@types/react-dom@^19.0.0',
+  'vite@^7.0.0',
 ]
 
 function expectNpmDevInstalls(
@@ -121,12 +122,7 @@ function expectPnpmDevInstalls(
       ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
       ...(includeReact ? REACT_INSTALL_PACKAGES : []),
     ],
-    [
-      'add',
-      '--save-dev',
-      '--allow-build=ffmpeg-static',
-      `screenci@${screenciVersion}`,
-    ],
+    ['add', '--save-dev', `screenci@${screenciVersion}`],
   ]
 
   expect(pnpmInstallCalls).toEqual(
@@ -459,7 +455,7 @@ describe('CLI', () => {
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/my-app/screenci/recordings/example.screenci.ts',
-        expect.stringContaining("await page.goto('https://screenci.com/')")
+        expect.stringContaining('await page.setContent(landingPageHtml())')
       )
       // With React overlays on (the default), the screenshot example remains a
       // `.ts` file and rings a locator with a `.tsx` overlay page.
@@ -972,7 +968,7 @@ describe('CLI', () => {
       )
       expect(mockSpawn).toHaveBeenCalledWith(
         'pnpm',
-        ['add', '--save-dev', '--allow-build=ffmpeg-static', 'screenci@0.0.32'],
+        ['add', '--save-dev', 'screenci@0.0.32'],
         expect.objectContaining({
           cwd: '/workspace/my-project/screenci',
           stdio: 'pipe',
@@ -1471,14 +1467,14 @@ describe('CLI', () => {
           call[0] === 'pnpm' &&
           Array.isArray(call[1]) &&
           call[1][0] === 'add' &&
-          call[1][2] === '--allow-build=ffmpeg-static'
+          call[1].includes('screenci@0.0.32')
       )
 
       expect(pnpmVersionCallIndex).toBeGreaterThanOrEqual(0)
       expect(screenciInstallCallIndex).toBeGreaterThan(pnpmVersionCallIndex)
       expect(mockSpawn).toHaveBeenCalledWith(
         'pnpm',
-        ['add', '--save-dev', '--allow-build=ffmpeg-static', 'screenci@0.0.32'],
+        ['add', '--save-dev', 'screenci@0.0.32'],
         expect.objectContaining({
           cwd: '/workspace/my-project/screenci',
           stdio: 'pipe',
@@ -1491,7 +1487,7 @@ describe('CLI', () => {
           call[0] === '/workspace/my-project/screenci/pnpm-workspace.yaml'
       )
       expect(workspaceCall?.[1]).toContain(
-        'allowBuilds:\n  ffmpeg-static: true'
+        'allowBuilds:\n  esbuild: true\n  ffmpeg-static: true'
       )
       expect(workspaceCall?.[1]).not.toContain('onlyBuiltDependencies')
       // The flat (host) pnpm-workspace.yaml is never written; only the island's.
@@ -1539,7 +1535,7 @@ describe('CLI', () => {
           call[0] === '/workspace/my-project/screenci/pnpm-workspace.yaml'
       )
       expect(workspaceCall?.[1]).toContain(
-        'onlyBuiltDependencies:\n  - ffmpeg-static'
+        'onlyBuiltDependencies:\n  - esbuild\n  - ffmpeg-static'
       )
       expect(workspaceCall?.[1]).not.toContain('allowBuilds')
     })
@@ -2158,7 +2154,7 @@ describe('CLI', () => {
             call[0] === 'cmd.exe' &&
             Array.isArray(call[1]) &&
             (call[1] as string[])[3] ===
-              '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0""'
+              '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0" "vite@^7.0.0""'
         )
         expect(installCall).toEqual([
           'cmd.exe',
@@ -2166,7 +2162,7 @@ describe('CLI', () => {
             '/d',
             '/s',
             '/c',
-            '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0""',
+            '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0" "vite@^7.0.0""',
           ],
           expect.objectContaining({
             cwd: '/workspace/create-app/screenci',
@@ -2268,7 +2264,7 @@ describe('CLI', () => {
         "Running 'npm exec --yes --package=skills -- skills add screenci/screenci --skill screenci --skill playwright-cli -y'..."
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        "Running 'npm install --save-dev @playwright/test@^1.59.0 @types/node@^25.9.1 @playwright/cli@latest react@^19.0.0 react-dom@^19.0.0 @types/react@^19.0.0 @types/react-dom@^19.0.0'..."
+        "Running 'npm install --save-dev @playwright/test@^1.59.0 @types/node@^25.9.1 @playwright/cli@latest react@^19.0.0 react-dom@^19.0.0 @types/react@^19.0.0 @types/react-dom@^19.0.0 vite@^7.0.0'..."
       )
     })
   })

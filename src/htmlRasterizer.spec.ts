@@ -135,6 +135,22 @@ describe('rasterizeHtmlOverlay caching', () => {
     })
     expect(existsSync(join(base, '.overlay-cache', `${hash}.png`))).toBe(true)
   })
+
+  it('keys distinct inline content to distinct hashes (inline source is part of the document)', () => {
+    // Inline element/jsx/html overlays embed their markup or bundle in the
+    // final document, so two different inline sources never share a cache slot.
+    const a = overlayInputHash({
+      kind: 'image',
+      deviceScaleFactor: 2,
+      html: '<div id="screenci-overlay-root"><b>one</b></div>',
+    })
+    const b = overlayInputHash({
+      kind: 'image',
+      deviceScaleFactor: 2,
+      html: '<div id="screenci-overlay-root"><b>two</b></div>',
+    })
+    expect(a).not.toBe(b)
+  })
 })
 
 describe('framesForDuration', () => {

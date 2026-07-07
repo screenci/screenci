@@ -15,7 +15,7 @@ describe('createScreenCIRuntimeContext', () => {
     const ctx = createScreenCIRuntimeContext()
     expect(ctx.recordOptions).toBeNull()
     expect(ctx.renderOptions).toBeUndefined()
-    expect(ctx.crop).toBeNull()
+    expect(ctx.clip).toBeNull()
     expect(ctx.captureKind).toBe('video')
   })
 
@@ -45,10 +45,10 @@ describe('runtime getters/setters', () => {
     })
   })
 
-  it('sets and reads the per-test crop on the active context', () => {
+  it('sets and reads the per-test clip on the active context', () => {
     const ctx = createScreenCIRuntimeContext()
 
-    const cropRecord = {
+    const clipRecord = {
       box: { x: 100, y: 200, width: 500, height: 400 },
       padding: { top: 0, right: 0, bottom: 0, left: 0 },
       source: 'region' as const,
@@ -56,12 +56,12 @@ describe('runtime getters/setters', () => {
 
     runWithScreenCIRuntimeContext(ctx, () => {
       expect(getRuntimeCrop()).toBeUndefined()
-      setRuntimeCrop(cropRecord)
-      expect(getRuntimeCrop()).toEqual(cropRecord)
+      setRuntimeCrop(clipRecord)
+      expect(getRuntimeCrop()).toEqual(clipRecord)
     })
 
-    // The crop is stored on the context object itself, not a module global.
-    expect(ctx.crop).toEqual(cropRecord)
+    // The clip is stored on the context object itself, not a module global.
+    expect(ctx.clip).toEqual(clipRecord)
   })
 
   it('reports the capture kind from the active context', () => {

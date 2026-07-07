@@ -11,13 +11,13 @@ import type {
   IEventRecorder,
   ElementRect,
   FocusChangeEvent,
-  InputEvent,
   MouseMoveEvent,
   MouseDownEvent,
   MouseUpEvent,
   MouseShowEvent,
   MouseHideEvent,
   MouseWaitEvent,
+  InputEvent,
 } from './events.js'
 import { NOOP_EVENT_RECORDER } from './events.js'
 import {
@@ -111,7 +111,6 @@ import {
 const pageClickRecorders = new WeakMap<object, IEventRecorder>()
 
 const DEFAULT_PRE_CLICK_PAUSE_MS = 50
-const DEFAULT_POST_CLICK_PAUSE_MS = 300
 const DEFAULT_POST_TYPING_SETTLE_PAUSE_MS = CLICK_DURATION_MS / 2
 
 export function setActiveClickRecorder(recorder: IEventRecorder | null): void {
@@ -419,6 +418,30 @@ function buildDefaultClickMouseMoveRequest(options?: {
   }
 }
 
+type CursorMoveOption = {
+  move?: (
+    | { duration?: number; speed?: never }
+    | { duration?: never; speed?: number }
+  ) & {
+    easing?: Easing
+    delayAfter?: number
+  }
+}
+
+function resolveCursorMoveOption(move: CursorMoveOption['move']): {
+  moveDuration: number | undefined
+  moveSpeed: number | undefined
+  moveEasing: Easing
+  moveDelayAfter: number | undefined
+} {
+  return {
+    moveDuration: move?.duration,
+    moveSpeed: move?.speed,
+    moveEasing: move?.easing ?? 'ease-in-out',
+    moveDelayAfter: move?.delayAfter,
+  }
+}
+
 async function appendMouseWait(
   innerEvents: ClickActionResult['innerEvents'],
   durationMs: number
@@ -475,65 +498,18 @@ function resolveEditableCallOptions<T extends object>(
   return { options: options as T | undefined, forcedEditable: false }
 }
 
-/**
- * Cursor timing values shared by the pointer-driven wrappers. When the action
- * is editable and unlocked, the web override (merged over the effective
- * defaults by {@link applyEditableOverride}) replaces the code-side values;
- * a locked or non-editable action keeps them untouched.
- */
-type CursorTimingValues = {
-  moveDuration?: number | undefined
-  moveSpeed?: number | undefined
-  moveEasing?: Easing | undefined
-  beforeClickPause?: number | undefined
-  postClickPause?: number | undefined
+/** True when any of the given code-supplied option values is set. */
+function hasExplicitOption(...values: unknown[]): boolean {
+  return values.some((value) => value !== undefined)
 }
 
 /**
- * A single numeric override value for an unlocked editable action, for
- * action-specific fields outside {@link CursorTimingValues} (typing duration,
- * hover duration, drag duration). Undefined when locked, not editable, or no
- * numeric override is stored for the key.
- */
-function editableOverrideNumber(
-  editable: EditableMeta | undefined,
-  key: string
-): number | undefined {
-  if (editable === undefined || editable.locked) return undefined
-  const value = applyEditableOverride(editable)[key]
-  return typeof value === 'number' ? value : undefined
-}
-
-function resolveCursorTimingOverrides(
-  editable: EditableMeta | undefined,
-  original: CursorTimingValues
-): CursorTimingValues {
-  if (editable === undefined || editable.locked) return original
-  const eff = applyEditableOverride(editable)
-  return {
-    ...(typeof eff.moveDuration === 'number' && {
-      moveDuration: eff.moveDuration,
-    }),
-    ...(typeof eff.moveSpeed === 'number' && { moveSpeed: eff.moveSpeed }),
-    ...(typeof eff.moveEasing === 'string' && {
-      moveEasing: eff.moveEasing as Easing,
-    }),
-    ...(typeof eff.beforeClickPause === 'number' && {
-      beforeClickPause: eff.beforeClickPause,
-    }),
-    ...(typeof eff.postClickPause === 'number' && {
-      postClickPause: eff.postClickPause,
-    }),
-  }
-}
-
-/**
- * Builds the editable metadata for an instrumented input action: identity from
- * the locator's captured description, position from the runtime counters, and
- * the effective option values this run used. Returns undefined when implicit
- * editability is disabled (the recording then carries no editor metadata).
- * `locked` is true when code passed any explicit ScreenCI option, which locks
- * the whole action against web edits.
+ * Builds the editable metadata for an instrumented input action: identity
+ * from the locator's captured description, position from the runtime
+ * counters, and the effective option values this run used. Returns undefined
+ * when implicit editability is disabled and no explicit editable(...) marker
+ * named the action. `locked` is true when code passed any explicit ScreenCI
+ * option, which locks the whole action against web edits.
  */
 function buildInputEditableMeta(
   locator: Locator,
@@ -542,7 +518,6 @@ function buildInputEditableMeta(
     locked: boolean
     defaults: Record<string, unknown>
     schemaKind?: EditableSchemaKind
-    /** Explicit action name from an `editable('name', ...)` options marker. */
     name?: string | undefined
   }
 ): EditableMeta | undefined {
@@ -565,25 +540,20 @@ function buildInputEditableMeta(
   })
 }
 
-/** True when any of the given code-supplied option values is set. */
-function hasExplicitOption(...values: unknown[]): boolean {
-  return values.some((value) => value !== undefined)
-}
-
 /**
- * Editable metadata for the click-shaped actions (tap, check, uncheck,
- * select), which share the same cursor-move option set and defaults.
+ * Editable metadata for the pointer-driven wrappers, which share the cursor
+ * move option set (`move.duration/speed/easing/delayAfter`).
  */
-function buildClickLikeEditableMeta(
+function buildPointerEditableMeta(
   locator: Locator,
   subKind: InputEvent['subType'],
   values: {
     moveDuration?: number | undefined
     moveSpeed?: number | undefined
     moveEasing?: Easing | undefined
-    beforeClickPause?: number | undefined
-    postClickPause?: number | undefined
+    moveDelayAfter?: number | undefined
     autoZoomOptions?: AutoZoomOptions | undefined
+    hasExplicitMove: boolean
   },
   editableCall?: { name?: string | undefined; forcedEditable: boolean }
 ): EditableMeta | undefined {
@@ -592,14 +562,7 @@ function buildClickLikeEditableMeta(
     // though its seed sets values; plain code options lock the whole action.
     locked: editableCall?.forcedEditable
       ? false
-      : hasExplicitOption(
-          values.moveDuration,
-          values.moveSpeed,
-          values.moveEasing,
-          values.beforeClickPause,
-          values.postClickPause,
-          values.autoZoomOptions
-        ),
+      : values.hasExplicitMove || values.autoZoomOptions !== undefined,
     name: editableCall?.name,
     defaults: {
       // moveDuration and moveSpeed are mutually exclusive; only default the
@@ -609,10 +572,57 @@ function buildClickLikeEditableMeta(
       }),
       ...(values.moveSpeed !== undefined && { moveSpeed: values.moveSpeed }),
       moveEasing: values.moveEasing ?? 'ease-in-out',
-      beforeClickPause: values.beforeClickPause ?? 0,
-      postClickPause: values.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
+      moveDelayAfter: values.moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
     },
   })
+}
+
+/**
+ * Cursor timing values shared by the pointer-driven wrappers. When the action
+ * is editable and unlocked, the web override (merged over the effective
+ * defaults by {@link applyEditableOverride}) replaces the code-side values;
+ * a locked or non-editable action keeps them untouched.
+ */
+type CursorTimingValues = {
+  moveDuration?: number | undefined
+  moveSpeed?: number | undefined
+  moveEasing?: Easing | undefined
+  moveDelayAfter?: number | undefined
+}
+
+function resolveCursorTimingOverrides(
+  editable: EditableMeta | undefined,
+  original: CursorTimingValues
+): CursorTimingValues {
+  if (editable === undefined || editable.locked) return original
+  const eff = applyEditableOverride(editable)
+  return {
+    ...(typeof eff.moveDuration === 'number' && {
+      moveDuration: eff.moveDuration,
+    }),
+    ...(typeof eff.moveSpeed === 'number' && { moveSpeed: eff.moveSpeed }),
+    ...(typeof eff.moveEasing === 'string' && {
+      moveEasing: eff.moveEasing as Easing,
+    }),
+    ...(typeof eff.moveDelayAfter === 'number' && {
+      moveDelayAfter: eff.moveDelayAfter,
+    }),
+  }
+}
+
+/**
+ * A single numeric override value for an unlocked editable action, for
+ * action-specific fields outside {@link CursorTimingValues} (typing duration,
+ * hover duration, drag duration). Undefined when locked, not editable, or no
+ * numeric override is stored for the key.
+ */
+function editableOverrideNumber(
+  editable: EditableMeta | undefined,
+  key: string
+): number | undefined {
+  if (editable === undefined || editable.locked) return undefined
+  const value = applyEditableOverride(editable)[key]
+  return typeof value === 'number' ? value : undefined
 }
 
 const LOCATOR_RETURN_METHODS = [
@@ -784,7 +794,7 @@ async function performAction(
     )
   }
 
-  await sleep(beforeClickPause)
+  await appendMouseWait(innerEvents, beforeClickPause)
 
   if (!mouseMoveRequest) {
     await doClick(
@@ -935,27 +945,21 @@ export function instrumentLocator(locator: Locator): Locator {
   locator.click = async (
     rawOptions?:
       | (Parameters<Locator['click']>[0] & {
-          moveDuration?: number
-          moveSpeed?: number
-          beforeClickPause?: number
-          moveEasing?: Easing
-          postClickPause?: number
+          move?: CursorMoveOption['move']
           autoZoomOptions?: AutoZoomOptions
         })
       | EditableMarker
   ) => {
     const editableCall = resolveEditableCallOptions(rawOptions)
     const {
-      moveDuration,
-      moveSpeed,
-      beforeClickPause,
-      moveEasing,
-      postClickPause,
+      move,
       autoZoomOptions,
       position,
       steps: _steps,
       ...clickOptions
     } = editableCall.options ?? {}
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
       return originalClick({
@@ -967,16 +971,16 @@ export function instrumentLocator(locator: Locator): Locator {
 
     assertDurationOrSpeed(moveDuration, moveSpeed, 'click move')
 
-    const editable = buildClickLikeEditableMeta(
+    const editable = buildPointerEditableMeta(
       locator,
       'click',
       {
         moveDuration,
         moveSpeed,
         moveEasing,
-        beforeClickPause,
-        postClickPause,
+        moveDelayAfter,
         autoZoomOptions,
+        hasExplicitMove: move !== undefined,
       },
       editableCall
     )
@@ -984,8 +988,7 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
-      beforeClickPause,
-      postClickPause,
+      moveDelayAfter,
     })
 
     const { doClick, supportsTrial } = resolveLocatorMouseAction(
@@ -1007,8 +1010,8 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       position,
       clickOptions.noWaitAfter,
-      timing.beforeClickPause,
-      timing.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
+      timing.moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+      0,
       false
     )
 
@@ -1026,11 +1029,7 @@ export function instrumentLocator(locator: Locator): Locator {
   type PressSequentiallyOptions = Parameters<
     Locator['pressSequentially']
   >[1] & {
-    moveDuration?: number
-    moveSpeed?: number
-    moveEasing?: Easing
-    beforeClickPause?: number
-    postClickPause?: number
+    move?: CursorMoveOption['move']
     noWaitAfter?: boolean
     forceClick?: boolean
     autoZoomOptions?: AutoZoomOptions
@@ -1047,11 +1046,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const shouldSkipDefaultClickAnimation =
       !options?.forceClick && (await isLocatorAlreadyFocusedForTyping(locator))
     const {
-      moveDuration,
-      moveSpeed,
-      moveEasing = 'ease-in-out',
-      beforeClickPause,
-      postClickPause,
+      move,
       noWaitAfter,
       forceClick: _forceClick,
       autoZoomOptions,
@@ -1060,6 +1055,8 @@ export function instrumentLocator(locator: Locator): Locator {
       redact: redactOption,
       ...pressOptions
     } = options ?? {}
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
       return originalPressSequentially(
@@ -1070,29 +1067,19 @@ export function instrumentLocator(locator: Locator): Locator {
 
     await applyActionRedact(locator, redactOption)
 
-    const editable = buildInputEditableMeta(locator, 'pressSequentially', {
-      locked: hasExplicitOption(
-        moveDuration,
-        moveSpeed,
-        options?.moveEasing,
-        beforeClickPause,
-        postClickPause,
-        autoZoomOptions
-      ),
-      defaults: {
-        moveDuration: moveDuration ?? DEFAULT_CLICK_MOUSE_MOVE_DURATION,
-        ...(moveSpeed !== undefined && { moveSpeed }),
-        moveEasing,
-        beforeClickPause: beforeClickPause ?? DEFAULT_PRE_CLICK_PAUSE_MS,
-        postClickPause: postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
-      },
+    const editable = buildPointerEditableMeta(locator, 'pressSequentially', {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      moveDelayAfter,
+      autoZoomOptions,
+      hasExplicitMove: move !== undefined,
     })
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
       moveSpeed,
       moveEasing,
-      beforeClickPause,
-      postClickPause,
+      moveDelayAfter,
     })
 
     const innerEvents: ClickActionResult['innerEvents'] = []
@@ -1110,9 +1097,9 @@ export function instrumentLocator(locator: Locator): Locator {
       const clickActionResult = await performAction(
         buildDefaultClickMouseMoveRequest({
           targetPosInElement: position,
-          moveDuration,
-          moveSpeed,
-          moveEasing,
+          moveDuration: timing.moveDuration,
+          moveSpeed: timing.moveSpeed,
+          moveEasing: timing.moveEasing,
         }),
         locator,
         async () =>
@@ -1125,8 +1112,8 @@ export function instrumentLocator(locator: Locator): Locator {
         autoZoomOptions,
         position,
         noWaitAfter,
-        timing.beforeClickPause ?? DEFAULT_PRE_CLICK_PAUSE_MS,
-        timing.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
+        timing.moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+        0,
         _hideMouse ?? false
       )
       innerEvents.push(...(clickActionResult?.innerEvents ?? []))
@@ -1150,11 +1137,7 @@ export function instrumentLocator(locator: Locator): Locator {
   locator.fill = async (
     value: string,
     options?: {
-      moveDuration?: number
-      moveSpeed?: number
-      moveEasing?: Easing
-      beforeClickPause?: number
-      postClickPause?: number
+      move?: CursorMoveOption['move']
       noWaitAfter?: boolean
       forceClick?: boolean
       duration?: number
@@ -1167,11 +1150,7 @@ export function instrumentLocator(locator: Locator): Locator {
   ) => {
     if (isInsideHide()) {
       const {
-        moveDuration: _moveDuration,
-        moveSpeed: _moveSpeed,
-        moveEasing: _moveEasing,
-        beforeClickPause: _beforeClickPause,
-        postClickPause: _postClickPause,
+        move: _move,
         noWaitAfter: _noWaitAfter,
         forceClick: _forceClick,
         duration: _duration,
@@ -1189,47 +1168,38 @@ export function instrumentLocator(locator: Locator): Locator {
       !options?.forceClick && (await isLocatorAlreadyFocusedForTyping(locator))
 
     const {
-      moveDuration,
-      moveSpeed,
-      moveEasing = 'ease-in-out',
-      beforeClickPause,
-      postClickPause,
+      move,
       noWaitAfter,
       hideMouse: _hideMouse,
       autoZoomOptions,
       position,
       redact: redactOption,
     } = options ?? {}
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      resolveCursorMoveOption(move)
 
     // Mask the field before any character is typed so the secret is never
     // captured in the clear.
     await applyActionRedact(locator, redactOption)
 
-    const editable = buildInputEditableMeta(locator, 'pressSequentially', {
-      locked: hasExplicitOption(
-        moveDuration,
-        moveSpeed,
-        options?.moveEasing,
-        beforeClickPause,
-        postClickPause,
-        options?.duration,
-        autoZoomOptions
-      ),
-      defaults: {
-        moveDuration: moveDuration ?? DEFAULT_CLICK_MOUSE_MOVE_DURATION,
-        ...(moveSpeed !== undefined && { moveSpeed }),
-        moveEasing,
-        beforeClickPause: beforeClickPause ?? DEFAULT_PRE_CLICK_PAUSE_MS,
-        postClickPause: postClickPause ?? CLICK_DURATION_MS / 2,
-        duration: options?.duration ?? 1000,
-      },
+    const editable = buildPointerEditableMeta(locator, 'pressSequentially', {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      moveDelayAfter,
+      autoZoomOptions,
+      hasExplicitMove: move !== undefined || options?.duration !== undefined,
     })
+    if (editable !== undefined) {
+      // Typing spread duration is fill-specific; expose it as an editable
+      // field alongside the shared cursor timings.
+      editable.defaults.duration = options?.duration ?? 1000
+    }
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
       moveSpeed,
       moveEasing,
-      beforeClickPause,
-      postClickPause,
+      moveDelayAfter,
     })
     const typingDuration =
       editableOverrideNumber(editable, 'duration') ?? options?.duration
@@ -1276,9 +1246,9 @@ export function instrumentLocator(locator: Locator): Locator {
       const clickActionResult = await performAction(
         buildDefaultClickMouseMoveRequest({
           targetPosInElement: position,
-          moveDuration,
-          moveSpeed,
-          moveEasing,
+          moveDuration: timing.moveDuration,
+          moveSpeed: timing.moveSpeed,
+          moveEasing: timing.moveEasing,
         }),
         locator,
         typeFilledValue,
@@ -1287,8 +1257,8 @@ export function instrumentLocator(locator: Locator): Locator {
         autoZoomOptions,
         position,
         noWaitAfter,
-        timing.beforeClickPause ?? DEFAULT_PRE_CLICK_PAUSE_MS,
-        timing.postClickPause ?? CLICK_DURATION_MS / 2,
+        timing.moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+        0,
         _hideMouse ?? false
       )
       innerEvents.push(...(clickActionResult?.innerEvents ?? []))
@@ -1318,26 +1288,15 @@ export function instrumentLocator(locator: Locator): Locator {
   )
   locator.tap = async (
     options?: Parameters<Locator['tap']>[0] & {
-      moveDuration?: number
-      moveSpeed?: number
-      moveEasing?: Easing
-      beforeClickPause?: number
-      postClickPause?: number
+      move?: CursorMoveOption['move']
       noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
-    const {
-      moveDuration,
-      moveSpeed,
-      moveEasing,
-      beforeClickPause,
-      postClickPause,
-      noWaitAfter,
-      position,
-      autoZoomOptions,
-      ...tapOpts
-    } = options ?? {}
+    const { move, noWaitAfter, position, autoZoomOptions, ...tapOpts } =
+      options ?? {}
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
       return originalTap({
@@ -1346,20 +1305,19 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
-    const editable = buildClickLikeEditableMeta(locator, 'tap', {
+    const editable = buildPointerEditableMeta(locator, 'tap', {
       moveDuration,
       moveSpeed,
       moveEasing,
-      beforeClickPause,
-      postClickPause,
+      moveDelayAfter,
       autoZoomOptions,
+      hasExplicitMove: move !== undefined,
     })
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
       moveSpeed,
       moveEasing,
-      beforeClickPause,
-      postClickPause,
+      moveDelayAfter,
     })
 
     const { doClick, supportsTrial } = resolveLocatorMouseAction(locator, 'tap')
@@ -1378,8 +1336,8 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       position,
       noWaitAfter,
-      timing.beforeClickPause,
-      timing.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
+      timing.moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+      0,
       false
     )
 
@@ -1404,26 +1362,15 @@ export function instrumentLocator(locator: Locator): Locator {
   )
   locator.check = async (
     options?: Parameters<Locator['check']>[0] & {
-      moveDuration?: number
-      moveSpeed?: number
-      moveEasing?: Easing
-      beforeClickPause?: number
-      postClickPause?: number
+      move?: CursorMoveOption['move']
       noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
-    const {
-      moveDuration,
-      moveSpeed,
-      moveEasing,
-      beforeClickPause,
-      postClickPause,
-      noWaitAfter,
-      position,
-      autoZoomOptions,
-      ...checkOpts
-    } = options ?? {}
+    const { move, noWaitAfter, position, autoZoomOptions, ...checkOpts } =
+      options ?? {}
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
       return originalCheck({
@@ -1432,20 +1379,19 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
-    const editable = buildClickLikeEditableMeta(locator, 'check', {
+    const editable = buildPointerEditableMeta(locator, 'check', {
       moveDuration,
       moveSpeed,
       moveEasing,
-      beforeClickPause,
-      postClickPause,
+      moveDelayAfter,
       autoZoomOptions,
+      hasExplicitMove: move !== undefined,
     })
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
       moveSpeed,
       moveEasing,
-      beforeClickPause,
-      postClickPause,
+      moveDelayAfter,
     })
 
     const { doClick, supportsTrial } = resolveLocatorMouseAction(
@@ -1467,8 +1413,8 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       position,
       noWaitAfter,
-      timing.beforeClickPause,
-      timing.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
+      timing.moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+      0,
       false
     )
 
@@ -1493,26 +1439,15 @@ export function instrumentLocator(locator: Locator): Locator {
   )
   locator.uncheck = async (
     options?: Parameters<Locator['uncheck']>[0] & {
-      moveDuration?: number
-      moveSpeed?: number
-      moveEasing?: Easing
-      beforeClickPause?: number
-      postClickPause?: number
+      move?: CursorMoveOption['move']
       noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
-    const {
-      moveDuration,
-      moveSpeed,
-      moveEasing,
-      beforeClickPause,
-      postClickPause,
-      noWaitAfter,
-      position,
-      autoZoomOptions,
-      ...uncheckOpts
-    } = options ?? {}
+    const { move, noWaitAfter, position, autoZoomOptions, ...uncheckOpts } =
+      options ?? {}
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
       return originalUncheck({
@@ -1521,20 +1456,19 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
-    const editable = buildClickLikeEditableMeta(locator, 'uncheck', {
+    const editable = buildPointerEditableMeta(locator, 'uncheck', {
       moveDuration,
       moveSpeed,
       moveEasing,
-      beforeClickPause,
-      postClickPause,
+      moveDelayAfter,
       autoZoomOptions,
+      hasExplicitMove: move !== undefined,
     })
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
       moveSpeed,
       moveEasing,
-      beforeClickPause,
-      postClickPause,
+      moveDelayAfter,
     })
 
     const { doClick, supportsTrial } = resolveLocatorMouseAction(
@@ -1556,8 +1490,8 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       position,
       noWaitAfter,
-      timing.beforeClickPause,
-      timing.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS,
+      timing.moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+      0,
       false
     )
 
@@ -1575,11 +1509,7 @@ export function instrumentLocator(locator: Locator): Locator {
   locator.setChecked = async (
     checked: boolean,
     options?: Parameters<Locator['check']>[0] & {
-      moveDuration?: number
-      moveSpeed?: number
-      moveEasing?: Easing
-      beforeClickPause?: number
-      postClickPause?: number
+      move?: CursorMoveOption['move']
       noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
     }
@@ -1607,27 +1537,16 @@ export function instrumentLocator(locator: Locator): Locator {
   locator.selectOption = async (
     values: Parameters<Locator['selectOption']>[0],
     options?: Parameters<Locator['selectOption']>[1] & {
-      moveDuration?: number
-      moveSpeed?: number
-      moveEasing?: Easing
-      beforeClickPause?: number
-      postClickPause?: number
+      move?: CursorMoveOption['move']
       noWaitAfter?: boolean
       position?: { x: number; y: number }
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<string[]> => {
-    const {
-      moveDuration,
-      moveSpeed,
-      moveEasing,
-      beforeClickPause,
-      postClickPause,
-      noWaitAfter,
-      position,
-      autoZoomOptions,
-      ...selectOpts
-    } = options ?? {}
+    const { move, noWaitAfter, position, autoZoomOptions, ...selectOpts } =
+      options ?? {}
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
       return originalSelectOption(values, {
@@ -1639,21 +1558,21 @@ export function instrumentLocator(locator: Locator): Locator {
     currentSelectValues = values
     currentSelectOptions = selectOpts as Parameters<Locator['selectOption']>[1]
     currentSelectResult = []
-    const editable = buildClickLikeEditableMeta(locator, 'select', {
+    const editable = buildPointerEditableMeta(locator, 'select', {
       moveDuration,
       moveSpeed,
       moveEasing,
-      beforeClickPause,
-      postClickPause,
+      moveDelayAfter,
       autoZoomOptions,
+      hasExplicitMove: move !== undefined,
     })
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
       moveSpeed,
       moveEasing,
-      beforeClickPause,
-      postClickPause,
+      moveDelayAfter,
     })
+
     const { doClick, supportsTrial } = resolveLocatorMouseAction(
       locator,
       'select'
@@ -1672,8 +1591,8 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       position,
       noWaitAfter,
-      timing.beforeClickPause,
-      timing.postClickPause ?? DEFAULT_POST_CLICK_PAUSE_MS
+      timing.moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+      0
     )
 
     const activeClickRecorder = getActiveClickRecorder(locator.page())
@@ -1692,46 +1611,37 @@ export function instrumentLocator(locator: Locator): Locator {
   const originalHover = locator.hover.bind(locator)
   locator.hover = async (
     options?: Parameters<Locator['hover']>[0] & {
-      moveDuration?: number
-      moveSpeed?: number
-      moveEasing?: Easing
-      hoverDuration?: number
+      move?: CursorMoveOption['move']
+      duration?: number
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
-    const {
-      moveDuration,
-      moveSpeed,
-      moveEasing = 'ease-in-out',
-      hoverDuration = 1000,
-      position,
-      ...hoverOptions
-    } = options ?? {}
+    const { move, duration = 1000, position, ...hoverOptions } = options ?? {}
+    const { moveDuration, moveSpeed, moveEasing } =
+      resolveCursorMoveOption(move)
 
     assertDurationOrSpeed(moveDuration, moveSpeed, 'hover move')
 
-    const editable = buildInputEditableMeta(locator, 'hover', {
-      locked: hasExplicitOption(
-        moveDuration,
-        moveSpeed,
-        options?.moveEasing,
-        options?.hoverDuration,
-        options?.autoZoomOptions
-      ),
-      defaults: {
-        moveDuration: moveDuration ?? DEFAULT_CLICK_MOUSE_MOVE_DURATION,
-        ...(moveSpeed !== undefined && { moveSpeed }),
-        moveEasing,
-        hoverDuration,
-      },
+    const editable = buildPointerEditableMeta(locator, 'hover', {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      autoZoomOptions: options?.autoZoomOptions,
+      hasExplicitMove: move !== undefined || options?.duration !== undefined,
     })
+    if (editable !== undefined) {
+      // Hover hold duration is hover-specific; expose it as an editable field
+      // alongside the shared cursor timings.
+      editable.defaults.duration = duration
+      delete editable.defaults.moveDelayAfter
+    }
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
       moveSpeed,
       moveEasing,
     })
     const effHoverDuration =
-      editableOverrideNumber(editable, 'hoverDuration') ?? hoverDuration
+      editableOverrideNumber(editable, 'duration') ?? duration
 
     const innerEvents: Array<
       FocusChangeEvent | MouseMoveEvent | MouseWaitEvent
@@ -1845,51 +1755,37 @@ export function instrumentLocator(locator: Locator): Locator {
   const originalSelectText = locator.selectText.bind(locator)
   locator.selectText = async (
     options?: Parameters<Locator['selectText']>[0] & {
-      moveDuration?: number
-      moveSpeed?: number
-      moveEasing?: Easing
-      beforeClickPause?: number
-      selectDuration?: number
+      move?: CursorMoveOption['move']
+      duration?: number
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
-    const {
-      moveDuration,
-      moveSpeed,
-      moveEasing = 'ease-in-out',
-      beforeClickPause = DEFAULT_PRE_CLICK_PAUSE_MS,
-      selectDuration,
-      autoZoomOptions,
-      ...selectOpts
-    } = options ?? {}
+    const { move, duration, autoZoomOptions, ...selectOpts } = options ?? {}
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      resolveCursorMoveOption(move)
 
     assertDurationOrSpeed(moveDuration, moveSpeed, 'selectText move')
 
-    const editable = buildInputEditableMeta(locator, 'selectText', {
-      locked: hasExplicitOption(
-        moveDuration,
-        moveSpeed,
-        options?.moveEasing,
-        options?.beforeClickPause,
-        selectDuration,
-        autoZoomOptions
-      ),
-      defaults: {
-        moveDuration: moveDuration ?? DEFAULT_CLICK_MOUSE_MOVE_DURATION,
-        ...(moveSpeed !== undefined && { moveSpeed }),
-        moveEasing,
-        beforeClickPause,
-        selectDuration: selectDuration ?? null,
-      },
+    const editable = buildPointerEditableMeta(locator, 'selectText', {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      moveDelayAfter,
+      autoZoomOptions,
+      hasExplicitMove: move !== undefined || duration !== undefined,
     })
+    if (editable !== undefined) {
+      // Selection sweep duration is selectText-specific.
+      editable.defaults.duration = duration ?? null
+    }
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
       moveSpeed,
       moveEasing,
-      beforeClickPause,
+      moveDelayAfter,
     })
     const effSelectDuration =
-      editableOverrideNumber(editable, 'selectDuration') ?? selectDuration
+      editableOverrideNumber(editable, 'duration') ?? duration
 
     const innerEvents: Array<
       | FocusChangeEvent
@@ -1916,7 +1812,7 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       undefined,
       undefined,
-      timing.beforeClickPause,
+      timing.moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
       undefined,
       false,
       effSelectDuration
@@ -1939,66 +1835,54 @@ export function instrumentLocator(locator: Locator): Locator {
   locator.dragTo = async (
     target: Locator,
     options?: Omit<NonNullable<Parameters<Locator['dragTo']>[1]>, 'steps'> & {
-      moveDuration?: number
-      moveSpeed?: number
-      moveEasing?: Easing
-      preDragPause?: number
-      dragDuration?: number
-      dragSpeed?: number
-      dragEasing?: Easing
+      move?: CursorMoveOption['move']
+      duration?: number
+      speed?: number
+      easing?: Easing
       dragSteps?: number
       autoZoomOptions?: AutoZoomOptions
     }
   ): Promise<void> => {
     const {
-      moveDuration,
-      moveSpeed,
-      moveEasing = 'ease-in-out',
-      preDragPause = CLICK_DURATION_MS / 2,
-      dragDuration,
-      dragSpeed,
-      dragEasing = 'ease-in-out',
+      move,
+      duration,
+      speed,
+      easing = 'ease-in-out',
       dragSteps = DEFAULT_DRAG_STEPS,
       sourcePosition,
       targetPosition,
       autoZoomOptions,
     } = options ?? {}
+    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
+      resolveCursorMoveOption(move)
 
     assertDurationOrSpeed(moveDuration, moveSpeed, 'dragTo move')
-    assertDurationOrSpeed(dragDuration, dragSpeed, 'dragTo drag')
+    assertDurationOrSpeed(duration, speed, 'dragTo drag')
 
-    const editable = buildInputEditableMeta(locator, 'dragTo', {
-      locked: hasExplicitOption(
-        moveDuration,
-        moveSpeed,
-        options?.moveEasing,
-        options?.preDragPause,
-        dragDuration,
-        dragSpeed,
-        options?.dragEasing,
-        options?.dragSteps,
-        autoZoomOptions
-      ),
-      defaults: {
-        moveDuration: moveDuration ?? DEFAULT_CLICK_MOUSE_MOVE_DURATION,
-        ...(moveSpeed !== undefined && { moveSpeed }),
-        moveEasing,
-        preDragPause,
-        dragDuration: dragDuration ?? DEFAULT_CLICK_MOUSE_MOVE_DURATION,
-        ...(dragSpeed !== undefined && { dragSpeed }),
-        dragEasing,
-        dragSteps,
-      },
+    const editable = buildPointerEditableMeta(locator, 'dragTo', {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      moveDelayAfter,
+      autoZoomOptions,
+      hasExplicitMove:
+        move !== undefined ||
+        hasExplicitOption(duration, speed, options?.easing, options?.dragSteps),
     })
+    if (editable !== undefined) {
+      // Drag-phase fields are dragTo-specific.
+      editable.defaults.duration = duration ?? DEFAULT_CLICK_MOUSE_MOVE_DURATION
+      editable.defaults.easing = easing
+      editable.defaults.dragSteps = dragSteps
+    }
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveDelayAfter,
     })
-    const effPreDragPause =
-      editableOverrideNumber(editable, 'preDragPause') ?? preDragPause
     const effDragDuration =
-      editableOverrideNumber(editable, 'dragDuration') ?? dragDuration
+      editableOverrideNumber(editable, 'duration') ?? duration
     const effDragSteps =
       editableOverrideNumber(editable, 'dragSteps') ?? dragSteps
 
@@ -2041,8 +1925,8 @@ export function instrumentLocator(locator: Locator): Locator {
       innerEvents.push(sourceFocusChange)
     }
 
-    // 2. preDragPause + mouseDown
-    await sleep(effPreDragPause)
+    // 2. move.delayAfter + mouseDown
+    await sleep(timing.moveDelayAfter ?? CLICK_DURATION_MS / 2)
     const mouseDownStart = Date.now()
     await performMouseDown({
       mouseDownInternal: getOriginalMouseDown(
@@ -2078,7 +1962,7 @@ export function instrumentLocator(locator: Locator): Locator {
       const toY = targetRect.y + targetPos.y
       const resolvedDuration = resolveMouseMoveDuration(page, toX, toY, {
         duration: effDragDuration,
-        speed: dragSpeed,
+        speed,
         defaultDuration: DEFAULT_CLICK_MOUSE_MOVE_DURATION,
         context: 'dragTo drag',
       })
@@ -2087,7 +1971,7 @@ export function instrumentLocator(locator: Locator): Locator {
         targetX: toX,
         targetY: toY,
         duration: resolvedDuration,
-        easing: dragEasing,
+        easing,
         steps: effDragSteps,
       })
       innerEvents.push({
@@ -2096,7 +1980,7 @@ export function instrumentLocator(locator: Locator): Locator {
         endMs: Date.now(),
         x: toX,
         y: toY,
-        ...(resolvedDuration > 0 ? { easing: dragEasing } : {}),
+        ...(resolvedDuration > 0 ? { easing } : {}),
         elementRect: targetRect,
       })
     }
@@ -2200,16 +2084,20 @@ export async function instrumentPage(page: Page): Promise<Page> {
   // flows through the same path.
   page.click = async (
     selector: string,
-    options?: Parameters<Page['click']>[1] & {
-      moveDuration?: number
-      moveSpeed?: number
-      beforeClickPause?: number
-      moveEasing?: Easing
-      postClickPause?: number
-      autoZoomOptions?: AutoZoomOptions
-    }
+    options?:
+      | (Parameters<Page['click']>[1] & {
+          move?: CursorMoveOption['move']
+          autoZoomOptions?: AutoZoomOptions
+        })
+      | EditableMarker
   ) => {
-    return page.locator(selector).click(options)
+    // The instrumented locator click accepts the editable(...) marker form,
+    // but Playwright's Locator type does not know that; go through unknown.
+    return (
+      page.locator(selector) as unknown as {
+        click: (options?: unknown) => Promise<void>
+      }
+    ).click(options)
   }
 
   const originalWaitForTimeout = page.waitForTimeout.bind(page)
@@ -2615,9 +2503,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
     button?: 'left' | 'right' | 'middle'
     clickCount?: number
     delay?: number
-    moveDuration?: number
-    moveSpeed?: number
-    moveEasing?: Easing
+    move?: CursorMoveOption['move']
     duration?: number
     easing?: Easing
     fake?: boolean
@@ -2632,14 +2518,14 @@ export async function instrumentPage(page: Page): Promise<Page> {
     }
   ).click = async (x, y, options) => {
     const {
-      moveDuration,
-      moveSpeed,
-      moveEasing = 'ease-in-out',
+      move,
       duration,
       easing = 'ease-in-out',
       fake,
       ...native
     } = options ?? {}
+    const { moveDuration, moveSpeed, moveEasing } =
+      resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
       await doReal(fake, () => originalClick(x, y, native))
@@ -2676,14 +2562,14 @@ export async function instrumentPage(page: Page): Promise<Page> {
     }
   ).dblclick = async (x, y, options) => {
     const {
-      moveDuration,
-      moveSpeed,
-      moveEasing = 'ease-in-out',
+      move,
       duration,
       easing = 'ease-in-out',
       fake,
       ...native
     } = options ?? {}
+    const { moveDuration, moveSpeed, moveEasing } =
+      resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
       await doReal(fake, () => originalDblclick(x, y, native))

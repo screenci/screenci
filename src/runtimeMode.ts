@@ -10,6 +10,23 @@ export const SCREENCI_DISABLE_RECORDING_TIMINGS_ENV =
   'SCREENCI_DISABLE_RECORDING_TIMINGS'
 export const SCREENCI_DEBUG_TIMING_ENV = 'SCREENCI_DEBUG_TIMING'
 export const SCREENCI_UPLOAD_EXISTING_ENV = 'UPLOAD_EXISTING'
+export const SCREENCI_FAST_NARRATION_ENV = 'SCREENCI_FAST_NARRATION'
+
+/**
+ * Fast narration mode (`screenci record --fast-narration`): skip the exact
+ * cue-audio pacing sleeps (and the duration prefetch behind them) so a
+ * recording run does not spend the narration's wall-clock time. Render-time
+ * frame holds absorb the full audio length instead, exactly as when durations
+ * are unavailable.
+ */
+export function isFastNarrationEnabled(
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  return (
+    env[SCREENCI_FAST_NARRATION_ENV] === 'true' ||
+    env[SCREENCI_FAST_NARRATION_ENV] === '1'
+  )
+}
 
 /**
  * When set, `screenci record` skips the Playwright recording run entirely and

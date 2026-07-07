@@ -76,8 +76,8 @@ render output, plus a few dependency-specific options:
 ```ts
 video.overlays({
   intro: selected('Intro Clip', {
-    start: '1.5s',
-    end: '5s',
+    start: 1500,
+    end: 5000,
     language: 'fi',
     inheritSubtitles: true,
     fill: 'screen',

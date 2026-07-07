@@ -86,6 +86,7 @@ import {
   captureRequestedButNotEnabled,
   getChromiumLaunchOptions,
   isCaptureAudioEnabled,
+  resolveCaptureAudioGain,
 } from './browserLaunchOptions.js'
 import { resolveEditableOverridesForVideo } from './editableRuntime.js'
 import {
@@ -919,6 +920,7 @@ const _videoBase = base.extend<
         testFilePath,
         recordOptions,
         renderOptions: renderOptionsObj,
+        activeLanguage: _screenciLanguage ?? null,
       })
       // Web-editor timing overrides for this video (injected by the CLI for
       // record and mock-record runs; absent for plain test runs).
@@ -982,6 +984,7 @@ const _videoBase = base.extend<
       recordingDir: videoDir,
       recordOptions,
       renderOptions: renderOptionsObj,
+      activeLanguage: _screenciLanguage ?? null,
     })
     // Web-editor timing overrides for this video, fetched by the CLI before
     // the run and injected via SCREENCI_EDITABLE_OVERRIDES.
@@ -1019,7 +1022,7 @@ const _videoBase = base.extend<
     // Mark the moment the video recording actually begins after the cursor is positioned.
     recorder.start()
 
-    const captureVolume = recordOptions.captureAudio ?? 0
+    const captureVolume = resolveCaptureAudioGain(recordOptions.captureAudio)
     // captureAudio is Linux-only. On macOS/Windows skip capture entirely (a
     // warning was already emitted at run start, and the worker fixture emits one
     // at the end) rather than writing a silent or whole-machine track.
@@ -1065,6 +1068,7 @@ const _videoBase = base.extend<
 
           // Do not end video abruptly.
           await sleep(POST_VIDEO_PAUSE)
+          recorder.addSleep(POST_VIDEO_PAUSE, 'postVideo')
         },
       })
     } finally {

@@ -21,7 +21,7 @@ const appUrl = process.env.SCREENCI_APP_URL ?? 'https://app.screenci.com/'
 // backend on the first record and reused on later runs (CI included).
 video
   .overlays({
-    logo: { path: './assets/logo.png', fill: 'recording', duration: '2s' },
+    logo: { path: './assets/logo.png', fill: 'recording', duration: 2000 },
   })
   .narration({
     en: {
@@ -64,7 +64,7 @@ video
   })
 
   // Brand intro, then explain the cue model out loud.
-  await overlays.logo.for('2s')
+  await overlays.logo.for(2000)
   await narration.intro()
 
   // Frame the Editor narration section while explaining overlap and web editing.

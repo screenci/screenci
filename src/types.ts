@@ -616,6 +616,17 @@ export type AutoZoomOptions = {
   delay?: number
   /** Delay in milliseconds to hold the full view after the zoom-out animation completes. */
   delayAfter?: number
+  /**
+   * Shifts the zoom window's START by this many ms when the recording is
+   * written (negative starts the zoom BEFORE the block's first action, a
+   * lead-in). Render-time repositioning: possible because the events are
+   * placed after the recording ran. A boundary that would land inside an
+   * interaction widens to the interaction's edge.
+   */
+  startOffset?: number
+  /** Shifts the zoom window's END by this many ms when the recording is
+   *  written (positive holds the zoom past the block's last action). */
+  endOffset?: number
 }
 
 export type MouseMoveTimingOption =

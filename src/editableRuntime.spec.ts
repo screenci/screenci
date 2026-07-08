@@ -1,11 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   applyEditableOverride,
-  indexEditableOverrides,
-  parseEditableOverrides,
-  resolveEditableOverridesForVideo,
-  SCREENCI_EDITABLE_OVERRIDES_ENV,
+  resolveRuntimeOverridesForVideo,
 } from './editableRuntime.js'
+import { SCREENCI_TIMELINE_EDITS_ENV } from './timelineEdits.js'
 import { buildEditableMeta } from './editableDescriptor.js'
 import {
   createScreenCIRuntimeContext,
@@ -13,70 +11,64 @@ import {
 } from './runtimeContext.js'
 
 function env(value: string): NodeJS.ProcessEnv {
-  return { [SCREENCI_EDITABLE_OVERRIDES_ENV]: value }
+  return { [SCREENCI_TIMELINE_EDITS_ENV]: value }
 }
 
-describe('parseEditableOverrides', () => {
-  it('parses a valid override map', () => {
-    const parsed = parseEditableOverrides(
-      env(
-        JSON.stringify({
-          'My video': [
-            {
-              key: 'input|click|getByRole(button)|0',
-              values: { moveDuration: 300 },
-            },
-          ],
-        })
-      )
-    )
-    expect(parsed).toEqual({
-      'My video': [
-        {
-          key: 'input|click|getByRole(button)|0',
-          values: { moveDuration: 300 },
-        },
-      ],
-    })
-  })
-
-  it('returns null when unset or malformed', () => {
-    expect(parseEditableOverrides({})).toBeNull()
-    expect(parseEditableOverrides(env('not json'))).toBeNull()
-    expect(parseEditableOverrides(env('42'))).toBeNull()
-  })
-
-  it('drops invalid entries but keeps valid ones', () => {
-    const parsed = parseEditableOverrides(
-      env(
-        JSON.stringify({
-          v: [
-            { key: 5, values: {} },
-            { key: 'delay||0', values: { durationMs: 100 } },
-            'nope',
-            { key: 'x' },
-          ],
-          w: 'not-an-array',
-        })
-      )
-    )
-    expect(parsed).toEqual({
-      v: [{ key: 'delay||0', values: { durationMs: 100 } }],
-    })
-  })
+const paramEdit = (key: string, fields: Record<string, unknown>) => ({
+  type: 'paramEdit',
+  id: `param|${key}`,
+  target: { key },
+  fields,
 })
 
-describe('resolveEditableOverridesForVideo', () => {
-  it('indexes entries for the requested video only', () => {
+/** Overrides map in the shape applyEditableOverride consumes. */
+function overridesByKey(
+  entries: Array<{ key: string; values: Record<string, unknown> }>
+): Map<string, Record<string, unknown>> {
+  return new Map(entries.map((entry) => [entry.key, entry.values]))
+}
+
+describe('resolveRuntimeOverridesForVideo', () => {
+  it('indexes the unified doc param edits for the requested video only', () => {
     const e = env(
       JSON.stringify({
-        a: [{ key: 'speed||0', values: { multiplier: 2 } }],
-        b: [{ key: 'speed||0', values: { multiplier: 4 } }],
+        a: { version: 2, edits: [paramEdit('speed||0', { multiplier: 2 })] },
+        b: { version: 2, edits: [paramEdit('speed||0', { multiplier: 4 })] },
       })
     )
-    const map = resolveEditableOverridesForVideo('a', e)
+    const map = resolveRuntimeOverridesForVideo('a', e)
     expect(map?.get('speed||0')).toEqual({ multiplier: 2 })
-    expect(resolveEditableOverridesForVideo('missing', e)).toBeNull()
+    expect(resolveRuntimeOverridesForVideo('missing', e)).toBeNull()
+  })
+
+  it('returns null when unset, malformed, or without param edits', () => {
+    expect(resolveRuntimeOverridesForVideo('a', {})).toBeNull()
+    expect(resolveRuntimeOverridesForVideo('a', env('not json'))).toBeNull()
+    expect(
+      resolveRuntimeOverridesForVideo(
+        'a',
+        env(
+          JSON.stringify({
+            a: {
+              version: 2,
+              edits: [
+                {
+                  type: 'placedEvent',
+                  id: 'e1',
+                  kind: 'hide',
+                  anchor: {
+                    ref: { type: 'videoStart' },
+                    edge: 'start',
+                    offsetMs: 0,
+                  },
+                  end: { durationMs: 100 },
+                },
+              ],
+            },
+          })
+        )
+      )
+    ).toBeNull()
   })
 })
 
@@ -94,7 +86,7 @@ describe('applyEditableOverride', () => {
 
   it('merges the override over defaults and stamps applied', () => {
     const m = meta()
-    const overrides = indexEditableOverrides([
+    const overrides = overridesByKey([
       {
         key: 'input|click|getByRole(button)|0',
         values: { moveDuration: 250, unknownField: 1 },
@@ -107,7 +99,7 @@ describe('applyEditableOverride', () => {
 
   it('never applies keys outside the defaults', () => {
     const m = meta()
-    const overrides = indexEditableOverrides([
+    const overrides = overridesByKey([
       { key: 'input|click|getByRole(button)|0', values: { evil: true } },
     ])
     expect(applyEditableOverride(m, overrides)).toEqual(m.defaults)
@@ -115,7 +107,7 @@ describe('applyEditableOverride', () => {
   })
 
   it('returns plain defaults for missing overrides', () => {
-    const overrides = indexEditableOverrides([
+    const overrides = overridesByKey([
       { key: 'input|click|getByRole(button)|0', values: { moveDuration: 1 } },
     ])
     expect(applyEditableOverride(meta(), new Map())).toEqual(meta().defaults)
@@ -128,7 +120,7 @@ describe('applyEditableOverride', () => {
       locked: true,
       lockedFields: ['moveDuration'],
     }
-    const overrides = indexEditableOverrides([
+    const overrides = overridesByKey([
       {
         key: 'input|click|getByRole(button)|0',
         values: { moveDuration: 1, moveEasing: 'linear' },
@@ -149,7 +141,7 @@ describe('applyEditableOverride', () => {
 
   it('treats every field of a locked meta without lockedFields as explicit', () => {
     const locked = { ...meta(), locked: true }
-    const overrides = indexEditableOverrides([
+    const overrides = overridesByKey([
       { key: 'input|click|getByRole(button)|0', values: { moveDuration: 1 } },
     ])
     const warnings: string[] = []
@@ -162,7 +154,7 @@ describe('applyEditableOverride', () => {
 
   it('reads overrides from the runtime context by default', () => {
     const context = createScreenCIRuntimeContext()
-    context.editable.overridesByKey = indexEditableOverrides([
+    context.editable.overridesByKey = overridesByKey([
       { key: 'input|click|getByRole(button)|0', values: { moveDuration: 111 } },
     ])
     runWithScreenCIRuntimeContext(context, () => {

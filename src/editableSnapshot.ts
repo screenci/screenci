@@ -16,8 +16,54 @@ import {
   writeFileSync,
 } from 'fs'
 import { join } from 'path'
-import type { EditableOverridesByVideo } from './editableRuntime.js'
 import { stableEditableKey } from './editableDescriptor.js'
+import type { Anchor, ParamEdit, PlacedEvent } from './timelineEdits.js'
+import { describeAnchor } from './timelineEdits.js'
+
+/** Param-edit values per video, in the stable-key entry shape the snapshot
+ *  comparisons work with. */
+export type EditableOverrideEntry = {
+  key: string
+  values: Record<string, unknown>
+}
+export type EditableOverridesByVideo = Record<string, EditableOverrideEntry[]>
+
+/** Placed events per video, straight from the unified timeline-edits docs. */
+export type PlacedEventsByVideo = Record<string, PlacedEvent[]>
+
+/**
+ * Splits fetched unified timeline-edits docs (keyed by video name) into the
+ * shapes the status report and sync prompt consume. Records that do not look
+ * like edit records are ignored (the server produced them, so this is only a
+ * guard against version skew).
+ */
+export function splitTimelineEditsByVideo(
+  docsByVideo: Record<string, unknown>
+): { overrides: EditableOverridesByVideo; placed: PlacedEventsByVideo } {
+  const overrides: EditableOverridesByVideo = {}
+  const placed: PlacedEventsByVideo = {}
+  for (const [videoName, doc] of Object.entries(docsByVideo)) {
+    const edits = (doc as { edits?: unknown[] } | null)?.edits
+    if (!Array.isArray(edits)) continue
+    for (const edit of edits) {
+      if (typeof edit !== 'object' || edit === null) continue
+      const record = edit as { type?: unknown }
+      if (record.type === 'paramEdit') {
+        const param = edit as ParamEdit
+        if (typeof param.target?.key !== 'string') continue
+        ;(overrides[videoName] ??= []).push({
+          key: param.target.key,
+          values: param.fields ?? {},
+        })
+      } else if (record.type === 'placedEvent') {
+        const event = edit as PlacedEvent
+        if (event.disabled === true) continue
+        ;(placed[videoName] ??= []).push(event)
+      }
+    }
+  }
+  return { overrides, placed }
+}
 
 /** File name of the snapshot inside `.screenci`. Preserved across runs. */
 export const EDITABLE_SNAPSHOT_FILE = 'editable-actions.json'
@@ -279,51 +325,56 @@ export function formatEditableStatusReport(
   return lines
 }
 
-/** Minimal authored-event shape the status report needs. */
-export type AuthoredEventStatusInput = {
-  id: string
-  kind: string
-  from: { ref: string; offsetMs: number }
-  to?: { anchor?: { ref: string } } | { durationMs?: number }
+/** Whether a placed event's anchor still resolves against the snapshot. */
+function anchorStatus(anchor: Anchor, keys: Set<string>): string {
+  switch (anchor.ref.type) {
+    case 'videoStart':
+    case 'videoEnd':
+      return 'ok'
+    case 'action':
+      return keys.has(anchor.ref.key)
+        ? 'ok'
+        : 'MISSING (fix the anchor in the web editor or re-record)'
+    case 'timestamp':
+    case 'cue':
+      return 'unverified (checked at record time)'
+    default: {
+      const exhaustive: never = anchor.ref
+      void exhaustive
+      return 'unverified'
+    }
+  }
 }
 
 /**
- * Status lines for web-authored events (hides/speed blocks): whether each
- * anchor still resolves against the latest recorded snapshot. Timestamp
- * anchors (`timestamp||name|ordinal` keys or bare names) cannot be verified
- * against the editable snapshot, so they report as unverified rather than
- * missing.
+ * Status lines for placed events (web-added hides/speedups/time remaps,
+ * moved or added narration cues, overlays, timestamp markers): whether each
+ * anchor still resolves against the latest recorded snapshot. Timestamp and
+ * cue anchors cannot be verified against the editable snapshot, so they
+ * report as unverified rather than missing.
  */
-export function formatAuthoredStatusReport(
+export function formatPlacedStatusReport(
   snapshot: EditableSnapshot,
-  authoredByVideo: Record<string, AuthoredEventStatusInput[]>
+  placedByVideo: PlacedEventsByVideo
 ): string[] {
   const lines: string[] = []
-  for (const [videoName, events] of Object.entries(authoredByVideo)) {
+  for (const [videoName, events] of Object.entries(placedByVideo)) {
     if (events.length === 0) continue
     lines.push(`Video: ${videoName}`)
     const keys = new Set(
       (snapshot.videos[videoName] ?? []).map((entry) => entry.key)
     )
-    const checkRef = (ref: string): string => {
-      if (keys.has(ref)) return 'ok'
-      if (ref.startsWith('timestamp||') || !ref.includes('|')) {
-        return 'unverified (timestamp anchors are checked at record time)'
-      }
-      return 'MISSING (fix the anchor in the web editor or re-record)'
-    }
     for (const event of events) {
-      const fromStatus = checkRef(event.from.ref)
-      const toRef =
-        event.to !== undefined && 'anchor' in event.to
-          ? event.to.anchor?.ref
+      const endAnchor =
+        event.end !== undefined && 'anchor' in event.end
+          ? event.end.anchor
           : undefined
       lines.push(
-        `  ${event.kind} '${event.id}': from ${event.from.ref} ` +
-          `${event.from.offsetMs >= 0 ? '+' : ''}${event.from.offsetMs}ms ` +
-          `-> anchor ${fromStatus}` +
-          (toRef !== undefined
-            ? `; to ${toRef} -> anchor ${checkRef(toRef)}`
+        `  ${event.kind} '${event.id}': from ${describeAnchor(event.anchor)} ` +
+          `-> anchor ${anchorStatus(event.anchor, keys)}` +
+          (endAnchor !== undefined
+            ? `; to ${describeAnchor(endAnchor)} -> anchor ` +
+              anchorStatus(endAnchor, keys)
             : '')
       )
     }
@@ -372,16 +423,107 @@ export function diffEditableOverridesAgainstSnapshot(
  * understands which downstream events shift. Returns [] when there is
  * nothing to codify.
  */
+/** The code literal for a placed anchor, as accepted by placeHide/... */
+function anchorLiteral(anchor: Anchor): string {
+  switch (anchor.ref.type) {
+    case 'videoStart':
+      return `'video:start'`
+    case 'videoEnd':
+      return `'video:end'`
+    case 'timestamp':
+      return anchor.ref.ordinal === 0
+        ? `'${anchor.ref.name}'`
+        : `{ timestamp: '${anchor.ref.name}', ordinal: ${anchor.ref.ordinal} }`
+    case 'action':
+      return anchor.edge === 'end'
+        ? `{ action: '${anchor.ref.key}' }`
+        : `{ action: '${anchor.ref.key}', edge: 'start' }`
+    case 'cue':
+      // No code literal for cue anchors; the instruction explains instead.
+      return `'${anchor.ref.cueId}'`
+    default: {
+      const exhaustive: never = anchor.ref
+      void exhaustive
+      return `'video:start'`
+    }
+  }
+}
+
+/** Human position of a placed anchor: file:line for actions, else itself. */
+function anchorAt(
+  anchor: Anchor,
+  byKey: Map<string, EditableSnapshotEntry>
+): string {
+  if (anchor.ref.type === 'action') {
+    const source = byKey.get(anchor.ref.key)?.source
+    return source !== undefined
+      ? `${source.file}:${source.line}`
+      : `(source unknown; action key ${anchor.ref.key})`
+  }
+  return describeAnchor(anchor)
+}
+
+/** The placeX() call that reproduces a placed span event in code. */
+function placeCallFor(event: PlacedEvent): string | null {
+  const kind = event.kind
+  if (
+    kind !== 'hide' &&
+    kind !== 'speed' &&
+    kind !== 'time' &&
+    kind !== 'zoom'
+  ) {
+    return null
+  }
+  const parts = [`from: ${anchorLiteral(event.anchor)}`]
+  if (event.anchor.offsetMs !== 0) {
+    parts.push(`offsetMs: ${Math.round(event.anchor.offsetMs)}`)
+  }
+  if (event.end !== undefined && 'anchor' in event.end) {
+    parts.push(`until: ${anchorLiteral(event.end.anchor)}`)
+    if (event.end.anchor.offsetMs !== 0) {
+      parts.push(`untilOffsetMs: ${Math.round(event.end.anchor.offsetMs)}`)
+    }
+  } else if (event.end !== undefined) {
+    parts.push(`durationMs: ${Math.round(event.end.durationMs)}`)
+  }
+  const props = event.props ?? {}
+  if (kind === 'speed' && typeof props.multiplier === 'number') {
+    parts.push(`multiplier: ${props.multiplier}`)
+  }
+  if (kind === 'time' && typeof props.durationMs === 'number') {
+    parts.push(`playsAsMs: ${Math.round(props.durationMs)}`)
+  }
+  if (kind === 'zoom') {
+    for (const field of ['amount', 'duration', 'centering'] as const) {
+      if (typeof props[field] === 'number') {
+        parts.push(`${field}: ${props[field]}`)
+      }
+    }
+    if (typeof props.easing === 'string') {
+      parts.push(`easing: '${props.easing}'`)
+    }
+  }
+  const fn =
+    kind === 'hide'
+      ? 'placeHide'
+      : kind === 'speed'
+        ? 'placeSpeed'
+        : kind === 'time'
+          ? 'placeTime'
+          : 'placeZoom'
+  return `${fn}({ ${parts.join(', ')} })`
+}
+
 export function buildEditablePlacementPrompt(
   snapshot: EditableSnapshot,
   overridesByVideo: EditableOverridesByVideo,
-  authoredByVideo: Record<string, AuthoredEventStatusInput[]> = {}
+  placedByVideo: PlacedEventsByVideo = {}
 ): string[] {
   const lines: string[] = []
   const videoNames = [
     ...new Set([
       ...Object.keys(overridesByVideo),
-      ...Object.keys(authoredByVideo),
+      ...Object.keys(placedByVideo),
     ]),
   ]
   for (const videoName of videoNames) {
@@ -408,6 +550,20 @@ export function buildEditablePlacementPrompt(
           )
           continue
         }
+        if (field === 'startOffset' || field === 'endOffset') {
+          const boundary = field === 'startOffset' ? 'start' : 'end'
+          lines.push(
+            `- CHANGE ${at(override.key)}: set \`${field}: ` +
+              `${JSON.stringify(value)}\` in the autoZoom options (shifts ` +
+              `the zoom window's ${boundary} at write time; editor ` +
+              `${JSON.stringify(codeValue)} -> ${JSON.stringify(value)} on ` +
+              `'${override.key}'). Large shifts often read better as moving ` +
+              `statements into or out of the block instead: the block's ` +
+              `first and last actions define its window. Then clear the ` +
+              `web override.`
+          )
+          continue
+        }
         lines.push(
           `- CHANGE ${at(override.key)}: set \`${field}\` to ` +
             `${JSON.stringify(value)} (editor override ` +
@@ -416,21 +572,62 @@ export function buildEditablePlacementPrompt(
         )
       }
     }
-    for (const event of authoredByVideo[videoName] ?? []) {
-      const fromAt = at(event.from.ref)
-      const offset = `${event.from.offsetMs >= 0 ? '+' : ''}${event.from.offsetMs}ms`
-      const to = event.to
-      const toText =
-        to !== undefined && 'anchor' in to && to.anchor !== undefined
-          ? `until ${at(to.anchor.ref)}`
-          : to !== undefined && 'durationMs' in to
-            ? `for ${(to as { durationMs?: number }).durationMs}ms`
-            : ''
-      lines.push(
-        `- WRAP the code starting at ${fromAt} (${offset} after that ` +
-          `event) ${toText} in \`${event.kind}(...)\` matching authored ` +
-          `event '${event.id}', then remove the authored event from the web.`
-      )
+    for (const event of placedByVideo[videoName] ?? []) {
+      const name =
+        typeof event.props?.name === 'string' ? event.props.name : event.id
+      const offset = `${event.anchor.offsetMs >= 0 ? '+' : ''}${Math.round(event.anchor.offsetMs)}ms`
+      const call = placeCallFor(event)
+      if (call !== null) {
+        lines.push(
+          `- ADD \`${call}\` anywhere in the test body (anchor is near ` +
+            `${anchorAt(event.anchor, byKey)}), matching web event ` +
+            `'${event.id}', then remove that event from the web editor.`
+        )
+        continue
+      }
+      switch (event.kind) {
+        case 'timestamp':
+          lines.push(
+            `- INSERT \`await timestamp('${name}')\` at the moment ${offset} ` +
+              `after ${anchorAt(event.anchor, byKey)} (web-created marker ` +
+              `'${event.id}'), then remove it from the web editor.`
+          )
+          break
+        case 'narrationCue':
+          lines.push(
+            event.targetId !== undefined
+              ? `- MOVE the \`await narration.${name}...\` call so the cue ` +
+                  `starts ${offset} after ${anchorAt(event.anchor, byKey)}: ` +
+                  `add \`await timestamp('<marker>')\` at that anchor and ` +
+                  `\`await waitSince('<marker>', ${Math.max(0, Math.round(event.anchor.offsetMs))})\` ` +
+                  `right before the cue call (web move '${event.id}'), then ` +
+                  `remove the move from the web editor.`
+              : `- ADD narration cue '${name}': declare it in ` +
+                  `\`video.narration([...])\` and call ` +
+                  `\`await narration.${name}()\` at the moment ${offset} ` +
+                  `after ${anchorAt(event.anchor, byKey)} (pace it with ` +
+                  `\`await waitSince(...)\` when needed; web event ` +
+                  `'${event.id}'), then remove it from the web editor.`
+          )
+          break
+        case 'overlay':
+          lines.push(
+            event.targetId !== undefined
+              ? `- MOVE the \`await overlays.${name}...\` call so the ` +
+                  `overlay starts ${offset} after ` +
+                  `${anchorAt(event.anchor, byKey)} (pace it with ` +
+                  `\`await waitSince(...)\`; web move '${event.id}'), then ` +
+                  `remove the move from the web editor.`
+              : `- ADD overlay '${name}': declare it in ` +
+                  `\`video.overlays([...])\` and call ` +
+                  `\`await overlays.${name}()\` at the moment ${offset} ` +
+                  `after ${anchorAt(event.anchor, byKey)} (web event ` +
+                  `'${event.id}'), then remove it from the web editor.`
+          )
+          break
+        default:
+          break
+      }
     }
     if (lines.length > sectionStart) {
       lines.splice(sectionStart, 0, `## Video: ${videoName}`)
@@ -440,7 +637,9 @@ export function buildEditablePlacementPrompt(
     lines.push(
       'Note: the recording is a strict sequence. Any timing change ripples: ' +
         'everything after the changed action happens earlier/later by the ' +
-        'same amount, up to the next page navigation. Do not reorder actions.'
+        'same amount, up to the next page navigation. Do not reorder ' +
+        'actions. placeHide/placeSpeed/placeTime calls are declarative ' +
+        '(applied at render time) and may sit anywhere in the test body.'
     )
   }
   return lines

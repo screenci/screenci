@@ -56,8 +56,7 @@ import {
   isOverrideDebugEnabled,
   isUploadExistingEnabled,
 } from './src/runtimeMode.js'
-import { SCREENCI_EDITABLE_OVERRIDES_ENV } from './src/editableRuntime.js'
-import { SCREENCI_AUTHORED_EVENTS_ENV } from './src/authoredEvents.js'
+import { SCREENCI_TIMELINE_EDITS_ENV } from './src/timelineEdits.js'
 import { DEFAULT_RECORD_UPLOAD_POLICY } from './src/defaults.js'
 import type { VoiceKey } from './src/voices.js'
 import type { RecordUploadPolicy, ScreenCIConfig } from './src/types.js'
@@ -83,11 +82,11 @@ import {
   buildEditablePlacementPrompt,
   diffEditableOverridesAgainstSnapshot,
   EDITABLE_SNAPSHOT_FILE,
-  formatAuthoredStatusReport,
   formatEditableStatusReport,
+  formatPlacedStatusReport,
   readEditableSnapshot,
+  splitTimelineEditsByVideo,
   updateEditableSnapshot,
-  type AuthoredEventStatusInput,
 } from './src/editableSnapshot.js'
 import {
   defaultActionOverridesClient,
@@ -3260,11 +3259,7 @@ export type EditableOverridesFetcher = (args: {
   secret: string
   projectName: string
 }) => Promise<{
-  overrides: Record<
-    string,
-    Array<{ key: string; values: Record<string, unknown> }>
-  >
-  authored: Record<string, AuthoredEventStatusInput[]>
+  timelineEdits: Record<string, unknown>
 }>
 
 const defaultEditableOverridesFetcher: EditableOverridesFetcher = async ({
@@ -3276,20 +3271,12 @@ const defaultEditableOverridesFetcher: EditableOverridesFetcher = async ({
   const res = await fetch(`${apiUrl}/cli/editable-overrides?${params}`, {
     headers: { 'X-ScreenCI-Secret': secret },
   })
-  if (!res.ok) return { overrides: {}, authored: {} }
-  const body = (await res.json()) as { overrides?: unknown; authored?: unknown }
+  if (!res.ok) return { timelineEdits: {} }
+  const body = (await res.json()) as { timelineEdits?: unknown }
   return {
-    overrides:
-      typeof body.overrides === 'object' && body.overrides !== null
-        ? (body.overrides as Awaited<
-            ReturnType<EditableOverridesFetcher>
-          >['overrides'])
-        : {},
-    authored:
-      typeof body.authored === 'object' && body.authored !== null
-        ? (body.authored as Awaited<
-            ReturnType<EditableOverridesFetcher>
-          >['authored'])
+    timelineEdits:
+      typeof body.timelineEdits === 'object' && body.timelineEdits !== null
+        ? (body.timelineEdits as Record<string, unknown>)
         : {},
   }
 }
@@ -3310,14 +3297,15 @@ export async function printActionStatus(
     await compareEditorStateToSnapshot(configPath, grep, client)
   for (const line of formatStatusReport(comparison)) log(line)
 
-  // Timing overrides and authored events (web timeline edits): best-effort;
-  // the action parameter report above must print even when this fetch fails.
+  // Timeline edits (param edits and placed events): best-effort; the action
+  // parameter report above must print even when this fetch fails.
   try {
-    const { overrides, authored } = await fetchEditableOverrides({
+    const { timelineEdits } = await fetchEditableOverrides({
       apiUrl,
       secret,
       projectName,
     })
+    const { overrides, placed } = splitTimelineEditsByVideo(timelineEdits)
     const snapshot = readEditableSnapshot(screenciDir)
     const lines = formatEditableStatusReport(snapshot, overrides)
     if (lines.length > 0) {
@@ -3325,11 +3313,11 @@ export async function printActionStatus(
       log('Timing overrides (web timeline edits):')
       for (const line of lines) log(line)
     }
-    const authoredLines = formatAuthoredStatusReport(snapshot, authored)
-    if (authoredLines.length > 0) {
+    const placedLines = formatPlacedStatusReport(snapshot, placed)
+    if (placedLines.length > 0) {
       log('')
-      log('Web-authored events (hides / speed blocks):')
-      for (const line of authoredLines) log(line)
+      log('Placed events (web-added hides / speedups / cues / overlays):')
+      for (const line of placedLines) log(line)
     }
   } catch {
     // ignore: the endpoint may be unavailable
@@ -3351,19 +3339,21 @@ export async function printSyncPrompt(
     await compareEditorStateToSnapshot(configPath, grep, client)
   const prompt = buildSyncPrompt(comparison, projectName)
 
-  // Timeline edits (timing overrides + authored events) become concrete
-  // placement instructions using the call sites captured at record time.
+  // Timeline edits (param edits + placed events) become concrete placement
+  // instructions using the call sites captured at record time and the
+  // placeHide/placeSpeed/placeTime/waitSince code primitives.
   let placement: string[] = []
   try {
-    const { overrides, authored } = await fetchEditableOverrides({
+    const { timelineEdits } = await fetchEditableOverrides({
       apiUrl,
       secret,
       projectName,
     })
+    const { overrides, placed } = splitTimelineEditsByVideo(timelineEdits)
     placement = buildEditablePlacementPrompt(
       readEditableSnapshot(screenciDir),
       overrides,
-      authored
+      placed
     )
   } catch {
     // Best-effort: the action-parameter prompt still prints.
@@ -4388,10 +4378,11 @@ export async function fetchActionOverridesEnv(
 }
 
 /**
- * Fetch the project's stored web-editor timing overrides (editable actions)
- * so they can be injected as SCREENCI_EDITABLE_OVERRIDES before a recording
- * or mock-record run. Best-effort: any failure returns an empty env so the
- * SDK uses code/default values, and a recording is never blocked by this.
+ * Fetch the project's stored web-editor timeline edits so they can be
+ * injected as SCREENCI_TIMELINE_EDITS before a recording or mock-record run.
+ * A failure never blocks the recording, but it always warns (not just in
+ * verbose mode): a silent failure would record a video that ignores the
+ * editor's edits.
  */
 export async function fetchEditableOverridesEnv(
   configPath: string,
@@ -4412,48 +4403,42 @@ export async function fetchEditableOverridesEnv(
       { headers: { 'X-ScreenCI-Secret': secret } }
     )
     if (!res.ok) {
-      if (verbose) {
-        logger.warn(
-          `Could not fetch editor timing overrides (${res.status}); using code-declared values.`
-        )
-      }
+      logger.warn(
+        `Could not fetch editor timeline edits (${res.status}); recording ` +
+          `with code-declared values. Stored web edits will NOT apply to ` +
+          `this run.`
+      )
       return {}
     }
 
     const body = (await res.json()) as {
-      overrides?: unknown
-      authored?: unknown
+      timelineEdits?: unknown
     }
     const env: Record<string, string> = {}
-    const overrides = body.overrides
+    // Unified timeline-edits doc (paramEdit + placedEvent records), the only
+    // wire format: the server converts every stored web edit into it.
+    const timelineEdits = body.timelineEdits
     if (
-      overrides !== undefined &&
-      overrides !== null &&
-      typeof overrides === 'object' &&
-      Object.keys(overrides as Record<string, unknown>).length > 0
+      timelineEdits !== undefined &&
+      timelineEdits !== null &&
+      typeof timelineEdits === 'object' &&
+      Object.keys(timelineEdits as Record<string, unknown>).length > 0
     ) {
-      env[SCREENCI_EDITABLE_OVERRIDES_ENV] = JSON.stringify(overrides)
+      env[SCREENCI_TIMELINE_EDITS_ENV] = JSON.stringify(timelineEdits)
     }
-    // Web-authored hides/speed blocks ride the same payload; injected as their
-    // own env and applied when each recording's data.json is written.
-    const authored = body.authored
-    if (
-      authored !== undefined &&
-      authored !== null &&
-      typeof authored === 'object' &&
-      Object.keys(authored as Record<string, unknown>).length > 0
-    ) {
-      env[SCREENCI_AUTHORED_EVENTS_ENV] = JSON.stringify(authored)
+    if (verbose && Object.keys(env).length > 0) {
+      logger.info(
+        `Fetched editor timeline edits (${Object.keys(env).join(', ')}).`
+      )
     }
     return env
   } catch (error) {
-    if (verbose) {
-      logger.warn(
-        `Could not fetch editor timing overrides; using code-declared values.${
+    logger.warn(
+      `Could not fetch editor timeline edits; recording with code-declared ` +
+        `values. Stored web edits will NOT apply to this run.${
           error instanceof Error ? ` (${error.message})` : ''
         }`
-      )
-    }
+    )
     return {}
   }
 }
@@ -4564,8 +4549,7 @@ export function reportFetchedOverridesForDebug(
     ['Studio text overrides', SCREENCI_VALUES_OVERRIDES_ENV],
     ['Studio record options', SCREENCI_RECORD_OPTIONS_ENV],
     ['Editor action-parameter overrides', SCREENCI_ACTION_OVERRIDES_ENV],
-    ['Editor timing overrides', SCREENCI_EDITABLE_OVERRIDES_ENV],
-    ['Web-authored events', SCREENCI_AUTHORED_EVENTS_ENV],
+    ['Editor timeline edits', SCREENCI_TIMELINE_EDITS_ENV],
     ['Web-added languages', SCREENCI_WEB_LANGUAGES_ENV],
   ]
   log('[screenci debug] overrides fetched from the backend for this run:')
@@ -4600,18 +4584,44 @@ export function reportEditableOverrideCollisions(
   editableOverridesEnv: Record<string, string>,
   log: (message: string) => void = (message) => logger.info(message)
 ): void {
-  const raw = editableOverridesEnv[SCREENCI_EDITABLE_OVERRIDES_ENV]
+  const raw = editableOverridesEnv[SCREENCI_TIMELINE_EDITS_ENV]
   if (raw === undefined) return
   try {
-    const overridesByVideo: unknown = JSON.parse(raw)
-    if (typeof overridesByVideo !== 'object' || overridesByVideo === null)
-      return
+    const docsByVideo: unknown = JSON.parse(raw)
+    if (typeof docsByVideo !== 'object' || docsByVideo === null) return
+    // Param edits from the unified doc, in the {key, values} entry shape the
+    // snapshot diff expects.
+    const overridesByVideo: Record<
+      string,
+      Array<{ key: string; values: Record<string, unknown> }>
+    > = {}
+    for (const [videoName, doc] of Object.entries(docsByVideo)) {
+      const edits = (doc as { edits?: unknown[] } | null)?.edits
+      if (!Array.isArray(edits)) continue
+      const entries = edits.flatMap((edit) => {
+        const record = edit as {
+          type?: unknown
+          target?: { key?: unknown }
+          fields?: unknown
+        }
+        return record.type === 'paramEdit' &&
+          typeof record.target?.key === 'string' &&
+          typeof record.fields === 'object' &&
+          record.fields !== null
+          ? [
+              {
+                key: record.target.key,
+                values: record.fields as Record<string, unknown>,
+              },
+            ]
+          : []
+      })
+      if (entries.length > 0) overridesByVideo[videoName] = entries
+    }
     const snapshot = readEditableSnapshot(screenciDir)
     for (const collision of diffEditableOverridesAgainstSnapshot(
       snapshot,
-      overridesByVideo as Parameters<
-        typeof diffEditableOverridesAgainstSnapshot
-      >[1]
+      overridesByVideo
     )) {
       log(
         `[screenci] editor override shadows code value: ${collision.key} ` +

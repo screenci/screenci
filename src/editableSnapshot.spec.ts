@@ -6,8 +6,9 @@ import {
   collectEditableFromRecordings,
   diffEditableOverridesAgainstSnapshot,
   buildEditablePlacementPrompt,
-  formatAuthoredStatusReport,
   formatEditableStatusReport,
+  formatPlacedStatusReport,
+  splitTimelineEditsByVideo,
   mergeEditableSnapshot,
   readEditableSnapshot,
   updateEditableSnapshot,
@@ -114,21 +115,37 @@ describe('formatEditableStatusReport', () => {
   })
 })
 
-describe('formatAuthoredStatusReport', () => {
+describe('formatPlacedStatusReport', () => {
   it('reports resolved, missing and unverified anchors', () => {
-    const lines = formatAuthoredStatusReport(SNAPSHOT, {
+    const lines = formatPlacedStatusReport(SNAPSHOT, {
       'My video': [
         {
+          type: 'placedEvent',
           id: 'a1',
           kind: 'hide',
-          from: { ref: 'input|click|getByRole(button)|0', offsetMs: 200 },
-          to: { durationMs: 500 },
+          anchor: {
+            ref: { type: 'action', key: 'input|click|getByRole(button)|0' },
+            edge: 'end',
+            offsetMs: 200,
+          },
+          end: { durationMs: 500 },
         },
         {
+          type: 'placedEvent',
           id: 'a2',
           kind: 'speed',
-          from: { ref: 'input|click|gone|3', offsetMs: 0 },
-          to: { anchor: { ref: 'timestamp||checkout|0' } },
+          anchor: {
+            ref: { type: 'action', key: 'input|click|gone|3' },
+            edge: 'start',
+            offsetMs: 0,
+          },
+          end: {
+            anchor: {
+              ref: { type: 'timestamp', name: 'checkout', ordinal: 0 },
+              edge: 'start',
+              offsetMs: 0,
+            },
+          },
         },
       ],
     })
@@ -139,8 +156,47 @@ describe('formatAuthoredStatusReport', () => {
     expect(report).toContain('unverified')
   })
 
-  it('returns no lines without authored events', () => {
-    expect(formatAuthoredStatusReport(SNAPSHOT, {})).toEqual([])
+  it('returns no lines without placed events', () => {
+    expect(formatPlacedStatusReport(SNAPSHOT, {})).toEqual([])
+  })
+})
+
+describe('splitTimelineEditsByVideo', () => {
+  it('splits docs into param-edit entries and placed events', () => {
+    const { overrides, placed } = splitTimelineEditsByVideo({
+      demo: {
+        version: 2,
+        edits: [
+          {
+            type: 'paramEdit',
+            id: 'p1',
+            target: { key: 'delay|||0' },
+            fields: { durationMs: 100 },
+          },
+          {
+            type: 'placedEvent',
+            id: 'e1',
+            kind: 'hide',
+            anchor: { ref: { type: 'videoStart' }, edge: 'start', offsetMs: 0 },
+            end: { durationMs: 100 },
+          },
+          {
+            type: 'placedEvent',
+            id: 'e2',
+            kind: 'hide',
+            anchor: { ref: { type: 'videoStart' }, edge: 'start', offsetMs: 0 },
+            end: { durationMs: 100 },
+            disabled: true,
+          },
+        ],
+      },
+      broken: 'not a doc',
+    })
+    expect(overrides).toEqual({
+      demo: [{ key: 'delay|||0', values: { durationMs: 100 } }],
+    })
+    expect(placed.demo?.map((event) => event.id)).toEqual(['e1'])
+    expect(placed.broken).toBeUndefined()
   })
 })
 
@@ -180,10 +236,49 @@ describe('buildEditablePlacementPrompt', () => {
       {
         'My video': [
           {
+            type: 'placedEvent',
             id: 'a1',
             kind: 'speed',
-            from: { ref: 'timestamp||mark|0', offsetMs: 50 },
-            to: { durationMs: 200 },
+            anchor: {
+              ref: { type: 'timestamp', name: 'mark', ordinal: 0 },
+              edge: 'start',
+              offsetMs: 50,
+            },
+            end: { durationMs: 200 },
+            props: { multiplier: 3 },
+          },
+          {
+            type: 'placedEvent',
+            id: 'z1',
+            kind: 'zoom',
+            anchor: {
+              ref: { type: 'action', key: 'input|click|getByRole(button)|0' },
+              edge: 'start',
+              offsetMs: -400,
+            },
+            end: {
+              anchor: {
+                ref: {
+                  type: 'action',
+                  key: 'input|click|getByRole(button)|0',
+                },
+                edge: 'end',
+                offsetMs: 600,
+              },
+            },
+            props: { amount: 0.6 },
+          },
+          {
+            type: 'placedEvent',
+            id: 'n1',
+            kind: 'narrationCue',
+            anchor: {
+              ref: { type: 'action', key: 'input|click|getByRole(button)|0' },
+              edge: 'end',
+              offsetMs: 800,
+            },
+            targetId: 'cue||intro|0',
+            props: { name: 'intro' },
           },
         ],
       }
@@ -197,8 +292,18 @@ describe('buildEditablePlacementPrompt', () => {
       'INSERT `await page.waitForTimeout(1300)` immediately BEFORE recordings/pitch.screenci.ts:42'
     )
     expect(text).toContain(
-      'WRAP the code starting at recordings/pitch.screenci.ts:50 (+50ms after that event) for 200ms in `speed(...)`'
+      "ADD `placeSpeed({ from: 'mark', offsetMs: 50, durationMs: 200, multiplier: 3 })`"
     )
+    expect(text).toContain(
+      "ADD `placeZoom({ from: { action: 'input|click|getByRole(button)|0', " +
+        "edge: 'start' }, offsetMs: -400, until: { action: " +
+        "'input|click|getByRole(button)|0' }, untilOffsetMs: 600, " +
+        'amount: 0.6 })`'
+    )
+    expect(text).toContain("web event 'a1'")
+    expect(text).toContain('MOVE the `await narration.intro...` call')
+    expect(text).toContain("`await waitSince('<marker>', 800)`")
+    expect(text).toContain('recordings/pitch.screenci.ts:42')
     expect(text).toContain('ripples')
   })
 

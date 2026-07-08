@@ -25,10 +25,16 @@ import {
   type ActionParamSpec,
 } from './actionParams.js'
 import type { EditableMeta } from './editableDescriptor.js'
+import { stableEditableKey } from './editableDescriptor.js'
 import {
-  applyAuthoredEvents,
-  resolveAuthoredEventsForVideo,
-} from './authoredEvents.js'
+  OverrideReportBuilder,
+  applyPlacedEvents,
+  applyZoomWindowOffsets,
+  resolveTimelineEditsForVideo,
+  splitEdits,
+  type OverrideReportItem,
+  type PlacedEvent,
+} from './timelineEdits.js'
 import type { VoiceKey } from './voices.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { getGitMetadata } from './git.js'
@@ -912,6 +918,14 @@ export type AutoZoomStartEvent = {
   duration: number
   amount: number
   centering?: number
+  /**
+   * Write-time boundary shifts (`autoZoom` options `startOffset`/`endOffset`):
+   * consumed by `applyZoomWindowOffsets` when data.json is written, which
+   * moves this event (and its matching autoZoomEnd) and strips the fields,
+   * so downstream consumers never see them.
+   */
+  startOffset?: number
+  endOffset?: number
   /** Web-editor metadata: identity, lock state, and effective option values. */
   editable?: EditableMeta
 }
@@ -1247,6 +1261,12 @@ export type RecordingData = {
    * present the parameters for editing and to key its overrides.
    */
   actionParams?: ActionParamRecord[]
+  /**
+   * One item per web-editor override this recording tried to apply, with its
+   * outcome (applied, fallback, shadowed-code, or skipped with a reason). The
+   * backend surfaces these in the editor so no edit ever vanishes silently.
+   */
+  overrideReport?: OverrideReportItem[]
 }
 
 /** Extra, output-specific fields written into `data.json`. */
@@ -1401,6 +1421,18 @@ export interface IEventRecorder {
   addTimeEnd(): void
   /** Records a named marker at the current recording time (`timestamp()`). */
   addTimestamp(name: string): void
+  /**
+   * Wall-clock time (Date.now()) of the most recent `timestamp(name)` call,
+   * or null when the marker has not been recorded yet. Used by `waitSince()`
+   * to pace execution relative to a marker.
+   */
+  getTimestampWallClock(name: string): number | null
+  /**
+   * Queues a code-declared placed event (`placeHide`/`placeSpeed`/
+   * `placeTime`): an anchored render-time event applied when data.json is
+   * written, exactly like a web-placed one.
+   */
+  addPlacedEvent(placed: PlacedEvent): void
   addAutoZoomStart(options?: AutoZoomOptions, editable?: EditableMeta): void
   addAutoZoomEnd(options?: AutoZoomOptions): void
   addNarrationHide(): void
@@ -1489,6 +1521,10 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addTimeStart(): void {},
   addTimeEnd(): void {},
   addTimestamp(): void {},
+  getTimestampWallClock(): number | null {
+    return null
+  },
+  addPlacedEvent(): void {},
   addAutoZoomStart(): void {},
   addAutoZoomEnd(): void {},
   addNarrationHide(): void {},
@@ -1529,6 +1565,17 @@ export class EventRecorder implements IEventRecorder {
   private readonly actionParams: ActionParamCollector
   /** Monotonic counter for stable `KeyPressEvent.id` values. */
   private keyPressCounter = 0
+  /**
+   * Report collector shared with the runtime (see runtimeContext.editable):
+   * runtime param edits and write-time placed events land in one report,
+   * embedded into data.json. A fresh builder is created at write time when
+   * none was bound.
+   */
+  private overrideReport: OverrideReportBuilder | null = null
+  /** Wall-clock time of the latest `timestamp(name)` call, for waitSince(). */
+  private readonly timestampWallClock = new Map<string, number>()
+  /** Code-declared placed events, applied at data.json write time. */
+  private readonly codePlacedEvents: PlacedEvent[] = []
 
   constructor(
     renderOptions?: RenderOptions,
@@ -1555,6 +1602,18 @@ export class EventRecorder implements IEventRecorder {
     spec: ActionParamSpec
   ): Record<string, unknown> {
     return this.actionParams.apply(selector, method, spec)
+  }
+
+  setOverrideReport(report: OverrideReportBuilder): void {
+    this.overrideReport = report
+  }
+
+  getTimestampWallClock(name: string): number | null {
+    return this.timestampWallClock.get(name) ?? null
+  }
+
+  addPlacedEvent(placed: PlacedEvent): void {
+    this.codePlacedEvents.push(placed)
   }
 
   registerVoiceForLang(_lang: string, _meta: VoiceLanguageMeta): void {}
@@ -2175,6 +2234,7 @@ export class EventRecorder implements IEventRecorder {
 
   addTimestamp(name: string): void {
     if (this.startTime === null) return
+    this.timestampWallClock.set(name, Date.now())
     const timeMs = Date.now() - this.startTime
     this.events.push({ type: 'timestamp', timeMs, name })
   }
@@ -2207,6 +2267,14 @@ export class EventRecorder implements IEventRecorder {
       amount: resolvedOptions.amount,
       ...(centering !== undefined && {
         centering,
+      }),
+      // Write-time boundary shifts, applied and stripped when data.json is
+      // written (a negative startOffset reaches into the past legally there).
+      ...(resolvedOptions.startOffset !== 0 && {
+        startOffset: resolvedOptions.startOffset,
+      }),
+      ...(resolvedOptions.endOffset !== 0 && {
+        endOffset: resolvedOptions.endOffset,
       }),
       ...(editable !== undefined && { editable }),
     })
@@ -2451,14 +2519,60 @@ export class EventRecorder implements IEventRecorder {
           )
         : this.events
 
-    // Web-authored hides and speed blocks: anchored to recorded events and
-    // injected by the CLI before the run. Applied here so the uploaded
-    // data.json already carries the resulting event pairs; unresolvable
-    // anchors are skipped with a warning and never fail the recording.
-    const authored = resolveAuthoredEventsForVideo(videoName)
-    if (authored !== null) {
-      serializedEvents = applyAuthoredEvents(serializedEvents, authored)
+    // autoZoom write-time boundary shifts (startOffset/endOffset): applied
+    // first so placed events and anchors see the final zoom windows.
+    serializedEvents = applyZoomWindowOffsets(serializedEvents)
+
+    // Timeline edits: code-declared placed events (placeHide/placeSpeed/
+    // placeTime) plus the web editor's edits injected by the CLI via
+    // SCREENCI_TIMELINE_EDITS. Applied here so the uploaded data.json
+    // already carries the resulting events. Every outcome (applied,
+    // fallback, skipped + reason) lands in the override report; nothing
+    // fails the recording and nothing is skipped silently. Code events
+    // apply first so a web edit can still adjust what they produced.
+    const report = this.overrideReport ?? new OverrideReportBuilder()
+    const unified = resolveTimelineEditsForVideo(videoName)
+    if (unified !== null) {
+      for (const invalid of unified.invalid) {
+        report.add({
+          editId: invalid.id,
+          channel: 'placedEvent',
+          status: 'skipped',
+          reason: `invalidRecord:${invalid.reason}`,
+        })
+      }
     }
+    const webEdits = unified !== null ? splitEdits(unified.edits) : null
+    const allPlaced = [
+      ...this.codePlacedEvents,
+      ...(webEdits?.placedEvents ?? []),
+    ]
+    if (allPlaced.length > 0) {
+      serializedEvents = applyPlacedEvents(serializedEvents, allPlaced, report)
+    }
+    if (webEdits !== null) {
+      // Param edits whose target action was never recorded this run: report
+      // them so the editor can show the edit went unmatched (stale key).
+      const recordedKeys = new Set<string>()
+      for (const event of serializedEvents) {
+        const meta = (event as { editable?: EditableMeta }).editable
+        if (meta?.descriptor !== undefined) {
+          recordedKeys.add(stableEditableKey(meta.descriptor))
+        }
+      }
+      for (const edit of webEdits.paramEdits) {
+        if (recordedKeys.has(edit.target.key)) continue
+        report.add({
+          editId: edit.id,
+          channel: 'paramEdit',
+          status: 'skipped',
+          subject: edit.target.key,
+          reason: `targetMissing:${edit.target.key}`,
+        })
+      }
+    }
+    report.logSummary(videoName)
+    const overrideReportItems = report.items()
 
     const languageSet = new Set<string>()
     for (const event of this.events) {
@@ -2544,6 +2658,9 @@ export class EventRecorder implements IEventRecorder {
       }),
       ...(actionParamRecords.length > 0 && {
         actionParams: actionParamRecords,
+      }),
+      ...(overrideReportItems.length > 0 && {
+        overrideReport: overrideReportItems,
       }),
       metadata: {
         videoName,

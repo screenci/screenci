@@ -23,6 +23,8 @@ export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
   centering: 1,
   delay: 0,
   delayAfter: 200,
+  startOffset: 0,
+  endOffset: 0,
 }
 
 /**

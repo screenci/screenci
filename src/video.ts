@@ -87,7 +87,8 @@ import {
   isCaptureAudioEnabled,
   resolveCaptureAudioGain,
 } from './browserLaunchOptions.js'
-import { resolveEditableOverridesForVideo } from './editableRuntime.js'
+import { resolveRuntimeOverridesForVideo } from './editableRuntime.js'
+import { OverrideReportBuilder } from './timelineEdits.js'
 import {
   createScreenCIRuntimeContext,
   runWithScreenCIRuntimeContext,
@@ -952,9 +953,13 @@ const _videoBase = base.extend<
         activeLanguage: _screenciLanguage ?? null,
       })
       // Web-editor timing overrides for this video (injected by the CLI for
-      // record and mock-record runs; absent for plain test runs).
+      // record and mock-record runs; absent for plain test runs). One report
+      // collects runtime param edits and write-time placed events.
+      const overrideReport = new OverrideReportBuilder()
+      recorder.setOverrideReport(overrideReport)
+      runtimeContext.editable.report = overrideReport
       runtimeContext.editable.overridesByKey =
-        resolveEditableOverridesForVideo(videoName)
+        resolveRuntimeOverridesForVideo(videoName)
       bindStillCaptureToPage(page)
       await setupMouseTracking(page, recorder)
       if (resolveDisableAnimations(recordOptions.disableAnimations, 'video')) {
@@ -1016,9 +1021,14 @@ const _videoBase = base.extend<
       activeLanguage: _screenciLanguage ?? null,
     })
     // Web-editor timing overrides for this video, fetched by the CLI before
-    // the run and injected via SCREENCI_EDITABLE_OVERRIDES.
+    // the run and injected via SCREENCI_TIMELINE_EDITS. One report collects
+    // runtime param edits and write-time placed events, embedded into
+    // data.json.
+    const overrideReport = new OverrideReportBuilder()
+    recorder.setOverrideReport(overrideReport)
+    runtimeContext.editable.report = overrideReport
     runtimeContext.editable.overridesByKey =
-      resolveEditableOverridesForVideo(videoName)
+      resolveRuntimeOverridesForVideo(videoName)
 
     await setupMouseTracking(page, recorder)
     if (resolveDisableAnimations(recordOptions.disableAnimations, 'video')) {

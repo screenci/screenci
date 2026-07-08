@@ -81,7 +81,20 @@ async function postDev<T>(
     const text = await res.text().catch(() => '')
     throw new Error(`Request to ${path} failed: ${res.status} ${text}`.trim())
   }
-  return (await res.json()) as T
+  // Tolerate an empty 2xx body: the /cli/dev/* proxy (and idle keep-alives) can
+  // return an empty response, and calling res.json() on it throws "Unexpected
+  // end of JSON input", which the poll loop would otherwise log as a connection
+  // problem and back off on. An empty body just means "nothing to report" (e.g.
+  // no pending trigger), so resolve to an empty object.
+  const text = await res.text()
+  if (text.trim() === '') return {} as T
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    throw new Error(
+      `Request to ${path} returned invalid JSON: ${text.slice(0, 200)}`
+    )
+  }
 }
 
 export async function registerDevListener(
@@ -98,13 +111,13 @@ export async function pollDevListener(
   deps: DevListenDeps,
   listenerId: string
 ): Promise<DevTrigger | null> {
-  const result = await postDev<{ trigger: DevTrigger | null }>(
+  const result = await postDev<{ trigger?: DevTrigger | null }>(
     config,
     deps,
     '/cli/dev/poll',
     { listenerId }
   )
-  return result.trigger
+  return result.trigger ?? null
 }
 
 export async function reportDevTrigger(

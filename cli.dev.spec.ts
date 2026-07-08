@@ -103,6 +103,15 @@ describe('pollDevListener', () => {
 
     await expect(pollDevListener(config, deps, 'lst_1')).resolves.toBeNull()
   })
+
+  it('treats an empty 2xx body as no trigger instead of throwing', async () => {
+    const deps = makeDeps()
+    // The /cli/dev/* proxy (or an idle keep-alive) can return an empty body;
+    // res.json() on it throws "Unexpected end of JSON input".
+    deps.fetchMock.mockResolvedValueOnce(new Response('', { status: 200 }))
+
+    await expect(pollDevListener(config, deps, 'lst_1')).resolves.toBeNull()
+  })
 })
 
 describe('runDevListenLoop', () => {

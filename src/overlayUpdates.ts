@@ -18,7 +18,12 @@ import {
 } from './editableDescriptor.js'
 import { applyEditableOverride } from './editableRuntime.js'
 import { assetCandidatePaths, hashAssetFile } from './assetHash.js'
-import type { Easing, NarrationCorner } from './types.js'
+import type {
+  Easing,
+  NarrationCorner,
+  NarrationFullScreenFit,
+  NarrationPosition,
+} from './types.js'
 import { EASING_NAMES } from './types.js'
 
 /**
@@ -70,12 +75,26 @@ export type MoveNarrationOptions = OverlayTransitionOptions & {
    * Per-axis inset from the anchor corner as a fraction of the shorter output
    * side. Overrides the global `renderOptions.narration.padding` for the set
    * axis from this point on; an omitted axis keeps its current effective
-   * value. Range [-1, 1]; negative pushes the tile past the edge.
+   * value. Range [-1, 1]; negative pushes the tile past the edge. Corner
+   * positions only.
    */
   padding?: { x?: number; y?: number }
   /**
+   * Signed per-axis displacement from the exact output center, as a fraction
+   * of the shorter output side. Range [-1, 1]. 'center' position only. The
+   * offset persists for later 'center' moves until overridden.
+   */
+  offset?: { x?: number; y?: number }
+  /**
+   * How full-screen narration fits the frame: 'contain' letterboxes with
+   * black bars, 'cover' fills the frame with slight cropping. Defaults to
+   * 'contain'. 'full-screen' position only.
+   */
+  fit?: NarrationFullScreenFit
+  /**
    * Tile size as a fraction of the shorter output side, (0, 1]. Set together
-   * with the move to animate both in one synchronized transition.
+   * with the move to animate both in one synchronized transition. Not valid
+   * with 'full-screen' (it always fills the frame).
    */
   size?: number
 }
@@ -89,6 +108,12 @@ const NARRATION_CORNERS: readonly NarrationCorner[] = [
   'top-right',
   'bottom-left',
   'bottom-right',
+]
+
+const NARRATION_POSITIONS: readonly NarrationPosition[] = [
+  ...NARRATION_CORNERS,
+  'center',
+  'full-screen',
 ]
 
 function assertFiniteInRange(
@@ -142,20 +167,25 @@ export function validateTransition(
   return { durationMs: duration, easing }
 }
 
-/** Validates a narration corner name (exhaustive against {@link NarrationCorner}). */
-export function validateCorner(api: string, corner: NarrationCorner): void {
-  switch (corner) {
+/** Validates a narration position name (exhaustive against {@link NarrationPosition}). */
+export function validatePosition(
+  api: string,
+  position: NarrationPosition
+): void {
+  switch (position) {
     case 'top-left':
     case 'top-right':
     case 'bottom-left':
     case 'bottom-right':
+    case 'center':
+    case 'full-screen':
       return
     default: {
-      const _: never = corner
+      const _: never = position
       throw invalidOptionError({
         api,
-        option: 'corner',
-        expectation: `one of ${NARRATION_CORNERS.join(', ')}`,
+        option: 'position',
+        expectation: `one of ${NARRATION_POSITIONS.join(', ')}`,
         value: _,
       })
     }
@@ -164,12 +194,21 @@ export function validateCorner(api: string, corner: NarrationCorner): void {
 
 /** Validates the payload of a `moveNarration()` call. */
 export function validateMoveNarration(
-  corner: NarrationCorner,
+  position: NarrationPosition,
   options: MoveNarrationOptions | undefined
 ): Omit<NarrationUpdateEvent, 'type' | 'timeMs'> {
   const api = 'moveNarration'
-  validateCorner(api, corner)
+  validatePosition(api, position)
+  const isCorner = (NARRATION_CORNERS as readonly string[]).includes(position)
   if (options?.padding !== undefined) {
+    if (!isCorner) {
+      throw invalidOptionError({
+        api,
+        option: 'padding',
+        expectation: 'padding is only valid with corner positions',
+        value: position,
+      })
+    }
     const { x, y } = options.padding
     if (x === undefined && y === undefined) {
       throw invalidOptionError({
@@ -184,13 +223,65 @@ export function validateMoveNarration(
     if (y !== undefined)
       assertFiniteInRange(api, 'padding.y', y, -1, 1, 'a number in [-1, 1]')
   }
+  if (options?.offset !== undefined) {
+    if (position !== 'center') {
+      throw invalidOptionError({
+        api,
+        option: 'offset',
+        expectation: "offset is only valid with the 'center' position",
+        value: position,
+      })
+    }
+    const { x, y } = options.offset
+    if (x === undefined && y === undefined) {
+      throw invalidOptionError({
+        api,
+        option: 'offset',
+        expectation: 'at least one of offset.x / offset.y',
+        value: options.offset,
+      })
+    }
+    if (x !== undefined)
+      assertFiniteInRange(api, 'offset.x', x, -1, 1, 'a number in [-1, 1]')
+    if (y !== undefined)
+      assertFiniteInRange(api, 'offset.y', y, -1, 1, 'a number in [-1, 1]')
+  }
+  if (options?.fit !== undefined) {
+    if (position !== 'full-screen') {
+      throw invalidOptionError({
+        api,
+        option: 'fit',
+        expectation: "fit is only valid with the 'full-screen' position",
+        value: position,
+      })
+    }
+    if (options.fit !== 'contain' && options.fit !== 'cover') {
+      throw invalidOptionError({
+        api,
+        option: 'fit',
+        expectation: "one of 'contain', 'cover'",
+        value: options.fit,
+      })
+    }
+  }
   if (options?.size !== undefined) {
+    if (position === 'full-screen') {
+      throw invalidOptionError({
+        api,
+        option: 'size',
+        expectation:
+          "size is not valid with 'full-screen' (it always fills the frame)",
+        value: options.size,
+      })
+    }
     validateNarrationSize(api, options.size)
   }
   const transition = validateTransition(api, options)
   return {
-    corner,
+    position,
     ...(options?.padding !== undefined && { padding: options.padding }),
+    ...(options?.offset !== undefined && { offset: options.offset }),
+    ...(options?.fit !== undefined && { fit: options.fit }),
     ...(options?.size !== undefined && { size: options.size }),
     ...(transition !== undefined && { transition }),
   }
@@ -251,21 +342,24 @@ export function validateSetBackground(
 }
 
 /**
- * Moves the narration (camera PIP) overlay to another corner, optionally with
- * per-axis padding and a new size, animated when a `duration` is given.
+ * Moves the narration (camera PIP) overlay to another position, optionally
+ * with a new size, animated when a `duration` is given.
+ *
+ * Corner and 'center' moves slide positionally. 'full-screen' shows the
+ * UNCROPPED narration source over the whole frame and never slides: it
+ * appears in place, cross-fading over `duration` (the corner/center tile
+ * fades out while the full-screen layer fades in). Any later move to a
+ * corner or 'center' exits full screen the same way.
  *
  * @example
  * ```ts
- * await moveNarration('top-left', {
- *   padding: { x: 0.02, y: 0.06 },
- *   size: 0.2,
- *   duration: 600,
- *   easing: 'ease-in-out',
- * })
+ * await moveNarration('center', { offset: { x: 0.1 }, duration: 400 })
+ * await moveNarration('full-screen', { fit: 'cover', duration: 300 })
+ * await moveNarration('bottom-right', { duration: 300 }) // exits full screen
  * ```
  */
 export async function moveNarration(
-  corner: NarrationCorner,
+  position: NarrationPosition,
   options?: MoveNarrationOptions,
   recorder: IEventRecorder = getActiveHideRecorder()
 ): Promise<void> {
@@ -273,18 +367,20 @@ export async function moveNarration(
     subKind: 'moveNarration',
     schemaKind: 'narrationUpdate',
     defaults: {
-      corner,
+      position,
       size: options?.size ?? null,
       duration: options?.duration ?? null,
     },
   })
   const eff = applyEditableOverride(editable)
-  const effCorner =
-    typeof eff.corner === 'string' ? (eff.corner as NarrationCorner) : corner
+  const effPosition =
+    typeof eff.position === 'string'
+      ? (eff.position as NarrationPosition)
+      : position
   const effSize = effNumber(eff, 'size')
   const effDuration = effNumber(eff, 'duration')
   recorder.addNarrationUpdate({
-    ...validateMoveNarration(effCorner, {
+    ...validateMoveNarration(effPosition, {
       ...options,
       ...(effSize !== undefined && { size: effSize }),
       ...(effDuration !== undefined && { duration: effDuration }),

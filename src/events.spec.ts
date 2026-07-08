@@ -567,6 +567,38 @@ describe('EventRecorder', () => {
       expect((ro.zoom as Record<string, unknown>).motionBlur).toBe(0.5)
     })
 
+    it('omits narration.audio by default and resolves it when opted in', async () => {
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+      let parsed: RecordingData = JSON.parse(
+        await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      )
+      let ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.narration as Record<string, unknown>).audio).toBeUndefined()
+
+      recorder = new EventRecorder({ narration: { audio: true } })
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+      parsed = JSON.parse(await readFile(join(tmpDir, 'data.json'), 'utf-8'))
+      ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.narration as Record<string, unknown>).audio).toEqual({
+        denoise: { strength: 0.85 },
+        normalize: { level: -16 },
+      })
+
+      recorder = new EventRecorder({
+        narration: { audio: { normalize: { level: -14 } } },
+      })
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+      parsed = JSON.parse(await readFile(join(tmpDir, 'data.json'), 'utf-8'))
+      ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.narration as Record<string, unknown>).audio).toEqual({
+        denoise: false,
+        normalize: { level: -14 },
+      })
+    })
+
     it('preserves explicit cursor and camera motion blur', async () => {
       recorder = new EventRecorder({
         mouse: { motionBlur: 0 },

@@ -14,6 +14,10 @@ export type {
   Easing,
   VideoEncoderPreset,
 } from './src/types.js'
+export type {
+  NarrationAudioCleanupOption,
+  ResolvedNarrationAudioCleanup,
+} from './src/narrationAudioCleanup.js'
 
 // Re-export voices
 export { voices, modelTypes } from './src/voices.js'
@@ -95,7 +99,11 @@ export type {
   MoveNarrationOptions,
   SetBackgroundInput,
 } from './src/overlayUpdates.js'
-export type { NarrationCorner } from './src/types.js'
+export type {
+  NarrationCorner,
+  NarrationPosition,
+  NarrationFullScreenFit,
+} from './src/types.js'
 export type {
   UpdateTransition,
   NarrationUpdateEvent,

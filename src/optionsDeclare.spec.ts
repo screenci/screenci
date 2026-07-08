@@ -88,6 +88,35 @@ describe('mergeRenderOptions', () => {
     expect(mergeRenderOptions(base, undefined)).toBe(base)
     expect(mergeRenderOptions(undefined, base)).toBe(base)
   })
+
+  it('keeps the base recording clip when the patch touches sibling fields', () => {
+    const base: Partial<RenderOptions> = {
+      recording: { clip: { x: 10, y: 20, width: 300, height: 200 }, size: 0.9 },
+    }
+    const merged = mergeRenderOptions(base, { recording: { roundness: 0.5 } })
+    expect(merged).toEqual({
+      recording: {
+        clip: { x: 10, y: 20, width: 300, height: 200 },
+        size: 0.9,
+        roundness: 0.5,
+      },
+    })
+  })
+
+  it('replaces the recording clip atomically when the patch sets one', () => {
+    const base: Partial<RenderOptions> = {
+      recording: { clip: { x: 10, y: 20, width: 300, height: 200 } },
+    }
+    const merged = mergeRenderOptions(base, {
+      recording: { clip: { x: 0, y: 0, width: 100, height: 100 } },
+    })
+    expect(merged?.recording?.clip).toEqual({
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+    })
+  })
 })
 
 describe('combineRecordOptionsLayers', () => {

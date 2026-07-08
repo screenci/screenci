@@ -6,7 +6,7 @@ import type {
   Mouse,
 } from '@playwright/test'
 import type { PerformanceOption } from './performance.js'
-import type { ClipTarget, ScreenshotClipRecord } from './clip.js'
+import type { ClipRegion, ClipTarget, ScreenshotClipRecord } from './clip.js'
 import type { AnyTopLevelVoiceConfig } from './voiceConfig.js'
 
 /**
@@ -153,6 +153,15 @@ export type RenderOptions = {
     roundness?: number
     /** Shadow strength from 0 (none) to 1 (default shadow). */
     dropShadow?: number
+    /**
+     * Crop of the recorded video, in CSS pixels of the recording viewport
+     * (top-left origin), following Playwright's `clip` shape. The recording is
+     * always captured at the full configured resolution; the clip is applied at
+     * render time, so it can be changed and re-rendered without re-recording.
+     * Only the clipped region appears in the output, and the recording tile
+     * takes the clip's aspect ratio.
+     */
+    clip?: ClipRegion
   }
   narration?: {
     /** 0-1 fraction of the output frame: 1=mask size equals shorter side of output. */
@@ -295,6 +304,8 @@ export type ResolvedRenderOptions = {
     size: number
     roundness: number
     dropShadow: number
+    /** Render-time crop of the recording (CSS px of the recording viewport). */
+    clip?: ClipRegion
   }
   narration: {
     size: number

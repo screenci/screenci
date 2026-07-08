@@ -624,6 +624,56 @@ describe('EventRecorder', () => {
       expect((ro.output as Record<string, unknown>).quality).toBe('1080p')
     })
 
+    it('omits recording.clip by default', async () => {
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed: RecordingData = JSON.parse(content)
+      const ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.recording as Record<string, unknown>).clip).toBeUndefined()
+    })
+
+    it('passes through a recording clip and keeps sibling defaults', async () => {
+      recorder = new EventRecorder({
+        recording: { clip: { x: 100, y: 50, width: 800, height: 600 } },
+      })
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed: RecordingData = JSON.parse(content)
+      const ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.recording as Record<string, unknown>).clip).toEqual({
+        x: 100,
+        y: 50,
+        width: 800,
+        height: 600,
+      })
+      expect((ro.recording as Record<string, unknown>).size).toBe(1.0)
+    })
+
+    it('rejects an invalid recording clip at declare time', () => {
+      expect(
+        () =>
+          new EventRecorder({
+            recording: { clip: { x: 0, y: 0, width: 0, height: 100 } },
+          })
+      ).toThrow(/width and height must be greater than 0/)
+      expect(
+        () =>
+          new EventRecorder({
+            recording: { clip: { x: -10, y: 0, width: 100, height: 100 } },
+          })
+      ).toThrow(/non-negative/)
+      expect(
+        () =>
+          new EventRecorder({
+            recording: { clip: { x: 0, y: NaN, width: 100, height: 100 } },
+          })
+      ).toThrow(/non-negative/)
+    })
+
     it('preserves explicit aspectRatio and serialises to resolution', async () => {
       recorder = new EventRecorder({ output: { aspectRatio: '9:16' } })
       recorder.start()

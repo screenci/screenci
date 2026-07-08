@@ -14,7 +14,7 @@ import type {
   ResolvedRenderOptions,
 } from './types.js'
 import { RENDER_OPTIONS_DEFAULTS } from './types.js'
-import type { ScreenshotClipRecord } from './clip.js'
+import { assertValidRegion, type ScreenshotClipRecord } from './clip.js'
 import type { StudioOptionFlags } from './studio.js'
 import {
   ActionParamCollector,
@@ -1456,6 +1456,9 @@ export class EventRecorder implements IEventRecorder {
     actionParams?: ActionParamCollector
   ) {
     this.recordOptions = recordOptions
+    if (renderOptions?.recording?.clip !== undefined) {
+      assertValidRegion(renderOptions.recording.clip)
+    }
     this.renderOptions = renderOptions
     // Every recording is web-editable, so option groups default to studio.
     this.studioOptions = studioOptions ?? {
@@ -2228,6 +2231,9 @@ export class EventRecorder implements IEventRecorder {
           ro?.recording?.dropShadow,
           RENDER_OPTIONS_DEFAULTS.recording.dropShadow
         ),
+        // Render-time crop is opt-in (no default). Recorded full-size; the
+        // renderer applies the clip so it can change without re-recording.
+        ...(ro?.recording?.clip !== undefined && { clip: ro.recording.clip }),
       },
       narration: {
         size: ro?.narration?.size ?? RENDER_OPTIONS_DEFAULTS.narration.size,

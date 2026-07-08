@@ -231,6 +231,20 @@ export type RenderOptions = {
      */
     motionBlur?: number
   }
+  /** Keyboard shortcut keycap overlays for `page.keyboard.press` calls. */
+  shortcuts?: {
+    /** Show modifier-combo shortcuts (e.g. Shift+A). Defaults to `true`. */
+    show?: boolean
+    /** Show single-key presses (e.g. 'A'). Defaults to `false`. */
+    showSingle?: boolean
+    /** Keycap appearance. Defaults to `'dark'`. */
+    theme?: 'light' | 'dark'
+    /**
+     * Per-shortcut show/hide set from the editor timeline, keyed by the
+     * recorded keyPress event id.
+     */
+    overrides?: Record<string, { show: boolean }>
+  }
   output?: {
     /**
      * Aspect ratio of the rendered video output.
@@ -292,6 +306,11 @@ export const RENDER_OPTIONS_DEFAULTS = {
   zoom: {
     motionBlur: 0.5,
   },
+  shortcuts: {
+    show: true,
+    showSingle: false,
+    theme: 'dark' as 'light' | 'dark',
+  },
   output: {
     aspectRatio: '16:9' as AspectRatio,
     quality: '1080p' as Quality,
@@ -338,6 +357,13 @@ export type ResolvedRenderOptions = {
   }
   zoom: {
     motionBlur: number
+  }
+  shortcuts: {
+    show: boolean
+    showSingle: boolean
+    theme: 'light' | 'dark'
+    /** Present only when the editor stored per-shortcut visibility. */
+    overrides?: Record<string, { show: boolean }>
   }
   output: {
     aspectRatio: AspectRatio
@@ -572,6 +598,17 @@ export type AutoZoomOptions = {
   delay?: number
   /** Delay in milliseconds to hold the full view after the zoom-out animation completes. */
   delayAfter?: number
+  /**
+   * Shifts the zoom window's START by this many ms when the recording is
+   * written (negative starts the zoom BEFORE the block's first action, a
+   * lead-in). Render-time repositioning: possible because the events are
+   * placed after the recording ran. A boundary that would land inside an
+   * interaction widens to the interaction's edge.
+   */
+  startOffset?: number
+  /** Shifts the zoom window's END by this many ms when the recording is
+   *  written (positive holds the zoom past the block's last action). */
+  endOffset?: number
 }
 
 export type MouseMoveTimingOption =

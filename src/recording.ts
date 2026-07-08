@@ -1,5 +1,7 @@
 export { RENDER_OPTIONS_DEFAULTS } from './types.js'
 
+export { isSingleKeyCombo } from './keyCombo.js'
+
 export type {
   AspectRatio,
   FPS,

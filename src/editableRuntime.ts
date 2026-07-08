@@ -1,74 +1,22 @@
 /**
  * Runtime application of web-editor overrides for editable actions.
  *
- * Before a recording, the CLI fetches the video's stored overrides from the
- * backend and injects them via `SCREENCI_EDITABLE_OVERRIDES` (a JSON map of
- * video name to entries in stable-key form). At runtime each editable action
- * resolves its override by stable key and merges it over the effective
- * defaults, so a web edit changes the very next record without a code change.
+ * Before a recording, the CLI fetches the video's stored timeline edits from
+ * the backend and injects them via `SCREENCI_TIMELINE_EDITS`. At runtime each
+ * editable action resolves its param edit by stable key and merges it over
+ * the effective defaults, so a web edit changes the very next record without
+ * a code change. Placed events from the same doc apply at data.json write
+ * time (see timelineEdits.ts).
  */
 import type { EditableMeta } from './editableDescriptor.js'
 import { stableEditableKey } from './editableDescriptor.js'
-import { getEditableRunOverrides } from './runtimeContext.js'
+import {
+  getEditableRunOverrides,
+  getEditableRunReport,
+} from './runtimeContext.js'
 import { isOverrideDebugEnabled } from './debugFlags.js'
-
-export const SCREENCI_EDITABLE_OVERRIDES_ENV = 'SCREENCI_EDITABLE_OVERRIDES'
-
-/** One stored override: the action's stable key and its edited values. */
-export type EditableOverrideEntry = {
-  key: string
-  values: Record<string, unknown>
-}
-
-/** Overrides per video name, as injected by the CLI. */
-export type EditableOverridesByVideo = Record<string, EditableOverrideEntry[]>
-
-/**
- * Parse the injected override map. Returns `null` when unset or malformed so
- * the run falls back to code/default values; entries with a non-string key or
- * non-object values are dropped.
- */
-export function parseEditableOverrides(
-  env: NodeJS.ProcessEnv = process.env
-): EditableOverridesByVideo | null {
-  const raw = env[SCREENCI_EDITABLE_OVERRIDES_ENV]
-  if (raw === undefined || raw.trim().length === 0) return null
-
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    if (typeof parsed !== 'object' || parsed === null) return null
-
-    const result: EditableOverridesByVideo = {}
-    for (const [videoName, entries] of Object.entries(parsed)) {
-      if (!Array.isArray(entries)) continue
-      const valid: EditableOverrideEntry[] = []
-      for (const entry of entries) {
-        if (typeof entry !== 'object' || entry === null) continue
-        const { key, values } = entry as Record<string, unknown>
-        if (typeof key !== 'string') continue
-        if (typeof values !== 'object' || values === null) continue
-        valid.push({ key, values: values as Record<string, unknown> })
-      }
-      result[videoName] = valid
-    }
-    return result
-  } catch {
-    return null
-  }
-}
-
-/**
- * Overrides for one video, keyed by stable key for O(1) runtime resolution.
- */
-export function indexEditableOverrides(
-  entries: readonly EditableOverrideEntry[]
-): Map<string, Record<string, unknown>> {
-  const byKey = new Map<string, Record<string, unknown>>()
-  for (const entry of entries) {
-    byKey.set(entry.key, entry.values)
-  }
-  return byKey
-}
+import type { OverrideReportBuilder } from './timelineEdits.js'
+import { resolveTimelineEditsForVideo, splitEdits } from './timelineEdits.js'
 
 /**
  * Merges the web override for the given editable action over its effective
@@ -87,7 +35,8 @@ export function applyEditableOverride(
     string,
     Record<string, unknown>
   > | null = getEditableRunOverrides(),
-  warn: (message: string) => void = (message) => console.warn(message)
+  warn: (message: string) => void = (message) => console.warn(message),
+  report: OverrideReportBuilder | null = getEditableRunReport()
 ): Record<string, unknown> {
   if (meta === undefined) return {}
   if (overridesByKey === null) return { ...meta.defaults }
@@ -100,6 +49,7 @@ export function applyEditableOverride(
     meta.lockedFields ?? (meta.locked ? Object.keys(meta.defaults) : [])
   )
   const applied: Record<string, unknown> = {}
+  const shadowed: Record<string, unknown> = {}
   const merged: Record<string, unknown> = { ...meta.defaults }
   for (const [field, value] of Object.entries(override)) {
     if (value === undefined) continue
@@ -108,6 +58,7 @@ export function applyEditableOverride(
     // web start-time edit works without an intermediate re-record.
     if (!(field in meta.defaults) && field !== 'sleepBefore') continue
     if (lockedFields.has(field) && meta.defaults[field] !== value) {
+      shadowed[field] = meta.defaults[field]
       warn(
         `[screenci] editor override shadows code value: ${key} ${field}: ` +
           `code ${JSON.stringify(meta.defaults[field])} -> editor ` +
@@ -125,19 +76,35 @@ export function applyEditableOverride(
   }
   if (Object.keys(applied).length > 0) {
     meta.applied = applied
+    report?.add({
+      editId: key,
+      channel: 'paramEdit',
+      status: Object.keys(shadowed).length > 0 ? 'shadowed-code' : 'applied',
+      subject: key,
+      appliedValues: applied,
+      ...(Object.keys(shadowed).length > 0 && { codeValues: shadowed }),
+    })
   }
   return merged
 }
 
 /**
- * The indexed overrides for one video, ready to bind into the runtime
- * context at recording start. Null when none were injected for it.
+ * Runtime overrides for one video: the unified timeline-edits doc's param
+ * edits (`SCREENCI_TIMELINE_EDITS`), indexed by stable key. Only param edits
+ * apply at runtime; placed events apply at data.json write time. Null when
+ * nothing was injected for the video.
  */
-export function resolveEditableOverridesForVideo(
+export function resolveRuntimeOverridesForVideo(
   videoName: string,
   env: NodeJS.ProcessEnv = process.env
 ): Map<string, Record<string, unknown>> | null {
-  const entries = parseEditableOverrides(env)?.[videoName]
-  if (entries === undefined || entries.length === 0) return null
-  return indexEditableOverrides(entries)
+  const unified = resolveTimelineEditsForVideo(videoName, env)
+  if (unified === null) return null
+  const { paramEdits } = splitEdits(unified.edits)
+  if (paramEdits.length === 0) return null
+  const byKey = new Map<string, Record<string, unknown>>()
+  for (const edit of paramEdits) {
+    byKey.set(edit.target.key, edit.fields)
+  }
+  return byKey
 }

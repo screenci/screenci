@@ -480,28 +480,33 @@ describe('CLI', () => {
       ).resolves.toEqual({})
     })
 
-    it('injects the fetched override map as SCREENCI_EDITABLE_OVERRIDES', async () => {
+    it('injects the fetched timeline-edits map as SCREENCI_TIMELINE_EDITS', async () => {
       setupConfig()
-      const overrides = {
-        'My video': [
-          {
-            key: 'input|click|getByRole(button)|0',
-            values: { moveDuration: 1 },
-          },
-        ],
+      const timelineEdits = {
+        'My video': {
+          version: 2,
+          edits: [
+            {
+              type: 'paramEdit',
+              id: 'param|input|click|getByRole(button)|0',
+              target: { key: 'input|click|getByRole(button)|0' },
+              fields: { moveDuration: 1 },
+            },
+          ],
+        },
       }
       vi.stubGlobal(
         'fetch',
         vi.fn(async () => ({
           ok: true,
-          json: async () => ({ overrides }),
+          json: async () => ({ timelineEdits }),
         }))
       )
       const { fetchEditableOverridesEnv } = await import('./cli')
       await expect(
         fetchEditableOverridesEnv('test-fixtures/screenci.config.ts', false)
       ).resolves.toEqual({
-        SCREENCI_EDITABLE_OVERRIDES: JSON.stringify(overrides),
+        SCREENCI_TIMELINE_EDITS: JSON.stringify(timelineEdits),
       })
       vi.unstubAllGlobals()
     })
@@ -519,7 +524,10 @@ describe('CLI', () => {
 
       vi.stubGlobal(
         'fetch',
-        vi.fn(async () => ({ ok: true, json: async () => ({ overrides: {} }) }))
+        vi.fn(async () => ({
+          ok: true,
+          json: async () => ({ timelineEdits: {} }),
+        }))
       )
       await expect(
         fetchEditableOverridesEnv('test-fixtures/screenci.config.ts', false)
@@ -607,13 +615,18 @@ describe('CLI', () => {
       reportEditableOverrideCollisions(
         '/project/.screenci',
         {
-          SCREENCI_EDITABLE_OVERRIDES: JSON.stringify({
-            'My video': [
-              {
-                key: 'input|click|getByRole(button)|0',
-                values: { moveDuration: 250, moveEasing: 'linear' },
-              },
-            ],
+          SCREENCI_TIMELINE_EDITS: JSON.stringify({
+            'My video': {
+              version: 2,
+              edits: [
+                {
+                  type: 'paramEdit',
+                  id: 'param|input|click|getByRole(button)|0',
+                  target: { key: 'input|click|getByRole(button)|0' },
+                  fields: { moveDuration: 250, moveEasing: 'linear' },
+                },
+              ],
+            },
           }),
         },
         (message) => lines.push(message)
@@ -638,13 +651,18 @@ describe('CLI', () => {
       reportEditableOverrideCollisions(
         '/project/.screenci',
         {
-          SCREENCI_EDITABLE_OVERRIDES: JSON.stringify({
-            'My video': [
-              {
-                key: 'input|click|getByRole(button)|0',
-                values: { moveDuration: 250 },
-              },
-            ],
+          SCREENCI_TIMELINE_EDITS: JSON.stringify({
+            'My video': {
+              version: 2,
+              edits: [
+                {
+                  type: 'paramEdit',
+                  id: 'param|input|click|getByRole(button)|0',
+                  target: { key: 'input|click|getByRole(button)|0' },
+                  fields: { moveDuration: 250 },
+                },
+              ],
+            },
           }),
         },
         (message) => lines.push(message)

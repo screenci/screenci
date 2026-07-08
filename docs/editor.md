@@ -73,6 +73,8 @@ video.recordOptions({ fps: 30 })
 - [how to manage background audio from Editor](#editor-audio-from-code)
 - [how render and record options combine with web edits](#editor-render-and-record-options)
 - [how to manage languages from Editor](#editor-languages-from-code)
+- [how to place anchored events from code](#placed-events-from-code)
+- [how web edits move into code with an agent](#the-agentic-loop)
 - [how action parameters are tracked and overridden](#action-parameter-tracking-and-overrides)
 - [how to migrate from the removed `editable()` helper](#migrating-from-editable)
 
@@ -381,22 +383,146 @@ kept as stale entries in the editor for cleanup instead of being dropped.
 
 ## Web-authored events
 
-Hides and speed blocks can also be ADDED from the web timeline, without any
-code change. Hover the timeline and click the small `+` on the ghost marker to
-open the add popover: pick the kind (hide or speedup), an anchor (a previous
-known event, either an interaction or a `timestamp()` marker), an offset in
-milliseconds from that anchor, and a duration (or a second anchor plus its own
-offset for the end). Bars can also be resized by dragging their right edge.
+Render-affecting events can also be ADDED and MOVED from the web timeline,
+without any code change: hides, speedups, time remaps, narration cues,
+overlays, and timestamp markers. Interactions are different on purpose: a
+click or tap always stays where the test code performed it, and only its
+parameters (durations, sleeps) are editable.
 
-At the next record the CLI fetches the authored events and the SDK inserts the
-matching `hideStart`/`hideEnd` or `speedStart`/`speedEnd` pairs into the
-recorded event stream at the resolved positions. An anchor that no longer
-exists never fails the recording: the event is skipped with a warning
-(`authored hide skipped: anchor ... not found`), the editor shows it under
-"Broken anchors", and `screenci status` reports it with a fix suggestion.
+Every web-placed or web-moved event is positioned as an **anchor plus an
+offset in milliseconds**. An anchor is a known moment of the recording:
+
+- the video start or end,
+- an interaction or other editable action (its start or end edge),
+- a `timestamp('name')` marker,
+- a narration cue start.
+
+When you drag an event on the timeline the editor picks the nearest preceding
+anchor automatically and stores the offset; the event's popover shows the
+anchor and lets you pick a different one. Because positions are relative to
+anchors rather than to wall-clock time, they survive re-records whose real
+durations drift.
+
+At the next record the CLI fetches the stored edits and the SDK resolves each
+anchor against the freshly recorded events and inserts or moves the matching
+events (for example `hideStart`/`hideEnd` pairs). An anchor that no longer
+exists never fails the recording and is never dropped silently: when the edit
+carries its last known position it is applied there and reported as a
+`fallback`; otherwise it is reported as `skipped` with a reason. The editor
+shows these outcomes on the timeline, and `screenci status` reports them with
+a fix suggestion.
 
 `timestamp('name')` markers are the most stable anchors: add one in code at a
 meaningful moment and hang web-authored events off it with offsets.
+
+## Placed events from code
+
+Everything the web timeline can place, code can place too, with the same
+anchor semantics. `placeHide`, `placeSpeed`, and `placeTime` are declarative:
+they run no code and never wait. The event is resolved against the recorded
+events when the recording is written, so its position is exact regardless of
+how fast the run executed:
+
+```ts
+import { placeHide, placeSpeed, placeTime, timestamp } from 'screenci'
+
+video('Checkout', async ({ page }) => {
+  await timestamp('form-submitted')
+  await page.getByRole('button', { name: 'Submit' }).click()
+
+  // Hide 250ms..750ms after the marker (a loading flicker, say).
+  placeHide({ from: 'form-submitted', offsetMs: 250, durationMs: 500 })
+
+  // Play everything between two markers at 3x.
+  placeSpeed({ from: 'form-submitted', until: 'receipt-shown', multiplier: 3 })
+
+  // Fit a span to exactly 400ms of output.
+  placeTime({ from: 'video:start', durationMs: 2000, playsAsMs: 400 })
+
+  // Zoom the camera into the upcoming click: lead in 400ms BEFORE it and
+  // hold 600ms after it. Backwards placement works because the events are
+  // positioned after the recording ran; the camera target comes from the
+  // mouse positions recorded inside the window.
+  placeZoom({
+    from: {
+      action: 'input|click|getByRole(button, name=Save)|0',
+      edge: 'start',
+    },
+    offsetMs: -400,
+    until: { action: 'input|click|getByRole(button, name=Save)|0' },
+    untilOffsetMs: 600,
+    amount: 0.6,
+  })
+})
+```
+
+Anchors accept `'video:start'` / `'video:end'`, a timestamp name (or
+`{ timestamp: 'name', ordinal: n }` for repeated names), or
+`{ action: '<stable key>', edge: 'start' | 'end' }` using the action keys
+printed by `screenci sync-prompt`. Because the calls are declarative they can
+sit anywhere in the test body.
+
+When the zoom should cover a stretch of code you are already writing, prefer
+wrapping it in `autoZoom(fn, { startOffset, endOffset })` instead of
+`placeZoom`: the block's first and last actions define the window, and the
+offsets shift its boundaries at write time (negative `startOffset` leads in
+before the first action). See
+[Camera and zooming](./camera-and-zooming.md#shifting-the-zoom-window-with-startoffset--endoffset).
+`placeZoom` is for windows that do not align with a block, and it is what
+`screenci sync-prompt` emits when codifying web-added zooms.
+
+For events that DO happen at call time (a narration cue, a click), `waitSince`
+paces the run relative to a marker, absorbing execution-speed drift:
+
+```ts
+import { timestamp, waitSince } from 'screenci'
+
+await timestamp('dashboard-open')
+await page.getByRole('button', { name: 'Stats' }).click()
+// Runs the next line exactly 800ms after 'dashboard-open', however long the
+// click actually took. Never waits longer than the full 800ms.
+await waitSince('dashboard-open', 800)
+await narration.stats()
+```
+
+Rule of thumb: render-time events (hide, speedup, time remap, zoom) never
+need a runtime wait, place them declaratively; call-time events use
+`waitSince` when their distance from a known moment matters.
+
+Offsets may be negative: because placement happens after the recording ran,
+an event can be counted BACKWARDS from its anchor. That is how a zoom leads
+into a click, and the editor uses the same idea: dragging an event just
+before an upcoming action anchors it to that action with a negative offset,
+so the pair stays glued together across re-records. In the web editor,
+zooming into a click is a parameter of the click: the click popover's
+**Camera** section (lead-in, hold, amount) stores a placed zoom that rides
+the action. Zoom windows never cut through an interaction: a boundary that
+would land inside one widens to the interaction's edge.
+
+## The agentic loop
+
+Web edits and code stay in sync through a loop designed for coding agents:
+
+1. **Edit in the web timeline.** Drags and added events are stored as anchored
+   edits (anchor + offset from a known moment).
+2. **Record.** `screenci record` fetches the edits, applies them, and prints
+   the override report; every edit ends as applied, fallback, or skipped with
+   a reason, in the logs and in the editor.
+3. **Check drift.** `screenci status` lists edits that shadow explicit code
+   values, stale edits whose action vanished, and placed events with broken
+   anchors.
+4. **Codify.** `screenci sync-prompt` prints an agent-ready prompt: CHANGE
+   lines with exact `file:line` call sites for parameter edits, INSERT lines
+   for start-time sleeps, and ADD lines with ready-to-paste
+   `placeHide(...)` / `placeSpeed(...)` / `placeTime(...)` calls (plus
+   `timestamp` / `waitSince` guidance for narration cues and overlays). Paste
+   it to a coding agent and apply.
+5. **Clear the web layer.** `screenci reset-web-edits` removes the codified
+   edits so the next record runs purely from code, and the loop is closed.
+
+Because placed events in code and on the web share one model, codifying an
+edit is usually a single pasted line, and the next recording's override
+report confirms the code now produces the same result.
 
 ## What is editable from the web
 
@@ -434,19 +560,37 @@ each anchored to a previous known event plus an offset.
   `CHANGE recordings/pitch.screenci.ts:42: set moveDuration to 150 ...`.
   After codifying, clear the web layer with `reset-web-edits`.
 
+## The override report
+
+Every record run produces an override report: one line per web edit the run
+tried to apply, with its outcome. Skips, fallbacks, and edits that shadow
+explicit code values are always logged; a summary line closes each video:
+
+```
+[screenci overrides] applied placedEvent hide anchor=action:input|click|locator(#go)|0.end+250ms h_ab12 -> 12480..13930ms
+[screenci overrides] SKIPPED placedEvent narrationCue anchor=timestamp:intro|0.start+0ms n_9 reason=anchorMissing:timestamp:intro|0
+[screenci overrides] My video: 3 applied, 1 skipped
+```
+
+The same items are embedded into the uploaded recording data
+(`overrideReport` in `data.json`), so the editor can show whether each edit
+was applied, applied at its fallback position, or skipped and why. A fetch
+failure before the run also warns loudly: a recording never silently ignores
+your saved edits.
+
 ## Debugging overrides
 
 Set `SCREENCI_DEBUG_OVERRIDES=1` when running `screenci record` to trace the
 whole loop: the CLI first dumps every override set fetched from the backend
-(timing overrides, action parameters, authored events, text values, record
+(timing overrides, action parameters, timeline edits, text values, record
 options, web-added languages), then the run logs each value again at the
-moment it is applied:
+moment it is applied (applied lines join the always-on skip/fallback lines):
 
 ```
 [screenci debug] Editor timing overrides:
   { "My video": [ { "key": "input|click|locator(#go)|0", "values": { "moveDuration": 150 } } ] }
 [screenci debug] editor override applied: input|click|locator(#go)|0 moveDuration: 900 -> 150
-[screenci debug] authored speed applied: 1770-1970ms (anchor 'mark' +50ms)
+[screenci overrides] applied placedEvent speed anchor=timestamp:mark|0.start+50ms s_3 -> 1770..1970ms
 ```
 
 ## Editor languages from code

@@ -699,6 +699,12 @@ export type ScreenCIMouseClickOptions = NonNullable<
 /** Shared cursor-animation options available on all locator actions. */
 type CursorActionMoveOptions = {
   move?: CursorMoveOptions
+  /**
+   * Stable identity slug for the web editor (e.g. `click1`). Stamped
+   * automatically by `screenci sync`; identity only, never affects the
+   * action's behavior.
+   */
+  editId?: string
 }
 
 export type ScreenCILocatorClickOptions = Omit<

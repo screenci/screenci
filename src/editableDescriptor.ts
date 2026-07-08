@@ -63,7 +63,7 @@ export type EditableActionDescriptor = {
   /**
    * The user-code call site that produced the action, captured from the
    * stack at instrumentation time. Not part of the stable identity; used by
-   * `screenci sync-prompt` to tell an agent exactly where to place a change.
+   * `screenci sync` and `screenci status` to point at where a change lands.
    */
   source?: { file: string; line: number }
 }

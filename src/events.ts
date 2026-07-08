@@ -28,12 +28,9 @@ import type { EditableMeta } from './editableDescriptor.js'
 import { stableEditableKey } from './editableDescriptor.js'
 import {
   OverrideReportBuilder,
-  applyPlacedEvents,
-  applyZoomWindowOffsets,
   resolveTimelineEditsForVideo,
   splitEdits,
   type OverrideReportItem,
-  type PlacedEvent,
 } from './timelineEdits.js'
 import type { VoiceKey } from './voices.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
@@ -912,12 +909,8 @@ export type AutoZoomStartEvent = {
   duration: number
   amount: number
   centering?: number
-  /**
-   * Write-time boundary shifts (`autoZoom` options `startOffset`/`endOffset`):
-   * consumed by `applyZoomWindowOffsets` when data.json is written, which
-   * moves this event (and its matching autoZoomEnd) and strips the fields,
-   * so downstream consumers never see them.
-   */
+  /** `autoZoom` boundary-shift options (`startOffset`/`endOffset`), carried
+   *  through for downstream consumers that widen the zoom window. */
   startOffset?: number
   endOffset?: number
   /** Web-editor metadata: identity, lock state, and effective option values. */
@@ -1413,12 +1406,6 @@ export interface IEventRecorder {
   addSpeedEnd(): void
   addTimeStart(durationMs: number, editable?: EditableMeta, name?: string): void
   addTimeEnd(): void
-  /**
-   * Queues a code-declared placed event (`placeHide`/`placeSpeed`/
-   * `placeTime`): an anchored render-time event applied when data.json is
-   * written, exactly like a web-placed one.
-   */
-  addPlacedEvent(placed: PlacedEvent): void
   addAutoZoomStart(options?: AutoZoomOptions, editable?: EditableMeta): void
   addAutoZoomEnd(options?: AutoZoomOptions): void
   addNarrationHide(): void
@@ -1507,7 +1494,6 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addSpeedEnd(): void {},
   addTimeStart(): void {},
   addTimeEnd(): void {},
-  addPlacedEvent(): void {},
   addAutoZoomStart(): void {},
   addAutoZoomEnd(): void {},
   addNarrationHide(): void {},
@@ -1555,8 +1541,6 @@ export class EventRecorder implements IEventRecorder {
    * none was bound.
    */
   private overrideReport: OverrideReportBuilder | null = null
-  /** Code-declared placed events, applied at data.json write time. */
-  private readonly codePlacedEvents: PlacedEvent[] = []
 
   constructor(
     renderOptions?: RenderOptions,
@@ -1588,10 +1572,6 @@ export class EventRecorder implements IEventRecorder {
 
   setOverrideReport(report: OverrideReportBuilder): void {
     this.overrideReport = report
-  }
-
-  addPlacedEvent(placed: PlacedEvent): void {
-    this.codePlacedEvents.push(placed)
   }
 
   registerVoiceForLang(_lang: string, _meta: VoiceLanguageMeta): void {}
@@ -2483,44 +2463,33 @@ export class EventRecorder implements IEventRecorder {
     // with `[activeLanguage]` so the upload produces a single language version
     // (and the renderer never sees foreign-language translations).
     const activeLanguage = this.activeLanguage
-    let serializedEvents =
+    const serializedEvents =
       activeLanguage !== null
         ? this.events.map((event) =>
             filterEventTranslationsToLanguage(event, activeLanguage)
           )
         : this.events
 
-    // autoZoom write-time boundary shifts (startOffset/endOffset): applied
-    // first so placed events and anchors see the final zoom windows.
-    serializedEvents = applyZoomWindowOffsets(serializedEvents)
-
-    // Timeline edits: code-declared placed events (placeHide/placeSpeed/
-    // placeTime) plus the web editor's edits injected by the CLI via
-    // SCREENCI_TIMELINE_EDITS. Applied here so the uploaded data.json
-    // already carries the resulting events. Every outcome (applied,
-    // fallback, skipped + reason) lands in the override report; nothing
-    // fails the recording and nothing is skipped silently. Code events
-    // apply first so a web edit can still adjust what they produced.
+    // Timeline edits: the web editor's edits injected by the CLI via
+    // SCREENCI_TIMELINE_EDITS. Only param edits apply at record time (they
+    // change real waits, applied at runtime by editableRuntime). The codify
+    // records (media/zoom/gap) are never materialized here: `screenci sync`
+    // writes them into code and normal recording emits them. Every param-edit
+    // outcome lands in the override report; nothing fails the recording and
+    // nothing is skipped silently.
     const report = this.overrideReport ?? new OverrideReportBuilder()
     const unified = resolveTimelineEditsForVideo(videoName)
     if (unified !== null) {
       for (const invalid of unified.invalid) {
         report.add({
           editId: invalid.id,
-          channel: 'placedEvent',
+          channel: 'codifyEdit',
           status: 'skipped',
           reason: `invalidRecord:${invalid.reason}`,
         })
       }
     }
     const webEdits = unified !== null ? splitEdits(unified.edits) : null
-    const allPlaced = [
-      ...this.codePlacedEvents,
-      ...(webEdits?.placedEvents ?? []),
-    ]
-    if (allPlaced.length > 0) {
-      serializedEvents = applyPlacedEvents(serializedEvents, allPlaced, report)
-    }
     if (webEdits !== null) {
       // Param edits whose target action was never recorded this run: report
       // them so the editor can show the edit went unmatched (stale key).

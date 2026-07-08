@@ -2,31 +2,37 @@
  * Planner for `screenci sync`: turns the web editor's edits into concrete
  * text changes to the user's .screenci.ts files, using the codemod primitives.
  *
- * Every code edit locates its call site by the action's `editId` slug: an
- * exact string identity with no heuristics. Actions without a slug are not
- * guessed at; they land in `fallback` (rendered as the agent prompt) until a
- * record plus sync stamps them. Loops (`slug#N` repeat executions), narration
- * content, and other judgment edits stay on the fallback path by design.
+ * Every code edit locates its call site by an action's `editId` slug: an exact
+ * string identity with no heuristics. The model is one linear timeline in call
+ * order: interactions and effects interleave, gaps are `waitForTimeout` sleeps.
+ * Placing an effect means inserting a call in the gap after a known editId'd
+ * action (splitting an existing sleep when needed), or wrapping a contiguous
+ * run of interactions in a block (`autoZoom`/`hide`/`speed`/`time`).
+ *
+ * An edit either applies by editId or its section is locked (unstamped action,
+ * a `slug#N` loop repeat, control flow around the call, or a shape the codemod
+ * refuses). Locked edits are counted in `unappliable` and reported as plain
+ * text: there is no agent-prompt fallback.
  *
  * Pure over injected inputs (parsed comparison, snapshots, a readFile): unit
  * tests drive it with in-memory files.
  */
 import { jsonEqual, type ActionMethod } from './actionParams.js'
 import type { ActionParamsSnapshot } from './actionParamsSnapshot.js'
+import type { WebStateComparison } from './actionSync.js'
 import type {
-  OverrideAssessment,
-  VideoComparison,
-  WebStateComparison,
-} from './actionSync.js'
-import {
-  placeCallFor,
-  type EditableOverridesByVideo,
-  type EditableSnapshot,
-  type EditableSnapshotEntry,
-  type PlacedEventsByVideo,
-  type RenamesByVideo,
+  CodifyEditsByVideo,
+  EditableOverridesByVideo,
+  EditableSnapshot,
+  RenamesByVideo,
 } from './editableSnapshot.js'
-import type { PlacedEvent } from './timelineEdits.js'
+import type {
+  CodifyEdit,
+  GapPointEdit,
+  GapSpanEdit,
+  MediaEdit,
+  ZoomEdit,
+} from './timelineEdits.js'
 import {
   applyTextEdits,
   chainRootIdentifier,
@@ -34,12 +40,18 @@ import {
   enclosingStatement,
   ensureNamedImport,
   findCallByEditId,
-  insertStatementAfter,
   insertStatementBefore,
+  insertStatementsAfter,
+  isLinearCallSite,
+  nextStatement,
   previousStatement,
   renameEditId as renameEditIdInSource,
   removeOption,
   setOptionValue,
+  splitWaitEdit,
+  valueToSource,
+  waitForTimeoutArg,
+  wrapStatementsInBlock,
   type CodemodContext,
   type TextEdit,
   type TsModule,
@@ -55,22 +67,10 @@ function existingWaitBefore(
   ctx: CodemodContext,
   statement: TS.Statement,
   root: string
-): TS.Expression | null {
-  const { ts } = ctx
+): TS.NumericLiteral | null {
   const previous = previousStatement(ctx, statement)
-  if (previous === null || !ts.isExpressionStatement(previous)) return null
-  let expression: TS.Expression = previous.expression
-  if (ts.isAwaitExpression(expression)) expression = expression.expression
-  if (!ts.isCallExpression(expression)) return null
-  const callee = expression.expression
-  if (!ts.isPropertyAccessExpression(callee)) return null
-  if (callee.name.text !== 'waitForTimeout') return null
-  if (!ts.isIdentifier(callee.expression) || callee.expression.text !== root) {
-    return null
-  }
-  const argument = expression.arguments[0]
-  if (argument === undefined || !ts.isNumericLiteral(argument)) return null
-  return argument
+  if (previous === null) return null
+  return waitForTimeoutArg(ctx, previous, root)
 }
 
 /** Which argument holds the options object, per instrumented method. */
@@ -94,17 +94,18 @@ export type AppliedItem = {
   description: string
 }
 
+/** An edit whose section is locked (never a codemod target this run). */
+export type UnappliableItem = {
+  videoName: string
+  reason: string
+}
+
 export type CodeSyncPlan = {
   /** Files with changes: original and edited text (not yet written). */
   files: Array<{ path: string; before: string; after: string }>
   applied: AppliedItem[]
-  /** Everything that must go through the agent prompt instead. */
-  fallback: {
-    comparison: WebStateComparison
-    overrides: EditableOverridesByVideo
-    placed: PlacedEventsByVideo
-    renames: RenamesByVideo
-  }
+  /** Edits that could not be applied by editId (locked sections). */
+  unappliable: UnappliableItem[]
   /** Videos where every pending edit was applied (safe to reset web edits). */
   fullyAppliedVideos: string[]
 }
@@ -114,7 +115,7 @@ export type CodeSyncInput = {
   actionSnapshot: ActionParamsSnapshot
   editableSnapshot: EditableSnapshot
   editableOverrides: EditableOverridesByVideo
-  placedEvents: PlacedEventsByVideo
+  codifyEdits: CodifyEditsByVideo
   renames: RenamesByVideo
 }
 
@@ -133,9 +134,299 @@ type SlugItem = {
   videoName: string
   editId: string
   description: string
-  /** Marks the source item so a failure can be routed back to fallback. */
-  onFallback: () => void
+  /** Marks the source item unappliable so it counts as locked. */
+  onUnappliable: () => void
   compute: (ctx: CodemodContext) => TextEdit[] | null
+}
+
+const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
+
+/** `root.name` when `name` is a plain identifier, else `root['name']`. */
+function memberAccess(root: string, name: string): string {
+  return IDENTIFIER.test(name)
+    ? `${root}.${name}`
+    : `${root}[${valueToSource(name)}]`
+}
+
+/** The imperative media call for a MediaEdit, or null when it lacks a name. */
+function mediaCallCode(edit: MediaEdit): string | null {
+  const props = edit.props ?? {}
+  const name = typeof props.name === 'string' && props.name ? props.name : null
+  if (name === null) return null
+  const root =
+    edit.kind === 'narrationCue'
+      ? 'narration'
+      : edit.kind === 'overlay'
+        ? 'overlays'
+        : typeof props.fixture === 'string' && props.fixture
+          ? props.fixture
+          : 'audio'
+  const access = memberAccess(root, name)
+  return edit.blocking ? `await ${access}()` : `await ${access}.start()`
+}
+
+/** The instant call + import for a GapPointEdit, or null when incomplete. */
+function gapPointCode(
+  edit: GapPointEdit
+): { code: string; importName: string } | null {
+  const props = edit.props ?? {}
+  switch (edit.kind) {
+    case 'narrationBox': {
+      const corner = typeof props.corner === 'string' ? props.corner : undefined
+      const size = typeof props.size === 'number' ? props.size : undefined
+      if (corner !== undefined) {
+        const opt = size !== undefined ? `, { size: ${size} }` : ''
+        return {
+          code: `await moveNarration(${valueToSource(corner)}${opt})`,
+          importName: 'moveNarration',
+        }
+      }
+      if (size !== undefined) {
+        return {
+          code: `await resizeNarration(${size})`,
+          importName: 'resizeNarration',
+        }
+      }
+      return null
+    }
+    case 'recording': {
+      const visible =
+        typeof props.visible === 'boolean' ? props.visible : undefined
+      const size = typeof props.size === 'number' ? props.size : undefined
+      if (visible === false) {
+        return { code: `await hideRecording()`, importName: 'hideRecording' }
+      }
+      if (visible === true) {
+        return { code: `await showRecording()`, importName: 'showRecording' }
+      }
+      if (size !== undefined) {
+        return {
+          code: `await resizeRecording(${size})`,
+          importName: 'resizeRecording',
+        }
+      }
+      return null
+    }
+    case 'background': {
+      const css =
+        typeof props.backgroundCss === 'string' && props.backgroundCss
+          ? props.backgroundCss
+          : undefined
+      if (css === undefined) return null
+      return {
+        code: `await setBackground(${valueToSource(css)})`,
+        importName: 'setBackground',
+      }
+    }
+    default: {
+      const exhaustive: never = edit.kind
+      void exhaustive
+      return null
+    }
+  }
+}
+
+/**
+ * Insert `callCode` in the gap after the action `afterEditId`, preceded by a
+ * `waitForTimeout(sleepMs)` gap. Splits an existing sleep in the gap when one
+ * is there (so the item lands inside it), otherwise inserts a fresh sleep.
+ * Returns null when the site is locked (control flow / ambiguous) or the call
+ * needs an import the file cannot take.
+ */
+function insertInGapAfter(
+  ctx: CodemodContext,
+  afterEditId: string,
+  callCode: string,
+  sleepMs: number,
+  importName?: string
+): TextEdit[] | null {
+  const call = isLinearCallSite(ctx, afterEditId)
+  if (call === null) return null
+  const statement = enclosingStatement(ctx, call)
+  if (statement === null) return null
+  const edits: TextEdit[] = []
+  if (importName !== undefined) {
+    const importEdits = ensureNamedImport(ctx, 'screenci', importName)
+    if (importEdits === null) return null
+    edits.push(...importEdits)
+  }
+  const sleep = Math.max(0, Math.round(sleepMs))
+  if (sleep === 0) {
+    edits.push(insertStatementsAfter(ctx, statement, [callCode]))
+    return edits
+  }
+  const root = chainRootIdentifier(ctx.ts, call.expression)
+  if (root === null) return null
+  const next = nextStatement(ctx, statement)
+  const nextArg = next !== null ? waitForTimeoutArg(ctx, next, root) : null
+  if (nextArg !== null && Number(nextArg.text) >= sleep) {
+    // Split the existing gap: shrink it to `sleep`, then place the call and the
+    // remainder sleep after it.
+    const split = splitWaitEdit(ctx, nextArg, sleep, root)
+    edits.push(split.shrink)
+    edits.push(
+      insertStatementsAfter(ctx, next!, [callCode, split.remainderCode])
+    )
+    return edits
+  }
+  edits.push(
+    insertStatementsAfter(ctx, statement, [
+      `await ${root}.waitForTimeout(${sleep})`,
+      callCode,
+    ])
+  )
+  return edits
+}
+
+/** Wrap the interaction run `fromEditId..untilEditId` in a block call. */
+function wrapRun(
+  ctx: CodemodContext,
+  fromEditId: string,
+  untilEditId: string,
+  header: string,
+  leadMs: number | undefined,
+  trailMs: number | undefined,
+  footerClose?: string,
+  importName?: string
+): TextEdit[] | null {
+  const fromCall = isLinearCallSite(ctx, fromEditId)
+  const untilCall = isLinearCallSite(ctx, untilEditId)
+  if (fromCall === null || untilCall === null) return null
+  const fromStmt = enclosingStatement(ctx, fromCall)
+  const untilStmt = enclosingStatement(ctx, untilCall)
+  if (fromStmt === null || untilStmt === null) return null
+  const root = chainRootIdentifier(ctx.ts, fromCall.expression)
+  const lead =
+    leadMs !== undefined && leadMs > 0 && root !== null
+      ? `await ${root}.waitForTimeout(${Math.round(leadMs)})`
+      : undefined
+  const trail =
+    trailMs !== undefined && trailMs > 0 && root !== null
+      ? `await ${root}.waitForTimeout(${Math.round(trailMs)})`
+      : undefined
+  const wrap = wrapStatementsInBlock(ctx, fromStmt, untilStmt, header, {
+    leadLine: lead,
+    trailLine: trail,
+    footerClose,
+  })
+  if (wrap === null) return null
+  const edits: TextEdit[] = []
+  if (importName !== undefined) {
+    const importEdits = ensureNamedImport(ctx, 'screenci', importName)
+    if (importEdits === null) return null
+    edits.push(...importEdits)
+  }
+  edits.push(...wrap)
+  return edits
+}
+
+/** Plan the code edits for one codify record, or null when it is unappliable. */
+function planCodifyEdit(edit: CodifyEdit): {
+  editIds: string[]
+  description: string
+  compute: (ctx: CodemodContext) => TextEdit[] | null
+} | null {
+  switch (edit.type) {
+    case 'mediaEdit': {
+      const callCode = mediaCallCode(edit)
+      if (callCode === null) return null
+      return {
+        editIds: [edit.afterEditId],
+        description: `insert \`${callCode}\` after '${edit.afterEditId}'`,
+        compute: (ctx) =>
+          insertInGapAfter(
+            ctx,
+            edit.afterEditId,
+            callCode,
+            edit.sleepBeforeMs ?? 0
+          ),
+      }
+    }
+    case 'gapPointEdit': {
+      const point = gapPointCode(edit)
+      if (point === null) return null
+      return {
+        editIds: [edit.afterEditId],
+        description: `insert \`${point.code}\` after '${edit.afterEditId}'`,
+        compute: (ctx) =>
+          insertInGapAfter(
+            ctx,
+            edit.afterEditId,
+            point.code,
+            edit.sleepBeforeMs ?? 0,
+            point.importName
+          ),
+      }
+    }
+    case 'zoomEdit': {
+      const zoom = edit as ZoomEdit
+      const props = zoom.props ?? {}
+      const optionFields: Record<string, unknown> = {}
+      for (const key of ['amount', 'duration', 'easing', 'centering']) {
+        if (props[key] !== undefined) optionFields[key] = props[key]
+      }
+      const optionSource =
+        Object.keys(optionFields).length > 0
+          ? valueToSource(optionFields)
+          : null
+      const footerClose =
+        optionSource !== null ? `}, ${optionSource})` : undefined
+      return {
+        editIds: [zoom.fromEditId, zoom.untilEditId],
+        description: `wrap '${zoom.fromEditId}'..'${zoom.untilEditId}' in autoZoom`,
+        compute: (ctx) =>
+          wrapRun(
+            ctx,
+            zoom.fromEditId,
+            zoom.untilEditId,
+            'await autoZoom(async () => {',
+            zoom.leadInMs,
+            zoom.holdMs,
+            footerClose,
+            'autoZoom'
+          ),
+      }
+    }
+    case 'gapSpanEdit': {
+      const span = edit as GapSpanEdit
+      const props = span.props ?? {}
+      let header: string
+      if (span.kind === 'hide') {
+        header = 'await hide(async () => {'
+      } else if (span.kind === 'speed') {
+        const multiplier =
+          typeof props.multiplier === 'number' && props.multiplier > 0
+            ? props.multiplier
+            : 2
+        header = `await speed(${multiplier}, async () => {`
+      } else {
+        const durationMs =
+          typeof props.durationMs === 'number' ? props.durationMs : null
+        if (durationMs === null || durationMs < 0) return null
+        header = `await time(${Math.round(durationMs)}, async () => {`
+      }
+      return {
+        editIds: [span.fromEditId, span.untilEditId],
+        description: `wrap '${span.fromEditId}'..'${span.untilEditId}' in ${span.kind}`,
+        compute: (ctx) =>
+          wrapRun(
+            ctx,
+            span.fromEditId,
+            span.untilEditId,
+            header,
+            span.fromSleepMs,
+            span.untilSleepMs,
+            undefined,
+            span.kind
+          ),
+      }
+    }
+    default: {
+      const exhaustive: never = edit
+      void exhaustive
+      return null
+    }
+  }
 }
 
 export function planCodeSync(
@@ -145,12 +436,9 @@ export function planCodeSync(
   const texts = new Map<string, string>()
   const originals = new Map<string, string>()
   const applied: AppliedItem[] = []
-  const fallbackOverrides: EditableOverridesByVideo = {}
-  const fallbackPlaced: PlacedEventsByVideo = {}
-  const fallbackRenames: RenamesByVideo = {}
-  const fallbackVideos: VideoComparison[] = []
-  const fallbackCounts = new Map<string, number>()
+  const unappliable: UnappliableItem[] = []
   const appliedCounts = new Map<string, number>()
+  const unappliableCounts = new Map<string, number>()
 
   const bump = (map: Map<string, number>, video: string): void => {
     map.set(video, (map.get(video) ?? 0) + 1)
@@ -182,7 +470,7 @@ export function planCodeSync(
     ...new Set([
       ...input.comparison.videos.map((video) => video.videoName),
       ...Object.keys(input.editableOverrides),
-      ...Object.keys(input.placedEvents),
+      ...Object.keys(input.codifyEdits),
       ...Object.keys(input.renames),
     ]),
   ]
@@ -197,20 +485,9 @@ export function planCodeSync(
           .filter((file): file is string => file !== undefined)
       ),
     ]
-    const fallbackOverrideFields = (
-      key: string,
-      fields: [string, unknown][]
-    ): void => {
-      if (fields.length === 0) return
-      ;(fallbackOverrides[videoName] ??= []).push({
-        key,
-        values: Object.fromEntries(fields),
-      })
-      bump(fallbackCounts, videoName)
-    }
-    const fallbackEvent = (event: PlacedEvent): void => {
-      ;(fallbackPlaced[videoName] ??= []).push(event)
-      bump(fallbackCounts, videoName)
+    const markUnappliable = (reason: string): void => {
+      unappliable.push({ videoName, reason })
+      bump(unappliableCounts, videoName)
     }
 
     /** The single candidate file whose text contains the editId slug. */
@@ -222,6 +499,13 @@ export function planCodeSync(
       })
       return holders.length === 1 ? holders[0]! : null
     }
+    /** The single file that contains every editId in the set. */
+    const fileWithAllEditIds = (editIds: string[]): string | null => {
+      const files = editIds.map((editId) => fileWithEditId(editId))
+      const first = files[0]
+      if (first === null || first === undefined) return null
+      return files.every((file) => file === first) ? first : null
+    }
     const applySlugItem = (item: SlugItem): void => {
       const file = fileWithEditId(item.editId)
       if (file !== null && tryApply(file, item.compute)) {
@@ -232,7 +516,7 @@ export function planCodeSync(
         })
         bump(appliedCounts, item.videoName)
       } else {
-        item.onFallback()
+        item.onUnappliable()
       }
     }
 
@@ -241,20 +525,17 @@ export function planCodeSync(
       const entry = byKey.get(override.key)
       const editId = entry?.editId
       // No editId (unstamped action or a `slug#N` loop repeat execution):
-      // never guess at a call site; the prompt handles it.
+      // never guess at a call site; the section is locked.
       if (editId === undefined || override.key.includes('#')) {
-        fallbackOverrideFields(
-          override.key,
-          Object.entries(override.values).filter(([field, value]) => {
-            if (value === undefined) return false
-            return !(
-              entry !== undefined && jsonEqual(entry.defaults[field], value)
-            )
-          })
-        )
+        for (const [field, value] of Object.entries(override.values)) {
+          if (value === undefined) continue
+          if (entry !== undefined && jsonEqual(entry.defaults[field], value)) {
+            continue
+          }
+          markUnappliable(`locked param edit '${override.key}' ${field}`)
+        }
         continue
       }
-      const remaining: [string, unknown][] = []
       for (const [field, value] of Object.entries(override.values)) {
         if (value === undefined) continue
         if (jsonEqual(entry!.defaults[field], value)) {
@@ -266,7 +547,8 @@ export function planCodeSync(
             videoName,
             editId,
             description: `insert await <page>.waitForTimeout(${ms}) before '${editId}'`,
-            onFallback: () => remaining.push([field, value]),
+            onUnappliable: () =>
+              markUnappliable(`locked sleepBefore on '${editId}'`),
             compute: (ctx) => {
               const call = findCallByEditId(ctx, editId)
               if (call === null) return null
@@ -306,7 +588,8 @@ export function planCodeSync(
             videoName,
             editId,
             description: `set ${field}: ${JSON.stringify(value)} on '${editId}'`,
-            onFallback: () => remaining.push([field, value]),
+            onUnappliable: () =>
+              markUnappliable(`locked ${field} on '${editId}'`),
             compute: (ctx) => {
               const call = findCallByEditId(ctx, editId)
               if (call === null) return null
@@ -320,25 +603,24 @@ export function planCodeSync(
           })
           continue
         }
-        remaining.push([field, value])
+        markUnappliable(`unsupported param field '${field}' on '${editId}'`)
       }
-      fallbackOverrideFields(override.key, remaining)
     }
 
-    // ── Placed events (declarative placeX calls, timestamp markers) ────────
-    for (const event of input.placedEvents[videoName] ?? []) {
-      const planned = planPlacedEvent(event, byKey, entries)
+    // ── Codify edits (media / zoom / gap span / gap point) ─────────────────
+    for (const edit of input.codifyEdits[videoName] ?? []) {
+      const planned = planCodifyEdit(edit)
       if (planned === null) {
-        fallbackEvent(event)
+        markUnappliable(`unappliable ${edit.type} '${edit.id}'`)
         continue
       }
-      applySlugItem({
-        videoName,
-        editId: planned.editId,
-        description: planned.description,
-        onFallback: () => fallbackEvent(event),
-        compute: planned.compute,
-      })
+      const file = fileWithAllEditIds(planned.editIds)
+      if (file !== null && tryApply(file, planned.compute)) {
+        applied.push({ videoName, file, description: planned.description })
+        bump(appliedCounts, videoName)
+      } else {
+        markUnappliable(`locked ${edit.type} '${edit.id}'`)
+      }
     }
 
     // ── Action-parameter overrides (option values on stamped calls) ────────
@@ -347,7 +629,6 @@ export function planCodeSync(
     )
     if (comparisonVideo !== undefined) {
       const records = input.actionSnapshot.videos[videoName] ?? []
-      const fallbackAssessments: OverrideAssessment[] = []
       for (const assessment of comparisonVideo.overrides) {
         if (assessment.kind === 'in-sync') continue
         const record =
@@ -364,8 +645,9 @@ export function planCodeSync(
           OPTIONS_ARG_INDEX[assessment.method as ActionMethod]
         // Stale, unstamped, or unknown method: never guess.
         if (editId === undefined || optionsIndex === undefined) {
-          fallbackAssessments.push(assessment)
-          bump(fallbackCounts, videoName)
+          markUnappliable(
+            `locked action override ${assessment.selector} ${assessment.method}`
+          )
           continue
         }
         const pathSegments = assessment.optionPath.split('.')
@@ -406,16 +688,8 @@ export function planCodeSync(
           })
           bump(appliedCounts, videoName)
         } else {
-          fallbackAssessments.push(assessment)
-          bump(fallbackCounts, videoName)
+          markUnappliable(`locked action override on '${editId}'`)
         }
-      }
-      if (fallbackAssessments.length > 0) {
-        fallbackVideos.push({
-          videoName,
-          inSnapshot: comparisonVideo.inSnapshot,
-          overrides: fallbackAssessments,
-        })
       }
     }
 
@@ -442,8 +716,9 @@ export function planCodeSync(
         })
         bump(appliedCounts, videoName)
       } else {
-        ;(fallbackRenames[videoName] ??= []).push(rename)
-        bump(fallbackCounts, videoName)
+        markUnappliable(
+          `locked rename '${rename.editId}' -> '${rename.newEditId}'`
+        )
       }
     }
   }
@@ -455,105 +730,8 @@ export function planCodeSync(
   const fullyAppliedVideos = videoNames.filter(
     (videoName) =>
       (appliedCounts.get(videoName) ?? 0) > 0 &&
-      (fallbackCounts.get(videoName) ?? 0) === 0
+      (unappliableCounts.get(videoName) ?? 0) === 0
   )
 
-  return {
-    files,
-    applied,
-    fallback: {
-      comparison: {
-        videos: fallbackVideos,
-        snapshotEmpty: input.comparison.snapshotEmpty,
-      },
-      overrides: fallbackOverrides,
-      placed: fallbackPlaced,
-      renames: fallbackRenames,
-    },
-    fullyAppliedVideos,
-  }
-}
-
-const PLACE_FN_IMPORTS: Record<string, string> = {
-  hide: 'placeHide',
-  speed: 'placeSpeed',
-  time: 'placeTime',
-  zoom: 'placeZoom',
-}
-
-/**
- * How to insert a placed event's code, keyed by an editId. Span kinds
- * (declarative placeX calls) can sit anywhere in the test body, so any
- * stamped action of the video works as the insertion anchor; timestamps must
- * land exactly at their anchor, so only zero-offset action anchors qualify.
- * Null routes the event to the prompt (including videos with no stamped
- * action at all: no guessing).
- */
-function planPlacedEvent(
-  event: PlacedEvent,
-  byKey: Map<string, EditableSnapshotEntry>,
-  entries: EditableSnapshotEntry[]
-): {
-  editId: string
-  description: string
-  compute: (ctx: CodemodContext) => TextEdit[] | null
-} | null {
-  const call = placeCallFor(event)
-  if (call !== null) {
-    const importName = PLACE_FN_IMPORTS[event.kind]
-    if (importName === undefined) return null
-    const anchorEditId =
-      event.anchor.ref.type === 'action'
-        ? byKey.get(event.anchor.ref.key)?.editId
-        : undefined
-    // Declarative calls may sit anywhere: any stamped action anchors them.
-    const editId =
-      anchorEditId ??
-      entries.find((entry) => entry.editId !== undefined)?.editId
-    if (editId === undefined) return null
-    return {
-      editId,
-      description: `add ${call} after '${editId}'`,
-      compute: (ctx) => {
-        const anchorCall = findCallByEditId(ctx, editId)
-        if (anchorCall === null) return null
-        const statement = enclosingStatement(ctx, anchorCall)
-        if (statement === null) return null
-        const importEdits = ensureNamedImport(ctx, 'screenci', importName)
-        if (importEdits === null) return null
-        return [...importEdits, insertStatementAfter(ctx, statement, call)]
-      },
-    }
-  }
-  if (
-    event.kind === 'timestamp' &&
-    event.anchor.offsetMs === 0 &&
-    event.anchor.ref.type === 'action'
-  ) {
-    const editId = byKey.get(event.anchor.ref.key)?.editId
-    if (editId === undefined) return null
-    const name =
-      typeof event.props?.name === 'string' ? event.props.name : event.id
-    const code = `await timestamp('${name.replace(/'/g, "\\'")}')`
-    const before = event.anchor.edge === 'start'
-    return {
-      editId,
-      description: `insert ${code} ${before ? 'before' : 'after'} '${editId}'`,
-      compute: (ctx) => {
-        const anchorCall = findCallByEditId(ctx, editId)
-        if (anchorCall === null) return null
-        const statement = enclosingStatement(ctx, anchorCall)
-        if (statement === null) return null
-        const importEdits = ensureNamedImport(ctx, 'screenci', 'timestamp')
-        if (importEdits === null) return null
-        return [
-          ...importEdits,
-          before
-            ? insertStatementBefore(ctx, statement, code)
-            : insertStatementAfter(ctx, statement, code),
-        ]
-      },
-    }
-  }
-  return null
+  return { files, applied, unappliable, fullyAppliedVideos }
 }

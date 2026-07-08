@@ -1,9 +1,9 @@
 /**
  * Comparison of the web editor's action-parameter overrides against the latest
  * local recording snapshot (`.screenci/action-params.json`), powering
- * `screenci status` (human report) and `screenci sync-prompt` (an agent-ready
- * prompt that brings code back in sync with the editor). Pure; the CLI wires
- * in the fetched overrides and the snapshot.
+ * `screenci status` (human report) and `screenci sync` (which brings code back
+ * in sync with the editor). Pure; the CLI wires in the fetched overrides and
+ * the snapshot.
  */
 import {
   ACTION_PARAM_DEFAULTS,
@@ -207,70 +207,4 @@ export function formatStatusReport(comparison: WebStateComparison): string[] {
     }
   }
   return lines
-}
-
-/**
- * Build the agent-ready sync prompt: per video, which action options to change
- * or remove in code so it matches the web editor. Returns `null` when there is
- * nothing actionable. Project and video names appear once each; stale
- * overrides are surfaced as warnings (best effort, the editor state may
- * predate a code change).
- */
-export function buildSyncPrompt(
-  comparison: WebStateComparison,
-  projectName: string
-): string | null {
-  const sections: string[] = []
-  for (const video of comparison.videos) {
-    const actionable = video.overrides.filter(
-      (o) => o.kind === 'change' || o.kind === 'remove' || o.kind === 'codify'
-    )
-    const stale = video.overrides.filter((o) => o.kind === 'stale')
-    if (actionable.length === 0 && stale.length === 0) continue
-
-    const lines: string[] = [`## Video: ${video.videoName}`]
-    for (const o of actionable) {
-      const site = `locator \`${o.selector}\`, call ${o.occurrence + 1} of \`.${o.method}(...)\``
-      if (o.kind === 'remove') {
-        lines.push(
-          `- REMOVE the explicit \`${o.optionPath}\` option (currently ` +
-            `${formatValue(o.codeValue)}) from ${site}: the editor reset it to ` +
-            `the default (${formatValue(o.defaultValue)}).`
-        )
-      } else if (o.kind === 'change') {
-        lines.push(
-          `- CHANGE \`${o.optionPath}\` from ${formatValue(o.codeValue)} to ` +
-            `${formatValue(o.editorValue)} on ${site}.`
-        )
-      } else {
-        lines.push(
-          `- CHANGE \`${o.optionPath}\` on ${site}: set it explicitly to ` +
-            `${formatValue(o.editorValue)} (code currently uses the default ` +
-            `${formatValue(o.codeValue)}).`
-        )
-      }
-    }
-    for (const o of stale) {
-      lines.push(
-        `- WARNING (stale): the editor overrides \`${o.optionPath}\` = ` +
-          `${formatValue(o.editorValue)} on locator \`${o.selector}\` ` +
-          `\`.${o.method}(...)\` call ${o.occurrence + 1}, but the latest ` +
-          `recording has no such action. The code likely changed; re-check ` +
-          `this override in the editor.`
-      )
-    }
-    sections.push(lines.join('\n'))
-  }
-
-  if (sections.length === 0) return null
-
-  return [
-    `Sync the ScreenCI project "${projectName}" video scripts with the web ` +
-      `editor's action-parameter edits. For each item below, update the ` +
-      `matching locator action call site in the .screenci.ts scripts. ` +
-      `"call N" counts calls with the same locator and method within the ` +
-      `video, in execution order. After editing, re-record to confirm the ` +
-      `values converge; the editor overrides can then be cleared.`,
-    ...sections,
-  ].join('\n\n')
 }

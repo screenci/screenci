@@ -81,11 +81,9 @@ import {
   updateActionParamsSnapshot,
 } from './src/actionParamsSnapshot.js'
 import {
-  buildEditablePlacementPrompt,
   diffEditableOverridesAgainstSnapshot,
   EDITABLE_SNAPSHOT_FILE,
   formatEditableStatusReport,
-  formatPlacedStatusReport,
   readEditableSnapshot,
   splitTimelineEditsByVideo,
   updateEditableSnapshot,
@@ -95,14 +93,9 @@ import {
   type ActionOverridesClient,
 } from './src/actionOverridesClient.js'
 import {
-  buildSyncPrompt,
   compareWebStateToSnapshot,
   formatStatusReport,
 } from './src/actionSync.js'
-import {
-  buildStudioSyncPrompt,
-  type StudioSyncState,
-} from './src/studioSync.js'
 import { diffLines, loadTypescript, type TsModule } from './src/codemod.js'
 import { planCodeSync, type CodeSyncPlan } from './src/codeSync.js'
 import {
@@ -3429,7 +3422,7 @@ async function readLastRecordId(screenciDir: string): Promise<string | null> {
 /**
  * Fetch the web editor's current action-parameter override state and compare
  * it to the latest local recording snapshot. Shared by `screenci status` and
- * `screenci sync-prompt`; the client is injected for tests.
+ * `screenci sync`; the client is injected for tests.
  */
 async function compareEditorStateToSnapshot(
   configPath: string | undefined,
@@ -3493,51 +3486,11 @@ const defaultEditableOverridesFetcher: EditableOverridesFetcher = async ({
   }
 }
 
-/** Fetcher for the web editor's Studio option overrides, injectable in tests. */
-export type StudioSyncFetcher = (args: {
-  apiUrl: string
-  secret: string
-  projectName: string
-}) => Promise<StudioSyncState>
-
-const defaultStudioSyncFetcher: StudioSyncFetcher = async ({
-  apiUrl,
-  secret,
-  projectName,
-}) => {
-  const params = new URLSearchParams({ projectName })
-  const res = await fetch(`${apiUrl}/cli/studio-sync?${params}`, {
-    headers: { 'X-ScreenCI-Secret': secret },
-  })
-  if (!res.ok) return { videos: {} }
-  const body = (await res.json()) as { videos?: unknown }
-  return {
-    videos:
-      typeof body.videos === 'object' && body.videos !== null
-        ? (body.videos as StudioSyncState['videos'])
-        : {},
-  }
-}
-
-/** Restrict a Studio-sync map to the videos whose names match `--grep`. */
-function filterStudioSyncByGrep(
-  state: StudioSyncState,
-  grep?: string
-): StudioSyncState {
-  if (grep === undefined) return state
-  const re = new RegExp(grep)
-  const videos: StudioSyncState['videos'] = {}
-  for (const [name, video] of Object.entries(state.videos)) {
-    if (re.test(name)) videos[name] = video
-  }
-  return { videos }
-}
-
 /**
  * Filters the per-video timeline-edits map by the same `--grep` regex the
  * action-parameter report uses, so `screenci status -g <name>` narrows the
- * timeline-edits and placed-events blocks to matching videos too (not just
- * the action-parameter section).
+ * timeline-edits block to matching videos too (not just the action-parameter
+ * section).
  */
 function filterTimelineEditsByGrep(
   timelineEdits: Record<string, unknown>,
@@ -3576,7 +3529,7 @@ export async function printActionStatus(
       secret,
       projectName,
     })
-    const { overrides, placed } = splitTimelineEditsByVideo(
+    const { overrides } = splitTimelineEditsByVideo(
       filterTimelineEditsByGrep(timelineEdits, grep)
     )
     const snapshot = readEditableSnapshot(screenciDir)
@@ -3586,83 +3539,8 @@ export async function printActionStatus(
       log('Timing overrides (web timeline edits):')
       for (const line of lines) log(line)
     }
-    const placedLines = formatPlacedStatusReport(snapshot, placed)
-    if (placedLines.length > 0) {
-      log('')
-      log('Placed events (web-added hides / speedups / cues / overlays):')
-      for (const line of placedLines) log(line)
-    }
   } catch {
     // ignore: the endpoint may be unavailable
-  }
-}
-
-/**
- * `screenci sync-prompt`: print an agent-ready prompt describing which action
- * options to change or remove in code so it matches the web editor's edits.
- */
-export async function printSyncPrompt(
-  configPath?: string,
-  grep?: string,
-  client: ActionOverridesClient = defaultActionOverridesClient,
-  write: (text: string) => void = (text) => process.stdout.write(text),
-  fetchEditableOverrides: EditableOverridesFetcher = defaultEditableOverridesFetcher,
-  fetchStudioSync: StudioSyncFetcher = defaultStudioSyncFetcher
-): Promise<void> {
-  const { comparison, projectName, screenciDir, apiUrl, secret } =
-    await compareEditorStateToSnapshot(configPath, grep, client)
-  const prompt = buildSyncPrompt(comparison, projectName)
-
-  // Timeline edits (param edits + placed events) become concrete placement
-  // instructions using the call sites captured at record time and the
-  // placeHide/placeSpeed/placeTime/waitSince code primitives.
-  let placement: string[] = []
-  try {
-    const { timelineEdits } = await fetchEditableOverrides({
-      apiUrl,
-      secret,
-      projectName,
-    })
-    const { overrides, placed, renames } = splitTimelineEditsByVideo(
-      filterTimelineEditsByGrep(timelineEdits, grep)
-    )
-    placement = buildEditablePlacementPrompt(
-      readEditableSnapshot(screenciDir),
-      overrides,
-      placed,
-      renames
-    )
-  } catch {
-    // Best-effort: the action-parameter prompt still prints.
-  }
-
-  // Studio option overrides (render/record options) and content edits held in
-  // the editor, so an agent can codify them too.
-  let studio: string | null = null
-  try {
-    const state = await fetchStudioSync({ apiUrl, secret, projectName })
-    studio = buildStudioSyncPrompt(
-      filterStudioSyncByGrep(state, grep),
-      projectName
-    )
-  } catch {
-    // Best-effort: the rest of the prompt still prints.
-  }
-
-  if (prompt === null && placement.length === 0 && studio === null) {
-    write(
-      'Nothing to sync: the web editor has no edits that differ from code.\n'
-    )
-    return
-  }
-  if (prompt !== null) write(`${prompt}\n`)
-  if (placement.length > 0) {
-    write(`\n# Timeline edits to move into code\n\n`)
-    write(`${placement.join('\n')}\n`)
-  }
-  if (studio !== null) {
-    write(`\n# Studio options to move into code\n\n`)
-    write(`${studio}\n`)
   }
 }
 
@@ -3670,7 +3548,6 @@ export async function printSyncPrompt(
 export type SyncCommandDeps = {
   client?: ActionOverridesClient
   fetchEditableOverrides?: EditableOverridesFetcher
-  fetchStudioSync?: StudioSyncFetcher
   loadTs?: (projectDir: string) => TsModule | null
   readFileText?: (path: string) => string | null
   writeFileText?: (path: string, text: string) => void
@@ -3702,7 +3579,7 @@ function planStampsAndCodeSync(args: {
   actionSnapshot: ReturnType<typeof readActionParamsSnapshot>
   editableSnapshot: ReturnType<typeof readEditableSnapshot>
   editableOverrides: ReturnType<typeof splitTimelineEditsByVideo>['overrides']
-  placedEvents: ReturnType<typeof splitTimelineEditsByVideo>['placed']
+  codifyEdits: ReturnType<typeof splitTimelineEditsByVideo>['codify']
   renames: ReturnType<typeof splitTimelineEditsByVideo>['renames']
   readFile: (path: string) => string | null
 }): {
@@ -3727,7 +3604,7 @@ function planStampsAndCodeSync(args: {
       actionSnapshot: args.actionSnapshot,
       editableSnapshot: args.editableSnapshot,
       editableOverrides: args.editableOverrides,
-      placedEvents: args.placedEvents,
+      codifyEdits: args.codifyEdits,
       renames: args.renames,
     },
     { ts: args.ts, readFile }
@@ -3755,10 +3632,11 @@ function planStampsAndCodeSync(args: {
 
 /**
  * `screenci sync`: apply the web editor's edits directly to the .screenci.ts
- * sources via static analysis where that is unambiguous, and print the agent
- * prompt for whatever remains. Dry-run (diff) by default; `--write` saves the
- * changes, and `--write --reset` additionally clears the web timeline edits of
- * every video whose pending edits were all applied.
+ * sources by editId-keyed static analysis. Dry-run (diff) by default; `--write`
+ * saves the changes, and `--write --reset` additionally clears the web timeline
+ * edits of every video whose pending edits were all applied. Edits whose
+ * section is locked (unstamped, a loop repeat, or control flow around the call)
+ * are reported as a plain unappliable count; there is no agent-prompt fallback.
  */
 export async function runSync(
   configPath: string | undefined,
@@ -3774,12 +3652,12 @@ export async function runSync(
   const { comparison, projectName, screenciDir, apiUrl, secret } =
     await compareEditorStateToSnapshot(configPath, options.grep, client)
 
-  // Timeline edits (param edits + placed events): best-effort like the other
+  // Timeline edits (param edits + codify records): best-effort like the other
   // commands; the action-parameter sync still runs when this fetch fails.
   let editableOverrides: ReturnType<
     typeof splitTimelineEditsByVideo
   >['overrides'] = {}
-  let placedEvents: ReturnType<typeof splitTimelineEditsByVideo>['placed'] = {}
+  let codifyEdits: ReturnType<typeof splitTimelineEditsByVideo>['codify'] = {}
   let renames: ReturnType<typeof splitTimelineEditsByVideo>['renames'] = {}
   try {
     const fetchEditable =
@@ -3793,7 +3671,7 @@ export async function runSync(
       filterTimelineEditsByGrep(timelineEdits, options.grep)
     )
     editableOverrides = split.overrides
-    placedEvents = split.placed
+    codifyEdits = split.codify
     renames = split.renames
   } catch {
     // ignore: the endpoint may be unavailable
@@ -3803,10 +3681,7 @@ export async function runSync(
   const actionSnapshot = readActionParamsSnapshot(screenciDir)
   const ts = (deps.loadTs ?? loadTypescript)(dirname(screenciDir))
   if (ts === null) {
-    log(
-      'Could not load the typescript module; applying nothing. Use ' +
-        '`screenci sync-prompt` with a coding agent instead.'
-    )
+    log('Could not load the typescript module; applying nothing.')
   }
   const planned =
     ts === null
@@ -3814,12 +3689,7 @@ export async function runSync(
           plan: {
             files: [],
             applied: [],
-            fallback: {
-              comparison,
-              overrides: editableOverrides,
-              placed: placedEvents,
-              renames,
-            },
+            unappliable: [],
             fullyAppliedVideos: [],
           } satisfies CodeSyncPlan,
           files: [] as Array<{ path: string; before: string; after: string }>,
@@ -3833,40 +3703,16 @@ export async function runSync(
           actionSnapshot,
           editableSnapshot,
           editableOverrides,
-          placedEvents,
+          codifyEdits,
           renames,
           readFile: deps.readFileText ?? defaultReadFileText,
         })
   const plan = planned.plan
 
-  // Studio options (render/record options, narration text) are never applied
-  // automatically; they surface in the prompt remainder below.
-  let studioPrompt: string | null = null
-  try {
-    const fetchStudio = deps.fetchStudioSync ?? defaultStudioSyncFetcher
-    const state = await fetchStudio({ apiUrl, secret, projectName })
-    studioPrompt = buildStudioSyncPrompt(
-      filterStudioSyncByGrep(state, options.grep),
-      projectName
-    )
-  } catch {
-    // Best-effort: the code sync still reports.
-  }
-
-  const fallbackPrompt = buildSyncPrompt(plan.fallback.comparison, projectName)
-  const fallbackPlacement = buildEditablePlacementPrompt(
-    editableSnapshot,
-    plan.fallback.overrides,
-    plan.fallback.placed,
-    plan.fallback.renames
-  )
-
   if (
     planned.files.length === 0 &&
     plan.applied.length === 0 &&
-    fallbackPrompt === null &&
-    fallbackPlacement.length === 0 &&
-    studioPrompt === null
+    plan.unappliable.length === 0
   ) {
     log('Nothing to sync: the web editor has no edits that differ from code.')
     return
@@ -3908,19 +3754,16 @@ export async function runSync(
     log('Run `screenci sync --write` to save these changes.')
   }
 
-  const hasFallback =
-    fallbackPrompt !== null ||
-    fallbackPlacement.length > 0 ||
-    studioPrompt !== null
-  if (hasFallback) {
+  if (plan.unappliable.length > 0) {
     log('')
     log(
-      'Not applied automatically (use `screenci sync-prompt` with a coding ' +
-        'agent, or edit by hand):'
+      `${plan.unappliable.length} edit(s) could not be applied (locked ` +
+        'section: unstamped action, a loop repeat, or control flow around ' +
+        'the call). Edit the code by hand:'
     )
-    if (fallbackPrompt !== null) log(fallbackPrompt)
-    if (fallbackPlacement.length > 0) log(fallbackPlacement.join('\n'))
-    if (studioPrompt !== null) log(studioPrompt)
+    for (const item of plan.unappliable) {
+      log(`  [${item.videoName}] ${item.reason}`)
+    }
   }
 
   if (options.reset === true) {
@@ -3966,7 +3809,6 @@ export async function runDevAutoSync(
   const client = deps.client ?? defaultActionOverridesClient
   const fetchEditable =
     deps.fetchEditableOverrides ?? defaultEditableOverridesFetcher
-  const appliedPlacedSignatures = new Set<string>()
   let lastFingerprint = ''
 
   while (!controller.stopped) {
@@ -3997,17 +3839,8 @@ export async function runDevAutoSync(
         log('auto-sync: could not load typescript; auto-sync disabled.')
         return
       }
-      const { overrides, placed, renames } =
+      const { overrides, codify, renames } =
         splitTimelineEditsByVideo(timelineEdits)
-      // Never insert the same placed event twice in one session.
-      const filteredPlaced = Object.fromEntries(
-        Object.entries(placed).map(([videoName, events]) => [
-          videoName,
-          events.filter(
-            (event) => !appliedPlacedSignatures.has(JSON.stringify(event))
-          ),
-        ])
-      )
       const planned = planStampsAndCodeSync({
         ts,
         screenciDir,
@@ -4015,7 +3848,7 @@ export async function runDevAutoSync(
         actionSnapshot: readActionParamsSnapshot(screenciDir),
         editableSnapshot: readEditableSnapshot(screenciDir),
         editableOverrides: overrides,
-        placedEvents: filteredPlaced,
+        codifyEdits: codify,
         renames,
         readFile: deps.readFileText ?? defaultReadFileText,
       })
@@ -4034,17 +3867,6 @@ export async function runDevAutoSync(
       }
       for (const item of plan.applied) {
         log(`auto-sync: [${item.videoName}] ${item.description}`)
-      }
-      // Placed events that did not land in the fallback were applied.
-      for (const [videoName, events] of Object.entries(filteredPlaced)) {
-        const fallbackIds = new Set(
-          (plan.fallback.placed[videoName] ?? []).map((event) => event.id)
-        )
-        for (const event of events) {
-          if (!fallbackIds.has(event.id)) {
-            appliedPlacedSignatures.add(JSON.stringify(event))
-          }
-        }
       }
       const resetVideo =
         deps.resetVideoEdits ??
@@ -4065,7 +3887,6 @@ export async function runDevAutoSync(
 /**
  * `screenci reset-web-edits`: clears the project's (or one video's) web
  * timeline edits via the backend, so the next record runs purely from code.
- * Used by agents after codifying edits from `screenci sync-prompt`.
  */
 export async function resetWebEdits(
   configPath?: string,
@@ -4694,28 +4515,11 @@ export async function main() {
     })
 
   program
-    .command('sync-prompt')
-    .description(
-      'Print an agent-ready prompt to sync code with the web editor edits'
-    )
-    .option('-c, --config <path>', 'path to screenci.config.ts')
-    .option(
-      '-g, --grep <regex>',
-      'only include videos whose name matches this regular expression'
-    )
-    .action(async (options: Record<string, unknown>) => {
-      await printSyncPrompt(
-        options['config'] as string | undefined,
-        options['grep'] as string | undefined
-      )
-    })
-
-  program
     .command('sync')
     .description(
-      'Apply the web editor edits to the .screenci.ts sources via static ' +
-        'analysis (dry-run by default; whatever cannot be applied safely ' +
-        'prints as an agent prompt)'
+      'Apply the web editor edits to the .screenci.ts sources via editId-keyed ' +
+        'static analysis (dry-run by default; whatever cannot be applied ' +
+        'safely is reported as an unappliable count)'
     )
     .option('-c, --config <path>', 'path to screenci.config.ts')
     .option(

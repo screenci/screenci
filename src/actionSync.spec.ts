@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  buildSyncPrompt,
-  compareWebStateToSnapshot,
-  formatStatusReport,
-} from './actionSync.js'
+import { compareWebStateToSnapshot, formatStatusReport } from './actionSync.js'
 import type { ActionParamsSnapshot } from './actionParamsSnapshot.js'
 
 const SELECTOR = "getByRole('button', { name: 'Save' })"
@@ -110,51 +106,5 @@ describe('formatStatusReport', () => {
     expect(lines).toContain('override shadows explicit code value')
     expect(lines).toContain('override changes a defaulted value')
     expect(lines).toContain('stale override')
-  })
-})
-
-describe('buildSyncPrompt', () => {
-  it('returns null when nothing is actionable', () => {
-    expect(
-      buildSyncPrompt(compareWebStateToSnapshot(SNAPSHOT, {}), 'proj')
-    ).toBeNull()
-    expect(
-      buildSyncPrompt(
-        compareWebStateToSnapshot(SNAPSHOT, {
-          'My video': { [key('move.duration')]: 400 },
-        }),
-        'proj'
-      )
-    ).toBeNull()
-  })
-
-  it('names the project and video once and emits change/remove/warning items', () => {
-    const prompt = buildSyncPrompt(
-      compareWebStateToSnapshot(SNAPSHOT, {
-        'My video': {
-          [key('move.duration')]: 250,
-          [key('move.easing')]: 'linear',
-          [key('move.duration', 1)]: 111,
-        },
-      }),
-      'my-project'
-    )!
-    expect(prompt).toContain('"my-project"')
-    expect(prompt.match(/## Video: My video/g)).toHaveLength(1)
-    expect(prompt).toContain('CHANGE `move.duration` from 400 to 250')
-    expect(prompt).toContain('set it explicitly to "linear"')
-    expect(prompt).toContain('WARNING (stale)')
-  })
-
-  it('emits remove instructions with the default value', () => {
-    const prompt = buildSyncPrompt(
-      compareWebStateToSnapshot(SNAPSHOT, {
-        'My video': { [key('move.duration')]: 900 },
-      }),
-      'my-project'
-    )!
-    expect(prompt).toContain('REMOVE the explicit `move.duration` option')
-    expect(prompt).toContain('(currently 400)')
-    expect(prompt).toContain('default (900)')
   })
 })

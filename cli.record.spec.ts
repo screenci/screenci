@@ -671,7 +671,7 @@ describe('CLI', () => {
     })
   })
 
-  describe('status and sync-prompt commands', () => {
+  describe('status command', () => {
     const SNAPSHOT = {
       version: 1,
       videos: {
@@ -748,78 +748,28 @@ describe('CLI', () => {
       expect(lines.join('\n')).toContain('in sync')
     })
 
-    it('sync-prompt prints an agent-ready prompt with change instructions', async () => {
-      const client = setupProject({
-        'My video': {
-          "getByRole('button')|click|0|move.duration": 250,
-        },
-      })
-      const { printSyncPrompt } = await import('./cli')
-      let out = ''
-      await printSyncPrompt(
-        'test-fixtures/screenci.config.ts',
-        undefined,
-        client,
-        (text) => {
-          out += text
-        }
-      )
-      expect(out).toContain('"Test Project"')
-      expect(out).toContain('## Video: My video')
-      expect(out).toContain('CHANGE `move.duration` from 400 to 250')
-    })
-
-    it('sync-prompt respects the grep filter and reports nothing to sync', async () => {
-      const client = setupProject({
-        'My video': {
-          "getByRole('button')|click|0|move.duration": 250,
-        },
-      })
-      const { printSyncPrompt } = await import('./cli')
-      let out = ''
-      await printSyncPrompt(
-        'test-fixtures/screenci.config.ts',
-        '^Other',
-        client,
-        (text) => {
-          out += text
-        }
-      )
-      expect(out).toContain('Nothing to sync')
-    })
-
-    it('status grep filters the placed-events block, not just action params', async () => {
+    it('status grep filters the timing-overrides block, not just action params', async () => {
       const client = setupProject({})
       const timelineEdits = {
         'My video': {
-          version: 2,
+          version: 3,
           edits: [
             {
-              type: 'placedEvent',
+              type: 'paramEdit',
               id: 'p1',
-              kind: 'hide',
-              anchor: {
-                ref: { type: 'videoStart' },
-                edge: 'start',
-                offsetMs: 0,
-              },
-              end: { durationMs: 500 },
+              target: { key: 'input|click|getByRole(button)|0' },
+              fields: { sleepBefore: 400 },
             },
           ],
         },
         'Other video': {
-          version: 2,
+          version: 3,
           edits: [
             {
-              type: 'placedEvent',
+              type: 'paramEdit',
               id: 'p2',
-              kind: 'timestamp',
-              anchor: {
-                ref: { type: 'videoStart' },
-                edge: 'start',
-                offsetMs: 0,
-              },
-              props: { name: 'mark' },
+              target: { key: 'delay|||0' },
+              fields: { sleepBefore: 200 },
             },
           ],
         },
@@ -835,11 +785,8 @@ describe('CLI', () => {
         fetchEditableOverrides
       )
       const report = lines.join('\n')
-      expect(report).toContain('Placed events')
-      expect(report).toContain("hide 'p1'")
-      // The grep-excluded video's placed events must not leak into the report.
+      // The grep-excluded video's edits must not leak into the report.
       expect(report).not.toContain('Other video')
-      expect(report).not.toContain("timestamp 'p2'")
     })
   })
 

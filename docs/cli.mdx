@@ -19,7 +19,6 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | `screenci info`                    | Print the last record run's URLs and render status       |
 | `screenci status`                  | Compare Editor action edits with the latest recorded run |
 | `screenci sync`                    | Apply Editor edits to the test sources (static analysis) |
-| `screenci sync-prompt`             | Print an agent prompt to sync code with Editor edits     |
 | `screenci make-public <videoId>`   | Enable public delivery for a video                       |
 | `screenci make-private <videoId>`  | Disable public delivery for a video                      |
 | `screenci delete <videoId>`        | Permanently delete a video and its renders               |
@@ -375,10 +374,10 @@ Options:
   missing `editId` slugs (see [`screenci sync`](#screenci-sync)), and applies
   what sync can apply mechanically; a video whose
   pending edits were all applied gets its web edits cleared automatically, so
-  the next record runs purely from code. Edits that need judgment (narration
-  content, ambiguous call sites) are left in the editor and reported in the
-  log; use `screenci sync-prompt` for those. Auto-sync pauses while a
-  triggered record is running.
+  the next record runs purely from code. Edits whose section is locked (an
+  unstamped action, a loop repeat, or a call inside control flow) are left in
+  the editor and reported in the log. Auto-sync pauses while a triggered
+  record is running.
 - `-v, --verbose`: verbose output.
 
 Setup:
@@ -570,17 +569,20 @@ It can:
   `move.duration` on a `.click(...)`)
 - insert `await page.waitForTimeout(...)` for start-time edits
 - set `startOffset` / `endOffset` on the matching `autoZoom(...)` options
-- add `placeHide` / `placeSpeed` / `placeTime` / `placeZoom` calls (and their
-  imports) for web-authored span events, and `await timestamp('name')` for
-  zero-offset markers
+- place web-authored effects into the linear timeline: a narration cue /
+  overlay / audio start in the gap after an action, an `autoZoom(...)` bracket
+  over a run of interactions, a `hide(...)` / `speed(...)` / `time(...)` span,
+  or an instant `moveNarration(...)` / `resizeRecording(...)` /
+  `setBackground(...)` point (with the needed imports and gap `waitForTimeout`
+  sleeps)
 - apply editId renames made in the Editor
 
 Every edit locates its call site by the exact `editId` slug: there is no
-heuristic matching, so an applied edit is never a guess. Edits on actions
-that have not been stamped yet (record once, then sync) print as agent-prompt
-instructions instead, exactly as `screenci sync-prompt` would emit them, as
-do loop executions, non-literal option values, narration and overlay content,
-moved timestamps with offsets, presentation updates, and Studio options.
+heuristic matching, so an applied edit is never a guess. An edit either applies
+by editId or its section is locked and reported as an unappliable count to edit
+by hand: an action that has not been stamped yet (record once, then sync), a
+loop execution, or a call inside control flow (`if`/`for`/...). There is no
+agent-prompt fallback.
 
 By default `screenci sync` is a dry run that prints per-file diffs. Options:
 
@@ -592,18 +594,6 @@ By default `screenci sync` is a dry run that prints per-file diffs. Options:
 
 Requires `SCREENCI_SECRET` and a resolvable `typescript` installation (any
 ScreenCI project has one).
-
-## `screenci sync-prompt`
-
-Prints an agent-ready prompt that describes which action options to change or
-remove in your `.screenci.ts` scripts so code matches the web Editor's edits:
-CHANGE items give the from/to values per locator and call, REMOVE items say
-which explicit option to drop because the Editor reset it to the default, and
-stale overrides are surfaced as warnings. Paste the output to a coding agent,
-apply the edits, then re-record; once code and Editor agree the overrides can
-be cleared.
-
-Takes the same `-c, --config` and `-g, --grep` options as `screenci status`.
 
 ## `screenci make-public <videoId>`
 

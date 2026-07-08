@@ -456,22 +456,218 @@ export function enclosingStatement(
   return null
 }
 
+/** The sibling statements of `statement` (its block/source-file body), or null. */
+function siblingStatements(
+  ctx: CodemodContext,
+  statement: TS.Statement
+): TS.NodeArray<TS.Statement> | null {
+  const { ts } = ctx
+  const parent = statement.parent
+  if (parent === undefined) return null
+  return ts.isBlock(parent)
+    ? parent.statements
+    : ts.isSourceFile(parent)
+      ? parent.statements
+      : null
+}
+
 /** The statement immediately before `statement` in its enclosing block. */
 export function previousStatement(
   ctx: CodemodContext,
   statement: TS.Statement
 ): TS.Statement | null {
-  const { ts } = ctx
-  const parent = statement.parent
-  if (parent === undefined) return null
-  const statements = ts.isBlock(parent)
-    ? parent.statements
-    : ts.isSourceFile(parent)
-      ? parent.statements
-      : null
+  const statements = siblingStatements(ctx, statement)
   if (statements === null) return null
   const index = statements.indexOf(statement)
   return index > 0 ? statements[index - 1]! : null
+}
+
+/** The statement immediately after `statement` in its enclosing block. */
+export function nextStatement(
+  ctx: CodemodContext,
+  statement: TS.Statement
+): TS.Statement | null {
+  const statements = siblingStatements(ctx, statement)
+  if (statements === null) return null
+  const index = statements.indexOf(statement)
+  return index >= 0 && index < statements.length - 1
+    ? statements[index + 1]!
+    : null
+}
+
+/**
+ * The numeric-literal argument node of an `await <root>.waitForTimeout(<n>)`
+ * expression statement, or null when `statement` is not such a sleep on `root`.
+ * Editor-placed gap sleeps are recognised (and split/coalesced/removed) through
+ * this shape: there is no marker on the node, only the structural match.
+ */
+export function waitForTimeoutArg(
+  ctx: CodemodContext,
+  statement: TS.Statement,
+  root: string
+): TS.NumericLiteral | null {
+  const { ts } = ctx
+  if (!ts.isExpressionStatement(statement)) return null
+  let expression: TS.Expression = statement.expression
+  if (ts.isAwaitExpression(expression)) expression = expression.expression
+  if (!ts.isCallExpression(expression)) return null
+  const callee = expression.expression
+  if (!ts.isPropertyAccessExpression(callee)) return null
+  if (callee.name.text !== 'waitForTimeout') return null
+  if (!ts.isIdentifier(callee.expression) || callee.expression.text !== root) {
+    return null
+  }
+  const argument = expression.arguments[0]
+  if (argument === undefined || !ts.isNumericLiteral(argument)) return null
+  return argument
+}
+
+/**
+ * A contiguous run of statements `from..until` that are direct siblings in the
+ * same plain block (or source file), or null when they are not (different
+ * blocks, or `until` precedes `from`). Contiguity is guaranteed by them being
+ * siblings; the caller wraps that whole run.
+ */
+export function sameBlockRun(
+  ctx: CodemodContext,
+  from: TS.Statement,
+  until: TS.Statement
+): { statements: TS.Statement[] } | null {
+  if (from.parent !== until.parent) return null
+  const statements = siblingStatements(ctx, from)
+  if (statements === null) return null
+  const fromIndex = statements.indexOf(from)
+  const untilIndex = statements.indexOf(until)
+  if (fromIndex === -1 || untilIndex === -1 || untilIndex < fromIndex) {
+    return null
+  }
+  return { statements: statements.slice(fromIndex, untilIndex + 1) }
+}
+
+/**
+ * The call carrying `editId` when it sits on an editable, linear call site:
+ * exactly one occurrence in the file, and every ancestor up to the enclosing
+ * function/arrow body is a plain block (no for/while/if/switch/ternary/case).
+ * Returns null when the slug is missing, ambiguous, or locked in control flow
+ * (a loop repeat or a branch): such sections are shown but never a codemod
+ * target.
+ */
+export function isLinearCallSite(
+  ctx: CodemodContext,
+  editId: string
+): TS.CallExpression | null {
+  const { ts } = ctx
+  const call = findCallByEditId(ctx, editId)
+  if (call === null) return null
+  for (
+    let node: TS.Node | undefined = call.parent;
+    node !== undefined;
+    node = node.parent
+  ) {
+    if (
+      ts.isArrowFunction(node) ||
+      ts.isFunctionExpression(node) ||
+      ts.isFunctionDeclaration(node) ||
+      ts.isMethodDeclaration(node) ||
+      ts.isSourceFile(node)
+    ) {
+      // Reached the enclosing function body without hitting control flow.
+      return call
+    }
+    if (
+      ts.isForStatement(node) ||
+      ts.isForOfStatement(node) ||
+      ts.isForInStatement(node) ||
+      ts.isWhileStatement(node) ||
+      ts.isDoStatement(node) ||
+      ts.isIfStatement(node) ||
+      ts.isSwitchStatement(node) ||
+      ts.isCaseClause(node) ||
+      ts.isDefaultClause(node) ||
+      ts.isConditionalExpression(node)
+    ) {
+      return null
+    }
+  }
+  return null
+}
+
+/**
+ * Wrap the statement run `from..until` (must be same-block siblings) in a block
+ * call: insert `<header>` before `from` and `})` after `until`, with optional
+ * `leadLine` as the first inner statement and `trailLine` as the last. The
+ * inner statements keep their text and indentation; only the bracket lines are
+ * inserted. Returns the two edits, or null when they are not a same-block run.
+ */
+export function wrapStatementsInBlock(
+  ctx: CodemodContext,
+  from: TS.Statement,
+  until: TS.Statement,
+  header: string,
+  opts: {
+    leadLine?: string | undefined
+    trailLine?: string | undefined
+    footerClose?: string | undefined
+  } = {}
+): TextEdit[] | null {
+  if (sameBlockRun(ctx, from, until) === null) return null
+  const indent = statementIndent(ctx, from)
+  const footerClose = opts.footerClose ?? '})'
+  const open =
+    `${header}\n${indent}` +
+    (opts.leadLine !== undefined ? `${opts.leadLine}\n${indent}` : '')
+  const close =
+    `\n${indent}` +
+    (opts.trailLine !== undefined ? `${opts.trailLine}\n${indent}` : '') +
+    footerClose
+  const start = from.getStart()
+  const end = until.getEnd()
+  return [
+    { start, end: start, replacement: open },
+    { start: end, end, replacement: close },
+  ]
+}
+
+/** Insert one or more statements, each on its own line, after `statement`. */
+export function insertStatementsAfter(
+  ctx: CodemodContext,
+  statement: TS.Statement,
+  codes: string[]
+): TextEdit {
+  const indent = statementIndent(ctx, statement)
+  const end = statement.getEnd()
+  const text = codes
+    .filter((code) => code.length > 0)
+    .map((code) => `\n${indent}${code}`)
+    .join('')
+  return { start: end, end, replacement: text }
+}
+
+/**
+ * Split an existing `waitForTimeout(N)` gap so an item can sit inside it: the
+ * numeric literal becomes `beforeMs`, and a new `await <root>.waitForTimeout(N
+ * - beforeMs)` is inserted right after the item lands. Returns the edit that
+ * shrinks the existing sleep plus the source text for the trailing remainder
+ * sleep (empty when the split leaves nothing after). The caller places the
+ * remainder after the inserted item.
+ */
+export function splitWaitEdit(
+  ctx: CodemodContext,
+  waitArg: TS.NumericLiteral,
+  beforeMs: number,
+  root: string
+): { shrink: TextEdit; remainderCode: string } {
+  const total = Number(waitArg.text)
+  const remainder = Math.max(0, total - beforeMs)
+  return {
+    shrink: {
+      start: waitArg.getStart(),
+      end: waitArg.getEnd(),
+      replacement: String(beforeMs),
+    },
+    remainderCode:
+      remainder > 0 ? `await ${root}.waitForTimeout(${remainder})` : '',
+  }
 }
 
 /**

@@ -143,7 +143,6 @@ function baseDeps(
     resets,
     deps: {
       fetchEditableOverrides: vi.fn(async () => ({ timelineEdits: {} })),
-      fetchStudioSync: vi.fn(async () => ({ videos: {} })),
       loadTs: () => ts,
       readFileText: (path: string) => files[path] ?? null,
       writeFileText: (path: string, text: string) => {
@@ -224,7 +223,7 @@ describe('screenci sync', () => {
     expect(resets).toEqual(['My video'])
   })
 
-  it('keeps web edits when something fell back to the prompt', async () => {
+  it('keeps web edits when an edit is unappliable (locked section)', async () => {
     const client = setupProject({
       'My video': {
         [`${SAVE_SELECTOR}|click|0|move.duration`]: 250,
@@ -242,8 +241,7 @@ describe('screenci sync', () => {
     )
     expect(resets).toEqual([])
     const out = lines.join('\n')
-    expect(out).toContain('Not applied automatically')
-    expect(out).toContain('stale')
+    expect(out).toContain('could not be applied')
     expect(out).toContain('No video had all of its edits applied')
   })
 
@@ -403,7 +401,7 @@ describe('screenci sync', () => {
     expect(client.fetchActionOverrides).not.toHaveBeenCalled()
   })
 
-  it('falls back entirely to the prompt when typescript is unavailable', async () => {
+  it('applies nothing when typescript is unavailable', async () => {
     const client = setupProject({
       'My video': { [`${SAVE_SELECTOR}|click|0|move.duration`]: 250 },
     })
@@ -418,7 +416,6 @@ describe('screenci sync', () => {
     )
     const out = lines.join('\n')
     expect(out).toContain('Could not load the typescript module')
-    expect(out).toContain('CHANGE `move.duration` from 400 to 250')
     expect(written).toEqual({})
   })
 })

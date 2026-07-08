@@ -8,6 +8,7 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  writeFileSync,
 } from 'fs'
 import { createHash, randomUUID } from 'crypto'
 import { createRequire } from 'module'
@@ -102,6 +103,8 @@ import {
   buildStudioSyncPrompt,
   type StudioSyncState,
 } from './src/studioSync.js'
+import { diffLines, loadTypescript, type TsModule } from './src/codemod.js'
+import { planCodeSync, type CodeSyncPlan } from './src/codeSync.js'
 import { maybeExtractVoiceSampleAudio } from './src/voiceSampleAudio.js'
 import {
   type CliCredential,
@@ -3611,6 +3614,193 @@ export async function printSyncPrompt(
   }
 }
 
+/** Injectable pieces of `screenci sync`, for unit tests. */
+export type SyncCommandDeps = {
+  client?: ActionOverridesClient
+  fetchEditableOverrides?: EditableOverridesFetcher
+  fetchStudioSync?: StudioSyncFetcher
+  loadTs?: (projectDir: string) => TsModule | null
+  readFileText?: (path: string) => string | null
+  writeFileText?: (path: string, text: string) => void
+  resetVideoEdits?: (
+    configPath: string | undefined,
+    videoName: string
+  ) => Promise<void>
+}
+
+const defaultReadFileText = (path: string): string | null => {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * `screenci sync`: apply the web editor's edits directly to the .screenci.ts
+ * sources via static analysis where that is unambiguous, and print the agent
+ * prompt for whatever remains. Dry-run (diff) by default; `--write` saves the
+ * changes, and `--write --reset` additionally clears the web timeline edits of
+ * every video whose pending edits were all applied.
+ */
+export async function runSync(
+  configPath: string | undefined,
+  options: {
+    grep?: string | undefined
+    write?: boolean | undefined
+    reset?: boolean | undefined
+  } = {},
+  log: (message: string) => void = (message) => logger.info(message),
+  deps: SyncCommandDeps = {}
+): Promise<void> {
+  const client = deps.client ?? defaultActionOverridesClient
+  const { comparison, projectName, screenciDir, apiUrl, secret } =
+    await compareEditorStateToSnapshot(configPath, options.grep, client)
+
+  // Timeline edits (param edits + placed events): best-effort like the other
+  // commands; the action-parameter sync still runs when this fetch fails.
+  let editableOverrides: ReturnType<
+    typeof splitTimelineEditsByVideo
+  >['overrides'] = {}
+  let placedEvents: ReturnType<typeof splitTimelineEditsByVideo>['placed'] = {}
+  try {
+    const fetchEditable =
+      deps.fetchEditableOverrides ?? defaultEditableOverridesFetcher
+    const { timelineEdits } = await fetchEditable({
+      apiUrl,
+      secret,
+      projectName,
+    })
+    const split = splitTimelineEditsByVideo(
+      filterTimelineEditsByGrep(timelineEdits, options.grep)
+    )
+    editableOverrides = split.overrides
+    placedEvents = split.placed
+  } catch {
+    // ignore: the endpoint may be unavailable
+  }
+
+  const editableSnapshot = readEditableSnapshot(screenciDir)
+  const actionSnapshot = readActionParamsSnapshot(screenciDir)
+  const ts = (deps.loadTs ?? loadTypescript)(dirname(screenciDir))
+  if (ts === null) {
+    log(
+      'Could not load the typescript module; applying nothing. Use ' +
+        '`screenci sync-prompt` with a coding agent instead.'
+    )
+  }
+  const plan: CodeSyncPlan =
+    ts === null
+      ? {
+          files: [],
+          applied: [],
+          fallback: {
+            comparison,
+            overrides: editableOverrides,
+            placed: placedEvents,
+          },
+          fullyAppliedVideos: [],
+        }
+      : planCodeSync(
+          {
+            comparison,
+            actionSnapshot,
+            editableSnapshot,
+            editableOverrides,
+            placedEvents,
+          },
+          { ts, readFile: deps.readFileText ?? defaultReadFileText }
+        )
+
+  // Studio options (render/record options, narration text) are never applied
+  // automatically; they surface in the prompt remainder below.
+  let studioPrompt: string | null = null
+  try {
+    const fetchStudio = deps.fetchStudioSync ?? defaultStudioSyncFetcher
+    const state = await fetchStudio({ apiUrl, secret, projectName })
+    studioPrompt = buildStudioSyncPrompt(
+      filterStudioSyncByGrep(state, options.grep),
+      projectName
+    )
+  } catch {
+    // Best-effort: the code sync still reports.
+  }
+
+  const fallbackPrompt = buildSyncPrompt(plan.fallback.comparison, projectName)
+  const fallbackPlacement = buildEditablePlacementPrompt(
+    editableSnapshot,
+    plan.fallback.overrides,
+    plan.fallback.placed
+  )
+
+  if (
+    plan.files.length === 0 &&
+    plan.applied.length === 0 &&
+    fallbackPrompt === null &&
+    fallbackPlacement.length === 0 &&
+    studioPrompt === null
+  ) {
+    log('Nothing to sync: the web editor has no edits that differ from code.')
+    return
+  }
+
+  for (const file of plan.files) {
+    log(`${options.write === true ? 'Updated' : 'Would update'} ${file.path}:`)
+    for (const line of diffLines(file.before, file.after)) log(line)
+    if (options.write === true) {
+      const write = deps.writeFileText ?? writeFileSync
+      write(file.path, file.after)
+    }
+  }
+  if (plan.applied.length > 0) {
+    log('')
+    log(
+      `${options.write === true ? 'Applied' : 'Would apply'} ` +
+        `${plan.applied.length} edit(s):`
+    )
+    for (const item of plan.applied) {
+      log(`  [${item.videoName}] ${item.description}`)
+    }
+    if (options.write !== true) {
+      log('Run `screenci sync --write` to save these changes.')
+    }
+  }
+
+  const hasFallback =
+    fallbackPrompt !== null ||
+    fallbackPlacement.length > 0 ||
+    studioPrompt !== null
+  if (hasFallback) {
+    log('')
+    log(
+      'Not applied automatically (use `screenci sync-prompt` with a coding ' +
+        'agent, or edit by hand):'
+    )
+    if (fallbackPrompt !== null) log(fallbackPrompt)
+    if (fallbackPlacement.length > 0) log(fallbackPlacement.join('\n'))
+    if (studioPrompt !== null) log(studioPrompt)
+  }
+
+  if (options.reset === true) {
+    if (options.write !== true) {
+      log('')
+      log('--reset does nothing without --write; skipped.')
+    } else if (plan.fullyAppliedVideos.length > 0) {
+      const resetVideo =
+        deps.resetVideoEdits ??
+        (async (path: string | undefined, videoName: string) =>
+          resetWebEdits(path, videoName, log))
+      for (const videoName of plan.fullyAppliedVideos) {
+        await resetVideo(configPath, videoName)
+        log(`Cleared web timeline edits for video: ${videoName}`)
+      }
+    } else {
+      log('')
+      log('No video had all of its edits applied; web edits left in place.')
+    }
+  }
+}
+
 /**
  * `screenci reset-web-edits`: clears the project's (or one video's) web
  * timeline edits via the backend, so the next record runs purely from code.
@@ -4241,6 +4431,32 @@ export async function main() {
         options['config'] as string | undefined,
         options['grep'] as string | undefined
       )
+    })
+
+  program
+    .command('sync')
+    .description(
+      'Apply the web editor edits to the .screenci.ts sources via static ' +
+        'analysis (dry-run by default; whatever cannot be applied safely ' +
+        'prints as an agent prompt)'
+    )
+    .option('-c, --config <path>', 'path to screenci.config.ts')
+    .option(
+      '-g, --grep <regex>',
+      'only include videos whose name matches this regular expression'
+    )
+    .option('-w, --write', 'save the changes to disk (default is a dry run)')
+    .option(
+      '--reset',
+      'with --write: clear the web timeline edits of every video whose ' +
+        'pending edits were all applied'
+    )
+    .action(async (options: Record<string, unknown>) => {
+      await runSync(options['config'] as string | undefined, {
+        grep: options['grep'] as string | undefined,
+        write: options['write'] === true,
+        reset: options['reset'] === true,
+      })
     })
 
   program

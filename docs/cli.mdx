@@ -18,6 +18,7 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | `screenci dev`                     | Connect this machine to the editor for on-demand records |
 | `screenci info`                    | Print the last record run's URLs and render status       |
 | `screenci status`                  | Compare Editor action edits with the latest recorded run |
+| `screenci sync`                    | Apply Editor edits to the test sources (static analysis) |
 | `screenci sync-prompt`             | Print an agent prompt to sync code with Editor edits     |
 | `screenci make-public <videoId>`   | Enable public delivery for a video                       |
 | `screenci make-private <videoId>`  | Disable public delivery for a video                      |
@@ -527,6 +528,40 @@ Options:
 Requires `SCREENCI_SECRET`. See
 [Action parameter tracking and overrides](/docs/editor#action-parameter-tracking-and-overrides)
 for the full model.
+
+## `screenci sync`
+
+Applies the web Editor's edits directly to your `.screenci.ts` sources using
+static analysis (the TypeScript parser), no agent involved. It can:
+
+- change, add, or remove explicit action options (for example
+  `move.duration` on a `.click(...)`), matched by locator, method, and call
+  occurrence
+- insert `await page.waitForTimeout(...)` for start-time edits, at the call
+  site captured during the last recording
+- set `startOffset` / `endOffset` on the matching `autoZoom(...)` options
+- add `placeHide` / `placeSpeed` / `placeTime` / `placeZoom` calls (and their
+  imports) for web-authored span events, and `await timestamp('name')` for
+  zero-offset markers
+
+Every edit is verified against the latest recorded snapshot before it is
+applied. When a call site cannot be resolved unambiguously (line drift, the
+same locator inside a loop or helper, values that are not plain literals),
+the file is left untouched and the item prints as an agent-prompt
+instruction instead, exactly as `screenci sync-prompt` would emit it.
+Narration and overlay content, moved timestamps with offsets, presentation
+updates, and Studio options always go through the prompt.
+
+By default `screenci sync` is a dry run that prints per-file diffs. Options:
+
+- `-w, --write`: save the changes to disk
+- `--reset` (with `--write`): clear the web timeline edits of every video
+  whose pending edits were all applied (like `screenci reset-web-edits`, per
+  video)
+- `-c, --config` and `-g, --grep` as in `screenci status`
+
+Requires `SCREENCI_SECRET` and a resolvable `typescript` installation (any
+ScreenCI project has one).
 
 ## `screenci sync-prompt`
 

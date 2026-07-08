@@ -519,14 +519,20 @@ Web edits and code stay in sync through a loop designed for coding agents:
 3. **Check drift.** `screenci status` lists edits that shadow explicit code
    values, stale edits whose action vanished, and placed events with broken
    anchors.
-4. **Codify.** `screenci sync-prompt` prints an agent-ready prompt: CHANGE
+4. **Codify.** `screenci sync` applies the mechanical edits directly to the
+   `.screenci.ts` sources via static analysis (dry-run by default, `--write`
+   to save); anything it cannot place unambiguously falls through to the
+   prompt path. Alternatively `screenci sync-prompt` prints an agent-ready
+   prompt for everything: CHANGE
    lines with exact `file:line` call sites for parameter edits, INSERT lines
    for start-time sleeps, and ADD lines with ready-to-paste
    `placeHide(...)` / `placeSpeed(...)` / `placeTime(...)` calls (plus
    `timestamp` / `waitSince` guidance for narration cues and overlays). Paste
    it to a coding agent and apply.
 5. **Clear the web layer.** `screenci reset-web-edits` removes the codified
-   edits so the next record runs purely from code, and the loop is closed.
+   edits so the next record runs purely from code, and the loop is closed
+   (`screenci sync --write --reset` does this automatically for videos whose
+   edits were all applied).
 
 Because placed events in code and on the web share one model, codifying an
 edit is usually a single pasted line, and the next recording's override

@@ -1,0 +1,416 @@
+import { describe, expect, it } from 'vitest'
+import ts from 'typescript'
+import {
+  applyTextEdits,
+  chainRootIdentifier,
+  createContext,
+  diffLines,
+  ensureNamedImport,
+  findActionCall,
+  findActionCalls,
+  findCallNamed,
+  insertStatementAfter,
+  insertStatementBefore,
+  removeOption,
+  setOptionValue,
+  statementAtLine,
+  valueToSource,
+  type CodemodContext,
+  type TextEdit,
+} from './codemod.js'
+
+function ctxOf(source: string): CodemodContext {
+  return createContext(ts, 'test.screenci.ts', source)
+}
+
+function applied(source: string, edit: TextEdit | null): string {
+  expect(edit).not.toBeNull()
+  return applyTextEdits(source, [edit!])
+}
+
+describe('applyTextEdits', () => {
+  it('applies edits back to front', () => {
+    const result = applyTextEdits('abcdef', [
+      { start: 1, end: 2, replacement: 'B' },
+      { start: 4, end: 5, replacement: 'E' },
+    ])
+    expect(result).toBe('aBcdEf')
+  })
+
+  it('allows zero-length inserts at the same position in order', () => {
+    const result = applyTextEdits('ab', [
+      { start: 1, end: 1, replacement: 'x' },
+      { start: 1, end: 1, replacement: 'y' },
+    ])
+    expect(result).toBe('axyb')
+  })
+
+  it('throws on overlapping edits', () => {
+    expect(() =>
+      applyTextEdits('abcdef', [
+        { start: 1, end: 4, replacement: 'x' },
+        { start: 2, end: 5, replacement: 'y' },
+      ])
+    ).toThrow('Overlapping text edits')
+  })
+})
+
+describe('valueToSource', () => {
+  it('renders primitives in single-quote style', () => {
+    expect(valueToSource(500)).toBe('500')
+    expect(valueToSource(true)).toBe('true')
+    expect(valueToSource(null)).toBe('null')
+    expect(valueToSource("it's")).toBe("'it\\'s'")
+  })
+
+  it('renders objects and arrays', () => {
+    expect(valueToSource({ x: 1, y: 2 })).toBe('{ x: 1, y: 2 }')
+    expect(valueToSource([1, 'a'])).toBe("[1, 'a']")
+  })
+})
+
+describe('findActionCalls / findActionCall', () => {
+  const source = [
+    "import { video } from 'screenci'",
+    '',
+    "video('Demo', async ({ page }) => {",
+    "  await page.getByRole('button', { name: 'Save' }).click()",
+    "  await page.getByRole('button', { name: 'Save' }).click({ delay: 5 })",
+    "  await page.locator('#name').fill('Jane')",
+    '})',
+    '',
+  ].join('\n')
+
+  it('finds calls by selector and method, ignoring quote style', () => {
+    const ctx = ctxOf(source.replace(/'Save'/g, '"Save"'))
+    const calls = findActionCalls(
+      ctx,
+      "getByRole('button', { name: 'Save' })",
+      'click'
+    )
+    expect(calls).toHaveLength(2)
+  })
+
+  it('resolves an occurrence when counts match', () => {
+    const ctx = ctxOf(source)
+    const call = findActionCall(ctx, {
+      selector: "getByRole('button', { name: 'Save' })",
+      method: 'click',
+      occurrence: 1,
+      expectedTotal: 2,
+    })
+    expect(call).not.toBeNull()
+    expect(call!.getText(ctx.sourceFile)).toContain('delay: 5')
+  })
+
+  it('returns null when lexical count differs from the recorded count', () => {
+    const ctx = ctxOf(source)
+    const call = findActionCall(ctx, {
+      selector: "getByRole('button', { name: 'Save' })",
+      method: 'click',
+      occurrence: 0,
+      expectedTotal: 3,
+    })
+    expect(call).toBeNull()
+  })
+
+  it('returns null when a match sits inside a loop', () => {
+    const looped = [
+      'for (const i of [1, 2]) {',
+      "  await page.locator('#x').click()",
+      '}',
+    ].join('\n')
+    const ctx = ctxOf(looped)
+    const call = findActionCall(ctx, {
+      selector: "locator('#x')",
+      method: 'click',
+      occurrence: 0,
+      expectedTotal: 1,
+    })
+    expect(call).toBeNull()
+  })
+})
+
+describe('setOptionValue', () => {
+  it('replaces an existing literal value', () => {
+    const source =
+      "await page.locator('#a').click({ move: { duration: 500 } })\n"
+    const ctx = ctxOf(source)
+    const call = findActionCall(ctx, {
+      selector: "locator('#a')",
+      method: 'click',
+      occurrence: 0,
+      expectedTotal: 1,
+    })!
+    const edit = setOptionValue(ctx, call, 0, ['move', 'duration'], 1200)
+    expect(applied(source, edit)).toBe(
+      "await page.locator('#a').click({ move: { duration: 1200 } })\n"
+    )
+  })
+
+  it('creates a nested object when the path is missing', () => {
+    const source = "await page.locator('#a').click({ delay: 5 })\n"
+    const ctx = ctxOf(source)
+    const call = findActionCall(ctx, {
+      selector: "locator('#a')",
+      method: 'click',
+      occurrence: 0,
+      expectedTotal: 1,
+    })!
+    const edit = setOptionValue(ctx, call, 0, ['move', 'duration'], 800)
+    expect(applied(source, edit)).toBe(
+      "await page.locator('#a').click({ delay: 5, move: { duration: 800 } })\n"
+    )
+  })
+
+  it('adds the options argument when missing (index 0)', () => {
+    const source = "await page.locator('#a').click()\n"
+    const ctx = ctxOf(source)
+    const call = findActionCall(ctx, {
+      selector: "locator('#a')",
+      method: 'click',
+      occurrence: 0,
+      expectedTotal: 1,
+    })!
+    const edit = setOptionValue(ctx, call, 0, ['position'], { x: 1, y: 2 })
+    expect(applied(source, edit)).toBe(
+      "await page.locator('#a').click({ position: { x: 1, y: 2 } })\n"
+    )
+  })
+
+  it('adds the options argument after a required argument (index 1)', () => {
+    const source = "await page.locator('#a').fill('Jane')\n"
+    const ctx = ctxOf(source)
+    const call = findActionCall(ctx, {
+      selector: "locator('#a')",
+      method: 'fill',
+      occurrence: 0,
+      expectedTotal: 1,
+    })!
+    const edit = setOptionValue(ctx, call, 1, ['duration'], 900)
+    expect(applied(source, edit)).toBe(
+      "await page.locator('#a').fill('Jane', { duration: 900 })\n"
+    )
+  })
+
+  it('preserves comments and multi-line formatting around the edit', () => {
+    const source = [
+      "await page.locator('#a').click({",
+      '  // keep me',
+      '  move: {',
+      '    duration: 500, // and me',
+      '  },',
+      '})',
+      '',
+    ].join('\n')
+    const ctx = ctxOf(source)
+    const call = findActionCall(ctx, {
+      selector: "locator('#a')",
+      method: 'click',
+      occurrence: 0,
+      expectedTotal: 1,
+    })!
+    const edit = setOptionValue(ctx, call, 0, ['move', 'duration'], 750)
+    expect(applied(source, edit)).toBe(
+      source.replace('duration: 500', 'duration: 750')
+    )
+  })
+
+  it('returns null for a non-literal current value', () => {
+    const source = "await page.locator('#a').click({ delay: DELAY })\n"
+    const ctx = ctxOf(source)
+    const call = findActionCall(ctx, {
+      selector: "locator('#a')",
+      method: 'click',
+      occurrence: 0,
+      expectedTotal: 1,
+    })!
+    // Replacing an identifier value is allowed (we overwrite the initializer);
+    // but a spread that may hide the option must refuse.
+    const spreadSource = "await page.locator('#a').click({ ...base })\n"
+    const spreadCtx = ctxOf(spreadSource)
+    const spreadCall = findActionCall(spreadCtx, {
+      selector: "locator('#a')",
+      method: 'click',
+      occurrence: 0,
+      expectedTotal: 1,
+    })!
+    expect(setOptionValue(spreadCtx, spreadCall, 0, ['delay'], 5)).toBeNull()
+    // Options argument that is not an object literal: refuse.
+    const identSource = "await page.locator('#a').click(opts)\n"
+    const identCtx = ctxOf(identSource)
+    const identCall = findActionCall(identCtx, {
+      selector: "locator('#a')",
+      method: 'click',
+      occurrence: 0,
+      expectedTotal: 1,
+    })!
+    expect(setOptionValue(identCtx, identCall, 0, ['delay'], 5)).toBeNull()
+    void call
+  })
+})
+
+describe('removeOption', () => {
+  function callOf(ctx: CodemodContext, method = 'click') {
+    return findActionCall(ctx, {
+      selector: "locator('#a')",
+      method,
+      occurrence: 0,
+      expectedTotal: 1,
+    })!
+  }
+
+  it('removes a property and its comma', () => {
+    const source =
+      "await page.locator('#a').click({ delay: 5, noWaitAfter: true })\n"
+    const ctx = ctxOf(source)
+    const edit = removeOption(ctx, callOf(ctx), 0, ['delay'])
+    expect(applied(source, edit)).toBe(
+      "await page.locator('#a').click({ noWaitAfter: true })\n"
+    )
+  })
+
+  it('removes a last property including the preceding comma', () => {
+    const source =
+      "await page.locator('#a').click({ delay: 5, noWaitAfter: true })\n"
+    const ctx = ctxOf(source)
+    const edit = removeOption(ctx, callOf(ctx), 0, ['noWaitAfter'])
+    expect(applied(source, edit)).toBe(
+      "await page.locator('#a').click({ delay: 5 })\n"
+    )
+  })
+
+  it('collapses empty nested objects up to the options argument', () => {
+    const source =
+      "await page.locator('#a').click({ move: { duration: 500 } })\n"
+    const ctx = ctxOf(source)
+    const edit = removeOption(ctx, callOf(ctx), 0, ['move', 'duration'])
+    expect(applied(source, edit)).toBe("await page.locator('#a').click()\n")
+  })
+
+  it('keeps siblings when collapsing a nested object', () => {
+    const source =
+      "await page.locator('#a').click({ move: { duration: 500 }, delay: 5 })\n"
+    const ctx = ctxOf(source)
+    const edit = removeOption(ctx, callOf(ctx), 0, ['move', 'duration'])
+    expect(applied(source, edit)).toBe(
+      "await page.locator('#a').click({ delay: 5 })\n"
+    )
+  })
+
+  it('removes an options argument at index 1 including the comma', () => {
+    const source = "await page.locator('#a').fill('Jane', { duration: 900 })\n"
+    const ctx = ctxOf(source)
+    const edit = removeOption(ctx, callOf(ctx, 'fill'), 1, ['duration'])
+    expect(applied(source, edit)).toBe(
+      "await page.locator('#a').fill('Jane')\n"
+    )
+  })
+
+  it('returns null when the option is missing', () => {
+    const source = "await page.locator('#a').click({ delay: 5 })\n"
+    const ctx = ctxOf(source)
+    expect(removeOption(ctx, callOf(ctx), 0, ['noWaitAfter'])).toBeNull()
+  })
+})
+
+describe('statements and inserts', () => {
+  const source = [
+    "video('Demo', async ({ page }) => {",
+    "  await page.locator('#a').click()",
+    '})',
+    '',
+  ].join('\n')
+
+  it('finds the statement at a line and inserts before it', () => {
+    const ctx = ctxOf(source)
+    const statement = statementAtLine(ctx, 2)!
+    const edit = insertStatementBefore(
+      ctx,
+      statement,
+      'await page.waitForTimeout(500)'
+    )
+    expect(applyTextEdits(source, [edit])).toBe(
+      [
+        "video('Demo', async ({ page }) => {",
+        '  await page.waitForTimeout(500)',
+        "  await page.locator('#a').click()",
+        '})',
+        '',
+      ].join('\n')
+    )
+  })
+
+  it('inserts after a statement with matching indentation', () => {
+    const ctx = ctxOf(source)
+    const statement = statementAtLine(ctx, 2)!
+    const edit = insertStatementAfter(
+      ctx,
+      statement,
+      "placeZoom({ from: 'video:start' })"
+    )
+    expect(applyTextEdits(source, [edit])).toBe(
+      [
+        "video('Demo', async ({ page }) => {",
+        "  await page.locator('#a').click()",
+        "  placeZoom({ from: 'video:start' })",
+        '})',
+        '',
+      ].join('\n')
+    )
+  })
+
+  it('finds a named call inside a statement and its chain root', () => {
+    const ctx = ctxOf(source)
+    const statement = statementAtLine(ctx, 2)!
+    const call = findCallNamed(ctx, statement, 'click')!
+    expect(call).not.toBeNull()
+    expect(
+      chainRootIdentifier(
+        ts,
+        (call.expression as ts.PropertyAccessExpression).expression
+      )
+    ).toBe('page')
+  })
+
+  it('returns null for a line outside any block statement', () => {
+    const ctx = ctxOf(source)
+    expect(statementAtLine(ctx, 4)).toBeNull()
+  })
+})
+
+describe('ensureNamedImport', () => {
+  it('returns [] when the name is already imported', () => {
+    const ctx = ctxOf("import { video, placeZoom } from 'screenci'\n")
+    expect(ensureNamedImport(ctx, 'screenci', 'placeZoom')).toEqual([])
+  })
+
+  it('appends to an existing named import', () => {
+    const source = "import { video } from 'screenci'\n"
+    const ctx = ctxOf(source)
+    const edits = ensureNamedImport(ctx, 'screenci', 'placeZoom')!
+    expect(applyTextEdits(source, edits)).toBe(
+      "import { video, placeZoom } from 'screenci'\n"
+    )
+  })
+
+  it('returns null when there is no import from the module', () => {
+    const ctx = ctxOf("import { test } from '@playwright/test'\n")
+    expect(ensureNamedImport(ctx, 'screenci', 'placeZoom')).toBeNull()
+  })
+})
+
+describe('diffLines', () => {
+  it('shows changed lines with one line of context', () => {
+    const before = ['a', 'b', 'c', 'd', 'e'].join('\n')
+    const after = ['a', 'b', 'C', 'd', 'e'].join('\n')
+    expect(diffLines(before, after)).toEqual([
+      '  ...',
+      '  b',
+      '- c',
+      '+ C',
+      '  d',
+      '  ...',
+    ])
+  })
+})

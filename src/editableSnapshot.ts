@@ -424,7 +424,7 @@ export function diffEditableOverridesAgainstSnapshot(
  * nothing to codify.
  */
 /** The code literal for a placed anchor, as accepted by placeHide/... */
-function anchorLiteral(anchor: Anchor): string {
+export function anchorLiteral(anchor: Anchor): string {
   switch (anchor.ref.type) {
     case 'videoStart':
       return `'video:start'`
@@ -464,7 +464,7 @@ function anchorAt(
 }
 
 /** The placeX() call that reproduces a placed span event in code. */
-function placeCallFor(event: PlacedEvent): string | null {
+export function placeCallFor(event: PlacedEvent): string | null {
   const kind = event.kind
   if (
     kind !== 'hide' &&

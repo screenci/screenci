@@ -65,21 +65,19 @@ shown or hidden individually with a right click. Editor overrides win over the
 
 ## Global render options
 
-Configure the overlays under `renderOptions.shortcuts`:
+Configure the overlays per video under `renderOptions.shortcuts`:
 
 ```ts
-export default {
-  renderOptions: {
-    shortcuts: {
-      // Show modifier combos. Default: true.
-      show: true,
-      // Show single key presses. Default: false.
-      showSingle: false,
-      // Keycap appearance: 'light' or 'dark'. Default: 'dark'.
-      theme: 'dark',
-    },
+video.renderOptions({
+  shortcuts: {
+    // Show modifier combos. Default: true.
+    show: true,
+    // Show single key presses. Default: false.
+    showSingle: false,
+    // Keycap appearance: 'light' or 'dark'. Default: 'dark'.
+    theme: 'dark',
   },
-}
+})
 ```
 
 The same options are editable in the web editor's "Keyboard shortcuts" section,

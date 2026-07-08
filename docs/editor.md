@@ -54,10 +54,8 @@ video.languages(['en', 'fi']) // code seed the web app can extend
 video.languages({ languages: ['en', 'fi'], mode: 'shared' }) // seed with capture options
 
 // Render / record options: code values are the starting point, web edits win.
-video.use({ renderOptions: { output: { aspectRatio: '9:16' } } })
-video.use({ recordOptions: { fps: 30 } })
-
-// Or per video with the builder methods (supports per-language overrides).
+// Declare them per video with the builder methods (renderOptions supports
+// per-language overrides via { default, <lang> }).
 video.renderOptions({ output: { aspectRatio: '9:16' } })
 video.recordOptions({ fps: 30 })
 ```
@@ -73,7 +71,7 @@ video.recordOptions({ fps: 30 })
 - [how to manage background audio from Editor](#editor-audio-from-code)
 - [how render and record options combine with web edits](#editor-render-and-record-options)
 - [how to manage languages from Editor](#editor-languages-from-code)
-- [how to place anchored events from code](#placed-events-from-code)
+- [how to place effects from code](#effects-in-code-block-wrappers-and-gap-sleeps)
 - [how web edits move into code with an agent](#the-agentic-loop)
 - [how action parameters are tracked and overridden](#action-parameter-tracking-and-overrides)
 - [how to migrate from the removed `editable()` helper](#migrating-from-editable)
@@ -267,11 +265,9 @@ edits override them:
 import { video } from 'screenci'
 
 // Code values: Editor starts from these. An Editor edit wins from then on.
-video.use({ renderOptions: { recording: { size: 0.85 } } })
-video.use({ renderOptions: { output: { aspectRatio: '9:16' } } })
-
-// Or per video (supports per-language overrides):
+// Declare per video (supports per-language overrides via { default, <lang> }):
 video.renderOptions({ recording: { size: 0.85 } })
+video.renderOptions({ output: { aspectRatio: '9:16' } })
 
 // Or declare nothing: Editor starts from the system defaults.
 ```
@@ -385,158 +381,142 @@ kept as stale entries in the editor for cleanup instead of being dropped.
 
 Render-affecting events can also be ADDED and MOVED from the web timeline,
 without any code change: hides, speedups, time remaps, narration cues,
-overlays, timestamp markers, and presentation updates (background changes,
-narration-box moves/resizes, recording resize/hide/show). Interactions are
-different on purpose: a click or tap always stays where the test code
-performed it, and only its parameters (durations, sleeps) are editable.
+overlays, and presentation updates (background changes, narration-box
+moves/resizes, recording resize/hide/show). Interactions are different on
+purpose: a click or tap always stays where the test code performed it, and
+only its parameters (durations, sleeps) are editable.
 
-Everything the timeline adds is stored as one unified placed event; there is
-no separate legacy path. A newly added event appears immediately on the
-timeline as a pending item (a dashed, dimmed bar) that reads "applies at the
-next record", so you can see and remove it before re-recording.
+Everything the timeline adds is stored as one unified edit keyed to a call
+position; there is no separate legacy path. A newly added event appears
+immediately on the timeline as a pending item (a dashed, dimmed bar) that
+reads "applies at the next record", so you can see and remove it before
+re-recording.
 
-Every web-placed or web-moved event is positioned as an **anchor plus an
-offset in milliseconds**. An anchor is a known moment of the recording:
+Every web-placed or web-moved event is positioned by **call position**: which
+editable action it sits after (or, for a span, the run of actions it brackets),
+plus any timing gap as a plain millisecond sleep. The editor snaps to the
+identity of a known action (its stable `editId` slug) rather than to
+wall-clock time, so positions survive re-records whose real durations drift.
 
-- the video start or end,
-- an interaction or other editable action (its start or end edge),
-- a `timestamp('name')` marker,
-- a narration cue start.
+- A point event (a narration cue, an overlay, a background change, a
+  narration-box move, a recording resize) is stored as "after action X, with an
+  optional `waitForTimeout(ms)` gap before it".
+- A span event (hide, speed, time) is stored as the run of actions it brackets:
+  "from action X until action Y", with optional gap sleeps at each edge.
+- A zoom is stored as the run of interactions it wraps, with a lead-in and hold
+  expressed as sleeps inside the block.
 
-When you drag or add an event on the timeline the editor picks the nearest
-anchor in either direction automatically (so a lead-in glued to an upcoming
-click anchors to that click with a negative offset) and stores the offset; the
-add popover and the event's popover list every anchor (video start/end, action
-start/end edges, timestamp markers, narration cue starts) and let you pick a
-different one. Because positions are relative to anchors rather than to
-wall-clock time, they survive re-records whose real durations drift.
+When you drag an event just before an upcoming click, the editor glues it to
+that click by making it the action the event sits before, with a `waitForTimeout`
+gap. There is no free offset field: everything lands in a gap between known
+actions or brackets a known run of actions.
 
-At the next record the CLI fetches the stored edits and the SDK resolves each
-anchor against the freshly recorded events and inserts or moves the matching
-events (for example `hideStart`/`hideEnd` pairs). An anchor that no longer
-exists never fails the recording and is never dropped silently: when the edit
-carries its last known position it is applied there and reported as a
-`fallback`; otherwise it is reported as `skipped` with a reason. The editor
-shows these outcomes on the timeline, and `screenci status` reports them with
-a fix suggestion.
+At the next record the CLI fetches the stored edits and the SDK plays them in
+call order. An action that no longer exists (its editId vanished from the
+latest recording) never fails the recording and is never dropped silently: the
+edit is reported as `skipped` with a reason. The editor shows these outcomes on
+the timeline, and `screenci status` reports them with a fix suggestion.
 
-`timestamp('name')` markers are the most stable anchors: add one in code at a
-meaningful moment and hang web-authored events off it with offsets.
+## Effects in code: block wrappers and gap sleeps
 
-## Placed events from code
+Everything the web timeline can place, code expresses directly as calls in the
+linear timeline. There are no declarative "placed" helpers and no anchors or
+offsets: an effect's position is simply where its call sits in the test body,
+and timing gaps are plain `await page.waitForTimeout(ms)` sleeps.
 
-Everything the web timeline can place, code can place too, with the same
-anchor semantics. `placeHide`, `placeSpeed`, and `placeTime` are declarative:
-they run no code and never wait. The event is resolved against the recorded
-events when the recording is written, so its position is exact regardless of
-how fast the run executed:
+Render-time spans (hide, speed, time) and camera zooms are **block wrappers**
+that bracket the interactions they cover. Lead-in and hold are sleeps inside
+the block:
 
 ```ts
-import { placeHide, placeSpeed, placeTime, timestamp } from 'screenci'
-
 video('Checkout', async ({ page }) => {
-  await timestamp('form-submitted')
-  await page.getByRole('button', { name: 'Submit' }).click()
+  await page.getByRole('button', { name: 'Submit' }).click({ editId: 'submit' })
 
-  // Hide 250ms..750ms after the marker (a loading flicker, say).
-  placeHide({ from: 'form-submitted', offsetMs: 250, durationMs: 500 })
+  // Hide a loading flicker that appears 250ms after the click, for 500ms.
+  await page.waitForTimeout(250)
+  await hide(async () => {
+    await page.waitForTimeout(500)
+  })
 
-  // Play everything between two markers at 3x.
-  placeSpeed({ from: 'form-submitted', until: 'receipt-shown', multiplier: 3 })
+  // Play a stretch of steps at 3x.
+  await speed(3, async () => {
+    await page.getByRole('button', { name: 'Next' }).click({ editId: 'next' })
+    await page
+      .getByRole('button', { name: 'Confirm' })
+      .click({ editId: 'confirm' })
+  })
 
-  // Fit a span to exactly 400ms of output.
-  placeTime({ from: 'video:start', durationMs: 2000, playsAsMs: 400 })
+  // Fit a block to exactly 400ms of output.
+  await time(400, async () => {
+    await page
+      .getByRole('tab', { name: 'Receipt' })
+      .click({ editId: 'receipt' })
+  })
 
-  // Zoom the camera into the upcoming click: lead in 400ms BEFORE it and
-  // hold 600ms after it. Backwards placement works because the events are
-  // positioned after the recording ran; the camera target comes from the
-  // mouse positions recorded inside the window.
-  placeZoom({
-    from: {
-      action: 'input|click|getByRole(button, name=Save)|0',
-      edge: 'start',
-    },
-    offsetMs: -400,
-    until: { action: 'input|click|getByRole(button, name=Save)|0' },
-    untilOffsetMs: 600,
-    amount: 0.6,
+  // Zoom the camera into a click: lead in 400ms BEFORE it and hold 600ms
+  // after it. The camera target comes from the mouse positions recorded
+  // inside the block.
+  await autoZoom(async () => {
+    await page.waitForTimeout(400) // lead-in before the first inner action
+    await page.getByRole('button', { name: 'Save' }).click({ editId: 'save' })
+    await page.waitForTimeout(600) // hold after the last inner action
   })
 })
 ```
 
-Anchors accept `'video:start'` / `'video:end'`, a timestamp name (or
-`{ timestamp: 'name', ordinal: n }` for repeated names), or
-`{ action: '<stable key>', edge: 'start' | 'end' }` using the action keys
-printed by `screenci sync-prompt`. Because the calls are declarative they can
-sit anywhere in the test body.
+To place an effect a fixed time after an interaction, put a
+`waitForTimeout(ms)` right after that interaction and then the effect. To lead a
+zoom in before a click, open the `autoZoom` block earlier and lead in with a
+sleep as its first inner line. The block's first and last actions define its
+window; you never compute an absolute offset. See
+[Camera and zooming](./camera-and-zooming.md) for `autoZoom`, `zoomTo`, and
+`resetZoom`.
 
-When the zoom should cover a stretch of code you are already writing, prefer
-wrapping it in `autoZoom(fn, { startOffset, endOffset })` instead of
-`placeZoom`: the block's first and last actions define the window, and the
-offsets shift its boundaries at write time (negative `startOffset` leads in
-before the first action). See
-[Camera and zooming](./camera-and-zooming.md#shifting-the-zoom-window-with-startoffset--endoffset).
-`placeZoom` is for windows that do not align with a block, and it is what
-`screenci sync-prompt` emits when codifying web-added zooms.
-
-For events that DO happen at call time (a narration cue, a click), `waitSince`
-paces the run relative to a marker, absorbing execution-speed drift:
+Point effects that DO happen at call time (a narration cue, an overlay) are
+just imperative calls in the timeline, paced by ordinary sleeps:
 
 ```ts
-import { timestamp, waitSince } from 'screenci'
-
-await timestamp('dashboard-open')
-await page.getByRole('button', { name: 'Stats' }).click()
-// Runs the next line exactly 800ms after 'dashboard-open', however long the
-// click actually took. Never waits longer than the full 800ms.
-await waitSince('dashboard-open', 800)
+await page.getByRole('button', { name: 'Stats' }).click({ editId: 'stats' })
+// Start the narration 800ms after the click.
+await page.waitForTimeout(800)
 await narration.stats()
 ```
 
-Rule of thumb: render-time events (hide, speedup, time remap, zoom) never
-need a runtime wait, place them declaratively; call-time events use
-`waitSince` when their distance from a known moment matters.
-
-Offsets may be negative: because placement happens after the recording ran,
-an event can be counted BACKWARDS from its anchor. That is how a zoom leads
-into a click, and the editor uses the same idea: dragging an event just
-before an upcoming action anchors it to that action with a negative offset,
-so the pair stays glued together across re-records. In the web editor,
-zooming into a click is a parameter of the click: the click popover's
-**Camera** section (lead-in, hold, amount) stores a placed zoom that rides
-the action. Zoom windows never cut through an interaction: a boundary that
-would land inside one widens to the interaction's edge.
+Rule of thumb: gaps are `waitForTimeout` sleeps, render-time spans and zooms
+are block wrappers over the interactions they cover, and narration/overlay
+cues are plain calls placed where you want them in call order. The web editor
+shows this same linear timeline, and `screenci sync` writes these
+call-position statements back into code, keyed by each action's `editId`.
 
 ## The agentic loop
 
 Web edits and code stay in sync through a loop designed for coding agents:
 
-1. **Edit in the web timeline.** Drags and added events are stored as anchored
-   edits (anchor + offset from a known moment).
+1. **Edit in the web timeline.** Drags and added events are stored as
+   call-position edits (which action the event sits after, or the run it
+   brackets, plus any gap sleeps), each keyed to a stable `editId`.
 2. **Record.** `screenci record` fetches the edits, applies them, and prints
-   the override report; every edit ends as applied, fallback, or skipped with
-   a reason, in the logs and in the editor.
+   the override report; every edit ends as applied or skipped with a reason,
+   in the logs and in the editor.
 3. **Check drift.** `screenci status` lists edits that shadow explicit code
-   values, stale edits whose action vanished, and placed events with broken
-   anchors.
-4. **Codify.** `screenci sync` applies the mechanical edits directly to the
-   `.screenci.ts` sources via static analysis (dry-run by default, `--write`
-   to save); anything it cannot place unambiguously falls through to the
-   prompt path. Alternatively `screenci sync-prompt` prints an agent-ready
-   prompt for everything: CHANGE
-   lines with exact `file:line` call sites for parameter edits, INSERT lines
-   for start-time sleeps, and ADD lines with ready-to-paste
-   `placeHide(...)` / `placeSpeed(...)` / `placeTime(...)` calls (plus
-   `timestamp` / `waitSince` guidance for narration cues and overlays). Paste
-   it to a coding agent and apply.
+   values and stale edits whose action vanished.
+4. **Codify.** `screenci sync` applies the edits directly to the `.screenci.ts`
+   sources via static analysis (dry-run by default, `--write` to save). Each
+   edit locates its call site by the exact `editId` slug and writes the
+   call-position statement: a `narration.x()` / overlay / presentation call
+   (with a `waitForTimeout` gap) into the right spot, or an
+   `autoZoom` / `hide` / `speed` / `time` block bracketing the right run of
+   interactions. There is no agent-prompt fallback: an edit either applies by
+   editId or its section is locked (a loop or branch) and reported as an
+   unappliable count.
 5. **Clear the web layer.** `screenci reset-web-edits` removes the codified
    edits so the next record runs purely from code, and the loop is closed
    (`screenci sync --write --reset` does this automatically for videos whose
    edits were all applied).
 
-Because placed events in code and on the web share one model, codifying an
-edit is usually a single pasted line, and the next recording's override
-report confirms the code now produces the same result.
+Because the web timeline and code share one linear model, codifying an edit
+inserts the same call you would have written by hand, and the next recording's
+override report confirms the code now produces the same result.
 
 ## Action identity: editId
 
@@ -546,8 +526,8 @@ code, e.g. `.click({ editId: 'click1' })` or
 --sync`) stamps missing slugs automatically after a recording, allocating
 numbers from `.screenci/edit-ids.json` (commit it; numbers are never reused
 and stamped ids are never removed). With an editId, the action's stable key
-IS the slug: edits and placed-event anchors keep matching across re-records
-even after refactors, moved lines, or locator changes, and `screenci sync`
+IS the slug: edits keep matching across re-records even after refactors, moved
+lines, or locator changes, and `screenci sync`
 locates the call site by the exact slug instead of heuristics.
 
 The slug is the action's display name on the editor timeline, and it can be
@@ -559,10 +539,10 @@ codified.
 editId is optional until edits need to reach code. Actions without one keep
 the matcher-based identity (locator description + occurrence) for display and
 record-time overrides, but `screenci sync` never guesses at their call sites:
-their edits stay on the agent-prompt path until a record plus sync stamps
-them. An action that executes more than once in a recording (a loop) gets
-keys like `click1#1` for the repeat executions; those cannot be expressed as
-code options and stay web-runtime-only.
+their edits stay web-runtime-only until a record plus sync stamps them. An
+action that executes more than once in a recording (a loop) gets keys like
+`click1#1` for the repeat executions; those sit in a locked section that
+cannot be expressed as code options and stay web-runtime-only.
 
 ## What is editable from the web
 
@@ -587,7 +567,8 @@ Every recorded action carries identity metadata, so the timeline covers:
 
 The editor can also ADD events without code changes: hides, speedups, time
 remaps, background changes, narration-box changes, and recording changes,
-each anchored to a previous known event plus an offset.
+each placed by call position (after a known action, or bracketing a run of
+actions) with any gap expressed as a `waitForTimeout` sleep.
 
 ## Resetting web edits
 
@@ -595,28 +576,26 @@ each anchored to a previous known event plus an offset.
   (clears timing overrides and authored events for the video).
 - From the CLI: `screenci reset-web-edits [--video <name>]` clears the whole
   project (or one video), so the next record runs purely from code.
-- `screenci sync-prompt` prints agent-ready placement instructions (using
-  the call sites captured at record time) to move web edits INTO code:
-  `CHANGE recordings/pitch.screenci.ts:42: set moveDuration to 150 ...`.
-  After codifying, clear the web layer with `reset-web-edits`.
+- `screenci sync --write` moves web edits INTO code, locating each call site by
+  its `editId` slug and writing the call-position statement. After codifying,
+  clear the web layer with `reset-web-edits`.
 
 ## The override report
 
 Every record run produces an override report: one line per web edit the run
-tried to apply, with its outcome. Skips, fallbacks, and edits that shadow
-explicit code values are always logged; a summary line closes each video:
+tried to apply, with its outcome. Skips and edits that shadow explicit code
+values are always logged; a summary line closes each video:
 
 ```
-[screenci overrides] applied placedEvent hide anchor=action:input|click|locator(#go)|0.end+250ms h_ab12 -> 12480..13930ms
-[screenci overrides] SKIPPED placedEvent narrationCue anchor=timestamp:intro|0.start+0ms n_9 reason=anchorMissing:timestamp:intro|0
+[screenci overrides] applied event hide after=submit +250ms h_ab12
+[screenci overrides] SKIPPED event narrationCue after=intro reason=editIdMissing:intro n_9
 [screenci overrides] My video: 3 applied, 1 skipped
 ```
 
 The same items are embedded into the uploaded recording data
 (`overrideReport` in `data.json`), so the editor can show whether each edit
-was applied, applied at its fallback position, or skipped and why. A fetch
-failure before the run also warns loudly: a recording never silently ignores
-your saved edits.
+was applied or skipped and why. A fetch failure before the run also warns
+loudly: a recording never silently ignores your saved edits.
 
 ## Debugging overrides
 
@@ -630,7 +609,7 @@ moment it is applied (applied lines join the always-on skip/fallback lines):
 [screenci debug] Editor timing overrides:
   { "My video": [ { "key": "input|click|locator(#go)|0", "values": { "moveDuration": 150 } } ] }
 [screenci debug] editor override applied: input|click|locator(#go)|0 moveDuration: 900 -> 150
-[screenci overrides] applied placedEvent speed anchor=timestamp:mark|0.start+50ms s_3 -> 1770..1970ms
+[screenci overrides] applied event speed from=next until=confirm s_3
 ```
 
 ## Editor languages from code
@@ -744,27 +723,25 @@ The SDK also exports `ACTION_PARAM_DEFAULTS`, the default value of every
 tracked option per action method, so integrations can tell an override that
 merely restates the default from a real change and offer "reset to default".
 
-### Checking and syncing: `status` and `sync-prompt`
+### Checking and syncing: `status` and `sync`
 
 Two commands keep code and Editor edits from drifting apart:
 
-- `screenci status` fetches the Editor's current action-parameter edits and
-  compares them with the latest recorded run: which overrides shadow explicit
-  code values, which change defaults, which are stale (the action no longer
-  exists in the latest recording, usually because the code changed).
-- `screenci sync-prompt` prints an agent-ready prompt describing exactly which
-  action options to change or remove in code so it matches the Editor: CHANGE
-  items give the from/to values per locator and call, REMOVE items say which
-  explicit option to drop because the Editor reset it to the default. Stale
-  overrides are included as warnings. Paste the output to a coding agent, apply
-  the edits, re-record, and the overrides can be cleared.
-
-  The prompt also has a "Studio options to move into code" section covering the
-  render and record options the Editor holds (SET directives naming each option
-  path and value, to place in `defineConfig` or on the video) and a NOTE per
-  content field the Editor holds (narration, on-screen text, audio, overlays),
-  so those edits can be codified too. Record options are captured at record
-  time, so re-record after codifying them.
+- `screenci status` fetches the Editor's current edits and compares them with
+  the latest recorded run: which overrides shadow explicit code values, which
+  change defaults, which are stale (the action no longer exists in the latest
+  recording, usually because the code changed).
+- `screenci sync` applies the Editor's edits directly to the `.screenci.ts`
+  sources (dry-run by default, `--write` to save). It locates each call site by
+  the exact `editId` slug and writes the change in place: action-parameter
+  edits set or remove option values, and added effects become call-position
+  statements (a `narration.x()` / overlay / presentation call with a
+  `waitForTimeout` gap, or an `autoZoom` / `hide` / `speed` / `time` block
+  bracketing the right run of interactions). There is no agent-prompt path: an
+  edit either applies by editId or its section is locked and reported as an
+  unappliable count. Render and record options the Editor holds are codified
+  into `video.renderOptions(...)` / `video.recordOptions(...)`; record options
+  are captured at record time, so re-record after codifying them.
 
 Both accept `-g, --grep <regex>` to filter videos by name (the same semantics
 as Playwright's `--grep`) and `-c, --config <path>`.
@@ -774,15 +751,15 @@ as Playwright's `--grep`) and `-c, --config <path>`.
 The `editable()` helper has been removed. Everything is editable in the web app
 by default now, so the wrapper is no longer needed:
 
-| Before                                          | After                                         |
-| ----------------------------------------------- | --------------------------------------------- |
-| `editable(['intro'])`                           | `['intro']`                                   |
-| `editable({ intro: 'Hi' })`                     | `{ intro: 'Hi' }`                             |
-| `video.languages(editable())`                   | `video.languages()`                           |
-| `video.languages(editable(['en', 'fi']))`       | `video.languages(['en', 'fi'])`               |
-| `video.languages(editable({ mode: 'shared' }))` | `video.languages({ mode: 'shared' })`         |
-| `use({ recordOptions: editable({ fps: 30 }) })` | `use({ recordOptions: { fps: 30 } })`         |
-| `use({ renderOptions: editable() })`            | omit `renderOptions` (or pass a plain object) |
+| Before                                          | After                                  |
+| ----------------------------------------------- | -------------------------------------- |
+| `editable(['intro'])`                           | `['intro']`                            |
+| `editable({ intro: 'Hi' })`                     | `{ intro: 'Hi' }`                      |
+| `video.languages(editable())`                   | `video.languages()`                    |
+| `video.languages(editable(['en', 'fi']))`       | `video.languages(['en', 'fi'])`        |
+| `video.languages(editable({ mode: 'shared' }))` | `video.languages({ mode: 'shared' })`  |
+| `use({ recordOptions: editable({ fps: 30 }) })` | `video.recordOptions({ fps: 30 })`     |
+| `use({ renderOptions: editable() })`            | `video.renderOptions({ default: {} })` |
 
 A bare array still declares blank editor-owned names. A plain object now
 supplies code values that are used at record time and remain editable in the

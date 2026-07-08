@@ -201,21 +201,6 @@ API reference: [hide()](/docs/reference/api/functions/hide). See also [Animated
 Interactions](/docs/guides/animated-interactions) for how visible actions are
 captured.
 
-### `timestamp()`
-
-Marks a named point in the recording. It has no effect on the rendered output:
-it only labels a moment so the web editor can surface it on its own timeline row,
-making it easy to find the exact spot a step happened when reviewing or editing.
-
-```ts
-await timestamp('checkout-opened')
-await page.getByRole('button', { name: 'Pay' }).click()
-await timestamp('payment-done')
-```
-
-The name can be reused; each call is a distinct marker. Markers are read-only in
-the editor (they come from code).
-
 ### Positions: holding narration and overlays until a point in the video
 
 Narration cues and overlays can take a string position so they land at an
@@ -382,9 +367,9 @@ combine this with the bare-array form of narration, for example
 `video.narration(['intro']).overlays(['logo'])`. Object forms supply code
 values that stay editable in Editor; an Editor edit wins over the code value.
 
-Render options work the same way: values declared through
-`use({ renderOptions: {...} })` or per video with `video.renderOptions(...)`
-are the starting point, and web edits override them. Every recording also
+Render options work the same way: values declared per video with
+`video.renderOptions(...)` are the starting point, and web edits override
+them. Every recording also
 tracks which option values its Playwright actions used (for example
 `move.duration` or `position`) and whether each was explicit in code or a
 default, so the web editor can present and override them; see

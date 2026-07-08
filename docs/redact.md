@@ -67,10 +67,10 @@ For elements that are secret for the whole video, list their CSS selectors under
 any page script runs, so there is no reveal race:
 
 ```ts
-// screenci.config.ts (or a per-video video.recordOptions(...))
-recordOptions: {
+// Declare per video with video.recordOptions(...).
+video.recordOptions({
   redact: ['.api-key', '[data-sensitive]'],
-}
+})
 ```
 
 ## Mask appearance

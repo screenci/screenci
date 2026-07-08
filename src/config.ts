@@ -32,42 +32,18 @@ import {
  *   recordingDir: './recordings',
  *   use: {
  *     baseURL: 'https://app.example.com',
- *     recordOptions: {
- *       aspectRatio: '16:9',  // '16:9' | '9:16' | '1:1' | '4:3' | ...
- *       quality: '1080p',     // '720p' | '1080p' | '1440p' | '2160p'
- *       fps: 60,              // 24 | 30 | 60
- *     },
  *     trace: 'retain-on-failure',
  *   },
  * })
  * ```
  *
+ * Record and render options are declared per video with
+ * `video.recordOptions(...)` / `video.renderOptions(...)` (code values are the
+ * starting point and stay editable in the web editor), not at config level.
+ *
  * @param config - screenci configuration options
  * @returns Extended Playwright configuration with screenci-managed test discovery
  */
-/**
- * Move config-level `recordOptions` / `renderOptions` onto the internal option
- * fixtures the video/screenshot fixtures read (`_screenciConfigRecordOptions` /
- * `_screenciConfigRenderOptions`). They form the project-wide default layer that
- * per-video `video.recordOptions(...)` / `video.renderOptions(...)` override.
- * `undefined` input passes through so callers stay simple.
- */
-function remapConfigOptions<
-  T extends { recordOptions?: unknown; renderOptions?: unknown },
->(use: T | undefined): Record<string, unknown> | undefined {
-  if (use === undefined) return undefined
-  const { recordOptions, renderOptions, ...restUse } = use
-  return {
-    ...restUse,
-    ...(recordOptions !== undefined && {
-      _screenciConfigRecordOptions: recordOptions,
-    }),
-    ...(renderOptions !== undefined && {
-      _screenciConfigRenderOptions: renderOptions,
-    }),
-  }
-}
-
 export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
   const isRecording = process.env.SCREENCI_RECORDING === 'true'
 
@@ -180,12 +156,12 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
   const projects = rest.projects?.map((project) => ({
     ...project,
     use: {
-      ...remapConfigOptions(project.use),
+      ...project.use,
       ...(isRecording ? { trace: 'off' as const } : {}),
     },
   }))
   const use = {
-    ...remapConfigOptions(rest.use),
+    ...rest.use,
     ...(trace !== undefined ? { trace } : {}),
     actionTimeout: rest.use?.actionTimeout ?? DEFAULT_ACTION_TIMEOUT,
     navigationTimeout:

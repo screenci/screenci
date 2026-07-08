@@ -110,12 +110,12 @@ For faster, smoother recordings:
   [Recording encoder](/docs/configuration#recording-encoder).
 
   ```ts
-  use: {
-    recordOptions: {
-      // Lightest encode on constrained CI runners; full quality locally.
-      encoder: process.env.CI ? 'fast' : 'sharp',
-    },
-  },
+  video.recordOptions({
+    // Lightest encode on constrained CI runners; full quality locally.
+    encoder: process.env.CI ? 'fast' : 'sharp',
+  })('My video', async ({ page }) => {
+    /* ... */
+  })
   ```
 
 ## Asset files do not need to be committed

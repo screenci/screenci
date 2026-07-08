@@ -15,12 +15,11 @@ to it. ScreenCI couples to your app only through a `baseURL` (and optional
 `storageState`). It does not need to live in, or share dependencies with, the
 app it records, which is what keeps it isolated in a monorepo.
 
-The config merges three layers:
-
-1. ScreenCI defaults.
-2. Your project-wide defaults from `screenci.config.ts`.
-3. Per-file overrides from `video.renderOptions()` / `video.recordOptions()`
-   (and Playwright options from `video.use()`).
+Playwright options in `screenci.config.ts` (like `baseURL`) merge with per-file
+`video.use()` overrides. Record and render options are not set in the config:
+they are declared per video with `video.recordOptions()` and
+`video.renderOptions()`, starting from the system defaults. Any value you omit
+falls back to those defaults.
 
 ## Common full config
 
@@ -51,22 +50,6 @@ export default defineConfig({
   use: {
     // Shared base URL for page.goto('/path') style navigation.
     baseURL: 'https://staging.screenci.com',
-    recordOptions: {
-      // Capture landscape video by default.
-      aspectRatio: '16:9',
-      // Record at 1080p unless a file opts into something else.
-      quality: '1080p',
-      // Use 60 fps for smoother cursor and animation capture.
-      fps: 60,
-    },
-    renderOptions: {
-      output: {
-        background: {
-          // Apply a consistent background behind the recorded browser area.
-          backgroundCss: 'linear-gradient(135deg, #101820 0%, #16324f 100%)',
-        },
-      },
-    },
   },
 
   // ScreenCI currently records with Chromium, so start with a Chromium project.
@@ -75,7 +58,10 @@ export default defineConfig({
 ```
 
 Use this as a menu, not a template you must fill out. Most projects only need
-`projectName` plus one or two shared defaults.
+`projectName` plus one or two shared defaults. Record and render options are not
+set here: declare them per video with `video.recordOptions(...)` and
+`video.renderOptions(...)` (see [Capture defaults](#capture-defaults) and
+[Rendering defaults](#rendering-defaults)).
 
 ## Config areas
 
@@ -149,7 +135,7 @@ file you set via `envFile`.
 
 ### Capture defaults
 
-Set shared `recordOptions` under `use`:
+Declare `recordOptions` per video with `video.recordOptions(...)`:
 
 - `aspectRatio`
 - `quality`
@@ -159,6 +145,21 @@ Set shared `recordOptions` under `use`:
 - `redact`: CSS selectors masked from the first frame so on-screen secrets never
   enter the recording. See
   [redacting sensitive content](/docs/guides/redact).
+
+```ts
+import { video } from 'screenci'
+
+video.recordOptions({
+  // Capture landscape video.
+  aspectRatio: '16:9',
+  // Record at 1080p unless a file opts into something else.
+  quality: '1080p',
+  // Use 60 fps for smoother cursor and animation capture.
+  fps: 60,
+})('My video', async ({ page }) => {
+  await page.goto('/')
+})
+```
 
 These values determine the recording viewport, so they are the supported way to
 control recording size.
@@ -178,10 +179,12 @@ The `init`-scaffolded config opts into `'sharp'` locally and keeps `'fast'` in
 CI, which is the recommended setup:
 
 ```ts
-recordOptions: {
+video.recordOptions({
   // Lightest encode on constrained CI runners; full quality locally.
   encoder: process.env.CI ? 'fast' : 'sharp', // default: 'fast'
-}
+})('My video', async ({ page }) => {
+  /* ... */
+})
 ```
 
 ### Recording performance
@@ -197,10 +200,12 @@ Pass an object of frame-skip counts to tune each stream independently
 (`0` = every frame). Intervals are derived from the recording `fps`:
 
 ```ts
-recordOptions: {
+video.recordOptions({
   // Defaults: dispatch the cursor sparingly (render-time), scroll every frame.
   performance: { mouseFrameSkip: 5, scrollFrameSkip: 0 },
-}
+})('My video', async ({ page }) => {
+  /* ... */
+})
 ```
 
 By default the cursor skips 5 frames (~10fps at 60fps), since it is re-drawn at
@@ -210,7 +215,10 @@ cursor's path.
 
 ### Rendering defaults
 
-Set shared `renderOptions` under `use` when you want consistent output styling:
+Declare `renderOptions` per video with `video.renderOptions(...)` when you want
+consistent output styling. It also accepts a per-language form,
+`video.renderOptions({ default: {...}, fi: {...} })`, so one language can differ
+from the rest:
 
 - `output.background`
 - `recording.size`, `recording.roundness`, `recording.dropShadow`
@@ -229,11 +237,13 @@ change or remove the clip and re-render without re-recording. Coordinates are
 CSS pixels of the recording viewport (top-left origin):
 
 ```ts
-renderOptions: {
+video.renderOptions({
   recording: {
     clip: { x: 200, y: 120, width: 960, height: 600 },
   },
-}
+})('My video', async ({ page }) => {
+  /* ... */
+})
 ```
 
 The recording tile takes the clip's aspect ratio, and cursor movement and zoom
@@ -247,9 +257,11 @@ By default the cursor is the built-in arrow, coloured by `mouse.style`
 `mouse.image` at a local image, relative to your config directory:
 
 ```ts
-renderOptions: {
+video.renderOptions({
   mouse: { image: './assets/my-cursor.png', size: 0.05 },
-}
+})('My video', async ({ page }) => {
+  /* ... */
+})
 ```
 
 The image is uploaded alongside the recording, and drawn in both video and
@@ -277,26 +289,27 @@ static frames cost nothing. The two settings are independent: you can blur the
 camera without blurring the cursor, or the reverse.
 
 ```ts
-renderOptions: {
+video.renderOptions({
   mouse: { motionBlur: 0.5 },
   zoom: { motionBlur: 0.5 },
-}
+})('My video', async ({ page }) => {
+  /* ... */
+})
 ```
 
-Use project-wide render defaults for branding and layout consistency, then
-override only the files that need a different look.
+Reuse the same render options across videos for branding and layout
+consistency, then override only the files that need a different look.
 
-Render and record options are always manageable on the Editor page: values
-declared in code (via `use({ renderOptions: {...} })` and
-`use({ recordOptions: {...} })`, or per video with `video.renderOptions(...)`
-and `video.recordOptions(...)`) are the starting point, and web edits override
-them. Omit them entirely to start from the system defaults. See
+The web Editor is the source of truth for render and record options. Values
+declared in code (per video with `video.renderOptions(...)` and
+`video.recordOptions(...)`) are the starting point, and web edits override them.
+Omit them entirely to start from the system defaults. See
 [Editor](/docs/guides/editor).
 
 ### Example: shared `use` defaults
 
-Use `use` when multiple videos should share the same recording, navigation, or
-rendering defaults:
+Use `use` for Playwright options that multiple videos share, such as a common
+`baseURL` for navigation:
 
 ```ts
 import { defineConfig } from 'screenci'
@@ -306,28 +319,32 @@ export default defineConfig({
   envFile: '.env',
   use: {
     baseURL: 'https://staging.example.com',
-    recordOptions: {
-      aspectRatio: '16:9',
-      quality: '1080p',
-      fps: 60,
-    },
-    renderOptions: {
-      narration: {
-        corner: 'bottom-left',
-        size: 'medium',
-      },
-      output: {
-        background: {
-          backgroundCss: 'linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)',
-        },
-      },
-    },
   },
 })
 ```
 
-This keeps every video in the project on the same baseline, so individual files
-only need to override the few things that are actually different.
+Record and render options are not set here. Declare them per video, and reuse
+the same object across files when you want a shared baseline:
+
+```ts
+import { video } from 'screenci'
+
+video
+  .recordOptions({ aspectRatio: '16:9', quality: '1080p', fps: 60 })
+  .renderOptions({
+    narration: {
+      corner: 'bottom-left',
+      size: 'medium',
+    },
+    output: {
+      background: {
+        backgroundCss: 'linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)',
+      },
+    },
+  })('My video', async ({ page }) => {
+  await page.goto('/')
+})
+```
 
 ### Playwright integration
 

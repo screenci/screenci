@@ -1419,18 +1419,6 @@ export type ScreenCIConfig = Omit<
   webServer?: PlaywrightTestConfig['webServer']
   use?: Omit<NonNullable<PlaywrightTestConfig['use']>, 'trace'> & {
     /**
-     * Project-wide default record options. Override per video with
-     * `video.recordOptions(...)`. Code values are the starting point; they
-     * stay editable in the web editor.
-     */
-    recordOptions?: RecordOptions
-    /**
-     * Project-wide default render options. Override per video with
-     * `video.renderOptions(...)`. Code values are the starting point; they
-     * stay editable in the web editor.
-     */
-    renderOptions?: RenderOptions
-    /**
      * Timeout in milliseconds for individual actions like `click()`, `fill()`, etc.
      *
      * Separate from the overall test timeout. Defaults to 30 seconds so actions
@@ -1457,18 +1445,6 @@ export type ScreenCIConfig = Omit<
   }
   projects?: (Omit<Project, 'use'> & {
     use?: Omit<NonNullable<Project['use']>, 'trace'> & {
-      /**
-       * Project-wide default record options. Override per video with
-       * `video.recordOptions(...)`. Code values are the starting point; they
-       * stay editable in the web editor.
-       */
-      recordOptions?: RecordOptions
-      /**
-       * Project-wide default render options. Override per video with
-       * `video.renderOptions(...)`. Code values are the starting point; they
-       * stay editable in the web editor.
-       */
-      renderOptions?: RenderOptions
       /**
        * When to record traces during test execution.
        * Uses Playwright's native `trace` option type.

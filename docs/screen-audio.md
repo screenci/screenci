@@ -5,8 +5,8 @@ Recording system audio takes two settings that play different roles:
 - **`enableCaptureAudio`** (root of your config, boolean): turns on audio mode
   for the whole run. It is the launch-time switch, decided once per worker
   before any individual video runs.
-- **`recordOptions.captureAudio`** (number, per config/project/video): the gain
-  for an individual recording. `0` (the default) captures nothing.
+- **`recordOptions.captureAudio`** (number, per video): the gain for an
+  individual recording. `0` (the default) captures nothing.
 
 Both are needed: `enableCaptureAudio` makes the browser able to emit audio, and
 `captureAudio` says which videos record it and how loud. A video that sets
@@ -91,12 +91,20 @@ import { defineConfig } from 'screenci'
 export default defineConfig({
   // Launch the browser in audio mode for the whole run (Linux only).
   enableCaptureAudio: true,
-  use: {
-    recordOptions: {
-      // Capture every video at unity gain. Or set this per video instead.
-      captureAudio: 1,
-    },
-  },
+})
+```
+
+`enableCaptureAudio` is the run-level switch. Turn capture on for a video with
+`captureAudio` in its `video.recordOptions(...)`:
+
+```ts
+import { video } from 'screenci'
+
+video.recordOptions({
+  // Capture this video at unity gain.
+  captureAudio: 1,
+})('My video', async ({ page }) => {
+  await page.goto('/')
 })
 ```
 

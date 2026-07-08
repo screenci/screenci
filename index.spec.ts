@@ -18,10 +18,6 @@ describe('public api surface', () => {
       'modelTypes',
       'moveNarration',
       'overlayRect',
-      'placeHide',
-      'placeSpeed',
-      'placeTime',
-      'placeZoom',
       'redact',
       'resetZoom',
       'resizeNarration',
@@ -33,11 +29,9 @@ describe('public api surface', () => {
       'showRecording',
       'speed',
       'time',
-      'timestamp',
       'unredactAll',
       'video',
       'voices',
-      'waitSince',
       'zoomTo',
     ])
   })

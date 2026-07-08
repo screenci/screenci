@@ -905,12 +905,6 @@ export type NavigationEvent = {
   url: string
 }
 
-export type TimestampEvent = {
-  type: 'timestamp'
-  timeMs: number
-  name: string
-}
-
 export type AutoZoomStartEvent = {
   type: 'autoZoomStart'
   timeMs: number
@@ -1122,7 +1116,6 @@ export type RecordingEvent =
   | TimeEndEvent
   | NavigationEvent
   | RedactEvent
-  | TimestampEvent
   | AutoZoomStartEvent
   | AutoZoomEndEvent
   | DelayEvent
@@ -1420,14 +1413,6 @@ export interface IEventRecorder {
   addSpeedEnd(): void
   addTimeStart(durationMs: number, editable?: EditableMeta, name?: string): void
   addTimeEnd(): void
-  /** Records a named marker at the current recording time (`timestamp()`). */
-  addTimestamp(name: string): void
-  /**
-   * Wall-clock time (Date.now()) of the most recent `timestamp(name)` call,
-   * or null when the marker has not been recorded yet. Used by `waitSince()`
-   * to pace execution relative to a marker.
-   */
-  getTimestampWallClock(name: string): number | null
   /**
    * Queues a code-declared placed event (`placeHide`/`placeSpeed`/
    * `placeTime`): an anchored render-time event applied when data.json is
@@ -1522,10 +1507,6 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addSpeedEnd(): void {},
   addTimeStart(): void {},
   addTimeEnd(): void {},
-  addTimestamp(): void {},
-  getTimestampWallClock(): number | null {
-    return null
-  },
   addPlacedEvent(): void {},
   addAutoZoomStart(): void {},
   addAutoZoomEnd(): void {},
@@ -1574,8 +1555,6 @@ export class EventRecorder implements IEventRecorder {
    * none was bound.
    */
   private overrideReport: OverrideReportBuilder | null = null
-  /** Wall-clock time of the latest `timestamp(name)` call, for waitSince(). */
-  private readonly timestampWallClock = new Map<string, number>()
   /** Code-declared placed events, applied at data.json write time. */
   private readonly codePlacedEvents: PlacedEvent[] = []
 
@@ -1609,10 +1588,6 @@ export class EventRecorder implements IEventRecorder {
 
   setOverrideReport(report: OverrideReportBuilder): void {
     this.overrideReport = report
-  }
-
-  getTimestampWallClock(name: string): number | null {
-    return this.timestampWallClock.get(name) ?? null
   }
 
   addPlacedEvent(placed: PlacedEvent): void {
@@ -2233,13 +2208,6 @@ export class EventRecorder implements IEventRecorder {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     this.events.push({ type: 'timeEnd', timeMs })
-  }
-
-  addTimestamp(name: string): void {
-    if (this.startTime === null) return
-    this.timestampWallClock.set(name, Date.now())
-    const timeMs = Date.now() - this.startTime
-    this.events.push({ type: 'timestamp', timeMs, name })
   }
 
   addAutoZoomStart(options?: AutoZoomOptions, editable?: EditableMeta): void {

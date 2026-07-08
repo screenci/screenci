@@ -82,16 +82,6 @@ export { redact, unredactAll } from './src/redact.js'
 export type { RedactOptions, RedactStyle, RedactHandle } from './src/types.js'
 export { speed } from './src/speed.js'
 export { time } from './src/time.js'
-export { timestamp } from './src/timestamp.js'
-export {
-  placeHide,
-  placeSpeed,
-  placeTime,
-  placeZoom,
-  waitSince,
-  type PlaceAnchor,
-  type PlaceSpanOptions,
-} from './src/placed.js'
 export { autoZoom } from './src/autoZoom.js'
 export { zoomTo, resetZoom } from './src/manualZoom.js'
 export { hideNarration, showNarration } from './src/narrationVisibility.js'

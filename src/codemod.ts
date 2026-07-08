@@ -447,6 +447,62 @@ function isStatementNode(ts: TsModule, node: TS.Node): boolean {
   )
 }
 
+/**
+ * The call expression whose options carry `editId: '<slug>'`. Exact identity:
+ * immune to line drift, refactors, helpers, and locator changes. Null when
+ * the slug is absent or (duplicated in one file) ambiguous.
+ */
+export function findCallByEditId(
+  ctx: CodemodContext,
+  editId: string
+): TS.CallExpression | null {
+  const { ts, sourceFile } = ctx
+  const matches: TS.CallExpression[] = []
+  const visit = (node: TS.Node): void => {
+    if (ts.isCallExpression(node)) {
+      for (const argument of node.arguments) {
+        if (!ts.isObjectLiteralExpression(argument)) continue
+        for (const property of argument.properties) {
+          if (
+            ts.isPropertyAssignment(property) &&
+            ts.isIdentifier(property.name) &&
+            property.name.text === 'editId' &&
+            ts.isStringLiteral(property.initializer) &&
+            property.initializer.text === editId
+          ) {
+            matches.push(node)
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return matches.length === 1 ? matches[0]! : null
+}
+
+/** The statement containing `node` whose parent is a block (insertable). */
+export function enclosingStatement(
+  ctx: CodemodContext,
+  node: TS.Node
+): TS.Statement | null {
+  const { ts } = ctx
+  for (
+    let current: TS.Node | undefined = node;
+    current !== undefined;
+    current = current.parent
+  ) {
+    if (
+      isStatementNode(ts, current) &&
+      current.parent !== undefined &&
+      (ts.isBlock(current.parent) || ts.isSourceFile(current.parent))
+    ) {
+      return current as TS.Statement
+    }
+  }
+  return null
+}
+
 /** The statement immediately before `statement` in its enclosing block. */
 export function previousStatement(
   ctx: CodemodContext,

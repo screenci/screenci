@@ -596,6 +596,7 @@ function buildInputEditableMeta(
     defaults: Record<string, unknown>
     schemaKind?: EditableSchemaKind
     name?: string | undefined
+    editId?: string | undefined
   }
 ): EditableMeta | undefined {
   const matcher = getLocatorDescription(locator)
@@ -603,6 +604,7 @@ function buildInputEditableMeta(
     kind: 'input' as const,
     subKind,
     ...(options.name !== undefined && { name: options.name }),
+    ...(options.editId !== undefined && { editId: options.editId }),
     ...(matcher !== undefined && { matcher }),
   }
   return buildEditableMeta({
@@ -633,6 +635,7 @@ function buildPointerEditableMeta(
     hasExplicitMove: boolean
     /** The code-supplied move option, used to mark per-field provenance. */
     explicitMove?: CursorMoveOption['move']
+    editId?: string | undefined
   }
 ): EditableMeta | undefined {
   const lockedFields = [
@@ -644,6 +647,7 @@ function buildPointerEditableMeta(
       : []),
   ]
   return buildInputEditableMeta(locator, subKind, {
+    ...(values.editId !== undefined && { editId: values.editId }),
     // Explicit code options mark provenance: web edits still apply, but the
     // editor and the record run warn that they shadow code values.
     locked: values.hasExplicitMove || values.autoZoomOptions !== undefined,
@@ -1042,6 +1046,7 @@ export function instrumentLocator(locator: Locator): Locator {
     options?: Parameters<Locator['click']>[0] & {
       move?: CursorMoveOption['move']
       autoZoomOptions?: AutoZoomOptions
+      editId?: string
     }
   ) => {
     const {
@@ -1049,6 +1054,7 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       position,
       steps: _steps,
+      editId,
       ...clickOptions
     } = options ?? {}
 
@@ -1072,6 +1078,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const effectivePosition = asOptionalPoint(effective.position)
 
     const editable = buildPointerEditableMeta(locator, 'click', {
+      editId,
       moveDuration,
       moveSpeed,
       moveEasing,
@@ -1134,6 +1141,7 @@ export function instrumentLocator(locator: Locator): Locator {
     hideMouse?: boolean
     position?: { x: number; y: number }
     redact?: boolean | RedactOptions
+    editId?: string
     /** Total typing time (ms), like `fill`. Defaults to the text length times
      *  the per-character cadence, so longer text types for longer. Editable in
      *  the web app; the native per-key `delay` is derived from it. */
@@ -1174,6 +1182,7 @@ export function instrumentLocator(locator: Locator): Locator {
       position,
       redact: redactOption,
       duration: durationOption,
+      editId,
       ...pressOptions
     } = options ?? {}
 
@@ -1210,6 +1219,7 @@ export function instrumentLocator(locator: Locator): Locator {
     await applyActionRedact(locator, redactOption)
 
     const editable = buildPointerEditableMeta(locator, 'pressSequentially', {
+      editId,
       moveDuration,
       moveSpeed,
       moveEasing,
@@ -1298,6 +1308,7 @@ export function instrumentLocator(locator: Locator): Locator {
       hideMouse?: boolean
       redact?: boolean | RedactOptions
       autoZoomOptions?: AutoZoomOptions
+      editId?: string
     }
   ) => {
     if (isInsideHide()) {
@@ -1310,6 +1321,7 @@ export function instrumentLocator(locator: Locator): Locator {
         hideMouse: _hideMouse,
         redact: _redact,
         autoZoomOptions: _autoZoomOptions,
+        editId: _editId,
         ...fillOptions
       } = options ?? {}
 
@@ -1326,6 +1338,7 @@ export function instrumentLocator(locator: Locator): Locator {
       autoZoomOptions,
       position,
       redact: redactOption,
+      editId,
     } = options ?? {}
 
     const effective = applyActionParams(locator, 'fill', {
@@ -1347,6 +1360,7 @@ export function instrumentLocator(locator: Locator): Locator {
     await applyActionRedact(locator, redactOption)
 
     const editable = buildPointerEditableMeta(locator, 'pressSequentially', {
+      editId,
       moveDuration,
       moveSpeed,
       moveEasing,
@@ -1459,9 +1473,10 @@ export function instrumentLocator(locator: Locator): Locator {
       move?: CursorMoveOption['move']
       noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
+      editId?: string
     }
   ): Promise<void> => {
-    const { move, noWaitAfter, position, autoZoomOptions, ...tapOpts } =
+    const { move, noWaitAfter, position, autoZoomOptions, editId, ...tapOpts } =
       options ?? {}
 
     if (isInsideHide()) {
@@ -1481,6 +1496,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const effectivePosition = asOptionalPoint(effective.position)
 
     const editable = buildPointerEditableMeta(locator, 'tap', {
+      editId,
       moveDuration,
       moveSpeed,
       moveEasing,
@@ -1543,10 +1559,17 @@ export function instrumentLocator(locator: Locator): Locator {
       move?: CursorMoveOption['move']
       noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
+      editId?: string
     }
   ): Promise<void> => {
-    const { move, noWaitAfter, position, autoZoomOptions, ...checkOpts } =
-      options ?? {}
+    const {
+      move,
+      noWaitAfter,
+      position,
+      autoZoomOptions,
+      editId,
+      ...checkOpts
+    } = options ?? {}
 
     if (isInsideHide()) {
       return originalCheck({
@@ -1565,6 +1588,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const effectivePosition = asOptionalPoint(effective.position)
 
     const editable = buildPointerEditableMeta(locator, 'check', {
+      editId,
       moveDuration,
       moveSpeed,
       moveEasing,
@@ -1630,10 +1654,17 @@ export function instrumentLocator(locator: Locator): Locator {
       move?: CursorMoveOption['move']
       noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
+      editId?: string
     }
   ): Promise<void> => {
-    const { move, noWaitAfter, position, autoZoomOptions, ...uncheckOpts } =
-      options ?? {}
+    const {
+      move,
+      noWaitAfter,
+      position,
+      autoZoomOptions,
+      editId,
+      ...uncheckOpts
+    } = options ?? {}
 
     if (isInsideHide()) {
       return originalUncheck({
@@ -1652,6 +1683,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const effectivePosition = asOptionalPoint(effective.position)
 
     const editable = buildPointerEditableMeta(locator, 'uncheck', {
+      editId,
       moveDuration,
       moveSpeed,
       moveEasing,
@@ -1710,6 +1742,7 @@ export function instrumentLocator(locator: Locator): Locator {
       move?: CursorMoveOption['move']
       noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
+      editId?: string
     }
   ): Promise<void> => {
     if (checked) {
@@ -1739,10 +1772,17 @@ export function instrumentLocator(locator: Locator): Locator {
       noWaitAfter?: boolean
       position?: { x: number; y: number }
       autoZoomOptions?: AutoZoomOptions
+      editId?: string
     }
   ): Promise<string[]> => {
-    const { move, noWaitAfter, position, autoZoomOptions, ...selectOpts } =
-      options ?? {}
+    const {
+      move,
+      noWaitAfter,
+      position,
+      autoZoomOptions,
+      editId,
+      ...selectOpts
+    } = options ?? {}
 
     if (isInsideHide()) {
       return originalSelectOption(values, {
@@ -1764,6 +1804,7 @@ export function instrumentLocator(locator: Locator): Locator {
     currentSelectOptions = selectOpts as Parameters<Locator['selectOption']>[1]
     currentSelectResult = []
     const editable = buildPointerEditableMeta(locator, 'select', {
+      editId,
       moveDuration,
       moveSpeed,
       moveEasing,
@@ -1823,9 +1864,10 @@ export function instrumentLocator(locator: Locator): Locator {
       move?: CursorMoveOption['move']
       duration?: number
       autoZoomOptions?: AutoZoomOptions
+      editId?: string
     }
   ): Promise<void> => {
-    const { move, duration, position, ...hoverOptions } = options ?? {}
+    const { move, duration, position, editId, ...hoverOptions } = options ?? {}
 
     assertDurationOrSpeed(move?.duration, move?.speed, 'hover move')
 
@@ -1843,6 +1885,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const hoverDuration = asOptionalNumber(effective.duration) ?? 1000
 
     const editable = buildPointerEditableMeta(locator, 'hover', {
+      editId,
       moveDuration,
       moveSpeed,
       moveEasing,
@@ -1919,6 +1962,7 @@ export function instrumentLocator(locator: Locator): Locator {
       amount?: number
       /** 0–1: visibility bias inside the zoomed viewport; 0 = barely fit, 1 = centered. */
       centering?: number
+      editId?: string
     }
   ): Promise<void> => {
     if (isInsideHide()) {
@@ -1937,6 +1981,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const centering = asOptionalNumber(effective.centering)
 
     const editable = buildInputEditableMeta(locator, 'focusChange', {
+      ...(options?.editId !== undefined && { editId: options.editId }),
       locked: hasExplicitOption(
         options?.easing,
         options?.duration,
@@ -1993,9 +2038,11 @@ export function instrumentLocator(locator: Locator): Locator {
       move?: CursorMoveOption['move']
       duration?: number
       autoZoomOptions?: AutoZoomOptions
+      editId?: string
     }
   ): Promise<void> => {
-    const { move, duration, autoZoomOptions, ...selectOpts } = options ?? {}
+    const { move, duration, autoZoomOptions, editId, ...selectOpts } =
+      options ?? {}
 
     assertDurationOrSpeed(move?.duration, move?.speed, 'selectText move')
 
@@ -2008,6 +2055,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const selectDuration = asOptionalNumber(effective.duration)
 
     const editable = buildPointerEditableMeta(locator, 'selectText', {
+      editId,
       moveDuration,
       moveSpeed,
       moveEasing,
@@ -2085,9 +2133,10 @@ export function instrumentLocator(locator: Locator): Locator {
       easing?: Easing
       dragSteps?: number
       autoZoomOptions?: AutoZoomOptions
+      editId?: string
     }
   ): Promise<void> => {
-    const { move, sourcePosition, targetPosition, autoZoomOptions } =
+    const { move, sourcePosition, targetPosition, autoZoomOptions, editId } =
       options ?? {}
 
     assertDurationOrSpeed(move?.duration, move?.speed, 'dragTo move')
@@ -2115,6 +2164,7 @@ export function instrumentLocator(locator: Locator): Locator {
     const effectiveTargetPosition = asOptionalPoint(effective.targetPosition)
 
     const editable = buildPointerEditableMeta(locator, 'dragTo', {
+      editId,
       moveDuration,
       moveSpeed,
       moveEasing,

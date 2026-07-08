@@ -538,6 +538,24 @@ Because placed events in code and on the web share one model, codifying an
 edit is usually a single pasted line, and the next recording's override
 report confirms the code now produces the same result.
 
+## Action identity: editId
+
+Every editable action can carry a stable, human-readable identity slug in
+code, e.g. `.click({ editId: 'click1' })` or
+`autoZoom(fn, { editId: 'zoom1' })`. `screenci sync` (and `screenci dev
+--sync`) stamps missing slugs automatically after a recording, allocating
+numbers from `.screenci/edit-ids.json` (commit it; numbers are never reused
+and stamped ids are never removed). With an editId, the action's stable key
+IS the slug: edits and placed-event anchors keep matching across re-records
+even after refactors, moved lines, or locator changes, and `screenci sync`
+locates the call site by the exact slug instead of heuristics.
+
+Actions without an editId fall back to the legacy matcher-based identity
+(locator description + occurrence), which works for straight-line scripts but
+breaks on refactors. An action that executes more than once in a recording
+(a loop) gets keys like `click1#1` for the repeat executions; those cannot be
+expressed as code options and stay web-runtime-only.
+
 ## What is editable from the web
 
 Every recorded action carries identity metadata, so the timeline covers:

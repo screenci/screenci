@@ -71,6 +71,8 @@ export const EDITABLE_SNAPSHOT_FILE = 'editable-actions.json'
 /** One editable action as recorded by the previous run. */
 export type EditableSnapshotEntry = {
   key: string
+  /** Stable code identity slug (e.g. `fill1`) when the action is stamped. */
+  editId?: string
   locked: boolean
   lockedFields?: string[]
   defaults: Record<string, unknown>
@@ -118,6 +120,7 @@ type RecordedEditableMeta = {
   descriptor?: {
     kind?: unknown
     subKind?: unknown
+    editId?: unknown
     name?: unknown
     matcher?: unknown
     ordinal?: unknown
@@ -151,11 +154,17 @@ function toSnapshotEntry(
       ...(typeof descriptor.subKind === 'string' && {
         subKind: descriptor.subKind,
       }),
+      ...(typeof descriptor.editId === 'string' && {
+        editId: descriptor.editId,
+      }),
       ...(typeof descriptor.name === 'string' && { name: descriptor.name }),
       ...(typeof descriptor.matcher === 'string' && {
         matcher: descriptor.matcher,
       }),
       ordinal: descriptor.ordinal,
+    }),
+    ...(typeof descriptor.editId === 'string' && {
+      editId: descriptor.editId,
     }),
     locked: editable.locked === true,
     ...(lockedFields.length > 0 && { lockedFields }),

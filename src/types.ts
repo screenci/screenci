@@ -601,6 +601,12 @@ export type NarrationPosition = NarrationCorner | 'center' | 'full-screen'
 export type NarrationFullScreenFit = 'contain' | 'cover'
 
 export type AutoZoomOptions = {
+  /**
+   * Stable identity slug for the web editor (e.g. `zoom2`). Stamped
+   * automatically by `screenci sync`; not a zoom setting and never marks the
+   * block as code-locked.
+   */
+  editId?: string
   easing?: Easing
   /** Duration in milliseconds for zoom-in transitions. */
   duration?: number

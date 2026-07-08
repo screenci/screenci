@@ -280,6 +280,18 @@ A shared-mode recording (`{ mode: 'shared' }`) is a single capture and is not
 split by this filter. See
 [Languages](/docs/guides/languages) for the recording API.
 
+### `--no-render`
+
+Upload the recording and its editable timeline data without dispatching a
+render. Useful for a fast first sync with the web editor: the timeline, the
+action identities (`editId` slugs), and the editable parameters land in the
+Editor in seconds, without waiting for (or spending) a render. Render later
+with a plain `screenci record`:
+
+```bash
+npx screenci record --no-render
+```
+
 ### `--fast-narration`
 
 Skip narration-length pacing while recording. By default a per-language
@@ -359,8 +371,9 @@ Options:
 - `--token <token>`: personal dev token. Defaults to `SCREENCI_DEV_TOKEN` from
   your project env file.
 - `--sync`: auto-apply web editor edits to the recording sources while
-  listening. Every few seconds the listener checks for new edits and applies
-  what [`screenci sync`](#screenci-sync) can apply mechanically; a video whose
+  listening. Every few seconds the listener checks for new edits, stamps
+  missing `editId` slugs (see [`screenci sync`](#screenci-sync)), and applies
+  what sync can apply mechanically; a video whose
   pending edits were all applied gets its web edits cleared automatically, so
   the next record runs purely from code. Edits that need judgment (narration
   content, ambiguous call sites) are left in the editor and reported in the
@@ -540,7 +553,18 @@ for the full model.
 ## `screenci sync`
 
 Applies the web Editor's edits directly to your `.screenci.ts` sources using
-static analysis (the TypeScript parser), no agent involved. It can:
+static analysis (the TypeScript parser), no agent involved.
+
+Before applying anything, `sync` stamps a stable identity onto every recorded
+action that lacks one: a human-readable `editId` slug (`click1`, `fill2`,
+`zoom1`) inserted into the call's options. From then on edits locate their
+call site by that exact slug, so refactors, moved lines, and locator changes
+never break the mapping. Slugs are allocated from `.screenci/edit-ids.json`
+(commit it), numbers are never reused, and stamped ids are never removed.
+Actions that run inside a loop cannot carry a per-execution identity and are
+skipped (their edits stay web-runtime-only).
+
+It can:
 
 - change, add, or remove explicit action options (for example
   `move.duration` on a `.click(...)`), matched by locator, method, and call

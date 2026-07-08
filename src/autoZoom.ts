@@ -114,14 +114,18 @@ function buildAutoZoomEditableMeta(input: {
   options: AutoZoomOptions | undefined
   locked: boolean
 }): EditableMeta | undefined {
+  // editId is identity, not a zoom setting: keep it out of the lock and the
+  // editable defaults.
+  const { editId, ...zoomOptions } = input.options ?? {}
   const identity = {
     kind: 'autoZoom' as const,
+    ...(editId !== undefined && { editId }),
   }
   return buildEditableMeta({
     ...identity,
     schemaKind: 'autoZoom',
     locked: input.locked,
-    lockedFields: Object.entries(input.options ?? {})
+    lockedFields: Object.entries(zoomOptions)
       .filter(([, value]) => value !== undefined)
       .map(([field]) => field),
     // Element framing inside autoZoom uses the comfort-band centering, not
@@ -129,7 +133,7 @@ function buildAutoZoomEditableMeta(input: {
     defaults: {
       ...DEFAULT_ZOOM_OPTIONS,
       centering: DEFAULT_AUTO_ZOOM_CENTERING,
-      ...(input.options ?? {}),
+      ...zoomOptions,
     },
     position: nextEditablePosition(editableIdentityKey(identity)),
   })
@@ -172,11 +176,14 @@ export async function autoZoom(
       'Cannot call autoZoom() while manual zoom is active'
     )
   }
-  // A plain options object with any key set locks the block against web
-  // timeline edits; a bare autoZoom(fn) stays fully web-editable.
+  // A plain options object with any zoom key set locks the block against web
+  // timeline edits; a bare autoZoom(fn) (or one carrying only an editId)
+  // stays fully web-editable.
   const locked =
     codeOptions !== undefined &&
-    Object.values(codeOptions).some((value) => value !== undefined)
+    Object.entries(codeOptions).some(
+      ([field, value]) => field !== 'editId' && value !== undefined
+    )
   const editable = buildAutoZoomEditableMeta({
     options: codeOptions,
     locked,

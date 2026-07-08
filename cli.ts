@@ -105,6 +105,13 @@ import {
 } from './src/studioSync.js'
 import { diffLines, loadTypescript, type TsModule } from './src/codemod.js'
 import { planCodeSync, type CodeSyncPlan } from './src/codeSync.js'
+import {
+  planEditIdStamps,
+  readEditIdCounters,
+  writeEditIdCounters,
+  type EditIdCounters,
+  type EditIdStampPlan,
+} from './src/editIdStamp.js'
 import { maybeExtractVoiceSampleAudio } from './src/voiceSampleAudio.js'
 import {
   type CliCredential,
@@ -820,6 +827,11 @@ async function uploadRecordingCandidate(
             data,
             recordingHash,
             recordId,
+            // `record --no-render`: the backend skips render dispatch; the
+            // recording and its editable data still reach the editor.
+            ...(process.env['SCREENCI_SKIP_RENDER'] === '1'
+              ? { skipRender: true }
+              : {}),
             ...(isScreenshot ? { expectedScreenshotCount } : {}),
             expectedAssets: preparedUploadAssets.map((asset) => ({
               fileHash: asset.fileHash,
@@ -3676,6 +3688,69 @@ const defaultReadFileText = (path: string): string | null => {
 }
 
 /**
+ * Shared by `screenci sync` and `dev --sync`: stamp missing editIds first
+ * (identity slugs land in code before edits key on them), then plan the code
+ * sync against the stamped text. Returns the merged per-file changes (stamps
+ * plus edits, diffed against the on-disk text) and the mutated counters to
+ * persist when the changes are written.
+ */
+function planStampsAndCodeSync(args: {
+  ts: TsModule
+  screenciDir: string
+  comparison: ReturnType<typeof compareWebStateToSnapshot>
+  actionSnapshot: ReturnType<typeof readActionParamsSnapshot>
+  editableSnapshot: ReturnType<typeof readEditableSnapshot>
+  editableOverrides: ReturnType<typeof splitTimelineEditsByVideo>['overrides']
+  placedEvents: ReturnType<typeof splitTimelineEditsByVideo>['placed']
+  readFile: (path: string) => string | null
+}): {
+  plan: CodeSyncPlan
+  files: Array<{ path: string; before: string; after: string }>
+  stamped: EditIdStampPlan['stamped']
+  counters: EditIdCounters | null
+} {
+  const stampPlan = planEditIdStamps(
+    args.editableSnapshot,
+    readEditIdCounters(args.screenciDir),
+    { ts: args.ts, readFile: args.readFile }
+  )
+  const stampedTexts = new Map(
+    stampPlan.files.map((file) => [file.path, file.after])
+  )
+  const readFile = (path: string): string | null =>
+    stampedTexts.get(path) ?? args.readFile(path)
+  const plan = planCodeSync(
+    {
+      comparison: args.comparison,
+      actionSnapshot: args.actionSnapshot,
+      editableSnapshot: args.editableSnapshot,
+      editableOverrides: args.editableOverrides,
+      placedEvents: args.placedEvents,
+    },
+    { ts: args.ts, readFile }
+  )
+  // Merge: diff every changed file against its on-disk text (plan `before`
+  // may be the stamped text, which never hit the disk).
+  const merged = new Map<string, { before: string; after: string }>()
+  for (const file of stampPlan.files) {
+    merged.set(file.path, { before: file.before, after: file.after })
+  }
+  for (const file of plan.files) {
+    const stampedFile = merged.get(file.path)
+    merged.set(file.path, {
+      before: stampedFile?.before ?? file.before,
+      after: file.after,
+    })
+  }
+  return {
+    plan,
+    files: [...merged.entries()].map(([path, texts]) => ({ path, ...texts })),
+    stamped: stampPlan.stamped,
+    counters: stampPlan.stamped.length > 0 ? stampPlan.counters : null,
+  }
+}
+
+/**
  * `screenci sync`: apply the web editor's edits directly to the .screenci.ts
  * sources via static analysis where that is unambiguous, and print the agent
  * prompt for whatever remains. Dry-run (diff) by default; `--write` saves the
@@ -3728,28 +3803,34 @@ export async function runSync(
         '`screenci sync-prompt` with a coding agent instead.'
     )
   }
-  const plan: CodeSyncPlan =
+  const planned =
     ts === null
       ? {
-          files: [],
-          applied: [],
-          fallback: {
-            comparison,
-            overrides: editableOverrides,
-            placed: placedEvents,
-          },
-          fullyAppliedVideos: [],
+          plan: {
+            files: [],
+            applied: [],
+            fallback: {
+              comparison,
+              overrides: editableOverrides,
+              placed: placedEvents,
+            },
+            fullyAppliedVideos: [],
+          } satisfies CodeSyncPlan,
+          files: [] as Array<{ path: string; before: string; after: string }>,
+          stamped: [] as EditIdStampPlan['stamped'],
+          counters: null as EditIdCounters | null,
         }
-      : planCodeSync(
-          {
-            comparison,
-            actionSnapshot,
-            editableSnapshot,
-            editableOverrides,
-            placedEvents,
-          },
-          { ts, readFile: deps.readFileText ?? defaultReadFileText }
-        )
+      : planStampsAndCodeSync({
+          ts,
+          screenciDir,
+          comparison,
+          actionSnapshot,
+          editableSnapshot,
+          editableOverrides,
+          placedEvents,
+          readFile: deps.readFileText ?? defaultReadFileText,
+        })
+  const plan = planned.plan
 
   // Studio options (render/record options, narration text) are never applied
   // automatically; they surface in the prompt remainder below.
@@ -3773,7 +3854,7 @@ export async function runSync(
   )
 
   if (
-    plan.files.length === 0 &&
+    planned.files.length === 0 &&
     plan.applied.length === 0 &&
     fallbackPrompt === null &&
     fallbackPlacement.length === 0 &&
@@ -3783,13 +3864,25 @@ export async function runSync(
     return
   }
 
-  for (const file of plan.files) {
+  if (planned.stamped.length > 0) {
+    log(
+      `${options.write === true ? 'Stamped' : 'Would stamp'} editIds for ` +
+        `${planned.stamped.length} action(s):`
+    )
+    for (const stamp of planned.stamped) {
+      log(`  [${stamp.videoName}] ${stamp.editId} <- ${stamp.key}`)
+    }
+  }
+  for (const file of planned.files) {
     log(`${options.write === true ? 'Updated' : 'Would update'} ${file.path}:`)
     for (const line of diffLines(file.before, file.after)) log(line)
     if (options.write === true) {
       const write = deps.writeFileText ?? writeFileSync
       write(file.path, file.after)
     }
+  }
+  if (options.write === true && planned.counters !== null) {
+    writeEditIdCounters(screenciDir, planned.counters)
   }
   if (plan.applied.length > 0) {
     log('')
@@ -3803,6 +3896,8 @@ export async function runSync(
     if (options.write !== true) {
       log('Run `screenci sync --write` to save these changes.')
     }
+  } else if (options.write !== true && planned.files.length > 0) {
+    log('Run `screenci sync --write` to save these changes.')
   }
 
   const hasFallback =
@@ -3904,20 +3999,29 @@ export async function runDevAutoSync(
           ),
         ])
       )
-      const plan = planCodeSync(
-        {
-          comparison,
-          actionSnapshot: readActionParamsSnapshot(screenciDir),
-          editableSnapshot: readEditableSnapshot(screenciDir),
-          editableOverrides: overrides,
-          placedEvents: filteredPlaced,
-        },
-        { ts, readFile: deps.readFileText ?? defaultReadFileText }
-      )
-      if (plan.files.length === 0) continue
+      const planned = planStampsAndCodeSync({
+        ts,
+        screenciDir,
+        comparison,
+        actionSnapshot: readActionParamsSnapshot(screenciDir),
+        editableSnapshot: readEditableSnapshot(screenciDir),
+        editableOverrides: overrides,
+        placedEvents: filteredPlaced,
+        readFile: deps.readFileText ?? defaultReadFileText,
+      })
+      const plan = planned.plan
+      if (planned.files.length === 0) continue
 
       const write = deps.writeFileText ?? writeFileSync
-      for (const file of plan.files) write(file.path, file.after)
+      for (const file of planned.files) write(file.path, file.after)
+      if (planned.counters !== null) {
+        writeEditIdCounters(screenciDir, planned.counters)
+      }
+      for (const stamp of planned.stamped) {
+        log(
+          `auto-sync: stamped ${stamp.editId} <- [${stamp.videoName}] ${stamp.key}`
+        )
+      }
       for (const item of plan.applied) {
         log(`auto-sync: [${item.videoName}] ${item.description}`)
       }
@@ -4359,9 +4463,19 @@ export async function main() {
       '--fast-narration',
       'skip narration-length pacing while recording; the render freezes frames for the audio instead'
     )
+    .option(
+      '--no-render',
+      'upload the recording and its editable data without dispatching a ' +
+        'render (fast editor sync; render later with a normal record)'
+    )
     .allowUnknownOption(true)
     .action(async () => {
       const parsed = parseRecordCliArgs(getSubcommandArgv('record'))
+      if (parsed.noRender) {
+        // Read where the upload start request is built; env so the flag
+        // survives the Playwright child process boundary.
+        process.env['SCREENCI_SKIP_RENDER'] = '1'
+      }
 
       // `--remote` is a pure dispatch: it fires the project's GitHub Actions
       // recording workflow and exits, so there is no local Playwright run. A
@@ -4733,12 +4847,14 @@ export function parseRecordCliArgs(args: string[]): {
   remote: boolean
   languages: string | undefined
   fastNarration: boolean
+  noRender: boolean
   otherArgs: string[]
 } {
   let configPath: string | undefined
   let verbose = false
   let remote = false
   let fastNarration = false
+  let noRender = false
   let languages: string | undefined
   const otherArgs: string[] = []
 
@@ -4774,6 +4890,9 @@ export function parseRecordCliArgs(args: string[]): {
     } else if (arg === '--fast-narration') {
       // screenci-only flag: parsed out so it is not forwarded to Playwright.
       fastNarration = true
+    } else if (arg === '--no-render') {
+      // screenci-only flag: upload the recording without dispatching renders.
+      noRender = true
     } else {
       otherArgs.push(arg)
     }
@@ -4785,6 +4904,7 @@ export function parseRecordCliArgs(args: string[]): {
     remote,
     languages,
     fastNarration,
+    noRender,
     otherArgs,
   }
 }

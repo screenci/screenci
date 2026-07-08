@@ -14,7 +14,8 @@ import type {
 // - docs/configuration.md
 // - docs/camera-and-zooming.md
 // - README.md
-export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
+// editId is identity, not a zoom setting: it has no default.
+export const DEFAULT_ZOOM_OPTIONS: Required<Omit<AutoZoomOptions, 'editId'>> = {
   easing: 'ease-out',
   duration: 750,
   zoomOutDuration: 600,

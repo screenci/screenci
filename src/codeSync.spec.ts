@@ -294,6 +294,109 @@ describe('planCodeSync: timeline param edits', () => {
   })
 })
 
+describe('planCodeSync: editId-keyed edits', () => {
+  const STAMPED = [
+    "import { video, autoZoom } from 'screenci'",
+    '',
+    "video('Demo', async ({ page }) => {",
+    '  await autoZoom(async () => {',
+    "    await page.getByRole('button', { name: 'Save' }).click({ editId: 'click1' })",
+    "  }, { editId: 'zoom1' })",
+    '})',
+    '',
+  ].join('\n')
+  const stampedSnapshot: EditableSnapshot = {
+    version: 1,
+    videos: {
+      Demo: [
+        {
+          key: 'click1',
+          editId: 'click1',
+          locked: false,
+          defaults: { sleepBefore: 0 },
+          source: { file: FILE, line: 5 },
+        },
+        {
+          key: 'zoom1',
+          editId: 'zoom1',
+          locked: false,
+          defaults: { startOffset: 0 },
+          source: { file: FILE, line: 4 },
+        },
+      ],
+    },
+  }
+
+  it('locates by editId even when lines drifted', () => {
+    // Wrong line anchors on purpose: editId lookup must not care.
+    const drifted: EditableSnapshot = {
+      version: 1,
+      videos: {
+        Demo: stampedSnapshot.videos['Demo']!.map((entry) => ({
+          ...entry,
+          source: { file: FILE, line: 1 },
+        })),
+      },
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: drifted,
+        editableOverrides: {
+          Demo: [
+            { key: 'click1', values: { sleepBefore: 500 } },
+            { key: 'zoom1', values: { startOffset: -200 } },
+          ],
+        },
+      }),
+      { [FILE]: STAMPED }
+    )
+    const after = result.files[0]!.after
+    expect(after).toContain('await page.waitForTimeout(500)')
+    expect(after).toContain("{ editId: 'zoom1', startOffset: -200 }")
+    expect(result.fullyAppliedVideos).toEqual(['Demo'])
+  })
+
+  it('routes repeat-execution keys (loops) to the fallback', () => {
+    const result = plan(
+      inputWith({
+        editableSnapshot: stampedSnapshot,
+        editableOverrides: {
+          Demo: [{ key: 'click1#1', values: { sleepBefore: 500 } }],
+        },
+      }),
+      { [FILE]: STAMPED }
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.fallback.overrides['Demo']).toEqual([
+      { key: 'click1#1', values: { sleepBefore: 500 } },
+    ])
+  })
+
+  it('resolves editId-keyed placed-event anchors via the snapshot', () => {
+    const event: PlacedEvent = {
+      type: 'placedEvent',
+      id: 'e9',
+      kind: 'hide',
+      anchor: {
+        ref: { type: 'action', key: 'click1' },
+        edge: 'end',
+        offsetMs: 100,
+      },
+      end: { durationMs: 400 },
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: stampedSnapshot,
+        placedEvents: { Demo: [event] },
+      }),
+      { [FILE]: STAMPED }
+    )
+    expect(result.files[0]!.after).toContain(
+      "placeHide({ from: { action: 'click1' }, offsetMs: 100, durationMs: 400 })"
+    )
+  })
+})
+
 describe('planCodeSync: placed events', () => {
   const zoomEvent: PlacedEvent = {
     type: 'placedEvent',

@@ -8,6 +8,7 @@ const mockRmSync = vi.fn()
 const mockReaddirSync = vi.fn(() => [] as string[])
 const mockReadFileSync = vi.fn()
 const mockWriteFileSync = vi.fn()
+const mockRenameSync = vi.fn()
 const mockCreateReadStream = vi.fn()
 const mockReaddir = vi.fn()
 const mockReadFile = vi.fn()
@@ -26,6 +27,7 @@ vi.mock('fs', () => ({
   readdirSync: mockReaddirSync,
   readFileSync: mockReadFileSync,
   writeFileSync: mockWriteFileSync,
+  renameSync: mockRenameSync,
   default: {
     createReadStream: mockCreateReadStream,
     existsSync: mockExistsSync,
@@ -35,6 +37,7 @@ vi.mock('fs', () => ({
     readdirSync: mockReaddirSync,
     readFileSync: mockReadFileSync,
     writeFileSync: mockWriteFileSync,
+    renameSync: mockRenameSync,
   },
 }))
 
@@ -58,13 +61,14 @@ vi.mock('fs/promises', () => ({
 }))
 
 const SAVE_SELECTOR = "getByRole('button', { name: 'Save' })"
-const CLICK_KEY = 'input|click|getByRole(button, name=Save)|0'
+// The fixture is already editId-stamped: its stable key IS the slug.
+const CLICK_KEY = 'click1'
 
 const SOURCE = [
   "import { video } from 'screenci'",
   '',
   "video('My video', async ({ page }) => {",
-  "  await page.getByRole('button', { name: 'Save' }).click({ move: { duration: 400 } })",
+  "  await page.getByRole('button', { name: 'Save' }).click({ move: { duration: 400 }, editId: 'click1' })",
   '})',
   '',
 ].join('\n')
@@ -89,6 +93,7 @@ const EDITABLE_SNAPSHOT = {
     'My video': [
       {
         key: CLICK_KEY,
+        editId: 'click1',
         locked: false,
         defaults: { sleepBefore: 0 },
         source: { file: '/project/demo.screenci.ts', line: 4 },
@@ -198,7 +203,7 @@ describe('screenci sync', () => {
       { client, ...deps }
     )
     expect(written['/project/demo.screenci.ts']).toContain(
-      '.click({ move: { duration: 250 } })'
+      ".click({ move: { duration: 250 }, editId: 'click1' })"
     )
     expect(lines.join('\n')).toContain('Applied 1 edit(s):')
   })
@@ -271,6 +276,53 @@ describe('screenci sync', () => {
     )
   })
 
+  it('stamps missing editIds even without editor edits', async () => {
+    const unstampedSource = SOURCE.replace(", editId: 'click1'", '')
+    const client = setupProject({})
+    // Replace the editable snapshot with an unstamped entry.
+    mockReadFileSync.mockImplementation((path: string | URL) => {
+      if (String(path).endsWith('action-params.json')) {
+        return JSON.stringify(ACTION_SNAPSHOT)
+      }
+      if (String(path).endsWith('editable-actions.json')) {
+        return JSON.stringify({
+          version: 1,
+          videos: {
+            'My video': [
+              {
+                key: 'input|click|getByRole(button, name=Save)|0',
+                locked: false,
+                defaults: { sleepBefore: 0 },
+                source: { file: '/project/demo.screenci.ts', line: 4 },
+              },
+            ],
+          },
+        })
+      }
+      return ''
+    })
+    const { runSync } = await import('./cli')
+    const { deps, written } = baseDeps({
+      '/project/demo.screenci.ts': unstampedSource,
+    })
+    const lines: string[] = []
+    await runSync(
+      'test-fixtures/screenci.config.ts',
+      { write: true },
+      (message) => lines.push(message),
+      { client, ...deps }
+    )
+    expect(written['/project/demo.screenci.ts']).toContain(
+      ".click({ move: { duration: 400 }, editId: 'click1' })"
+    )
+    expect(lines.join('\n')).toContain('Stamped editIds for 1 action(s):')
+    // Counters persisted via write-then-rename.
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      expect.stringContaining('edit-ids.json'),
+      expect.stringContaining('"click": 1')
+    )
+  })
+
   it('reports nothing to sync when the editor has no differing edits', async () => {
     const client = setupProject({})
     const { runSync } = await import('./cli')
@@ -314,7 +366,7 @@ describe('screenci sync', () => {
       }
     )
     expect(written['/project/demo.screenci.ts']).toContain(
-      '.click({ move: { duration: 250 } })'
+      ".click({ move: { duration: 250 }, editId: 'click1' })"
     )
     expect(resets).toEqual(['My video'])
     const out = lines.join('\n')

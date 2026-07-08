@@ -40,6 +40,14 @@ export type EditableActionDescriptor = {
   kind: EditableActionKind
   /** Input action sub-kind: 'click', 'pressSequentially', 'dragTo', ... */
   subKind?: string
+  /**
+   * Stable, human-readable identity slug from code (e.g. `fill1`, `zoom2`),
+   * set via the `editId` option and stamped automatically by `screenci sync`.
+   * When present it IS the action's stable key: matching survives refactors,
+   * moved lines, and locator changes. The matcher-based identity below is the
+   * bootstrap fallback for not-yet-stamped actions.
+   */
+  editId?: string
   /** Explicit name, e.g. from `speed('name', fn)`. */
   name?: string
   /**
@@ -111,9 +119,12 @@ export type EditableMeta = {
 export function editableIdentityKey(
   descriptor: Pick<
     EditableActionDescriptor,
-    'kind' | 'subKind' | 'name' | 'matcher'
+    'kind' | 'subKind' | 'name' | 'matcher' | 'editId'
   >
 ): string {
+  // An editId IS the identity: ordinals then count executions of that exact
+  // call site (ordinal > 0 means it ran in a loop or the id is duplicated).
+  if (descriptor.editId !== undefined) return descriptor.editId
   return [
     descriptor.kind,
     descriptor.subKind ?? '',
@@ -122,15 +133,22 @@ export function editableIdentityKey(
 }
 
 /**
- * The stable key overrides are matched by across re-records: identity plus
+ * The stable key overrides are matched by across re-records. With an editId
+ * the key is the slug itself (`fill1`), or `fill1#N` for repeat executions of
+ * the same call site; without one it is the legacy matcher identity plus
  * ordinal. `seq` stays out (it shifts whenever any action is added anywhere).
  */
 export function stableEditableKey(
   descriptor: Pick<
     EditableActionDescriptor,
-    'kind' | 'subKind' | 'name' | 'matcher' | 'ordinal'
+    'kind' | 'subKind' | 'name' | 'matcher' | 'ordinal' | 'editId'
   >
 ): string {
+  if (descriptor.editId !== undefined) {
+    return descriptor.ordinal === 0
+      ? descriptor.editId
+      : `${descriptor.editId}#${descriptor.ordinal}`
+  }
   return `${editableIdentityKey(descriptor)}|${descriptor.ordinal}`
 }
 
@@ -143,6 +161,7 @@ export type EditablePosition = {
 export type BuildEditableMetaInput = {
   kind: EditableActionKind
   subKind?: string
+  editId?: string
   name?: string
   matcher?: string
   schemaKind: EditableSchemaKind
@@ -159,6 +178,7 @@ export function buildEditableMeta(input: BuildEditableMetaInput): EditableMeta {
     descriptor: {
       kind: input.kind,
       ...(input.subKind !== undefined && { subKind: input.subKind }),
+      ...(input.editId !== undefined && { editId: input.editId }),
       ...(input.name !== undefined && { name: input.name }),
       ...(input.matcher !== undefined && { matcher: input.matcher }),
       ordinal: input.position.ordinal,

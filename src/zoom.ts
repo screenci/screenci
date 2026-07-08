@@ -6,7 +6,7 @@ import type { AutoZoomState } from './runtimeContext.js'
 
 type FocusChangeZoom = NonNullable<FocusChangeEvent['zoom']>
 
-export type ResolvedAutoZoomOptions = Required<AutoZoomOptions>
+export type ResolvedAutoZoomOptions = Required<Omit<AutoZoomOptions, 'editId'>>
 
 export function resolveEffectiveDuration(
   options: ResolvedAutoZoomOptions,

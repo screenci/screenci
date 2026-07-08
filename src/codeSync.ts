@@ -31,6 +31,8 @@ import {
   findCallNamed,
   insertStatementAfter,
   insertStatementBefore,
+  enclosingStatement,
+  findCallByEditId,
   previousStatement,
   removeOption,
   setOptionValue,
@@ -209,8 +211,31 @@ export function planCodeSync(
     // ── Line-anchored items (param edits + placed events) ──────────────────
     const lineItems: LineItem[] = []
 
+    /** The single candidate file whose text contains the editId slug. */
+    const fileWithEditId = (editId: string): string | null => {
+      const needle = `'${editId}'`
+      const holders = candidateFiles.filter((file) => {
+        const text = getText(file)
+        return text !== null && text.includes(needle)
+      })
+      return holders.length === 1 ? holders[0]! : null
+    }
+
     for (const override of input.editableOverrides[videoName] ?? []) {
       const entry = byKey.get(override.key)
+      // `fill1#2`: a repeat execution of one call site (a loop). No code
+      // identity can distinguish the executions; web-runtime only.
+      if (override.key.includes('#')) {
+        fallbackOverrideFields(
+          override.key,
+          Object.entries(override.values).filter(
+            ([, value]) => value !== undefined
+          )
+        )
+        continue
+      }
+      const editId = entry?.editId
+      const editIdFile = editId !== undefined ? fileWithEditId(editId) : null
       const { kind, subKind } = parseEditableKey(override.key)
       const remaining: [string, unknown][] = []
       for (const [field, value] of Object.entries(override.values)) {
@@ -219,6 +244,80 @@ export function planCodeSync(
           continue // in sync, nothing to do
         }
         const source = entry?.source
+        // editId-stamped actions: exact identity, no line anchors needed.
+        if (editId !== undefined && editIdFile !== null) {
+          if (
+            field === 'sleepBefore' &&
+            typeof value === 'number' &&
+            value > 0
+          ) {
+            const ms = Math.round(value)
+            lineItems.push({
+              videoName,
+              file: editIdFile,
+              line: source?.line ?? 0,
+              description: `insert await <page>.waitForTimeout(${ms}) before '${editId}'`,
+              onFallback: () => remaining.push([field, value]),
+              compute: (ctx) => {
+                const call = findCallByEditId(ctx, editId)
+                if (call === null) return null
+                if (!ctx.ts.isPropertyAccessExpression(call.expression)) {
+                  return null
+                }
+                const root = chainRootIdentifier(
+                  ctx.ts,
+                  call.expression.expression
+                )
+                if (root === null) return null
+                const statement = enclosingStatement(ctx, call)
+                if (statement === null) return null
+                const existing = existingWaitBefore(ctx, statement, root)
+                if (existing !== null) {
+                  return [
+                    {
+                      start: existing.getStart(),
+                      end: existing.getEnd(),
+                      replacement: String(ms),
+                    },
+                  ]
+                }
+                return [
+                  insertStatementBefore(
+                    ctx,
+                    statement,
+                    `await ${root}.waitForTimeout(${ms})`
+                  ),
+                ]
+              },
+            })
+            continue
+          }
+          if (field === 'startOffset' || field === 'endOffset') {
+            lineItems.push({
+              videoName,
+              file: editIdFile,
+              line: source?.line ?? 0,
+              description: `set ${field}: ${JSON.stringify(value)} on '${editId}'`,
+              onFallback: () => remaining.push([field, value]),
+              compute: (ctx) => {
+                const call = findCallByEditId(ctx, editId)
+                if (call === null) return null
+                const callee = call.expression
+                if (
+                  !ctx.ts.isIdentifier(callee) ||
+                  callee.text !== 'autoZoom'
+                ) {
+                  return null
+                }
+                const edit = setOptionValue(ctx, call, 1, [field], value)
+                return edit === null ? null : [edit]
+              },
+            })
+            continue
+          }
+          remaining.push([field, value])
+          continue
+        }
         if (
           field === 'sleepBefore' &&
           typeof value === 'number' &&

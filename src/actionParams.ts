@@ -115,7 +115,14 @@ export const ACTION_PARAM_DEFAULTS: Record<
   check: CLICK_LIKE_DEFAULTS,
   uncheck: CLICK_LIKE_DEFAULTS,
   selectOption: CLICK_LIKE_DEFAULTS,
-  pressSequentially: CLICK_LIKE_DEFAULTS,
+  pressSequentially: {
+    ...CLICK_LIKE_DEFAULTS,
+    // Total typing time. Its default is derived per call from the text length
+    // (text.length * DEFAULT_PRESS_SEQUENTIALLY_MS_PER_CHAR), so there is no
+    // single static default here; the per-call value the recording used is the
+    // baseline the editor compares against.
+    duration: null,
+  },
   fill: {
     ...CLICK_LIKE_DEFAULTS,
     duration: DEFAULT_FILL_TYPING_DURATION_MS,

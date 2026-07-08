@@ -55,6 +55,7 @@ import {
   DEFAULT_FILL_TYPING_DURATION_MS,
   DEFAULT_HOVER_DURATION_MS,
   DEFAULT_PRE_CLICK_PAUSE_MS,
+  DEFAULT_PRESS_SEQUENTIALLY_MS_PER_CHAR,
 } from './defaults.js'
 import {
   CLICK_DURATION_MS,
@@ -1133,6 +1134,10 @@ export function instrumentLocator(locator: Locator): Locator {
     hideMouse?: boolean
     position?: { x: number; y: number }
     redact?: boolean | RedactOptions
+    /** Total typing time (ms), like `fill`. Defaults to the text length times
+     *  the per-character cadence, so longer text types for longer. Editable in
+     *  the web app; the native per-key `delay` is derived from it. */
+    duration?: number
   }
 
   // Record locator.press as a keyboard shortcut overlay, like
@@ -1168,6 +1173,7 @@ export function instrumentLocator(locator: Locator): Locator {
       hideMouse: _hideMouse,
       position,
       redact: redactOption,
+      duration: durationOption,
       ...pressOptions
     } = options ?? {}
 
@@ -1178,14 +1184,28 @@ export function instrumentLocator(locator: Locator): Locator {
       )
     }
 
+    // The typing time scales with the character count: the default total is
+    // `length * per-char cadence`. An explicit `duration` (total) wins; failing
+    // that, a native per-key `delay` is read as the cadence (delay * length).
+    const charCount = Math.max(1, text.length)
+    const nativeDelay = asOptionalNumber(pressOptions.delay)
+    const explicitDuration =
+      durationOption ??
+      (nativeDelay !== undefined ? nativeDelay * charCount : undefined)
+    const defaultTypingDuration =
+      charCount * DEFAULT_PRESS_SEQUENTIALLY_MS_PER_CHAR
+
     const effective = applyActionParams(locator, 'pressSequentially', {
       ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
       position: { explicit: position, fallback: null },
       noWaitAfter: { explicit: noWaitAfter, fallback: true },
+      duration: { explicit: explicitDuration, fallback: defaultTypingDuration },
     })
     const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
       effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
+    const typingDuration =
+      asOptionalNumber(effective.duration) ?? defaultTypingDuration
 
     await applyActionRedact(locator, redactOption)
 
@@ -1195,15 +1215,29 @@ export function instrumentLocator(locator: Locator): Locator {
       moveEasing,
       moveDelayAfter,
       autoZoomOptions,
-      hasExplicitMove: move !== undefined,
+      hasExplicitMove: move !== undefined || explicitDuration !== undefined,
       explicitMove: move,
     })
+    if (editable !== undefined) {
+      // Typing spread duration, editable alongside the shared cursor timings.
+      editable.defaults.duration = typingDuration
+      addLockedFields(editable, { duration: explicitDuration })
+    }
     const timing = resolveCursorTimingOverrides(editable, {
       moveDuration,
       moveSpeed,
       moveEasing,
       moveDelayAfter,
     })
+    const effTypingDuration =
+      editableOverrideNumber(editable, 'duration') ?? typingDuration
+    // Playwright types key by key with a per-key `delay`, so the effective total
+    // is spread evenly across the characters. Screenshots keep only the final
+    // frame, so type instantly.
+    const typedPressOptions = {
+      ...pressOptions,
+      delay: isScreenshotCapture() ? 0 : effTypingDuration / charCount,
+    } as Parameters<Locator['pressSequentially']>[1]
 
     const innerEvents: ClickActionResult['innerEvents'] = []
     let elementRect: ElementRect | undefined = undefined
@@ -1212,10 +1246,7 @@ export function instrumentLocator(locator: Locator): Locator {
       const focusChange = await changeFocus(locator, autoZoomOptions)
       innerEvents.push(focusChange)
       elementRect = focusChange.elementRect
-      await originalPressSequentially(
-        text,
-        pressOptions as Parameters<Locator['pressSequentially']>[1]
-      )
+      await originalPressSequentially(text, typedPressOptions)
     } else {
       const clickActionResult = await performAction(
         buildDefaultClickMouseMoveRequest({
@@ -1225,11 +1256,7 @@ export function instrumentLocator(locator: Locator): Locator {
           moveEasing: timing.moveEasing,
         }),
         locator,
-        async () =>
-          originalPressSequentially(
-            text,
-            pressOptions as Parameters<Locator['pressSequentially']>[1]
-          ),
+        async () => originalPressSequentially(text, typedPressOptions),
         false,
         'singleBefore',
         autoZoomOptions,

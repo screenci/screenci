@@ -72,6 +72,14 @@ export const DEFAULT_DRAG_PRESS_DELAY_MS = 100
 /** Default typing animation duration for `fill`, in milliseconds. */
 export const DEFAULT_FILL_TYPING_DURATION_MS = 1000
 
+/**
+ * Default per-character typing cadence for `pressSequentially`, in milliseconds.
+ * Unlike `fill` (a fixed total spread), `pressSequentially` types key by key, so
+ * its default total duration scales with the text length: longer text types for
+ * longer. The effective total is `text.length * this`.
+ */
+export const DEFAULT_PRESS_SEQUENTIALLY_MS_PER_CHAR = 60
+
 /** Default hold duration on the target for `hover`, in milliseconds. */
 export const DEFAULT_HOVER_DURATION_MS = 1000
 

@@ -2441,6 +2441,35 @@ describe('editable descriptor capture', () => {
     expect(meta.defaults).toMatchObject({ moveDuration: 100 })
   })
 
+  it('scales pressSequentially typing duration by character count and derives the key delay', async () => {
+    resetEditableRuntimeState()
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+    const locator = makeLocatorMock({ x: 0, y: 0, width: 10, height: 10 }, page)
+    const originalPressSequentially = locator.pressSequentially as ReturnType<
+      typeof vi.fn
+    >
+    instrumentLocator(locator)
+
+    await Promise.all([
+      locator.pressSequentially('Acme Corp'), // 9 characters
+      vi.runAllTimersAsync(),
+    ])
+
+    const addInput = recorder.addInput as ReturnType<typeof vi.fn>
+    const meta = addInput.mock.calls[0]![3] as EditableMeta
+    // Default total = length (9) * 60ms/char.
+    expect(meta.defaults.duration).toBe(540)
+    // The per-key delay handed to Playwright is total / length = 60ms.
+    const nativeCall = originalPressSequentially.mock.calls[0]!
+    expect((nativeCall[1] as { delay: number }).delay).toBe(60)
+    // Not locked: nothing was set explicitly in code.
+    expect(meta.locked).toBe(false)
+  })
+
   it('records a locked delay event for numeric page.waitForTimeout', async () => {
     resetEditableRuntimeState()
     const { recorder } = makeRecorder()

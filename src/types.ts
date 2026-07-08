@@ -786,6 +786,14 @@ export type ScreenCILocatorPressSequentiallyOptions = Omit<
     forceClick?: boolean
     noWaitAfter?: boolean
     delay?: number
+    /**
+     * Total typing time in milliseconds. Editable in the web app. Unlike `fill`,
+     * the default scales with the text length (about 60ms per character), so
+     * longer text types for longer. The per-keystroke `delay` is derived from
+     * this divided by the character count; an explicit `delay` (with no
+     * `duration`) is instead read as the per-character cadence.
+     */
+    duration?: number
     position?: { x: number; y: number }
     /** Hide the cursor while typing; shown again on the next mouse move. */
     hideMouse?: boolean
@@ -1064,7 +1072,13 @@ export type ScreenCILocator = Omit<
    * `forceClick: true` to always animate the click.
    *
    * @param text - The text to type.
-   * @param options.delay - Time between keystrokes in milliseconds.
+   * @param options.duration - Total time in milliseconds to spend typing.
+   *   Unlike `fill`, the default scales with the text length (about 60ms per
+   *   character), so longer text types for longer. The per-keystroke delay is
+   *   derived from this value divided by the number of characters.
+   * @param options.delay - Time between keystrokes in milliseconds. Read as the
+   *   per-character cadence when `duration` is not given (total = delay times
+   *   the character count).
    * @param options.timeout - Maximum time in milliseconds to wait for the
    *   element to be actionable.
    * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).

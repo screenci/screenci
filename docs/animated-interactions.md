@@ -131,6 +131,18 @@ Pass `forceClick: true` to always show the click animation:
 await page.getByLabel('Search').fill('product tour', { forceClick: true })
 ```
 
+Both spread the typing over a `duration` (total milliseconds), editable in the
+web app. `fill` defaults to a fixed 1000ms regardless of length. Because
+`pressSequentially` types key by key, its default total scales with the text
+length (about 60ms per character), so longer text types for longer; pass an
+explicit `duration` to override, or a per-key `delay` (read as the per-character
+cadence when no `duration` is given):
+
+```ts
+await page.getByLabel('Bio').pressSequentially('Hello there') // ~660ms (11 chars)
+await page.getByLabel('Bio').pressSequentially('Hello there', { duration: 300 })
+```
+
 ### selectText
 
 `selectText` shows a triple-click animation. Control its total duration:

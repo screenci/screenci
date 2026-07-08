@@ -302,7 +302,7 @@ export const docsManifest = [
     navLabel: 'CLI',
     title: 'CLI',
     description:
-      'Command reference for screenci init, test, record, project info, and public delivery commands.',
+      'Command reference for screenci init, test, record, dev, project info, and public delivery commands.',
     prev: 'docs/guides/anonymous-trial',
     next: 'docs/reference/configuration',
   },

@@ -28,6 +28,7 @@ import {
   resolve,
 } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
+import { hostname } from 'os'
 import { Command, CommanderError } from 'commander'
 import { confirm } from '@inquirer/prompts'
 import pc from 'picocolors'
@@ -114,6 +115,15 @@ import {
   saveAnonSessionRecordUrl,
   secretCredential,
 } from './src/anonSession.js'
+import {
+  type DevListenConfig,
+  type DevListenDeps,
+  DevAuthError,
+  SCREENCI_DEV_TOKEN_ENV,
+  deregisterDevListener,
+  registerDevListener,
+  runDevListenLoop,
+} from './src/devListen.js'
 
 // Re-export the environment-aware URL helpers so existing importers (and tests)
 // can keep importing them from the CLI entrypoint.
@@ -3002,6 +3012,150 @@ async function triggerRemoteRun(
   )
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// Runs the record for one web-editor dev trigger: exactly one video (grep by
+// its title) in exactly one language, then uploads. Mirrors the `record`
+// command's local path, minus its remote/UPLOAD_EXISTING/hint concerns; the
+// error message is reported back to the editor instead of the console.
+async function runTriggeredRecord(
+  configPath: string | undefined,
+  trigger: { videoName: string; language: string },
+  verbose: boolean
+): Promise<void> {
+  const resolvedConfigPath = resolveScreenCIConfigPathOrExit(configPath)
+  const screenciConfig =
+    await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
+  const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
+  const grepArgs = ['--grep', escapeRegExp(trigger.videoName)]
+  const requestedVideoNames = await collectRequestedRecordVideoNames(
+    resolvedConfigPath,
+    grepArgs,
+    trigger.language
+  )
+  const recordRunLock = await acquireRecordRunLock(
+    screenciDir,
+    screenciConfig.projectName
+  )
+
+  try {
+    let playwrightFailure: Error | null = null
+    try {
+      await run(
+        'record',
+        grepArgs,
+        configPath,
+        verbose,
+        false,
+        trigger.language
+      )
+    } catch (error) {
+      if (!(error instanceof Error)) throw error
+      playwrightFailure = error
+    }
+
+    await uploadRecordedVideosForConfig(
+      configPath,
+      playwrightFailure,
+      verbose,
+      requestedVideoNames
+    )
+
+    if (playwrightFailure !== null) {
+      throw playwrightFailure
+    }
+  } finally {
+    await recordRunLock.release()
+  }
+}
+
+export async function runDevCommand(
+  options: { config?: string; verbose?: boolean; token?: string },
+  depsOverride: Partial<DevListenDeps> & { machineName?: string } = {}
+): Promise<void> {
+  const { screenciConfig, secret, apiUrl } = await requireScreenCISecret(
+    options.config
+  )
+
+  const devToken = options.token ?? process.env[SCREENCI_DEV_TOKEN_ENV]
+  if (!devToken) {
+    logger.error(
+      `No ${SCREENCI_DEV_TOKEN_ENV} configured. Create a personal dev token at ${pc.cyan(getScreenCISecretsUrl())} and add it to your env file, or pass it with --token.`
+    )
+    process.exit(1)
+  }
+
+  const config: DevListenConfig = {
+    apiUrl,
+    secret,
+    devToken,
+    projectName: screenciConfig.projectName,
+    machineName: depsOverride.machineName ?? hostname(),
+  }
+  const deps: DevListenDeps = {
+    fetchFn: fetch,
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    logger,
+    runRecord: (trigger) =>
+      runTriggeredRecord(options.config, trigger, options.verbose ?? false),
+    ...depsOverride,
+  }
+
+  let registration: { listenerId: string; userName: string }
+  try {
+    registration = await registerDevListener(config, deps)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.error(`Failed to connect: ${message}`)
+    if (error instanceof DevAuthError) {
+      logger.error(
+        `Check your dev token at ${pc.cyan(getScreenCISecretsUrl())}.`
+      )
+    }
+    process.exit(1)
+  }
+
+  logger.info(
+    `Connected as ${pc.bold(`${registration.userName}@${config.machineName}`)} for project "${screenciConfig.projectName}".`
+  )
+  logger.info(
+    `Waiting for record requests from ${pc.cyan(getDevFrontendUrl())}. Press Ctrl-C to stop.`
+  )
+
+  const controller = { stopped: false }
+  const shutdown = () => {
+    if (controller.stopped) return
+    controller.stopped = true
+    logger.info('Disconnecting...')
+    void deregisterDevListener(config, deps, registration.listenerId)
+      .catch(() => {})
+      .finally(() => process.exit(0))
+  }
+  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', shutdown)
+
+  try {
+    await runDevListenLoop(config, deps, registration.listenerId, controller)
+  } catch (error) {
+    if (error instanceof DevAuthError) {
+      logger.error(error.message)
+      logger.error(
+        `Create a new dev token at ${pc.cyan(getScreenCISecretsUrl())} if yours was revoked.`
+      )
+      await deregisterDevListener(config, deps, registration.listenerId).catch(
+        () => {}
+      )
+      process.exit(1)
+    }
+    throw error
+  } finally {
+    process.off('SIGINT', shutdown)
+    process.off('SIGTERM', shutdown)
+  }
+}
+
 function getRecordRunLockPath(screenciDir: string): string {
   return resolve(screenciDir, SCREENCI_RECORD_LOCK_FILE)
 }
@@ -3780,7 +3934,7 @@ export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
     logger.error(
-      'Available commands: record, test, info, make-public, make-private, delete, init'
+      'Available commands: record, dev, test, info, make-public, make-private, delete, init'
     )
     process.exit(1)
   }
@@ -3896,6 +4050,28 @@ export async function main() {
         await recordRunLock.release()
       }
     })
+
+  // dev command: connect this machine to the web editor and record on demand
+  program
+    .command('dev')
+    .description(
+      'Connect this machine to the ScreenCI editor and record videos on demand'
+    )
+    .option('-c, --config <path>', 'path to config file')
+    .option('-v, --verbose', 'verbose output')
+    .option(
+      '--token <token>',
+      `personal dev token (defaults to ${SCREENCI_DEV_TOKEN_ENV} from your env file)`
+    )
+    .action(
+      async (options: {
+        config?: string
+        verbose?: boolean
+        token?: string
+      }) => {
+        await runDevCommand(options)
+      }
+    )
 
   program
     .command('test [playwrightArgs...]')

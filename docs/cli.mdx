@@ -15,6 +15,7 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | `screenci init [name]`             | Scaffold a ScreenCI project                              |
 | `screenci test [playwrightArgs]`   | Run `.screenci.ts` files locally without final recording |
 | `screenci record [playwrightArgs]` | Record videos and upload results when configured         |
+| `screenci dev`                     | Connect this machine to the editor for on-demand records |
 | `screenci info`                    | Print the last record run's URLs and render status       |
 | `screenci status`                  | Compare Editor action edits with the latest recorded run |
 | `screenci sync-prompt`             | Print an agent prompt to sync code with Editor edits     |
@@ -339,6 +340,50 @@ the project page in the app, see
 Without a connected repository the command reports that GitHub is not connected.
 Targeted (`--grep`) runs need the workflow to declare a `grep` input; projects
 scaffolded by `screenci init` include it.
+
+## `screenci dev`
+
+Connects this machine to the ScreenCI editor so a Record button in the editor
+can trigger a local `screenci record` of one video and language on demand. The
+command keeps running, polling the service for record requests, until you stop
+it with Ctrl-C.
+
+```bash
+screenci dev
+```
+
+Options:
+
+- `-c, --config <path>`: path to the ScreenCI config file.
+- `--token <token>`: personal dev token. Defaults to `SCREENCI_DEV_TOKEN` from
+  your project env file.
+- `-v, --verbose`: verbose output.
+
+Setup:
+
+1. Create a personal dev token on the Secrets page in the app (one token per
+   machine, up to five per user).
+2. Add it to your project env file as `SCREENCI_DEV_TOKEN=<token>`, next to
+   your `SCREENCI_SECRET`.
+3. Run `screenci dev` in your project. The editor header shows your machine as
+   connected (for example `you@laptop`) and offers "Record ... on laptop" in
+   the Render button's record menu.
+
+While connected:
+
+- Only your own account can trigger records on your machine. Teammates see
+  whose machine is connected but cannot use it.
+- A triggered record runs exactly one video in one language (the one open in
+  the editor), then uploads and renders as a normal record run.
+- The regular record run lock applies: if another `screenci record` is already
+  running, the request is reported back to the editor as failed.
+- Stopping the command (Ctrl-C) disconnects the machine; the editor updates
+  within about fifteen seconds.
+
+Dev tokens are separate from `SCREENCI_SECRET`: the secret authenticates your
+project to the service, the dev token additionally proves which user and
+machine is listening. Revoking the token on the Secrets page immediately
+disconnects the machine.
 
 ## `screenci info`
 

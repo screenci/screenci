@@ -1320,7 +1320,8 @@ export interface IEventRecorder {
   applyActionParams(
     selector: string,
     method: ActionMethod,
-    spec: ActionParamSpec
+    spec: ActionParamSpec,
+    editId?: string
   ): Record<string, unknown>
   /**
    * Records a pause (`page.waitForTimeout`) so the web editor can show and,
@@ -1487,7 +1488,8 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   applyActionParams(
     _selector: string,
     _method: ActionMethod,
-    spec: ActionParamSpec
+    spec: ActionParamSpec,
+    _editId?: string
   ): Record<string, unknown> {
     return resolveSpecWithoutTracking(spec)
   },
@@ -1599,9 +1601,10 @@ export class EventRecorder implements IEventRecorder {
   applyActionParams(
     selector: string,
     method: ActionMethod,
-    spec: ActionParamSpec
+    spec: ActionParamSpec,
+    editId?: string
   ): Record<string, unknown> {
-    return this.actionParams.apply(selector, method, spec)
+    return this.actionParams.apply(selector, method, spec, editId)
   }
 
   setOverrideReport(report: OverrideReportBuilder): void {

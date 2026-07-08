@@ -556,11 +556,13 @@ it by replacing the slug's string literal in code. Nothing goes stale in
 between because the recorded slug keeps matching until the rename is
 codified.
 
-Actions without an editId fall back to the legacy matcher-based identity
-(locator description + occurrence), which works for straight-line scripts but
-breaks on refactors. An action that executes more than once in a recording
-(a loop) gets keys like `click1#1` for the repeat executions; those cannot be
-expressed as code options and stay web-runtime-only.
+editId is optional until edits need to reach code. Actions without one keep
+the matcher-based identity (locator description + occurrence) for display and
+record-time overrides, but `screenci sync` never guesses at their call sites:
+their edits stay on the agent-prompt path until a record plus sync stamps
+them. An action that executes more than once in a recording (a loop) gets
+keys like `click1#1` for the repeat executions; those cannot be expressed as
+code options and stay web-runtime-only.
 
 ## What is editable from the web
 

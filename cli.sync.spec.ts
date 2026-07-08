@@ -81,6 +81,7 @@ const ACTION_SNAPSHOT = {
         selector: SAVE_SELECTOR,
         method: 'click',
         occurrence: 0,
+        editId: 'click1',
         params: { 'move.duration': { value: 400, source: 'explicit' } },
       },
     ],

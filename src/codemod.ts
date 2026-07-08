@@ -84,11 +84,6 @@ export function applyTextEdits(source: string, edits: TextEdit[]): string {
   return result
 }
 
-/** Whitespace- and quote-insensitive comparison form of a code snippet. */
-function normalizeCode(text: string): string {
-  return text.replace(/\s+/g, '').replace(/["`]/g, "'")
-}
-
 /** The leftmost identifier of a property/call chain, e.g. `page` of
  *  `page.getByRole('button').click()`. Null when the chain does not start at
  *  a plain identifier (destructured helper results, awaited expressions). */
@@ -110,81 +105,6 @@ export function chainRootIdentifier(
       return null
     }
   }
-}
-
-/** Whether a node sits inside a loop (occurrence order would be ambiguous). */
-function isInsideLoop(ts: TsModule, node: TS.Node): boolean {
-  for (let parent = node.parent; parent !== undefined; parent = parent.parent) {
-    if (
-      ts.isForStatement(parent) ||
-      ts.isForOfStatement(parent) ||
-      ts.isForInStatement(parent) ||
-      ts.isWhileStatement(parent) ||
-      ts.isDoStatement(parent)
-    ) {
-      return true
-    }
-  }
-  return false
-}
-
-/**
- * All calls of `<locator chain>.<method>(...)` whose locator chain matches the
- * snapshot selector (Playwright's `String(locator)` form), in lexical order.
- * The chain is compared after stripping the root identifier (`page.`), with
- * whitespace and quote style normalized.
- */
-export function findActionCalls(
-  ctx: CodemodContext,
-  selector: string,
-  method: string
-): TS.CallExpression[] {
-  const { ts, sourceFile } = ctx
-  const wanted = normalizeCode(selector)
-  const matches: TS.CallExpression[] = []
-  const visit = (node: TS.Node): void => {
-    if (
-      ts.isCallExpression(node) &&
-      ts.isPropertyAccessExpression(node.expression) &&
-      node.expression.name.text === method
-    ) {
-      const chain = node.expression.expression
-      const root = chainRootIdentifier(ts, chain)
-      if (root !== null) {
-        const chainText = chain.getText(sourceFile)
-        const withoutRoot = chainText.startsWith(`${root}.`)
-          ? chainText.slice(root.length + 1)
-          : chainText
-        if (normalizeCode(withoutRoot) === wanted) matches.push(node)
-      }
-    }
-    ts.forEachChild(node, visit)
-  }
-  visit(sourceFile)
-  return matches
-}
-
-/**
- * The single call for a snapshot `selector|method|occurrence` key, or null
- * when the file cannot be trusted to contain it unambiguously:
- * `expectedTotal` (the number of executions the recording saw) must equal the
- * number of lexical matches, no match may sit inside a loop, and the
- * occurrence index must exist. Straight-line scripts satisfy all three.
- */
-export function findActionCall(
-  ctx: CodemodContext,
-  args: {
-    selector: string
-    method: string
-    occurrence: number
-    expectedTotal: number
-  }
-): TS.CallExpression | null {
-  const matches = findActionCalls(ctx, args.selector, args.method)
-  if (matches.length !== args.expectedTotal) return null
-  if (args.occurrence < 0 || args.occurrence >= matches.length) return null
-  if (matches.some((match) => isInsideLoop(ctx.ts, match))) return null
-  return matches[args.occurrence]!
 }
 
 /** JS source text for a JSON-safe value, in single-quote style. */

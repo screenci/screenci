@@ -82,6 +82,27 @@ describe('ActionParamCollector', () => {
     })
   })
 
+  it('stores the editId on the record when provided', () => {
+    const collector = new ActionParamCollector()
+    collector.apply(
+      SELECTOR,
+      'click',
+      { 'move.duration': { explicit: undefined, fallback: 900 } },
+      'save-button-click'
+    )
+    expect(collector.getRecords()[0]!.editId).toBe('save-button-click')
+  })
+
+  it('omits editId from the record when not provided', () => {
+    const collector = new ActionParamCollector()
+    collector.apply(SELECTOR, 'click', {
+      'move.duration': { explicit: undefined, fallback: 900 },
+    })
+    const record = collector.getRecords()[0]!
+    expect(record.editId).toBeUndefined()
+    expect('editId' in record).toBe(false)
+  })
+
   it('counts occurrences per selector + method', () => {
     const collector = new ActionParamCollector()
     collector.apply(SELECTOR, 'click', {})

@@ -144,12 +144,14 @@ function getActiveClickRecorder(page?: object): IEventRecorder {
 function applyActionParams(
   locator: Locator,
   method: ActionMethod,
-  spec: ActionParamSpec
+  spec: ActionParamSpec,
+  editId?: string
 ): Record<string, unknown> {
   return getActiveClickRecorder(locator.page()).applyActionParams(
     normalizeSelector(locator),
     method,
-    spec
+    spec,
+    editId
   )
 }
 
@@ -1068,11 +1070,16 @@ export function instrumentLocator(locator: Locator): Locator {
 
     assertDurationOrSpeed(move?.duration, move?.speed, 'click move')
 
-    const effective = applyActionParams(locator, 'click', {
-      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
-      position: { explicit: position, fallback: null },
-      noWaitAfter: { explicit: clickOptions.noWaitAfter, fallback: true },
-    })
+    const effective = applyActionParams(
+      locator,
+      'click',
+      {
+        ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+        position: { explicit: position, fallback: null },
+        noWaitAfter: { explicit: clickOptions.noWaitAfter, fallback: true },
+      },
+      editId
+    )
     const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
       effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
@@ -1204,12 +1211,20 @@ export function instrumentLocator(locator: Locator): Locator {
     const defaultTypingDuration =
       charCount * DEFAULT_PRESS_SEQUENTIALLY_MS_PER_CHAR
 
-    const effective = applyActionParams(locator, 'pressSequentially', {
-      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
-      position: { explicit: position, fallback: null },
-      noWaitAfter: { explicit: noWaitAfter, fallback: true },
-      duration: { explicit: explicitDuration, fallback: defaultTypingDuration },
-    })
+    const effective = applyActionParams(
+      locator,
+      'pressSequentially',
+      {
+        ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+        position: { explicit: position, fallback: null },
+        noWaitAfter: { explicit: noWaitAfter, fallback: true },
+        duration: {
+          explicit: explicitDuration,
+          fallback: defaultTypingDuration,
+        },
+      },
+      editId
+    )
     const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
       effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
@@ -1341,15 +1356,20 @@ export function instrumentLocator(locator: Locator): Locator {
       editId,
     } = options ?? {}
 
-    const effective = applyActionParams(locator, 'fill', {
-      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
-      position: { explicit: position, fallback: null },
-      noWaitAfter: { explicit: noWaitAfter, fallback: true },
-      duration: {
-        explicit: options?.duration,
-        fallback: DEFAULT_FILL_TYPING_DURATION_MS,
+    const effective = applyActionParams(
+      locator,
+      'fill',
+      {
+        ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+        position: { explicit: position, fallback: null },
+        noWaitAfter: { explicit: noWaitAfter, fallback: true },
+        duration: {
+          explicit: options?.duration,
+          fallback: DEFAULT_FILL_TYPING_DURATION_MS,
+        },
       },
-    })
+      editId
+    )
     const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
       effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
@@ -1486,11 +1506,16 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
-    const effective = applyActionParams(locator, 'tap', {
-      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
-      position: { explicit: position, fallback: null },
-      noWaitAfter: { explicit: noWaitAfter, fallback: true },
-    })
+    const effective = applyActionParams(
+      locator,
+      'tap',
+      {
+        ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+        position: { explicit: position, fallback: null },
+        noWaitAfter: { explicit: noWaitAfter, fallback: true },
+      },
+      editId
+    )
     const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
       effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
@@ -1578,11 +1603,16 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
-    const effective = applyActionParams(locator, 'check', {
-      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
-      position: { explicit: position, fallback: null },
-      noWaitAfter: { explicit: noWaitAfter, fallback: true },
-    })
+    const effective = applyActionParams(
+      locator,
+      'check',
+      {
+        ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+        position: { explicit: position, fallback: null },
+        noWaitAfter: { explicit: noWaitAfter, fallback: true },
+      },
+      editId
+    )
     const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
       effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
@@ -1673,11 +1703,16 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
-    const effective = applyActionParams(locator, 'uncheck', {
-      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
-      position: { explicit: position, fallback: null },
-      noWaitAfter: { explicit: noWaitAfter, fallback: true },
-    })
+    const effective = applyActionParams(
+      locator,
+      'uncheck',
+      {
+        ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+        position: { explicit: position, fallback: null },
+        noWaitAfter: { explicit: noWaitAfter, fallback: true },
+      },
+      editId
+    )
     const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
       effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
@@ -1791,11 +1826,16 @@ export function instrumentLocator(locator: Locator): Locator {
       })
     }
 
-    const effective = applyActionParams(locator, 'selectOption', {
-      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
-      position: { explicit: position, fallback: null },
-      noWaitAfter: { explicit: noWaitAfter, fallback: true },
-    })
+    const effective = applyActionParams(
+      locator,
+      'selectOption',
+      {
+        ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+        position: { explicit: position, fallback: null },
+        noWaitAfter: { explicit: noWaitAfter, fallback: true },
+      },
+      editId
+    )
     const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
       effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
@@ -1871,13 +1911,18 @@ export function instrumentLocator(locator: Locator): Locator {
 
     assertDurationOrSpeed(move?.duration, move?.speed, 'hover move')
 
-    const effective = applyActionParams(locator, 'hover', {
-      'move.duration': { explicit: move?.duration, fallback: null },
-      'move.speed': { explicit: move?.speed, fallback: null },
-      'move.easing': { explicit: move?.easing, fallback: 'ease-in-out' },
-      position: { explicit: position, fallback: null },
-      duration: { explicit: duration, fallback: DEFAULT_HOVER_DURATION_MS },
-    })
+    const effective = applyActionParams(
+      locator,
+      'hover',
+      {
+        'move.duration': { explicit: move?.duration, fallback: null },
+        'move.speed': { explicit: move?.speed, fallback: null },
+        'move.easing': { explicit: move?.easing, fallback: 'ease-in-out' },
+        position: { explicit: position, fallback: null },
+        duration: { explicit: duration, fallback: DEFAULT_HOVER_DURATION_MS },
+      },
+      editId
+    )
     const moveDuration = asOptionalNumber(effective['move.duration'])
     const moveSpeed = asOptionalNumber(effective['move.speed'])
     const moveEasing = (effective['move.easing'] as Easing) ?? 'ease-in-out'
@@ -1969,12 +2014,17 @@ export function instrumentLocator(locator: Locator): Locator {
       return originalScrollIntoViewIfNeeded(options)
     }
 
-    const effective = applyActionParams(locator, 'scrollIntoViewIfNeeded', {
-      easing: { explicit: options?.easing, fallback: 'ease-in-out' },
-      duration: { explicit: options?.duration, fallback: null },
-      amount: { explicit: options?.amount, fallback: null },
-      centering: { explicit: options?.centering, fallback: null },
-    })
+    const effective = applyActionParams(
+      locator,
+      'scrollIntoViewIfNeeded',
+      {
+        easing: { explicit: options?.easing, fallback: 'ease-in-out' },
+        duration: { explicit: options?.duration, fallback: null },
+        amount: { explicit: options?.amount, fallback: null },
+        centering: { explicit: options?.centering, fallback: null },
+      },
+      options?.editId
+    )
     const easing = (effective.easing as Easing) ?? 'ease-in-out'
     const duration = asOptionalNumber(effective.duration)
     const amount = asOptionalNumber(effective.amount)
@@ -2046,10 +2096,15 @@ export function instrumentLocator(locator: Locator): Locator {
 
     assertDurationOrSpeed(move?.duration, move?.speed, 'selectText move')
 
-    const effective = applyActionParams(locator, 'selectText', {
-      ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
-      duration: { explicit: duration, fallback: null },
-    })
+    const effective = applyActionParams(
+      locator,
+      'selectText',
+      {
+        ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
+        duration: { explicit: duration, fallback: null },
+      },
+      editId
+    )
     const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
       effectiveCursorMove(effective)
     const selectDuration = asOptionalNumber(effective.duration)
@@ -2142,15 +2197,23 @@ export function instrumentLocator(locator: Locator): Locator {
     assertDurationOrSpeed(move?.duration, move?.speed, 'dragTo move')
     assertDurationOrSpeed(options?.duration, options?.speed, 'dragTo drag')
 
-    const effective = applyActionParams(locator, 'dragTo', {
-      ...cursorMoveSpec(move, DEFAULT_DRAG_PRESS_DELAY_MS),
-      duration: { explicit: options?.duration, fallback: null },
-      speed: { explicit: options?.speed, fallback: null },
-      easing: { explicit: options?.easing, fallback: 'ease-in-out' },
-      dragSteps: { explicit: options?.dragSteps, fallback: DEFAULT_DRAG_STEPS },
-      sourcePosition: { explicit: sourcePosition, fallback: null },
-      targetPosition: { explicit: targetPosition, fallback: null },
-    })
+    const effective = applyActionParams(
+      locator,
+      'dragTo',
+      {
+        ...cursorMoveSpec(move, DEFAULT_DRAG_PRESS_DELAY_MS),
+        duration: { explicit: options?.duration, fallback: null },
+        speed: { explicit: options?.speed, fallback: null },
+        easing: { explicit: options?.easing, fallback: 'ease-in-out' },
+        dragSteps: {
+          explicit: options?.dragSteps,
+          fallback: DEFAULT_DRAG_STEPS,
+        },
+        sourcePosition: { explicit: sourcePosition, fallback: null },
+        targetPosition: { explicit: targetPosition, fallback: null },
+      },
+      editId
+    )
     const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
       effectiveCursorMove(effective)
     const dragSpeed = asOptionalNumber(effective.speed)

@@ -63,6 +63,8 @@ export type ActionParamRecord = {
   selector: string
   method: ActionMethod
   occurrence: number
+  /** The call site's editId slug, when the action was called with one. */
+  editId?: string
   params: Record<string, ActionParamValue>
 }
 
@@ -230,7 +232,8 @@ export class ActionParamCollector {
   apply(
     selector: string,
     method: ActionMethod,
-    spec: ActionParamSpec
+    spec: ActionParamSpec,
+    editId?: string
   ): Record<string, unknown> {
     const occurrenceKey = `${selector}|${method}`
     const occurrence = this.occurrences.get(occurrenceKey) ?? 0
@@ -270,7 +273,13 @@ export class ActionParamCollector {
       }
     }
 
-    this.records.push({ selector, method, occurrence, params })
+    this.records.push({
+      selector,
+      method,
+      occurrence,
+      ...(editId !== undefined && { editId }),
+      params,
+    })
     return effective
   }
 

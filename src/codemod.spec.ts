@@ -6,8 +6,6 @@ import {
   createContext,
   diffLines,
   ensureNamedImport,
-  findActionCall,
-  findActionCalls,
   findCallNamed,
   insertStatementAfter,
   insertStatementBefore,
@@ -21,6 +19,10 @@ import {
 
 function ctxOf(source: string): CodemodContext {
   return createContext(ts, 'test.screenci.ts', source)
+}
+
+function callNamed(ctx: CodemodContext, method: string) {
+  return findCallNamed(ctx, ctx.sourceFile, method)!
 }
 
 function applied(source: string, edit: TextEdit | null): string {
@@ -69,79 +71,12 @@ describe('valueToSource', () => {
   })
 })
 
-describe('findActionCalls / findActionCall', () => {
-  const source = [
-    "import { video } from 'screenci'",
-    '',
-    "video('Demo', async ({ page }) => {",
-    "  await page.getByRole('button', { name: 'Save' }).click()",
-    "  await page.getByRole('button', { name: 'Save' }).click({ delay: 5 })",
-    "  await page.locator('#name').fill('Jane')",
-    '})',
-    '',
-  ].join('\n')
-
-  it('finds calls by selector and method, ignoring quote style', () => {
-    const ctx = ctxOf(source.replace(/'Save'/g, '"Save"'))
-    const calls = findActionCalls(
-      ctx,
-      "getByRole('button', { name: 'Save' })",
-      'click'
-    )
-    expect(calls).toHaveLength(2)
-  })
-
-  it('resolves an occurrence when counts match', () => {
-    const ctx = ctxOf(source)
-    const call = findActionCall(ctx, {
-      selector: "getByRole('button', { name: 'Save' })",
-      method: 'click',
-      occurrence: 1,
-      expectedTotal: 2,
-    })
-    expect(call).not.toBeNull()
-    expect(call!.getText(ctx.sourceFile)).toContain('delay: 5')
-  })
-
-  it('returns null when lexical count differs from the recorded count', () => {
-    const ctx = ctxOf(source)
-    const call = findActionCall(ctx, {
-      selector: "getByRole('button', { name: 'Save' })",
-      method: 'click',
-      occurrence: 0,
-      expectedTotal: 3,
-    })
-    expect(call).toBeNull()
-  })
-
-  it('returns null when a match sits inside a loop', () => {
-    const looped = [
-      'for (const i of [1, 2]) {',
-      "  await page.locator('#x').click()",
-      '}',
-    ].join('\n')
-    const ctx = ctxOf(looped)
-    const call = findActionCall(ctx, {
-      selector: "locator('#x')",
-      method: 'click',
-      occurrence: 0,
-      expectedTotal: 1,
-    })
-    expect(call).toBeNull()
-  })
-})
-
 describe('setOptionValue', () => {
   it('replaces an existing literal value', () => {
     const source =
       "await page.locator('#a').click({ move: { duration: 500 } })\n"
     const ctx = ctxOf(source)
-    const call = findActionCall(ctx, {
-      selector: "locator('#a')",
-      method: 'click',
-      occurrence: 0,
-      expectedTotal: 1,
-    })!
+    const call = callNamed(ctx, 'click')
     const edit = setOptionValue(ctx, call, 0, ['move', 'duration'], 1200)
     expect(applied(source, edit)).toBe(
       "await page.locator('#a').click({ move: { duration: 1200 } })\n"
@@ -151,12 +86,7 @@ describe('setOptionValue', () => {
   it('creates a nested object when the path is missing', () => {
     const source = "await page.locator('#a').click({ delay: 5 })\n"
     const ctx = ctxOf(source)
-    const call = findActionCall(ctx, {
-      selector: "locator('#a')",
-      method: 'click',
-      occurrence: 0,
-      expectedTotal: 1,
-    })!
+    const call = callNamed(ctx, 'click')
     const edit = setOptionValue(ctx, call, 0, ['move', 'duration'], 800)
     expect(applied(source, edit)).toBe(
       "await page.locator('#a').click({ delay: 5, move: { duration: 800 } })\n"
@@ -166,12 +96,7 @@ describe('setOptionValue', () => {
   it('adds the options argument when missing (index 0)', () => {
     const source = "await page.locator('#a').click()\n"
     const ctx = ctxOf(source)
-    const call = findActionCall(ctx, {
-      selector: "locator('#a')",
-      method: 'click',
-      occurrence: 0,
-      expectedTotal: 1,
-    })!
+    const call = callNamed(ctx, 'click')
     const edit = setOptionValue(ctx, call, 0, ['position'], { x: 1, y: 2 })
     expect(applied(source, edit)).toBe(
       "await page.locator('#a').click({ position: { x: 1, y: 2 } })\n"
@@ -181,12 +106,7 @@ describe('setOptionValue', () => {
   it('adds the options argument after a required argument (index 1)', () => {
     const source = "await page.locator('#a').fill('Jane')\n"
     const ctx = ctxOf(source)
-    const call = findActionCall(ctx, {
-      selector: "locator('#a')",
-      method: 'fill',
-      occurrence: 0,
-      expectedTotal: 1,
-    })!
+    const call = callNamed(ctx, 'fill')
     const edit = setOptionValue(ctx, call, 1, ['duration'], 900)
     expect(applied(source, edit)).toBe(
       "await page.locator('#a').fill('Jane', { duration: 900 })\n"
@@ -204,12 +124,7 @@ describe('setOptionValue', () => {
       '',
     ].join('\n')
     const ctx = ctxOf(source)
-    const call = findActionCall(ctx, {
-      selector: "locator('#a')",
-      method: 'click',
-      occurrence: 0,
-      expectedTotal: 1,
-    })!
+    const call = callNamed(ctx, 'click')
     const edit = setOptionValue(ctx, call, 0, ['move', 'duration'], 750)
     expect(applied(source, edit)).toBe(
       source.replace('duration: 500', 'duration: 750')
@@ -219,32 +134,17 @@ describe('setOptionValue', () => {
   it('returns null for a non-literal current value', () => {
     const source = "await page.locator('#a').click({ delay: DELAY })\n"
     const ctx = ctxOf(source)
-    const call = findActionCall(ctx, {
-      selector: "locator('#a')",
-      method: 'click',
-      occurrence: 0,
-      expectedTotal: 1,
-    })!
+    const call = callNamed(ctx, 'click')
     // Replacing an identifier value is allowed (we overwrite the initializer);
     // but a spread that may hide the option must refuse.
     const spreadSource = "await page.locator('#a').click({ ...base })\n"
     const spreadCtx = ctxOf(spreadSource)
-    const spreadCall = findActionCall(spreadCtx, {
-      selector: "locator('#a')",
-      method: 'click',
-      occurrence: 0,
-      expectedTotal: 1,
-    })!
+    const spreadCall = findCallNamed(spreadCtx, spreadCtx.sourceFile, 'click')!
     expect(setOptionValue(spreadCtx, spreadCall, 0, ['delay'], 5)).toBeNull()
     // Options argument that is not an object literal: refuse.
     const identSource = "await page.locator('#a').click(opts)\n"
     const identCtx = ctxOf(identSource)
-    const identCall = findActionCall(identCtx, {
-      selector: "locator('#a')",
-      method: 'click',
-      occurrence: 0,
-      expectedTotal: 1,
-    })!
+    const identCall = findCallNamed(identCtx, identCtx.sourceFile, 'click')!
     expect(setOptionValue(identCtx, identCall, 0, ['delay'], 5)).toBeNull()
     void call
   })
@@ -252,12 +152,7 @@ describe('setOptionValue', () => {
 
 describe('removeOption', () => {
   function callOf(ctx: CodemodContext, method = 'click') {
-    return findActionCall(ctx, {
-      selector: "locator('#a')",
-      method,
-      occurrence: 0,
-      expectedTotal: 1,
-    })!
+    return findCallNamed(ctx, ctx.sourceFile, method)!
   }
 
   it('removes a property and its comma', () => {

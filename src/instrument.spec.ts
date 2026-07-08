@@ -918,6 +918,32 @@ describe('instrumentLocator', () => {
       fallback: 'ease-in-out',
     })
     expect(spec['noWaitAfter']).toEqual({ explicit: undefined, fallback: true })
+    // No editId at the call site: nothing forwarded.
+    expect(applySpy.mock.calls[0]![3]).toBeUndefined()
+  })
+
+  it('forwards the call-site editId to applyActionParams', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const bb = { x: 100, y: 200, width: 80, height: 40 }
+    const locator = makeLocatorMock(bb, page)
+    instrumentLocator(locator)
+    await Promise.all([
+      (
+        locator as unknown as {
+          click(options?: { editId?: string }): Promise<void>
+        }
+      ).click({ editId: 'save-button-click' }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const applySpy = recorder.applyActionParams as ReturnType<typeof vi.fn>
+    expect(applySpy).toHaveBeenCalledTimes(1)
+    expect(applySpy.mock.calls[0]![3]).toBe('save-button-click')
   })
 
   it('uses the effective values returned by applyActionParams (editor override)', async () => {

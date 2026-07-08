@@ -485,14 +485,20 @@ describe('CLI', () => {
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })
 
-    it('should reject the removed dev command', async () => {
+    // `dev` was once a removed command; it is now the editor listener command,
+    // so it must parse as a real command (here it exits asking for the secret)
+    // instead of being rejected as unknown.
+    it('recognizes the dev command', async () => {
       process.argv = ['node', 'cli.js', 'dev']
 
       const { main } = await import('./cli')
 
       await expect(main()).rejects.toThrow('process.exit called')
 
-      expect(loggerErrorSpy).toHaveBeenCalledWith('Unknown command: dev')
+      expect(loggerErrorSpy).not.toHaveBeenCalledWith('Unknown command: dev')
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('SCREENCI_SECRET')
+      )
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })
 

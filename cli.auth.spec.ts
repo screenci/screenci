@@ -376,7 +376,7 @@ describe('CLI', () => {
       await expect(main()).rejects.toThrow('process.exit called')
 
       expect(loggerErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('record, test')
+        expect.stringContaining('record, dev, test')
       )
       // The browser sign-in `login` command is gone from the OTP-based flow, so
       // it must not be advertised as a top-level command.

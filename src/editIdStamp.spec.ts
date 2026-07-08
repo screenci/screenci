@@ -79,9 +79,13 @@ describe('planEditIdStamps', () => {
     const after = result.files[0]!.after
     expect(after).toContain(".click({ editId: 'click1' })")
     expect(after).toContain(".fill('Jane', { duration: 600, editId: 'fill1' })")
-    expect(after).toContain("}, { editId: 'zoom1' })")
+    expect(after).toContain("}, { editId: 'autoZoom1' })")
     expect(result.stamped).toHaveLength(3)
-    expect(result.counters.counters).toEqual({ click: 1, fill: 1, zoom: 1 })
+    expect(result.counters.counters).toEqual({
+      click: 1,
+      fill: 1,
+      autoZoom: 1,
+    })
   })
 
   it('skips entries that already have an editId or no source', () => {

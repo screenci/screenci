@@ -542,7 +542,7 @@ report confirms the code now produces the same result.
 
 Every editable action can carry a stable, human-readable identity slug in
 code, e.g. `.click({ editId: 'click1' })` or
-`autoZoom(fn, { editId: 'zoom1' })`. `screenci sync` (and `screenci dev
+`autoZoom(fn, { editId: 'autoZoom1' })`. `screenci sync` (and `screenci dev
 --sync`) stamps missing slugs automatically after a recording, allocating
 numbers from `.screenci/edit-ids.json` (commit it; numbers are never reused
 and stamped ids are never removed). With an editId, the action's stable key

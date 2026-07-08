@@ -119,15 +119,9 @@ function stampTarget(entry: EditableSnapshotEntry): {
   }
 }
 
-/** Slug prefix for a call name (`autoZoom` reads better as `zoom`). */
+/** Slug prefix: always the function name of the stamped call. */
 function prefixFor(callName: string): string {
-  return callName === 'autoZoom'
-    ? 'zoom'
-    : callName === 'selectOption'
-      ? 'select'
-      : callName === 'pressSequentially'
-        ? 'type'
-        : callName
+  return callName
 }
 
 export type EditIdStampPlan = {

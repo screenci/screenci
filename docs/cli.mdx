@@ -557,7 +557,7 @@ static analysis (the TypeScript parser), no agent involved.
 
 Before applying anything, `sync` stamps a stable identity onto every recorded
 action that lacks one: a human-readable `editId` slug (`click1`, `fill2`,
-`zoom1`) inserted into the call's options. From then on edits locate their
+`autoZoom1`) inserted into the call's options. From then on edits locate their
 call site by that exact slug, so refactors, moved lines, and locator changes
 never break the mapping. Slugs are allocated from `.screenci/edit-ids.json`
 (commit it), numbers are never reused, and stamped ids are never removed.

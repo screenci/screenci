@@ -41,7 +41,7 @@ export type EditableActionDescriptor = {
   /** Input action sub-kind: 'click', 'pressSequentially', 'dragTo', ... */
   subKind?: string
   /**
-   * Stable, human-readable identity slug from code (e.g. `fill1`, `zoom2`),
+   * Stable, human-readable identity slug from code (e.g. `fill1`, `autoZoom2`),
    * set via the `editId` option and stamped automatically by `screenci sync`.
    * When present it IS the action's stable key: matching survives refactors,
    * moved lines, and locator changes. The matcher-based identity below is the

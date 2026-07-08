@@ -727,6 +727,13 @@ Two commands keep code and Editor edits from drifting apart:
   overrides are included as warnings. Paste the output to a coding agent, apply
   the edits, re-record, and the overrides can be cleared.
 
+  The prompt also has a "Studio options to move into code" section covering the
+  render and record options the Editor holds (SET directives naming each option
+  path and value, to place in `defineConfig` or on the video) and a NOTE per
+  content field the Editor holds (narration, on-screen text, audio, overlays),
+  so those edits can be codified too. Record options are captured at record
+  time, so re-record after codifying them.
+
 Both accept `-g, --grep <regex>` to filter videos by name (the same semantics
 as Playwright's `--grep`) and `-c, --config <path>`.
 

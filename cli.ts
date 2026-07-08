@@ -98,6 +98,10 @@ import {
   compareWebStateToSnapshot,
   formatStatusReport,
 } from './src/actionSync.js'
+import {
+  buildStudioSyncPrompt,
+  type StudioSyncState,
+} from './src/studioSync.js'
 import { maybeExtractVoiceSampleAudio } from './src/voiceSampleAudio.js'
 import {
   type CliCredential,
@@ -3435,6 +3439,46 @@ const defaultEditableOverridesFetcher: EditableOverridesFetcher = async ({
   }
 }
 
+/** Fetcher for the web editor's Studio option overrides, injectable in tests. */
+export type StudioSyncFetcher = (args: {
+  apiUrl: string
+  secret: string
+  projectName: string
+}) => Promise<StudioSyncState>
+
+const defaultStudioSyncFetcher: StudioSyncFetcher = async ({
+  apiUrl,
+  secret,
+  projectName,
+}) => {
+  const params = new URLSearchParams({ projectName })
+  const res = await fetch(`${apiUrl}/cli/studio-sync?${params}`, {
+    headers: { 'X-ScreenCI-Secret': secret },
+  })
+  if (!res.ok) return { videos: {} }
+  const body = (await res.json()) as { videos?: unknown }
+  return {
+    videos:
+      typeof body.videos === 'object' && body.videos !== null
+        ? (body.videos as StudioSyncState['videos'])
+        : {},
+  }
+}
+
+/** Restrict a Studio-sync map to the videos whose names match `--grep`. */
+function filterStudioSyncByGrep(
+  state: StudioSyncState,
+  grep?: string
+): StudioSyncState {
+  if (grep === undefined) return state
+  const re = new RegExp(grep)
+  const videos: StudioSyncState['videos'] = {}
+  for (const [name, video] of Object.entries(state.videos)) {
+    if (re.test(name)) videos[name] = video
+  }
+  return { videos }
+}
+
 /**
  * Filters the per-video timeline-edits map by the same `--grep` regex the
  * action-parameter report uses, so `screenci status -g <name>` narrows the
@@ -3508,7 +3552,8 @@ export async function printSyncPrompt(
   grep?: string,
   client: ActionOverridesClient = defaultActionOverridesClient,
   write: (text: string) => void = (text) => process.stdout.write(text),
-  fetchEditableOverrides: EditableOverridesFetcher = defaultEditableOverridesFetcher
+  fetchEditableOverrides: EditableOverridesFetcher = defaultEditableOverridesFetcher,
+  fetchStudioSync: StudioSyncFetcher = defaultStudioSyncFetcher
 ): Promise<void> {
   const { comparison, projectName, screenciDir, apiUrl, secret } =
     await compareEditorStateToSnapshot(configPath, grep, client)
@@ -3536,10 +3581,22 @@ export async function printSyncPrompt(
     // Best-effort: the action-parameter prompt still prints.
   }
 
-  if (prompt === null && placement.length === 0) {
+  // Studio option overrides (render/record options) and content edits held in
+  // the editor, so an agent can codify them too.
+  let studio: string | null = null
+  try {
+    const state = await fetchStudioSync({ apiUrl, secret, projectName })
+    studio = buildStudioSyncPrompt(
+      filterStudioSyncByGrep(state, grep),
+      projectName
+    )
+  } catch {
+    // Best-effort: the rest of the prompt still prints.
+  }
+
+  if (prompt === null && placement.length === 0 && studio === null) {
     write(
-      'Nothing to sync: the web editor has no action-parameter edits that ' +
-        'differ from code.\n'
+      'Nothing to sync: the web editor has no edits that differ from code.\n'
     )
     return
   }
@@ -3547,6 +3604,10 @@ export async function printSyncPrompt(
   if (placement.length > 0) {
     write(`\n# Timeline edits to move into code\n\n`)
     write(`${placement.join('\n')}\n`)
+  }
+  if (studio !== null) {
+    write(`\n# Studio options to move into code\n\n`)
+    write(`${studio}\n`)
   }
 }
 

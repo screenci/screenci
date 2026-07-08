@@ -871,6 +871,170 @@ export function ensureNamedImport(
 }
 
 /**
+ * The single `video('<name>', ...)` builder call for `videoName`: a call whose
+ * FIRST argument is the string literal `videoName` and whose callee chain's
+ * leftmost identifier is `video`. Supports every builder form:
+ * `video('N', fn)`, `video.narration([...])('N', fn)`,
+ * `video.renderOptions({...}).recordOptions({...})('N', fn)`. Null when the
+ * declaration is absent or (duplicated in one file) ambiguous, so the caller
+ * never edits a chain it cannot pin down.
+ */
+export function findVideoCall(
+  ctx: CodemodContext,
+  videoName: string
+): TS.CallExpression | null {
+  const { ts, sourceFile } = ctx
+  const matches: TS.CallExpression[] = []
+  const visit = (node: TS.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const first = node.arguments[0]
+      if (
+        first !== undefined &&
+        ts.isStringLiteral(first) &&
+        first.text === videoName &&
+        chainRootIdentifier(ts, node.expression) === 'video'
+      ) {
+        matches.push(node)
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return matches.length === 1 ? matches[0]! : null
+}
+
+/**
+ * The `.<method>(<arg>)` call already present in `callee`'s chain (e.g. the
+ * existing `.renderOptions({...})` of a video builder), or null when the chain
+ * has no such call. Walks the property/call chain from the outside in.
+ */
+function findMethodCallInChain(
+  ts: TsModule,
+  callee: TS.Expression,
+  method: string
+): TS.CallExpression | null {
+  let current: TS.Expression = callee
+  for (;;) {
+    if (ts.isCallExpression(current)) {
+      const inner = current.expression
+      if (ts.isPropertyAccessExpression(inner) && inner.name.text === method) {
+        return current
+      }
+      current = current.expression
+    } else if (ts.isPropertyAccessExpression(current)) {
+      current = current.expression
+    } else if (ts.isNonNullExpression(current)) {
+      current = current.expression
+    } else {
+      return null
+    }
+  }
+}
+
+/** Flatten a plain-object value to `{ path, value }` leaves (arrays are leaves). */
+function optionLeaves(
+  value: Record<string, unknown>,
+  prefix: string[] = []
+): Array<{ path: string[]; value: unknown }> {
+  const leaves: Array<{ path: string[]; value: unknown }> = []
+  for (const [key, entryValue] of Object.entries(value)) {
+    const path = [...prefix, key]
+    if (
+      entryValue !== null &&
+      typeof entryValue === 'object' &&
+      !Array.isArray(entryValue)
+    ) {
+      leaves.push(...optionLeaves(entryValue as Record<string, unknown>, path))
+    } else {
+      leaves.push({ path, value: entryValue })
+    }
+  }
+  return leaves
+}
+
+/**
+ * Merge `valueObject`'s leaves into the source text of an object literal,
+ * reusing `setOptionValue`'s deep-set logic. Returns the new object-literal
+ * source, or null when any leaf resists a mechanical edit (spread, shorthand,
+ * non-literal nesting, non-JSON value). Same-value merges return the input
+ * unchanged (idempotent).
+ */
+function mergeObjectLiteralText(
+  ts: TsModule,
+  objectText: string,
+  valueObject: Record<string, unknown>
+): string | null {
+  let text = objectText
+  for (const leaf of optionLeaves(valueObject)) {
+    const source = `__m(${text})`
+    const ctx = createContext(ts, 'merge.ts', source)
+    const statement = ctx.sourceFile.statements[0]
+    if (statement === undefined || !ts.isExpressionStatement(statement)) {
+      return null
+    }
+    const call = statement.expression
+    if (!ts.isCallExpression(call)) return null
+    const edit = setOptionValue(ctx, call, 0, leaf.path, leaf.value)
+    if (edit === null) return null
+    const newSource = applyTextEdits(source, [edit])
+    const reparsed = createContext(ts, 'merge.ts', newSource)
+    const reStatement = reparsed.sourceFile.statements[0]
+    if (reStatement === undefined || !ts.isExpressionStatement(reStatement)) {
+      return null
+    }
+    const reCall = reStatement.expression
+    if (!ts.isCallExpression(reCall)) return null
+    const arg = reCall.arguments[0]
+    if (arg === undefined) return null
+    text = newSource.slice(arg.getStart(), arg.getEnd())
+  }
+  return text
+}
+
+/**
+ * Codify a Studio render/record option set onto a video builder call: either
+ * update an existing `.<method>({...})` object literal (deep-merging the given
+ * keys) or insert `.<method>(<object>)` into the chain immediately before the
+ * final `('<name>', fn)` call. `method` is `renderOptions` or `recordOptions`.
+ *
+ * Conservative by design: returns null when the video declaration is missing or
+ * ambiguous, when the value is not JSON-serialisable, or when an existing
+ * `.<method>()` argument is not a plain object literal (a spread or a variable).
+ * Never mangles a chain it does not fully understand. Idempotent: re-applying
+ * the same values produces no edit.
+ */
+export function setBuilderOptions(
+  ctx: CodemodContext,
+  videoName: string,
+  method: 'renderOptions' | 'recordOptions',
+  valueObject: Record<string, unknown>
+): TextEdit[] | null {
+  const { ts } = ctx
+  const call = findVideoCall(ctx, videoName)
+  if (call === null) return null
+  const existing = findMethodCallInChain(ts, call.expression, method)
+  if (existing !== null) {
+    const arg = existing.arguments[0]
+    if (arg === undefined || !ts.isObjectLiteralExpression(arg)) return null
+    const objectText = ctx.source.slice(arg.getStart(), arg.getEnd())
+    const merged = mergeObjectLiteralText(ts, objectText, valueObject)
+    if (merged === null) return null
+    if (merged === objectText) return [] // idempotent no-op
+    return [{ start: arg.getStart(), end: arg.getEnd(), replacement: merged }]
+  }
+  const valueSource = valueToSource(valueObject)
+  if (valueSource === null) return null
+  const insertAt = call.expression.getEnd()
+  return [
+    {
+      start: insertAt,
+      end: insertAt,
+      replacement: `.${method}(${valueSource})`,
+    },
+  ]
+}
+
+/**
  * Minimal line diff (LCS) for dry-run output: `-` lines from `before`, `+`
  * lines from `after`, unchanged lines omitted except one line of context on
  * each side of a change.

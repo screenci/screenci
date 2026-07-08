@@ -98,6 +98,7 @@ import {
 } from './src/actionSync.js'
 import { diffLines, loadTypescript, type TsModule } from './src/codemod.js'
 import { planCodeSync, type CodeSyncPlan } from './src/codeSync.js'
+import type { StudioSyncState } from './src/studioSync.js'
 import {
   planEditIdStamps,
   readEditIdCounters,
@@ -3486,6 +3487,36 @@ const defaultEditableOverridesFetcher: EditableOverridesFetcher = async ({
   }
 }
 
+/** Fetcher for the web editor's Studio render/record option state, injectable. */
+export type StudioSyncFetcher = (args: {
+  apiUrl: string
+  secret: string
+  projectName: string
+}) => Promise<StudioSyncState>
+
+const defaultStudioSyncFetcher: StudioSyncFetcher = async ({
+  apiUrl,
+  secret,
+  projectName,
+}) => {
+  try {
+    const params = new URLSearchParams({ projectName })
+    const res = await fetch(`${apiUrl}/cli/studio-sync?${params}`, {
+      headers: { 'X-ScreenCI-Secret': secret },
+    })
+    if (!res.ok) return { videos: {} }
+    const body = (await res.json()) as { videos?: unknown }
+    return {
+      videos:
+        typeof body.videos === 'object' && body.videos !== null
+          ? (body.videos as StudioSyncState['videos'])
+          : {},
+    }
+  } catch {
+    return { videos: {} }
+  }
+}
+
 /**
  * Filters the per-video timeline-edits map by the same `--grep` regex the
  * action-parameter report uses, so `screenci status -g <name>` narrows the
@@ -3502,6 +3533,18 @@ function filterTimelineEditsByGrep(
     Object.entries(timelineEdits).filter(([videoName]) =>
       pattern.test(videoName)
     )
+  )
+}
+
+/** Filters the per-video Studio option map by the `--grep` regex. */
+function filterStudioSyncByGrep(
+  videos: StudioSyncState['videos'],
+  grep?: string
+): StudioSyncState['videos'] {
+  if (grep === undefined) return videos
+  const pattern = new RegExp(grep)
+  return Object.fromEntries(
+    Object.entries(videos).filter(([videoName]) => pattern.test(videoName))
   )
 }
 
@@ -3548,6 +3591,7 @@ export async function printActionStatus(
 export type SyncCommandDeps = {
   client?: ActionOverridesClient
   fetchEditableOverrides?: EditableOverridesFetcher
+  fetchStudioSync?: StudioSyncFetcher
   loadTs?: (projectDir: string) => TsModule | null
   readFileText?: (path: string) => string | null
   writeFileText?: (path: string, text: string) => void
@@ -3584,6 +3628,7 @@ function planStampsAndCodeSync(args: {
     typeof splitTimelineEditsByVideo
   >['removedCodify']
   renames: ReturnType<typeof splitTimelineEditsByVideo>['renames']
+  studioSync: StudioSyncState
   readFile: (path: string) => string | null
 }): {
   plan: CodeSyncPlan
@@ -3610,6 +3655,7 @@ function planStampsAndCodeSync(args: {
       codifyEdits: args.codifyEdits,
       removedCodifyEdits: args.removedCodifyEdits,
       renames: args.renames,
+      studioSync: args.studioSync,
     },
     { ts: args.ts, readFile }
   )
@@ -3685,6 +3731,19 @@ export async function runSync(
     // ignore: the endpoint may be unavailable
   }
 
+  // Studio render/record option edits, codified into builder calls. Best-effort
+  // and tolerant of a failed fetch, like the timeline edits above.
+  let studioSync: StudioSyncState = { videos: {} }
+  try {
+    const fetchStudio = deps.fetchStudioSync ?? defaultStudioSyncFetcher
+    const fetched = await fetchStudio({ apiUrl, secret, projectName })
+    studioSync = {
+      videos: filterStudioSyncByGrep(fetched.videos, options.grep),
+    }
+  } catch {
+    // ignore: the endpoint may be unavailable
+  }
+
   const editableSnapshot = readEditableSnapshot(screenciDir)
   const actionSnapshot = readActionParamsSnapshot(screenciDir)
   const ts = (deps.loadTs ?? loadTypescript)(dirname(screenciDir))
@@ -3714,6 +3773,7 @@ export async function runSync(
           codifyEdits,
           removedCodifyEdits,
           renames,
+          studioSync,
           readFile: deps.readFileText ?? defaultReadFileText,
         })
   const plan = planned.plan
@@ -3818,6 +3878,7 @@ export async function runDevAutoSync(
   const client = deps.client ?? defaultActionOverridesClient
   const fetchEditable =
     deps.fetchEditableOverrides ?? defaultEditableOverridesFetcher
+  const fetchStudio = deps.fetchStudioSync ?? defaultStudioSyncFetcher
   let lastFingerprint = ''
 
   while (!controller.stopped) {
@@ -3839,7 +3900,17 @@ export async function runDevAutoSync(
       } catch {
         // ignore: the endpoint may be unavailable
       }
-      const fingerprint = JSON.stringify([comparison.videos, timelineEdits])
+      let studioSync: StudioSyncState = { videos: {} }
+      try {
+        studioSync = await fetchStudio({ apiUrl, secret, projectName })
+      } catch {
+        // ignore: the endpoint may be unavailable
+      }
+      const fingerprint = JSON.stringify([
+        comparison.videos,
+        timelineEdits,
+        studioSync.videos,
+      ])
       if (fingerprint === lastFingerprint) continue
       lastFingerprint = fingerprint
 
@@ -3860,6 +3931,7 @@ export async function runDevAutoSync(
         codifyEdits: codify,
         removedCodifyEdits: removedCodify,
         renames,
+        studioSync,
         readFile: deps.readFileText ?? defaultReadFileText,
       })
       const plan = planned.plan

@@ -574,6 +574,10 @@ It can:
   or an instant `moveNarration(...)` / `resizeRecording(...)` /
   `setBackground(...)` point (with the needed imports and gap `waitForTimeout`
   sleeps)
+- codify Editor render/record option edits into the video's builder chain,
+  updating an existing `video.renderOptions({...})` / `video.recordOptions({...})`
+  call in place (merging the changed keys) or inserting one before the video's
+  `('Name', fn)` call when absent
 - apply editId renames made in the Editor
 
 Re-running `sync` is safe. Applying the same edits again is a no-op: an effect

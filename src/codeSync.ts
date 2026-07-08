@@ -20,6 +20,7 @@
 import { jsonEqual, type ActionMethod } from './actionParams.js'
 import type { ActionParamsSnapshot } from './actionParamsSnapshot.js'
 import type { WebStateComparison } from './actionSync.js'
+import type { StudioSyncState } from './studioSync.js'
 import type {
   CodifyEditsByVideo,
   EditableOverridesByVideo,
@@ -42,6 +43,7 @@ import {
   enclosingWrapBody,
   ensureNamedImport,
   findCallByEditId,
+  findVideoCall,
   insertStatementBefore,
   insertStatementsAfter,
   isLinearCallSite,
@@ -50,6 +52,7 @@ import {
   removeFullLine,
   renameEditId as renameEditIdInSource,
   removeOption,
+  setBuilderOptions,
   setOptionValue,
   splitWaitEdit,
   statementsAfter,
@@ -130,6 +133,12 @@ export type CodeSyncInput = {
    */
   removedCodifyEdits: CodifyEditsByVideo
   renames: RenamesByVideo
+  /**
+   * Studio render/record option edits, keyed by video name. Codified into
+   * `video.renderOptions({...})` / `video.recordOptions({...})` builder calls.
+   * Optional so existing callers (and tests) need not pass it.
+   */
+  studioSync?: StudioSyncState
 }
 
 /** A slug that is safe as a code identity and a wire key. */
@@ -738,7 +747,19 @@ export function planCodeSync(
       ...Object.keys(input.codifyEdits),
       ...Object.keys(input.removedCodifyEdits),
       ...Object.keys(input.renames),
+      ...Object.keys(input.studioSync?.videos ?? {}),
     ]),
+  ]
+
+  // Every source file named across the whole editable snapshot: the fallback
+  // search space for a studio video that has no editable entries of its own.
+  const allSnapshotFiles = [
+    ...new Set(
+      Object.values(input.editableSnapshot.videos)
+        .flat()
+        .map((entry) => entry.source?.file)
+        .filter((file): file is string => file !== undefined)
+    ),
   ]
 
   for (const videoName of videoNames) {
@@ -979,6 +1000,45 @@ export function planCodeSync(
         markUnappliable(
           `locked rename '${rename.editId}' -> '${rename.newEditId}'`
         )
+      }
+    }
+
+    // ── Studio render/record option edits (codify into builder calls) ──────
+    const studioVideo = input.studioSync?.videos[videoName]
+    if (studioVideo !== undefined) {
+      // Locate the single file that declares this video's builder call. Prefer
+      // the video's editable source files; fall back to every source file in
+      // the snapshot so a video with no editable entries can still be found.
+      const searchFiles =
+        candidateFiles.length > 0 ? candidateFiles : allSnapshotFiles
+      const declaringFile = (): string | null => {
+        const holders = searchFiles.filter((file) => {
+          const text = getText(file)
+          if (text === null) return false
+          const ctx = createContext(deps.ts, file, text)
+          return findVideoCall(ctx, videoName) !== null
+        })
+        return holders.length === 1 ? holders[0]! : null
+      }
+      const file = declaringFile()
+      for (const method of ['renderOptions', 'recordOptions'] as const) {
+        const values = studioVideo[method]
+        if (values === undefined || Object.keys(values).length === 0) continue
+        const ok =
+          file !== null &&
+          tryApply(file, (ctx) =>
+            setBuilderOptions(ctx, videoName, method, values)
+          )
+        if (ok) {
+          applied.push({
+            videoName,
+            file: file!,
+            description: `codify ${method} on video '${videoName}'`,
+          })
+          bump(appliedCounts, videoName)
+        } else {
+          markUnappliable(`locked ${method} on video '${videoName}'`)
+        }
       }
     }
   }

@@ -12,6 +12,7 @@ import {
   insertStatementBefore,
   removeFullLine,
   removeOption,
+  setBuilderOptions,
   setOptionValue,
   statementAtLine,
   statementsAfter,
@@ -356,6 +357,81 @@ describe('ensureNamedImport', () => {
   it('returns null when there is no import from the module', () => {
     const ctx = ctxOf("import { test } from '@playwright/test'\n")
     expect(ensureNamedImport(ctx, 'screenci', 'placeZoom')).toBeNull()
+  })
+})
+
+describe('setBuilderOptions', () => {
+  function applyAll(source: string, edits: TextEdit[] | null): string {
+    expect(edits).not.toBeNull()
+    return applyTextEdits(source, edits!)
+  }
+
+  it('inserts renderOptions into a bare video(name, fn) call', () => {
+    const source = "video('Demo', async ({ page }) => {})"
+    const ctx = ctxOf(source)
+    const edits = setBuilderOptions(ctx, 'Demo', 'renderOptions', {
+      fps: 60,
+    })
+    expect(applyAll(source, edits)).toBe(
+      "video.renderOptions({ fps: 60 })('Demo', async ({ page }) => {})"
+    )
+  })
+
+  it('inserts before the final call on a video.narration([...]) chain', () => {
+    const source = "video.narration(['en'])('Demo', async () => {})"
+    const ctx = ctxOf(source)
+    const edits = setBuilderOptions(ctx, 'Demo', 'recordOptions', {
+      headless: true,
+    })
+    expect(applyAll(source, edits)).toBe(
+      "video.narration(['en']).recordOptions({ headless: true })('Demo', async () => {})"
+    )
+  })
+
+  it('updates an existing renderOptions object literal, merging keys', () => {
+    const source = "video.renderOptions({ fps: 30 })('Demo', async () => {})"
+    const ctx = ctxOf(source)
+    const edits = setBuilderOptions(ctx, 'Demo', 'renderOptions', {
+      fps: 60,
+      mouse: { size: 2 },
+    })
+    expect(applyAll(source, edits)).toBe(
+      "video.renderOptions({ fps: 60, mouse: { size: 2 } })('Demo', async () => {})"
+    )
+  })
+
+  it('is a no-op when the existing values already match', () => {
+    const source = "video.renderOptions({ fps: 60 })('Demo', async () => {})"
+    const ctx = ctxOf(source)
+    const edits = setBuilderOptions(ctx, 'Demo', 'renderOptions', { fps: 60 })
+    expect(edits).toEqual([])
+  })
+
+  it('returns null when the video declaration is ambiguous', () => {
+    const source = [
+      "video('Demo', async () => {})",
+      "video('Demo', async () => {})",
+    ].join('\n')
+    const ctx = ctxOf(source)
+    expect(
+      setBuilderOptions(ctx, 'Demo', 'renderOptions', { fps: 60 })
+    ).toBeNull()
+  })
+
+  it('returns null when the video declaration is missing', () => {
+    const source = "video('Other', async () => {})"
+    const ctx = ctxOf(source)
+    expect(
+      setBuilderOptions(ctx, 'Demo', 'renderOptions', { fps: 60 })
+    ).toBeNull()
+  })
+
+  it('returns null when an existing option arg is not a plain object', () => {
+    const source = "video.renderOptions(baseOptions)('Demo', async () => {})"
+    const ctx = ctxOf(source)
+    expect(
+      setBuilderOptions(ctx, 'Demo', 'renderOptions', { fps: 60 })
+    ).toBeNull()
   })
 })
 

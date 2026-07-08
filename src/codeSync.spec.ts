@@ -614,3 +614,37 @@ describe('planCodeSync: combined edits on one file', () => {
     expect(result.fullyAppliedVideos).toEqual(['Demo'])
   })
 })
+
+describe('planCodeSync: studio render/record option codify', () => {
+  const CONTENT = { narration: false, text: false, audio: false, assets: false }
+
+  it('inserts renderOptions into the video builder call', () => {
+    const result = plan(
+      inputWith({
+        studioSync: {
+          videos: {
+            Demo: { renderOptions: { fps: 60 }, content: CONTENT },
+          },
+        },
+      })
+    )
+    const after = afterFor(result, FILE)
+    expect(after).toContain("video.renderOptions({ fps: 60 })('Demo'")
+    expect(result.applied).toHaveLength(1)
+    expect(result.fullyAppliedVideos).toEqual(['Demo'])
+  })
+
+  it('marks the video unappliable when its declaration is absent', () => {
+    const result = plan(
+      inputWith({
+        studioSync: {
+          videos: {
+            Ghost: { recordOptions: { headless: true }, content: CONTENT },
+          },
+        },
+      })
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(1)
+  })
+})

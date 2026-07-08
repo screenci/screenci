@@ -120,6 +120,7 @@ function inputWith(overrides: Partial<CodeSyncInput>): CodeSyncInput {
     editableSnapshot: EDITABLE_SNAPSHOT,
     editableOverrides: {},
     codifyEdits: {},
+    removedCodifyEdits: {},
     renames: {},
     ...overrides,
   }
@@ -429,16 +430,94 @@ describe('planCodeSync: zoom edits', () => {
   })
 })
 
-describe('planCodeSync: ghost-sleep cleanup', () => {
-  // TODO(ghost-sleep): when a previously-codified effect (and its editor-placed
-  // gap `waitForTimeout`) is removed from the fetched edit set, sync should
-  // detect the orphaned sleep structurally (a wait adjacent to the effect's
-  // editId whose ms matches what an edit placed) and remove/re-coalesce it. The
-  // current wire model represents removal only as absence, so the planner has
-  // no signal to reconcile against; implementing this needs a code-vs-edits
-  // reconcile pass that walks the existing effect calls. Split/insert and
-  // loop-guard are done; this reconcile is deferred.
-  it.todo('removes an orphaned editor sleep when its effect is deleted')
+describe('planCodeSync: idempotent re-sync and ghost-sleep cleanup', () => {
+  // A blocking narration cue placed after click1 with a 300ms lead sleep. The
+  // codemod splits the 1000ms gap into 300 (before) + 700 (after the cue).
+  const narration: CodifyEdit = {
+    type: 'mediaEdit',
+    id: 'm1',
+    kind: 'narrationCue',
+    afterEditId: 'click1',
+    sleepBeforeMs: 300,
+    blocking: true,
+    props: { name: 'intro' },
+  }
+  const otherFiles = { [ZOOM_FILE]: ZOOM_SOURCE, [LOOP_FILE]: LOOP_SOURCE }
+
+  /** The FILE text after one sync of `narration` (with the given lead sleep). */
+  function syncedOnce(sleepBeforeMs = 300): string {
+    const result = plan(
+      inputWith({
+        codifyEdits: { Demo: [{ ...narration, sleepBeforeMs }] },
+      })
+    )
+    return afterFor(result, FILE)
+  }
+
+  it('re-syncing the same media edit makes no change (idempotent)', () => {
+    const after1 = syncedOnce()
+    const result2 = plan(inputWith({ codifyEdits: { Demo: [narration] } }), {
+      [FILE]: after1,
+      ...otherFiles,
+    })
+    expect(result2.files).toHaveLength(0)
+  })
+
+  it('changing sleepBeforeMs updates the existing sleep without stacking', () => {
+    const after1 = syncedOnce()
+    const result2 = plan(
+      inputWith({
+        codifyEdits: { Demo: [{ ...narration, sleepBeforeMs: 500 }] },
+      }),
+      { [FILE]: after1, ...otherFiles }
+    )
+    const after2 = afterFor(result2, FILE)
+    expect(after2).toContain('await page.waitForTimeout(500)')
+    expect(after2).not.toContain('await page.waitForTimeout(300)')
+    // Exactly one narration call: the edit was updated in place, not stacked.
+    expect(after2.match(/narration\.intro/g)).toHaveLength(1)
+    // The remainder gap after the cue is preserved.
+    expect(after2).toContain('await page.waitForTimeout(700)')
+  })
+
+  it('removes an orphaned editor sleep and effect when its edit is deleted', () => {
+    const after1 = syncedOnce()
+    const result2 = plan(
+      inputWith({ removedCodifyEdits: { Demo: [narration] } }),
+      { [FILE]: after1, ...otherFiles }
+    )
+    const after2 = afterFor(result2, FILE)
+    expect(after2).not.toContain('narration.intro')
+    // The split gap re-coalesced back to the original single 1000ms sleep.
+    expect(after2).toContain('await page.waitForTimeout(1000)')
+    expect(after2).not.toContain('await page.waitForTimeout(300)')
+    expect(after2).not.toContain('await page.waitForTimeout(700)')
+  })
+
+  it('never touches a hand-authored wait with no adjacent codemod effect', () => {
+    // The edit set claims a removed cue, but the code has none: nothing to do,
+    // and the hand-authored waitForTimeout(1000) is left exactly as it was.
+    const result = plan(
+      inputWith({ removedCodifyEdits: { Demo: [narration] } })
+    )
+    expect(result.files).toHaveLength(0)
+  })
+
+  it('leaves an unrelated adjacent effect call in place (head mismatch)', () => {
+    // A hand-authored `narration.other()` sits in the gap; the removed edit
+    // targets `narration.intro`. The mismatched call must survive.
+    const handAuthored = SOURCE.replace(
+      '  await page.waitForTimeout(1000)',
+      ['  await narration.other()', '  await page.waitForTimeout(1000)'].join(
+        '\n'
+      )
+    )
+    const result = plan(
+      inputWith({ removedCodifyEdits: { Demo: [narration] } }),
+      { [FILE]: handAuthored, ...otherFiles }
+    )
+    expect(result.files).toHaveLength(0)
+  })
 })
 
 describe('planCodeSync: gap span edits', () => {

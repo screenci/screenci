@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
 import {
   applyTextEdits,
+  awaitedCallHead,
   chainRootIdentifier,
   createContext,
   diffLines,
@@ -9,9 +10,11 @@ import {
   findCallNamed,
   insertStatementAfter,
   insertStatementBefore,
+  removeFullLine,
   removeOption,
   setOptionValue,
   statementAtLine,
+  statementsAfter,
   valueToSource,
   type CodemodContext,
   type TextEdit,
@@ -271,6 +274,67 @@ describe('statements and inserts', () => {
   it('returns null for a line outside any block statement', () => {
     const ctx = ctxOf(source)
     expect(statementAtLine(ctx, 4)).toBeNull()
+  })
+})
+
+describe('awaitedCallHead', () => {
+  const source = [
+    "video('Demo', async ({ page }) => {", // 1
+    '  await narration.intro()', // 2
+    '  await overlays.logo.start()', // 3
+    "  await setBackground('#000')", // 4
+    '  await page.waitForTimeout(500)', // 5
+    '  const x = 1', // 6
+    '})', // 7
+    '',
+  ].join('\n')
+
+  it('reads the callee head, stripping a trailing .start', () => {
+    const ctx = ctxOf(source)
+    expect(awaitedCallHead(ctx, statementAtLine(ctx, 2)!)).toBe(
+      'narration.intro'
+    )
+    expect(awaitedCallHead(ctx, statementAtLine(ctx, 3)!)).toBe('overlays.logo')
+    expect(awaitedCallHead(ctx, statementAtLine(ctx, 4)!)).toBe('setBackground')
+  })
+
+  it('returns null for a non-awaited-call statement', () => {
+    const ctx = ctxOf(source)
+    expect(awaitedCallHead(ctx, statementAtLine(ctx, 6)!)).toBeNull()
+  })
+})
+
+describe('statementsAfter and removeFullLine', () => {
+  const source = [
+    "video('Demo', async ({ page }) => {", // 1
+    "  await page.locator('#a').click()", // 2
+    '  await page.waitForTimeout(300)', // 3
+    '  await narration.intro()', // 4
+    '})', // 5
+    '',
+  ].join('\n')
+
+  it('lists the sibling statements after a statement', () => {
+    const ctx = ctxOf(source)
+    const after = statementsAfter(ctx, statementAtLine(ctx, 2)!)
+    expect(after.map((stmt) => awaitedCallHead(ctx, stmt))).toEqual([
+      'page.waitForTimeout',
+      'narration.intro',
+    ])
+  })
+
+  it('removes a statement and its whole physical line', () => {
+    const ctx = ctxOf(source)
+    const edit = removeFullLine(ctx, statementAtLine(ctx, 3)!)
+    expect(applyTextEdits(source, [edit])).toBe(
+      [
+        "video('Demo', async ({ page }) => {",
+        "  await page.locator('#a').click()",
+        '  await narration.intro()',
+        '})',
+        '',
+      ].join('\n')
+    )
   })
 })
 

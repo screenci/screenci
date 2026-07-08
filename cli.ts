@@ -3580,6 +3580,9 @@ function planStampsAndCodeSync(args: {
   editableSnapshot: ReturnType<typeof readEditableSnapshot>
   editableOverrides: ReturnType<typeof splitTimelineEditsByVideo>['overrides']
   codifyEdits: ReturnType<typeof splitTimelineEditsByVideo>['codify']
+  removedCodifyEdits: ReturnType<
+    typeof splitTimelineEditsByVideo
+  >['removedCodify']
   renames: ReturnType<typeof splitTimelineEditsByVideo>['renames']
   readFile: (path: string) => string | null
 }): {
@@ -3605,6 +3608,7 @@ function planStampsAndCodeSync(args: {
       editableSnapshot: args.editableSnapshot,
       editableOverrides: args.editableOverrides,
       codifyEdits: args.codifyEdits,
+      removedCodifyEdits: args.removedCodifyEdits,
       renames: args.renames,
     },
     { ts: args.ts, readFile }
@@ -3658,6 +3662,9 @@ export async function runSync(
     typeof splitTimelineEditsByVideo
   >['overrides'] = {}
   let codifyEdits: ReturnType<typeof splitTimelineEditsByVideo>['codify'] = {}
+  let removedCodifyEdits: ReturnType<
+    typeof splitTimelineEditsByVideo
+  >['removedCodify'] = {}
   let renames: ReturnType<typeof splitTimelineEditsByVideo>['renames'] = {}
   try {
     const fetchEditable =
@@ -3672,6 +3679,7 @@ export async function runSync(
     )
     editableOverrides = split.overrides
     codifyEdits = split.codify
+    removedCodifyEdits = split.removedCodify
     renames = split.renames
   } catch {
     // ignore: the endpoint may be unavailable
@@ -3704,6 +3712,7 @@ export async function runSync(
           editableSnapshot,
           editableOverrides,
           codifyEdits,
+          removedCodifyEdits,
           renames,
           readFile: deps.readFileText ?? defaultReadFileText,
         })
@@ -3839,7 +3848,7 @@ export async function runDevAutoSync(
         log('auto-sync: could not load typescript; auto-sync disabled.')
         return
       }
-      const { overrides, codify, renames } =
+      const { overrides, codify, removedCodify, renames } =
         splitTimelineEditsByVideo(timelineEdits)
       const planned = planStampsAndCodeSync({
         ts,
@@ -3849,6 +3858,7 @@ export async function runDevAutoSync(
         editableSnapshot: readEditableSnapshot(screenciDir),
         editableOverrides: overrides,
         codifyEdits: codify,
+        removedCodifyEdits: removedCodify,
         renames,
         readFile: deps.readFileText ?? defaultReadFileText,
       })

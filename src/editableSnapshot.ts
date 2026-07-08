@@ -48,10 +48,14 @@ export function splitTimelineEditsByVideo(
 ): {
   overrides: EditableOverridesByVideo
   codify: CodifyEditsByVideo
+  /** Disabled codify records: the editor placed then removed these. `screenci
+   *  sync` deletes their codemod-authored calls (ghost cleanup). */
+  removedCodify: CodifyEditsByVideo
   renames: RenamesByVideo
 } {
   const overrides: EditableOverridesByVideo = {}
   const codify: CodifyEditsByVideo = {}
+  const removedCodify: CodifyEditsByVideo = {}
   const renames: RenamesByVideo = {}
   const CODIFY_TYPES = new Set([
     'mediaEdit',
@@ -76,7 +80,10 @@ export function splitTimelineEditsByVideo(
         typeof record.type === 'string' &&
         CODIFY_TYPES.has(record.type)
       ) {
-        if (record.disabled === true) continue
+        if (record.disabled === true) {
+          ;(removedCodify[videoName] ??= []).push(edit as CodifyEdit)
+          continue
+        }
         ;(codify[videoName] ??= []).push(edit as CodifyEdit)
       } else if (record.type === 'renameEdit') {
         const rename = edit as RenameEdit
@@ -93,7 +100,7 @@ export function splitTimelineEditsByVideo(
       }
     }
   }
-  return { overrides, codify, renames }
+  return { overrides, codify, removedCodify, renames }
 }
 
 /** File name of the snapshot inside `.screenci`. Preserved across runs. */

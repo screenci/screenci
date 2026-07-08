@@ -577,6 +577,18 @@ It can:
   sleeps)
 - apply editId renames made in the Editor
 
+Re-running `sync` is safe. Applying the same edits again is a no-op: an effect
+already placed after its action is updated in place, never stacked, so the file
+stops changing once code and Editor agree. Changing only an effect's lead sleep
+rewrites the existing `waitForTimeout(...)` rather than adding another. And when
+an effect is removed in the Editor, `sync` deletes the call it authored and
+re-coalesces the gap sleep it split, so no orphaned "ghost" sleep is left
+behind. This cleanup runs only for the point effects it can identify
+unambiguously (narration cues, overlays, audio starts, and
+`moveNarration`/`resizeRecording`/`setBackground` points); a removed
+`autoZoom`/`hide`/`speed`/`time` wrap is left in place for you to delete by hand
+rather than risk unwrapping code you may have since edited.
+
 Every edit locates its call site by the exact `editId` slug: there is no
 heuristic matching, so an applied edit is never a guess. An edit either applies
 by editId or its section is locked and reported as an unappliable count to edit

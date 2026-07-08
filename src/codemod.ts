@@ -522,6 +522,106 @@ export function waitForTimeoutArg(
   return argument
 }
 
+/** The statements that follow `statement` in its enclosing block, in order. */
+export function statementsAfter(
+  ctx: CodemodContext,
+  statement: TS.Statement
+): TS.Statement[] {
+  const statements = siblingStatements(ctx, statement)
+  if (statements === null) return []
+  const index = statements.indexOf(statement)
+  return index < 0 ? [] : Array.from(statements).slice(index + 1)
+}
+
+/** The call expression of an `await <call>` / `<call>` expression statement. */
+function awaitedCallOf(
+  ctx: CodemodContext,
+  statement: TS.Statement
+): TS.CallExpression | null {
+  const { ts } = ctx
+  if (!ts.isExpressionStatement(statement)) return null
+  let expression: TS.Expression = statement.expression
+  if (ts.isAwaitExpression(expression)) expression = expression.expression
+  return ts.isCallExpression(expression) ? expression : null
+}
+
+/**
+ * The callee head of an awaited-call statement, with a trailing `.start`
+ * stripped so `await narration.intro.start()` and `await narration.intro()`
+ * share the head `narration.intro`. Null when the statement is not an awaited
+ * call. This is how a codemod-authored effect placement is matched back to the
+ * effect it carries: no marker on the node, only its callee identity.
+ */
+export function awaitedCallHead(
+  ctx: CodemodContext,
+  statement: TS.Statement
+): string | null {
+  const call = awaitedCallOf(ctx, statement)
+  if (call === null) return null
+  const callee = call.expression
+  if (
+    ctx.ts.isPropertyAccessExpression(callee) &&
+    callee.name.text === 'start'
+  ) {
+    return callee.expression.getText()
+  }
+  return callee.getText()
+}
+
+/**
+ * Remove `statement` together with the whole physical line it occupies (its
+ * leading indentation and its trailing newline). Used to delete an orphaned
+ * effect call and its editor-placed gap sleep so the surrounding text closes up
+ * cleanly (no blank line left behind).
+ */
+export function removeFullLine(
+  ctx: CodemodContext,
+  statement: TS.Statement
+): TextEdit {
+  const start = statement.getStart()
+  const lineStart = ctx.source.lastIndexOf('\n', start - 1) + 1
+  let end = statement.getEnd()
+  if (ctx.source[end] === '\n') end += 1
+  return { start: lineStart, end, replacement: '' }
+}
+
+/**
+ * The block body of a `<fnName>(async () => { ... })` wrap the codemod authors,
+ * when `call` sits directly inside that callback (its nearest enclosing
+ * function is the wrap's callback). Null otherwise. Lets a re-sync recognise an
+ * already-wrapped run instead of wrapping it a second time.
+ */
+export function enclosingWrapBody(
+  ctx: CodemodContext,
+  call: TS.CallExpression,
+  fnName: string
+): TS.Block | null {
+  const { ts } = ctx
+  for (
+    let node: TS.Node | undefined = call.parent;
+    node !== undefined;
+    node = node.parent
+  ) {
+    if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+      const parent = node.parent
+      if (parent !== undefined && ts.isCallExpression(parent)) {
+        const callee = parent.expression
+        const name = ts.isIdentifier(callee) ? callee.text : null
+        if (name === fnName && ts.isBlock(node.body)) return node.body
+      }
+      return null
+    }
+    if (
+      ts.isFunctionDeclaration(node) ||
+      ts.isMethodDeclaration(node) ||
+      ts.isSourceFile(node)
+    ) {
+      return null
+    }
+  }
+  return null
+}
+
 /**
  * A contiguous run of statements `from..until` that are direct siblings in the
  * same plain block (or source file), or null when they are not (different

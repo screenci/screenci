@@ -35,9 +35,11 @@ import type {
 } from './timelineEdits.js'
 import {
   applyTextEdits,
+  awaitedCallHead,
   chainRootIdentifier,
   createContext,
   enclosingStatement,
+  enclosingWrapBody,
   ensureNamedImport,
   findCallByEditId,
   insertStatementBefore,
@@ -45,10 +47,12 @@ import {
   isLinearCallSite,
   nextStatement,
   previousStatement,
+  removeFullLine,
   renameEditId as renameEditIdInSource,
   removeOption,
   setOptionValue,
   splitWaitEdit,
+  statementsAfter,
   valueToSource,
   waitForTimeoutArg,
   wrapStatementsInBlock,
@@ -116,6 +120,15 @@ export type CodeSyncInput = {
   editableSnapshot: EditableSnapshot
   editableOverrides: EditableOverridesByVideo
   codifyEdits: CodifyEditsByVideo
+  /**
+   * Codify edits the editor removed (a disabled record still names the editId,
+   * kind and sleep it placed). Their codemod-authored calls are deleted from
+   * code so a "place then remove" round trip leaves no orphaned effect or
+   * ghost gap sleep. Removal is implemented for the unambiguous point effects
+   * (media cues/overlays/audio and gap points); disabled wrap edits
+   * (zoom/hide/speed/time) are left in place (see `plannedRemoval`).
+   */
+  removedCodifyEdits: CodifyEditsByVideo
   renames: RenamesByVideo
 }
 
@@ -148,8 +161,14 @@ function memberAccess(root: string, name: string): string {
     : `${root}[${valueToSource(name)}]`
 }
 
-/** The imperative media call for a MediaEdit, or null when it lacks a name. */
-function mediaCallCode(edit: MediaEdit): string | null {
+/**
+ * The imperative media call for a MediaEdit plus its callee `head` (the callee
+ * text a re-sync matches against, e.g. `narration.intro`), or null when the
+ * edit lacks a name.
+ */
+function mediaHeadAndCall(
+  edit: MediaEdit
+): { callCode: string; head: string } | null {
   const props = edit.props ?? {}
   const name = typeof props.name === 'string' && props.name ? props.name : null
   if (name === null) return null
@@ -161,8 +180,11 @@ function mediaCallCode(edit: MediaEdit): string | null {
         : typeof props.fixture === 'string' && props.fixture
           ? props.fixture
           : 'audio'
-  const access = memberAccess(root, name)
-  return edit.blocking ? `await ${access}()` : `await ${access}.start()`
+  const head = memberAccess(root, name)
+  return {
+    callCode: edit.blocking ? `await ${head}()` : `await ${head}.start()`,
+    head,
+  }
 }
 
 /** The instant call + import for a GapPointEdit, or null when incomplete. */
@@ -227,23 +249,111 @@ function gapPointCode(
 }
 
 /**
- * Insert `callCode` in the gap after the action `afterEditId`, preceded by a
- * `waitForTimeout(sleepMs)` gap. Splits an existing sleep in the gap when one
- * is there (so the item lands inside it), otherwise inserts a fresh sleep.
- * Returns null when the site is locked (control flow / ambiguous) or the call
- * needs an import the file cannot take.
+ * A codemod-authored effect placement already in code: the effect call
+ * statement and, when present, the editor-placed `waitForTimeout` sleep sitting
+ * immediately before it. Recognised structurally (no marker): scanning the
+ * statements after the anchor, every gap sleep and awaited effect call is part
+ * of the placement region; the first ordinary statement ends it.
+ */
+type PlacedEffect = {
+  callStatement: TS.Statement
+  sleepStatement: TS.Statement | null
+}
+
+/**
+ * Find the codemod-authored placement of the effect whose callee head is
+ * `expectedHead`, sitting in the gap after `anchor`. Only editor gap sleeps
+ * (`<root>.waitForTimeout`) and awaited effect calls may lie between; the scan
+ * stops at the first ordinary statement so a call further down the body is
+ * never mistaken for the placement. Null when no such placement is there.
+ */
+function findPlacedEffect(
+  ctx: CodemodContext,
+  anchor: TS.Statement,
+  root: string,
+  expectedHead: string
+): PlacedEffect | null {
+  let sleepStatement: TS.Statement | null = null
+  for (const statement of statementsAfter(ctx, anchor)) {
+    if (waitForTimeoutArg(ctx, statement, root) !== null) {
+      sleepStatement = statement
+      continue
+    }
+    const head = awaitedCallHead(ctx, statement)
+    if (head === null) return null // an ordinary statement ends the gap region
+    if (head === expectedHead)
+      return { callStatement: statement, sleepStatement }
+    sleepStatement = null // a different effect call: its own sleep, not ours
+  }
+  return null
+}
+
+/**
+ * Edits that make the editor-placed sleep before `placed.callStatement` equal
+ * `sleep` ms: update the existing sleep literal, insert one when missing, or
+ * remove it when `sleep` is 0. Same-value re-syncs produce no edit (idempotent).
+ */
+function reconcileSleepBefore(
+  ctx: CodemodContext,
+  placed: PlacedEffect,
+  sleep: number,
+  root: string
+): TextEdit[] {
+  const sleepStatement = placed.sleepStatement
+  const arg =
+    sleepStatement !== null
+      ? waitForTimeoutArg(ctx, sleepStatement, root)
+      : null
+  if (sleep > 0) {
+    if (arg !== null) {
+      return Number(arg.text) === sleep
+        ? []
+        : [
+            {
+              start: arg.getStart(),
+              end: arg.getEnd(),
+              replacement: String(sleep),
+            },
+          ]
+    }
+    // Insert a fresh sleep line before the call (at the call's line start so it
+    // never overlaps a same-position call-text replacement).
+    const start = placed.callStatement.getStart()
+    const lineStart = ctx.source.lastIndexOf('\n', start - 1) + 1
+    const indent = ctx.source.slice(lineStart, start)
+    return [
+      {
+        start: lineStart,
+        end: lineStart,
+        replacement: `${indent}await ${root}.waitForTimeout(${sleep})\n`,
+      },
+    ]
+  }
+  return sleepStatement !== null ? [removeFullLine(ctx, sleepStatement)] : []
+}
+
+/**
+ * Place `callCode` in the gap after the action `afterEditId`, preceded by a
+ * `waitForTimeout(sleepMs)` gap. Idempotent: when a previous sync already
+ * placed this same effect (matched by its callee `head`), update that call and
+ * its editor sleep in place instead of stacking a second copy. On a fresh
+ * placement it splits an existing sleep in the gap (so the item lands inside
+ * it), otherwise inserts a new sleep. Returns null when the site is locked
+ * (control flow / ambiguous) or the call needs an import the file cannot take.
  */
 function insertInGapAfter(
   ctx: CodemodContext,
   afterEditId: string,
   callCode: string,
   sleepMs: number,
+  head: string,
   importName?: string
 ): TextEdit[] | null {
   const call = isLinearCallSite(ctx, afterEditId)
   if (call === null) return null
   const statement = enclosingStatement(ctx, call)
   if (statement === null) return null
+  const root = chainRootIdentifier(ctx.ts, call.expression)
   const edits: TextEdit[] = []
   if (importName !== undefined) {
     const importEdits = ensureNamedImport(ctx, 'screenci', importName)
@@ -251,11 +361,28 @@ function insertInGapAfter(
     edits.push(...importEdits)
   }
   const sleep = Math.max(0, Math.round(sleepMs))
+
+  // Idempotent re-sync: reuse an existing placement of this effect.
+  if (root !== null) {
+    const placed = findPlacedEffect(ctx, statement, root, head)
+    if (placed !== null) {
+      if (placed.callStatement.getText() !== callCode) {
+        edits.push({
+          start: placed.callStatement.getStart(),
+          end: placed.callStatement.getEnd(),
+          replacement: callCode,
+        })
+      }
+      edits.push(...reconcileSleepBefore(ctx, placed, sleep, root))
+      return edits
+    }
+  }
+
+  // Fresh placement.
   if (sleep === 0) {
     edits.push(insertStatementsAfter(ctx, statement, [callCode]))
     return edits
   }
-  const root = chainRootIdentifier(ctx.ts, call.expression)
   if (root === null) return null
   const next = nextStatement(ctx, statement)
   const nextArg = next !== null ? waitForTimeoutArg(ctx, next, root) : null
@@ -278,6 +405,58 @@ function insertInGapAfter(
   return edits
 }
 
+/**
+ * Edits that remove a codemod-authored effect placed after `afterEditId` whose
+ * callee head is `head`, re-coalescing the split gap. Safe deletion signal: the
+ * effect is present in code adjacent to the editId and its edit record was
+ * removed (a disabled edit still names the editId, kind and `sleepBeforeMs`).
+ * The editor-placed sleep is only reclaimed when its ms matches `sleepBeforeMs`
+ * (the user asked to verify via the sleep time); a hand-edited sleep is left
+ * alone. Returns [] when the effect is already gone (idempotent), null when the
+ * site is locked.
+ */
+function removeEffectAfter(
+  ctx: CodemodContext,
+  afterEditId: string,
+  head: string,
+  sleepBeforeMs: number
+): TextEdit[] | null {
+  const call = isLinearCallSite(ctx, afterEditId)
+  if (call === null) return null
+  const statement = enclosingStatement(ctx, call)
+  if (statement === null) return null
+  const root = chainRootIdentifier(ctx.ts, call.expression)
+  if (root === null) return null
+  const placed = findPlacedEffect(ctx, statement, root, head)
+  if (placed === null) return [] // nothing to remove: already reconciled
+  const edits: TextEdit[] = [removeFullLine(ctx, placed.callStatement)]
+  const expected = Math.max(0, Math.round(sleepBeforeMs))
+  const sleepArg =
+    placed.sleepStatement !== null
+      ? waitForTimeoutArg(ctx, placed.sleepStatement, root)
+      : null
+  // Only reclaim the editor sleep when its ms matches what the edit placed.
+  if (
+    placed.sleepStatement !== null &&
+    sleepArg !== null &&
+    Number(sleepArg.text) === expected
+  ) {
+    const after = nextStatement(ctx, placed.callStatement)
+    const remainderArg =
+      after !== null ? waitForTimeoutArg(ctx, after, root) : null
+    if (remainderArg !== null) {
+      // Merge the split back into a single gap: sleepBefore + remainder.
+      edits.push({
+        start: remainderArg.getStart(),
+        end: remainderArg.getEnd(),
+        replacement: String(expected + Number(remainderArg.text)),
+      })
+    }
+    edits.push(removeFullLine(ctx, placed.sleepStatement))
+  }
+  return edits
+}
+
 /** Wrap the interaction run `fromEditId..untilEditId` in a block call. */
 function wrapRun(
   ctx: CodemodContext,
@@ -296,6 +475,43 @@ function wrapRun(
   const untilStmt = enclosingStatement(ctx, untilCall)
   if (fromStmt === null || untilStmt === null) return null
   const root = chainRootIdentifier(ctx.ts, fromCall.expression)
+
+  // Idempotent re-sync: when the run is already inside the wrap this edit would
+  // create (same block for both ends), do not wrap again. Update the lead/trail
+  // gap sleeps in place when they changed; otherwise it is a no-op.
+  if (importName !== undefined) {
+    const fromBody = enclosingWrapBody(ctx, fromCall, importName)
+    const untilBody = enclosingWrapBody(ctx, untilCall, importName)
+    if (fromBody !== null && fromBody === untilBody) {
+      const edits: TextEdit[] = []
+      const body = fromBody.statements
+      const first = body.length > 0 ? body[0]! : null
+      const last = body.length > 0 ? body[body.length - 1]! : null
+      const updateSleep = (
+        stmt: TS.Statement | null,
+        ms: number | undefined,
+        boundary: TS.Statement
+      ): void => {
+        if (stmt === null || root === null) return
+        // Only touch a sleep that is the codemod's lead/trail: a
+        // `waitForTimeout` at the very edge of the block, outside the run.
+        if (stmt === boundary) return
+        const arg = waitForTimeoutArg(ctx, stmt, root)
+        if (arg === null || ms === undefined || ms <= 0) return
+        const rounded = Math.round(ms)
+        if (Number(arg.text) !== rounded) {
+          edits.push({
+            start: arg.getStart(),
+            end: arg.getEnd(),
+            replacement: String(rounded),
+          })
+        }
+      }
+      updateSleep(first, leadMs, fromStmt)
+      updateSleep(last, trailMs, untilStmt)
+      return edits
+    }
+  }
   const lead =
     leadMs !== undefined && leadMs > 0 && root !== null
       ? `await ${root}.waitForTimeout(${Math.round(leadMs)})`
@@ -328,17 +544,18 @@ function planCodifyEdit(edit: CodifyEdit): {
 } | null {
   switch (edit.type) {
     case 'mediaEdit': {
-      const callCode = mediaCallCode(edit)
-      if (callCode === null) return null
+      const media = mediaHeadAndCall(edit)
+      if (media === null) return null
       return {
         editIds: [edit.afterEditId],
-        description: `insert \`${callCode}\` after '${edit.afterEditId}'`,
+        description: `insert \`${media.callCode}\` after '${edit.afterEditId}'`,
         compute: (ctx) =>
           insertInGapAfter(
             ctx,
             edit.afterEditId,
-            callCode,
-            edit.sleepBeforeMs ?? 0
+            media.callCode,
+            edit.sleepBeforeMs ?? 0,
+            media.head
           ),
       }
     }
@@ -354,6 +571,7 @@ function planCodifyEdit(edit: CodifyEdit): {
             edit.afterEditId,
             point.code,
             edit.sleepBeforeMs ?? 0,
+            point.importName,
             point.importName
           ),
       }
@@ -429,6 +647,53 @@ function planCodifyEdit(edit: CodifyEdit): {
   }
 }
 
+/**
+ * Plan the removal of a removed (disabled) codify record, or null when the kind
+ * cannot be removed with high confidence. Only point effects are removed: their
+ * call is unambiguous (a single `narration.`/`overlays.`/`audio.` cue or a known
+ * point function) and adjacent to the editId. Wrap edits (zoom/hide/speed/time)
+ * are NOT auto-removed here: safely un-wrapping a block (restoring the inner run
+ * and its formatting) is ambiguous, so a stale wrap is left for the user rather
+ * than risk deleting hand-authored structure. This is the documented limit.
+ */
+function plannedRemoval(edit: CodifyEdit): {
+  editIds: string[]
+  description: string
+  compute: (ctx: CodemodContext) => TextEdit[] | null
+} | null {
+  if (edit.type === 'mediaEdit') {
+    const media = mediaHeadAndCall(edit)
+    if (media === null) return null
+    return {
+      editIds: [edit.afterEditId],
+      description: `remove \`${media.callCode}\` after '${edit.afterEditId}'`,
+      compute: (ctx) =>
+        removeEffectAfter(
+          ctx,
+          edit.afterEditId,
+          media.head,
+          edit.sleepBeforeMs ?? 0
+        ),
+    }
+  }
+  if (edit.type === 'gapPointEdit') {
+    const point = gapPointCode(edit)
+    if (point === null) return null
+    return {
+      editIds: [edit.afterEditId],
+      description: `remove \`${point.code}\` after '${edit.afterEditId}'`,
+      compute: (ctx) =>
+        removeEffectAfter(
+          ctx,
+          edit.afterEditId,
+          point.importName,
+          edit.sleepBeforeMs ?? 0
+        ),
+    }
+  }
+  return null // wrap edits (zoomEdit/gapSpanEdit): conservative, not removed
+}
+
 export function planCodeSync(
   input: CodeSyncInput,
   deps: CodeSyncDeps
@@ -471,6 +736,7 @@ export function planCodeSync(
       ...input.comparison.videos.map((video) => video.videoName),
       ...Object.keys(input.editableOverrides),
       ...Object.keys(input.codifyEdits),
+      ...Object.keys(input.removedCodifyEdits),
       ...Object.keys(input.renames),
     ]),
   ]
@@ -620,6 +886,20 @@ export function planCodeSync(
         bump(appliedCounts, videoName)
       } else {
         markUnappliable(`locked ${edit.type} '${edit.id}'`)
+      }
+    }
+
+    // ── Ghost cleanup: removed (disabled) codify effects ───────────────────
+    // Runs after the inserts above so a place-then-remove round trip nets out.
+    for (const edit of input.removedCodifyEdits[videoName] ?? []) {
+      const planned = plannedRemoval(edit)
+      if (planned === null) continue // wrap edits: left in place by design
+      const file = fileWithAllEditIds(planned.editIds)
+      if (file !== null && tryApply(file, planned.compute)) {
+        applied.push({ videoName, file, description: planned.description })
+        bump(appliedCounts, videoName)
+      } else {
+        markUnappliable(`locked removal ${edit.type} '${edit.id}'`)
       }
     }
 

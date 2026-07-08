@@ -214,10 +214,31 @@ Set shared `renderOptions` under `use` when you want consistent output styling:
 
 - `output.background`
 - `recording.size`, `recording.roundness`, `recording.dropShadow`
+- `recording.clip` (crop the recording at render time, see below)
 - `narration.corner`, `narration.padding`, `narration.size`, `narration.roundness` (0 = square, 1 = circle; defaults to 0.2)
 - `mouse.size`, `mouse.style` (`'white'` or `'black'` cursor)
 - `mouse.image` (custom cursor image, see below)
 - `mouse.motionBlur` and `zoom.motionBlur` (motion blur strength, see below)
+
+### Cropping the recording
+
+`recording.clip` shows only a region of the recorded screen in the final video,
+following Playwright's `clip` shape. The recording is always captured at the
+full configured resolution and the crop is applied at render time, so you can
+change or remove the clip and re-render without re-recording. Coordinates are
+CSS pixels of the recording viewport (top-left origin):
+
+```ts
+renderOptions: {
+  recording: {
+    clip: { x: 200, y: 120, width: 960, height: 600 },
+  },
+}
+```
+
+The recording tile takes the clip's aspect ratio, and cursor movement and zoom
+follow the clipped region. The clip is also editable visually on the Editor
+page (a crop selection on top of the video preview).
 
 ### Custom mouse
 

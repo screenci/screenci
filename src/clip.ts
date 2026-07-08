@@ -111,7 +111,7 @@ export function applyClipPadding(
   }
 }
 
-function assertValidRegion(region: ClipRegion): void {
+export function assertValidRegion(region: ClipRegion): void {
   const ok = (v: number): boolean => Number.isFinite(v) && v >= 0
   if (
     !ok(region.x) ||

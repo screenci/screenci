@@ -4,9 +4,10 @@ import type {
   Page,
   Locator,
   Mouse,
+  Keyboard,
 } from '@playwright/test'
 import type { PerformanceOption } from './performance.js'
-import type { ClipTarget, ScreenshotClipRecord } from './clip.js'
+import type { ClipRegion, ClipTarget, ScreenshotClipRecord } from './clip.js'
 import type { AnyTopLevelVoiceConfig } from './voiceConfig.js'
 import type {
   NarrationAudioCleanupOption,
@@ -157,6 +158,15 @@ export type RenderOptions = {
     roundness?: number
     /** Shadow strength from 0 (none) to 1 (default shadow). */
     dropShadow?: number
+    /**
+     * Crop of the recorded video, in CSS pixels of the recording viewport
+     * (top-left origin), following Playwright's `clip` shape. The recording is
+     * always captured at the full configured resolution; the clip is applied at
+     * render time, so it can be changed and re-rendered without re-recording.
+     * Only the clipped region appears in the output, and the recording tile
+     * takes the clip's aspect ratio.
+     */
+    clip?: ClipRegion
   }
   narration?: {
     /** 0-1 fraction of the output frame: 1=mask size equals shorter side of output. */
@@ -231,6 +241,27 @@ export type RenderOptions = {
      */
     motionBlur?: number
   }
+  /** Keyboard shortcut overlays recorded from `page.keyboard.press`. */
+  shortcuts?: {
+    /**
+     * Show modifier-combo shortcuts (e.g. `Shift+A`) as keycap overlays.
+     * Defaults to `true`.
+     */
+    show?: boolean
+    /**
+     * Show single-key presses (e.g. `'A'`) as keycap overlays. Defaults to
+     * `false`.
+     */
+    showSingle?: boolean
+    /** Keycap appearance. Defaults to `'dark'`. */
+    theme?: 'light' | 'dark'
+    /**
+     * Per-shortcut visibility overrides from the web editor timeline, keyed by
+     * the recorded event id. Wins over the per-call `show` option and the
+     * global toggles.
+     */
+    overrides?: Record<string, { show: boolean }>
+  }
   output?: {
     /**
      * Aspect ratio of the rendered video output.
@@ -292,6 +323,11 @@ export const RENDER_OPTIONS_DEFAULTS = {
   zoom: {
     motionBlur: 0.5,
   },
+  shortcuts: {
+    show: true,
+    showSingle: false,
+    theme: 'dark' as 'light' | 'dark',
+  },
   output: {
     aspectRatio: '16:9' as AspectRatio,
     quality: '1080p' as Quality,
@@ -311,6 +347,8 @@ export type ResolvedRenderOptions = {
     size: number
     roundness: number
     dropShadow: number
+    /** Render-time crop of the recording (CSS px of the recording viewport). */
+    clip?: ClipRegion
   }
   narration: {
     size: number
@@ -338,6 +376,12 @@ export type ResolvedRenderOptions = {
   }
   zoom: {
     motionBlur: number
+  }
+  shortcuts: {
+    show: boolean
+    showSingle: boolean
+    theme: 'light' | 'dark'
+    overrides?: Record<string, { show: boolean }>
   }
   output: {
     aspectRatio: AspectRatio
@@ -912,6 +956,30 @@ type ScreenCIMouse = Omit<
   hide(): void
 }
 
+/** Options for {@link ScreenCIKeyboard.press}. */
+export type ScreenCIKeyboardPressOptions = NonNullable<
+  Parameters<Keyboard['press']>[1]
+> & {
+  /**
+   * Visibility override for the keyboard shortcut overlay in the rendered
+   * video. `true` shows the keycaps even when the shortcut kind is disabled
+   * globally (e.g. a single key with `shortcuts.showSingle` off); `false`
+   * always hides them. Omit to follow `renderOptions.shortcuts`.
+   */
+  show?: boolean
+}
+
+export type ScreenCIKeyboard = Omit<Keyboard, 'press'> & {
+  /**
+   * Presses a key or key combo (e.g. `'A'`, `'Shift+A'`, `'ControlOrMeta+K'`).
+   *
+   * The press is recorded as an animated keycap overlay shown at the bottom of
+   * the rendered video, subject to `renderOptions.shortcuts` and the `show`
+   * option.
+   */
+  press(key: string, options?: ScreenCIKeyboardPressOptions): Promise<void>
+}
+
 export type ScreenCILocator = Omit<
   Locator,
   | 'click'
@@ -923,10 +991,22 @@ export type ScreenCILocator = Omit<
   | 'selectOption'
   | 'selectText'
   | 'dragTo'
+  | 'press'
   | LocatorReturnMethodNames
   | 'all'
   | 'page'
 > & {
+  /**
+   * Presses a key or key combo (e.g. `'Enter'`, `'Shift+A'`) on the element.
+   *
+   * The press is recorded as an animated keycap overlay shown at the bottom of
+   * the rendered video, subject to `renderOptions.shortcuts` and the `show`
+   * option.
+   */
+  press(
+    key: string,
+    options?: Parameters<Locator['press']>[1] & { show?: boolean }
+  ): Promise<void>
   /**
    * Clicks the element with an animated cursor move.
    *
@@ -1156,9 +1236,15 @@ export type ScreenCIScreenshotOptions = Omit<
 
 export type ScreenCIPage = Omit<
   Page,
-  'click' | 'mouse' | 'screenshot' | 'waitForTimeout' | LocatorReturnMethodNames
+  | 'click'
+  | 'mouse'
+  | 'keyboard'
+  | 'screenshot'
+  | 'waitForTimeout'
+  | LocatorReturnMethodNames
 > & {
   mouse: ScreenCIMouse
+  keyboard: ScreenCIKeyboard
   /**
    * Waits in the recording timeline. Plain `screenci test` collapses this to
    * 0ms so authoring runs stay fast; `screenci record` and

@@ -385,9 +385,15 @@ kept as stale entries in the editor for cleanup instead of being dropped.
 
 Render-affecting events can also be ADDED and MOVED from the web timeline,
 without any code change: hides, speedups, time remaps, narration cues,
-overlays, and timestamp markers. Interactions are different on purpose: a
-click or tap always stays where the test code performed it, and only its
-parameters (durations, sleeps) are editable.
+overlays, timestamp markers, and presentation updates (background changes,
+narration-box moves/resizes, recording resize/hide/show). Interactions are
+different on purpose: a click or tap always stays where the test code
+performed it, and only its parameters (durations, sleeps) are editable.
+
+Everything the timeline adds is stored as one unified placed event; there is
+no separate legacy path. A newly added event appears immediately on the
+timeline as a pending item (a dashed, dimmed bar) that reads "applies at the
+next record", so you can see and remove it before re-recording.
 
 Every web-placed or web-moved event is positioned as an **anchor plus an
 offset in milliseconds**. An anchor is a known moment of the recording:
@@ -397,11 +403,13 @@ offset in milliseconds**. An anchor is a known moment of the recording:
 - a `timestamp('name')` marker,
 - a narration cue start.
 
-When you drag an event on the timeline the editor picks the nearest preceding
-anchor automatically and stores the offset; the event's popover shows the
-anchor and lets you pick a different one. Because positions are relative to
-anchors rather than to wall-clock time, they survive re-records whose real
-durations drift.
+When you drag or add an event on the timeline the editor picks the nearest
+anchor in either direction automatically (so a lead-in glued to an upcoming
+click anchors to that click with a negative offset) and stores the offset; the
+add popover and the event's popover list every anchor (video start/end, action
+start/end edges, timestamp markers, narration cue starts) and let you pick a
+different one. Because positions are relative to anchors rather than to
+wall-clock time, they survive re-records whose real durations drift.
 
 At the next record the CLI fetches the stored edits and the SDK resolves each
 anchor against the freshly recorded events and inserts or moves the matching

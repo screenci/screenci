@@ -787,6 +787,60 @@ describe('CLI', () => {
       )
       expect(out).toContain('Nothing to sync')
     })
+
+    it('status grep filters the placed-events block, not just action params', async () => {
+      const client = setupProject({})
+      const timelineEdits = {
+        'My video': {
+          version: 2,
+          edits: [
+            {
+              type: 'placedEvent',
+              id: 'p1',
+              kind: 'hide',
+              anchor: {
+                ref: { type: 'videoStart' },
+                edge: 'start',
+                offsetMs: 0,
+              },
+              end: { durationMs: 500 },
+            },
+          ],
+        },
+        'Other video': {
+          version: 2,
+          edits: [
+            {
+              type: 'placedEvent',
+              id: 'p2',
+              kind: 'timestamp',
+              anchor: {
+                ref: { type: 'videoStart' },
+                edge: 'start',
+                offsetMs: 0,
+              },
+              props: { name: 'mark' },
+            },
+          ],
+        },
+      }
+      const fetchEditableOverrides = vi.fn(async () => ({ timelineEdits }))
+      const { printActionStatus } = await import('./cli')
+      const lines: string[] = []
+      await printActionStatus(
+        'test-fixtures/screenci.config.ts',
+        '^My',
+        client,
+        (message) => lines.push(message),
+        fetchEditableOverrides
+      )
+      const report = lines.join('\n')
+      expect(report).toContain('Placed events')
+      expect(report).toContain("hide 'p1'")
+      // The grep-excluded video's placed events must not leak into the report.
+      expect(report).not.toContain('Other video')
+      expect(report).not.toContain("timestamp 'p2'")
+    })
   })
 
   describe('reportActionOverrideCollisions', () => {

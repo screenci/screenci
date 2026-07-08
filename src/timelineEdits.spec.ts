@@ -532,6 +532,109 @@ describe('applyPlacedEvents', () => {
       `targetMissing:${cueIdFor('gone', 0)}`
     )
   })
+
+  it('inserts a background update at the resolved position', () => {
+    const { report } = makeReport()
+    const result = applyPlacedEvents(
+      baseEvents,
+      [
+        placed({
+          id: 'bg1',
+          kind: 'background',
+          anchor: anchor({ type: 'timestamp', name: 'mark', ordinal: 0 }),
+          end: undefined,
+          props: { backgroundCss: '#101014', durationMs: 400 },
+        }),
+      ],
+      report
+    ) as Array<Record<string, unknown>>
+    const bg = result.find((event) => event.type === 'backgroundUpdate')
+    expect(bg?.timeMs).toBe(2000)
+    expect(bg?.background).toEqual({ backgroundCss: '#101014' })
+    expect(bg?.transition).toEqual({ durationMs: 400, easing: 'ease-in-out' })
+    expect(itemsOf(report)[0]?.status).toBe('applied')
+  })
+
+  it('skips a background update with no css', () => {
+    const { report } = makeReport()
+    applyPlacedEvents(
+      baseEvents,
+      [
+        placed({
+          id: 'bg2',
+          kind: 'background',
+          anchor: anchor({ type: 'videoStart' }, 100),
+          end: undefined,
+          props: {},
+        }),
+      ],
+      report
+    )
+    expect(itemsOf(report)[0]?.status).toBe('skipped')
+    expect(itemsOf(report)[0]?.reason).toBe('backgroundMissingCss')
+  })
+
+  it('inserts a narration-box update, instant when no duration', () => {
+    const { report } = makeReport()
+    const result = applyPlacedEvents(
+      baseEvents,
+      [
+        placed({
+          id: 'nb1',
+          kind: 'narrationBox',
+          anchor: anchor({ type: 'videoStart' }, 500),
+          end: undefined,
+          props: { corner: 'bottom-left', size: 0.3 },
+        }),
+      ],
+      report
+    ) as Array<Record<string, unknown>>
+    const update = result.find((event) => event.type === 'narrationUpdate')
+    expect(update?.timeMs).toBe(500)
+    expect(update?.position).toBe('bottom-left')
+    expect(update?.size).toBe(0.3)
+    expect(update?.transition).toBeUndefined()
+  })
+
+  it('inserts a recording update carrying visibility', () => {
+    const { report } = makeReport()
+    const result = applyPlacedEvents(
+      baseEvents,
+      [
+        placed({
+          id: 'rec1',
+          kind: 'recording',
+          anchor: anchor({ type: 'videoStart' }, 800),
+          end: undefined,
+          props: { visible: false },
+        }),
+      ],
+      report
+    ) as Array<Record<string, unknown>>
+    const update = result.find((event) => event.type === 'recordingUpdate')
+    expect(update?.timeMs).toBe(800)
+    expect(update?.visible).toBe(false)
+    expect(itemsOf(report)[0]?.status).toBe('applied')
+  })
+
+  it('skips a recording update with no size or visibility change', () => {
+    const { report } = makeReport()
+    applyPlacedEvents(
+      baseEvents,
+      [
+        placed({
+          id: 'rec2',
+          kind: 'recording',
+          anchor: anchor({ type: 'videoStart' }, 0),
+          end: undefined,
+          props: {},
+        }),
+      ],
+      report
+    )
+    expect(itemsOf(report)[0]?.status).toBe('skipped')
+    expect(itemsOf(report)[0]?.reason).toBe('recordingMissingChange')
+  })
 })
 
 describe('applyZoomWindowOffsets', () => {

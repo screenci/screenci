@@ -3282,6 +3282,25 @@ const defaultEditableOverridesFetcher: EditableOverridesFetcher = async ({
 }
 
 /**
+ * Filters the per-video timeline-edits map by the same `--grep` regex the
+ * action-parameter report uses, so `screenci status -g <name>` narrows the
+ * timeline-edits and placed-events blocks to matching videos too (not just
+ * the action-parameter section).
+ */
+function filterTimelineEditsByGrep(
+  timelineEdits: Record<string, unknown>,
+  grep?: string
+): Record<string, unknown> {
+  if (grep === undefined) return timelineEdits
+  const pattern = new RegExp(grep)
+  return Object.fromEntries(
+    Object.entries(timelineEdits).filter(([videoName]) =>
+      pattern.test(videoName)
+    )
+  )
+}
+
+/**
  * `screenci status`: report how the web editor's action-parameter edits relate
  * to the latest recorded run (overrides shadowing explicit code values,
  * defaults changed from the editor, stale overrides).
@@ -3305,7 +3324,9 @@ export async function printActionStatus(
       secret,
       projectName,
     })
-    const { overrides, placed } = splitTimelineEditsByVideo(timelineEdits)
+    const { overrides, placed } = splitTimelineEditsByVideo(
+      filterTimelineEditsByGrep(timelineEdits, grep)
+    )
     const snapshot = readEditableSnapshot(screenciDir)
     const lines = formatEditableStatusReport(snapshot, overrides)
     if (lines.length > 0) {
@@ -3349,7 +3370,9 @@ export async function printSyncPrompt(
       secret,
       projectName,
     })
-    const { overrides, placed } = splitTimelineEditsByVideo(timelineEdits)
+    const { overrides, placed } = splitTimelineEditsByVideo(
+      filterTimelineEditsByGrep(timelineEdits, grep)
+    )
     placement = buildEditablePlacementPrompt(
       readEditableSnapshot(screenciDir),
       overrides,

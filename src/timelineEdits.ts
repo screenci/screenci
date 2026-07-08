@@ -83,6 +83,12 @@ export const PLACED_POINT_KINDS = [
   'narrationCue',
   'overlay',
   'timestamp',
+  // Presentation updates that fire once at a moment: change the page
+  // background, move/resize the narration (PIP) box, or resize/hide/show the
+  // screen recording. Each inserts its recorded `*Update` event.
+  'background',
+  'narrationBox',
+  'recording',
 ] as const
 
 export type PlacedSpanKind = (typeof PLACED_SPAN_KINDS)[number]
@@ -129,7 +135,10 @@ export type PlacedEvent = {
   /**
    * Kind-specific options: speed reads `multiplier` (default 2), time reads
    * `durationMs`, zoom reads `amount`/`duration`/`easing`/`centering`,
-   * timestamp/narrationCue/overlay read `name`.
+   * timestamp/narrationCue/overlay read `name`, background reads
+   * `backgroundCss`, narrationBox reads `corner`/`size`, recording reads
+   * `size`/`visible`; the three update kinds also read an optional
+   * `durationMs` for an eased transition.
    */
   props?: Record<string, unknown>
   disabled?: boolean
@@ -605,6 +614,29 @@ function propString(
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
+function propBool(
+  props: Record<string, unknown>,
+  field: string
+): boolean | undefined {
+  const value = props[field]
+  return typeof value === 'boolean' ? value : undefined
+}
+
+/**
+ * A presentation-update transition from a `durationMs` prop: omitted (an
+ * instant cut) when the duration is missing or non-positive, otherwise an
+ * eased crossfade. Web-added updates default to `ease-in-out`, matching the
+ * SDK's `OverlayTransitionOptions`.
+ */
+function propTransition(
+  props: Record<string, unknown>
+): { durationMs: number; easing: string } | undefined {
+  const durationMs = propNumber(props, 'durationMs')
+  if (durationMs === undefined || durationMs <= 0) return undefined
+  const easing = propString(props, 'easing')
+  return { durationMs, easing: easing ?? 'ease-in-out' }
+}
+
 /**
  * Moves a zoom boundary out of any input event's span: the renderer rejects
  * autoZoom boundaries strictly inside an input, so a start boundary snaps to
@@ -890,6 +922,60 @@ export function applyPlacedEvents<T>(
               name,
             })
           }
+          item(status, { resolvedStartMs: timeMs, ...fallbackReason })
+          continue
+        }
+        case 'background': {
+          const backgroundCss = propString(props, 'backgroundCss')
+          if (backgroundCss === undefined) {
+            item('skipped', { reason: 'backgroundMissingCss' })
+            continue
+          }
+          const transition = propTransition(props)
+          insertSorted(events, {
+            type: 'backgroundUpdate',
+            timeMs,
+            background: { backgroundCss },
+            ...(transition !== undefined && { transition }),
+          })
+          item(status, { resolvedStartMs: timeMs, ...fallbackReason })
+          continue
+        }
+        case 'narrationBox': {
+          // `corner` carries a NarrationPosition (corner / 'center' /
+          // 'full-screen'); either it or a new size must be present.
+          const position = propString(props, 'corner')
+          const size = propNumber(props, 'size')
+          if (position === undefined && size === undefined) {
+            item('skipped', { reason: 'narrationBoxMissingChange' })
+            continue
+          }
+          const transition = propTransition(props)
+          insertSorted(events, {
+            type: 'narrationUpdate',
+            timeMs,
+            ...(position !== undefined && { position }),
+            ...(size !== undefined && { size }),
+            ...(transition !== undefined && { transition }),
+          })
+          item(status, { resolvedStartMs: timeMs, ...fallbackReason })
+          continue
+        }
+        case 'recording': {
+          const size = propNumber(props, 'size')
+          const visible = propBool(props, 'visible')
+          if (size === undefined && visible === undefined) {
+            item('skipped', { reason: 'recordingMissingChange' })
+            continue
+          }
+          const transition = propTransition(props)
+          insertSorted(events, {
+            type: 'recordingUpdate',
+            timeMs,
+            ...(size !== undefined && { size }),
+            ...(visible !== undefined && { visible }),
+            ...(transition !== undefined && { transition }),
+          })
           item(status, { resolvedStartMs: timeMs, ...fallbackReason })
           continue
         }

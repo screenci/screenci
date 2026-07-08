@@ -88,3 +88,7 @@ on later runs, so you do not have to commit the files. If a file is missing
 locally, ScreenCI reuses the version uploaded for this video (matched by file
 path). See
 [Asset files do not need to be committed](/docs/ci-setup#asset-files-do-not-need-to-be-committed).
+
+Background audio tracks play as provided; automatic cleanup applies only to
+self-recorded narration, see
+[Clean up recorded narration audio](./narration.md#clean-up-recorded-narration-audio).

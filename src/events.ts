@@ -14,6 +14,7 @@ import type {
   ResolvedRenderOptions,
 } from './types.js'
 import { RENDER_OPTIONS_DEFAULTS } from './types.js'
+import { resolveNarrationAudioCleanup } from './narrationAudioCleanup.js'
 import { assertValidRegion, type ScreenshotClipRecord } from './clip.js'
 import type { StudioOptionFlags } from './studio.js'
 import {
@@ -1023,9 +1024,33 @@ export type SleepEvent = {
   reason: SleepReason
 }
 
+/**
+ * A keyboard shortcut press recorded from `page.keyboard.press` or
+ * `locator.press`. Rendered as an animated keycap overlay at the bottom of the
+ * video, subject to `renderOptions.shortcuts` visibility rules.
+ */
+export type KeyPressEvent = {
+  type: 'keyPress'
+  /** Stable per-recording id (`kp-0`, `kp-1`, ...) used by editor overrides. */
+  id: string
+  /** Recording-relative time of the press. */
+  timeMs: number
+  /**
+   * Normalized key parts, e.g. `['Shift', 'A']` or `['A']`. `ControlOrMeta`
+   * is resolved to the recording platform's key at record time.
+   */
+  keys: string[]
+  /**
+   * Per-call visibility override from `press(key, { show })`. When absent the
+   * global `renderOptions.shortcuts` toggles decide.
+   */
+  show?: boolean
+}
+
 export type RecordingEvent =
   | VideoStartEvent
   | InputEvent
+  | KeyPressEvent
   | CueStartEvent
   | CueEndEvent
   | ValuesDeclareEvent
@@ -1242,6 +1267,12 @@ export interface IEventRecorder {
    * ignores this event.
    */
   addDelay(durationMs: number, editable?: EditableMeta): void
+  /**
+   * Records a keyboard shortcut press (`page.keyboard.press`) at the current
+   * recording time. `keys` are the normalized combo parts (e.g.
+   * `['Shift', 'A']`); `show` is the per-call visibility override.
+   */
+  addKeyPress(keys: string[], show?: boolean): void
   addCueStart(
     text: string,
     name: string,
@@ -1384,6 +1415,7 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
     return resolveSpecWithoutTracking(spec)
   },
   addDelay(): void {},
+  addKeyPress(): void {},
   addCueStart(): void {},
   addStudioCueStart(): void {},
   addValuesDeclare(): void {},
@@ -1448,6 +1480,8 @@ export class EventRecorder implements IEventRecorder {
   private readonly studioOptions: StudioOptionFlags
   /** Per-recording action-parameter provenance and editor overrides. */
   private readonly actionParams: ActionParamCollector
+  /** Monotonic counter for stable `KeyPressEvent.id` values. */
+  private keyPressCounter = 0
 
   constructor(
     renderOptions?: RenderOptions,
@@ -1678,6 +1712,19 @@ export class EventRecorder implements IEventRecorder {
       timeMs,
       durationMs,
       ...(editable !== undefined && { editable }),
+    })
+  }
+
+  addKeyPress(keys: string[], show?: boolean): void {
+    if (this.startTime === null) return
+    if (keys.length === 0) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'keyPress',
+      id: `kp-${this.keyPressCounter++}`,
+      timeMs,
+      keys,
+      ...(show !== undefined && { show }),
     })
   }
 
@@ -2221,6 +2268,9 @@ export class EventRecorder implements IEventRecorder {
     // undefined otherwise, so the code values render as the starting point while
     // the Studio flag marks the group web-editable (the web app overrides it).
     const ro = this.renderOptions
+    const narrationAudioCleanup = resolveNarrationAudioCleanup(
+      ro?.narration?.audio
+    )
     const resolved: ResolvedRenderOptions = {
       recording: {
         size: ro?.recording?.size ?? RENDER_OPTIONS_DEFAULTS.recording.size,
@@ -2251,6 +2301,9 @@ export class EventRecorder implements IEventRecorder {
           ro?.narration?.dropShadow,
           RENDER_OPTIONS_DEFAULTS.narration.dropShadow
         ),
+        ...(narrationAudioCleanup !== undefined && {
+          audio: narrationAudioCleanup,
+        }),
       },
       mouse: {
         size: ro?.mouse?.size ?? RENDER_OPTIONS_DEFAULTS.mouse.size,
@@ -2265,6 +2318,16 @@ export class EventRecorder implements IEventRecorder {
       zoom: {
         motionBlur:
           ro?.zoom?.motionBlur ?? RENDER_OPTIONS_DEFAULTS.zoom.motionBlur,
+      },
+      shortcuts: {
+        show: ro?.shortcuts?.show ?? RENDER_OPTIONS_DEFAULTS.shortcuts.show,
+        showSingle:
+          ro?.shortcuts?.showSingle ??
+          RENDER_OPTIONS_DEFAULTS.shortcuts.showSingle,
+        theme: ro?.shortcuts?.theme ?? RENDER_OPTIONS_DEFAULTS.shortcuts.theme,
+        ...(ro?.shortcuts?.overrides !== undefined && {
+          overrides: ro.shortcuts.overrides,
+        }),
       },
       output: {
         aspectRatio:

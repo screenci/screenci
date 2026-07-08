@@ -13,12 +13,15 @@ export type {
 
 export type { ScreenshotClipRecord, ResolvedClipPadding } from './clip.js'
 
+export { parseKeyCombo, isSingleKeyCombo } from './keyCombo.js'
+
 export type {
   RecordingData,
   RecordingEvent,
   ElementRect,
   VideoStartEvent,
   InputEvent,
+  KeyPressEvent,
   FocusChangeEvent,
   MouseMoveEvent,
   MouseDownEvent,

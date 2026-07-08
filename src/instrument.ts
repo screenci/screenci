@@ -38,6 +38,7 @@ import type {
   ScreenCIPage,
 } from './types.js'
 import { isInsideHide } from './hide.js'
+import { parseKeyCombo } from './keyCombo.js'
 import { redact } from './redact.js'
 import {
   changeFocus,
@@ -1118,6 +1119,24 @@ export function instrumentLocator(locator: Locator): Locator {
     hideMouse?: boolean
     position?: { x: number; y: number }
     redact?: boolean | RedactOptions
+  }
+
+  // Record locator.press as a keyboard shortcut overlay, like
+  // page.keyboard.press. No cursor animation: the press targets an element
+  // that is usually already focused.
+  const originalLocatorPress = locator.press.bind(locator)
+  locator.press = async (
+    key: string,
+    options?: Parameters<Locator['press']>[1] & { show?: boolean }
+  ): Promise<void> => {
+    const { show, ...native } = options ?? {}
+    await originalLocatorPress(key, native)
+    if (!isInsideHide()) {
+      getActiveClickRecorder(locator.page()).addKeyPress(
+        parseKeyCombo(key, process.platform),
+        show
+      )
+    }
   }
 
   const originalPressSequentially = locator.pressSequentially.bind(locator)
@@ -2336,6 +2355,23 @@ export async function instrumentPage(page: Page): Promise<Page> {
         : undefined
     )
   }) as Page['unroute']
+
+  // Instrument page.keyboard.press to record keyboard shortcut overlays.
+  const keyboard = page.keyboard
+  const originalKeyboardPress = keyboard.press.bind(keyboard)
+  keyboard.press = async (
+    key: string,
+    options?: Parameters<typeof keyboard.press>[1] & { show?: boolean }
+  ): Promise<void> => {
+    const { show, ...native } = options ?? {}
+    await originalKeyboardPress(key, native)
+    if (!isInsideHide()) {
+      getActiveClickRecorder(page).addKeyPress(
+        parseKeyCombo(key, process.platform),
+        show
+      )
+    }
+  }
 
   // Instrument page.mouse to record mouse moves and visibility toggles.
   const originalMouse = page.mouse

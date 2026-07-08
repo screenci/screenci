@@ -129,6 +129,44 @@ describe('EventRecorder', () => {
     })
   })
 
+  describe('addKeyPress', () => {
+    it('records keys with a stable incrementing id and the current time', () => {
+      recorder.start()
+      now = 1200
+      recorder.addKeyPress(['Shift', 'A'])
+      now = 1500
+      recorder.addKeyPress(['Control', 'K'], true)
+
+      expect(recorder.getEvents().slice(1)).toEqual([
+        { type: 'keyPress', id: 'kp-0', timeMs: 200, keys: ['Shift', 'A'] },
+        {
+          type: 'keyPress',
+          id: 'kp-1',
+          timeMs: 500,
+          keys: ['Control', 'K'],
+          show: true,
+        },
+      ])
+    })
+
+    it('records show: false overrides', () => {
+      recorder.start()
+      recorder.addKeyPress(['A'], false)
+      expect(recorder.getEvents()[1]).toMatchObject({
+        type: 'keyPress',
+        keys: ['A'],
+        show: false,
+      })
+    })
+
+    it('ignores empty key lists and calls before start', () => {
+      recorder.addKeyPress(['A'])
+      recorder.start()
+      recorder.addKeyPress([])
+      expect(recorder.getEvents()).toHaveLength(1)
+    })
+  })
+
   describe('background audio events', () => {
     it('records an audioStart with path, volume and repeat', () => {
       recorder.start()
@@ -540,6 +578,11 @@ describe('EventRecorder', () => {
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed: RecordingData = JSON.parse(content)
       const ro = parsed.renderOptions as Record<string, unknown>
+      expect(ro.shortcuts).toEqual({
+        show: true,
+        showSingle: false,
+        theme: 'dark',
+      })
       // output: stored as aspectRatio + quality (not pre-computed resolution)
       expect((ro.output as Record<string, unknown>).aspectRatio).toBe('16:9')
       expect((ro.output as Record<string, unknown>).quality).toBe('1080p')
@@ -565,6 +608,38 @@ describe('EventRecorder', () => {
       // motion blur defaults (cursor + camera)
       expect((ro.mouse as Record<string, unknown>).motionBlur).toBe(0.5)
       expect((ro.zoom as Record<string, unknown>).motionBlur).toBe(0.5)
+    })
+
+    it('omits narration.audio by default and resolves it when opted in', async () => {
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+      let parsed: RecordingData = JSON.parse(
+        await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      )
+      let ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.narration as Record<string, unknown>).audio).toBeUndefined()
+
+      recorder = new EventRecorder({ narration: { audio: true } })
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+      parsed = JSON.parse(await readFile(join(tmpDir, 'data.json'), 'utf-8'))
+      ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.narration as Record<string, unknown>).audio).toEqual({
+        denoise: { strength: 0.85 },
+        normalize: { level: -16 },
+      })
+
+      recorder = new EventRecorder({
+        narration: { audio: { normalize: { level: -14 } } },
+      })
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+      parsed = JSON.parse(await readFile(join(tmpDir, 'data.json'), 'utf-8'))
+      ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.narration as Record<string, unknown>).audio).toEqual({
+        denoise: false,
+        normalize: { level: -14 },
+      })
     })
 
     it('preserves explicit cursor and camera motion blur', async () => {

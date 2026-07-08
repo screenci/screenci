@@ -97,7 +97,7 @@ const EDITABLE_SNAPSHOT: EditableSnapshot = {
         key: 'autoZoom1',
         editId: 'autoZoom1',
         locked: false,
-        defaults: { startOffset: 0, endOffset: 0 },
+        defaults: {},
         source: { file: ZOOM_FILE, line: 4 },
       },
     ],
@@ -242,23 +242,6 @@ describe('planCodeSync: timeline param edits', () => {
     // click1 has no preceding wait, so this inserts one before it.
     const after = afterFor(result, FILE)
     expect(after).toContain('await page.waitForTimeout(800)')
-  })
-
-  it('sets autoZoom offsets on the slugged block', () => {
-    const result = plan(
-      inputWith({
-        editableOverrides: {
-          Zoom: [
-            { key: 'autoZoom1', values: { startOffset: -200, endOffset: 300 } },
-          ],
-        },
-      })
-    )
-    const after = afterFor(result, ZOOM_FILE)
-    expect(after).toContain(
-      "{ editId: 'autoZoom1', startOffset: -200, endOffset: 300 }"
-    )
-    expect(result.applied).toHaveLength(2)
   })
 
   it('skips fields equal to the recorded defaults', () => {

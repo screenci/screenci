@@ -849,26 +849,6 @@ export function planCodeSync(
           })
           continue
         }
-        if (field === 'startOffset' || field === 'endOffset') {
-          applySlugItem({
-            videoName,
-            editId,
-            description: `set ${field}: ${JSON.stringify(value)} on '${editId}'`,
-            onUnappliable: () =>
-              markUnappliable(`locked ${field} on '${editId}'`),
-            compute: (ctx) => {
-              const call = findCallByEditId(ctx, editId)
-              if (call === null) return null
-              const callee = call.expression
-              if (!ctx.ts.isIdentifier(callee) || callee.text !== 'autoZoom') {
-                return null
-              }
-              const edit = setOptionValue(ctx, call, 1, [field], value)
-              return edit === null ? null : [edit]
-            },
-          })
-          continue
-        }
         markUnappliable(`unsupported param field '${field}' on '${editId}'`)
       }
     }

@@ -909,10 +909,6 @@ export type AutoZoomStartEvent = {
   duration: number
   amount: number
   centering?: number
-  /** `autoZoom` boundary-shift options (`startOffset`/`endOffset`), carried
-   *  through for downstream consumers that widen the zoom window. */
-  startOffset?: number
-  endOffset?: number
   /** Web-editor metadata: identity, lock state, and effective option values. */
   editable?: EditableMeta
 }
@@ -2218,14 +2214,6 @@ export class EventRecorder implements IEventRecorder {
       amount: resolvedOptions.amount,
       ...(centering !== undefined && {
         centering,
-      }),
-      // Write-time boundary shifts, applied and stripped when data.json is
-      // written (a negative startOffset reaches into the past legally there).
-      ...(resolvedOptions.startOffset !== 0 && {
-        startOffset: resolvedOptions.startOffset,
-      }),
-      ...(resolvedOptions.endOffset !== 0 && {
-        endOffset: resolvedOptions.endOffset,
       }),
       ...(editable !== undefined && { editable }),
     })

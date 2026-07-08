@@ -144,7 +144,19 @@ export type PlacedEvent = {
   disabled?: boolean
 }
 
-export type EditRecord = ParamEdit | PlacedEvent
+/**
+ * Rename of an action's stable `editId` slug, made in the web editor. Applied
+ * to code by `screenci sync` (the slug's string literal is replaced); until
+ * then the recorded slug keeps matching, so nothing goes stale in between.
+ */
+export type RenameEdit = {
+  type: 'renameEdit'
+  id: string
+  target: { editId: string }
+  newEditId: string
+}
+
+export type EditRecord = ParamEdit | PlacedEvent | RenameEdit
 
 export type TimelineEditsDoc = {
   version: number
@@ -420,6 +432,10 @@ export function splitEdits(edits: readonly EditRecord[]): SplitEdits {
         break
       case 'placedEvent':
         if (edit.disabled !== true) placedEvents.push(edit)
+        break
+      case 'renameEdit':
+        // Renames affect code identity only; nothing to apply at record time
+        // (the recorded slug keeps matching until the rename is codified).
         break
       default: {
         const exhaustive: never = edit

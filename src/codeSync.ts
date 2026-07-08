@@ -20,6 +20,7 @@ import {
   type EditableSnapshot,
   type EditableSnapshotEntry,
   type PlacedEventsByVideo,
+  type RenamesByVideo,
 } from './editableSnapshot.js'
 import type { PlacedEvent } from './timelineEdits.js'
 import {
@@ -34,6 +35,7 @@ import {
   enclosingStatement,
   findCallByEditId,
   previousStatement,
+  renameEditId as renameEditIdInSource,
   removeOption,
   setOptionValue,
   statementAtLine,
@@ -100,6 +102,7 @@ export type CodeSyncPlan = {
     comparison: WebStateComparison
     overrides: EditableOverridesByVideo
     placed: PlacedEventsByVideo
+    renames: RenamesByVideo
   }
   /** Videos where every pending edit was applied (safe to reset web edits). */
   fullyAppliedVideos: string[]
@@ -111,6 +114,12 @@ export type CodeSyncInput = {
   editableSnapshot: EditableSnapshot
   editableOverrides: EditableOverridesByVideo
   placedEvents: PlacedEventsByVideo
+  renames: RenamesByVideo
+}
+
+/** A slug that is safe as a code identity and a wire key. */
+export function isValidEditId(slug: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(slug)
 }
 
 export type CodeSyncDeps = {
@@ -144,6 +153,7 @@ export function planCodeSync(
   const applied: AppliedItem[] = []
   const fallbackOverrides: EditableOverridesByVideo = {}
   const fallbackPlaced: PlacedEventsByVideo = {}
+  const fallbackRenames: RenamesByVideo = {}
   const fallbackVideos: VideoComparison[] = []
   const fallbackCounts = new Map<string, number>()
   const appliedCounts = new Map<string, number>()
@@ -179,6 +189,7 @@ export function planCodeSync(
       ...input.comparison.videos.map((video) => video.videoName),
       ...Object.keys(input.editableOverrides),
       ...Object.keys(input.placedEvents),
+      ...Object.keys(input.renames),
     ]),
   ]
 
@@ -523,6 +534,34 @@ export function planCodeSync(
         })
       }
     }
+
+    // ── editId renames (applied last: earlier items key on the old slug) ───
+    for (const rename of input.renames[videoName] ?? []) {
+      if (rename.newEditId === rename.editId) continue // no-op
+      const file = fileWithEditId(rename.editId)
+      const ok =
+        isValidEditId(rename.newEditId) &&
+        file !== null &&
+        tryApply(file, (ctx) => {
+          const edit = renameEditIdInSource(
+            ctx,
+            rename.editId,
+            rename.newEditId
+          )
+          return edit === null ? null : [edit]
+        })
+      if (ok) {
+        applied.push({
+          videoName,
+          file: file!,
+          description: `rename editId '${rename.editId}' -> '${rename.newEditId}'`,
+        })
+        bump(appliedCounts, videoName)
+      } else {
+        ;(fallbackRenames[videoName] ??= []).push(rename)
+        bump(fallbackCounts, videoName)
+      }
+    }
   }
 
   const files = [...texts.entries()]
@@ -545,6 +584,7 @@ export function planCodeSync(
       },
       overrides: fallbackOverrides,
       placed: fallbackPlaced,
+      renames: fallbackRenames,
     },
     fullyAppliedVideos,
   }

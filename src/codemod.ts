@@ -481,6 +481,39 @@ export function findCallByEditId(
   return matches.length === 1 ? matches[0]! : null
 }
 
+/**
+ * Replace the `editId: '<oldId>'` string literal with `newId`. Null when the
+ * slug is absent or ambiguous in the file.
+ */
+export function renameEditId(
+  ctx: CodemodContext,
+  oldId: string,
+  newId: string
+): TextEdit | null {
+  const { ts } = ctx
+  const call = findCallByEditId(ctx, oldId)
+  if (call === null) return null
+  for (const argument of call.arguments) {
+    if (!ts.isObjectLiteralExpression(argument)) continue
+    for (const property of argument.properties) {
+      if (
+        ts.isPropertyAssignment(property) &&
+        ts.isIdentifier(property.name) &&
+        property.name.text === 'editId' &&
+        ts.isStringLiteral(property.initializer) &&
+        property.initializer.text === oldId
+      ) {
+        return {
+          start: property.initializer.getStart(),
+          end: property.initializer.getEnd(),
+          replacement: `'${newId.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`,
+        }
+      }
+    }
+  }
+  return null
+}
+
 /** The statement containing `node` whose parent is a block (insertable). */
 export function enclosingStatement(
   ctx: CodemodContext,

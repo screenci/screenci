@@ -17,7 +17,12 @@ import {
 } from 'fs'
 import { join } from 'path'
 import { stableEditableKey } from './editableDescriptor.js'
-import type { Anchor, ParamEdit, PlacedEvent } from './timelineEdits.js'
+import type {
+  Anchor,
+  ParamEdit,
+  PlacedEvent,
+  RenameEdit,
+} from './timelineEdits.js'
 import { describeAnchor } from './timelineEdits.js'
 
 /** Param-edit values per video, in the stable-key entry shape the snapshot
@@ -31,6 +36,12 @@ export type EditableOverridesByVideo = Record<string, EditableOverrideEntry[]>
 /** Placed events per video, straight from the unified timeline-edits docs. */
 export type PlacedEventsByVideo = Record<string, PlacedEvent[]>
 
+/** editId renames per video, from the unified timeline-edits docs. */
+export type RenamesByVideo = Record<
+  string,
+  Array<{ editId: string; newEditId: string }>
+>
+
 /**
  * Splits fetched unified timeline-edits docs (keyed by video name) into the
  * shapes the status report and sync prompt consume. Records that do not look
@@ -39,9 +50,14 @@ export type PlacedEventsByVideo = Record<string, PlacedEvent[]>
  */
 export function splitTimelineEditsByVideo(
   docsByVideo: Record<string, unknown>
-): { overrides: EditableOverridesByVideo; placed: PlacedEventsByVideo } {
+): {
+  overrides: EditableOverridesByVideo
+  placed: PlacedEventsByVideo
+  renames: RenamesByVideo
+} {
   const overrides: EditableOverridesByVideo = {}
   const placed: PlacedEventsByVideo = {}
+  const renames: RenamesByVideo = {}
   for (const [videoName, doc] of Object.entries(docsByVideo)) {
     const edits = (doc as { edits?: unknown[] } | null)?.edits
     if (!Array.isArray(edits)) continue
@@ -59,10 +75,22 @@ export function splitTimelineEditsByVideo(
         const event = edit as PlacedEvent
         if (event.disabled === true) continue
         ;(placed[videoName] ??= []).push(event)
+      } else if (record.type === 'renameEdit') {
+        const rename = edit as RenameEdit
+        if (
+          typeof rename.target?.editId !== 'string' ||
+          typeof rename.newEditId !== 'string'
+        ) {
+          continue
+        }
+        ;(renames[videoName] ??= []).push({
+          editId: rename.target.editId,
+          newEditId: rename.newEditId,
+        })
       }
     }
   }
-  return { overrides, placed }
+  return { overrides, placed, renames }
 }
 
 /** File name of the snapshot inside `.screenci`. Preserved across runs. */
@@ -526,13 +554,15 @@ export function placeCallFor(event: PlacedEvent): string | null {
 export function buildEditablePlacementPrompt(
   snapshot: EditableSnapshot,
   overridesByVideo: EditableOverridesByVideo,
-  placedByVideo: PlacedEventsByVideo = {}
+  placedByVideo: PlacedEventsByVideo = {},
+  renamesByVideo: RenamesByVideo = {}
 ): string[] {
   const lines: string[] = []
   const videoNames = [
     ...new Set([
       ...Object.keys(overridesByVideo),
       ...Object.keys(placedByVideo),
+      ...Object.keys(renamesByVideo),
     ]),
   ]
   for (const videoName of videoNames) {
@@ -637,6 +667,14 @@ export function buildEditablePlacementPrompt(
         default:
           break
       }
+    }
+    for (const rename of renamesByVideo[videoName] ?? []) {
+      lines.push(
+        `- RENAME the \`editId: '${rename.editId}'\` option to ` +
+          `\`editId: '${rename.newEditId}'\` wherever it appears in the ` +
+          `.screenci.ts sources (web rename), then remove the rename from ` +
+          `the web editor.`
+      )
     }
     if (lines.length > sectionStart) {
       lines.splice(sectionStart, 0, `## Video: ${videoName}`)

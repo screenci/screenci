@@ -550,6 +550,12 @@ IS the slug: edits and placed-event anchors keep matching across re-records
 even after refactors, moved lines, or locator changes, and `screenci sync`
 locates the call site by the exact slug instead of heuristics.
 
+The slug is the action's display name on the editor timeline, and it can be
+renamed there: the rename is stored as a web edit and `screenci sync` applies
+it by replacing the slug's string literal in code. Nothing goes stale in
+between because the recorded slug keeps matching until the rename is
+codified.
+
 Actions without an editId fall back to the legacy matcher-based identity
 (locator description + occurrence), which works for straight-line scripts but
 breaks on refactors. An action that executes more than once in a recording

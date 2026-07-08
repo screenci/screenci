@@ -3623,13 +3623,14 @@ export async function printSyncPrompt(
       secret,
       projectName,
     })
-    const { overrides, placed } = splitTimelineEditsByVideo(
+    const { overrides, placed, renames } = splitTimelineEditsByVideo(
       filterTimelineEditsByGrep(timelineEdits, grep)
     )
     placement = buildEditablePlacementPrompt(
       readEditableSnapshot(screenciDir),
       overrides,
-      placed
+      placed,
+      renames
     )
   } catch {
     // Best-effort: the action-parameter prompt still prints.
@@ -3702,6 +3703,7 @@ function planStampsAndCodeSync(args: {
   editableSnapshot: ReturnType<typeof readEditableSnapshot>
   editableOverrides: ReturnType<typeof splitTimelineEditsByVideo>['overrides']
   placedEvents: ReturnType<typeof splitTimelineEditsByVideo>['placed']
+  renames: ReturnType<typeof splitTimelineEditsByVideo>['renames']
   readFile: (path: string) => string | null
 }): {
   plan: CodeSyncPlan
@@ -3726,6 +3728,7 @@ function planStampsAndCodeSync(args: {
       editableSnapshot: args.editableSnapshot,
       editableOverrides: args.editableOverrides,
       placedEvents: args.placedEvents,
+      renames: args.renames,
     },
     { ts: args.ts, readFile }
   )
@@ -3777,6 +3780,7 @@ export async function runSync(
     typeof splitTimelineEditsByVideo
   >['overrides'] = {}
   let placedEvents: ReturnType<typeof splitTimelineEditsByVideo>['placed'] = {}
+  let renames: ReturnType<typeof splitTimelineEditsByVideo>['renames'] = {}
   try {
     const fetchEditable =
       deps.fetchEditableOverrides ?? defaultEditableOverridesFetcher
@@ -3790,6 +3794,7 @@ export async function runSync(
     )
     editableOverrides = split.overrides
     placedEvents = split.placed
+    renames = split.renames
   } catch {
     // ignore: the endpoint may be unavailable
   }
@@ -3813,6 +3818,7 @@ export async function runSync(
               comparison,
               overrides: editableOverrides,
               placed: placedEvents,
+              renames,
             },
             fullyAppliedVideos: [],
           } satisfies CodeSyncPlan,
@@ -3828,6 +3834,7 @@ export async function runSync(
           editableSnapshot,
           editableOverrides,
           placedEvents,
+          renames,
           readFile: deps.readFileText ?? defaultReadFileText,
         })
   const plan = planned.plan
@@ -3850,7 +3857,8 @@ export async function runSync(
   const fallbackPlacement = buildEditablePlacementPrompt(
     editableSnapshot,
     plan.fallback.overrides,
-    plan.fallback.placed
+    plan.fallback.placed,
+    plan.fallback.renames
   )
 
   if (
@@ -3989,7 +3997,8 @@ export async function runDevAutoSync(
         log('auto-sync: could not load typescript; auto-sync disabled.')
         return
       }
-      const { overrides, placed } = splitTimelineEditsByVideo(timelineEdits)
+      const { overrides, placed, renames } =
+        splitTimelineEditsByVideo(timelineEdits)
       // Never insert the same placed event twice in one session.
       const filteredPlaced = Object.fromEntries(
         Object.entries(placed).map(([videoName, events]) => [
@@ -4007,6 +4016,7 @@ export async function runDevAutoSync(
         editableSnapshot: readEditableSnapshot(screenciDir),
         editableOverrides: overrides,
         placedEvents: filteredPlaced,
+        renames,
         readFile: deps.readFileText ?? defaultReadFileText,
       })
       const plan = planned.plan

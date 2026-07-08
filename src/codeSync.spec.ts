@@ -70,6 +70,7 @@ function inputWith(overrides: Partial<CodeSyncInput>): CodeSyncInput {
     editableSnapshot: EDITABLE_SNAPSHOT,
     editableOverrides: {},
     placedEvents: {},
+    renames: {},
     ...overrides,
   }
 }
@@ -354,6 +355,43 @@ describe('planCodeSync: editId-keyed edits', () => {
     expect(after).toContain('await page.waitForTimeout(500)')
     expect(after).toContain("{ editId: 'zoom1', startOffset: -200 }")
     expect(result.fullyAppliedVideos).toEqual(['Demo'])
+  })
+
+  it('applies renames by replacing the slug literal, after other edits', () => {
+    const result = plan(
+      inputWith({
+        editableSnapshot: stampedSnapshot,
+        editableOverrides: {
+          Demo: [{ key: 'click1', values: { sleepBefore: 500 } }],
+        },
+        renames: {
+          Demo: [{ editId: 'click1', newEditId: 'save-button' }],
+        },
+      }),
+      { [FILE]: STAMPED }
+    )
+    const after = result.files[0]!.after
+    expect(after).toContain("editId: 'save-button'")
+    expect(after).toContain('await page.waitForTimeout(500)')
+    expect(result.fullyAppliedVideos).toEqual(['Demo'])
+  })
+
+  it('routes invalid or unlocatable renames to the fallback', () => {
+    const result = plan(
+      inputWith({
+        editableSnapshot: stampedSnapshot,
+        renames: {
+          Demo: [
+            { editId: 'click1', newEditId: "bad'\nslug" },
+            { editId: 'ghost9', newEditId: 'fine' },
+          ],
+        },
+      }),
+      { [FILE]: STAMPED }
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.fallback.renames['Demo']).toHaveLength(2)
+    expect(result.fullyAppliedVideos).toEqual([])
   })
 
   it('routes repeat-execution keys (loops) to the fallback', () => {

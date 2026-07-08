@@ -285,6 +285,71 @@ describe('screenci sync', () => {
     expect(lines.join('\n')).toContain('Nothing to sync')
   })
 
+  it('auto-sync applies once, dedupes unchanged state, and resets applied videos', async () => {
+    // Mutable editor state: after the reset the backend has no overrides.
+    let overrides: Record<string, unknown> = {
+      'My video': { [`${SAVE_SELECTOR}|click|0|move.duration`]: 250 },
+    }
+    const client = setupProject({})
+    client.fetchActionOverrides = vi.fn(async () => overrides)
+    const { runDevAutoSync } = await import('./cli')
+    const { deps, written, resets } = baseDeps()
+    deps.resetVideoEdits = vi.fn(async (_config, videoName: string) => {
+      resets.push(videoName)
+      overrides = {}
+    })
+    const controller = { stopped: false }
+    let ticks = 0
+    const lines: string[] = []
+    await runDevAutoSync(
+      'test-fixtures/screenci.config.ts',
+      controller,
+      () => false,
+      (message) => lines.push(message),
+      { client, ...deps },
+      1,
+      async () => {
+        ticks += 1
+        if (ticks > 4) controller.stopped = true
+      }
+    )
+    expect(written['/project/demo.screenci.ts']).toContain(
+      '.click({ move: { duration: 250 } })'
+    )
+    expect(resets).toEqual(['My video'])
+    const out = lines.join('\n')
+    expect(out).toContain('auto-sync: [My video]')
+    expect(out).toContain('cleared web timeline edits')
+    // The edit applied exactly once across the ticks.
+    expect(
+      lines.filter((line) => line.includes('set move.duration'))
+    ).toHaveLength(1)
+  })
+
+  it('auto-sync skips ticks while a record is running', async () => {
+    const client = setupProject({
+      'My video': { [`${SAVE_SELECTOR}|click|0|move.duration`]: 250 },
+    })
+    const { runDevAutoSync } = await import('./cli')
+    const { deps, written } = baseDeps()
+    const controller = { stopped: false }
+    let ticks = 0
+    await runDevAutoSync(
+      'test-fixtures/screenci.config.ts',
+      controller,
+      () => true,
+      () => {},
+      { client, ...deps },
+      1,
+      async () => {
+        ticks += 1
+        if (ticks > 3) controller.stopped = true
+      }
+    )
+    expect(written).toEqual({})
+    expect(client.fetchActionOverrides).not.toHaveBeenCalled()
+  })
+
   it('falls back entirely to the prompt when typescript is unavailable', async () => {
     const client = setupProject({
       'My video': { [`${SAVE_SELECTOR}|click|0|move.duration`]: 250 },

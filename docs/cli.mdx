@@ -358,6 +358,14 @@ Options:
 - `-c, --config <path>`: path to the ScreenCI config file.
 - `--token <token>`: personal dev token. Defaults to `SCREENCI_DEV_TOKEN` from
   your project env file.
+- `--sync`: auto-apply web editor edits to the recording sources while
+  listening. Every few seconds the listener checks for new edits and applies
+  what [`screenci sync`](#screenci-sync) can apply mechanically; a video whose
+  pending edits were all applied gets its web edits cleared automatically, so
+  the next record runs purely from code. Edits that need judgment (narration
+  content, ambiguous call sites) are left in the editor and reported in the
+  log; use `screenci sync-prompt` for those. Auto-sync pauses while a
+  triggered record is running.
 - `-v, --verbose`: verbose output.
 
 Setup:

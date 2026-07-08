@@ -219,6 +219,43 @@ describe('planCodeSync: timeline param edits', () => {
     expect(result.applied).toHaveLength(2)
   })
 
+  it('updates an existing waitForTimeout before the action instead of stacking', () => {
+    const withWait = SOURCE.replace(
+      "    await page.getByRole('button', { name: 'Save' }).click({ move: { duration: 500 } })",
+      [
+        '    await page.waitForTimeout(500)',
+        "    await page.getByRole('button', { name: 'Save' }).click({ move: { duration: 500 } })",
+      ].join('\n')
+    )
+    // The click statement moved down one line.
+    const snapshot: EditableSnapshot = {
+      version: 1,
+      videos: {
+        Demo: [
+          {
+            key: CLICK_KEY,
+            locked: false,
+            defaults: { sleepBefore: 0 },
+            source: { file: FILE, line: 6 },
+          },
+        ],
+      },
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshot,
+        editableOverrides: {
+          Demo: [{ key: CLICK_KEY, values: { sleepBefore: 800 } }],
+        },
+      }),
+      { [FILE]: withWait }
+    )
+    const after = result.files[0]!.after
+    expect(after).toContain('await page.waitForTimeout(800)')
+    expect(after).not.toContain('await page.waitForTimeout(500)')
+    expect(after.match(/waitForTimeout/g)).toHaveLength(1)
+  })
+
   it('skips fields equal to the recorded defaults', () => {
     const result = plan(
       inputWith({

@@ -3079,8 +3079,17 @@ async function runTriggeredRecord(
 }
 
 export async function runDevCommand(
-  options: { config?: string; verbose?: boolean; token?: string },
-  depsOverride: Partial<DevListenDeps> & { machineName?: string } = {}
+  options: {
+    config?: string
+    verbose?: boolean
+    token?: string
+    sync?: boolean
+  },
+  depsOverride: Partial<DevListenDeps> & {
+    machineName?: string
+    syncDeps?: SyncCommandDeps
+    syncPollMs?: number
+  } = {}
 ): Promise<void> {
   const { screenciConfig, secret, apiUrl } = await requireScreenCISecret(
     options.config
@@ -3101,12 +3110,23 @@ export async function runDevCommand(
     projectName: screenciConfig.projectName,
     machineName: depsOverride.machineName ?? hostname(),
   }
+  let recording = false
   const deps: DevListenDeps = {
     fetchFn: fetch,
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     logger,
-    runRecord: (trigger) =>
-      runTriggeredRecord(options.config, trigger, options.verbose ?? false),
+    runRecord: async (trigger) => {
+      recording = true
+      try {
+        await runTriggeredRecord(
+          options.config,
+          trigger,
+          options.verbose ?? false
+        )
+      } finally {
+        recording = false
+      }
+    },
     ...depsOverride,
   }
 
@@ -3143,6 +3163,24 @@ export async function runDevCommand(
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
 
+  // Optional auto-sync: apply web edits to the sources while listening. Runs
+  // alongside the listen loop and shares its stop controller; errors are
+  // logged per tick and never take the listener down.
+  if (options.sync === true) {
+    logger.info(
+      'Auto-sync on: web editor edits are applied to the recording sources ' +
+        'and cleared once fully codified.'
+    )
+    void runDevAutoSync(
+      options.config,
+      controller,
+      () => recording,
+      (message) => logger.info(message),
+      depsOverride.syncDeps ?? {},
+      depsOverride.syncPollMs
+    )
+  }
+
   try {
     await runDevListenLoop(config, deps, registration.listenerId, controller)
   } catch (error) {
@@ -3158,6 +3196,7 @@ export async function runDevCommand(
     }
     throw error
   } finally {
+    controller.stopped = true
     process.off('SIGINT', shutdown)
     process.off('SIGTERM', shutdown)
   }
@@ -3802,6 +3841,114 @@ export async function runSync(
 }
 
 /**
+ * Background loop behind `screenci dev --sync`: while the dev listener runs,
+ * poll the web editor's edits and apply what static analysis can to the
+ * .screenci.ts sources, then clear the web edits of fully applied videos.
+ *
+ * Idempotence: value edits re-apply harmlessly (same text), sleepBefore
+ * updates an existing wait in place, and inserted placed events are remembered
+ * by signature for the session so they are never inserted twice. The loop
+ * pauses while a triggered record is running (`isBusy`).
+ */
+export async function runDevAutoSync(
+  configPath: string | undefined,
+  controller: { stopped: boolean },
+  isBusy: () => boolean,
+  log: (message: string) => void = (message) => logger.info(message),
+  deps: SyncCommandDeps = {},
+  pollMs = 5000,
+  sleep: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms))
+): Promise<void> {
+  const client = deps.client ?? defaultActionOverridesClient
+  const fetchEditable =
+    deps.fetchEditableOverrides ?? defaultEditableOverridesFetcher
+  const appliedPlacedSignatures = new Set<string>()
+  let lastFingerprint = ''
+
+  while (!controller.stopped) {
+    await sleep(pollMs)
+    if (controller.stopped) break
+    if (isBusy()) {
+      // A record just ran (or is running): the snapshot may change, so force
+      // a re-plan on the next idle tick.
+      lastFingerprint = ''
+      continue
+    }
+    try {
+      const { comparison, projectName, screenciDir, apiUrl, secret } =
+        await compareEditorStateToSnapshot(configPath, undefined, client)
+      let timelineEdits: Record<string, unknown> = {}
+      try {
+        timelineEdits = (await fetchEditable({ apiUrl, secret, projectName }))
+          .timelineEdits
+      } catch {
+        // ignore: the endpoint may be unavailable
+      }
+      const fingerprint = JSON.stringify([comparison.videos, timelineEdits])
+      if (fingerprint === lastFingerprint) continue
+      lastFingerprint = fingerprint
+
+      const ts = (deps.loadTs ?? loadTypescript)(dirname(screenciDir))
+      if (ts === null) {
+        log('auto-sync: could not load typescript; auto-sync disabled.')
+        return
+      }
+      const { overrides, placed } = splitTimelineEditsByVideo(timelineEdits)
+      // Never insert the same placed event twice in one session.
+      const filteredPlaced = Object.fromEntries(
+        Object.entries(placed).map(([videoName, events]) => [
+          videoName,
+          events.filter(
+            (event) => !appliedPlacedSignatures.has(JSON.stringify(event))
+          ),
+        ])
+      )
+      const plan = planCodeSync(
+        {
+          comparison,
+          actionSnapshot: readActionParamsSnapshot(screenciDir),
+          editableSnapshot: readEditableSnapshot(screenciDir),
+          editableOverrides: overrides,
+          placedEvents: filteredPlaced,
+        },
+        { ts, readFile: deps.readFileText ?? defaultReadFileText }
+      )
+      if (plan.files.length === 0) continue
+
+      const write = deps.writeFileText ?? writeFileSync
+      for (const file of plan.files) write(file.path, file.after)
+      for (const item of plan.applied) {
+        log(`auto-sync: [${item.videoName}] ${item.description}`)
+      }
+      // Placed events that did not land in the fallback were applied.
+      for (const [videoName, events] of Object.entries(filteredPlaced)) {
+        const fallbackIds = new Set(
+          (plan.fallback.placed[videoName] ?? []).map((event) => event.id)
+        )
+        for (const event of events) {
+          if (!fallbackIds.has(event.id)) {
+            appliedPlacedSignatures.add(JSON.stringify(event))
+          }
+        }
+      }
+      const resetVideo =
+        deps.resetVideoEdits ??
+        (async (path: string | undefined, videoName: string) =>
+          resetWebEdits(path, videoName, log))
+      for (const videoName of plan.fullyAppliedVideos) {
+        await resetVideo(configPath, videoName)
+        log(`auto-sync: cleared web timeline edits for video: ${videoName}`)
+        lastFingerprint = ''
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      log(`auto-sync error: ${message}`)
+    }
+  }
+}
+
+/**
  * `screenci reset-web-edits`: clears the project's (or one video's) web
  * timeline edits via the backend, so the next record runs purely from code.
  * Used by agents after codifying edits from `screenci sync-prompt`.
@@ -4314,11 +4461,17 @@ export async function main() {
       '--token <token>',
       `personal dev token (defaults to ${SCREENCI_DEV_TOKEN_ENV} from your env file)`
     )
+    .option(
+      '--sync',
+      'auto-apply web editor edits to the recording sources while listening ' +
+        '(static analysis; fully applied videos get their web edits cleared)'
+    )
     .action(
       async (options: {
         config?: string
         verbose?: boolean
         token?: string
+        sync?: boolean
       }) => {
         await runDevCommand(options)
       }

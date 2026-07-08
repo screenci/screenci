@@ -447,6 +447,24 @@ function isStatementNode(ts: TsModule, node: TS.Node): boolean {
   )
 }
 
+/** The statement immediately before `statement` in its enclosing block. */
+export function previousStatement(
+  ctx: CodemodContext,
+  statement: TS.Statement
+): TS.Statement | null {
+  const { ts } = ctx
+  const parent = statement.parent
+  if (parent === undefined) return null
+  const statements = ts.isBlock(parent)
+    ? parent.statements
+    : ts.isSourceFile(parent)
+      ? parent.statements
+      : null
+  if (statements === null) return null
+  const index = statements.indexOf(statement)
+  return index > 0 ? statements[index - 1]! : null
+}
+
 /**
  * The first call expression inside a node whose callee is (or ends with) the
  * given name, e.g. `click` matches `page.getByRole(...).click(...)` and

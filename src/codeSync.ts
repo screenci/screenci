@@ -31,6 +31,7 @@ import {
   findCallNamed,
   insertStatementAfter,
   insertStatementBefore,
+  previousStatement,
   removeOption,
   setOptionValue,
   statementAtLine,
@@ -38,6 +39,34 @@ import {
   type TextEdit,
   type TsModule,
 } from './codemod.js'
+import type TS from 'typescript'
+
+/**
+ * The duration-argument node of an `await <root>.waitForTimeout(<number>)`
+ * statement sitting immediately before `statement`, or null. Lets repeated
+ * sleepBefore syncs update the existing wait instead of stacking new ones.
+ */
+function existingWaitBefore(
+  ctx: CodemodContext,
+  statement: TS.Statement,
+  root: string
+): TS.Expression | null {
+  const { ts } = ctx
+  const previous = previousStatement(ctx, statement)
+  if (previous === null || !ts.isExpressionStatement(previous)) return null
+  let expression: TS.Expression = previous.expression
+  if (ts.isAwaitExpression(expression)) expression = expression.expression
+  if (!ts.isCallExpression(expression)) return null
+  const callee = expression.expression
+  if (!ts.isPropertyAccessExpression(callee)) return null
+  if (callee.name.text !== 'waitForTimeout') return null
+  if (!ts.isIdentifier(callee.expression) || callee.expression.text !== root) {
+    return null
+  }
+  const argument = expression.arguments[0]
+  if (argument === undefined || !ts.isNumericLiteral(argument)) return null
+  return argument
+}
 
 /** Which argument holds the options object, per instrumented method. */
 const OPTIONS_ARG_INDEX: Record<ActionMethod, number> = {
@@ -219,6 +248,19 @@ export function planCodeSync(
                 call.expression.expression
               )
               if (root === null) return null
+              // A wait we (or the user) already placed directly before the
+              // action: update its duration instead of stacking another one.
+              // Keeps repeated syncs (e.g. dev auto-sync) idempotent.
+              const existing = existingWaitBefore(ctx, statement, root)
+              if (existing !== null) {
+                return [
+                  {
+                    start: existing.getStart(),
+                    end: existing.getEnd(),
+                    replacement: String(ms),
+                  },
+                ]
+              }
               return [
                 insertStatementBefore(
                   ctx,

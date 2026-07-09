@@ -18,6 +18,8 @@ export type DevTrigger = {
   videoName: string
   language: string
   requestedByName: string
+  /** Record raw footage into the preview slot without dispatching a render. */
+  previewOnly?: boolean
 }
 
 export type DevListenLogger = {

@@ -145,6 +145,29 @@ describe('runDevListenLoop', () => {
     expect(reports[1].triggerId).toBe('trg_1')
   })
 
+  it('passes a previewOnly trigger through to the record runner', async () => {
+    const controller = { stopped: false }
+    const runRecord = vi.fn(async () => {})
+    const deps = makeDeps({ runRecord })
+    const previewTrigger: DevTrigger = { ...trigger, previewOnly: true }
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/cli/dev/poll')) {
+        if (deps.fetchMock.mock.calls.length === 1) {
+          return jsonResponse({ trigger: previewTrigger })
+        }
+        controller.stopped = true
+        return jsonResponse({ trigger: null })
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    await runDevListenLoop(config, deps, 'lst_1', controller)
+
+    expect(runRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ previewOnly: true })
+    )
+  })
+
   it('reports failed with the error message when the record throws', async () => {
     const controller = { stopped: false }
     const runRecord = vi.fn(async () => {

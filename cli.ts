@@ -825,6 +825,12 @@ async function uploadRecordingCandidate(
             ...(process.env['SCREENCI_SKIP_RENDER'] === '1'
               ? { skipRender: true }
               : {}),
+            // Preview-only record (from the web editor's raw-record button):
+            // the backend stores the recording into the video's preview slot
+            // without dispatching a render.
+            ...(process.env['SCREENCI_PREVIEW_ONLY'] === '1'
+              ? { previewOnly: true }
+              : {}),
             ...(isScreenshot ? { expectedScreenshotCount } : {}),
             expectedAssets: preparedUploadAssets.map((asset) => ({
               fileHash: asset.fileHash,
@@ -3034,7 +3040,7 @@ function escapeRegExp(value: string): string {
 // error message is reported back to the editor instead of the console.
 async function runTriggeredRecord(
   configPath: string | undefined,
-  trigger: { videoName: string; language: string },
+  trigger: { videoName: string; language: string; previewOnly?: boolean },
   verbose: boolean
 ): Promise<void> {
   const resolvedConfigPath = resolveScreenCIConfigPathOrExit(configPath)
@@ -3068,12 +3074,27 @@ async function runTriggeredRecord(
       playwrightFailure = error
     }
 
-    await uploadRecordedVideosForConfig(
-      configPath,
-      playwrightFailure,
-      verbose,
-      requestedVideoNames
-    )
+    // A preview-only trigger uploads into the video's preview slot without a
+    // render. The upload body reads this from the env, mirroring
+    // SCREENCI_SKIP_RENDER; scope it to this upload and restore it after.
+    const previousPreviewOnly = process.env['SCREENCI_PREVIEW_ONLY']
+    if (trigger.previewOnly === true) {
+      process.env['SCREENCI_PREVIEW_ONLY'] = '1'
+    }
+    try {
+      await uploadRecordedVideosForConfig(
+        configPath,
+        playwrightFailure,
+        verbose,
+        requestedVideoNames
+      )
+    } finally {
+      if (previousPreviewOnly === undefined) {
+        delete process.env['SCREENCI_PREVIEW_ONLY']
+      } else {
+        process.env['SCREENCI_PREVIEW_ONLY'] = previousPreviewOnly
+      }
+    }
 
     if (playwrightFailure !== null) {
       throw playwrightFailure

@@ -10,6 +10,7 @@
  */
 import type { EditableMeta } from './editableDescriptor.js'
 import { stableEditableKey } from './editableDescriptor.js'
+import { jsonEqual } from './actionParams.js'
 import {
   getEditableRunOverrides,
   getEditableRunReport,
@@ -57,6 +58,10 @@ export function applyEditableOverride(
     // applies to recordings made before the field existed in defaults, so a
     // web start-time edit works without an intermediate re-record.
     if (!(field in meta.defaults) && field !== 'sleepBefore') continue
+    // A field equal to the recorded default changes nothing: skip it so it is
+    // never merged, logged, or reported as a no-op `x -> x` override. (The
+    // editor prunes these on save; this also covers docs stored before that.)
+    if (jsonEqual(meta.defaults[field], value)) continue
     if (lockedFields.has(field) && meta.defaults[field] !== value) {
       shadowed[field] = meta.defaults[field]
       warn(

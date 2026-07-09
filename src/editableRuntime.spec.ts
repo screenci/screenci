@@ -97,6 +97,37 @@ describe('applyEditableOverride', () => {
     expect(m.applied).toEqual({ moveDuration: 250 })
   })
 
+  it('skips a field equal to the default (no no-op override)', () => {
+    const m = meta()
+    const warnings: string[] = []
+    // moveDuration equals the default (900): a no-op that must not be applied,
+    // logged, or reported. moveEasing genuinely changes.
+    const overrides = overridesByKey([
+      {
+        key: 'input|click|getByRole(button)|0',
+        values: { moveDuration: 900, moveEasing: 'linear' },
+      },
+    ])
+    const merged = applyEditableOverride(m, overrides, (message) =>
+      warnings.push(message)
+    )
+    expect(merged).toEqual({ moveDuration: 900, moveEasing: 'linear' })
+    // Only the field that actually changed is recorded as applied.
+    expect(m.applied).toEqual({ moveEasing: 'linear' })
+  })
+
+  it('applies nothing when every field equals the default', () => {
+    const m = meta()
+    const overrides = overridesByKey([
+      {
+        key: 'input|click|getByRole(button)|0',
+        values: { moveDuration: 900, moveEasing: 'ease-in-out' },
+      },
+    ])
+    expect(applyEditableOverride(m, overrides)).toEqual(m.defaults)
+    expect(m.applied).toBeUndefined()
+  })
+
   it('never applies keys outside the defaults', () => {
     const m = meta()
     const overrides = overridesByKey([

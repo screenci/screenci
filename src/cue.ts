@@ -40,6 +40,7 @@ import {
   getScreenCIRuntimeContext,
   getRuntimeActiveLanguage,
   getRuntimeCueRecorder,
+  getRuntimeRecordOptions,
   resetCueRuntimeState,
   setRuntimeCueRecorder,
   type ActiveCueRun,
@@ -49,10 +50,7 @@ import {
   fetchCueDurations,
   type FetchCueDurationsDeps,
 } from './cueDurations.js'
-import {
-  isFastNarrationEnabled,
-  isScreenciRecordingEnabled,
-} from './runtimeMode.js'
+import { isScreenciRecordingEnabled } from './runtimeMode.js'
 import { getDevBackendUrl } from './linkSession.js'
 import { join } from 'path'
 
@@ -196,14 +194,15 @@ export function setCueDurationFetchDeps(
 
 /**
  * Whether this run paces cues with real audio durations: a recording pass for
- * one specific language (per-language mode), not fast mode, with credentials
- * to reach the backend. Everything else keeps frame-gap pacing and lets the
- * render-time holds cover the audio.
+ * one specific language (per-language mode), with `actualNarrationPace` opted
+ * in on the video's record options, and credentials to reach the backend.
+ * Everything else keeps frame-gap pacing and lets the render-time holds cover
+ * the audio (the default, so recording stays fast).
  */
 function shouldPaceCueAudio(): boolean {
   return (
     isScreenciRecordingEnabled() &&
-    !isFastNarrationEnabled() &&
+    getRuntimeRecordOptions()?.actualNarrationPace === true &&
     getRuntimeActiveLanguage() !== null &&
     typeof process.env['SCREENCI_SECRET'] === 'string' &&
     process.env['SCREENCI_SECRET'] !== ''

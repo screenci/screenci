@@ -1058,18 +1058,4 @@ describe('CLI', () => {
       expect(parseRecordCliArgs(['--grep', 'x']).languages).toBeUndefined()
     })
   })
-
-  describe('parseRecordCliArgs --fast-narration', () => {
-    it('parses the flag and keeps it out of pass-through args', async () => {
-      const { parseRecordCliArgs } = await import('./cli')
-      const parsed = parseRecordCliArgs(['--fast-narration', '--grep', 'x'])
-      expect(parsed.fastNarration).toBe(true)
-      expect(parsed.otherArgs).toEqual(['--grep', 'x'])
-    })
-
-    it('defaults to false when not provided', async () => {
-      const { parseRecordCliArgs } = await import('./cli')
-      expect(parseRecordCliArgs(['--grep', 'x']).fastNarration).toBe(false)
-    })
-  })
 })

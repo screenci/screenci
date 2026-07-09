@@ -12,23 +12,6 @@ export const SCREENCI_DISABLE_RECORDING_TIMINGS_ENV =
   'SCREENCI_DISABLE_RECORDING_TIMINGS'
 export const SCREENCI_DEBUG_TIMING_ENV = 'SCREENCI_DEBUG_TIMING'
 export const SCREENCI_UPLOAD_EXISTING_ENV = 'UPLOAD_EXISTING'
-export const SCREENCI_FAST_NARRATION_ENV = 'SCREENCI_FAST_NARRATION'
-
-/**
- * Fast narration mode (`screenci record --fast-narration`): skip the exact
- * cue-audio pacing sleeps (and the duration prefetch behind them) so a
- * recording run does not spend the narration's wall-clock time. Render-time
- * frame holds absorb the full audio length instead, exactly as when durations
- * are unavailable.
- */
-export function isFastNarrationEnabled(
-  env: NodeJS.ProcessEnv = process.env
-): boolean {
-  return (
-    env[SCREENCI_FAST_NARRATION_ENV] === 'true' ||
-    env[SCREENCI_FAST_NARRATION_ENV] === '1'
-  )
-}
 
 /**
  * When set, `screenci record` skips the Playwright recording run entirely and
@@ -202,7 +185,12 @@ export function parseValuesOverrides(
 /** Studio record-option overrides per video name: `{ [videoName]: {...} }`. */
 export type RecordOptionsOverrides = Record<
   string,
-  { aspectRatio?: AspectRatio; quality?: Quality; fps?: FPS }
+  {
+    aspectRatio?: AspectRatio
+    quality?: Quality
+    fps?: FPS
+    actualNarrationPace?: boolean
+  }
 >
 
 const VALID_ASPECT_RATIOS = new Set<AspectRatio>([
@@ -249,6 +237,9 @@ export function parseRecordOptions(
       if (typeof o.fps === 'number' && VALID_FPS.has(o.fps as FPS)) {
         entry.fps = o.fps as FPS
       }
+      if (typeof o.actualNarrationPace === 'boolean') {
+        entry.actualNarrationPace = o.actualNarrationPace
+      }
       result[videoName] = entry
     }
     return result
@@ -294,11 +285,17 @@ export function parseActionOverrides(
 
 /**
  * Merge Studio record-option overrides over the code-declared record options.
- * Only the Studio-owned fields (aspect ratio, quality, fps) are overridden; the
- * rest (encoder, performance, deviceScaleFactor) stay from code. Pure.
+ * Only the Studio-owned fields (aspect ratio, quality, fps, actual narration
+ * pace) are overridden; the rest (encoder, performance, deviceScaleFactor) stay
+ * from code. Pure.
  */
 export function mergeStudioRecordOptions<
-  T extends { aspectRatio?: AspectRatio; quality?: Quality; fps?: FPS },
+  T extends {
+    aspectRatio?: AspectRatio
+    quality?: Quality
+    fps?: FPS
+    actualNarrationPace?: boolean
+  },
 >(codeRecordOptions: T, studio: RecordOptionsOverrides[string] | undefined): T {
   if (studio === undefined) return codeRecordOptions
   return {
@@ -308,5 +305,8 @@ export function mergeStudioRecordOptions<
     }),
     ...(studio.quality !== undefined && { quality: studio.quality }),
     ...(studio.fps !== undefined && { fps: studio.fps }),
+    ...(studio.actualNarrationPace !== undefined && {
+      actualNarrationPace: studio.actualNarrationPace,
+    }),
   }
 }

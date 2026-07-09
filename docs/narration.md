@@ -121,26 +121,29 @@ control of the timeline.
 
 ### How recording pacing works
 
-When a recording pass targets one language (the default per-language mode) and
-your project is linked to an account, ScreenCI looks up each cue's real audio
-length before the cue ends and paces the recording to it: `await narration.key()`
-takes as long as the spoken line, and the recording's length matches the
-finished video. This makes freeze-frames (inserted when the audio outlasts the
-recording) the exception rather than the rule.
+By default recording is fast and independent of narration length: each cue keeps
+only a short gap, and the render freezes a frame to cover the remaining audio.
+The finished video is always correct either way, because the render is the
+source of truth for cue timing. Editing narration text after recording
+re-renders without re-recording: the render inserts the missing time when a line
+grew, and trims any paced-in extra when a line shrank (never cutting into mouse
+movement, scrolls, clicks, or zooms; a safety buffer is kept around them).
 
-Pacing is best-effort. When the length is unknown (offline, shared-capture
-multi-language mode, or an unlinked project) the recording keeps only a short
-gap per cue and the render freezes a frame for the remaining audio, exactly as
-before. Editing narration text after recording re-renders without re-recording:
-the render inserts the missing time when a line grew, and trims the paced-in
-extra when a line shrank (never cutting into mouse movement, scrolls, clicks,
-or zooms; a safety buffer is kept around them).
+If you want the raw recording to already match the finished pacing (so a local
+preview scrubs closer to the final video), opt in with
+`recordOptions.actualNarrationPace`:
 
-To skip pacing and record as fast as possible, pass `--fast-narration`:
-
-```bash
-npx screenci record --fast-narration
+```ts
+video.recordOptions({ actualNarrationPace: true })
 ```
+
+With this on, and when a recording pass targets one language (per-language mode)
+and your project is linked to an account, ScreenCI looks up each cue's real audio
+length before the cue ends and sleeps the recording to it: `await narration.key()`
+takes as long as the spoken line. Pacing is best-effort: when the length is
+unknown (offline, shared-capture multi-language mode, or an unlinked project) it
+falls back to the fast frame-gap behavior and the render freezes a frame for the
+remaining audio.
 
 ### Holding a cue until a position
 

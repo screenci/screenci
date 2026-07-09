@@ -1142,7 +1142,6 @@ describe('exact cue-audio pacing', () => {
     originalEnv = { ...process.env }
     process.env.SCREENCI_RECORDING = 'true'
     process.env.SCREENCI_SECRET = 'test-secret'
-    delete process.env.SCREENCI_FAST_NARRATION
     now = 100_000
     vi.spyOn(Date, 'now').mockImplementation(() => now)
     sleeps = []
@@ -1152,7 +1151,11 @@ describe('exact cue-audio pacing', () => {
       now += ms
     })
     setActiveScreenCIRuntimeContext(
-      createScreenCIRuntimeContext({ recorder, activeLanguage: 'en' })
+      createScreenCIRuntimeContext({
+        recorder,
+        activeLanguage: 'en',
+        recordOptions: { actualNarrationPace: true },
+      })
     )
     setCueDurationFetchDeps({
       fetchFn: (async () =>
@@ -1209,8 +1212,10 @@ describe('exact cue-audio pacing', () => {
     )
   })
 
-  it('skips pacing in fast narration mode', async () => {
-    process.env.SCREENCI_FAST_NARRATION = 'true'
+  it('skips pacing when actualNarrationPace is off (the default)', async () => {
+    setActiveScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ recorder, activeLanguage: 'en' })
+    )
     const cues = createNarration(singleLangInput)
 
     await cues.intro()
@@ -1223,7 +1228,11 @@ describe('exact cue-audio pacing', () => {
 
   it('skips pacing in shared mode (no active language)', async () => {
     setActiveScreenCIRuntimeContext(
-      createScreenCIRuntimeContext({ recorder, activeLanguage: null })
+      createScreenCIRuntimeContext({
+        recorder,
+        activeLanguage: null,
+        recordOptions: { actualNarrationPace: true },
+      })
     )
     const cues = createNarration(singleLangInput)
 

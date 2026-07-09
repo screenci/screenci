@@ -243,6 +243,26 @@ describe('parseRecordOptions', () => {
     ).toEqual({ Demo: {} })
   })
 
+  it('parses the actualNarrationPace boolean', () => {
+    expect(
+      parseRecordOptions({
+        SCREENCI_RECORD_OPTIONS: JSON.stringify({
+          Demo: { actualNarrationPace: true },
+        }),
+      } as NodeJS.ProcessEnv)
+    ).toEqual({ Demo: { actualNarrationPace: true } })
+  })
+
+  it('drops a non-boolean actualNarrationPace', () => {
+    expect(
+      parseRecordOptions({
+        SCREENCI_RECORD_OPTIONS: JSON.stringify({
+          Demo: { actualNarrationPace: 'yes' },
+        }),
+      } as NodeJS.ProcessEnv)
+    ).toEqual({ Demo: {} })
+  })
+
   it('returns null on malformed JSON', () => {
     expect(
       parseRecordOptions({
@@ -274,6 +294,16 @@ describe('mergeStudioRecordOptions', () => {
       quality: '720p',
       fps: 60,
       encoder: 'h264',
+    })
+  })
+
+  it('overrides the actualNarrationPace flag from the studio value', () => {
+    const code = { aspectRatio: '16:9' as const, actualNarrationPace: false }
+    expect(
+      mergeStudioRecordOptions(code, { actualNarrationPace: true })
+    ).toEqual({
+      aspectRatio: '16:9',
+      actualNarrationPace: true,
     })
   })
 })

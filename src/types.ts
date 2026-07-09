@@ -573,6 +573,21 @@ export type RecordOptions = {
    * @example 0.18
    */
   cursorCurviness?: number
+
+  /**
+   * Slow the recording run down so each narration cue's captured window already
+   * spans its synthesized audio (plus the between-cue pause). Off by default:
+   * recording stays fast and independent of narration length, and the render
+   * absorbs the full audio with frozen-frame holds instead (identical output,
+   * only the raw recording scrubs closer to final timing).
+   *
+   * Opt in when you want the local recording preview to match the final pacing.
+   * Only takes effect for a per-language recording pass with backend
+   * credentials available; otherwise it is a no-op.
+   *
+   * @default false
+   */
+  actualNarrationPace?: boolean
 }
 
 /**

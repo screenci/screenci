@@ -121,6 +121,63 @@ the browser tracks the gesture (a slider thumb follows the pointer, drag-and-dro
 hit testing fires). The default is `dragSteps: 24` spread across the drag; raise
 it for a longer or more sensitive drag.
 
+### Curved cursor paths
+
+By default the cursor travels to its target in a straight line. Pass a `curve`
+on the `move` option to make it arc, which reads as more natural and human. The
+easing still controls the speed along the path; `curve` only changes its shape.
+
+```ts
+// A gentle, human-looking arc
+await page.getByRole('button', { name: 'Save' }).click({
+  move: { curve: 'natural' },
+})
+
+// A stronger, deliberate bow
+await page.getByRole('link', { name: 'Docs' }).click({
+  move: { curve: 'arc', curviness: 0.5 },
+})
+
+// Force a straight line (overrides a project-wide default)
+await page.getByLabel('Email').fill('demo@example.com', {
+  move: { curve: 'none' },
+})
+```
+
+`curve` accepts:
+
+| Value              | Meaning                                                    |
+| ------------------ | ---------------------------------------------------------- |
+| `'none'`           | Straight line (the default).                               |
+| `'natural'`        | A gentle arc whose bow direction alternates between moves. |
+| `'arc'`            | A stronger, symmetric single bow.                          |
+| `[x1, y1, x2, y2]` | An explicit cubic bezier (see below).                      |
+
+`curviness` (a signed number) tunes the preset bow as a fraction of the move
+length. Positive bows to the left of travel (upward for a left-to-right move),
+negative flips it.
+
+The tuple form mirrors CSS `cubic-bezier`: the straight line from start to end
+is the x-axis, so `x1`/`x2` are the fraction (0..1) along the path and `y1`/`y2`
+are the perpendicular deflection in the same unit. It is resolution-independent.
+
+```ts
+// S-curve: bow one way at 1/3, the other at 2/3
+await page
+  .getByTestId('cell')
+  .click({ move: { curve: [0.33, 0.4, 0.66, -0.2] } })
+```
+
+To curve **every** automatic move without touching each call, set a project-wide
+default in your record options (overridable per call):
+
+```ts
+video.recordOptions({ cursorCurve: 'natural', cursorCurviness: 0.18 })
+```
+
+The real dispatched cursor follows the curve too, so hover and pointer events
+fire along the arc, not just in the rendered video.
+
 ### fill and pressSequentially
 
 `fill` and `pressSequentially` animate a click before typing by default.
@@ -158,6 +215,14 @@ await page.getByTestId('code-block').selectText({ selectDuration: 900 })
 
 ```ts
 await page.mouse.move(400, 300, { duration: 600, easing: 'ease-in-out' })
+```
+
+It also takes `curve` and `curviness` (the same values as the locator `move`
+option above) so a raw move can arc:
+
+```ts
+await page.mouse.move(400, 300, { curve: 'natural' })
+await page.mouse.move(400, 300, { curve: [0.25, 0.5, 0.75, 0.5] })
 ```
 
 A bare `page.mouse.move` (no `duration`/`speed`) animates by default so the

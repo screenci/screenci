@@ -12,6 +12,7 @@ import {
   type PerformanceIntervals,
 } from './performance.js'
 import { evaluateEasingAtT } from './easing.js'
+import { cubicBezierAt, type Point } from './cursorCurve.js'
 import { logger } from './logger.js'
 import {
   isTimingDebugEnabled,
@@ -381,8 +382,14 @@ export async function performMouseMove(options: {
    * Omitted keeps the plain cursor interval.
    */
   steps?: number
+  /**
+   * Cubic-bezier control points (absolute viewport pixels) for a curved path.
+   * When present the real dispatched cursor follows the curve (so hover/pointer
+   * events fire along it); when absent the move is a straight line.
+   */
+  control?: readonly [Point, Point]
 }): Promise<{ startMs: number; endMs: number }> {
-  const { page, targetX, targetY, duration, easing, steps } = options
+  const { page, targetX, targetY, duration, easing, steps, control } = options
   const mouseMoveInternal = getOriginalMouseMove(page, async () => {
     throw new Error('[screenci] Missing original mouse move for page.')
   })
@@ -407,9 +414,15 @@ export async function performMouseMove(options: {
       const elapsedMs = Date.now() - startMs
       const t = Math.min(1, elapsedMs / duration)
       const easedT = evaluateEasingAtT(t, easing)
-      const x = startPos.x + easedT * (targetX - startPos.x)
-      const y = startPos.y + easedT * (targetY - startPos.y)
-      await mouseMoveInternal(x, y)
+      const target = { x: targetX, y: targetY }
+      const point =
+        control !== undefined
+          ? cubicBezierAt(easedT, startPos, control[0], control[1], target)
+          : {
+              x: startPos.x + easedT * (targetX - startPos.x),
+              y: startPos.y + easedT * (targetY - startPos.y),
+            }
+      await mouseMoveInternal(point.x, point.y)
       if (t >= 1) break
       await new Promise<void>((resolve) => setTimeout(resolve, intervalMs))
     }

@@ -183,6 +183,38 @@ describe('mouse helpers', () => {
     expect(result.endMs).toBeGreaterThanOrEqual(result.startMs)
   })
 
+  it('dispatches the real cursor along the bezier when control points are given', async () => {
+    const page = {}
+    const calls: Array<{ x: number; y: number }> = []
+    const mouseMoveInternal = vi.fn().mockImplementation(async (x, y) => {
+      calls.push({ x, y })
+    })
+    setOriginalMouseMove(page, mouseMoveInternal)
+    setMousePosition(page, { x: 0, y: 0 })
+
+    const promise = performMouseMove({
+      page,
+      targetX: 100,
+      targetY: 0,
+      duration: 100,
+      easing: 'linear',
+      steps: 10,
+      // A symmetric upward bow: a straight move would keep y == 0 throughout.
+      control: [
+        { x: 50, y: -50 },
+        { x: 50, y: -50 },
+      ],
+    })
+    await vi.runAllTimersAsync()
+    await promise
+
+    // Endpoints land exactly on target/start.
+    expect(calls[calls.length - 1]).toEqual({ x: 100, y: 0 })
+    // Somewhere in the middle the cursor left the straight line (curved).
+    expect(calls.some((c) => c.y < -10)).toBe(true)
+    expect(getMousePosition(page)).toEqual({ x: 100, y: 0 })
+  })
+
   it('records the planned mouse duration even when the real move is slow', async () => {
     const page = {}
     const mouseMoveInternal = vi.fn().mockImplementation(

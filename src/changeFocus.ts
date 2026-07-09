@@ -6,7 +6,9 @@ import {
   DEFAULT_CLICK_MOUSE_MOVE_DURATION,
   DEFAULT_SCROLL_CENTERING,
 } from './defaults.js'
-import type { AutoZoomOptions, Easing } from './types.js'
+import type { AutoZoomOptions, CursorCurve, Easing } from './types.js'
+import { computeControlPoints } from './cursorCurve.js'
+import { getScreenCIRuntimeContext } from './runtimeContext.js'
 import {
   getMousePosition,
   getScrollDispatchIntervalMs,
@@ -56,6 +58,10 @@ export type MouseMoveRequest = {
   duration?: number
   speed?: number
   easing: Easing
+  /** Cursor path shape; resolved to control points at dispatch. */
+  curve?: CursorCurve
+  /** Bow amount for the `'natural'`/`'arc'` curve presets. */
+  curviness?: number
 }
 
 type ViewportSize = { width: number; height: number }
@@ -1647,6 +1653,15 @@ export async function changeFocus(
     await sleep(focusOptions.delay)
   }
 
+  const control =
+    mouseMovePlan !== undefined && timing.duration > 0
+      ? computeControlPoints(startViewportPos, mouseMovePlan.mouseTarget, {
+          curve: mouseMove?.curve,
+          curviness: mouseMove?.curviness,
+          seq: getScreenCIRuntimeContext().editable.seq,
+        })
+      : undefined
+
   const mousePromise =
     mouseMovePlan !== undefined
       ? performMouseMove({
@@ -1655,6 +1670,7 @@ export async function changeFocus(
           targetY: mouseMovePlan.mouseTarget.y,
           duration: timing.duration,
           easing: timing.easing,
+          ...(control !== undefined ? { control } : {}),
         })
       : Promise.resolve(undefined)
 
@@ -1710,6 +1726,7 @@ export async function changeFocus(
           startMs: mouseMoveResult.startMs,
           endMs: mouseMoveResult.endMs,
           ...(timing.duration > 0 ? { easing: timing.easing } : {}),
+          ...(control !== undefined ? { control } : {}),
         }
       : undefined
   if (focusOptions.delayAfter > 0) {

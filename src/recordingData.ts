@@ -29,6 +29,8 @@ export type FocusChangeEvent = {
     startMs: number
     endMs: number
     easing?: Easing
+    /** Cubic-bezier control points (absolute viewport px) for a curved path. */
+    control?: [{ x: number; y: number }, { x: number; y: number }]
   }
   scroll?: {
     startMs: number
@@ -60,6 +62,8 @@ export type MouseMoveEvent = {
   x: number
   y: number
   easing?: Easing
+  /** Cubic-bezier control points (absolute viewport px) for a curved path. */
+  control?: [{ x: number; y: number }, { x: number; y: number }]
   zoomFollow?: boolean
   elementRect?: ElementRect
 }

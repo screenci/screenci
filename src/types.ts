@@ -554,6 +554,25 @@ export type RecordOptions = {
    * @default true for screenshots, false for video
    */
   disableAnimations?: boolean
+
+  /**
+   * Project-wide default cursor path shape. Every automatic move (the approach
+   * before a `click()`, `fill()`, etc.) and every `page.mouse` move adopts this
+   * unless the call passes its own `move.curve`. See {@link CursorCurve}.
+   *
+   * @default 'none'
+   * @example 'natural'
+   */
+  cursorCurve?: CursorCurve
+
+  /**
+   * Project-wide default bow amount for the `'natural'`/`'arc'` cursor-curve
+   * presets, as a fraction of the segment length. Overridden per call by
+   * `move.curviness`. See {@link CursorMoveOptions.curviness}.
+   *
+   * @example 0.18
+   */
+  cursorCurviness?: number
 }
 
 /**
@@ -644,9 +663,48 @@ export type CursorMoveTimingOption =
       speed?: number
     }
 
+/**
+ * The two middle handles of a cubic bezier cursor path, in a normalized,
+ * CSS-`cubic-bezier` analog frame: the straight line from the move's start to
+ * its end is the x-axis, so `x1`/`x2` are the fraction (0..1) *along* that line
+ * and `y1`/`y2` are the perpendicular deflection in the **same unit** (a
+ * fraction of the segment length). Positive `y` bends to the left of travel
+ * (upward for a left-to-right move); negative flips it. The frame is isotropic
+ * and resolution-independent.
+ *
+ * @example [0.33, 0.4, 0.66, -0.2] // an S-curve
+ * @example [0.33, 0, 0.66, 0]      // a straight line
+ */
+export type CurveTuple = [number, number, number, number]
+
+/**
+ * How a cursor move curves on its way to the target.
+ *
+ * - `'none'`: straight line (the historical behavior).
+ * - `'natural'`: a gentle, human-looking arc. Its bow direction alternates
+ *   deterministically so consecutive moves vary yet always re-render identically.
+ * - `'arc'`: a stronger, deliberate single bow.
+ * - {@link CurveTuple}: an explicit normalized cubic bezier.
+ */
+export type CursorCurve = 'none' | 'natural' | 'arc' | CurveTuple
+
 export type CursorMoveOptions = CursorMoveTimingOption & {
   /** Easing function for the cursor move animation (default: 'ease-in-out'). */
   easing?: Easing
+  /**
+   * Shape of the cursor path to the target (default: `'none'`, a straight line;
+   * or the project-wide `recordOptions.cursorCurve` when set). See
+   * {@link CursorCurve}.
+   */
+  curve?: CursorCurve
+  /**
+   * Bow amount for the `'natural'`/`'arc'` presets, as a fraction of the segment
+   * length. A signed value fixes the bend direction (positive = left of travel /
+   * upward for a left-to-right move); when omitted the preset picks a sensible
+   * default and, for `'natural'`, a deterministic alternating direction. Ignored
+   * when `curve` is an explicit {@link CurveTuple}.
+   */
+  curviness?: number
   /** Delay after cursor arrival before the primary action starts, in ms. */
   delayAfter?: number
 }
@@ -894,11 +952,19 @@ type ScreenCIMouse = Omit<
    *   When provided and greater than 0, the cursor is animated with easing.
    * @param options.speed - Cursor speed in pixels per second.
    * @param options.easing - Easing function for the cursor animation (default: 'ease-in-out').
+   * @param options.curve - Cursor path shape (default: `'none'`, or the project
+   *   `recordOptions.cursorCurve`). See {@link CursorCurve}.
+   * @param options.curviness - Bow amount for the `'natural'`/`'arc'` presets.
    */
   move(
     x: number,
     y: number,
-    options?: { steps?: number; easing?: Easing } & MouseMoveTimingOption
+    options?: {
+      steps?: number
+      easing?: Easing
+      curve?: CursorCurve
+      curviness?: number
+    } & MouseMoveTimingOption
   ): Promise<void>
   /**
    * Presses the mouse button down at the current cursor position, animating the

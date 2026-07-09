@@ -78,6 +78,13 @@ export type FocusChangeEvent = {
     startMs: number
     endMs: number
     easing?: Easing
+    /**
+     * Cubic-bezier control points (absolute viewport pixels) for a curved path
+     * from the previous cursor position to `{x, y}`. Absent for a straight move.
+     * Resolved at record time from the move's `curve` option (or the project
+     * default) so the renderer and the web editor consume the same geometry.
+     */
+    control?: [{ x: number; y: number }, { x: number; y: number }]
   }
   scroll?: {
     startMs: number
@@ -107,8 +114,13 @@ export type MouseMoveEvent = {
   x: number
   y: number
   easing?: Easing
+  /**
+   * Cubic-bezier control points (absolute viewport pixels) for a curved path to
+   * `{x, y}`. Absent for a straight move. See {@link FocusChangeEvent.mouse}.
+   */
+  control?: [{ x: number; y: number }, { x: number; y: number }]
   zoomFollow?: boolean
-  /** Bounding rect of the element the cursor moved to — used for zoom centering hints. */
+  /** Bounding rect of the element the cursor moved to. used for zoom centering hints. */
   elementRect?: ElementRect
 }
 

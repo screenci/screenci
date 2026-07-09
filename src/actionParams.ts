@@ -15,6 +15,7 @@
 import { logger } from './logger.js'
 import {
   DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+  DEFAULT_CURSOR_CURVE,
   DEFAULT_DRAG_PRESS_DELAY_MS,
   DEFAULT_DRAG_STEPS,
   DEFAULT_FILL_TYPING_DURATION_MS,
@@ -91,6 +92,8 @@ function cursorMoveDefaults(delayAfter: number): Record<string, unknown> {
     'move.duration': DEFAULT_CLICK_MOUSE_MOVE_DURATION,
     'move.speed': null,
     'move.easing': 'ease-in-out',
+    'move.curve': DEFAULT_CURSOR_CURVE,
+    'move.curviness': null,
     'move.delayAfter': delayAfter,
   }
 }
@@ -133,6 +136,8 @@ export const ACTION_PARAM_DEFAULTS: Record<
     'move.duration': null,
     'move.speed': null,
     'move.easing': 'ease-in-out',
+    'move.curve': DEFAULT_CURSOR_CURVE,
+    'move.curviness': null,
     position: null,
     duration: DEFAULT_HOVER_DURATION_MS,
   },

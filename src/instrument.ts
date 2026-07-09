@@ -33,12 +33,14 @@ import {
 import { applyEditableOverride } from './editableRuntime.js'
 import type {
   AutoZoomOptions,
+  CursorCurve,
   Easing,
   RedactOptions,
   ScreenCIPage,
 } from './types.js'
 import { isInsideHide } from './hide.js'
 import { parseKeyCombo } from './keyCombo.js'
+import { computeControlPoints } from './cursorCurve.js'
 import { redact } from './redact.js'
 import {
   changeFocus,
@@ -50,6 +52,7 @@ import { buildZoomEvent, resolveAutoZoomOptions } from './zoom.js'
 import {
   DEFAULT_AUTO_ZOOM_CENTERING,
   DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+  DEFAULT_CURSOR_CURVE,
   DEFAULT_DRAG_PRESS_DELAY_MS,
   DEFAULT_DRAG_STEPS,
   DEFAULT_FILL_TYPING_DURATION_MS,
@@ -71,6 +74,7 @@ import {
   getOriginalMouseHide,
   getOriginalMouseShow,
   getOriginalMouseUp,
+  getMousePosition,
   isMouseVisible,
   type MouseClickInteractionType,
   performMouseClickAction,
@@ -103,6 +107,8 @@ import {
   nextEditablePosition,
   setRuntimeClickRecorder,
   isScreenshotCapture,
+  getRuntimeRecordOptions,
+  getScreenCIRuntimeContext,
 } from './runtimeContext.js'
 import {
   normalizeSelector,
@@ -170,6 +176,16 @@ function cursorMoveSpec(
     },
     'move.speed': { explicit: move?.speed, fallback: null },
     'move.easing': { explicit: move?.easing, fallback: 'ease-in-out' },
+    // The project-wide `recordOptions.cursorCurve` is the fallback, so setting
+    // it once makes every automatic move curve unless a call overrides it.
+    'move.curve': {
+      explicit: move?.curve,
+      fallback: getRuntimeRecordOptions()?.cursorCurve ?? DEFAULT_CURSOR_CURVE,
+    },
+    'move.curviness': {
+      explicit: move?.curviness,
+      fallback: getRuntimeRecordOptions()?.cursorCurviness ?? null,
+    },
     'move.delayAfter': {
       explicit: move?.delayAfter,
       fallback: moveDelayAfterFallback,
@@ -182,9 +198,12 @@ function effectiveCursorMove(effective: Record<string, unknown>): {
   moveDuration: number | undefined
   moveSpeed: number | undefined
   moveEasing: Easing
+  moveCurve: CursorCurve | undefined
+  moveCurviness: number | undefined
   moveDelayAfter: number
 } {
   const moveSpeed = asOptionalNumber(effective['move.speed'])
+  const curve = effective['move.curve']
   return {
     // With an (overridden or explicit) speed the duration must stay unset so
     // the move derives its duration from the distance.
@@ -194,6 +213,11 @@ function effectiveCursorMove(effective: Record<string, unknown>): {
         : asOptionalNumber(effective['move.duration']),
     moveSpeed,
     moveEasing: (effective['move.easing'] as Easing) ?? 'ease-in-out',
+    moveCurve:
+      curve === null || curve === undefined
+        ? undefined
+        : (curve as CursorCurve),
+    moveCurviness: asOptionalNumber(effective['move.curviness']),
     moveDelayAfter: asOptionalNumber(effective['move.delayAfter']) ?? 0,
   }
 }
@@ -483,6 +507,8 @@ function buildDefaultClickMouseMoveRequest(options?: {
   moveDuration?: number | undefined
   moveSpeed?: number | undefined
   moveEasing?: Easing | undefined
+  moveCurve?: CursorCurve | undefined
+  moveCurviness?: number | undefined
 }): MouseMoveRequest {
   return {
     ...(options?.targetPosInElement !== undefined
@@ -495,6 +521,10 @@ function buildDefaultClickMouseMoveRequest(options?: {
         : {}),
     ...(options?.moveSpeed !== undefined ? { speed: options.moveSpeed } : {}),
     easing: options?.moveEasing ?? 'ease-in-out',
+    ...(options?.moveCurve !== undefined ? { curve: options.moveCurve } : {}),
+    ...(options?.moveCurviness !== undefined
+      ? { curviness: options.moveCurviness }
+      : {}),
   }
 }
 
@@ -504,6 +534,8 @@ type CursorMoveOption = {
     | { duration?: never; speed?: number }
   ) & {
     easing?: Easing
+    curve?: CursorCurve
+    curviness?: number
     delayAfter?: number
   }
 }
@@ -512,12 +544,16 @@ function resolveCursorMoveOption(move: CursorMoveOption['move']): {
   moveDuration: number | undefined
   moveSpeed: number | undefined
   moveEasing: Easing
+  moveCurve: CursorCurve | undefined
+  moveCurviness: number | undefined
   moveDelayAfter: number | undefined
 } {
   return {
     moveDuration: move?.duration,
     moveSpeed: move?.speed,
     moveEasing: move?.easing ?? 'ease-in-out',
+    moveCurve: move?.curve,
+    moveCurviness: move?.curviness,
     moveDelayAfter: move?.delayAfter,
   }
 }
@@ -632,6 +668,8 @@ function buildPointerEditableMeta(
     moveDuration?: number | undefined
     moveSpeed?: number | undefined
     moveEasing?: Easing | undefined
+    moveCurve?: CursorCurve | undefined
+    moveCurviness?: number | undefined
     moveDelayAfter?: number | undefined
     autoZoomOptions?: AutoZoomOptions | undefined
     hasExplicitMove: boolean
@@ -644,6 +682,8 @@ function buildPointerEditableMeta(
     ...(values.explicitMove?.duration !== undefined ? ['moveDuration'] : []),
     ...(values.explicitMove?.speed !== undefined ? ['moveSpeed'] : []),
     ...(values.explicitMove?.easing !== undefined ? ['moveEasing'] : []),
+    ...(values.explicitMove?.curve !== undefined ? ['moveCurve'] : []),
+    ...(values.explicitMove?.curviness !== undefined ? ['moveCurviness'] : []),
     ...(values.explicitMove?.delayAfter !== undefined
       ? ['moveDelayAfter']
       : []),
@@ -665,6 +705,10 @@ function buildPointerEditableMeta(
       }),
       ...(values.moveSpeed !== undefined && { moveSpeed: values.moveSpeed }),
       moveEasing: values.moveEasing ?? 'ease-in-out',
+      moveCurve: values.moveCurve ?? DEFAULT_CURSOR_CURVE,
+      ...(values.moveCurviness !== undefined && {
+        moveCurviness: values.moveCurviness,
+      }),
       moveDelayAfter: values.moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
     },
   })
@@ -1080,8 +1124,14 @@ export function instrumentLocator(locator: Locator): Locator {
       },
       editId
     )
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      effectiveCursorMove(effective)
+    const {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      moveCurve,
+      moveCurviness,
+      moveDelayAfter,
+    } = effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
 
     const editable = buildPointerEditableMeta(locator, 'click', {
@@ -1112,6 +1162,8 @@ export function instrumentLocator(locator: Locator): Locator {
         moveDuration: timing.moveDuration,
         moveSpeed: timing.moveSpeed,
         moveEasing: timing.moveEasing,
+        moveCurve,
+        moveCurviness,
       }),
       locator,
       doClick,
@@ -1225,8 +1277,14 @@ export function instrumentLocator(locator: Locator): Locator {
       },
       editId
     )
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      effectiveCursorMove(effective)
+    const {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      moveCurve,
+      moveCurviness,
+      moveDelayAfter,
+    } = effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
     const typingDuration =
       asOptionalNumber(effective.duration) ?? defaultTypingDuration
@@ -1279,6 +1337,8 @@ export function instrumentLocator(locator: Locator): Locator {
           moveDuration: timing.moveDuration,
           moveSpeed: timing.moveSpeed,
           moveEasing: timing.moveEasing,
+          moveCurve,
+          moveCurviness,
         }),
         locator,
         async () => originalPressSequentially(text, typedPressOptions),
@@ -1370,8 +1430,14 @@ export function instrumentLocator(locator: Locator): Locator {
       },
       editId
     )
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      effectiveCursorMove(effective)
+    const {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      moveCurve,
+      moveCurviness,
+      moveDelayAfter,
+    } = effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
     const typingDuration = asOptionalNumber(effective.duration) ?? 1000
 
@@ -1449,6 +1515,8 @@ export function instrumentLocator(locator: Locator): Locator {
           moveDuration: timing.moveDuration,
           moveSpeed: timing.moveSpeed,
           moveEasing: timing.moveEasing,
+          moveCurve,
+          moveCurviness,
         }),
         locator,
         typeFilledValue,
@@ -1516,8 +1584,14 @@ export function instrumentLocator(locator: Locator): Locator {
       },
       editId
     )
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      effectiveCursorMove(effective)
+    const {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      moveCurve,
+      moveCurviness,
+      moveDelayAfter,
+    } = effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
 
     const editable = buildPointerEditableMeta(locator, 'tap', {
@@ -1545,6 +1619,8 @@ export function instrumentLocator(locator: Locator): Locator {
         moveDuration: timing.moveDuration,
         moveSpeed: timing.moveSpeed,
         moveEasing: timing.moveEasing,
+        moveCurve,
+        moveCurviness,
       }),
       locator,
       doClick,
@@ -1613,8 +1689,14 @@ export function instrumentLocator(locator: Locator): Locator {
       },
       editId
     )
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      effectiveCursorMove(effective)
+    const {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      moveCurve,
+      moveCurviness,
+      moveDelayAfter,
+    } = effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
 
     const editable = buildPointerEditableMeta(locator, 'check', {
@@ -1645,6 +1727,8 @@ export function instrumentLocator(locator: Locator): Locator {
         moveDuration: timing.moveDuration,
         moveSpeed: timing.moveSpeed,
         moveEasing: timing.moveEasing,
+        moveCurve,
+        moveCurviness,
       }),
       locator,
       doClick,
@@ -1713,8 +1797,14 @@ export function instrumentLocator(locator: Locator): Locator {
       },
       editId
     )
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      effectiveCursorMove(effective)
+    const {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      moveCurve,
+      moveCurviness,
+      moveDelayAfter,
+    } = effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
 
     const editable = buildPointerEditableMeta(locator, 'uncheck', {
@@ -1745,6 +1835,8 @@ export function instrumentLocator(locator: Locator): Locator {
         moveDuration: timing.moveDuration,
         moveSpeed: timing.moveSpeed,
         moveEasing: timing.moveEasing,
+        moveCurve,
+        moveCurviness,
       }),
       locator,
       doClick,
@@ -1836,8 +1928,14 @@ export function instrumentLocator(locator: Locator): Locator {
       },
       editId
     )
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      effectiveCursorMove(effective)
+    const {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      moveCurve,
+      moveCurviness,
+      moveDelayAfter,
+    } = effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
 
     currentSelectValues = values
@@ -1870,6 +1968,8 @@ export function instrumentLocator(locator: Locator): Locator {
         moveDuration: timing.moveDuration,
         moveSpeed: timing.moveSpeed,
         moveEasing: timing.moveEasing,
+        moveCurve,
+        moveCurviness,
       }),
       locator,
       doClick,
@@ -1918,6 +2018,15 @@ export function instrumentLocator(locator: Locator): Locator {
         'move.duration': { explicit: move?.duration, fallback: null },
         'move.speed': { explicit: move?.speed, fallback: null },
         'move.easing': { explicit: move?.easing, fallback: 'ease-in-out' },
+        'move.curve': {
+          explicit: move?.curve,
+          fallback:
+            getRuntimeRecordOptions()?.cursorCurve ?? DEFAULT_CURSOR_CURVE,
+        },
+        'move.curviness': {
+          explicit: move?.curviness,
+          fallback: getRuntimeRecordOptions()?.cursorCurviness ?? null,
+        },
         position: { explicit: position, fallback: null },
         duration: { explicit: duration, fallback: DEFAULT_HOVER_DURATION_MS },
       },
@@ -1926,6 +2035,12 @@ export function instrumentLocator(locator: Locator): Locator {
     const moveDuration = asOptionalNumber(effective['move.duration'])
     const moveSpeed = asOptionalNumber(effective['move.speed'])
     const moveEasing = (effective['move.easing'] as Easing) ?? 'ease-in-out'
+    const moveCurveValue = effective['move.curve']
+    const moveCurve =
+      moveCurveValue === null || moveCurveValue === undefined
+        ? undefined
+        : (moveCurveValue as CursorCurve)
+    const moveCurviness = asOptionalNumber(effective['move.curviness'])
     const effectivePosition = asOptionalPoint(effective.position)
     const hoverDuration = asOptionalNumber(effective.duration) ?? 1000
 
@@ -1964,6 +2079,8 @@ export function instrumentLocator(locator: Locator): Locator {
         : {}),
       ...(timing.moveSpeed !== undefined ? { speed: timing.moveSpeed } : {}),
       easing: timing.moveEasing ?? moveEasing,
+      ...(moveCurve !== undefined ? { curve: moveCurve } : {}),
+      ...(moveCurviness !== undefined ? { curviness: moveCurviness } : {}),
     }
 
     const hoverFocusChange = await changeFocus(
@@ -2105,8 +2222,14 @@ export function instrumentLocator(locator: Locator): Locator {
       },
       editId
     )
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      effectiveCursorMove(effective)
+    const {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      moveCurve,
+      moveCurviness,
+      moveDelayAfter,
+    } = effectiveCursorMove(effective)
     const selectDuration = asOptionalNumber(effective.duration)
 
     const editable = buildPointerEditableMeta(locator, 'selectText', {
@@ -2148,6 +2271,8 @@ export function instrumentLocator(locator: Locator): Locator {
         moveDuration: timing.moveDuration,
         moveSpeed: timing.moveSpeed,
         moveEasing: timing.moveEasing,
+        moveCurve,
+        moveCurviness,
       }),
       locator,
       async () => {
@@ -2214,8 +2339,14 @@ export function instrumentLocator(locator: Locator): Locator {
       },
       editId
     )
-    const { moveDuration, moveSpeed, moveEasing, moveDelayAfter } =
-      effectiveCursorMove(effective)
+    const {
+      moveDuration,
+      moveSpeed,
+      moveEasing,
+      moveCurve,
+      moveCurviness,
+      moveDelayAfter,
+    } = effectiveCursorMove(effective)
     const dragSpeed = asOptionalNumber(effective.speed)
     const duration =
       dragSpeed !== undefined ? undefined : asOptionalNumber(effective.duration)
@@ -2293,6 +2424,8 @@ export function instrumentLocator(locator: Locator): Locator {
         : {}),
       ...(timing.moveSpeed !== undefined ? { speed: timing.moveSpeed } : {}),
       easing: timing.moveEasing ?? moveEasing,
+      ...(moveCurve !== undefined ? { curve: moveCurve } : {}),
+      ...(moveCurviness !== undefined ? { curviness: moveCurviness } : {}),
     })
 
     if (sourceFocusChange.elementRect) {
@@ -2681,6 +2814,8 @@ export async function instrumentPage(page: Page): Promise<Page> {
       duration?: number
       speed?: number
       easing?: Easing
+      curve?: CursorCurve
+      curviness?: number
     }
   ) => {
     const duration = resolveMouseMoveDuration(page, x, y, {
@@ -2693,12 +2828,30 @@ export async function instrumentPage(page: Page): Promise<Page> {
       context: 'page.mouse.move',
     })
     const easing = options?.easing ?? 'ease-in-out'
+    const control =
+      duration > 0
+        ? computeControlPoints(
+            getMousePosition(page) ?? { x, y },
+            { x, y },
+            {
+              curve:
+                options?.curve ??
+                getRuntimeRecordOptions()?.cursorCurve ??
+                DEFAULT_CURSOR_CURVE,
+              curviness:
+                options?.curviness ??
+                getRuntimeRecordOptions()?.cursorCurviness,
+              seq: getScreenCIRuntimeContext().editable.seq,
+            }
+          )
+        : undefined
     const moveResult = await performMouseMove({
       page,
       targetX: x,
       targetY: y,
       duration,
       easing,
+      ...(control !== undefined ? { control } : {}),
     })
     const zoomEvent = resolveAutoZoomCursorFollow(
       page,
@@ -2715,6 +2868,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
         startMs: moveResult.startMs,
         endMs: moveResult.endMs,
         ...(duration > 0 ? { easing } : {}),
+        ...(control !== undefined ? { control } : {}),
       },
       ...(zoomEvent !== undefined ? { zoom: zoomEvent } : {}),
     }
@@ -2788,7 +2942,9 @@ export async function instrumentPage(page: Page): Promise<Page> {
     y: number,
     moveDuration: number | undefined,
     moveSpeed: number | undefined,
-    moveEasing: Easing
+    moveEasing: Easing,
+    moveCurve?: CursorCurve,
+    moveCurviness?: number
   ): Promise<FocusChangeEvent> => {
     const duration = resolveMouseMoveDuration(page, x, y, {
       duration: moveDuration,
@@ -2796,12 +2952,29 @@ export async function instrumentPage(page: Page): Promise<Page> {
       defaultDuration: DEFAULT_CLICK_MOUSE_MOVE_DURATION,
       context: 'page.mouse.click move',
     })
+    const control =
+      duration > 0
+        ? computeControlPoints(
+            getMousePosition(page) ?? { x, y },
+            { x, y },
+            {
+              curve:
+                moveCurve ??
+                getRuntimeRecordOptions()?.cursorCurve ??
+                DEFAULT_CURSOR_CURVE,
+              curviness:
+                moveCurviness ?? getRuntimeRecordOptions()?.cursorCurviness,
+              seq: getScreenCIRuntimeContext().editable.seq,
+            }
+          )
+        : undefined
     const moveResult = await performMouseMove({
       page,
       targetX: x,
       targetY: y,
       duration,
       easing: moveEasing,
+      ...(control !== undefined ? { control } : {}),
     })
     const zoomEvent = resolveAutoZoomCursorFollow(
       page,
@@ -2823,6 +2996,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
         startMs: moveResult.startMs,
         endMs: moveResult.endMs,
         ...(duration > 0 ? { easing: moveEasing } : {}),
+        ...(control !== undefined ? { control } : {}),
       },
       ...(zoomEvent !== undefined ? { zoom: zoomEvent } : {}),
     }
@@ -2911,7 +3085,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
       fake,
       ...native
     } = options ?? {}
-    const { moveDuration, moveSpeed, moveEasing } =
+    const { moveDuration, moveSpeed, moveEasing, moveCurve, moveCurviness } =
       resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
@@ -2925,7 +3099,9 @@ export async function instrumentPage(page: Page): Promise<Page> {
       y,
       moveDuration,
       moveSpeed,
-      moveEasing
+      moveEasing,
+      moveCurve,
+      moveCurviness
     )
     const pressEvents: Array<MouseDownEvent | MouseUpEvent> = []
     await recordVisualPress(
@@ -2955,7 +3131,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
       fake,
       ...native
     } = options ?? {}
-    const { moveDuration, moveSpeed, moveEasing } =
+    const { moveDuration, moveSpeed, moveEasing, moveCurve, moveCurviness } =
       resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
@@ -2969,7 +3145,9 @@ export async function instrumentPage(page: Page): Promise<Page> {
       y,
       moveDuration,
       moveSpeed,
-      moveEasing
+      moveEasing,
+      moveCurve,
+      moveCurviness
     )
     const pressEvents: Array<MouseDownEvent | MouseUpEvent> = []
     // The real double click fires once, during the first visual press. The

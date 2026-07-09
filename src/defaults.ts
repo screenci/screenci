@@ -57,6 +57,25 @@ export const DEFAULT_AUTO_ZOOM_CENTERING = 0.6
 export const DEFAULT_CLICK_MOUSE_MOVE_DURATION: number = 900
 
 /**
+ * Default project-wide cursor path shape when `recordOptions.cursorCurve` is
+ * unset. `'none'` keeps the historical straight-line motion.
+ */
+export const DEFAULT_CURSOR_CURVE = 'none'
+
+/**
+ * Default bow amount (fraction of segment length) for the `'natural'` cursor
+ * curve preset when no `curviness` is given.
+ */
+export const DEFAULT_NATURAL_CURVINESS = 0.18
+
+/**
+ * Default bow amount (fraction of segment length) for the `'arc'` cursor curve
+ * preset when no `curviness` is given. Stronger and more deliberate than
+ * `'natural'`.
+ */
+export const DEFAULT_ARC_CURVINESS = 0.4
+
+/**
  * Default pause between the cursor arriving on the target and the press, in
  * milliseconds (`move.delayAfter` of click-like actions).
  */

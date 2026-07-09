@@ -210,6 +210,8 @@ describe('ACTION_PARAM_DEFAULTS', () => {
       'move.duration': 900,
       'move.speed': null,
       'move.easing': 'ease-in-out',
+      'move.curve': 'none',
+      'move.curviness': null,
       'move.delayAfter': 50,
       position: null,
       noWaitAfter: true,

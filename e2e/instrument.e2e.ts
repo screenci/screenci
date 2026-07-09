@@ -28,6 +28,8 @@ type CursorMoveOpts = {
     | { duration?: never; speed?: number }
   ) & {
     easing?: string
+    curve?: 'none' | 'natural' | 'arc' | [number, number, number, number]
+    curviness?: number
     delayAfter?: number
   }
 }
@@ -232,6 +234,32 @@ test.describe('click instrumentation', () => {
       move: { duration: 50 },
     })
     await expect(page.locator('#click-status')).not.toHaveText('Not clicked')
+  })
+
+  test('records cubic-bezier control points for a curved move', async ({
+    page,
+  }) => {
+    await clickableLocator(page.locator('#click-button')).click({
+      move: { duration: 200, curve: 'natural' },
+    })
+
+    const [event] = clickEvents()
+    const move = moveEventsIn(event!)[0] as FocusChangeEvent
+    expect(move.mouse?.control).toBeDefined()
+    expect(move.mouse!.control).toHaveLength(2)
+    const [c1, c2] = move.mouse!.control!
+    expect(typeof c1.x).toBe('number')
+    expect(typeof c2.y).toBe('number')
+  })
+
+  test('omits control points for a straight move', async ({ page }) => {
+    await clickableLocator(page.locator('#click-button')).click({
+      move: { duration: 200, curve: 'none' },
+    })
+
+    const [event] = clickEvents()
+    const move = moveEventsIn(event!)[0] as FocusChangeEvent
+    expect(move.mouse?.control).toBeUndefined()
   })
 
   test('records elementRect', async ({ page }) => {

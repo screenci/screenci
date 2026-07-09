@@ -51,6 +51,21 @@ const LOOP_SOURCE = [
   '',
 ].join('\n')
 
+// A script whose action is called on a stored locator VARIABLE, not on `page`
+// directly. A sleepBefore must still emit `page.waitForTimeout`, never
+// `thumb.waitForTimeout` (locators have no waitForTimeout).
+const DRAG_FILE = '/proj/drag.screenci.ts'
+const DRAG_SOURCE = [
+  "import { video } from 'screenci'",
+  '',
+  "video('Drag', async ({ page }) => {",
+  '  const thumb = page.locator(\'[data-slot="slider-thumb"]\').first()',
+  "  const track = thumb.locator('xpath=..')",
+  "  await thumb.dragTo(track, { editId: 'drag1' })",
+  '})',
+  '',
+].join('\n')
+
 const ACTION_SNAPSHOT: ActionParamsSnapshot = {
   version: 1,
   videos: {
@@ -110,6 +125,15 @@ const EDITABLE_SNAPSHOT: EditableSnapshot = {
         source: { file: LOOP_FILE, line: 5 },
       },
     ],
+    Drag: [
+      {
+        key: 'drag1',
+        editId: 'drag1',
+        locked: false,
+        defaults: { sleepBefore: 0 },
+        source: { file: DRAG_FILE, line: 6 },
+      },
+    ],
   },
 }
 
@@ -132,6 +156,7 @@ function plan(
     [FILE]: SOURCE,
     [ZOOM_FILE]: ZOOM_SOURCE,
     [LOOP_FILE]: LOOP_SOURCE,
+    [DRAG_FILE]: DRAG_SOURCE,
   }
 ) {
   return planCodeSync(input, {
@@ -227,6 +252,21 @@ describe('planCodeSync: timeline param edits', () => {
       ].join('\n')
     )
     expect(result.fullyAppliedVideos).toEqual(['Demo'])
+  })
+
+  it('emits page.waitForTimeout for an action on a stored locator variable', () => {
+    const result = plan(
+      inputWith({
+        editableOverrides: {
+          Drag: [{ key: 'drag1', values: { sleepBefore: 3491 } }],
+        },
+      })
+    )
+    const after = afterFor(result, DRAG_FILE)
+    expect(after).toContain('await page.waitForTimeout(3491)')
+    // Never on the locator variable: locators have no waitForTimeout.
+    expect(after).not.toContain('thumb.waitForTimeout')
+    expect(result.fullyAppliedVideos).toEqual(['Drag'])
   })
 
   it('updates an existing waitForTimeout instead of stacking', () => {

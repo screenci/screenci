@@ -38,6 +38,7 @@ import {
   applyTextEdits,
   awaitedCallHead,
   chainRootIdentifier,
+  resolvePageIdentifier,
   createContext,
   enclosingStatement,
   enclosingWrapBody,
@@ -842,8 +843,12 @@ export function planCodeSync(
               if (!ctx.ts.isPropertyAccessExpression(call.expression)) {
                 return null
               }
-              const root = chainRootIdentifier(
+              // waitForTimeout must sit on the page, not the action receiver:
+              // an action on a stored locator (`sliderThumb.dragTo(...)`) has a
+              // locator chain root, so resolve it back to the page identifier.
+              const root = resolvePageIdentifier(
                 ctx.ts,
+                ctx.sourceFile,
                 call.expression.expression
               )
               if (root === null) return null

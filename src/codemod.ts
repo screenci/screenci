@@ -107,6 +107,63 @@ export function chainRootIdentifier(
   }
 }
 
+/**
+ * The initializer of a top-level-or-nested `const <name> = <init>` declaration
+ * with the given name, or null when `name` is not a local variable (e.g. it is
+ * the `page` test parameter). Used to trace a stored locator back to the page.
+ */
+function variableInitializer(
+  ts: TsModule,
+  sourceFile: TS.SourceFile,
+  name: string
+): TS.Expression | null {
+  let found: TS.Expression | null = null
+  const visit = (node: TS.Node): void => {
+    if (found !== null) return
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === name &&
+      node.initializer !== undefined
+    ) {
+      found = node.initializer
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return found
+}
+
+/**
+ * Resolves the page identifier behind an action's receiver expression.
+ *
+ * `chainRootIdentifier` returns the leftmost identifier of a call chain, which
+ * is the page for `page.getByRole(...).click()` but a stored locator variable
+ * for `sliderThumb.dragTo(...)`. A `waitForTimeout` sleep must always be emitted
+ * on the page, so this follows a locator variable back through its declaration
+ * (`const sliderThumb = page.locator(...)`) until it reaches an identifier with
+ * no local declaration (the `page` parameter). Falls back to the chain root when
+ * no declaration is found.
+ */
+export function resolvePageIdentifier(
+  ts: TsModule,
+  sourceFile: TS.SourceFile,
+  expression: TS.Expression
+): string | null {
+  let name = chainRootIdentifier(ts, expression)
+  const seen = new Set<string>()
+  while (name !== null && !seen.has(name)) {
+    seen.add(name)
+    const init = variableInitializer(ts, sourceFile, name)
+    if (init === null) return name // no local declaration: the page parameter
+    const next = chainRootIdentifier(ts, init)
+    if (next === null || next === name) return name
+    name = next
+  }
+  return name
+}
+
 /** JS source text for a JSON-safe value, in single-quote style. */
 export function valueToSource(value: unknown): string | null {
   if (value === null || value === undefined) return 'null'

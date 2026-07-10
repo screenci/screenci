@@ -25,6 +25,7 @@ import type {
   CodifyEditsByVideo,
   EditableOverridesByVideo,
   EditableSnapshot,
+  OverlayDeclEditsByVideo,
   RenamesByVideo,
 } from './editableSnapshot.js'
 import type {
@@ -55,6 +56,7 @@ import {
   removeOption,
   setBuilderOptions,
   setOptionValue,
+  setOverlayDeclProps,
   splitWaitEdit,
   statementsAfter,
   valueToSource,
@@ -134,6 +136,12 @@ export type CodeSyncInput = {
    */
   removedCodifyEdits: CodifyEditsByVideo
   renames: RenamesByVideo
+  /**
+   * Overlay declaration placement edits, keyed by video name. Codified into
+   * the overlay's config object inside `video.overlays({...})`. Optional so
+   * existing callers (and tests) need not pass it.
+   */
+  overlayDeclEdits?: OverlayDeclEditsByVideo
   /**
    * Studio render/record option edits, keyed by video name. Codified into
    * `video.renderOptions({...})` / `video.recordOptions({...})` builder calls.
@@ -748,6 +756,7 @@ export function planCodeSync(
       ...Object.keys(input.codifyEdits),
       ...Object.keys(input.removedCodifyEdits),
       ...Object.keys(input.renames),
+      ...Object.keys(input.overlayDeclEdits ?? {}),
       ...Object.keys(input.studioSync?.videos ?? {}),
     ]),
   ]
@@ -1008,23 +1017,51 @@ export function planCodeSync(
       }
     }
 
+    // Locate the single file that declares this video's builder call. Prefer
+    // the video's editable source files; fall back to every source file in
+    // the snapshot so a video with no editable entries can still be found.
+    const declaringFile = (): string | null => {
+      const searchFiles =
+        candidateFiles.length > 0 ? candidateFiles : allSnapshotFiles
+      const holders = searchFiles.filter((file) => {
+        const text = getText(file)
+        if (text === null) return false
+        const ctx = createContext(deps.ts, file, text)
+        return findVideoCall(ctx, videoName) !== null
+      })
+      return holders.length === 1 ? holders[0]! : null
+    }
+
+    // ── Overlay declaration placement edits (codify into video.overlays) ───
+    const overlayDeclEdits = input.overlayDeclEdits?.[videoName] ?? []
+    if (overlayDeclEdits.length > 0) {
+      const file = declaringFile()
+      for (const edit of overlayDeclEdits) {
+        const ok =
+          file !== null &&
+          tryApply(file, (ctx) =>
+            setOverlayDeclProps(ctx, videoName, edit.overlayName, edit.props)
+          )
+        if (ok) {
+          applied.push({
+            videoName,
+            file: file!,
+            description:
+              `set overlay '${edit.overlayName}' placement ` +
+              JSON.stringify(edit.props),
+          })
+          bump(appliedCounts, videoName)
+        } else {
+          markUnappliable(
+            `locked overlay declaration '${edit.overlayName}' on video '${videoName}'`
+          )
+        }
+      }
+    }
+
     // ── Studio render/record option edits (codify into builder calls) ──────
     const studioVideo = input.studioSync?.videos[videoName]
     if (studioVideo !== undefined) {
-      // Locate the single file that declares this video's builder call. Prefer
-      // the video's editable source files; fall back to every source file in
-      // the snapshot so a video with no editable entries can still be found.
-      const searchFiles =
-        candidateFiles.length > 0 ? candidateFiles : allSnapshotFiles
-      const declaringFile = (): string | null => {
-        const holders = searchFiles.filter((file) => {
-          const text = getText(file)
-          if (text === null) return false
-          const ctx = createContext(deps.ts, file, text)
-          return findVideoCall(ctx, videoName) !== null
-        })
-        return holders.length === 1 ? holders[0]! : null
-      }
       const file = declaringFile()
       for (const method of ['renderOptions', 'recordOptions'] as const) {
         const values = studioVideo[method]

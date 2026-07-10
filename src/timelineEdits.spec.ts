@@ -4,6 +4,7 @@ import {
   OverrideReportBuilder,
   SCREENCI_TIMELINE_EDITS_ENV,
   cueIdFor,
+  overlayDeclIdFor,
   overlayIdFor,
   parseTimelineEdits,
   resolveTimelineEditsForVideo,
@@ -161,6 +162,57 @@ describe('cueIdFor / overlayIdFor', () => {
   it('produces stable name-ordinal ids', () => {
     expect(cueIdFor('welcome', 0)).toBe('cue||welcome|0')
     expect(overlayIdFor('logo', 2)).toBe('overlay||logo|2')
+    expect(overlayDeclIdFor('logo')).toBe('overlaydecl-logo')
+  })
+})
+
+describe('overlayDeclEdit records', () => {
+  it('parses a valid overlayDeclEdit', () => {
+    const doc = {
+      demo: {
+        version: 3,
+        edits: [
+          {
+            type: 'overlayDeclEdit',
+            id: 'overlaydecl-logo',
+            overlayName: 'logo',
+            props: { x: 96, width: 240 },
+          },
+        ],
+      },
+    }
+    const parsed = parseTimelineEdits(env(JSON.stringify(doc)))
+    expect(parsed?.demo?.edits).toHaveLength(1)
+    expect(parsed?.demo?.invalid).toEqual([])
+  })
+
+  it('rejects records missing overlayName or props', () => {
+    const doc = {
+      demo: {
+        version: 3,
+        edits: [
+          { type: 'overlayDeclEdit', id: 'd1', props: { x: 1 } },
+          { type: 'overlayDeclEdit', id: 'd2', overlayName: 'logo' },
+        ],
+      },
+    }
+    const parsed = parseTimelineEdits(env(JSON.stringify(doc)))
+    expect(parsed?.demo?.edits).toEqual([])
+    expect(parsed?.demo?.invalid.map((entry) => entry.id)).toEqual(['d1', 'd2'])
+  })
+
+  it('is ignored by splitEdits at record time', () => {
+    const edits: EditRecord[] = [
+      {
+        type: 'overlayDeclEdit',
+        id: 'overlaydecl-logo',
+        overlayName: 'logo',
+        props: { margin: 8 },
+      },
+    ]
+    const split = splitEdits(edits)
+    expect(split.paramEdits).toEqual([])
+    expect(split.codifyEdits).toEqual([])
   })
 })
 

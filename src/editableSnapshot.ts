@@ -17,7 +17,12 @@ import {
 } from 'fs'
 import { join } from 'path'
 import { stableEditableKey } from './editableDescriptor.js'
-import type { CodifyEdit, ParamEdit, RenameEdit } from './timelineEdits.js'
+import type {
+  CodifyEdit,
+  OverlayDeclEdit,
+  ParamEdit,
+  RenameEdit,
+} from './timelineEdits.js'
 
 /** Param-edit values per video, in the stable-key entry shape the snapshot
  *  comparisons work with. */
@@ -37,6 +42,9 @@ export type RenamesByVideo = Record<
   Array<{ editId: string; newEditId: string }>
 >
 
+/** Overlay declaration placement edits per video (codified by sync). */
+export type OverlayDeclEditsByVideo = Record<string, OverlayDeclEdit[]>
+
 /**
  * Splits fetched unified timeline-edits docs (keyed by video name) into the
  * shapes the status report and sync prompt consume. Records that do not look
@@ -52,11 +60,13 @@ export function splitTimelineEditsByVideo(
    *  sync` deletes their codemod-authored calls (ghost cleanup). */
   removedCodify: CodifyEditsByVideo
   renames: RenamesByVideo
+  overlayDecls: OverlayDeclEditsByVideo
 } {
   const overrides: EditableOverridesByVideo = {}
   const codify: CodifyEditsByVideo = {}
   const removedCodify: CodifyEditsByVideo = {}
   const renames: RenamesByVideo = {}
+  const overlayDecls: OverlayDeclEditsByVideo = {}
   const CODIFY_TYPES = new Set([
     'mediaEdit',
     'zoomEdit',
@@ -97,10 +107,21 @@ export function splitTimelineEditsByVideo(
           editId: rename.target.editId,
           newEditId: rename.newEditId,
         })
+      } else if (record.type === 'overlayDeclEdit') {
+        const decl = edit as OverlayDeclEdit
+        if (
+          typeof decl.overlayName !== 'string' ||
+          typeof decl.props !== 'object' ||
+          decl.props === null ||
+          record.disabled === true
+        ) {
+          continue
+        }
+        ;(overlayDecls[videoName] ??= []).push(decl)
       }
     }
   }
-  return { overrides, codify, removedCodify, renames }
+  return { overrides, codify, removedCodify, renames, overlayDecls }
 }
 
 /** File name of the snapshot inside `.screenci`. Preserved across runs. */

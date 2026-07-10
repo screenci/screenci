@@ -140,10 +140,29 @@ export type GapPointEdit = {
   disabled?: boolean
 }
 
+/**
+ * A placement change to an overlay DECLARATION in `video.overlays({...})`,
+ * made graphically in the web editor. `props` carries exactly one placement
+ * variant to merge into the named overlay's config object:
+ * - `{ margin }` for a locator-locked overlay (declared with `over`),
+ * - `{ x?, y?, width | height }` or `{ fill }` for a freely placed one.
+ * Applied by `screenci sync` only (nothing to do at record time); stale
+ * variant keys (e.g. `fill` when switching to a box) are removed by the
+ * codemod. The id is `overlaydecl-<overlayName>` so upserts are
+ * last-write-wins per overlay.
+ */
+export type OverlayDeclEdit = {
+  type: 'overlayDeclEdit'
+  id: string
+  overlayName: string
+  props: Record<string, unknown>
+  disabled?: boolean
+}
+
 /** Codify-only records: placed into code by `screenci sync`, never at runtime. */
 export type CodifyEdit = MediaEdit | ZoomEdit | GapSpanEdit | GapPointEdit
 
-export type EditRecord = ParamEdit | RenameEdit | CodifyEdit
+export type EditRecord = ParamEdit | RenameEdit | CodifyEdit | OverlayDeclEdit
 
 export type TimelineEditsDoc = {
   version: number
@@ -348,6 +367,15 @@ function editRecordProblem(value: unknown): string | null {
       if (!optionalProps(record.props)) return 'invalid props'
       return null
     }
+    case 'overlayDeclEdit': {
+      if (!isNonEmptyString(record.overlayName)) {
+        return 'overlayDeclEdit missing overlayName'
+      }
+      if (typeof record.props !== 'object' || record.props === null) {
+        return 'overlayDeclEdit missing props'
+      }
+      return null
+    }
     default:
       return `unknown record type '${String(record.type)}'`
   }
@@ -424,6 +452,10 @@ export function splitEdits(edits: readonly EditRecord[]): SplitEdits {
         // Renames affect code identity only; nothing to apply at record time
         // (the recorded slug keeps matching until the rename is codified).
         break
+      case 'overlayDeclEdit':
+        // Declaration placement edits are codified by `screenci sync`; at
+        // record time the studio draft already carries the placement override.
+        break
       case 'mediaEdit':
       case 'zoomEdit':
       case 'gapSpanEdit':
@@ -449,4 +481,9 @@ export function cueIdFor(name: string, ordinal: number): string {
 /** Stable id of the nth (0-based) overlay/asset with this name. */
 export function overlayIdFor(name: string, ordinal: number): string {
   return `overlay||${name}|${ordinal}`
+}
+
+/** Stable id of the declaration-placement edit for an overlay name. */
+export function overlayDeclIdFor(name: string): string {
+  return `overlaydecl-${name}`
 }

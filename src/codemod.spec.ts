@@ -14,6 +14,7 @@ import {
   removeOption,
   setBuilderOptions,
   setOptionValue,
+  setOverlayDeclProps,
   statementAtLine,
   statementsAfter,
   valueToSource,
@@ -431,6 +432,133 @@ describe('setBuilderOptions', () => {
     const ctx = ctxOf(source)
     expect(
       setBuilderOptions(ctx, 'Demo', 'renderOptions', { fps: 60 })
+    ).toBeNull()
+  })
+})
+
+describe('setOverlayDeclProps', () => {
+  function applyAll(source: string, edits: TextEdit[] | null): string {
+    expect(edits).not.toBeNull()
+    return applyTextEdits(source, edits!)
+  }
+  const decl = (config: string): string =>
+    `video.overlays({ logo: ${config} })('Demo', async () => {})`
+
+  it('merges box props into an object declaration, dropping fill', () => {
+    const source = decl("{ path: './logo.png', fill: 'recording' }")
+    const edits = setOverlayDeclProps(ctxOf(source), 'Demo', 'logo', {
+      x: 96,
+      y: 96,
+      width: 240,
+    })
+    expect(applyAll(source, edits)).toBe(
+      decl("{ path: './logo.png', x: 96, y: 96, width: 240 }")
+    )
+  })
+
+  it('switches a box declaration to fill, dropping box keys', () => {
+    const source = decl("{ path: './logo.png', x: 96, y: 96, width: 240 }")
+    const edits = setOverlayDeclProps(ctxOf(source), 'Demo', 'logo', {
+      fill: 'screen',
+    })
+    expect(applyAll(source, edits)).toBe(
+      decl("{ path: './logo.png', fill: 'screen' }")
+    )
+  })
+
+  it('drops the opposite dimension when switching width to height', () => {
+    const source = decl("{ path: './logo.png', width: 240 }")
+    const edits = setOverlayDeclProps(ctxOf(source), 'Demo', 'logo', {
+      height: 120,
+    })
+    expect(applyAll(source, edits)).toBe(
+      decl("{ path: './logo.png', height: 120 }")
+    )
+  })
+
+  it('updates margin on an over declaration', () => {
+    const source = decl("{ path: './ring.html', over: target, margin: 8 }")
+    const edits = setOverlayDeclProps(ctxOf(source), 'Demo', 'logo', {
+      margin: 16,
+    })
+    expect(applyAll(source, edits)).toBe(
+      decl("{ path: './ring.html', over: target, margin: 16 }")
+    )
+  })
+
+  it('adds margin to an over declaration that had none', () => {
+    const source = decl("{ path: './ring.html', over: target }")
+    const edits = setOverlayDeclProps(ctxOf(source), 'Demo', 'logo', {
+      margin: 12,
+    })
+    expect(applyAll(source, edits)).toBe(
+      decl("{ path: './ring.html', over: target, margin: 12 }")
+    )
+  })
+
+  it('expands a path-string shorthand into a config with the props', () => {
+    const source = decl("'./logo.png'")
+    const edits = setOverlayDeclProps(ctxOf(source), 'Demo', 'logo', {
+      x: 10,
+      width: 200,
+    })
+    expect(applyAll(source, edits)).toBe(
+      decl("{ path: './logo.png', x: 10, width: 200 }")
+    )
+  })
+
+  it('is a no-op when the values already match', () => {
+    const source = decl("{ path: './logo.png', width: 240 }")
+    expect(
+      setOverlayDeclProps(ctxOf(source), 'Demo', 'logo', { width: 240 })
+    ).toEqual([])
+  })
+
+  it('refuses free placement props on an over declaration', () => {
+    const source = decl("{ path: './ring.html', over: target }")
+    expect(
+      setOverlayDeclProps(ctxOf(source), 'Demo', 'logo', { width: 240 })
+    ).toBeNull()
+    expect(
+      setOverlayDeclProps(ctxOf(source), 'Demo', 'logo', { fill: 'screen' })
+    ).toBeNull()
+  })
+
+  it('refuses margin on a declaration without over', () => {
+    const source = decl("{ path: './logo.png', width: 240 }")
+    expect(
+      setOverlayDeclProps(ctxOf(source), 'Demo', 'logo', { margin: 8 })
+    ).toBeNull()
+    expect(
+      setOverlayDeclProps(ctxOf(decl("'./logo.png'")), 'Demo', 'logo', {
+        margin: 8,
+      })
+    ).toBeNull()
+  })
+
+  it('refuses factory, spread, and missing declarations', () => {
+    const factory = decl("(t) => ({ path: './ring.html', over: t })")
+    expect(
+      setOverlayDeclProps(ctxOf(factory), 'Demo', 'logo', { width: 1 })
+    ).toBeNull()
+    const spread = decl('{ ...base, width: 240 }')
+    expect(
+      setOverlayDeclProps(ctxOf(spread), 'Demo', 'logo', { width: 1 })
+    ).toBeNull()
+    const other = decl("{ path: './logo.png', width: 240 }")
+    expect(
+      setOverlayDeclProps(ctxOf(other), 'Demo', 'other', { width: 1 })
+    ).toBeNull()
+    const noOverlays = "video('Demo', async () => {})"
+    expect(
+      setOverlayDeclProps(ctxOf(noOverlays), 'Demo', 'logo', { width: 1 })
+    ).toBeNull()
+  })
+
+  it('refuses an array (studio names) overlays argument', () => {
+    const source = "video.overlays(['logo'])('Demo', async () => {})"
+    expect(
+      setOverlayDeclProps(ctxOf(source), 'Demo', 'logo', { width: 1 })
     ).toBeNull()
   })
 })

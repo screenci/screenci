@@ -655,6 +655,133 @@ describe('planCodeSync: combined edits on one file', () => {
   })
 })
 
+describe('planCodeSync: overlay declaration edits', () => {
+  const OVERLAY_FILE = '/proj/overlay.screenci.ts'
+  const OVERLAY_SOURCE = [
+    "import { video } from 'screenci'",
+    '',
+    'video',
+    '  .overlays({',
+    "    logo: { path: './logo.png', fill: 'recording' },",
+    "    ring: { path: './ring.html', over: target, margin: 8 },",
+    '  })',
+    "  ('Overlaid', async ({ page }) => {",
+    "  await page.getByRole('button', { name: 'Save' }).click({ editId: 'oclick' })",
+    '})',
+    '',
+  ].join('\n')
+  const snapshotWithOverlayVideo: typeof EDITABLE_SNAPSHOT = {
+    version: 1,
+    videos: {
+      ...EDITABLE_SNAPSHOT.videos,
+      Overlaid: [
+        {
+          key: 'oclick',
+          editId: 'oclick',
+          locked: false,
+          defaults: { sleepBefore: 0 },
+          source: { file: OVERLAY_FILE, line: 9 },
+        },
+      ],
+    },
+  }
+  const overlayFiles = {
+    [FILE]: SOURCE,
+    [OVERLAY_FILE]: OVERLAY_SOURCE,
+  }
+
+  it('merges box props into the named overlay declaration', () => {
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshotWithOverlayVideo,
+        overlayDeclEdits: {
+          Overlaid: [
+            {
+              type: 'overlayDeclEdit',
+              id: 'overlaydecl-logo',
+              overlayName: 'logo',
+              props: { x: 96, y: 96, width: 240 },
+            },
+          ],
+        },
+      }),
+      overlayFiles
+    )
+    const after = afterFor(result, OVERLAY_FILE)
+    expect(after).toContain(
+      "logo: { path: './logo.png', x: 96, y: 96, width: 240 }"
+    )
+    expect(after).toContain(
+      "ring: { path: './ring.html', over: target, margin: 8 }"
+    )
+    expect(result.applied).toHaveLength(1)
+    expect(result.fullyAppliedVideos).toEqual(['Overlaid'])
+  })
+
+  it('updates the margin of an over-locked overlay', () => {
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshotWithOverlayVideo,
+        overlayDeclEdits: {
+          Overlaid: [
+            {
+              type: 'overlayDeclEdit',
+              id: 'overlaydecl-ring',
+              overlayName: 'ring',
+              props: { margin: 20 },
+            },
+          ],
+        },
+      }),
+      overlayFiles
+    )
+    expect(afterFor(result, OVERLAY_FILE)).toContain(
+      "ring: { path: './ring.html', over: target, margin: 20 }"
+    )
+  })
+
+  it('marks unappliable when free props target an over declaration', () => {
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshotWithOverlayVideo,
+        overlayDeclEdits: {
+          Overlaid: [
+            {
+              type: 'overlayDeclEdit',
+              id: 'overlaydecl-ring',
+              overlayName: 'ring',
+              props: { width: 300 },
+            },
+          ],
+        },
+      }),
+      overlayFiles
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(1)
+    expect(result.unappliable[0]!.reason).toContain('ring')
+  })
+
+  it('marks unappliable when the video declaration is missing', () => {
+    const result = plan(
+      inputWith({
+        overlayDeclEdits: {
+          Ghost: [
+            {
+              type: 'overlayDeclEdit',
+              id: 'overlaydecl-logo',
+              overlayName: 'logo',
+              props: { width: 300 },
+            },
+          ],
+        },
+      })
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(1)
+  })
+})
+
 describe('planCodeSync: studio render/record option codify', () => {
   const CONTENT = { narration: false, text: false, audio: false, assets: false }
 

@@ -3677,6 +3677,7 @@ function planStampsAndCodeSync(args: {
     typeof splitTimelineEditsByVideo
   >['removedCodify']
   renames: ReturnType<typeof splitTimelineEditsByVideo>['renames']
+  overlayDeclEdits: ReturnType<typeof splitTimelineEditsByVideo>['overlayDecls']
   studioSync: StudioSyncState
   readFile: (path: string) => string | null
 }): {
@@ -3704,6 +3705,7 @@ function planStampsAndCodeSync(args: {
       codifyEdits: args.codifyEdits,
       removedCodifyEdits: args.removedCodifyEdits,
       renames: args.renames,
+      overlayDeclEdits: args.overlayDeclEdits,
       studioSync: args.studioSync,
     },
     { ts: args.ts, readFile }
@@ -3761,6 +3763,9 @@ export async function runSync(
     typeof splitTimelineEditsByVideo
   >['removedCodify'] = {}
   let renames: ReturnType<typeof splitTimelineEditsByVideo>['renames'] = {}
+  let overlayDeclEdits: ReturnType<
+    typeof splitTimelineEditsByVideo
+  >['overlayDecls'] = {}
   try {
     const fetchEditable =
       deps.fetchEditableOverrides ?? defaultEditableOverridesFetcher
@@ -3776,6 +3781,7 @@ export async function runSync(
     codifyEdits = split.codify
     removedCodifyEdits = split.removedCodify
     renames = split.renames
+    overlayDeclEdits = split.overlayDecls
   } catch {
     // ignore: the endpoint may be unavailable
   }
@@ -3822,6 +3828,7 @@ export async function runSync(
           codifyEdits,
           removedCodifyEdits,
           renames,
+          overlayDeclEdits,
           studioSync,
           readFile: deps.readFileText ?? defaultReadFileText,
         })
@@ -3968,7 +3975,7 @@ export async function runDevAutoSync(
         log('auto-sync: could not load typescript; auto-sync disabled.')
         return
       }
-      const { overrides, codify, removedCodify, renames } =
+      const { overrides, codify, removedCodify, renames, overlayDecls } =
         splitTimelineEditsByVideo(timelineEdits)
       const planned = planStampsAndCodeSync({
         ts,
@@ -3980,6 +3987,7 @@ export async function runDevAutoSync(
         codifyEdits: codify,
         removedCodifyEdits: removedCodify,
         renames,
+        overlayDeclEdits: overlayDecls,
         studioSync,
         readFile: deps.readFileText ?? defaultReadFileText,
       })

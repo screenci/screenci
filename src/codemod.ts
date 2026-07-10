@@ -965,7 +965,7 @@ export function findVideoCall(
  * existing `.renderOptions({...})` of a video builder), or null when the chain
  * has no such call. Walks the property/call chain from the outside in.
  */
-function findMethodCallInChain(
+export function findMethodCallInChain(
   ts: TsModule,
   callee: TS.Expression,
   method: string
@@ -1087,6 +1087,182 @@ export function setBuilderOptions(
       start: insertAt,
       end: insertAt,
       replacement: `.${method}(${valueSource})`,
+    },
+  ]
+}
+
+/**
+ * Remove the named top-level keys from an object-literal source text. Missing
+ * keys are skipped. Returns the new source, or null when the object resists a
+ * mechanical edit (spreads, shorthand properties, not a plain literal).
+ */
+function removeObjectLiteralKeys(
+  ts: TsModule,
+  objectText: string,
+  keys: readonly string[]
+): string | null {
+  let text = objectText
+  for (const key of keys) {
+    const source = `__m(${text})`
+    const ctx = createContext(ts, 'merge.ts', source)
+    const statement = ctx.sourceFile.statements[0]
+    if (statement === undefined || !ts.isExpressionStatement(statement)) {
+      return null
+    }
+    const call = statement.expression
+    if (!ts.isCallExpression(call)) return null
+    const arg = call.arguments[0]
+    if (arg === undefined || !ts.isObjectLiteralExpression(arg)) return null
+    const { property, unsafe } = findProperty(ts, arg, key)
+    if (unsafe) return null
+    if (property === null) continue // key absent: nothing to remove
+    const edit =
+      arg.properties.length > 1
+        ? removePropertyEdit(arg, property)
+        : // Only property: an empty object literal stays valid here (unlike a
+          // removable options argument), so collapse to `{}`.
+          { start: arg.getStart(), end: arg.getEnd(), replacement: '{}' }
+    const newSource = applyTextEdits(source, [edit])
+    const reparsed = createContext(ts, 'merge.ts', newSource)
+    const reStatement = reparsed.sourceFile.statements[0]
+    if (reStatement === undefined || !ts.isExpressionStatement(reStatement)) {
+      return null
+    }
+    const reCall = reStatement.expression
+    if (!ts.isCallExpression(reCall)) return null
+    const reArg = reCall.arguments[0]
+    if (reArg === undefined) return null
+    text = newSource.slice(reArg.getStart(), reArg.getEnd())
+  }
+  return text
+}
+
+/** The placement-variant keys of an overlay config, for stale-key cleanup. */
+const OVERLAY_BOX_KEYS = [
+  'x',
+  'y',
+  'width',
+  'height',
+  'relativeTo',
+  'aspectRatio',
+] as const
+
+/**
+ * The top-level keys that become stale when `props` (one placement variant)
+ * is merged into an overlay declaration, so the result stays a single valid
+ * placement variant:
+ * - merging `fill` removes every box key (and would remove `over`/`margin`,
+ *   but the caller refuses `fill` on an `over` declaration entirely);
+ * - merging box keys removes `fill` and the opposite dimension;
+ * - merging `margin` alone removes nothing.
+ */
+function staleOverlayKeys(props: Record<string, unknown>): string[] {
+  const keys = new Set<string>()
+  if ('fill' in props) {
+    for (const key of OVERLAY_BOX_KEYS) keys.add(key)
+  }
+  if (OVERLAY_BOX_KEYS.some((key) => key in props)) {
+    keys.add('fill')
+    if ('width' in props) keys.add('height')
+    if ('height' in props) keys.add('width')
+  }
+  for (const key of Object.keys(props)) keys.delete(key)
+  return [...keys]
+}
+
+/**
+ * Merge placement props into one overlay's declaration inside the
+ * `video.overlays({...})` call of the named video. Returns the text edits, an
+ * empty array when already in sync (idempotent), or null when the shape
+ * resists a mechanical edit.
+ *
+ * Handled declaration shapes:
+ * - an object-literal config (`logo: { path: ..., ... }`): props are merged
+ *   and stale placement-variant keys removed;
+ * - a string path shorthand (`logo: './logo.png'`): rewritten to
+ *   `{ path: './logo.png', ...props }` (the shorthand meant fill-recording,
+ *   so a placement edit must expand it).
+ *
+ * Refused (null): a missing/ambiguous video declaration, an array (studio
+ * names) argument, a factory/JSX/spread/`selected(...)` declaration, free
+ * placement props on a declaration that uses `over` (the box is pinned to a
+ * live element), and `margin` on a declaration that does not use `over`.
+ */
+export function setOverlayDeclProps(
+  ctx: CodemodContext,
+  videoName: string,
+  overlayName: string,
+  props: Record<string, unknown>
+): TextEdit[] | null {
+  const { ts } = ctx
+  if (Object.keys(props).length === 0) return []
+  const videoCall = findVideoCall(ctx, videoName)
+  if (videoCall === null) return null
+  const overlaysCall = findMethodCallInChain(
+    ts,
+    videoCall.expression,
+    'overlays'
+  )
+  if (overlaysCall === null) return null
+  const arg = overlaysCall.arguments[0]
+  if (arg === undefined || !ts.isObjectLiteralExpression(arg)) return null
+  const { property, unsafe } = findProperty(ts, arg, overlayName)
+  if (property === null || unsafe) return null
+
+  const initializer = property.initializer
+  if (ts.isStringLiteral(initializer)) {
+    // Path shorthand: expand to a config object carrying the new placement.
+    const pathSource = ctx.source.slice(
+      initializer.getStart(),
+      initializer.getEnd()
+    )
+    if ('margin' in props) return null // margin needs an `over` declaration
+    const merged = mergeObjectLiteralText(ts, `{ path: ${pathSource} }`, props)
+    if (merged === null) return null
+    return [
+      {
+        start: initializer.getStart(),
+        end: initializer.getEnd(),
+        replacement: merged,
+      },
+    ]
+  }
+  if (!ts.isObjectLiteralExpression(initializer)) {
+    return null // factory, JSX element, selected(...), variable: refuse
+  }
+  const { property: overProperty, unsafe: overUnsafe } = findProperty(
+    ts,
+    initializer,
+    'over'
+  )
+  if (overUnsafe) return null
+  const hasOver = overProperty !== null
+  const freeKeys = ['fill', ...OVERLAY_BOX_KEYS]
+  if (hasOver && freeKeys.some((key) => key in props)) {
+    return null // over-locked: only margin may change
+  }
+  if (!hasOver && 'margin' in props) {
+    return null // margin without over is invalid
+  }
+
+  const objectText = ctx.source.slice(
+    initializer.getStart(),
+    initializer.getEnd()
+  )
+  const cleaned = removeObjectLiteralKeys(
+    ts,
+    objectText,
+    staleOverlayKeys(props)
+  )
+  if (cleaned === null) return null
+  const merged = mergeObjectLiteralText(ts, cleaned, props)
+  if (merged === null) return null
+  if (merged === objectText) return [] // idempotent no-op
+  return [
+    {
+      start: initializer.getStart(),
+      end: initializer.getEnd(),
+      replacement: merged,
     },
   ]
 }

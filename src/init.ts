@@ -1355,7 +1355,12 @@ export function generateExampleVideo(): string {
 
 video
   .overlays({
-    logo: { path: './assets/logo.png', duration: 2000, overMouse: true },
+    logo: {
+      path: './assets/logo.png',
+      duration: 2000,
+      overMouse: true,
+      fill: 'recording',
+    },
   })
   .narration({
     docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',

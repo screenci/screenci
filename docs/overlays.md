@@ -61,17 +61,20 @@ video.overlays(['intro', 'logo'])
 
 A config draws its content from exactly one source. Component overlays (`.tsx`/`.solid.tsx`/`.vue`/`.svelte` files, `jsx`/`solidJsx` source) accept serializable `props`; only `.mp4`/image files accept the video/crop fields.
 
+Every config object also declares **exactly one placement** (see [Positioning](#positioning)): `fill: 'recording' | 'screen'`, an `over` locator, or an explicit box with exactly one of `width`/`height` (plus optional `x`/`y`/`relativeTo`/`aspectRatio`). The variants' fields cannot be mixed, and a config with no placement is an error. Only the bare shorthands (a path string like `hint: 'assets/callout.html'` or a bare React element) carry an implicit `fill: 'recording'`.
+
 ```tsx
 import { video } from 'screenci'
 
 video.overlays({
   intro: { path: 'assets/intro.mp4', fill: 'screen' }, // full-frame video
-  hint: 'assets/callout.html', // full HTML page
+  hint: 'assets/callout.html', // full HTML page (shorthand: fills the recording)
   badge: {
     path: 'overlays/Badge.tsx',
     props: { label: 'New' },
     x: 1340,
     y: 110,
+    width: 288,
   }, // React component page
   note: { html: '<div class="note">Tip</div>', x: 1340, y: 320, width: 380 }, // inline fragment
   stamp: <Stamp label="Beta" />, // inline React element
@@ -121,7 +124,11 @@ Image (`.svg`/`.png`) and video (`.mp4`) overlays accept a `crop` rectangle that
 ```ts
 const overlays = createOverlays({
   // Show only the left panel of a wide screen recording.
-  panel: { path: 'demo.mp4', crop: { x: 0, y: 0, width: 960, height: 1080 } },
+  panel: {
+    path: 'demo.mp4',
+    fill: 'recording',
+    crop: { x: 0, y: 0, width: 960, height: 1080 },
+  },
   // Crop a badge out of a sprite sheet and place it top-right.
   badge: {
     path: 'sprites.png',
@@ -142,7 +149,7 @@ const overlays = createOverlays({
 ```ts
 const overlays = createOverlays({
   // Play seconds 2 through the halfway point of the source clip.
-  clip: { path: 'demo.mp4', start: '0:02', end: '50%' },
+  clip: { path: 'demo.mp4', fill: 'recording', start: '0:02', end: '50%' },
 })
 ```
 
@@ -260,6 +267,9 @@ video.overlays({
     props: { to: 100 },
     animate: true,
     duration: 2000,
+    x: 1340,
+    y: 110,
+    width: 288,
   },
 })('Overview', async ({ overlays }) => {
   await overlays.counter() // counts 0 -> 100 over 2s
@@ -334,6 +344,9 @@ video.overlays({
     props: { to: 100 },
     animate: true,
     duration: 2000,
+    x: 1340,
+    y: 110,
+    width: 288,
   },
 })
 ```
@@ -423,6 +436,9 @@ video.overlays({
     animate: true,
     duration: 1200,
     fps: 60,
+    x: 768,
+    y: 864,
+    width: 384,
   },
 })('Overview', async ({ overlays }) => {
   await overlays.intro() // plays the 1.5s animation over a frozen frame
@@ -461,7 +477,25 @@ instead of a black card. Both are uploaded with the recording automatically.
 
 ## Positioning
 
-Placement fields are flat on the config and each defaults independently.
+Placement is **mandatory on every config object**, and a config picks exactly
+one of three variants:
+
+- **`fill: 'recording' | 'screen'`** fills a frame: `'recording'` fills the
+  recording area, `'screen'` fills the entire output frame, including any
+  padding around the recording.
+- **`over: <locator>`** (optional `margin`) sizes and positions the overlay
+  over a live element; see
+  [Positioning over a live element](#positioning-over-a-live-element).
+- **An explicit box** with exactly one of `width`/`height`, plus optional
+  `x`/`y`/`relativeTo`/`aspectRatio`.
+
+The variants' fields cannot be mixed: `fill` combined with `x`/`y`/`width`/
+`height` is an error, as is a box with both `width` and `height`, or a config
+with no placement at all. The only exception is the bare shorthands, a path
+string (`logo: './logo.png'`) or a bare React element, which mean
+`fill: 'recording'`.
+
+Box placement fields are flat on the config and each defaults independently.
 Coordinates are **CSS pixels of the recording viewport**, the same space
 Playwright's `boundingBox()`, `page.mouse`, and `viewportSize()` use, with the
 overlay anchored at its top-left corner. The renderer maps these recording-viewport
@@ -495,9 +529,9 @@ video.overlays({
 - `relativeTo: 'recording'` (the default) positions against the composited recording area (which may be inset when `renderOptions.recording.size < 1`). Pixels are measured in the recording viewport, so the box stays correct whatever output size you settle on later in the studio.
 - `relativeTo: 'screen'` positions against the full output frame, using the same recording-pixel scale measured from the output's top-left.
 - `x` and `y` are the top-left corner in CSS px. Both default to `0`.
-- Provide one of `width` or `height` (in CSS px). The other is derived from the overlay's intrinsic aspect ratio (or from `aspectRatio`, given as `width / height`) so it is never distorted.
+- Provide exactly one of `width` or `height` (in CSS px). The other is derived from the overlay's intrinsic aspect ratio (or from `aspectRatio`, given as `width / height`) so it is never distorted.
 
-When no placement field is set, the overlay fills the recording area (the renderer resolves this, since it knows the recording size). To fill explicitly, set `fill`: `'recording'` fills the recording area (the same as omitting placement), and `'screen'` fills the entire output frame.
+To fill a frame instead of placing a box, set `fill`: `'recording'` fills the recording area and `'screen'` fills the entire output frame. `fill` cannot be combined with the box fields, and a config object with no placement at all is rejected. Only the bare shorthands (a path string or a bare React element) fill the recording implicitly.
 
 ### Overlays and zoom (`pinToScreen`)
 
@@ -604,7 +638,8 @@ video.overlays({
 
 `over` works with every rendered page overlay (component files, `.html`,
 `element`, `jsx`/`solidJsx`, and inline `html`). It is always
-recording-relative and overrides `x`/`y`/`width`/`height`/`relativeTo`/`fill`.
+recording-relative and is a placement of its own: combining `over` with
+`fill` or the box fields (`x`/`y`/`width`/`height`/`relativeTo`) is an error.
 Make the content fill its box (`width:100%;height:100%`). Repeated calls with the
 same element box rasterize only once.
 

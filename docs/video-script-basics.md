@@ -57,7 +57,12 @@ import { autoZoom, hide, video } from 'screenci'
 
 video
   .overlays({
-    logo: { path: './assets/logo.png', duration: 2000, overMouse: true },
+    logo: {
+      path: './assets/logo.png',
+      duration: 2000,
+      overMouse: true,
+      fill: 'recording',
+    },
   })
   .narration({
     docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
@@ -353,11 +358,11 @@ controllers are exposed through the `overlays` fixture in the body:
 import { video } from 'screenci'
 
 video.overlays({
-  logo: { image: 'logo.png', position: 'top-right' },
+  logo: { path: 'logo.png', x: 1560, y: 96, width: 288 },
 })('Branded intro', async ({ page, overlays }) => {
-  await overlays.logo.show()
+  await overlays.logo.start()
   await page.goto('/dashboard')
-  await overlays.logo.hide()
+  await overlays.logo.end()
 })
 ```
 

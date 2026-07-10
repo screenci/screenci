@@ -1,4 +1,5 @@
 import { describe, it, expectTypeOf } from 'vitest'
+import type { Locator } from '@playwright/test'
 import { createOverlays, type OverlayController } from './asset.js'
 
 describe('createOverlays type constraints', () => {
@@ -104,6 +105,7 @@ describe('createOverlays type constraints', () => {
       ring: (p: { path: `${string}.html`; x: number }) => ({
         path: p.path,
         x: p.x,
+        width: 300,
       }),
     })
     expectTypeOf(overlays.ring).toEqualTypeOf<
@@ -117,7 +119,7 @@ describe('createOverlays type constraints', () => {
   it('keeps static keys as plain controllers alongside factory keys', () => {
     const overlays = createOverlays({
       logo: './logo.png',
-      note: (p: { x: number }) => ({ path: './note.html', x: p.x }),
+      note: (p: { x: number }) => ({ path: './note.html', x: p.x, width: 380 }),
     })
     expectTypeOf(overlays.logo).toEqualTypeOf<OverlayController>()
     expectTypeOf(overlays.note).toEqualTypeOf<
@@ -140,9 +142,50 @@ describe('createOverlays type constraints', () => {
 
   it('rejects calling a factory-key controller without props', () => {
     const overlays = createOverlays({
-      note: (p: { x: number }) => ({ path: './note.html', x: p.x }),
+      note: (p: { x: number }) => ({ path: './note.html', x: p.x, width: 380 }),
     })
     // @ts-expect-error the factory requires its props argument
     overlays.note()
+  })
+
+  it('rejects a config object without a placement variant', () => {
+    createOverlays({
+      // @ts-expect-error a config must set fill, over, or width/height
+      logo: { path: './logo.png', duration: 1000 },
+    })
+  })
+
+  it('rejects mixing fill with box fields', () => {
+    createOverlays({
+      // @ts-expect-error fill cannot be combined with x/y/width/height
+      logo: { path: './logo.png', fill: 'recording', width: 300 },
+    })
+  })
+
+  it('rejects both width and height on a box placement', () => {
+    createOverlays({
+      // @ts-expect-error provide exactly one of width or height
+      logo: { path: './logo.png', width: 300, height: 200 },
+    })
+  })
+
+  it('rejects margin without over', () => {
+    createOverlays({
+      // @ts-expect-error margin only applies together with over
+      note: { path: './note.html', width: 300, margin: 8 },
+    })
+  })
+
+  it('accepts an over placement with a margin', () => {
+    createOverlays({
+      ring: { path: './ring.html', over: {} as Locator, margin: 8 },
+    })
+  })
+
+  it('rejects mixing over with fill', () => {
+    createOverlays({
+      // @ts-expect-error over cannot be combined with fill
+      ring: { path: './ring.html', over: {} as Locator, fill: 'recording' },
+    })
   })
 })

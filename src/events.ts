@@ -437,23 +437,46 @@ export type VideoCueStartEvent = {
  *   (`relativeTo: 'recording'`, the default). Provide exactly one of `width` or
  *   `height`; the other dimension is derived from the asset's intrinsic aspect
  *   ratio, or from `aspectRatio` (width / height) when given.
+ *
+ * A positioned placement that was resolved from an `over` locator at recording
+ * time additionally carries the {@link OverlayLocatorLock} fields, so editors
+ * know the box is pinned to a live element (only its margin is adjustable).
  */
 export type OverlayPlacement =
   | { fullScreen: true }
-  | {
+  | (OverlayLocatorLock & {
       relativeTo: 'screen' | 'recording'
       x: number
       y: number
       width: number
       aspectRatio?: number
-    }
-  | {
+    })
+  | (OverlayLocatorLock & {
       relativeTo: 'screen' | 'recording'
       x: number
       y: number
       height: number
       aspectRatio?: number
-    }
+    })
+
+/**
+ * Provenance fields present on a positioned {@link OverlayPlacement} that was
+ * resolved from an `over` locator: the box is pinned to the element's rect
+ * (plus margin), so an editor may only adjust the margin, not move or resize
+ * the box freely. Absent on freely placed overlays and on recordings made
+ * before these fields existed.
+ */
+export type OverlayLocatorLock = {
+  /** Present (true) when the placement came from an `over` locator. */
+  overLocked?: true
+  /** The `margin` (CSS px) that was applied around the element's box. */
+  marginPx?: number
+  /**
+   * The element's raw bounding box (CSS px of the recording viewport) before
+   * the margin was applied and before clamping to the viewport.
+   */
+  elementRect?: { x: number; y: number; width: number; height: number }
+}
 
 /**
  * Asset format policy is recorded explicitly so renderers never need to infer

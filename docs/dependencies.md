@@ -18,7 +18,7 @@ Unlike a file overlay, a dependency is a live link: when the target's selected r
 
 ## Declare a dependency
 
-Pass `selected(name)` as an overlay value. The `name` is the project-unique title of another video or screenshot. screenci embeds that target's currently selected render (for the matching language), so you never restate the target's file, medium, or output. No local asset file is read, uploaded, or committed for a render dependency.
+Pass `selected(name, options)` as an overlay value. The `name` is the project-unique title of another video or screenshot, and the options must include a placement: `fill: 'recording' | 'screen'`, or an explicit box with exactly one of `width`/`height` (`over` does not apply, since the embedded output is a finished render with no live element to size against). screenci embeds that target's currently selected render (for the matching language), so you never restate the target's file, medium, or output. No local asset file is read, uploaded, or committed for a render dependency.
 
 ```ts
 import { video, selected } from 'screenci'
@@ -29,7 +29,7 @@ video('Intro Clip', async ({ page }) => {
 })
 
 // The dependent: embeds whatever "Intro Clip" currently renders to.
-video.overlays({ intro: selected('Intro Clip') })(
+video.overlays({ intro: selected('Intro Clip', { fill: 'recording' }) })(
   'Full Demo',
   async ({ page, overlays }) => {
     await overlays.intro() // embeds the "Intro Clip" render
@@ -38,7 +38,7 @@ video.overlays({ intro: selected('Intro Clip') })(
 )
 ```
 
-A dependency overlay is driven exactly like any other overlay: call it for a blocking window (`await overlays.intro.for('1.2s')` or `await overlays.intro.for(1200)`), hold it until a position (`await overlays.intro.until('0:05')`), let a bare `await overlays.intro()` hold it for its natural length, or drive a live window with `start()`/`end()`. It accepts the same placement options as a file overlay (`x`/`y`/`width`/`height`/`relativeTo`/`aspectRatio`/`fill`/`pinToScreen`/`overMouse`), so you can frame it anywhere in the output.
+A dependency overlay is driven exactly like any other overlay: call it for a blocking window (`await overlays.intro.for('1.2s')` or `await overlays.intro.for(1200)`), hold it until a position (`await overlays.intro.until('0:05')`), let a bare `await overlays.intro()` hold it for its natural length, or drive a live window with `start()`/`end()`. Like a file overlay it requires a placement in its options, either `fill` or an explicit box (`x`/`y`/`relativeTo`/`aspectRatio` plus exactly one of `width`/`height`), and it also accepts `pinToScreen`/`overMouse`, so you can frame it anywhere in the output.
 
 ```ts
 video.overlays({
@@ -58,12 +58,14 @@ A dependency also accepts `crop` (both video and screenshot targets) and `start`
 video.overlays({
   // Reframe and trim an embedded video render.
   demo: selected('Full Demo', {
+    fill: 'recording',
     crop: { x: 0, y: 0, width: 1280, height: 720 },
     start: '2s',
     end: '50%',
   }),
   // Crop a region of an embedded screenshot (no start/end: a screenshot has no timeline).
   shot: selected('Dashboard Shot', {
+    fill: 'recording',
     crop: { x: 64, y: 64, width: 800, height: 600 },
   }),
 })
@@ -77,7 +79,7 @@ An embedded video always plays the target's audio. By default its narration subt
 
 ```ts
 video.overlays({
-  intro: selected('Intro Clip', { inheritSubtitles: true }),
+  intro: selected('Intro Clip', { fill: 'recording', inheritSubtitles: true }),
 })('Full Demo', async ({ page, overlays }) => {
   await overlays.intro() // plays the clip's audio and shows its subtitles
   await page.goto('/dashboard')
@@ -127,12 +129,11 @@ Pass a `language` to embed a **fixed** language of the target, regardless of whi
 
 ```ts
 // Always embed the Finnish intro, whatever language the demo renders in.
-video.overlays({ intro: selected('Intro Clip', { language: 'fi' }) })(
-  'Full Demo',
-  async ({ overlays }) => {
-    await overlays.intro()
-  }
-)
+video.overlays({
+  intro: selected('Intro Clip', { fill: 'recording', language: 'fi' }),
+})('Full Demo', async ({ overlays }) => {
+  await overlays.intro()
+})
 ```
 
 A pinned language never falls back to another one: if the target has **no** finished render in the pinned language, the dependent render **fails explicitly** with an error listing the languages the target does have. Render the target in the pinned language to resolve it.

@@ -47,52 +47,101 @@ export type { OverlayPlacement, OverlayClip } from './events.js'
 export type OverlayDuration = number
 
 /**
- * Placement and capture fields shared by every overlay variant. Placement is
- * flat (not nested) and uses CSS pixels in the recording viewport (the same
- * space as Playwright's `boundingBox()`, `page.mouse`, and `viewportSize()`),
- * each defaulting independently: `relativeTo: 'recording'`, `x: 0`, `y: 0`.
- * Provide exactly one of `width`/`height` (the other follows the source aspect,
- * or `aspectRatio`). When no placement field is set, the overlay fills the
- * recording area.
+ * Fill the whole frame instead of positioning the overlay. `'recording'`
+ * fills the recording area; `'screen'` fills the entire output frame,
+ * including any padding around the recording. Mutually exclusive with the
+ * box fields (`x`/`y`/`width`/`height`) and with `over`.
  */
-type OverlayCommon = {
+export type OverlayFillPlacement = {
+  /** Which frame the overlay fills: the recording area or the whole output. */
+  fill: 'recording' | 'screen'
+  over?: never
+  margin?: never
+  relativeTo?: never
+  x?: never
+  y?: never
+  width?: never
+  height?: never
+  aspectRatio?: never
+}
+
+/**
+ * Position the overlay over a live element, captured at recording time from
+ * the locator's bounding box. The overlay is sized to that box (plus
+ * {@link OverlayOverPlacement.margin}) and fills it, so it frames the element
+ * exactly (placement is always recording-relative). HTML files, inline
+ * `html`, and React elements only; your content should fill its box (for
+ * example `width:100%;height:100%`). Mutually exclusive with `fill` and the
+ * box fields.
+ */
+export type OverlayOverPlacement = {
+  /** The live element the overlay is positioned and sized over. */
+  over: Locator
+  /**
+   * Extra space (CSS px) added around the {@link over} element on every side,
+   * so the overlay surrounds it rather than sitting exactly on its edges.
+   */
+  margin?: number
+  fill?: never
+  relativeTo?: never
+  x?: never
+  y?: never
+  width?: never
+  height?: never
+  aspectRatio?: never
+}
+
+/**
+ * Explicit box placement, flat (not nested), in CSS pixels of the recording
+ * viewport (the same space as Playwright's `boundingBox()`, `page.mouse`, and
+ * `viewportSize()`), each field defaulting independently:
+ * `relativeTo: 'recording'`, `x: 0`, `y: 0`. Provide exactly one of
+ * `width`/`height` (the other follows the source aspect, or `aspectRatio`).
+ */
+export type OverlayBoxPlacement = {
   /** Reference box for placement coordinates. Defaults to `'recording'`. */
   relativeTo?: 'screen' | 'recording'
   /** Left edge in CSS px of the recording viewport. Defaults to `0`. */
   x?: number
   /** Top edge in CSS px of the recording viewport. Defaults to `0`. */
   y?: number
-  /** Width in CSS px. Provide instead of `height` (exactly one). */
-  width?: number
-  /** Height in CSS px. Provide instead of `width` (exactly one). */
-  height?: number
   /**
    * Aspect ratio (`width / height`) used to derive the unset axis from the one
    * you provide, instead of the source's intrinsic aspect. Optional.
    */
   aspectRatio?: number
-  /**
-   * Fill the whole frame instead of positioning the overlay. `'recording'`
-   * fills the recording area (the same as omitting every placement field);
-   * `'screen'` fills the entire output frame, including any padding around the
-   * recording. Overrides `x`/`y`/`width`/`height`.
-   */
-  fill?: 'recording' | 'screen'
-  /**
-   * Position the overlay over a live element, captured at recording time from
-   * the locator's bounding box. The overlay is sized to that box (plus
-   * {@link margin}) and fills it, so it frames the element exactly. Overrides
-   * `x`/`y`/`width`/`height`/`relativeTo`/`fill` (placement is always
-   * recording-relative). HTML files, inline `html`, and React elements only;
-   * your content should fill its box (for example `width:100%;height:100%`).
-   */
-  over?: Locator
-  /**
-   * Extra space (CSS px) added around the {@link over} element on every side,
-   * so the overlay surrounds it rather than sitting exactly on its edges. Only
-   * valid together with `over`.
-   */
-  margin?: number
+  fill?: never
+  over?: never
+  margin?: never
+} & (
+  | {
+      /** Width in CSS px. Provide instead of `height` (exactly one). */
+      width: number
+      height?: never
+    }
+  | {
+      /** Height in CSS px. Provide instead of `width` (exactly one). */
+      height: number
+      width?: never
+    }
+)
+
+/**
+ * Where an overlay goes, required on every config object: fill a frame
+ * (`fill`), track a live element (`over`), or an explicit box
+ * (`x`/`y` + `width`|`height`). Exactly one variant must be used; the
+ * variants' fields cannot be mixed.
+ */
+export type OverlayPlacementInput =
+  | OverlayFillPlacement
+  | OverlayOverPlacement
+  | OverlayBoxPlacement
+
+/**
+ * Capture and timing fields shared by every overlay variant, independent of
+ * placement.
+ */
+type OverlayCaptureCommon = {
   /**
    * Default visible length in milliseconds, used when the overlay is shown with a bare call
    * (`await overlays.logo()`) or `.for()` without its own length.
@@ -150,6 +199,13 @@ type OverlayCommon = {
    */
   overMouse?: boolean
 }
+
+/**
+ * Placement and capture fields shared by every overlay variant. Placement is
+ * mandatory: every config picks exactly one {@link OverlayPlacementInput}
+ * variant (`fill`, `over`, or an explicit box with `width`/`height`).
+ */
+type OverlayCommon = OverlayCaptureCommon & OverlayPlacementInput
 
 /** Fields that only apply to a `.mp4` video overlay (a file `path`). */
 type OverlayVideoFields = {
@@ -392,54 +448,47 @@ export type OverlayConfig =
 export const MAX_AUDIO_LEVEL = 4
 
 /**
- * Placement options accepted by {@link selected}. These are the subset of
- * {@link OverlayCommon} that apply to a render dependency: the embedded output
- * is a finished still or clip, so source-only fields (`over`/`margin`/`animate`/
- * `css`/`capturePadding`) do not apply.
+ * Placement options accepted by {@link selected}. Placement is mandatory
+ * (`fill`, or an explicit box with `width`/`height`); `over`/`margin` do not
+ * apply since the embedded output is a finished still or clip with no live
+ * element to size against, and neither do the other source-only fields
+ * (`animate`/`css`/`capturePadding`).
  */
-export type DependencyOverlayOptions = Pick<
-  OverlayCommon,
-  | 'relativeTo'
-  | 'x'
-  | 'y'
-  | 'width'
-  | 'height'
-  | 'aspectRatio'
-  | 'fill'
-  | 'duration'
-  | 'clip'
-  | 'pinToScreen'
-  | 'overMouse'
-  | 'fadeIn'
-  | 'fadeOut'
-> & {
-  /**
-   * Late start into the embedded VIDEO (ms number/timecode/`'50%'` position).
-   * Video dependencies only; rejected when the target resolves to a screenshot.
-   */
-  start?: TimelineOffset
-  /** Early end into the embedded VIDEO (video dependencies only). */
-  end?: TimelineOffset
-  /**
-   * Also carry the embedded target's narration subtitles up into the surrounding
-   * video. The embed always plays the target's audio; with this on, the target's
-   * subtitles are additionally shown as subtitles of the surrounding video (in
-   * its VTT track) for the window the embed plays, wherever the surrounding video
-   * has no competing narration of its own. Defaults to `false`.
-   */
-  inheritSubtitles?: boolean
-  /**
-   * Pin the embed to a specific language of the target (a language code such as
-   * `'fi'`), independent of the surrounding render's language. Use this to embed
-   * a fixed-language version of the target no matter which language the
-   * surrounding video is rendered in. When the target has no finished render in
-   * this language, the dependent render FAILS explicitly (the error lists the
-   * languages the target does have) rather than falling back to another one.
-   * Omit to inherit the surrounding render's language (embedding the target's
-   * output for the matching language, or its single language when unambiguous).
-   */
-  language?: string
-}
+export type DependencyOverlayOptions = (
+  | OverlayFillPlacement
+  | OverlayBoxPlacement
+) &
+  Pick<
+    OverlayCaptureCommon,
+    'duration' | 'clip' | 'pinToScreen' | 'overMouse' | 'fadeIn' | 'fadeOut'
+  > & {
+    /**
+     * Late start into the embedded VIDEO (ms number/timecode/`'50%'` position).
+     * Video dependencies only; rejected when the target resolves to a screenshot.
+     */
+    start?: TimelineOffset
+    /** Early end into the embedded VIDEO (video dependencies only). */
+    end?: TimelineOffset
+    /**
+     * Also carry the embedded target's narration subtitles up into the surrounding
+     * video. The embed always plays the target's audio; with this on, the target's
+     * subtitles are additionally shown as subtitles of the surrounding video (in
+     * its VTT track) for the window the embed plays, wherever the surrounding video
+     * has no competing narration of its own. Defaults to `false`.
+     */
+    inheritSubtitles?: boolean
+    /**
+     * Pin the embed to a specific language of the target (a language code such as
+     * `'fi'`), independent of the surrounding render's language. Use this to embed
+     * a fixed-language version of the target no matter which language the
+     * surrounding video is rendered in. When the target has no finished render in
+     * this language, the dependent render FAILS explicitly (the error lists the
+     * languages the target does have) rather than falling back to another one.
+     * Omit to inherit the surrounding render's language (embedding the target's
+     * output for the matching language, or its single language when unambiguous).
+     */
+    language?: string
+  }
 
 /** Brand identifying a {@link selected} render-dependency overlay input. */
 const DEPENDENCY_INPUT_BRAND = '__screenciSelectedDependency' as const
@@ -479,9 +528,12 @@ export type DependencyOverlayInput = {
  * dependent render then fails explicitly (listing the target's available
  * languages) when the target has no finished render in that language.
  *
+ * Placement is mandatory: pass `fill` or an explicit box (`x`/`y` +
+ * `width`|`height`) in the options.
+ *
  * @example
  * ```ts
- * video.overlays({ intro: selected('Intro Clip') })(
+ * video.overlays({ intro: selected('Intro Clip', { fill: 'recording' }) })(
  *   'Full Demo',
  *   async ({ page, overlays }) => {
  *     await overlays.intro()
@@ -493,17 +545,16 @@ export type DependencyOverlayInput = {
  * @example
  * ```ts
  * // Always embed the Finnish intro, whatever language the demo renders in.
- * video.overlays({ intro: selected('Intro Clip', { language: 'fi' }) })(
- *   'Full Demo',
- *   async ({ overlays }) => {
- *     await overlays.intro()
- *   }
- * )
+ * video.overlays({
+ *   intro: selected('Intro Clip', { fill: 'recording', language: 'fi' }),
+ * })('Full Demo', async ({ overlays }) => {
+ *   await overlays.intro()
+ * })
  * ```
  */
 export function selected(
   name: string,
-  options?: DependencyOverlayOptions
+  options: DependencyOverlayOptions
 ): DependencyOverlayInput {
   if (typeof name !== 'string' || name.trim().length === 0) {
     throw new Error(
@@ -798,9 +849,10 @@ export type Overlays<T extends Record<string, OverlayInputOrFactory>> = {
  * or passed to `.for(...)`) unless driven with `start()`/`end()`; `.mp4`
  * overlays use their natural duration and default `audio` to `1` (natural level).
  *
- * Placement defaults to the full recording area (`relativeTo: 'recording'`);
- * override any field independently. Coordinates are CSS px of the recording
- * viewport.
+ * A config object must choose a placement: `fill` ('recording' or 'screen'),
+ * `over` (a locator the overlay tracks), or an explicit box with `width` or
+ * `height` (coordinates are CSS px of the recording viewport). The bare
+ * shorthands (a path string or a React element) fill the recording area.
  *
  * @example
  * ```tsx
@@ -852,14 +904,16 @@ function buildOverlayController(
     return (props: unknown) =>
       buildOverlayFromConfig(name, (input as OverlayConfigFactory)(props))
   }
+  // Bare shorthands (a path string or a React element) have nowhere to carry
+  // placement, so they mean "fill the recording area".
   if (typeof input === 'string') {
-    return buildOverlayFromConfig(name, { path: input })
+    return buildOverlayFromConfig(name, { path: input, fill: 'recording' })
   }
   // A bare React element (`badge: <Badge />`) is shorthand for `{ element }`.
   // Matched before the config branch: an element is a plain object too, but
   // carries the React `$$typeof` brand.
   if (isReactElement(input)) {
-    return buildOverlayFromConfig(name, { element: input })
+    return buildOverlayFromConfig(name, { element: input, fill: 'recording' })
   }
   return buildOverlayFromConfig(name, input)
 }
@@ -1099,10 +1153,12 @@ function buildOverlayFromConfig(
 
   // Image/video file overlays never use `over` (rejected in
   // resolvePlacementSource), so the source is always a concrete placement.
-  const placement =
-    placementSource.kind === 'fixed'
-      ? placementSource.placement
-      : resolveOverlayPlacement(name, config)
+  if (placementSource.kind !== 'fixed') {
+    throw new Error(
+      `[screenci] Overlay "${name}" (${label}) cannot use "over": file overlays have a fixed placement.`
+    )
+  }
+  const placement = placementSource.placement
 
   // File-backed image / video overlays.
   if (extension === '.svg' || extension === '.png') {
@@ -1443,7 +1499,17 @@ function createDependencyOverlayController(
 ): OverlayController {
   // `over`/`margin` are not in DependencyOverlayOptions, so placement is always
   // fixed here (an embedded render has no live element to size against).
-  const placement = resolveOverlayPlacement(name, input.config)
+  const dependencyVariant = classifyPlacementVariant(name, input.config)
+  if (dependencyVariant === 'over') {
+    throw new Error(
+      `[screenci] Overlay "${name}" cannot use "over" with selected(...): an embedded render has no live element to size against.`
+    )
+  }
+  const placement = resolveOverlayPlacement(
+    name,
+    input.config,
+    dependencyVariant
+  )
   const fullScreen = input.config.fill === 'screen'
   const pinToScreen = input.config.pinToScreen === true
   const configDurationMs = resolveConfigDuration(name, input.config.duration)
@@ -1900,43 +1966,110 @@ function validatePlacement(name: string, placement: OverlayPlacement): void {
 }
 
 /**
+ * The placement variant a config uses: `fill` a frame, track a live element
+ * (`over`), or an explicit box. Exactly one; classified (and cross-variant
+ * mixes rejected) by {@link classifyPlacementVariant}.
+ */
+type PlacementVariantKind = 'fill' | 'over' | 'box'
+
+/**
+ * Classifies which {@link OverlayPlacementInput} variant a config uses,
+ * rejecting configs that mix variants or provide none. The union already
+ * enforces this at the type level; this re-checks it for plain-JS callers and
+ * for configs built at runtime.
+ */
+function classifyPlacementVariant(
+  name: string,
+  config: PlacementFieldBag
+): PlacementVariantKind {
+  const hasBoxField =
+    config.x !== undefined ||
+    config.y !== undefined ||
+    config.width !== undefined ||
+    config.height !== undefined ||
+    config.relativeTo !== undefined ||
+    config.aspectRatio !== undefined
+  if (config.over !== undefined) {
+    if (config.fill !== undefined) {
+      throw new Error(
+        `[screenci] Overlay "${name}" cannot set both "over" and "fill".`
+      )
+    }
+    if (hasBoxField) {
+      throw new Error(
+        `[screenci] Overlay "${name}" cannot combine "over" with x/y/width/height/relativeTo. The placement comes from the locator's box.`
+      )
+    }
+    return 'over'
+  }
+  if (config.margin !== undefined) {
+    throw new Error(
+      `[screenci] Overlay "${name}" sets "margin" without "over". "margin" only applies when positioning over a locator.`
+    )
+  }
+  if (config.fill !== undefined) {
+    if (hasBoxField) {
+      throw new Error(
+        `[screenci] Overlay "${name}" cannot combine "fill" with x/y/width/height/relativeTo. "fill" places the overlay over the whole frame.`
+      )
+    }
+    return 'fill'
+  }
+  if (config.width === undefined && config.height === undefined) {
+    throw new Error(
+      `[screenci] Overlay "${name}" must choose a placement: set "fill" ('recording' or 'screen'), "over" (a locator), or an explicit box with "width" or "height" (in CSS px).`
+    )
+  }
+  return 'box'
+}
+
+/**
+ * The flat placement fields as read off a config at runtime, without the
+ * union's `never` constraints (a plain-JS caller can pass anything).
+ */
+type PlacementFieldBag = {
+  fill?: 'recording' | 'screen'
+  over?: Locator
+  margin?: number
+  relativeTo?: 'screen' | 'recording'
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  aspectRatio?: number
+}
+
+/**
  * Resolves an {@link OverlayConfig}'s flat placement fields into the event-shape
  * {@link OverlayPlacement}. Coordinates are CSS pixels in the recording viewport,
- * with the defaults `relativeTo: 'recording'`, `x: 0`, `y: 0`. When neither
- * `width` nor `height` is given (and no other placement field is set), it returns
- * `undefined`: the overlay fills the recording area, which the renderer resolves
- * since the recording size is known there.
+ * with the defaults `relativeTo: 'recording'`, `x: 0`, `y: 0`. For
+ * `fill: 'recording'` it returns `undefined`: the overlay fills the recording
+ * area, which the renderer resolves since the recording size is known there.
+ * Only the `fill` and `box` variants resolve here; an `over` placement is
+ * deferred to recording time (see {@link resolvePlacementSource}).
  */
 function resolveOverlayPlacement(
   name: string,
-  config: OverlayCommon
+  config: PlacementFieldBag,
+  variant: Exclude<PlacementVariantKind, 'over'>
 ): OverlayPlacement | undefined {
-  if (config.fill === 'screen') {
-    return { fullScreen: true }
-  }
-  if (config.fill === 'recording') {
-    // Fill the recording area (resolved by the renderer, which knows its size).
-    return undefined
+  switch (variant) {
+    case 'fill':
+      // 'recording' fills the recording area (resolved by the renderer, which
+      // knows its size); 'screen' fills the whole output frame.
+      return config.fill === 'screen' ? { fullScreen: true } : undefined
+    case 'box':
+      break
+    default:
+      variant satisfies never
+      throw new Error(
+        `[screenci] Overlay "${name}" has an unknown placement variant.`
+      )
   }
   if (config.width !== undefined && config.height !== undefined) {
     throw new Error(
       `[screenci] Overlay "${name}" must set only one of width or height (the other is derived from the aspect ratio).`
     )
-  }
-  const hasSize = config.width !== undefined || config.height !== undefined
-  if (!hasSize) {
-    const positioned =
-      config.x !== undefined ||
-      config.y !== undefined ||
-      config.relativeTo !== undefined ||
-      config.aspectRatio !== undefined
-    if (positioned) {
-      throw new Error(
-        `[screenci] Overlay "${name}" must set "width" or "height" (in CSS px) when positioning it. Omit all placement fields to fill the recording area, or set "fill".`
-      )
-    }
-    // Fill the recording area (resolved by the renderer, which knows its size).
-    return undefined
   }
   const relativeTo = config.relativeTo ?? 'recording'
   const x = config.x ?? 0
@@ -1981,34 +2114,25 @@ function resolvePlacementSource(
   config: OverlayConfig,
   flags: { isRendered: boolean }
 ): PlacementSource {
-  if (config.margin !== undefined && config.over === undefined) {
-    throw new Error(
-      `[screenci] Overlay "${name}" sets "margin" without "over". "margin" only applies when positioning over a locator.`
-    )
+  const variant = classifyPlacementVariant(name, config)
+  switch (variant) {
+    case 'fill':
+    case 'box':
+      return {
+        kind: 'fixed',
+        placement: resolveOverlayPlacement(name, config, variant),
+      }
+    case 'over':
+      break
+    default:
+      variant satisfies never
+      throw new Error(
+        `[screenci] Overlay "${name}" has an unknown placement variant.`
+      )
   }
-  if (config.over === undefined) {
-    return { kind: 'fixed', placement: resolveOverlayPlacement(name, config) }
-  }
-
   if (!flags.isRendered) {
     throw new Error(
       `[screenci] Overlay "${name}" can only use "over" with a rendered page overlay (.html, .tsx, .solid.tsx, .vue, .svelte, element, jsx/solidJsx, or inline html): the overlay is sized to the element's box.`
-    )
-  }
-  if (config.fill !== undefined) {
-    throw new Error(
-      `[screenci] Overlay "${name}" cannot set both "over" and "fill".`
-    )
-  }
-  if (
-    config.x !== undefined ||
-    config.y !== undefined ||
-    config.width !== undefined ||
-    config.height !== undefined ||
-    config.relativeTo !== undefined
-  ) {
-    throw new Error(
-      `[screenci] Overlay "${name}" cannot combine "over" with x/y/width/height/relativeTo. The placement comes from the locator's box.`
     )
   }
   const margin = config.margin ?? 0
@@ -2017,7 +2141,7 @@ function resolvePlacementSource(
       `[screenci] Overlay "${name}" must provide a finite "margin" greater than or equal to 0. Received: ${String(config.margin)}`
     )
   }
-  return { kind: 'over', over: config.over, margin }
+  return { kind: 'over', over: config.over!, margin }
 }
 
 /**
@@ -2040,6 +2164,11 @@ async function resolvePlacement(source: PlacementSource): Promise<{
       x: rect.x,
       y: rect.y,
       width: rect.width ?? rect.pixels.width,
+      // Locator provenance: editors treat the box as pinned to the element and
+      // only let the margin change.
+      overLocked: true,
+      marginPx: source.margin,
+      elementRect: rect.element,
     },
     sizePx: { width: rect.pixels.width, height: rect.pixels.height },
   }

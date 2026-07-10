@@ -561,6 +561,53 @@ async function encodeAnimationFrames(
   }
 }
 
+/**
+ * Derives the alpha-capable preview .webm from an already-encoded dual-stream
+ * clip (stream 0 color, stream 1 alpha matte) by merging the matte back into
+ * an alpha channel. Used for cross-run cache entries written before the
+ * preview encode existed. Best-effort: returns undefined when ffmpeg cannot
+ * do it (e.g. no libvpx-vp9).
+ */
+async function encodePreviewFromDualStreamClip(
+  clip: Buffer
+): Promise<Buffer | undefined> {
+  const tmp = await mkdtemp(join(tmpdir(), 'screenci-anim-preview-'))
+  try {
+    const inPath = join(tmp, 'clip.mp4')
+    const outPath = join(tmp, 'preview.webm')
+    await writeFile(inPath, clip)
+    await runFfmpeg([
+      '-y',
+      '-i',
+      inPath,
+      '-filter_complex',
+      '[0:v:0][0:v:1]alphamerge[out]',
+      '-map',
+      '[out]',
+      '-c:v',
+      'libvpx-vp9',
+      '-pix_fmt',
+      'yuva420p',
+      '-auto-alt-ref',
+      '0',
+      '-crf',
+      '32',
+      '-b:v',
+      '0',
+      '-deadline',
+      'good',
+      '-cpu-used',
+      '5',
+      outPath,
+    ])
+    return await readFile(outPath)
+  } catch {
+    return undefined
+  } finally {
+    await rm(tmp, { recursive: true, force: true })
+  }
+}
+
 async function playwrightAnimatedHtmlRasterizer(
   request: AnimatedHtmlRasterizeRequest
 ): Promise<{
@@ -619,13 +666,22 @@ async function renderAnimatedOverlay(
       width: number
       height: number
     }
+    const buffer = readFileSync(clipPath)
+    // A cache written before the preview encode existed has no .webm: derive
+    // it from the cached dual-stream mp4 (color + alpha matte) so old caches
+    // gain an alpha-capable preview without re-capturing the animation.
+    let previewBuffer: Buffer | undefined
+    if (existsSync(previewClipPath)) {
+      previewBuffer = readFileSync(previewClipPath)
+    } else {
+      previewBuffer = await encodePreviewFromDualStreamClip(buffer)
+      if (previewBuffer !== undefined) {
+        writeFileSync(previewClipPath, previewBuffer)
+      }
+    }
     return {
-      buffer: readFileSync(clipPath),
-      // A cache written before the preview encode existed has no .webm; the
-      // overlay then simply ships without a preview clip until re-rendered.
-      ...(existsSync(previewClipPath) && {
-        previewBuffer: readFileSync(previewClipPath),
-      }),
+      buffer,
+      ...(previewBuffer !== undefined && { previewBuffer }),
       width,
       height,
     }

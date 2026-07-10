@@ -327,6 +327,24 @@ describe('rasterizeAnimatedHtmlOverlay caching', () => {
     expect(calls).toBe(4)
   })
 
+  it('recovers gracefully when a pre-preview cache entry cannot be re-encoded', async () => {
+    await render('<div>cached</div>')
+    // Drop the preview clip, as if the cache was written before the preview
+    // encode existed. The fake mp4 bytes cannot be re-encoded by ffmpeg, so
+    // the derivation fails and the overlay ships without a preview clip.
+    const hash = overlayInputHash({
+      kind: 'animation',
+      deviceScaleFactor: 2,
+      fps: 30,
+      durationMs: 1000,
+      html: '<div>cached</div>',
+    })
+    await rm(join(base, '.overlay-cache', `${hash}.webm`))
+    const second = await render('<div>cached</div>')
+    expect(calls).toBe(1) // still served from the cache, not re-captured
+    expect(second.previewFileHash).toBeUndefined()
+  })
+
   it('keys the on-disk cache by overlayInputHash (single source of truth)', async () => {
     await render('<div>hash-me</div>', { fps: 30, durationMs: 1000 })
     const hash = overlayInputHash({

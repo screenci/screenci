@@ -555,6 +555,17 @@ export type AnimationAssetStartEvent = {
   path: string
   fileHash?: string
   /**
+   * Alpha-capable preview encode of the same clip (VP9 .webm with a real alpha
+   * channel), playable directly in a browser `<video>`. The main `path` clip
+   * carries its transparency as a second alpha-matte stream that browsers do
+   * not composite (they show opaque black instead), so the web editor's live
+   * preview plays this clip. Optional: older recordings and ffmpeg builds
+   * without VP9 support omit it.
+   */
+  previewPath?: string
+  /** SHA-256 of the preview file bytes. Present iff `previewPath` is. */
+  previewFileHash?: string
+  /**
    * Capture length of the animation. Present for both blocking and live
    * (`start()`/`end()`) overlays: a live animated overlay plays out to this
    * length, so the renderer needs it even though a paired assetEnd also bounds

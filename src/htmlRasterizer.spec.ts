@@ -213,6 +213,46 @@ describe('rasterizeAnimatedHtmlOverlay', () => {
     expect(await readFile(result.path)).toEqual(clipBytes)
   })
 
+  it('writes the alpha-capable preview .webm and returns its path and hash', async () => {
+    const previewBytes = Buffer.from('fake-webm-bytes')
+    setAnimatedHtmlRasterizer(async () => ({
+      buffer: clipBytes,
+      previewBuffer: previewBytes,
+      width: 320,
+      height: 80,
+    }))
+    const result = await runWithScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ recordingDir: dir }),
+      () =>
+        rasterizeAnimatedHtmlOverlay({
+          name: 'intro',
+          html: '<div>hi</div>',
+          durationMs: 1500,
+        })
+    )
+
+    expect(result.previewFileHash).toBe(
+      createHash('sha256').update(previewBytes).digest('hex')
+    )
+    expect(result.previewPath?.endsWith('.webm')).toBe(true)
+    expect(existsSync(result.previewPath!)).toBe(true)
+    expect(await readFile(result.previewPath!)).toEqual(previewBytes)
+  })
+
+  it('omits the preview fields when the rasterizer produced no preview clip', async () => {
+    const result = await runWithScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ recordingDir: dir }),
+      () =>
+        rasterizeAnimatedHtmlOverlay({
+          name: 'intro',
+          html: '<div>hi</div>',
+          durationMs: 1500,
+        })
+    )
+    expect(result.previewPath).toBeUndefined()
+    expect(result.previewFileHash).toBeUndefined()
+  })
+
   it('throws when there is no active recording directory', async () => {
     await expect(
       runWithScreenCIRuntimeContext(
@@ -239,7 +279,12 @@ describe('rasterizeAnimatedHtmlOverlay caching', () => {
     calls = 0
     setAnimatedHtmlRasterizer(async () => {
       calls += 1
-      return { buffer: Buffer.from(`mp4-${calls}`), width: 100, height: 50 }
+      return {
+        buffer: Buffer.from(`mp4-${calls}`),
+        previewBuffer: Buffer.from(`webm-${calls}`),
+        width: 100,
+        height: 50,
+      }
     })
     setOverlayCacheEnabled(true)
   })
@@ -267,6 +312,9 @@ describe('rasterizeAnimatedHtmlOverlay caching', () => {
 
     expect(calls).toBe(1)
     expect(second.fileHash).toBe(first.fileHash)
+    // The preview clip is cached alongside the main clip.
+    expect(second.previewFileHash).toBe(first.previewFileHash)
+    expect(second.previewFileHash).toBeDefined()
   })
 
   it('re-renders when the markup, fps, or duration changes', async () => {

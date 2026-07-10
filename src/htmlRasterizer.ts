@@ -304,6 +304,14 @@ export type AnimatedHtmlRasterizeResult = {
   path: string
   /** SHA-256 of the file bytes, used for upload de-duplication. */
   fileHash: string
+  /** Absolute path to the written alpha-capable preview .webm (VP9 with a real
+   *  alpha channel), playable directly in a browser `<video>`. Browsers only
+   *  play the first stream of the renderer's dual-stream .mp4 (opaque black
+   *  where the overlay is transparent), so the web editor's live preview uses
+   *  this clip instead. Absent when the preview encode is unavailable. */
+  previewPath?: string
+  /** SHA-256 of the preview file bytes. Present iff `previewPath` is. */
+  previewFileHash?: string
   /** Intrinsic rendered width in CSS pixels. */
   width: number
   /** Intrinsic rendered height in CSS pixels. */
@@ -334,7 +342,14 @@ export type AnimatedHtmlRasterizeRequest = {
  */
 export type AnimatedHtmlRasterizer = (
   request: AnimatedHtmlRasterizeRequest
-) => Promise<{ buffer: Buffer; width: number; height: number }>
+) => Promise<{
+  buffer: Buffer
+  /** Alpha-capable browser-playable preview encode (VP9 .webm) of the same
+   *  clip, when available. */
+  previewBuffer?: Buffer
+  width: number
+  height: number
+}>
 
 let animatedRasterizer: AnimatedHtmlRasterizer =
   playwrightAnimatedHtmlRasterizer
@@ -468,7 +483,7 @@ function runFfmpeg(args: string[]): Promise<void> {
 async function encodeAnimationFrames(
   frames: Buffer[],
   fps: number
-): Promise<Buffer> {
+): Promise<{ buffer: Buffer; previewBuffer?: Buffer }> {
   const tmp = await mkdtemp(join(tmpdir(), 'screenci-anim-'))
   try {
     await Promise.all(
@@ -502,7 +517,45 @@ async function encodeAnimationFrames(
       '+faststart',
       outPath,
     ])
-    return await readFile(outPath)
+    const buffer = await readFile(outPath)
+    // Second, browser-facing encode: VP9 with a REAL alpha channel, so the web
+    // editor's live preview can play the overlay with transparency (a browser
+    // <video> only plays the first stream of the dual-stream .mp4 above, which
+    // shows opaque black where the overlay is transparent). `-auto-alt-ref 0`
+    // is required for VP9 alpha. Best-effort: an ffmpeg without libvpx-vp9
+    // just skips the preview clip and the editor falls back to the .mp4.
+    const previewPath = join(tmp, 'overlay-preview.webm')
+    let previewBuffer: Buffer | undefined
+    try {
+      await runFfmpeg([
+        '-y',
+        '-framerate',
+        String(fps),
+        '-i',
+        join(tmp, 'frame_%05d.png'),
+        '-vf',
+        'format=rgba,pad=ceil(iw/2)*2:ceil(ih/2)*2:0:0:color=black@0',
+        '-c:v',
+        'libvpx-vp9',
+        '-pix_fmt',
+        'yuva420p',
+        '-auto-alt-ref',
+        '0',
+        '-crf',
+        '32',
+        '-b:v',
+        '0',
+        '-deadline',
+        'good',
+        '-cpu-used',
+        '5',
+        previewPath,
+      ])
+      previewBuffer = await readFile(previewPath)
+    } catch {
+      previewBuffer = undefined
+    }
+    return previewBuffer !== undefined ? { buffer, previewBuffer } : { buffer }
   } finally {
     await rm(tmp, { recursive: true, force: true })
   }
@@ -510,10 +563,23 @@ async function encodeAnimationFrames(
 
 async function playwrightAnimatedHtmlRasterizer(
   request: AnimatedHtmlRasterizeRequest
-): Promise<{ buffer: Buffer; width: number; height: number }> {
+): Promise<{
+  buffer: Buffer
+  previewBuffer?: Buffer
+  width: number
+  height: number
+}> {
   const { frames, width, height } = await captureAnimationFrames(request)
-  const buffer = await encodeAnimationFrames(frames, request.fps)
-  return { buffer, width, height }
+  const { buffer, previewBuffer } = await encodeAnimationFrames(
+    frames,
+    request.fps
+  )
+  return {
+    buffer,
+    ...(previewBuffer !== undefined && { previewBuffer }),
+    width,
+    height,
+  }
 }
 
 /**
@@ -524,7 +590,12 @@ async function playwrightAnimatedHtmlRasterizer(
 async function renderAnimatedOverlay(
   recordingDir: string,
   request: AnimatedHtmlRasterizeRequest
-): Promise<{ buffer: Buffer; width: number; height: number }> {
+): Promise<{
+  buffer: Buffer
+  previewBuffer?: Buffer
+  width: number
+  height: number
+}> {
   if (!cacheEnabled) {
     return animatedRasterizer(request)
   }
@@ -540,6 +611,7 @@ async function renderAnimatedOverlay(
   })
   const cacheDir = join(dirname(recordingDir), OVERLAY_CACHE_DIR_NAME)
   const clipPath = join(cacheDir, `${inputHash}.mp4`)
+  const previewClipPath = join(cacheDir, `${inputHash}.webm`)
   const metaPath = join(cacheDir, `${inputHash}.anim.json`)
 
   if (existsSync(clipPath) && existsSync(metaPath)) {
@@ -547,12 +619,24 @@ async function renderAnimatedOverlay(
       width: number
       height: number
     }
-    return { buffer: readFileSync(clipPath), width, height }
+    return {
+      buffer: readFileSync(clipPath),
+      // A cache written before the preview encode existed has no .webm; the
+      // overlay then simply ships without a preview clip until re-rendered.
+      ...(existsSync(previewClipPath) && {
+        previewBuffer: readFileSync(previewClipPath),
+      }),
+      width,
+      height,
+    }
   }
 
   const result = await animatedRasterizer(request)
   mkdirSync(cacheDir, { recursive: true })
   writeFileSync(clipPath, result.buffer)
+  if (result.previewBuffer !== undefined) {
+    writeFileSync(previewClipPath, result.previewBuffer)
+  }
   writeFileSync(
     metaPath,
     JSON.stringify({ width: result.width, height: result.height })
@@ -588,13 +672,16 @@ export async function rasterizeAnimatedHtmlOverlay(opts: {
   // Validate sampling parameters up front (also exercised by the real capture).
   framesForDuration(opts.durationMs, fps)
 
-  const { buffer, width, height } = await renderAnimatedOverlay(recordingDir, {
-    html: opts.html,
-    durationMs: opts.durationMs,
-    fps,
-    deviceScaleFactor,
-    ...(opts.awaitMount === true && { awaitMount: true }),
-  })
+  const { buffer, previewBuffer, width, height } = await renderAnimatedOverlay(
+    recordingDir,
+    {
+      html: opts.html,
+      durationMs: opts.durationMs,
+      fps,
+      deviceScaleFactor,
+      ...(opts.awaitMount === true && { awaitMount: true }),
+    }
+  )
   const fileHash = createHash('sha256').update(buffer).digest('hex')
   const dir = join(recordingDir, 'generated')
   mkdirSync(dir, { recursive: true })
@@ -603,5 +690,24 @@ export async function rasterizeAnimatedHtmlOverlay(opts: {
     `${sanitizeName(opts.name)}-${fileHash.slice(0, 16)}.mp4`
   )
   writeFileSync(path, buffer)
-  return { path, fileHash, width, height, durationMs: opts.durationMs }
+  if (previewBuffer === undefined) {
+    return { path, fileHash, width, height, durationMs: opts.durationMs }
+  }
+  const previewFileHash = createHash('sha256')
+    .update(previewBuffer)
+    .digest('hex')
+  const previewPath = join(
+    dir,
+    `${sanitizeName(opts.name)}-${previewFileHash.slice(0, 16)}.webm`
+  )
+  writeFileSync(previewPath, previewBuffer)
+  return {
+    path,
+    fileHash,
+    previewPath,
+    previewFileHash,
+    width,
+    height,
+    durationMs: opts.durationMs,
+  }
 }

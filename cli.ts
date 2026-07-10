@@ -1542,6 +1542,35 @@ export async function collectUploadAssets(
       // Render dependencies (selected(...)) have no local file: the backend
       // resolves the target render's output and injects it at dispatch time.
       if ('dependency' in event) continue
+      // The alpha-capable preview clip of an animated overlay (see
+      // AnimationAssetStartEvent.previewPath). Its hash is stamped at
+      // rasterize time, so it only needs uploading; the `::preview` name keeps
+      // it out of the main overlay's name-keyed hash remap.
+      if (
+        'previewPath' in event &&
+        typeof event.previewPath === 'string' &&
+        typeof event.previewFileHash === 'string' &&
+        !assets.has(`hash:${event.previewFileHash}`)
+      ) {
+        const previewFile = await readRecordingFile(
+          event.previewPath,
+          configDir,
+          sourceFilePath
+        )
+        assets.set(`hash:${event.previewFileHash}`, {
+          kind: 'overlay',
+          fileHash: event.previewFileHash,
+          path: event.previewPath,
+          name: `${event.name}::preview`,
+          size: previewFile?.buffer.byteLength ?? 0,
+          ...(previewFile !== null
+            ? {
+                fileBuffer: previewFile.buffer,
+                contentType: contentTypeForPath(previewFile.resolvedPath),
+              }
+            : { assumedUploaded: true }),
+        })
+      }
       if (assets.has(`name:${event.name}`)) continue
       const resolvedFile = await readRecordingFile(
         event.path,

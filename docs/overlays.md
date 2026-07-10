@@ -454,6 +454,11 @@ How the animation is driven and how long it runs:
 Capturing many frames is heavier than a single screenshot, so prefer short
 durations for full-screen animations.
 
+Each animated overlay is encoded twice at capture time: a render clip for the
+video pipeline, plus a browser-playable preview clip that keeps the transparent
+background, so the web editor's live preview shows the animation over your app
+instead of a black card. Both are uploaded with the recording automatically.
+
 ## Positioning
 
 Placement fields are flat on the config and each defaults independently.

@@ -549,6 +549,14 @@ async function encodeAnimationFrames(
         'good',
         '-cpu-used',
         '5',
+        // Dense keyframes (1s at 30fps): the web editor seeks INTO these clips
+        // (a jump into the middle of a code overlay); with libvpx's sparse
+        // default interval a mid-clip seek decodes from the very start, which
+        // shows black/stale frames for seconds.
+        '-g',
+        '30',
+        '-row-mt',
+        '1',
         previewPath,
       ])
       previewBuffer = await readFile(previewPath)
@@ -598,6 +606,12 @@ async function encodePreviewFromDualStreamClip(
       'good',
       '-cpu-used',
       '5',
+      // Dense keyframes for fast mid-clip seeks in the web editor (see the
+      // fresh-encode graph above).
+      '-g',
+      '30',
+      '-row-mt',
+      '1',
       outPath,
     ])
     return await readFile(outPath)

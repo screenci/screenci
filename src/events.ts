@@ -209,7 +209,7 @@ export type RecordingCustomVoiceRef = {
 export type CueTranslation = {
   text: string
   voice: VoiceKey | RecordingCustomVoiceRef
-  /** TTS model type: `'expressive'` or `'consistent'`. Defaults to `'consistent'`. Choosing `'expressive'` for a language that also has a consistent voice requires the Business tier; a language whose only built-in voice is the expressive model uses it automatically on every plan. */
+  /** TTS model type: `'expressive'` or `'consistent'`. Defaults to `'consistent'`. A language whose only built-in voice is the expressive model uses it automatically. */
   modelType?: string
   /** Gemini style prompt, or ElevenLabs `eleven_multilingual_v2` style exaggeration. */
   style?: string | number
@@ -370,7 +370,7 @@ export type VideoCueTranslationFile =
 export type VideoCueTranslationTTS = {
   text: string
   voice: VoiceKey | RecordingCustomVoiceRef
-  /** TTS model type: `'expressive'` or `'consistent'`. Defaults to `'consistent'`. Choosing `'expressive'` for a language that also has a consistent voice requires the Business tier; a language whose only built-in voice is the expressive model uses it automatically on every plan. */
+  /** TTS model type: `'expressive'` or `'consistent'`. Defaults to `'consistent'`. A language whose only built-in voice is the expressive model uses it automatically. */
   modelType?: string
   /** Gemini style prompt, or ElevenLabs `eleven_multilingual_v2` style exaggeration. */
   style?: string | number
@@ -1169,7 +1169,7 @@ export type VoiceLanguageMeta = {
    * regeneration. Consistent output is not guaranteed across all voice types.
    */
   seed?: number
-  /** TTS model type: `'expressive'` or `'consistent'`. Defaults to `'consistent'`. Choosing `'expressive'` for a language that also has a consistent voice requires the Business tier; a language whose only built-in voice is the expressive model uses it automatically on every plan. */
+  /** TTS model type: `'expressive'` or `'consistent'`. Defaults to `'consistent'`. A language whose only built-in voice is the expressive model uses it automatically. */
   modelType?: string
   /** Gemini style prompt, or ElevenLabs `eleven_multilingual_v2` style exaggeration. */
   style?: string | number

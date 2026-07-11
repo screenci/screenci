@@ -8,12 +8,12 @@ anonymous trial agrees to the [Terms](https://screenci.com/legal/tos), which
 
 ## What the trial includes
 
-An anonymous trial gets a full preview of ScreenCI, including two Business-tier
-narration features, so you can judge the best of what a paid plan unlocks
-before creating an account:
+An anonymous trial gets a full preview of ScreenCI, including multi-language
+narration, a Business-tier feature, so you can judge the best of what a paid
+plan unlocks before creating an account:
 
-- **Expressive narration** (style prompts and tone control) is allowed
-  outright.
+- **Expressive narration** (style prompts and tone control), which is
+  available on every plan.
 - **Multiple narration languages**: up to 3 languages at once, well above the
   single-language limit that Free and Starter carry after signup (see
   [One language per plan](/docs/guides/languages#one-language-per-plan)), but

@@ -3582,7 +3582,7 @@ describe('CLI', () => {
       ).toBe(false)
     })
 
-    it('formats expressive narration tier failures with a fix suggestion', async () => {
+    it('warns with the video name and server message when an upload is refused', async () => {
       process.argv = [
         'node',
         'cli.js',
@@ -3623,7 +3623,7 @@ describe('CLI', () => {
             text: vi
               .fn()
               .mockResolvedValue(
-                'Expressive narration and style prompts require the Business tier. Upgrade your subscription tier at https://app.screenci.com/billing to continue rendering.'
+                'Your starter tier allows a single narration language across your organization, and this render would use 2. Upgrade your plan to render more languages at https://app.screenci.com/billing.'
               ),
           }
         }
@@ -3647,7 +3647,7 @@ describe('CLI', () => {
       )
 
       expect(loggerWarnSpy).toHaveBeenCalledWith(
-        "Find ScreenCI docs and getting started: Expressive narration and style prompts require the Business tier. Upgrade your subscription tier at https://app.screenci.com/billing to continue rendering.\nIf you want to keep using the current tier, remove `voice.style` or `modelType: 'expressive'` from the localize `voice`."
+        'Find ScreenCI docs and getting started: Your starter tier allows a single narration language across your organization, and this render would use 2. Upgrade your plan to render more languages at https://app.screenci.com/billing.'
       )
     })
 

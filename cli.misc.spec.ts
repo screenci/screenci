@@ -427,16 +427,16 @@ describe('CLI', () => {
       ).toBe(message)
     })
 
-    it('adds a fix suggestion to expressive narration tier failures', async () => {
+    it('prefixes failure messages with the video name', async () => {
       const { formatFailedVideoMessage } = await import('./cli')
 
       expect(
         formatFailedVideoMessage(
           'Find ScreenCI docs and getting started',
-          'Expressive narration and style prompts require the Business tier. Upgrade your subscription tier at https://app.screenci.com/billing to continue rendering.'
+          'Your starter tier allows a single narration language across your organization, and this render would use 2. Upgrade your plan to render more languages at https://app.screenci.com/billing.'
         )
       ).toBe(
-        "Find ScreenCI docs and getting started: Expressive narration and style prompts require the Business tier. Upgrade your subscription tier at https://app.screenci.com/billing to continue rendering.\nIf you want to keep using the current tier, remove `voice.style` or `modelType: 'expressive'` from the localize `voice`."
+        'Find ScreenCI docs and getting started: Your starter tier allows a single narration language across your organization, and this render would use 2. Upgrade your plan to render more languages at https://app.screenci.com/billing.'
       )
     })
 

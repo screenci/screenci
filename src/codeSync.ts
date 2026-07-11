@@ -29,9 +29,11 @@ import type {
   CodifyEditsByVideo,
   EditableOverridesByVideo,
   EditableSnapshot,
+  NarrationEditsByVideo,
   OverlayDeclEditsByVideo,
   RenamesByVideo,
 } from './editableSnapshot.js'
+import { isLanguageKey } from './declare.js'
 import type {
   CodifyEdit,
   GapPointEdit,
@@ -59,6 +61,7 @@ import {
   renameEditId as renameEditIdInSource,
   removeOption,
   setBuilderOptions,
+  setNarrationValue,
   setOptionValue,
   setOverlayDeclProps,
   splitWaitEdit,
@@ -215,6 +218,13 @@ export type CodeSyncInput = {
    * Optional so existing callers (and tests) need not pass it.
    */
   studioSync?: StudioSyncState
+  /**
+   * Narration cue value edits, keyed by video name. Codified into the
+   * `video.narration(...)` declaration argument (added when missing, converted
+   * to the language-major form when a non-default language is edited).
+   * Optional so existing callers (and tests) need not pass it.
+   */
+  narrationEdits?: NarrationEditsByVideo
 }
 
 /** A slug that is safe as a code identity and a wire key. */
@@ -1081,6 +1091,7 @@ export function planCodeSync(
       ...Object.keys(input.renames),
       ...Object.keys(input.overlayDeclEdits ?? {}),
       ...Object.keys(input.studioSync?.videos ?? {}),
+      ...Object.keys(input.narrationEdits ?? {}),
     ]),
   ]
 
@@ -1472,6 +1483,51 @@ export function planCodeSync(
           bump(appliedCounts, videoName)
         } else {
           markUnappliable(`locked ${method} on video '${videoName}'`)
+        }
+      }
+    }
+
+    // ── Narration cue value edits (codify into video.narration) ────────────
+    const narrationEdits = input.narrationEdits?.[videoName] ?? []
+    if (narrationEdits.length > 0) {
+      const file = declaringFile()
+      for (const edit of narrationEdits) {
+        let reason = `locked narration cue '${edit.cueName}' on video '${videoName}'`
+        const ok =
+          file !== null &&
+          tryApply(file, (ctx) => {
+            const result = setNarrationValue(
+              ctx,
+              videoName,
+              {
+                cueName: edit.cueName,
+                lang: edit.lang,
+                ...(edit.isDefault !== undefined && {
+                  isDefault: edit.isDefault,
+                }),
+                value: edit.value,
+              },
+              isLanguageKey
+            )
+            if (result.kind === 'edits') return result.edits
+            if (result.kind === 'appManaged') {
+              reason =
+                `narration cue '${edit.cueName}' on video '${videoName}' ` +
+                `is app-managed (names-only declaration)`
+            }
+            return null
+          })
+        if (ok) {
+          applied.push({
+            videoName,
+            file: file!,
+            description:
+              `set narration cue '${edit.cueName}' (${edit.lang}) ` +
+              `on video '${videoName}'`,
+          })
+          bump(appliedCounts, videoName)
+        } else {
+          markUnappliable(reason)
         }
       }
     }

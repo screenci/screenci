@@ -9,6 +9,12 @@
  * requests while Playwright runs. A new trigger arriving while a record is
  * active either kills and replaces it (when the run is younger than the kill
  * window) or queues behind it (queue depth 1, latest wins).
+ *
+ * The record slot also serves machine-local requests raised by the
+ * source-file watcher (devWatch.ts): those share the kill-window and queue
+ * semantics, two queued local requests merge their video names, and nothing
+ * is reported to the backend trigger channel (the editor sees the run through
+ * the sync state).
  */
 
 export const DEV_TOKEN_HEADER = 'X-ScreenCI-Dev-Token'
@@ -69,6 +75,12 @@ export type DevListenLogger = {
   error: (message: string) => void
 }
 
+/**
+ * A record request raised on this machine (the source-file watcher), not by
+ * the backend. Carries the video names to re-record as previews.
+ */
+export type LocalRecordRequest = { videoNames: string[] }
+
 export type DevListenDeps = {
   fetchFn: typeof fetch
   sleep: (ms: number) => Promise<void>
@@ -81,6 +93,15 @@ export type DevListenDeps = {
   runRecord: (trigger: DevTrigger, signal?: AbortSignal) => Promise<void>
   /** Applies one codegen request to the test source; throws on failure. */
   applyCodegen?: (request: DevCodegenRequest) => Promise<void>
+  /**
+   * Drains one pending machine-local record request (from the source-file
+   * watcher). Checked every poll iteration; local requests share the record
+   * slot and kill-window semantics with backend triggers, but report nothing
+   * to the trigger channel (editor visibility comes from the sync state).
+   */
+  takeLocalRequest?: () => LocalRecordRequest | null
+  /** Runs a machine-local preview record for the given video names. */
+  runLocalRecord?: (videoNames: string[], signal?: AbortSignal) => Promise<void>
   /** Registers a heartbeat timer during a run; returns a cancel function. */
   setIntervalFn?: (fn: () => void, ms: number) => () => void
   /** Time source, injectable for tests. */
@@ -232,14 +253,25 @@ export async function deregisterDevListener(
   await postDev(config, deps, '/cli/dev/deregister', { listenerId })
 }
 
+/** The work occupying the single record slot. */
+type RecordJob =
+  | { kind: 'trigger'; trigger: DevTrigger }
+  | { kind: 'local'; videoNames: string[] }
+
 /** One background record run. */
 type ActiveRecord = {
-  trigger: DevTrigger
+  job: RecordJob
   startedAt: number
   abort: AbortController
   /** Set before aborting so the completion reports "superseded", not "done". */
   superseded: boolean
   done: Promise<void>
+}
+
+function jobLabel(job: RecordJob): string {
+  return job.kind === 'trigger'
+    ? `"${job.trigger.videoName}"`
+    : job.videoNames.map((name) => `"${name}"`).join(', ')
 }
 
 async function handleCodegenRequest(
@@ -312,13 +344,115 @@ export async function runDevListenLoop(
   const now = deps.now ?? Date.now
 
   let active: ActiveRecord | null = null
-  let queued: DevTrigger | null = null
+  let queued: RecordJob | null = null
   let lastActivityAt = -Infinity
 
-  const startRecord = (trigger: DevTrigger): void => {
+  const runTriggerJob = async (
+    slot: ActiveRecord,
+    trigger: DevTrigger,
+    abort: AbortController
+  ): Promise<void> => {
+    deps.logger.info(
+      `Record requested by ${trigger.requestedByName}: "${trigger.videoName}" (${trigger.language})`
+    )
+    let cancelHeartbeat = () => {}
+    try {
+      await reportDevTrigger(
+        config,
+        deps,
+        listenerId,
+        trigger.triggerId,
+        'running'
+      )
+      // Re-report `running` periodically so a long record keeps the
+      // listener's heartbeat fresh; best-effort, a missed beat only delays
+      // the status UI.
+      cancelHeartbeat = setIntervalFn(() => {
+        void reportDevTrigger(
+          config,
+          deps,
+          listenerId,
+          trigger.triggerId,
+          'running'
+        ).catch(() => {})
+      }, config.runHeartbeatMs ?? DEV_RUN_HEARTBEAT_MS)
+
+      await deps.runRecord(trigger, abort.signal)
+      cancelHeartbeat()
+      if (slot.superseded) {
+        await reportDevTrigger(
+          config,
+          deps,
+          listenerId,
+          trigger.triggerId,
+          'failed',
+          SUPERSEDED_RECORD_MESSAGE
+        )
+      } else {
+        await reportDevTrigger(
+          config,
+          deps,
+          listenerId,
+          trigger.triggerId,
+          'done'
+        )
+        deps.logger.info(
+          `Finished recording "${trigger.videoName}" (${trigger.language}).`
+        )
+      }
+    } catch (error) {
+      cancelHeartbeat()
+      const message = slot.superseded
+        ? SUPERSEDED_RECORD_MESSAGE
+        : error instanceof Error
+          ? error.message
+          : String(error)
+      if (!slot.superseded) {
+        deps.logger.error(
+          `Record for "${trigger.videoName}" (${trigger.language}) failed: ${message}`
+        )
+      }
+      await reportDevTrigger(
+        config,
+        deps,
+        listenerId,
+        trigger.triggerId,
+        'failed',
+        message
+      ).catch(() => {})
+    }
+  }
+
+  const runLocalJob = async (
+    slot: ActiveRecord,
+    videoNames: string[],
+    abort: AbortController
+  ): Promise<void> => {
+    // Local jobs report nothing to the trigger channel: the editor sees them
+    // through the sync state the runner reports.
+    deps.logger.info(`Source change: re-recording ${jobLabel(slot.job)}.`)
+    try {
+      if (deps.runLocalRecord === undefined) {
+        throw new Error('This listener does not support local records')
+      }
+      await deps.runLocalRecord(videoNames, abort.signal)
+      if (!slot.superseded) {
+        deps.logger.info(`Finished re-recording ${jobLabel(slot.job)}.`)
+      }
+    } catch (error) {
+      if (!slot.superseded) {
+        const message = error instanceof Error ? error.message : String(error)
+        deps.logger.error(
+          `Local record for ${jobLabel(slot.job)} failed: ${message}`
+        )
+      }
+    }
+  }
+
+  const startRecord = (job: RecordJob): void => {
     const abort = new AbortController()
     const slot: ActiveRecord = {
-      trigger,
+      job,
       startedAt: now(),
       abort,
       superseded: false,
@@ -326,116 +460,72 @@ export async function runDevListenLoop(
     }
     active = slot
     slot.done = (async () => {
-      deps.logger.info(
-        `Record requested by ${trigger.requestedByName}: "${trigger.videoName}" (${trigger.language})`
-      )
-      let cancelHeartbeat = () => {}
-      try {
-        await reportDevTrigger(
-          config,
-          deps,
-          listenerId,
-          trigger.triggerId,
-          'running'
-        )
-        // Re-report `running` periodically so a long record keeps the
-        // listener's heartbeat fresh; best-effort, a missed beat only delays
-        // the status UI.
-        cancelHeartbeat = setIntervalFn(() => {
-          void reportDevTrigger(
-            config,
-            deps,
-            listenerId,
-            trigger.triggerId,
-            'running'
-          ).catch(() => {})
-        }, config.runHeartbeatMs ?? DEV_RUN_HEARTBEAT_MS)
-
-        await deps.runRecord(trigger, abort.signal)
-        cancelHeartbeat()
-        if (slot.superseded) {
-          await reportDevTrigger(
-            config,
-            deps,
-            listenerId,
-            trigger.triggerId,
-            'failed',
-            SUPERSEDED_RECORD_MESSAGE
-          )
-        } else {
-          await reportDevTrigger(
-            config,
-            deps,
-            listenerId,
-            trigger.triggerId,
-            'done'
-          )
-          deps.logger.info(
-            `Finished recording "${trigger.videoName}" (${trigger.language}).`
-          )
+      switch (job.kind) {
+        case 'trigger':
+          await runTriggerJob(slot, job.trigger, abort)
+          break
+        case 'local':
+          await runLocalJob(slot, job.videoNames, abort)
+          break
+        default: {
+          const exhaustive: never = job
+          throw new Error(`Unknown record job ${String(exhaustive)}`)
         }
-      } catch (error) {
-        cancelHeartbeat()
-        const message = slot.superseded
-          ? SUPERSEDED_RECORD_MESSAGE
-          : error instanceof Error
-            ? error.message
-            : String(error)
-        if (!slot.superseded) {
-          deps.logger.error(
-            `Record for "${trigger.videoName}" (${trigger.language}) failed: ${message}`
-          )
-        }
-        await reportDevTrigger(
-          config,
-          deps,
-          listenerId,
-          trigger.triggerId,
-          'failed',
-          message
-        ).catch(() => {})
-      } finally {
-        if (active === slot) active = null
-        const next = queued
-        queued = null
-        if (next !== null && !controller.stopped) startRecord(next)
       }
+      if (active === slot) active = null
+      const next = queued
+      queued = null
+      if (next !== null && !controller.stopped) startRecord(next)
     })()
   }
 
-  const acceptTrigger = async (trigger: DevTrigger): Promise<void> => {
+  const acceptJob = async (job: RecordJob): Promise<void> => {
     if (active === null) {
-      startRecord(trigger)
+      startRecord(job)
       return
     }
-    // Latest wins: a previously queued trigger is dropped for the new one.
     if (queued !== null) {
-      await reportDevTrigger(
-        config,
-        deps,
-        listenerId,
-        queued.triggerId,
-        'failed',
-        SUPERSEDED_RECORD_MESSAGE
-      ).catch(() => {})
+      if (queued.kind === 'local' && job.kind === 'local') {
+        // Two pending local requests merge: re-record the union of names.
+        job = {
+          kind: 'local',
+          videoNames: [...new Set([...queued.videoNames, ...job.videoNames])],
+        }
+      } else if (queued.kind === 'trigger') {
+        // Latest wins: a previously queued trigger is dropped for the new job.
+        await reportDevTrigger(
+          config,
+          deps,
+          listenerId,
+          queued.trigger.triggerId,
+          'failed',
+          SUPERSEDED_RECORD_MESSAGE
+        ).catch(() => {})
+      }
     }
-    queued = trigger
+    queued = job
     if (now() - active.startedAt < killWindowMs) {
-      // Young run: kill it, the slot's completion starts the queued trigger.
+      // Young run: kill it, the slot's completion starts the queued job.
       deps.logger.info(
-        `Killing the record of "${active.trigger.videoName}" for a newer request.`
+        `Killing the record of ${jobLabel(active.job)} for a newer request.`
       )
       active.superseded = true
       active.abort.abort()
     } else {
-      deps.logger.info(
-        `Queued "${trigger.videoName}" after the record in progress.`
-      )
+      deps.logger.info(`Queued ${jobLabel(job)} after the record in progress.`)
     }
   }
 
   while (!controller.stopped) {
     let delayMs = pollIntervalMs
+    // Machine-local record requests (source-file watcher) are drained before
+    // the poll so a backend hiccup cannot stall them. They share the record
+    // slot with backend triggers and count as activity for fast polling.
+    const local = deps.takeLocalRequest?.() ?? null
+    if (local !== null && local.videoNames.length > 0) {
+      lastActivityAt = now()
+      await acceptJob({ kind: 'local', videoNames: local.videoNames })
+    }
     try {
       const result = await pollDevListener(config, deps, listenerId)
       if (result.codegenRequests.length > 0 || result.trigger !== null) {
@@ -449,7 +539,7 @@ export async function runDevListenLoop(
         await handleCodegenRequest(config, deps, listenerId, request)
       }
       if (result.trigger !== null && !controller.stopped) {
-        await acceptTrigger(result.trigger)
+        await acceptJob({ kind: 'trigger', trigger: result.trigger })
       }
     } catch (error) {
       if (error instanceof DevAuthError) {

@@ -51,6 +51,72 @@ describe('splitTimelineEditsByVideo', () => {
     expect(codify.broken).toBeUndefined()
     expect(renames.demo).toEqual([{ editId: 'click1', newEditId: 'save' }])
   })
+
+  it('splits options and narration records into their own buckets', () => {
+    const { studioOptions, narrationEdits } = splitTimelineEditsByVideo({
+      demo: {
+        version: 4,
+        edits: [
+          {
+            type: 'optionsEdit',
+            id: 'options|renderOptions',
+            method: 'renderOptions',
+            values: { fps: 60 },
+          },
+          {
+            type: 'optionsEdit',
+            id: 'options|recordOptions',
+            method: 'recordOptions',
+            values: { headless: true },
+          },
+          {
+            type: 'narrationEdit',
+            id: 'narration|intro|default',
+            cueName: 'intro',
+            lang: 'default',
+            value: 'Hi',
+          },
+          {
+            type: 'narrationEdit',
+            id: 'narration|intro|fi',
+            cueName: 'intro',
+            lang: 'fi',
+            value: { cue: 'Moi', volume: 0.5 },
+          },
+        ],
+      },
+    })
+    expect(studioOptions.demo).toEqual({
+      renderOptions: { fps: 60 },
+      recordOptions: { headless: true },
+    })
+    expect(narrationEdits.demo?.map((edit) => edit.id)).toEqual([
+      'narration|intro|default',
+      'narration|intro|fi',
+    ])
+  })
+
+  it('ignores malformed options and narration records', () => {
+    const { studioOptions, narrationEdits } = splitTimelineEditsByVideo({
+      demo: {
+        version: 4,
+        edits: [
+          { type: 'optionsEdit', id: 'x', method: 'other', values: {} },
+          { type: 'optionsEdit', id: 'y', method: 'renderOptions' },
+          {
+            type: 'narrationEdit',
+            id: 'z',
+            cueName: 'intro',
+            lang: 'default',
+            value: { volume: 0.5 },
+          },
+          { type: 'narrationEdit', id: 'w', cueName: 'intro', value: 'Hi' },
+        ],
+      },
+    })
+    expect(studioOptions).toEqual({})
+    expect(narrationEdits).toEqual({})
+  })
 })
 
 describe('collectEditableFromRecordings', () => {

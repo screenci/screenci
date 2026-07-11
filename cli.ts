@@ -76,10 +76,17 @@ import { OVERLAY_CACHE_DIR_NAME } from './src/htmlRasterizer.js'
 import { collectEditableFromRecordings } from './src/editableSnapshot.js'
 import { applyCodegenRequest } from './src/applyCodegen.js'
 import {
+  grepMatcher,
   runDevStartupSync,
   type DevStartupDeps,
   type KeptRecording,
 } from './src/devStartup.js'
+import {
+  buildWatchTargets,
+  startDevWatcher,
+  type DevWatchDeps,
+  type DevWatcherController,
+} from './src/devWatch.js'
 import { entriesFromRecordingData } from './src/editableSnapshot.js'
 import {
   LAST_DATA_FILE,
@@ -111,6 +118,7 @@ import {
 import {
   type DevListenConfig,
   type DevListenDeps,
+  type LocalRecordRequest,
   DevAuthError,
   SCREENCI_DEV_TOKEN_ENV,
   deregisterDevListener,
@@ -3165,7 +3173,8 @@ async function runTriggeredRecord(
 async function runPreviewRecordPass(
   configPath: string | undefined,
   grepPattern: string | undefined,
-  verbose: boolean
+  verbose: boolean,
+  abortSignal?: AbortSignal
 ): Promise<void> {
   const resolvedConfigPath = resolveScreenCIConfigPathOrExit(configPath)
   const screenciConfig =
@@ -3184,8 +3193,19 @@ async function runPreviewRecordPass(
   try {
     let playwrightFailure: Error | null = null
     try {
-      await run('record', grepArgs, configPath, verbose, false)
+      await run(
+        'record',
+        grepArgs,
+        configPath,
+        verbose,
+        false,
+        undefined,
+        abortSignal
+      )
     } catch (error) {
+      // A killed (superseded) run uploads nothing: the replacing record is
+      // already on its way and would race this upload.
+      if (error instanceof RecordAbortedError) throw error
       if (!(error instanceof Error)) throw error
       playwrightFailure = error
     }
@@ -3221,10 +3241,13 @@ export async function runDevCommand(
     recordKillWindow?: string
     grep?: string
     forceRecord?: boolean
+    /** False disables the source-file watcher (--no-watch). */
+    watch?: boolean
   },
   depsOverride: Partial<DevListenDeps> & {
     machineName?: string
     startupDeps?: Partial<DevStartupDeps>
+    watchDeps?: Partial<DevWatchDeps>
   } = {}
 ): Promise<void> {
   const { screenciConfig, secret, apiUrl } = await requireScreenCISecret(
@@ -3250,17 +3273,38 @@ export async function runDevCommand(
       ? { recordKillWindowMs: killWindowSeconds * 1000 }
       : {}),
   }
+  // Source-file watcher state: created after the startup handshake; the
+  // codegen/stamp write paths re-baseline files through it so the CLI's own
+  // writes never trigger a watch re-record.
+  let watcher: DevWatcherController | null = null
+  let pendingLocal: LocalRecordRequest | null = null
+  const enqueueLocalRecord = (videoNames: string[]): void => {
+    const names = new Set([...(pendingLocal?.videoNames ?? []), ...videoNames])
+    if (names.size === 0) return
+    pendingLocal = { videoNames: [...names] }
+  }
+
   const deps: DevListenDeps = {
     fetchFn: fetch,
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     logger,
     runRecord: async (trigger, signal) => {
-      await runTriggeredRecord(
-        options.config,
-        trigger,
-        options.verbose ?? false,
-        signal
-      )
+      try {
+        await runTriggeredRecord(
+          options.config,
+          trigger,
+          options.verbose ?? false,
+          signal
+        )
+      } finally {
+        // A record may have learned new source files; watch them too.
+        await refreshWatchTargets()
+      }
+    },
+    takeLocalRequest: () => {
+      const request = pendingLocal
+      pendingLocal = null
+      return request
     },
     applyCodegen: async (request) => {
       const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.config)
@@ -3280,7 +3324,10 @@ export async function runDevCommand(
             return null
           }
         },
-        writeFile: (path, content) => writeFileSync(path, content),
+        writeFile: (path, content) => {
+          writeFileSync(path, content)
+          void watcher?.refreshBaseline(path)
+        },
         editableSnapshot: {
           version: 1,
           videos: collectEditableFromRecordings(screenciDir),
@@ -3308,12 +3355,65 @@ export async function runDevCommand(
     `Connected as ${pc.bold(`${registration.userName}@${config.machineName}`)} for project "${screenciConfig.projectName}".`
   )
 
+  const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.config)
+  const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
+  const readKeptRecordings = async (): Promise<KeptRecording[]> => {
+    if (!existsSync(screenciDir)) return []
+    const recordings: KeptRecording[] = []
+    for (const entry of readdirSync(screenciDir)) {
+      const dir = resolve(screenciDir, entry)
+      if (statSync(dir, { throwIfNoEntry: false })?.isDirectory() !== true)
+        continue
+      const data = await readKeptRecordingData(dir)
+      if (data !== null) recordings.push({ entry, data })
+    }
+    return recordings
+  }
+  const managedMatcher = grepMatcher(options.grep)
+  const currentWatchTargets = async () =>
+    buildWatchTargets(
+      await readKeptRecordings(),
+      managedMatcher,
+      resolvedConfigPath
+    )
+  const refreshWatchTargets = async (): Promise<void> => {
+    if (watcher === null) return
+    try {
+      await watcher.refreshTargets(await currentWatchTargets())
+    } catch {
+      // Best-effort: a failed refresh keeps the previous watch set.
+    }
+  }
+
+  // Machine-local preview record for the watcher's video names: the editor
+  // sees it through the sync state, and freshly learned sources are watched
+  // afterwards.
+  deps.runLocalRecord ??= async (videoNames, signal) => {
+    await reportDevSyncState(
+      config,
+      deps,
+      registration.listenerId,
+      videoNames
+    ).catch(() => {})
+    try {
+      await runPreviewRecordPass(
+        options.config,
+        videoNames.map(escapeRegExp).join('|'),
+        options.verbose ?? false,
+        signal
+      )
+    } finally {
+      await reportDevSyncState(config, deps, registration.listenerId, []).catch(
+        () => {}
+      )
+      await refreshWatchTargets()
+    }
+  }
+
   // Startup handshake: bring every managed video up to date (source hash
   // matches, all editable actions carry editIds) before serving the editor.
   // Fresh recordings skip the record entirely.
   try {
-    const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.config)
-    const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
     await runDevStartupSync(
       {
         ...(options.grep !== undefined && { grep: options.grep }),
@@ -3322,20 +3422,7 @@ export async function runDevCommand(
         }),
       },
       {
-        readKeptRecordings: async () => {
-          if (!existsSync(screenciDir)) return []
-          const recordings: KeptRecording[] = []
-          for (const entry of readdirSync(screenciDir)) {
-            const dir = resolve(screenciDir, entry)
-            if (
-              statSync(dir, { throwIfNoEntry: false })?.isDirectory() !== true
-            )
-              continue
-            const data = await readKeptRecordingData(dir)
-            if (data !== null) recordings.push({ entry, data })
-          }
-          return recordings
-        },
+        readKeptRecordings,
         stampEditIds: async (videos) => {
           const ts = loadTypescript(dirname(screenciDir))
           if (ts === null) {
@@ -3359,7 +3446,10 @@ export async function runDevCommand(
             }
           )
           for (const file of plan.files) {
-            if (file.after !== file.before) writeFileSync(file.path, file.after)
+            if (file.after !== file.before) {
+              writeFileSync(file.path, file.after)
+              void watcher?.refreshBaseline(file.path)
+            }
           }
           if (plan.stamped.length > 0) {
             writeEditIdCounters(screenciDir, plan.counters)
@@ -3393,6 +3483,43 @@ export async function runDevCommand(
     )
   }
 
+  // Watch the managed videos' source files (and the config) so saving a test
+  // source re-records its previews without a manual trigger.
+  if (options.watch !== false) {
+    try {
+      watcher = await startDevWatcher(await currentWatchTargets(), {
+        logger,
+        onSourcesChanged: (videoNames) => {
+          logger.info(
+            `Source change detected: ${videoNames
+              .map((name) => `"${name}"`)
+              .join(', ')}`
+          )
+          enqueueLocalRecord(videoNames)
+        },
+        onConfigChanged: () => {
+          logger.info(
+            'screenci.config.ts changed: re-recording every managed video. ' +
+              'Restart screenci dev if the project itself changed.'
+          )
+          void (async () => {
+            const targets = await currentWatchTargets()
+            enqueueLocalRecord(
+              [...targets.files.values()].flatMap((names) => [...names])
+            )
+          })()
+        },
+        ...depsOverride.watchDeps,
+      })
+      logger.info(
+        'Watching test sources for changes (disable with --no-watch).'
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.warn(`Source watching unavailable: ${message}`)
+    }
+  }
+
   logger.info(
     `Waiting for record requests from ${pc.cyan(getDevFrontendUrl())}. Press Ctrl-C to stop.`
   )
@@ -3401,6 +3528,7 @@ export async function runDevCommand(
   const shutdown = () => {
     if (controller.stopped) return
     controller.stopped = true
+    watcher?.stop()
     logger.info('Disconnecting...')
     void deregisterDevListener(config, deps, registration.listenerId)
       .catch(() => {})
@@ -3425,6 +3553,7 @@ export async function runDevCommand(
     throw error
   } finally {
     controller.stopped = true
+    watcher?.stop()
     process.off('SIGINT', shutdown)
     process.off('SIGTERM', shutdown)
   }
@@ -4152,6 +4281,11 @@ export async function main() {
       're-record every managed video at startup even when the kept ' +
         'recordings are up to date'
     )
+    .option(
+      '--no-watch',
+      'do not watch the managed test sources (and screenci.config.ts) for ' +
+        'changes that trigger a preview re-record'
+    )
     .action(
       async (options: {
         config?: string
@@ -4160,6 +4294,7 @@ export async function main() {
         recordKillWindow?: string
         grep?: string
         forceRecord?: boolean
+        watch?: boolean
       }) => {
         await runDevCommand(options)
       }

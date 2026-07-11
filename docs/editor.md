@@ -556,6 +556,38 @@ remaps, and recording changes,
 each placed by call position (after a known action, or bracketing a run of
 actions) with any gap expressed as a `waitForTimeout` sleep.
 
+## Option panels and narration text reach code too
+
+The editor's option panels are codegen'd the same way as timeline edits while
+`screenci dev` is connected (the studio config keeps working as the instant
+preview and the offline fallback):
+
+- **Render options** (recording size and roundness, background, aspect ratio,
+  quality, mouse size/style/motion blur, keyboard shortcut display, narration
+  box styling, shadow, crop) are merged into the video's
+  `.renderOptions({...})` builder call. The call is appended to the chain when
+  the video has none yet; existing keys are updated in place and unrelated
+  keys are left untouched.
+- **Record options** are merged into `.recordOptions({...})` the same way and
+  trigger a preview re-record, since they change recorded behavior.
+- **Narration text** is merged into the `video.narration(...)` declaration:
+  a new cue key is added, an existing value replaced, and per-cue volume is
+  written as the `{ cue, volume }` object form (a plain text edit never
+  upgrades a string cue to an object, and editing the text of an object cue
+  keeps its other keys). Editing a non-default language converts a flat
+  (content-major) declaration to the language-major form: the existing values
+  move under `default` verbatim and the edited language gets its own
+  sub-object.
+
+Not codegen'd (app-managed by design): narration voices and uploaded narration
+media, cloned-voice samples, on-screen text values, and audio tracks. A
+names-only narration declaration (`.narration(['intro'])`) keeps its content in
+the web app; editing such a cue never touches code.
+
+Loop repeats stay locked: an action that runs more than once from a single
+call site (keys like `click1#1`) cannot be edited per execution, in the editor
+or through codegen. Edit the first iteration or the code itself.
+
 ## Undoing web edits
 
 Edits live in your sources, so undoing one is a code change: revert the file

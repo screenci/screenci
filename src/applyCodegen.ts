@@ -2,8 +2,9 @@
  * Applies a single editor codegen request to the test sources.
  *
  * The dev channel delivers one unified timeline-edit record (paramEdit,
- * mediaEdit, zoomEdit, gapSpanEdit, gapPointEdit, overlayDeclEdit or
- * renameEdit) addressed by editId. The record is written straight into the
+ * mediaEdit, zoomEdit, gapSpanEdit, gapPointEdit, overlayDeclEdit,
+ * optionsEdit, narrationEdit or renameEdit). The record is written straight
+ * into the
  * `.screenci.ts` source through the same codemod pipeline `screenci sync`
  * uses; the call site is located via the editable entries of the video's kept
  * recording data. Throws when the edit cannot be applied, so the listener
@@ -43,9 +44,10 @@ export function applyCodegenRequest(
   }
 
   const split = splitTimelineEditsByVideo({
-    [request.videoName]: { version: 3, edits: [record] },
+    [request.videoName]: { version: 4, edits: [record] },
   })
 
+  const studioVideo = split.studioOptions[request.videoName]
   const plan = planCodeSync(
     {
       // The codegen path carries no web action-param state to diff; the
@@ -58,6 +60,22 @@ export function applyCodegenRequest(
       removedCodifyEdits: split.removedCodify,
       renames: split.renames,
       overlayDeclEdits: split.overlayDecls,
+      ...(studioVideo !== undefined && {
+        studioSync: {
+          videos: {
+            [request.videoName]: {
+              ...studioVideo,
+              content: {
+                narration: false,
+                text: false,
+                audio: false,
+                assets: false,
+              },
+            },
+          },
+        },
+      }),
+      narrationEdits: split.narrationEdits,
     },
     { ts: deps.ts, readFile: deps.readFile }
   )

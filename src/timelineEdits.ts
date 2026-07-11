@@ -25,9 +25,16 @@
  *   in gaps (after `fromEditId` and after `untilEditId`).
  * - `gapPointEdit`: an instant `moveNarration`/`resizeRecording`/`setBackground`
  *   point in the gap after an action.
+ * - `optionsEdit`: a full snapshot of the editor's render or record option
+ *   values, merged into the video's `.renderOptions({...})` /
+ *   `.recordOptions({...})` builder call (added when missing).
+ * - `narrationEdit`: a narration cue value change, merged into the
+ *   `video.narration({...})` declaration (added when missing; the declaration
+ *   is converted to the language-major form when a non-default language is
+ *   edited).
  */
 
-export const TIMELINE_EDITS_VERSION = 3
+export const TIMELINE_EDITS_VERSION = 4
 
 // ─── Edit records ────────────────────────────────────────────────────────────
 
@@ -167,10 +174,62 @@ export type OverlayDeclEdit = {
   disabled?: boolean
 }
 
+export const OPTIONS_EDIT_METHODS = ['renderOptions', 'recordOptions'] as const
+export type OptionsEditMethod = (typeof OPTIONS_EDIT_METHODS)[number]
+
+/**
+ * A full snapshot of the editor's render or record option values for a video.
+ * Merged (deep, idempotent) into the existing `.<method>({...})` object
+ * literal of the video builder chain, or appended as a new `.<method>({...})`
+ * call when the section is missing. The id is `options|<method>` so repeated
+ * sends coalesce last-write-wins per method.
+ */
+export type OptionsEdit = {
+  type: 'optionsEdit'
+  id: string
+  method: OptionsEditMethod
+  values: Record<string, unknown>
+}
+
+/**
+ * The value of one narration cue: a plain string, or an object carrying the
+ * cue text plus per-cue metadata (voice override, volume).
+ */
+export type NarrationCueValue = string | { cue: string; [key: string]: unknown }
+
+/**
+ * A narration cue value change made in the web editor, applied to the
+ * `video.narration(...)` declaration argument. `lang` is a language code or
+ * `'default'` for the shared value. When the declaration is content-major and
+ * a non-default language is edited, the argument is rewritten to the
+ * language-major form (existing values move under `default`). The id is
+ * `narration|<cueName>|<lang>` so repeated sends coalesce per cue and
+ * language.
+ */
+export type NarrationEdit = {
+  type: 'narrationEdit'
+  id: string
+  cueName: string
+  lang: string
+  /**
+   * True when `lang` is the video's default language: the edit targets the
+   * shared value (content-major object or `default` sub-object) unless the
+   * declaration carries an explicit `[lang]` sub-object.
+   */
+  isDefault?: boolean
+  value: NarrationCueValue
+}
+
 /** Codify-only records: placed into code by `screenci sync`, never at runtime. */
 export type CodifyEdit = MediaEdit | ZoomEdit | GapSpanEdit | GapPointEdit
 
-export type EditRecord = ParamEdit | RenameEdit | CodifyEdit | OverlayDeclEdit
+export type EditRecord =
+  | ParamEdit
+  | RenameEdit
+  | CodifyEdit
+  | OverlayDeclEdit
+  | OptionsEdit
+  | NarrationEdit
 
 export type TimelineEditsDoc = {
   version: number
@@ -192,4 +251,14 @@ export function overlayIdFor(name: string, ordinal: number): string {
 /** Stable id of the declaration-placement edit for an overlay name. */
 export function overlayDeclIdFor(name: string): string {
   return `overlaydecl-${name}`
+}
+
+/** Stable id of the options snapshot edit for a builder method. */
+export function optionsEditIdFor(method: OptionsEditMethod): string {
+  return `options|${method}`
+}
+
+/** Stable id of the narration value edit for a cue name and language. */
+export function narrationEditIdFor(cueName: string, lang: string): string {
+  return `narration|${cueName}|${lang}`
 }

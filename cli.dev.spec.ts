@@ -507,6 +507,169 @@ describe('runDevListenLoop', () => {
       runDevListenLoop(config, deps, 'lst_1', controller)
     ).rejects.toBeInstanceOf(DevAuthError)
   })
+
+  it('runs a local record request without touching the trigger channel', async () => {
+    const controller = { stopped: false }
+    const runLocalRecord = vi.fn(async () => {})
+    let request: { videoNames: string[] } | null = {
+      videoNames: ['Intro video'],
+    }
+    const takeLocalRequest = vi.fn(() => {
+      const taken = request
+      request = null
+      return taken
+    })
+    const deps = makeDeps({ runLocalRecord, takeLocalRequest })
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/cli/dev/poll')) {
+        if (runLocalRecord.mock.calls.length > 0) controller.stopped = true
+        return jsonResponse({})
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    await runDevListenLoop(config, deps, 'lst_1', controller)
+
+    expect(runLocalRecord).toHaveBeenCalledWith(
+      ['Intro video'],
+      expect.any(AbortSignal)
+    )
+    const triggerReports = deps.fetchMock.mock.calls.filter(([url]) =>
+      (url as string).endsWith('/cli/dev/report')
+    )
+    expect(triggerReports).toHaveLength(0)
+  })
+
+  it('merges queued local requests into one union re-record', async () => {
+    const controller = { stopped: false }
+    let clock = 0
+    const recorded: string[][] = []
+    let releaseFirst = () => {}
+    const runLocalRecord = vi.fn((videoNames: string[]) => {
+      recorded.push(videoNames)
+      if (recorded.length === 1) {
+        return new Promise<void>((resolve) => {
+          releaseFirst = resolve
+        })
+      }
+      return Promise.resolve()
+    })
+    const requests: Array<{ videoNames: string[] }> = [
+      { videoNames: ['A'] },
+      { videoNames: ['B'] },
+      { videoNames: ['C', 'B'] },
+    ]
+    const takeLocalRequest = vi.fn(() => requests.shift() ?? null)
+    const deps = makeDeps({
+      runLocalRecord,
+      takeLocalRequest,
+      now: () => clock,
+    })
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/cli/dev/poll')) {
+        // Keep the first record outside the kill window so newcomers queue.
+        clock = 60_000
+        if (recorded.length >= 1 && requests.length === 0) {
+          releaseFirst()
+        }
+        if (recorded.length >= 2) controller.stopped = true
+        return jsonResponse({})
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    await runDevListenLoop(config, deps, 'lst_1', controller)
+
+    expect(recorded[0]).toEqual(['A'])
+    expect(recorded[1]).toEqual(['B', 'C'])
+  })
+
+  it('kills a young trigger record when a local request arrives', async () => {
+    const controller = { stopped: false }
+    let clock = 0
+    const runRecord = vi.fn(
+      (_t: DevTrigger, signal?: AbortSignal) =>
+        new Promise<void>((_resolve, reject) => {
+          // Like the real runner, honor a signal aborted before the spawn.
+          if (signal?.aborted) {
+            reject(new Error('Record aborted'))
+            return
+          }
+          signal?.addEventListener('abort', () =>
+            reject(new Error('Record aborted'))
+          )
+        })
+    )
+    const runLocalRecord = vi.fn(async () => {})
+    const requests: Array<{ videoNames: string[] } | null> = [
+      null,
+      { videoNames: ['Intro video'] },
+    ]
+    const takeLocalRequest = vi.fn(() =>
+      requests.length > 0 ? (requests.shift() ?? null) : null
+    )
+    const deps = makeDeps({
+      runRecord,
+      runLocalRecord,
+      takeLocalRequest,
+      now: () => clock,
+    })
+    let polls = 0
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/cli/dev/poll')) {
+        polls += 1
+        if (polls === 1) return jsonResponse({ trigger })
+        clock = 5_000 // Inside the 10s kill window.
+        if (runLocalRecord.mock.calls.length > 0) controller.stopped = true
+        return jsonResponse({})
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    await runDevListenLoop(config, deps, 'lst_1', controller)
+
+    expect(runLocalRecord).toHaveBeenCalledWith(
+      ['Intro video'],
+      expect.any(AbortSignal)
+    )
+    // The superseded trigger reported failed.
+    const reports = deps.fetchMock.mock.calls
+      .filter(([url]) => (url as string).endsWith('/cli/dev/report'))
+      .map(([, init]) => JSON.parse((init as RequestInit).body as string))
+    expect(reports.some((r) => r.state === 'failed')).toBe(true)
+  })
+
+  it('aborts an active local record on shutdown', async () => {
+    const controller = { stopped: false }
+    let aborted = false
+    const runLocalRecord = vi.fn(
+      (_names: string[], signal?: AbortSignal) =>
+        new Promise<void>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            aborted = true
+            reject(new Error('Record aborted'))
+          })
+        })
+    )
+    let request: { videoNames: string[] } | null = { videoNames: ['A'] }
+    const takeLocalRequest = vi.fn(() => {
+      const taken = request
+      request = null
+      return taken
+    })
+    const deps = makeDeps({ runLocalRecord, takeLocalRequest })
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/cli/dev/poll')) {
+        if (runLocalRecord.mock.calls.length > 0) controller.stopped = true
+        return jsonResponse({})
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    await runDevListenLoop(config, deps, 'lst_1', controller)
+
+    expect(aborted).toBe(true)
+  })
 })
 
 describe('reportDevTrigger and deregisterDevListener', () => {

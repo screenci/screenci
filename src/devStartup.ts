@@ -68,7 +68,10 @@ export type DevStartupResult = {
   missingEditIds: string[]
 }
 
-function grepMatcher(grep: string | undefined): (name: string) => boolean {
+/** Matcher for `--grep`-style filters; shared with the source-file watcher. */
+export function grepMatcher(
+  grep: string | undefined
+): (name: string) => boolean {
   if (grep === undefined) return () => true
   try {
     const regex = new RegExp(grep)

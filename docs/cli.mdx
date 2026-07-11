@@ -374,6 +374,7 @@ Options:
   than this is killed and replaced when a newer record request arrives; an
   older one finishes first and the new request runs right after (only the
   latest queued request is kept). Default: 10.
+- `--no-watch`: disable the source-file watcher (see below).
 - `-v, --verbose`: verbose output.
 
 Startup check: `screenci dev` keeps each recording's `data.json` on disk after
@@ -388,6 +389,23 @@ this machine as a codegen request and written directly into the
 `.screenci.ts` source (the code is the single source of truth). Edits that
 change recorded behavior additionally trigger an automatic preview record.
 An edit the codegen cannot apply is reported back and the editor reverts it.
+Besides timeline edits this covers the editor's option panels: render and
+record option changes are merged into the video's `.renderOptions({...})` /
+`.recordOptions({...})` builder calls (the call is added when the section does
+not exist yet), and narration text edits are merged into the
+`video.narration(...)` declaration. Editing a narration text in a non-default
+language converts a flat declaration to the language-major form (the existing
+values move under `default`). A names-only narration declaration
+(`.narration(['intro'])`) stays app-managed: its content lives in the web app
+and is never codegen'd.
+
+Source watching: while connected, `screenci dev` watches the test source files
+backing the managed videos, plus `screenci.config.ts`. Saving a real change to
+a source file automatically re-records that file's videos as a preview (the
+same freshness hash as the startup check filters out no-op saves and the
+CLI's own codegen writes); changing the config re-records every managed video.
+Watching follows the `-g/--grep` filter and can be turned off with
+`--no-watch`.
 
 Setup:
 

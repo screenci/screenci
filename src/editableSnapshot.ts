@@ -9,10 +9,13 @@ import { join } from 'path'
 import { stableEditableKey } from './editableDescriptor.js'
 import type {
   CodifyEdit,
+  NarrationEdit,
+  OptionsEdit,
   OverlayDeclEdit,
   ParamEdit,
   RenameEdit,
 } from './timelineEdits.js'
+import { OPTIONS_EDIT_METHODS } from './timelineEdits.js'
 
 /** Param-edit values per video, in the stable-key entry shape the snapshot
  *  comparisons work with. */
@@ -35,6 +38,18 @@ export type RenamesByVideo = Record<
 /** Overlay declaration placement edits per video (codified by sync). */
 export type OverlayDeclEditsByVideo = Record<string, OverlayDeclEdit[]>
 
+/** Render/record option snapshots per video (codified into builder calls). */
+export type StudioOptionsByVideo = Record<
+  string,
+  {
+    renderOptions?: Record<string, unknown>
+    recordOptions?: Record<string, unknown>
+  }
+>
+
+/** Narration cue value edits per video (codified into the declaration). */
+export type NarrationEditsByVideo = Record<string, NarrationEdit[]>
+
 /**
  * Splits fetched unified timeline-edits docs (keyed by video name) into the
  * shapes the status report and sync prompt consume. Records that do not look
@@ -51,12 +66,16 @@ export function splitTimelineEditsByVideo(
   removedCodify: CodifyEditsByVideo
   renames: RenamesByVideo
   overlayDecls: OverlayDeclEditsByVideo
+  studioOptions: StudioOptionsByVideo
+  narrationEdits: NarrationEditsByVideo
 } {
   const overrides: EditableOverridesByVideo = {}
   const codify: CodifyEditsByVideo = {}
   const removedCodify: CodifyEditsByVideo = {}
   const renames: RenamesByVideo = {}
   const overlayDecls: OverlayDeclEditsByVideo = {}
+  const studioOptions: StudioOptionsByVideo = {}
+  const narrationEdits: NarrationEditsByVideo = {}
   const CODIFY_TYPES = new Set([
     'mediaEdit',
     'zoomEdit',
@@ -108,10 +127,44 @@ export function splitTimelineEditsByVideo(
           continue
         }
         ;(overlayDecls[videoName] ??= []).push(decl)
+      } else if (record.type === 'optionsEdit') {
+        const options = edit as OptionsEdit
+        if (
+          !OPTIONS_EDIT_METHODS.includes(options.method) ||
+          typeof options.values !== 'object' ||
+          options.values === null
+        ) {
+          continue
+        }
+        ;(studioOptions[videoName] ??= {})[options.method] = options.values
+      } else if (record.type === 'narrationEdit') {
+        const narration = edit as NarrationEdit
+        const value = narration.value as unknown
+        const validValue =
+          typeof value === 'string' ||
+          (typeof value === 'object' &&
+            value !== null &&
+            typeof (value as { cue?: unknown }).cue === 'string')
+        if (
+          typeof narration.cueName !== 'string' ||
+          typeof narration.lang !== 'string' ||
+          !validValue
+        ) {
+          continue
+        }
+        ;(narrationEdits[videoName] ??= []).push(narration)
       }
     }
   }
-  return { overrides, codify, removedCodify, renames, overlayDecls }
+  return {
+    overrides,
+    codify,
+    removedCodify,
+    renames,
+    overlayDecls,
+    studioOptions,
+    narrationEdits,
+  }
 }
 
 /** One editable action as recorded by the previous run. */

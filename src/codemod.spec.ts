@@ -13,6 +13,7 @@ import {
   removeFullLine,
   removeOption,
   setBuilderOptions,
+  setNarrationValue,
   setOptionValue,
   setOverlayDeclProps,
   statementAtLine,
@@ -433,6 +434,333 @@ describe('setBuilderOptions', () => {
     expect(
       setBuilderOptions(ctx, 'Demo', 'renderOptions', { fps: 60 })
     ).toBeNull()
+  })
+})
+
+describe('setNarrationValue', () => {
+  const isLanguageKey = (key: string): boolean =>
+    key === 'default' || ['fr', 'de', 'en'].includes(key)
+
+  function narrate(
+    source: string,
+    edit: { cueName: string; lang: string; isDefault?: boolean; value: unknown }
+  ) {
+    return setNarrationValue(ctxOf(source), 'Demo', edit, isLanguageKey)
+  }
+
+  function narrated(
+    source: string,
+    edit: { cueName: string; lang: string; isDefault?: boolean; value: unknown }
+  ): string {
+    const result = narrate(source, edit)
+    expect(result.kind).toBe('edits')
+    if (result.kind !== 'edits') throw new Error('unreachable')
+    return applyTextEdits(source, result.edits)
+  }
+
+  it('adds a content-major .narration section when missing (default lang)', () => {
+    const source = "video('Demo', async () => {})"
+    expect(
+      narrated(source, { cueName: 'intro', lang: 'default', value: 'Hi' })
+    ).toBe("video.narration({ intro: 'Hi' })('Demo', async () => {})")
+  })
+
+  it('adds a language-major .narration section when missing (specific lang)', () => {
+    const source = "video.renderOptions({ fps: 30 })('Demo', async () => {})"
+    expect(
+      narrated(source, { cueName: 'intro', lang: 'fr', value: 'Salut' })
+    ).toBe(
+      'video.renderOptions({ fps: 30 })' +
+        ".narration({ fr: { intro: 'Salut' } })('Demo', async () => {})"
+    )
+  })
+
+  it('changes an existing content-major value in the default lang', () => {
+    const source =
+      "video.narration({ intro: 'Hi', cta: 'Go' })('Demo', async () => {})"
+    expect(
+      narrated(source, { cueName: 'intro', lang: 'default', value: 'Hello' })
+    ).toBe(
+      "video.narration({ intro: 'Hello', cta: 'Go' })('Demo', async () => {})"
+    )
+  })
+
+  it('adds a new cue key to a content-major object', () => {
+    const source = "video.narration({ intro: 'Hi' })('Demo', async () => {})"
+    expect(
+      narrated(source, { cueName: 'outro', lang: 'default', value: 'Bye' })
+    ).toBe(
+      "video.narration({ intro: 'Hi', outro: 'Bye' })('Demo', async () => {})"
+    )
+  })
+
+  it('converts content-major to language-major on a non-default lang edit', () => {
+    const source =
+      "video.narration({ intro: 'Hi', cta: 'Go' })('Demo', async () => {})"
+    expect(
+      narrated(source, { cueName: 'intro', lang: 'fr', value: 'Salut' })
+    ).toBe(
+      "video.narration({ default: { intro: 'Hi', cta: 'Go' }, " +
+        "fr: { intro: 'Salut' } })('Demo', async () => {})"
+    )
+  })
+
+  it('populates an empty declaration in the language-major form', () => {
+    const source = "video.narration({})('Demo', async () => {})"
+    expect(
+      narrated(source, { cueName: 'intro', lang: 'fr', value: 'Salut' })
+    ).toBe(
+      "video.narration({ fr: { intro: 'Salut' } })('Demo', async () => {})"
+    )
+  })
+
+  it('merges into an existing language of a language-major object', () => {
+    const source =
+      "video.narration({ default: { intro: 'Hi' }, fr: { intro: 'Salut' } })" +
+      "('Demo', async () => {})"
+    expect(
+      narrated(source, { cueName: 'intro', lang: 'fr', value: 'Coucou' })
+    ).toBe(
+      "video.narration({ default: { intro: 'Hi' }, fr: { intro: 'Coucou' } })" +
+        "('Demo', async () => {})"
+    )
+  })
+
+  it('adds a missing language key to a language-major object', () => {
+    const source =
+      "video.narration({ default: { intro: 'Hi' } })('Demo', async () => {})"
+    expect(
+      narrated(source, { cueName: 'intro', lang: 'de', value: 'Hallo' })
+    ).toBe(
+      "video.narration({ default: { intro: 'Hi' }, de: { intro: 'Hallo' } })" +
+        "('Demo', async () => {})"
+    )
+  })
+
+  it('adds a new cue to an existing language sub-object', () => {
+    const source =
+      "video.narration({ fr: { intro: 'Salut' } })('Demo', async () => {})"
+    expect(
+      narrated(source, { cueName: 'cta', lang: 'fr', value: 'Allez' })
+    ).toBe(
+      "video.narration({ fr: { intro: 'Salut', cta: 'Allez' } })" +
+        "('Demo', async () => {})"
+    )
+  })
+
+  it('updates the default sub-object of a language-major declaration', () => {
+    const source =
+      "video.narration({ default: { intro: 'Hi' } })('Demo', async () => {})"
+    expect(
+      narrated(source, { cueName: 'intro', lang: 'default', value: 'Hello' })
+    ).toBe(
+      "video.narration({ default: { intro: 'Hello' } })('Demo', async () => {})"
+    )
+  })
+
+  it('merges an object value into an existing cue object, keeping other keys', () => {
+    const source =
+      "video.narration({ intro: { cue: 'Hi', volume: 0.5 } })" +
+      "('Demo', async () => {})"
+    expect(
+      narrated(source, {
+        cueName: 'intro',
+        lang: 'default',
+        value: { cue: 'Hello' },
+      })
+    ).toBe(
+      "video.narration({ intro: { cue: 'Hello', volume: 0.5 } })" +
+        "('Demo', async () => {})"
+    )
+  })
+
+  it('keeps declared metadata when a plain text edit hits an object cue', () => {
+    const source =
+      "video.narration({ intro: { cue: 'Hi', volume: 0.5 } })" +
+      "('Demo', async () => {})"
+    expect(
+      narrated(source, { cueName: 'intro', lang: 'default', value: 'Hello' })
+    ).toBe(
+      "video.narration({ intro: { cue: 'Hello', volume: 0.5 } })" +
+        "('Demo', async () => {})"
+    )
+  })
+
+  it('writes a cue-only object value as a plain string', () => {
+    const source = "video.narration({ intro: 'Hi' })('Demo', async () => {})"
+    expect(
+      narrated(source, {
+        cueName: 'intro',
+        lang: 'default',
+        value: { cue: 'Hello' },
+      })
+    ).toBe("video.narration({ intro: 'Hello' })('Demo', async () => {})")
+  })
+
+  it('upgrades a plain string cue to an object when metadata arrives', () => {
+    const source = "video.narration({ intro: 'Hi' })('Demo', async () => {})"
+    expect(
+      narrated(source, {
+        cueName: 'intro',
+        lang: 'default',
+        value: { cue: 'Hi', volume: 0.5 },
+      })
+    ).toBe(
+      "video.narration({ intro: { cue: 'Hi', volume: 0.5 } })" +
+        "('Demo', async () => {})"
+    )
+  })
+
+  it('is a no-op when the string value already matches', () => {
+    const source = "video.narration({ intro: 'Hi' })('Demo', async () => {})"
+    const result = narrate(source, {
+      cueName: 'intro',
+      lang: 'default',
+      value: 'Hi',
+    })
+    expect(result).toEqual({ kind: 'edits', edits: [] })
+  })
+
+  it('is a no-op when the object value already matches', () => {
+    const source =
+      "video.narration({ intro: { cue: 'Hi', volume: 0.5 } })" +
+      "('Demo', async () => {})"
+    const result = narrate(source, {
+      cueName: 'intro',
+      lang: 'default',
+      value: { cue: 'Hi', volume: 0.5 },
+    })
+    expect(result).toEqual({ kind: 'edits', edits: [] })
+  })
+
+  it('reports a names-only declaration as app-managed', () => {
+    const source = "video.narration(['intro', 'cta'])('Demo', async () => {})"
+    expect(
+      narrate(source, { cueName: 'intro', lang: 'default', value: 'Hi' })
+    ).toEqual({ kind: 'appManaged' })
+  })
+
+  it('is unsupported when the declaration argument is not a literal', () => {
+    const source = "video.narration(cues)('Demo', async () => {})"
+    expect(
+      narrate(source, { cueName: 'intro', lang: 'default', value: 'Hi' })
+    ).toEqual({ kind: 'unsupported' })
+  })
+
+  it('is unsupported when the declaration contains a spread', () => {
+    const source =
+      "video.narration({ ...base, intro: 'Hi' })('Demo', async () => {})"
+    expect(
+      narrate(source, { cueName: 'intro', lang: 'default', value: 'Hello' })
+    ).toEqual({ kind: 'unsupported' })
+  })
+
+  it('is unsupported when the video declaration is missing or ambiguous', () => {
+    expect(
+      setNarrationValue(
+        ctxOf("video('Other', async () => {})"),
+        'Demo',
+        { cueName: 'intro', lang: 'default', value: 'Hi' },
+        isLanguageKey
+      )
+    ).toEqual({ kind: 'unsupported' })
+    const duplicated = [
+      "video('Demo', async () => {})",
+      "video('Demo', async () => {})",
+    ].join('\n')
+    expect(
+      setNarrationValue(
+        ctxOf(duplicated),
+        'Demo',
+        { cueName: 'intro', lang: 'default', value: 'Hi' },
+        isLanguageKey
+      )
+    ).toEqual({ kind: 'unsupported' })
+  })
+
+  it('treats a default-language edit as the shared content-major value', () => {
+    const source = "video.narration({ intro: 'Hi' })('Demo', async () => {})"
+    expect(
+      narrated(source, {
+        cueName: 'intro',
+        lang: 'en',
+        isDefault: true,
+        value: 'Hello',
+      })
+    ).toBe("video.narration({ intro: 'Hello' })('Demo', async () => {})")
+  })
+
+  it('prefers an explicit language key over default for a default-language edit', () => {
+    const source =
+      "video.narration({ default: { intro: 'Hi' }, en: { intro: 'Hey' } })" +
+      "('Demo', async () => {})"
+    expect(
+      narrated(source, {
+        cueName: 'intro',
+        lang: 'en',
+        isDefault: true,
+        value: 'Hello',
+      })
+    ).toBe(
+      "video.narration({ default: { intro: 'Hi' }, en: { intro: 'Hello' } })" +
+        "('Demo', async () => {})"
+    )
+  })
+
+  it('routes a default-language edit without an explicit key to default', () => {
+    const source =
+      "video.narration({ default: { intro: 'Hi' }, fr: { intro: 'Salut' } })" +
+      "('Demo', async () => {})"
+    expect(
+      narrated(source, {
+        cueName: 'intro',
+        lang: 'en',
+        isDefault: true,
+        value: 'Hello',
+      })
+    ).toBe(
+      "video.narration({ default: { intro: 'Hello' }, fr: { intro: 'Salut' } })" +
+        "('Demo', async () => {})"
+    )
+  })
+
+  it('adds a default sub-object for a default-language edit when missing', () => {
+    const source =
+      "video.narration({ fr: { intro: 'Salut' } })('Demo', async () => {})"
+    expect(
+      narrated(source, {
+        cueName: 'intro',
+        lang: 'en',
+        isDefault: true,
+        value: 'Hello',
+      })
+    ).toBe(
+      "video.narration({ fr: { intro: 'Salut' }, default: { intro: 'Hello' } })" +
+        "('Demo', async () => {})"
+    )
+  })
+
+  it('starts a missing section content-major on a default-language edit', () => {
+    const source = "video('Demo', async () => {})"
+    expect(
+      narrated(source, {
+        cueName: 'intro',
+        lang: 'en',
+        isDefault: true,
+        value: 'Hi',
+      })
+    ).toBe("video.narration({ intro: 'Hi' })('Demo', async () => {})")
+  })
+
+  it('quotes cue names that are not identifiers', () => {
+    const source = "video('Demo', async () => {})"
+    expect(
+      narrated(source, {
+        cueName: 'step one',
+        lang: 'default',
+        value: 'Hi',
+      })
+    ).toBe("video.narration({ 'step one': 'Hi' })('Demo', async () => {})")
   })
 })
 

@@ -1145,3 +1145,102 @@ describe('planCodeSync: studio render/record option codify', () => {
     expect(result.unappliable).toHaveLength(1)
   })
 })
+
+describe('planCodeSync: narration cue value codify', () => {
+  it('adds a .narration section to the video builder call when missing', () => {
+    const result = plan(
+      inputWith({
+        narrationEdits: {
+          Demo: [
+            {
+              type: 'narrationEdit',
+              id: 'narration|intro|default',
+              cueName: 'intro',
+              lang: 'default',
+              value: 'Hi there',
+            },
+          ],
+        },
+      })
+    )
+    const after = afterFor(result, FILE)
+    expect(after).toContain("video.narration({ intro: 'Hi there' })('Demo'")
+    expect(result.applied).toHaveLength(1)
+    expect(result.fullyAppliedVideos).toEqual(['Demo'])
+  })
+
+  it('converts a content-major declaration to language-major on a lang edit', () => {
+    const narratedSource = SOURCE.replace(
+      "video('Demo'",
+      "video.narration({ intro: 'Hi' })('Demo'"
+    )
+    const files = { [FILE]: narratedSource }
+    const result = plan(
+      inputWith({
+        narrationEdits: {
+          Demo: [
+            {
+              type: 'narrationEdit',
+              id: 'narration|intro|fi',
+              cueName: 'intro',
+              lang: 'fi',
+              value: 'Moi',
+            },
+          ],
+        },
+      }),
+      files
+    )
+    const after = afterFor(result, FILE)
+    expect(after).toContain(
+      "video.narration({ default: { intro: 'Hi' }, fi: { intro: 'Moi' } })"
+    )
+    expect(result.applied).toHaveLength(1)
+  })
+
+  it('marks a names-only declaration app-managed', () => {
+    const namesOnlySource = SOURCE.replace(
+      "video('Demo'",
+      "video.narration(['intro'])('Demo'"
+    )
+    const result = plan(
+      inputWith({
+        narrationEdits: {
+          Demo: [
+            {
+              type: 'narrationEdit',
+              id: 'narration|intro|default',
+              cueName: 'intro',
+              lang: 'default',
+              value: 'Hi',
+            },
+          ],
+        },
+      }),
+      { [FILE]: namesOnlySource }
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(1)
+    expect(result.unappliable[0]!.reason).toContain('app-managed')
+  })
+
+  it('marks the video unappliable when its declaration is absent', () => {
+    const result = plan(
+      inputWith({
+        narrationEdits: {
+          Ghost: [
+            {
+              type: 'narrationEdit',
+              id: 'narration|intro|default',
+              cueName: 'intro',
+              lang: 'default',
+              value: 'Hi',
+            },
+          ],
+        },
+      })
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(1)
+  })
+})

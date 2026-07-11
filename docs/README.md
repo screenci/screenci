@@ -20,8 +20,6 @@ reference material to drill into.
 
 - [Animated Interactions](./animated-interactions.md)
 - [Narration](./narration.md)
-- [Text](./text.md)
-- [Audio](./audio.md)
 - [Overlays](./overlays.md)
 - [Languages](./languages.md)
 - [Camera and Zooming](./camera-and-zooming.md)

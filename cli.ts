@@ -7,7 +7,9 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
+  renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'fs'
 import { createHash, randomUUID } from 'crypto'
@@ -52,12 +54,10 @@ import {
   SCREENCI_LANGUAGES_ENV,
   SCREENCI_VALUES_OVERRIDES_ENV,
   SCREENCI_RECORD_OPTIONS_ENV,
-  SCREENCI_ACTION_OVERRIDES_ENV,
   SCREENCI_WEB_LANGUAGES_ENV,
   isOverrideDebugEnabled,
   isUploadExistingEnabled,
 } from './src/runtimeMode.js'
-import { SCREENCI_TIMELINE_EDITS_ENV } from './src/timelineEdits.js'
 import { DEFAULT_RECORD_UPLOAD_POLICY } from './src/defaults.js'
 import type { VoiceKey } from './src/voices.js'
 import type { RecordUploadPolicy, ScreenCIConfig } from './src/types.js'
@@ -73,37 +73,30 @@ import {
   persistScreenCISecret,
 } from './src/linkSession.js'
 import { OVERLAY_CACHE_DIR_NAME } from './src/htmlRasterizer.js'
+import { collectEditableFromRecordings } from './src/editableSnapshot.js'
+import { applyCodegenRequest } from './src/applyCodegen.js'
 import {
-  ACTION_PARAMS_SNAPSHOT_FILE,
-  diffOverridesAgainstSnapshot,
-  readActionParamsSnapshot,
-  updateActionParamsSnapshot,
-} from './src/actionParamsSnapshot.js'
+  grepMatcher,
+  runDevStartupSync,
+  type DevStartupDeps,
+  type KeptRecording,
+} from './src/devStartup.js'
 import {
-  diffEditableOverridesAgainstSnapshot,
-  EDITABLE_SNAPSHOT_FILE,
-  formatEditableStatusReport,
-  readEditableSnapshot,
-  splitTimelineEditsByVideo,
-  updateEditableSnapshot,
-} from './src/editableSnapshot.js'
+  buildWatchTargets,
+  startDevWatcher,
+  type DevWatchDeps,
+  type DevWatcherController,
+} from './src/devWatch.js'
+import { entriesFromRecordingData } from './src/editableSnapshot.js'
 import {
-  defaultActionOverridesClient,
-  type ActionOverridesClient,
-} from './src/actionOverridesClient.js'
-import {
-  compareWebStateToSnapshot,
-  formatStatusReport,
-} from './src/actionSync.js'
-import { diffLines, loadTypescript, type TsModule } from './src/codemod.js'
-import { planCodeSync, type CodeSyncPlan } from './src/codeSync.js'
-import type { StudioSyncState } from './src/studioSync.js'
+  LAST_DATA_FILE,
+  readKeptRecordingData,
+} from './src/recordingFreshness.js'
+import { loadTypescript } from './src/codemod.js'
 import {
   planEditIdStamps,
   readEditIdCounters,
   writeEditIdCounters,
-  type EditIdCounters,
-  type EditIdStampPlan,
 } from './src/editIdStamp.js'
 import { maybeExtractVoiceSampleAudio } from './src/voiceSampleAudio.js'
 import {
@@ -125,10 +118,12 @@ import {
 import {
   type DevListenConfig,
   type DevListenDeps,
+  type LocalRecordRequest,
   DevAuthError,
   SCREENCI_DEV_TOKEN_ENV,
   deregisterDevListener,
   registerDevListener,
+  reportDevSyncState,
   runDevListenLoop,
 } from './src/devListen.js'
 
@@ -644,8 +639,15 @@ function shouldKeepRecordedArtifacts(): boolean {
 function cleanupUploadedRecordingDir(screenciDir: string, entry: string): void {
   if (shouldKeepRecordedArtifacts()) return
 
+  // Keep data.json: it survives the upload so the next dev session can skip
+  // re-recording when the source file is unchanged (recordingFreshness.ts).
+  // Only the media and other artifacts are removed.
   try {
-    rmSync(resolve(screenciDir, entry), { recursive: true, force: true })
+    const dir = resolve(screenciDir, entry)
+    for (const file of readdirSync(dir)) {
+      if (file === 'data.json') continue
+      rmSync(resolve(dir, file), { recursive: true, force: true })
+    }
   } catch (error) {
     logger.warn(
       `Uploaded recording cleanup failed for "${entry}": ${error instanceof Error ? error.message : String(error)}`
@@ -830,6 +832,14 @@ async function uploadRecordingCandidate(
             // without dispatching a render.
             ...(process.env['SCREENCI_PREVIEW_ONLY'] === '1'
               ? { previewOnly: true }
+              : {}),
+            // Preview-first: renders dispatch only on export. Set by
+            // `record --export` (or the deprecated --publish/--render
+            // aliases); env so the flag survives the Playwright child process
+            // boundary. The wire field stays `publish` for backend
+            // compatibility with older CLIs.
+            ...(process.env['SCREENCI_EXPORT'] === '1'
+              ? { publish: true }
               : {}),
             ...(isScreenshot ? { expectedScreenshotCount } : {}),
             expectedAssets: preparedUploadAssets.map((asset) => ({
@@ -1315,13 +1325,32 @@ export function clearRecordingDirectories(dir: string): void {
     // runs. Wiping it would mint a fresh trial every record, so the one-record
     // cap, the claim, and the auto-graduate to a real secret would all break.
     if (entry === ANON_SESSION_FILE) continue
-    // Preserve the action-parameter snapshot: it must survive so the next run
-    // can diff editor overrides against the previous run's explicit values.
-    if (entry === ACTION_PARAMS_SNAPSHOT_FILE) continue
-    // Preserve the editable-actions snapshot for the same reason: the next run
-    // diffs web timing overrides against the previous run's explicit values.
-    if (entry === EDITABLE_SNAPSHOT_FILE) continue
-    rmSync(resolve(dir, entry), { recursive: true, force: true })
+    // Per-recording directories keep their event data across runs: the dev
+    // session freshness check (recordingFreshness.ts) reads it to decide
+    // whether a re-record is needed at all. The kept file is renamed to
+    // last-data.json so the upload phase (which enumerates dirs holding a
+    // data.json) never mistakes a previous run's recording for a fresh one.
+    const entryPath = resolve(dir, entry)
+    if (
+      statSync(entryPath, { throwIfNoEntry: false })?.isDirectory() === true &&
+      (existsSync(resolve(entryPath, 'data.json')) ||
+        existsSync(resolve(entryPath, LAST_DATA_FILE)))
+    ) {
+      for (const file of readdirSync(entryPath)) {
+        if (file === LAST_DATA_FILE) continue
+        if (file === 'data.json') {
+          rmSync(resolve(entryPath, LAST_DATA_FILE), { force: true })
+          renameSync(
+            resolve(entryPath, file),
+            resolve(entryPath, LAST_DATA_FILE)
+          )
+          continue
+        }
+        rmSync(resolve(entryPath, file), { recursive: true, force: true })
+      }
+      continue
+    }
+    rmSync(entryPath, { recursive: true, force: true })
   }
 }
 
@@ -3070,7 +3099,8 @@ function escapeRegExp(value: string): string {
 async function runTriggeredRecord(
   configPath: string | undefined,
   trigger: { videoName: string; language: string; previewOnly?: boolean },
-  verbose: boolean
+  verbose: boolean,
+  abortSignal?: AbortSignal
 ): Promise<void> {
   const resolvedConfigPath = resolveScreenCIConfigPathOrExit(configPath)
   const screenciConfig =
@@ -3096,9 +3126,13 @@ async function runTriggeredRecord(
         configPath,
         verbose,
         false,
-        trigger.language
+        trigger.language,
+        abortSignal
       )
     } catch (error) {
+      // A killed (superseded) run uploads nothing: the replacing record is
+      // already on its way and would race this upload.
+      if (error instanceof RecordAbortedError) throw error
       if (!(error instanceof Error)) throw error
       playwrightFailure = error
     }
@@ -3133,17 +3167,87 @@ async function runTriggeredRecord(
   }
 }
 
+// One preview record pass over the videos matching `grepPattern` (all when
+// undefined): records, then uploads into the preview slots without a render.
+// Used by the dev startup handshake to bring stale recordings up to date.
+async function runPreviewRecordPass(
+  configPath: string | undefined,
+  grepPattern: string | undefined,
+  verbose: boolean,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  const resolvedConfigPath = resolveScreenCIConfigPathOrExit(configPath)
+  const screenciConfig =
+    await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
+  const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
+  const grepArgs = grepPattern !== undefined ? ['--grep', grepPattern] : []
+  const requestedVideoNames = await collectRequestedRecordVideoNames(
+    resolvedConfigPath,
+    grepArgs,
+    undefined
+  )
+  const recordRunLock = await acquireRecordRunLock(
+    screenciDir,
+    screenciConfig.projectName
+  )
+  try {
+    let playwrightFailure: Error | null = null
+    try {
+      await run(
+        'record',
+        grepArgs,
+        configPath,
+        verbose,
+        false,
+        undefined,
+        abortSignal
+      )
+    } catch (error) {
+      // A killed (superseded) run uploads nothing: the replacing record is
+      // already on its way and would race this upload.
+      if (error instanceof RecordAbortedError) throw error
+      if (!(error instanceof Error)) throw error
+      playwrightFailure = error
+    }
+    const previousPreviewOnly = process.env['SCREENCI_PREVIEW_ONLY']
+    process.env['SCREENCI_PREVIEW_ONLY'] = '1'
+    try {
+      await uploadRecordedVideosForConfig(
+        configPath,
+        playwrightFailure,
+        verbose,
+        requestedVideoNames
+      )
+    } finally {
+      if (previousPreviewOnly === undefined) {
+        delete process.env['SCREENCI_PREVIEW_ONLY']
+      } else {
+        process.env['SCREENCI_PREVIEW_ONLY'] = previousPreviewOnly
+      }
+    }
+    if (playwrightFailure !== null) {
+      throw playwrightFailure
+    }
+  } finally {
+    await recordRunLock.release()
+  }
+}
+
 export async function runDevCommand(
   options: {
     config?: string
     verbose?: boolean
     token?: string
-    sync?: boolean
+    recordKillWindow?: string
+    grep?: string
+    forceRecord?: boolean
+    /** False disables the source-file watcher (--no-watch). */
+    watch?: boolean
   },
   depsOverride: Partial<DevListenDeps> & {
     machineName?: string
-    syncDeps?: SyncCommandDeps
-    syncPollMs?: number
+    startupDeps?: Partial<DevStartupDeps>
+    watchDeps?: Partial<DevWatchDeps>
   } = {}
 ): Promise<void> {
   const { screenciConfig, secret, apiUrl } = await requireScreenCISecret(
@@ -3158,29 +3262,77 @@ export async function runDevCommand(
     process.exit(1)
   }
 
+  const killWindowSeconds = Number(options.recordKillWindow)
   const config: DevListenConfig = {
     apiUrl,
     secret,
     devToken,
     projectName: screenciConfig.projectName,
     machineName: depsOverride.machineName ?? hostname(),
+    ...(Number.isFinite(killWindowSeconds) && killWindowSeconds >= 0
+      ? { recordKillWindowMs: killWindowSeconds * 1000 }
+      : {}),
   }
-  let recording = false
+  // Source-file watcher state: created after the startup handshake; the
+  // codegen/stamp write paths re-baseline files through it so the CLI's own
+  // writes never trigger a watch re-record.
+  let watcher: DevWatcherController | null = null
+  let pendingLocal: LocalRecordRequest | null = null
+  const enqueueLocalRecord = (videoNames: string[]): void => {
+    const names = new Set([...(pendingLocal?.videoNames ?? []), ...videoNames])
+    if (names.size === 0) return
+    pendingLocal = { videoNames: [...names] }
+  }
+
   const deps: DevListenDeps = {
     fetchFn: fetch,
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     logger,
-    runRecord: async (trigger) => {
-      recording = true
+    runRecord: async (trigger, signal) => {
       try {
         await runTriggeredRecord(
           options.config,
           trigger,
-          options.verbose ?? false
+          options.verbose ?? false,
+          signal
         )
       } finally {
-        recording = false
+        // A record may have learned new source files; watch them too.
+        await refreshWatchTargets()
       }
+    },
+    takeLocalRequest: () => {
+      const request = pendingLocal
+      pendingLocal = null
+      return request
+    },
+    applyCodegen: async (request) => {
+      const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.config)
+      const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
+      const ts = loadTypescript(dirname(screenciDir))
+      if (ts === null) {
+        throw new Error(
+          'TypeScript is not available; install it to enable editor codegen'
+        )
+      }
+      applyCodegenRequest(request, {
+        ts,
+        readFile: (path) => {
+          try {
+            return readFileSync(path, 'utf8')
+          } catch {
+            return null
+          }
+        },
+        writeFile: (path, content) => {
+          writeFileSync(path, content)
+          void watcher?.refreshBaseline(path)
+        },
+        editableSnapshot: {
+          version: 1,
+          videos: collectEditableFromRecordings(screenciDir),
+        },
+      })
     },
     ...depsOverride,
   }
@@ -3202,6 +3354,172 @@ export async function runDevCommand(
   logger.info(
     `Connected as ${pc.bold(`${registration.userName}@${config.machineName}`)} for project "${screenciConfig.projectName}".`
   )
+
+  const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.config)
+  const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
+  const readKeptRecordings = async (): Promise<KeptRecording[]> => {
+    if (!existsSync(screenciDir)) return []
+    const recordings: KeptRecording[] = []
+    for (const entry of readdirSync(screenciDir)) {
+      const dir = resolve(screenciDir, entry)
+      if (statSync(dir, { throwIfNoEntry: false })?.isDirectory() !== true)
+        continue
+      const data = await readKeptRecordingData(dir)
+      if (data !== null) recordings.push({ entry, data })
+    }
+    return recordings
+  }
+  const managedMatcher = grepMatcher(options.grep)
+  const currentWatchTargets = async () =>
+    buildWatchTargets(
+      await readKeptRecordings(),
+      managedMatcher,
+      resolvedConfigPath
+    )
+  const refreshWatchTargets = async (): Promise<void> => {
+    if (watcher === null) return
+    try {
+      await watcher.refreshTargets(await currentWatchTargets())
+    } catch {
+      // Best-effort: a failed refresh keeps the previous watch set.
+    }
+  }
+
+  // Machine-local preview record for the watcher's video names: the editor
+  // sees it through the sync state, and freshly learned sources are watched
+  // afterwards.
+  deps.runLocalRecord ??= async (videoNames, signal) => {
+    await reportDevSyncState(
+      config,
+      deps,
+      registration.listenerId,
+      videoNames
+    ).catch(() => {})
+    try {
+      await runPreviewRecordPass(
+        options.config,
+        videoNames.map(escapeRegExp).join('|'),
+        options.verbose ?? false,
+        signal
+      )
+    } finally {
+      await reportDevSyncState(config, deps, registration.listenerId, []).catch(
+        () => {}
+      )
+      await refreshWatchTargets()
+    }
+  }
+
+  // Startup handshake: bring every managed video up to date (source hash
+  // matches, all editable actions carry editIds) before serving the editor.
+  // Fresh recordings skip the record entirely.
+  try {
+    await runDevStartupSync(
+      {
+        ...(options.grep !== undefined && { grep: options.grep }),
+        ...(options.forceRecord !== undefined && {
+          forceRecord: options.forceRecord,
+        }),
+      },
+      {
+        readKeptRecordings,
+        stampEditIds: async (videos) => {
+          const ts = loadTypescript(dirname(screenciDir))
+          if (ts === null) {
+            logger.warn(
+              'TypeScript is not available; editIds cannot be stamped.'
+            )
+            return 0
+          }
+          const plan = planEditIdStamps(
+            { version: 1, videos },
+            readEditIdCounters(screenciDir),
+            {
+              ts,
+              readFile: (path) => {
+                try {
+                  return readFileSync(path, 'utf8')
+                } catch {
+                  return null
+                }
+              },
+            }
+          )
+          for (const file of plan.files) {
+            if (file.after !== file.before) {
+              writeFileSync(file.path, file.after)
+              void watcher?.refreshBaseline(file.path)
+            }
+          }
+          if (plan.stamped.length > 0) {
+            writeEditIdCounters(screenciDir, plan.counters)
+          }
+          return plan.stamped.length
+        },
+        recordPreview: async (grepPattern) => {
+          await runPreviewRecordPass(
+            options.config,
+            grepPattern,
+            options.verbose ?? false
+          )
+        },
+        entriesFromData: entriesFromRecordingData,
+        setSyncing: async (videoNames) => {
+          await reportDevSyncState(
+            config,
+            deps,
+            registration.listenerId,
+            videoNames
+          )
+        },
+        logger,
+        ...depsOverride.startupDeps,
+      }
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.warn(
+      `Startup sync failed (${message}); continuing, records can still be triggered from the editor.`
+    )
+  }
+
+  // Watch the managed videos' source files (and the config) so saving a test
+  // source re-records its previews without a manual trigger.
+  if (options.watch !== false) {
+    try {
+      watcher = await startDevWatcher(await currentWatchTargets(), {
+        logger,
+        onSourcesChanged: (videoNames) => {
+          logger.info(
+            `Source change detected: ${videoNames
+              .map((name) => `"${name}"`)
+              .join(', ')}`
+          )
+          enqueueLocalRecord(videoNames)
+        },
+        onConfigChanged: () => {
+          logger.info(
+            'screenci.config.ts changed: re-recording every managed video. ' +
+              'Restart screenci dev if the project itself changed.'
+          )
+          void (async () => {
+            const targets = await currentWatchTargets()
+            enqueueLocalRecord(
+              [...targets.files.values()].flatMap((names) => [...names])
+            )
+          })()
+        },
+        ...depsOverride.watchDeps,
+      })
+      logger.info(
+        'Watching test sources for changes (disable with --no-watch).'
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.warn(`Source watching unavailable: ${message}`)
+    }
+  }
+
   logger.info(
     `Waiting for record requests from ${pc.cyan(getDevFrontendUrl())}. Press Ctrl-C to stop.`
   )
@@ -3210,6 +3528,7 @@ export async function runDevCommand(
   const shutdown = () => {
     if (controller.stopped) return
     controller.stopped = true
+    watcher?.stop()
     logger.info('Disconnecting...')
     void deregisterDevListener(config, deps, registration.listenerId)
       .catch(() => {})
@@ -3217,24 +3536,6 @@ export async function runDevCommand(
   }
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
-
-  // Optional auto-sync: apply web edits to the sources while listening. Runs
-  // alongside the listen loop and shares its stop controller; errors are
-  // logged per tick and never take the listener down.
-  if (options.sync === true) {
-    logger.info(
-      'Auto-sync on: web editor edits are applied to the recording sources ' +
-        'and cleared once fully codified.'
-    )
-    void runDevAutoSync(
-      options.config,
-      controller,
-      () => recording,
-      (message) => logger.info(message),
-      depsOverride.syncDeps ?? {},
-      depsOverride.syncPollMs
-    )
-  }
 
   try {
     await runDevListenLoop(config, deps, registration.listenerId, controller)
@@ -3252,6 +3553,7 @@ export async function runDevCommand(
     throw error
   } finally {
     controller.stopped = true
+    watcher?.stop()
     process.off('SIGINT', shutdown)
     process.off('SIGTERM', shutdown)
   }
@@ -3469,592 +3771,6 @@ async function readLastRecordId(screenciDir: string): Promise<string | null> {
 // that run, a per-language `latestRecord` with render status and record-pinned
 // URLs. Without a local run, only the project-wide listing with `static` URLs is
 // returned. The server does the merge; the CLI just passes the recordId.
-/**
- * Fetch the web editor's current action-parameter override state and compare
- * it to the latest local recording snapshot. Shared by `screenci status` and
- * `screenci sync`; the client is injected for tests.
- */
-async function compareEditorStateToSnapshot(
-  configPath: string | undefined,
-  grep: string | undefined,
-  client: ActionOverridesClient
-): Promise<{
-  comparison: ReturnType<typeof compareWebStateToSnapshot>
-  projectName: string
-  screenciDir: string
-  apiUrl: string
-  secret: string
-}> {
-  const { resolvedConfigPath, screenciConfig, secret, apiUrl } =
-    await requireScreenCISecret(configPath)
-  const overrides = await client.fetchActionOverrides({
-    apiUrl,
-    secret,
-    projectName: screenciConfig.projectName,
-  })
-  const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
-  const snapshot = readActionParamsSnapshot(screenciDir)
-  const comparison = compareWebStateToSnapshot(
-    snapshot,
-    overrides,
-    grep !== undefined ? new RegExp(grep) : undefined
-  )
-  return {
-    comparison,
-    projectName: screenciConfig.projectName,
-    screenciDir,
-    apiUrl,
-    secret,
-  }
-}
-
-/** Fetcher for the web editor's stored timing overrides, injectable in tests. */
-export type EditableOverridesFetcher = (args: {
-  apiUrl: string
-  secret: string
-  projectName: string
-}) => Promise<{
-  timelineEdits: Record<string, unknown>
-}>
-
-const defaultEditableOverridesFetcher: EditableOverridesFetcher = async ({
-  apiUrl,
-  secret,
-  projectName,
-}) => {
-  const params = new URLSearchParams({ projectName })
-  const res = await fetch(`${apiUrl}/cli/editable-overrides?${params}`, {
-    headers: { 'X-ScreenCI-Secret': secret },
-  })
-  if (!res.ok) return { timelineEdits: {} }
-  const body = (await res.json()) as { timelineEdits?: unknown }
-  return {
-    timelineEdits:
-      typeof body.timelineEdits === 'object' && body.timelineEdits !== null
-        ? (body.timelineEdits as Record<string, unknown>)
-        : {},
-  }
-}
-
-/** Fetcher for the web editor's Studio render/record option state, injectable. */
-export type StudioSyncFetcher = (args: {
-  apiUrl: string
-  secret: string
-  projectName: string
-}) => Promise<StudioSyncState>
-
-const defaultStudioSyncFetcher: StudioSyncFetcher = async ({
-  apiUrl,
-  secret,
-  projectName,
-}) => {
-  try {
-    const params = new URLSearchParams({ projectName })
-    const res = await fetch(`${apiUrl}/cli/studio-sync?${params}`, {
-      headers: { 'X-ScreenCI-Secret': secret },
-    })
-    if (!res.ok) return { videos: {} }
-    const body = (await res.json()) as { videos?: unknown }
-    return {
-      videos:
-        typeof body.videos === 'object' && body.videos !== null
-          ? (body.videos as StudioSyncState['videos'])
-          : {},
-    }
-  } catch {
-    return { videos: {} }
-  }
-}
-
-/**
- * Filters the per-video timeline-edits map by the same `--grep` regex the
- * action-parameter report uses, so `screenci status -g <name>` narrows the
- * timeline-edits block to matching videos too (not just the action-parameter
- * section).
- */
-function filterTimelineEditsByGrep(
-  timelineEdits: Record<string, unknown>,
-  grep?: string
-): Record<string, unknown> {
-  if (grep === undefined) return timelineEdits
-  const pattern = new RegExp(grep)
-  return Object.fromEntries(
-    Object.entries(timelineEdits).filter(([videoName]) =>
-      pattern.test(videoName)
-    )
-  )
-}
-
-/** Filters the per-video Studio option map by the `--grep` regex. */
-function filterStudioSyncByGrep(
-  videos: StudioSyncState['videos'],
-  grep?: string
-): StudioSyncState['videos'] {
-  if (grep === undefined) return videos
-  const pattern = new RegExp(grep)
-  return Object.fromEntries(
-    Object.entries(videos).filter(([videoName]) => pattern.test(videoName))
-  )
-}
-
-/**
- * `screenci status`: report how the web editor's action-parameter edits relate
- * to the latest recorded run (overrides shadowing explicit code values,
- * defaults changed from the editor, stale overrides).
- */
-export async function printActionStatus(
-  configPath?: string,
-  grep?: string,
-  client: ActionOverridesClient = defaultActionOverridesClient,
-  log: (message: string) => void = (message) => logger.info(message),
-  fetchEditableOverrides: EditableOverridesFetcher = defaultEditableOverridesFetcher
-): Promise<void> {
-  const { comparison, projectName, screenciDir, apiUrl, secret } =
-    await compareEditorStateToSnapshot(configPath, grep, client)
-  for (const line of formatStatusReport(comparison)) log(line)
-
-  // Timeline edits (param edits and placed events): best-effort; the action
-  // parameter report above must print even when this fetch fails.
-  try {
-    const { timelineEdits } = await fetchEditableOverrides({
-      apiUrl,
-      secret,
-      projectName,
-    })
-    const { overrides } = splitTimelineEditsByVideo(
-      filterTimelineEditsByGrep(timelineEdits, grep)
-    )
-    const snapshot = readEditableSnapshot(screenciDir)
-    const lines = formatEditableStatusReport(snapshot, overrides)
-    if (lines.length > 0) {
-      log('')
-      log('Timing overrides (web timeline edits):')
-      for (const line of lines) log(line)
-    }
-  } catch {
-    // ignore: the endpoint may be unavailable
-  }
-}
-
-/** Injectable pieces of `screenci sync`, for unit tests. */
-export type SyncCommandDeps = {
-  client?: ActionOverridesClient
-  fetchEditableOverrides?: EditableOverridesFetcher
-  fetchStudioSync?: StudioSyncFetcher
-  loadTs?: (projectDir: string) => TsModule | null
-  readFileText?: (path: string) => string | null
-  writeFileText?: (path: string, text: string) => void
-  resetVideoEdits?: (
-    configPath: string | undefined,
-    videoName: string
-  ) => Promise<void>
-}
-
-const defaultReadFileText = (path: string): string | null => {
-  try {
-    return readFileSync(path, 'utf8')
-  } catch {
-    return null
-  }
-}
-
-/**
- * Shared by `screenci sync` and `dev --sync`: stamp missing editIds first
- * (identity slugs land in code before edits key on them), then plan the code
- * sync against the stamped text. Returns the merged per-file changes (stamps
- * plus edits, diffed against the on-disk text) and the mutated counters to
- * persist when the changes are written.
- */
-function planStampsAndCodeSync(args: {
-  ts: TsModule
-  screenciDir: string
-  comparison: ReturnType<typeof compareWebStateToSnapshot>
-  actionSnapshot: ReturnType<typeof readActionParamsSnapshot>
-  editableSnapshot: ReturnType<typeof readEditableSnapshot>
-  editableOverrides: ReturnType<typeof splitTimelineEditsByVideo>['overrides']
-  codifyEdits: ReturnType<typeof splitTimelineEditsByVideo>['codify']
-  removedCodifyEdits: ReturnType<
-    typeof splitTimelineEditsByVideo
-  >['removedCodify']
-  renames: ReturnType<typeof splitTimelineEditsByVideo>['renames']
-  overlayDeclEdits: ReturnType<typeof splitTimelineEditsByVideo>['overlayDecls']
-  studioSync: StudioSyncState
-  readFile: (path: string) => string | null
-}): {
-  plan: CodeSyncPlan
-  files: Array<{ path: string; before: string; after: string }>
-  stamped: EditIdStampPlan['stamped']
-  counters: EditIdCounters | null
-} {
-  const stampPlan = planEditIdStamps(
-    args.editableSnapshot,
-    readEditIdCounters(args.screenciDir),
-    { ts: args.ts, readFile: args.readFile }
-  )
-  const stampedTexts = new Map(
-    stampPlan.files.map((file) => [file.path, file.after])
-  )
-  const readFile = (path: string): string | null =>
-    stampedTexts.get(path) ?? args.readFile(path)
-  const plan = planCodeSync(
-    {
-      comparison: args.comparison,
-      actionSnapshot: args.actionSnapshot,
-      editableSnapshot: args.editableSnapshot,
-      editableOverrides: args.editableOverrides,
-      codifyEdits: args.codifyEdits,
-      removedCodifyEdits: args.removedCodifyEdits,
-      renames: args.renames,
-      overlayDeclEdits: args.overlayDeclEdits,
-      studioSync: args.studioSync,
-    },
-    { ts: args.ts, readFile }
-  )
-  // Merge: diff every changed file against its on-disk text (plan `before`
-  // may be the stamped text, which never hit the disk).
-  const merged = new Map<string, { before: string; after: string }>()
-  for (const file of stampPlan.files) {
-    merged.set(file.path, { before: file.before, after: file.after })
-  }
-  for (const file of plan.files) {
-    const stampedFile = merged.get(file.path)
-    merged.set(file.path, {
-      before: stampedFile?.before ?? file.before,
-      after: file.after,
-    })
-  }
-  return {
-    plan,
-    files: [...merged.entries()].map(([path, texts]) => ({ path, ...texts })),
-    stamped: stampPlan.stamped,
-    counters: stampPlan.stamped.length > 0 ? stampPlan.counters : null,
-  }
-}
-
-/**
- * `screenci sync`: apply the web editor's edits directly to the .screenci.ts
- * sources by editId-keyed static analysis. Dry-run (diff) by default; `--write`
- * saves the changes, and `--write --reset` additionally clears the web timeline
- * edits of every video whose pending edits were all applied. Edits whose
- * section is locked (unstamped, a loop repeat, or control flow around the call)
- * are reported as a plain unappliable count; there is no agent-prompt fallback.
- */
-export async function runSync(
-  configPath: string | undefined,
-  options: {
-    grep?: string | undefined
-    write?: boolean | undefined
-    reset?: boolean | undefined
-  } = {},
-  log: (message: string) => void = (message) => logger.info(message),
-  deps: SyncCommandDeps = {}
-): Promise<void> {
-  const client = deps.client ?? defaultActionOverridesClient
-  const { comparison, projectName, screenciDir, apiUrl, secret } =
-    await compareEditorStateToSnapshot(configPath, options.grep, client)
-
-  // Timeline edits (param edits + codify records): best-effort like the other
-  // commands; the action-parameter sync still runs when this fetch fails.
-  let editableOverrides: ReturnType<
-    typeof splitTimelineEditsByVideo
-  >['overrides'] = {}
-  let codifyEdits: ReturnType<typeof splitTimelineEditsByVideo>['codify'] = {}
-  let removedCodifyEdits: ReturnType<
-    typeof splitTimelineEditsByVideo
-  >['removedCodify'] = {}
-  let renames: ReturnType<typeof splitTimelineEditsByVideo>['renames'] = {}
-  let overlayDeclEdits: ReturnType<
-    typeof splitTimelineEditsByVideo
-  >['overlayDecls'] = {}
-  try {
-    const fetchEditable =
-      deps.fetchEditableOverrides ?? defaultEditableOverridesFetcher
-    const { timelineEdits } = await fetchEditable({
-      apiUrl,
-      secret,
-      projectName,
-    })
-    const split = splitTimelineEditsByVideo(
-      filterTimelineEditsByGrep(timelineEdits, options.grep)
-    )
-    editableOverrides = split.overrides
-    codifyEdits = split.codify
-    removedCodifyEdits = split.removedCodify
-    renames = split.renames
-    overlayDeclEdits = split.overlayDecls
-  } catch {
-    // ignore: the endpoint may be unavailable
-  }
-
-  // Studio render/record option edits, codified into builder calls. Best-effort
-  // and tolerant of a failed fetch, like the timeline edits above.
-  let studioSync: StudioSyncState = { videos: {} }
-  try {
-    const fetchStudio = deps.fetchStudioSync ?? defaultStudioSyncFetcher
-    const fetched = await fetchStudio({ apiUrl, secret, projectName })
-    studioSync = {
-      videos: filterStudioSyncByGrep(fetched.videos, options.grep),
-    }
-  } catch {
-    // ignore: the endpoint may be unavailable
-  }
-
-  const editableSnapshot = readEditableSnapshot(screenciDir)
-  const actionSnapshot = readActionParamsSnapshot(screenciDir)
-  const ts = (deps.loadTs ?? loadTypescript)(dirname(screenciDir))
-  if (ts === null) {
-    log('Could not load the typescript module; applying nothing.')
-  }
-  const planned =
-    ts === null
-      ? {
-          plan: {
-            files: [],
-            applied: [],
-            unappliable: [],
-            fullyAppliedVideos: [],
-          } satisfies CodeSyncPlan,
-          files: [] as Array<{ path: string; before: string; after: string }>,
-          stamped: [] as EditIdStampPlan['stamped'],
-          counters: null as EditIdCounters | null,
-        }
-      : planStampsAndCodeSync({
-          ts,
-          screenciDir,
-          comparison,
-          actionSnapshot,
-          editableSnapshot,
-          editableOverrides,
-          codifyEdits,
-          removedCodifyEdits,
-          renames,
-          overlayDeclEdits,
-          studioSync,
-          readFile: deps.readFileText ?? defaultReadFileText,
-        })
-  const plan = planned.plan
-
-  if (
-    planned.files.length === 0 &&
-    plan.applied.length === 0 &&
-    plan.unappliable.length === 0
-  ) {
-    log('Nothing to sync: the web editor has no edits that differ from code.')
-    return
-  }
-
-  if (planned.stamped.length > 0) {
-    log(
-      `${options.write === true ? 'Stamped' : 'Would stamp'} editIds for ` +
-        `${planned.stamped.length} action(s):`
-    )
-    for (const stamp of planned.stamped) {
-      log(`  [${stamp.videoName}] ${stamp.editId} <- ${stamp.key}`)
-    }
-  }
-  for (const file of planned.files) {
-    log(`${options.write === true ? 'Updated' : 'Would update'} ${file.path}:`)
-    for (const line of diffLines(file.before, file.after)) log(line)
-    if (options.write === true) {
-      const write = deps.writeFileText ?? writeFileSync
-      write(file.path, file.after)
-    }
-  }
-  if (options.write === true && planned.counters !== null) {
-    writeEditIdCounters(screenciDir, planned.counters)
-  }
-  if (plan.applied.length > 0) {
-    log('')
-    log(
-      `${options.write === true ? 'Applied' : 'Would apply'} ` +
-        `${plan.applied.length} edit(s):`
-    )
-    for (const item of plan.applied) {
-      log(`  [${item.videoName}] ${item.description}`)
-    }
-    if (options.write !== true) {
-      log('Run `screenci sync --write` to save these changes.')
-    }
-  } else if (options.write !== true && planned.files.length > 0) {
-    log('Run `screenci sync --write` to save these changes.')
-  }
-
-  if (plan.unappliable.length > 0) {
-    log('')
-    log(
-      `${plan.unappliable.length} edit(s) could not be applied (locked ` +
-        'section: unstamped action, a loop repeat, or control flow around ' +
-        'the call). Edit the code by hand:'
-    )
-    for (const item of plan.unappliable) {
-      log(`  [${item.videoName}] ${item.reason}`)
-    }
-  }
-
-  if (options.reset === true) {
-    if (options.write !== true) {
-      log('')
-      log('--reset does nothing without --write; skipped.')
-    } else if (plan.fullyAppliedVideos.length > 0) {
-      const resetVideo =
-        deps.resetVideoEdits ??
-        (async (path: string | undefined, videoName: string) =>
-          resetWebEdits(path, videoName, log))
-      for (const videoName of plan.fullyAppliedVideos) {
-        await resetVideo(configPath, videoName)
-        log(`Cleared web timeline edits for video: ${videoName}`)
-      }
-    } else {
-      log('')
-      log('No video had all of its edits applied; web edits left in place.')
-    }
-  }
-}
-
-/**
- * Background loop behind `screenci dev --sync`: while the dev listener runs,
- * poll the web editor's edits and apply what static analysis can to the
- * .screenci.ts sources, then clear the web edits of fully applied videos.
- *
- * Idempotence: value edits re-apply harmlessly (same text), sleepBefore
- * updates an existing wait in place, and inserted placed events are remembered
- * by signature for the session so they are never inserted twice. The loop
- * pauses while a triggered record is running (`isBusy`).
- */
-export async function runDevAutoSync(
-  configPath: string | undefined,
-  controller: { stopped: boolean },
-  isBusy: () => boolean,
-  log: (message: string) => void = (message) => logger.info(message),
-  deps: SyncCommandDeps = {},
-  pollMs = 5000,
-  sleep: (ms: number) => Promise<void> = (ms) =>
-    new Promise((resolve) => setTimeout(resolve, ms))
-): Promise<void> {
-  const client = deps.client ?? defaultActionOverridesClient
-  const fetchEditable =
-    deps.fetchEditableOverrides ?? defaultEditableOverridesFetcher
-  const fetchStudio = deps.fetchStudioSync ?? defaultStudioSyncFetcher
-  let lastFingerprint = ''
-
-  while (!controller.stopped) {
-    await sleep(pollMs)
-    if (controller.stopped) break
-    if (isBusy()) {
-      // A record just ran (or is running): the snapshot may change, so force
-      // a re-plan on the next idle tick.
-      lastFingerprint = ''
-      continue
-    }
-    try {
-      const { comparison, projectName, screenciDir, apiUrl, secret } =
-        await compareEditorStateToSnapshot(configPath, undefined, client)
-      let timelineEdits: Record<string, unknown> = {}
-      try {
-        timelineEdits = (await fetchEditable({ apiUrl, secret, projectName }))
-          .timelineEdits
-      } catch {
-        // ignore: the endpoint may be unavailable
-      }
-      let studioSync: StudioSyncState = { videos: {} }
-      try {
-        studioSync = await fetchStudio({ apiUrl, secret, projectName })
-      } catch {
-        // ignore: the endpoint may be unavailable
-      }
-      const fingerprint = JSON.stringify([
-        comparison.videos,
-        timelineEdits,
-        studioSync.videos,
-      ])
-      if (fingerprint === lastFingerprint) continue
-      lastFingerprint = fingerprint
-
-      const ts = (deps.loadTs ?? loadTypescript)(dirname(screenciDir))
-      if (ts === null) {
-        log('auto-sync: could not load typescript; auto-sync disabled.')
-        return
-      }
-      const { overrides, codify, removedCodify, renames, overlayDecls } =
-        splitTimelineEditsByVideo(timelineEdits)
-      const planned = planStampsAndCodeSync({
-        ts,
-        screenciDir,
-        comparison,
-        actionSnapshot: readActionParamsSnapshot(screenciDir),
-        editableSnapshot: readEditableSnapshot(screenciDir),
-        editableOverrides: overrides,
-        codifyEdits: codify,
-        removedCodifyEdits: removedCodify,
-        renames,
-        overlayDeclEdits: overlayDecls,
-        studioSync,
-        readFile: deps.readFileText ?? defaultReadFileText,
-      })
-      const plan = planned.plan
-      if (planned.files.length === 0) continue
-
-      const write = deps.writeFileText ?? writeFileSync
-      for (const file of planned.files) write(file.path, file.after)
-      if (planned.counters !== null) {
-        writeEditIdCounters(screenciDir, planned.counters)
-      }
-      for (const stamp of planned.stamped) {
-        log(
-          `auto-sync: stamped ${stamp.editId} <- [${stamp.videoName}] ${stamp.key}`
-        )
-      }
-      for (const item of plan.applied) {
-        log(`auto-sync: [${item.videoName}] ${item.description}`)
-      }
-      const resetVideo =
-        deps.resetVideoEdits ??
-        (async (path: string | undefined, videoName: string) =>
-          resetWebEdits(path, videoName, log))
-      for (const videoName of plan.fullyAppliedVideos) {
-        await resetVideo(configPath, videoName)
-        log(`auto-sync: cleared web timeline edits for video: ${videoName}`)
-        lastFingerprint = ''
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      log(`auto-sync error: ${message}`)
-    }
-  }
-}
-
-/**
- * `screenci reset-web-edits`: clears the project's (or one video's) web
- * timeline edits via the backend, so the next record runs purely from code.
- */
-export async function resetWebEdits(
-  configPath?: string,
-  videoName?: string,
-  log: (message: string) => void = (message) => logger.info(message)
-): Promise<void> {
-  const { screenciConfig, secret, apiUrl } =
-    await requireScreenCISecret(configPath)
-  const params = new URLSearchParams({
-    projectName: screenciConfig.projectName,
-  })
-  if (videoName !== undefined) params.set('videoName', videoName)
-  const res = await fetch(`${apiUrl}/cli/reset-editable?${params.toString()}`, {
-    method: 'POST',
-    headers: { 'X-ScreenCI-Secret': secret },
-  })
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(
-      `Failed to reset web edits: ${res.status} ${extractBackendError(text)}`
-    )
-  }
-  const body = (await res.json()) as { reset?: number }
-  log(
-    `Cleared web timeline edits for ${body.reset ?? 0} video(s)` +
-      `${videoName !== undefined ? ` (video: ${videoName})` : ''}.`
-  )
-}
-
 async function printInfo(configPath?: string): Promise<void> {
   const { resolvedConfigPath, screenciConfig, secret, apiUrl } =
     await requireScreenCISecret(configPath)
@@ -4434,6 +4150,12 @@ export async function main() {
       'upload the recording and its editable data without dispatching a ' +
         'render (fast editor sync; render later with a normal record)'
     )
+    .option(
+      '--export',
+      'export a finished video from this recording. Without it the upload ' +
+        'refreshes the live preview only; export minutes are spent on ' +
+        'export. (deprecated aliases: --publish, --render)'
+    )
     .allowUnknownOption(true)
     .action(async () => {
       const parsed = parseRecordCliArgs(getSubcommandArgv('record'))
@@ -4441,6 +4163,10 @@ export async function main() {
         // Read where the upload start request is built; env so the flag
         // survives the Playwright child process boundary.
         process.env['SCREENCI_SKIP_RENDER'] = '1'
+      }
+      if (parsed.exportVideo) {
+        // Preview-first: uploads only render when explicitly exported.
+        process.env['SCREENCI_EXPORT'] = '1'
       }
 
       // `--remote` is a pure dispatch: it fires the project's GitHub Actions
@@ -4541,16 +4267,34 @@ export async function main() {
       `personal dev token (defaults to ${SCREENCI_DEV_TOKEN_ENV} from your env file)`
     )
     .option(
-      '--sync',
-      'auto-apply web editor edits to the recording sources while listening ' +
-        '(static analysis; fully applied videos get their web edits cleared)'
+      '--record-kill-window <seconds>',
+      'a running record younger than this is killed and replaced when a new ' +
+        'record request arrives; an older one finishes first (default: 10)'
+    )
+    .option(
+      '-g, --grep <pattern>',
+      'only manage videos whose title matches this pattern (same filter as ' +
+        'playwright --grep)'
+    )
+    .option(
+      '--force-record',
+      're-record every managed video at startup even when the kept ' +
+        'recordings are up to date'
+    )
+    .option(
+      '--no-watch',
+      'do not watch the managed test sources (and screenci.config.ts) for ' +
+        'changes that trigger a preview re-record'
     )
     .action(
       async (options: {
         config?: string
         verbose?: boolean
         token?: string
-        sync?: boolean
+        recordKillWindow?: string
+        grep?: string
+        forceRecord?: boolean
+        watch?: boolean
       }) => {
         await runDevCommand(options)
       }
@@ -4614,64 +4358,6 @@ export async function main() {
     .option('-c, --config <path>', 'path to screenci.config.ts')
     .action(async (options: Record<string, unknown>) => {
       await printInfo(options['config'] as string | undefined)
-    })
-
-  program
-    .command('status')
-    .description(
-      "Compare the web editor's action-parameter edits with the latest recorded run"
-    )
-    .option('-c, --config <path>', 'path to screenci.config.ts')
-    .option(
-      '-g, --grep <regex>',
-      'only include videos whose name matches this regular expression'
-    )
-    .action(async (options: Record<string, unknown>) => {
-      await printActionStatus(
-        options['config'] as string | undefined,
-        options['grep'] as string | undefined
-      )
-    })
-
-  program
-    .command('reset-web-edits')
-    .description(
-      'Clear all web timeline edits (timing overrides and authored events) ' +
-        'for this project, so the next record runs purely from code'
-    )
-    .option('-c, --config <path>', 'path to screenci.config.ts')
-    .option('--video <name>', 'only reset one video by name')
-    .action(async (options: Record<string, unknown>) => {
-      await resetWebEdits(
-        options['config'] as string | undefined,
-        options['video'] as string | undefined
-      )
-    })
-
-  program
-    .command('sync')
-    .description(
-      'Apply the web editor edits to the .screenci.ts sources via editId-keyed ' +
-        'static analysis (dry-run by default; whatever cannot be applied ' +
-        'safely is reported as an unappliable count)'
-    )
-    .option('-c, --config <path>', 'path to screenci.config.ts')
-    .option(
-      '-g, --grep <regex>',
-      'only include videos whose name matches this regular expression'
-    )
-    .option('-w, --write', 'save the changes to disk (default is a dry run)')
-    .option(
-      '--reset',
-      'with --write: clear the web timeline edits of every video whose ' +
-        'pending edits were all applied'
-    )
-    .action(async (options: Record<string, unknown>) => {
-      await runSync(options['config'] as string | undefined, {
-        grep: options['grep'] as string | undefined,
-        write: options['write'] === true,
-        reset: options['reset'] === true,
-      })
     })
 
   program
@@ -4795,12 +4481,14 @@ export function parseRecordCliArgs(args: string[]): {
   remote: boolean
   languages: string | undefined
   noRender: boolean
+  exportVideo: boolean
   otherArgs: string[]
 } {
   let configPath: string | undefined
   let verbose = false
   let remote = false
   let noRender = false
+  let exportVideo = false
   let languages: string | undefined
   const otherArgs: string[] = []
 
@@ -4836,6 +4524,15 @@ export function parseRecordCliArgs(args: string[]): {
     } else if (arg === '--no-render') {
       // screenci-only flag: upload the recording without dispatching renders.
       noRender = true
+    } else if (
+      arg === '--export' ||
+      arg === '--publish' ||
+      arg === '--render'
+    ) {
+      // screenci-only flag: export a finished video (preview-first default
+      // otherwise refreshes the live preview only). --publish and --render
+      // are deprecated aliases kept for older scripts.
+      exportVideo = true
     } else {
       otherArgs.push(arg)
     }
@@ -4847,6 +4544,7 @@ export function parseRecordCliArgs(args: string[]): {
     remote,
     languages,
     noRender,
+    exportVideo,
     otherArgs,
   }
 }
@@ -5030,144 +4728,6 @@ async function fetchRecordOptionsEnv(
 }
 
 /**
- * Fetch the project's current web-editor action-parameter overrides so they can
- * be injected as SCREENCI_ACTION_OVERRIDES before a recording. The client is
- * injected so tests plug in fakes; the default hits
- * `GET /cli/action-overrides` and treats a missing endpoint (404) as "no
- * overrides". Best-effort: any failure returns an empty env so the SDK uses
- * the code values.
- */
-export async function fetchActionOverridesEnv(
-  configPath: string,
-  verbose: boolean,
-  client: ActionOverridesClient = defaultActionOverridesClient
-): Promise<Record<string, string>> {
-  // Editor overrides only exist for a real (non-anonymous) org, and record must
-  // still work without an account, so skip the fetch entirely rather than
-  // calling requireScreenCISecret, which would hard-exit without a secret.
-  if (!process.env.SCREENCI_SECRET) return {}
-  try {
-    const { screenciConfig, secret, apiUrl } =
-      await requireScreenCISecret(configPath)
-    const overrides = await client.fetchActionOverrides({
-      apiUrl,
-      secret,
-      projectName: screenciConfig.projectName,
-    })
-    if (Object.keys(overrides).length === 0) return {}
-    return { [SCREENCI_ACTION_OVERRIDES_ENV]: JSON.stringify(overrides) }
-  } catch (error) {
-    if (verbose) {
-      logger.warn(
-        `Could not fetch editor action overrides; using code-declared values.${
-          error instanceof Error ? ` (${error.message})` : ''
-        }`
-      )
-    }
-    return {}
-  }
-}
-
-/**
- * Fetch the project's stored web-editor timeline edits so they can be
- * injected as SCREENCI_TIMELINE_EDITS before a recording or mock-record run.
- * A failure never blocks the recording, but it always warns (not just in
- * verbose mode): a silent failure would record a video that ignores the
- * editor's edits.
- */
-export async function fetchEditableOverridesEnv(
-  configPath: string,
-  verbose: boolean
-): Promise<Record<string, string>> {
-  // Editor config only exists for a real (non-anonymous) org; skip entirely
-  // without a secret rather than hard-exiting via requireScreenCISecret.
-  if (!process.env.SCREENCI_SECRET) return {}
-  try {
-    const { screenciConfig, secret, apiUrl } =
-      await requireScreenCISecret(configPath)
-    const params = new URLSearchParams({
-      projectName: screenciConfig.projectName,
-    })
-
-    const res = await fetch(
-      `${apiUrl}/cli/editable-overrides?${params.toString()}`,
-      { headers: { 'X-ScreenCI-Secret': secret } }
-    )
-    if (!res.ok) {
-      logger.warn(
-        `Could not fetch editor timeline edits (${res.status}); recording ` +
-          `with code-declared values. Stored web edits will NOT apply to ` +
-          `this run.`
-      )
-      return {}
-    }
-
-    const body = (await res.json()) as {
-      timelineEdits?: unknown
-    }
-    const env: Record<string, string> = {}
-    // Unified timeline-edits doc (paramEdit + placedEvent records), the only
-    // wire format: the server converts every stored web edit into it.
-    const timelineEdits = body.timelineEdits
-    if (
-      timelineEdits !== undefined &&
-      timelineEdits !== null &&
-      typeof timelineEdits === 'object' &&
-      Object.keys(timelineEdits as Record<string, unknown>).length > 0
-    ) {
-      env[SCREENCI_TIMELINE_EDITS_ENV] = JSON.stringify(timelineEdits)
-    }
-    if (verbose && Object.keys(env).length > 0) {
-      logger.info(
-        `Fetched editor timeline edits (${Object.keys(env).join(', ')}).`
-      )
-    }
-    return env
-  } catch (error) {
-    logger.warn(
-      `Could not fetch editor timeline edits; recording with code-declared ` +
-        `values. Stored web edits will NOT apply to this run.${
-          error instanceof Error ? ` (${error.message})` : ''
-        }`
-    )
-    return {}
-  }
-}
-
-/**
- * Print one info line per editor override that shadows an explicitly code-set
- * action parameter, comparing the fetched overrides against the previous run's
- * snapshot. A missing snapshot (first run) prints nothing.
- */
-export function reportActionOverrideCollisions(
-  screenciDir: string,
-  actionOverridesEnv: Record<string, string>,
-  log: (message: string) => void = (message) => logger.info(message)
-): void {
-  const raw = actionOverridesEnv[SCREENCI_ACTION_OVERRIDES_ENV]
-  if (raw === undefined) return
-  try {
-    const overridesByVideo: unknown = JSON.parse(raw)
-    if (typeof overridesByVideo !== 'object' || overridesByVideo === null)
-      return
-    const snapshot = readActionParamsSnapshot(screenciDir)
-    for (const collision of diffOverridesAgainstSnapshot(
-      snapshot,
-      overridesByVideo as Record<string, Record<string, unknown>>
-    )) {
-      log(
-        `[screenci] editor override shadows code value: ${collision.selector} ` +
-          `${collision.method} ${collision.optionPath}: ` +
-          `code ${JSON.stringify(collision.codeValue)} -> editor ` +
-          `${JSON.stringify(collision.editorValue)} (video: ${collision.videoName})`
-      )
-    }
-  } catch {
-    // Best-effort reporting; never block a recording.
-  }
-}
-
-/**
  * Fetch the web's per-video language additions so they can be injected as
  * SCREENCI_WEB_LANGUAGES before a recording. A language added from the web is
  * then recorded on every re-record even when code never declared it.
@@ -5239,8 +4799,6 @@ export function reportFetchedOverridesForDebug(
   const sections: Array<[string, string]> = [
     ['Studio text overrides', SCREENCI_VALUES_OVERRIDES_ENV],
     ['Studio record options', SCREENCI_RECORD_OPTIONS_ENV],
-    ['Editor action-parameter overrides', SCREENCI_ACTION_OVERRIDES_ENV],
-    ['Editor timeline edits', SCREENCI_TIMELINE_EDITS_ENV],
     ['Web-added languages', SCREENCI_WEB_LANGUAGES_ENV],
   ]
   log('[screenci debug] overrides fetched from the backend for this run:')
@@ -5264,65 +4822,10 @@ export function reportFetchedOverridesForDebug(
   }
 }
 
-/**
- * Print one info line per web timing override that shadows an explicitly
- * code-set editable value, comparing the fetched overrides against the
- * previous run's editable snapshot. A missing snapshot (first run) prints
- * nothing.
- */
-export function reportEditableOverrideCollisions(
-  screenciDir: string,
-  editableOverridesEnv: Record<string, string>,
-  log: (message: string) => void = (message) => logger.info(message)
-): void {
-  const raw = editableOverridesEnv[SCREENCI_TIMELINE_EDITS_ENV]
-  if (raw === undefined) return
-  try {
-    const docsByVideo: unknown = JSON.parse(raw)
-    if (typeof docsByVideo !== 'object' || docsByVideo === null) return
-    // Param edits from the unified doc, in the {key, values} entry shape the
-    // snapshot diff expects.
-    const overridesByVideo: Record<
-      string,
-      Array<{ key: string; values: Record<string, unknown> }>
-    > = {}
-    for (const [videoName, doc] of Object.entries(docsByVideo)) {
-      const edits = (doc as { edits?: unknown[] } | null)?.edits
-      if (!Array.isArray(edits)) continue
-      const entries = edits.flatMap((edit) => {
-        const record = edit as {
-          type?: unknown
-          target?: { key?: unknown }
-          fields?: unknown
-        }
-        return record.type === 'paramEdit' &&
-          typeof record.target?.key === 'string' &&
-          typeof record.fields === 'object' &&
-          record.fields !== null
-          ? [
-              {
-                key: record.target.key,
-                values: record.fields as Record<string, unknown>,
-              },
-            ]
-          : []
-      })
-      if (entries.length > 0) overridesByVideo[videoName] = entries
-    }
-    const snapshot = readEditableSnapshot(screenciDir)
-    for (const collision of diffEditableOverridesAgainstSnapshot(
-      snapshot,
-      overridesByVideo
-    )) {
-      log(
-        `[screenci] editor override shadows code value: ${collision.key} ` +
-          `${collision.field}: code ${JSON.stringify(collision.codeValue)} ` +
-          `-> editor ${JSON.stringify(collision.editorValue)} ` +
-          `(video: ${collision.videoName})`
-      )
-    }
-  } catch {
-    // Best-effort reporting; never block a recording.
+/** Thrown when a record run is killed via its abort signal. */
+export class RecordAbortedError extends Error {
+  constructor() {
+    super('Record run was aborted')
   }
 }
 
@@ -5332,7 +4835,8 @@ async function run(
   customConfigPath?: string,
   verbose = false,
   mockRecord = false,
-  languages?: string
+  languages?: string,
+  abortSignal?: AbortSignal
 ) {
   const configPath = resolveScreenCIConfigPathOrExit(customConfigPath)
 
@@ -5377,34 +4881,6 @@ async function run(
       ? await fetchRecordOptionsEnv(configPath, verboseFetch)
       : {}
 
-  // Web-editor action-parameter overrides (record only). Before recording,
-  // compare them with the previous run's snapshot and print an info line for
-  // every override that shadows an explicitly code-set value.
-  const actionOverridesEnv =
-    command === 'record'
-      ? await fetchActionOverridesEnv(configPath, verboseFetch)
-      : {}
-  if (command === 'record') {
-    reportActionOverrideCollisions(
-      resolve(dirname(configPath), '.screenci'),
-      actionOverridesEnv
-    )
-  }
-
-  // Web-editor timing overrides apply whenever recording timings run: record
-  // and `test --mock-record`. Plain test runs skip sleeps/animation, so the
-  // fetch would be wasted there.
-  const editableOverridesEnv =
-    command === 'record' || mockRecord
-      ? await fetchEditableOverridesEnv(configPath, verboseFetch)
-      : {}
-  if (command === 'record') {
-    reportEditableOverrideCollisions(
-      resolve(dirname(configPath), '.screenci'),
-      editableOverridesEnv
-    )
-  }
-
   // Web-added languages (record only): union into each video's recorded set so
   // a language added from the web is never blocked by code.
   const webLanguagesEnv =
@@ -5419,8 +4895,6 @@ async function run(
     reportFetchedOverridesForDebug({
       ...textOverridesEnv,
       ...recordOptionsEnv,
-      ...actionOverridesEnv,
-      ...editableOverridesEnv,
       ...webLanguagesEnv,
     })
   }
@@ -5436,8 +4910,6 @@ async function run(
       : {}),
     ...textOverridesEnv,
     ...recordOptionsEnv,
-    ...actionOverridesEnv,
-    ...editableOverridesEnv,
     ...webLanguagesEnv,
     ...(command === 'test' && !mockRecord
       ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
@@ -5479,10 +4951,6 @@ async function run(
       ...textOverridesEnv,
       // Studio record-option overrides resolved from the backend (record only).
       ...recordOptionsEnv,
-      // Web-editor action-parameter overrides (record only).
-      ...actionOverridesEnv,
-      // Web-editor timing overrides (record and test --mock-record).
-      ...editableOverridesEnv,
       // Web-added languages (record only): unioned into each video's set.
       ...webLanguagesEnv,
       ...(command === 'test' && !mockRecord
@@ -5498,16 +4966,39 @@ async function run(
     exitParentOnForward: true,
   })
 
-  // Resolved before the Promise executor, whose `resolve` parameter shadows
-  // the path helper of the same name.
-  const screenciDirForSnapshot = resolve(dirname(configPath), '.screenci')
+  // Abort support (dev-triggered records superseded by a newer request):
+  // kill the Playwright child tree and reject with RecordAbortedError. The
+  // close handler must NOT treat this kill as a user signal to forward, or
+  // it would take the whole dev process down with it.
+  let abortedByUs = false
+  const killChild = (): void => {
+    abortedByUs = true
+    try {
+      if (process.platform !== 'win32' && child.pid !== undefined) {
+        process.kill(-child.pid, 'SIGTERM')
+      } else {
+        child.kill('SIGTERM')
+      }
+    } catch {
+      // Child already gone.
+    }
+  }
+  if (abortSignal !== undefined) {
+    if (abortSignal.aborted) killChild()
+    else abortSignal.addEventListener('abort', killChild, { once: true })
+  }
 
   return new Promise<void>((resolve, reject) => {
     child.on('close', (code, signal) => {
       void (async () => {
         const forwardedSignal = childSignals.getForwardedSignal()
         childSignals.cleanup()
+        abortSignal?.removeEventListener('abort', killChild)
 
+        if (abortedByUs) {
+          reject(new RecordAbortedError())
+          return
+        }
         if (forwardedSignal) {
           process.kill(process.pid, forwardedSignal)
           return
@@ -5515,21 +5006,6 @@ async function run(
         if (signal) {
           process.kill(process.pid, signal)
           return
-        }
-        // Snapshot the action parameters of the recordings that were written,
-        // even on a partly failed run (some recordings may have completed).
-        // Best-effort: never fail the record because of the snapshot.
-        if (command === 'record') {
-          try {
-            updateActionParamsSnapshot(screenciDirForSnapshot)
-          } catch {
-            // ignore
-          }
-          try {
-            updateEditableSnapshot(screenciDirForSnapshot)
-          } catch {
-            // ignore
-          }
         }
         if (code === 0) {
           resolve()

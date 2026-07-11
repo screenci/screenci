@@ -729,18 +729,26 @@ export interface MediaBuilder<Args, O = object> extends BuilderTerminal<
   narration<const A extends FeatureArg<LocalizeNarrationValue>>(
     arg: A
   ): MediaBuilder<Args, O & NarrationOverrideFor<Args, A>>
-  /** Declare on-screen values fields. */
-  values<const A extends FeatureArg<string>>(
-    arg: A
-  ): MediaBuilder<Args, O & ValuesOverrideFor<Args, A>>
+  // Hidden for release: the on-screen values feature is unfinished, so the
+  // builder method is removed from the public type surface. The runtime
+  // implementation stays. Re-enable by uncommenting. Docs moved to
+  // docs/removed/values.md at the repo root.
+  // /** Declare on-screen values fields. */
+  // values<const A extends FeatureArg<string>>(
+  //   arg: A
+  // ): MediaBuilder<Args, O & ValuesOverrideFor<Args, A>>
   /** Declare overlays. */
   overlays<const A extends FeatureArg<OverlayInputOrFactory>>(
     arg: A
   ): MediaBuilder<Args, O & OverlayOverrideFor<Args, A>>
-  /** Declare background-audio tracks. */
-  audio<const A extends FeatureArg<AudioInput>>(
-    arg: A
-  ): MediaBuilder<Args, O & AudioOverrideFor<Args, A>>
+  // Hidden for release: the background audio feature is unfinished, so the
+  // builder method is removed from the public type surface. The runtime
+  // implementation stays. Re-enable by uncommenting. Docs moved to
+  // docs/removed/audio.md at the repo root.
+  // /** Declare background-audio tracks. */
+  // audio<const A extends FeatureArg<AudioInput>>(
+  //   arg: A
+  // ): MediaBuilder<Args, O & AudioOverrideFor<Args, A>>
   /** Declare the recorded language set / capture mode. */
   languages(arg?: LanguagesArg): MediaBuilder<Args, O>
   /**
@@ -765,6 +773,22 @@ export interface MediaBuilder<Args, O = object> extends BuilderTerminal<
 
 /** Backwards-compatible alias used by the video/screenshot entry points. */
 export type VideoBuilder<Args, O = object> = MediaBuilder<Args, O>
+
+/**
+ * The builder methods hidden from the public MediaBuilder type for release
+ * (values and audio are unfinished features). The runtime implementation keeps
+ * attaching them so existing recorded scripts keep working; internal wiring
+ * types them through this interface. Delete this and uncomment the MediaBuilder
+ * methods to re-enable.
+ */
+export interface HiddenFeatureMethods<Args, O = object> {
+  values<const A extends FeatureArg<string>>(
+    arg: A
+  ): MediaBuilder<Args, O & ValuesOverrideFor<Args, A>>
+  audio<const A extends FeatureArg<AudioInput>>(
+    arg: A
+  ): MediaBuilder<Args, O & AudioOverrideFor<Args, A>>
+}
 
 function normalizeVariants(variants: EachVariant[]): EachVariant[] {
   if (variants.length === 0) {
@@ -906,12 +930,15 @@ export function createVideoBuilder<Args>(
 
   callable.narration = ((arg: FeatureArg<LocalizeNarrationValue>) =>
     withFeature('narration', arg)) as MediaBuilder<Args>['narration']
-  callable.values = ((arg: FeatureArg<string>) =>
-    withFeature('values', arg)) as MediaBuilder<Args>['values']
   callable.overlays = ((arg: FeatureArg<OverlayInputOrFactory>) =>
     withFeature('overlays', arg)) as MediaBuilder<Args>['overlays']
-  callable.audio = ((arg: FeatureArg<AudioInput>) =>
-    withFeature('audio', arg)) as MediaBuilder<Args>['audio']
+  // values() and audio() are hidden from the public type for release but stay
+  // attached at runtime (see HiddenFeatureMethods).
+  const hiddenCallable = callable as unknown as HiddenFeatureMethods<Args>
+  hiddenCallable.values = ((arg: FeatureArg<string>) =>
+    withFeature('values', arg)) as HiddenFeatureMethods<Args>['values']
+  hiddenCallable.audio = ((arg: FeatureArg<AudioInput>) =>
+    withFeature('audio', arg)) as HiddenFeatureMethods<Args>['audio']
 
   callable.recordOptions = ((arg: OptionsArg<RecordOptions>) =>
     createVideoBuilder<Args>(test, features, {

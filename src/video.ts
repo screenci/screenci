@@ -34,6 +34,7 @@ import { resetCueChain } from './cue.js'
 import { setActiveCueRecorder } from './cue.js'
 import {
   createVideoBuilder,
+  type HiddenFeatureMethods,
   type MediaBuilder,
   type ResolvedRecordingLocalize,
 } from './builder.js'
@@ -87,8 +88,6 @@ import {
   isCaptureAudioEnabled,
   resolveCaptureAudioGain,
 } from './browserLaunchOptions.js'
-import { resolveRuntimeOverridesForVideo } from './editableRuntime.js'
-import { OverrideReportBuilder } from './timelineEdits.js'
 import {
   createScreenCIRuntimeContext,
   runWithScreenCIRuntimeContext,
@@ -107,7 +106,6 @@ import {
   resolveRecordingTimingDuration,
   parseValuesOverrides,
   parseRecordOptions,
-  parseActionOverrides,
   mergeStudioRecordOptions,
 } from './runtimeMode.js'
 import { ActionParamCollector } from './actionParams.js'
@@ -912,9 +910,9 @@ const _videoBase = base.extend<
         // knows this video may have languages added/rendered from Studio.
         languages: _screenciRecordingLocalize?.studioOwned ?? false,
       },
-      // Action-parameter provenance for this video, with the web editor's
-      // per-action overrides (fetched by the CLI, injected via env) applied.
-      new ActionParamCollector(parseActionOverrides()?.[videoName] ?? {})
+      // Action-parameter provenance for this video (values and their
+      // explicit/default provenance, straight from code).
+      new ActionParamCollector()
     )
     // Declared `values` fields (and the active language's seeds) emitted once at
     // recording start so the backend/Studio learn them.
@@ -952,14 +950,6 @@ const _videoBase = base.extend<
         renderOptions: renderOptionsObj,
         activeLanguage: _screenciLanguage ?? null,
       })
-      // Web-editor timing overrides for this video (injected by the CLI for
-      // record and mock-record runs; absent for plain test runs). One report
-      // collects runtime param edits and write-time placed events.
-      const overrideReport = new OverrideReportBuilder()
-      recorder.setOverrideReport(overrideReport)
-      runtimeContext.editable.report = overrideReport
-      runtimeContext.editable.overridesByKey =
-        resolveRuntimeOverridesForVideo(videoName)
       bindStillCaptureToPage(page)
       await setupMouseTracking(page, recorder)
       if (resolveDisableAnimations(recordOptions.disableAnimations, 'video')) {
@@ -1020,16 +1010,6 @@ const _videoBase = base.extend<
       renderOptions: renderOptionsObj,
       activeLanguage: _screenciLanguage ?? null,
     })
-    // Web-editor timing overrides for this video, fetched by the CLI before
-    // the run and injected via SCREENCI_TIMELINE_EDITS. One report collects
-    // runtime param edits and write-time placed events, embedded into
-    // data.json.
-    const overrideReport = new OverrideReportBuilder()
-    recorder.setOverrideReport(overrideReport)
-    runtimeContext.editable.report = overrideReport
-    runtimeContext.editable.overridesByKey =
-      resolveRuntimeOverridesForVideo(videoName)
-
     await setupMouseTracking(page, recorder)
     if (resolveDisableAnimations(recordOptions.disableAnimations, 'video')) {
       await installAnimationDisabling(page)
@@ -1286,14 +1266,17 @@ interface Video extends VideoCallSignatures {
    */
   narration: MediaBuilder<VideoArgs>['narration']
 
-  /** Declare on-screen values fields (array = blank names, object = code values). */
-  values: MediaBuilder<VideoArgs>['values']
+  // Hidden for release: the on-screen values and background audio features are
+  // unfinished. The runtime methods stay attached; re-enable by uncommenting
+  // (see HiddenFeatureMethods in builder.ts).
+  // /** Declare on-screen values fields (array = blank names, object = code values). */
+  // values: MediaBuilder<VideoArgs>['values']
 
   /** Declare overlays (array = blank names, object = code values/factories). */
   overlays: MediaBuilder<VideoArgs>['overlays']
 
-  /** Declare background-audio tracks (array = blank names, object = code values). */
-  audio: MediaBuilder<VideoArgs>['audio']
+  // /** Declare background-audio tracks (array = blank names, object = code values). */
+  // audio: MediaBuilder<VideoArgs>['audio']
 
   /**
    * Declare the recorded language set / capture mode. The web app owns the set;
@@ -1416,9 +1399,15 @@ const _rootBuilder = createVideoBuilder<VideoArgs>(
   _videoBase as unknown as Parameters<typeof createVideoBuilder>[0]
 )
 video.narration = _rootBuilder.narration
-video.values = _rootBuilder.values
 video.overlays = _rootBuilder.overlays
-video.audio = _rootBuilder.audio
+// values() and audio() are hidden from the public type for release but stay
+// attached at runtime (see HiddenFeatureMethods in builder.ts).
+;(video as unknown as HiddenFeatureMethods<VideoArgs>).values = (
+  _rootBuilder as unknown as HiddenFeatureMethods<VideoArgs>
+).values
+;(video as unknown as HiddenFeatureMethods<VideoArgs>).audio = (
+  _rootBuilder as unknown as HiddenFeatureMethods<VideoArgs>
+).audio
 video.languages = _rootBuilder.languages
 video.recordOptions = _rootBuilder.recordOptions
 video.renderOptions = _rootBuilder.renderOptions

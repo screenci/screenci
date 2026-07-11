@@ -378,6 +378,12 @@ export type RecordingMetadata = {
   screenciVersion: string
   languages?: string[]
   sourceFilePath?: string
+  /**
+   * SHA-256 of the test source file this recording was produced from. Used by
+   * the dev-session freshness check (recordingFreshness.ts) to skip recording
+   * when the source is unchanged and every editable action has an editId.
+   */
+  sourceHash?: string
   /** First 8 chars of the git commit the recording was made at, if available. */
   commit?: string
   /** Whether the repo had uncommitted changes (always false in CI). */

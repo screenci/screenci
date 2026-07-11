@@ -1,6 +1,8 @@
 /**
- * Planner for `screenci sync`: turns the web editor's edits into concrete
+ * Planner for editor codegen: turns the web editor's edits into concrete
  * text changes to the user's .screenci.ts files, using the codemod primitives.
+ * Driven by `screenci dev` (applyCodegen.ts), which applies each edit to the
+ * sources the moment it arrives; code is the single source of truth.
  *
  * Every code edit locates its call site by an action's `editId` slug: an exact
  * string identity with no heuristics. The model is one linear timeline in call
@@ -17,17 +19,21 @@
  * Pure over injected inputs (parsed comparison, snapshots, a readFile): unit
  * tests drive it with in-memory files.
  */
-import { jsonEqual, type ActionMethod } from './actionParams.js'
-import type { ActionParamsSnapshot } from './actionParamsSnapshot.js'
-import type { WebStateComparison } from './actionSync.js'
+import {
+  jsonEqual,
+  type ActionMethod,
+  type ActionParamRecord,
+} from './actionParams.js'
 import type { StudioSyncState } from './studioSync.js'
 import type {
   CodifyEditsByVideo,
   EditableOverridesByVideo,
   EditableSnapshot,
+  NarrationEditsByVideo,
   OverlayDeclEditsByVideo,
   RenamesByVideo,
 } from './editableSnapshot.js'
+import { isLanguageKey } from './declare.js'
 import type {
   CodifyEdit,
   GapPointEdit,
@@ -55,6 +61,7 @@ import {
   renameEditId as renameEditIdInSource,
   removeOption,
   setBuilderOptions,
+  setNarrationValue,
   setOptionValue,
   setOverlayDeclProps,
   splitWaitEdit,
@@ -154,6 +161,36 @@ export type CodeSyncPlan = {
   fullyAppliedVideos: string[]
 }
 
+/**
+ * The latest recorded action-parameter records per video, used to locate
+ * stamped call sites for comparison-driven option edits. The codegen path
+ * passes an empty snapshot (the single edit record is the change).
+ */
+export type ActionParamsSnapshot = {
+  version: 1
+  videos: Record<string, ActionParamRecord[]>
+}
+
+/** How one editor action-parameter override relates to the code. */
+export type OverrideAssessment = {
+  kind: 'change' | 'remove' | 'codify' | 'in-sync' | 'stale'
+  selector: string
+  method: string
+  occurrence: number
+  optionPath: string
+  editorValue: unknown
+}
+
+/**
+ * Editor action-parameter override state to reconcile into code. The codegen
+ * path passes an empty comparison; the shape stays so callers can feed
+ * assessed overrides through the same planner.
+ */
+export type WebStateComparison = {
+  videos: Array<{ videoName: string; overrides: OverrideAssessment[] }>
+  snapshotEmpty: boolean
+}
+
 export type CodeSyncInput = {
   comparison: WebStateComparison
   actionSnapshot: ActionParamsSnapshot
@@ -182,6 +219,13 @@ export type CodeSyncInput = {
    * Optional so existing callers (and tests) need not pass it.
    */
   studioSync?: StudioSyncState
+  /**
+   * Narration cue value edits, keyed by video name. Codified into the
+   * `video.narration(...)` declaration argument (added when missing, converted
+   * to the language-major form when a non-default language is edited).
+   * Optional so existing callers (and tests) need not pass it.
+   */
+  narrationEdits?: NarrationEditsByVideo
 }
 
 /** A slug that is safe as a code identity and a wire key. */
@@ -1071,6 +1115,7 @@ export function planCodeSync(
       ...Object.keys(input.renames),
       ...Object.keys(input.overlayDeclEdits ?? {}),
       ...Object.keys(input.studioSync?.videos ?? {}),
+      ...Object.keys(input.narrationEdits ?? {}),
     ]),
   ]
 
@@ -1465,6 +1510,51 @@ export function planCodeSync(
           bump(appliedCounts, videoName)
         } else {
           markUnappliable(`locked ${method} on video '${videoName}'`)
+        }
+      }
+    }
+
+    // ── Narration cue value edits (codify into video.narration) ────────────
+    const narrationEdits = input.narrationEdits?.[videoName] ?? []
+    if (narrationEdits.length > 0) {
+      const file = declaringFile()
+      for (const edit of narrationEdits) {
+        let reason = `locked narration cue '${edit.cueName}' on video '${videoName}'`
+        const ok =
+          file !== null &&
+          tryApply(file, (ctx) => {
+            const result = setNarrationValue(
+              ctx,
+              videoName,
+              {
+                cueName: edit.cueName,
+                lang: edit.lang,
+                ...(edit.isDefault !== undefined && {
+                  isDefault: edit.isDefault,
+                }),
+                value: edit.value,
+              },
+              isLanguageKey
+            )
+            if (result.kind === 'edits') return result.edits
+            if (result.kind === 'appManaged') {
+              reason =
+                `narration cue '${edit.cueName}' on video '${videoName}' ` +
+                `is app-managed (names-only declaration)`
+            }
+            return null
+          })
+        if (ok) {
+          applied.push({
+            videoName,
+            file: file!,
+            description:
+              `set narration cue '${edit.cueName}' (${edit.lang}) ` +
+              `on video '${videoName}'`,
+          })
+          bump(appliedCounts, videoName)
+        } else {
+          markUnappliable(reason)
         }
       }
     }

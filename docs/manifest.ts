@@ -100,32 +100,12 @@ export const docsManifest = [
     description:
       'Attach spoken cues to a video, overlap narration with visible UI motion, choose voices, use speech markup, and connect ElevenLabs for custom voices.',
     prev: 'docs/guides/keyboard-shortcuts',
-    next: 'docs/guides/values',
-  },
-  {
-    source: 'values.md',
-    slug: 'docs/guides/values',
-    section: 'Fixtures',
-    order: 2,
-    navLabel: 'Values',
-    title: 'Values',
-    description:
-      'Inject per-language page content with video.values() for apps that do not self-localize, and let the web editor manage field values without code changes.',
-    prev: 'docs/guides/narration',
-    next: 'docs/guides/audio',
-  },
-  {
-    source: 'audio.md',
-    slug: 'docs/guides/audio',
-    section: 'Fixtures',
-    order: 3,
-    navLabel: 'Audio',
-    title: 'Audio',
-    description:
-      'Add background music or sound effects to a video with video.audio(), control volume and looping, and let the web editor manage track files.',
-    prev: 'docs/guides/values',
     next: 'docs/guides/overlays',
   },
+  // The Values (docs/guides/values), Audio (docs/guides/audio), and Render
+  // dependencies (docs/guides/dependencies) docs were removed for release:
+  // the features are unfinished and no longer exported. Their sources moved to
+  // docs/removed/ at the repo root.
   {
     source: 'overlays.md',
     slug: 'docs/guides/overlays',
@@ -135,19 +115,7 @@ export const docsManifest = [
     title: 'Overlays',
     description:
       'Add intro clips, corner logos, transitions, and timed overlays to ScreenCI recordings from files, HTML, or React.',
-    prev: 'docs/guides/audio',
-    next: 'docs/guides/dependencies',
-  },
-  {
-    source: 'dependencies.md',
-    slug: 'docs/guides/dependencies',
-    section: 'Fixtures',
-    order: 5,
-    navLabel: 'Render dependencies',
-    title: 'Render Dependencies',
-    description:
-      'Reuse another ScreenCI video or screenshot with selected(...): embed its currently selected output, inherit its audio, optionally carry subtitles, and keep dependents updated when the source render changes.',
-    prev: 'docs/guides/overlays',
+    prev: 'docs/guides/narration',
     next: 'docs/guides/languages',
   },
   {
@@ -158,8 +126,8 @@ export const docsManifest = [
     navLabel: 'Languages',
     title: 'Languages',
     description:
-      'Record per-language video versions from one script: set browser locale automatically, localize narration, values, overlays, and audio, and control the recording mode.',
-    prev: 'docs/guides/dependencies',
+      'Record per-language video versions from one script: set browser locale automatically, localize narration and overlays, and control the recording mode.',
+    prev: 'docs/guides/overlays',
     next: 'docs/guides/camera-and-zooming',
   },
   {
@@ -182,22 +150,13 @@ export const docsManifest = [
     navLabel: 'Mid-video overlay updates',
     title: 'Mid-Video Overlay Updates',
     description:
-      'Move, resize, hide, and show the narration bubble and recording frame mid-video with animated transitions, fade overlays, and change the background with a cut or crossfade.',
+      'Resize, hide, and show the recording frame and narration bubble mid-video with animated transitions, and fade overlays in and out.',
     prev: 'docs/guides/camera-and-zooming',
-    next: 'docs/guides/screenshots',
-  },
-  {
-    source: 'screenshots.md',
-    slug: 'docs/guides/screenshots',
-    section: 'Guides',
-    order: 5,
-    navLabel: 'Screenshots',
-    title: 'Screenshots',
-    description:
-      'Capture branded still screenshots with the screenshot() fixture: crop to a component, set quality and dark mode, and frame the shot on a background with overlays.',
-    prev: 'docs/guides/overlay-updates',
     next: 'docs/guides/editor',
   },
+  // The Screenshots doc (docs/guides/screenshots) was removed for release:
+  // the screenshot() fixture is unfinished and no longer exported. Its source
+  // moved to docs/removed/screenshots.md at the repo root.
   {
     source: 'editor.md',
     slug: 'docs/guides/editor',
@@ -207,7 +166,7 @@ export const docsManifest = [
     title: 'Editor',
     description:
       'Remix render options, narration text, voices, overlays, and languages from the web app. Everything is editable by default: arrays declare blank editor-owned names, and code values stay editable in the web editor.',
-    prev: 'docs/guides/screenshots',
+    prev: 'docs/guides/overlay-updates',
     next: 'docs/guides/public-urls-and-embeds',
   },
   {
@@ -332,20 +291,12 @@ export const docsManifest = [
   },
 ] as const
 
-const AUDIO_VALUES_DOCS_FLAG = 'SCREENCI_ENABLE_AUDIO_VALUES_DOCS'
-
-export function isAudioValuesDocsEnabled() {
-  return process.env[AUDIO_VALUES_DOCS_FLAG] === 'true'
-}
-
+// The SCREENCI_ENABLE_AUDIO_VALUES_DOCS env flag used to gate the audio and
+// values docs from the sidebar. Those docs are now removed from the manifest
+// entirely (see docs/removed/ at the repo root), so every remaining doc is
+// visible.
 function isSidebarVisibleDoc(entry: (typeof docsManifest)[number]) {
-  if (
-    entry.slug === 'docs/guides/audio' ||
-    entry.slug === 'docs/guides/values'
-  ) {
-    return isAudioValuesDocsEnabled()
-  }
-
+  void entry
   return true
 }
 

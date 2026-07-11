@@ -11,7 +11,6 @@ import type { ScreenshotClipRecord } from './clip.js'
 import type { CueDurationsMap } from './cueDurations.js'
 import type { ResolvedRedactStyle } from './redactController.js'
 import type { EditablePosition } from './editableDescriptor.js'
-import type { OverrideReportBuilder } from './timelineEdits.js'
 
 export type CurrentZoomViewport = {
   focusPoint: { x: number; y: number }
@@ -158,17 +157,6 @@ export type ScreenCIRuntimeContext = {
   editable: {
     seq: number
     ordinalByIdentity: Map<string, number>
-    /**
-     * Web-editor overrides for the active recording, indexed by stable key.
-     * Null when none were injected (plain `test` runs, no stored edits).
-     */
-    overridesByKey: Map<string, Record<string, unknown>> | null
-    /**
-     * Report collector for this recording's override applications. Shared
-     * with the recorder so runtime param edits and write-time placed events
-     * land in one report. Null outside instrumented record runs.
-     */
-    report: OverrideReportBuilder | null
   }
 }
 
@@ -232,8 +220,6 @@ export function createScreenCIRuntimeContext(
     editable: {
       seq: 0,
       ordinalByIdentity: new Map<string, number>(),
-      overridesByKey: null,
-      report: null,
     },
   }
 }
@@ -431,39 +417,6 @@ export function resetEditableRuntimeState(): void {
   const state = getScreenCIRuntimeContext().editable
   state.seq = 0
   state.ordinalByIdentity.clear()
-  state.overridesByKey = null
-  state.report = null
-}
-
-/**
- * Binds the active recording's web-editor overrides (indexed by stable key)
- * so editable actions can resolve them. Pass null to clear.
- */
-export function setEditableRunOverrides(
-  overridesByKey: Map<string, Record<string, unknown>> | null
-): void {
-  getScreenCIRuntimeContext().editable.overridesByKey = overridesByKey
-}
-
-export function getEditableRunOverrides(): Map<
-  string,
-  Record<string, unknown>
-> | null {
-  return getScreenCIRuntimeContext().editable.overridesByKey
-}
-
-/**
- * Binds the active recording's override report so runtime edit applications
- * are collected alongside write-time placed events. Pass null to clear.
- */
-export function setEditableRunReport(
-  report: OverrideReportBuilder | null
-): void {
-  getScreenCIRuntimeContext().editable.report = report
-}
-
-export function getEditableRunReport(): OverrideReportBuilder | null {
-  return getScreenCIRuntimeContext().editable.report
 }
 
 export function getRuntimeAutoZoomState(): AutoZoomState {

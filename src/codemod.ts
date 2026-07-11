@@ -1193,6 +1193,274 @@ export function setBuilderOptions(
   ]
 }
 
+/** `name` when it is a plain identifier, else a quoted property name. */
+function propertyNameSource(name: string): string {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)
+    ? name
+    : `'${name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+}
+
+/**
+ * The top-level property names of an object literal, or null when the literal
+ * contains a spread or a computed name (its key set cannot be known
+ * statically).
+ */
+function objectLiteralKeys(
+  ts: TsModule,
+  object: TS.ObjectLiteralExpression
+): string[] | null {
+  const keys: string[] = []
+  for (const property of object.properties) {
+    if (ts.isSpreadAssignment(property)) return null
+    const name = property.name
+    if (name === undefined) return null
+    if (ts.isIdentifier(name) || ts.isStringLiteral(name)) {
+      keys.push(name.text)
+    } else {
+      return null
+    }
+  }
+  return keys
+}
+
+/** One narration cue value change to write into a declaration argument. */
+export type NarrationValueEdit = {
+  cueName: string
+  /** A language code, or `'default'` for the shared value. */
+  lang: string
+  /**
+   * True when `lang` is the video's default language: the edit targets the
+   * shared (content-major or `default`) value unless the declaration carries
+   * an explicit `[lang]` sub-object.
+   */
+  isDefault?: boolean
+  value: unknown
+}
+
+/**
+ * Result of {@link setNarrationValue}: computed edits (empty when already
+ * up to date), `appManaged` for a names-only declaration whose content lives
+ * in the web app, or `unsupported` when the declaration resists a mechanical
+ * edit.
+ */
+export type NarrationValueResult =
+  | { kind: 'edits'; edits: TextEdit[] }
+  | { kind: 'appManaged' }
+  | { kind: 'unsupported' }
+
+/** Merge one cue value into a `name -> value` object literal. */
+function mergeCueIntoObject(
+  ctx: CodemodContext,
+  object: TS.ObjectLiteralExpression,
+  edit: NarrationValueEdit,
+  valueSource: string
+): NarrationValueResult {
+  const { ts } = ctx
+  const { property, unsafe } = findProperty(ts, object, edit.cueName)
+  if (unsafe) return { kind: 'unsupported' }
+  if (property === null) {
+    return {
+      kind: 'edits',
+      edits: [
+        insertPropertyEdit(
+          object,
+          `${propertyNameSource(edit.cueName)}: ${valueSource}`
+        ),
+      ],
+    }
+  }
+  const initializer = property.initializer
+  // Object (or string, onto an object cue) value onto an existing object
+  // literal: deep-merge only the sent keys, so an edited cue text keeps a
+  // declared voice or volume, and vice versa.
+  const mergeValue: Record<string, unknown> | null =
+    typeof edit.value === 'object' &&
+    edit.value !== null &&
+    !Array.isArray(edit.value)
+      ? (edit.value as Record<string, unknown>)
+      : typeof edit.value === 'string'
+        ? { cue: edit.value }
+        : null
+  if (mergeValue !== null && ts.isObjectLiteralExpression(initializer)) {
+    const objectText = ctx.source.slice(
+      initializer.getStart(),
+      initializer.getEnd()
+    )
+    const merged = mergeObjectLiteralText(ts, objectText, mergeValue)
+    if (merged === null) return { kind: 'unsupported' }
+    if (merged === objectText) return { kind: 'edits', edits: [] }
+    return {
+      kind: 'edits',
+      edits: [
+        {
+          start: initializer.getStart(),
+          end: initializer.getEnd(),
+          replacement: merged,
+        },
+      ],
+    }
+  }
+  // Plain replacement otherwise: string onto string, and the shape upgrades
+  // (string value onto an object, object value onto a plain string).
+  if (
+    typeof edit.value === 'string' &&
+    ts.isStringLiteralLike(initializer) &&
+    initializer.text === edit.value
+  ) {
+    return { kind: 'edits', edits: [] } // idempotent no-op
+  }
+  return {
+    kind: 'edits',
+    edits: [
+      {
+        start: initializer.getStart(),
+        end: initializer.getEnd(),
+        replacement: valueSource,
+      },
+    ],
+  }
+}
+
+/**
+ * Write one narration cue value into the `video.narration(...)` declaration
+ * of `videoName`, handling every declaration shape (see declare.ts):
+ *
+ * - Declaration missing: a `.narration({...})` call is appended to the chain,
+ *   content-major for a default-language edit and language-major otherwise.
+ * - Content-major object: the cue is merged in place for a default-language
+ *   edit; editing a non-default language rewrites the argument to the
+ *   language-major form, with the existing object text preserved verbatim
+ *   under `default`.
+ * - Language-major object: the cue is merged into the language's sub-object
+ *   when present. A default-language edit without an explicit `[lang]` key
+ *   targets the shared `default` sub-object (added when missing); any other
+ *   missing language key is added.
+ * - Names-only array: content is app-managed by design; reported as such.
+ *
+ * Conservative by design: `unsupported` whenever the declaration or the video
+ * call resists a mechanical edit (missing/ambiguous declaration, spreads,
+ * shorthand properties, non-literal arguments). Idempotent: re-applying the
+ * same value produces no edit.
+ */
+export function setNarrationValue(
+  ctx: CodemodContext,
+  videoName: string,
+  edit: NarrationValueEdit,
+  isLanguageKey: (key: string) => boolean
+): NarrationValueResult {
+  const { ts } = ctx
+  // A `{ cue }` object with no other keys is the plain-string spelling: keep
+  // declarations minimal (a text edit never upgrades a string cue to an
+  // object).
+  if (
+    typeof edit.value === 'object' &&
+    edit.value !== null &&
+    !Array.isArray(edit.value)
+  ) {
+    const valueKeys = Object.keys(edit.value)
+    const cueOnly = (edit.value as { cue?: unknown }).cue
+    if (
+      valueKeys.length === 1 &&
+      valueKeys[0] === 'cue' &&
+      typeof cueOnly === 'string'
+    ) {
+      edit = { ...edit, value: cueOnly }
+    }
+  }
+  const valueSource = valueToSource(edit.value)
+  if (valueSource === null) return { kind: 'unsupported' }
+  const call = findVideoCall(ctx, videoName)
+  if (call === null) return { kind: 'unsupported' }
+  const cueProp = propertyNameSource(edit.cueName)
+  const langProp = propertyNameSource(edit.lang)
+  const isDefault = edit.isDefault === true || edit.lang === 'default'
+  const existing = findMethodCallInChain(ts, call.expression, 'narration')
+  if (existing === null) {
+    const objectSource = isDefault
+      ? `{ ${cueProp}: ${valueSource} }`
+      : `{ ${langProp}: { ${cueProp}: ${valueSource} } }`
+    const insertAt = call.expression.getEnd()
+    return {
+      kind: 'edits',
+      edits: [
+        {
+          start: insertAt,
+          end: insertAt,
+          replacement: `.narration(${objectSource})`,
+        },
+      ],
+    }
+  }
+  const arg = existing.arguments[0]
+  if (arg === undefined) return { kind: 'unsupported' }
+  if (ts.isArrayLiteralExpression(arg)) return { kind: 'appManaged' }
+  if (!ts.isObjectLiteralExpression(arg)) return { kind: 'unsupported' }
+  const keys = objectLiteralKeys(ts, arg)
+  if (keys === null) return { kind: 'unsupported' }
+  const languageMajor = keys.length > 0 && keys.every(isLanguageKey)
+  if (!languageMajor) {
+    if (isDefault || keys.length === 0) {
+      if (keys.length === 0 && !isDefault) {
+        // Empty declaration: start it directly in the language-major form.
+        return {
+          kind: 'edits',
+          edits: [
+            {
+              start: arg.getStart(),
+              end: arg.getEnd(),
+              replacement: `{ ${langProp}: { ${cueProp}: ${valueSource} } }`,
+            },
+          ],
+        }
+      }
+      return mergeCueIntoObject(ctx, arg, edit, valueSource)
+    }
+    // Content-major declaration edited in a specific language: convert to the
+    // language-major form, keeping the existing object text verbatim as the
+    // shared `default` values.
+    const existingText = ctx.source.slice(arg.getStart(), arg.getEnd())
+    return {
+      kind: 'edits',
+      edits: [
+        {
+          start: arg.getStart(),
+          end: arg.getEnd(),
+          replacement:
+            `{ default: ${existingText}, ` +
+            `${langProp}: { ${cueProp}: ${valueSource} } }`,
+        },
+      ],
+    }
+  }
+  // Language-major: an explicit `[lang]` sub-object wins; a default-language
+  // edit without one targets the shared `default` sub-object.
+  const explicit = findProperty(ts, arg, edit.lang)
+  if (explicit.unsafe) return { kind: 'unsupported' }
+  let property = explicit.property
+  let targetProp = langProp
+  if (property === null && isDefault && edit.lang !== 'default') {
+    const shared = findProperty(ts, arg, 'default')
+    if (shared.unsafe) return { kind: 'unsupported' }
+    property = shared.property
+    targetProp = 'default'
+  }
+  if (property === null) {
+    return {
+      kind: 'edits',
+      edits: [
+        insertPropertyEdit(
+          arg,
+          `${targetProp}: { ${cueProp}: ${valueSource} }`
+        ),
+      ],
+    }
+  }
+  if (!ts.isObjectLiteralExpression(property.initializer)) {
+    return { kind: 'unsupported' }
+  }
+  return mergeCueIntoObject(ctx, property.initializer, edit, valueSource)
+}
+
 /**
  * Remove the named top-level keys from an object-literal source text. Missing
  * keys are skipped. Returns the new source, or null when the object resists a

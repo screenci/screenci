@@ -201,7 +201,7 @@ async function applyRedact(
  * Mask the element(s) matched by `locator` so the content never enters the
  * recording. The mask is applied client side in the live DOM, so the obscured
  * pixels are never captured and never uploaded to screenci. This is true
- * redaction, unlike {@link cover}, which only hides content in the published
+ * redaction, unlike {@link cover}, which only hides content in the exported
  * output.
  *
  * To hide a secret that is already on screen without a visible flash, register

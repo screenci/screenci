@@ -17,8 +17,6 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | `screenci record [playwrightArgs]` | Record videos and upload results when configured         |
 | `screenci dev`                     | Connect this machine to the editor for on-demand records |
 | `screenci info`                    | Print the last record run's URLs and render status       |
-| `screenci status`                  | Compare Editor action edits with the latest recorded run |
-| `screenci sync`                    | Apply Editor edits to the test sources (static analysis) |
 | `screenci make-public <videoId>`   | Enable public delivery for a video                       |
 | `screenci make-private <videoId>`  | Disable public delivery for a video                      |
 | `screenci delete <videoId>`        | Permanently delete a video and its renders               |
@@ -279,13 +277,25 @@ A shared-mode recording (`{ mode: 'shared' }`) is a single capture and is not
 split by this filter. See
 [Languages](/docs/guides/languages) for the recording API.
 
+### `--export`
+
+Export a finished video from this recording. Without `--export`, `record`
+refreshes the video's live preview in the Editor only, so you can iterate for
+free and export when you are happy. Export minutes are spent only on export:
+
+```bash
+npx screenci record --export
+```
+
+`--publish` and `--render` are accepted as deprecated aliases.
+
 ### `--no-render`
 
 Upload the recording and its editable timeline data without dispatching a
 render. Useful for a fast first sync with the web editor: the timeline, the
 action identities (`editId` slugs), and the editable parameters land in the
-Editor in seconds, without waiting for (or spending) a render. Render later
-with a plain `screenci record`:
+Editor in seconds, without waiting for (or spending) a render. Export later
+with `screenci record --export`:
 
 ```bash
 npx screenci record --no-render
@@ -301,7 +311,7 @@ Behavior:
 - uploads only the recordings requested by this run (for example the videos matched by `--grep` or `--languages`), with or without `SCREENCI_SECRET`
 - prints a results URL only when the requested recordings uploaded successfully. If a requested video is missing its `recording.mp4` or another upload failure occurs, `record` exits non-zero, does not save `.screenci/last-record.json`, and does not print a success URL for unrelated output
 - prints any informational notices returned by the service in cyan after upload (occasional, non-error status messages such as maintenance or timing notes). These never affect the exit code
-- new accounts start on the Free plan automatically (no plan selection step). Free renders include a ScreenCI watermark; paid plans remove it and raise render and active-video limits, and unlock multiple languages plus expressive tone control
+- new accounts start on the Free plan automatically (no plan selection step). Free exports include a ScreenCI watermark; paid plans remove it and raise export and active-video limits, and unlock multiple languages plus expressive tone control
 
 Relevant options:
 
@@ -325,7 +335,7 @@ soon as the workflow has been triggered.
 npx screenci record --remote
 ```
 
-Pass `--grep` to record only matching videos or screenshots remotely (the filter
+Pass `--grep` to record only matching videos remotely (the filter
 is forwarded to the workflow's `grep` input):
 
 ```bash
@@ -355,16 +365,47 @@ Options:
 - `-c, --config <path>`: path to the ScreenCI config file.
 - `--token <token>`: personal dev token. Defaults to `SCREENCI_DEV_TOKEN` from
   your project env file.
-- `--sync`: auto-apply web editor edits to the recording sources while
-  listening. Every few seconds the listener checks for new edits, stamps
-  missing `editId` slugs (see [`screenci sync`](#screenci-sync)), and applies
-  what sync can apply mechanically; a video whose
-  pending edits were all applied gets its web edits cleared automatically, so
-  the next record runs purely from code. Edits whose section is locked (an
-  unstamped action, a loop repeat, or a call inside control flow) are left in
-  the editor and reported in the log. Auto-sync pauses while a triggered
-  record is running.
+- `-g, --grep <pattern>`: only manage videos whose title matches this pattern
+  (the same filter as Playwright's `--grep`). The startup check and any
+  startup records are limited to the matching videos.
+- `--force-record`: re-record every managed video at startup even when the
+  kept recordings are up to date.
+- `--record-kill-window <seconds>`: while connected, a running record younger
+  than this is killed and replaced when a newer record request arrives; an
+  older one finishes first and the new request runs right after (only the
+  latest queued request is kept). Default: 10.
+- `--no-watch`: disable the source-file watcher (see below).
 - `-v, --verbose`: verbose output.
+
+Startup check: `screenci dev` keeps each recording's `data.json` on disk after
+upload, along with a hash of the test source file. On startup it compares that
+hash with the current source and verifies every editable action carries an
+`editId`. Up-to-date videos skip recording entirely; anything stale gets its
+missing `editId` slugs stamped into the source and is re-recorded as a preview
+(no render) before the session starts serving the editor.
+
+Editor codegen: while connected, every edit made in the web editor is sent to
+this machine as a codegen request and written directly into the
+`.screenci.ts` source (the code is the single source of truth). Edits that
+change recorded behavior additionally trigger an automatic preview record.
+An edit the codegen cannot apply is reported back and the editor reverts it.
+Besides timeline edits this covers the editor's option panels: render and
+record option changes are merged into the video's `.renderOptions({...})` /
+`.recordOptions({...})` builder calls (the call is added when the section does
+not exist yet), and narration text edits are merged into the
+`video.narration(...)` declaration. Editing a narration text in a non-default
+language converts a flat declaration to the language-major form (the existing
+values move under `default`). A names-only narration declaration
+(`.narration(['intro'])`) stays app-managed: its content lives in the web app
+and is never codegen'd.
+
+Source watching: while connected, `screenci dev` watches the test source files
+backing the managed videos, plus `screenci.config.ts`. Saving a real change to
+a source file automatically re-records that file's videos as a preview (the
+same freshness hash as the startup check filters out no-op saves and the
+CLI's own codegen writes); changing the config re-records every managed video.
+Watching follows the `-g/--grep` filter and can be turned off with
+`--no-watch`.
 
 Setup:
 
@@ -374,7 +415,7 @@ Setup:
    your `SCREENCI_SECRET`.
 3. Run `screenci dev` in your project. The editor header shows your machine as
    connected (for example `you@laptop`) and offers "Record ... on laptop" in
-   the Render button's record menu.
+   the Export button's record menu.
 
 While connected:
 
@@ -555,11 +596,10 @@ It can:
   `move.duration` on a `.click(...)`)
 - insert `await page.waitForTimeout(...)` for start-time edits
 - place web-authored effects into the linear timeline: a narration cue /
-  overlay / audio start in the gap after an action, an `autoZoom(...)` bracket
+  overlay start in the gap after an action, an `autoZoom(...)` bracket
   over a run of interactions, a `hide(...)` / `speed(...)` / `time(...)` span,
-  or an instant `moveNarration(...)` / `resizeRecording(...)` /
-  `setBackground(...)` point (with the needed imports and gap `waitForTimeout`
-  sleeps)
+  or an instant `resizeRecording(...)` point (with the needed imports and gap
+  `waitForTimeout` sleeps)
 - codify Editor render/record option edits into the video's builder chain,
   updating an existing `video.renderOptions({...})` / `video.recordOptions({...})`
   call in place (merging the changed keys) or inserting one before the video's
@@ -573,8 +613,8 @@ rewrites the existing `waitForTimeout(...)` rather than adding another. And when
 an effect is removed in the Editor, `sync` deletes the call it authored and
 re-coalesces the gap sleep it split, so no orphaned "ghost" sleep is left
 behind. This cleanup runs only for the point effects it can identify
-unambiguously (narration cues, overlays, audio starts, and
-`moveNarration`/`resizeRecording`/`setBackground` points); a removed
+unambiguously (narration cues, overlays, and
+`resizeRecording` points); a removed
 `autoZoom`/`hide`/`speed`/`time` wrap is left in place for you to delete by hand
 rather than risk unwrapping code you may have since edited.
 

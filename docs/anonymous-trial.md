@@ -32,7 +32,7 @@ further within that call:
   left. Once all three are used (or the trial session expires), a further
   `screenci record` stops before it starts and prints a sign-up link instead of
   recording again.
-- **Up to 3 videos and screenshots** in each call.
+- **Up to 3 videos** in each call.
 - **Up to 3 narration languages at once**, combined across everything in a
   call.
 - **1080p maximum resolution.** 4K output requires signing up for the

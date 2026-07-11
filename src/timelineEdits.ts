@@ -1,23 +1,20 @@
 /**
- * Unified timeline edits: the single wire format for web-editor overrides.
+ * Unified timeline edits: the typed record shapes of web-editor edits.
  *
- * A `TimelineEditsDoc` carries every edit the web editor stored for a video as
- * typed records keyed by the stable code identity of an action (its `editId`
- * slug). There are no anchors and no offsets: position is "where the call sits
- * in code call-order," and timing gaps are plain `waitForTimeout` sleeps.
+ * A `TimelineEditsDoc` carries every edit the web editor produced for a video
+ * as typed records keyed by the stable code identity of an action (its
+ * `editId` slug). There are no anchors and no offsets: position is "where the
+ * call sits in code call-order," and timing gaps are plain `waitForTimeout`
+ * sleeps.
  *
- * Two record shapes apply at record time:
+ * Code is the single source of truth: edits arrive over the dev channel as
+ * codegen requests (`screenci dev`, see applyCodegen.ts) and are written
+ * straight into the .screenci.ts sources. Nothing is applied at record time;
+ * a recording always runs purely from code values.
+ *
  * - `paramEdit`: changes parameter fields of a recorded action (durations,
  *   sleeps, typing delay). It targets an action by its stable editable key.
- * - `renameEdit`: renames an action's `editId` slug (codified by `screenci
- *   sync`; nothing to apply at record time).
- *
- * The remaining records are codify-only: they are never materialized into the
- * recorded event list. `screenci sync` writes them into the .screenci.ts
- * sources as real calls (a narration cue, an `autoZoom(...)` bracket, a
- * `hide(...)` span, a `moveNarration(...)` point, etc.), and normal recording
- * then emits the corresponding events. Each codify record locates its call
- * site by an `editId`:
+ * - `renameEdit`: renames an action's `editId` slug.
  * - `mediaEdit`: a narration cue / overlay / audio start placed in the gap
  *   after an action. `blocking:true` awaits it (backbone, advances the
  *   timeline); `blocking:false` fires and forgets (background). End is never
@@ -28,17 +25,16 @@
  *   in gaps (after `fromEditId` and after `untilEditId`).
  * - `gapPointEdit`: an instant `moveNarration`/`resizeRecording`/`setBackground`
  *   point in the gap after an action.
- *
- * Before a record run the CLI fetches the doc and injects it via
- * `SCREENCI_TIMELINE_EDITS` (a JSON map of video name to doc). Only param edits
- * apply at runtime (they change real waits). Every param edit produces an
- * `OverrideReportItem` so nothing is ever silently skipped.
+ * - `optionsEdit`: a full snapshot of the editor's render or record option
+ *   values, merged into the video's `.renderOptions({...})` /
+ *   `.recordOptions({...})` builder call (added when missing).
+ * - `narrationEdit`: a narration cue value change, merged into the
+ *   `video.narration({...})` declaration (added when missing; the declaration
+ *   is converted to the language-major form when a non-default language is
+ *   edited).
  */
-import { isOverrideDebugEnabled } from './debugFlags.js'
 
-export const SCREENCI_TIMELINE_EDITS_ENV = 'SCREENCI_TIMELINE_EDITS'
-
-export const TIMELINE_EDITS_VERSION = 3
+export const TIMELINE_EDITS_VERSION = 4
 
 // ─── Edit records ────────────────────────────────────────────────────────────
 
@@ -192,6 +188,52 @@ export type OverlayDeclEdit = {
   disabled?: boolean
 }
 
+export const OPTIONS_EDIT_METHODS = ['renderOptions', 'recordOptions'] as const
+export type OptionsEditMethod = (typeof OPTIONS_EDIT_METHODS)[number]
+
+/**
+ * A full snapshot of the editor's render or record option values for a video.
+ * Merged (deep, idempotent) into the existing `.<method>({...})` object
+ * literal of the video builder chain, or appended as a new `.<method>({...})`
+ * call when the section is missing. The id is `options|<method>` so repeated
+ * sends coalesce last-write-wins per method.
+ */
+export type OptionsEdit = {
+  type: 'optionsEdit'
+  id: string
+  method: OptionsEditMethod
+  values: Record<string, unknown>
+}
+
+/**
+ * The value of one narration cue: a plain string, or an object carrying the
+ * cue text plus per-cue metadata (voice override, volume).
+ */
+export type NarrationCueValue = string | { cue: string; [key: string]: unknown }
+
+/**
+ * A narration cue value change made in the web editor, applied to the
+ * `video.narration(...)` declaration argument. `lang` is a language code or
+ * `'default'` for the shared value. When the declaration is content-major and
+ * a non-default language is edited, the argument is rewritten to the
+ * language-major form (existing values move under `default`). The id is
+ * `narration|<cueName>|<lang>` so repeated sends coalesce per cue and
+ * language.
+ */
+export type NarrationEdit = {
+  type: 'narrationEdit'
+  id: string
+  cueName: string
+  lang: string
+  /**
+   * True when `lang` is the video's default language: the edit targets the
+   * shared value (content-major object or `default` sub-object) unless the
+   * declaration carries an explicit `[lang]` sub-object.
+   */
+  isDefault?: boolean
+  value: NarrationCueValue
+}
+
 /** Codify-only records: placed into code by `screenci sync`, never at runtime. */
 export type CodifyEdit =
   | MediaEdit
@@ -200,376 +242,17 @@ export type CodifyEdit =
   | GapPointEdit
   | BlockRemoveEdit
 
-export type EditRecord = ParamEdit | RenameEdit | CodifyEdit | OverlayDeclEdit
+export type EditRecord =
+  | ParamEdit
+  | RenameEdit
+  | CodifyEdit
+  | OverlayDeclEdit
+  | OptionsEdit
+  | NarrationEdit
 
 export type TimelineEditsDoc = {
   version: number
   edits: EditRecord[]
-}
-
-// ─── Override report ─────────────────────────────────────────────────────────
-
-export type OverrideReportStatus =
-  | 'applied'
-  | 'fallback'
-  | 'shadowed-code'
-  | 'skipped'
-
-export type OverrideReportChannel =
-  | 'paramEdit'
-  | 'codifyEdit'
-  | 'legacyEditable'
-  | 'legacyAuthored'
-  | 'fetch'
-
-export type OverrideReportItem = {
-  editId: string
-  channel: OverrideReportChannel
-  status: OverrideReportStatus
-  /** Codify-edit kind or paramEdit target key, for readable logs. */
-  subject?: string
-  reason?: string
-  resolvedStartMs?: number
-  resolvedEndMs?: number
-  appliedValues?: Record<string, unknown>
-  codeValues?: Record<string, unknown>
-}
-
-/**
- * Collects one item per edit application attempt and turns them into
- * readable log lines. Injected wherever overrides are applied so the whole
- * run produces a single report, embedded in data.json and uploaded.
- */
-export class OverrideReportBuilder {
-  private readonly reportItems: OverrideReportItem[] = []
-
-  constructor(
-    private readonly log: (message: string) => void = (message) =>
-      console.warn(message)
-  ) {}
-
-  add(item: OverrideReportItem): void {
-    this.reportItems.push(item)
-    // Skips, fallbacks and shadowed code values always log; applied detail
-    // only with override debugging enabled.
-    if (item.status === 'applied' && !isOverrideDebugEnabled()) return
-    this.log(formatReportItem(item))
-  }
-
-  items(): OverrideReportItem[] {
-    return [...this.reportItems]
-  }
-
-  /** Logs the end-of-video summary block (counts per status). */
-  logSummary(videoName: string): void {
-    if (this.reportItems.length === 0) return
-    const counts = new Map<OverrideReportStatus, number>()
-    for (const item of this.reportItems) {
-      counts.set(item.status, (counts.get(item.status) ?? 0) + 1)
-    }
-    const parts = [...counts.entries()].map(
-      ([status, count]) => `${count} ${status}`
-    )
-    this.log(`[screenci overrides] ${videoName}: ${parts.join(', ')}`)
-  }
-}
-
-export function formatReportItem(item: OverrideReportItem): string {
-  const status =
-    item.status === 'applied' ? 'applied' : item.status.toUpperCase()
-  const subject = item.subject !== undefined ? ` ${item.subject}` : ''
-  const range =
-    item.resolvedStartMs !== undefined
-      ? item.resolvedEndMs !== undefined &&
-        item.resolvedEndMs !== item.resolvedStartMs
-        ? ` -> ${Math.round(item.resolvedStartMs)}..${Math.round(item.resolvedEndMs)}ms`
-        : ` -> ${Math.round(item.resolvedStartMs)}ms`
-      : ''
-  const reason = item.reason !== undefined ? ` reason=${item.reason}` : ''
-  return `[screenci overrides] ${status} ${item.channel}${subject} ${item.editId}${range}${reason}`
-}
-
-// ─── Parsing ─────────────────────────────────────────────────────────────────
-
-export type InvalidEdit = { id: string; reason: string }
-
-export type ParsedVideoEdits = {
-  edits: EditRecord[]
-  /** Records that failed validation: reported, never silently dropped. */
-  invalid: InvalidEdit[]
-}
-
-export type TimelineEditsByVideo = Record<string, ParsedVideoEdits>
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0
-}
-
-function optionalNonNegativeMs(value: unknown): boolean {
-  return (
-    value === undefined ||
-    (typeof value === 'number' && Number.isFinite(value) && value >= 0)
-  )
-}
-
-/**
- * Validates an optional `delayMs` against its sibling sleep field: a delay
- * must be a positive integer and cannot combine with a positive sleep (the
- * two encode contradictory placements: before vs after the anchor).
- */
-function delayMsProblem(
-  delayMs: unknown,
-  sleepMs: unknown,
-  sleepField: string
-): string | null {
-  if (delayMs === undefined) return null
-  if (
-    typeof delayMs !== 'number' ||
-    !Number.isInteger(delayMs) ||
-    delayMs <= 0
-  ) {
-    return 'invalid delayMs'
-  }
-  if (typeof sleepMs === 'number' && sleepMs > 0) {
-    return `delayMs cannot combine with a positive ${sleepField}`
-  }
-  return null
-}
-
-function optionalProps(value: unknown): boolean {
-  return value === undefined || (typeof value === 'object' && value !== null)
-}
-
-/** Why a record is invalid, or null when it is a valid {@link EditRecord}. */
-function editRecordProblem(value: unknown): string | null {
-  if (typeof value !== 'object' || value === null) return 'not an object'
-  const record = value as Record<string, unknown>
-  if (!isNonEmptyString(record.id)) return 'missing id'
-  switch (record.type) {
-    case 'paramEdit': {
-      const target = record.target as Record<string, unknown> | null
-      if (
-        typeof target !== 'object' ||
-        target === null ||
-        !isNonEmptyString(target.key)
-      ) {
-        return 'paramEdit missing target.key'
-      }
-      if (typeof record.fields !== 'object' || record.fields === null) {
-        return 'paramEdit missing fields'
-      }
-      return null
-    }
-    case 'renameEdit': {
-      const target = record.target as Record<string, unknown> | null
-      if (
-        typeof target !== 'object' ||
-        target === null ||
-        !isNonEmptyString(target.editId)
-      ) {
-        return 'renameEdit missing target.editId'
-      }
-      if (!isNonEmptyString(record.newEditId)) {
-        return 'renameEdit missing newEditId'
-      }
-      return null
-    }
-    case 'mediaEdit': {
-      if (
-        !(MEDIA_EDIT_KINDS as readonly string[]).includes(record.kind as string)
-      ) {
-        return `unknown mediaEdit kind '${String(record.kind)}'`
-      }
-      if (!isNonEmptyString(record.afterEditId))
-        return 'mediaEdit missing afterEditId'
-      if (typeof record.blocking !== 'boolean')
-        return 'mediaEdit missing blocking'
-      if (!optionalNonNegativeMs(record.sleepBeforeMs))
-        return 'invalid sleepBeforeMs'
-      {
-        const problem = delayMsProblem(
-          record.delayMs,
-          record.sleepBeforeMs,
-          'sleepBeforeMs'
-        )
-        if (problem !== null) return problem
-      }
-      if (record.delayMs !== undefined && record.blocking === true) {
-        return 'delayMs requires blocking: false'
-      }
-      if (!optionalProps(record.props)) return 'invalid props'
-      return null
-    }
-    case 'zoomEdit': {
-      if (!isNonEmptyString(record.fromEditId))
-        return 'zoomEdit missing fromEditId'
-      if (!isNonEmptyString(record.untilEditId))
-        return 'zoomEdit missing untilEditId'
-      if (!optionalNonNegativeMs(record.leadInMs)) return 'invalid leadInMs'
-      if (!optionalNonNegativeMs(record.holdMs)) return 'invalid holdMs'
-      if (!optionalProps(record.props)) return 'invalid props'
-      return null
-    }
-    case 'gapSpanEdit': {
-      if (
-        !(GAP_SPAN_KINDS as readonly string[]).includes(record.kind as string)
-      ) {
-        return `unknown gapSpanEdit kind '${String(record.kind)}'`
-      }
-      if (!isNonEmptyString(record.fromEditId))
-        return 'gapSpanEdit missing fromEditId'
-      if (!isNonEmptyString(record.untilEditId))
-        return 'gapSpanEdit missing untilEditId'
-      if (!optionalNonNegativeMs(record.fromSleepMs))
-        return 'invalid fromSleepMs'
-      if (!optionalNonNegativeMs(record.untilSleepMs))
-        return 'invalid untilSleepMs'
-      {
-        const problem = delayMsProblem(
-          record.delayMs,
-          record.fromSleepMs,
-          'fromSleepMs'
-        )
-        if (problem !== null) return problem
-      }
-      if (!optionalProps(record.props)) return 'invalid props'
-      return null
-    }
-    case 'gapPointEdit': {
-      if (
-        !(GAP_POINT_KINDS as readonly string[]).includes(record.kind as string)
-      ) {
-        return `unknown gapPointEdit kind '${String(record.kind)}'`
-      }
-      if (!isNonEmptyString(record.afterEditId))
-        return 'gapPointEdit missing afterEditId'
-      if (!optionalNonNegativeMs(record.sleepBeforeMs))
-        return 'invalid sleepBeforeMs'
-      {
-        const problem = delayMsProblem(
-          record.delayMs,
-          record.sleepBeforeMs,
-          'sleepBeforeMs'
-        )
-        if (problem !== null) return problem
-      }
-      if (!optionalProps(record.props)) return 'invalid props'
-      return null
-    }
-    case 'blockRemoveEdit': {
-      const target = record.target as Record<string, unknown> | null
-      if (
-        typeof target !== 'object' ||
-        target === null ||
-        !isNonEmptyString(target.editId)
-      ) {
-        return 'blockRemoveEdit missing target.editId'
-      }
-      return null
-    }
-    case 'overlayDeclEdit': {
-      if (!isNonEmptyString(record.overlayName)) {
-        return 'overlayDeclEdit missing overlayName'
-      }
-      if (typeof record.props !== 'object' || record.props === null) {
-        return 'overlayDeclEdit missing props'
-      }
-      return null
-    }
-    default:
-      return `unknown record type '${String(record.type)}'`
-  }
-}
-
-/**
- * Parse the injected timeline-edits map. Returns `null` when the env var is
- * unset or unreadable; per-video invalid records are kept in `invalid` so the
- * caller can report them instead of losing them silently.
- */
-export function parseTimelineEdits(
-  env: NodeJS.ProcessEnv = process.env
-): TimelineEditsByVideo | null {
-  const raw = env[SCREENCI_TIMELINE_EDITS_ENV]
-  if (raw === undefined || raw.trim().length === 0) return null
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return null
-  }
-  if (typeof parsed !== 'object' || parsed === null) return null
-
-  const result: TimelineEditsByVideo = {}
-  for (const [videoName, doc] of Object.entries(parsed)) {
-    if (typeof doc !== 'object' || doc === null) continue
-    const { edits } = doc as Record<string, unknown>
-    if (!Array.isArray(edits)) continue
-    const valid: EditRecord[] = []
-    const invalid: InvalidEdit[] = []
-    for (const [index, record] of edits.entries()) {
-      const problem = editRecordProblem(record)
-      if (problem === null) {
-        valid.push(record as EditRecord)
-      } else {
-        const id =
-          typeof (record as Record<string, unknown>)?.id === 'string'
-            ? ((record as Record<string, unknown>).id as string)
-            : `#${index}`
-        invalid.push({ id, reason: problem })
-      }
-    }
-    if (valid.length > 0 || invalid.length > 0) {
-      result[videoName] = { edits: valid, invalid }
-    }
-  }
-  return Object.keys(result).length > 0 ? result : null
-}
-
-/** The parsed edits for one video from the injected env, or null. */
-export function resolveTimelineEditsForVideo(
-  videoName: string,
-  env: NodeJS.ProcessEnv = process.env
-): ParsedVideoEdits | null {
-  return parseTimelineEdits(env)?.[videoName] ?? null
-}
-
-export type SplitEdits = {
-  /** Param edits: applied at record time (they change real waits). */
-  paramEdits: ParamEdit[]
-  /** Codify-only records: never materialized at record time. */
-  codifyEdits: CodifyEdit[]
-}
-
-export function splitEdits(edits: readonly EditRecord[]): SplitEdits {
-  const paramEdits: ParamEdit[] = []
-  const codifyEdits: CodifyEdit[] = []
-  for (const edit of edits) {
-    switch (edit.type) {
-      case 'paramEdit':
-        paramEdits.push(edit)
-        break
-      case 'renameEdit':
-        // Renames affect code identity only; nothing to apply at record time
-        // (the recorded slug keeps matching until the rename is codified).
-        break
-      case 'overlayDeclEdit':
-        // Declaration placement edits are codified by `screenci sync`; at
-        // record time the studio draft already carries the placement override.
-        break
-      case 'mediaEdit':
-      case 'zoomEdit':
-      case 'gapSpanEdit':
-      case 'gapPointEdit':
-      case 'blockRemoveEdit':
-        if (edit.disabled !== true) codifyEdits.push(edit)
-        break
-      default: {
-        const exhaustive: never = edit
-        void exhaustive
-      }
-    }
-  }
-  return { paramEdits, codifyEdits }
 }
 
 // ─── Stable ids for cues and overlays ────────────────────────────────────────
@@ -587,4 +270,14 @@ export function overlayIdFor(name: string, ordinal: number): string {
 /** Stable id of the declaration-placement edit for an overlay name. */
 export function overlayDeclIdFor(name: string): string {
   return `overlaydecl-${name}`
+}
+
+/** Stable id of the options snapshot edit for a builder method. */
+export function optionsEditIdFor(method: OptionsEditMethod): string {
+  return `options|${method}`
+}
+
+/** Stable id of the narration value edit for a cue name and language. */
+export function narrationEditIdFor(cueName: string, lang: string): string {
+  return `narration|${cueName}|${lang}`
 }

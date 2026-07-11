@@ -1,10 +1,39 @@
 import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
-import { compareWebStateToSnapshot } from './actionSync.js'
-import type { ActionParamsSnapshot } from './actionParamsSnapshot.js'
 import type { EditableSnapshot } from './editableSnapshot.js'
 import type { CodifyEdit } from './timelineEdits.js'
-import { planCodeSync, type CodeSyncInput } from './codeSync.js'
+import {
+  planCodeSync,
+  type ActionParamsSnapshot,
+  type CodeSyncInput,
+  type OverrideAssessment,
+  type WebStateComparison,
+} from './codeSync.js'
+
+/** A one-video comparison in the shape planCodeSync consumes. */
+function comparisonFor(
+  videoName: string,
+  overrides: OverrideAssessment[]
+): WebStateComparison {
+  return { videos: [{ videoName, overrides }], snapshotEmpty: false }
+}
+
+/** Shorthand for a change-kind assessment on a click/fill option. */
+function change(
+  selector: string,
+  method: string,
+  optionPath: string,
+  editorValue: unknown
+): OverrideAssessment {
+  return {
+    kind: 'change',
+    selector,
+    method,
+    occurrence: 0,
+    optionPath,
+    editorValue,
+  }
+}
 
 const FILE = '/proj/demo.screenci.ts'
 const SAVE_SELECTOR = "getByRole('button', { name: 'Save' })"
@@ -171,13 +200,18 @@ function afterFor(result: ReturnType<typeof plan>, path: string): string {
 
 describe('planCodeSync: action-parameter overrides', () => {
   it('applies change and codify by slug, marks stale unappliable', () => {
-    const comparison = compareWebStateToSnapshot(ACTION_SNAPSHOT, {
-      Demo: {
-        [`${SAVE_SELECTOR}|click|0|move.duration`]: 1200,
-        [`locator('#name')|fill|0|duration`]: 900,
-        [`locator('#gone')|click|0|duration`]: 5,
+    const comparison = comparisonFor('Demo', [
+      change(SAVE_SELECTOR, 'click', 'move.duration', 1200),
+      change("locator('#name')", 'fill', 'duration', 900),
+      {
+        kind: 'stale',
+        selector: "locator('#gone')",
+        method: 'click',
+        occurrence: 0,
+        optionPath: 'duration',
+        editorValue: 5,
       },
-    })
+    ])
     const result = plan(inputWith({ comparison }))
     const after = afterFor(result, FILE)
     expect(after).toContain(
@@ -203,9 +237,9 @@ describe('planCodeSync: action-parameter overrides', () => {
         ],
       },
     }
-    const comparison = compareWebStateToSnapshot(unstamped, {
-      Demo: { [`${SAVE_SELECTOR}|click|0|move.duration`]: 1200 },
-    })
+    const comparison = comparisonFor('Demo', [
+      change(SAVE_SELECTOR, 'click', 'move.duration', 1200),
+    ])
     const result = plan(inputWith({ comparison, actionSnapshot: unstamped }))
     expect(result.files).toHaveLength(0)
     expect(result.unappliable).toHaveLength(1)
@@ -226,9 +260,9 @@ describe('planCodeSync: action-parameter overrides', () => {
         ],
       },
     }
-    const comparison = compareWebStateToSnapshot(wrongMethod, {
-      Demo: { [`${SAVE_SELECTOR}|click|0|move.duration`]: 1200 },
-    })
+    const comparison = comparisonFor('Demo', [
+      change(SAVE_SELECTOR, 'click', 'move.duration', 1200),
+    ])
     const result = plan(inputWith({ comparison, actionSnapshot: wrongMethod }))
     expect(result.files).toHaveLength(0)
     expect(result.unappliable).toHaveLength(1)
@@ -920,9 +954,9 @@ describe('planCodeSync: renames', () => {
 
 describe('planCodeSync: combined edits on one file', () => {
   it('applies slug-keyed edits of every channel together', () => {
-    const comparison = compareWebStateToSnapshot(ACTION_SNAPSHOT, {
-      Demo: { [`${SAVE_SELECTOR}|click|0|move.duration`]: 1200 },
-    })
+    const comparison = comparisonFor('Demo', [
+      change(SAVE_SELECTOR, 'click', 'move.duration', 1200),
+    ])
     const result = plan(
       inputWith({
         comparison,
@@ -1218,6 +1252,105 @@ describe('planCodeSync: block removal (unwrap)', () => {
         codifyEdits: { HideDemo: [remove] },
       }),
       { [HIDE_FILE]: HIDE_SOURCE }
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(1)
+  })
+})
+
+describe('planCodeSync: narration cue value codify', () => {
+  it('adds a .narration section to the video builder call when missing', () => {
+    const result = plan(
+      inputWith({
+        narrationEdits: {
+          Demo: [
+            {
+              type: 'narrationEdit',
+              id: 'narration|intro|default',
+              cueName: 'intro',
+              lang: 'default',
+              value: 'Hi there',
+            },
+          ],
+        },
+      })
+    )
+    const after = afterFor(result, FILE)
+    expect(after).toContain("video.narration({ intro: 'Hi there' })('Demo'")
+    expect(result.applied).toHaveLength(1)
+    expect(result.fullyAppliedVideos).toEqual(['Demo'])
+  })
+
+  it('converts a content-major declaration to language-major on a lang edit', () => {
+    const narratedSource = SOURCE.replace(
+      "video('Demo'",
+      "video.narration({ intro: 'Hi' })('Demo'"
+    )
+    const files = { [FILE]: narratedSource }
+    const result = plan(
+      inputWith({
+        narrationEdits: {
+          Demo: [
+            {
+              type: 'narrationEdit',
+              id: 'narration|intro|fi',
+              cueName: 'intro',
+              lang: 'fi',
+              value: 'Moi',
+            },
+          ],
+        },
+      }),
+      files
+    )
+    const after = afterFor(result, FILE)
+    expect(after).toContain(
+      "video.narration({ default: { intro: 'Hi' }, fi: { intro: 'Moi' } })"
+    )
+    expect(result.applied).toHaveLength(1)
+  })
+
+  it('marks a names-only declaration app-managed', () => {
+    const namesOnlySource = SOURCE.replace(
+      "video('Demo'",
+      "video.narration(['intro'])('Demo'"
+    )
+    const result = plan(
+      inputWith({
+        narrationEdits: {
+          Demo: [
+            {
+              type: 'narrationEdit',
+              id: 'narration|intro|default',
+              cueName: 'intro',
+              lang: 'default',
+              value: 'Hi',
+            },
+          ],
+        },
+      }),
+      { [FILE]: namesOnlySource }
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(1)
+    expect(result.unappliable[0]!.reason).toContain('app-managed')
+  })
+
+  it('marks the video unappliable when its declaration is absent', () => {
+    const result = plan(
+      inputWith({
+        narrationEdits: {
+          Ghost: [
+            {
+              type: 'narrationEdit',
+              id: 'narration|intro|default',
+              cueName: 'intro',
+              lang: 'default',
+              value: 'Hi',
+            },
+          ],
+        },
+      })
     )
     expect(result.files).toHaveLength(0)
     expect(result.unappliable).toHaveLength(1)

@@ -2,17 +2,10 @@
  * Action-parameter provenance. Every instrumented Playwright action (click,
  * fill, hover, ...) reports which option values it used and whether each value
  * was explicit at the call site or a default. The records are serialized into
- * `data.json` (so the backend learns the used values and their provenance) and
- * snapshotted under `.screenci` so the next `record` run can warn when a web
- * editor override shadows an explicitly code-set value.
- *
- * Editor overrides arrive keyed by
- * `"<selector>|<method>|<occurrence>|<optionPath>"` and are applied to the
- * action before it runs. An override that actually changes the used value is
- * logged and recorded as `used`, so the uploaded recording tells the editor
- * which values the recording really ran with.
+ * `data.json` so the backend learns the used values and their provenance; the
+ * web editor's edits themselves are codegen'd straight into the sources by
+ * `screenci dev`, so the recorded code values are always what a run used.
  */
-import { logger } from './logger.js'
 import {
   DEFAULT_CLICK_MOUSE_MOVE_DURATION,
   DEFAULT_CURSOR_CURVE,
@@ -40,17 +33,11 @@ export type ActionMethod =
 /** Whether a parameter value was set at the call site or fell back to a default. */
 export type ParamSource = 'explicit' | 'default'
 
-/** One recorded parameter: the code value, its provenance, and the used value. */
+/** One recorded parameter: the code value and its provenance. */
 export type ActionParamValue = {
   /** The code value (JSON-safe; `null` when the code value is undefined). */
   value: unknown
   source: ParamSource
-  /**
-   * The value the recording actually ran with, present only when an editor
-   * override changed it (differs from `value`). The editor reads this to update
-   * its own copy of the options after a recording.
-   */
-  used?: unknown
 }
 
 /**
@@ -77,12 +64,6 @@ export type ActionParamSpec = Record<
   string,
   { explicit: unknown; fallback: unknown }
 >
-
-/** Editor overrides for one video: `paramKey -> value`. */
-export type ActionOverrides = Record<string, unknown>
-
-/** Editor overrides keyed by video name. */
-export type ActionOverridesByVideo = Record<string, ActionOverrides>
 
 /** The cursor-move option defaults shared by every mouse-driven action. */
 function cursorMoveDefaults(delayAfter: number): Record<string, unknown> {
@@ -194,45 +175,17 @@ export function jsonEqual(a: unknown, b: unknown): boolean {
 }
 
 /**
- * Whether an override value is acceptable for a parameter: primitives always,
- * plain objects/arrays for structured options (e.g. `position`). Functions and
- * symbols never (they cannot come from JSON anyway).
- */
-function isApplicableOverride(value: unknown): boolean {
-  const t = typeof value
-  return (
-    t === 'number' ||
-    t === 'string' ||
-    t === 'boolean' ||
-    (t === 'object' && value !== null)
-  )
-}
-
-/**
- * Collects the {@link ActionParamRecord}s of one recording and applies editor
- * overrides. One instance per `EventRecorder`; constructor-injected so tests
- * build it directly with fake overrides and a spy logger.
+ * Collects the {@link ActionParamRecord}s of one recording. One instance per
+ * `EventRecorder`.
  */
 export class ActionParamCollector {
   private readonly records: ActionParamRecord[] = []
   private readonly occurrences = new Map<string, number>()
-  private readonly overrides: ActionOverrides
-  private readonly log: (message: string) => void
-
-  constructor(
-    overrides: ActionOverrides = {},
-    log: (message: string) => void = (message) => logger.info(message)
-  ) {
-    this.overrides = overrides
-    this.log = log
-  }
 
   /**
-   * Record one action call and return the effective option values: the editor
-   * override when present, else the explicit call-site value, else the
-   * default. Only an override that actually changes the used value is logged
-   * and stored as `used`; an override equal to the code value is a no-op. The
-   * `value`/`source` fields always describe the code side.
+   * Record one action call and return the effective option values: the
+   * explicit call-site value, else the default. The `value`/`source` fields
+   * describe the code side.
    */
   apply(
     selector: string,
@@ -250,32 +203,8 @@ export class ActionParamCollector {
       const codeValue = explicit !== undefined ? explicit : fallback
       const source: ParamSource =
         explicit !== undefined ? 'explicit' : 'default'
-      const recordedCodeValue = toRecordedValue(codeValue)
-      params[optionPath] = { value: recordedCodeValue, source }
-
-      const overrideKey = actionParamKey(
-        selector,
-        method,
-        occurrence,
-        optionPath
-      )
-      const override = this.overrides[overrideKey]
-      if (
-        override !== undefined &&
-        isApplicableOverride(override) &&
-        !jsonEqual(override, recordedCodeValue)
-      ) {
-        effective[optionPath] = override
-        params[optionPath]!.used = override
-        this.log(
-          `[screenci] editor override: ${selector} ${method} ${optionPath}: ` +
-            `${JSON.stringify(override)} (code: ${JSON.stringify(
-              recordedCodeValue
-            )}, ${source})`
-        )
-      } else {
-        effective[optionPath] = codeValue
-      }
+      params[optionPath] = { value: toRecordedValue(codeValue), source }
+      effective[optionPath] = codeValue
     }
 
     this.records.push({

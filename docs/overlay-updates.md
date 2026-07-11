@@ -150,6 +150,37 @@ const overlays = video.overlays({
 Video narration cues render through the narration bubble, so they follow the
 narration fades. The mouse cursor's hide/show remains instant.
 
+## Delaying an update into an interaction
+
+A call cannot execute while an interaction is awaited, so an update written
+between two interactions always lands in the gap between them. To land an
+update DURING an interaction, write the call before it and pass `delay`
+(milliseconds): the call runs immediately, but the change is recorded `delay`
+ms later on the timeline.
+
+```ts
+await setBackground({ backgroundCss: '#101014' }, { delay: 500 })
+await page.getByRole('button', { name: 'Open dashboard' }).click()
+// The background switches 500 ms into the click above.
+```
+
+Every update on this page accepts `delay`: `moveNarration`,
+`resizeNarration`, `resizeRecording`, `hideRecording` / `showRecording`,
+`hideNarration` / `showNarration`, and `setBackground`. It combines freely
+with `duration` (the transition starts at the delayed instant). The same
+option exists on media `start()` calls (narration cues, overlays, audio) and
+on the `hide` / `speed` / `time` wrappers, where it shifts the recorded start
+only.
+
+Two rules apply:
+
+- **Same-type events stay in time order.** Recording fails with an error when
+  a delayed event would land behind a same-type event recorded after it, for
+  example a delayed `hideRecording` overtaken by a later `showRecording`.
+  Reduce the delay or reorder the calls.
+- **A delay cannot outlive the recording.** If the recording ends before the
+  delayed instant, the recording fails with an error naming the event.
+
 ## Rules and limits
 
 - **Easings**: `linear`, `ease-in`, `ease-out`, `ease-in-out`, and the

@@ -119,6 +119,21 @@ Use the cue markers intentionally:
 That is the main tool for overlapping speech with UI motion without losing
 control of the timeline.
 
+`start()` also accepts a `delay` (milliseconds) that offsets the recorded
+start into the future, so a cue written before an interaction can begin
+speaking during it (a call cannot execute while an interaction is awaited):
+
+```ts
+await narration.saving.start({ delay: 400 })
+await page.getByRole('button', { name: 'Save' }).click()
+// The line starts 400 ms into the click above.
+```
+
+Delayed cue starts must stay in time order; recording fails with an error when
+a delayed cue would land behind a cue recorded after it. See
+[Mid-Video Overlay Updates](./overlay-updates.md#delaying-an-update-into-an-interaction)
+for the full rules.
+
 ### How recording pacing works
 
 By default recording is fast and independent of narration length: each cue keeps

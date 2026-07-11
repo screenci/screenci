@@ -709,6 +709,12 @@ await page.fill('#email', 'demo@example.com')
 await overlays.badge.end()
 ```
 
+`start()` accepts a `delay` (milliseconds) that offsets the recorded start
+into the future, so an overlay written before an interaction can appear during
+it: `await overlays.badge.start({ delay: 500 })`. Delayed overlay starts must
+stay in time order; see
+[Mid-Video Overlay Updates](./overlay-updates.md#delaying-an-update-into-an-interaction).
+
 For an overlay with an intrinsic length (a `.mp4` video, an embedded video
 dependency, or an [animated](#animated-overlays) HTML/React clip), `end()` lets
 the clip finish: if the media is longer than the live window, the remainder plays

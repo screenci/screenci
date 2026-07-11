@@ -10,6 +10,8 @@ import {
   type EditableMeta,
 } from './editableDescriptor.js'
 import { applyEditableOverride } from './editableRuntime.js'
+import { delayArg, validateDelay } from './overlayUpdates.js'
+import type { TimelineBlockOptions } from './hide.js'
 
 function assertValidSpeedMultiplier(multiplier: number): void {
   if (!Number.isFinite(multiplier) || multiplier <= 0) {
@@ -58,23 +60,39 @@ function buildSpeedEditableMeta(input: {
  * - `speed(fn)`: unnamed web-editable block, identified by its position on
  *   the editor timeline.
  */
-export async function speed(fn: () => Promise<void> | void): Promise<void>
+export async function speed(
+  fn: () => Promise<void> | void,
+  options?: TimelineBlockOptions
+): Promise<void>
 export async function speed(
   name: string,
-  fn: () => Promise<void> | void
+  fn: () => Promise<void> | void,
+  options?: TimelineBlockOptions
 ): Promise<void>
 export async function speed(
   multiplier: number,
-  fn: () => Promise<void> | void
+  fn: () => Promise<void> | void,
+  options?: TimelineBlockOptions
 ): Promise<void>
 export async function speed(
   first: number | string | (() => Promise<void> | void),
-  maybeFn?: () => Promise<void> | void
+  second?: (() => Promise<void> | void) | TimelineBlockOptions,
+  maybeOptions?: TimelineBlockOptions
 ): Promise<void> {
-  const fn = typeof first === 'function' ? first : maybeFn
+  const fn =
+    typeof first === 'function'
+      ? first
+      : typeof second === 'function'
+        ? second
+        : undefined
+  const options =
+    typeof first === 'function'
+      ? (second as TimelineBlockOptions | undefined)
+      : maybeOptions
   if (fn === undefined) {
     throw new Error('speed() requires a callback function')
   }
+  const delayMs = validateDelay('speed', options?.delay)
 
   const locked = typeof first === 'number'
   const name = typeof first === 'string' ? first : undefined
@@ -101,7 +119,7 @@ export async function speed(
     type: 'speed',
     recorder,
     emitStart: (activeRecorder) =>
-      activeRecorder.addSpeedStart(multiplier, editable),
+      activeRecorder.addSpeedStart(multiplier, editable, ...delayArg(delayMs)),
     emitEnd: (activeRecorder) => activeRecorder.addSpeedEnd(),
     fn,
     multiplier,

@@ -67,6 +67,10 @@ Timing:
 - A bare call (`await audio.theme()`) starts the track at that point and plays it
   for the **rest of the video**.
 - `start()` / `end()` bound a track to a specific span, without freezing a frame.
+  `start()` accepts a `delay` (milliseconds) that offsets the recorded start,
+  so a track can begin during the interaction that follows the call:
+  `await music.sting.start({ delay: 300 })`. See
+  [Mid-Video Overlay Updates](./overlay-updates.md#delaying-an-update-into-an-interaction).
 - Tracks are **non-exclusive**: starting one never stops another, so music and a
   sound effect can overlap. Each track also runs independently of narration.
 

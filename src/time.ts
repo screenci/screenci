@@ -10,6 +10,8 @@ import {
   type EditableMeta,
 } from './editableDescriptor.js'
 import { applyEditableOverride } from './editableRuntime.js'
+import { delayArg, validateDelay } from './overlayUpdates.js'
+import type { TimelineBlockOptions } from './hide.js'
 
 function assertValidTimeDuration(durationMs: number): void {
   if (!Number.isFinite(durationMs) || durationMs < 0) {
@@ -58,25 +60,38 @@ function buildTimeEditableMeta(input: {
  */
 export async function time(
   durationMs: number,
-  fn: () => Promise<void> | void
+  fn: () => Promise<void> | void,
+  options?: TimelineBlockOptions
 ): Promise<void>
 export async function time(
   name: string,
   durationMs: number,
-  fn: () => Promise<void> | void
+  fn: () => Promise<void> | void,
+  options?: TimelineBlockOptions
 ): Promise<void>
 export async function time(
   first: number | string,
   second: number | (() => Promise<void> | void),
-  maybeFn?: () => Promise<void> | void
+  third?: (() => Promise<void> | void) | TimelineBlockOptions,
+  maybeOptions?: TimelineBlockOptions
 ): Promise<void> {
   const name = typeof first === 'string' ? first : undefined
   const codeDurationMs = typeof first === 'number' ? first : (second as number)
-  const fn = typeof second === 'function' ? second : maybeFn
+  const fn =
+    typeof second === 'function'
+      ? second
+      : typeof third === 'function'
+        ? third
+        : undefined
+  const options =
+    typeof second === 'function'
+      ? (third as TimelineBlockOptions | undefined)
+      : maybeOptions
   if (fn === undefined) {
     throw new Error('time() requires a callback function')
   }
   assertValidTimeDuration(codeDurationMs)
+  const delayMs = validateDelay('time', options?.delay)
 
   const editable = buildTimeEditableMeta({ durationMs: codeDurationMs, name })
   const effective = applyEditableOverride(editable)
@@ -91,7 +106,12 @@ export async function time(
     type: 'time',
     recorder,
     emitStart: (activeRecorder) =>
-      activeRecorder.addTimeStart(durationMs, editable, name),
+      activeRecorder.addTimeStart(
+        durationMs,
+        editable,
+        name,
+        ...delayArg(delayMs)
+      ),
     emitEnd: (activeRecorder) => activeRecorder.addTimeEnd(),
     fn,
     durationMs,

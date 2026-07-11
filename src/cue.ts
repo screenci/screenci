@@ -29,6 +29,11 @@ import type { NormalizedNarration } from './localize.js'
 import { isCustomVoiceRef } from './customVoiceRef.js'
 import { MAX_AUDIO_LEVEL } from './asset.js'
 import { isInsideHide } from './hide.js'
+import {
+  delayArg,
+  validateDelay,
+  type StartDelayOptions,
+} from './overlayUpdates.js'
 import { logger } from './logger.js'
 import { logMissingAsset } from './missingAssetLog.js'
 import {
@@ -332,7 +337,11 @@ export type NarrationCue = {
    * it finish. Successive `.until(...)` targets must be monotonic.
    */
   until(position: TimelineOffset): Promise<void>
-  start(): Promise<void>
+  /**
+   * Start the line now (non-blocking); pair with `end()`. `delay` offsets the
+   * recorded start (see {@link StartDelayOptions}).
+   */
+  start(options?: StartDelayOptions): Promise<void>
   end(): Promise<void>
 }
 
@@ -532,27 +541,26 @@ export function assertNarrationLanguagesMatch(
  * the parser.
  */
 /**
- * Builds the optional trailing `volume`/`until` arguments for the cue recorder
- * methods. Kept positional and minimal (omit a trailing arg rather than pass
- * `undefined`) so the recorded events, and the call shape itself, stay identical
- * to before whenever no position or volume is set.
+ * Builds the optional trailing `volume`/`until`/`studio`/`delay` arguments for
+ * the cue recorder methods. Trailing `undefined`s are omitted so the recorded
+ * events, and the call shape itself, stay identical to before whenever the
+ * optional values are unset.
  */
 type CueTrailingArgs = [
   volume?: number | undefined,
-  until?: TimelineAnchorInput,
+  until?: TimelineAnchorInput | undefined,
+  studio?: boolean | undefined,
+  delayMs?: number | undefined,
 ]
 
 function cueTrailingArgs(
   volume: number | undefined,
-  until: TimelineAnchorInput | undefined
+  until: TimelineAnchorInput | undefined,
+  studio?: boolean,
+  delayMs?: number
 ): CueTrailingArgs {
-  const tail: CueTrailingArgs = []
-  if (until !== undefined) {
-    tail[0] = volume
-    tail[1] = until
-  } else if (volume !== undefined) {
-    tail[0] = volume
-  }
+  const tail: CueTrailingArgs = [volume, until, studio, delayMs]
+  while (tail.length > 0 && tail[tail.length - 1] === undefined) tail.pop()
   return tail
 }
 
@@ -575,14 +583,16 @@ function createCueController(
   name: string,
   emitStart: (
     recorder: IEventRecorder,
-    until?: TimelineAnchorInput
+    until?: TimelineAnchorInput,
+    delayMs?: number
   ) => void | Promise<void>
 ): NarrationCue {
   let didRegisterName = false
 
   const start = async (
     startedWithExplicitStart = true,
-    until?: TimelineAnchorInput
+    until?: TimelineAnchorInput,
+    delayMs?: number
   ): Promise<void> => {
     if (isInsideHide()) throw new Error('Cannot start narration inside hide()')
     const recorder = getRuntimeCueRecorder()
@@ -597,7 +607,7 @@ function createCueController(
     context.cue.activeCueRun = run
     // emitStart may attach exact-audio pacing durations to the active run via
     // startCueAudioPacing (text cues in per-language recording).
-    await emitStart(recorder, until)
+    await emitStart(recorder, until, delayMs)
     // The audio window starts at the cueStart event just recorded; the cue end
     // sleeps the remainder of audio + pause measured from here.
     run.startedAtMs = Date.now()
@@ -632,7 +642,12 @@ function createCueController(
 
   cue.until = (position: TimelineOffset): Promise<void> =>
     block(resolveCueAnchor(position))
-  cue.start = start
+  cue.start = async (options?: StartDelayOptions) =>
+    start(
+      true,
+      undefined,
+      validateDelay(`narration "${name}" start`, options?.delay)
+    )
   cue.end = end
   return cue
 }
@@ -651,9 +666,9 @@ export function buildStudioNarrationCues(
 ): Record<string, NarrationCue> {
   const result: Record<string, NarrationCue> = {}
   for (const name of names) {
-    result[name] = createCueController(name, (recorder, until) => {
+    result[name] = createCueController(name, (recorder, until, delayMs) => {
       sleepForCueFrameGap()
-      recorder.addStudioCueStart(name, until)
+      recorder.addStudioCueStart(name, until, ...delayArg(delayMs))
     })
   }
   return result
@@ -907,76 +922,17 @@ function buildCuesFromInput(
     }
 
     if (hasFileEntry) {
-      result[keyStr] = createCueController(keyStr, async (recorder, until) => {
-        const testFilePath = getScreenCIRuntimeContext().testFilePath
-        for (const lang of langs) {
-          recorder.registerVoiceForLang(lang, resolvedVoiceMeta.get(lang)!)
-        }
-        const videoTranslations: Record<string, VideoCueTranslation> = {}
-        for (const lang of langs) {
-          const val = normalizedByLang.get(lang)
-          if (val === undefined) continue
-          const voice = resolvedVoices.get(lang)!
-          const meta = resolvedVoiceMeta.get(lang)
-          const modelType = meta?.modelType
-          const style = meta?.style
-          const accent = meta?.accent
-          const pacing = meta?.pacing
-          const stability = meta?.stability
-          const similarityBoost = meta?.similarityBoost
-          const speed = meta?.speed
-          const useSpeakerBoost = meta?.useSpeakerBoost
-          const seed = meta?.seed
-          if (val.type === 'text') {
-            videoTranslations[lang] = {
-              text: val.text,
-              voice: await toRecordedVoice(voice),
-              ...(modelType !== undefined && { modelType }),
-              ...(style !== undefined && { style }),
-              ...(accent !== undefined && { accent }),
-              ...(pacing !== undefined && { pacing }),
-              ...(stability !== undefined && { stability }),
-              ...(similarityBoost !== undefined && { similarityBoost }),
-              ...(speed !== undefined && { speed }),
-              ...(useSpeakerBoost !== undefined && { useSpeakerBoost }),
-              ...(seed !== undefined && { seed }),
-            }
-          } else {
-            videoTranslations[lang] = await entryToVideoTranslation(
-              testFilePath,
-              {
-                path: val.path,
-                ...(val.subtitle !== undefined && { subtitle: val.subtitle }),
-                ...(val.clip !== undefined && { clip: val.clip }),
-                ...(val.sourceStart !== undefined && {
-                  sourceStart: val.sourceStart,
-                }),
-                ...(val.sourceEnd !== undefined && {
-                  sourceEnd: val.sourceEnd,
-                }),
-              }
-            )
+      result[keyStr] = createCueController(
+        keyStr,
+        async (recorder, until, delayMs) => {
+          const testFilePath = getScreenCIRuntimeContext().testFilePath
+          for (const lang of langs) {
+            recorder.registerVoiceForLang(lang, resolvedVoiceMeta.get(lang)!)
           }
-        }
-        sleepForCueFrameGap()
-        recorder.addVideoCueStart(
-          keyStr,
-          undefined,
-          undefined,
-          undefined,
-          videoTranslations,
-          ...cueTrailingArgs(cueVolume, until)
-        )
-      })
-    } else {
-      result[keyStr] = createCueController(keyStr, async (recorder, until) => {
-        for (const lang of langs) {
-          recorder.registerVoiceForLang(lang, resolvedVoiceMeta.get(lang)!)
-        }
-        const textTranslations: Record<string, CueTranslation> = {}
-        for (const lang of langs) {
-          const val = normalizedByLang.get(lang)
-          if (val !== undefined && val.type === 'text') {
+          const videoTranslations: Record<string, VideoCueTranslation> = {}
+          for (const lang of langs) {
+            const val = normalizedByLang.get(lang)
+            if (val === undefined) continue
             const voice = resolvedVoices.get(lang)!
             const meta = resolvedVoiceMeta.get(lang)
             const modelType = meta?.modelType
@@ -988,31 +944,96 @@ function buildCuesFromInput(
             const speed = meta?.speed
             const useSpeakerBoost = meta?.useSpeakerBoost
             const seed = meta?.seed
-            textTranslations[lang] = {
-              text: val.text,
-              voice: await toRecordedVoice(voice),
-              ...(modelType !== undefined && { modelType }),
-              ...(style !== undefined && { style }),
-              ...(accent !== undefined && { accent }),
-              ...(pacing !== undefined && { pacing }),
-              ...(stability !== undefined && { stability }),
-              ...(similarityBoost !== undefined && { similarityBoost }),
-              ...(speed !== undefined && { speed }),
-              ...(useSpeakerBoost !== undefined && { useSpeakerBoost }),
-              ...(seed !== undefined && { seed }),
+            if (val.type === 'text') {
+              videoTranslations[lang] = {
+                text: val.text,
+                voice: await toRecordedVoice(voice),
+                ...(modelType !== undefined && { modelType }),
+                ...(style !== undefined && { style }),
+                ...(accent !== undefined && { accent }),
+                ...(pacing !== undefined && { pacing }),
+                ...(stability !== undefined && { stability }),
+                ...(similarityBoost !== undefined && { similarityBoost }),
+                ...(speed !== undefined && { speed }),
+                ...(useSpeakerBoost !== undefined && { useSpeakerBoost }),
+                ...(seed !== undefined && { seed }),
+              }
+            } else {
+              videoTranslations[lang] = await entryToVideoTranslation(
+                testFilePath,
+                {
+                  path: val.path,
+                  ...(val.subtitle !== undefined && { subtitle: val.subtitle }),
+                  ...(val.clip !== undefined && { clip: val.clip }),
+                  ...(val.sourceStart !== undefined && {
+                    sourceStart: val.sourceStart,
+                  }),
+                  ...(val.sourceEnd !== undefined && {
+                    sourceEnd: val.sourceEnd,
+                  }),
+                }
+              )
             }
           }
+          sleepForCueFrameGap()
+          recorder.addVideoCueStart(
+            keyStr,
+            undefined,
+            undefined,
+            undefined,
+            videoTranslations,
+            ...cueTrailingArgs(cueVolume, until, undefined, delayMs)
+          )
         }
-        sleepForCueFrameGap()
-        recorder.addCueStart(
-          '',
-          keyStr,
-          undefined,
-          textTranslations,
-          ...cueTrailingArgs(cueVolume, until)
-        )
-        startCueAudioPacing(keyStr, textTranslations)
-      })
+      )
+    } else {
+      result[keyStr] = createCueController(
+        keyStr,
+        async (recorder, until, delayMs) => {
+          for (const lang of langs) {
+            recorder.registerVoiceForLang(lang, resolvedVoiceMeta.get(lang)!)
+          }
+          const textTranslations: Record<string, CueTranslation> = {}
+          for (const lang of langs) {
+            const val = normalizedByLang.get(lang)
+            if (val !== undefined && val.type === 'text') {
+              const voice = resolvedVoices.get(lang)!
+              const meta = resolvedVoiceMeta.get(lang)
+              const modelType = meta?.modelType
+              const style = meta?.style
+              const accent = meta?.accent
+              const pacing = meta?.pacing
+              const stability = meta?.stability
+              const similarityBoost = meta?.similarityBoost
+              const speed = meta?.speed
+              const useSpeakerBoost = meta?.useSpeakerBoost
+              const seed = meta?.seed
+              textTranslations[lang] = {
+                text: val.text,
+                voice: await toRecordedVoice(voice),
+                ...(modelType !== undefined && { modelType }),
+                ...(style !== undefined && { style }),
+                ...(accent !== undefined && { accent }),
+                ...(pacing !== undefined && { pacing }),
+                ...(stability !== undefined && { stability }),
+                ...(similarityBoost !== undefined && { similarityBoost }),
+                ...(speed !== undefined && { speed }),
+                ...(useSpeakerBoost !== undefined && { useSpeakerBoost }),
+                ...(seed !== undefined && { seed }),
+              }
+            }
+          }
+          sleepForCueFrameGap()
+          recorder.addCueStart(
+            '',
+            keyStr,
+            undefined,
+            textTranslations,
+            ...cueTrailingArgs(cueVolume, until, undefined, delayMs)
+          )
+          startCueAudioPacing(keyStr, textTranslations)
+        }
+      )
     }
   }
   return result
@@ -1175,10 +1196,13 @@ export function buildLocalizedNarrationCues(
     // cue, but tagged `studio` so the web app can still override it (a Studio edit
     // wins over the seed) and so the render is not held.
     if (isStudio && langs.length === 0) {
-      result[cueName] = createCueController(cueName, (recorder, until) => {
-        sleepForCueFrameGap()
-        recorder.addStudioCueStart(cueName, until)
-      })
+      result[cueName] = createCueController(
+        cueName,
+        (recorder, until, delayMs) => {
+          sleepForCueFrameGap()
+          recorder.addStudioCueStart(cueName, until, ...delayArg(delayMs))
+        }
+      )
       continue
     }
 
@@ -1214,7 +1238,7 @@ export function buildLocalizedNarrationCues(
     if (hasFileEntry) {
       result[cueName] = createCueController(
         cueName,
-        async (recorder, until) => {
+        async (recorder, until, delayMs) => {
           const testFilePath = getScreenCIRuntimeContext().testFilePath
           const resolved = new Map(
             langs.map((lang) => [lang, resolveLang(lang)])
@@ -1259,16 +1283,14 @@ export function buildLocalizedNarrationCues(
             undefined,
             undefined,
             videoTranslations,
-            cueVolume,
-            until,
-            isStudio
+            ...cueTrailingArgs(cueVolume, until, isStudio, delayMs)
           )
         }
       )
     } else {
       result[cueName] = createCueController(
         cueName,
-        async (recorder, until) => {
+        async (recorder, until, delayMs) => {
           const resolved = new Map(
             langs.map((lang) => [lang, resolveLang(lang)])
           )
@@ -1293,9 +1315,7 @@ export function buildLocalizedNarrationCues(
             cueName,
             undefined,
             textTranslations,
-            cueVolume,
-            until,
-            isStudio
+            ...cueTrailingArgs(cueVolume, until, isStudio, delayMs)
           )
           startCueAudioPacing(cueName, textTranslations)
         }

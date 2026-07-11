@@ -49,6 +49,61 @@ describe('timeline blocks', () => {
     expect(recorder.addSpeedEnd).toHaveBeenCalledOnce()
   })
 
+  it('passes a validated delay through to the block start events', async () => {
+    await speed(0.5, async () => {}, { delay: 400 })
+    await time(1000, async () => {}, { delay: 300 })
+    await hide(async () => {}, { delay: 200 })
+
+    expect(recorder.addSpeedStart).toHaveBeenCalledWith(
+      0.5,
+      expect.anything(),
+      400
+    )
+    expect(recorder.addTimeStart).toHaveBeenCalledWith(
+      1000,
+      expect.anything(),
+      undefined,
+      300
+    )
+    expect(recorder.addHideStart).toHaveBeenCalledWith(
+      expect.anything(),
+      undefined,
+      200
+    )
+  })
+
+  it('supports delay on the named block forms', async () => {
+    await speed('fast', async () => {}, { delay: 150 })
+    await time('intro', 500, async () => {}, { delay: 250 })
+    await hide('setup', async () => {}, { delay: 350 })
+
+    expect(recorder.addSpeedStart).toHaveBeenCalledWith(
+      1,
+      expect.anything(),
+      150
+    )
+    expect(recorder.addTimeStart).toHaveBeenCalledWith(
+      500,
+      expect.anything(),
+      'intro',
+      250
+    )
+    expect(recorder.addHideStart).toHaveBeenCalledWith(
+      expect.anything(),
+      'setup',
+      350
+    )
+  })
+
+  it('rejects a negative or non-integer block delay', async () => {
+    await expect(speed(2, async () => {}, { delay: -5 })).rejects.toThrow(
+      /delay/
+    )
+    await expect(hide(async () => {}, { delay: 1.5 })).rejects.toThrow(/delay/)
+    expect(recorder.addSpeedStart).not.toHaveBeenCalled()
+    expect(recorder.addHideStart).not.toHaveBeenCalled()
+  })
+
   it('records time start/end with duration', async () => {
     await time(1000, async () => {})
 

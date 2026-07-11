@@ -59,6 +59,7 @@ import {
   setOverlayDeclProps,
   splitWaitEdit,
   statementsAfter,
+  statementsBefore,
   valueToSource,
   waitForTimeoutArg,
   wrapStatementsInBlock,
@@ -231,8 +232,16 @@ function mediaHeadAndCall(
           ? props.fixture
           : 'audio'
   const head = memberAccess(root, name)
+  // A delayed placement (validated non-blocking) carries the offset as a
+  // `delay` option on start(); the call itself sits before the anchor.
+  const startArgs =
+    edit.delayMs !== undefined
+      ? valueToSource({ delay: Math.round(edit.delayMs) })!
+      : ''
   return {
-    callCode: edit.blocking ? `await ${head}()` : `await ${head}.start()`,
+    callCode: edit.blocking
+      ? `await ${head}()`
+      : `await ${head}.start(${startArgs})`,
     head,
   }
 }
@@ -242,12 +251,25 @@ function gapPointCode(
   edit: GapPointEdit
 ): { code: string; importName: string } | null {
   const props = edit.props ?? {}
+  // A delayed placement carries the offset as a `delay` option on the call.
+  const delayFields: Record<string, unknown> =
+    edit.delayMs !== undefined ? { delay: Math.round(edit.delayMs) } : {}
+  /** Options-object source for `fields` merged with the delay, '' when empty. */
+  const optionsSource = (fields: Record<string, unknown>): string => {
+    const merged = { ...fields, ...delayFields }
+    return Object.keys(merged).length > 0 ? valueToSource(merged)! : ''
+  }
+  /** `, { ... }` trailing-argument form of {@link optionsSource}. */
+  const trailingOptions = (fields: Record<string, unknown>): string => {
+    const source = optionsSource(fields)
+    return source === '' ? '' : `, ${source}`
+  }
   switch (edit.kind) {
     case 'narrationBox': {
       const corner = typeof props.corner === 'string' ? props.corner : undefined
       const size = typeof props.size === 'number' ? props.size : undefined
       if (corner !== undefined) {
-        const opt = size !== undefined ? `, { size: ${size} }` : ''
+        const opt = trailingOptions(size !== undefined ? { size } : {})
         return {
           code: `await moveNarration(${valueToSource(corner)}${opt})`,
           importName: 'moveNarration',
@@ -255,7 +277,7 @@ function gapPointCode(
       }
       if (size !== undefined) {
         return {
-          code: `await resizeNarration(${size})`,
+          code: `await resizeNarration(${size}${trailingOptions({})})`,
           importName: 'resizeNarration',
         }
       }
@@ -266,14 +288,20 @@ function gapPointCode(
         typeof props.visible === 'boolean' ? props.visible : undefined
       const size = typeof props.size === 'number' ? props.size : undefined
       if (visible === false) {
-        return { code: `await hideRecording()`, importName: 'hideRecording' }
+        return {
+          code: `await hideRecording(${optionsSource({})})`,
+          importName: 'hideRecording',
+        }
       }
       if (visible === true) {
-        return { code: `await showRecording()`, importName: 'showRecording' }
+        return {
+          code: `await showRecording(${optionsSource({})})`,
+          importName: 'showRecording',
+        }
       }
       if (size !== undefined) {
         return {
-          code: `await resizeRecording(${size})`,
+          code: `await resizeRecording(${size}${trailingOptions({})})`,
           importName: 'resizeRecording',
         }
       }
@@ -286,7 +314,7 @@ function gapPointCode(
           : undefined
       if (css === undefined) return null
       return {
-        code: `await setBackground(${valueToSource(css)})`,
+        code: `await setBackground(${valueToSource(css)}${trailingOptions({})})`,
         importName: 'setBackground',
       }
     }
@@ -336,6 +364,130 @@ function findPlacedEffect(
     sleepStatement = null // a different effect call: its own sleep, not ours
   }
   return null
+}
+
+/**
+ * Find the codemod-authored BEFORE-anchor placement of the effect whose
+ * callee head is `expectedHead`: the awaited effect calls sitting immediately
+ * before `anchor` (nearest first, with editor gap sleeps allowed in between).
+ * The scan stops at the first ordinary statement, mirroring
+ * {@link findPlacedEffect} for the delayed-placement region.
+ */
+function findPlacedEffectBefore(
+  ctx: CodemodContext,
+  anchor: TS.Statement,
+  root: string | null,
+  expectedHead: string
+): TS.Statement | null {
+  for (const statement of statementsBefore(ctx, anchor)) {
+    if (root !== null && waitForTimeoutArg(ctx, statement, root) !== null) {
+      continue
+    }
+    const head = awaitedCallHead(ctx, statement)
+    if (head === null) return null // an ordinary statement ends the region
+    if (head === expectedHead) return statement
+  }
+  return null
+}
+
+/**
+ * Edits that remove a stale AFTER-anchor placement of the effect `head` when
+ * its edit switched to a delayed (before-anchor) placement, re-coalescing the
+ * split gap sleep like {@link removeEffectAfter} so no ghost pause is left.
+ * Empty when there is nothing to remove.
+ */
+function removeStalePlacedEffectAfter(
+  ctx: CodemodContext,
+  anchor: TS.Statement,
+  root: string | null,
+  head: string
+): TextEdit[] {
+  if (root === null) return []
+  const placed = findPlacedEffect(ctx, anchor, root, head)
+  if (placed === null) return []
+  const edits: TextEdit[] = [removeFullLine(ctx, placed.callStatement)]
+  const sleepArg =
+    placed.sleepStatement !== null
+      ? waitForTimeoutArg(ctx, placed.sleepStatement, root)
+      : null
+  if (placed.sleepStatement !== null && sleepArg !== null) {
+    const after = nextStatement(ctx, placed.callStatement)
+    const remainderArg =
+      after !== null ? waitForTimeoutArg(ctx, after, root) : null
+    if (remainderArg !== null) {
+      // Merge the split back into a single gap sleep.
+      edits.push({
+        start: remainderArg.getStart(),
+        end: remainderArg.getEnd(),
+        replacement: String(Number(sleepArg.text) + Number(remainderArg.text)),
+      })
+      edits.push(removeFullLine(ctx, placed.sleepStatement))
+    }
+  }
+  return edits
+}
+
+/**
+ * Place `callCode` immediately BEFORE the action `afterEditId`: the delayed
+ * placement form, where the call carries a `{ delay }` option instead of a
+ * preceding gap sleep. Idempotent: an existing before-anchor placement of the
+ * same effect (matched by callee `head`) is updated in place. A stale
+ * after-anchor placement of the same effect is removed, so switching an edit
+ * between sleep and delay placement never leaves two copies. Returns null
+ * when the site is locked.
+ */
+function insertBeforeAnchor(
+  ctx: CodemodContext,
+  afterEditId: string,
+  callCode: string,
+  head: string,
+  importName?: string
+): TextEdit[] | null {
+  const call = isLinearCallSite(ctx, afterEditId)
+  if (call === null) return null
+  const statement = enclosingStatement(ctx, call)
+  if (statement === null) return null
+  const root = chainRootIdentifier(ctx.ts, call.expression)
+  const edits: TextEdit[] = []
+  if (importName !== undefined) {
+    const importEdits = ensureNamedImport(ctx, 'screenci', importName)
+    if (importEdits === null) return null
+    edits.push(...importEdits)
+  }
+  const placed = findPlacedEffectBefore(ctx, statement, root, head)
+  if (placed !== null) {
+    if (placed.getText() !== callCode) {
+      edits.push({
+        start: placed.getStart(),
+        end: placed.getEnd(),
+        replacement: callCode,
+      })
+    }
+    return edits
+  }
+  edits.push(...removeStalePlacedEffectAfter(ctx, statement, root, head))
+  edits.push(insertStatementBefore(ctx, statement, callCode))
+  return edits
+}
+
+/**
+ * Edits that remove a codemod-authored delayed effect placed BEFORE
+ * `afterEditId` whose callee head is `head`. Returns [] when the effect is
+ * already gone (idempotent), null when the site is locked.
+ */
+function removeEffectBefore(
+  ctx: CodemodContext,
+  afterEditId: string,
+  head: string
+): TextEdit[] | null {
+  const call = isLinearCallSite(ctx, afterEditId)
+  if (call === null) return null
+  const statement = enclosingStatement(ctx, call)
+  if (statement === null) return null
+  const root = chainRootIdentifier(ctx.ts, call.expression)
+  const placed = findPlacedEffectBefore(ctx, statement, root, head)
+  if (placed === null) return []
+  return [removeFullLine(ctx, placed)]
 }
 
 /**
@@ -428,6 +580,11 @@ function insertInGapAfter(
     }
   }
 
+  // A stale delayed (before-anchor) placement of this effect means the edit
+  // switched back to sleep placement: remove it before placing fresh.
+  const placedBefore = findPlacedEffectBefore(ctx, statement, root, head)
+  if (placedBefore !== null) edits.push(removeFullLine(ctx, placedBefore))
+
   // Fresh placement.
   if (sleep === 0) {
     edits.push(insertStatementsAfter(ctx, statement, [callCode]))
@@ -507,6 +664,59 @@ function removeEffectAfter(
   return edits
 }
 
+/**
+ * Edits that reconcile the `{ delay }` option on an existing wrap call whose
+ * callback body is `body`: update the numeric value when it changed, or
+ * append the options argument when `delayMs` is set and the wrap has none.
+ * A wrap without the option is left alone when `delayMs` is unset (removing a
+ * possibly hand-authored option is not worth the risk). Empty when in sync.
+ */
+function updateWrapDelayOption(
+  ctx: CodemodContext,
+  body: TS.Block,
+  delayMs: number | undefined
+): TextEdit[] {
+  const { ts } = ctx
+  const arrow = body.parent
+  if (!ts.isArrowFunction(arrow) && !ts.isFunctionExpression(arrow)) return []
+  const call = arrow.parent
+  if (!ts.isCallExpression(call)) return []
+  const arrowIndex = call.arguments.findIndex((arg) => arg === arrow)
+  if (arrowIndex < 0) return []
+  const optionsArg = call.arguments[arrowIndex + 1]
+  if (optionsArg !== undefined && ts.isObjectLiteralExpression(optionsArg)) {
+    for (const prop of optionsArg.properties) {
+      if (
+        ts.isPropertyAssignment(prop) &&
+        ts.isIdentifier(prop.name) &&
+        prop.name.text === 'delay' &&
+        ts.isNumericLiteral(prop.initializer)
+      ) {
+        if (delayMs === undefined) return []
+        const rounded = Math.round(delayMs)
+        if (Number(prop.initializer.text) === rounded) return []
+        return [
+          {
+            start: prop.initializer.getStart(),
+            end: prop.initializer.getEnd(),
+            replacement: String(rounded),
+          },
+        ]
+      }
+    }
+    return []
+  }
+  if (optionsArg !== undefined || delayMs === undefined) return []
+  const end = arrow.getEnd()
+  return [
+    {
+      start: end,
+      end,
+      replacement: `, ${valueToSource({ delay: Math.round(delayMs) })!}`,
+    },
+  ]
+}
+
 /** Wrap the interaction run `fromEditId..untilEditId` in a block call. */
 function wrapRun(
   ctx: CodemodContext,
@@ -516,7 +726,8 @@ function wrapRun(
   leadMs: number | undefined,
   trailMs: number | undefined,
   footerClose?: string,
-  importName?: string
+  importName?: string,
+  delayMs?: number
 ): TextEdit[] | null {
   const fromCall = isLinearCallSite(ctx, fromEditId)
   const untilCall = isLinearCallSite(ctx, untilEditId)
@@ -559,6 +770,7 @@ function wrapRun(
       }
       updateSleep(first, leadMs, fromStmt)
       updateSleep(last, trailMs, untilStmt)
+      edits.push(...updateWrapDelayOption(ctx, fromBody, delayMs))
       return edits
     }
   }
@@ -596,17 +808,28 @@ function planCodifyEdit(edit: CodifyEdit): {
     case 'mediaEdit': {
       const media = mediaHeadAndCall(edit)
       if (media === null) return null
+      if (edit.delayMs !== undefined && edit.blocking) return null
       return {
         editIds: [edit.afterEditId],
-        description: `insert \`${media.callCode}\` after '${edit.afterEditId}'`,
+        description:
+          edit.delayMs !== undefined
+            ? `insert \`${media.callCode}\` before '${edit.afterEditId}'`
+            : `insert \`${media.callCode}\` after '${edit.afterEditId}'`,
         compute: (ctx) =>
-          insertInGapAfter(
-            ctx,
-            edit.afterEditId,
-            media.callCode,
-            edit.sleepBeforeMs ?? 0,
-            media.head
-          ),
+          edit.delayMs !== undefined
+            ? insertBeforeAnchor(
+                ctx,
+                edit.afterEditId,
+                media.callCode,
+                media.head
+              )
+            : insertInGapAfter(
+                ctx,
+                edit.afterEditId,
+                media.callCode,
+                edit.sleepBeforeMs ?? 0,
+                media.head
+              ),
       }
     }
     case 'gapPointEdit': {
@@ -614,16 +837,27 @@ function planCodifyEdit(edit: CodifyEdit): {
       if (point === null) return null
       return {
         editIds: [edit.afterEditId],
-        description: `insert \`${point.code}\` after '${edit.afterEditId}'`,
+        description:
+          edit.delayMs !== undefined
+            ? `insert \`${point.code}\` before '${edit.afterEditId}'`
+            : `insert \`${point.code}\` after '${edit.afterEditId}'`,
         compute: (ctx) =>
-          insertInGapAfter(
-            ctx,
-            edit.afterEditId,
-            point.code,
-            edit.sleepBeforeMs ?? 0,
-            point.importName,
-            point.importName
-          ),
+          edit.delayMs !== undefined
+            ? insertBeforeAnchor(
+                ctx,
+                edit.afterEditId,
+                point.code,
+                point.importName,
+                point.importName
+              )
+            : insertInGapAfter(
+                ctx,
+                edit.afterEditId,
+                point.code,
+                edit.sleepBeforeMs ?? 0,
+                point.importName,
+                point.importName
+              ),
       }
     }
     case 'zoomEdit': {
@@ -673,6 +907,13 @@ function planCodifyEdit(edit: CodifyEdit): {
         if (durationMs === null || durationMs < 0) return null
         header = `await time(${Math.round(durationMs)}, async () => {`
       }
+      // A delayed span opens with `{ delay }` on the wrapper call: the start
+      // stamp lands inside the `fromEditId` interaction (validation rules out
+      // a positive fromSleepMs alongside).
+      const footerClose =
+        span.delayMs !== undefined
+          ? `}, ${valueToSource({ delay: Math.round(span.delayMs) })!})`
+          : undefined
       return {
         editIds: [span.fromEditId, span.untilEditId],
         description: `wrap '${span.fromEditId}'..'${span.untilEditId}' in ${span.kind}`,
@@ -684,8 +925,9 @@ function planCodifyEdit(edit: CodifyEdit): {
             header,
             span.fromSleepMs,
             span.untilSleepMs,
-            undefined,
-            span.kind
+            footerClose,
+            span.kind,
+            span.delayMs
           ),
       }
     }
@@ -714,6 +956,13 @@ function plannedRemoval(edit: CodifyEdit): {
   if (edit.type === 'mediaEdit') {
     const media = mediaHeadAndCall(edit)
     if (media === null) return null
+    if (edit.delayMs !== undefined) {
+      return {
+        editIds: [edit.afterEditId],
+        description: `remove \`${media.callCode}\` before '${edit.afterEditId}'`,
+        compute: (ctx) => removeEffectBefore(ctx, edit.afterEditId, media.head),
+      }
+    }
     return {
       editIds: [edit.afterEditId],
       description: `remove \`${media.callCode}\` after '${edit.afterEditId}'`,
@@ -729,6 +978,14 @@ function plannedRemoval(edit: CodifyEdit): {
   if (edit.type === 'gapPointEdit') {
     const point = gapPointCode(edit)
     if (point === null) return null
+    if (edit.delayMs !== undefined) {
+      return {
+        editIds: [edit.afterEditId],
+        description: `remove \`${point.code}\` before '${edit.afterEditId}'`,
+        compute: (ctx) =>
+          removeEffectBefore(ctx, edit.afterEditId, point.importName),
+      }
+    }
     return {
       editIds: [edit.afterEditId],
       description: `remove \`${point.code}\` after '${edit.afterEditId}'`,
@@ -972,7 +1229,25 @@ export function planCodeSync(
     }
 
     // ── Codify edits (media / zoom / gap span / gap point) ─────────────────
-    for (const edit of input.codifyEdits[videoName] ?? []) {
+    // Same-anchor delayed placements must land in ascending-delay code order
+    // (each insert goes immediately before its anchor, so a later-processed
+    // edit sits closer to the anchor = later in code = must carry the larger
+    // delay). Stable sort: everything else keeps its doc order.
+    const codifyEdits = [...(input.codifyEdits[videoName] ?? [])].sort(
+      (a, b) => {
+        if (
+          'afterEditId' in a &&
+          'afterEditId' in b &&
+          a.afterEditId === b.afterEditId &&
+          a.delayMs !== undefined &&
+          b.delayMs !== undefined
+        ) {
+          return a.delayMs - b.delayMs
+        }
+        return 0
+      }
+    )
+    for (const edit of codifyEdits) {
       const planned = planCodifyEdit(edit)
       if (planned === null) {
         markUnappliable(`unappliable ${edit.type} '${edit.id}'`)

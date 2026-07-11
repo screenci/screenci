@@ -19,25 +19,35 @@ import {
 } from './overlayUpdates.js'
 
 /** Fake recorder capturing update events, injected via the DI parameter. */
-function fakeRecorder(): IEventRecorder & { pushed: RecordingEvent[] } {
+function fakeRecorder(): IEventRecorder & {
+  pushed: RecordingEvent[]
+  delays: (number | undefined)[]
+} {
   const pushed: RecordingEvent[] = []
+  const delays: (number | undefined)[] = []
   return {
     ...NOOP_EVENT_RECORDER,
     pushed,
-    addNarrationUpdate(update) {
+    delays,
+    addNarrationUpdate(update, delayMs) {
       pushed.push({ type: 'narrationUpdate', timeMs: 0, ...update })
+      delays.push(delayMs)
     },
-    addRecordingUpdate(update) {
+    addRecordingUpdate(update, delayMs) {
       pushed.push({ type: 'recordingUpdate', timeMs: 0, ...update })
+      delays.push(delayMs)
     },
-    addBackgroundUpdate(update) {
+    addBackgroundUpdate(update, delayMs) {
       pushed.push({ type: 'backgroundUpdate', timeMs: 0, ...update })
+      delays.push(delayMs)
     },
-    addNarrationHide() {
+    addNarrationHide(delayMs) {
       pushed.push({ type: 'narrationHide', timeMs: 0 })
+      delays.push(delayMs)
     },
-    addNarrationShow() {
+    addNarrationShow(delayMs) {
       pushed.push({ type: 'narrationShow', timeMs: 0 })
+      delays.push(delayMs)
     },
   }
 }
@@ -194,6 +204,52 @@ describe('free functions push events through the recorder', () => {
       'narrationHide',
       'narrationShow',
     ])
+  })
+
+  it('passes a validated delay through to the recorder', async () => {
+    const r = fakeRecorder()
+    await moveNarration('top-right', { delay: 500 }, r)
+    await resizeNarration(0.2, { delay: 250 }, r)
+    await resizeRecording(0.5, { delay: 100 }, r)
+    await hideRecording({ delay: 50 }, r)
+    await showRecording({}, r)
+    narrationVisibilityUpdate('hideNarration', false, { delay: 75 }, r)
+    narrationVisibilityUpdate(
+      'showNarration',
+      true,
+      { delay: 80, duration: 200 },
+      r
+    )
+    expect(r.delays).toEqual([500, 250, 100, 50, undefined, 75, 80])
+  })
+
+  it('treats delay 0 as no offset', async () => {
+    const r = fakeRecorder()
+    await hideRecording({ delay: 0 }, r)
+    expect(r.delays).toEqual([undefined])
+  })
+
+  it('collapses the delay when recording timings are disabled', async () => {
+    vi.stubEnv('SCREENCI_DISABLE_RECORDING_TIMINGS', 'true')
+    try {
+      const r = fakeRecorder()
+      await hideRecording({ delay: 700 }, r)
+      expect(r.delays).toEqual([undefined])
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('rejects negative and non-integer delays', async () => {
+    const r = fakeRecorder()
+    await expect(hideRecording({ delay: -1 }, r)).rejects.toThrow(/delay/)
+    await expect(resizeRecording(0.5, { delay: 1.5 }, r)).rejects.toThrow(
+      /delay/
+    )
+    await expect(moveNarration('top-left', { delay: NaN }, r)).rejects.toThrow(
+      /delay/
+    )
+    expect(r.pushed).toHaveLength(0)
   })
 
   it('narrationVisibilityUpdate emits narrationUpdate for fades', () => {

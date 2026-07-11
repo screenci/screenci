@@ -49,6 +49,8 @@ await autoZoom(async () => {
 
 Use automatic zoom when the camera should react to the flow instead of following a storyboard you planned in advance.
 
+Note on naming: `autoZoom`'s own `delay` / `delayAfter` options are real pauses slept before and after the zoom. They are unrelated to the `delay` option on overlay updates and media `start()` calls, which offsets an event's recorded timestamp (see [Mid-Video Overlay Updates](./overlay-updates.md#delaying-an-update-into-an-interaction)). Zoom brackets do not take that offset; use the editor's lead-in instead.
+
 ## Manual zoom
 
 ```ts

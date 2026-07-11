@@ -88,6 +88,13 @@ export type MediaEdit = {
   kind: MediaEditKind
   afterEditId: string
   sleepBeforeMs?: number
+  /**
+   * Places the call BEFORE the anchor instead of in the gap after it, with a
+   * `{ delay: delayMs }` option: the recorded start lands `delayMs` after the
+   * anchor's start, so the media can begin during the anchor interaction.
+   * Mutually exclusive with a positive `sleepBeforeMs`.
+   */
+  delayMs?: number
   blocking: boolean
   props?: Record<string, unknown>
   disabled?: boolean
@@ -120,6 +127,12 @@ export type GapSpanEdit = {
   kind: GapSpanKind
   fromEditId: string
   fromSleepMs?: number
+  /**
+   * Delays the span's recorded START into the `fromEditId` interaction: the
+   * wrap opens with `{ delay: delayMs }` so the effect begins `delayMs` after
+   * the interaction's start. Mutually exclusive with a positive `fromSleepMs`.
+   */
+  delayMs?: number
   untilEditId: string
   untilSleepMs?: number
   props?: Record<string, unknown>
@@ -136,6 +149,12 @@ export type GapPointEdit = {
   kind: GapPointKind
   afterEditId: string
   sleepBeforeMs?: number
+  /**
+   * Places the call BEFORE the anchor with a `{ delay: delayMs }` option so
+   * the instant change lands `delayMs` after the anchor interaction's start
+   * (i.e. during it). Mutually exclusive with a positive `sleepBeforeMs`.
+   */
+  delayMs?: number
   props?: Record<string, unknown>
   disabled?: boolean
 }
@@ -274,6 +293,30 @@ function optionalNonNegativeMs(value: unknown): boolean {
   )
 }
 
+/**
+ * Validates an optional `delayMs` against its sibling sleep field: a delay
+ * must be a positive integer and cannot combine with a positive sleep (the
+ * two encode contradictory placements: before vs after the anchor).
+ */
+function delayMsProblem(
+  delayMs: unknown,
+  sleepMs: unknown,
+  sleepField: string
+): string | null {
+  if (delayMs === undefined) return null
+  if (
+    typeof delayMs !== 'number' ||
+    !Number.isInteger(delayMs) ||
+    delayMs <= 0
+  ) {
+    return 'invalid delayMs'
+  }
+  if (typeof sleepMs === 'number' && sleepMs > 0) {
+    return `delayMs cannot combine with a positive ${sleepField}`
+  }
+  return null
+}
+
 function optionalProps(value: unknown): boolean {
   return value === undefined || (typeof value === 'object' && value !== null)
 }
@@ -324,6 +367,17 @@ function editRecordProblem(value: unknown): string | null {
         return 'mediaEdit missing blocking'
       if (!optionalNonNegativeMs(record.sleepBeforeMs))
         return 'invalid sleepBeforeMs'
+      {
+        const problem = delayMsProblem(
+          record.delayMs,
+          record.sleepBeforeMs,
+          'sleepBeforeMs'
+        )
+        if (problem !== null) return problem
+      }
+      if (record.delayMs !== undefined && record.blocking === true) {
+        return 'delayMs requires blocking: false'
+      }
       if (!optionalProps(record.props)) return 'invalid props'
       return null
     }
@@ -351,6 +405,14 @@ function editRecordProblem(value: unknown): string | null {
         return 'invalid fromSleepMs'
       if (!optionalNonNegativeMs(record.untilSleepMs))
         return 'invalid untilSleepMs'
+      {
+        const problem = delayMsProblem(
+          record.delayMs,
+          record.fromSleepMs,
+          'fromSleepMs'
+        )
+        if (problem !== null) return problem
+      }
       if (!optionalProps(record.props)) return 'invalid props'
       return null
     }
@@ -364,6 +426,14 @@ function editRecordProblem(value: unknown): string | null {
         return 'gapPointEdit missing afterEditId'
       if (!optionalNonNegativeMs(record.sleepBeforeMs))
         return 'invalid sleepBeforeMs'
+      {
+        const problem = delayMsProblem(
+          record.delayMs,
+          record.sleepBeforeMs,
+          'sleepBeforeMs'
+        )
+        if (problem !== null) return problem
+      }
       if (!optionalProps(record.props)) return 'invalid props'
       return null
     }

@@ -11,6 +11,19 @@ import {
   editableIdentityKey,
   type EditableMeta,
 } from './editableDescriptor.js'
+import { delayArg, validateDelay } from './overlayUpdates.js'
+
+/**
+ * Options shared by the timeline block wrappers (`hide`, `speed`, `time`).
+ */
+export type TimelineBlockOptions = {
+  /**
+   * Offsets the recorded START of the block this many milliseconds into the
+   * future; the end still lands when the wrapped callback finishes. Lets the
+   * effect begin partway into the first wrapped interaction. Integer >= 0.
+   */
+  delay?: number
+}
 
 export function setActiveHideRecorder(recorder: IEventRecorder | null): void {
   setRuntimeHideRecorder(recorder)
@@ -61,20 +74,35 @@ function buildHideEditableMeta(name: string | undefined): EditableMeta {
   })
 }
 
-export async function hide(fn: () => Promise<void> | void): Promise<void>
+export async function hide(
+  fn: () => Promise<void> | void,
+  options?: TimelineBlockOptions
+): Promise<void>
 export async function hide(
   name: string,
-  fn: () => Promise<void> | void
+  fn: () => Promise<void> | void,
+  options?: TimelineBlockOptions
 ): Promise<void>
 export async function hide(
   first: string | (() => Promise<void> | void),
-  maybeFn?: () => Promise<void> | void
+  second?: (() => Promise<void> | void) | TimelineBlockOptions,
+  maybeOptions?: TimelineBlockOptions
 ): Promise<void> {
   const name = typeof first === 'string' ? first : undefined
-  const fn = typeof first === 'function' ? first : maybeFn
+  const fn =
+    typeof first === 'function'
+      ? first
+      : typeof second === 'function'
+        ? second
+        : undefined
+  const options =
+    typeof first === 'function'
+      ? (second as TimelineBlockOptions | undefined)
+      : maybeOptions
   if (fn === undefined) {
     throw new Error('hide() requires a callback function')
   }
+  const delayMs = validateDelay('hide', options?.delay)
   if (isScreenshotCapture()) {
     // A still only keeps the final frame, so there is no timeline to cut a
     // hidden section from. The wrapped setup still runs, but hide() is a no-op.
@@ -87,7 +115,11 @@ export async function hide(
     type: 'hide',
     recorder: activeRecorder,
     emitStart: (recorder) =>
-      recorder.addHideStart(buildHideEditableMeta(name), name),
+      recorder.addHideStart(
+        buildHideEditableMeta(name),
+        name,
+        ...delayArg(delayMs)
+      ),
     emitEnd: (recorder) => recorder.addHideEnd(),
     fn,
   })

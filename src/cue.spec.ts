@@ -618,6 +618,31 @@ describe('createNarration', () => {
       )
     })
 
+    it('start({ delay }) passes the delay as the trailing recorder arg', async () => {
+      const cues = createNarration(langInput)
+      await cues.intro.start({ delay: 500 })
+
+      expect(recorder.addCueStart).toHaveBeenCalledWith(
+        '',
+        'intro',
+        undefined,
+        {
+          en: { text: 'Hello world', voice: voices.Ava },
+          fi: { text: 'Hei maailma', voice: voices.Ava },
+        },
+        undefined,
+        undefined,
+        undefined,
+        500
+      )
+    })
+
+    it('start() rejects an invalid delay', async () => {
+      const cues = createNarration(langInput)
+      await expect(cues.intro.start({ delay: -1 })).rejects.toThrow(/delay/)
+      expect(recorder.addCueStart).not.toHaveBeenCalled()
+    })
+
     it('start() emits sleep → cueStart(multilang) sequence', async () => {
       const cues = createNarration(langInput)
       await cues.intro.start()

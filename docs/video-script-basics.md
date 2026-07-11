@@ -202,6 +202,14 @@ await time(1000, async () => {
 // - Narration cue audio is not retimed; these only remap the recording timeline.
 ```
 
+All three accept a trailing options object with `delay` (milliseconds), which
+shifts the recorded START of the block forward while the end still lands when
+the callback finishes. That lets the effect begin partway into the first
+wrapped interaction, for example `await speed(2, async () => { ... }, { delay:
+400 })`. See [Mid-Video Overlay
+Updates](./overlay-updates.md#delaying-an-update-into-an-interaction) for the
+time-order rules delayed events must follow.
+
 API reference: [hide()](/docs/reference/api/functions/hide). See also [Animated
 Interactions](/docs/guides/animated-interactions) for how visible actions are
 captured.

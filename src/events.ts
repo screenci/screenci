@@ -1363,6 +1363,13 @@ export interface IEventRecorder {
    * `['Shift', 'A']`); `show` is the per-call visibility override.
    */
   addKeyPress(keys: string[], show?: boolean): void
+  /**
+   * Records a narration cue start. `delayMs` (like on every `add*` method
+   * that accepts it) shifts the stamped `timeMs` forward: the call runs now
+   * but the event lands `delayMs` later, letting a call written before an
+   * interaction take effect during it. Throws when the delayed stamp lands
+   * before an already-recorded event of the same type stream.
+   */
   addCueStart(
     text: string,
     name: string,
@@ -1370,10 +1377,15 @@ export interface IEventRecorder {
     translations?: Record<string, CueTranslation>,
     volume?: number,
     until?: TimelineAnchorInput,
-    studio?: boolean
+    studio?: boolean,
+    delayMs?: number
   ): void
   /** Records a studio-mode cue start — text and voice are configured in Studio. */
-  addStudioCueStart(name: string, until?: TimelineAnchorInput): void
+  addStudioCueStart(
+    name: string,
+    until?: TimelineAnchorInput,
+    delayMs?: number
+  ): void
   /**
    * Declares the localized `values` fields used by this recording (field names,
    * Studio-managed field names, and the active language's seeds) so the backend
@@ -1393,16 +1405,21 @@ export interface IEventRecorder {
     translations?: Record<string, VideoCueTranslation>,
     volume?: number,
     until?: TimelineAnchorInput,
-    studio?: boolean
+    studio?: boolean,
+    delayMs?: number
   ): void
-  addAssetStart(name: string, asset: AssetStartPayload): void
+  addAssetStart(name: string, asset: AssetStartPayload, delayMs?: number): void
   /**
    * Records a rendered/animated overlay `assetStart` whose bytes are produced
    * after the test. The event is pushed at the current timeline position with a
    * placeholder `path` and no `fileHash`; the deferred flush rasterizes the
    * captured {@link DeferredRasterizeRequest} and patches the event in place.
    */
-  addPendingAssetStart(name: string, pending: PendingAssetStart): void
+  addPendingAssetStart(
+    name: string,
+    pending: PendingAssetStart,
+    delayMs?: number
+  ): void
   /**
    * The overlays awaiting deferred rasterization, in record order. Each entry's
    * `event` is the live object in the recording, so the flush patches it
@@ -1417,11 +1434,11 @@ export interface IEventRecorder {
    */
   addAssetEnd(name: string | undefined, reason?: 'auto' | 'wait'): void
   /** Records a studio-mode asset start — the file and options are configured in Studio. */
-  addStudioAssetStart(name: string): void
+  addStudioAssetStart(name: string, delayMs?: number): void
   /** Records the start of a background audio track (`createAudio`). */
-  addAudioStart(name: string, audio: AudioStartPayload): void
+  addAudioStart(name: string, audio: AudioStartPayload, delayMs?: number): void
   /** Records a studio-mode audio start — the file, volume, and repeat are configured in Studio. */
-  addStudioAudioStart(name: string): void
+  addStudioAudioStart(name: string, delayMs?: number): void
   /**
    * Records the end of a background audio track. `name` pairs it to its start;
    * an audio track left open plays to the end of the video.
@@ -1436,7 +1453,7 @@ export interface IEventRecorder {
    * timestamp is always 0 regardless of when it is called.
    */
   addScreenAudioTrack(audio: AudioStartPayload): void
-  addHideStart(editable?: EditableMeta, name?: string): void
+  addHideStart(editable?: EditableMeta, name?: string, delayMs?: number): void
   addHideEnd(): void
   /** Records a page navigation span (a hard border on the editor timeline). */
   addNavigation(url: string, startMs: number): void
@@ -1444,35 +1461,47 @@ export interface IEventRecorder {
   addRedact(matcher: string | undefined, editable?: EditableMeta): void
   /** Resolved cursor/scroll dispatch intervals from `recordOptions.performance`. */
   getPerformanceIntervals(): PerformanceIntervals
-  addSpeedStart(multiplier: number, editable?: EditableMeta): void
+  addSpeedStart(
+    multiplier: number,
+    editable?: EditableMeta,
+    delayMs?: number
+  ): void
   addSpeedEnd(): void
-  addTimeStart(durationMs: number, editable?: EditableMeta, name?: string): void
+  addTimeStart(
+    durationMs: number,
+    editable?: EditableMeta,
+    name?: string,
+    delayMs?: number
+  ): void
   addTimeEnd(): void
   addAutoZoomStart(options?: AutoZoomOptions, editable?: EditableMeta): void
   addAutoZoomEnd(options?: AutoZoomOptions): void
-  addNarrationHide(): void
-  addNarrationShow(): void
+  addNarrationHide(delayMs?: number): void
+  addNarrationShow(delayMs?: number): void
   /**
    * Records a mid-video narration overlay update (move/resize/visibility).
    * Throws when the update lands at the same time as, or inside the running
    * transition of, the previous narration update.
    */
   addNarrationUpdate(
-    update: Omit<NarrationUpdateEvent, 'type' | 'timeMs'>
+    update: Omit<NarrationUpdateEvent, 'type' | 'timeMs'>,
+    delayMs?: number
   ): void
   /**
    * Records a mid-video recording overlay update (resize/visibility).
    * Same overlap rule as {@link addNarrationUpdate}.
    */
   addRecordingUpdate(
-    update: Omit<RecordingUpdateEvent, 'type' | 'timeMs'>
+    update: Omit<RecordingUpdateEvent, 'type' | 'timeMs'>,
+    delayMs?: number
   ): void
   /**
    * Records a mid-video background change. Same overlap rule as
    * {@link addNarrationUpdate}.
    */
   addBackgroundUpdate(
-    update: Omit<BackgroundUpdateEvent, 'type' | 'timeMs'>
+    update: Omit<BackgroundUpdateEvent, 'type' | 'timeMs'>,
+    delayMs?: number
   ): void
   /**
    * Records an artificial sleep that just finished. `durationMs` is the actually
@@ -1672,6 +1701,44 @@ export class EventRecorder implements IEventRecorder {
     return timeMs
   }
 
+  /**
+   * Recording-relative timestamp for an event being recorded now, shifted
+   * forward by an optional `delayMs`. Callers pre-scale the delay with the
+   * recording-timing mode (see `validateDelay`), like every simulated pause,
+   * so delayed stamps stay consistent with real-elapsed stamps. A delay lets
+   * a call written before an interaction take effect during or after it.
+   */
+  private stampTimeMs(delayMs?: number): number {
+    const base = Date.now() - (this.startTime ?? 0)
+    if (delayMs === undefined || delayMs <= 0) return base
+    return base + delayMs
+  }
+
+  /**
+   * Rejects an event stamped earlier than an already-recorded event of the
+   * same type stream. Same-type events must land in time order; a `delay` on
+   * an earlier call can otherwise leapfrog this one.
+   */
+  private assertInOrder(
+    types: readonly RecordingEvent['type'][],
+    label: string,
+    timeMs: number
+  ): void {
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      const event = this.events[i]!
+      if (!types.includes(event.type)) continue
+      const prevTime = (event as { timeMs?: number }).timeMs
+      if (prevTime !== undefined && timeMs < prevTime) {
+        throw new ScreenciError(
+          `${label} at ${timeMs}ms lands before an already-recorded ${label} at ${prevTime}ms. ` +
+            `Same-type events must be recorded in time order: reduce that event's delay, ` +
+            `add a delay to this call, or reorder the calls.`
+        )
+      }
+      return
+    }
+  }
+
   private normalizeCentering(
     options: AutoZoomOptions | undefined
   ): number | undefined {
@@ -1841,10 +1908,16 @@ export class EventRecorder implements IEventRecorder {
     translations?: Record<string, CueTranslation>,
     volume?: number,
     until?: TimelineAnchorInput,
-    studio?: boolean
+    studio?: boolean,
+    delayMs?: number
   ): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(
+      ['cueStart', 'videoCueStart'],
+      'narration cue start',
+      timeMs
+    )
     this.events.push({
       type: 'cueStart',
       timeMs,
@@ -1860,9 +1933,18 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addStudioCueStart(name: string, until?: TimelineAnchorInput): void {
+  addStudioCueStart(
+    name: string,
+    until?: TimelineAnchorInput,
+    delayMs?: number
+  ): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(
+      ['cueStart', 'videoCueStart'],
+      'narration cue start',
+      timeMs
+    )
     this.events.push({
       type: 'cueStart',
       timeMs,
@@ -1906,10 +1988,16 @@ export class EventRecorder implements IEventRecorder {
     translations?: Record<string, VideoCueTranslation>,
     volume?: number,
     until?: TimelineAnchorInput,
-    studio?: boolean
+    studio?: boolean,
+    delayMs?: number
   ): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(
+      ['cueStart', 'videoCueStart'],
+      'narration cue start',
+      timeMs
+    )
     this.events.push({
       type: 'videoCueStart',
       timeMs,
@@ -1925,9 +2013,14 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addAssetStart(name: string, asset: AssetStartPayload): void {
+  addAssetStart(
+    name: string,
+    asset: AssetStartPayload,
+    delayMs?: number
+  ): void {
     if (this.startTime === null) return
-    const timeMs = this.snapToAdjacentTransition(Date.now() - this.startTime)
+    const timeMs = this.snapToAdjacentTransition(this.stampTimeMs(delayMs))
+    this.assertInOrder(['assetStart'], 'overlay start', timeMs)
     if (asset.kind === 'image') {
       this.events.push({
         type: 'assetStart',
@@ -2038,9 +2131,14 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addPendingAssetStart(name: string, pending: PendingAssetStart): void {
+  addPendingAssetStart(
+    name: string,
+    pending: PendingAssetStart,
+    delayMs?: number
+  ): void {
     if (this.startTime === null) return
-    const timeMs = this.snapToAdjacentTransition(Date.now() - this.startTime)
+    const timeMs = this.snapToAdjacentTransition(this.stampTimeMs(delayMs))
+    this.assertInOrder(['assetStart'], 'overlay start', timeMs)
     const event: ImageAssetStartEvent | AnimationAssetStartEvent = {
       type: 'assetStart',
       timeMs,
@@ -2083,9 +2181,10 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addStudioAssetStart(name: string): void {
+  addStudioAssetStart(name: string, delayMs?: number): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(['assetStart'], 'overlay start', timeMs)
     this.events.push({
       type: 'assetStart',
       timeMs,
@@ -2094,9 +2193,14 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addAudioStart(name: string, audio: AudioStartPayload): void {
+  addAudioStart(
+    name: string,
+    audio: AudioStartPayload,
+    delayMs?: number
+  ): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(['audioStart'], 'audio start', timeMs)
     this.events.push({
       type: 'audioStart',
       timeMs,
@@ -2110,9 +2214,10 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addStudioAudioStart(name: string): void {
+  addStudioAudioStart(name: string, delayMs?: number): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(['audioStart'], 'audio start', timeMs)
     this.events.push({
       type: 'audioStart',
       timeMs,
@@ -2151,9 +2256,10 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addHideStart(editable?: EditableMeta, name?: string): void {
+  addHideStart(editable?: EditableMeta, name?: string, delayMs?: number): void {
     if (this.startTime === null) return
-    const timeMs = this.snapToAdjacentTransition(Date.now() - this.startTime)
+    const timeMs = this.snapToAdjacentTransition(this.stampTimeMs(delayMs))
+    this.assertInOrder(['hideStart', 'hideEnd'], 'hide span', timeMs)
     this.events.push({
       type: 'hideStart',
       timeMs,
@@ -2193,9 +2299,14 @@ export class EventRecorder implements IEventRecorder {
     )
   }
 
-  addSpeedStart(multiplier: number, editable?: EditableMeta): void {
+  addSpeedStart(
+    multiplier: number,
+    editable?: EditableMeta,
+    delayMs?: number
+  ): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(['speedStart', 'speedEnd'], 'speed span', timeMs)
     this.events.push({
       type: 'speedStart',
       timeMs,
@@ -2213,10 +2324,12 @@ export class EventRecorder implements IEventRecorder {
   addTimeStart(
     durationMs: number,
     editable?: EditableMeta,
-    name?: string
+    name?: string,
+    delayMs?: number
   ): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(['timeStart', 'timeEnd'], 'time span', timeMs)
     this.events.push({
       type: 'timeStart',
       timeMs,
@@ -2291,15 +2404,25 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addNarrationHide(): void {
+  addNarrationHide(delayMs?: number): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(
+      ['narrationHide', 'narrationShow'],
+      'narration visibility change',
+      timeMs
+    )
     this.events.push({ type: 'narrationHide', timeMs })
   }
 
-  addNarrationShow(): void {
+  addNarrationShow(delayMs?: number): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(
+      ['narrationHide', 'narrationShow'],
+      'narration visibility change',
+      timeMs
+    )
     this.events.push({ type: 'narrationShow', timeMs })
   }
 
@@ -2321,7 +2444,8 @@ export class EventRecorder implements IEventRecorder {
         throw new ScreenciError(
           `${target} at ${timeMs}ms overlaps the previous update at ` +
             `${event.timeMs}ms (its transition runs until ${transitionEndMs}ms). ` +
-            `Wait for the transition to finish before the next update.`
+            `Wait for the transition to finish before the next update, or ` +
+            `adjust the calls' delay options so the updates land in order.`
         )
       }
       return
@@ -2329,10 +2453,11 @@ export class EventRecorder implements IEventRecorder {
   }
 
   addNarrationUpdate(
-    update: Omit<NarrationUpdateEvent, 'type' | 'timeMs'>
+    update: Omit<NarrationUpdateEvent, 'type' | 'timeMs'>,
+    delayMs?: number
   ): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
     this.assertNoUpdateOverlap('narrationUpdate', timeMs)
     // Consecutive full-screen moves have no meaning (the narration is
     // already full screen); require an exit to a corner or 'center' first.
@@ -2353,19 +2478,21 @@ export class EventRecorder implements IEventRecorder {
   }
 
   addRecordingUpdate(
-    update: Omit<RecordingUpdateEvent, 'type' | 'timeMs'>
+    update: Omit<RecordingUpdateEvent, 'type' | 'timeMs'>,
+    delayMs?: number
   ): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
     this.assertNoUpdateOverlap('recordingUpdate', timeMs)
     this.events.push({ type: 'recordingUpdate', timeMs, ...update })
   }
 
   addBackgroundUpdate(
-    update: Omit<BackgroundUpdateEvent, 'type' | 'timeMs'>
+    update: Omit<BackgroundUpdateEvent, 'type' | 'timeMs'>,
+    delayMs?: number
   ): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
     this.assertNoUpdateOverlap('backgroundUpdate', timeMs)
     this.events.push({ type: 'backgroundUpdate', timeMs, ...update })
   }
@@ -2388,6 +2515,22 @@ export class EventRecorder implements IEventRecorder {
     sourceFilePath?: string,
     options?: WriteRecordingOptions
   ): Promise<void> {
+    // A delayed event may have been stamped into the future; if the recording
+    // ended before that moment the render would reference footage that does
+    // not exist, so fail fast with the offending event.
+    if (this.startTime !== null) {
+      const recordingEndMs = Date.now() - this.startTime
+      for (const event of this.events) {
+        const timeMs = (event as { timeMs?: number }).timeMs
+        if (timeMs !== undefined && timeMs > recordingEndMs) {
+          throw new ScreenciError(
+            `${event.type} at ${timeMs}ms lands past the end of the recording ` +
+              `(${recordingEndMs}ms). Its delay pushed it beyond the last recorded ` +
+              `moment; reduce the delay or extend the recording.`
+          )
+        }
+      }
+    }
     const filePath = join(dir, 'data.json')
 
     // Studio mode: render options come from the Studio page. data.json still

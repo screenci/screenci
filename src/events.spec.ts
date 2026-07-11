@@ -529,6 +529,80 @@ describe('EventRecorder', () => {
     })
   })
 
+  describe('delayed events', () => {
+    it('stamps a delayed update at call time plus the delay', () => {
+      recorder.start() // startTime = 1000
+      now = 1500
+      recorder.addBackgroundUpdate(
+        { background: { backgroundCss: '#101014' } },
+        700
+      )
+      expect(recorder.getEvents().at(-1)).toMatchObject({
+        type: 'backgroundUpdate',
+        timeMs: 1200,
+      })
+    })
+
+    it('throws when an update lands behind an already-recorded delayed update', () => {
+      recorder.start()
+      recorder.addBackgroundUpdate(
+        { background: { backgroundCss: '#111' } },
+        5000
+      )
+      now = 2000
+      expect(() =>
+        recorder.addBackgroundUpdate({ background: { backgroundCss: '#222' } })
+      ).toThrow(/overlaps the previous update/)
+    })
+
+    it('throws when a narration visibility change lands behind a delayed one', () => {
+      recorder.start()
+      recorder.addNarrationHide(5000) // lands at 5000ms
+      now = 2000
+      expect(() => recorder.addNarrationShow()).toThrow(
+        /narration visibility change at 1000ms lands before an already-recorded/
+      )
+    })
+
+    it('allows a later narration visibility change after the delayed stamp', () => {
+      recorder.start()
+      recorder.addNarrationHide(500) // lands at 500ms
+      now = 2000
+      expect(() => recorder.addNarrationShow()).not.toThrow()
+      expect(recorder.getEvents().at(-1)).toMatchObject({
+        type: 'narrationShow',
+        timeMs: 1000,
+      })
+    })
+
+    it('throws when an overlay start lands behind a delayed overlay start', () => {
+      recorder.start()
+      recorder.addAssetStart(
+        'late',
+        { kind: 'image', path: 'a.png', fullScreen: false },
+        5000
+      )
+      now = 2000
+      expect(() =>
+        recorder.addAssetStart('early', {
+          kind: 'image',
+          path: 'b.png',
+          fullScreen: false,
+        })
+      ).toThrow(/overlay start at 1000ms lands before an already-recorded/)
+    })
+
+    it('stamps delayed hide and speed starts forward', () => {
+      recorder.start()
+      now = 1400
+      recorder.addHideStart(undefined, undefined, 300)
+      recorder.addSpeedStart(2, undefined, 250)
+      const events = recorder.getEvents()
+      expect(events.at(-2)).toMatchObject({ type: 'hideStart', timeMs: 700 })
+      expect(events.at(-1)).toMatchObject({ type: 'speedStart', timeMs: 650 })
+    })
+  })
+
   describe('writeToFile', () => {
     let tmpDir: string
 
@@ -539,6 +613,19 @@ describe('EventRecorder', () => {
 
     afterEach(async () => {
       await rm(tmpDir, { recursive: true, force: true })
+    })
+
+    it('throws when a delayed event lands past the end of the recording', async () => {
+      recorder.start() // 1000
+      now = 1500
+      recorder.addBackgroundUpdate(
+        { background: { backgroundCss: '#111' } },
+        9000
+      )
+      now = 2000 // recording ends at 1000ms, event stamped at 9500ms
+      await expect(recorder.writeToFile(tmpDir, 'Test Video')).rejects.toThrow(
+        /backgroundUpdate at 9500ms lands past the end of the recording/
+      )
     })
 
     it('writes data.json with nested input events', async () => {

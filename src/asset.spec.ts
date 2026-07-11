@@ -773,6 +773,34 @@ describe('createOverlays', () => {
       expect(recorder.addAssetEnd).toHaveBeenCalledWith('badge', 'wait')
     })
 
+    it('start({ delay }) passes the delay as the trailing recorder arg', async () => {
+      const overlays = createOverlays({
+        badge: { fill: 'recording', path: './badge.png' },
+      })
+
+      await overlays.badge.start({ delay: 600 })
+      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+        'badge',
+        {
+          kind: 'image',
+          path: './badge.png',
+          fullScreen: false,
+        },
+        600
+      )
+      await overlays.badge.end()
+    })
+
+    it('start() rejects an invalid delay', async () => {
+      const overlays = createOverlays({
+        badge: { fill: 'recording', path: './badge.png' },
+      })
+      await expect(overlays.badge.start({ delay: -10 })).rejects.toThrow(
+        /delay/
+      )
+      expect(recorder.addAssetStart).not.toHaveBeenCalled()
+    })
+
     it('keeps overlapping overlays live and ends each by name independently', async () => {
       const overlays = createOverlays({
         a: { fill: 'recording', path: './a.png' },

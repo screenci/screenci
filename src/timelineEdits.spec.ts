@@ -126,6 +126,121 @@ describe('parseTimelineEdits', () => {
   })
 })
 
+describe('parseTimelineEdits: delayMs validation', () => {
+  const env = (value: string) =>
+    ({ SCREENCI_TIMELINE_EDITS: value }) as NodeJS.ProcessEnv
+
+  const docWith = (edit: Record<string, unknown>) =>
+    JSON.stringify({ demo: { version: 3, edits: [edit] } })
+
+  const point = {
+    type: 'gapPointEdit',
+    id: 'gp1',
+    kind: 'background',
+    afterEditId: 'click1',
+    props: { backgroundCss: '#101014' },
+  }
+
+  it('accepts a positive integer delayMs on point, media, and span edits', () => {
+    const doc = JSON.stringify({
+      demo: {
+        version: 3,
+        edits: [
+          { ...point, delayMs: 500 },
+          {
+            type: 'mediaEdit',
+            id: 'm1',
+            kind: 'overlay',
+            afterEditId: 'click1',
+            blocking: false,
+            delayMs: 250,
+            props: { name: 'logo' },
+          },
+          {
+            type: 'gapSpanEdit',
+            id: 'g1',
+            kind: 'hide',
+            fromEditId: 'a',
+            untilEditId: 'b',
+            delayMs: 400,
+          },
+        ],
+      },
+    })
+    const parsed = parseTimelineEdits(env(doc))
+    expect(parsed?.demo.edits).toHaveLength(3)
+    expect(parsed?.demo.invalid).toHaveLength(0)
+  })
+
+  it('rejects zero, negative, and non-integer delayMs', () => {
+    for (const delayMs of [0, -100, 1.5, 'x']) {
+      const parsed = parseTimelineEdits(env(docWith({ ...point, delayMs })))
+      expect(parsed?.demo.invalid).toEqual([
+        { id: 'gp1', reason: 'invalid delayMs' },
+      ])
+    }
+  })
+
+  it('rejects delayMs combined with a positive sleep field', () => {
+    const parsed = parseTimelineEdits(
+      env(docWith({ ...point, delayMs: 500, sleepBeforeMs: 300 }))
+    )
+    expect(parsed?.demo.invalid).toEqual([
+      {
+        id: 'gp1',
+        reason: 'delayMs cannot combine with a positive sleepBeforeMs',
+      },
+    ])
+
+    const span = parseTimelineEdits(
+      env(
+        docWith({
+          type: 'gapSpanEdit',
+          id: 'g1',
+          kind: 'hide',
+          fromEditId: 'a',
+          untilEditId: 'b',
+          delayMs: 400,
+          fromSleepMs: 200,
+        })
+      )
+    )
+    expect(span?.demo.invalid).toEqual([
+      {
+        id: 'g1',
+        reason: 'delayMs cannot combine with a positive fromSleepMs',
+      },
+    ])
+  })
+
+  it('allows delayMs next to a zero sleep field', () => {
+    const parsed = parseTimelineEdits(
+      env(docWith({ ...point, delayMs: 500, sleepBeforeMs: 0 }))
+    )
+    expect(parsed?.demo.invalid).toHaveLength(0)
+    expect(parsed?.demo.edits).toHaveLength(1)
+  })
+
+  it('rejects delayMs on a blocking media edit', () => {
+    const parsed = parseTimelineEdits(
+      env(
+        docWith({
+          type: 'mediaEdit',
+          id: 'm1',
+          kind: 'narrationCue',
+          afterEditId: 'click1',
+          blocking: true,
+          delayMs: 250,
+          props: { name: 'intro' },
+        })
+      )
+    )
+    expect(parsed?.demo.invalid).toEqual([
+      { id: 'm1', reason: 'delayMs requires blocking: false' },
+    ])
+  })
+})
+
 describe('splitEdits', () => {
   it('splits param edits from codify records and drops disabled/rename', () => {
     const edits: EditRecord[] = [

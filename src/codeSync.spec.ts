@@ -674,6 +674,218 @@ describe('planCodeSync: gap span edits', () => {
   })
 })
 
+describe('planCodeSync: delayed (before-anchor) placements', () => {
+  const otherFiles = { [ZOOM_FILE]: ZOOM_SOURCE, [LOOP_FILE]: LOOP_SOURCE }
+
+  const delayedPoint: CodifyEdit = {
+    type: 'gapPointEdit',
+    id: 'dp1',
+    kind: 'background',
+    afterEditId: 'fill1',
+    delayMs: 500,
+    props: { backgroundCss: '#101014' },
+  }
+
+  it('places a delayed gap point before the anchor with a delay option', () => {
+    const result = plan(inputWith({ codifyEdits: { Demo: [delayedPoint] } }))
+    const after = afterFor(result, FILE)
+    expect(after).toContain("await setBackground('#101014', { delay: 500 })")
+    expect(after).toContain("import { video, setBackground } from 'screenci'")
+    // The call sits BEFORE the fill anchor, with no gap sleep of its own.
+    const callIndex = after.indexOf("await setBackground('#101014'")
+    const anchorIndex = after.indexOf("await page.locator('#name').fill")
+    expect(callIndex).toBeGreaterThan(0)
+    expect(callIndex).toBeLessThan(anchorIndex)
+  })
+
+  it('places a delayed non-blocking media start before the anchor', () => {
+    const media: CodifyEdit = {
+      type: 'mediaEdit',
+      id: 'dm1',
+      kind: 'overlay',
+      afterEditId: 'fill1',
+      delayMs: 250,
+      blocking: false,
+      props: { name: 'logo' },
+    }
+    const result = plan(inputWith({ codifyEdits: { Demo: [media] } }))
+    const after = afterFor(result, FILE)
+    expect(after).toContain('await overlays.logo.start({ delay: 250 })')
+    const callIndex = after.indexOf('await overlays.logo.start')
+    const anchorIndex = after.indexOf("await page.locator('#name').fill")
+    expect(callIndex).toBeLessThan(anchorIndex)
+  })
+
+  it('a delayed blocking media edit is unappliable', () => {
+    const media: CodifyEdit = {
+      type: 'mediaEdit',
+      id: 'dm2',
+      kind: 'narrationCue',
+      afterEditId: 'fill1',
+      delayMs: 250,
+      blocking: true,
+      props: { name: 'intro' },
+    }
+    const result = plan(inputWith({ codifyEdits: { Demo: [media] } }))
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(1)
+  })
+
+  it('re-syncing the same delayed point makes no change (idempotent)', () => {
+    const after1 = afterFor(
+      plan(inputWith({ codifyEdits: { Demo: [delayedPoint] } })),
+      FILE
+    )
+    const result2 = plan(inputWith({ codifyEdits: { Demo: [delayedPoint] } }), {
+      [FILE]: after1,
+      ...otherFiles,
+    })
+    expect(result2.files).toHaveLength(0)
+  })
+
+  it('changing the delay updates the placed call in place', () => {
+    const after1 = afterFor(
+      plan(inputWith({ codifyEdits: { Demo: [delayedPoint] } })),
+      FILE
+    )
+    const result2 = plan(
+      inputWith({ codifyEdits: { Demo: [{ ...delayedPoint, delayMs: 900 }] } }),
+      { [FILE]: after1, ...otherFiles }
+    )
+    const after2 = afterFor(result2, FILE)
+    expect(after2).toContain("await setBackground('#101014', { delay: 900 })")
+    expect(after2.match(/setBackground/g)).toHaveLength(2) // import + one call
+  })
+
+  it('switching a point from sleep to delay removes the after-anchor copy', () => {
+    const sleepPoint: CodifyEdit = {
+      type: 'gapPointEdit',
+      id: 'dp1',
+      kind: 'background',
+      afterEditId: 'click1',
+      sleepBeforeMs: 300,
+      props: { backgroundCss: '#101014' },
+    }
+    const after1 = afterFor(
+      plan(inputWith({ codifyEdits: { Demo: [sleepPoint] } })),
+      FILE
+    )
+    expect(after1).toContain('await page.waitForTimeout(300)')
+    const result2 = plan(
+      inputWith({
+        codifyEdits: {
+          Demo: [{ ...sleepPoint, sleepBeforeMs: undefined, delayMs: 450 }],
+        },
+      }),
+      { [FILE]: after1, ...otherFiles }
+    )
+    const after2 = afterFor(result2, FILE)
+    expect(after2).toContain("await setBackground('#101014', { delay: 450 })")
+    expect(after2.match(/setBackground\(/g)).toHaveLength(1)
+    // The split 300/700 gap re-coalesced into the original 1000ms sleep.
+    expect(after2).toContain('await page.waitForTimeout(1000)')
+    expect(after2).not.toContain('await page.waitForTimeout(300)')
+  })
+
+  it('switching a point from delay to sleep removes the before-anchor copy', () => {
+    const after1 = afterFor(
+      plan(inputWith({ codifyEdits: { Demo: [delayedPoint] } })),
+      FILE
+    )
+    const result2 = plan(
+      inputWith({
+        codifyEdits: {
+          Demo: [{ ...delayedPoint, delayMs: undefined, sleepBeforeMs: 0 }],
+        },
+      }),
+      { [FILE]: after1, ...otherFiles }
+    )
+    const after2 = afterFor(result2, FILE)
+    expect(after2).toContain("await setBackground('#101014')")
+    expect(after2).not.toContain('{ delay:')
+    expect(after2.match(/setBackground\(/g)).toHaveLength(1)
+  })
+
+  it('orders two same-anchor delayed points by ascending delay', () => {
+    const early: CodifyEdit = {
+      type: 'gapPointEdit',
+      id: 'dpA',
+      kind: 'recording',
+      afterEditId: 'fill1',
+      delayMs: 200,
+      props: { visible: false },
+    }
+    const late: CodifyEdit = {
+      type: 'gapPointEdit',
+      id: 'dpB',
+      kind: 'recording',
+      afterEditId: 'fill1',
+      delayMs: 800,
+      props: { size: 0.5 },
+    }
+    // Doc order is late-first: the planner must still emit ascending delays.
+    const result = plan(inputWith({ codifyEdits: { Demo: [late, early] } }))
+    const after = afterFor(result, FILE)
+    const earlyIndex = after.indexOf('await hideRecording({ delay: 200 })')
+    const lateIndex = after.indexOf(
+      'await resizeRecording(0.5, { delay: 800 })'
+    )
+    expect(earlyIndex).toBeGreaterThan(0)
+    expect(lateIndex).toBeGreaterThan(0)
+    expect(earlyIndex).toBeLessThan(lateIndex)
+  })
+
+  it('wraps a delayed gap span with a delay option on the wrapper', () => {
+    const span: CodifyEdit = {
+      type: 'gapSpanEdit',
+      id: 'ds1',
+      kind: 'hide',
+      fromEditId: 'click1',
+      untilEditId: 'fill1',
+      delayMs: 400,
+    }
+    const result = plan(inputWith({ codifyEdits: { Demo: [span] } }))
+    const after = afterFor(result, FILE)
+    expect(after).toContain('await hide(async () => {')
+    expect(after).toContain('}, { delay: 400 })')
+  })
+
+  it('updates the wrapper delay on re-sync without re-wrapping', () => {
+    const span: CodifyEdit = {
+      type: 'gapSpanEdit',
+      id: 'ds1',
+      kind: 'hide',
+      fromEditId: 'click1',
+      untilEditId: 'fill1',
+      delayMs: 400,
+    }
+    const after1 = afterFor(
+      plan(inputWith({ codifyEdits: { Demo: [span] } })),
+      FILE
+    )
+    const result2 = plan(
+      inputWith({ codifyEdits: { Demo: [{ ...span, delayMs: 650 }] } }),
+      { [FILE]: after1, ...otherFiles }
+    )
+    const after2 = afterFor(result2, FILE)
+    expect(after2).toContain('}, { delay: 650 })')
+    expect(after2.match(/await hide\(/g)).toHaveLength(1)
+  })
+
+  it('removes a deleted delayed point placed before its anchor', () => {
+    const after1 = afterFor(
+      plan(inputWith({ codifyEdits: { Demo: [delayedPoint] } })),
+      FILE
+    )
+    const result2 = plan(
+      inputWith({ removedCodifyEdits: { Demo: [delayedPoint] } }),
+      { [FILE]: after1, ...otherFiles }
+    )
+    const after2 = afterFor(result2, FILE)
+    expect(after2).not.toContain('setBackground(')
+  })
+})
+
 describe('planCodeSync: renames', () => {
   it('applies renames last, by replacing the slug literal', () => {
     const result = plan(

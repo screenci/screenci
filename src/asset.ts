@@ -28,6 +28,11 @@ import { access, readFile } from 'fs/promises'
 import { dirname, resolve } from 'path'
 import { performRecordedSleep } from './recordedSleep.js'
 import {
+  delayArg,
+  validateDelay,
+  type StartDelayOptions,
+} from './overlayUpdates.js'
+import {
   DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
   DEFAULT_ANIMATION_FPS,
 } from './htmlRasterizer.js'
@@ -808,8 +813,11 @@ export type OverlayController = {
    * monotonic (each at or after the previous timeline point).
    */
   until(position: TimelineOffset): Promise<void>
-  /** Show the overlay live over the recording (non-blocking); pair with `end()`. */
-  start(): Promise<void>
+  /**
+   * Show the overlay live over the recording (non-blocking); pair with `end()`.
+   * `delay` offsets the recorded start (see {@link StartDelayOptions}).
+   */
+  start(options?: StartDelayOptions): Promise<void>
   /**
    * Stop a live overlay. For a length-less overlay (image/HTML/React) it ends
    * immediately. For an overlay with an intrinsic length (video / dependency /
@@ -1403,7 +1411,11 @@ function endLiveAsset(name: string, reason: 'auto' | 'wait'): void {
 function createAssetControllerCore(
   name: string,
   validate: () => Promise<void>,
-  emitStart: (recorder: IEventRecorder, mode: AssetStartMode) => void,
+  emitStart: (
+    recorder: IEventRecorder,
+    mode: AssetStartMode,
+    delayMs?: number
+  ) => void,
   options: {
     /**
      * Optional async step run after {@link validate} and before
@@ -1415,7 +1427,10 @@ function createAssetControllerCore(
   } = {}
 ): OverlayController {
   const { prepare } = options
-  const start = async (startedWithExplicitStart = true): Promise<void> => {
+  const start = async (
+    startedWithExplicitStart = true,
+    delayMs?: number
+  ): Promise<void> => {
     await validate()
     await prepare?.({ type: 'live' })
     const recorder = getRuntimeAssetRecorder()
@@ -1427,7 +1442,7 @@ function createAssetControllerCore(
     }
     const run = createActiveAssetRun(startedWithExplicitStart)
     context.asset.activeRuns.set(name, run)
-    emitStart(recorder, { type: 'live' })
+    emitStart(recorder, { type: 'live' }, ...delayArg(delayMs))
   }
 
   const end = async (): Promise<void> => {
@@ -1472,7 +1487,8 @@ function createAssetControllerCore(
   controller.until = (position: TimelineOffset): Promise<void> =>
     runBlocking({ type: 'blocking', until: resolveOverlayAnchor(position) })
 
-  controller.start = () => start(true)
+  controller.start = async (startOptions?: StartDelayOptions) =>
+    start(true, validateDelay(`overlay "${name}" start`, startOptions?.delay))
   controller.end = end
   return controller
 }
@@ -1481,7 +1497,8 @@ function createStudioAssetController(name: string): OverlayController {
   return createAssetControllerCore(
     name,
     () => Promise.resolve(),
-    (recorder) => recorder.addStudioAssetStart(name)
+    (recorder, _mode, delayMs) =>
+      recorder.addStudioAssetStart(name, ...delayArg(delayMs))
   )
 }
 
@@ -1526,7 +1543,7 @@ function createDependencyOverlayController(
   return createAssetControllerCore(
     name,
     () => Promise.resolve(),
-    (recorder, mode) => {
+    (recorder, mode, delayMs) => {
       let durationMs: number | undefined
       let until: TimelineAnchorInput | undefined
       if (mode.type === 'blocking') {
@@ -1539,31 +1556,35 @@ function createDependencyOverlayController(
           durationMs = mode.durationMs ?? configDurationMs
         }
       }
-      recorder.addAssetStart(name, {
-        kind: 'dependency',
-        dependency: {
-          name: input.name,
-          ...(input.config.language !== undefined && {
-            language: input.config.language,
-          }),
-          ...(input.config.inheritSubtitles === true && {
-            inheritSubtitles: true,
-          }),
+      recorder.addAssetStart(
+        name,
+        {
+          kind: 'dependency',
+          dependency: {
+            name: input.name,
+            ...(input.config.language !== undefined && {
+              language: input.config.language,
+            }),
+            ...(input.config.inheritSubtitles === true && {
+              inheritSubtitles: true,
+            }),
+          },
+          ...(durationMs !== undefined && { durationMs }),
+          ...timelineAnchorFields(until),
+          fullScreen,
+          ...(pinToScreen && { pinToScreen: true }),
+          ...(input.config.overMouse === true && { overMouse: true }),
+          ...(validateFadeMs(input.name, 'fadeIn', input.config.fadeIn) !==
+            undefined && { fadeInMs: input.config.fadeIn }),
+          ...(validateFadeMs(input.name, 'fadeOut', input.config.fadeOut) !==
+            undefined && { fadeOutMs: input.config.fadeOut }),
+          ...(placement !== undefined && { placement }),
+          ...(input.config.clip !== undefined && { clip: input.config.clip }),
+          ...(sourceStart !== undefined && { sourceStart }),
+          ...(sourceEnd !== undefined && { sourceEnd }),
         },
-        ...(durationMs !== undefined && { durationMs }),
-        ...timelineAnchorFields(until),
-        fullScreen,
-        ...(pinToScreen && { pinToScreen: true }),
-        ...(input.config.overMouse === true && { overMouse: true }),
-        ...(validateFadeMs(input.name, 'fadeIn', input.config.fadeIn) !==
-          undefined && { fadeInMs: input.config.fadeIn }),
-        ...(validateFadeMs(input.name, 'fadeOut', input.config.fadeOut) !==
-          undefined && { fadeOutMs: input.config.fadeOut }),
-        ...(placement !== undefined && { placement }),
-        ...(input.config.clip !== undefined && { clip: input.config.clip }),
-        ...(sourceStart !== undefined && { sourceStart }),
-        ...(sourceEnd !== undefined && { sourceEnd }),
-      })
+        ...delayArg(delayMs)
+      )
     }
   )
 }
@@ -1611,8 +1632,12 @@ function createFileOverlayController(
         await validateAssetPath(resolved.path, testFilePath)
       }
     },
-    (recorder, mode) => {
-      recorder.addAssetStart(name, toRecordedFileStart(name, resolved, mode))
+    (recorder, mode, delayMs) => {
+      recorder.addAssetStart(
+        name,
+        toRecordedFileStart(name, resolved, mode),
+        ...delayArg(delayMs)
+      )
     }
   )
 }
@@ -1650,7 +1675,7 @@ function createRenderedOverlayController(
   return createAssetControllerCore(
     name,
     () => Promise.resolve(),
-    (recorder, mode) => {
+    (recorder, mode, delayMs) => {
       // `resolvedHtml` is set only once the overlay has resolved, so it is the
       // "is resolved" signal. `resolvedPlacement` may legitimately stay
       // undefined (a fill-the-recording overlay emits no placement).
@@ -1670,28 +1695,32 @@ function createRenderedOverlayController(
           validateDurationMs(name, `overlay "${name}"`, durationMsForEvent)
         }
       }
-      recorder.addPendingAssetStart(name, {
-        kind: 'image',
-        ...(durationMsForEvent !== undefined && {
-          durationMs: durationMsForEvent,
-        }),
-        ...timelineAnchorFields(until),
-        fullScreen,
-        ...(pinToScreen && { pinToScreen: true }),
-        ...(overMouse && { overMouse: true }),
-        ...(fade.fadeInMs !== undefined && { fadeInMs: fade.fadeInMs }),
-        ...(fade.fadeOutMs !== undefined && { fadeOutMs: fade.fadeOutMs }),
-        ...(resolvedPlacement !== undefined && {
-          placement: resolvedPlacement,
-        }),
-        request: {
+      recorder.addPendingAssetStart(
+        name,
+        {
           kind: 'image',
-          name,
-          html: resolvedHtml,
-          ...(renderOpts.awaitMount === true && { awaitMount: true }),
-          deviceScaleFactor: DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
+          ...(durationMsForEvent !== undefined && {
+            durationMs: durationMsForEvent,
+          }),
+          ...timelineAnchorFields(until),
+          fullScreen,
+          ...(pinToScreen && { pinToScreen: true }),
+          ...(overMouse && { overMouse: true }),
+          ...(fade.fadeInMs !== undefined && { fadeInMs: fade.fadeInMs }),
+          ...(fade.fadeOutMs !== undefined && { fadeOutMs: fade.fadeOutMs }),
+          ...(resolvedPlacement !== undefined && {
+            placement: resolvedPlacement,
+          }),
+          request: {
+            kind: 'image',
+            name,
+            html: resolvedHtml,
+            ...(renderOpts.awaitMount === true && { awaitMount: true }),
+            deviceScaleFactor: DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
+          },
         },
-      })
+        ...delayArg(delayMs)
+      )
     },
     {
       prepare: async () => {
@@ -1775,33 +1804,37 @@ function createAnimatedOverlayController(
   return createAssetControllerCore(
     name,
     () => Promise.resolve(),
-    (recorder) => {
+    (recorder, _mode, delayMs) => {
       if (skipped || resolved === undefined) return
-      recorder.addPendingAssetStart(name, {
-        kind: 'animation',
-        // Always carry the capture length, for blocking and live overlays alike.
-        // A live animated overlay plays out to this length (the renderer holds a
-        // frozen-frame tail when it is longer than the start()/end() window), so
-        // it needs the duration even when an assetEnd also bounds the window.
-        durationMs: resolved.durationMs,
-        fullScreen,
-        ...(pinToScreen && { pinToScreen: true }),
-        ...(overMouse && { overMouse: true }),
-        ...(fade.fadeInMs !== undefined && { fadeInMs: fade.fadeInMs }),
-        ...(fade.fadeOutMs !== undefined && { fadeOutMs: fade.fadeOutMs }),
-        ...(resolved.placement !== undefined && {
-          placement: resolved.placement,
-        }),
-        request: {
+      recorder.addPendingAssetStart(
+        name,
+        {
           kind: 'animation',
-          name,
-          html: resolved.html,
-          ...(renderOpts.awaitMount === true && { awaitMount: true }),
-          deviceScaleFactor: DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
-          fps: fps ?? DEFAULT_ANIMATION_FPS,
+          // Always carry the capture length, for blocking and live overlays alike.
+          // A live animated overlay plays out to this length (the renderer holds a
+          // frozen-frame tail when it is longer than the start()/end() window), so
+          // it needs the duration even when an assetEnd also bounds the window.
           durationMs: resolved.durationMs,
+          fullScreen,
+          ...(pinToScreen && { pinToScreen: true }),
+          ...(overMouse && { overMouse: true }),
+          ...(fade.fadeInMs !== undefined && { fadeInMs: fade.fadeInMs }),
+          ...(fade.fadeOutMs !== undefined && { fadeOutMs: fade.fadeOutMs }),
+          ...(resolved.placement !== undefined && {
+            placement: resolved.placement,
+          }),
+          request: {
+            kind: 'animation',
+            name,
+            html: resolved.html,
+            ...(renderOpts.awaitMount === true && { awaitMount: true }),
+            deviceScaleFactor: DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
+            fps: fps ?? DEFAULT_ANIMATION_FPS,
+            durationMs: resolved.durationMs,
+          },
         },
-      })
+        ...delayArg(delayMs)
+      )
     },
     {
       prepare: async (mode) => {

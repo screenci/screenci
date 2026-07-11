@@ -579,6 +579,17 @@ export function waitForTimeoutArg(
   return argument
 }
 
+/** The statements that precede `statement` in its enclosing block, nearest first. */
+export function statementsBefore(
+  ctx: CodemodContext,
+  statement: TS.Statement
+): TS.Statement[] {
+  const statements = siblingStatements(ctx, statement)
+  if (statements === null) return []
+  const index = statements.indexOf(statement)
+  return index <= 0 ? [] : Array.from(statements).slice(0, index).reverse()
+}
+
 /** The statements that follow `statement` in its enclosing block, in order. */
 export function statementsAfter(
   ctx: CodemodContext,

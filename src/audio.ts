@@ -9,6 +9,11 @@ import {
   prewarmAssetFile,
 } from './assetHash.js'
 import { isInsideHide } from './hide.js'
+import {
+  delayArg,
+  validateDelay,
+  type StartDelayOptions,
+} from './overlayUpdates.js'
 import { logMissingAsset } from './missingAssetLog.js'
 import { MAX_AUDIO_LEVEL, validateSpeedTime } from './asset.js'
 import {
@@ -85,7 +90,8 @@ export type AudioInput = string | AudioConfig
  */
 export type AudioController = {
   (): Promise<void>
-  start(): Promise<void>
+  /** Starts the track; `delay` offsets the recorded start (see {@link StartDelayOptions}). */
+  start(options?: StartDelayOptions): Promise<void>
   end(): Promise<void>
 }
 
@@ -346,11 +352,12 @@ export function buildAudio(
  */
 function createAudioControllerCore(
   name: string,
-  emitStart: (recorder: IEventRecorder) => Promise<void>
+  emitStart: (recorder: IEventRecorder, delayMs?: number) => Promise<void>
 ): AudioController {
   // start()/end() register a live run so end() can pair to its start and a
   // double start() is rejected.
-  const start = async (): Promise<void> => {
+  const start = async (options?: StartDelayOptions): Promise<void> => {
+    const delayMs = validateDelay(`audio "${name}" start`, options?.delay)
     if (isInsideHide()) {
       throw new Error('[screenci] Cannot start audio inside hide()')
     }
@@ -366,7 +373,7 @@ function createAudioControllerCore(
     })
     const run: ActiveAudioRun = { finished, resolveFinished }
     context.audio.activeRuns.set(name, run)
-    await emitStart(getRuntimeAudioRecorder())
+    await emitStart(getRuntimeAudioRecorder(), delayMs)
   }
 
   const end = async (): Promise<void> => {
@@ -419,15 +426,15 @@ function buildAudioController(
     }
   }
 
-  return createAudioControllerCore(name, async (recorder) => {
+  return createAudioControllerCore(name, async (recorder, delayMs) => {
     const payload = await buildPayload()
-    recorder.addAudioStart(name, payload)
+    recorder.addAudioStart(name, payload, ...delayArg(delayMs))
   })
 }
 
 function buildStudioAudioController(name: string): AudioController {
-  return createAudioControllerCore(name, (recorder) => {
-    recorder.addStudioAudioStart(name)
+  return createAudioControllerCore(name, (recorder, delayMs) => {
+    recorder.addStudioAudioStart(name, ...delayArg(delayMs))
     return Promise.resolve()
   })
 }

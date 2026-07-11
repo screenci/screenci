@@ -6,6 +6,7 @@ import type {
   UpdateTransition,
 } from './events.js'
 import { getActiveHideRecorder } from './timelineBlock.js'
+import { resolveRecordingTimingDuration } from './runtimeMode.js'
 import {
   getScreenCIRuntimeContext,
   nextEditablePosition,
@@ -68,6 +69,15 @@ export type OverlayTransitionOptions = {
   duration?: number
   /** Defaults to `'ease-in-out'`. */
   easing?: Easing
+  /**
+   * Offsets the effect this many milliseconds into the future. The call runs
+   * immediately but the change lands `delay` ms later on the timeline, so a
+   * call written before an interaction can take effect during it (a call
+   * cannot execute while an interaction is awaited). Same-type events must
+   * land in time order; recording fails when a delayed event would land
+   * behind one recorded after it. Integer >= 0.
+   */
+  delay?: number
 }
 
 export type MoveNarrationOptions = OverlayTransitionOptions & {
@@ -127,6 +137,51 @@ function assertFiniteInRange(
   if (!Number.isFinite(value) || value < min || value > max) {
     throw invalidOptionError({ api, option, expectation, value })
   }
+}
+
+/**
+ * Options for `start()` on media controllers (narration cues, overlays,
+ * audio tracks).
+ */
+export type StartDelayOptions = {
+  /**
+   * Offsets the recorded start this many milliseconds into the future. The
+   * call runs immediately but the media starts `delay` ms later on the
+   * timeline, so a call written before an interaction can start during it.
+   * Integer >= 0.
+   */
+  delay?: number
+}
+
+/**
+ * Trailing recorder-argument tuple for an optional delay: empty when unset so
+ * the call shape stays identical to a call without a delay.
+ */
+export function delayArg(delayMs: number | undefined): [] | [number] {
+  return delayMs === undefined ? [] : [delayMs]
+}
+
+/**
+ * Validates a `delay` option (integer ms >= 0) and scales it with the
+ * recording-timing mode, like every simulated pause, so delayed stamps stay
+ * consistent with real-elapsed stamps. Returns the delay to pass to the
+ * recorder, or undefined when absent or when it resolves to zero (no offset).
+ */
+export function validateDelay(
+  api: string,
+  delay: number | undefined
+): number | undefined {
+  if (delay === undefined) return undefined
+  if (!Number.isInteger(delay) || delay < 0) {
+    throw invalidOptionError({
+      api,
+      option: 'delay',
+      expectation: 'an integer >= 0 (milliseconds)',
+      value: delay,
+    })
+  }
+  const scaled = resolveRecordingTimingDuration(delay)
+  return scaled === 0 ? undefined : scaled
 }
 
 /** Validates and normalizes transition options. Returns undefined for instant. */
@@ -379,14 +434,17 @@ export async function moveNarration(
       : position
   const effSize = effNumber(eff, 'size')
   const effDuration = effNumber(eff, 'duration')
-  recorder.addNarrationUpdate({
-    ...validateMoveNarration(effPosition, {
-      ...options,
-      ...(effSize !== undefined && { size: effSize }),
-      ...(effDuration !== undefined && { duration: effDuration }),
-    }),
-    editable,
-  })
+  recorder.addNarrationUpdate(
+    {
+      ...validateMoveNarration(effPosition, {
+        ...options,
+        ...(effSize !== undefined && { size: effSize }),
+        ...(effDuration !== undefined && { duration: effDuration }),
+      }),
+      editable,
+    },
+    validateDelay('moveNarration', options?.delay)
+  )
 }
 
 /**
@@ -411,11 +469,14 @@ export async function resizeNarration(
     ...options,
     ...(effDuration !== undefined && { duration: effDuration }),
   })
-  recorder.addNarrationUpdate({
-    size: effSize,
-    ...(transition !== undefined && { transition }),
-    editable,
-  })
+  recorder.addNarrationUpdate(
+    {
+      size: effSize,
+      ...(transition !== undefined && { transition }),
+      editable,
+    },
+    validateDelay('resizeNarration', options?.delay)
+  )
 }
 
 /**
@@ -441,11 +502,14 @@ export async function resizeRecording(
     ...options,
     ...(effDuration !== undefined && { duration: effDuration }),
   })
-  recorder.addRecordingUpdate({
-    size: effSize,
-    ...(transition !== undefined && { transition }),
-    editable,
-  })
+  recorder.addRecordingUpdate(
+    {
+      size: effSize,
+      ...(transition !== undefined && { transition }),
+      editable,
+    },
+    validateDelay('resizeRecording', options?.delay)
+  )
 }
 
 /**
@@ -469,11 +533,14 @@ export async function hideRecording(
     ...options,
     ...(effDuration !== undefined && { duration: effDuration }),
   })
-  recorder.addRecordingUpdate({
-    visible: false,
-    ...(transition !== undefined && { transition }),
-    editable,
-  })
+  recorder.addRecordingUpdate(
+    {
+      visible: false,
+      ...(transition !== undefined && { transition }),
+      editable,
+    },
+    validateDelay('hideRecording', options?.delay)
+  )
 }
 
 /**
@@ -495,11 +562,14 @@ export async function showRecording(
     ...options,
     ...(effDuration !== undefined && { duration: effDuration }),
   })
-  recorder.addRecordingUpdate({
-    visible: true,
-    ...(transition !== undefined && { transition }),
-    editable,
-  })
+  recorder.addRecordingUpdate(
+    {
+      visible: true,
+      ...(transition !== undefined && { transition }),
+      editable,
+    },
+    validateDelay('showRecording', options?.delay)
+  )
 }
 
 /**
@@ -556,11 +626,14 @@ export async function setBackground(
   } else {
     resolved = validated
   }
-  recorder.addBackgroundUpdate({
-    background: resolved,
-    ...(transition !== undefined && { transition }),
-    editable,
-  })
+  recorder.addBackgroundUpdate(
+    {
+      background: resolved,
+      ...(transition !== undefined && { transition }),
+      editable,
+    },
+    validateDelay('setBackground', options?.delay)
+  )
 }
 
 /** @internal Shared by narrationVisibility.ts for fade-capable hide/show. */
@@ -571,15 +644,16 @@ export function narrationVisibilityUpdate(
   recorder: IEventRecorder
 ): void {
   const transition = validateTransition(api, options)
+  const delayMs = validateDelay(api, options?.delay)
   if (transition === undefined) {
     // Instant hide/show keeps emitting the legacy events so existing renders
     // stay byte-identical.
     if (visible) {
-      recorder.addNarrationShow()
+      recorder.addNarrationShow(delayMs)
     } else {
-      recorder.addNarrationHide()
+      recorder.addNarrationHide(delayMs)
     }
     return
   }
-  recorder.addNarrationUpdate({ visible, transition })
+  recorder.addNarrationUpdate({ visible, transition }, delayMs)
 }

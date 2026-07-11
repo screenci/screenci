@@ -34,7 +34,7 @@ Overlays can be owned by code or handed to [Editor](./editor.md) (the web app wh
 
 ## Two ways to declare overlays
 
-There are two ways to declare overlays, and both are editable in the web app. The same two forms apply to [`narration`](./narration.md), [`values`](./values.md), and [`audio`](./audio.md). See the [Editor guide](./editor.md) for how the web editing works.
+There are two ways to declare overlays, and both are editable in the web app. The same two forms apply to [`narration`](./narration.md). See the [Editor guide](./editor.md) for how the web editing works.
 
 **1. Code values.** You point each overlay at a file, element, or config. The code values are used until the overlay is edited in [Editor](./editor.md), and from then on the Editor value wins.
 
@@ -88,9 +88,7 @@ video.overlays({
 
 `video.overlays({...})` returns a builder you call with the usual
 `(title, body)` arguments. Each key becomes a callable overlay controller,
-delivered to the body through the injected `overlays` fixture. The same pattern
-works for screenshots:
-`screenshot.overlays({...})('Title', async ({ page, crop, overlays }) => {...})`.
+delivered to the body through the injected `overlays` fixture.
 
 You can also declare overlay names alone with a bare array and upload the files
 plus display options on the Editor page instead of keeping them in the
@@ -580,7 +578,6 @@ video.overlays({
 
 - The overlay keeps its placement: a `pinToScreen` overlay stays fixed in screen space, a burned overlay still moves and scales with the camera during zoom. `overMouse` only changes its stacking order relative to the cursor.
 - Overlapping `overMouse` overlays each draw above the cursor.
-- It has no effect on screenshots, whose cursor is hidden by default (see `renderOptions.screenshot.mouse.show`).
 
 ### Positioning over a live element
 
@@ -645,9 +642,7 @@ same element box rasterize only once.
 
 Add [`animate: true`](#animated-overlays) and the ring plays its CSS animation
 back in the video while the page keeps being driven underneath. Here is that same
-margin ring, pulsing around a live element (the
-[Screenshots guide](/docs/guides/screenshots#highlight-a-locator) shows the
-still version):
+margin ring, pulsing around a live element:
 
 <!-- screenci-doc-video:docs/guides/overlays -->
 

@@ -264,8 +264,8 @@ video.renderOptions({
 })
 ```
 
-The image is uploaded alongside the recording, and drawn in both video and
-screenshot output. It replaces the built-in cursor entirely, so `mouse.style`
+The image is uploaded alongside the recording, and drawn in the video
+output. It replaces the built-in cursor entirely, so `mouse.style`
 is ignored when `image` is set. A few things to know:
 
 - Use a **PNG**.

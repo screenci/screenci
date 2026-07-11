@@ -1,6 +1,6 @@
 # Version History
 
-Every time a video (or screenshot) is rendered, ScreenCI keeps the result as a
+Every time a video is rendered, ScreenCI keeps the result as a
 **version**. One version is always the **selected** one: it is what a public URL
 serves and what embeds display. Version history lets you keep older renders
 around, compare them, and roll back by selecting a previous one, without

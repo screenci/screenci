@@ -53,8 +53,7 @@ you never have to use a synthesized voice if you would rather use your own.
 ## Two ways to declare narration
 
 There are two ways to declare narration, and both are editable in the web app.
-The same two forms apply to [`values`](./values.md),
-[`overlays`](./overlays.md), and [`audio`](./audio.md). See the
+The same two forms apply to [`overlays`](./overlays.md). See the
 [Editor guide](./editor.md) for how the web editing works.
 
 **1. Code values.** You write the text; it is used at record time. Changing it
@@ -206,8 +205,8 @@ video
 
 ## Balance narration volume
 
-Set a per-cue `volume` to balance a spoken line against the recording and any
-background audio. Use the object form of a cue and add `volume`:
+Set a per-cue `volume` to balance a spoken line against the recording. Use the
+object form of a cue and add `volume`:
 
 ```ts
 video.narration({
@@ -257,7 +256,7 @@ video.renderOptions({
 `audio: true` enables the full chain: background noise reduction (a neural
 noise-reduction filter plus a low-frequency rumble cut) and loudness
 normalization to a consistent target level. It applies only to narration you
-recorded yourself; generated narration, background audio tracks, and captured
+recorded yourself; generated narration and captured
 screen audio are never touched. It is off by default.
 
 The object form enables the two steps individually and exposes their tuning
@@ -729,11 +728,11 @@ voices you are licensed to reproduce, in line with the ElevenLabs
 > ElevenLabs account, delete custom voices you no longer need to free up slots,
 > then re-run the render.
 
-## Move, resize, hide the bubble mid-video
+## Hide the bubble mid-video
 
-The narration bubble's corner, padding, size, and visibility can change
-mid-video with animated transitions (`moveNarration`, `resizeNarration`,
-`hideNarration({ duration })`): see
+The narration bubble's visibility can change
+mid-video with animated transitions (`hideNarration({ duration })` and
+`showNarration({ duration })`): see
 [Mid-Video Overlay Updates](/docs/guides/overlay-updates).
 
 ## Manage narration from Editor
@@ -761,6 +760,6 @@ supply starting text from code by passing a plain object (for example
 `video.narration({ intro: 'Welcome' })`): the code values are used until the
 cue is edited in Editor, and from then on the Editor value wins. You can also
 hand the language set itself to the web with `video.languages()` (no argument).
-The same bare-array form works for values via `video.values([...])`. The
+The
 markers still carry timing the same way; only the text lives in Editor. See
 [Editor](/docs/guides/editor).

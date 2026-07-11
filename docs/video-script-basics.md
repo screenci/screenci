@@ -291,13 +291,13 @@ await resetZoom()
 API reference: [zoomTo()](/docs/reference/api/functions/zoomto),
 [resetZoom()](/docs/reference/api/functions/resetzoom)
 
-### `video.narration()`, `video.values()`, and `video.overlays()`
+### `video.narration()` and `video.overlays()`
 
-Use the per-feature builders to attach narration cues, localized strings, and
+Use the per-feature builders to attach narration cues and
 overlay controllers to a video. Each builder returns the same chainable `video`,
 so you can combine them and end with a `(title, body)` call. The body receives
 the fixtures matching the features you declared: `narration` markers (timing
-only), `values` field values, `overlays` controllers, and the active `language`. See
+only), `overlays` controllers, and the active `language`. See
 [Narration](/docs/guides/narration).
 
 `video.narration({...})` accepts either form:
@@ -312,7 +312,6 @@ only), `values` field values, `overlays` controllers, and the active `language`.
 
 Other parts of the spec:
 
-- chain `video.values({...})` for localized strings injected into the page
 - chain `video.overlays({...})` to declare overlay controllers (see below)
 - short, sentence-sized cues instead of paragraph-sized narration blocks
 

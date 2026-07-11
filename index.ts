@@ -6,8 +6,11 @@ export type {
   RecordUploadPolicy,
   RecordOptions,
   RenderOptions,
-  ScreenshotOutputFormat,
-  ScreenshotRenderOptions,
+  // Hidden for release: the screenshots feature is unfinished. Re-enable by
+  // uncommenting these exports (and the ones marked below). The removed docs
+  // live in docs/removed/ at the repo root.
+  // ScreenshotOutputFormat,
+  // ScreenshotRenderOptions,
   ScreenCIConfig,
   ExtendedScreenCIConfig,
   AutoZoomOptions,
@@ -34,13 +37,16 @@ export { defineConfig } from './src/config.js'
 
 // Re-export video fixture and narration cue
 export { video } from './src/video.js'
-export { screenshot } from './src/screenshot.js'
+// Hidden for release: the screenshots feature is unfinished. Re-enable by
+// uncommenting. Docs moved to docs/removed/screenshots.md at the repo root.
+// export { screenshot } from './src/screenshot.js'
 export type {
   ClipTarget,
   ClipRegion,
   ClipOptions,
-  ScreenshotClip,
-  ScreenshotClipRecord,
+  // Hidden for release together with screenshot() above.
+  // ScreenshotClip,
+  // ScreenshotClipRecord,
   ResolvedClipPadding,
 } from './src/clip.js'
 export type {
@@ -86,28 +92,35 @@ export { autoZoom } from './src/autoZoom.js'
 export { zoomTo, resetZoom } from './src/manualZoom.js'
 export { hideNarration, showNarration } from './src/narrationVisibility.js'
 export {
-  moveNarration,
-  resizeNarration,
+  // Hidden for release: narration positioning (moveNarration, resizeNarration)
+  // and changing the background mid recording (setBackground) are unfinished.
+  // Re-enable by uncommenting these and the related types below. Docs moved to
+  // docs/removed/overlay-updates.md at the repo root.
+  // moveNarration,
+  // resizeNarration,
   resizeRecording,
   hideRecording,
   showRecording,
-  setBackground,
+  // setBackground,
 } from './src/overlayUpdates.js'
 export type {
   OverlayTransitionOptions,
-  MoveNarrationOptions,
-  SetBackgroundInput,
+  // Hidden for release together with moveNarration/setBackground above.
+  // MoveNarrationOptions,
+  // SetBackgroundInput,
 } from './src/overlayUpdates.js'
-export type {
-  NarrationCorner,
-  NarrationPosition,
-  NarrationFullScreenFit,
-} from './src/types.js'
+// Hidden for release together with narration positioning above.
+// export type {
+//   NarrationCorner,
+//   NarrationPosition,
+//   NarrationFullScreenFit,
+// } from './src/types.js'
 export type {
   UpdateTransition,
-  NarrationUpdateEvent,
+  // Hidden for release together with narration positioning and setBackground.
+  // NarrationUpdateEvent,
   RecordingUpdateEvent,
-  BackgroundUpdateEvent,
+  // BackgroundUpdateEvent,
 } from './src/events.js'
 // Per-method defaults of every tracked action option, so the backend/editor can
 // tell an override that restates the default from a real change.
@@ -132,15 +145,20 @@ export type {
   OverlayControllerFor,
   OverlayPlacement,
   OverlayClip,
-  DependencyOverlayInput,
-  DependencyOverlayOptions,
+  // Hidden for release: the selected() render-dependency feature is
+  // unfinished. Docs moved to docs/removed/selected.md at the repo root.
+  // DependencyOverlayInput,
+  // DependencyOverlayOptions,
 } from './src/asset.js'
 export { overlayRect } from './src/overlayRect.js'
 export type { OverlayRect, OverlayRectOptions } from './src/overlayRect.js'
-export type {
-  AudioController,
-  AudioConfig,
-  AudioInput,
-  AudioTracks,
-} from './src/audio.js'
+// Hidden for release: the background audio feature is unfinished. Re-enable by
+// uncommenting (the video.audio() builder method is commented out alongside in
+// src/builder.ts). Docs moved to docs/removed/audio.md at the repo root.
+// export type {
+//   AudioController,
+//   AudioConfig,
+//   AudioInput,
+//   AudioTracks,
+// } from './src/audio.js'
 export type { ZoomTarget, ZoomTargetPoint } from './src/manualZoom.js'

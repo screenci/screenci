@@ -108,9 +108,9 @@ video.recordOptions({
 })
 ```
 
-`captureAudio` is a linear gain value, the same scale used by `video.audio(...)`
-tracks and overlay volumes: `1` is unity gain, `0.5` is half volume, `2` is
-double, `0` disables capture.
+`captureAudio` is a linear gain value, the same scale used by overlay
+volumes: `1` is unity gain, `0.5` is half volume, `2` is double, `0` disables
+capture.
 
 ## Running recordings in parallel
 
@@ -150,6 +150,6 @@ it (no default sink or manual sink needed, screenci manages them):
 
 ## Interaction with narration and other audio
 
-Screen audio is mixed alongside narration cues and `video.audio(...)` tracks.
+Screen audio is mixed alongside narration cues.
 If the captured level is too loud relative to narration, lower `captureAudio`
 (e.g. `0.3`) rather than changing the system output volume.

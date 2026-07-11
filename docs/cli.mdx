@@ -337,7 +337,7 @@ soon as the workflow has been triggered.
 npx screenci record --remote
 ```
 
-Pass `--grep` to record only matching videos or screenshots remotely (the filter
+Pass `--grep` to record only matching videos remotely (the filter
 is forwarded to the workflow's `grep` input):
 
 ```bash
@@ -567,11 +567,10 @@ It can:
   `move.duration` on a `.click(...)`)
 - insert `await page.waitForTimeout(...)` for start-time edits
 - place web-authored effects into the linear timeline: a narration cue /
-  overlay / audio start in the gap after an action, an `autoZoom(...)` bracket
+  overlay start in the gap after an action, an `autoZoom(...)` bracket
   over a run of interactions, a `hide(...)` / `speed(...)` / `time(...)` span,
-  or an instant `moveNarration(...)` / `resizeRecording(...)` /
-  `setBackground(...)` point (with the needed imports and gap `waitForTimeout`
-  sleeps)
+  or an instant `resizeRecording(...)` point (with the needed imports and gap
+  `waitForTimeout` sleeps)
 - codify Editor render/record option edits into the video's builder chain,
   updating an existing `video.renderOptions({...})` / `video.recordOptions({...})`
   call in place (merging the changed keys) or inserting one before the video's
@@ -585,8 +584,8 @@ rewrites the existing `waitForTimeout(...)` rather than adding another. And when
 an effect is removed in the Editor, `sync` deletes the call it authored and
 re-coalesces the gap sleep it split, so no orphaned "ghost" sleep is left
 behind. This cleanup runs only for the point effects it can identify
-unambiguously (narration cues, overlays, audio starts, and
-`moveNarration`/`resizeRecording`/`setBackground` points); a removed
+unambiguously (narration cues, overlays, and
+`resizeRecording` points); a removed
 `autoZoom`/`hide`/`speed`/`time` wrap is left in place for you to delete by hand
 rather than risk unwrapping code you may have since edited.
 

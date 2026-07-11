@@ -50,6 +50,7 @@ import {
 } from './video.js'
 import {
   createVideoBuilder,
+  type HiddenFeatureMethods,
   SCREENSHOT_FEATURES,
   type MediaBuilder,
 } from './builder.js'
@@ -515,8 +516,11 @@ interface Screenshot extends ScreenshotCallSignatures {
    * language, and the body receives the active `language` and `values` fields.
    * Chainable with `.each(...)`.
    */
-  /** Declare on-screen values fields (array = blank names, object = code values). */
-  values: MediaBuilder<ScreenshotArgs>['values']
+  // Hidden for release: the on-screen values feature is unfinished. The
+  // runtime method stays attached; re-enable by uncommenting (see
+  // HiddenFeatureMethods in builder.ts).
+  // /** Declare on-screen values fields (array = blank names, object = code values). */
+  // values: MediaBuilder<ScreenshotArgs>['values']
 
   /** Declare overlays (array = blank names, object = code values/factories). */
   overlays: MediaBuilder<ScreenshotArgs>['overlays']
@@ -609,7 +613,11 @@ const _screenshotRootBuilder = createVideoBuilder<ScreenshotArgs>(
   _screenshotBase as unknown as Parameters<typeof createVideoBuilder>[0],
   SCREENSHOT_FEATURES
 )
-screenshot.values = _screenshotRootBuilder.values
+// values() is hidden from the public type for release but stays attached at
+// runtime (see HiddenFeatureMethods in builder.ts).
+;(screenshot as unknown as HiddenFeatureMethods<ScreenshotArgs>).values = (
+  _screenshotRootBuilder as unknown as HiddenFeatureMethods<ScreenshotArgs>
+).values
 screenshot.overlays = _screenshotRootBuilder.overlays
 screenshot.languages = _screenshotRootBuilder.languages
 screenshot.recordOptions = _screenshotRootBuilder.recordOptions

@@ -494,6 +494,36 @@ cues are plain calls placed where you want them in call order. The web editor
 shows this same linear timeline, and `screenci sync` writes these
 call-position statements back into code, keyed by each action's `editId`.
 
+### Splitting and trimming the recording from the web editor
+
+The web timeline has a scissors mode: clicking the recording track cuts it at
+that instant. A bare split is stored as a zero-width `hide` span edit. It is
+editor-only state: `screenci sync` never writes an empty `hide(async () => {})`
+into code, so an untouched split just stays editable on the web.
+
+Dragging a split's edges inward swallows footage (and the interactions in it)
+into the hide; the span edit is re-anchored to whole interactions, with
+`waitForTimeout` sleeps preserving any partial gap on both sides. Dragging back
+out restores the footage. Once synced, the span becomes a regular `hide(...)`
+block in code.
+
+### Removing a code block from the web editor
+
+A named block (`hide('setup', ...)`, `speed('fast', ...)`, `time('intro', ...)`)
+can be removed from the web editor (merge two recording sections, reset a
+trim). This stores a `blockRemoveEdit` targeting the block's name; `screenci
+sync` unwraps the block in source, keeping the wrapped calls (any
+`waitForTimeout` pacing inside survives as plain gap sleeps). Anonymous blocks
+cannot be targeted mechanically: name a block to make it web-removable.
+
+### Actions inside `hide()`
+
+Instrumented actions inside a `hide()` run raw (no cursor animation) and emit
+no input events, but each one records a small `hiddenAction` marker
+(`{ type: 'hiddenAction', timeMs, action, matcher? }`) in the recording data.
+Renderers ignore these markers; the web editor uses them to know what a hide
+was suppressing.
+
 ## The agentic loop
 
 Web edits and code stay in sync through a loop designed for coding agents:

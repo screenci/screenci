@@ -355,3 +355,45 @@ describe('OverrideReportBuilder', () => {
     expect(report.items()).toHaveLength(2)
   })
 })
+
+describe('blockRemoveEdit records', () => {
+  it('parses a valid blockRemoveEdit and routes it to codify edits', () => {
+    const doc = {
+      demo: {
+        version: 3,
+        edits: [
+          { type: 'blockRemoveEdit', id: 'b1', target: { editId: 'setup' } },
+        ],
+      },
+    }
+    const parsed = parseTimelineEdits(env(JSON.stringify(doc)))!
+    expect(parsed.demo!.invalid).toHaveLength(0)
+    const { codifyEdits } = splitEdits(parsed.demo!.edits)
+    expect(codifyEdits).toEqual([
+      { type: 'blockRemoveEdit', id: 'b1', target: { editId: 'setup' } },
+    ])
+  })
+
+  it('rejects a blockRemoveEdit without target.editId and skips disabled ones', () => {
+    const doc = {
+      demo: {
+        version: 3,
+        edits: [
+          { type: 'blockRemoveEdit', id: 'b2', target: {} },
+          {
+            type: 'blockRemoveEdit',
+            id: 'b3',
+            target: { editId: 'setup' },
+            disabled: true,
+          },
+        ],
+      },
+    }
+    const parsed = parseTimelineEdits(env(JSON.stringify(doc)))!
+    expect(parsed.demo!.invalid).toEqual([
+      { id: 'b2', reason: 'blockRemoveEdit missing target.editId' },
+    ])
+    const { codifyEdits } = splitEdits(parsed.demo!.edits)
+    expect(codifyEdits).toHaveLength(0)
+  })
+})

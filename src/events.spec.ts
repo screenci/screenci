@@ -1588,3 +1588,28 @@ describe('EventRecorder', () => {
     })
   })
 })
+
+describe('EventRecorder.addHiddenAction', () => {
+  it('records a hiddenAction marker with the action and matcher', () => {
+    const recorder = new EventRecorder()
+    recorder.start()
+    recorder.addHiddenAction('click', "getByRole('button')")
+    recorder.addHiddenAction('waitForTimeout')
+    const markers = recorder
+      .getEvents()
+      .filter((event) => event.type === 'hiddenAction')
+    expect(markers).toHaveLength(2)
+    expect(markers[0]).toMatchObject({
+      action: 'click',
+      matcher: "getByRole('button')",
+    })
+    expect(markers[1]).toMatchObject({ action: 'waitForTimeout' })
+    expect(markers[1]).not.toHaveProperty('matcher')
+  })
+
+  it('is a no-op before start()', () => {
+    const recorder = new EventRecorder()
+    recorder.addHiddenAction('click')
+    expect(recorder.getEvents()).toHaveLength(0)
+  })
+})

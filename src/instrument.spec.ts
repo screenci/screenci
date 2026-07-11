@@ -76,6 +76,7 @@ function makeRecorder() {
     ),
     addDelay: vi.fn(),
     addKeyPress: vi.fn(),
+    addHiddenAction: vi.fn(),
     getPerformanceIntervals: vi.fn(() =>
       resolvePerformanceIntervals(undefined)
     ),
@@ -2514,5 +2515,41 @@ describe('editable descriptor capture', () => {
     expect(meta.descriptor.kind).toBe('delay')
     expect(meta.locked).toBe(true)
     expect(meta.defaults).toEqual({ durationMs: 250 })
+  })
+})
+
+describe('hidden-action markers inside hide()', () => {
+  it('records a hiddenAction marker for a locator action inside hide()', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+    const locator = makeLocatorMock()
+    instrumentLocator(locator)
+    await Promise.all([
+      hide(async () => {
+        await locator.click()
+      }),
+      vi.runAllTimersAsync(),
+    ])
+    expect(recorder.addHiddenAction).toHaveBeenCalledTimes(1)
+    expect(recorder.addHiddenAction).toHaveBeenCalledWith(
+      'click',
+      expect.any(String)
+    )
+    expect(recorder.addInput).not.toHaveBeenCalled()
+  })
+
+  it('records a hiddenAction marker for keyboard presses inside hide()', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+    const page = makePageMock()
+    await instrumentPage(page)
+    await Promise.all([
+      hide(async () => {
+        await page.keyboard.press('A')
+      }),
+      vi.runAllTimersAsync(),
+    ])
+    expect(recorder.addHiddenAction).toHaveBeenCalledWith('keyboard.press')
+    expect(recorder.addKeyPress).not.toHaveBeenCalled()
   })
 })

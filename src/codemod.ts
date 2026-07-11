@@ -690,6 +690,97 @@ export function enclosingWrapBody(
   return null
 }
 
+/** The timeline-block wrapper function names an unwrap may target. */
+const UNWRAPPABLE_BLOCK_KINDS = ['hide', 'speed', 'time'] as const
+
+/**
+ * Find the NAMED timeline-block wrap call `hide('<name>', ...)` /
+ * `speed('<name>', ...)` / `time('<name>', ...)` whose name literal equals
+ * `name` and whose callback body is a plain block. Null when absent or
+ * ambiguous (two blocks with the same name).
+ */
+function findNamedBlockCall(
+  ctx: CodemodContext,
+  name: string
+): { call: TS.CallExpression; body: TS.Block } | null {
+  const { ts } = ctx
+  const matches: Array<{ call: TS.CallExpression; body: TS.Block }> = []
+  const visit = (node: TS.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression
+      if (
+        ts.isIdentifier(callee) &&
+        (UNWRAPPABLE_BLOCK_KINDS as readonly string[]).includes(callee.text) &&
+        node.arguments.some(
+          (arg) => ts.isStringLiteral(arg) && arg.text === name
+        )
+      ) {
+        const fn = node.arguments.find(
+          (arg) => ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)
+        ) as TS.ArrowFunction | TS.FunctionExpression | undefined
+        if (fn !== undefined && ts.isBlock(fn.body)) {
+          matches.push({ call: node, body: fn.body })
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ctx.sourceFile)
+  return matches.length === 1 ? matches[0]! : null
+}
+
+/**
+ * Unwrap a NAMED timeline block (`hide`/`speed`/`time`): the wrapper statement
+ * is replaced by the callback body's statements, dedented one level, so the
+ * wrapped calls keep running (and any `waitForTimeout` pacing inside them is
+ * preserved as plain gap sleeps). Conservative by design: only a named block
+ * whose enclosing statement is a plain awaited expression statement is
+ * unwrapped; anything else returns null (locked).
+ */
+export function unwrapBlockCall(
+  ctx: CodemodContext,
+  name: string
+): TextEdit[] | null {
+  const { ts } = ctx
+  const found = findNamedBlockCall(ctx, name)
+  if (found === null) return null
+  const statement = enclosingStatement(ctx, found.call)
+  if (statement === null || !ts.isExpressionStatement(statement)) return null
+  // The statement must be exactly `await <kind>(...)`: a wrap nested in other
+  // expressions is not a mechanical unwrap.
+  const expr = statement.expression
+  if (!ts.isAwaitExpression(expr) || expr.expression !== found.call) return null
+  const inner = found.body.statements
+  const whole = removeFullLine(ctx, statement)
+  if (inner.length === 0) return [whole]
+  // Replace the wrapper's physical lines with the inner statements' text,
+  // dedented by the indentation difference between the wrapper and its body.
+  const stmtStart = statement.getStart()
+  const stmtLineStart = ctx.source.lastIndexOf('\n', stmtStart - 1) + 1
+  const stmtIndent = ctx.source.slice(stmtLineStart, stmtStart)
+  const firstInnerStart = inner[0]!.getStart()
+  const firstInnerLineStart =
+    ctx.source.lastIndexOf('\n', firstInnerStart - 1) + 1
+  const innerIndent = ctx.source.slice(firstInnerLineStart, firstInnerStart)
+  const dedent =
+    innerIndent.startsWith(stmtIndent) && innerIndent.length > stmtIndent.length
+      ? innerIndent.slice(stmtIndent.length)
+      : ''
+  const innerText = ctx.source.slice(
+    firstInnerLineStart,
+    inner[inner.length - 1]!.getEnd()
+  )
+  const dedented = innerText
+    .split('\n')
+    .map((line) =>
+      dedent !== '' && line.startsWith(dedent)
+        ? line.slice(dedent.length)
+        : line
+    )
+    .join('\n')
+  return [{ start: whole.start, end: whole.end, replacement: `${dedented}\n` }]
+}
+
 /**
  * A contiguous run of statements `from..until` that are direct siblings in the
  * same plain block (or source file), or null when they are not (different

@@ -1115,6 +1115,10 @@ export function instrumentLocator(locator: Locator): Locator {
     } = options ?? {}
 
     if (isInsideHide()) {
+      getActiveClickRecorder(locator.page()).addHiddenAction(
+        'click',
+        normalizeSelector(locator)
+      )
       return originalClick({
         ...clickOptions,
         ...(position !== undefined && { position }),
@@ -1236,6 +1240,11 @@ export function instrumentLocator(locator: Locator): Locator {
         parseKeyCombo(key, process.platform),
         show
       )
+    } else {
+      getActiveClickRecorder(locator.page()).addHiddenAction(
+        'press',
+        normalizeSelector(locator)
+      )
     }
   }
 
@@ -1260,6 +1269,10 @@ export function instrumentLocator(locator: Locator): Locator {
     } = options ?? {}
 
     if (isInsideHide()) {
+      getActiveClickRecorder(locator.page()).addHiddenAction(
+        'pressSequentially',
+        normalizeSelector(locator)
+      )
       return originalPressSequentially(
         text,
         pressOptions as Parameters<Locator['pressSequentially']>[1]
@@ -1418,6 +1431,10 @@ export function instrumentLocator(locator: Locator): Locator {
         ...fillOptions
       } = options ?? {}
 
+      getActiveClickRecorder(locator.page()).addHiddenAction(
+        'fill',
+        normalizeSelector(locator)
+      )
       return originalFill(value, fillOptions as Parameters<Locator['fill']>[1])
     }
 
@@ -1590,6 +1607,10 @@ export function instrumentLocator(locator: Locator): Locator {
       options ?? {}
 
     if (isInsideHide()) {
+      getActiveClickRecorder(locator.page()).addHiddenAction(
+        'tap',
+        normalizeSelector(locator)
+      )
       return originalTap({
         ...(tapOpts as Parameters<Locator['tap']>[0]),
         noWaitAfter: noWaitAfter ?? true,
@@ -1699,6 +1720,10 @@ export function instrumentLocator(locator: Locator): Locator {
     } = options ?? {}
 
     if (isInsideHide()) {
+      getActiveClickRecorder(locator.page()).addHiddenAction(
+        'check',
+        normalizeSelector(locator)
+      )
       return originalCheck({
         ...(checkOpts as Parameters<Locator['check']>[0]),
         noWaitAfter: noWaitAfter ?? true,
@@ -1811,6 +1836,10 @@ export function instrumentLocator(locator: Locator): Locator {
     } = options ?? {}
 
     if (isInsideHide()) {
+      getActiveClickRecorder(locator.page()).addHiddenAction(
+        'uncheck',
+        normalizeSelector(locator)
+      )
       return originalUncheck({
         ...(uncheckOpts as Parameters<Locator['uncheck']>[0]),
         noWaitAfter: noWaitAfter ?? true,
@@ -1946,6 +1975,10 @@ export function instrumentLocator(locator: Locator): Locator {
     } = options ?? {}
 
     if (isInsideHide()) {
+      getActiveClickRecorder(locator.page()).addHiddenAction(
+        'selectOption',
+        normalizeSelector(locator)
+      )
       return originalSelectOption(values, {
         ...(selectOpts as Parameters<Locator['selectOption']>[1]),
         noWaitAfter: noWaitAfter ?? true,
@@ -2172,6 +2205,10 @@ export function instrumentLocator(locator: Locator): Locator {
     }
   ): Promise<void> => {
     if (isInsideHide()) {
+      getActiveClickRecorder(locator.page()).addHiddenAction(
+        'scrollIntoViewIfNeeded',
+        normalizeSelector(locator)
+      )
       return originalScrollIntoViewIfNeeded(options)
     }
 
@@ -2674,6 +2711,8 @@ export async function instrumentPage(page: Page): Promise<Page> {
           String(url),
           navigationStartMs
         )
+      } else {
+        getActiveClickRecorder(page).addHiddenAction('goto', String(url))
       }
       return response
     }) as Page['goto']
@@ -2699,6 +2738,8 @@ export async function instrumentPage(page: Page): Promise<Page> {
     // (timeMs + durationMs is its end on the editor timeline).
     if (!isInsideHide()) {
       getActiveClickRecorder(page).addDelay(effDuration, editable)
+    } else {
+      getActiveClickRecorder(page).addHiddenAction('waitForTimeout')
     }
     await originalWaitForTimeout(resolveRecordingTimingDuration(effDuration))
   }) as Page['waitForTimeout']
@@ -2747,6 +2788,8 @@ export async function instrumentPage(page: Page): Promise<Page> {
         parseKeyCombo(key, process.platform),
         show
       )
+    } else {
+      getActiveClickRecorder(page).addHiddenAction('keyboard.press')
     }
   }
 
@@ -3143,6 +3186,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
       resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
+      getActiveClickRecorder(page).addHiddenAction('mouse.click')
       await doReal(fake, () => originalClick(x, y, native))
       return
     }
@@ -3189,6 +3233,7 @@ export async function instrumentPage(page: Page): Promise<Page> {
       resolveCursorMoveOption(move)
 
     if (isInsideHide()) {
+      getActiveClickRecorder(page).addHiddenAction('mouse.dblclick')
       await doReal(fake, () => originalDblclick(x, y, native))
       return
     }

@@ -160,6 +160,20 @@ export type GapPointEdit = {
 }
 
 /**
+ * Removes a code-owned NAMED wrapper block (`hide('name', ...)` /
+ * `speed('name', ...)` / `time('name', ...)`) from source. `screenci sync`
+ * unwraps the block, keeping the wrapped calls (any `waitForTimeout` pacing
+ * inside the block survives as plain gap sleeps). `target.editId` is the
+ * block's stable name slug. Anonymous blocks cannot be targeted.
+ */
+export type BlockRemoveEdit = {
+  type: 'blockRemoveEdit'
+  id: string
+  target: { editId: string }
+  disabled?: boolean
+}
+
+/**
  * A placement change to an overlay DECLARATION in `video.overlays({...})`,
  * made graphically in the web editor. `props` carries exactly one placement
  * variant to merge into the named overlay's config object:
@@ -179,7 +193,12 @@ export type OverlayDeclEdit = {
 }
 
 /** Codify-only records: placed into code by `screenci sync`, never at runtime. */
-export type CodifyEdit = MediaEdit | ZoomEdit | GapSpanEdit | GapPointEdit
+export type CodifyEdit =
+  | MediaEdit
+  | ZoomEdit
+  | GapSpanEdit
+  | GapPointEdit
+  | BlockRemoveEdit
 
 export type EditRecord = ParamEdit | RenameEdit | CodifyEdit | OverlayDeclEdit
 
@@ -437,6 +456,17 @@ function editRecordProblem(value: unknown): string | null {
       if (!optionalProps(record.props)) return 'invalid props'
       return null
     }
+    case 'blockRemoveEdit': {
+      const target = record.target as Record<string, unknown> | null
+      if (
+        typeof target !== 'object' ||
+        target === null ||
+        !isNonEmptyString(target.editId)
+      ) {
+        return 'blockRemoveEdit missing target.editId'
+      }
+      return null
+    }
     case 'overlayDeclEdit': {
       if (!isNonEmptyString(record.overlayName)) {
         return 'overlayDeclEdit missing overlayName'
@@ -530,6 +560,7 @@ export function splitEdits(edits: readonly EditRecord[]): SplitEdits {
       case 'zoomEdit':
       case 'gapSpanEdit':
       case 'gapPointEdit':
+      case 'blockRemoveEdit':
         if (edit.disabled !== true) codifyEdits.push(edit)
         break
       default: {

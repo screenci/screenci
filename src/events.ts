@@ -1129,10 +1129,28 @@ export type KeyPressEvent = {
   show?: boolean
 }
 
+/**
+ * An instrumented action performed inside a `hide()` block. The action runs
+ * raw (no cursor animation, no input event) and its footage is cut from the
+ * output, but this marker keeps the action visible to the web editor: a hide
+ * that gets unwrapped back out of code can show what it was suppressing.
+ * Renderers and timing math ignore it (it carries no output-affecting data).
+ */
+export type HiddenActionEvent = {
+  type: 'hiddenAction'
+  /** Recording-relative time the hidden action ran. */
+  timeMs: number
+  /** The instrumented method (`click`, `fill`, `press`, ...). */
+  action: string
+  /** Normalized locator description, when the action targets one. */
+  matcher?: string
+}
+
 export type RecordingEvent =
   | VideoStartEvent
   | InputEvent
   | KeyPressEvent
+  | HiddenActionEvent
   | CueStartEvent
   | CueEndEvent
   | ValuesDeclareEvent
@@ -1364,6 +1382,12 @@ export interface IEventRecorder {
    */
   addKeyPress(keys: string[], show?: boolean): void
   /**
+   * Records an instrumented action performed inside a `hide()` block. The
+   * action itself ran raw (no cursor animation, no input event); this marker
+   * keeps it visible to the web editor. See {@link HiddenActionEvent}.
+   */
+  addHiddenAction(action: string, matcher?: string): void
+  /**
    * Records a narration cue start. `delayMs` (like on every `add*` method
    * that accepts it) shifts the stamped `timeMs` forward: the call runs now
    * but the event lands `delayMs` later, letting a call written before an
@@ -1538,6 +1562,7 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   },
   addDelay(): void {},
   addKeyPress(): void {},
+  addHiddenAction(): void {},
   addCueStart(): void {},
   addStudioCueStart(): void {},
   addValuesDeclare(): void {},
@@ -1898,6 +1923,17 @@ export class EventRecorder implements IEventRecorder {
       timeMs,
       keys,
       ...(show !== undefined && { show }),
+    })
+  }
+
+  addHiddenAction(action: string, matcher?: string): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'hiddenAction',
+      timeMs,
+      action,
+      ...(matcher !== undefined && { matcher }),
     })
   }
 

@@ -343,9 +343,21 @@ export type SleepEvent = {
   reason: SleepReason
 }
 
+/**
+ * An instrumented action performed inside a `hide()` block: the action ran
+ * raw and its footage is cut, but the marker keeps it visible to the editor.
+ */
+export type HiddenActionEvent = {
+  type: 'hiddenAction'
+  timeMs: number
+  action: string
+  matcher?: string
+}
+
 export type RecordingEvent =
   | VideoStartEvent
   | InputEvent
+  | HiddenActionEvent
   | CueStartEvent
   | CueEndEvent
   | VideoCueStartEvent

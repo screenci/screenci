@@ -60,6 +60,7 @@ import {
   splitWaitEdit,
   statementsAfter,
   statementsBefore,
+  unwrapBlockCall,
   valueToSource,
   waitForTimeoutArg,
   wrapStatementsInBlock,
@@ -931,12 +932,35 @@ function planCodifyEdit(edit: CodifyEdit): {
           ),
       }
     }
+    case 'blockRemoveEdit': {
+      return {
+        editIds: [edit.target.editId],
+        description: `unwrap block '${edit.target.editId}'`,
+        compute: (ctx) => unwrapBlockCall(ctx, edit.target.editId),
+      }
+    }
     default: {
       const exhaustive: never = edit
       void exhaustive
       return null
     }
   }
+}
+
+/**
+ * True for a bare split marker: a zero-width hide the editor uses to cut the
+ * recording filmstrip without removing footage. It stays editor-only state
+ * (never codified): syncing `await hide(async () => {})` would add noise for
+ * no output change, and the split remains editable in the web editor.
+ */
+function isBareSplit(edit: CodifyEdit): boolean {
+  return (
+    edit.type === 'gapSpanEdit' &&
+    edit.kind === 'hide' &&
+    edit.fromEditId === edit.untilEditId &&
+    edit.delayMs === undefined &&
+    (edit.fromSleepMs ?? 0) === (edit.untilSleepMs ?? 0)
+  )
 }
 
 /**
@@ -1248,6 +1272,9 @@ export function planCodeSync(
       }
     )
     for (const edit of codifyEdits) {
+      // Bare split markers are editor-only: skipped without counting, so the
+      // video is not marked fully applied (the split survives in the editor).
+      if (isBareSplit(edit)) continue
       const planned = planCodifyEdit(edit)
       if (planned === null) {
         markUnappliable(`unappliable ${edit.type} '${edit.id}'`)

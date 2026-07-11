@@ -1111,3 +1111,115 @@ describe('planCodeSync: studio render/record option codify', () => {
     expect(result.unappliable).toHaveLength(1)
   })
 })
+
+describe('planCodeSync: bare split markers', () => {
+  it('skips a zero-width hide without counting it applied or unappliable', () => {
+    const split: CodifyEdit = {
+      type: 'gapSpanEdit',
+      id: 'split1',
+      kind: 'hide',
+      fromEditId: 'click1',
+      fromSleepMs: 400,
+      untilEditId: 'click1',
+      untilSleepMs: 400,
+    }
+    const result = plan(inputWith({ codifyEdits: { Demo: [split] } }))
+    expect(result.files).toHaveLength(0)
+    expect(result.applied).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(0)
+    // The split stays editor-only: the video is never marked fully applied.
+    expect(result.fullyAppliedVideos).not.toContain('Demo')
+  })
+
+  it('still codifies a trimmed (non-zero) hide', () => {
+    const trimmed: CodifyEdit = {
+      type: 'gapSpanEdit',
+      id: 'trim1',
+      kind: 'hide',
+      fromEditId: 'click1',
+      fromSleepMs: 200,
+      untilEditId: 'fill1',
+      untilSleepMs: 100,
+    }
+    const result = plan(inputWith({ codifyEdits: { Demo: [trimmed] } }))
+    const after = afterFor(result, FILE)
+    expect(after).toContain('await hide(async () => {')
+    expect(after).toContain('await page.waitForTimeout(200)')
+    expect(after).toContain('await page.waitForTimeout(100)')
+  })
+})
+
+describe('planCodeSync: block removal (unwrap)', () => {
+  const HIDE_FILE = '/proj/hidedemo.screenci.ts'
+  const HIDE_SOURCE = [
+    "import { video, hide } from 'screenci'",
+    '',
+    "video('HideDemo', async ({ page }) => {",
+    "  await page.getByRole('button').click({ editId: 'hclick' })",
+    "  await hide('setup', async () => {",
+    '    await page.waitForTimeout(250)',
+    "    await page.locator('#x').click()",
+    '  })',
+    "  await page.locator('#y').click({ editId: 'hclick2' })",
+    '})',
+    '',
+  ].join('\n')
+  const snapshot: EditableSnapshot = {
+    version: 1,
+    videos: {
+      HideDemo: [
+        {
+          key: 'hclick',
+          editId: 'hclick',
+          locked: false,
+          defaults: {},
+          source: { file: HIDE_FILE, line: 4 },
+        },
+        {
+          key: 'hclick2',
+          editId: 'hclick2',
+          locked: false,
+          defaults: {},
+          source: { file: HIDE_FILE, line: 9 },
+        },
+      ],
+    },
+  }
+
+  it('unwraps a named hide block, keeping the wrapped calls and pacing', () => {
+    const remove: CodifyEdit = {
+      type: 'blockRemoveEdit',
+      id: 'rm1',
+      target: { editId: 'setup' },
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshot,
+        codifyEdits: { HideDemo: [remove] },
+      }),
+      { [HIDE_FILE]: HIDE_SOURCE }
+    )
+    const after = afterFor(result, HIDE_FILE)
+    expect(after).not.toContain("hide('setup'")
+    expect(after).toContain('  await page.waitForTimeout(250)')
+    expect(after).toContain("  await page.locator('#x').click()")
+    expect(result.unappliable).toHaveLength(0)
+  })
+
+  it('marks an unknown block name unappliable', () => {
+    const remove: CodifyEdit = {
+      type: 'blockRemoveEdit',
+      id: 'rm2',
+      target: { editId: 'missing' },
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshot,
+        codifyEdits: { HideDemo: [remove] },
+      }),
+      { [HIDE_FILE]: HIDE_SOURCE }
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(1)
+  })
+})

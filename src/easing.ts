@@ -1,5 +1,9 @@
 import type { Easing } from './types.js'
 
+// Browser-safe re-export for the web editor (this subpath has no Node deps).
+export { EASING_NAMES } from './types.js'
+export type { Easing }
+
 /**
  * Evaluate a polynomial easing function at normalized time t in [0, 1].
  */

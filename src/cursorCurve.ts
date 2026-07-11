@@ -62,6 +62,55 @@ export function computeControlPoints(
 }
 
 /**
+ * Invert {@link computeControlPoints}: express two absolute-pixel control
+ * points in the normalized travel frame of the move from `from` to `to`.
+ * Returns `undefined` for degenerate (near zero-length) moves, where the
+ * travel frame is undefined.
+ */
+export function controlPointsToTuple(
+  from: Point,
+  to: Point,
+  c1: Point,
+  c2: Point
+): CurveTuple | undefined {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const length = Math.hypot(dx, dy)
+  if (length < MIN_CURVE_LENGTH_PX) return undefined
+
+  const ux = dx / length
+  const uy = dy / length
+  const nx = uy
+  const ny = -ux
+
+  const project = (p: Point): [number, number] => {
+    const px = p.x - from.x
+    const py = p.y - from.y
+    return [(px * ux + py * uy) / length, (px * nx + py * ny) / length]
+  }
+  const [x1, y1] = project(c1)
+  const [x2, y2] = project(c2)
+  return [x1, y1, x2, y2]
+}
+
+/**
+ * Validate an untrusted value (for example a web-editor override) as a
+ * {@link CursorCurve}. Accepts the preset names and a 4-finite-number tuple;
+ * anything else returns `undefined`.
+ */
+export function parseCursorCurve(value: unknown): CursorCurve | undefined {
+  if (value === 'none' || value === 'natural' || value === 'arc') return value
+  if (
+    Array.isArray(value) &&
+    value.length === 4 &&
+    value.every((n) => typeof n === 'number' && Number.isFinite(n))
+  ) {
+    return [value[0], value[1], value[2], value[3]]
+  }
+  return undefined
+}
+
+/**
  * Turn a curve preset (or pass an explicit tuple through) into a normalized
  * `[x1, y1, x2, y2]` cubic-bezier tuple. Returns `undefined` when the tuple
  * carries no perpendicular deflection (a straight line).

@@ -336,6 +336,12 @@ prints a matching warning (`editor override shadows code value: ...`), and
 `screenci status` lists every shadowing edit so you can move it into code or
 clear it.
 
+Cursor-move fields (`move.duration`/`move.speed`, `move.easing`, `move.curve`,
+`move.curviness`, `move.delayAfter`), action durations, and pre-action pauses
+all sync back into code: `screenci sync` writes each edited value as the
+matching option on the `editId`-stamped call. The cursor path's curve can be
+edited visually in the preview by dragging its bezier handles.
+
 Manual `zoomTo(...)` calls and `scrollIntoViewIfNeeded()` also appear on the
 editor's "Zooms & scrolls" row with editable `easing`, `duration`, `amount`,
 and `centering` fields.

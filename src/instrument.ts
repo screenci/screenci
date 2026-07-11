@@ -40,7 +40,7 @@ import type {
 } from './types.js'
 import { isInsideHide } from './hide.js'
 import { parseKeyCombo } from './keyCombo.js'
-import { computeControlPoints } from './cursorCurve.js'
+import { computeControlPoints, parseCursorCurve } from './cursorCurve.js'
 import { redact } from './redact.js'
 import {
   changeFocus,
@@ -724,6 +724,8 @@ type CursorTimingValues = {
   moveDuration?: number | undefined
   moveSpeed?: number | undefined
   moveEasing?: Easing | undefined
+  moveCurve?: CursorCurve | undefined
+  moveCurviness?: number | undefined
   moveDelayAfter?: number | undefined
 }
 
@@ -733,6 +735,7 @@ function resolveCursorTimingOverrides(
 ): CursorTimingValues {
   if (editable === undefined) return original
   const eff = applyEditableOverride(editable)
+  const effCurve = parseCursorCurve(eff.moveCurve)
   return {
     ...(typeof eff.moveDuration === 'number' && {
       moveDuration: eff.moveDuration,
@@ -740,6 +743,13 @@ function resolveCursorTimingOverrides(
     ...(typeof eff.moveSpeed === 'number' && { moveSpeed: eff.moveSpeed }),
     ...(typeof eff.moveEasing === 'string' && {
       moveEasing: eff.moveEasing as Easing,
+    }),
+    // A curve of 'none' must stay distinguishable from "no value" so an
+    // override can straighten a preset-curved move; keep 'none' as-is here
+    // and let the move request builder skip it.
+    ...(effCurve !== undefined && { moveCurve: effCurve }),
+    ...(typeof eff.moveCurviness === 'number' && {
+      moveCurviness: eff.moveCurviness,
     }),
     ...(typeof eff.moveDelayAfter === 'number' && {
       moveDelayAfter: eff.moveDelayAfter,
@@ -1139,6 +1149,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined,
@@ -1148,6 +1160,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
     })
 
@@ -1162,8 +1176,8 @@ export function instrumentLocator(locator: Locator): Locator {
         moveDuration: timing.moveDuration,
         moveSpeed: timing.moveSpeed,
         moveEasing: timing.moveEasing,
-        moveCurve,
-        moveCurviness,
+        moveCurve: timing.moveCurve,
+        moveCurviness: timing.moveCurviness,
       }),
       locator,
       doClick,
@@ -1296,6 +1310,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined || explicitDuration !== undefined,
@@ -1310,6 +1326,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
     })
     const effTypingDuration =
@@ -1337,8 +1355,8 @@ export function instrumentLocator(locator: Locator): Locator {
           moveDuration: timing.moveDuration,
           moveSpeed: timing.moveSpeed,
           moveEasing: timing.moveEasing,
-          moveCurve,
-          moveCurviness,
+          moveCurve: timing.moveCurve,
+          moveCurviness: timing.moveCurviness,
         }),
         locator,
         async () => originalPressSequentially(text, typedPressOptions),
@@ -1450,6 +1468,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined || options?.duration !== undefined,
@@ -1465,6 +1485,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
     })
     const effTypingDuration =
@@ -1515,8 +1537,8 @@ export function instrumentLocator(locator: Locator): Locator {
           moveDuration: timing.moveDuration,
           moveSpeed: timing.moveSpeed,
           moveEasing: timing.moveEasing,
-          moveCurve,
-          moveCurviness,
+          moveCurve: timing.moveCurve,
+          moveCurviness: timing.moveCurviness,
         }),
         locator,
         typeFilledValue,
@@ -1599,6 +1621,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined,
@@ -1608,6 +1632,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
     })
 
@@ -1619,8 +1645,8 @@ export function instrumentLocator(locator: Locator): Locator {
         moveDuration: timing.moveDuration,
         moveSpeed: timing.moveSpeed,
         moveEasing: timing.moveEasing,
-        moveCurve,
-        moveCurviness,
+        moveCurve: timing.moveCurve,
+        moveCurviness: timing.moveCurviness,
       }),
       locator,
       doClick,
@@ -1704,6 +1730,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined,
@@ -1713,6 +1741,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
     })
 
@@ -1727,8 +1757,8 @@ export function instrumentLocator(locator: Locator): Locator {
         moveDuration: timing.moveDuration,
         moveSpeed: timing.moveSpeed,
         moveEasing: timing.moveEasing,
-        moveCurve,
-        moveCurviness,
+        moveCurve: timing.moveCurve,
+        moveCurviness: timing.moveCurviness,
       }),
       locator,
       doClick,
@@ -1812,6 +1842,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined,
@@ -1821,6 +1853,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
     })
 
@@ -1835,8 +1869,8 @@ export function instrumentLocator(locator: Locator): Locator {
         moveDuration: timing.moveDuration,
         moveSpeed: timing.moveSpeed,
         moveEasing: timing.moveEasing,
-        moveCurve,
-        moveCurviness,
+        moveCurve: timing.moveCurve,
+        moveCurviness: timing.moveCurviness,
       }),
       locator,
       doClick,
@@ -1946,6 +1980,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined,
@@ -1955,6 +1991,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
     })
 
@@ -1968,8 +2006,8 @@ export function instrumentLocator(locator: Locator): Locator {
         moveDuration: timing.moveDuration,
         moveSpeed: timing.moveSpeed,
         moveEasing: timing.moveEasing,
-        moveCurve,
-        moveCurviness,
+        moveCurve: timing.moveCurve,
+        moveCurviness: timing.moveCurviness,
       }),
       locator,
       doClick,
@@ -2049,6 +2087,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       autoZoomOptions: options?.autoZoomOptions,
       hasExplicitMove: move !== undefined || options?.duration !== undefined,
       explicitMove: move,
@@ -2064,6 +2104,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
     })
     const effHoverDuration =
       editableOverrideNumber(editable, 'duration') ?? hoverDuration
@@ -2079,8 +2121,10 @@ export function instrumentLocator(locator: Locator): Locator {
         : {}),
       ...(timing.moveSpeed !== undefined ? { speed: timing.moveSpeed } : {}),
       easing: timing.moveEasing ?? moveEasing,
-      ...(moveCurve !== undefined ? { curve: moveCurve } : {}),
-      ...(moveCurviness !== undefined ? { curviness: moveCurviness } : {}),
+      ...(timing.moveCurve !== undefined ? { curve: timing.moveCurve } : {}),
+      ...(timing.moveCurviness !== undefined
+        ? { curviness: timing.moveCurviness }
+        : {}),
     }
 
     const hoverFocusChange = await changeFocus(
@@ -2237,6 +2281,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove: move !== undefined || duration !== undefined,
@@ -2251,6 +2297,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
     })
     const effSelectDuration =
@@ -2271,8 +2319,8 @@ export function instrumentLocator(locator: Locator): Locator {
         moveDuration: timing.moveDuration,
         moveSpeed: timing.moveSpeed,
         moveEasing: timing.moveEasing,
-        moveCurve,
-        moveCurviness,
+        moveCurve: timing.moveCurve,
+        moveCurviness: timing.moveCurviness,
       }),
       locator,
       async () => {
@@ -2362,6 +2410,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
       autoZoomOptions,
       hasExplicitMove:
@@ -2384,6 +2434,8 @@ export function instrumentLocator(locator: Locator): Locator {
       moveDuration,
       moveSpeed,
       moveEasing,
+      moveCurve,
+      moveCurviness,
       moveDelayAfter,
     })
     const effDragDuration =
@@ -2424,8 +2476,10 @@ export function instrumentLocator(locator: Locator): Locator {
         : {}),
       ...(timing.moveSpeed !== undefined ? { speed: timing.moveSpeed } : {}),
       easing: timing.moveEasing ?? moveEasing,
-      ...(moveCurve !== undefined ? { curve: moveCurve } : {}),
-      ...(moveCurviness !== undefined ? { curviness: moveCurviness } : {}),
+      ...(timing.moveCurve !== undefined ? { curve: timing.moveCurve } : {}),
+      ...(timing.moveCurviness !== undefined
+        ? { curviness: timing.moveCurviness }
+        : {}),
     })
 
     if (sourceFocusChange.elementRect) {

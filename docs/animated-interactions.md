@@ -178,6 +178,11 @@ video.recordOptions({ cursorCurve: 'natural', cursorCurviness: 0.18 })
 The real dispatched cursor follows the curve too, so hover and pointer events
 fire along the arc, not just in the rendered video.
 
+The curve is also editable visually: in the web editor, select an interaction
+(click it in the timeline, or click near the cursor in the preview) and drag
+the two bezier handles over the video. The edit applies on the next record,
+and `screenci sync` writes it back into the call as `move.curve`.
+
 ### fill and pressSequentially
 
 `fill` and `pressSequentially` animate a click before typing by default.

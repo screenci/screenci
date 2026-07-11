@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   computeControlPoints,
+  controlPointsToTuple,
+  parseCursorCurve,
   cubicBezierAt,
   type Point,
 } from './cursorCurve.js'
@@ -96,5 +98,58 @@ describe('cubicBezierAt', () => {
     const mid = cubicBezierAt(0.5, p0, c1, c2, p3)
     expect(mid.x).toBeCloseTo(50)
     expect(mid.y).toBeCloseTo(75) // pulled toward the control points
+  })
+})
+
+describe('controlPointsToTuple', () => {
+  it('round-trips a tuple through computeControlPoints', () => {
+    const tuple: [number, number, number, number] = [0.17, 0.67, 0.83, -0.4]
+    const a: Point = { x: 12, y: 34 }
+    const b: Point = { x: 250, y: 180 }
+    const control = computeControlPoints(a, b, { curve: tuple })!
+    const back = controlPointsToTuple(a, b, control[0], control[1])!
+    back.forEach((component, i) => expect(component).toBeCloseTo(tuple[i]!, 6))
+  })
+
+  it('round-trips pixel control points through the tuple', () => {
+    const a: Point = { x: 40, y: 300 }
+    const b: Point = { x: 400, y: 60 }
+    const c1: Point = { x: 90, y: 120 }
+    const c2: Point = { x: 310, y: 220 }
+    const tuple = controlPointsToTuple(a, b, c1, c2)!
+    const control = computeControlPoints(a, b, { curve: tuple })!
+    expect(control[0].x).toBeCloseTo(c1.x, 6)
+    expect(control[0].y).toBeCloseTo(c1.y, 6)
+    expect(control[1].x).toBeCloseTo(c2.x, 6)
+    expect(control[1].y).toBeCloseTo(c2.y, 6)
+  })
+
+  it('returns undefined for a degenerate move', () => {
+    const a: Point = { x: 10, y: 10 }
+    expect(controlPointsToTuple(a, { x: 10.2, y: 10 }, a, a)).toBeUndefined()
+  })
+})
+
+describe('parseCursorCurve', () => {
+  it('accepts preset names', () => {
+    expect(parseCursorCurve('none')).toBe('none')
+    expect(parseCursorCurve('natural')).toBe('natural')
+    expect(parseCursorCurve('arc')).toBe('arc')
+  })
+
+  it('accepts a 4-finite-number tuple', () => {
+    expect(parseCursorCurve([0.1, -0.2, 0.9, 0.4])).toEqual([
+      0.1, -0.2, 0.9, 0.4,
+    ])
+  })
+
+  it('rejects everything else', () => {
+    expect(parseCursorCurve('wiggly')).toBeUndefined()
+    expect(parseCursorCurve([0.1, 0.2, 0.3])).toBeUndefined()
+    expect(parseCursorCurve([0.1, 0.2, 0.3, Number.NaN])).toBeUndefined()
+    expect(parseCursorCurve([0.1, 0.2, 0.3, '0.4'])).toBeUndefined()
+    expect(parseCursorCurve({})).toBeUndefined()
+    expect(parseCursorCurve(undefined)).toBeUndefined()
+    expect(parseCursorCurve(null)).toBeUndefined()
   })
 })

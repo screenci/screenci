@@ -317,6 +317,90 @@ describe('planCodeSync: timeline param edits', () => {
   })
 })
 
+describe('planCodeSync: cursor-move param edits', () => {
+  it('codifies a moveCurve tuple into move.curve on the slugged call', () => {
+    const result = plan(
+      inputWith({
+        editableOverrides: {
+          Demo: [
+            { key: 'click1', values: { moveCurve: [0.17, 0.67, 0.83, -0.4] } },
+          ],
+        },
+      })
+    )
+    const after = afterFor(result, FILE)
+    expect(after).toContain(
+      '.click({ move: { duration: 500, curve: [0.17, 0.67, 0.83, -0.4] }, ' +
+        "editId: 'click1' })"
+    )
+    expect(result.fullyAppliedVideos).toEqual(['Demo'])
+  })
+
+  it('codifies moveEasing and top-level duration', () => {
+    const result = plan(
+      inputWith({
+        editableOverrides: {
+          Demo: [
+            { key: 'click1', values: { moveEasing: 'ease-out' } },
+            { key: 'fill1', values: { duration: 900 } },
+          ],
+        },
+      })
+    )
+    const after = afterFor(result, FILE)
+    expect(after).toContain("move: { duration: 500, easing: 'ease-out' }")
+    expect(after).toContain(".fill('Jane', { editId: 'fill1', duration: 900 })")
+    expect(result.fullyAppliedVideos).toEqual(['Demo'])
+  })
+
+  it('never emits both a duration and a speed on the same move', () => {
+    // click1 has an explicit move.duration; a speed override must not join it.
+    // Here the sibling removal collapses the object the insert targets, which
+    // is too entangled for a mechanical edit: stay safe and mark unappliable.
+    const result = plan(
+      inputWith({
+        editableOverrides: {
+          Demo: [{ key: 'click1', values: { moveSpeed: 800 } }],
+        },
+      })
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(1)
+  })
+
+  it('drops the explicit sibling when the move has other options', () => {
+    const files = {
+      [FILE]: SOURCE.replace(
+        'move: { duration: 500 }',
+        "move: { duration: 500, easing: 'linear' }"
+      ),
+    }
+    const result = plan(
+      inputWith({
+        editableOverrides: {
+          Demo: [{ key: 'click1', values: { moveSpeed: 800 } }],
+        },
+      }),
+      files
+    )
+    const after = afterFor(result, FILE)
+    expect(after).toContain('speed: 800')
+    expect(after).not.toContain('duration: 500')
+  })
+
+  it('marks loop-locked cursor-move edits unappliable', () => {
+    const result = plan(
+      inputWith({
+        editableOverrides: {
+          Loop: [{ key: 'loopclick#1', values: { moveEasing: 'linear' } }],
+        },
+      })
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(1)
+  })
+})
+
 describe('planCodeSync: editId lookups survive line drift', () => {
   it('locates by slug even when snapshot lines are wrong', () => {
     const drifted: EditableSnapshot = {

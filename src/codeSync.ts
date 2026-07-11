@@ -98,6 +98,38 @@ const OPTIONS_ARG_INDEX: Record<ActionMethod, number> = {
   dragTo: 1,
 }
 
+/**
+ * Editable cursor-move param fields and the option path they codify to on the
+ * stamped call. Shared by every pointer-driven action (click, fill, dragTo,
+ * hover, ...); action-specific extras (`duration`, `easing`, `dragSteps`) are
+ * top-level options on their methods.
+ */
+const CURSOR_MOVE_OPTION_PATHS: Record<string, string> = {
+  moveDuration: 'move.duration',
+  moveSpeed: 'move.speed',
+  moveEasing: 'move.easing',
+  moveCurve: 'move.curve',
+  moveCurviness: 'move.curviness',
+  moveDelayAfter: 'move.delayAfter',
+  duration: 'duration',
+  easing: 'easing',
+  dragSteps: 'dragSteps',
+}
+
+/**
+ * Mutually exclusive sibling options: writing one must drop the other so a
+ * call never carries both a duration and a speed.
+ */
+const EXCLUSIVE_OPTION_SIBLINGS: Record<string, string> = {
+  moveDuration: 'move.speed',
+  moveSpeed: 'move.duration',
+}
+
+/** Whether two text edits touch overlapping ranges (unsafe to co-apply). */
+function editsOverlap(a: TextEdit, b: TextEdit): boolean {
+  return a.start < b.end && b.start < a.end
+}
+
 export type AppliedItem = {
   videoName: string
   file: string
@@ -880,6 +912,57 @@ export function planCodeSync(
                   `await ${root}.waitForTimeout(${ms})`
                 ),
               ]
+            },
+          })
+          continue
+        }
+        const optionPath = CURSOR_MOVE_OPTION_PATHS[field]
+        if (optionPath !== undefined) {
+          applySlugItem({
+            videoName,
+            editId,
+            description: `set ${optionPath} = ${JSON.stringify(value)} on '${editId}'`,
+            onUnappliable: () =>
+              markUnappliable(`locked param edit '${editId}' ${field}`),
+            compute: (ctx) => {
+              const call = findCallByEditId(ctx, editId)
+              if (call === null) return null
+              if (!ctx.ts.isPropertyAccessExpression(call.expression)) {
+                return null
+              }
+              const method = call.expression.name.text
+              const optionsIndex = (
+                OPTIONS_ARG_INDEX as Record<string, number | undefined>
+              )[method]
+              if (optionsIndex === undefined) return null
+              const edits: TextEdit[] = []
+              // Duration and speed are mutually exclusive: writing one drops
+              // any explicit sibling so the call never carries both.
+              const siblingPath = EXCLUSIVE_OPTION_SIBLINGS[field]
+              if (siblingPath !== undefined) {
+                const removal = removeOption(
+                  ctx,
+                  call,
+                  optionsIndex,
+                  siblingPath.split('.')
+                )
+                if (removal !== null) edits.push(removal)
+              }
+              const edit = setOptionValue(
+                ctx,
+                call,
+                optionsIndex,
+                optionPath.split('.'),
+                value
+              )
+              if (edit === null) return null
+              if (edits.some((other) => editsOverlap(other, edit))) {
+                // The sibling removal collapses the object the set edit
+                // targets; too entangled for a mechanical edit.
+                return null
+              }
+              edits.push(edit)
+              return edits
             },
           })
           continue

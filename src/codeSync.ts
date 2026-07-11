@@ -1,6 +1,8 @@
 /**
- * Planner for `screenci sync`: turns the web editor's edits into concrete
+ * Planner for editor codegen: turns the web editor's edits into concrete
  * text changes to the user's .screenci.ts files, using the codemod primitives.
+ * Driven by `screenci dev` (applyCodegen.ts), which applies each edit to the
+ * sources the moment it arrives; code is the single source of truth.
  *
  * Every code edit locates its call site by an action's `editId` slug: an exact
  * string identity with no heuristics. The model is one linear timeline in call
@@ -17,9 +19,11 @@
  * Pure over injected inputs (parsed comparison, snapshots, a readFile): unit
  * tests drive it with in-memory files.
  */
-import { jsonEqual, type ActionMethod } from './actionParams.js'
-import type { ActionParamsSnapshot } from './actionParamsSnapshot.js'
-import type { WebStateComparison } from './actionSync.js'
+import {
+  jsonEqual,
+  type ActionMethod,
+  type ActionParamRecord,
+} from './actionParams.js'
 import type { StudioSyncState } from './studioSync.js'
 import type {
   CodifyEditsByVideo,
@@ -151,6 +155,36 @@ export type CodeSyncPlan = {
   unappliable: UnappliableItem[]
   /** Videos where every pending edit was applied (safe to reset web edits). */
   fullyAppliedVideos: string[]
+}
+
+/**
+ * The latest recorded action-parameter records per video, used to locate
+ * stamped call sites for comparison-driven option edits. The codegen path
+ * passes an empty snapshot (the single edit record is the change).
+ */
+export type ActionParamsSnapshot = {
+  version: 1
+  videos: Record<string, ActionParamRecord[]>
+}
+
+/** How one editor action-parameter override relates to the code. */
+export type OverrideAssessment = {
+  kind: 'change' | 'remove' | 'codify' | 'in-sync' | 'stale'
+  selector: string
+  method: string
+  occurrence: number
+  optionPath: string
+  editorValue: unknown
+}
+
+/**
+ * Editor action-parameter override state to reconcile into code. The codegen
+ * path passes an empty comparison; the shape stays so callers can feed
+ * assessed overrides through the same planner.
+ */
+export type WebStateComparison = {
+  videos: Array<{ videoName: string; overrides: OverrideAssessment[] }>
+  snapshotEmpty: boolean
 }
 
 export type CodeSyncInput = {

@@ -1,9 +1,7 @@
 import type { AspectRatio, FPS, Quality } from './types.js'
-import type { ActionOverridesByVideo } from './actionParams.js'
 import { isScreenshotCapture } from './runtimeContext.js'
 
 export const SCREENCI_RECORDING_ENV = 'SCREENCI_RECORDING'
-export const SCREENCI_ACTION_OVERRIDES_ENV = 'SCREENCI_ACTION_OVERRIDES'
 export const SCREENCI_MOCK_RECORD_ENV = 'SCREENCI_MOCK_RECORD'
 export const SCREENCI_LANGUAGES_ENV = 'SCREENCI_LANGUAGES'
 export const SCREENCI_VALUES_OVERRIDES_ENV = 'SCREENCI_VALUES_OVERRIDES'
@@ -241,41 +239,6 @@ export function parseRecordOptions(
         entry.actualNarrationPace = o.actualNarrationPace
       }
       result[videoName] = entry
-    }
-    return result
-  } catch {
-    return null
-  }
-}
-
-/**
- * Parse web-editor action-parameter overrides injected for a re-record. The
- * payload is a JSON map of
- * `{ [videoName]: { "<selector>|<method>|<occurrence>|<optionPath>": value } }`,
- * set by the CLI from the backend before the recording runs (see
- * `SCREENCI_ACTION_OVERRIDES`). Returns `null` when unset or malformed, so
- * actions fall back to the code values.
- */
-export function parseActionOverrides(
-  env: NodeJS.ProcessEnv = process.env
-): ActionOverridesByVideo | null {
-  const raw = env[SCREENCI_ACTION_OVERRIDES_ENV]
-  if (raw === undefined || raw.trim().length === 0) return null
-
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))
-      return null
-
-    const result: ActionOverridesByVideo = {}
-    for (const [videoName, overrides] of Object.entries(parsed)) {
-      if (
-        typeof overrides !== 'object' ||
-        overrides === null ||
-        Array.isArray(overrides)
-      )
-        continue
-      result[videoName] = { ...(overrides as Record<string, unknown>) }
     }
     return result
   } catch {

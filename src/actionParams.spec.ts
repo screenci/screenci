@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   ACTION_PARAM_DEFAULTS,
   ActionParamCollector,
@@ -115,92 +115,6 @@ describe('ActionParamCollector', () => {
         ['hover', 0],
       ]
     )
-  })
-
-  it('applies a matching override, logs it, and keeps code provenance', () => {
-    const log = vi.fn()
-    const collector = new ActionParamCollector(
-      { [actionParamKey(SELECTOR, 'click', 0, 'move.duration')]: 250 },
-      log
-    )
-    const effective = collector.apply(SELECTOR, 'click', {
-      'move.duration': { explicit: 400, fallback: 900 },
-    })
-    expect(effective).toEqual({ 'move.duration': 250 })
-    // The record keeps the code value plus the actually used value.
-    expect(collector.getRecords()[0]!.params['move.duration']).toEqual({
-      value: 400,
-      source: 'explicit',
-      used: 250,
-    })
-    expect(log).toHaveBeenCalledTimes(1)
-    expect(log.mock.calls[0]![0]).toContain('editor override')
-    expect(log.mock.calls[0]![0]).toContain(SELECTOR)
-    expect(log.mock.calls[0]![0]).toContain('move.duration')
-    expect(log.mock.calls[0]![0]).toContain('250')
-    expect(log.mock.calls[0]![0]).toContain('400')
-  })
-
-  it('only overrides the matching occurrence', () => {
-    const log = vi.fn()
-    const collector = new ActionParamCollector(
-      { [actionParamKey(SELECTOR, 'click', 1, 'move.duration')]: 250 },
-      log
-    )
-    const first = collector.apply(SELECTOR, 'click', {
-      'move.duration': { explicit: undefined, fallback: 900 },
-    })
-    const second = collector.apply(SELECTOR, 'click', {
-      'move.duration': { explicit: undefined, fallback: 900 },
-    })
-    expect(first).toEqual({ 'move.duration': 900 })
-    expect(second).toEqual({ 'move.duration': 250 })
-    expect(log).toHaveBeenCalledTimes(1)
-  })
-
-  it('ignores non-matching override keys and inapplicable values', () => {
-    const log = vi.fn()
-    const collector = new ActionParamCollector(
-      {
-        'other|click|0|move.duration': 250,
-        [actionParamKey(SELECTOR, 'click', 0, 'noWaitAfter')]: null,
-      },
-      log
-    )
-    const effective = collector.apply(SELECTOR, 'click', {
-      'move.duration': { explicit: undefined, fallback: 900 },
-      noWaitAfter: { explicit: undefined, fallback: true },
-    })
-    expect(effective).toEqual({ 'move.duration': 900, noWaitAfter: true })
-    expect(log).not.toHaveBeenCalled()
-  })
-
-  it('treats an override equal to the code value as a no-op (no log, no used)', () => {
-    const log = vi.fn()
-    const collector = new ActionParamCollector(
-      { [actionParamKey(SELECTOR, 'click', 0, 'move.duration')]: 400 },
-      log
-    )
-    const effective = collector.apply(SELECTOR, 'click', {
-      'move.duration': { explicit: 400, fallback: 900 },
-    })
-    expect(effective).toEqual({ 'move.duration': 400 })
-    expect(collector.getRecords()[0]!.params['move.duration']).toEqual({
-      value: 400,
-      source: 'explicit',
-    })
-    expect(log).not.toHaveBeenCalled()
-  })
-
-  it('accepts structured overrides (e.g. position)', () => {
-    const collector = new ActionParamCollector(
-      { [actionParamKey(SELECTOR, 'click', 0, 'position')]: { x: 1, y: 2 } },
-      vi.fn()
-    )
-    const effective = collector.apply(SELECTOR, 'click', {
-      position: { explicit: undefined, fallback: undefined },
-    })
-    expect(effective).toEqual({ position: { x: 1, y: 2 } })
   })
 })
 

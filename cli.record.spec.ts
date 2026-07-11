@@ -17,6 +17,10 @@ const mockExistsSync = vi.fn()
 const mockRealpathSync = vi.fn((path: string) => path)
 const mockMkdirSync = vi.fn()
 const mockRmSync = vi.fn()
+const mockRenameSync = vi.fn()
+const mockStatSync = vi.fn(
+  () => undefined as undefined | { isDirectory: () => boolean }
+)
 const mockReaddirSync = vi.fn(() => [] as string[])
 const mockReadFileSync = vi.fn()
 const mockReaddir = vi.fn()
@@ -180,6 +184,8 @@ vi.mock('fs', () => ({
   realpathSync: mockRealpathSync,
   mkdirSync: mockMkdirSync,
   rmSync: mockRmSync,
+  renameSync: mockRenameSync,
+  statSync: mockStatSync,
   readdirSync: mockReaddirSync,
   readFileSync: mockReadFileSync,
   default: {
@@ -188,6 +194,8 @@ vi.mock('fs', () => ({
     realpathSync: mockRealpathSync,
     mkdirSync: mockMkdirSync,
     rmSync: mockRmSync,
+    renameSync: mockRenameSync,
+    statSync: mockStatSync,
     readdirSync: mockReaddirSync,
     readFileSync: mockReadFileSync,
   },
@@ -264,6 +272,8 @@ describe('CLI', () => {
       return ''
     })
     mockStat.mockResolvedValue({ size: 4 })
+    mockStatSync.mockReturnValue(undefined)
+    mockReaddirSync.mockReturnValue([] as unknown as string[])
     mockCreateReadStream.mockImplementation(() => {
       const stream = new Readable({ read() {} })
       process.nextTick(() => {
@@ -396,6 +406,33 @@ describe('CLI', () => {
       expect(removed).not.toContain('/project/.screenci/.overlay-cache')
     })
 
+    it('keeps a recording dir data.json as last-data.json for the freshness check', async () => {
+      const { clearRecordingDirectories } = await import('./cli')
+      const dir = '/project/.screenci'
+      mockReaddirSync.mockImplementation(((path: string) =>
+        path === dir
+          ? ['My Video [en]']
+          : ['data.json', 'recording.mp4']) as never)
+      mockStatSync.mockReturnValue({ isDirectory: () => true })
+      mockExistsSync.mockImplementation((path: string) =>
+        path.endsWith('data.json')
+      )
+
+      clearRecordingDirectories(dir)
+
+      const removed = mockRmSync.mock.calls.map((call) => call[0] as string)
+      // Media goes, the event data survives (renamed so the upload phase never
+      // mistakes it for a fresh recording).
+      expect(removed).toContain(
+        '/project/.screenci/My Video [en]/recording.mp4'
+      )
+      expect(removed).not.toContain('/project/.screenci/My Video [en]')
+      expect(mockRenameSync).toHaveBeenCalledWith(
+        '/project/.screenci/My Video [en]/data.json',
+        '/project/.screenci/My Video [en]/last-data.json'
+      )
+    })
+
     it('preserves the anon trial token so one trial spans runs (cap/claim/graduate stay intact)', async () => {
       const { clearRecordingDirectories } = await import('./cli')
       const dir = '/project/.screenci'
@@ -411,138 +448,6 @@ describe('CLI', () => {
       // Wiping this would mint a fresh trial every record, bypassing the
       // one-record cap and breaking the claim / auto-graduate detection.
       expect(removed).not.toContain('/project/.screenci/anon-session.json')
-    })
-
-    it('preserves the action-params snapshot so the next run can diff editor overrides', async () => {
-      const { clearRecordingDirectories } = await import('./cli')
-      const dir = '/project/.screenci'
-      mockReaddirSync.mockReturnValue([
-        'My Video [en]',
-        'action-params.json',
-      ] as unknown as string[])
-
-      clearRecordingDirectories(dir)
-
-      const removed = mockRmSync.mock.calls.map((call) => call[0] as string)
-      expect(removed).toContain('/project/.screenci/My Video [en]')
-      // Wiping this would lose the previous run's explicit/default provenance,
-      // so override-shadowing warnings could never fire.
-      expect(removed).not.toContain('/project/.screenci/action-params.json')
-    })
-
-    it('preserves the editable-actions snapshot so the next run can diff timing overrides', async () => {
-      const { clearRecordingDirectories } = await import('./cli')
-      const dir = '/project/.screenci'
-      mockReaddirSync.mockReturnValue([
-        'My Video [en]',
-        'editable-actions.json',
-      ] as unknown as string[])
-
-      clearRecordingDirectories(dir)
-
-      const removed = mockRmSync.mock.calls.map((call) => call[0] as string)
-      expect(removed).toContain('/project/.screenci/My Video [en]')
-      // Wiping this would lose the previous run's per-field explicit
-      // provenance, so timing-override shadow warnings could never fire.
-      expect(removed).not.toContain('/project/.screenci/editable-actions.json')
-    })
-  })
-
-  describe('fetchActionOverridesEnv', () => {
-    it('returns no env without a SCREENCI_SECRET (anonymous record works)', async () => {
-      delete process.env.SCREENCI_SECRET
-      const { fetchActionOverridesEnv } = await import('./cli')
-      await expect(
-        fetchActionOverridesEnv('/project/screenci.config.ts', false)
-      ).resolves.toEqual({})
-    })
-  })
-
-  describe('fetchEditableOverridesEnv', () => {
-    function setupConfig() {
-      process.env.SCREENCI_SECRET = 'sk-test'
-      mockExistsSync.mockImplementation((path: string) =>
-        path.endsWith('screenci.config.ts')
-      )
-      mockReadFile.mockImplementation(async (path: string | URL) => {
-        if (String(path).endsWith('screenci.config.ts')) {
-          return "export default { projectName: 'Test Project' }"
-        }
-        return ''
-      })
-    }
-
-    it('returns no env without a SCREENCI_SECRET (anonymous record works)', async () => {
-      delete process.env.SCREENCI_SECRET
-      const { fetchEditableOverridesEnv } = await import('./cli')
-      await expect(
-        fetchEditableOverridesEnv('/project/screenci.config.ts', false)
-      ).resolves.toEqual({})
-    })
-
-    it('injects the fetched timeline-edits map as SCREENCI_TIMELINE_EDITS', async () => {
-      setupConfig()
-      const timelineEdits = {
-        'My video': {
-          version: 2,
-          edits: [
-            {
-              type: 'paramEdit',
-              id: 'param|input|click|getByRole(button)|0',
-              target: { key: 'input|click|getByRole(button)|0' },
-              fields: { moveDuration: 1 },
-            },
-          ],
-        },
-      }
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async () => ({
-          ok: true,
-          json: async () => ({ timelineEdits }),
-        }))
-      )
-      const { fetchEditableOverridesEnv } = await import('./cli')
-      await expect(
-        fetchEditableOverridesEnv('test-fixtures/screenci.config.ts', false)
-      ).resolves.toEqual({
-        SCREENCI_TIMELINE_EDITS: JSON.stringify(timelineEdits),
-      })
-      vi.unstubAllGlobals()
-    })
-
-    it('returns no env when the endpoint fails or has no overrides (never blocks record)', async () => {
-      setupConfig()
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async () => ({ ok: false, status: 500 }))
-      )
-      const { fetchEditableOverridesEnv } = await import('./cli')
-      await expect(
-        fetchEditableOverridesEnv('test-fixtures/screenci.config.ts', false)
-      ).resolves.toEqual({})
-
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async () => ({
-          ok: true,
-          json: async () => ({ timelineEdits: {} }),
-        }))
-      )
-      await expect(
-        fetchEditableOverridesEnv('test-fixtures/screenci.config.ts', false)
-      ).resolves.toEqual({})
-
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async () => {
-          throw new Error('offline')
-        })
-      )
-      await expect(
-        fetchEditableOverridesEnv('test-fixtures/screenci.config.ts', false)
-      ).resolves.toEqual({})
-      vi.unstubAllGlobals()
     })
   })
 
@@ -589,270 +494,6 @@ describe('CLI', () => {
         fetchWebLanguagesEnv('test-fixtures/screenci.config.ts', false)
       ).resolves.toEqual({})
       vi.unstubAllGlobals()
-    })
-  })
-
-  describe('reportEditableOverrideCollisions', () => {
-    it('prints one line per override shadowing an explicit code value', async () => {
-      const { reportEditableOverrideCollisions } = await import('./cli')
-      const snapshot = {
-        version: 1,
-        videos: {
-          'My video': [
-            {
-              key: 'input|click|getByRole(button)|0',
-              locked: true,
-              lockedFields: ['moveDuration'],
-              defaults: { moveDuration: 400, moveEasing: 'ease-in-out' },
-            },
-          ],
-        },
-      }
-      mockExistsSync.mockReturnValue(true)
-      mockReadFileSync.mockReturnValue(JSON.stringify(snapshot))
-
-      const lines: string[] = []
-      reportEditableOverrideCollisions(
-        '/project/.screenci',
-        {
-          SCREENCI_TIMELINE_EDITS: JSON.stringify({
-            'My video': {
-              version: 2,
-              edits: [
-                {
-                  type: 'paramEdit',
-                  id: 'param|input|click|getByRole(button)|0',
-                  target: { key: 'input|click|getByRole(button)|0' },
-                  fields: { moveDuration: 250, moveEasing: 'linear' },
-                },
-              ],
-            },
-          }),
-        },
-        (message) => lines.push(message)
-      )
-
-      // Only the explicit code value collides; the defaulted easing does not.
-      expect(lines).toHaveLength(1)
-      expect(lines[0]).toContain('editor override shadows code value')
-      expect(lines[0]).toContain('moveDuration')
-      expect(lines[0]).toContain('code 400')
-      expect(lines[0]).toContain('editor 250')
-      expect(lines[0]).toContain('My video')
-    })
-
-    it('prints nothing without fetched overrides or without a snapshot', async () => {
-      const { reportEditableOverrideCollisions } = await import('./cli')
-      const lines: string[] = []
-      reportEditableOverrideCollisions('/project/.screenci', {}, (message) =>
-        lines.push(message)
-      )
-      mockExistsSync.mockReturnValue(false)
-      reportEditableOverrideCollisions(
-        '/project/.screenci',
-        {
-          SCREENCI_TIMELINE_EDITS: JSON.stringify({
-            'My video': {
-              version: 2,
-              edits: [
-                {
-                  type: 'paramEdit',
-                  id: 'param|input|click|getByRole(button)|0',
-                  target: { key: 'input|click|getByRole(button)|0' },
-                  fields: { moveDuration: 250 },
-                },
-              ],
-            },
-          }),
-        },
-        (message) => lines.push(message)
-      )
-      expect(lines).toEqual([])
-    })
-  })
-
-  describe('status command', () => {
-    const SNAPSHOT = {
-      version: 1,
-      videos: {
-        'My video': [
-          {
-            selector: "getByRole('button')",
-            method: 'click',
-            occurrence: 0,
-            params: {
-              'move.duration': { value: 400, source: 'explicit' },
-            },
-          },
-        ],
-      },
-    }
-
-    function setupProject(overrides: Record<string, unknown>) {
-      process.env.SCREENCI_SECRET = 'sk-test'
-      mockExistsSync.mockImplementation((path: string) => {
-        if (path.endsWith('screenci.config.ts')) return true
-        if (path.endsWith('action-params.json')) return true
-        return false
-      })
-      mockReadFile.mockImplementation(async (path: string | URL) => {
-        if (String(path).endsWith('screenci.config.ts')) {
-          return "export default { projectName: 'Test Project' }"
-        }
-        return ''
-      })
-      mockReadFileSync.mockImplementation((path: string | URL) => {
-        if (String(path).endsWith('action-params.json')) {
-          return JSON.stringify(SNAPSHOT)
-        }
-        return ''
-      })
-      return {
-        fetchActionOverrides: vi.fn(async () => overrides),
-      }
-    }
-
-    it('status reports override kinds against the latest snapshot', async () => {
-      const client = setupProject({
-        'My video': {
-          "getByRole('button')|click|0|move.duration": 250,
-        },
-      })
-      const { printActionStatus } = await import('./cli')
-      const lines: string[] = []
-      await printActionStatus(
-        'test-fixtures/screenci.config.ts',
-        undefined,
-        client,
-        (message) => lines.push(message)
-      )
-      expect(client.fetchActionOverrides).toHaveBeenCalledWith(
-        expect.objectContaining({ projectName: 'Test Project' })
-      )
-      const report = lines.join('\n')
-      expect(report).toContain('Video: My video')
-      expect(report).toContain('override shadows explicit code value')
-      expect(report).toContain('code 400 -> editor 250')
-    })
-
-    it('status reports in-sync when the editor has no overrides', async () => {
-      const client = setupProject({})
-      const { printActionStatus } = await import('./cli')
-      const lines: string[] = []
-      await printActionStatus(
-        'test-fixtures/screenci.config.ts',
-        undefined,
-        client,
-        (message) => lines.push(message)
-      )
-      expect(lines.join('\n')).toContain('in sync')
-    })
-
-    it('status grep filters the timing-overrides block, not just action params', async () => {
-      const client = setupProject({})
-      const timelineEdits = {
-        'My video': {
-          version: 3,
-          edits: [
-            {
-              type: 'paramEdit',
-              id: 'p1',
-              target: { key: 'input|click|getByRole(button)|0' },
-              fields: { sleepBefore: 400 },
-            },
-          ],
-        },
-        'Other video': {
-          version: 3,
-          edits: [
-            {
-              type: 'paramEdit',
-              id: 'p2',
-              target: { key: 'delay|||0' },
-              fields: { sleepBefore: 200 },
-            },
-          ],
-        },
-      }
-      const fetchEditableOverrides = vi.fn(async () => ({ timelineEdits }))
-      const { printActionStatus } = await import('./cli')
-      const lines: string[] = []
-      await printActionStatus(
-        'test-fixtures/screenci.config.ts',
-        '^My',
-        client,
-        (message) => lines.push(message),
-        fetchEditableOverrides
-      )
-      const report = lines.join('\n')
-      // The grep-excluded video's edits must not leak into the report.
-      expect(report).not.toContain('Other video')
-    })
-  })
-
-  describe('reportActionOverrideCollisions', () => {
-    it('prints one line per override shadowing an explicit code value', async () => {
-      const { reportActionOverrideCollisions } = await import('./cli')
-      const snapshot = {
-        version: 1,
-        videos: {
-          'My video': [
-            {
-              selector: "getByRole('button')",
-              method: 'click',
-              occurrence: 0,
-              params: {
-                'move.duration': { value: 400, source: 'explicit' },
-                'move.easing': { value: 'ease-in-out', source: 'default' },
-              },
-            },
-          ],
-        },
-      }
-      mockExistsSync.mockReturnValue(true)
-      mockReadFileSync.mockReturnValue(JSON.stringify(snapshot))
-
-      const lines: string[] = []
-      reportActionOverrideCollisions(
-        '/project/.screenci',
-        {
-          SCREENCI_ACTION_OVERRIDES: JSON.stringify({
-            'My video': {
-              "getByRole('button')|click|0|move.duration": 250,
-              "getByRole('button')|click|0|move.easing": 'linear',
-            },
-          }),
-        },
-        (message) => lines.push(message)
-      )
-
-      // Only the explicit code value collides; the defaulted easing does not.
-      expect(lines).toHaveLength(1)
-      expect(lines[0]).toContain('editor override shadows code value')
-      expect(lines[0]).toContain("getByRole('button')")
-      expect(lines[0]).toContain('move.duration')
-      expect(lines[0]).toContain('code 400')
-      expect(lines[0]).toContain('editor 250')
-      expect(lines[0]).toContain('My video')
-    })
-
-    it('prints nothing without fetched overrides or without a snapshot', async () => {
-      const { reportActionOverrideCollisions } = await import('./cli')
-      const lines: string[] = []
-      reportActionOverrideCollisions('/project/.screenci', {}, (message) =>
-        lines.push(message)
-      )
-      mockExistsSync.mockReturnValue(false)
-      reportActionOverrideCollisions(
-        '/project/.screenci',
-        {
-          SCREENCI_ACTION_OVERRIDES: JSON.stringify({
-            'My video': { "getByRole('button')|click|0|move.duration": 250 },
-          }),
-        },
-        (message) => lines.push(message)
-      )
-      expect(lines).toEqual([])
     })
   })
 
@@ -2063,10 +1704,15 @@ describe('CLI', () => {
       expect(loggerWarnSpy).toHaveBeenCalledWith(
         'Some recordings failed, uploading successful videos only.'
       )
-      expect(mockRmSync).toHaveBeenCalledWith(
-        expect.stringContaining('/.screenci/demo-video'),
-        { recursive: true, force: true }
+      // Cleanup removes the uploaded media but keeps data.json for the next
+      // dev session's freshness check.
+      expect(mockReaddirSync).toHaveBeenCalledWith(
+        expect.stringContaining('/.screenci/demo-video')
       )
+      const removed = mockRmSync.mock.calls.map((call) => String(call[0]))
+      expect(
+        removed.some((path) => path.endsWith('demo-video/data.json'))
+      ).toBe(false)
     })
 
     it('skips upload after partial failure with all-or-nothing policy, then still fails', async () => {
@@ -2974,8 +2620,12 @@ describe('CLI', () => {
       )
     })
 
-    it('removes uploaded recording directories after successful upload', async () => {
+    it('removes uploaded media but keeps data.json after successful upload', async () => {
       mockReaddir.mockResolvedValue(['demo-video'])
+      mockReaddirSync.mockReturnValue([
+        'data.json',
+        'recording.mp4',
+      ] as unknown as string[])
       mockReadFile.mockImplementation(async (path: string | URL) => {
         const pathString = String(path)
         if (pathString.endsWith('package.json')) {
@@ -3042,10 +2692,15 @@ describe('CLI', () => {
         failedVideoMessages: [],
         plan: null,
       })
-      expect(mockRmSync).toHaveBeenCalledWith('/repo/.screenci/demo-video', {
-        recursive: true,
-        force: true,
-      })
+      // Media is removed; data.json survives so the next dev session can skip
+      // re-recording when the source is unchanged.
+      expect(mockRmSync).toHaveBeenCalledWith(
+        '/repo/.screenci/demo-video/recording.mp4',
+        { recursive: true, force: true }
+      )
+      const removed = mockRmSync.mock.calls.map((call) => call[0] as string)
+      expect(removed).not.toContain('/repo/.screenci/demo-video')
+      expect(removed).not.toContain('/repo/.screenci/demo-video/data.json')
     })
 
     it('keeps uploaded recording directories when DEBUG=true', async () => {

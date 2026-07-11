@@ -249,7 +249,7 @@ export const docsManifest = [
     navLabel: 'Anonymous trial',
     title: 'Anonymous Trial',
     description:
-      'Record without an account: what the anonymous trial allows (including a preview of expressive narration and multiple languages), its limits, and what happens to that content after you sign up.',
+      'Record without an account: what the anonymous trial allows (including expressive narration and a preview of multiple languages), its limits, and what happens to that content after you sign up.',
     prev: 'docs/guides/organisation',
     next: 'docs/reference/cli',
   },

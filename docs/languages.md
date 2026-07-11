@@ -360,9 +360,7 @@ These narrate with both the consistent (default) and expressive models:
 With the built-in voices these narrate only with the expressive model, which is
 their only built-in voice, so it is **selected automatically on every plan**: you
 do not need to set `modelType`, and Free and Starter can narrate one of these
-languages just like any other. (Choosing the expressive model as a tone upgrade
-for a language that _also_ has a consistent voice is the part that requires the
-Business tier, along with `style` prompts.) They also work with your own
+languages just like any other. They also work with your own
 ElevenLabs or sample-cloned voice, and for non-narration features (such as
 locale selection) they behave like any other key.
 

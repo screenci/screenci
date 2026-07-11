@@ -311,7 +311,7 @@ Behavior:
 - uploads only the recordings requested by this run (for example the videos matched by `--grep` or `--languages`), with or without `SCREENCI_SECRET`
 - prints a results URL only when the requested recordings uploaded successfully. If a requested video is missing its `recording.mp4` or another upload failure occurs, `record` exits non-zero, does not save `.screenci/last-record.json`, and does not print a success URL for unrelated output
 - prints any informational notices returned by the service in cyan after upload (occasional, non-error status messages such as maintenance or timing notes). These never affect the exit code
-- new accounts start on the Free plan automatically (no plan selection step). Free exports include a ScreenCI watermark; paid plans remove it and raise export and active-video limits, and unlock multiple languages plus expressive tone control
+- new accounts start on the Free plan automatically (no plan selection step). Free exports include a ScreenCI watermark; paid plans remove it and raise export and active-video limits, and unlock multiple languages
 
 Relevant options:
 

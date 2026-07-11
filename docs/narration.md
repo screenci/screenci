@@ -27,11 +27,9 @@ exception: for Russian (`ru`), the built-in choices are `Ava`, `Daniel`, `Emma`,
 `Leo`, `Lily`, `Max`, `Miles`, and `Nora`. The built-in fallback voice is `Ava`,
 so an unconfigured video stays valid there too.
 
-`style` prompts require the Business tier, as does choosing `modelType:
-'expressive'` for a language that also has a consistent voice (a tone upgrade).
+`style` prompts and `modelType: 'expressive'` are available on every plan.
 A language whose only built-in voice is the expressive model uses it
-automatically on every plan, so Free and Starter can narrate it without setting
-`modelType`.
+automatically, so you can narrate it without setting `modelType`.
 
 Recording yourself is always possible on every tier: you can supply your own
 recorded audio for any cue with a [`media` file](#balance-narration-volume), or
@@ -343,8 +341,7 @@ video.narration({
 })
 ```
 
-The German entry above is a Business-tier example because it uses expressive
-narration. A per-cue voice can also carry a `seed` (an integer mixed into the
+A per-cue voice can also carry a `seed` (an integer mixed into the
 audio cache key) to force regeneration or pin a specific take.
 
 A per-cue `voice` is the most specific level of the cascade, so you can also
@@ -450,10 +447,9 @@ need to choose between consistency and expressiveness.
 
 - `consistent` is the safer default for docs and product walkthroughs
 - `expressive` is useful when you want a more natural, less uniform delivery
-- choosing `expressive` for a language that also has a consistent voice, and
-  `style` prompts, require the Business tier
+- both model types and `style` prompts are available on every plan
 - a language whose only built-in voice is the expressive model uses it
-  automatically on every plan, no `modelType` needed
+  automatically, no `modelType` needed
 
 ## Inline speech markup
 
@@ -522,9 +518,8 @@ your own ElevenLabs API key.
 
 The consistent model is the default, and the expressive model is selected
 automatically for a language that has no consistent voice (its only built-in
-option), on every plan. Choosing the expressive model as a tone upgrade for a
-language that also has a consistent voice, and `style` prompts, require the
-Business tier.
+option). Choosing the expressive model as a tone upgrade, and `style` prompts,
+are available on every plan.
 
 Free and Starter also render a single narration language across the whole
 organization; multiple languages require Business. See

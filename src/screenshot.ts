@@ -59,7 +59,7 @@ import {
   buildValues,
   type Values,
 } from './localizeRuntime.js'
-import { parseActionOverrides, parseValuesOverrides } from './runtimeMode.js'
+import { parseValuesOverrides } from './runtimeMode.js'
 import { ActionParamCollector } from './actionParams.js'
 import {
   combineRecordOptionsLayers,
@@ -303,9 +303,9 @@ const _screenshotBase = base.extend<
         renderOptions: true,
         recordOptions: true,
       },
-      // Action-parameter provenance for this capture, with the web editor's
-      // per-action overrides (fetched by the CLI, injected via env) applied.
-      new ActionParamCollector(parseActionOverrides()?.[videoName] ?? {})
+      // Action-parameter provenance for this capture (values and their
+      // explicit/default provenance, straight from code).
+      new ActionParamCollector()
     )
     recorder.setActiveLanguage(_screenciLanguage ?? null)
     // Declared `values` fields (and the active language's seeds) emitted once at

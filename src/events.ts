@@ -25,13 +25,7 @@ import {
   type ActionParamSpec,
 } from './actionParams.js'
 import type { EditableMeta } from './editableDescriptor.js'
-import { stableEditableKey } from './editableDescriptor.js'
-import {
-  OverrideReportBuilder,
-  resolveTimelineEditsForVideo,
-  splitEdits,
-  type OverrideReportItem,
-} from './timelineEdits.js'
+import { hashSourceFile } from './recordingFreshness.js'
 import type { VoiceKey } from './voices.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { getGitMetadata } from './git.js'
@@ -1198,6 +1192,13 @@ export type RecordingMetadata = {
   availableLanguages?: string[]
   sourceFilePath?: string
   /**
+   * SHA-256 of the test source file this recording was produced from. Together
+   * with per-event editIds it lets `screenci dev` skip re-recording when the
+   * source is unchanged (see recordingFreshness.ts). Multiple videos from the
+   * same file share the hash.
+   */
+  sourceHash?: string
+  /**
    * Which parts of this recording are web-editor configurable. Every recording
    * is web-editable, so `renderOptions`/`recordOptions` are always set;
    * `narration` is set when the recording contains name-only narration cues;
@@ -1289,12 +1290,6 @@ export type RecordingData = {
    * present the parameters for editing and to key its overrides.
    */
   actionParams?: ActionParamRecord[]
-  /**
-   * One item per web-editor override this recording tried to apply, with its
-   * outcome (applied, fallback, shadowed-code, or skipped with a reason). The
-   * backend surfaces these in the editor so no edit ever vanishes silently.
-   */
-  overrideReport?: OverrideReportItem[]
 }
 
 /** Extra, output-specific fields written into `data.json`. */
@@ -1605,13 +1600,6 @@ export class EventRecorder implements IEventRecorder {
   private readonly actionParams: ActionParamCollector
   /** Monotonic counter for stable `KeyPressEvent.id` values. */
   private keyPressCounter = 0
-  /**
-   * Report collector shared with the runtime (see runtimeContext.editable):
-   * runtime param edits and write-time placed events land in one report,
-   * embedded into data.json. A fresh builder is created at write time when
-   * none was bound.
-   */
-  private overrideReport: OverrideReportBuilder | null = null
 
   constructor(
     renderOptions?: RenderOptions,
@@ -1639,10 +1627,6 @@ export class EventRecorder implements IEventRecorder {
     editId?: string
   ): Record<string, unknown> {
     return this.actionParams.apply(selector, method, spec, editId)
-  }
-
-  setOverrideReport(report: OverrideReportBuilder): void {
-    this.overrideReport = report
   }
 
   registerVoiceForLang(_lang: string, _meta: VoiceLanguageMeta): void {}
@@ -2647,50 +2631,6 @@ export class EventRecorder implements IEventRecorder {
           )
         : this.events
 
-    // Timeline edits: the web editor's edits injected by the CLI via
-    // SCREENCI_TIMELINE_EDITS. Only param edits apply at record time (they
-    // change real waits, applied at runtime by editableRuntime). The codify
-    // records (media/zoom/gap) are never materialized here: `screenci sync`
-    // writes them into code and normal recording emits them. Every param-edit
-    // outcome lands in the override report; nothing fails the recording and
-    // nothing is skipped silently.
-    const report = this.overrideReport ?? new OverrideReportBuilder()
-    const unified = resolveTimelineEditsForVideo(videoName)
-    if (unified !== null) {
-      for (const invalid of unified.invalid) {
-        report.add({
-          editId: invalid.id,
-          channel: 'codifyEdit',
-          status: 'skipped',
-          reason: `invalidRecord:${invalid.reason}`,
-        })
-      }
-    }
-    const webEdits = unified !== null ? splitEdits(unified.edits) : null
-    if (webEdits !== null) {
-      // Param edits whose target action was never recorded this run: report
-      // them so the editor can show the edit went unmatched (stale key).
-      const recordedKeys = new Set<string>()
-      for (const event of serializedEvents) {
-        const meta = (event as { editable?: EditableMeta }).editable
-        if (meta?.descriptor !== undefined) {
-          recordedKeys.add(stableEditableKey(meta.descriptor))
-        }
-      }
-      for (const edit of webEdits.paramEdits) {
-        if (recordedKeys.has(edit.target.key)) continue
-        report.add({
-          editId: edit.id,
-          channel: 'paramEdit',
-          status: 'skipped',
-          subject: edit.target.key,
-          reason: `targetMissing:${edit.target.key}`,
-        })
-      }
-    }
-    report.logSummary(videoName)
-    const overrideReportItems = report.items()
-
     const languageSet = new Set<string>()
     for (const event of this.events) {
       if (event.type === 'cueStart') {
@@ -2762,6 +2702,13 @@ export class EventRecorder implements IEventRecorder {
           }
         : undefined
 
+    // Source hash: lets the next dev session skip re-recording when the test
+    // file is unchanged and every editable action already has an editId.
+    const sourceHash =
+      sourceFilePath !== undefined
+        ? await hashSourceFile(sourceFilePath)
+        : undefined
+
     const actionParamRecords = this.actionParams.getRecords()
     const data: RecordingData = {
       events: serializedEvents,
@@ -2776,15 +2723,13 @@ export class EventRecorder implements IEventRecorder {
       ...(actionParamRecords.length > 0 && {
         actionParams: actionParamRecords,
       }),
-      ...(overrideReportItems.length > 0 && {
-        overrideReport: overrideReportItems,
-      }),
       metadata: {
         videoName,
         screenciVersion: SCREENCI_VERSION,
         ...(languages !== undefined && { languages }),
         ...(availableLanguages !== undefined && { availableLanguages }),
         ...(sourceFilePath !== undefined && { sourceFilePath }),
+        ...(sourceHash !== undefined && { sourceHash }),
         ...(git.commit !== undefined && { commit: git.commit }),
         ...(git.isDirty !== undefined && { isDirty: git.isDirty }),
         ...(studio !== undefined && { studio }),

@@ -17,8 +17,6 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | `screenci record [playwrightArgs]` | Record videos and upload results when configured         |
 | `screenci dev`                     | Connect this machine to the editor for on-demand records |
 | `screenci info`                    | Print the last record run's URLs and render status       |
-| `screenci status`                  | Compare Editor action edits with the latest recorded run |
-| `screenci sync`                    | Apply Editor edits to the test sources (static analysis) |
 | `screenci make-public <videoId>`   | Enable public delivery for a video                       |
 | `screenci make-private <videoId>`  | Disable public delivery for a video                      |
 | `screenci delete <videoId>`        | Permanently delete a video and its renders               |
@@ -355,16 +353,29 @@ Options:
 - `-c, --config <path>`: path to the ScreenCI config file.
 - `--token <token>`: personal dev token. Defaults to `SCREENCI_DEV_TOKEN` from
   your project env file.
-- `--sync`: auto-apply web editor edits to the recording sources while
-  listening. Every few seconds the listener checks for new edits, stamps
-  missing `editId` slugs (see [`screenci sync`](#screenci-sync)), and applies
-  what sync can apply mechanically; a video whose
-  pending edits were all applied gets its web edits cleared automatically, so
-  the next record runs purely from code. Edits whose section is locked (an
-  unstamped action, a loop repeat, or a call inside control flow) are left in
-  the editor and reported in the log. Auto-sync pauses while a triggered
-  record is running.
+- `-g, --grep <pattern>`: only manage videos whose title matches this pattern
+  (the same filter as Playwright's `--grep`). The startup check and any
+  startup records are limited to the matching videos.
+- `--force-record`: re-record every managed video at startup even when the
+  kept recordings are up to date.
+- `--record-kill-window <seconds>`: while connected, a running record younger
+  than this is killed and replaced when a newer record request arrives; an
+  older one finishes first and the new request runs right after (only the
+  latest queued request is kept). Default: 10.
 - `-v, --verbose`: verbose output.
+
+Startup check: `screenci dev` keeps each recording's `data.json` on disk after
+upload, along with a hash of the test source file. On startup it compares that
+hash with the current source and verifies every editable action carries an
+`editId`. Up-to-date videos skip recording entirely; anything stale gets its
+missing `editId` slugs stamped into the source and is re-recorded as a preview
+(no render) before the session starts serving the editor.
+
+Editor codegen: while connected, every edit made in the web editor is sent to
+this machine as a codegen request and written directly into the
+`.screenci.ts` source (the code is the single source of truth). Edits that
+change recorded behavior additionally trigger an automatic preview record.
+An edit the codegen cannot apply is reported back and the editor reverts it.
 
 Setup:
 
@@ -516,85 +527,6 @@ reaches `finished` (or gate your pipeline on `failed`).
 (for example a fresh checkout that has never run `screenci record`), `info` does
 not fail. It simply omits `latestRecordId` and the `latestRecord` fields and
 prints the project-wide listing with `static` URLs only.
-
-## `screenci status`
-
-Fetches the web Editor's current action-parameter edits and compares them with
-the latest recorded run's snapshot (`.screenci/action-params.json`). Reports
-per video which overrides shadow explicitly code-set values, which change
-defaulted values, which match code (no effect), and which are stale because the
-action no longer exists in the latest recording.
-
-Options:
-
-- `-c, --config <path>`: path to `screenci.config.ts`
-- `-g, --grep <regex>`: only include videos whose name matches the regular
-  expression (same semantics as Playwright's `--grep`)
-
-Requires `SCREENCI_SECRET`. See
-[Action parameter tracking and overrides](/docs/editor#action-parameter-tracking-and-overrides)
-for the full model.
-
-## `screenci sync`
-
-Applies the web Editor's edits directly to your `.screenci.ts` sources using
-static analysis (the TypeScript parser), no agent involved.
-
-Before applying anything, `sync` stamps a stable identity onto every recorded
-action that lacks one: a human-readable `editId` slug (`click1`, `fill2`,
-`autoZoom1`) inserted into the call's options. From then on edits locate their
-call site by that exact slug, so refactors, moved lines, and locator changes
-never break the mapping. Slugs are allocated from `.screenci/edit-ids.json`
-(commit it), numbers are never reused, and stamped ids are never removed.
-Actions that run inside a loop cannot carry a per-execution identity and are
-skipped (their edits stay web-runtime-only).
-
-It can:
-
-- change, add, or remove explicit action options (for example
-  `move.duration` on a `.click(...)`)
-- insert `await page.waitForTimeout(...)` for start-time edits
-- place web-authored effects into the linear timeline: a narration cue /
-  overlay / audio start in the gap after an action, an `autoZoom(...)` bracket
-  over a run of interactions, a `hide(...)` / `speed(...)` / `time(...)` span,
-  or an instant `moveNarration(...)` / `resizeRecording(...)` /
-  `setBackground(...)` point (with the needed imports and gap `waitForTimeout`
-  sleeps)
-- codify Editor render/record option edits into the video's builder chain,
-  updating an existing `video.renderOptions({...})` / `video.recordOptions({...})`
-  call in place (merging the changed keys) or inserting one before the video's
-  `('Name', fn)` call when absent
-- apply editId renames made in the Editor
-
-Re-running `sync` is safe. Applying the same edits again is a no-op: an effect
-already placed after its action is updated in place, never stacked, so the file
-stops changing once code and Editor agree. Changing only an effect's lead sleep
-rewrites the existing `waitForTimeout(...)` rather than adding another. And when
-an effect is removed in the Editor, `sync` deletes the call it authored and
-re-coalesces the gap sleep it split, so no orphaned "ghost" sleep is left
-behind. This cleanup runs only for the point effects it can identify
-unambiguously (narration cues, overlays, audio starts, and
-`moveNarration`/`resizeRecording`/`setBackground` points); a removed
-`autoZoom`/`hide`/`speed`/`time` wrap is left in place for you to delete by hand
-rather than risk unwrapping code you may have since edited.
-
-Every edit locates its call site by the exact `editId` slug: there is no
-heuristic matching, so an applied edit is never a guess. An edit either applies
-by editId or its section is locked and reported as an unappliable count to edit
-by hand: an action that has not been stamped yet (record once, then sync), a
-loop execution, or a call inside control flow (`if`/`for`/...). There is no
-agent-prompt fallback.
-
-By default `screenci sync` is a dry run that prints per-file diffs. Options:
-
-- `-w, --write`: save the changes to disk
-- `--reset` (with `--write`): clear the web timeline edits of every video
-  whose pending edits were all applied (like `screenci reset-web-edits`, per
-  video)
-- `-c, --config` and `-g, --grep` as in `screenci status`
-
-Requires `SCREENCI_SECRET` and a resolvable `typescript` installation (any
-ScreenCI project has one).
 
 ## `screenci make-public <videoId>`
 

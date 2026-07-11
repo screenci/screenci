@@ -120,8 +120,8 @@ For faster, smoother recordings:
 
 ## Asset files do not need to be committed
 
-Overlay images and videos, background audio, and narration media (the files you
-reference with `video.overlays(...)`, `video.audio(...)`, and narration `media`
+Overlay images and videos and narration media (the files you
+reference with `video.overlays(...)` and narration `media`
 cues) are uploaded to ScreenCI the first time you record with the files present. On
 later runs they are reused: ScreenCI matches each asset to the version uploaded
 for the same video (by file path, or by overlay name) and reuses it.
@@ -141,7 +141,7 @@ If a referenced file is missing locally **and** no previously uploaded version
 exists for that video (for example a brand new overlay that has never been
 recorded with its file present), the upload fails with a clear message telling
 you to record once with the file present, or to commit it. This keeps a video
-from silently rendering without an overlay, audio track, or narration clip.
+from silently rendering without an overlay or narration clip.
 
 Notes:
 
@@ -179,7 +179,7 @@ a short-lived token scoped to only `Actions: write` on the repositories you pick
 Once connected, you can dispatch the recording workflow two ways:
 
 - **From the app:** click **Record all** on the project page. To record a single
-  video or screenshot, use its **Record** button (on the project page or its
+  video, use its **Record** button (on the project page or its
   detail page).
 - **From the CLI:** run [`screenci record --remote`](/docs/reference/cli#-remote).
   It resolves the project from `SCREENCI_SECRET` and triggers the workflow without
@@ -187,7 +187,7 @@ Once connected, you can dispatch the recording workflow two ways:
 
 ### Targeted recordings
 
-You can record only some videos or screenshots instead of all of them, from
+You can record only some videos instead of all of them, from
 either surface:
 
 - **From the app:** the per-item **Record** buttons.

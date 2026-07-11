@@ -10,7 +10,7 @@ retune voices, and adjust overlays and render options in the browser, then ship
 a new version themselves.
 
 **Everything is editable by default.** Every feature a video declares
-(narration, values, overlays, audio, languages, render and record options) can
+(narration, overlays, languages, render and record options) can
 be edited in the web app. There is nothing to opt in to; the only choice you
 make in code is where the content starts:
 
@@ -27,10 +27,10 @@ make in code is where the content starts:
   as a one-off, overriding anything for a single export. One-off exports are
   not saved and do not change what future uploads render.
 
-The `video.narration`, `video.values`, `video.overlays`, and `video.audio`
+The `video.narration` and `video.overlays`
 declarations type the matching fixtures to exactly those names, so a typo is a
-compile error. The fixtures (`narration`, `values`, `overlays`, `audio` in the
-test body) expose the controllers and values regardless of which form declared
+compile error. The fixtures (`narration` and `overlays` in the
+test body) expose the controllers regardless of which form declared
 them.
 
 The declaration forms at a glance:
@@ -40,13 +40,10 @@ import { video } from 'screenci'
 
 // Blank editor-owned names: the names live in code, the content in Editor.
 video.narration(['intro', 'outro'])
-video.values(['cta'])
 video.overlays(['intro', 'logo'])
-video.audio(['theme', 'sting'])
 
 // Plain objects: code values, used at record time, editable in the web app.
 video.narration({ en: { intro: 'Welcome', outro: 'Thanks' } })
-video.values({ cta: 'Get started' })
 
 // Languages: hand the whole set to the web, or seed an initial set.
 video.languages() // web-owned set
@@ -66,9 +63,7 @@ video.recordOptions({ fps: 30 })
 - [how saved edits and one-off renders differ](#saved-edits-vs-one-off-renders)
 - [how to manage narration from Editor](#editor-narration-from-code)
 - [how to use uploaded media as narration](#narration-media-from-editor)
-- [how to manage on-screen values from Editor](#editor-values-from-code)
 - [how to manage overlays from Editor](#editor-overlays-from-code)
-- [how to manage background audio from Editor](#editor-audio-from-code)
 - [how render and record options combine with web edits](#editor-render-and-record-options)
 - [how to manage languages from Editor](#editor-languages-from-code)
 - [how to place effects from code](#effects-in-code-block-wrappers-and-gap-sleeps)
@@ -81,7 +76,7 @@ video.recordOptions({ fps: 30 })
 ## Editing in Editor
 
 Open a video in the web app and choose **Open in Editor**. Editor shows the
-narration, voices, overlays, audio, and render options the video uses. Every
+narration, voices, overlays, and render options the video uses. Every
 item is editable: names declared as a blank array start empty and wait for
 content, and values declared in code show their current code value as the
 starting point.
@@ -292,7 +287,7 @@ Record options (aspect ratio, quality, fps) work the same way but change the
 captured viewport and encode, so Editor edits to them take effect on the
 **next recording**, not when you click **Export**. They are fetched before the
 recording runs and applied to that capture (later uploads reuse the saved
-values). Like the Values section, the Recording options section shows this
+values). The Recording options section shows this
 reminder inline with a **Re-record this video** button:
 
 ```ts
@@ -549,16 +544,15 @@ Every recorded action carries identity metadata, so the timeline covers:
   duration), `page.waitForTimeout()` delays, and named `hide()` spans
   (visible, read-only). `speed`, `time` and `hide` all accept an optional
   name as their first argument for a stable identity.
-- **Presentation**: `moveNarration`/`resizeNarration` (corner, size,
-  duration), `resizeRecording`/`hideRecording`/`showRecording` (size,
-  duration), `setBackground` (css, duration), and `redact()` mask styling
+- **Presentation**: `resizeRecording`/`hideRecording`/`showRecording` (size,
+  duration) and `redact()` mask styling
   (color, radius, css).
 - **Hard borders**: `page.goto` navigations are recorded and shown as
   full-height borders. Their duration is app time: never editable, and
   timing edits cannot cross them.
 
 The editor can also ADD events without code changes: hides, speedups, time
-remaps, background changes, narration-box changes, and recording changes,
+remaps, and recording changes,
 each placed by call position (after a known action, or bracketing a run of
 actions) with any gap expressed as a `waitForTimeout` sleep.
 
@@ -585,7 +579,7 @@ values, record options, web-added languages).
 
 Every declared language set is web-owned: the recorded set is the **union** of
 the web app's selection, the code seed, and any language keys used by
-per-language features (narration, values, overlays, audio). Call
+per-language features (narration, overlays). Call
 `video.languages()` with no argument to hand the whole set to the web app. The
 **Languages** section on the Editor page shows the current set and lets you add
 or remove languages:
@@ -628,7 +622,7 @@ here.
 Adding a language triggers a re-record: the Languages section shows a
 **Re-record this video** button that queues a new recording pass from the web
 when the project is connected to GitHub. The new pass reuses the same Editor
-narration, overlays, and audio configuration. Removing a language takes effect
+narration and overlays configuration. Removing a language takes effect
 on the next upload without re-recording. Languages seeded in code or carried by
 per-feature language keys stay in the recorded set even if removed from the web
 selection, since the recorded set is the union of all three sources.

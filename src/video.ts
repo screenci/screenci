@@ -34,6 +34,7 @@ import { resetCueChain } from './cue.js'
 import { setActiveCueRecorder } from './cue.js'
 import {
   createVideoBuilder,
+  type HiddenFeatureMethods,
   type MediaBuilder,
   type ResolvedRecordingLocalize,
 } from './builder.js'
@@ -1265,14 +1266,17 @@ interface Video extends VideoCallSignatures {
    */
   narration: MediaBuilder<VideoArgs>['narration']
 
-  /** Declare on-screen values fields (array = blank names, object = code values). */
-  values: MediaBuilder<VideoArgs>['values']
+  // Hidden for release: the on-screen values and background audio features are
+  // unfinished. The runtime methods stay attached; re-enable by uncommenting
+  // (see HiddenFeatureMethods in builder.ts).
+  // /** Declare on-screen values fields (array = blank names, object = code values). */
+  // values: MediaBuilder<VideoArgs>['values']
 
   /** Declare overlays (array = blank names, object = code values/factories). */
   overlays: MediaBuilder<VideoArgs>['overlays']
 
-  /** Declare background-audio tracks (array = blank names, object = code values). */
-  audio: MediaBuilder<VideoArgs>['audio']
+  // /** Declare background-audio tracks (array = blank names, object = code values). */
+  // audio: MediaBuilder<VideoArgs>['audio']
 
   /**
    * Declare the recorded language set / capture mode. The web app owns the set;
@@ -1395,9 +1399,15 @@ const _rootBuilder = createVideoBuilder<VideoArgs>(
   _videoBase as unknown as Parameters<typeof createVideoBuilder>[0]
 )
 video.narration = _rootBuilder.narration
-video.values = _rootBuilder.values
 video.overlays = _rootBuilder.overlays
-video.audio = _rootBuilder.audio
+// values() and audio() are hidden from the public type for release but stay
+// attached at runtime (see HiddenFeatureMethods in builder.ts).
+;(video as unknown as HiddenFeatureMethods<VideoArgs>).values = (
+  _rootBuilder as unknown as HiddenFeatureMethods<VideoArgs>
+).values
+;(video as unknown as HiddenFeatureMethods<VideoArgs>).audio = (
+  _rootBuilder as unknown as HiddenFeatureMethods<VideoArgs>
+).audio
 video.languages = _rootBuilder.languages
 video.recordOptions = _rootBuilder.recordOptions
 video.renderOptions = _rootBuilder.renderOptions

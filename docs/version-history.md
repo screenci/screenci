@@ -6,9 +6,9 @@ serves and what embeds display. Version history lets you keep older renders
 around, compare them, and roll back by selecting a previous one, without
 re-recording.
 
-> Version history is a paid feature. On the Free plan a video keeps only its
-> single latest version, so there is nothing to roll back to. Any paid plan
-> retains multiple versions per language.
+> Every plan keeps the 5 most recent non-selected versions per language (plus the
+> selected one), so you always have a recent history to compare against and roll
+> back to.
 
 #### You will learn
 
@@ -37,7 +37,13 @@ re-recording, no re-rendering.
 
 ## Retention
 
-Paid plans keep multiple non-selected versions per language so you always have a
-recent history to compare against and roll back to. When the number of kept
-versions is exceeded, the oldest non-selected versions are pruned first; the
-selected version is never pruned.
+Every plan keeps the 5 most recent non-selected versions per language so you
+always have a recent history to compare against and roll back to. When that count
+is exceeded, the oldest non-selected versions are pruned first; the selected
+version is never pruned.
+
+Newly rendered versions have a short grace period (about an hour) during which
+they are never pruned, even beyond the kept count, so a burst of quick
+re-renders is not deleted out from under you. Once they age past the grace
+period they are swept automatically back down to the kept count. To keep a
+render forever, download it via the authenticated `screenci info` download URLs.

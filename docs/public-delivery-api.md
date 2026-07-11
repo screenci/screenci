@@ -207,14 +207,9 @@ selected version, which always exists, so use it whenever you just want "the lat
 ### Version retention
 
 Renders do not live forever. ScreenCI keeps the currently selected version plus
-a bounded number of recent versions per language, then prunes the rest. The
-budget depends on your plan:
-
-| Plan     | Recent versions kept per language (besides the selected one) |
-| -------- | ------------------------------------------------------------ |
-| Free     | 3                                                            |
-| Starter  | 5                                                            |
-| Business | 50                                                           |
+the 5 most recent non-selected versions per language, on every plan, then prunes
+the rest. Freshly created versions are given a short grace period before they can
+be pruned, so a burst of quick re-renders is never deleted out from under you.
 
 Once a run is pruned, its record-pinned URLs `404` (see above).
 

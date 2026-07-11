@@ -95,8 +95,8 @@ own render, or `404`s once the run is cleaned up. It never falls back to a
 different version, and it always honors the public switch, so it also `404`s if
 the video is made private.
 
-ScreenCI keeps only a bounded number of versions per language (3 on Free, 5 on
-Starter, 50 on Business), so older runs are eventually pruned. To keep a specific
+ScreenCI keeps only a bounded number of versions per language (the 5 most recent
+non-selected versions on every plan), so older runs are eventually pruned. To keep a specific
 run forever, download it via the authenticated URLs in
 [`screenci info`](/docs/reference/cli#screenci-info), described under
 [Keep a render forever](/docs/reference/public-delivery-api#keep-a-render-forever).

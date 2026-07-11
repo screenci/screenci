@@ -831,10 +831,12 @@ async function uploadRecordingCandidate(
             ...(process.env['SCREENCI_PREVIEW_ONLY'] === '1'
               ? { previewOnly: true }
               : {}),
-            // Preview-first: renders dispatch only when publishing. Set by
-            // `record --publish` (or --render); env so the flag survives the
-            // Playwright child process boundary.
-            ...(process.env['SCREENCI_PUBLISH'] === '1'
+            // Preview-first: renders dispatch only on export. Set by
+            // `record --export` (or the deprecated --publish/--render
+            // aliases); env so the flag survives the Playwright child process
+            // boundary. The wire field stays `publish` for backend
+            // compatibility with older CLIs.
+            ...(process.env['SCREENCI_EXPORT'] === '1'
               ? { publish: true }
               : {}),
             ...(isScreenshot ? { expectedScreenshotCount } : {}),
@@ -4441,10 +4443,10 @@ export async function main() {
         'render (fast editor sync; render later with a normal record)'
     )
     .option(
-      '--publish',
-      'render a finished video from this recording (alias: --render). ' +
-        'Without it the upload refreshes the live preview only; rendered ' +
-        'minutes are spent on publish.'
+      '--export',
+      'export a finished video from this recording. Without it the upload ' +
+        'refreshes the live preview only; export minutes are spent on ' +
+        'export. (deprecated aliases: --publish, --render)'
     )
     .allowUnknownOption(true)
     .action(async () => {
@@ -4454,9 +4456,9 @@ export async function main() {
         // survives the Playwright child process boundary.
         process.env['SCREENCI_SKIP_RENDER'] = '1'
       }
-      if (parsed.publish) {
-        // Preview-first: uploads only render when explicitly published.
-        process.env['SCREENCI_PUBLISH'] = '1'
+      if (parsed.exportVideo) {
+        // Preview-first: uploads only render when explicitly exported.
+        process.env['SCREENCI_EXPORT'] = '1'
       }
 
       // `--remote` is a pure dispatch: it fires the project's GitHub Actions
@@ -4811,14 +4813,14 @@ export function parseRecordCliArgs(args: string[]): {
   remote: boolean
   languages: string | undefined
   noRender: boolean
-  publish: boolean
+  exportVideo: boolean
   otherArgs: string[]
 } {
   let configPath: string | undefined
   let verbose = false
   let remote = false
   let noRender = false
-  let publish = false
+  let exportVideo = false
   let languages: string | undefined
   const otherArgs: string[] = []
 
@@ -4854,10 +4856,15 @@ export function parseRecordCliArgs(args: string[]): {
     } else if (arg === '--no-render') {
       // screenci-only flag: upload the recording without dispatching renders.
       noRender = true
-    } else if (arg === '--publish' || arg === '--render') {
-      // screenci-only flag: render a finished video (preview-first default
-      // otherwise refreshes the live preview only).
-      publish = true
+    } else if (
+      arg === '--export' ||
+      arg === '--publish' ||
+      arg === '--render'
+    ) {
+      // screenci-only flag: export a finished video (preview-first default
+      // otherwise refreshes the live preview only). --publish and --render
+      // are deprecated aliases kept for older scripts.
+      exportVideo = true
     } else {
       otherArgs.push(arg)
     }
@@ -4869,7 +4876,7 @@ export function parseRecordCliArgs(args: string[]): {
     remote,
     languages,
     noRender,
-    publish,
+    exportVideo,
     otherArgs,
   }
 }

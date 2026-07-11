@@ -23,8 +23,8 @@ make in code is where the content starts:
   editable in the web app: once a value is edited in Editor, the Editor value
   wins over the code value on every later upload.
 
-- **Render a one-off version.** Any video can be opened in Editor and rendered
-  as a one-off, overriding anything for a single render. One-off renders are
+- **Export a one-off version.** Any video can be opened in Editor and exported
+  as a one-off, overriding anything for a single export. One-off exports are
   not saved and do not change what future uploads render.
 
 The `video.narration`, `video.values`, `video.overlays`, and `video.audio`
@@ -62,7 +62,7 @@ video.recordOptions({ fps: 30 })
 
 #### You will learn
 
-- [how to edit and render a video in Editor](#editing-in-editor)
+- [how to edit and export a video in Editor](#editing-in-editor)
 - [how saved edits and one-off renders differ](#saved-edits-vs-one-off-renders)
 - [how to manage narration from Editor](#editor-narration-from-code)
 - [how to use uploaded media as narration](#narration-media-from-editor)
@@ -96,9 +96,9 @@ saved**. The saved set is this video's Editor configuration, and it is applied
 automatically to every later upload (see [Saved edits vs one-off
 renders](#saved-edits-vs-one-off-renders)).
 
-Pick a language at the top, then choose **Render** to render a new version in
-that language from the same recording. Rendering is per language: switch the
-language and render again to update another localized version.
+Pick a language at the top, then choose **Export** to export a new version in
+that language from the same recording. Exports are per language: switch the
+language and export again to update another localized version.
 
 Editor versions are marked with an **Editor** badge in the version list, and the
 version page shows exactly which values were changed compared to the
@@ -119,7 +119,7 @@ Editor separates changes that stick from changes that do not:
   ```
 
 - **One-off renders** produce a single version without saving anything. Choose
-  **Create one-off version**, confirm the prompt, edit freely, then **Render
+  **Create one-off version**, confirm the prompt, edit freely, then **Export
   one-off**. One-off renders never change what future uploads render.
 
 The same idea applies to languages: a
@@ -290,7 +290,7 @@ video('Product demo', async ({ page }) => {
 
 Record options (aspect ratio, quality, fps) work the same way but change the
 captured viewport and encode, so Editor edits to them take effect on the
-**next recording**, not when you click **Render**. They are fetched before the
+**next recording**, not when you click **Export**. They are fetched before the
 recording runs and applied to that capture (later uploads reuse the saved
 values). Like the Values section, the Recording options section shows this
 reminder inline with a **Re-record this video** button:

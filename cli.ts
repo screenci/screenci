@@ -123,7 +123,7 @@ import {
   type DevListenDeps,
   type LocalRecordRequest,
   DevAuthError,
-  SCREENCI_DEV_TOKEN_ENV,
+  SCREENCI_EDIT_TOKEN_ENV,
   deregisterDevListener,
   registerDevListener,
   reportDevSyncState,
@@ -3247,10 +3247,10 @@ export async function runDevCommand(
     options.config
   )
 
-  const devToken = options.token ?? process.env[SCREENCI_DEV_TOKEN_ENV]
-  if (!devToken) {
+  const editorToken = options.token ?? process.env[SCREENCI_EDIT_TOKEN_ENV]
+  if (!editorToken) {
     logger.error(
-      `No ${SCREENCI_DEV_TOKEN_ENV} configured. Create a personal dev token at ${pc.cyan(getScreenCISecretsUrl())} and add it to your env file, or pass it with --token.`
+      `No ${SCREENCI_EDIT_TOKEN_ENV} configured. Create a personal editor token at ${pc.cyan(getScreenCISecretsUrl())} and add it to your env file, or pass it with --token.`
     )
     process.exit(1)
   }
@@ -3259,7 +3259,7 @@ export async function runDevCommand(
   const config: DevListenConfig = {
     apiUrl,
     secret,
-    devToken,
+    devToken: editorToken,
     projectName: screenciConfig.projectName,
     machineName: depsOverride.machineName ?? hostname(),
     ...(Number.isFinite(killWindowSeconds) && killWindowSeconds >= 0
@@ -3336,7 +3336,7 @@ export async function runDevCommand(
     logger.error(`Failed to connect: ${message}`)
     if (error instanceof DevAuthError) {
       logger.error(
-        `Check your dev token at ${pc.cyan(getScreenCISecretsUrl())}.`
+        `Check your editor token at ${pc.cyan(getScreenCISecretsUrl())}.`
       )
     }
     process.exit(1)
@@ -3491,7 +3491,7 @@ export async function runDevCommand(
         onConfigChanged: () => {
           logger.info(
             'screenci.config.ts changed: re-recording every managed video. ' +
-              'Restart screenci dev if the project itself changed.'
+              'Restart screenci edit if the project itself changed.'
           )
           void (async () => {
             const targets = await currentWatchTargets()
@@ -3534,7 +3534,7 @@ export async function runDevCommand(
     if (error instanceof DevAuthError) {
       logger.error(error.message)
       logger.error(
-        `Create a new dev token at ${pc.cyan(getScreenCISecretsUrl())} if yours was revoked.`
+        `Create a new editor token at ${pc.cyan(getScreenCISecretsUrl())} if yours was revoked.`
       )
       await deregisterDevListener(config, deps, registration.listenerId).catch(
         () => {}
@@ -4247,7 +4247,7 @@ export async function main() {
 
   // dev command: connect this machine to the web editor and record on demand
   program
-    .command('dev')
+    .command('edit')
     .description(
       'Connect this machine to the ScreenCI editor and record videos on demand'
     )
@@ -4255,7 +4255,7 @@ export async function main() {
     .option('-v, --verbose', 'verbose output')
     .option(
       '--token <token>',
-      `personal dev token (defaults to ${SCREENCI_DEV_TOKEN_ENV} from your env file)`
+      `personal editor token (defaults to ${SCREENCI_EDIT_TOKEN_ENV} from your env file)`
     )
     .option(
       '--record-kill-window <seconds>',

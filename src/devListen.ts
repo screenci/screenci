@@ -18,7 +18,7 @@
  */
 
 export const DEV_TOKEN_HEADER = 'X-ScreenCI-Dev-Token'
-export const SCREENCI_DEV_TOKEN_ENV = 'SCREENCI_DEV_TOKEN'
+export const SCREENCI_EDIT_TOKEN_ENV = 'SCREENCI_EDIT_TOKEN'
 
 export const DEV_POLL_INTERVAL_MS = 2_500
 export const DEV_RUN_HEARTBEAT_MS = 10_000
@@ -149,7 +149,7 @@ async function postDev<T>(
   if (res.status === 401) {
     const text = await res.text().catch(() => '')
     throw new DevAuthError(
-      `The backend rejected this session (401). Your dev token may have been revoked. ${text}`.trim()
+      `The backend rejected this session (401). Your editor token may have been revoked. ${text}`.trim()
     )
   }
   if (!res.ok) {

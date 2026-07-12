@@ -180,7 +180,7 @@ fire along the arc, not just in the rendered video.
 
 The curve is also editable visually: in the web editor, select an interaction
 (click it in the timeline, or click near the cursor in the preview) and drag
-the two bezier handles over the video. With `screenci dev` connected the edit
+the two bezier handles over the video. With `screenci edit` connected the edit
 is written into the call as `move.curve` and applies on the next record.
 
 ### fill and pressSequentially

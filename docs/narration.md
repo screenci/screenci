@@ -767,7 +767,7 @@ The
 markers still carry timing the same way; only the text lives in Editor.
 
 The editor's narration panel covers more than text (editing requires a
-connected `screenci dev` machine, since every change is written back into your
+connected `screenci edit` machine, since every change is written back into your
 script):
 
 - **Voice controls**: pick the voice and tune `style`, `accent`, `pacing`, and

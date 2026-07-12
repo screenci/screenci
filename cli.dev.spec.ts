@@ -87,7 +87,7 @@ describe('registerDevListener', () => {
   it('throws DevAuthError on a 401', async () => {
     const deps = makeDeps()
     deps.fetchMock.mockResolvedValueOnce(
-      jsonResponse({ error: 'Invalid dev token' }, 401)
+      jsonResponse({ error: 'Invalid editor token' }, 401)
     )
 
     await expect(registerDevListener(config, deps)).rejects.toBeInstanceOf(
@@ -500,7 +500,7 @@ describe('runDevListenLoop', () => {
     const controller = { stopped: false }
     const deps = makeDeps()
     deps.fetchMock.mockResolvedValue(
-      jsonResponse({ error: 'Invalid dev token' }, 401)
+      jsonResponse({ error: 'Invalid editor token' }, 401)
     )
 
     await expect(

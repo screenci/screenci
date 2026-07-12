@@ -15,7 +15,7 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | `screenci init [name]`             | Scaffold a ScreenCI project                                                   |
 | `screenci test [playwrightArgs]`   | Run `.screenci.ts` files locally without final recording                      |
 | `screenci record [playwrightArgs]` | Record videos and upload results when configured                              |
-| `screenci dev`                     | Connect this machine to the editor: unlocks web editing and on-demand records |
+| `screenci edit`                    | Connect this machine to the editor: unlocks web editing and on-demand records |
 | `screenci info`                    | Print the last record run's URLs and render status                            |
 | `screenci make-public <videoId>`   | Enable public delivery for a video                                            |
 | `screenci make-private <videoId>`  | Disable public delivery for a video                                           |
@@ -349,7 +349,7 @@ Without a connected repository the command reports that GitHub is not connected.
 Targeted (`--grep`) runs need the workflow to declare a `grep` input; projects
 scaffolded by `screenci init` include it.
 
-## `screenci dev`
+## `screenci edit`
 
 Connects this machine to the ScreenCI editor. This is the live editing
 channel: editing in the web editor is locked until a machine you own is
@@ -360,13 +360,13 @@ running, polling the service for edit and record requests, until you stop it
 with Ctrl-C. See [Editor](/docs/guides/editor) for the editing model.
 
 ```bash
-screenci dev
+screenci edit
 ```
 
 Options:
 
 - `-c, --config <path>`: path to the ScreenCI config file.
-- `--token <token>`: personal dev token. Defaults to `SCREENCI_DEV_TOKEN` from
+- `--token <token>`: personal editor token. Defaults to `SCREENCI_EDIT_TOKEN` from
   your project env file.
 - `-g, --grep <pattern>`: only manage videos whose title matches this pattern
   (the same filter as Playwright's `--grep`). The startup check and any
@@ -380,7 +380,7 @@ Options:
 - `--no-watch`: disable the source-file watcher (see below).
 - `-v, --verbose`: verbose output.
 
-Startup check: `screenci dev` keeps each recording's `data.json` on disk after
+Startup check: `screenci edit` keeps each recording's `data.json` on disk after
 upload, along with a hash of the test source file. On startup it compares that
 hash with the current source and verifies every editable action carries an
 `editId`. Up-to-date videos skip recording entirely; anything stale gets its
@@ -402,7 +402,7 @@ values move under `default`). A names-only narration declaration
 (`.narration(['intro'])`) stays app-managed: its content lives in the web app
 and is never codegen'd.
 
-Source watching: while connected, `screenci dev` watches the test source files
+Source watching: while connected, `screenci edit` watches the test source files
 backing the managed videos, plus `screenci.config.ts`. Saving a real change to
 a source file automatically re-records that file's videos as a preview (the
 same freshness hash as the startup check filters out no-op saves and the
@@ -412,11 +412,11 @@ Watching follows the `-g/--grep` filter and can be turned off with
 
 Setup:
 
-1. Create a personal dev token on the Secrets page in the app (one token per
+1. Create a personal editor token on the Secrets page in the app (one token per
    machine, up to five per user).
-2. Add it to your project env file as `SCREENCI_DEV_TOKEN=<token>`, next to
+2. Add it to your project env file as `SCREENCI_EDIT_TOKEN=<token>`, next to
    your `SCREENCI_SECRET`.
-3. Run `screenci dev` in your project. The editor header shows your machine as
+3. Run `screenci edit` in your project. The editor header shows your machine as
    connected (for example `you@laptop`) and offers "Record ... on laptop" in
    the Export button's record menu.
 
@@ -437,8 +437,8 @@ While connected:
 - Stopping the command (Ctrl-C) disconnects the machine; the editor updates
   within about fifteen seconds.
 
-Dev tokens are separate from `SCREENCI_SECRET`: the secret authenticates your
-project to the service, the dev token additionally proves which user and
+Editor tokens are separate from `SCREENCI_SECRET`: the secret authenticates your
+project to the service, the editor token additionally proves which user and
 machine is listening. Revoking the token on the Secrets page immediately
 disconnects the machine.
 

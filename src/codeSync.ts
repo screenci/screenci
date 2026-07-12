@@ -29,6 +29,7 @@ import type {
   CodifyEditsByVideo,
   EditableOverridesByVideo,
   EditableSnapshot,
+  EditableSnapshotEntry,
   EditorMediaEditsByVideo,
   LanguagesEditsByVideo,
   NarrationEditsByVideo,
@@ -56,10 +57,12 @@ import {
   enclosingWrapBody,
   ensureNamedImport,
   findCallByEditId,
+  findRecordedWait,
   findVideoCall,
   insertStatementBefore,
   insertStatementsAfter,
   isLinearCallSite,
+  mergeAdjacentWaitEdits,
   nextStatement,
   previousStatement,
   removeFullLine,
@@ -99,6 +102,31 @@ function existingWaitBefore(
   const previous = previousStatement(ctx, statement)
   if (previous === null) return null
   return waitForTimeoutArg(ctx, previous, root)
+}
+
+/**
+ * A recorded delay (waitForTimeout) has no editId of its own, so it is located
+ * for codegen through its nearest stamped neighbor in recording order: the
+ * following action (the wait sits before it) or, failing that, the preceding
+ * action (the wait sits after it). The neighbor must be the immediate one; a
+ * non-stamped entry in between (another delay/effect) makes the source position
+ * ambiguous, so we return null and the caller refuses rather than guessing.
+ */
+function resolveDelayAnchor(
+  entries: readonly EditableSnapshotEntry[],
+  delayKey: string
+): { anchorEditId: string; direction: 'before' | 'after' } | null {
+  const index = entries.findIndex((entry) => entry.key === delayKey)
+  if (index < 0) return null
+  const following = entries[index + 1]
+  if (following?.editId !== undefined) {
+    return { anchorEditId: following.editId, direction: 'before' }
+  }
+  const preceding = entries[index - 1]
+  if (preceding?.editId !== undefined) {
+    return { anchorEditId: preceding.editId, direction: 'after' }
+  }
+  return null
 }
 
 /** Which argument holds the options object, per instrumented method. */
@@ -1419,6 +1447,73 @@ export function planCodeSync(
     for (const override of input.editableOverrides[videoName] ?? []) {
       const entry = byKey.get(override.key)
       const editId = entry?.editId
+
+      // Recorded delay (waitForTimeout): durationMs rewrites the numeric arg in
+      // place (or removes the whole call at 0). The wait has no editId of its
+      // own, so it is located via a stamped neighbor action. Dragging an
+      // interaction along the timeline commits durationMs on the adjacent delay,
+      // which is how a move re-expresses as resizing the neighboring sleep.
+      if (entry?.schemaKind === 'delay') {
+        const value = override.values.durationMs
+        if (
+          typeof value === 'number' &&
+          !jsonEqual(entry.defaults.durationMs, value)
+        ) {
+          const ms = Math.round(value)
+          const anchor = resolveDelayAnchor(entries, override.key)
+          if (anchor === null) {
+            markUnappliable(
+              'unstamped-action',
+              `delay durationMs on '${override.key}': no adjacent stamped ` +
+                `action to locate the waitForTimeout call`
+            )
+          } else {
+            applySlugItem({
+              videoName,
+              editId: anchor.anchorEditId,
+              description:
+                ms === 0
+                  ? `remove waitForTimeout near '${anchor.anchorEditId}'`
+                  : `set waitForTimeout to ${ms}ms near '${anchor.anchorEditId}'`,
+              onUnappliable: (refusal) =>
+                markUnappliable(
+                  refusal.reason,
+                  `delay durationMs on '${override.key}': ${refusal.message}`
+                ),
+              compute: (ctx) => {
+                const literal = findRecordedWait(
+                  ctx,
+                  anchor.anchorEditId,
+                  anchor.direction
+                )
+                if (literal === null) {
+                  return {
+                    reason: 'unsupported-shape',
+                    message:
+                      `the recorded waitForTimeout adjacent to ` +
+                      `'${anchor.anchorEditId}' was not found (source drifted)`,
+                  }
+                }
+                if (ms === 0) {
+                  const statement = enclosingStatement(ctx, literal)
+                  return statement === null
+                    ? null
+                    : [removeFullLine(ctx, statement)]
+                }
+                return [
+                  {
+                    start: literal.getStart(),
+                    end: literal.getEnd(),
+                    replacement: String(ms),
+                  },
+                ]
+              },
+            })
+          }
+        }
+        continue
+      }
+
       // No editId (unstamped action or a `slug#N` loop repeat execution):
       // never guess at a call site; the section is locked.
       if (editId === undefined || override.key.includes('#')) {
@@ -1992,6 +2087,22 @@ export function planCodeSync(
             `'${videoName}': ${refusal.message}`
         )
       }
+    }
+  }
+
+  // Coalesce back-to-back waitForTimeout calls left adjacent by this sync (a
+  // removed effect/delay can butt two sleeps together). Adjacency is judged in
+  // source, per block, so it never crosses control flow. Runs only on files
+  // this sync already changed, and only after their edits are applied (the
+  // edits are offset-based against the pre-edit text, so this re-parses the
+  // final text and applies a second, independent round). Untouched files are
+  // left exactly as authored.
+  for (const [path, after] of texts) {
+    if (originals.get(path) === after) continue
+    const ctx = createContext(deps.ts, path, after)
+    const mergeEdits = mergeAdjacentWaitEdits(ctx)
+    if (mergeEdits.length > 0) {
+      texts.set(path, applyTextEdits(after, mergeEdits))
     }
   }
 

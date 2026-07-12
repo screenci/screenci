@@ -588,6 +588,20 @@ export function waitForTimeoutArg(
   statement: TS.Statement,
   root: string
 ): TS.NumericLiteral | null {
+  const info = waitStatementInfo(ctx, statement)
+  return info !== null && info.root === root ? info.literal : null
+}
+
+/**
+ * The receiver identifier and numeric-literal argument of any
+ * `await <root>.waitForTimeout(<n>)` statement, regardless of which root it sits
+ * on. Null when `statement` is not such a sleep. Used by the coalescing pass,
+ * which does not know the root ahead of time.
+ */
+function waitStatementInfo(
+  ctx: CodemodContext,
+  statement: TS.Statement
+): { root: string; literal: TS.NumericLiteral } | null {
   const { ts } = ctx
   if (!ts.isExpressionStatement(statement)) return null
   let expression: TS.Expression = statement.expression
@@ -596,12 +610,117 @@ export function waitForTimeoutArg(
   const callee = expression.expression
   if (!ts.isPropertyAccessExpression(callee)) return null
   if (callee.name.text !== 'waitForTimeout') return null
-  if (!ts.isIdentifier(callee.expression) || callee.expression.text !== root) {
-    return null
-  }
+  if (!ts.isIdentifier(callee.expression)) return null
   const argument = expression.arguments[0]
   if (argument === undefined || !ts.isNumericLiteral(argument)) return null
-  return argument
+  return { root: callee.expression.text, literal: argument }
+}
+
+/** The numeric value of a wait literal, tolerating `_` digit separators. */
+function waitLiteralValue(literal: TS.NumericLiteral): number {
+  return Number(literal.text.replace(/_/g, ''))
+}
+
+/**
+ * Text edits that collapse every maximal run of two or more consecutive
+ * `await <root>.waitForTimeout(n)` statements (same root, nothing but those
+ * sleeps between them) into a single `waitForTimeout(<sum>)`. Adjacency is
+ * judged per statement list (block / source-file body), so a run never spans a
+ * control-flow boundary. A comment between two sleeps breaks the run (authored
+ * intent is preserved). A run whose sum is 0 is removed entirely. Idempotent:
+ * a lone sleep is never rewritten, so re-running yields no further edits.
+ */
+export function mergeAdjacentWaitEdits(ctx: CodemodContext): TextEdit[] {
+  const { ts } = ctx
+  const edits: TextEdit[] = []
+  const visitList = (statements: TS.NodeArray<TS.Statement>): void => {
+    let i = 0
+    while (i < statements.length) {
+      const first = waitStatementInfo(ctx, statements[i]!)
+      if (first === null) {
+        i += 1
+        continue
+      }
+      const run = [{ statement: statements[i]!, info: first }]
+      let j = i + 1
+      while (j < statements.length) {
+        const next = statements[j]!
+        const info = waitStatementInfo(ctx, next)
+        if (info === null || info.root !== first.root) break
+        const comments = ts.getLeadingCommentRanges(
+          ctx.source,
+          next.getFullStart()
+        )
+        if (comments !== undefined && comments.length > 0) break
+        run.push({ statement: next, info })
+        j += 1
+      }
+      if (run.length >= 2) {
+        const sum = run.reduce(
+          (total, item) => total + waitLiteralValue(item.info.literal),
+          0
+        )
+        if (sum === 0) {
+          for (const item of run)
+            edits.push(removeFullLine(ctx, item.statement))
+        } else {
+          const firstLiteral = run[0]!.info.literal
+          edits.push({
+            start: firstLiteral.getStart(),
+            end: firstLiteral.getEnd(),
+            replacement: String(sum),
+          })
+          for (let k = 1; k < run.length; k += 1) {
+            edits.push(removeFullLine(ctx, run[k]!.statement))
+          }
+        }
+      }
+      i = j
+    }
+  }
+  const walk = (node: TS.Node): void => {
+    if (ts.isSourceFile(node) || ts.isBlock(node)) {
+      visitList((node as TS.SourceFile | TS.Block).statements)
+    }
+    ts.forEachChild(node, walk)
+  }
+  walk(ctx.sourceFile)
+  return edits
+}
+
+/**
+ * The numeric-literal argument of a recorded `await <page>.waitForTimeout(<n>)`
+ * that sits immediately adjacent to the call carrying `anchorEditId`. A recorded
+ * wait carries no editId of its own (waitForTimeout takes no options object), so
+ * it is located structurally through a stamped neighbor: the wait immediately
+ * before the anchor action (`direction: 'before'`) or immediately after it
+ * (`direction: 'after'`). Null when the anchor is missing/ambiguous or the
+ * adjacent statement is not such a wait (drifted source: caller should refuse
+ * rather than guess).
+ */
+export function findRecordedWait(
+  ctx: CodemodContext,
+  anchorEditId: string,
+  direction: 'before' | 'after'
+): TS.NumericLiteral | null {
+  const { ts } = ctx
+  const call = findCallByEditId(ctx, anchorEditId)
+  if (call === null) return null
+  if (!ts.isPropertyAccessExpression(call.expression)) return null
+  const root = resolvePageIdentifier(
+    ts,
+    ctx.sourceFile,
+    call.expression.expression
+  )
+  if (root === null) return null
+  const statement = enclosingStatement(ctx, call)
+  if (statement === null) return null
+  const neighbor =
+    direction === 'before'
+      ? previousStatement(ctx, statement)
+      : nextStatement(ctx, statement)
+  if (neighbor === null) return null
+  return waitForTimeoutArg(ctx, neighbor, root)
 }
 
 /** The statements that precede `statement` in its enclosing block, nearest first. */

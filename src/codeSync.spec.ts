@@ -1856,3 +1856,194 @@ describe('editsOverlap', () => {
     expect(result.unappliable[0]!.reason).toBe('unsupported-shape')
   })
 })
+
+describe('planCodeSync: recorded delay (waitForTimeout) durationMs', () => {
+  // click1, a recorded waitForTimeout, then fill1. The wait is its own delay
+  // entry (unlocked); dragging fill1 earlier/later commits durationMs here.
+  const DELAY_FILE = '/proj/delay.screenci.ts'
+  const DELAY_SOURCE = [
+    "import { video } from 'screenci'",
+    '',
+    "video('Delay', async ({ page }) => {",
+    "  await page.getByRole('button', { name: 'Save' }).click({ editId: 'click1' })",
+    '  await page.waitForTimeout(1000)',
+    "  await page.locator('#name').fill('Jane', { editId: 'fill1' })",
+    '})',
+    '',
+  ].join('\n')
+
+  const snapshot = (
+    entries: EditableSnapshot['videos'][string]
+  ): EditableSnapshot => ({ version: 1, videos: { Delay: entries } })
+
+  const ORDERED = [
+    {
+      key: 'click1',
+      editId: 'click1',
+      locked: false,
+      defaults: {},
+      source: { file: DELAY_FILE, line: 4 },
+    },
+    {
+      key: 'delayMid',
+      schemaKind: 'delay',
+      locked: false,
+      defaults: { durationMs: 1000 },
+      source: { file: DELAY_FILE, line: 5 },
+    },
+    {
+      key: 'fill1',
+      editId: 'fill1',
+      locked: false,
+      defaults: {},
+      source: { file: DELAY_FILE, line: 6 },
+    },
+  ]
+
+  const files = { [DELAY_FILE]: DELAY_SOURCE }
+
+  it('rewrites the numeric waitForTimeout arg in place', () => {
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshot(ORDERED),
+        editableOverrides: {
+          Delay: [{ key: 'delayMid', values: { durationMs: 2500 } }],
+        },
+      }),
+      files
+    )
+    const after = afterFor(result, DELAY_FILE)
+    expect(after).toContain('await page.waitForTimeout(2500)')
+    expect(after).not.toContain('waitForTimeout(1000)')
+    expect(result.fullyAppliedVideos).toEqual(['Delay'])
+  })
+
+  it('removes the whole waitForTimeout call at durationMs 0', () => {
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshot(ORDERED),
+        editableOverrides: {
+          Delay: [{ key: 'delayMid', values: { durationMs: 0 } }],
+        },
+      }),
+      files
+    )
+    const after = afterFor(result, DELAY_FILE)
+    expect(after).not.toContain('waitForTimeout')
+  })
+
+  it('skips a durationMs equal to the recorded default', () => {
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshot(ORDERED),
+        editableOverrides: {
+          Delay: [{ key: 'delayMid', values: { durationMs: 1000 } }],
+        },
+      }),
+      files
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toEqual([])
+  })
+
+  it('refuses when the adjacent wait has drifted out of source', () => {
+    const noWaitSource = [
+      "import { video } from 'screenci'",
+      '',
+      "video('Delay', async ({ page }) => {",
+      "  await page.getByRole('button', { name: 'Save' }).click({ editId: 'click1' })",
+      "  await page.locator('#name').fill('Jane', { editId: 'fill1' })",
+      '})',
+      '',
+    ].join('\n')
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshot(ORDERED),
+        editableOverrides: {
+          Delay: [{ key: 'delayMid', values: { durationMs: 2500 } }],
+        },
+      }),
+      { [DELAY_FILE]: noWaitSource }
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable[0]!.reason).toBe('unsupported-shape')
+  })
+
+  it('refuses a delay with no adjacent stamped action to anchor on', () => {
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshot([
+          {
+            key: 'delayLone',
+            schemaKind: 'delay',
+            locked: false,
+            defaults: { durationMs: 1000 },
+            source: { file: DELAY_FILE, line: 5 },
+          },
+        ]),
+        editableOverrides: {
+          Delay: [{ key: 'delayLone', values: { durationMs: 2500 } }],
+        },
+      }),
+      files
+    )
+    expect(result.unappliable[0]!.reason).toBe('unstamped-action')
+  })
+
+  it('coalesces two waits left adjacent after a durationMs edit', () => {
+    // click1, wait(1000), wait(500), fill1. Editing the second wait keeps the
+    // two adjacent, so the post-pass merges them into one sum.
+    const twoWaitSource = [
+      "import { video } from 'screenci'",
+      '',
+      "video('Delay', async ({ page }) => {",
+      "  await page.getByRole('button', { name: 'Save' }).click({ editId: 'click1' })",
+      '  await page.waitForTimeout(1000)',
+      '  await page.waitForTimeout(500)',
+      "  await page.locator('#name').fill('Jane', { editId: 'fill1' })",
+      '})',
+      '',
+    ].join('\n')
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshot([
+          {
+            key: 'click1',
+            editId: 'click1',
+            locked: false,
+            defaults: {},
+            source: { file: DELAY_FILE, line: 4 },
+          },
+          {
+            key: 'delayA',
+            schemaKind: 'delay',
+            locked: false,
+            defaults: { durationMs: 1000 },
+            source: { file: DELAY_FILE, line: 5 },
+          },
+          {
+            key: 'delayB',
+            schemaKind: 'delay',
+            locked: false,
+            defaults: { durationMs: 500 },
+            source: { file: DELAY_FILE, line: 6 },
+          },
+          {
+            key: 'fill1',
+            editId: 'fill1',
+            locked: false,
+            defaults: {},
+            source: { file: DELAY_FILE, line: 7 },
+          },
+        ]),
+        editableOverrides: {
+          Delay: [{ key: 'delayB', values: { durationMs: 700 } }],
+        },
+      }),
+      { [DELAY_FILE]: twoWaitSource }
+    )
+    const after = afterFor(result, DELAY_FILE)
+    expect(after).toContain('await page.waitForTimeout(1700)')
+    expect(after.match(/waitForTimeout/g)).toHaveLength(1)
+  })
+})

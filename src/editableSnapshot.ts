@@ -224,6 +224,9 @@ export type EditableSnapshotEntry = {
   key: string
   /** Stable code identity slug (e.g. `fill1`) when the action is stamped. */
   editId?: string
+  /** The edit schema (e.g. `delay`, `cursorMove`); lets codegen tell a
+   *  recorded waitForTimeout apart from other unstamped entries. */
+  schemaKind?: string
   locked: boolean
   lockedFields?: string[]
   defaults: Record<string, unknown>
@@ -246,6 +249,7 @@ type RecordedEditableMeta = {
     ordinal?: unknown
     source?: unknown
   }
+  schemaKind?: unknown
   locked?: unknown
   lockedFields?: unknown
   defaults?: unknown
@@ -285,6 +289,9 @@ function toSnapshotEntry(
     }),
     ...(typeof descriptor.editId === 'string' && {
       editId: descriptor.editId,
+    }),
+    ...(typeof editable.schemaKind === 'string' && {
+      schemaKind: editable.schemaKind,
     }),
     locked: editable.locked === true,
     ...(lockedFields.length > 0 && { lockedFields }),

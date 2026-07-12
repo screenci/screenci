@@ -29,6 +29,8 @@ import {
   unwrapBlockCall,
   valueToSource,
   waitForTimeoutArg,
+  findRecordedWait,
+  mergeAdjacentWaitEdits,
   type CodemodContext,
   type TextEdit,
 } from './codemod.js'
@@ -1280,5 +1282,123 @@ describe('resolvePageIdentifier: deep locator alias chains', () => {
       call.expression as import('typescript').PropertyAccessExpression
     ).expression
     expect(resolvePageIdentifier(ctx.ts, ctx.sourceFile, receiver)).toBe('a')
+  })
+})
+
+describe('findRecordedWait', () => {
+  const source = [
+    'import { video } from "screenci"',
+    'export default video("demo", async (page) => {',
+    "  await page.locator('#a').click({ editId: 'one' })",
+    '  await page.waitForTimeout(3000)',
+    "  await page.locator('#b').click({ editId: 'two' })",
+    '})',
+    '',
+  ].join('\n')
+
+  it('finds the wait before an anchor action', () => {
+    const ctx = ctxOf(source)
+    const literal = findRecordedWait(ctx, 'two', 'before')
+    expect(literal?.text).toBe('3000')
+  })
+
+  it('finds the wait after an anchor action', () => {
+    const ctx = ctxOf(source)
+    const literal = findRecordedWait(ctx, 'one', 'after')
+    expect(literal?.text).toBe('3000')
+  })
+
+  it('returns null when the adjacent statement is not a wait', () => {
+    const ctx = ctxOf(source)
+    // Nothing after 'two'.
+    expect(findRecordedWait(ctx, 'two', 'after')).toBeNull()
+    // Nothing but the wait before 'one'.
+    expect(findRecordedWait(ctx, 'one', 'before')).toBeNull()
+  })
+})
+
+describe('mergeAdjacentWaitEdits', () => {
+  const wrap = (body: string[]): string =>
+    [
+      'import { video } from "screenci"',
+      'export default video("demo", async (page) => {',
+      ...body,
+      '})',
+      '',
+    ].join('\n')
+
+  it('merges a back-to-back pair into their sum', () => {
+    const source = wrap([
+      '  await page.waitForTimeout(1000)',
+      '  await page.waitForTimeout(500)',
+    ])
+    const after = applyTextEdits(source, mergeAdjacentWaitEdits(ctxOf(source)))
+    expect(after).toContain('await page.waitForTimeout(1500)')
+    expect(after.match(/waitForTimeout/g)).toHaveLength(1)
+  })
+
+  it('merges a run of three', () => {
+    const source = wrap([
+      '  await page.waitForTimeout(100)',
+      '  await page.waitForTimeout(200)',
+      '  await page.waitForTimeout(300)',
+    ])
+    const after = applyTextEdits(source, mergeAdjacentWaitEdits(ctxOf(source)))
+    expect(after).toContain('await page.waitForTimeout(600)')
+    expect(after.match(/waitForTimeout/g)).toHaveLength(1)
+  })
+
+  it('does not merge waits on different roots', () => {
+    const source = wrap([
+      '  await page.waitForTimeout(100)',
+      '  await other.waitForTimeout(200)',
+    ])
+    expect(mergeAdjacentWaitEdits(ctxOf(source))).toHaveLength(0)
+  })
+
+  it('does not merge across an interaction between the waits', () => {
+    const source = wrap([
+      '  await page.waitForTimeout(100)',
+      "  await page.locator('#a').click()",
+      '  await page.waitForTimeout(200)',
+    ])
+    expect(mergeAdjacentWaitEdits(ctxOf(source))).toHaveLength(0)
+  })
+
+  it('does not merge when a comment sits between the waits', () => {
+    const source = wrap([
+      '  await page.waitForTimeout(100)',
+      '  // keep these separate',
+      '  await page.waitForTimeout(200)',
+    ])
+    expect(mergeAdjacentWaitEdits(ctxOf(source))).toHaveLength(0)
+  })
+
+  it('does not merge waits in different blocks', () => {
+    const source = wrap([
+      '  if (true) {',
+      '    await page.waitForTimeout(100)',
+      '  }',
+      '  await page.waitForTimeout(200)',
+    ])
+    expect(mergeAdjacentWaitEdits(ctxOf(source))).toHaveLength(0)
+  })
+
+  it('removes the whole run when the sum is zero', () => {
+    const source = wrap([
+      '  await page.waitForTimeout(0)',
+      '  await page.waitForTimeout(0)',
+    ])
+    const after = applyTextEdits(source, mergeAdjacentWaitEdits(ctxOf(source)))
+    expect(after).not.toContain('waitForTimeout')
+  })
+
+  it('is idempotent', () => {
+    const source = wrap([
+      '  await page.waitForTimeout(1000)',
+      '  await page.waitForTimeout(500)',
+    ])
+    const once = applyTextEdits(source, mergeAdjacentWaitEdits(ctxOf(source)))
+    expect(mergeAdjacentWaitEdits(ctxOf(once))).toHaveLength(0)
   })
 })

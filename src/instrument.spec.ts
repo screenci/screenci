@@ -2497,7 +2497,7 @@ describe('editable descriptor capture', () => {
     expect(meta.locked).toBe(false)
   })
 
-  it('records a locked delay event for numeric page.waitForTimeout', async () => {
+  it('records an editable delay event for numeric page.waitForTimeout', async () => {
     resetEditableRuntimeState()
     const { recorder } = makeRecorder()
     setActiveClickRecorder(recorder)
@@ -2513,7 +2513,11 @@ describe('editable descriptor capture', () => {
     const [durationMs, meta] = addDelay.mock.calls[0]! as [number, EditableMeta]
     expect(durationMs).toBe(250)
     expect(meta.descriptor.kind).toBe('delay')
-    expect(meta.locked).toBe(true)
+    // The recorded wait is now unlocked: codegen rewrites the numeric
+    // waitForTimeout arg in place, so dragging a neighboring interaction can
+    // absorb into it.
+    expect(meta.locked).toBe(false)
+    expect(meta.lockedFields).toBeUndefined()
     expect(meta.defaults).toEqual({ durationMs: 250 })
   })
 })

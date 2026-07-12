@@ -160,6 +160,7 @@ describe('collectEditableFromRecordings', () => {
     expect(collected['My video']).toEqual([
       {
         key: 'input|click|getByRole(button)|0',
+        schemaKind: 'cursorMove',
         locked: true,
         lockedFields: ['moveDuration'],
         defaults: { moveDuration: 400 },

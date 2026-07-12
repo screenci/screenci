@@ -424,6 +424,14 @@ moving, pushing the action later on the timeline. In the editor, dragging a
 bar's left edge sets it, and the pause shows as a leading "sleep" part of the
 bar.
 
+Dragging a whole interaction along the timeline absorbs into the recorded
+`waitForTimeout` next to it: moving it later grows the preceding sleep (and
+moving it earlier shrinks it), rewriting the `waitForTimeout(<ms>)` argument in
+code so the timeline matches what the next record will produce. When an edit
+leaves two `waitForTimeout` calls back-to-back in the source (nothing but sleeps
+between them), they collapse into a single `waitForTimeout` whose duration is
+their sum.
+
 Recordings always run purely from code: nothing is fetched or overridden at
 record time. After each upload the timeline is reconciled against what was
 actually recorded, so new actions appear in place and removed actions
@@ -441,6 +449,11 @@ Everything the timeline adds is one unified edit record keyed to a call
 position, and it is codegen'd into the sources the moment it is saved (via
 the connected `screenci edit` session). A newly added event appears on the
 timeline as a pending item until the next record confirms it.
+
+A web-authored event can be deleted again: select it and press **Delete** or
+**Backspace**, or right-click it and choose **Delete**. Deleting removes the
+edit from both the editor and the source (the same path "Reset all" uses).
+Recorded interactions are code-owned and cannot be deleted this way.
 
 Events are added in two ways:
 

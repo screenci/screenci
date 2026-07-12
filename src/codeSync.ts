@@ -1057,6 +1057,11 @@ function planCodifyEdit(edit: CodifyEdit): {
         span.delayMs !== undefined
           ? `}, ${valueToSource({ delay: Math.round(span.delayMs) })!})`
           : undefined
+      // A lead-hide (start pulled before `fromEditId`) emits the same leading
+      // `waitForTimeout` as a forward `fromSleepMs`: the block opens with a
+      // wait, then the run executes. Only `fromLeadMs` reaches codegen; the
+      // end-side `untilLeadMs` lives only on editor-only bare splits.
+      const leadMs = span.fromLeadMs ?? span.fromSleepMs
       return {
         editIds: [span.fromEditId, span.untilEditId],
         description: `wrap '${span.fromEditId}'..'${span.untilEditId}' in ${span.kind}`,
@@ -1066,7 +1071,7 @@ function planCodifyEdit(edit: CodifyEdit): {
             span.fromEditId,
             span.untilEditId,
             header,
-            span.fromSleepMs,
+            leadMs,
             span.untilSleepMs,
             footerClose,
             span.kind,
@@ -1101,6 +1106,10 @@ function isBareSplit(edit: CodifyEdit): boolean {
     edit.kind === 'hide' &&
     edit.fromEditId === edit.untilEditId &&
     edit.delayMs === undefined &&
+    // A lead split (placed left of the first interaction) is bare when both
+    // boundaries pull back by the same lead; a forward split when both sleeps
+    // match. The two modes never mix on a bare split.
+    (edit.fromLeadMs ?? 0) === (edit.untilLeadMs ?? 0) &&
     (edit.fromSleepMs ?? 0) === (edit.untilSleepMs ?? 0)
   )
 }

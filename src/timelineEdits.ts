@@ -124,6 +124,15 @@ export type GapSpanEdit = {
   fromEditId: string
   fromSleepMs?: number
   /**
+   * Pulls the span's recorded START to BEFORE `fromEditId`: the wrap is
+   * emitted before the interaction's statement and opens with a
+   * `waitForTimeout(fromLeadMs)` so the effect covers the `fromLeadMs` of
+   * footage leading into it. Used for a cut placed left of the first
+   * interaction, where no earlier anchor exists to sleep forward from.
+   * Mutually exclusive with `fromSleepMs` and `delayMs`.
+   */
+  fromLeadMs?: number
+  /**
    * Delays the span's recorded START into the `fromEditId` interaction: the
    * wrap opens with `{ delay: delayMs }` so the effect begins `delayMs` after
    * the interaction's start. Mutually exclusive with a positive `fromSleepMs`.
@@ -131,6 +140,15 @@ export type GapSpanEdit = {
   delayMs?: number
   untilEditId: string
   untilSleepMs?: number
+  /**
+   * The end-boundary twin of `fromLeadMs`: pulls the span's recorded END to
+   * BEFORE `untilEditId` (end = `until` start minus `untilLeadMs`). Only ever
+   * set on an editor-only zero-record-time split placed left of the first
+   * interaction (a bare split, never codified); a codifiable lead-hide extends
+   * over the first interaction and ends via a forward `untilSleepMs`. Mutually
+   * exclusive with `untilSleepMs`.
+   */
+  untilLeadMs?: number
   props?: Record<string, unknown>
   disabled?: boolean
 }

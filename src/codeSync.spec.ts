@@ -690,6 +690,29 @@ describe('planCodeSync: gap span edits', () => {
     expect(afterFor(result, FILE)).toContain('await speed(3, async () => {')
   })
 
+  it('emits fromLeadMs as a leading waitForTimeout (cut left of the run)', () => {
+    const span: CodifyEdit = {
+      type: 'gapSpanEdit',
+      id: 'gl1',
+      kind: 'hide',
+      fromEditId: 'click1',
+      fromLeadMs: 500,
+      untilEditId: 'fill1',
+    }
+    const after = afterFor(
+      plan(inputWith({ codifyEdits: { Demo: [span] } })),
+      FILE
+    )
+    expect(after).toContain('await hide(async () => {')
+    // The lead becomes a waitForTimeout at the top of the block, before the run.
+    expect(after).toContain('await page.waitForTimeout(500)')
+    const hideAt = after.indexOf('await hide(async () => {')
+    const waitAt = after.indexOf('await page.waitForTimeout(500)')
+    const clickAt = after.indexOf("editId: 'click1'")
+    expect(hideAt).toBeLessThan(waitAt)
+    expect(waitAt).toBeLessThan(clickAt)
+  })
+
   it('wraps the run in a time block, unappliable without a duration', () => {
     const span: CodifyEdit = {
       type: 'gapSpanEdit',

@@ -73,7 +73,8 @@ export function isLanguageKey(key: string): boolean {
  */
 export function normalizeFeature<V>(
   feature: string,
-  arg: FeatureArg<V>
+  arg: FeatureArg<V>,
+  options: { forbidLanguageMajor?: boolean } = {}
 ): NormalizedFeature<V> {
   if (Array.isArray(arg)) {
     // Names only: the content lives in the web app; code just declares the keys.
@@ -94,6 +95,15 @@ export function normalizeFeature<V>(
   const languageMajor = keys.length > 0 && keys.every(isLanguageKey)
 
   if (languageMajor) {
+    if (options.forbidLanguageMajor) {
+      throw new ScreenciError(
+        `${feature} no longer accepts the language-major form ` +
+          `({ en: { ... } }). ${feature} are shared across every language: ` +
+          `use .narration for per-language content, or swap the ${feature} ` +
+          `file per language in the web editor. ` +
+          `See https://screenci.com/docs/overlays`
+      )
+    }
     const shared = (obj[DEFAULT_KEY] as Record<string, V> | undefined) ?? {}
     const byLang: Record<string, Record<string, V>> = {}
     for (const key of keys) {

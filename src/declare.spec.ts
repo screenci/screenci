@@ -98,6 +98,29 @@ describe('normalizeFeature', () => {
     expect(n.codeNames).toEqual(['intro', 'cta'])
   })
 
+  it('forbidLanguageMajor rejects a language-major object (overlays)', () => {
+    expect(() =>
+      normalizeFeature<string>(
+        'overlays',
+        { en: { badge: 'a' }, fi: { badge: 'b' } },
+        { forbidLanguageMajor: true }
+      )
+    ).toThrow(/no longer accepts the language-major form/)
+  })
+
+  it('forbidLanguageMajor still allows the content-major and array forms', () => {
+    const content = normalizeFeature<string>(
+      'overlays',
+      { badge: 'a' },
+      { forbidLanguageMajor: true }
+    )
+    expect(content.shared).toEqual({ badge: 'a' })
+    const names = normalizeFeature<string>('overlays', ['badge'], {
+      forbidLanguageMajor: true,
+    })
+    expect(names.studioNames).toEqual(['badge'])
+  })
+
   it('collects override-only names after shared names', () => {
     const n = normalizeFeature<string>('text', {
       default: { a: 'A' },

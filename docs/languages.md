@@ -8,10 +8,12 @@ self-localizing app renders in the right language without extra work from you.
 A plain video with no `.languages(...)` call records one round that stays
 language-agnostic (no `[en]` tag), pinned to the `en-US` browser locale.
 
-Narration and overlays each accept the same per-language object
-form. The language set is inferred from the union of all feature keys, so adding
-a language to any one of them is enough to produce a version. TypeScript validates
-that every language covers the same cues, which catches drift early.
+Narration accepts a per-language object form: the same cue keys under each
+language code. The language set is inferred from the union of the narration
+keys (plus any `.languages(...)` call), so adding a language there is enough to
+produce a version. TypeScript validates that every language covers the same
+cues, which catches drift early. Overlays are shared across every language (see
+below); only narration (and per-language browser locales) vary by language.
 
 <!-- screenci-doc-video:docs/guides/languages -->
 
@@ -55,37 +57,21 @@ Use bare language keys such as `en`, `fi`, `fr`, and `cmn`. You can also add a
 the `default` value, for example
 `video.narration({ default: { intro: 'Hi' }, fr: { intro: 'Salut' } })`.
 
-The same pattern applies to `video.overlays(...)`: pass a
-language-major object and each language's assets are
-realized in that language's recording pass while the body drives the same
-controller name regardless of language:
+Overlays do not vary by language. `video.overlays(...)` takes a names-only
+array or a single shared `name -> config` object, and the same overlay is used
+in every language's recording pass:
 
 ```ts
 video.overlays({
-  en: { badge: { path: 'assets/badge.en.png', x: 1382, y: 65, width: 384 } },
-  fi: { badge: { path: 'assets/badge.fi.png', x: 1382, y: 65, width: 384 } },
+  badge: { path: 'assets/badge.png', x: 1382, y: 65, width: 384 },
 })('Landing', async ({ page, overlays }) => {
   await page.goto('/')
-  await overlays.badge() // the active language's file in each pass
+  await overlays.badge() // the same badge in every language
 })
 ```
 
-A `default` key supplies a shared fallback for any language that omits a name:
-
-```ts
-video.overlays({
-  default: { badge: { path: 'assets/badge.png', x: 1382, y: 65, width: 384 } },
-  fi: { badge: { path: 'assets/badge.fi.png', x: 1382, y: 65, width: 384 } },
-})('Landing', async ({ page, overlays }) => {
-  await overlays.badge() // shared badge for en, the Finnish one for fi
-})
-```
-
-> **Per-language overlays need per-language capture**
-> (the default mode, below): they are baked into each language's own recording
-> pass. In **shared capture mode** one recording is reused for every language and
-> only narration is overdubbed, so overlays are identical
-> across languages there.
+If you need a language-specific asset, swap the overlay file per language in the
+web editor rather than in code.
 
 ## Localized recordings (per-language capture)
 

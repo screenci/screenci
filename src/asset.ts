@@ -1346,14 +1346,12 @@ export function buildStudioOverlays(
 
 /**
  * Build overlay controllers for a `video.overlays(...)` declaration. Studio
- * (array) names become Studio-managed controllers; code (object) names resolve
- * their config for the active language (`byLang[language] ?? shared`) and become
- * regular overlay controllers. Per-language mode realizes one language per pass,
- * so the active-language config is the one captured.
+ * (array) names become Studio-managed controllers; code (object) names become
+ * regular overlay controllers. Overlays are shared across every language (no
+ * language-major form), so there is no per-language resolution.
  */
 export function buildOverlays(
-  feature: NormalizedFeature<OverlayInputOrFactory> | null | undefined,
-  language: string | undefined
+  feature: NormalizedFeature<OverlayInputOrFactory> | null | undefined
 ): Record<string, OverlayController | ((props: unknown) => OverlayController)> {
   const result: Record<
     string,
@@ -1364,9 +1362,7 @@ export function buildOverlays(
     result[name] = createStudioAssetController(name)
   }
   for (const name of feature.codeNames) {
-    const input =
-      (language !== undefined ? feature.byLang[language]?.[name] : undefined) ??
-      feature.shared[name]
+    const input = feature.shared[name]
     if (input === undefined) continue
     result[name] = buildOverlayController(name, input)
   }

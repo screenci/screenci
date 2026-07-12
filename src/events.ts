@@ -2806,11 +2806,12 @@ export function filterEventTranslationsToLanguage(
     } as RecordingEvent
   }
 
-  // Asset/audio events have no per-language map in the renderer schema: fold the
+  // Audio events have no per-language map in the renderer schema: fold the
   // active language's override up into the top-level fields and drop the map, so
-  // the renderer only ever sees a single resolved language.
+  // the renderer only ever sees a single resolved language. (Overlays are shared
+  // across languages, so assetStart no longer carries per-language translations.)
   if (
-    (event.type === 'assetStart' || event.type === 'audioStart') &&
+    event.type === 'audioStart' &&
     'translations' in event &&
     event.translations !== undefined
   ) {

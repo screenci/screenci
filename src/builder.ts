@@ -15,6 +15,7 @@ import type { LocalizeNarrationValue, VoiceConfig } from './localize.js'
 import type { Lang } from './voices.js'
 import {
   normalizeFeature,
+  type ContentMajor,
   type FeatureArg,
   type NormalizedFeature,
 } from './declare.js'
@@ -167,12 +168,9 @@ function variantVideoName(
 /** Languages contributed by the per-feature declarations (union of `byLang`). */
 function featureLanguages(state: BuilderState): string[] {
   const set = new Set<string>()
-  for (const feature of [
-    state.narration,
-    state.values,
-    state.overlays,
-    state.audio,
-  ]) {
+  // Overlays are shared across languages (no language-major form), so they
+  // never contribute a language.
+  for (const feature of [state.narration, state.values, state.audio]) {
     for (const lang of feature?.languages ?? []) set.add(lang)
   }
   for (const decl of [state.recordOptions, state.renderOptions]) {
@@ -237,10 +235,11 @@ function warnUnusedLanguages(
 ): void {
   const active = new Set(resolved.availableLanguages)
   const langList = resolved.availableLanguages.join(', ') || '(none)'
+  // Overlays are shared across languages, so they have no per-language values
+  // to flag as unused.
   const features: [string, NormalizedFeature<unknown> | null][] = [
     ['Narration', state.narration],
     ['Values', state.values],
-    ['Overlay', state.overlays],
     ['Audio', state.audio],
   ]
   for (const [label, feature] of features) {
@@ -577,31 +576,17 @@ type FeatureControllers<A, V> = A extends readonly string[]
 /**
  * Overlays mirror {@link FeatureControllers} but resolve each name's controller
  * type from its declared input (`OverlayControllerFor<A[K]>`), so the precise
- * controller variant is preserved alongside navigability. Language-major and
- * Studio names fall back to the broad {@link OverlayController}, matching the
- * prior behavior.
+ * controller variant is preserved alongside navigability. Overlays are shared
+ * across every language (unlike narration), so there is no language-major form:
+ * only the names-only array and content-major object spellings are accepted.
  */
 type OverlayContentMajorControllers<A> = {
-  -readonly [K in keyof A as K extends LangKey
-    ? never
-    : Extract<K, string>]-?: OverlayControllerFor<A[K]>
+  -readonly [K in keyof A as Extract<K, string>]-?: OverlayControllerFor<A[K]>
 }
-
-type OverlayLangMajorControllers<A> = UnionToIntersection<
-  {
-    [L in Extract<keyof A, LangKey>]: A[L] extends Record<string, unknown>
-      ? {
-          -readonly [K in keyof A[L] as Extract<K, string>]-?: OverlayController
-        }
-      : never
-  }[Extract<keyof A, LangKey>]
->
 
 type OverlayControllers<A> = A extends readonly string[]
   ? Record<A[number], OverlayController>
-  : [Extract<Exclude<keyof A, LangKey>, string>] extends [never]
-    ? OverlayLangMajorControllers<A>
-    : OverlayContentMajorControllers<A>
+  : OverlayContentMajorControllers<A>
 
 type NarrationOverrideFor<Args, A> = 'narration' extends keyof Args
   ? [FeatureNamesOf<A>] extends [never]
@@ -667,8 +652,11 @@ export interface MediaBuilder<Args, O = object> extends BuilderTerminal<
   // values<const A extends FeatureArg<string>>(
   //   arg: A
   // ): MediaBuilder<Args, O & ValuesOverrideFor<Args, A>>
-  /** Declare overlays. */
-  overlays<const A extends FeatureArg<OverlayInputOrFactory>>(
+  /** Declare overlays: blank names (array) or content values (object). Overlays
+   *  are shared across languages, so the language-major form is not accepted. */
+  overlays<
+    const A extends readonly string[] | ContentMajor<OverlayInputOrFactory>,
+  >(
     arg: A
   ): MediaBuilder<Args, O & OverlayOverrideFor<Args, A>>
   // Hidden for release: the background audio feature is unfinished, so the
@@ -853,7 +841,11 @@ export function createVideoBuilder<Args>(
     }
     return createVideoBuilder<Args>(test, features, {
       ...state,
-      [key]: normalizeFeature(key, arg),
+      // Overlays are shared across languages, so their language-major spelling
+      // is rejected at declare time (narration/values/audio still accept it).
+      [key]: normalizeFeature(key, arg, {
+        forbidLanguageMajor: key === 'overlays',
+      }),
     })
   }
 

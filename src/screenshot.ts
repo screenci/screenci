@@ -145,7 +145,7 @@ const _screenshotBase = base.extend<
   },
 
   overlays: async ({ _screenciOverlays, _screenciLanguage }, use) => {
-    await use(buildOverlays(_screenciOverlays, _screenciLanguage))
+    await use(buildOverlays(_screenciOverlays))
   },
 
   clip: async ({}, use) => {

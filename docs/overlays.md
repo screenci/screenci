@@ -108,8 +108,9 @@ with code values stay editable too: the code values are used until the overlay
 is edited in Editor, and from then on the Editor value wins. See
 [Editor](./editor.md#editor-overlays-from-code).
 
-For per-language overlay files (e.g. a translated badge image), see
-[Languages](/docs/guides/languages).
+Overlays are shared across every language (they do not take a language-major
+form). For a language-specific asset (e.g. a translated badge image), swap the
+overlay file per language in the web editor.
 
 Overlay files (`.png`, `.mp4`, `.svg`) are uploaded the first time you record
 with them present and reused on later runs, so you do not have to commit the

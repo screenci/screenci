@@ -5,6 +5,7 @@ import { join } from 'path'
 import { fileURLToPath } from 'url'
 import {
   createOverlays,
+  buildOverlays,
   buildStudioOverlays,
   selected,
   setActiveAssetRecorder,
@@ -13,6 +14,7 @@ import {
   resetRegisteredAssetPaths,
   resetMissingOverlayWarnings,
 } from './asset.js'
+import { normalizeFeature } from './declare.js'
 import { logger } from './logger.js'
 import {
   setAnimatedHtmlRasterizer,
@@ -2318,5 +2320,26 @@ describe('overlay overMouse', () => {
       'logo',
       expect.objectContaining({ overMouse: true })
     )
+  })
+})
+
+describe('buildOverlays (shared across languages)', () => {
+  it('resolves code overlays from the shared map with no per-language variance', () => {
+    const feature = normalizeFeature('overlays', {
+      logo: { path: './logo.png', fill: 'recording' },
+    })
+    const overlays = buildOverlays(feature)
+    expect(Object.keys(overlays)).toEqual(['logo'])
+    expect(overlays.logo).toBeDefined()
+  })
+
+  it('maps array (Studio) names to controllers', () => {
+    const feature = normalizeFeature('overlays', ['badge'])
+    const overlays = buildOverlays(feature)
+    expect(Object.keys(overlays)).toEqual(['badge'])
+  })
+
+  it('returns an empty map for a null feature', () => {
+    expect(buildOverlays(null)).toEqual({})
   })
 })

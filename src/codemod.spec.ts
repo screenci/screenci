@@ -485,6 +485,16 @@ describe('setNarrationValue', () => {
     ).toBe("video.narration({ intro: 'Hi' })('Demo', async () => {})")
   })
 
+  it('writes an empty-string placeholder value (added-language placeholders)', () => {
+    const source = "video.narration({ intro: 'Hi' })('Demo', async () => {})"
+    expect(
+      narrated(source, { cueName: 'intro', lang: 'fr', value: { cue: '' } })
+    ).toBe(
+      "video.narration({ default: { intro: 'Hi' }, fr: { intro: '' } })" +
+        "('Demo', async () => {})"
+    )
+  })
+
   it('adds a language-major .narration section when missing (specific lang)', () => {
     const source = "video.renderOptions({ fps: 30 })('Demo', async () => {})"
     expect(

@@ -117,4 +117,12 @@ describe('builder fixture controllers', () => {
       expectTypeOf<keyof typeof overlays>().toEqualTypeOf<'logo' | 'badge'>()
     })
   })
+
+  it('overlays: rejects the language-major form (overlays are shared)', () => {
+    video.overlays({
+      // @ts-expect-error overlays no longer accept a language-major object.
+      en: { badge: { path: './badge.en.png' } },
+      fi: { badge: { path: './badge.fi.png' } },
+    })('t', async () => {})
+  })
 })

@@ -213,23 +213,6 @@ export type VideoCueStartEvent = {
   volume?: number
 }
 
-/**
- * A per-language override of an overlay's file/options, used in shared-capture
- * mode where one recording carries every language. The recorder folds the active
- * language's translation into the top-level fields before serialization (see
- * `filterEventTranslationsToLanguage`), so the renderer only ever sees a single
- * resolved language.
- */
-export type AssetTranslation = {
-  path: string
-  fileHash?: string
-  durationMs?: number
-  audio?: number
-  fullScreen?: boolean
-  speed?: number
-  time?: number
-}
-
 export type ImageAssetStartEvent = {
   type: 'assetStart'
   timeMs: number
@@ -239,8 +222,6 @@ export type ImageAssetStartEvent = {
   fileHash?: string
   durationMs?: number
   fullScreen: boolean
-  /** Per-language file overrides (shared-capture mode); folded before render. */
-  translations?: Record<string, AssetTranslation>
 }
 
 export type VideoAssetStartEvent = {
@@ -260,8 +241,6 @@ export type VideoAssetStartEvent = {
   speed?: number
   /** Target playback duration (ms); an alternative to {@link speed}. */
   time?: number
-  /** Per-language file overrides (shared-capture mode); folded before render. */
-  translations?: Record<string, AssetTranslation>
 }
 
 export type AssetStartEvent = ImageAssetStartEvent | VideoAssetStartEvent

@@ -739,8 +739,11 @@ layer to reset.
 > values now (via `video.languages({ languages, mode, locales, browserLocale })`).
 
 The recorded language set is the **union** of the code set declared with
-`video.languages([...])` and any language keys used by per-language features
-(narration, overlays). The **Languages** section on the Editor page shows the
+`video.languages([...])` and any language keys used by the narration
+declaration (overlays are shared across languages). When you add a language to a
+narrated video, the editor offers to auto-translate the existing narrations into
+it, or start it with empty placeholders. The **Languages** section on the Editor
+page shows the
 current set and lets you add a language; adding one writes it into your
 `video.languages([...])` declaration in code (a new `.languages([...])` call is
 added when the video has none) through the connected `screenci dev` machine,

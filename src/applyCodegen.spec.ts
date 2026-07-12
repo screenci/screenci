@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
-import { applyCodegenRequest } from './applyCodegen.js'
+import {
+  applyCodegenRequest,
+  requireTypescriptForCodegen,
+} from './applyCodegen.js'
 import type { EditableSnapshot } from './editableSnapshot.js'
 
 const FILE = '/proj/demo.screenci.ts'
@@ -154,5 +157,37 @@ describe('applyCodegenRequest: options and narration records', () => {
         source
       )
     ).toThrow(/app-managed/)
+  })
+})
+
+describe('requireTypescriptForCodegen', () => {
+  it('throws an actionable error when the loader resolves nothing', () => {
+    expect(() => requireTypescriptForCodegen(() => null, '/proj')).toThrow(
+      'TypeScript is not available; install it to enable editor codegen'
+    )
+  })
+
+  it('returns the loaded module and passes the project dir through', () => {
+    const seen: string[] = []
+    const loaded = requireTypescriptForCodegen((dir) => {
+      seen.push(dir)
+      return ts
+    }, '/proj')
+    expect(loaded).toBe(ts)
+    expect(seen).toEqual(['/proj'])
+  })
+})
+
+describe('applyCodegenRequest: typed refusal reasons in errors', () => {
+  it('names the reason so the editor toast is actionable', () => {
+    const record = JSON.stringify({
+      type: 'mediaEdit',
+      id: 'm1',
+      kind: 'narrationCue',
+      afterEditId: 'missing-slug',
+      blocking: true,
+      props: { name: 'intro' },
+    })
+    expect(() => apply(record)).toThrow(/\[unknown-edit-id\]/)
   })
 })

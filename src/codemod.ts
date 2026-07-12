@@ -424,15 +424,11 @@ function isStatementNode(ts: TsModule, node: TS.Node): boolean {
   )
 }
 
-/**
- * The call expression whose options carry `editId: '<slug>'`. Exact identity:
- * immune to line drift, refactors, helpers, and locator changes. Null when
- * the slug is absent or (duplicated in one file) ambiguous.
- */
-export function findCallByEditId(
+/** Every call expression whose options carry `editId: '<slug>'`. */
+function findCallsByEditId(
   ctx: CodemodContext,
   editId: string
-): TS.CallExpression | null {
+): TS.CallExpression[] {
   const { ts, sourceFile } = ctx
   const matches: TS.CallExpression[] = []
   const visit = (node: TS.Node): void => {
@@ -455,7 +451,36 @@ export function findCallByEditId(
     ts.forEachChild(node, visit)
   }
   visit(sourceFile)
+  return matches
+}
+
+/**
+ * The call expression whose options carry `editId: '<slug>'`. Exact identity:
+ * immune to line drift, refactors, helpers, and locator changes. Null when
+ * the slug is absent or (duplicated in one file) ambiguous.
+ */
+export function findCallByEditId(
+  ctx: CodemodContext,
+  editId: string
+): TS.CallExpression | null {
+  const matches = findCallsByEditId(ctx, editId)
   return matches.length === 1 ? matches[0]! : null
+}
+
+/**
+ * Diagnose why an editId may not be an editable call site: absent from the
+ * file, duplicated (ambiguous), or locked inside control flow. `ok` means the
+ * site is unique and linear; an edit that still fails there was refused by the
+ * call's shape (non-literal options, spreads, unsupported structure).
+ */
+export function classifyEditIdSite(
+  ctx: CodemodContext,
+  editId: string
+): 'missing' | 'ambiguous' | 'control-flow' | 'ok' {
+  const matches = findCallsByEditId(ctx, editId)
+  if (matches.length === 0) return 'missing'
+  if (matches.length > 1) return 'ambiguous'
+  return isLinearCallSite(ctx, editId) === null ? 'control-flow' : 'ok'
 }
 
 /**
@@ -690,6 +715,58 @@ export function enclosingWrapBody(
   return null
 }
 
+/**
+ * The named-import table of a module: for every `import { a, b as c } from
+ * '<moduleName>'` binding, maps the local name to the exported name (`c -> b`)
+ * and back (`b -> c`). Lets every callee-name match resolve through aliases,
+ * so `import { autoZoom as az }` + `az(...)` is still recognised.
+ */
+export type ImportTable = {
+  localToExport: Map<string, string>
+  exportToLocal: Map<string, string>
+}
+
+/** Build the {@link ImportTable} for `moduleName` (usually `'screenci'`). */
+export function importTableFor(
+  ctx: CodemodContext,
+  moduleName: string
+): ImportTable {
+  const { ts, sourceFile } = ctx
+  const localToExport = new Map<string, string>()
+  const exportToLocal = new Map<string, string>()
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement)) continue
+    if (
+      !ts.isStringLiteral(statement.moduleSpecifier) ||
+      statement.moduleSpecifier.text !== moduleName
+    ) {
+      continue
+    }
+    const bindings = statement.importClause?.namedBindings
+    if (bindings === undefined || !ts.isNamedImports(bindings)) continue
+    for (const element of bindings.elements) {
+      const exported = element.propertyName?.text ?? element.name.text
+      const local = element.name.text
+      localToExport.set(local, exported)
+      if (!exportToLocal.has(exported)) exportToLocal.set(exported, local)
+    }
+  }
+  return { localToExport, exportToLocal }
+}
+
+/**
+ * The local name under which `exportName` is imported from `moduleName`, or
+ * null when it is not imported as a named binding (absent, namespace import,
+ * or re-exported through another module).
+ */
+export function resolveImportedLocalName(
+  ctx: CodemodContext,
+  moduleName: string,
+  exportName: string
+): string | null {
+  return importTableFor(ctx, moduleName).exportToLocal.get(exportName) ?? null
+}
+
 /** The timeline-block wrapper function names an unwrap may target. */
 const UNWRAPPABLE_BLOCK_KINDS = ['hide', 'speed', 'time'] as const
 
@@ -704,13 +781,16 @@ function findNamedBlockCall(
   name: string
 ): { call: TS.CallExpression; body: TS.Block } | null {
   const { ts } = ctx
+  const { localToExport } = importTableFor(ctx, 'screenci')
   const matches: Array<{ call: TS.CallExpression; body: TS.Block }> = []
   const visit = (node: TS.Node): void => {
     if (ts.isCallExpression(node)) {
       const callee = node.expression
       if (
         ts.isIdentifier(callee) &&
-        (UNWRAPPABLE_BLOCK_KINDS as readonly string[]).includes(callee.text) &&
+        (UNWRAPPABLE_BLOCK_KINDS as readonly string[]).includes(
+          localToExport.get(callee.text) ?? callee.text
+        ) &&
         node.arguments.some(
           (arg) => ts.isStringLiteral(arg) && arg.text === name
         )
@@ -741,16 +821,30 @@ export function unwrapBlockCall(
   ctx: CodemodContext,
   name: string
 ): TextEdit[] | null {
-  const { ts } = ctx
   const found = findNamedBlockCall(ctx, name)
   if (found === null) return null
-  const statement = enclosingStatement(ctx, found.call)
+  return unwrapWrapCallStatement(ctx, found.call, found.body)
+}
+
+/**
+ * Unwrap one wrap call: replace its enclosing `await <wrap>(...)` statement
+ * with the callback body's statements, dedented one level, preserving any
+ * `waitForTimeout` pacing inside. Null when the statement is not exactly a
+ * plain awaited expression statement of that call.
+ */
+export function unwrapWrapCallStatement(
+  ctx: CodemodContext,
+  call: TS.CallExpression,
+  body: TS.Block
+): TextEdit[] | null {
+  const { ts } = ctx
+  const statement = enclosingStatement(ctx, call)
   if (statement === null || !ts.isExpressionStatement(statement)) return null
   // The statement must be exactly `await <kind>(...)`: a wrap nested in other
   // expressions is not a mechanical unwrap.
   const expr = statement.expression
-  if (!ts.isAwaitExpression(expr) || expr.expression !== found.call) return null
-  const inner = found.body.statements
+  if (!ts.isAwaitExpression(expr) || expr.expression !== call) return null
+  const inner = body.statements
   const whole = removeFullLine(ctx, statement)
   if (inner.length === 0) return [whole]
   // Replace the wrapper's physical lines with the inner statements' text,
@@ -992,16 +1086,18 @@ export function insertStatementAfter(
 }
 
 /**
- * Ensure `importName` is among the named imports from `moduleName`. Returns
- * [] when already imported, a single edit when it can be appended to an
- * existing named-import list, and null when the file has no editable import
- * from that module.
+ * Ensure the export `importName` is available among the named imports from
+ * `moduleName`. When it is already imported (possibly under an alias, e.g.
+ * `import { autoZoom as az }`), returns no edits and the existing local name
+ * so the caller reuses the alias. Otherwise returns a single edit appending it
+ * to an existing named-import list. Null when the file has no editable named
+ * import from that module (absent or namespace-only import).
  */
 export function ensureNamedImport(
   ctx: CodemodContext,
   moduleName: string,
   importName: string
-): TextEdit[] | null {
+): { edits: TextEdit[]; localName: string } | null {
   const { ts, sourceFile } = ctx
   for (const statement of sourceFile.statements) {
     if (!ts.isImportDeclaration(statement)) continue
@@ -1013,18 +1109,25 @@ export function ensureNamedImport(
     }
     const bindings = statement.importClause?.namedBindings
     if (bindings === undefined || !ts.isNamedImports(bindings)) continue
-    if (bindings.elements.some((element) => element.name.text === importName)) {
-      return []
+    const existing = bindings.elements.find(
+      (element) =>
+        (element.propertyName?.text ?? element.name.text) === importName
+    )
+    if (existing !== undefined) {
+      return { edits: [], localName: existing.name.text }
     }
     if (bindings.elements.length === 0) continue
     const last = bindings.elements[bindings.elements.length - 1]!
-    return [
-      {
-        start: last.getEnd(),
-        end: last.getEnd(),
-        replacement: `, ${importName}`,
-      },
-    ]
+    return {
+      edits: [
+        {
+          start: last.getEnd(),
+          end: last.getEnd(),
+          replacement: `, ${importName}`,
+        },
+      ],
+      localName: importName,
+    }
   }
   return null
 }

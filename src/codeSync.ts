@@ -1660,6 +1660,15 @@ export function planCodeSync(
     // delay). Stable sort: everything else keeps its doc order.
     const codifyEdits = [...(input.codifyEdits[videoName] ?? [])].sort(
       (a, b) => {
+        // A blockRemoveEdit (e.g. unwrapping a code autoZoom that is being
+        // split) must run BEFORE the adds in the same pass: otherwise the two
+        // re-wrap zoomEdits see the original block still enclosing their anchors
+        // and no-op (wrapRun idempotency), and the later unwrap then strips the
+        // sole zoom, leaving none. Ordering the unwrap first frees the sub-runs
+        // so each re-wrap creates a real sibling bracket.
+        const aRemove = a.type === 'blockRemoveEdit'
+        const bRemove = b.type === 'blockRemoveEdit'
+        if (aRemove !== bRemove) return aRemove ? -1 : 1
         if (
           'afterEditId' in a &&
           'afterEditId' in b &&

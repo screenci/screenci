@@ -886,8 +886,15 @@ export function resolveImportedLocalName(
   return importTableFor(ctx, moduleName).exportToLocal.get(exportName) ?? null
 }
 
-/** The timeline-block wrapper function names an unwrap may target. */
-const UNWRAPPABLE_BLOCK_KINDS = ['hide', 'speed', 'time'] as const
+/**
+ * The timeline-block wrapper function names an unwrap may target. `autoZoom` is
+ * included so a code-authored autoZoom can be split: the editor removes the
+ * original bracket (a `blockRemoveEdit` on its stamped `editId`) and re-adds two
+ * autoZoom brackets over the sub-runs. Every one of these is stamped with a
+ * unique `editId`, so widening the set only ever unwraps the exact block a
+ * `blockRemoveEdit` names.
+ */
+const UNWRAPPABLE_BLOCK_KINDS = ['hide', 'speed', 'time', 'autoZoom'] as const
 
 /**
  * Find the timeline-block wrap call (`hide` / `speed` / `time`) identified by

@@ -602,6 +602,27 @@ calls (any `waitForTimeout` pacing inside survives as plain gap sleeps).
 Blocks without an editId get one stamped automatically when an edit session
 starts, so every block becomes web-removable.
 
+### Splitting a camera zoom in two
+
+An `autoZoom` bracket on the Zooms row can be split into two back-to-back
+brackets from the web editor: enter split mode (the scissors) and click the
+zoom at the interaction boundary where it should break. A web-added
+(pending) zoom is split by rewriting its own edit record. A code-authored
+`autoZoom` is split through the codegen channel: the editor sends a
+`blockRemoveEdit` for the original bracket's `editId` (which now unwraps
+`autoZoom` blocks, not only `hide`/`speed`/`time`) plus two `zoomEdit`s over
+the two interaction sub-runs, each carrying the original zoom options
+(`amount`/`duration`/`easing`/`centering`) so the halves are identical apart
+from their time. The unwrap is ordered before the two re-wraps in one sync
+pass, so the result is two sibling `autoZoom(...)` blocks. Because this
+rewrites the source, splitting a code zoom needs a connected `screenci edit`
+session; with no machine connected the editor declines rather than storing a
+deferred edit. A zoom framing a single interaction cannot be split.
+
+Overlays and narration cues are not yet splittable from the web editor: their
+placements are stored as points (a start position, not a code-level span), so
+there is no duration to divide. Splitting those remains a source edit.
+
 ### Actions inside `hide()`
 
 Instrumented actions inside a `hide()` run raw (no cursor animation) and emit

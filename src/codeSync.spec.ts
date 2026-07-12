@@ -1314,6 +1314,112 @@ describe('planCodeSync: block removal (unwrap)', () => {
   })
 })
 
+describe('planCodeSync: splitting a code autoZoom into two', () => {
+  const SPLIT_FILE = '/proj/splitzoom.screenci.ts'
+  const SPLIT_SOURCE = [
+    "import { video, autoZoom } from 'screenci'",
+    '',
+    "video('Split', async ({ page }) => {",
+    '  await autoZoom(',
+    '    async () => {',
+    "      await page.getByRole('button', { name: 'A' }).click({ editId: 'sa' })",
+    '      await page.waitForTimeout(500)',
+    "      await page.getByRole('button', { name: 'B' }).click({ editId: 'sb' })",
+    '    },',
+    "    { amount: 0.6, editId: 'autoZoomS' }",
+    '  )',
+    '})',
+    '',
+  ].join('\n')
+  const snapshot: EditableSnapshot = {
+    version: 1,
+    videos: {
+      Split: [
+        {
+          key: 'sa',
+          editId: 'sa',
+          locked: false,
+          defaults: {},
+          source: { file: SPLIT_FILE, line: 6 },
+        },
+        {
+          key: 'sb',
+          editId: 'sb',
+          locked: false,
+          defaults: {},
+          source: { file: SPLIT_FILE, line: 8 },
+        },
+        {
+          key: 'autoZoomS',
+          editId: 'autoZoomS',
+          locked: false,
+          defaults: {},
+          source: { file: SPLIT_FILE, line: 4 },
+        },
+      ],
+    },
+  }
+  // Remove the original bracket, re-wrap each interaction in its own autoZoom.
+  const remove: CodifyEdit = {
+    type: 'blockRemoveEdit',
+    id: 'rm',
+    target: { editId: 'autoZoomS' },
+  }
+  const left: CodifyEdit = {
+    type: 'zoomEdit',
+    id: 'zl',
+    fromEditId: 'sa',
+    untilEditId: 'sa',
+    props: { amount: 0.6 },
+  }
+  const right: CodifyEdit = {
+    type: 'zoomEdit',
+    id: 'zr',
+    fromEditId: 'sb',
+    untilEditId: 'sb',
+    props: { amount: 0.6 },
+  }
+
+  it('unwraps the original and creates two sibling autoZoom brackets', () => {
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshot,
+        codifyEdits: { Split: [remove, left, right] },
+      }),
+      { [SPLIT_FILE]: SPLIT_SOURCE }
+    )
+    const after = afterFor(result, SPLIT_FILE)
+    // The original bracket's editId is gone; two new brackets exist, each
+    // wrapping one interaction and carrying the original zoom props.
+    expect(after).not.toContain('autoZoomS')
+    expect(after.match(/await autoZoom\(async \(\) => \{/g)).toHaveLength(2)
+    expect(after).toContain(
+      "await page.getByRole('button', { name: 'A' }).click({ editId: 'sa' })"
+    )
+    expect(after).toContain(
+      "await page.getByRole('button', { name: 'B' }).click({ editId: 'sb' })"
+    )
+    expect(after.match(/amount: 0\.6/g)).toHaveLength(2)
+    expect(result.unappliable).toHaveLength(0)
+  })
+
+  it('orders the unwrap before the re-wraps regardless of record order', () => {
+    // The two zoomEdits precede the blockRemove in the array: the internal sort
+    // must still run the unwrap first, or the re-wraps no-op and the unwrap
+    // then strips the sole bracket, leaving zero.
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshot,
+        codifyEdits: { Split: [left, right, remove] },
+      }),
+      { [SPLIT_FILE]: SPLIT_SOURCE }
+    )
+    const after = afterFor(result, SPLIT_FILE)
+    expect(after.match(/await autoZoom\(async \(\) => \{/g)).toHaveLength(2)
+    expect(after).not.toContain('autoZoomS')
+  })
+})
+
 describe('planCodeSync: narration cue value codify', () => {
   it('adds a .narration section to the video builder call when missing', () => {
     const result = plan(

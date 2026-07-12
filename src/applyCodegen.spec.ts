@@ -32,9 +32,13 @@ const SNAPSHOT: EditableSnapshot = {
   },
 }
 
-function apply(editJson: string, source: string = SOURCE) {
+async function apply(
+  editJson: string,
+  source: string = SOURCE,
+  formatFile?: (path: string, content: string) => Promise<string>
+) {
   const writes: Record<string, string> = {}
-  applyCodegenRequest(
+  await applyCodegenRequest(
     {
       requestId: 'req1',
       videoName: 'Demo',
@@ -49,14 +53,15 @@ function apply(editJson: string, source: string = SOURCE) {
         writes[path] = content
       },
       editableSnapshot: SNAPSHOT,
+      ...(formatFile !== undefined && { formatFile }),
     }
   )
   return writes
 }
 
 describe('applyCodegenRequest: options and narration records', () => {
-  it('writes an optionsEdit as a new .renderOptions call', () => {
-    const writes = apply(
+  it('writes an optionsEdit as a new .renderOptions call', async () => {
+    const writes = await apply(
       JSON.stringify({
         type: 'optionsEdit',
         id: 'options|renderOptions',
@@ -69,12 +74,12 @@ describe('applyCodegenRequest: options and narration records', () => {
     )
   })
 
-  it('merges an optionsEdit into an existing .recordOptions call', () => {
+  it('merges an optionsEdit into an existing .recordOptions call', async () => {
     const source = SOURCE.replace(
       "video('Demo'",
       "video.recordOptions({ headless: false })('Demo'"
     )
-    const writes = apply(
+    const writes = await apply(
       JSON.stringify({
         type: 'optionsEdit',
         id: 'options|recordOptions',
@@ -88,12 +93,12 @@ describe('applyCodegenRequest: options and narration records', () => {
     )
   })
 
-  it('does not rewrite the file when the options already match', () => {
+  it('does not rewrite the file when the options already match', async () => {
     const source = SOURCE.replace(
       "video('Demo'",
       "video.renderOptions({ fps: 60 })('Demo'"
     )
-    const writes = apply(
+    const writes = await apply(
       JSON.stringify({
         type: 'optionsEdit',
         id: 'options|renderOptions',
@@ -105,8 +110,8 @@ describe('applyCodegenRequest: options and narration records', () => {
     expect(writes).toEqual({})
   })
 
-  it('writes a narrationEdit into the declaration, adding the section', () => {
-    const writes = apply(
+  it('writes a narrationEdit into the declaration, adding the section', async () => {
+    const writes = await apply(
       JSON.stringify({
         type: 'narrationEdit',
         id: 'narration|intro|default',
@@ -120,12 +125,12 @@ describe('applyCodegenRequest: options and narration records', () => {
     )
   })
 
-  it('converts a content-major declaration on a non-default lang edit', () => {
+  it('converts a content-major declaration on a non-default lang edit', async () => {
     const source = SOURCE.replace(
       "video('Demo'",
       "video.narration({ intro: 'Hi' })('Demo'"
     )
-    const writes = apply(
+    const writes = await apply(
       JSON.stringify({
         type: 'narrationEdit',
         id: 'narration|intro|fi',
@@ -140,12 +145,12 @@ describe('applyCodegenRequest: options and narration records', () => {
     )
   })
 
-  it('throws with the reason when a narration edit is app-managed', () => {
+  it('throws with the reason when a narration edit is app-managed', async () => {
     const source = SOURCE.replace(
       "video('Demo'",
       "video.narration(['intro'])('Demo'"
     )
-    expect(() =>
+    await expect(
       apply(
         JSON.stringify({
           type: 'narrationEdit',
@@ -156,7 +161,51 @@ describe('applyCodegenRequest: options and narration records', () => {
         }),
         source
       )
-    ).toThrow(/app-managed/)
+    ).rejects.toThrow(/app-managed/)
+  })
+})
+
+describe('applyCodegenRequest: formatting', () => {
+  it('writes the formatted content when a formatFile dep is provided', async () => {
+    const formatted: string[] = []
+    const writes = await apply(
+      JSON.stringify({
+        type: 'optionsEdit',
+        id: 'options|renderOptions',
+        method: 'renderOptions',
+        values: { fps: 60 },
+      }),
+      SOURCE,
+      async (path, content) => {
+        formatted.push(path)
+        return `${content}// formatted\n`
+      }
+    )
+    expect(formatted).toEqual([FILE])
+    expect(writes[FILE]).toMatch(/\/\/ formatted\n$/)
+  })
+
+  it('does not format when no file changes', async () => {
+    const source = SOURCE.replace(
+      "video('Demo'",
+      "video.renderOptions({ fps: 60 })('Demo'"
+    )
+    const formatted: string[] = []
+    const writes = await apply(
+      JSON.stringify({
+        type: 'optionsEdit',
+        id: 'options|renderOptions',
+        method: 'renderOptions',
+        values: { fps: 60 },
+      }),
+      source,
+      async (path, content) => {
+        formatted.push(path)
+        return content
+      }
+    )
+    expect(writes).toEqual({})
+    expect(formatted).toEqual([])
   })
 })
 
@@ -179,7 +228,7 @@ describe('requireTypescriptForCodegen', () => {
 })
 
 describe('applyCodegenRequest: typed refusal reasons in errors', () => {
-  it('names the reason so the editor toast is actionable', () => {
+  it('names the reason so the editor toast is actionable', async () => {
     const record = JSON.stringify({
       type: 'mediaEdit',
       id: 'm1',
@@ -188,6 +237,6 @@ describe('applyCodegenRequest: typed refusal reasons in errors', () => {
       blocking: true,
       props: { name: 'intro' },
     })
-    expect(() => apply(record)).toThrow(/\[unknown-edit-id\]/)
+    await expect(apply(record)).rejects.toThrow(/\[unknown-edit-id\]/)
   })
 })

@@ -616,6 +616,17 @@ Code is the single source of truth, and the loop is a single step:
 Because the web timeline and code share one linear model, a codegen'd edit
 inserts the same call you would have written by hand.
 
+### Formatting codegen edits
+
+After an edit is written, the CLI formats the changed file with your
+project's own Prettier install. `screenci init` enables this by scaffolding a
+minimal `.prettierrc` (2-space indent, single quotes, no semicolons, matching
+the generated examples) and installing `prettier` in the project. Formatting
+runs only when both are present: edit `.prettierrc` to change the style, or
+delete it (or uninstall `prettier`) to keep the raw codegen output. A
+formatting failure never fails the edit; the unformatted change is written
+and a warning is logged.
+
 ## Action identity: editId
 
 Every editable action can carry a stable, human-readable identity slug in

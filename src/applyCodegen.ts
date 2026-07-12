@@ -27,6 +27,12 @@ export type ApplyCodegenDeps = {
    * from the kept recording data. Used to locate call sites by editId.
    */
   editableSnapshot: EditableSnapshot
+  /**
+   * Optional formatter applied to each changed file's content before it is
+   * written (see src/format.ts). Must never throw; on trouble it returns the
+   * content unchanged.
+   */
+  formatFile?: (path: string, content: string) => Promise<string>
 }
 
 /**
@@ -47,10 +53,10 @@ export function requireTypescriptForCodegen(
   return ts
 }
 
-export function applyCodegenRequest(
+export async function applyCodegenRequest(
   request: DevCodegenRequest,
   deps: ApplyCodegenDeps
-): void {
+): Promise<void> {
   let record: unknown
   try {
     record = JSON.parse(request.editJson)
@@ -108,6 +114,11 @@ export function applyCodegenRequest(
   }
 
   for (const file of plan.files) {
-    if (file.after !== file.before) deps.writeFile(file.path, file.after)
+    if (file.after === file.before) continue
+    const content =
+      deps.formatFile !== undefined
+        ? await deps.formatFile(file.path, file.after)
+        : file.after
+    deps.writeFile(file.path, content)
   }
 }

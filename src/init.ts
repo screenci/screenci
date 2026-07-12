@@ -21,6 +21,7 @@ const PLAYWRIGHT_TEST_VERSION = '^1.59.0'
 const PLAYWRIGHT_CLI_VERSION = 'latest'
 const NODE_TYPES_VERSION = '^25.9.1'
 const VITE_VERSION = '^7.0.0'
+const PRETTIER_VERSION = '^3.6.0'
 const REACT_VERSION = '^19.0.0'
 const REACT_DOM_VERSION = '^19.0.0'
 const REACT_TYPES_VERSION = '^19.0.0'
@@ -577,7 +578,31 @@ function generateIslandPackageJson(projectName: string): string {
         scripts: {
           test: 'screenci test',
           record: 'screenci record',
+          format: 'prettier --write .',
         },
+      },
+      null,
+      2
+    ) + '\n'
+  )
+}
+
+/**
+ * Prettier config scaffolded into the island. It gates automatic formatting
+ * of codegen-edited recording files: screenci formats an edited file only
+ * when prettier is installed and a config file resolves for it, so deleting
+ * this file disables the feature and editing it changes the style. The
+ * values match the style of the generated example recordings so the first
+ * codegen edit does not reformat whole files.
+ */
+export function generatePrettierConfig(): string {
+  return (
+    JSON.stringify(
+      {
+        tabWidth: 2,
+        useTabs: false,
+        semi: false,
+        singleQuote: true,
       },
       null,
       2
@@ -662,6 +687,11 @@ for configuration.
 - \`${scripts.test}\` tests your video scripts fast locally.
 - \`${scripts.testUi}\` tests your video scripts in interactive UI mode.
 - \`${scripts.record}\` records and pauses for first-time setup if needed.
+
+## Formatting
+
+Editor-driven code edits are formatted with Prettier using \`.prettierrc\`.
+Edit that file to change the style, or delete it to disable formatting.
 
 ## Recording without an account
 
@@ -1074,6 +1104,9 @@ async function installInitDependencies(
   const sharedPackages = [
     `@playwright/test@${PLAYWRIGHT_TEST_VERSION}`,
     `@types/node@${NODE_TYPES_VERSION}`,
+    // Formats codegen-edited recording files; screenci skips formatting when
+    // prettier or the .prettierrc scaffolded by init is removed.
+    `prettier@${PRETTIER_VERSION}`,
     ...(includePlaywrightCli
       ? [`@playwright/cli@${PLAYWRIGHT_CLI_VERSION}`]
       : []),
@@ -1799,6 +1832,7 @@ export async function runInit(
       resolve(islandDir, 'README.md'),
       generateIslandReadme(projectName, packageManager)
     )
+    await writeFile(resolve(islandDir, '.prettierrc'), generatePrettierConfig())
     await writeInitGitignore(islandDir, packageManager)
     await writeFile(
       resolve(islandDir, 'recordings', 'example.screenci.ts'),

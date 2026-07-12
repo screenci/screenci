@@ -94,6 +94,7 @@ import {
 } from './src/recordingFreshness.js'
 import { loadTypescript } from './src/codemod.js'
 import {
+  planDuplicateEditIdFixes,
   planEditIdStamps,
   readEditIdCounters,
   writeEditIdCounters,
@@ -149,11 +150,14 @@ const require = createRequire(import.meta.url)
 
 type PlaywrightListReportSuite = {
   title?: string
+  /** Source file for this suite, relative to `config.rootDir` (or absolute). */
+  file?: string
   specs?: Array<{ title: string }>
   suites?: PlaywrightListReportSuite[]
 }
 
 type PlaywrightListReport = {
+  config?: { rootDir?: string }
   suites?: PlaywrightListReportSuite[]
   errors?: Array<{
     message?: string
@@ -226,6 +230,33 @@ export function collectPlaywrightListTitles(
   return titles
 }
 
+/** Absolute source-file paths of every discovered suite, deduped. */
+export function collectPlaywrightListFiles(
+  report: PlaywrightListReport
+): string[] {
+  const rootDir = report.config?.rootDir
+  const files = new Set<string>()
+
+  const visitSuite = (suite: PlaywrightListReportSuite) => {
+    if (typeof suite.file === 'string' && suite.file.trim() !== '') {
+      files.add(
+        isAbsolute(suite.file)
+          ? suite.file
+          : resolve(rootDir ?? '.', suite.file)
+      )
+    }
+    for (const child of suite.suites ?? []) {
+      visitSuite(child)
+    }
+  }
+
+  for (const suite of report.suites ?? []) {
+    visitSuite(suite)
+  }
+
+  return [...files]
+}
+
 function parsePlaywrightListReport(stdout: string): PlaywrightListReport {
   return JSON.parse(stdout) as PlaywrightListReport
 }
@@ -281,6 +312,19 @@ async function collectDiscoveredTestTitles(
   additionalArgs: string[],
   env: NodeJS.ProcessEnv
 ): Promise<string[]> {
+  const report = await collectPlaywrightListReport(
+    configPath,
+    additionalArgs,
+    env
+  )
+  return report === null ? [] : collectPlaywrightListTitles(report.suites ?? [])
+}
+
+async function collectPlaywrightListReport(
+  configPath: string,
+  additionalArgs: string[],
+  env: NodeJS.ProcessEnv
+): Promise<PlaywrightListReport | null> {
   const listArgs = [
     'test',
     '--config',
@@ -291,7 +335,7 @@ async function collectDiscoveredTestTitles(
   ]
   const spawnSpec = resolvePlaywrightSpawnSpec(listArgs, dirname(configPath))
 
-  return await new Promise<string[]>((resolve, reject) => {
+  return await new Promise<PlaywrightListReport | null>((resolve, reject) => {
     const child = spawn(spawnSpec.command, spawnSpec.args, {
       stdio: ['inherit', 'pipe', 'pipe'],
       ...(spawnSpec.shell !== undefined ? { shell: spawnSpec.shell } : {}),
@@ -336,7 +380,7 @@ async function collectDiscoveredTestTitles(
       }
       if (code !== 0) {
         if (stderr.trim() === '' && stdout.trim() === '') {
-          resolve([])
+          resolve(null)
           return
         }
         const parsedDiscoveryError =
@@ -354,11 +398,10 @@ async function collectDiscoveredTestTitles(
 
       try {
         if (stdout.trim() === '') {
-          resolve([])
+          resolve(null)
           return
         }
-        const report = parsePlaywrightListReport(stdout)
-        resolve(collectPlaywrightListTitles(report.suites ?? []))
+        resolve(parsePlaywrightListReport(stdout))
       } catch (error) {
         reject(error)
       }
@@ -371,21 +414,61 @@ async function collectDiscoveredTestTitles(
   })
 }
 
-async function validateUniqueDiscoveredTestTitles(
-  configPath: string,
-  additionalArgs: string[],
-  env: NodeJS.ProcessEnv
-): Promise<void> {
-  const titles = await collectDiscoveredTestTitles(
-    configPath,
-    additionalArgs,
-    env
-  )
-  const duplicates = findDuplicateTitles(titles)
-
-  if (duplicates.length > 0) {
-    throw new Error(formatDuplicateTitlesMessage(duplicates))
+/**
+ * Re-stamp duplicate editIds (one slug at two distinct call sites) across the
+ * given source files with fresh, never-reused slugs, writing the fixes through
+ * the project formatter. Returns the number of renames. Best-effort: a no-op
+ * when TypeScript is unavailable or no source has a collision.
+ */
+async function resolveDuplicateEditIdsInSources(
+  sourcePaths: readonly string[],
+  args: {
+    screenciDir: string
+    projectDir: string
+    log: (message: string) => void
+    warn: (message: string) => void
+    formatFile?: (path: string, content: string) => Promise<string>
+    onFileWritten?: (path: string) => void
   }
+): Promise<number> {
+  const ts = loadTypescript(args.projectDir)
+  if (ts === null) {
+    args.warn(
+      'TypeScript is not available; duplicate editIds cannot be resolved.'
+    )
+    return 0
+  }
+  const files: Array<{ path: string; text: string }> = []
+  for (const path of new Set(sourcePaths)) {
+    try {
+      files.push({ path, text: readFileSync(path, 'utf8') })
+    } catch {
+      // Unreadable (moved/deleted): skip, nothing to resolve there.
+    }
+  }
+  if (files.length === 0) return 0
+
+  const plan = planDuplicateEditIdFixes(
+    files,
+    readEditIdCounters(args.screenciDir),
+    { ts }
+  )
+  for (const file of plan.files) {
+    const content = args.formatFile
+      ? await args.formatFile(file.path, file.after)
+      : file.after
+    writeFileSync(file.path, content)
+    args.onFileWritten?.(file.path)
+  }
+  if (plan.renamed.length > 0) {
+    writeEditIdCounters(args.screenciDir, plan.counters)
+    for (const rename of plan.renamed) {
+      args.log(
+        `Resolved duplicate editId '${rename.from}' -> '${rename.to}' in ${rename.path}`
+      )
+    }
+  }
+  return plan.renamed.length
 }
 
 function resolveRecordingFileCandidates(
@@ -3334,6 +3417,17 @@ export async function runDevCommand(
           version: 1,
           videos: collectEditableFromRecordings(screenciDir),
         },
+        resolveDuplicateEditIds: async (paths) =>
+          (await resolveDuplicateEditIdsInSources(paths, {
+            screenciDir,
+            projectDir: dirname(screenciDir),
+            log: (message) => logger.info(message),
+            warn: (message) => logger.warn(message),
+            formatFile: createProjectFormatter(dirname(resolvedConfigPath), {
+              warn: (message) => logger.warn(message),
+            }),
+            onFileWritten: (path) => void watcher?.refreshBaseline(path),
+          })) > 0,
       })
     },
     ...depsOverride,
@@ -3461,6 +3555,17 @@ export async function runDevCommand(
           }
           return plan.stamped.length
         },
+        resolveDuplicateEditIds: async (sourcePaths) =>
+          resolveDuplicateEditIdsInSources(sourcePaths, {
+            screenciDir,
+            projectDir: dirname(screenciDir),
+            log: (message) => logger.info(message),
+            warn: (message) => logger.warn(message),
+            formatFile: createProjectFormatter(dirname(screenciDir), {
+              warn: (message) => logger.warn(message),
+            }),
+            onFileWritten: (path) => void watcher?.refreshBaseline(path),
+          }),
         recordPreview: async (grepPattern) => {
           await runPreviewRecordPass(
             options.config,
@@ -4671,20 +4776,54 @@ async function run(
 
   const envForChild = { ...process.env }
 
-  await validateUniqueDiscoveredTestTitles(configPath, additionalArgs, {
-    ...envForChild,
-    SCREENCI_CONFIG_DIR: dirname(configPath),
-    ...(command === 'record' ? { SCREENCI_RECORDING: 'true' } : {}),
-    ...(command === 'record' && languages
-      ? { [SCREENCI_LANGUAGES_ENV]: languages }
-      : {}),
-    ...(command === 'test' && !mockRecord
-      ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
-      : {}),
-    ...(command === 'test' && mockRecord
-      ? { [SCREENCI_MOCK_RECORD_ENV]: 'true' }
-      : {}),
-  })
+  // One test-discovery pass (`--list`) serves both checks: unique titles and,
+  // for record, duplicate-editId resolution over the discovered sources.
+  const discoveryReport = await collectPlaywrightListReport(
+    configPath,
+    additionalArgs,
+    {
+      ...envForChild,
+      SCREENCI_CONFIG_DIR: dirname(configPath),
+      ...(command === 'record' ? { SCREENCI_RECORDING: 'true' } : {}),
+      ...(command === 'record' && languages
+        ? { [SCREENCI_LANGUAGES_ENV]: languages }
+        : {}),
+      ...(command === 'test' && !mockRecord
+        ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
+        : {}),
+      ...(command === 'test' && mockRecord
+        ? { [SCREENCI_MOCK_RECORD_ENV]: 'true' }
+        : {}),
+    }
+  )
+
+  if (discoveryReport !== null) {
+    const duplicates = findDuplicateTitles(
+      collectPlaywrightListTitles(discoveryReport.suites ?? [])
+    )
+    if (duplicates.length > 0) {
+      throw new Error(formatDuplicateTitlesMessage(duplicates))
+    }
+  }
+
+  // Resolve duplicate editIds in the discovered sources before recording, so
+  // the record captures corrected (unique) slugs. Static analysis only; a no-op
+  // when nothing collides. Record only: `test` must never rewrite sources.
+  if (command === 'record' && discoveryReport !== null) {
+    const projectDir = dirname(configPath)
+    await resolveDuplicateEditIdsInSources(
+      collectPlaywrightListFiles(discoveryReport),
+      {
+        screenciDir: resolve(projectDir, '.screenci'),
+        projectDir,
+        log: (message) => logger.info(message),
+        warn: (message) => logger.warn(message),
+        formatFile: createProjectFormatter(projectDir, {
+          warn: (message) => logger.warn(message),
+        }),
+      }
+    )
+  }
 
   if (verbose && process.env.SCREENCI_RECORDING !== 'true') {
     logger.info(`Using config: ${configPath}`)

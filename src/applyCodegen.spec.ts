@@ -5,6 +5,7 @@ import {
   requireTypescriptForCodegen,
 } from './applyCodegen.js'
 import type { EditableSnapshot } from './editableSnapshot.js'
+import { planDuplicateEditIdFixes, readEditIdCounters } from './editIdStamp.js'
 
 const FILE = '/proj/demo.screenci.ts'
 
@@ -313,5 +314,97 @@ describe('applyCodegenRequest: typed refusal reasons in errors', () => {
       props: { name: 'intro' },
     })
     await expect(apply(record)).rejects.toThrow(/\[unknown-edit-id\]/)
+  })
+})
+
+describe('applyCodegenRequest: duplicate editId self-heal', () => {
+  const DUP_SOURCE = [
+    "import { video } from 'screenci'",
+    '',
+    "video('Demo', async ({ page }) => {",
+    "  await page.locator('#a').fill('A', { editId: 'fill1' })",
+    "  await page.locator('#b').fill('B', { editId: 'fill1' })",
+    '})',
+    '',
+  ].join('\n')
+
+  const DUP_SNAPSHOT: EditableSnapshot = {
+    version: 1,
+    videos: {
+      Demo: [
+        {
+          key: 'fill1',
+          editId: 'fill1',
+          locked: false,
+          defaults: {},
+          source: { file: FILE, line: 4 },
+        },
+      ],
+    },
+  }
+
+  const mediaAfterFill1 = JSON.stringify({
+    type: 'mediaEdit',
+    id: 'm1',
+    kind: 'narrationCue',
+    afterEditId: 'fill1',
+    blocking: true,
+    props: { name: 'intro' },
+  })
+
+  it('re-stamps the duplicate then applies the edit', async () => {
+    const files: Record<string, string> = { [FILE]: DUP_SOURCE }
+    await applyCodegenRequest(
+      {
+        requestId: 'req1',
+        videoName: 'Demo',
+        editId: 'edit1',
+        editJson: mediaAfterFill1,
+        requiresRecord: false,
+      },
+      {
+        ts,
+        readFile: (path) => files[path] ?? null,
+        writeFile: (path, content) => {
+          files[path] = content
+        },
+        editableSnapshot: DUP_SNAPSHOT,
+        resolveDuplicateEditIds: async (paths) => {
+          const plan = planDuplicateEditIdFixes(
+            paths.map((path) => ({ path, text: files[path]! })),
+            readEditIdCounters('/proj/.screenci'),
+            { ts }
+          )
+          for (const file of plan.files) files[file.path] = file.after
+          return plan.renamed.length > 0
+        },
+      }
+    )
+    // The duplicate became fill2, the surviving fill1 got the narration cue.
+    expect(files[FILE]).toContain("editId: 'fill2'")
+    expect(files[FILE]).toContain('await narration.intro()')
+    expect(files[FILE]!.match(/editId: 'fill1'/g)).toHaveLength(1)
+  })
+
+  it('still throws when the duplicate cannot be resolved', async () => {
+    const files: Record<string, string> = { [FILE]: DUP_SOURCE }
+    await expect(
+      applyCodegenRequest(
+        {
+          requestId: 'req1',
+          videoName: 'Demo',
+          editId: 'edit1',
+          editJson: mediaAfterFill1,
+          requiresRecord: false,
+        },
+        {
+          ts,
+          readFile: (path) => files[path] ?? null,
+          writeFile: () => {},
+          editableSnapshot: DUP_SNAPSHOT,
+          resolveDuplicateEditIds: async () => false,
+        }
+      )
+    ).rejects.toThrow(/\[ambiguous-edit-id\]/)
   })
 })

@@ -492,9 +492,25 @@ export function renameEditId(
   oldId: string,
   newId: string
 ): TextEdit | null {
-  const { ts } = ctx
   const call = findCallByEditId(ctx, oldId)
   if (call === null) return null
+  return renameEditIdAtCall(ctx, call, oldId, newId)
+}
+
+/**
+ * Replace the `editId: '<oldId>'` string literal on a specific, already-located
+ * call node with `newId`. Unlike {@link renameEditId} this targets one known
+ * node, so it works even when the slug is duplicated in the file (the caller
+ * disambiguates which occurrence to rewrite). Null when the node carries no
+ * matching `editId` literal.
+ */
+export function renameEditIdAtCall(
+  ctx: CodemodContext,
+  call: TS.CallExpression,
+  oldId: string,
+  newId: string
+): TextEdit | null {
+  const { ts } = ctx
   for (const argument of call.arguments) {
     if (!ts.isObjectLiteralExpression(argument)) continue
     for (const property of argument.properties) {
@@ -514,6 +530,67 @@ export function renameEditId(
     }
   }
   return null
+}
+
+/** A single `editId: '<slug>'` occurrence found by static analysis. */
+export type EditIdOccurrence = {
+  editId: string
+  call: TS.CallExpression
+  /** Bounds of the string literal (including quotes), for a surgical rewrite. */
+  literalStart: number
+  literalEnd: number
+  /** The call's method/function name, e.g. `click`, `autoZoom`. */
+  callName: string
+}
+
+/** The method/function name of a call, or '' when it is not a plain call. */
+function callExpressionName(
+  ctx: CodemodContext,
+  call: TS.CallExpression
+): string {
+  const { ts } = ctx
+  const callee = call.expression
+  if (ts.isPropertyAccessExpression(callee)) return callee.name.text
+  if (ts.isIdentifier(callee)) return callee.text
+  return ''
+}
+
+/**
+ * Every `editId: '<slug>'` occurrence in the file. Unlike the slug-filtered
+ * {@link findCallByEditId}, this walks the source once and returns them all, so
+ * a caller can detect duplicates (one slug at more than one call site).
+ */
+export function collectEditIdOccurrences(
+  ctx: CodemodContext
+): EditIdOccurrence[] {
+  const { ts, sourceFile } = ctx
+  const occurrences: EditIdOccurrence[] = []
+  const visit = (node: TS.Node): void => {
+    if (ts.isCallExpression(node)) {
+      for (const argument of node.arguments) {
+        if (!ts.isObjectLiteralExpression(argument)) continue
+        for (const property of argument.properties) {
+          if (
+            ts.isPropertyAssignment(property) &&
+            ts.isIdentifier(property.name) &&
+            property.name.text === 'editId' &&
+            ts.isStringLiteral(property.initializer)
+          ) {
+            occurrences.push({
+              editId: property.initializer.text,
+              call: node,
+              literalStart: property.initializer.getStart(),
+              literalEnd: property.initializer.getEnd(),
+              callName: callExpressionName(ctx, node),
+            })
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return occurrences
 }
 
 /** The statement containing `node` whose parent is a block (insertable). */

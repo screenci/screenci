@@ -33,6 +33,13 @@ export type ApplyCodegenDeps = {
    * content unchanged.
    */
   formatFile?: (path: string, content: string) => Promise<string>
+  /**
+   * Optional self-heal for duplicate editIds. Given candidate source paths, it
+   * re-stamps any slug that appears at more than one call site with a fresh
+   * slug, writes the fixes, and returns true when it changed anything. Called
+   * before failing on an `ambiguous-edit-id`, so the edit can then reapply.
+   */
+  resolveDuplicateEditIds?: (paths: string[]) => Promise<boolean>
 }
 
 /**
@@ -72,40 +79,63 @@ export async function applyCodegenRequest(
   })
 
   const editorOptionsVideo = split.studioOptions[request.videoName]
-  const plan = planCodeSync(
-    {
-      // The codegen path carries no web action-param state to diff; the
-      // single record IS the change.
-      comparison: { videos: [], snapshotEmpty: true },
-      actionSnapshot: { version: 1, videos: {} },
-      editableSnapshot: deps.editableSnapshot,
-      editableOverrides: split.overrides,
-      codifyEdits: split.codify,
-      removedCodifyEdits: split.removedCodify,
-      renames: split.renames,
-      overlayDeclEdits: split.overlayDecls,
-      ...(editorOptionsVideo !== undefined && {
-        editorOptionsSync: {
-          videos: {
-            [request.videoName]: {
-              ...editorOptionsVideo,
-              content: {
-                narration: false,
-                text: false,
-                audio: false,
-                assets: false,
+  const computePlan = () =>
+    planCodeSync(
+      {
+        // The codegen path carries no web action-param state to diff; the
+        // single record IS the change.
+        comparison: { videos: [], snapshotEmpty: true },
+        actionSnapshot: { version: 1, videos: {} },
+        editableSnapshot: deps.editableSnapshot,
+        editableOverrides: split.overrides,
+        codifyEdits: split.codify,
+        removedCodifyEdits: split.removedCodify,
+        renames: split.renames,
+        overlayDeclEdits: split.overlayDecls,
+        ...(editorOptionsVideo !== undefined && {
+          editorOptionsSync: {
+            videos: {
+              [request.videoName]: {
+                ...editorOptionsVideo,
+                content: {
+                  narration: false,
+                  text: false,
+                  audio: false,
+                  assets: false,
+                },
               },
             },
           },
-        },
-      }),
-      narrationEdits: split.narrationEdits,
-      valuesEdits: split.valuesEdits,
-      languagesEdits: split.languagesEdits,
-      editorMediaEdits: split.editorMediaEdits,
-    },
-    { ts: deps.ts, readFile: deps.readFile }
-  )
+        }),
+        narrationEdits: split.narrationEdits,
+        valuesEdits: split.valuesEdits,
+        languagesEdits: split.languagesEdits,
+        editorMediaEdits: split.editorMediaEdits,
+      },
+      { ts: deps.ts, readFile: deps.readFile }
+    )
+
+  let plan = computePlan()
+
+  // A duplicate editId (one slug at two distinct call sites) makes the target
+  // ambiguous. Self-heal by re-stamping the duplicates, then reapply once.
+  if (
+    plan.unappliable.length > 0 &&
+    plan.unappliable.every((item) => item.reason === 'ambiguous-edit-id') &&
+    deps.resolveDuplicateEditIds !== undefined
+  ) {
+    const paths = [
+      ...new Set(
+        Object.values(deps.editableSnapshot.videos)
+          .flat()
+          .map((entry) => entry.source?.file)
+          .filter((file): file is string => file !== undefined)
+      ),
+    ]
+    if (await deps.resolveDuplicateEditIds(paths)) {
+      plan = computePlan()
+    }
+  }
 
   if (plan.unappliable.length > 0) {
     const reasons = plan.unappliable

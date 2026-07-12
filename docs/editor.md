@@ -680,6 +680,16 @@ The slug is the action's display name on the editor timeline, and it can be
 renamed there: the rename is codegen'd by replacing the slug's string literal
 in code.
 
+Because the slug IS the identity, two distinct actions must never share one. A
+copy-pasted `editId` silently merges both into a single identity (the second
+looks like a loop repeat and its edits cannot reach code). Static analysis
+guards against this automatically: before recording, and during the
+`screenci edit` startup handshake and its codegen apply, any slug found at two
+or more distinct call sites is resolved by keeping the first occurrence and
+re-stamping the rest with fresh slugs (allocated from `.screenci/edit-ids.json`,
+so they never collide with an existing id). A genuine loop (one call site that
+runs repeatedly) is a single occurrence in source and is left untouched.
+
 editId is optional until edits need to reach code. Actions without one keep
 the matcher-based identity (locator description + occurrence) for display, but
 codegen never guesses at their call sites: their edits cannot apply until the

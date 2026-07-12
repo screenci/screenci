@@ -12,11 +12,14 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import {
   applyTextEdits,
+  collectEditIdOccurrences,
   createContext,
   findCallNamed,
+  renameEditIdAtCall,
   setOptionValue,
   statementAtLine,
   type CodemodContext,
+  type TextEdit,
   type TsModule,
 } from './codemod.js'
 import type {
@@ -264,4 +267,98 @@ export function planEditIdStamps(
     .filter(([path, after]) => originals.get(path) !== after)
     .map(([path, after]) => ({ path, before: originals.get(path)!, after }))
   return { files, stamped, counters }
+}
+
+// ─── Duplicate editId resolution ──────────────────────────────────────────────
+
+export type DuplicateEditIdFile = { path: string; text: string }
+
+export type EditIdRename = { path: string; from: string; to: string }
+
+export type DuplicateEditIdFixPlan = {
+  /** Files with duplicates rewritten: original and edited text (not written). */
+  files: Array<{ path: string; before: string; after: string }>
+  /** One entry per re-stamped occurrence, for logging. */
+  renamed: EditIdRename[]
+  /** Mutated counters to persist when the fixes are written. */
+  counters: EditIdCounters
+}
+
+export type DuplicateEditIdFixDeps = {
+  ts: TsModule
+}
+
+/**
+ * Resolve editId collisions across the given source files: a slug used at two
+ * or more distinct call sites silently merges those actions into one runtime
+ * identity (the second becomes a phantom `slug#1` loop-repeat) and makes the
+ * slug ambiguous for codegen. Static analysis finds every occurrence, keeps the
+ * first (by file path, then position), and re-stamps the rest with a fresh,
+ * never-reused slug allocated from `counters`.
+ *
+ * A genuine loop (one call site executed repeatedly) is a single occurrence in
+ * source, so it is never touched: only distinct call sites sharing a slug are.
+ */
+export function planDuplicateEditIdFixes(
+  files: readonly DuplicateEditIdFile[],
+  counters: EditIdCounters,
+  deps: DuplicateEditIdFixDeps
+): DuplicateEditIdFixPlan {
+  // Collect every occurrence across all files, tagged with its file path.
+  const occurrences = files
+    .flatMap((file) => {
+      const ctx: CodemodContext = createContext(deps.ts, file.path, file.text)
+      return collectEditIdOccurrences(ctx).map((occurrence) => ({
+        ...occurrence,
+        path: file.path,
+        ctx,
+      }))
+    })
+    // Deterministic keep order: first by path, then by source position.
+    .sort((a, b) =>
+      a.path === b.path
+        ? a.literalStart - b.literalStart
+        : a.path.localeCompare(b.path)
+    )
+
+  const seen = new Set<string>()
+  const editsByFile = new Map<string, TextEdit[]>()
+  const renamed: EditIdRename[] = []
+  // Every slug already present in code, so an allocated replacement never
+  // collides with a hand-written slug the counters do not yet know about.
+  const inUse = new Set(occurrences.map((occurrence) => occurrence.editId))
+
+  for (const occurrence of occurrences) {
+    if (!seen.has(occurrence.editId)) {
+      seen.add(occurrence.editId)
+      continue // first occurrence keeps the slug
+    }
+    // A later occurrence of an already-seen slug: re-stamp it with the next
+    // free slug (skip any the counter would mint onto an existing one).
+    let slug = allocateEditId(counters, prefixFor(occurrence.callName))
+    while (inUse.has(slug)) {
+      slug = allocateEditId(counters, prefixFor(occurrence.callName))
+    }
+    inUse.add(slug)
+    const edit = renameEditIdAtCall(
+      occurrence.ctx,
+      occurrence.call,
+      occurrence.editId,
+      slug
+    )
+    if (edit === null) continue // counter gap is harmless; reuse is forbidden
+    const edits = editsByFile.get(occurrence.path) ?? []
+    edits.push(edit)
+    editsByFile.set(occurrence.path, edits)
+    renamed.push({ path: occurrence.path, from: occurrence.editId, to: slug })
+  }
+
+  const fileByPath = new Map(files.map((file) => [file.path, file.text]))
+  const changed: DuplicateEditIdFixPlan['files'] = []
+  for (const [path, edits] of editsByFile) {
+    const before = fileByPath.get(path)!
+    const after = applyTextEdits(before, edits)
+    if (after !== before) changed.push({ path, before, after })
+  }
+  return { files: changed, renamed, counters }
 }

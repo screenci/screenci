@@ -5,6 +5,7 @@ import {
   awaitedCallHead,
   chainRootIdentifier,
   classifyEditIdSite,
+  collectEditIdOccurrences,
   createContext,
   diffLines,
   ensureNamedImport,
@@ -17,6 +18,7 @@ import {
   insertStatementBefore,
   removeFullLine,
   removeOption,
+  renameEditIdAtCall,
   setBuilderOptions,
   setNarrationValue,
   setValuesValue,
@@ -1206,6 +1208,48 @@ describe('classifyEditIdSite', () => {
     expect(classifyEditIdSite(ctx, 'dup')).toBe('ambiguous')
     expect(classifyEditIdSite(ctx, 'branchy')).toBe('control-flow')
     expect(classifyEditIdSite(ctx, 'one')).toBe('ok')
+  })
+})
+
+describe('collectEditIdOccurrences', () => {
+  it('finds every occurrence with its call name and duplicates', () => {
+    const ctx = ctxOf(
+      [
+        "import { video, autoZoom } from 'screenci'",
+        "video('D', async ({ page }) => {",
+        "  await page.locator('#a').click({ editId: 'click1' })",
+        "  await page.locator('#b').click({ editId: 'click1' })",
+        "  await autoZoom(async () => {}, { editId: 'autoZoom1' })",
+        '})',
+        '',
+      ].join('\n')
+    )
+    const occurrences = collectEditIdOccurrences(ctx)
+    expect(occurrences.map((o) => [o.editId, o.callName])).toEqual([
+      ['click1', 'click'],
+      ['click1', 'click'],
+      ['autoZoom1', 'autoZoom'],
+    ])
+    // The two click1 occurrences point at distinct literal ranges.
+    expect(occurrences[0]!.literalStart).not.toBe(occurrences[1]!.literalStart)
+  })
+})
+
+describe('renameEditIdAtCall', () => {
+  it('rewrites one specific occurrence among duplicates', () => {
+    const ctx = ctxOf(
+      [
+        "await page.locator('#a').click({ editId: 'dup' })",
+        "await page.locator('#b').click({ editId: 'dup' })",
+        '',
+      ].join('\n')
+    )
+    const occurrences = collectEditIdOccurrences(ctx)
+    const edit = renameEditIdAtCall(ctx, occurrences[1]!.call, 'dup', 'click9')
+    expect(edit).not.toBeNull()
+    const after = applyTextEdits(ctx.source, [edit!])
+    expect(after).toContain("locator('#a').click({ editId: 'dup' })")
+    expect(after).toContain("locator('#b').click({ editId: 'click9' })")
   })
 })
 

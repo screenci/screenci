@@ -37,6 +37,13 @@ export type DevStartupDeps = {
     videos: Record<string, EditableSnapshotEntry[]>
   ) => Promise<number>
   /**
+   * Re-stamps editId collisions (one slug at two distinct call sites) across
+   * the given source files with fresh slugs. Returns the number of renames.
+   * A rewrite changes the source, so the affected videos re-record on the next
+   * pass via the freshness check. Optional; a no-op when unwired.
+   */
+  resolveDuplicateEditIds?: (sourcePaths: string[]) => Promise<number>
+  /**
    * Records the videos matching the grep pattern (or all when undefined) as
    * a preview (uploaded to the preview slot, no render) and uploads them.
    */
@@ -130,7 +137,7 @@ export async function runDevStartupSync(
   // actions, pass 2 stamps the editIds and re-records, pass 3 verifies.
   const MAX_PASSES = 3
   for (let pass = 1; pass <= MAX_PASSES; pass += 1) {
-    const states = await collectStates(deps, matches)
+    let states = await collectStates(deps, matches)
 
     // No kept data yet: nothing is known about the videos, record everything
     // this session manages and learn from the produced data.json files.
@@ -141,6 +148,27 @@ export async function runDevStartupSync(
       )
       await deps.recordPreview(options.grep)
       continue
+    }
+
+    // Resolve duplicate editIds (one slug at two distinct call sites) before
+    // anything else: the rewrite changes the source, so re-collect freshness so
+    // the affected videos re-record this pass.
+    if (deps.resolveDuplicateEditIds) {
+      const sourcePaths = [
+        ...new Set(
+          states
+            .flatMap((state) => state.entries)
+            .map((entry) => entry.source?.file)
+            .filter((file): file is string => file !== undefined)
+        ),
+      ]
+      const fixed = await deps.resolveDuplicateEditIds(sourcePaths)
+      if (fixed > 0) {
+        deps.logger.info(
+          `Resolved ${fixed} duplicate editId${fixed === 1 ? '' : 's'} into the sources.`
+        )
+        states = await collectStates(deps, matches)
+      }
     }
 
     // Stamp missing editIds first so the (re-)record's data.json carries them.

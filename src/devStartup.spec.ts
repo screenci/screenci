@@ -74,6 +74,28 @@ describe('runDevStartupSync', () => {
     expect(result.recorded).toEqual([])
   })
 
+  it('resolves duplicate editIds and re-records the affected video', async () => {
+    const resolveDuplicateEditIds = vi.fn(async () => 1)
+    let hash = 'hash-a'
+    const deps = makeDeps([kept('Demo', 'hash-a', [entry('fill1')])], {
+      resolveDuplicateEditIds,
+      // The rewrite changes the source, so the re-collected hash is stale.
+      hashSource: async () => hash,
+    })
+    resolveDuplicateEditIds.mockImplementation(async () => {
+      hash = 'hash-b'
+      return 1
+    })
+
+    const result = await runDevStartupSync({}, deps)
+
+    expect(resolveDuplicateEditIds).toHaveBeenCalledWith([
+      '/proj/demo.screenci.ts',
+    ])
+    expect(deps.recordPreview).toHaveBeenCalledWith('Demo')
+    expect(result.recorded).toEqual(['Demo'])
+  })
+
   it('re-records a video whose source hash changed', async () => {
     const deps = makeDeps([kept('Demo', 'old-hash', [entry('delay1')])])
 

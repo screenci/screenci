@@ -44,9 +44,8 @@ import { getRuntimePage, setRuntimeCrop } from './runtimeContext.js'
 import { ScreenciError } from './errors.js'
 import {
   withActiveRecordingContext,
-  resolveEffectiveRecordOptions,
-  resolveStudioRecordOptions,
-  resolveStudioRenderOptions,
+  resolveRecordOptionsBase,
+  resolveRenderOptionsBase,
 } from './video.js'
 import {
   createVideoBuilder,
@@ -60,7 +59,6 @@ import {
   buildValues,
   type Values,
 } from './localizeRuntime.js'
-import { parseValuesOverrides } from './runtimeMode.js'
 import { ActionParamCollector } from './actionParams.js'
 import {
   combineRecordOptionsLayers,
@@ -143,9 +141,7 @@ const _screenshotBase = base.extend<
   },
 
   values: async ({ _screenciValues, _screenciLanguage }, use) => {
-    await use(
-      buildValues(_screenciValues, _screenciLanguage, parseValuesOverrides())
-    )
+    await use(buildValues(_screenciValues, _screenciLanguage))
   },
 
   overlays: async ({ _screenciOverlays, _screenciLanguage }, use) => {
@@ -201,22 +197,16 @@ const _screenshotBase = base.extend<
       isMobile,
       deviceScaleFactor,
     },
-    use,
-    testInfo
+    use
   ) => {
-    const { base: baseRecordOptions } = resolveStudioRecordOptions(
+    const { base: baseRecordOptions } = resolveRecordOptionsBase(
       combineRecordOptionsLayers(
         _screenciConfigRecordOptions,
         _screenciRecordOptions
       )
     )
-    const effectiveRecordOptions = resolveEffectiveRecordOptions(
-      baseRecordOptions,
-      _screenciVideoName ?? testInfo.title
-    )
-    const aspectRatio =
-      effectiveRecordOptions.aspectRatio ?? DEFAULT_ASPECT_RATIO
-    const quality = effectiveRecordOptions.quality ?? DEFAULT_QUALITY
+    const aspectRatio = baseRecordOptions.aspectRatio ?? DEFAULT_ASPECT_RATIO
+    const quality = baseRecordOptions.quality ?? DEFAULT_QUALITY
     const dimensions = getDimensions(aspectRatio, quality)
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
 
@@ -226,7 +216,7 @@ const _screenshotBase = base.extend<
         dimensions,
         applyLocaleDefault: shouldRecord,
         deviceScaleFactor: resolveDeviceScaleFactor(
-          effectiveRecordOptions,
+          baseRecordOptions,
           deviceScaleFactor,
           DEFAULT_SCREENSHOT_DEVICE_SCALE_FACTOR
         ),
@@ -278,22 +268,19 @@ const _screenshotBase = base.extend<
     testInfo
   ) => {
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
-    const { base: baseRecordOptions } = resolveStudioRecordOptions(
+    const { base: baseRecordOptions } = resolveRecordOptionsBase(
       combineRecordOptionsLayers(
         _screenciConfigRecordOptions,
         _screenciRecordOptions
       )
     )
-    const { obj: renderOptionsObj } = resolveStudioRenderOptions(
+    const { obj: renderOptionsObj } = resolveRenderOptionsBase(
       combineRenderOptionsLayers(
         _screenciConfigRenderOptions,
         _screenciRenderOptions
       )
     )
-    const recordOptions = resolveEffectiveRecordOptions(
-      baseRecordOptions,
-      _screenciVideoName ?? testInfo.title
-    )
+    const recordOptions = baseRecordOptions
     const videoName = _screenciVideoName ?? testInfo.title
     // Every capture is web-editable: render/record options are always marked
     // studio so the app knows it may override them.

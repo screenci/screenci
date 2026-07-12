@@ -57,40 +57,18 @@ describe('buildValues', () => {
     expect(buildValues(t, 'fi')).toEqual({ heading: 'Hi', other: 'Muu' })
   })
 
-  it('returns an empty string per field for unset editor-owned (array) text', () => {
+  it('returns an empty string per field for an unset names-only field', () => {
     const t = text(['heading'])
-    expect(buildValues(t, 'en', null)).toEqual({ heading: '' })
+    expect(buildValues(t, 'en')).toEqual({ heading: '' })
   })
 
-  it('falls back to the code seed for an unset field, but a web edit wins', () => {
+  it('falls back to the code seed for an unset field', () => {
     const t = text({ heading: 'Hi' })
-    // No override: the seed renders, so the first capture is not blank.
-    expect(buildValues(t, 'en', null)).toEqual({ heading: 'Hi' })
-    // A Studio edit overrides the seed.
-    expect(buildValues(t, 'en', { en: { heading: 'Edited' } })).toEqual({
-      heading: 'Edited',
-    })
+    expect(buildValues(t, 'en')).toEqual({ heading: 'Hi' })
   })
 
   it('returns an empty object when there is no text', () => {
     expect(buildValues(undefined, 'en')).toEqual({})
-  })
-
-  it('lets a Studio override win over the seed for the active language', () => {
-    const t = text({ en: { heading: 'Seed' }, fi: { heading: 'Siemen' } })
-    const overrides = { fi: { heading: 'Studio FI' } }
-    expect(buildValues(t, 'fi', overrides)).toEqual({
-      heading: 'Studio FI',
-    })
-    expect(buildValues(t, 'en', overrides)).toEqual({ heading: 'Seed' })
-  })
-
-  it('resolves editor-owned text from overrides', () => {
-    const t = text(['heading'])
-    expect(buildValues(t, 'en', { en: { heading: 'From Studio' } })).toEqual({
-      heading: 'From Studio',
-    })
-    expect(buildValues(t, 'en', null)).toEqual({ heading: '' })
   })
 })
 
@@ -417,6 +395,17 @@ describe('code-seeded vs blank editor-owned narration cues', () => {
   it('emits a text-less studio cue for a blank array declaration', async () => {
     const markers = buildNarrationMarkers(narr(['intro']), ['en'])
     await markers.intro()
+    expect(cueStarts).toEqual([])
+    expect(studioCueStarts).toEqual(['intro'])
+  })
+
+  it('emits a studio cue for an object-form { editor } declaration', async () => {
+    const markers = buildNarrationMarkers(
+      narr({ en: { intro: { editor: 'intro' } } }),
+      ['en']
+    )
+    await markers.intro()
+    // A backend-hosted cue takes the studio path (no seeded translations).
     expect(cueStarts).toEqual([])
     expect(studioCueStarts).toEqual(['intro'])
   })

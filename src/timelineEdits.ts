@@ -32,9 +32,20 @@
  *   `video.narration({...})` declaration (added when missing; the declaration
  *   is converted to the language-major form when a non-default language is
  *   edited).
+ * - `valuesEdit`: an on-screen `values` field value change, merged into the
+ *   `video.values({...})` declaration the same way narration edits are (added
+ *   when missing; a names-only declaration is converted to an object literal
+ *   seeded with the edited field).
+ * - `languagesEdit`: the full desired language set for a video, written into
+ *   the `video.languages([...])` declaration (the block is created when
+ *   missing and its array extended otherwise).
+ * - `editorMediaEdit`: declares an editor-uploaded media item (overlay, narration
+ *   audio, or audio track) as backend-hosted in code, written into
+ *   `video.overlays/narration/audio({...})` as `{ <name>: { editor } }`. The
+ *   bytes stay in the backend; the declaration only makes the item explicit.
  */
 
-export const TIMELINE_EDITS_VERSION = 4
+export const TIMELINE_EDITS_VERSION = 5
 
 // ─── Edit records ────────────────────────────────────────────────────────────
 
@@ -234,6 +245,71 @@ export type NarrationEdit = {
   value: NarrationCueValue
 }
 
+/**
+ * The value of one on-screen `values` field: a plain string. Unlike narration
+ * there is no per-cue metadata, so the value is always the raw text.
+ */
+export type ValuesFieldValue = string
+
+/**
+ * An on-screen `values` field value change made in the web editor, applied to
+ * the `video.values(...)` declaration argument. `lang` is a language code or
+ * `'default'` for the shared value. Handled exactly like {@link NarrationEdit}:
+ * a content-major declaration edited in a non-default language is rewritten to
+ * the language-major form, and a names-only declaration is converted to an
+ * object literal seeded with the edited field. The id is
+ * `values|<field>|<lang>` so repeated sends coalesce per field and language.
+ */
+export type ValuesEdit = {
+  type: 'valuesEdit'
+  id: string
+  field: string
+  lang: string
+  /**
+   * True when `lang` is the video's default language: the edit targets the
+   * shared value (content-major object or `default` sub-object) unless the
+   * declaration carries an explicit `[lang]` sub-object.
+   */
+  isDefault?: boolean
+  value: ValuesFieldValue
+}
+
+/**
+ * The full desired language set for a video, written into the
+ * `video.languages([...])` declaration. `languages` lists every language the
+ * video should record, the default language first. The declaration's array is
+ * created when missing and extended (preserving existing order) otherwise; an
+ * object-config declaration has its `languages` array merged. The id is
+ * `languages` so repeated sends coalesce last-write-wins per video.
+ */
+export type LanguagesEdit = {
+  type: 'languagesEdit'
+  id: string
+  languages: string[]
+}
+
+export const EDITOR_MEDIA_METHODS = ['overlays', 'narration', 'audio'] as const
+export type EditorMediaMethod = (typeof EDITOR_MEDIA_METHODS)[number]
+
+/**
+ * Declares an editor-uploaded media item in code as backend-hosted: written
+ * into `video.overlays({...})` / `video.narration({...})` / `video.audio({...})`
+ * as `{ <name>: { editor: '<editor>' } }` (the declaration is created when
+ * missing; a names-only array form is converted to the object form). The bytes
+ * stay in the ScreenCI backend; the declaration only makes the item an explicit
+ * part of the video. The id is `editorMedia|<method>|<name>` so repeated sends
+ * coalesce per item.
+ */
+export type EditorMediaEdit = {
+  type: 'editorMediaEdit'
+  id: string
+  method: EditorMediaMethod
+  /** The declaration key (the code-facing controller/cue name). */
+  name: string
+  /** The backend asset name (conventionally the same as `name`). */
+  editor: string
+}
+
 /** Codify-only records: placed into code by `screenci sync`, never at runtime. */
 export type CodifyEdit =
   | MediaEdit
@@ -249,6 +325,9 @@ export type EditRecord =
   | OverlayDeclEdit
   | OptionsEdit
   | NarrationEdit
+  | ValuesEdit
+  | LanguagesEdit
+  | EditorMediaEdit
 
 export type TimelineEditsDoc = {
   version: number
@@ -282,6 +361,24 @@ export function narrationEditIdFor(cueName: string, lang: string): string {
   return `narration|${cueName}|${lang}`
 }
 
+/** Stable id of the values field edit for a field name and language. */
+export function valuesEditIdFor(field: string, lang: string): string {
+  return `values|${field}|${lang}`
+}
+
+/** Stable id of the languages edit for a video (one per video). */
+export function languagesEditId(): string {
+  return `languages`
+}
+
+/** Stable id of the editor-media marker edit for a method and item name. */
+export function editorMediaEditIdFor(
+  method: EditorMediaMethod,
+  name: string
+): string {
+  return `editorMedia|${method}|${name}`
+}
+
 /** Stable id of the param edit targeting an editable key. */
 export function paramEditIdFor(key: string): string {
   return `param|${key}`
@@ -302,6 +399,9 @@ export type ParsedEditId =
   | { kind: 'rename'; targetEditId: string }
   | { kind: 'options'; method: OptionsEditMethod }
   | { kind: 'narration'; cueName: string; lang: string }
+  | { kind: 'values'; field: string; lang: string }
+  | { kind: 'languages' }
+  | { kind: 'editorMedia'; method: EditorMediaMethod; name: string }
   | { kind: 'overlayDecl'; overlayName: string }
   | { kind: 'other'; editId: string }
 
@@ -332,6 +432,39 @@ export function parseEditId(editId: string): ParsedEditId {
         kind: 'narration',
         cueName: rest.slice(0, split),
         lang: rest.slice(split + 1),
+      }
+    }
+    return { kind: 'other', editId }
+  }
+  if (editId.startsWith('values|')) {
+    const rest = editId.slice('values|'.length)
+    const split = rest.lastIndexOf('|')
+    if (split > 0 && split < rest.length - 1) {
+      return {
+        kind: 'values',
+        field: rest.slice(0, split),
+        lang: rest.slice(split + 1),
+      }
+    }
+    return { kind: 'other', editId }
+  }
+  if (editId === 'languages') {
+    return { kind: 'languages' }
+  }
+  if (editId.startsWith('editorMedia|')) {
+    const rest = editId.slice('editorMedia|'.length)
+    const split = rest.indexOf('|')
+    if (split > 0 && split < rest.length - 1) {
+      const method = rest.slice(0, split)
+      const known = EDITOR_MEDIA_METHODS.find(
+        (candidate) => candidate === method
+      )
+      if (known !== undefined) {
+        return {
+          kind: 'editorMedia',
+          method: known,
+          name: rest.slice(split + 1),
+        }
       }
     }
     return { kind: 'other', editId }

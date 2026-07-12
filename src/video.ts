@@ -102,12 +102,7 @@ import {
 } from './runtimeContext.js'
 import { installRedactController } from './redact.js'
 import { escapeFileSystemPathSegment } from './fileSystemName.js'
-import {
-  resolveRecordingTimingDuration,
-  parseValuesOverrides,
-  parseRecordOptions,
-  mergeStudioRecordOptions,
-} from './runtimeMode.js'
+import { resolveRecordingTimingDuration } from './runtimeMode.js'
 import { ActionParamCollector } from './actionParams.js'
 import {
   combineRecordOptionsLayers,
@@ -145,27 +140,12 @@ function assertNotLegacyStudioString(value: unknown, option: string): void {
 }
 
 /**
- * The record options actually used for the capture: web-editor record options
- * fetched before recording (keyed by video name) override the code aspect
- * ratio, quality, and fps.
- */
-export function resolveEffectiveRecordOptions(
-  recordOptions: RecordOptions,
-  videoName: string
-): RecordOptions {
-  return mergeStudioRecordOptions(
-    recordOptions,
-    parseRecordOptions()?.[videoName]
-  )
-}
-
-/**
  * Resolve the `recordOptions` option: the code values merged over the defaults
  * (config layer plus per-video declaration, pre-combined by the caller). Every
  * recording's capture options are editable in the web app; the code values are
  * the starting point.
  */
-export function resolveStudioRecordOptions(
+export function resolveRecordOptionsBase(
   recordOptions: RecordOptions | Partial<RecordOptions> | undefined
 ): { base: RecordOptions } {
   assertNotLegacyStudioString(recordOptions, 'recordOptions')
@@ -181,7 +161,7 @@ export function resolveStudioRecordOptions(
  * editable in the web app; the code values (or the defaults, resolved at write
  * time) are the starting point.
  */
-export function resolveStudioRenderOptions(
+export function resolveRenderOptionsBase(
   renderOptions: RenderOptions | undefined
 ): {
   obj: RenderOptions | undefined
@@ -656,7 +636,7 @@ const _videoBase = base.extend<
     use,
     testInfo
   ) => {
-    const { obj: renderOptionsObj } = resolveStudioRenderOptions(
+    const { obj: renderOptionsObj } = resolveRenderOptionsBase(
       combineRenderOptionsLayers(
         _screenciConfigRenderOptions,
         _screenciRenderOptions
@@ -676,9 +656,7 @@ const _videoBase = base.extend<
   },
 
   values: async ({ _screenciValues, _screenciLanguage }, use) => {
-    await use(
-      buildValues(_screenciValues, _screenciLanguage, parseValuesOverrides())
-    )
+    await use(buildValues(_screenciValues, _screenciLanguage))
   },
 
   overlays: async ({ _screenciOverlays, _screenciLanguage }, use) => {
@@ -797,26 +775,19 @@ const _videoBase = base.extend<
       hasTouch,
       isMobile,
     },
-    use,
-    testInfo
+    use
   ) => {
-    // Configure browser context. The viewport is derived from recordOptions
-    // (with web-editor record-option overrides applied); other Playwright
-    // `use` options (colorScheme, locale, storageState, ...) are forwarded so
-    // they take effect on the context screenci creates.
-    const { base: baseRecordOptions } = resolveStudioRecordOptions(
+    // Configure browser context. The viewport is derived from recordOptions;
+    // other Playwright `use` options (colorScheme, locale, storageState, ...)
+    // are forwarded so they take effect on the context screenci creates.
+    const { base: baseRecordOptions } = resolveRecordOptionsBase(
       combineRecordOptionsLayers(
         _screenciConfigRecordOptions,
         _screenciRecordOptions
       )
     )
-    const effectiveRecordOptions = resolveEffectiveRecordOptions(
-      baseRecordOptions,
-      _screenciVideoName ?? testInfo.title
-    )
-    const aspectRatio =
-      effectiveRecordOptions.aspectRatio ?? DEFAULT_ASPECT_RATIO
-    const quality = effectiveRecordOptions.quality ?? DEFAULT_QUALITY
+    const aspectRatio = baseRecordOptions.aspectRatio ?? DEFAULT_ASPECT_RATIO
+    const quality = baseRecordOptions.quality ?? DEFAULT_QUALITY
     const dimensions = getDimensions(aspectRatio, quality)
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
 
@@ -876,39 +847,33 @@ const _videoBase = base.extend<
   ) => {
     // Only record when explicitly enabled (record command)
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
-    // Apply web-editor record-option overrides so the capture, serialized
-    // recordOptions, and viewport all use the effective values.
-    const { base: baseRecordOptions } = resolveStudioRecordOptions(
+    const { base: recordOptions } = resolveRecordOptionsBase(
       combineRecordOptionsLayers(
         _screenciConfigRecordOptions,
         _screenciRecordOptions
       )
     )
-    const { obj: renderOptionsObj } = resolveStudioRenderOptions(
+    const { obj: renderOptionsObj } = resolveRenderOptionsBase(
       combineRenderOptionsLayers(
         _screenciConfigRenderOptions,
         _screenciRenderOptions
       )
-    )
-    const recordOptions = resolveEffectiveRecordOptions(
-      baseRecordOptions,
-      _screenciVideoName ?? testInfo.title
     )
     // Per-language passes use a unique test title (so each gets its own
     // recording directory) but share one `videoName` so they group as language
     // versions of one video. Plain videos fall back to the test title.
     const videoName = _screenciVideoName ?? testInfo.title
     // Every recording is web-editable: render/record options are always marked
-    // studio so the app knows it may override them.
+    // editable so the app knows the editor may change them (edits codegen into
+    // code). No language set is web-owned any more: adding a language codegens a
+    // `video.languages([...])` block, so the set is always code-defined.
     const recorder = new EventRecorder(
       renderOptionsObj,
       recordOptions,
       {
         renderOptions: true,
         recordOptions: true,
-        // Web-owned language set: stamped into metadata.studio.languages so the app
-        // knows this video may have languages added/rendered from Studio.
-        languages: _screenciRecordingLocalize?.studioOwned ?? false,
+        languages: false,
       },
       // Action-parameter provenance for this video (values and their
       // explicit/default provenance, straight from code).

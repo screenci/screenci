@@ -94,6 +94,9 @@ export function applyCodegenRequest(
         },
       }),
       narrationEdits: split.narrationEdits,
+      valuesEdits: split.valuesEdits,
+      languagesEdits: split.languagesEdits,
+      editorMediaEdits: split.editorMediaEdits,
     },
     { ts: deps.ts, readFile: deps.readFile }
   )

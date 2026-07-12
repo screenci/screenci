@@ -140,6 +140,81 @@ describe('applyCodegenRequest: options and narration records', () => {
     )
   })
 
+  it('writes a valuesEdit into the declaration, adding the section', () => {
+    const writes = apply(
+      JSON.stringify({
+        type: 'valuesEdit',
+        id: 'values|title|default',
+        field: 'title',
+        lang: 'default',
+        value: 'Welcome',
+      })
+    )
+    expect(writes[FILE]).toContain("video.values({ title: 'Welcome' })('Demo'")
+  })
+
+  it('converts a names-only values array to an object literal', () => {
+    const source = SOURCE.replace(
+      "video('Demo'",
+      "video.values(['title', 'subtitle'])('Demo'"
+    )
+    const writes = apply(
+      JSON.stringify({
+        type: 'valuesEdit',
+        id: 'values|title|default',
+        field: 'title',
+        lang: 'default',
+        value: 'Welcome',
+      }),
+      source
+    )
+    expect(writes[FILE]).toContain(
+      "video.values({ title: 'Welcome', subtitle: '' })('Demo'"
+    )
+  })
+
+  it('writes a languagesEdit as a new .languages call', () => {
+    const writes = apply(
+      JSON.stringify({
+        type: 'languagesEdit',
+        id: 'languages',
+        languages: ['en', 'fi'],
+      })
+    )
+    expect(writes[FILE]).toContain("video.languages(['en', 'fi'])('Demo'")
+  })
+
+  it('extends an existing .languages array', () => {
+    const source = SOURCE.replace(
+      "video('Demo'",
+      "video.languages(['en'])('Demo'"
+    )
+    const writes = apply(
+      JSON.stringify({
+        type: 'languagesEdit',
+        id: 'languages',
+        languages: ['en', 'fi'],
+      }),
+      source
+    )
+    expect(writes[FILE]).toContain("video.languages(['en', 'fi'])('Demo'")
+  })
+
+  it('writes an editorMediaEdit as a backend-hosted overlay declaration', () => {
+    const writes = apply(
+      JSON.stringify({
+        type: 'editorMediaEdit',
+        id: 'editorMedia|overlays|logo',
+        method: 'overlays',
+        name: 'logo',
+        editor: 'logo',
+      })
+    )
+    expect(writes[FILE]).toContain(
+      "video.overlays({ logo: { editor: 'logo' } })('Demo'"
+    )
+  })
+
   it('throws with the reason when a narration edit is app-managed', () => {
     const source = SOURCE.replace(
       "video('Demo'",

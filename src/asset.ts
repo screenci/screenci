@@ -584,17 +584,41 @@ function isDependencyOverlayInput(
 }
 
 /**
+ * Declares a backend-hosted (editor-uploaded) overlay: its bytes live in the
+ * ScreenCI backend under the asset name `editor`, not in a local file. The
+ * declaration exists in code so the overlay is an explicit part of the video;
+ * placement, duration, and audio level are edited in the web editor. Recording
+ * emits a Studio asset start (no local path), and the backend merges the
+ * uploaded media by the declaration name at render. `editor` names the backend
+ * asset (conventionally the same as the declaration key).
+ */
+export type EditorOverlayInput = { editor: string }
+
+/** Whether a value is an {@link EditorOverlayInput} (`{ editor: '<name>' }`). */
+export function isEditorOverlayInput(
+  value: unknown
+): value is EditorOverlayInput {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { editor?: unknown }).editor === 'string'
+  )
+}
+
+/**
  * A value accepted by {@link createOverlays} for each key:
  *
  * - a `string` file path (`.tsx`/`.solid.tsx`/`.vue`/`.svelte`/`.html`/`.svg`/`.png`/`.mp4`),
  * - a React element (`<Badge label="New" />`, shorthand for `{ element }`),
- * - an {@link OverlayConfig} object, or
+ * - an {@link OverlayConfig} object,
+ * - `{ editor: '<name>' }` for a backend-hosted, editor-uploaded overlay, or
  * - a {@link selected} render dependency.
  */
 export type OverlayInput =
   | string
   | ReactElementLike
   | OverlayConfig
+  | EditorOverlayInput
   | DependencyOverlayInput
 
 /**
@@ -904,6 +928,11 @@ function buildOverlayController(
   // which would otherwise reject it for having no path.
   if (isDependencyOverlayInput(input)) {
     return createDependencyOverlayController(name, input)
+  }
+  // A backend-hosted `{ editor: '<name>' }` overlay: no local file, emit a
+  // Studio asset start under the declaration name (merged by the backend).
+  if (isEditorOverlayInput(input)) {
+    return createStudioAssetController(name)
   }
   // A factory is the only callable input. Config objects are plain objects, so
   // this branch never captures them. The config (and its validation) is built

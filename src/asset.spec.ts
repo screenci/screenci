@@ -195,6 +195,16 @@ describe('createOverlays', () => {
       })
     })
 
+    it('routes a { editor } overlay to a studio asset start (no local file)', async () => {
+      const overlays = createOverlays({ logo: { editor: 'logo' } })
+
+      await overlays.logo.for(1000)
+
+      expect(recorder.addStudioAssetStart).toHaveBeenCalledWith('logo')
+      // A backend-hosted overlay never resolves a file, so no code assetStart.
+      expect(recorder.addAssetStart).not.toHaveBeenCalled()
+    })
+
     it('emits pinToScreen on an image overlay when set', async () => {
       const overlays = createOverlays({
         logo: {

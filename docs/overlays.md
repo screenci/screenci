@@ -50,6 +50,15 @@ import { video } from 'screenci'
 video.overlays(['intro', 'logo'])
 ```
 
+You can also mark a single overlay as editor-owned inside a map with `{ editor: '<name>' }`. The overlay is an explicit part of the video (unlike a whole-array declaration), but its uploaded file lives in the ScreenCI backend, not in a local file. The `editor` string names the backend asset (conventionally the same as the key). Uploading a file in the editor codegens this form for you.
+
+```ts
+video.overlays({
+  logo: { editor: 'logo' }, // backend-hosted, uploaded in the editor
+  hint: { path: 'assets/callout.html' }, // local file
+})
+```
+
 ## Define overlays
 
 `video.overlays(...)` takes a map. Each value is one of:
@@ -57,6 +66,7 @@ video.overlays(['intro', 'logo'])
 - a **file path** string (`.tsx`, `.solid.tsx`, `.vue`, `.svelte`, `.html`, `.svg`, `.png`, `.mp4`),
 - a **React element** (`badge: <Badge label="New" />`, shorthand for `{ element: ... }`),
 - a **config object** (`{ path, ...placement }`, or one of the inline sources `element`/`jsx`/`solidJsx`/`html`),
+- `{ editor: '<name>' }` for a **backend-hosted** (editor-uploaded) overlay, or
 - a **factory** `(props) => config` (see [Programmatic overlays](#programmatic-overlays-props)), or
 
 A config draws its content from exactly one source. Component overlays (`.tsx`/`.solid.tsx`/`.vue`/`.svelte` files, `jsx`/`solidJsx` source) accept serializable `props`; only `.mp4`/image files accept the video/crop fields.

@@ -95,6 +95,16 @@ describe('createAudio', () => {
     expect(recorder.addAudioEnd).not.toHaveBeenCalled()
   })
 
+  it('routes a { editor } track to a studio audio start (no local file)', async () => {
+    await run(async () => {
+      const audio = createAudio({ theme: { editor: 'theme' } })
+      await audio.theme()
+    })
+    expect(recorder.addStudioAudioStart).toHaveBeenCalledWith('theme')
+    // A backend-hosted track never resolves a file, so no code audioStart fires.
+    expect(recorder.addAudioStart).not.toHaveBeenCalled()
+  })
+
   it('start({ delay }) passes the delay as the trailing recorder arg', async () => {
     await run(async () => {
       const audio = createAudio({ theme: { path: './music.mp3' } })

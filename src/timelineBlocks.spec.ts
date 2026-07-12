@@ -72,10 +72,10 @@ describe('timeline blocks', () => {
     )
   })
 
-  it('supports delay on the named block forms', async () => {
-    await speed('fast', async () => {}, { delay: 150 })
-    await time('intro', 500, async () => {}, { delay: 250 })
-    await hide('setup', async () => {}, { delay: 350 })
+  it('supports delay alongside an editId identity', async () => {
+    await speed(async () => {}, { editId: 'fast', delay: 150 })
+    await time(500, async () => {}, { editId: 'intro', delay: 250 })
+    await hide(async () => {}, { editId: 'setup', delay: 350 })
 
     expect(recorder.addSpeedStart).toHaveBeenCalledWith(
       1,

@@ -1264,6 +1264,38 @@ describe('planCodeSync: block removal (unwrap)', () => {
     expect(result.unappliable).toHaveLength(0)
   })
 
+  it('unwraps a block identified by its editId option', () => {
+    const optionSource = [
+      "import { video, hide } from 'screenci'",
+      '',
+      "video('HideDemo', async ({ page }) => {",
+      '  await hide(',
+      '    async () => {',
+      "      await page.locator('#x').click()",
+      '    },',
+      "    { editId: 'hide1' }",
+      '  )',
+      '})',
+      '',
+    ].join('\n')
+    const remove: CodifyEdit = {
+      type: 'blockRemoveEdit',
+      id: 'rm3',
+      target: { editId: 'hide1' },
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshot,
+        codifyEdits: { HideDemo: [remove] },
+      }),
+      { [HIDE_FILE]: optionSource }
+    )
+    const after = afterFor(result, HIDE_FILE)
+    expect(after).not.toContain('hide(')
+    expect(after).toContain("await page.locator('#x').click()")
+    expect(result.unappliable).toHaveLength(0)
+  })
+
   it('marks an unknown block name unappliable', () => {
     const remove: CodifyEdit = {
       type: 'blockRemoveEdit',

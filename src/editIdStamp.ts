@@ -95,6 +95,13 @@ function stampTarget(entry: EditableSnapshotEntry): {
   if (kind === 'autoZoom') {
     return { callNames: ['autoZoom'], optionsIndex: () => 1 }
   }
+  // Timeline block wrappers carry their editId in the trailing options
+  // object: hide(fn, opts), speed(fn|multiplier, fn?, opts), time(ms, fn,
+  // opts). The exact index depends on the call shape, so it is derived from
+  // the callback argument's position (see blockOptionsIndex).
+  if (kind === 'hide' || kind === 'speed' || kind === 'time') {
+    return { callNames: [kind], optionsIndex: () => -1 }
+  }
   if (kind !== 'input') return null
   switch (subKind) {
     case 'click':
@@ -122,6 +129,21 @@ function stampTarget(entry: EditableSnapshotEntry): {
 /** Slug prefix: always the function name of the stamped call. */
 function prefixFor(callName: string): string {
   return callName
+}
+
+/**
+ * The options-argument index for a timeline block wrapper call: right after
+ * the callback argument (hide(fn, opts) -> 1, speed(2, fn, opts) -> 2, ...).
+ * Null when the call has no function argument to anchor on.
+ */
+function blockOptionsIndex(
+  ts: TsModule,
+  call: import('typescript').CallExpression
+): number | null {
+  const fnIndex = call.arguments.findIndex(
+    (arg) => ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)
+  )
+  return fnIndex === -1 ? null : fnIndex + 1
 }
 
 export type EditIdStampPlan = {
@@ -219,14 +241,14 @@ export function planEditIdStamps(
         }
       }
       if (call === null) continue
+      // Block wrappers signal a shape-dependent options index with -1: it
+      // sits right after the callback argument.
+      const declaredIndex = target.optionsIndex(callName)
+      const optionsIndex =
+        declaredIndex === -1 ? blockOptionsIndex(deps.ts, call) : declaredIndex
+      if (optionsIndex === null) continue
       const slug = allocateEditId(counters, prefixFor(callName))
-      const edit = setOptionValue(
-        ctx,
-        call,
-        target.optionsIndex(callName),
-        ['editId'],
-        slug
-      )
+      const edit = setOptionValue(ctx, call, optionsIndex, ['editId'], slug)
       if (edit === null) {
         // Allocation is not rolled back: the counter gap is harmless and
         // reuse is forbidden by design.

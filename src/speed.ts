@@ -26,17 +26,18 @@ export function setActiveSpeedRecorder(recorder: IEventRecorder | null): void {
 /**
  * Editable metadata for a `speed` block. A numeric multiplier comes from
  * code and is marked explicit (a web edit shadows it with a warning); the
- * named (`speed('name', fn)`) and bare (`speed(fn)`) forms are web-editable
- * with a default multiplier of 1.
+ * bare (`speed(fn)`) form is web-editable with a default multiplier of 1.
+ * The stable identity slug comes from the `editId` option, stamped
+ * automatically when missing.
  */
 function buildSpeedEditableMeta(input: {
   multiplier: number
   locked: boolean
-  name?: string | undefined
+  editId?: string | undefined
 }): EditableMeta | undefined {
   const identity = {
     kind: 'speed' as const,
-    ...(input.name !== undefined && { name: input.name }),
+    ...(input.editId !== undefined && { editId: input.editId }),
   }
   return buildEditableMeta({
     ...identity,
@@ -51,21 +52,15 @@ function buildSpeedEditableMeta(input: {
 /**
  * Speeds up (or slows down) the recording inside `fn` at render time.
  *
- * Three forms:
+ * Two forms:
  *
  * - `speed(3, fn)`: the multiplier comes from code and is locked against web
  *   edits.
- * - `speed('name', fn)`: names the block; the multiplier is owned by the web
- *   editor (defaults to 1 until edited there).
- * - `speed(fn)`: unnamed web-editable block, identified by its position on
- *   the editor timeline.
+ * - `speed(fn)`: web-editable block (the multiplier defaults to 1 until
+ *   edited there), identified by its `editId` option (stamped automatically
+ *   when missing).
  */
 export async function speed(
-  fn: () => Promise<void> | void,
-  options?: TimelineBlockOptions
-): Promise<void>
-export async function speed(
-  name: string,
   fn: () => Promise<void> | void,
   options?: TimelineBlockOptions
 ): Promise<void>
@@ -75,7 +70,7 @@ export async function speed(
   options?: TimelineBlockOptions
 ): Promise<void>
 export async function speed(
-  first: number | string | (() => Promise<void> | void),
+  first: number | (() => Promise<void> | void),
   second?: (() => Promise<void> | void) | TimelineBlockOptions,
   maybeOptions?: TimelineBlockOptions
 ): Promise<void> {
@@ -95,13 +90,12 @@ export async function speed(
   const delayMs = validateDelay('speed', options?.delay)
 
   const locked = typeof first === 'number'
-  const name = typeof first === 'string' ? first : undefined
   if (locked) assertValidSpeedMultiplier(first)
 
   const editable = buildSpeedEditableMeta({
     multiplier: locked ? first : 1,
     locked,
-    name,
+    editId: options?.editId,
   })
   // Web override for the editable forms; the multiplier defaults to 1 (no
   // speed change) until edited in the web editor.

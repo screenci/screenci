@@ -88,6 +88,56 @@ describe('planEditIdStamps', () => {
     })
   })
 
+  it('stamps timeline block wrappers after their callback argument', () => {
+    const blockSource = [
+      "import { video, hide, speed, time } from 'screenci'", // 1
+      '', // 2
+      "video('Demo', async ({ page }) => {", // 3
+      '  await hide(async () => {', // 4
+      "    await page.goto('/login')", // 5
+      '  })', // 6
+      '  await speed(2, async () => {', // 7
+      "    await page.locator('#a').click()", // 8
+      '  })', // 9
+      '  await time(500, async () => {', // 10
+      "    await page.locator('#b').click()", // 11
+      '  })', // 12
+      '})', // 13
+      '',
+    ].join('\n')
+    const result = stamp(
+      snapshotWith([
+        {
+          key: 'hide',
+          locked: true,
+          defaults: {},
+          source: { file: FILE, line: 4 },
+        },
+        {
+          key: 'speed',
+          locked: true,
+          defaults: {},
+          source: { file: FILE, line: 7 },
+        },
+        {
+          key: 'time',
+          locked: true,
+          defaults: {},
+          source: { file: FILE, line: 10 },
+        },
+      ]),
+      counters(),
+      { [FILE]: blockSource }
+    )
+    expect(result.files).toHaveLength(1)
+    const after = result.files[0]!.after
+    // The options object lands right AFTER the callback argument.
+    expect(after).toContain("}, { editId: 'hide1' })")
+    expect(after).toContain("}, { editId: 'speed1' })")
+    expect(after).toContain("}, { editId: 'time1' })")
+    expect(result.counters.counters).toEqual({ hide: 1, speed: 1, time: 1 })
+  })
+
   it('skips entries that already have an editId or no source', () => {
     const result = stamp(
       snapshotWith([

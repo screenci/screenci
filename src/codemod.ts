@@ -771,10 +771,11 @@ export function resolveImportedLocalName(
 const UNWRAPPABLE_BLOCK_KINDS = ['hide', 'speed', 'time'] as const
 
 /**
- * Find the NAMED timeline-block wrap call `hide('<name>', ...)` /
- * `speed('<name>', ...)` / `time('<name>', ...)` whose name literal equals
- * `name` and whose callback body is a plain block. Null when absent or
- * ambiguous (two blocks with the same name).
+ * Find the timeline-block wrap call (`hide` / `speed` / `time`) identified by
+ * `name`: either an `{ editId: '<name>' }` property in its options object
+ * (the current identity form) or a legacy `'<name>'` string argument. The
+ * callback body must be a plain block. Null when absent or ambiguous (two
+ * blocks with the same identity).
  */
 function findNamedBlockCall(
   ctx: CodemodContext,
@@ -783,6 +784,19 @@ function findNamedBlockCall(
   const { ts } = ctx
   const { localToExport } = importTableFor(ctx, 'screenci')
   const matches: Array<{ call: TS.CallExpression; body: TS.Block }> = []
+  const hasEditIdOption = (call: TS.CallExpression): boolean =>
+    call.arguments.some(
+      (arg) =>
+        ts.isObjectLiteralExpression(arg) &&
+        arg.properties.some(
+          (prop) =>
+            ts.isPropertyAssignment(prop) &&
+            ts.isIdentifier(prop.name) &&
+            prop.name.text === 'editId' &&
+            ts.isStringLiteral(prop.initializer) &&
+            prop.initializer.text === name
+        )
+    )
   const visit = (node: TS.Node): void => {
     if (ts.isCallExpression(node)) {
       const callee = node.expression
@@ -791,9 +805,10 @@ function findNamedBlockCall(
         (UNWRAPPABLE_BLOCK_KINDS as readonly string[]).includes(
           localToExport.get(callee.text) ?? callee.text
         ) &&
-        node.arguments.some(
+        (node.arguments.some(
           (arg) => ts.isStringLiteral(arg) && arg.text === name
-        )
+        ) ||
+          hasEditIdOption(node))
       ) {
         const fn = node.arguments.find(
           (arg) => ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)

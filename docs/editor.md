@@ -396,10 +396,13 @@ The main editable action forms:
 ```ts
 import { autoZoom, speed } from 'screenci'
 
-// Named speed block: the multiplier is owned by the web editor (defaults to 1).
-await speed('intro-speedup', async () => { ... })
+// Editable block: the multiplier is owned by the web editor (defaults to 1).
+// The editId identity slug is stamped automatically when an edit session
+// starts; you can also set it yourself.
+await speed(async () => { ... }, { editId: 'intro-speedup' })
 
-// Unnamed editable block, identified by its timeline position.
+// Without an editId yet, the block is identified by its timeline position
+// until the next edit session stamps one.
 await speed(async () => { ... })
 
 // Explicit: the multiplier comes from code (a web edit rewrites this call).
@@ -578,12 +581,13 @@ out restores the footage. Once the trimmed span reaches code, it is a regular
 
 ### Removing a code block from the web editor
 
-A named block (`hide('setup', ...)`, `speed('fast', ...)`, `time('intro', ...)`)
-can be removed from the web editor (merge two recording sections, reset a
-trim). This sends a `blockRemoveEdit` targeting the block's name; the codegen
-channel unwraps the block in source, keeping the wrapped calls (any
-`waitForTimeout` pacing inside survives as plain gap sleeps). Anonymous blocks
-cannot be targeted mechanically: name a block to make it web-removable.
+A block carrying an `editId` (`hide(fn, { editId: 'setup' })`, and likewise
+`speed`/`time`) can be removed from the web editor (merge two recording
+sections, reset a trim). This sends a `blockRemoveEdit` targeting the block's
+editId; the codegen channel unwraps the block in source, keeping the wrapped
+calls (any `waitForTimeout` pacing inside survives as plain gap sleeps).
+Blocks without an editId get one stamped automatically when an edit session
+starts, so every block becomes web-removable.
 
 ### Actions inside `hide()`
 

@@ -204,8 +204,10 @@ await time(1000, async () => {
 // - Narration cue audio is not retimed; these only remap the recording timeline.
 ```
 
-All three accept a trailing options object with `delay` (milliseconds), which
-shifts the recorded START of the block forward while the end still lands when
+All three accept a trailing options object with `editId` (the block's stable
+identity slug, like an action's; one is stamped automatically when an edit
+session starts if missing) and `delay` (milliseconds), which shifts the
+recorded START of the block forward while the end still lands when
 the callback finishes. That lets the effect begin partway into the first
 wrapped interaction, for example `await speed(2, async () => { ... }, { delay:
 400 })`. See [Mid-Video Overlay

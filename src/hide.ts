@@ -23,6 +23,12 @@ export type TimelineBlockOptions = {
    * effect begin partway into the first wrapped interaction. Integer >= 0.
    */
   delay?: number
+  /**
+   * Stable identity slug for the block (like an action's `editId`). Names the
+   * block on the editor timeline and makes it web-removable. Stamped
+   * automatically on blocks missing one when an edit session starts.
+   */
+  editId?: string
 }
 
 export function setActiveHideRecorder(recorder: IEventRecorder | null): void {
@@ -56,14 +62,15 @@ export { POST_HIDE_PAUSE, isInsideHide } from './timelineBlock.js'
  * ```
  */
 /**
- * Identity metadata for a `hide` block: a read-only named span on the editor
+ * Identity metadata for a `hide` block: a read-only span on the editor
  * timeline (its edges are code-structural, so nothing is editable, but the
- * span is visible and anchorable). Optional name via `hide('name', fn)`.
+ * span is visible and anchorable). The stable identity slug comes from the
+ * `editId` option (like an action's), stamped automatically when missing.
  */
-function buildHideEditableMeta(name: string | undefined): EditableMeta {
+function buildHideEditableMeta(editId: string | undefined): EditableMeta {
   const identity = {
     kind: 'hide' as const,
-    ...(name !== undefined && { name }),
+    ...(editId !== undefined && { editId }),
   }
   return buildEditableMeta({
     ...identity,
@@ -77,31 +84,11 @@ function buildHideEditableMeta(name: string | undefined): EditableMeta {
 export async function hide(
   fn: () => Promise<void> | void,
   options?: TimelineBlockOptions
-): Promise<void>
-export async function hide(
-  name: string,
-  fn: () => Promise<void> | void,
-  options?: TimelineBlockOptions
-): Promise<void>
-export async function hide(
-  first: string | (() => Promise<void> | void),
-  second?: (() => Promise<void> | void) | TimelineBlockOptions,
-  maybeOptions?: TimelineBlockOptions
 ): Promise<void> {
-  const name = typeof first === 'string' ? first : undefined
-  const fn =
-    typeof first === 'function'
-      ? first
-      : typeof second === 'function'
-        ? second
-        : undefined
-  const options =
-    typeof first === 'function'
-      ? (second as TimelineBlockOptions | undefined)
-      : maybeOptions
-  if (fn === undefined) {
+  if (typeof fn !== 'function') {
     throw new Error('hide() requires a callback function')
   }
+  const name = options?.editId
   const delayMs = validateDelay('hide', options?.delay)
   if (isScreenshotCapture()) {
     // A still only keeps the final frame, so there is no timeline to cut a

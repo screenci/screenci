@@ -27,16 +27,16 @@ export function setActiveTimeRecorder(recorder: IEventRecorder | null): void {
 
 /**
  * Editable metadata for a `time` block. The target duration comes from code
- * (explicit; a web edit shadows it with a warning). An optional name makes
- * the identity robust across re-records, like `speed('name', fn)`.
+ * (explicit; a web edit shadows it with a warning). The stable identity slug
+ * comes from the `editId` option, stamped automatically when missing.
  */
 function buildTimeEditableMeta(input: {
   durationMs: number
-  name?: string | undefined
+  editId?: string | undefined
 }): EditableMeta | undefined {
   const identity = {
     kind: 'time' as const,
-    ...(input.name !== undefined && { name: input.name }),
+    ...(input.editId !== undefined && { editId: input.editId }),
   }
   return buildEditableMeta({
     ...identity,
@@ -50,56 +50,36 @@ function buildTimeEditableMeta(input: {
 
 /**
  * Remaps the wrapped section to exactly `durationMs` at render time
- * (compressing or stretching it). Two forms:
- *
- * - `time(1000, fn)`
- * - `time('name', 1000, fn)`: names the block on the editor timeline.
+ * (compressing or stretching it): `time(1000, fn)`.
  *
  * The duration is web-editable: an editor override applies at the next
- * record and shadows the code value with a warning.
+ * record and shadows the code value with a warning. The block's stable
+ * identity slug comes from the `editId` option (stamped automatically when
+ * missing).
  */
 export async function time(
   durationMs: number,
   fn: () => Promise<void> | void,
   options?: TimelineBlockOptions
-): Promise<void>
-export async function time(
-  name: string,
-  durationMs: number,
-  fn: () => Promise<void> | void,
-  options?: TimelineBlockOptions
-): Promise<void>
-export async function time(
-  first: number | string,
-  second: number | (() => Promise<void> | void),
-  third?: (() => Promise<void> | void) | TimelineBlockOptions,
-  maybeOptions?: TimelineBlockOptions
 ): Promise<void> {
-  const name = typeof first === 'string' ? first : undefined
-  const codeDurationMs = typeof first === 'number' ? first : (second as number)
-  const fn =
-    typeof second === 'function'
-      ? second
-      : typeof third === 'function'
-        ? third
-        : undefined
-  const options =
-    typeof second === 'function'
-      ? (third as TimelineBlockOptions | undefined)
-      : maybeOptions
-  if (fn === undefined) {
+  const codeDurationMs = durationMs
+  if (typeof fn !== 'function') {
     throw new Error('time() requires a callback function')
   }
   assertValidTimeDuration(codeDurationMs)
   const delayMs = validateDelay('time', options?.delay)
+  const name = options?.editId
 
-  const editable = buildTimeEditableMeta({ durationMs: codeDurationMs, name })
+  const editable = buildTimeEditableMeta({
+    durationMs: codeDurationMs,
+    editId: options?.editId,
+  })
   const effective = applyEditableOverride(editable)
-  const durationMs =
+  const effectiveDurationMs =
     typeof effective.durationMs === 'number'
       ? effective.durationMs
       : codeDurationMs
-  assertValidTimeDuration(durationMs)
+  assertValidTimeDuration(effectiveDurationMs)
 
   const recorder = getActiveHideRecorder()
   await runTimelineBlock({
@@ -107,13 +87,13 @@ export async function time(
     recorder,
     emitStart: (activeRecorder) =>
       activeRecorder.addTimeStart(
-        durationMs,
+        effectiveDurationMs,
         editable,
         name,
         ...delayArg(delayMs)
       ),
     emitEnd: (activeRecorder) => activeRecorder.addTimeEnd(),
     fn,
-    durationMs,
+    durationMs: effectiveDurationMs,
   })
 }

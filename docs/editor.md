@@ -370,7 +370,8 @@ see [Editor languages from code](#editor-languages-from-code) below. There is no
 ## Editable timeline actions
 
 Interaction timings, zoom options, speed blocks, and pauses can be edited from
-the web timeline and applied on the next record, without touching code.
+the web timeline, without hand-editing code: each saved edit is written into
+the sources for you and picked up by the next record.
 
 Every interaction is editable from the web, whether its values come from
 package defaults or from explicit options in code. Its identity is the
@@ -429,10 +430,9 @@ disappear.
 ## Web-authored events
 
 Render-affecting events can also be ADDED and MOVED from the web timeline,
-without any code change: hides, speedups, time remaps, narration cues,
+without hand-editing code: hides, speedups, time remaps, narration cues,
 overlays, and recording changes (resize/hide/show). Interactions are
-different on
-purpose: a click or tap always stays where the test code performed it, and
+different on purpose: a click or tap always stays where the test code performed it, and
 only its parameters (durations, sleeps) are editable.
 
 Everything the timeline adds is one unified edit record keyed to a call
@@ -651,8 +651,8 @@ Every recorded action carries identity metadata, so the timeline covers:
   full-height borders. Their duration is app time: never editable, and
   timing edits cannot cross them.
 
-The editor can also ADD events without code changes: hides, speedups, time
-remaps, and recording changes,
+The editor can also ADD events without hand-editing code: hides, speedups,
+time remaps, and recording changes,
 each placed by call position (after a known action, or bracketing a run of
 actions) with any gap expressed as a `waitForTimeout` sleep.
 

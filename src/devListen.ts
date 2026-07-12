@@ -17,6 +17,8 @@
  * the sync state).
  */
 
+import { describeEditId } from './timelineEdits.js'
+
 export const DEV_TOKEN_HEADER = 'X-ScreenCI-Dev-Token'
 export const SCREENCI_EDIT_TOKEN_ENV = 'SCREENCI_EDIT_TOKEN'
 
@@ -301,12 +303,12 @@ async function handleCodegenRequest(
       'applied'
     )
     deps.logger.info(
-      `Applied edit "${request.editId}" to "${request.videoName}".`
+      `Applied ${describeEditId(request.editId)} to "${request.videoName}".`
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     deps.logger.error(
-      `Codegen for edit "${request.editId}" (${request.videoName}) failed: ${message}`
+      `Codegen for ${describeEditId(request.editId)} (${request.videoName}) failed: ${message}`
     )
     await reportDevCodegen(
       config,

@@ -224,16 +224,19 @@ export function resolveRecordingLocalize(
 }
 
 /**
- * Warn about per-feature values declared for a language outside the recorded set
- * (e.g. `narration({ fr })` while the set is `[fi]`): the value is ignored.
+ * Warn about a per-feature value declared for a language the video does not
+ * define at all (e.g. `narration({ fr })` when the video's languages are
+ * `[en, fi]`): that value is never recorded. Checked against the video's full
+ * language set (`availableLanguages`), NOT the `--languages` render filter, so a
+ * single-language re-record (`--languages en`) never falsely flags the other
+ * languages, which still record in their own passes.
  */
 function warnUnusedLanguages(
   state: BuilderState,
   resolved: ResolvedRecordingLocalize
 ): void {
-  const active = new Set(resolved.languages)
-  const source = 'video.languages()'
-  const langList = resolved.languages.join(', ') || '(none)'
+  const active = new Set(resolved.availableLanguages)
+  const langList = resolved.availableLanguages.join(', ') || '(none)'
   const features: [string, NormalizedFeature<unknown> | null][] = [
     ['Narration', state.narration],
     ['Values', state.values],
@@ -246,9 +249,8 @@ function warnUnusedLanguages(
       if (active.has(lang) || entries === undefined) continue
       for (const name of Object.keys(entries)) {
         logger.warn(
-          `[screenci] ${label} ${name} (${lang}) is not used at all currently, ` +
-            `reason: only languages [${langList}] defined in ${source}. ` +
-            `See https://screenci.com/docs/localization`
+          `[screenci] ${label} ${name} (${lang}) is not used: the video's ` +
+            `languages are [${langList}]. See https://screenci.com/docs/localization`
         )
       }
     }
@@ -262,9 +264,8 @@ function warnUnusedLanguages(
     for (const lang of Object.keys(decl.byLang)) {
       if (active.has(lang)) continue
       logger.warn(
-        `[screenci] ${label} for language ${lang} are not used at all currently, ` +
-          `reason: only languages [${langList}] defined in ${source}. ` +
-          `See https://screenci.com/docs/localization`
+        `[screenci] ${label} for language ${lang} are not used: the video's ` +
+          `languages are [${langList}]. See https://screenci.com/docs/localization`
       )
     }
   }

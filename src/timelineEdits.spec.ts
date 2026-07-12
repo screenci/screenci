@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   cueIdFor,
+  describeEditId,
+  editorMediaEditIdFor,
+  languagesEditId,
   narrationEditIdFor,
   optionsEditIdFor,
   overlayDeclIdFor,
@@ -9,6 +12,7 @@ import {
   paramEditIdFor,
   parseEditId,
   renameEditIdFor,
+  valuesEditIdFor,
 } from './timelineEdits.js'
 
 describe('cueIdFor / overlayIdFor', () => {
@@ -74,5 +78,36 @@ describe('parseEditId', () => {
       kind: 'other',
       editId: 'narration|onlycue',
     })
+  })
+})
+
+describe('describeEditId', () => {
+  it('describes each edit kind in human-readable form', () => {
+    expect(describeEditId(optionsEditIdFor('renderOptions'))).toBe(
+      'render options'
+    )
+    expect(describeEditId(optionsEditIdFor('recordOptions'))).toBe(
+      'record options'
+    )
+    expect(describeEditId(paramEditIdFor('click1'))).toBe(
+      'the "click1" interaction'
+    )
+    expect(describeEditId(narrationEditIdFor('intro', 'de'))).toBe(
+      'the "intro" narration (de)'
+    )
+    expect(describeEditId(valuesEditIdFor('title', 'en'))).toBe(
+      'the "title" text (en)'
+    )
+    expect(describeEditId(languagesEditId())).toBe('the language set')
+    expect(describeEditId(editorMediaEditIdFor('overlays', 'logo'))).toBe(
+      'the "logo" overlay'
+    )
+    expect(describeEditId(editorMediaEditIdFor('audio', 'music'))).toBe(
+      'the "music" audio track'
+    )
+  })
+
+  it('falls back to the raw id for an unknown shape', () => {
+    expect(describeEditId('mystery-slug')).toBe('mystery-slug')
   })
 })

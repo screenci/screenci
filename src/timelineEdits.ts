@@ -495,3 +495,45 @@ export function parseEditId(editId: string): ParsedEditId {
   }
   return { kind: 'other', editId }
 }
+
+/** Human-readable name of a builder options method, for log/UI copy. */
+const OPTIONS_METHOD_LABEL: Record<OptionsEditMethod, string> = {
+  renderOptions: 'render options',
+  recordOptions: 'record options',
+}
+
+/** Human-readable singular of an editor-media method, for log/UI copy. */
+const EDITOR_MEDIA_LABEL: Record<EditorMediaMethod, string> = {
+  overlays: 'overlay',
+  narration: 'narration',
+  audio: 'audio track',
+}
+
+/**
+ * A short human-readable description of a wire edit id, for logs and UI (never
+ * show the raw `options|renderOptions` slug to users). Falls back to the raw id
+ * for unrecognized shapes.
+ */
+export function describeEditId(editId: string): string {
+  const parsed = parseEditId(editId)
+  switch (parsed.kind) {
+    case 'param':
+      return `the "${parsed.key}" interaction`
+    case 'rename':
+      return `the rename of "${parsed.targetEditId}"`
+    case 'options':
+      return OPTIONS_METHOD_LABEL[parsed.method]
+    case 'narration':
+      return `the "${parsed.cueName}" narration (${parsed.lang})`
+    case 'values':
+      return `the "${parsed.field}" text (${parsed.lang})`
+    case 'languages':
+      return 'the language set'
+    case 'editorMedia':
+      return `the "${parsed.name}" ${EDITOR_MEDIA_LABEL[parsed.method]}`
+    case 'overlayDecl':
+      return `the "${parsed.overlayName}" overlay placement`
+    case 'other':
+      return parsed.editId
+  }
+}

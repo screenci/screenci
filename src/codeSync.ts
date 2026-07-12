@@ -24,7 +24,7 @@ import {
   type ActionMethod,
   type ActionParamRecord,
 } from './actionParams.js'
-import type { StudioSyncState } from './studioSync.js'
+import type { EditorOptionsSyncState } from './editorOptionsSync.js'
 import type {
   CodifyEditsByVideo,
   EditableOverridesByVideo,
@@ -287,7 +287,7 @@ export type CodeSyncInput = {
    * `video.renderOptions({...})` / `video.recordOptions({...})` builder calls.
    * Optional so existing callers (and tests) need not pass it.
    */
-  studioSync?: StudioSyncState
+  editorOptionsSync?: EditorOptionsSyncState
   /**
    * Narration cue value edits, keyed by video name. Codified into the
    * `video.narration(...)` declaration argument (added when missing, converted
@@ -1326,7 +1326,7 @@ export function planCodeSync(
       ...Object.keys(input.removedCodifyEdits),
       ...Object.keys(input.renames),
       ...Object.keys(input.overlayDeclEdits ?? {}),
-      ...Object.keys(input.studioSync?.videos ?? {}),
+      ...Object.keys(input.editorOptionsSync?.videos ?? {}),
       ...Object.keys(input.narrationEdits ?? {}),
       ...Object.keys(input.valuesEdits ?? {}),
       ...Object.keys(input.languagesEdits ?? {}),
@@ -1797,11 +1797,11 @@ export function planCodeSync(
     }
 
     // ── Studio render/record option edits (codify into builder calls) ──────
-    const studioVideo = input.studioSync?.videos[videoName]
-    if (studioVideo !== undefined) {
+    const editorOptionsVideo = input.editorOptionsSync?.videos[videoName]
+    if (editorOptionsVideo !== undefined) {
       const file = declaringFile()
       for (const method of ['renderOptions', 'recordOptions'] as const) {
-        const values = studioVideo[method]
+        const values = editorOptionsVideo[method]
         if (values === undefined || Object.keys(values).length === 0) continue
         const refusal =
           file === null

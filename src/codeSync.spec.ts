@@ -1119,7 +1119,7 @@ describe('planCodeSync: studio render/record option codify', () => {
   it('inserts renderOptions into the video builder call', () => {
     const result = plan(
       inputWith({
-        studioSync: {
+        editorOptionsSync: {
           videos: {
             Demo: { renderOptions: { fps: 60 }, content: CONTENT },
           },
@@ -1135,7 +1135,7 @@ describe('planCodeSync: studio render/record option codify', () => {
   it('marks the video unappliable when its declaration is absent', () => {
     const result = plan(
       inputWith({
-        studioSync: {
+        editorOptionsSync: {
           videos: {
             Ghost: { recordOptions: { headless: true }, content: CONTENT },
           },

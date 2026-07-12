@@ -64,6 +64,9 @@ export type DevCodegenRequest = {
   editJson: string
   /** True when the edit changes recorded behavior and needs a re-record. */
   requiresRecord: boolean
+  /** The org member who authored the edit. Present for deferred edits queued
+   *  while no machine was connected; used only for the apply log line. */
+  queuedBy?: string
 }
 
 export type DevPollResult = {
@@ -303,7 +306,9 @@ async function handleCodegenRequest(
       'applied'
     )
     deps.logger.info(
-      `Applied ${describeEditId(request.editId)} to "${request.videoName}".`
+      `Applied ${describeEditId(request.editId)} to "${request.videoName}"${
+        request.queuedBy !== undefined ? ` (queued by ${request.queuedBy})` : ''
+      }.`
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

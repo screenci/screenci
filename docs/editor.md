@@ -6,13 +6,22 @@ and render options. You edit visually in the browser, and every change is
 written back into your `.screenci.ts` source through a connected
 `screenci edit` machine, so code stays the single source of truth.
 
-**Editing needs a connected machine.** Run `screenci edit` in your project to
-connect it. While no machine is connected the editor stays open for viewing and
-playback, but the editing controls are locked with a note explaining how to
-connect. Each edit you make is sent to your machine as a code change, applied
-to the sources within seconds, and the preview updates from the result. Edits
-that change what is captured (record options, interaction timings) also
-trigger an automatic preview re-record on your machine.
+**You can edit without a connected machine.** Anyone in your org can open a
+video and change narration, overlays, render options, and the rest right away.
+Those edits render immediately in the preview and in exports. Because code stays
+the single source of truth, each edit is also queued to be written into your
+`.screenci.ts` source: the sidebar shows an "N edits pending" list ("not yet in
+code"). Run `screenci edit` in your project and the next connect drains that
+queue into the sources, attributing each edit to whoever made it. A teammate can
+make the edits and a developer's machine can pick them up later.
+
+Edits that change what is captured (record options, interaction timings,
+on-screen text, the language set) cannot take effect until a recording runs.
+They are queued the same way, but the editor badges them "applies after next
+recording" and marks the preview stale rather than pretending they took effect.
+Trigger a re-record (via CI, or a connected machine, which auto-records once it
+applies the edit) to bake them in. While a connected machine is actively syncing
+a video's source, that video's editing controls lock briefly until it finishes.
 
 **Everything is editable by default.** Every feature a video declares
 (narration, overlays, languages, render and record options) can
@@ -64,7 +73,7 @@ video.recordOptions({ fps: 30 })
 #### You will learn
 
 - [how the editor is laid out and what each part does](#the-editor-at-a-glance)
-- [why editing requires a connected machine](#editing-needs-a-connected-machine)
+- [how pending edits sync to code](#pending-edits-and-code-sync)
 - [how to edit and export a video in Editor](#editing-in-editor)
 - [how to record from the editor](#recording-from-the-editor)
 - [how to manage narration from Editor](#editor-narration-from-code)
@@ -104,28 +113,35 @@ Opening a video in the web app opens the editor. The page is laid out as:
 - **Top right**: undo and redo (up to 20 steps, Cmd+Z / Shift+Cmd+Z), export
   status, and the **Export** button.
 
-## Editing needs a connected machine
+## Pending edits and code sync
 
-Every edit is a code change: the editor sends it to your machine over the
-`screenci edit` channel, the CLI writes it into the `.screenci.ts` source, and
-the preview updates from the applied result. Because of that, editing is
-locked until a machine you own is connected:
+Every edit is ultimately a code change: code stays the single source of truth.
+But you do not need a connected machine to edit. Anyone in the org can change a
+video, and the edits render immediately while they wait to be written into the
+`.screenci.ts` source. The sidebar's **pending** list shows how many edits are
+"not yet in code" and who queued each one.
+
+To flush the queue into your sources:
 
 1. Create a personal editor token on the Secrets page and add it to your project
    env file as `SCREENCI_EDIT_TOKEN=<token>`.
 2. Run `screenci edit` in your project.
-3. The sidebar's Recording group shows your machine connected (for example
-   `you@laptop`), and the editing controls unlock.
+3. On connect, the CLI writes every queued edit into the source (logging
+   "queued by <name>" for edits a teammate made) and the pending list drains.
 
-While no machine is connected the editor is view-only: playback, seeking, and
-version browsing keep working, but the edit controls are dimmed and show
-"Editing needs a connected machine" when clicked. Only your own account can
-use your machine; teammates see it connected but each need their own.
+If an edit can no longer be applied (its target was renamed or removed in code,
+or the source drifted), it stays in the list as failed with **Retry** and
+**Discard**. Discarding abandons only the code write: the value it set keeps
+rendering.
 
 Edits that only affect rendering (narration text, overlay files, render
-options) preview immediately. Edits that change the capture itself (record
-options, interaction timings, added effects) are marked **Needs re-record**
-and trigger an automatic preview re-record on the connected machine.
+options) preview and export immediately. Edits that change the capture itself
+(record options, interaction timings, on-screen text, the language set) are
+badged **applies after next recording**: the preview is marked stale until a
+recording runs. A connected machine auto-records once it applies such an edit;
+otherwise trigger a re-record via CI (see the CI setup guide) or ask a developer
+to run `screenci record`. While a connected machine is actively syncing a
+video's source, that video's editing controls lock briefly until it finishes.
 
 ## Editing in Editor
 
@@ -135,8 +151,8 @@ wait for content, and values declared in code show their current code value as
 the starting point.
 
 Items whose current value still comes from code are marked with a **set in
-code** badge. Editing such an item writes the new value back into your source
-through the connected machine, so code and editor never drift apart.
+code** badge. Editing such an item queues a write-back into your source (applied
+by the next connected machine), so code and editor never drift apart.
 
 Pick a language in the sidebar, then choose **Export** to export a new version
 in that language. Exports are per language: switch the language and export

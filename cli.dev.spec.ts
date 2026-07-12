@@ -220,6 +220,32 @@ describe('runDevListenLoop', () => {
     ])
   })
 
+  it('logs attribution when a deferred edit carries queuedBy', async () => {
+    const controller = { stopped: false }
+    const applyCodegen = vi.fn(async () => {})
+    const deps = makeDeps({ applyCodegen })
+    const deferred: DevCodegenRequest = {
+      ...codegenRequest,
+      queuedBy: 'Marketer Mo',
+    }
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/cli/dev/poll')) {
+        if (deps.fetchMock.mock.calls.length === 1) {
+          return jsonResponse({ trigger: null, codegenRequests: [deferred] })
+        }
+        controller.stopped = true
+        return jsonResponse({ trigger: null })
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    await runDevListenLoop(config, deps, 'lst_1', controller)
+
+    expect(deps.logger.info).toHaveBeenCalledWith(
+      expect.stringContaining('(queued by Marketer Mo)')
+    )
+  })
+
   it('reports codegen failed with the error message when the apply throws', async () => {
     const controller = { stopped: false }
     const applyCodegen = vi.fn(async () => {

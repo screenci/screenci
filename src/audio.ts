@@ -64,10 +64,30 @@ export type AudioConfig = {
 }
 
 /**
- * A value accepted by {@link createAudio} for each key: a file path string or an
- * {@link AudioConfig} object.
+ * Declares a backend-hosted (editor-uploaded) audio track: its bytes live in
+ * the ScreenCI backend under the asset name `editor`, not in a local file. The
+ * declaration keeps the track an explicit part of the video; volume and timing
+ * are edited in the web editor, and the backend merges the uploaded audio by
+ * the declaration name at render. `editor` names the backend asset
+ * (conventionally the same as the declaration key).
  */
-export type AudioInput = string | AudioConfig
+export type EditorAudioInput = { editor: string }
+
+/** Whether a value is an {@link EditorAudioInput} (`{ editor: '<name>' }`). */
+export function isEditorAudioInput(value: unknown): value is EditorAudioInput {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { editor?: unknown }).editor === 'string'
+  )
+}
+
+/**
+ * A value accepted by {@link createAudio} for each key: a file path string, an
+ * {@link AudioConfig} object, or `{ editor: '<name>' }` for a backend-hosted,
+ * editor-uploaded track.
+ */
+export type AudioInput = string | AudioConfig | EditorAudioInput
 
 /**
  * A background audio controller.
@@ -230,7 +250,10 @@ async function resolveAudioFile(
   return { path, fileHash }
 }
 
-function normalizeAudioConfig(name: string, input: AudioInput): AudioConfig {
+function normalizeAudioConfig(
+  name: string,
+  input: string | AudioConfig
+): AudioConfig {
   const config: AudioConfig =
     typeof input === 'string' ? { path: input } : input
   if (!hasAudioExtension(config.path)) {
@@ -287,7 +310,12 @@ export function createAudio<const T extends Record<string, AudioInput>>(
 ): AudioTracks<T> {
   const result = {} as AudioTracks<T>
   for (const name in tracks) {
-    result[name] = buildAudioController(name, tracks[name]!)
+    const input = tracks[name]!
+    // A backend-hosted `{ editor: '<name>' }` track: no local file, emit a
+    // Studio audio start under the declaration name (merged by the backend).
+    result[name] = isEditorAudioInput(input)
+      ? buildStudioAudioController(name)
+      : buildAudioController(name, input)
   }
   return result
 }
@@ -334,6 +362,12 @@ export function buildAudio(
       (language !== undefined ? feature.byLang[language]?.[name] : undefined) ??
       feature.shared[name]
     if (input === undefined) continue
+    // A `{ editor: '<name>' }` track is backend-hosted: emit a Studio audio
+    // start under the declaration name (no local file), like the array form.
+    if (isEditorAudioInput(input)) {
+      result[name] = buildStudioAudioController(name)
+      continue
+    }
     if (anchorFile !== undefined) {
       prewarmAssetFile(
         typeof input === 'string' ? input : input.path,
@@ -409,7 +443,7 @@ function createAudioControllerCore(
 
 function buildAudioController(
   name: string,
-  input: AudioInput
+  input: string | AudioConfig
 ): AudioController {
   const config = normalizeAudioConfig(name, input)
 

@@ -209,15 +209,14 @@ call: `.only(...)`, `.skip`, `.fixme`, and `.fail`. The in-body conditional
 
 ## Managing languages from Editor
 
-Every declared language set is web-owned: the recorded set is the union of the
-web app's selection, the code seed, and any language keys used by per-language
-features. Call `video.languages()` with no argument to hand the whole set to
-the web app.
+The recorded language set is the union of the code set declared with
+`video.languages([...])` and any language keys used by per-language features.
+Code is the single source of truth.
 
 ```ts
 import { video } from 'screenci'
 
-video.narration(['intro']).languages()(
+video.narration({ en: { intro: 'Hi' } }).languages(['en', 'fi'])(
   'Product tour',
   async ({ page, narration }) => {
     await narration.intro()
@@ -226,55 +225,21 @@ video.narration(['intro']).languages()(
 )
 ```
 
-With no argument, nothing is seeded, so rendering is held until the web app
-selects a language set. To start from an initial set the web app can still
-change, seed it: `video.languages(['en', 'fi'])` records en and fi plus
-whatever the web app adds. To seed the capture options too, pass a config
-object, for example
-`video.languages({ languages: ['en', 'fi'], mode: 'shared' })`.
-
-The web app can edit the language **set** but not `mode`, `locales`, or
-`browserLocale` yet, so set those to their final values in code up front: they are
-seeded once and used for every render until web editing of them ships.
+To set the capture options too, pass a config object, for example
+`video.languages({ languages: ['en', 'fi'], mode: 'shared' })`. With no
+`video.languages(...)` declaration the set is inferred from the per-feature
+language keys, falling back to the implicit `en` default for a plain video.
 
 The **Languages** section on the Editor page lists the current languages and
-lets you add or remove them. Adding a language opens a short guided setup: fill
-in that language's narration (a checklist tracks what is still missing), then
-render. The render reuses the existing capture with the new narration, so you do
-not have to re-record just to get a narrated version in another language.
-
-Adding languages from the web works with any `video.languages(...)`
-declaration, seeded or not: a code seed (a plain array or config object, as
-shown in the sections above) only sets the starting point, and the recorded
-set is the union of the web selection, the code seed, and per-feature
-language keys. For a single language you do not want in the permanent set,
-use a one-off language (below). See [Editor](./editor.md) for the full Editor
-guide.
-
-## One-off languages
-
-You can also add a single language from the web as a **one-off language**
-without touching the saved language set. It renders and serves like any other
-language version, but it is not part of the saved set or your code, so
-re-recording in CI never updates it automatically. This
-mirrors an Editor [one-off version](./editor.md#saved-edits-vs-one-off-renders),
-but at the language level.
-
-On the video's page, use the **Add a one-off language** picker in the Language
-versions section. Picking a language opens that
-language's page with the same guided setup as an Editor-managed language: fill in
-its narration (auto-translated from an existing language, with a checklist for
-what is still missing), then render. The render reuses the existing capture with
-the new narration, so you do not have to re-record.
-
-A one-off language is marked with a purple **One-off** badge in the language
-list and a banner on its page, noting that it is not declared in your code.
-Re-records still pick it up: before a record, the CLI fetches the web-added
-languages and unions them into each video's recorded set, so a language added
-from the web is never blocked by code.
-
-To move a web-added language into code, list it in the
-`video.languages([...])` seed or in a per-feature declaration.
+lets you add one. Adding a language writes it straight into your
+`video.languages([...])` declaration in code through the connected
+`screenci dev` machine (a new `.languages([...])` call is added when the video
+has none), then renders. The edit fails if no dev machine is connected: there
+is no web-side language store, so every language lives in code by the time the
+next record runs. Editing then continues with the usual guided setup: fill in
+that language's narration (a checklist tracks what is still missing), then
+render. The render reuses the existing capture with the new narration, so you
+do not have to re-record just to get a narrated version in another language.
 
 ## Available languages
 

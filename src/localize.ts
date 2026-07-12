@@ -49,6 +49,11 @@ export type LocalizeNarrationValue<L extends Lang = Lang> =
   | { cue: string; voice?: VoiceConfig<L>; language?: Lang; volume?: number }
   | ({ media: string } & LocalizeNarrationMediaFields)
   | ({ path: string } & LocalizeNarrationMediaFields)
+  // Backend-hosted (editor-uploaded) narration audio for this cue: its bytes
+  // live in the ScreenCI backend under the asset name `editor`, not in a local
+  // file. The declaration keeps the cue an explicit part of the video; the
+  // backend merges the uploaded audio by name at render.
+  | { editor: string }
 
 /** Seeded narration: language -> (cue name -> value). */
 export type NarrationByLang = Partial<{

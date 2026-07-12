@@ -7,7 +7,6 @@ import {
 } from './localize.js'
 import type { NormalizedFeature } from './declare.js'
 import type { Lang } from './voices.js'
-import type { ValuesOverrides } from './runtimeMode.js'
 import type {
   AnyLangNarrationOverride,
   AnyTopLevelVoiceConfig,
@@ -35,20 +34,45 @@ export type Values = Record<string, string>
  * / translation pipeline consumes. Each language resolves `byLang[lang] ?? shared`
  * (the fallback-to-shared rule); a studio (array) declaration carries names only.
  */
+/** Whether a cue value is a backend-hosted `{ editor: '<name>' }` declaration. */
+function isEditorNarrationValue(
+  value: LocalizeNarrationValue | undefined
+): value is { editor: string } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { editor?: unknown }).editor === 'string'
+  )
+}
+
 function featureToNormalizedNarration(
   feature: NormalizedFeature<LocalizeNarrationValue> | null,
   languages: string[]
 ): NormalizedNarration {
   if (feature === null) return null
+  // Object-form cues declared `{ editor: '<name>' }` are backend-hosted, just
+  // like the names-only array form: they take the Studio path (no seed), so the
+  // uploaded audio is merged by name at render. Detected across the shared and
+  // any per-language value (a cue marked editor in any language is editor-owned).
+  const editorNames = feature.codeNames.filter(
+    (name) =>
+      isEditorNarrationValue(feature.shared[name]) ||
+      Object.values(feature.byLang).some((entries) =>
+        isEditorNarrationValue(entries?.[name])
+      )
+  )
+  const editorSet = new Set(editorNames)
   const seedByLang: Partial<Record<Lang, Record<string, NormalizedCueValue>>> =
     {}
   for (const lang of languages) {
     const cues: Record<string, NormalizedCueValue> = {}
     // Seed every named cue that has a value: code-owned cues and seeded Studio
-    // cues (a seeded object). Blank Studio cues (a names-only array) have no value, so
-    // they carry no seed (the web app owns their text). `buildLocalizedNarrationCues`
-    // short-circuits Studio names, so a seed here is backend-facing metadata only.
+    // cues (a seeded object). Blank Studio cues (a names-only array) and editor
+    // cues have no seedable value, so they carry no seed (the backend owns their
+    // audio). `buildLocalizedNarrationCues` short-circuits Studio names, so a
+    // seed here is backend-facing metadata only.
     for (const name of feature.names) {
+      if (editorSet.has(name)) continue
       const value = feature.byLang[lang]?.[name] ?? feature.shared[name]
       if (value !== undefined) cues[name] = normalizeCueValue(name, value)
     }
@@ -56,8 +80,8 @@ function featureToNormalizedNarration(
   }
   return {
     cueNames: feature.names,
-    studioNames: feature.studioNames,
-    seededNames: feature.codeNames,
+    studioNames: [...feature.studioNames, ...editorNames],
+    seededNames: feature.codeNames.filter((name) => !editorSet.has(name)),
     seedByLang,
   }
 }
@@ -87,22 +111,19 @@ export function buildNarrationMarkers(
 }
 
 /**
- * Resolve the `values` fields for the active language: an Editor override wins
- * over the per-language seed, which wins over the shared value, then the empty
- * string (editor-owned fields stay empty until set in the web app).
+ * Resolve the `values` fields for the active language: the per-language seed
+ * wins over the shared value, then the empty string. Every field's content is
+ * code-owned now (edits are codegenned into `video.values(...)`).
  */
 export function buildValues(
   feature: NormalizedFeature<string> | null | undefined,
-  language: string | undefined,
-  overrides?: ValuesOverrides | null
+  language: string | undefined
 ): Values {
   if (!feature || feature.names.length === 0) return {}
-  const override = language !== undefined ? overrides?.[language] : undefined
   const langSeed = language !== undefined ? feature.byLang[language] : undefined
   const values: Values = {}
   for (const field of feature.names) {
-    values[field] =
-      override?.[field] ?? langSeed?.[field] ?? feature.shared[field] ?? ''
+    values[field] = langSeed?.[field] ?? feature.shared[field] ?? ''
   }
   return values
 }

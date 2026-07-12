@@ -52,10 +52,6 @@ import {
   SCREENCI_DISABLE_RECORDING_TIMINGS_ENV,
   SCREENCI_MOCK_RECORD_ENV,
   SCREENCI_LANGUAGES_ENV,
-  SCREENCI_VALUES_OVERRIDES_ENV,
-  SCREENCI_RECORD_OPTIONS_ENV,
-  SCREENCI_WEB_LANGUAGES_ENV,
-  isOverrideDebugEnabled,
   isUploadExistingEnabled,
 } from './src/runtimeMode.js'
 import { DEFAULT_RECORD_UPLOAD_POLICY } from './src/defaults.js'
@@ -4605,221 +4601,6 @@ function validateArgs(args: string[]): void {
   }
 }
 
-/**
- * Fetch the project's current Studio text-field overrides so they can be
- * injected as SCREENCI_VALUES_OVERRIDES before a recording. On-screen `values`
- * fields render during the recording (they cannot be patched at render time),
- * so any Studio edits must be present here; code-declared seeds are the
- * fallback. Best-effort: any failure returns an empty env so the SDK uses the
- * code seeds, and a recording is never blocked by this fetch.
- */
-async function fetchTextOverridesEnv(
-  configPath: string,
-  languages: string | undefined,
-  verbose: boolean
-): Promise<Record<string, string>> {
-  // Studio config only exists for a real (non-anonymous) org, and record must
-  // still work without an account, so skip the fetch entirely rather than
-  // calling requireScreenCISecret, which would hard-exit without a secret.
-  if (!process.env.SCREENCI_SECRET) return {}
-  try {
-    const { screenciConfig, secret, apiUrl } =
-      await requireScreenCISecret(configPath)
-    const params = new URLSearchParams({
-      projectName: screenciConfig.projectName,
-    })
-    if (languages) params.set('languages', languages)
-
-    const res = await fetch(
-      `${apiUrl}/cli/text-overrides?${params.toString()}`,
-      { headers: { 'X-ScreenCI-Secret': secret } }
-    )
-    if (!res.ok) {
-      if (verbose) {
-        logger.warn(
-          `Could not fetch Studio text overrides (${res.status}); using code-declared values.`
-        )
-      }
-      return {}
-    }
-
-    const body = (await res.json()) as { overrides?: unknown }
-    const overrides = body.overrides
-    if (
-      overrides === undefined ||
-      overrides === null ||
-      typeof overrides !== 'object' ||
-      Object.keys(overrides as Record<string, unknown>).length === 0
-    ) {
-      return {}
-    }
-    return { [SCREENCI_VALUES_OVERRIDES_ENV]: JSON.stringify(overrides) }
-  } catch (error) {
-    if (verbose) {
-      logger.warn(
-        `Could not fetch Studio text overrides; using code-declared values.${
-          error instanceof Error ? ` (${error.message})` : ''
-        }`
-      )
-    }
-    return {}
-  }
-}
-
-/**
- * Fetch the project's current Studio record-option overrides so they can be
- * injected as SCREENCI_RECORD_OPTIONS before a recording. Record options (aspect
- * ratio, quality, fps) change the captured viewport/encode, so any Studio edits
- * must be present here; code-declared values are the fallback. Best-effort: any
- * failure returns an empty env so the SDK uses the code values, and a recording
- * is never blocked by this fetch.
- */
-async function fetchRecordOptionsEnv(
-  configPath: string,
-  verbose: boolean
-): Promise<Record<string, string>> {
-  // Studio config only exists for a real (non-anonymous) org, and record must
-  // still work without an account, so skip the fetch entirely rather than
-  // calling requireScreenCISecret, which would hard-exit without a secret.
-  if (!process.env.SCREENCI_SECRET) return {}
-  try {
-    const { screenciConfig, secret, apiUrl } =
-      await requireScreenCISecret(configPath)
-    const params = new URLSearchParams({
-      projectName: screenciConfig.projectName,
-    })
-
-    const res = await fetch(
-      `${apiUrl}/cli/record-options?${params.toString()}`,
-      { headers: { 'X-ScreenCI-Secret': secret } }
-    )
-    if (!res.ok) {
-      if (verbose) {
-        logger.warn(
-          `Could not fetch Studio record options (${res.status}); using code-declared values.`
-        )
-      }
-      return {}
-    }
-
-    const body = (await res.json()) as { recordOptions?: unknown }
-    const recordOptions = body.recordOptions
-    if (
-      recordOptions === undefined ||
-      recordOptions === null ||
-      typeof recordOptions !== 'object' ||
-      Object.keys(recordOptions as Record<string, unknown>).length === 0
-    ) {
-      return {}
-    }
-    return { [SCREENCI_RECORD_OPTIONS_ENV]: JSON.stringify(recordOptions) }
-  } catch (error) {
-    if (verbose) {
-      logger.warn(
-        `Could not fetch Studio record options; using code-declared values.${
-          error instanceof Error ? ` (${error.message})` : ''
-        }`
-      )
-    }
-    return {}
-  }
-}
-
-/**
- * Fetch the web's per-video language additions so they can be injected as
- * SCREENCI_WEB_LANGUAGES before a recording. A language added from the web is
- * then recorded on every re-record even when code never declared it.
- * Best-effort: any failure returns an empty env so the run records the
- * code-declared set, and a recording is never blocked by this.
- */
-export async function fetchWebLanguagesEnv(
-  configPath: string,
-  verbose: boolean
-): Promise<Record<string, string>> {
-  // Web languages only exist for a real (non-anonymous) org; skip entirely
-  // without a secret rather than hard-exiting via requireScreenCISecret.
-  if (!process.env.SCREENCI_SECRET) return {}
-  try {
-    const { screenciConfig, secret, apiUrl } =
-      await requireScreenCISecret(configPath)
-    const params = new URLSearchParams({
-      projectName: screenciConfig.projectName,
-    })
-
-    const res = await fetch(
-      `${apiUrl}/cli/web-languages?${params.toString()}`,
-      {
-        headers: { 'X-ScreenCI-Secret': secret },
-      }
-    )
-    if (!res.ok) {
-      if (verbose) {
-        logger.warn(
-          `Could not fetch web languages (${res.status}); recording code-declared languages only.`
-        )
-      }
-      return {}
-    }
-
-    const body = (await res.json()) as { languages?: unknown }
-    const languages = body.languages
-    if (
-      languages === undefined ||
-      languages === null ||
-      typeof languages !== 'object' ||
-      Object.keys(languages as Record<string, unknown>).length === 0
-    ) {
-      return {}
-    }
-    return { [SCREENCI_WEB_LANGUAGES_ENV]: JSON.stringify(languages) }
-  } catch (error) {
-    if (verbose) {
-      logger.warn(
-        `Could not fetch web languages; recording code-declared languages only.${
-          error instanceof Error ? ` (${error.message})` : ''
-        }`
-      )
-    }
-    return {}
-  }
-}
-
-/**
- * Override debug dump (`SCREENCI_DEBUG_OVERRIDES=1`): print every override
- * set fetched from the backend, decoded from the env vars about to be
- * injected into the recording run. Pairs with the SDK's per-application
- * debug lines so a value can be traced from fetch to the action it changed.
- */
-export function reportFetchedOverridesForDebug(
-  fetchedEnv: Record<string, string>,
-  log: (message: string) => void = (message) => logger.info(message)
-): void {
-  const sections: Array<[string, string]> = [
-    ['Studio text overrides', SCREENCI_VALUES_OVERRIDES_ENV],
-    ['Studio record options', SCREENCI_RECORD_OPTIONS_ENV],
-    ['Web-added languages', SCREENCI_WEB_LANGUAGES_ENV],
-  ]
-  log('[screenci debug] overrides fetched from the backend for this run:')
-  for (const [label, envKey] of sections) {
-    const raw = fetchedEnv[envKey]
-    if (raw === undefined) {
-      // Absent means the backend returned nothing for this channel (or the
-      // fetch failed; failures are warned above). Named so a missing edit is
-      // traceable to "never persisted" rather than "not applied".
-      log(`[screenci debug] ${label}: (none)`)
-      continue
-    }
-    try {
-      log(`[screenci debug] ${label}:`)
-      for (const line of JSON.stringify(JSON.parse(raw), null, 2).split('\n')) {
-        log(`  ${line}`)
-      }
-    } catch {
-      log(`[screenci debug] ${label}: ${raw}`)
-    }
-  }
-}
-
 /** Thrown when a record run is killed via its abort signal. */
 export class RecordAbortedError extends Error {
   constructor() {
@@ -4860,43 +4641,6 @@ async function run(
     )
   }
 
-  // Override debug mode also turns on fetch warnings, so a failing or absent
-  // backend channel is named instead of silently yielding "(none)".
-  const verboseFetch = verbose || isOverrideDebugEnabled()
-
-  // Studio text-field overrides are injected for the record command only: they
-  // resolve in the SDK's `text` fixture before the recording runs. `test` (the
-  // preview run) keeps code-declared values.
-  const textOverridesEnv =
-    command === 'record'
-      ? await fetchTextOverridesEnv(configPath, languages, verboseFetch)
-      : {}
-
-  // Studio record-option overrides are likewise injected for record only: they
-  // resolve in the SDK's `recordOptions` fixture before the capture runs.
-  const recordOptionsEnv =
-    command === 'record'
-      ? await fetchRecordOptionsEnv(configPath, verboseFetch)
-      : {}
-
-  // Web-added languages (record only): union into each video's recorded set so
-  // a language added from the web is never blocked by code.
-  const webLanguagesEnv =
-    command === 'record'
-      ? await fetchWebLanguagesEnv(configPath, verboseFetch)
-      : {}
-
-  // Override debug mode (`SCREENCI_DEBUG_OVERRIDES=1`): dump everything the
-  // backend supplied for this run before recording starts. The SDK then logs
-  // each value again at the moment it is applied to an action.
-  if (isOverrideDebugEnabled()) {
-    reportFetchedOverridesForDebug({
-      ...textOverridesEnv,
-      ...recordOptionsEnv,
-      ...webLanguagesEnv,
-    })
-  }
-
   const envForChild = { ...process.env }
 
   await validateUniqueDiscoveredTestTitles(configPath, additionalArgs, {
@@ -4906,9 +4650,6 @@ async function run(
     ...(command === 'record' && languages
       ? { [SCREENCI_LANGUAGES_ENV]: languages }
       : {}),
-    ...textOverridesEnv,
-    ...recordOptionsEnv,
-    ...webLanguagesEnv,
     ...(command === 'test' && !mockRecord
       ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
       : {}),
@@ -4945,12 +4686,6 @@ async function run(
       ...(command === 'record' && languages
         ? { [SCREENCI_LANGUAGES_ENV]: languages }
         : {}),
-      // Studio text-field overrides resolved from the backend (record only).
-      ...textOverridesEnv,
-      // Studio record-option overrides resolved from the backend (record only).
-      ...recordOptionsEnv,
-      // Web-added languages (record only): unioned into each video's set.
-      ...webLanguagesEnv,
       ...(command === 'test' && !mockRecord
         ? { [SCREENCI_DISABLE_RECORDING_TIMINGS_ENV]: 'true' }
         : {}),

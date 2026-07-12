@@ -1296,6 +1296,229 @@ export function setBuilderOptions(
   ]
 }
 
+/**
+ * The string-literal elements of an array literal, or null when any element is
+ * not a plain string literal (a spread, identifier, or nested expression).
+ */
+function stringArrayElements(
+  ts: TsModule,
+  array: TS.ArrayLiteralExpression
+): string[] | null {
+  const values: string[] = []
+  for (const element of array.elements) {
+    if (!ts.isStringLiteralLike(element)) return null
+    values.push(element.text)
+  }
+  return values
+}
+
+/**
+ * Order-preserving union of an existing language array with a desired set: the
+ * existing elements keep their order, then any desired language not already
+ * present is appended in the order given.
+ */
+function unionLanguages(existing: string[], desired: string[]): string[] {
+  const result = [...existing]
+  for (const lang of desired) {
+    if (!result.includes(lang)) result.push(lang)
+  }
+  return result
+}
+
+/**
+ * Write the desired language set into the `video.languages(...)` declaration of
+ * `videoName`: create a `.languages([...])` call when missing, extend an
+ * existing array literal (order-preserving union), or merge into the
+ * `languages` array of an object-config declaration (`{ languages: [...] }`),
+ * adding the property when absent.
+ *
+ * Conservative by design: returns null when the video declaration is missing or
+ * ambiguous, or when an existing `.languages()` argument (or its `languages`
+ * property) is not a plain array of string literals. Idempotent: re-applying a
+ * subset already present produces no edit.
+ */
+export function setVideoLanguages(
+  ctx: CodemodContext,
+  videoName: string,
+  languages: string[]
+): TextEdit[] | null {
+  const { ts } = ctx
+  const call = findVideoCall(ctx, videoName)
+  if (call === null) return null
+  const arraySource = (langs: string[]): string =>
+    `[${langs.map((lang) => valueToSource(lang)).join(', ')}]`
+  const existing = findMethodCallInChain(ts, call.expression, 'languages')
+  if (existing === null) {
+    const insertAt = call.expression.getEnd()
+    return [
+      {
+        start: insertAt,
+        end: insertAt,
+        replacement: `.languages(${arraySource(languages)})`,
+      },
+    ]
+  }
+  const arg = existing.arguments[0]
+  if (arg === undefined) {
+    // `video.languages()` with no argument: seed it with the desired set.
+    const insertAt = arg === undefined ? existing.getEnd() - 1 : 0
+    return [
+      { start: insertAt, end: insertAt, replacement: arraySource(languages) },
+    ]
+  }
+  if (ts.isArrayLiteralExpression(arg)) {
+    const current = stringArrayElements(ts, arg)
+    if (current === null) return null
+    const merged = unionLanguages(current, languages)
+    if (
+      merged.length === current.length &&
+      merged.every((lang, index) => lang === current[index])
+    ) {
+      return [] // idempotent no-op
+    }
+    return [
+      {
+        start: arg.getStart(),
+        end: arg.getEnd(),
+        replacement: arraySource(merged),
+      },
+    ]
+  }
+  if (ts.isObjectLiteralExpression(arg)) {
+    const { property, unsafe } = findProperty(ts, arg, 'languages')
+    if (unsafe) return null
+    if (property === null) {
+      return [insertPropertyEdit(arg, `languages: ${arraySource(languages)}`)]
+    }
+    const initializer = property.initializer
+    if (!ts.isArrayLiteralExpression(initializer)) return null
+    const current = stringArrayElements(ts, initializer)
+    if (current === null) return null
+    const merged = unionLanguages(current, languages)
+    if (
+      merged.length === current.length &&
+      merged.every((lang, index) => lang === current[index])
+    ) {
+      return []
+    }
+    return [
+      {
+        start: initializer.getStart(),
+        end: initializer.getEnd(),
+        replacement: arraySource(merged),
+      },
+    ]
+  }
+  return null
+}
+
+/**
+ * Declare an editor-uploaded media item as backend-hosted in a
+ * `video.<method>({...})` call (`overlays` / `narration` / `audio`), writing
+ * `{ <name>: { editor: '<editorName>' } }`:
+ *
+ * - Missing declaration: a `.<method>({ '<name>': { editor } })` call is inserted
+ *   before the terminal `('<name>', fn)` call.
+ * - Names-only array (`['a', 'b']`): converted to the object form, every existing
+ *   name becoming `{ editor: '<name>' }`, then the new item added.
+ * - Object literal: the item property is added (or replaced when it does not
+ *   already match). For a language-major narration object the marker is added
+ *   into the shared `default` sub-object (created when missing), since an
+ *   uploaded audio cue is language-agnostic. `isLanguageKey` identifies the
+ *   language-major shape (pass it for narration; overlays/audio are flat).
+ *
+ * Conservative: returns null on a missing/ambiguous video declaration or a shape
+ * it cannot edit mechanically. Idempotent when the marker is already present.
+ */
+export function setEditorMedia(
+  ctx: CodemodContext,
+  videoName: string,
+  method: 'overlays' | 'narration' | 'audio',
+  name: string,
+  editorName: string,
+  isLanguageKey: (key: string) => boolean = () => false
+): TextEdit[] | null {
+  const { ts } = ctx
+  const call = findVideoCall(ctx, videoName)
+  if (call === null) return null
+  const markerSource = `{ editor: ${valueToSource(editorName)} }`
+  const itemSource = `${propertyNameSource(name)}: ${markerSource}`
+  const existing = findMethodCallInChain(ts, call.expression, method)
+  if (existing === null) {
+    const insertAt = call.expression.getEnd()
+    return [
+      {
+        start: insertAt,
+        end: insertAt,
+        replacement: `.${method}({ ${itemSource} })`,
+      },
+    ]
+  }
+  const arg = existing.arguments[0]
+  if (arg === undefined) return null
+  if (ts.isArrayLiteralExpression(arg)) {
+    const names = stringArrayElements(ts, arg)
+    if (names === null) return null
+    if (!names.includes(name)) names.push(name)
+    const entries = names.map((entryName) => {
+      const entryEditor = entryName === name ? editorName : entryName
+      return `${propertyNameSource(entryName)}: { editor: ${valueToSource(entryEditor)} }`
+    })
+    return [
+      {
+        start: arg.getStart(),
+        end: arg.getEnd(),
+        replacement: `{ ${entries.join(', ')} }`,
+      },
+    ]
+  }
+  if (!ts.isObjectLiteralExpression(arg)) return null
+  const keys = objectLiteralKeys(ts, arg)
+  if (keys === null) return null
+  const languageMajor = keys.length > 0 && keys.every(isLanguageKey)
+  if (languageMajor) {
+    // Add the marker into the shared `default` sub-object (an uploaded cue is
+    // language-agnostic). Create `default` when absent.
+    const shared = findProperty(ts, arg, 'default')
+    if (shared.unsafe) return null
+    if (shared.property === null) {
+      return [insertPropertyEdit(arg, `default: { ${itemSource} }`)]
+    }
+    if (!ts.isObjectLiteralExpression(shared.property.initializer)) return null
+    const inner = shared.property.initializer
+    const found = findProperty(ts, inner, name)
+    if (found.unsafe) return null
+    if (found.property !== null) {
+      return [
+        {
+          start: found.property.initializer.getStart(),
+          end: found.property.initializer.getEnd(),
+          replacement: markerSource,
+        },
+      ]
+    }
+    return [insertPropertyEdit(inner, itemSource)]
+  }
+  const found = findProperty(ts, arg, name)
+  if (found.unsafe) return null
+  if (found.property !== null) {
+    const initializer = found.property.initializer
+    const currentText = ctx.source.slice(
+      initializer.getStart(),
+      initializer.getEnd()
+    )
+    if (currentText === markerSource) return [] // idempotent no-op
+    return [
+      {
+        start: initializer.getStart(),
+        end: initializer.getEnd(),
+        replacement: markerSource,
+      },
+    ]
+  }
+  return [insertPropertyEdit(arg, itemSource)]
+}
+
 /** `name` when it is a plain identifier, else a quoted property name. */
 function propertyNameSource(name: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)
@@ -1451,6 +1674,89 @@ export function setNarrationValue(
   edit: NarrationValueEdit,
   isLanguageKey: (key: string) => boolean
 ): NarrationValueResult {
+  return setDeclarationValue(
+    ctx,
+    videoName,
+    'narration',
+    edit,
+    isLanguageKey,
+    () => ({
+      kind: 'appManaged',
+    })
+  )
+}
+
+/**
+ * Write one on-screen `values` field value into the `video.values(...)`
+ * declaration of `videoName`. Behaves exactly like {@link setNarrationValue}
+ * with one difference: a names-only array declaration (`values(['title'])`) is
+ * CONVERTED to an object literal (the listed fields become properties, the
+ * edited field seeded with its value and the rest with empty strings) instead
+ * of being reported as app-managed. There is no backend store of overrides
+ * anymore, so conversion is the only way the field stays editable from code.
+ */
+export function setValuesValue(
+  ctx: CodemodContext,
+  videoName: string,
+  edit: NarrationValueEdit,
+  isLanguageKey: (key: string) => boolean
+): NarrationValueResult {
+  const { ts } = ctx
+  return setDeclarationValue(
+    ctx,
+    videoName,
+    'values',
+    edit,
+    isLanguageKey,
+    (arg) => convertNamesOnlyValuesArray(ctx, ts, arg, edit)
+  )
+}
+
+/**
+ * Convert a names-only `values([...])` array literal into an object literal.
+ * Every listed field name becomes a property: the edited field gets its new
+ * value, the others empty strings. Refuses (`unsupported`) when the array
+ * holds anything but plain string literals.
+ */
+function convertNamesOnlyValuesArray(
+  ctx: CodemodContext,
+  ts: TsModule,
+  arg: TS.ArrayLiteralExpression,
+  edit: NarrationValueEdit
+): NarrationValueResult {
+  const names: string[] = []
+  for (const element of arg.elements) {
+    if (!ts.isStringLiteralLike(element)) return { kind: 'unsupported' }
+    names.push(element.text)
+  }
+  if (!names.includes(edit.cueName)) names.push(edit.cueName)
+  const valueSource = valueToSource(edit.value)
+  if (valueSource === null) return { kind: 'unsupported' }
+  const entries = names.map((name) => {
+    const rendered = name === edit.cueName ? valueSource : `''`
+    return `${propertyNameSource(name)}: ${rendered}`
+  })
+  return {
+    kind: 'edits',
+    edits: [
+      {
+        start: arg.getStart(),
+        end: arg.getEnd(),
+        replacement: `{ ${entries.join(', ')} }`,
+      },
+    ],
+  }
+}
+
+/** Shared implementation of {@link setNarrationValue} and {@link setValuesValue}. */
+function setDeclarationValue(
+  ctx: CodemodContext,
+  videoName: string,
+  method: 'narration' | 'values',
+  edit: NarrationValueEdit,
+  isLanguageKey: (key: string) => boolean,
+  namesOnlyArray: (arg: TS.ArrayLiteralExpression) => NarrationValueResult
+): NarrationValueResult {
   const { ts } = ctx
   // A `{ cue }` object with no other keys is the plain-string spelling: keep
   // declarations minimal (a text edit never upgrades a string cue to an
@@ -1477,7 +1783,7 @@ export function setNarrationValue(
   const cueProp = propertyNameSource(edit.cueName)
   const langProp = propertyNameSource(edit.lang)
   const isDefault = edit.isDefault === true || edit.lang === 'default'
-  const existing = findMethodCallInChain(ts, call.expression, 'narration')
+  const existing = findMethodCallInChain(ts, call.expression, method)
   if (existing === null) {
     const objectSource = isDefault
       ? `{ ${cueProp}: ${valueSource} }`
@@ -1489,14 +1795,14 @@ export function setNarrationValue(
         {
           start: insertAt,
           end: insertAt,
-          replacement: `.narration(${objectSource})`,
+          replacement: `.${method}(${objectSource})`,
         },
       ],
     }
   }
   const arg = existing.arguments[0]
   if (arg === undefined) return { kind: 'unsupported' }
-  if (ts.isArrayLiteralExpression(arg)) return { kind: 'appManaged' }
+  if (ts.isArrayLiteralExpression(arg)) return namesOnlyArray(arg)
   if (!ts.isObjectLiteralExpression(arg)) return { kind: 'unsupported' }
   const keys = objectLiteralKeys(ts, arg)
   if (keys === null) return { kind: 'unsupported' }

@@ -19,6 +19,9 @@ import {
   removeOption,
   setBuilderOptions,
   setNarrationValue,
+  setValuesValue,
+  setVideoLanguages,
+  setEditorMedia,
   setOptionValue,
   setOverlayDeclProps,
   statementAtLine,
@@ -902,6 +905,205 @@ describe('setOverlayDeclProps', () => {
     const source = "video.overlays(['logo'])('Demo', async () => {})"
     expect(
       setOverlayDeclProps(ctxOf(source), 'Demo', 'logo', { width: 1 })
+    ).toBeNull()
+  })
+})
+
+describe('setVideoLanguages', () => {
+  function applyAll(source: string, edits: TextEdit[] | null): string {
+    expect(edits).not.toBeNull()
+    return applyTextEdits(source, edits!)
+  }
+
+  it('inserts a .languages([...]) call when missing', () => {
+    const source = "video('Demo', async () => {})"
+    const edits = setVideoLanguages(ctxOf(source), 'Demo', ['en', 'fi'])
+    expect(applyAll(source, edits)).toBe(
+      "video.languages(['en', 'fi'])('Demo', async () => {})"
+    )
+  })
+
+  it('extends an existing array literal, preserving order', () => {
+    const source = "video.languages(['en', 'fi'])('Demo', async () => {})"
+    const edits = setVideoLanguages(ctxOf(source), 'Demo', ['en', 'fi', 'de'])
+    expect(applyAll(source, edits)).toBe(
+      "video.languages(['en', 'fi', 'de'])('Demo', async () => {})"
+    )
+  })
+
+  it('is a no-op when all desired languages are already present', () => {
+    const source = "video.languages(['en', 'fi'])('Demo', async () => {})"
+    expect(setVideoLanguages(ctxOf(source), 'Demo', ['en', 'fi'])).toEqual([])
+  })
+
+  it('merges into the languages array of an object-config declaration', () => {
+    const source =
+      "video.languages({ languages: ['en'], mode: 'shared' })('Demo', async () => {})"
+    const edits = setVideoLanguages(ctxOf(source), 'Demo', ['en', 'fi'])
+    expect(applyAll(source, edits)).toBe(
+      "video.languages({ languages: ['en', 'fi'], mode: 'shared' })('Demo', async () => {})"
+    )
+  })
+
+  it('adds a languages property to an object config that lacks one', () => {
+    const source = "video.languages({ mode: 'shared' })('Demo', async () => {})"
+    const edits = setVideoLanguages(ctxOf(source), 'Demo', ['en'])
+    expect(applyAll(source, edits)).toBe(
+      "video.languages({ mode: 'shared', languages: ['en'] })('Demo', async () => {})"
+    )
+  })
+
+  it('returns null when the array holds a non-literal element', () => {
+    const source = "video.languages([base])('Demo', async () => {})"
+    expect(setVideoLanguages(ctxOf(source), 'Demo', ['en'])).toBeNull()
+  })
+
+  it('returns null when the video declaration is missing', () => {
+    const source = "video('Other', async () => {})"
+    expect(setVideoLanguages(ctxOf(source), 'Demo', ['en'])).toBeNull()
+  })
+})
+
+describe('setValuesValue', () => {
+  const isLanguageKey = (key: string): boolean =>
+    key === 'default' || ['fr', 'de', 'en'].includes(key)
+
+  function value(
+    source: string,
+    edit: { cueName: string; lang: string; isDefault?: boolean; value: unknown }
+  ) {
+    return setValuesValue(ctxOf(source), 'Demo', edit, isLanguageKey)
+  }
+
+  function valued(
+    source: string,
+    edit: { cueName: string; lang: string; isDefault?: boolean; value: unknown }
+  ): string {
+    const result = value(source, edit)
+    expect(result.kind).toBe('edits')
+    if (result.kind !== 'edits') throw new Error('unreachable')
+    return applyTextEdits(source, result.edits)
+  }
+
+  it('adds a content-major .values section when missing (default lang)', () => {
+    const source = "video('Demo', async () => {})"
+    expect(
+      valued(source, { cueName: 'title', lang: 'default', value: 'Hi' })
+    ).toBe("video.values({ title: 'Hi' })('Demo', async () => {})")
+  })
+
+  it('converts a names-only array declaration to an object literal', () => {
+    const source = "video.values(['title', 'subtitle'])('Demo', async () => {})"
+    expect(
+      valued(source, { cueName: 'title', lang: 'default', value: 'Hi' })
+    ).toBe(
+      "video.values({ title: 'Hi', subtitle: '' })('Demo', async () => {})"
+    )
+  })
+
+  it('merges a field into an existing content-major object', () => {
+    const source = "video.values({ title: 'Hi' })('Demo', async () => {})"
+    expect(
+      valued(source, { cueName: 'subtitle', lang: 'default', value: 'Yo' })
+    ).toBe(
+      "video.values({ title: 'Hi', subtitle: 'Yo' })('Demo', async () => {})"
+    )
+  })
+
+  it('converts content-major to language-major on a non-default edit', () => {
+    const source = "video.values({ title: 'Hi' })('Demo', async () => {})"
+    expect(
+      valued(source, { cueName: 'title', lang: 'fr', value: 'Salut' })
+    ).toBe(
+      "video.values({ default: { title: 'Hi' }, fr: { title: 'Salut' } })('Demo', async () => {})"
+    )
+  })
+
+  it('is a no-op when the value already matches', () => {
+    const source = "video.values({ title: 'Hi' })('Demo', async () => {})"
+    const result = value(source, {
+      cueName: 'title',
+      lang: 'default',
+      value: 'Hi',
+    })
+    expect(result).toEqual({ kind: 'edits', edits: [] })
+  })
+})
+
+describe('setEditorMedia', () => {
+  const isLanguageKey = (key: string): boolean =>
+    key === 'default' || ['en', 'fi'].includes(key)
+
+  function applyAll(source: string, edits: TextEdit[] | null): string {
+    expect(edits).not.toBeNull()
+    return applyTextEdits(source, edits!)
+  }
+
+  it('inserts an .overlays call when missing', () => {
+    const source = "video('Demo', async () => {})"
+    const edits = setEditorMedia(
+      ctxOf(source),
+      'Demo',
+      'overlays',
+      'logo',
+      'logo'
+    )
+    expect(applyAll(source, edits)).toBe(
+      "video.overlays({ logo: { editor: 'logo' } })('Demo', async () => {})"
+    )
+  })
+
+  it('adds an item to an existing overlays object', () => {
+    const source =
+      "video.overlays({ hint: './hint.html' })('Demo', async () => {})"
+    const edits = setEditorMedia(
+      ctxOf(source),
+      'Demo',
+      'overlays',
+      'logo',
+      'logo'
+    )
+    expect(applyAll(source, edits)).toBe(
+      "video.overlays({ hint: './hint.html', logo: { editor: 'logo' } })('Demo', async () => {})"
+    )
+  })
+
+  it('converts a names-only array to the object form', () => {
+    const source = "video.audio(['music'])('Demo', async () => {})"
+    const edits = setEditorMedia(ctxOf(source), 'Demo', 'audio', 'sfx', 'sfx')
+    expect(applyAll(source, edits)).toBe(
+      "video.audio({ music: { editor: 'music' }, sfx: { editor: 'sfx' } })('Demo', async () => {})"
+    )
+  })
+
+  it('is a no-op when the marker already matches', () => {
+    const source =
+      "video.overlays({ logo: { editor: 'logo' } })('Demo', async () => {})"
+    expect(
+      setEditorMedia(ctxOf(source), 'Demo', 'overlays', 'logo', 'logo')
+    ).toEqual([])
+  })
+
+  it('adds a narration marker into the default sub-object (language-major)', () => {
+    const source =
+      "video.narration({ en: { intro: 'Hi' } })('Demo', async () => {})"
+    const edits = setEditorMedia(
+      ctxOf(source),
+      'Demo',
+      'narration',
+      'outro',
+      'outro',
+      isLanguageKey
+    )
+    expect(applyAll(source, edits)).toBe(
+      "video.narration({ en: { intro: 'Hi' }, default: { outro: { editor: 'outro' } } })('Demo', async () => {})"
+    )
+  })
+
+  it('returns null when the video declaration is missing', () => {
+    const source = "video('Other', async () => {})"
+    expect(
+      setEditorMedia(ctxOf(source), 'Demo', 'overlays', 'logo', 'logo')
     ).toBeNull()
   })
 })

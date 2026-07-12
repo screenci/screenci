@@ -50,14 +50,13 @@ video.overlays(['intro', 'logo'])
 // Plain objects: code values, used at record time, editable in the web app.
 video.narration({ en: { intro: 'Welcome', outro: 'Thanks' } })
 
-// Languages: hand the whole set to the web, or seed an initial set.
-video.languages() // web-owned set
-video.languages(['en', 'fi']) // code seed the web app can extend
-video.languages({ languages: ['en', 'fi'], mode: 'shared' }) // seed with capture options
+// Languages: the code set. Adding a language in the editor writes it here.
+video.languages(['en', 'fi']) // the code language set
+video.languages({ languages: ['en', 'fi'], mode: 'shared' }) // set with capture options
 
-// Render / record options: code values are the starting point, web edits win.
-// Declare them per video with the builder methods (renderOptions supports
-// per-language overrides via { default, <lang> }).
+// Render / record options: code values are the starting point. Editing them in
+// the editor writes the change back into these builder calls (renderOptions
+// supports per-language overrides via { default, <lang> }).
 video.renderOptions({ output: { aspectRatio: '9:16' } })
 video.recordOptions({ fps: 30 })
 ```
@@ -699,10 +698,11 @@ preview and the offline fallback):
   move under `default` verbatim and the edited language gets its own
   sub-object.
 
-Not codegen'd (app-managed by design): narration voices and uploaded narration
-media, cloned-voice samples, on-screen text values, and audio tracks. A
-names-only narration declaration (`.narration(['intro'])`) keeps its content in
-the web app; editing such a cue never touches code.
+Every editor edit is codegen'd: it is written into your `.screenci.ts` sources
+through the connected `screenci dev` machine, and fails if no machine is
+connected. There is no web-side edit store. Uploaded media (narration voices
+and recorded audio, cloned-voice samples) is downloaded to local editor files
+on the dev machine and referenced from code.
 
 Loop repeats stay locked: an action that runs more than once from a single
 call site (keys like `click1#1`) cannot be edited per execution, in the editor
@@ -714,32 +714,26 @@ Edits live in your sources, so undoing one is a code change: revert the file
 in git (or edit it by hand) and record again. There is no separate web edit
 layer to reset.
 
-## Debugging overrides
-
-Set `SCREENCI_DEBUG_OVERRIDES=1` when running `screenci record` to dump the
-Studio-owned override sets fetched from the backend before the run (text
-values, record options, web-added languages).
-
 ## Editor languages from code
 
 > **Set `mode`, `locales`, and `browserLocale` correctly in code up front.** The
-> web app can add and remove languages, but it cannot yet edit `mode`,
-> `locales`, or `browserLocale`. Those fields are seeded from code once and used
-> for every render until web editing of them ships, so give them their final
+> editor can add languages (by writing them into `video.languages([...])`), but
+> it cannot yet edit `mode`, `locales`, or `browserLocale`. Give them their final
 > values now (via `video.languages({ languages, mode, locales, browserLocale })`).
-> Only the language **set** is editable from the web today.
 
-Every declared language set is web-owned: the recorded set is the **union** of
-the web app's selection, the code seed, and any language keys used by
-per-language features (narration, overlays). Call
-`video.languages()` with no argument to hand the whole set to the web app. The
-**Languages** section on the Editor page shows the current set and lets you add
-or remove languages:
+The recorded language set is the **union** of the code set declared with
+`video.languages([...])` and any language keys used by per-language features
+(narration, overlays). The **Languages** section on the Editor page shows the
+current set and lets you add a language; adding one writes it into your
+`video.languages([...])` declaration in code (a new `.languages([...])` call is
+added when the video has none) through the connected `screenci dev` machine,
+then records:
 
 ```ts
 import { video } from 'screenci'
 
-video.narration(['intro']).languages()(
+// Records en and fi. Adding a language in the editor extends this array.
+video.narration({ en: { intro: 'Hi' } }).languages(['en', 'fi'])(
   'Product tour',
   async ({ page, narration }) => {
     await narration.intro()
@@ -748,44 +742,21 @@ video.narration(['intro']).languages()(
 )
 ```
 
-With no argument, nothing is seeded, so rendering is held until the web app
-selects a language set. To start from an initial set the web app can still
-change, seed it with an array of language codes:
+To set the capture options too, pass a config object:
 
 ```ts
-import { video } from 'screenci'
-
-// Records en and fi, plus whatever the web app adds.
-video.languages(['en', 'fi'])
-```
-
-To seed the capture options too, pass a config object:
-
-```ts
-// Seeded with the set and shared mode. The web app owns the set.
 video.languages({ languages: ['en', 'fi'], mode: 'shared' })
 ```
 
 The config accepts the same `languages`, `mode`, `locales`, and `browserLocale`
-fields as before. As noted above, the web app can edit the language set but not
+fields. As noted above, the editor can edit the language set but not
 `mode` / `locales` / `browserLocale` yet, so set those to their final values
 here.
 
-Adding a language triggers a re-record: the Languages section shows a
-**Re-record this video** button that queues a new recording pass from the web
-when the project is connected to GitHub. The new pass reuses the same Editor
-narration and overlays configuration. Removing a language takes effect
-on the next upload without re-recording. Languages seeded in code or carried by
-per-feature language keys stay in the recorded set even if removed from the web
-selection, since the recorded set is the union of all three sources.
-
-Unlike narration text and overlays (applied at render time), the language set
-changes the captured recording itself, so adding a language always requires a
-new recording pass.
-
-Combine `video.languages()` with name-only narration
-(`video.narration(['intro'])`) so both the narration content and the language
-set start blank and are filled in from the web app. See
+Adding a language records a fresh pass for it: the new pass reuses the existing
+capture and the new narration. Because the language set changes the captured
+recording itself (unlike narration text and overlays, applied at render time),
+adding a language always requires a new recording pass. See
 [Languages](./languages.md) for the full language API.
 
 ## Action parameter tracking and overrides

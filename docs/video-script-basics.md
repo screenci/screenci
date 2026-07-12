@@ -350,10 +350,9 @@ place them where they belong in the flow. That gives you cleaner overlap
 control, makes revisions less brittle, and should save API cost when a TTS
 provider such as ElevenLabs only needs to regenerate one changed sentence.
 
-To control which languages are recorded, chain `video.languages(...)` (call it
-with no argument for a fully web-owned set, a plain array of language codes as
-a seed, or `{ languages, mode }`). The recorded set is the union of the web
-app's selection, the code seed, and per-feature language keys. For example,
+To control which languages are recorded, chain `video.languages(...)` (a plain
+array of language codes, or `{ languages, mode }`). The recorded set is the
+union of the code set and per-feature language keys. For example,
 `video.narration({...}).languages({ mode: 'shared' })` records a single shared
 narration track instead of one per language. A video with no `.languages(...)`
 call records one language-agnostic round pinned to the `en-US` browser locale.

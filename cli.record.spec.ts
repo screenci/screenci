@@ -451,52 +451,6 @@ describe('CLI', () => {
     })
   })
 
-  describe('fetchWebLanguagesEnv', () => {
-    it('returns no env without a SCREENCI_SECRET (anonymous record works)', async () => {
-      delete process.env.SCREENCI_SECRET
-      const { fetchWebLanguagesEnv } = await import('./cli')
-      await expect(
-        fetchWebLanguagesEnv('/project/screenci.config.ts', false)
-      ).resolves.toEqual({})
-    })
-
-    it('injects the fetched language map as SCREENCI_WEB_LANGUAGES', async () => {
-      process.env.SCREENCI_SECRET = 'sk-test'
-      mockExistsSync.mockImplementation((path: string) =>
-        path.endsWith('screenci.config.ts')
-      )
-      mockReadFile.mockImplementation(async (path: string | URL) => {
-        if (String(path).endsWith('screenci.config.ts')) {
-          return "export default { projectName: 'Test Project' }"
-        }
-        return ''
-      })
-      const languages = { Tutorial: ['fi'] }
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async () => ({ ok: true, json: async () => ({ languages }) }))
-      )
-      const { fetchWebLanguagesEnv } = await import('./cli')
-      await expect(
-        fetchWebLanguagesEnv('test-fixtures/screenci.config.ts', false)
-      ).resolves.toEqual({
-        SCREENCI_WEB_LANGUAGES: JSON.stringify(languages),
-      })
-
-      // Failures never block a record.
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async () => {
-          throw new Error('offline')
-        })
-      )
-      await expect(
-        fetchWebLanguagesEnv('test-fixtures/screenci.config.ts', false)
-      ).resolves.toEqual({})
-      vi.unstubAllGlobals()
-    })
-  })
-
   describe('acquireRecordRunLock', () => {
     it('refuses a fresh lock whose pid is still alive', async () => {
       const addSignalListener = vi.fn()
@@ -804,86 +758,6 @@ describe('CLI', () => {
       expect(loggerWarnSpy).toHaveBeenCalledWith(
         'Code Cut: Missing recording.mp4 for "Code Cut"'
       )
-    })
-
-    it('injects Studio text overrides into the recording env', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-      const overrides = { en: { heading: 'From Studio' } }
-      mockFetch.mockImplementation(async (input: string | URL) => {
-        const url = String(input)
-        if (url.includes('/cli/text-overrides')) {
-          return {
-            ok: true,
-            status: 200,
-            json: vi.fn().mockResolvedValue({ overrides }),
-            text: vi.fn().mockResolvedValue(''),
-          }
-        }
-        return {
-          ok: true,
-          status: 200,
-          json: vi.fn().mockResolvedValue({}),
-          text: vi.fn().mockResolvedValue(''),
-        }
-      })
-      let capturedEnv: NodeJS.ProcessEnv | undefined
-      mockSpawn.mockImplementation(
-        (
-          _command: string,
-          _args: string[],
-          options?: { env?: NodeJS.ProcessEnv }
-        ) => {
-          capturedEnv = options?.env
-          process.nextTick(() => mockChildProcess.emit('close', 0))
-          return mockChildProcess as unknown as ChildProcess
-        }
-      )
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(capturedEnv?.SCREENCI_VALUES_OVERRIDES).toBe(
-        JSON.stringify(overrides)
-      )
-    })
-
-    it('records without text overrides when the endpoint fails', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-      mockFetch.mockImplementation(async (input: string | URL) => {
-        const url = String(input)
-        if (url.includes('/cli/text-overrides')) {
-          return {
-            ok: false,
-            status: 500,
-            json: vi.fn().mockResolvedValue({}),
-            text: vi.fn().mockResolvedValue('boom'),
-          }
-        }
-        return {
-          ok: true,
-          status: 200,
-          json: vi.fn().mockResolvedValue({}),
-          text: vi.fn().mockResolvedValue(''),
-        }
-      })
-      let capturedEnv: NodeJS.ProcessEnv | undefined
-      mockSpawn.mockImplementation(
-        (
-          _command: string,
-          _args: string[],
-          options?: { env?: NodeJS.ProcessEnv }
-        ) => {
-          capturedEnv = options?.env
-          process.nextTick(() => mockChildProcess.emit('close', 0))
-          return mockChildProcess as unknown as ChildProcess
-        }
-      )
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockSpawn).toHaveBeenCalled()
-      expect(capturedEnv?.SCREENCI_VALUES_OVERRIDES).toBeUndefined()
     })
 
     it('should only log the config path in verbose mode', async () => {

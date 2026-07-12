@@ -9,13 +9,16 @@ import { join } from 'path'
 import { stableEditableKey } from './editableDescriptor.js'
 import type {
   CodifyEdit,
+  EditorMediaEdit,
+  LanguagesEdit,
   NarrationEdit,
   OptionsEdit,
   OverlayDeclEdit,
   ParamEdit,
   RenameEdit,
+  ValuesEdit,
 } from './timelineEdits.js'
-import { OPTIONS_EDIT_METHODS } from './timelineEdits.js'
+import { EDITOR_MEDIA_METHODS, OPTIONS_EDIT_METHODS } from './timelineEdits.js'
 
 /** Param-edit values per video, in the stable-key entry shape the snapshot
  *  comparisons work with. */
@@ -50,6 +53,15 @@ export type StudioOptionsByVideo = Record<
 /** Narration cue value edits per video (codified into the declaration). */
 export type NarrationEditsByVideo = Record<string, NarrationEdit[]>
 
+/** On-screen `values` field edits per video (codified into the declaration). */
+export type ValuesEditsByVideo = Record<string, ValuesEdit[]>
+
+/** Desired language set per video (codified into `video.languages([...])`). */
+export type LanguagesEditsByVideo = Record<string, LanguagesEdit>
+
+/** Editor-uploaded media markers per video (codified into media declarations). */
+export type EditorMediaEditsByVideo = Record<string, EditorMediaEdit[]>
+
 /**
  * Splits fetched unified timeline-edits docs (keyed by video name) into the
  * shapes the status report and sync prompt consume. Records that do not look
@@ -68,6 +80,9 @@ export function splitTimelineEditsByVideo(
   overlayDecls: OverlayDeclEditsByVideo
   studioOptions: StudioOptionsByVideo
   narrationEdits: NarrationEditsByVideo
+  valuesEdits: ValuesEditsByVideo
+  languagesEdits: LanguagesEditsByVideo
+  editorMediaEdits: EditorMediaEditsByVideo
 } {
   const overrides: EditableOverridesByVideo = {}
   const codify: CodifyEditsByVideo = {}
@@ -76,6 +91,9 @@ export function splitTimelineEditsByVideo(
   const overlayDecls: OverlayDeclEditsByVideo = {}
   const studioOptions: StudioOptionsByVideo = {}
   const narrationEdits: NarrationEditsByVideo = {}
+  const valuesEdits: ValuesEditsByVideo = {}
+  const languagesEdits: LanguagesEditsByVideo = {}
+  const editorMediaEdits: EditorMediaEditsByVideo = {}
   const CODIFY_TYPES = new Set([
     'mediaEdit',
     'zoomEdit',
@@ -154,6 +172,36 @@ export function splitTimelineEditsByVideo(
           continue
         }
         ;(narrationEdits[videoName] ??= []).push(narration)
+      } else if (record.type === 'valuesEdit') {
+        const values = edit as ValuesEdit
+        if (
+          typeof values.field !== 'string' ||
+          typeof values.lang !== 'string' ||
+          typeof values.value !== 'string'
+        ) {
+          continue
+        }
+        ;(valuesEdits[videoName] ??= []).push(values)
+      } else if (record.type === 'languagesEdit') {
+        const langEdit = edit as LanguagesEdit
+        if (
+          !Array.isArray(langEdit.languages) ||
+          !langEdit.languages.every((lang) => typeof lang === 'string')
+        ) {
+          continue
+        }
+        // One languages edit per video: last write wins.
+        languagesEdits[videoName] = langEdit
+      } else if (record.type === 'editorMediaEdit') {
+        const media = edit as EditorMediaEdit
+        if (
+          !EDITOR_MEDIA_METHODS.includes(media.method) ||
+          typeof media.name !== 'string' ||
+          typeof media.editor !== 'string'
+        ) {
+          continue
+        }
+        ;(editorMediaEdits[videoName] ??= []).push(media)
       }
     }
   }
@@ -165,6 +213,9 @@ export function splitTimelineEditsByVideo(
     overlayDecls,
     studioOptions,
     narrationEdits,
+    valuesEdits,
+    languagesEdits,
+    editorMediaEdits,
   }
 }
 

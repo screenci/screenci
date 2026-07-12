@@ -71,7 +71,7 @@ export async function applyCodegenRequest(
     [request.videoName]: { version: 4, edits: [record] },
   })
 
-  const studioVideo = split.studioOptions[request.videoName]
+  const editorOptionsVideo = split.studioOptions[request.videoName]
   const plan = planCodeSync(
     {
       // The codegen path carries no web action-param state to diff; the
@@ -84,11 +84,11 @@ export async function applyCodegenRequest(
       removedCodifyEdits: split.removedCodify,
       renames: split.renames,
       overlayDeclEdits: split.overlayDecls,
-      ...(studioVideo !== undefined && {
-        studioSync: {
+      ...(editorOptionsVideo !== undefined && {
+        editorOptionsSync: {
           videos: {
             [request.videoName]: {
-              ...studioVideo,
+              ...editorOptionsVideo,
               content: {
                 narration: false,
                 text: false,
@@ -100,6 +100,9 @@ export async function applyCodegenRequest(
         },
       }),
       narrationEdits: split.narrationEdits,
+      valuesEdits: split.valuesEdits,
+      languagesEdits: split.languagesEdits,
+      editorMediaEdits: split.editorMediaEdits,
     },
     { ts: deps.ts, readFile: deps.readFile }
   )

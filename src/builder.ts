@@ -9,7 +9,7 @@ import type {
 } from './asset.js'
 import type { AudioController, AudioInput } from './audio.js'
 import { resolveLocaleForLanguage } from './locales.js'
-import { parseRequestedLanguages, parseWebLanguages } from './runtimeMode.js'
+import { parseRequestedLanguages } from './runtimeMode.js'
 import { logger } from './logger.js'
 import type { LocalizeNarrationValue, VoiceConfig } from './localize.js'
 import type { Lang } from './voices.js'
@@ -49,28 +49,24 @@ export type LocalizeMode = 'shared' | 'per-language'
  * drives the registration-time fan-out (one Playwright test per language), so it
  * lives on a builder method rather than in `recordOptions` (a run-time option).
  *
- * Every declared language set is owned by the ScreenCI web app: the recorded set
- * is the union of the web's current selection (injected at record time through the
- * same channel as `--languages`), the code seed, and the per-feature language
- * keys. When nothing is selected anywhere the set is empty and the render stays
- * pending (the recording still runs so its declared schema reaches the backend to
- * be filled). `studioSeed` (from `video.languages(['en', 'fi'])`) supplies the
- * initial set the web app starts from but may change.
+ * Code is the single source of truth: the recorded set is the union of the code
+ * seed (`video.languages(['en', 'fi'])`) and the per-feature language keys, then
+ * restricted by the `--languages` filter. Adding a language in the web editor
+ * codegens it into this `video.languages([...])` block, so it is code again by
+ * the next record.
  */
 export type RecordingLocalize = {
-  languages: 'studio'
+  /** Explicit code seed from `video.languages(['en', ...])`, if any. */
+  languages?: readonly Lang[]
   mode?: LocalizeMode
   locales?: Partial<Record<Lang, string>>
   browserLocale?: boolean
-  /** Initial code-seeded set (`video.languages(['en', ...])`). */
-  studioSeed?: readonly Lang[]
 }
 
 /**
- * The capture config for `video.languages(...)`. The web app owns the set (and
- * may edit these fields later); code supplies the starting values. `languages`
- * may be omitted to infer the set from the per-feature keys (e.g.
- * `narration({ en, fi })`), the usual pairing with `mode: 'shared'`.
+ * The capture config for `video.languages(...)`. `languages` may be omitted to
+ * infer the set from the per-feature keys (e.g. `narration({ en, fi })`), the
+ * usual pairing with `mode: 'shared'`.
  */
 export type LanguagesConfig = {
   languages?: readonly Lang[]
@@ -80,14 +76,12 @@ export type LanguagesConfig = {
 }
 
 /**
- * The argument accepted by `video.languages(...)`. The web app always owns the
- * set; code seeds it:
+ * The argument accepted by `video.languages(...)`:
  *
- * - omitted: nothing seeded (render pending until the web selects a set, unless
- *   per-feature keys contribute languages).
- * - `['en', 'fi']`: seeded with these languages.
- * - `{ languages, mode, ... }`: seeded with this config (the web can edit the
- *   set, and later the mode/locales).
+ * - omitted: nothing seeded (the set is inferred from per-feature keys, else the
+ *   implicit `['en']` default).
+ * - `['en', 'fi']`: the explicit code set.
+ * - `{ languages, mode, ... }`: the explicit config.
  */
 export type LanguagesArg = readonly Lang[] | LanguagesConfig | undefined
 
@@ -96,9 +90,8 @@ function normalizeLanguagesArg(arg: LanguagesArg): RecordingLocalize {
     ? { languages: arg as readonly Lang[] }
     : ((arg as LanguagesConfig | undefined) ?? {})
   return {
-    languages: 'studio',
     ...(cfg.languages !== undefined &&
-      cfg.languages.length > 0 && { studioSeed: cfg.languages }),
+      cfg.languages.length > 0 && { languages: cfg.languages }),
     ...(cfg.mode !== undefined && { mode: cfg.mode }),
     ...(cfg.locales !== undefined && { locales: cfg.locales }),
     ...(cfg.browserLocale !== undefined && {
@@ -156,14 +149,10 @@ export type ResolvedRecordingLocalize = {
   mode: LocalizeMode
   browserLocale: boolean
   locales?: Partial<Record<Lang, string>>
-  /** Whether the set was declared via `video.languages(...)` (web-owned). */
-  studioOwned: boolean
-  /** Web-owned set with nothing selected yet: record for metadata, do not render. */
-  pending: boolean
   /**
-   * Whether the languages were explicitly declared (via `video.languages(...)`,
-   * `'studio'`, or per-feature keys) rather than the implicit `['en']` default. A
-   * plain video with no language info stays language-agnostic (no `[lang]` tag).
+   * Whether the languages were explicitly defined (via `video.languages(...)` or
+   * per-feature keys) rather than the implicit `['en']` default. A plain video
+   * with no language info stays language-agnostic (no `[lang]` tag).
    */
   explicit: boolean
 }
@@ -193,89 +182,43 @@ function featureLanguages(state: BuilderState): string[] {
 }
 
 /**
- * Resolve the recorded language set at registration time. Priority:
- * 1. `video.languages(...)` declared -> web-owned: the UNION of the web's current
- *    selection (`requestedLanguages`, injected at record time), the code seed
- *    (`video.languages(['en', ...])`), and the per-feature language keys defined
- *    in code. Empty (none anywhere) => pending.
- * 2. union of per-feature language keys (e.g. `narration({ fr })` -> French).
- * 3. default `['en']`.
- * The `requestedLanguages` filter (CLI / studio injection) intersects 2-3; for the
- * web-owned set (1) it is unioned in instead, since the web only adds languages.
- *
- * `webLanguages` (the web's stored language set for this video, injected via
- * `SCREENCI_WEB_LANGUAGES`) is UNIONED in on every path: a language added from
- * the web is never blocked by code, whether or not `video.languages(...)` was
- * declared. The `--languages` filter still restricts branch 2-3 afterwards.
+ * Resolve the recorded language set at registration time. The set defined in
+ * code is the union of the explicit `video.languages(['en', ...])` seed and the
+ * per-feature language keys (e.g. `narration({ fr })` -> French); when neither
+ * contributes anything the set is the implicit `['en']` default (a plain video,
+ * language-agnostic). The `--languages` filter (`requestedLanguages`) then
+ * restricts the defined set to what was asked for.
  */
 export function resolveRecordingLocalize(
   state: BuilderState,
-  requestedLanguages: string[] | null,
-  webLanguages: readonly string[] = []
+  requestedLanguages: string[] | null
 ): ResolvedRecordingLocalize {
   const rl = state.recordingLocalize
   const mode: LocalizeMode = rl?.mode ?? 'per-language'
   const browserLocale = rl?.browserLocale ?? true
   const localesPatch = rl?.locales !== undefined ? { locales: rl.locales } : {}
 
-  if (rl !== null && rl !== undefined) {
-    // The web app owns the set, but the recorded languages are the union of:
-    // the web's current selection (`requestedLanguages`, fetched/injected at
-    // record time), the code seed (`video.languages(['en', ...])`), and the
-    // per-feature languages defined in code (e.g. `narration({ en, fi })`). So a
-    // video still records every language its code defines, plus whatever the web
-    // added, even on the first run before anything is configured in the web.
-    const languages = [
-      ...new Set([
-        ...(requestedLanguages ?? []),
-        ...(rl.studioSeed ?? []),
-        ...featureLanguages(state),
-        ...webLanguages,
-      ]),
-    ]
-    return {
-      languages,
-      // Studio-owned sets render every language they record, so the available
-      // set is the recorded set (the union above).
-      availableLanguages: languages,
-      mode,
-      browserLocale,
-      ...localesPatch,
-      studioOwned: true,
-      pending: languages.length === 0,
-      explicit: true,
-    }
-  }
+  // The set defined in code: the explicit `video.languages([...])` seed unioned
+  // with the per-feature language keys. Empty => the implicit `['en']` default.
+  const defined = [
+    ...new Set([...(rl?.languages ?? []), ...featureLanguages(state)]),
+  ]
+  const availableLanguages = defined.length > 0 ? defined : ['en']
+  const explicit = defined.length > 0
 
-  // No `video.languages(...)` declaration: infer the set from per-feature
-  // language keys, union in the web's stored additions, else fall back to the
-  // implicit `['en']` default. A web-added language makes the set explicit
-  // (the video records per-language versions for it from then on).
-  let declared: string[]
-  let explicit: boolean
-  const inferred = [...new Set([...featureLanguages(state), ...webLanguages])]
-  if (inferred.length > 0) {
-    declared = inferred
-    explicit = true
-  } else {
-    declared = ['en']
-    explicit = false
-  }
   const languages =
     requestedLanguages === null
-      ? declared
-      : declared.filter((lang) => requestedLanguages.includes(lang))
+      ? availableLanguages
+      : availableLanguages.filter((lang) => requestedLanguages.includes(lang))
   return {
     languages,
-    // The full declared set, regardless of the `--languages` render filter. The
+    // The full defined set, regardless of the `--languages` render filter. The
     // app reads this so a code-defined language that simply was not rendered this
     // run is not mistaken for one removed from code.
-    availableLanguages: declared,
+    availableLanguages,
     mode,
     browserLocale,
     ...localesPatch,
-    studioOwned: false,
-    pending: false,
     explicit,
   }
 }
@@ -289,7 +232,7 @@ function warnUnusedLanguages(
   resolved: ResolvedRecordingLocalize
 ): void {
   const active = new Set(resolved.languages)
-  const source = resolved.studioOwned ? 'web' : 'video.languages()'
+  const source = 'video.languages()'
   const langList = resolved.languages.join(', ') || '(none)'
   const features: [string, NormalizedFeature<unknown> | null][] = [
     ['Narration', state.narration],
@@ -336,15 +279,11 @@ function warnUnusedLanguages(
  * - `'shared'` mode yields one test carrying every language (overdubbed at
  *   render); the `--languages` filter does not split a shared recording.
  * - `'per-language'` mode yields one test per resolved language.
- * - A web-owned set with nothing selected yet yields one pending test that
- *   records (so its schema reaches the backend) but renders nothing.
  */
 export function expandRegistrations(params: {
   baseTitle: string
   state: BuilderState
   requestedLanguages: string[] | null
-  /** Web-added languages per video name (`SCREENCI_WEB_LANGUAGES`). */
-  webLanguagesByVideo?: Record<string, string[]> | null
 }): Registration[] {
   const { baseTitle, state } = params
   const variants: (EachVariant | null)[] = state.eachVariants ?? [null]
@@ -355,11 +294,7 @@ export function expandRegistrations(params: {
     const variantPatch = variant?.recordOptions ?? null
     const use = variant?.use ?? null
     const variantLabel = variant === null ? '' : `${variant.key} `
-    const resolved = resolveRecordingLocalize(
-      state,
-      params.requestedLanguages,
-      params.webLanguagesByVideo?.[videoName] ?? []
-    )
+    const resolved = resolveRecordingLocalize(state, params.requestedLanguages)
     warnUnusedLanguages(state, resolved)
 
     // Per-language options require a per-language capture: a shared recording
@@ -392,13 +327,9 @@ export function expandRegistrations(params: {
       }),
     })
 
-    // Explicitly-declared languages all filtered out (`--languages`) and not a
-    // pending studio set: register nothing for this variant.
-    if (
-      resolved.explicit &&
-      !resolved.studioOwned &&
-      resolved.languages.length === 0
-    ) {
+    // Explicitly-declared languages all filtered out (`--languages`): register
+    // nothing for this variant.
+    if (resolved.explicit && resolved.languages.length === 0) {
       continue
     }
 
@@ -412,12 +343,10 @@ export function expandRegistrations(params: {
       recordingLocalize: resolved,
     }
 
-    // Pending studio set, shared mode, or a single language-agnostic pass: one
-    // registration that carries every (or no) language without splitting.
+    // Shared mode or a single language-agnostic pass: one registration that
+    // carries every (or the single) language without splitting.
     const singlePass =
-      resolved.pending ||
-      resolved.mode === 'shared' ||
-      resolved.languages.length <= 1
+      resolved.mode === 'shared' || resolved.languages.length <= 1
 
     if (singlePass) {
       // A single explicitly-declared language is tagged `[lang]`; the implicit
@@ -430,7 +359,7 @@ export function expandRegistrations(params: {
           : null
       // Locale: an explicitly tagged single language uses its locale; the implicit
       // default records one round pinned to en-US (the `['en']` default) while
-      // staying language-agnostic. Shared / pending passes leave the locale unset.
+      // staying language-agnostic. Shared passes leave the locale unset.
       const localeLang =
         onlyLang ??
         (!resolved.explicit && resolved.languages.length === 1
@@ -438,7 +367,7 @@ export function expandRegistrations(params: {
           : null)
       const describeTitle = onlyLang
         ? `${variantLabel}${onlyLang}`.trim()
-        : resolved.mode === 'shared' || resolved.pending
+        : resolved.mode === 'shared'
           ? `${variantLabel}shared`.trim()
           : (variant?.key ?? baseTitle)
       registrations.push({
@@ -872,7 +801,6 @@ export function createVideoBuilder<Args>(
       baseTitle: title,
       state,
       requestedLanguages: parseRequestedLanguages(),
-      webLanguagesByVideo: parseWebLanguages(),
     })
 
     if (registrations.length === 0) {

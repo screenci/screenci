@@ -73,6 +73,20 @@ import { video } from 'screenci'
 video.narration(['intro', 'outro']).languages(['en'])
 ```
 
+To mark a single cue as backed by editor-uploaded audio inside a map, use
+`{ editor: '<name>' }`. The cue is an explicit part of the video, but its audio
+lives in the ScreenCI backend (not a local file) and is merged by name at
+render. Uploading narration audio in the editor codegens this form.
+
+```ts
+video.narration({
+  en: {
+    intro: 'Welcome.', // TTS text
+    outro: { editor: 'outro' }, // backend-hosted uploaded audio
+  },
+})
+```
+
 ## Attach a narration script
 
 Attach the narration script with `video.narration(...)`. The body receives a

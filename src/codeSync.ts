@@ -24,14 +24,17 @@ import {
   type ActionMethod,
   type ActionParamRecord,
 } from './actionParams.js'
-import type { StudioSyncState } from './studioSync.js'
+import type { EditorOptionsSyncState } from './editorOptionsSync.js'
 import type {
   CodifyEditsByVideo,
   EditableOverridesByVideo,
   EditableSnapshot,
+  EditorMediaEditsByVideo,
+  LanguagesEditsByVideo,
   NarrationEditsByVideo,
   OverlayDeclEditsByVideo,
   RenamesByVideo,
+  ValuesEditsByVideo,
 } from './editableSnapshot.js'
 import { isLanguageKey } from './declare.js'
 import type {
@@ -64,6 +67,9 @@ import {
   removeOption,
   setBuilderOptions,
   setNarrationValue,
+  setValuesValue,
+  setVideoLanguages,
+  setEditorMedia,
   setOptionValue,
   setOverlayDeclProps,
   splitWaitEdit,
@@ -281,7 +287,7 @@ export type CodeSyncInput = {
    * `video.renderOptions({...})` / `video.recordOptions({...})` builder calls.
    * Optional so existing callers (and tests) need not pass it.
    */
-  studioSync?: StudioSyncState
+  editorOptionsSync?: EditorOptionsSyncState
   /**
    * Narration cue value edits, keyed by video name. Codified into the
    * `video.narration(...)` declaration argument (added when missing, converted
@@ -289,6 +295,25 @@ export type CodeSyncInput = {
    * Optional so existing callers (and tests) need not pass it.
    */
   narrationEdits?: NarrationEditsByVideo
+  /**
+   * On-screen `values` field edits, keyed by video name. Codified into the
+   * `video.values(...)` declaration argument (added when missing; a names-only
+   * declaration is converted to an object literal seeded with the edit).
+   * Optional so existing callers (and tests) need not pass it.
+   */
+  valuesEdits?: ValuesEditsByVideo
+  /**
+   * Desired language set per video. Codified into `video.languages([...])`
+   * (created when missing, its array extended otherwise). Optional so existing
+   * callers (and tests) need not pass it.
+   */
+  languagesEdits?: LanguagesEditsByVideo
+  /**
+   * Editor-uploaded media markers per video. Codified into
+   * `video.overlays/narration/audio({...})` as `{ <name>: { editor } }`.
+   * Optional so existing callers (and tests) need not pass it.
+   */
+  editorMediaEdits?: EditorMediaEditsByVideo
 }
 
 /** A slug that is safe as a code identity and a wire key. */
@@ -1310,8 +1335,11 @@ export function planCodeSync(
       ...Object.keys(input.removedCodifyEdits),
       ...Object.keys(input.renames),
       ...Object.keys(input.overlayDeclEdits ?? {}),
-      ...Object.keys(input.studioSync?.videos ?? {}),
+      ...Object.keys(input.editorOptionsSync?.videos ?? {}),
       ...Object.keys(input.narrationEdits ?? {}),
+      ...Object.keys(input.valuesEdits ?? {}),
+      ...Object.keys(input.languagesEdits ?? {}),
+      ...Object.keys(input.editorMediaEdits ?? {}),
     ]),
   ]
 
@@ -1778,11 +1806,11 @@ export function planCodeSync(
     }
 
     // ── Studio render/record option edits (codify into builder calls) ──────
-    const studioVideo = input.studioSync?.videos[videoName]
-    if (studioVideo !== undefined) {
+    const editorOptionsVideo = input.editorOptionsSync?.videos[videoName]
+    if (editorOptionsVideo !== undefined) {
       const file = declaringFile()
       for (const method of ['renderOptions', 'recordOptions'] as const) {
-        const values = studioVideo[method]
+        const values = editorOptionsVideo[method]
         if (values === undefined || Object.keys(values).length === 0) continue
         const refusal =
           file === null
@@ -1857,6 +1885,112 @@ export function planCodeSync(
                   `'${videoName}': ${refusal.message}`
           )
         }
+      }
+    }
+
+    // ── On-screen `values` field edits (codify into video.values) ──────────
+    const valuesEdits = input.valuesEdits?.[videoName] ?? []
+    if (valuesEdits.length > 0) {
+      const file = declaringFile()
+      for (const edit of valuesEdits) {
+        const refusal =
+          file === null
+            ? unknownVideoRefusal(videoName)
+            : tryApply(file, (ctx) => {
+                const result = setValuesValue(
+                  ctx,
+                  videoName,
+                  {
+                    cueName: edit.field,
+                    lang: edit.lang,
+                    ...(edit.isDefault !== undefined && {
+                      isDefault: edit.isDefault,
+                    }),
+                    value: edit.value,
+                  },
+                  isLanguageKey
+                )
+                if (result.kind === 'edits') return result.edits
+                return null
+              })
+        if (refusal === null) {
+          applied.push({
+            videoName,
+            file: file!,
+            description:
+              `set values field '${edit.field}' (${edit.lang}) ` +
+              `on video '${videoName}'`,
+          })
+          bump(appliedCounts, videoName)
+        } else {
+          markUnappliable(
+            refusal.reason,
+            `locked values field '${edit.field}' on video ` +
+              `'${videoName}': ${refusal.message}`
+          )
+        }
+      }
+    }
+
+    // ── Language set (codify into video.languages) ─────────────────────────
+    const languagesEdit = input.languagesEdits?.[videoName]
+    if (languagesEdit !== undefined && languagesEdit.languages.length > 0) {
+      const file = declaringFile()
+      const refusal =
+        file === null
+          ? unknownVideoRefusal(videoName)
+          : tryApply(file, (ctx) =>
+              setVideoLanguages(ctx, videoName, languagesEdit.languages)
+            )
+      if (refusal === null) {
+        applied.push({
+          videoName,
+          file: file!,
+          description:
+            `set languages [${languagesEdit.languages.join(', ')}] ` +
+            `on video '${videoName}'`,
+        })
+        bump(appliedCounts, videoName)
+      } else {
+        markUnappliable(
+          refusal.reason,
+          `locked languages on video '${videoName}': ${refusal.message}`
+        )
+      }
+    }
+
+    // ── Editor-uploaded media markers (codify into media declarations) ─────
+    const editorMediaEdits = input.editorMediaEdits?.[videoName] ?? []
+    for (const edit of editorMediaEdits) {
+      const file = declaringFile()
+      const refusal =
+        file === null
+          ? unknownVideoRefusal(videoName)
+          : tryApply(file, (ctx) =>
+              setEditorMedia(
+                ctx,
+                videoName,
+                edit.method,
+                edit.name,
+                edit.editor,
+                edit.method === 'narration' ? isLanguageKey : undefined
+              )
+            )
+      if (refusal === null) {
+        applied.push({
+          videoName,
+          file: file!,
+          description:
+            `declare editor ${edit.method} '${edit.name}' ` +
+            `on video '${videoName}'`,
+        })
+        bump(appliedCounts, videoName)
+      } else {
+        markUnappliable(
+          refusal.reason,
+          `locked ${edit.method} '${edit.name}' on video ` +
+            `'${videoName}': ${refusal.message}`
+        )
       }
     }
   }

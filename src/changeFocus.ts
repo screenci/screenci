@@ -1,5 +1,6 @@
 import type { Locator } from '@playwright/test'
 import type { ElementRect, FocusChangeEvent } from './events.js'
+import { clamp } from './clamp.js'
 import { evaluateEasingAtT } from './easing.js'
 import {
   DEFAULT_AUTO_ZOOM_CENTERING,
@@ -134,10 +135,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) =>
     setTimeout(resolve, resolveRecordingTimingDuration(ms))
   )
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
 }
 
 function positionsDiffer(start: number, target: number): boolean {

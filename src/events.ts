@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'fs'
 import { writeFile } from 'fs/promises'
 import { dirname, join, resolve } from 'path'
 import { fileURLToPath } from 'url'
+import { clamp01 } from './clamp.js'
 import { invalidOptionError, ScreenciError } from './errors.js'
 import type {
   AutoZoomOptions,
@@ -2841,17 +2842,4 @@ function normalizeDropShadow(
   }
 
   return fallback
-}
-
-function clamp01(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0
-  }
-  if (value < 0) {
-    return 0
-  }
-  if (value > 1) {
-    return 1
-  }
-  return value
 }

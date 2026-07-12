@@ -1,3 +1,4 @@
+import { clamp } from './clamp.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import type { ElementRect, FocusChangeEvent } from './events.js'
 import { invalidOptionError } from './errors.js'
@@ -13,10 +14,6 @@ export function resolveEffectiveDuration(
   isZoomOut: boolean
 ): number {
   return isZoomOut ? options.zoomOutDuration : options.duration
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
 }
 
 function assertAutoZoomUnitIntervalOption(

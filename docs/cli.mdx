@@ -10,16 +10,16 @@ commands from inside your `screenci/` project directory. Most commands resolve
 
 ## Command overview
 
-| Command                            | Purpose                                                  |
-| ---------------------------------- | -------------------------------------------------------- |
-| `screenci init [name]`             | Scaffold a ScreenCI project                              |
-| `screenci test [playwrightArgs]`   | Run `.screenci.ts` files locally without final recording |
-| `screenci record [playwrightArgs]` | Record videos and upload results when configured         |
-| `screenci dev`                     | Connect this machine to the editor for on-demand records |
-| `screenci info`                    | Print the last record run's URLs and render status       |
-| `screenci make-public <videoId>`   | Enable public delivery for a video                       |
-| `screenci make-private <videoId>`  | Disable public delivery for a video                      |
-| `screenci delete <videoId>`        | Permanently delete a video and its renders               |
+| Command                            | Purpose                                                                       |
+| ---------------------------------- | ----------------------------------------------------------------------------- |
+| `screenci init [name]`             | Scaffold a ScreenCI project                                                   |
+| `screenci test [playwrightArgs]`   | Run `.screenci.ts` files locally without final recording                      |
+| `screenci record [playwrightArgs]` | Record videos and upload results when configured                              |
+| `screenci dev`                     | Connect this machine to the editor: unlocks web editing and on-demand records |
+| `screenci info`                    | Print the last record run's URLs and render status                            |
+| `screenci make-public <videoId>`   | Enable public delivery for a video                                            |
+| `screenci make-private <videoId>`  | Disable public delivery for a video                                           |
+| `screenci delete <videoId>`        | Permanently delete a video and its renders                                    |
 
 ## `screenci init`
 
@@ -351,10 +351,13 @@ scaffolded by `screenci init` include it.
 
 ## `screenci dev`
 
-Connects this machine to the ScreenCI editor so a Record button in the editor
-can trigger a local `screenci record` of one video and language on demand. The
-command keeps running, polling the service for record requests, until you stop
-it with Ctrl-C.
+Connects this machine to the ScreenCI editor. This is the live editing
+channel: editing in the web editor is locked until a machine you own is
+connected, because every web edit is written back into your `.screenci.ts`
+sources by this command. While connected, the editor can also trigger a local
+`screenci record` of one video and language on demand. The command keeps
+running, polling the service for edit and record requests, until you stop it
+with Ctrl-C. See [Editor](/docs/guides/editor) for the editing model.
 
 ```bash
 screenci dev
@@ -422,7 +425,13 @@ While connected:
 - Only your own account can trigger records on your machine. Teammates see
   whose machine is connected but cannot use it.
 - A triggered record runs exactly one video in one language (the one open in
-  the editor), then uploads and renders as a normal record run.
+  the editor), then uploads as a normal record run: it refreshes the live
+  preview, and renders only when the trigger was an export. The editor's
+  record menu also offers "Record raw preview footage", which records without
+  rendering at all.
+- Web edits are applied to your sources as you make them in the editor; the
+  editor shows a syncing state on your machine's chip while a change is being
+  written.
 - The regular record run lock applies: if another `screenci record` is already
   running, the request is reported back to the editor as failed.
 - Stopping the command (Ctrl-C) disconnects the machine; the editor updates

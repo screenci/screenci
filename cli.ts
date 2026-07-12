@@ -4075,7 +4075,7 @@ async function uploadRecordedVideosForConfig(
         if ('held' in notice.studio) {
           logger.info('')
           logger.info(
-            `Rendering for "${notice.videoName}" is on hold. Configure it in Studio:`
+            `Rendering for "${notice.videoName}" is on hold. Configure it in Editor:`
           )
           if (projectId !== null && notice.videoId !== null) {
             logger.info(
@@ -4084,7 +4084,7 @@ async function uploadRecordedVideosForConfig(
           }
         } else if (notice.studio.applied) {
           logger.info('')
-          logger.info(`Studio configuration applied for "${notice.videoName}".`)
+          logger.info(`Editor configuration applied for "${notice.videoName}".`)
         }
       }
       if (elevenLabsKeyMissingVideos.length > 0) {

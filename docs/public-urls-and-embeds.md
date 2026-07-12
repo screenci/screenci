@@ -37,7 +37,7 @@ for exact dimensions.
 Public delivery can either:
 
 - follow the latest finished render automatically
-- stay pinned to the selected accepted version for each language
+- stay pinned to the exported version you chose to serve for each language
 
 That lets you choose between automatic freshness and manual editorial control.
 
@@ -72,10 +72,11 @@ Public delivery is tracked separately for each language.
 When **Auto-select latest version** is on, ScreenCI keeps moving each language
 forward to the latest finished render.
 
-When **Auto-select latest version** is off, you must select a version manually
-for each language you want to serve. If a language has no selected version, its
-public URL exists but that language will not resolve to a video until you pick
-one.
+When **Auto-select latest version** is off, you must pick a version manually
+for each language you want to serve: open it in the editor sidebar's
+**Exported** group and choose **Serve at the public URL**. If a language has
+no selected version, its public URL exists but that language will not resolve
+to a video until you pick one.
 
 Manual selection is currently done in the app, not the CLI.
 

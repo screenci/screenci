@@ -666,6 +666,21 @@ by default; `'screen'` is only meaningful when the recording fills the output
 frame). Make sure the element is visible first; it throws if the locator has no
 box.
 
+### Position overlays in the web app
+
+Overlay placement is also editable visually in the editor (with a connected
+`screenci dev` machine, since placement edits are written back into your
+script):
+
+- **Drag in the live preview.** Drag an overlay on the video to move it, or
+  drag a corner to resize. For an element-locked overlay, dragging adjusts its
+  margin instead.
+- **Fill select.** The overlay panel's Fill control switches between
+  **Screen**, **Recording**, and **Custom (drag in preview)** placement.
+- Files, image duration, and video audio/speed/time controls are editable in
+  the same panel; see
+  [Editor overlays from code](./editor.md#editor-overlays-from-code).
+
 ## Timing and control flow
 
 Every controller supports two timing styles.

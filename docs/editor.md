@@ -1,13 +1,18 @@
 # Editor
 
-Editor lets your team remix videos from the ScreenCI web app: change render
-options, narration text, and voices without touching code or re-running the
-recording.
+Editor is the ScreenCI web app's editing surface for a video: a live preview of
+the raw recording, a multi-track timeline, and panels for narration, overlays,
+and render options. You edit visually in the browser, and every change is
+written back into your `.screenci.ts` source through a connected
+`screenci dev` machine, so code stays the single source of truth.
 
-It is built for teamwork: developers create the video in code once, and
-teammates who never touch the repo can then swap assets, rewrite narration,
-retune voices, and adjust overlays and render options in the browser, then ship
-a new version themselves.
+**Editing needs a connected machine.** Run `screenci dev` in your project to
+connect it. While no machine is connected the editor stays open for viewing and
+playback, but the editing controls are locked with a note explaining how to
+connect. Each edit you make is sent to your machine as a code change, applied
+to the sources within seconds, and the preview updates from the result. Edits
+that change what is captured (record options, interaction timings) also
+trigger an automatic preview re-record on your machine.
 
 **Everything is editable by default.** Every feature a video declares
 (narration, overlays, languages, render and record options) can
@@ -23,9 +28,9 @@ make in code is where the content starts:
   editable in the web app: once a value is edited in Editor, the Editor value
   wins over the code value on every later upload.
 
-- **Export a one-off version.** Any video can be opened in Editor and exported
-  as a one-off, overriding anything for a single export. One-off exports are
-  not saved and do not change what future uploads render.
+- **Edits write back to code.** Whichever form declared a value, editing it in
+  the web app produces a code change applied by your connected `screenci dev`
+  machine, so the sources always show what the video renders with.
 
 The `video.narration` and `video.overlays`
 declarations type the matching fixtures to exactly those names, so a typo is a
@@ -59,8 +64,10 @@ video.recordOptions({ fps: 30 })
 
 #### You will learn
 
+- [how the editor is laid out and what each part does](#the-editor-at-a-glance)
+- [why editing requires a connected machine](#editing-needs-a-connected-machine)
 - [how to edit and export a video in Editor](#editing-in-editor)
-- [how saved edits and one-off renders differ](#saved-edits-vs-one-off-renders)
+- [how to record from the editor](#recording-from-the-editor)
 - [how to manage narration from Editor](#editor-narration-from-code)
 - [how to use uploaded media as narration](#narration-media-from-editor)
 - [how to manage overlays from Editor](#editor-overlays-from-code)
@@ -73,53 +80,97 @@ video.recordOptions({ fps: 30 })
 
 <!-- screenci-doc-video:docs/guides/editor -->
 
+## The editor at a glance
+
+Opening a video in the web app opens the editor. The page is laid out as:
+
+- **Live preview** (center): plays the raw recording with your edits applied
+  on top, render-free. Camera zooms, cursor paths, overlays, narration audio,
+  and subtitles are all previewed live, so you see the result without spending
+  an export. A **Live preview** badge marks this mode. Some edits happen
+  directly on the video: drag an overlay to move it (a corner to resize),
+  pause and drag the cyan handles to reshape a cursor path, or type into the
+  subtitle box to change a cue's text.
+- **Timeline** (bottom, resizable): rows for **Overlays**, **Zooms**,
+  **Interactions**, **Recording**, and **Narration**. Click or drag to seek,
+  scroll to pan, pinch or Ctrl+scroll to zoom (1x to 60x). Selecting a bar
+  opens its editor in the side panel; dragging a bar moves it, and dragging an
+  overlay's right edge changes its duration.
+- **Side panel** (right): render options (canvas, background, roundness,
+  shadow, padding), recording options with a visual crop editor, and the
+  editor for whichever timeline item is selected.
+- **Sidebar** (left): the language picker, the **Editor** view, the
+  **Exported** group listing every exported version, and the **Recording**
+  group showing your connected `screenci dev` machine and record actions.
+- **Top right**: undo and redo (up to 20 steps, Cmd+Z / Shift+Cmd+Z), export
+  status, and the **Export** button.
+
+## Editing needs a connected machine
+
+Every edit is a code change: the editor sends it to your machine over the
+`screenci dev` channel, the CLI writes it into the `.screenci.ts` source, and
+the preview updates from the applied result. Because of that, editing is
+locked until a machine you own is connected:
+
+1. Create a personal dev token on the Secrets page and add it to your project
+   env file as `SCREENCI_DEV_TOKEN=<token>`.
+2. Run `screenci dev` in your project.
+3. The sidebar's Recording group shows your machine connected (for example
+   `you@laptop`), and the editing controls unlock.
+
+While no machine is connected the editor is view-only: playback, seeking, and
+version browsing keep working, but the edit controls are dimmed and show
+"Editing needs a connected machine" when clicked. Only your own account can
+use your machine; teammates see it connected but each need their own.
+
+Edits that only affect rendering (narration text, overlay files, render
+options) preview immediately. Edits that change the capture itself (record
+options, interaction timings, added effects) are marked **Needs re-record**
+and trigger an automatic preview re-record on the connected machine.
+
 ## Editing in Editor
 
-Open a video in the web app and choose **Open in Editor**. Editor shows the
-narration, voices, overlays, and render options the video uses. Every
-item is editable: names declared as a blank array start empty and wait for
-content, and values declared in code show their current code value as the
-starting point.
+The editor shows the narration, voices, overlays, and render options the video
+uses. Every item is editable: names declared as a blank array start empty and
+wait for content, and values declared in code show their current code value as
+the starting point.
 
-Items whose current value still comes from code are marked with a **code**
-badge. Editing such an item replaces the code value with the Editor value from
-then on; the badge switches to show the value is now web-owned. Each section
-also has a **How to edit from Editor** link to the matching guide below.
+Items whose current value still comes from code are marked with a **set in
+code** badge. Editing such an item writes the new value back into your source
+through the connected machine, so code and editor never drift apart.
 
-Edits autosave: a status line shows **Saving...** and then **All changes
-saved**. The saved set is this video's Editor configuration, and it is applied
-automatically to every later upload (see [Saved edits vs one-off
-renders](#saved-edits-vs-one-off-renders)).
+Pick a language in the sidebar, then choose **Export** to export a new version
+in that language. Exports are per language: switch the language and export
+again to update another localized version. If edits that need a new recording
+are pending and your machine is connected, Export records first and then
+renders. Exported versions appear in the sidebar's **Exported** group, with a
+status glyph while rendering and a marker on the version served at the public
+URL.
 
-Pick a language at the top, then choose **Export** to export a new version in
-that language from the same recording. Exports are per language: switch the
-language and export again to update another localized version.
+Saved editor values are applied automatically to every later upload, so CI
+keeps rendering with them. When this happens the CLI prints a line in the
+upload output, so it is visible in CI logs:
 
-Editor versions are marked with an **Editor** badge in the version list, and the
-version page shows exactly which values were changed compared to the
-code-specified ones.
+```
+Editor configuration applied for "Checkout walkthrough".
+```
 
-## Saved edits vs one-off renders
+## Recording from the editor
 
-Editor separates changes that stick from changes that do not:
+The sidebar's **Recording** group collects every way to produce fresh footage:
 
-- **Saved edits** autosave into the video's Editor configuration. That
-  configuration is reused automatically on every later upload, so CI keeps
-  rendering with your Editor values instead of the code values. When this
-  happens the CLI prints a line in the upload output, so it is visible in CI
-  logs:
+- **Record on your machine**: with `screenci dev` connected, the record menu
+  offers "Record <language> on <machine>". This runs a normal local record of
+  the open video and language on your machine and syncs the result back.
+- **Record raw preview footage**: records without rendering, refreshing the
+  live preview only. This is also what automatic preview re-records use.
+- **Record via CI**: when the project is connected to GitHub, queues the
+  project's recording workflow for this video, no local machine needed.
 
-  ```
-  Editor configuration applied for "Checkout walkthrough".
-  ```
-
-- **One-off renders** produce a single version without saving anything. Choose
-  **Create one-off version**, confirm the prompt, edit freely, then **Export
-  one-off**. One-off renders never change what future uploads render.
-
-The same idea applies to languages: a
-[one-off language](./languages.md#one-off-languages) adds a single language from
-the web to a video without changing your code, and CI never auto-updates it.
+A status line under the menu tracks the run ("Recording en on laptop...",
+"Recording synced."). The regular record run lock applies: if another
+`screenci record` is already running on the machine, the request is reported
+back as failed.
 
 ## Editor narration from code
 
@@ -379,8 +430,8 @@ disappear.
 
 Render-affecting events can also be ADDED and MOVED from the web timeline,
 without any code change: hides, speedups, time remaps, narration cues,
-overlays, and presentation updates (background changes, narration-box
-moves/resizes, recording resize/hide/show). Interactions are different on
+overlays, and recording changes (resize/hide/show). Interactions are
+different on
 purpose: a click or tap always stays where the test code performed it, and
 only its parameters (durations, sleeps) are editable.
 
@@ -389,15 +440,25 @@ position, and it is codegen'd into the sources the moment it is saved (via
 the connected `screenci dev` session). A newly added event appears on the
 timeline as a pending item until the next record confirms it.
 
+Events are added in two ways:
+
+- **The Add effect popover** (the "+" on a timeline row) creates a narration
+  cue, overlay, camera zoom, speedup, hide, time remap, or recording change,
+  anchored to the interaction(s) you pick.
+- **Directly on the Recording row**: toggle **split mode** (the scissors) and
+  click the recording to cut it, or drag a section's edge to hide footage from
+  either end. Right-clicking a section offers remove (hide), split at the
+  current time, reset trim, merge with the neighbor, and quick speed
+  (0.5x/2x/4x) and time-remap presets.
+
 Every web-placed or web-moved event is positioned by **call position**: which
 editable action it sits after (or, for a span, the run of actions it brackets),
 plus any timing gap as a plain millisecond sleep. The editor snaps to the
 identity of a known action (its stable `editId` slug) rather than to
 wall-clock time, so positions survive re-records whose real durations drift.
 
-- A point event (a narration cue, an overlay, a background change, a
-  narration-box move, a recording resize) is stored as "after action X, with an
-  optional `waitForTimeout(ms)` gap before it".
+- A point event (a narration cue, an overlay, a recording resize) is stored
+  as "after action X, with an optional `waitForTimeout(ms)` gap before it".
 - A span event (hide, speed, time) is stored as the run of actions it brackets:
   "from action X until action Y", with optional gap sleeps at each edge.
 - A zoom is stored as the run of interactions it wraps, with a lead-in and hold

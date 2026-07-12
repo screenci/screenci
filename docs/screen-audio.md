@@ -5,8 +5,9 @@ Recording system audio takes two settings that play different roles:
 - **`enableCaptureAudio`** (root of your config, boolean): turns on audio mode
   for the whole run. It is the launch-time switch, decided once per worker
   before any individual video runs.
-- **`recordOptions.captureAudio`** (number, per video): the gain for an
-  individual recording. `0` (the default) captures nothing.
+- **`recordOptions.captureAudio`** (per video): turns capture on for an
+  individual recording. Off by default; set `true` to capture at unity gain,
+  or `{ gain }` for a custom level.
 
 Both are needed: `enableCaptureAudio` makes the browser able to emit audio, and
 `captureAudio` says which videos record it and how loud. A video that sets
@@ -102,15 +103,16 @@ import { video } from 'screenci'
 
 video.recordOptions({
   // Capture this video at unity gain.
-  captureAudio: 1,
+  captureAudio: true,
 })('My video', async ({ page }) => {
   await page.goto('/')
 })
 ```
 
-`captureAudio` is a linear gain value, the same scale used by overlay
-volumes: `1` is unity gain, `0.5` is half volume, `2` is double, `0` disables
-capture.
+`captureAudio` is `true`, or an object with a linear `gain` on the same scale
+used by overlay volumes: `captureAudio: true` captures at unity gain,
+`captureAudio: { gain: 0.5 }` at half volume, `{ gain: 2 }` at double. Leaving
+it unset (or `false`) disables capture for that video.
 
 ## Running recordings in parallel
 
@@ -151,5 +153,6 @@ it (no default sink or manual sink needed, screenci manages them):
 ## Interaction with narration and other audio
 
 Screen audio is mixed alongside narration cues.
-If the captured level is too loud relative to narration, lower `captureAudio`
-(e.g. `0.3`) rather than changing the system output volume.
+If the captured level is too loud relative to narration, lower the capture gain
+(e.g. `captureAudio: { gain: 0.3 }`) rather than changing the system output
+volume.

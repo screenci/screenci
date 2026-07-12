@@ -229,9 +229,10 @@ yarn screenci test --ui
   </TabItem>
 </Tabs>
 
-## Record the final result
+## Record and preview
 
-When you are ready to record the videos in the `screenci/recordings/` directory, run:
+When the script is green, record the videos in the `screenci/recordings/`
+directory:
 
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
@@ -269,8 +270,31 @@ into `screenci/.env` (the same value you set for CI runs) so recordings upload
 directly to your organization. The upload contains the raw recording, not your
 source code.
 
-Free renders include a ScreenCI watermark. Upgrading removes it (and raises your
-render and active-video limits).
+By default `record` refreshes the video's **live preview** in the web editor,
+so you can iterate for free: record, watch the preview, adjust the script, and
+record again without spending anything.
+
+## Refine in the editor
+
+Open the video in the web app and run `screenci dev` in your project to
+connect your machine. That unlocks editing in the browser: narration text and
+voices, overlays, cuts and pacing on the timeline, and render options. Every
+edit is written back into your `.screenci.ts` script through the connected
+machine, so the code always matches what you see. See
+[Editor](/docs/guides/editor) for the full tour.
+
+## Export the final video
+
+When the preview looks right, export a finished video with the **Export**
+button in the editor, or from the CLI:
+
+```bash
+npx screenci record --export
+```
+
+Exporting renders the video in the service and spends export minutes. Free
+exports include a ScreenCI watermark. Upgrading removes it (and raises your
+export and active-video limits).
 
 It should look something like this:
 
@@ -280,6 +304,8 @@ It should look something like this:
 
 - [Video Script Basics](/docs/video-script-basics) to learn how video scripts
   work, including how to generate a first draft with codegen.
+- [Editor](/docs/guides/editor) to edit the video visually in the browser with
+  `screenci dev`.
 - [CI Setup](/docs/ci-setup) to configure recording in GitHub Actions and keep
   CI runs predictable.
 - [Public URLs and Embeds](/docs/guides/public-urls-and-embeds) to publish a

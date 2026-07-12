@@ -191,6 +191,10 @@ yarn screenci record
   </TabItem>
 </Tabs>
 
+A plain `record` refreshes the live preview only; to verify a finished video
+end to end (including public URLs), export one with
+`screenci record --export`.
+
 Focus on behavioral verification, not only compilation:
 
 - selector stability
@@ -202,7 +206,7 @@ If you publish videos publicly, also verify:
 
 - public URLs still resolve to the expected outputs
 - subtitles still align with the rendered narration
-- accepted/latest behavior still matches your release workflow
+- served/latest version behavior still matches your release workflow
 
 ## Refresh AI setup if needed
 

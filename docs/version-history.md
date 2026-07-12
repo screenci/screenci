@@ -1,7 +1,8 @@
 # Version History
 
-Every time a video is rendered, ScreenCI keeps the result as a
-**version**. One version is always the **selected** one: it is what a public URL
+Every export of a video is kept as a **version** (versions are created on
+export, not on every `screenci record`, which only refreshes the live
+preview). One version is always the **selected** one: it is what a public URL
 serves and what embeds display. Version history lets you keep older renders
 around, compare them, and roll back by selecting a previous one, without
 re-recording.
@@ -18,10 +19,11 @@ re-recording.
 
 ## What a version is
 
-A version is one finished render of a video: the encoded media, its thumbnail,
+A version is one finished export of a video: the encoded media, its thumbnail,
 and the exact render options, narration, and overlays used to produce it. Because
-each render is preserved, you can change something in Editor, render again, and
-still fall back to the previous look if you prefer it.
+each export is preserved, you can change something in Editor, export again, and
+still fall back to the previous look if you prefer it. Versions are listed in
+the editor sidebar's **Exported** group.
 
 Versions are tracked **per language**: an English render and a German render of
 the same video each have their own independent history.
@@ -29,10 +31,10 @@ the same video each have their own independent history.
 ## Selecting a version
 
 The **selected** version is the one served at the video's
-[public URL](/docs/guides/public-urls-and-embeds) and shown in embeds. Pick which
-render to serve with the **Select** button in the Versions list, or enable
-**Auto-select latest** so the newest finished render is always served
-automatically. Selecting an older version is an instant rollback: no
+[public URL](/docs/guides/public-urls-and-embeds) and shown in embeds. Open a
+version in the **Exported** group and choose **Serve at the public URL**, or
+enable **Auto-select latest version** so the newest finished export is always
+served automatically. Serving an older version is an instant rollback: no
 re-recording, no re-rendering.
 
 ## Retention

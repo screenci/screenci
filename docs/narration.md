@@ -333,6 +333,8 @@ video.narration({
         name: voices.Julian,
         modelType: 'expressive',
         style: 'A friendly and energetic German speaker.',
+        accent: 'Standard German',
+        pacing: 'Measured and deliberate',
       },
     },
   },
@@ -450,6 +452,12 @@ need to choose between consistency and expressiveness.
 - both model types and `style` prompts are available on every plan
 - a language whose only built-in voice is the expressive model uses it
   automatically, no `modelType` needed
+
+Expressive voices take descriptive prompts: `style` (the overall delivery,
+implies `expressive`), `accent` (the more specific the better, e.g.
+`'Southern American English'`; omitted means the voice's natural default), and
+`pacing` as a text description (e.g. `'Brisk and energetic'`). Consistent
+voices instead take a numeric `pacing` rate from `0.25` to `2`.
 
 ## Inline speech markup
 
@@ -756,5 +764,21 @@ supply starting text from code by passing a plain object (for example
 cue is edited in Editor, and from then on the Editor value wins. You can also
 hand the language set itself to the web with `video.languages()` (no argument).
 The
-markers still carry timing the same way; only the text lives in Editor. See
-[Editor](/docs/guides/editor).
+markers still carry timing the same way; only the text lives in Editor.
+
+The editor's narration panel covers more than text (editing requires a
+connected `screenci dev` machine, since every change is written back into your
+script):
+
+- **Voice controls**: pick the voice and tune `style`, `accent`, `pacing`, and
+  the model type per cue, with the same options as in code, plus a per-cue
+  volume slider.
+- **Record in the browser**: a cue can use recorded media instead of
+  synthesized speech. The **Record** button opens a dialog that records from
+  your microphone (or camera) right in the browser and attaches the result to
+  the cue, with an optional subtitle override.
+- **Clone a voice**: upload a voice sample from the narration panel to create
+  a cloned voice, the web equivalent of
+  [cloning from an audio sample](#clone-a-voice-from-an-audio-sample).
+
+See [Editor](/docs/guides/editor).

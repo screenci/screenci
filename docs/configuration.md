@@ -132,6 +132,10 @@ file you set via `envFile`.
 - `record.upload: 'passed-only'` uploads successful recordings even if another
   one failed.
 - `record.upload: 'all-or-nothing'` skips uploads when any recording fails.
+- `enableCaptureAudio: true` launches the browser in audio mode for the whole
+  run so videos can capture system audio (Linux only). Pair it with the
+  per-video `recordOptions.captureAudio` switch; see
+  [Screen audio](/docs/guides/screen-audio).
 
 ### Capture defaults
 
@@ -142,6 +146,9 @@ Declare `recordOptions` per video with `video.recordOptions(...)`:
 - `fps`
 - `performance` (see below)
 - `encoder` (see below)
+- `captureAudio` (`true` or `{ gain }`): capture system audio for this video;
+  requires the `enableCaptureAudio` config switch. See
+  [Screen audio](/docs/guides/screen-audio).
 - `redact`: CSS selectors masked from the first frame so on-screen secrets never
   enter the recording. See
   [redacting sensitive content](/docs/guides/redact).

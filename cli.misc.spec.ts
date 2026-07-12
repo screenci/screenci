@@ -387,6 +387,24 @@ describe('CLI', () => {
       )
     })
 
+    it('names the offending file in a Playwright discovery error', async () => {
+      const { extractPlaywrightDiscoveryError } = await import('./cli')
+
+      const report = JSON.stringify({
+        errors: [
+          {
+            message:
+              "SyntaxError: The requested module 'screenci' does not provide an export named 'screenshot'",
+            location: { file: '/proj/recordings/pitch.screenci.ts', line: 1 },
+          },
+        ],
+      })
+      expect(extractPlaywrightDiscoveryError(report)).toBe(
+        "SyntaxError: The requested module 'screenci' does not provide an " +
+          "export named 'screenshot' (in /proj/recordings/pitch.screenci.ts:1)"
+      )
+    })
+
     it('extracts the error field from a backend JSON body', async () => {
       const { extractBackendError } = await import('./cli')
 

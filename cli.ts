@@ -158,6 +158,7 @@ type PlaywrightListReport = {
   errors?: Array<{
     message?: string
     snippet?: string
+    location?: { file?: string; line?: number; column?: number }
   }>
 }
 
@@ -229,7 +230,7 @@ function parsePlaywrightListReport(stdout: string): PlaywrightListReport {
   return JSON.parse(stdout) as PlaywrightListReport
 }
 
-function extractPlaywrightDiscoveryError(output: string): string | null {
+export function extractPlaywrightDiscoveryError(output: string): string | null {
   try {
     const report = parsePlaywrightListReport(output)
     const firstError = report.errors?.find(
@@ -243,8 +244,18 @@ function extractPlaywrightDiscoveryError(output: string): string | null {
 
     const message = firstError.message.trim()
     const snippet = firstError.snippet?.trim()
+    // Name the offending file: a module-load error (e.g. a bad import) reports
+    // only the missing export in `message`, so surface the file that failed to
+    // load, which lives in `location` (and is not always in the snippet).
+    const file = firstError.location?.file?.trim()
+    const line = firstError.location?.line
+    const where =
+      file !== undefined && file !== ''
+        ? `${file}${typeof line === 'number' ? `:${line}` : ''}`
+        : null
+    const headline = where ? `${message} (in ${where})` : message
 
-    return snippet ? `${message}\n\n${snippet}` : message
+    return snippet ? `${headline}\n\n${snippet}` : headline
   } catch {
     return null
   }

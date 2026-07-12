@@ -75,6 +75,7 @@ function expectNpmDevInstalls(
       '--save-dev',
       `@playwright/test@^1.59.0`,
       '@types/node@^25.9.1',
+      'prettier@^3.6.0',
       ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
       ...(includeReact ? REACT_INSTALL_PACKAGES : []),
     ],
@@ -119,6 +120,7 @@ function expectPnpmDevInstalls(
       '--save-dev',
       `@playwright/test@^1.59.0`,
       '@types/node@^25.9.1',
+      'prettier@^3.6.0',
       ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
       ...(includeReact ? REACT_INSTALL_PACKAGES : []),
     ],
@@ -163,6 +165,7 @@ function expectYarnDevInstalls(
       '--dev',
       `@playwright/test@^1.59.0`,
       '@types/node@^25.9.1',
+      'prettier@^3.6.0',
       ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
       ...(includeReact ? REACT_INSTALL_PACKAGES : []),
     ],
@@ -514,6 +517,18 @@ describe('CLI', () => {
         record: 'screenci record',
       })
       expect(islandPkg['scripts']).not.toHaveProperty('screenci')
+      // Init enables codegen formatting: a user-editable .prettierrc gates it.
+      const prettierrcCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          call[0] === '/workspace/my-app/screenci/.prettierrc'
+      )
+      expect(prettierrcCall).toBeDefined()
+      expect(JSON.parse(prettierrcCall![1] as string)).toEqual({
+        tabWidth: 2,
+        useTabs: false,
+        semi: false,
+        singleQuote: true,
+      })
       // The island gets a minimal README documenting the run scripts and
       // linking to the docs.
       expect(mockWriteFile).toHaveBeenCalledWith(
@@ -958,6 +973,7 @@ describe('CLI', () => {
           '--save-dev',
           '@playwright/test@^1.59.0',
           '@types/node@^25.9.1',
+          'prettier@^3.6.0',
           '@playwright/cli@latest',
           ...REACT_INSTALL_PACKAGES,
         ],
@@ -1109,6 +1125,7 @@ describe('CLI', () => {
           '--dev',
           '@playwright/test@^1.59.0',
           '@types/node@^25.9.1',
+          'prettier@^3.6.0',
           '@playwright/cli@latest',
           ...REACT_INSTALL_PACKAGES,
         ],
@@ -2154,7 +2171,7 @@ describe('CLI', () => {
             call[0] === 'cmd.exe' &&
             Array.isArray(call[1]) &&
             (call[1] as string[])[3] ===
-              '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0" "vite@^7.0.0""'
+              '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "prettier@^3.6.0" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0" "vite@^7.0.0""'
         )
         expect(installCall).toEqual([
           'cmd.exe',
@@ -2162,7 +2179,7 @@ describe('CLI', () => {
             '/d',
             '/s',
             '/c',
-            '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0" "vite@^7.0.0""',
+            '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "prettier@^3.6.0" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0" "vite@^7.0.0""',
           ],
           expect.objectContaining({
             cwd: '/workspace/create-app/screenci',
@@ -2264,7 +2281,7 @@ describe('CLI', () => {
         "Running 'npm exec --yes --package=skills -- skills add screenci/screenci --skill screenci --skill playwright-cli -y'..."
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        "Running 'npm install --save-dev @playwright/test@^1.59.0 @types/node@^25.9.1 @playwright/cli@latest react@^19.0.0 react-dom@^19.0.0 @types/react@^19.0.0 @types/react-dom@^19.0.0 vite@^7.0.0'..."
+        "Running 'npm install --save-dev @playwright/test@^1.59.0 @types/node@^25.9.1 prettier@^3.6.0 @playwright/cli@latest react@^19.0.0 react-dom@^19.0.0 @types/react@^19.0.0 @types/react-dom@^19.0.0 vite@^7.0.0'..."
       )
     })
   })

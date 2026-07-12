@@ -65,6 +65,7 @@ describe('public api surface', () => {
       'generateGitignore',
       'generateIslandReadme',
       'generateIslandTsconfig',
+      'generatePrettierConfig',
       'generateReactExampleScreenshot',
       'generateRingOverlayHtml',
       'generateRingOverlayTsx',

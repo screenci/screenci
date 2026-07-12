@@ -78,6 +78,7 @@ import {
   applyCodegenRequest,
   requireTypescriptForCodegen,
 } from './src/applyCodegen.js'
+import { createProjectFormatter } from './src/format.js'
 import {
   grepMatcher,
   runDevStartupSync,
@@ -3306,8 +3307,11 @@ export async function runDevCommand(
         loadTypescript,
         dirname(screenciDir)
       )
-      applyCodegenRequest(request, {
+      await applyCodegenRequest(request, {
         ts,
+        formatFile: createProjectFormatter(dirname(resolvedConfigPath), {
+          warn: (message) => logger.warn(message),
+        }),
         readFile: (path) => {
           try {
             return readFileSync(path, 'utf8')
@@ -3436,9 +3440,12 @@ export async function runDevCommand(
               },
             }
           )
+          const formatFile = createProjectFormatter(dirname(screenciDir), {
+            warn: (message) => logger.warn(message),
+          })
           for (const file of plan.files) {
             if (file.after !== file.before) {
-              writeFileSync(file.path, file.after)
+              writeFileSync(file.path, await formatFile(file.path, file.after))
               void watcher?.refreshBaseline(file.path)
             }
           }

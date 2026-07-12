@@ -496,11 +496,11 @@ export type RecordOptions = {
    * - `{ gain: 0.5 }`: capture at half volume.
    * - `{ gain: 2 }`: boost to twice the natural level.
    *
-   * Audio is captured via ffmpeg from the platform default audio input and
-   * mixed into the rendered video. While capture is enabled the browser plays
-   * the page audio out loud on the host so the recorder can tap it. Each OS
-   * requires a one-time loopback source setup to capture system audio rather
-   * than the microphone. See the per-OS guide:
+   * Audio is captured via ffmpeg from an isolated per-worker virtual sink and
+   * mixed into the rendered video. The browser plays into that sink, so the
+   * host stays silent and only the recording browser's own audio is captured.
+   * Linux only, and the run-level `enableCaptureAudio` config switch must be
+   * on. See the guide:
    * https://screenci.com/docs/guides/screen-audio
    *
    * @default false

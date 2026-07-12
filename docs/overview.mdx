@@ -1,16 +1,27 @@
 # Overview
 
-ScreenCI treats product videos as code. Instead of editing screen recordings by
-hand, you describe a flow once as a Playwright-based script. ScreenCI drives your
-app, adds narration and camera motion, and renders a polished video. When the UI
-changes, you rerun the script and the video regenerates.
+ScreenCI treats product videos as code. You describe a flow once as a
+Playwright-based script. ScreenCI drives your app, adds narration and camera
+motion, and produces a polished video. When the UI changes, you rerun the
+script and the video regenerates.
 
 ## How it works
 
-Record with the CLI, render in the cloud, then deliver the final video where
-your team needs it.
+Record with the CLI, refine in the web editor, then export and deliver the
+final video where your team needs it.
 
 <!-- screenci-image:VideoLifecycle -->
+
+- **Record.** `screenci record` captures the flow on your machine and uploads
+  the recording. By default this only refreshes the video's live preview in
+  the web editor, so you can iterate for free.
+- **Refine.** The [Editor](/docs/guides/editor) shows a live preview and a
+  timeline. With `screenci dev` running, every edit you make in the browser
+  (narration, overlays, cuts, timings, render options) is written back into
+  your script, so code stays the source of truth.
+- **Export.** When the preview looks right, export (the Export button, or
+  `screenci record --export`) to render the finished video, then serve it
+  from a stable public URL.
 
 The CLI runs everything that touches your app locally, so the only thing that
 leaves your machine is the raw recording plus timing data, not your source code.
@@ -29,7 +40,8 @@ Pick the path that fits how you work.
   final video.
 
 Either way, once a video exists you can dig into the rest of the docs to refine
-it: [Video Script Basics](/docs/video-script-basics),
+it: [Editor](/docs/guides/editor),
+[Video Script Basics](/docs/video-script-basics),
 [Camera and Zooming](/docs/guides/camera-and-zooming),
 [Narration](/docs/guides/narration), and
 [Public URLs and Embeds](/docs/guides/public-urls-and-embeds).

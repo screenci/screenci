@@ -14,7 +14,7 @@ export const docsManifest = [
     navLabel: 'Overview',
     title: 'Overview',
     description:
-      'How ScreenCI works: record locally, render in the service, and serve from a CDN. The service never sees your source code, and the CLI is open source.',
+      'How ScreenCI works: record locally, refine in the web editor, export in the service, and serve from a CDN. The service never sees your source code, and the CLI is open source.',
     prev: null,
     next: 'docs/agent-integration',
   },
@@ -165,7 +165,7 @@ export const docsManifest = [
     navLabel: 'Editor',
     title: 'Editor',
     description:
-      'Remix render options, narration text, voices, overlays, and languages from the web app. Everything is editable by default: arrays declare blank editor-owned names, and code values stay editable in the web editor.',
+      'Edit videos visually in the web app: live preview, timeline cuts and pacing, narration, overlays, and render options. Edits are written back into your script through a connected screenci dev machine, so code stays the source of truth.',
     prev: 'docs/guides/overlay-updates',
     next: 'docs/guides/public-urls-and-embeds',
   },

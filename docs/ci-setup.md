@@ -26,6 +26,11 @@ Headless Shell, and runs `screenci record`. It mirrors
 [Playwright CI](https://playwright.dev/docs/ci). Use `push` to keep videos current
 automatically, or `workflow_dispatch` for a manual approval step before recording.
 
+By default the workflow's `record` refreshes each video's live preview in the
+editor without spending export minutes; no finished video is rendered. To make
+CI export finished videos, change the record step to
+`screenci record --export` (this spends export minutes on every run).
+
 ## Required secret
 
 Add [`SCREENCI_SECRET`](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions)
@@ -206,7 +211,8 @@ from your GitHub settings.
 
 ## Reading back render status
 
-Rendering happens after `record` uploads, so a green `record` step does not mean
+Rendering happens after `record --export` uploads (a plain `record` refreshes
+the preview and dispatches no render), so a green record step does not mean
 videos are rendered. Run [`screenci info`](/docs/reference/cli#screenci-info) to
 read each language's render status (`finished`, `rendering`, or `failed`) and
 public URLs as JSON. A CI job can poll until `finished` or gate on `failed`.

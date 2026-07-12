@@ -29,6 +29,24 @@ export type ApplyCodegenDeps = {
   editableSnapshot: EditableSnapshot
 }
 
+/**
+ * Guard for the codegen path: resolve the TypeScript module through the
+ * injected loader, throwing an actionable error when it is unavailable (the
+ * dev listener reports the message back to the editor).
+ */
+export function requireTypescriptForCodegen(
+  loadTs: (projectDir: string) => TsModule | null,
+  projectDir: string
+): TsModule {
+  const ts = loadTs(projectDir)
+  if (ts === null) {
+    throw new Error(
+      'TypeScript is not available; install it to enable editor codegen'
+    )
+  }
+  return ts
+}
+
 export function applyCodegenRequest(
   request: DevCodegenRequest,
   deps: ApplyCodegenDeps
@@ -81,7 +99,9 @@ export function applyCodegenRequest(
   )
 
   if (plan.unappliable.length > 0) {
-    const reasons = plan.unappliable.map((item) => item.reason).join('; ')
+    const reasons = plan.unappliable
+      .map((item) => `[${item.reason}] ${item.message}`)
+      .join('; ')
     throw new Error(
       `Edit "${request.editId}" could not be applied to code: ${reasons}`
     )

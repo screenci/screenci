@@ -45,6 +45,8 @@ import {
   applyTextEdits,
   awaitedCallHead,
   chainRootIdentifier,
+  classifyEditIdSite,
+  resolveImportedLocalName,
   resolvePageIdentifier,
   createContext,
   enclosingStatement,
@@ -68,6 +70,7 @@ import {
   statementsAfter,
   statementsBefore,
   unwrapBlockCall,
+  unwrapWrapCallStatement,
   valueToSource,
   waitForTimeoutArg,
   wrapStatementsInBlock,
@@ -135,8 +138,18 @@ const EXCLUSIVE_OPTION_SIBLINGS: Record<string, string> = {
 }
 
 /** Whether two text edits touch overlapping ranges (unsafe to co-apply). */
-function editsOverlap(a: TextEdit, b: TextEdit): boolean {
+export function editsOverlap(a: TextEdit, b: TextEdit): boolean {
   return a.start < b.end && b.start < a.end
+}
+
+/** Refusal for a video whose builder declaration cannot be located. */
+function unknownVideoRefusal(videoName: string): Refusal {
+  return {
+    reason: 'unknown-video',
+    message:
+      `the builder declaration of video '${videoName}' was not found in ` +
+      `exactly one source file`,
+  }
 }
 
 export type AppliedItem = {
@@ -145,10 +158,60 @@ export type AppliedItem = {
   description: string
 }
 
+/**
+ * Why an edit could not be applied by editId. Typed so callers (the CLI, the
+ * web editor toast) can act on the category, not just show text:
+ * - `unknown-edit-id`: the editId is absent from the candidate source files
+ *   (or not present in exactly one of them).
+ * - `ambiguous-edit-id`: the editId appears more than once in the file.
+ * - `inside-control-flow`: the call sits inside a loop, branch, or ternary.
+ * - `unstamped-action`: the action carries no editId yet (stamping pending).
+ * - `loop-repeat`: the target is a `slug#N` repeat execution of a loop.
+ * - `unsupported-field`: the edited param field has no code representation.
+ * - `invalid-edit`: the edit record itself is incomplete or invalid.
+ * - `unresolved-import`: the effect function is not importable in the file
+ *   (no editable named import from 'screenci', e.g. a namespace import or a
+ *   re-export wrapper).
+ * - `unknown-video`: the video's builder declaration was not found in exactly
+ *   one source file.
+ * - `app-managed`: the value lives in the web app by design (a names-only
+ *   narration declaration).
+ * - `unsupported-shape`: the call site resists a mechanical edit (non-literal
+ *   options, spreads, shorthand properties, unexpected structure).
+ */
+export type UnappliableReason =
+  | 'unknown-edit-id'
+  | 'ambiguous-edit-id'
+  | 'inside-control-flow'
+  | 'unstamped-action'
+  | 'loop-repeat'
+  | 'unsupported-field'
+  | 'invalid-edit'
+  | 'unresolved-import'
+  | 'unknown-video'
+  | 'app-managed'
+  | 'unsupported-shape'
+
+/** A typed refusal: why a compute step could not produce edits. */
+export type Refusal = { reason: UnappliableReason; message: string }
+
+/**
+ * A compute step's outcome: text edits (possibly empty, idempotent no-op), a
+ * typed {@link Refusal}, or null for an unclassified refusal (the caller
+ * classifies it from the editIds involved).
+ */
+type ComputeResult = TextEdit[] | Refusal | null
+
+function isRefusal(result: ComputeResult): result is Refusal {
+  return result !== null && !Array.isArray(result)
+}
+
 /** An edit whose section is locked (never a codemod target this run). */
 export type UnappliableItem = {
   videoName: string
-  reason: string
+  reason: UnappliableReason
+  /** Human-readable explanation, shown in CLI output and editor toasts. */
+  message: string
 }
 
 export type CodeSyncPlan = {
@@ -244,8 +307,8 @@ type SlugItem = {
   editId: string
   description: string
   /** Marks the source item unappliable so it counts as locked. */
-  onUnappliable: () => void
-  compute: (ctx: CodemodContext) => TextEdit[] | null
+  onUnappliable: (refusal: Refusal) => void
+  compute: (ctx: CodemodContext) => ComputeResult
 }
 
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
@@ -487,7 +550,7 @@ function insertBeforeAnchor(
   callCode: string,
   head: string,
   importName?: string
-): TextEdit[] | null {
+): ComputeResult {
   const call = isLinearCallSite(ctx, afterEditId)
   if (call === null) return null
   const statement = enclosingStatement(ctx, call)
@@ -495,9 +558,14 @@ function insertBeforeAnchor(
   const root = chainRootIdentifier(ctx.ts, call.expression)
   const edits: TextEdit[] = []
   if (importName !== undefined) {
-    const importEdits = ensureNamedImport(ctx, 'screenci', importName)
-    if (importEdits === null) return null
-    edits.push(...importEdits)
+    const ensured = ensureNamedImport(ctx, 'screenci', importName)
+    if (ensured === null) return unresolvedImport(importName)
+    edits.push(...ensured.edits)
+    if (ensured.localName !== importName) {
+      // The export is already imported under an alias: reuse it.
+      callCode = callCode.replace(`${importName}(`, `${ensured.localName}(`)
+      if (head === importName) head = ensured.localName
+    }
   }
   const placed = findPlacedEffectBefore(ctx, statement, root, head)
   if (placed !== null) {
@@ -513,6 +581,25 @@ function insertBeforeAnchor(
   edits.push(...removeStalePlacedEffectAfter(ctx, statement, root, head))
   edits.push(insertStatementBefore(ctx, statement, callCode))
   return edits
+}
+
+/** Refusal for an effect function that cannot be imported in this file. */
+function unresolvedImport(importName: string): Refusal {
+  return {
+    reason: 'unresolved-import',
+    message:
+      `the function '${importName}' needs a named import from 'screenci' ` +
+      `in this file (namespace imports and re-export wrappers cannot be ` +
+      `edited mechanically)`,
+  }
+}
+
+/**
+ * The local name to match an effect export against in this file: an existing
+ * import alias when present, else the canonical export name.
+ */
+function localEffectName(ctx: CodemodContext, importName: string): string {
+  return resolveImportedLocalName(ctx, 'screenci', importName) ?? importName
 }
 
 /**
@@ -595,7 +682,7 @@ function insertInGapAfter(
   sleepMs: number,
   head: string,
   importName?: string
-): TextEdit[] | null {
+): ComputeResult {
   const call = isLinearCallSite(ctx, afterEditId)
   if (call === null) return null
   const statement = enclosingStatement(ctx, call)
@@ -603,9 +690,14 @@ function insertInGapAfter(
   const root = chainRootIdentifier(ctx.ts, call.expression)
   const edits: TextEdit[] = []
   if (importName !== undefined) {
-    const importEdits = ensureNamedImport(ctx, 'screenci', importName)
-    if (importEdits === null) return null
-    edits.push(...importEdits)
+    const ensured = ensureNamedImport(ctx, 'screenci', importName)
+    if (ensured === null) return unresolvedImport(importName)
+    edits.push(...ensured.edits)
+    if (ensured.localName !== importName) {
+      // The export is already imported under an alias: reuse it.
+      callCode = callCode.replace(`${importName}(`, `${ensured.localName}(`)
+      if (head === importName) head = ensured.localName
+    }
   }
   const sleep = Math.max(0, Math.round(sleepMs))
 
@@ -773,7 +865,7 @@ function wrapRun(
   footerClose?: string,
   importName?: string,
   delayMs?: number
-): TextEdit[] | null {
+): ComputeResult {
   const fromCall = isLinearCallSite(ctx, fromEditId)
   const untilCall = isLinearCallSite(ctx, untilEditId)
   if (fromCall === null || untilCall === null) return null
@@ -781,13 +873,15 @@ function wrapRun(
   const untilStmt = enclosingStatement(ctx, untilCall)
   if (fromStmt === null || untilStmt === null) return null
   const root = chainRootIdentifier(ctx.ts, fromCall.expression)
+  const localName =
+    importName !== undefined ? localEffectName(ctx, importName) : undefined
 
   // Idempotent re-sync: when the run is already inside the wrap this edit would
   // create (same block for both ends), do not wrap again. Update the lead/trail
   // gap sleeps in place when they changed; otherwise it is a no-op.
-  if (importName !== undefined) {
-    const fromBody = enclosingWrapBody(ctx, fromCall, importName)
-    const untilBody = enclosingWrapBody(ctx, untilCall, importName)
+  if (importName !== undefined && localName !== undefined) {
+    const fromBody = enclosingWrapBody(ctx, fromCall, localName)
+    const untilBody = enclosingWrapBody(ctx, untilCall, localName)
     if (fromBody !== null && fromBody === untilBody) {
       const edits: TextEdit[] = []
       const body = fromBody.statements
@@ -827,18 +921,22 @@ function wrapRun(
     trailMs !== undefined && trailMs > 0 && root !== null
       ? `await ${root}.waitForTimeout(${Math.round(trailMs)})`
       : undefined
+  const edits: TextEdit[] = []
+  if (importName !== undefined) {
+    const ensured = ensureNamedImport(ctx, 'screenci', importName)
+    if (ensured === null) return unresolvedImport(importName)
+    edits.push(...ensured.edits)
+    if (ensured.localName !== importName) {
+      // The export is already imported under an alias: wrap with the alias.
+      header = header.replace(`${importName}(`, `${ensured.localName}(`)
+    }
+  }
   const wrap = wrapStatementsInBlock(ctx, fromStmt, untilStmt, header, {
     leadLine: lead,
     trailLine: trail,
     footerClose,
   })
   if (wrap === null) return null
-  const edits: TextEdit[] = []
-  if (importName !== undefined) {
-    const importEdits = ensureNamedImport(ctx, 'screenci', importName)
-    if (importEdits === null) return null
-    edits.push(...importEdits)
-  }
   edits.push(...wrap)
   return edits
 }
@@ -847,7 +945,7 @@ function wrapRun(
 function planCodifyEdit(edit: CodifyEdit): {
   editIds: string[]
   description: string
-  compute: (ctx: CodemodContext) => TextEdit[] | null
+  compute: (ctx: CodemodContext) => ComputeResult
 } | null {
   switch (edit.type) {
     case 'mediaEdit': {
@@ -1009,17 +1107,20 @@ function isBareSplit(edit: CodifyEdit): boolean {
 
 /**
  * Plan the removal of a removed (disabled) codify record, or null when the kind
- * cannot be removed with high confidence. Only point effects are removed: their
- * call is unambiguous (a single `narration.`/`overlays.`/`audio.` cue or a known
- * point function) and adjacent to the editId. Wrap edits (zoom/hide/speed/time)
- * are NOT auto-removed here: safely un-wrapping a block (restoring the inner run
- * and its formatting) is ambiguous, so a stale wrap is left for the user rather
- * than risk deleting hand-authored structure. This is the documented limit.
+ * cannot be removed with high confidence. Point effects are removed directly:
+ * their call is unambiguous (a single `narration.`/`overlays.`/`audio.` cue or
+ * a known point function) and adjacent to the editId. Wrap edits
+ * (zoom/hide/speed/time) are unwrapped when the wrap is recognisably
+ * editor-owned: an ANONYMOUS `autoZoom`/`hide`/`speed`/`time` wrap directly
+ * enclosing both anchor calls (the same identification the wrap reconciler
+ * uses). The inner statements and pacing sleeps survive, dedented one level.
+ * A NAMED block (`hide('name', ...)`) is user-authored and is never touched
+ * here; removing one takes an explicit blockRemoveEdit.
  */
 function plannedRemoval(edit: CodifyEdit): {
   editIds: string[]
   description: string
-  compute: (ctx: CodemodContext) => TextEdit[] | null
+  compute: (ctx: CodemodContext) => ComputeResult
 } | null {
   if (edit.type === 'mediaEdit') {
     const media = mediaHeadAndCall(edit)
@@ -1051,7 +1152,11 @@ function plannedRemoval(edit: CodifyEdit): {
         editIds: [edit.afterEditId],
         description: `remove \`${point.code}\` before '${edit.afterEditId}'`,
         compute: (ctx) =>
-          removeEffectBefore(ctx, edit.afterEditId, point.importName),
+          removeEffectBefore(
+            ctx,
+            edit.afterEditId,
+            localEffectName(ctx, point.importName)
+          ),
       }
     }
     return {
@@ -1061,12 +1166,53 @@ function plannedRemoval(edit: CodifyEdit): {
         removeEffectAfter(
           ctx,
           edit.afterEditId,
-          point.importName,
+          localEffectName(ctx, point.importName),
           edit.sleepBeforeMs ?? 0
         ),
     }
   }
-  return null // wrap edits (zoomEdit/gapSpanEdit): conservative, not removed
+  if (edit.type === 'zoomEdit' || edit.type === 'gapSpanEdit') {
+    if (isBareSplit(edit)) return null // editor-only marker: nothing in code
+    const importName = edit.type === 'zoomEdit' ? 'autoZoom' : edit.kind
+    const { fromEditId, untilEditId } = edit
+    return {
+      editIds: [fromEditId, untilEditId],
+      description:
+        `unwrap stale ${importName} around ` +
+        `'${fromEditId}'..'${untilEditId}'`,
+      compute: (ctx) => {
+        const { ts } = ctx
+        const localName = localEffectName(ctx, importName)
+        const fromCall = findCallByEditId(ctx, fromEditId)
+        const untilCall = findCallByEditId(ctx, untilEditId)
+        if (fromCall === null || untilCall === null) return null
+        // Editor-owned identification, same as the wrap reconciler: BOTH
+        // anchors sit directly inside one wrap callback of this kind.
+        const fromBody = enclosingWrapBody(ctx, fromCall, localName)
+        const untilBody = enclosingWrapBody(ctx, untilCall, localName)
+        if (fromBody === null || fromBody !== untilBody) {
+          return [] // no such wrap: already reconciled (idempotent)
+        }
+        const arrow = fromBody.parent
+        if (!ts.isArrowFunction(arrow) && !ts.isFunctionExpression(arrow)) {
+          return null
+        }
+        const wrapCall = arrow.parent
+        if (!ts.isCallExpression(wrapCall)) return null
+        // A NAMED block is user-authored: leave it alone.
+        if (wrapCall.arguments.some((arg) => ts.isStringLiteral(arg))) {
+          return []
+        }
+        return unwrapWrapCallStatement(ctx, wrapCall, fromBody)
+      },
+    }
+  }
+  if (edit.type === 'blockRemoveEdit') {
+    return null // removing a block-removal record: nothing to reconcile
+  }
+  const exhaustive: never = edit
+  void exhaustive
+  return null
 }
 
 export function planCodeSync(
@@ -1092,18 +1238,59 @@ export function planCodeSync(
     }
     return texts.get(file)!
   }
-  /** Compute and apply one item's edits against the file's current text. */
+  /** Classify a null compute result from the editIds it targeted. */
+  const classifyRefusal = (ctx: CodemodContext, editIds: string[]): Refusal => {
+    for (const editId of editIds) {
+      const site = classifyEditIdSite(ctx, editId)
+      if (site === 'missing') {
+        return {
+          reason: 'unknown-edit-id',
+          message: `editId '${editId}' was not found in the source file`,
+        }
+      }
+      if (site === 'ambiguous') {
+        return {
+          reason: 'ambiguous-edit-id',
+          message: `editId '${editId}' appears more than once in the file`,
+        }
+      }
+      if (site === 'control-flow') {
+        return {
+          reason: 'inside-control-flow',
+          message: `editId '${editId}' sits inside a loop, branch, or ternary`,
+        }
+      }
+    }
+    return {
+      reason: 'unsupported-shape',
+      message:
+        'the call site resists a mechanical edit ' +
+        '(non-literal options, spreads, or unexpected structure)',
+    }
+  }
+  /**
+   * Compute and apply one item's edits against the file's current text.
+   * Returns null on success, else the typed refusal (a null compute result is
+   * classified from the editIds it targeted).
+   */
   const tryApply = (
     file: string,
-    compute: (ctx: CodemodContext) => TextEdit[] | null
-  ): boolean => {
+    compute: (ctx: CodemodContext) => ComputeResult,
+    editIds: string[] = []
+  ): Refusal | null => {
     const text = getText(file)
-    if (text === null) return false
+    if (text === null) {
+      return {
+        reason: 'unsupported-shape',
+        message: `the source file '${file}' could not be read`,
+      }
+    }
     const ctx = createContext(deps.ts, file, text)
-    const edits = compute(ctx)
-    if (edits === null) return false
-    if (edits.length > 0) texts.set(file, applyTextEdits(text, edits))
-    return true
+    const result = compute(ctx)
+    if (isRefusal(result)) return result
+    if (result === null) return classifyRefusal(ctx, editIds)
+    if (result.length > 0) texts.set(file, applyTextEdits(text, result))
+    return null
   }
 
   const videoNames = [
@@ -1140,10 +1327,22 @@ export function planCodeSync(
           .filter((file): file is string => file !== undefined)
       ),
     ]
-    const markUnappliable = (reason: string): void => {
-      unappliable.push({ videoName, reason })
+    const markUnappliable = (
+      reason: UnappliableReason,
+      message: string
+    ): void => {
+      unappliable.push({ videoName, reason, message })
       bump(unappliableCounts, videoName)
     }
+    /** Refusal for an editId that no single candidate file contains. */
+    const missingEditIdRefusal = (editIds: string[]): Refusal => ({
+      reason: 'unknown-edit-id',
+      message:
+        editIds.length === 1
+          ? `editId '${editIds[0]}' was not found in exactly one source file`
+          : `editIds ${editIds.map((id) => `'${id}'`).join(', ')} were not ` +
+            `found together in exactly one source file`,
+    })
 
     /** The single candidate file whose text contains the editId slug. */
     const fileWithEditId = (editId: string): string | null => {
@@ -1163,15 +1362,19 @@ export function planCodeSync(
     }
     const applySlugItem = (item: SlugItem): void => {
       const file = fileWithEditId(item.editId)
-      if (file !== null && tryApply(file, item.compute)) {
+      const refusal =
+        file === null
+          ? missingEditIdRefusal([item.editId])
+          : tryApply(file, item.compute, [item.editId])
+      if (refusal === null) {
         applied.push({
           videoName: item.videoName,
-          file,
+          file: file!,
           description: item.description,
         })
         bump(appliedCounts, item.videoName)
       } else {
-        item.onUnappliable()
+        item.onUnappliable(refusal)
       }
     }
 
@@ -1187,7 +1390,19 @@ export function planCodeSync(
           if (entry !== undefined && jsonEqual(entry.defaults[field], value)) {
             continue
           }
-          markUnappliable(`locked param edit '${override.key}' ${field}`)
+          if (override.key.includes('#')) {
+            markUnappliable(
+              'loop-repeat',
+              `locked param edit '${override.key}' ${field}: the action is ` +
+                `a loop repeat execution and has no call site of its own`
+            )
+          } else {
+            markUnappliable(
+              'unstamped-action',
+              `locked param edit '${override.key}' ${field}: the action ` +
+                `carries no editId yet`
+            )
+          }
         }
         continue
       }
@@ -1202,8 +1417,11 @@ export function planCodeSync(
             videoName,
             editId,
             description: `insert await <page>.waitForTimeout(${ms}) before '${editId}'`,
-            onUnappliable: () =>
-              markUnappliable(`locked sleepBefore on '${editId}'`),
+            onUnappliable: (refusal) =>
+              markUnappliable(
+                refusal.reason,
+                `locked sleepBefore on '${editId}': ${refusal.message}`
+              ),
             compute: (ctx) => {
               const call = findCallByEditId(ctx, editId)
               if (call === null) return null
@@ -1248,8 +1466,11 @@ export function planCodeSync(
             videoName,
             editId,
             description: `set ${optionPath} = ${JSON.stringify(value)} on '${editId}'`,
-            onUnappliable: () =>
-              markUnappliable(`locked param edit '${editId}' ${field}`),
+            onUnappliable: (refusal) =>
+              markUnappliable(
+                refusal.reason,
+                `locked param edit '${editId}' ${field}: ${refusal.message}`
+              ),
             compute: (ctx) => {
               const call = findCallByEditId(ctx, editId)
               if (call === null) return null
@@ -1293,7 +1514,10 @@ export function planCodeSync(
           })
           continue
         }
-        markUnappliable(`unsupported param field '${field}' on '${editId}'`)
+        markUnappliable(
+          'unsupported-field',
+          `unsupported param field '${field}' on '${editId}'`
+        )
       }
     }
 
@@ -1322,15 +1546,30 @@ export function planCodeSync(
       if (isBareSplit(edit)) continue
       const planned = planCodifyEdit(edit)
       if (planned === null) {
-        markUnappliable(`unappliable ${edit.type} '${edit.id}'`)
+        markUnappliable(
+          'invalid-edit',
+          `unappliable ${edit.type} '${edit.id}': the edit record is ` +
+            `incomplete or invalid`
+        )
         continue
       }
       const file = fileWithAllEditIds(planned.editIds)
-      if (file !== null && tryApply(file, planned.compute)) {
-        applied.push({ videoName, file, description: planned.description })
+      const refusal =
+        file === null
+          ? missingEditIdRefusal(planned.editIds)
+          : tryApply(file, planned.compute, planned.editIds)
+      if (refusal === null) {
+        applied.push({
+          videoName,
+          file: file!,
+          description: planned.description,
+        })
         bump(appliedCounts, videoName)
       } else {
-        markUnappliable(`locked ${edit.type} '${edit.id}'`)
+        markUnappliable(
+          refusal.reason,
+          `locked ${edit.type} '${edit.id}': ${refusal.message}`
+        )
       }
     }
 
@@ -1338,13 +1577,24 @@ export function planCodeSync(
     // Runs after the inserts above so a place-then-remove round trip nets out.
     for (const edit of input.removedCodifyEdits[videoName] ?? []) {
       const planned = plannedRemoval(edit)
-      if (planned === null) continue // wrap edits: left in place by design
+      if (planned === null) continue // nothing in code to reconcile
       const file = fileWithAllEditIds(planned.editIds)
-      if (file !== null && tryApply(file, planned.compute)) {
-        applied.push({ videoName, file, description: planned.description })
+      const refusal =
+        file === null
+          ? missingEditIdRefusal(planned.editIds)
+          : tryApply(file, planned.compute, planned.editIds)
+      if (refusal === null) {
+        applied.push({
+          videoName,
+          file: file!,
+          description: planned.description,
+        })
         bump(appliedCounts, videoName)
       } else {
-        markUnappliable(`locked removal ${edit.type} '${edit.id}'`)
+        markUnappliable(
+          refusal.reason,
+          `locked removal ${edit.type} '${edit.id}': ${refusal.message}`
+        )
       }
     }
 
@@ -1371,37 +1621,45 @@ export function planCodeSync(
         // Stale, unstamped, or unknown method: never guess.
         if (editId === undefined || optionsIndex === undefined) {
           markUnappliable(
-            `locked action override ${assessment.selector} ${assessment.method}`
+            'unstamped-action',
+            `locked action override ${assessment.selector} ` +
+              `${assessment.method}: the action is stale, unstamped, or ` +
+              `uses an unknown method`
           )
           continue
         }
         const pathSegments = assessment.optionPath.split('.')
         const file = fileWithEditId(editId)
-        const ok =
-          file !== null &&
-          tryApply(file, (ctx) => {
-            const call = findCallByEditId(ctx, editId)
-            if (call === null) return null
-            // Sanity: the slug must sit on a call of the recorded method.
-            if (
-              !ctx.ts.isPropertyAccessExpression(call.expression) ||
-              call.expression.name.text !== assessment.method
-            ) {
-              return null
-            }
-            const edit =
-              assessment.kind === 'remove'
-                ? removeOption(ctx, call, optionsIndex, pathSegments)
-                : setOptionValue(
-                    ctx,
-                    call,
-                    optionsIndex,
-                    pathSegments,
-                    assessment.editorValue
-                  )
-            return edit === null ? null : [edit]
-          })
-        if (ok) {
+        const refusal =
+          file === null
+            ? missingEditIdRefusal([editId])
+            : tryApply(
+                file,
+                (ctx) => {
+                  const call = findCallByEditId(ctx, editId)
+                  if (call === null) return null
+                  // Sanity: the slug must sit on a call of the recorded method.
+                  if (
+                    !ctx.ts.isPropertyAccessExpression(call.expression) ||
+                    call.expression.name.text !== assessment.method
+                  ) {
+                    return null
+                  }
+                  const edit =
+                    assessment.kind === 'remove'
+                      ? removeOption(ctx, call, optionsIndex, pathSegments)
+                      : setOptionValue(
+                          ctx,
+                          call,
+                          optionsIndex,
+                          pathSegments,
+                          assessment.editorValue
+                        )
+                  return edit === null ? null : [edit]
+                },
+                [editId]
+              )
+        if (refusal === null) {
           applied.push({
             videoName,
             file: file!,
@@ -1413,7 +1671,10 @@ export function planCodeSync(
           })
           bump(appliedCounts, videoName)
         } else {
-          markUnappliable(`locked action override on '${editId}'`)
+          markUnappliable(
+            refusal.reason,
+            `locked action override on '${editId}': ${refusal.message}`
+          )
         }
       }
     }
@@ -1422,18 +1683,26 @@ export function planCodeSync(
     for (const rename of input.renames[videoName] ?? []) {
       if (rename.newEditId === rename.editId) continue // no-op
       const file = fileWithEditId(rename.editId)
-      const ok =
-        isValidEditId(rename.newEditId) &&
-        file !== null &&
-        tryApply(file, (ctx) => {
-          const edit = renameEditIdInSource(
-            ctx,
-            rename.editId,
-            rename.newEditId
-          )
-          return edit === null ? null : [edit]
-        })
-      if (ok) {
+      const refusal = !isValidEditId(rename.newEditId)
+        ? {
+            reason: 'invalid-edit' as const,
+            message: `'${rename.newEditId}' is not a valid editId slug`,
+          }
+        : file === null
+          ? missingEditIdRefusal([rename.editId])
+          : tryApply(
+              file,
+              (ctx) => {
+                const edit = renameEditIdInSource(
+                  ctx,
+                  rename.editId,
+                  rename.newEditId
+                )
+                return edit === null ? null : [edit]
+              },
+              [rename.editId]
+            )
+      if (refusal === null) {
         applied.push({
           videoName,
           file: file!,
@@ -1442,7 +1711,9 @@ export function planCodeSync(
         bump(appliedCounts, videoName)
       } else {
         markUnappliable(
-          `locked rename '${rename.editId}' -> '${rename.newEditId}'`
+          refusal.reason,
+          `locked rename '${rename.editId}' -> '${rename.newEditId}': ` +
+            refusal.message
         )
       }
     }
@@ -1467,12 +1738,18 @@ export function planCodeSync(
     if (overlayDeclEdits.length > 0) {
       const file = declaringFile()
       for (const edit of overlayDeclEdits) {
-        const ok =
-          file !== null &&
-          tryApply(file, (ctx) =>
-            setOverlayDeclProps(ctx, videoName, edit.overlayName, edit.props)
-          )
-        if (ok) {
+        const refusal =
+          file === null
+            ? unknownVideoRefusal(videoName)
+            : tryApply(file, (ctx) =>
+                setOverlayDeclProps(
+                  ctx,
+                  videoName,
+                  edit.overlayName,
+                  edit.props
+                )
+              )
+        if (refusal === null) {
           applied.push({
             videoName,
             file: file!,
@@ -1483,7 +1760,9 @@ export function planCodeSync(
           bump(appliedCounts, videoName)
         } else {
           markUnappliable(
-            `locked overlay declaration '${edit.overlayName}' on video '${videoName}'`
+            refusal.reason,
+            `locked overlay declaration '${edit.overlayName}' on video ` +
+              `'${videoName}': ${refusal.message}`
           )
         }
       }
@@ -1496,12 +1775,13 @@ export function planCodeSync(
       for (const method of ['renderOptions', 'recordOptions'] as const) {
         const values = studioVideo[method]
         if (values === undefined || Object.keys(values).length === 0) continue
-        const ok =
-          file !== null &&
-          tryApply(file, (ctx) =>
-            setBuilderOptions(ctx, videoName, method, values)
-          )
-        if (ok) {
+        const refusal =
+          file === null
+            ? unknownVideoRefusal(videoName)
+            : tryApply(file, (ctx) =>
+                setBuilderOptions(ctx, videoName, method, values)
+              )
+        if (refusal === null) {
           applied.push({
             videoName,
             file: file!,
@@ -1509,7 +1789,10 @@ export function planCodeSync(
           })
           bump(appliedCounts, videoName)
         } else {
-          markUnappliable(`locked ${method} on video '${videoName}'`)
+          markUnappliable(
+            refusal.reason,
+            `locked ${method} on video '${videoName}': ${refusal.message}`
+          )
         }
       }
     }
@@ -1519,32 +1802,35 @@ export function planCodeSync(
     if (narrationEdits.length > 0) {
       const file = declaringFile()
       for (const edit of narrationEdits) {
-        let reason = `locked narration cue '${edit.cueName}' on video '${videoName}'`
-        const ok =
-          file !== null &&
-          tryApply(file, (ctx) => {
-            const result = setNarrationValue(
-              ctx,
-              videoName,
-              {
-                cueName: edit.cueName,
-                lang: edit.lang,
-                ...(edit.isDefault !== undefined && {
-                  isDefault: edit.isDefault,
-                }),
-                value: edit.value,
-              },
-              isLanguageKey
-            )
-            if (result.kind === 'edits') return result.edits
-            if (result.kind === 'appManaged') {
-              reason =
-                `narration cue '${edit.cueName}' on video '${videoName}' ` +
-                `is app-managed (names-only declaration)`
-            }
-            return null
-          })
-        if (ok) {
+        const refusal =
+          file === null
+            ? unknownVideoRefusal(videoName)
+            : tryApply(file, (ctx) => {
+                const result = setNarrationValue(
+                  ctx,
+                  videoName,
+                  {
+                    cueName: edit.cueName,
+                    lang: edit.lang,
+                    ...(edit.isDefault !== undefined && {
+                      isDefault: edit.isDefault,
+                    }),
+                    value: edit.value,
+                  },
+                  isLanguageKey
+                )
+                if (result.kind === 'edits') return result.edits
+                if (result.kind === 'appManaged') {
+                  return {
+                    reason: 'app-managed' as const,
+                    message:
+                      `narration cue '${edit.cueName}' on video ` +
+                      `'${videoName}' is app-managed (names-only declaration)`,
+                  }
+                }
+                return null
+              })
+        if (refusal === null) {
           applied.push({
             videoName,
             file: file!,
@@ -1554,7 +1840,13 @@ export function planCodeSync(
           })
           bump(appliedCounts, videoName)
         } else {
-          markUnappliable(reason)
+          markUnappliable(
+            refusal.reason,
+            refusal.reason === 'app-managed'
+              ? refusal.message
+              : `locked narration cue '${edit.cueName}' on video ` +
+                  `'${videoName}': ${refusal.message}`
+          )
         }
       }
     }

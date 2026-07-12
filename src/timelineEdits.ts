@@ -281,3 +281,66 @@ export function optionsEditIdFor(method: OptionsEditMethod): string {
 export function narrationEditIdFor(cueName: string, lang: string): string {
   return `narration|${cueName}|${lang}`
 }
+
+/** Stable id of the param edit targeting an editable key. */
+export function paramEditIdFor(key: string): string {
+  return `param|${key}`
+}
+
+/** Stable id of the rename edit targeting an action's editId slug. */
+export function renameEditIdFor(targetEditId: string): string {
+  return `rename|${targetEditId}`
+}
+
+/**
+ * A structured view of a wire edit id, parsed back from the string forms the
+ * `*IdFor` encoders produce. Ids that follow none of the known conventions
+ * come back as `{ kind: 'other' }` with the raw id.
+ */
+export type ParsedEditId =
+  | { kind: 'param'; key: string }
+  | { kind: 'rename'; targetEditId: string }
+  | { kind: 'options'; method: OptionsEditMethod }
+  | { kind: 'narration'; cueName: string; lang: string }
+  | { kind: 'overlayDecl'; overlayName: string }
+  | { kind: 'other'; editId: string }
+
+/**
+ * Parse a wire edit id into its structured form. Inverse of the encoders:
+ * `param|<key>`, `rename|<targetEditId>`, `options|<method>`,
+ * `narration|<cueName>|<lang>` (the language is the last segment, so cue
+ * names may contain `|`), and `overlaydecl-<overlayName>`.
+ */
+export function parseEditId(editId: string): ParsedEditId {
+  if (editId.startsWith('param|')) {
+    return { kind: 'param', key: editId.slice('param|'.length) }
+  }
+  if (editId.startsWith('rename|')) {
+    return { kind: 'rename', targetEditId: editId.slice('rename|'.length) }
+  }
+  if (editId.startsWith('options|')) {
+    const method = editId.slice('options|'.length)
+    const known = OPTIONS_EDIT_METHODS.find((candidate) => candidate === method)
+    if (known !== undefined) return { kind: 'options', method: known }
+    return { kind: 'other', editId }
+  }
+  if (editId.startsWith('narration|')) {
+    const rest = editId.slice('narration|'.length)
+    const split = rest.lastIndexOf('|')
+    if (split > 0 && split < rest.length - 1) {
+      return {
+        kind: 'narration',
+        cueName: rest.slice(0, split),
+        lang: rest.slice(split + 1),
+      }
+    }
+    return { kind: 'other', editId }
+  }
+  if (editId.startsWith('overlaydecl-')) {
+    return {
+      kind: 'overlayDecl',
+      overlayName: editId.slice('overlaydecl-'.length),
+    }
+  }
+  return { kind: 'other', editId }
+}

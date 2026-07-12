@@ -3,6 +3,7 @@ import ts from 'typescript'
 import type { EditableSnapshot } from './editableSnapshot.js'
 import type { CodifyEdit } from './timelineEdits.js'
 import {
+  editsOverlap,
   planCodeSync,
   type ActionParamsSnapshot,
   type CodeSyncInput,
@@ -1089,7 +1090,7 @@ describe('planCodeSync: overlay declaration edits', () => {
     )
     expect(result.files).toHaveLength(0)
     expect(result.unappliable).toHaveLength(1)
-    expect(result.unappliable[0]!.reason).toContain('ring')
+    expect(result.unappliable[0]!.message).toContain('ring')
   })
 
   it('marks unappliable when the video declaration is missing', () => {
@@ -1333,7 +1334,7 @@ describe('planCodeSync: narration cue value codify', () => {
     )
     expect(result.files).toHaveLength(0)
     expect(result.unappliable).toHaveLength(1)
-    expect(result.unappliable[0]!.reason).toContain('app-managed')
+    expect(result.unappliable[0]!.reason).toBe('app-managed')
   })
 
   it('marks the video unappliable when its declaration is absent', () => {
@@ -1354,5 +1355,449 @@ describe('planCodeSync: narration cue value codify', () => {
     )
     expect(result.files).toHaveLength(0)
     expect(result.unappliable).toHaveLength(1)
+  })
+})
+
+describe('planCodeSync: aliased screenci imports', () => {
+  const ALIAS_FILE = '/proj/alias.screenci.ts'
+  const ALIAS_SOURCE = [
+    "import { video, setBackground as bg, autoZoom as az } from 'screenci'",
+    '',
+    "video('Alias', async ({ page }) => {",
+    "  await page.getByRole('button').click({ editId: 'aclick' })",
+    '  await page.waitForTimeout(1000)',
+    "  await page.locator('#z').click({ editId: 'aclick2' })",
+    '})',
+    '',
+  ].join('\n')
+  const aliasSnapshot: EditableSnapshot = {
+    version: 1,
+    videos: {
+      Alias: [
+        {
+          key: 'aclick',
+          editId: 'aclick',
+          locked: false,
+          defaults: {},
+          source: { file: ALIAS_FILE, line: 4 },
+        },
+        {
+          key: 'aclick2',
+          editId: 'aclick2',
+          locked: false,
+          defaults: {},
+          source: { file: ALIAS_FILE, line: 6 },
+        },
+      ],
+    },
+  }
+
+  it('reuses an existing alias when inserting a gap point call', () => {
+    const point: CodifyEdit = {
+      type: 'gapPointEdit',
+      id: 'gp-alias',
+      kind: 'background',
+      afterEditId: 'aclick',
+      sleepBeforeMs: 400,
+      props: { backgroundCss: 'red' },
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: aliasSnapshot,
+        codifyEdits: { Alias: [point] },
+      }),
+      { [ALIAS_FILE]: ALIAS_SOURCE }
+    )
+    const after = afterFor(result, ALIAS_FILE)
+    expect(after).toContain("await bg('red')")
+    expect(after).not.toContain('setBackground(')
+    // The import line is untouched: no duplicate import appended.
+    expect(after).toContain(
+      "import { video, setBackground as bg, autoZoom as az } from 'screenci'"
+    )
+    expect(result.unappliable).toHaveLength(0)
+  })
+
+  it('wraps a run through the imported alias', () => {
+    const zoom: CodifyEdit = {
+      type: 'zoomEdit',
+      id: 'z-alias',
+      fromEditId: 'aclick',
+      untilEditId: 'aclick2',
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: aliasSnapshot,
+        codifyEdits: { Alias: [zoom] },
+      }),
+      { [ALIAS_FILE]: ALIAS_SOURCE }
+    )
+    const after = afterFor(result, ALIAS_FILE)
+    expect(after).toContain('await az(async () => {')
+    expect(after).not.toContain('autoZoom(async')
+    expect(result.unappliable).toHaveLength(0)
+  })
+
+  it('recognises an alias-wrapped run as already wrapped (idempotent)', () => {
+    const wrapped = [
+      "import { video, autoZoom as az } from 'screenci'",
+      '',
+      "video('Alias', async ({ page }) => {",
+      '  await az(async () => {',
+      "    await page.getByRole('button').click({ editId: 'aclick' })",
+      "    await page.locator('#z').click({ editId: 'aclick2' })",
+      '  })',
+      '})',
+      '',
+    ].join('\n')
+    const zoom: CodifyEdit = {
+      type: 'zoomEdit',
+      id: 'z-alias2',
+      fromEditId: 'aclick',
+      untilEditId: 'aclick2',
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: aliasSnapshot,
+        codifyEdits: { Alias: [zoom] },
+      }),
+      { [ALIAS_FILE]: wrapped }
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(0)
+  })
+
+  it("refuses with 'unresolved-import' under a namespace-only import", () => {
+    const namespaced = [
+      "import { video } from 'screenci'",
+      "import * as fx from 'screenci/effects'",
+      '',
+      "video('Alias', async ({ page }) => {",
+      "  await page.getByRole('button').click({ editId: 'aclick' })",
+      '})',
+      '',
+    ].join('\n')
+    // Force the named-import path to fail: strip the editable import list.
+    const noNamed = namespaced.replace(
+      "import { video } from 'screenci'",
+      "import * as screenci from 'screenci'\nconst video = screenci.video"
+    )
+    const point: CodifyEdit = {
+      type: 'gapPointEdit',
+      id: 'gp-ns',
+      kind: 'background',
+      afterEditId: 'aclick',
+      props: { backgroundCss: 'red' },
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: aliasSnapshot,
+        codifyEdits: { Alias: [point] },
+      }),
+      { [ALIAS_FILE]: noNamed }
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(1)
+    expect(result.unappliable[0]!.reason).toBe('unresolved-import')
+    expect(result.unappliable[0]!.message).toContain('setBackground')
+  })
+})
+
+describe('planCodeSync: stale wrap cleanup on removal', () => {
+  const WRAP_FILE = '/proj/wrapped.screenci.ts'
+  const wrapSnapshot: EditableSnapshot = {
+    version: 1,
+    videos: {
+      Wrapped: [
+        {
+          key: 'wclick',
+          editId: 'wclick',
+          locked: false,
+          defaults: {},
+          source: { file: WRAP_FILE, line: 5 },
+        },
+        {
+          key: 'wclick2',
+          editId: 'wclick2',
+          locked: false,
+          defaults: {},
+          source: { file: WRAP_FILE, line: 6 },
+        },
+      ],
+    },
+  }
+
+  it('unwraps a deleted anonymous autoZoom, keeping calls and sleeps', () => {
+    const source = [
+      "import { video, autoZoom } from 'screenci'",
+      '',
+      "video('Wrapped', async ({ page }) => {",
+      '  await autoZoom(async () => {',
+      '    await page.waitForTimeout(300)',
+      "    await page.getByRole('button').click({ editId: 'wclick' })",
+      "    await page.locator('#b').click({ editId: 'wclick2' })",
+      '    await page.waitForTimeout(200)',
+      '  })',
+      '})',
+      '',
+    ].join('\n')
+    const removed: CodifyEdit = {
+      type: 'zoomEdit',
+      id: 'z-rm',
+      fromEditId: 'wclick',
+      untilEditId: 'wclick2',
+      leadInMs: 300,
+      holdMs: 200,
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: wrapSnapshot,
+        removedCodifyEdits: { Wrapped: [removed] },
+      }),
+      { [WRAP_FILE]: source }
+    )
+    const after = afterFor(result, WRAP_FILE)
+    expect(after).not.toContain('autoZoom(')
+    expect(after).toContain('  await page.waitForTimeout(300)')
+    expect(after).toContain(
+      "  await page.getByRole('button').click({ editId: 'wclick' })"
+    )
+    expect(after).toContain('  await page.waitForTimeout(200)')
+    expect(result.unappliable).toHaveLength(0)
+  })
+
+  it('unwraps a deleted anonymous speed wrap through an import alias', () => {
+    const source = [
+      "import { video, speed as sp } from 'screenci'",
+      '',
+      "video('Wrapped', async ({ page }) => {",
+      '  await sp(3, async () => {',
+      "    await page.getByRole('button').click({ editId: 'wclick' })",
+      "    await page.locator('#b').click({ editId: 'wclick2' })",
+      '  })',
+      '})',
+      '',
+    ].join('\n')
+    const removed: CodifyEdit = {
+      type: 'gapSpanEdit',
+      id: 's-rm',
+      kind: 'speed',
+      fromEditId: 'wclick',
+      untilEditId: 'wclick2',
+      props: { multiplier: 3 },
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: wrapSnapshot,
+        removedCodifyEdits: { Wrapped: [removed] },
+      }),
+      { [WRAP_FILE]: source }
+    )
+    const after = afterFor(result, WRAP_FILE)
+    expect(after).not.toContain('sp(3')
+    expect(after).toContain(
+      "  await page.getByRole('button').click({ editId: 'wclick' })"
+    )
+    expect(result.unappliable).toHaveLength(0)
+  })
+
+  it('never touches a NAMED (user-authored) block', () => {
+    const source = [
+      "import { video, hide } from 'screenci'",
+      '',
+      "video('Wrapped', async ({ page }) => {",
+      "  await hide('mine', async () => {",
+      "    await page.getByRole('button').click({ editId: 'wclick' })",
+      "    await page.locator('#b').click({ editId: 'wclick2' })",
+      '  })',
+      '})',
+      '',
+    ].join('\n')
+    const removed: CodifyEdit = {
+      type: 'gapSpanEdit',
+      id: 'h-rm',
+      kind: 'hide',
+      fromEditId: 'wclick',
+      untilEditId: 'wclick2',
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: wrapSnapshot,
+        removedCodifyEdits: { Wrapped: [removed] },
+      }),
+      { [WRAP_FILE]: source }
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(0)
+  })
+
+  it('is idempotent when the wrap is already gone', () => {
+    const source = [
+      "import { video } from 'screenci'",
+      '',
+      "video('Wrapped', async ({ page }) => {",
+      "  await page.getByRole('button').click({ editId: 'wclick' })",
+      "  await page.locator('#b').click({ editId: 'wclick2' })",
+      '})',
+      '',
+    ].join('\n')
+    const removed: CodifyEdit = {
+      type: 'zoomEdit',
+      id: 'z-gone',
+      fromEditId: 'wclick',
+      untilEditId: 'wclick2',
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: wrapSnapshot,
+        removedCodifyEdits: { Wrapped: [removed] },
+      }),
+      { [WRAP_FILE]: source }
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(0)
+  })
+})
+
+describe('planCodeSync: typed refusal reasons', () => {
+  it("reports 'unknown-edit-id' for a vanished slug", () => {
+    const media: CodifyEdit = {
+      type: 'mediaEdit',
+      id: 'm-x',
+      kind: 'narrationCue',
+      afterEditId: 'click1',
+      blocking: true,
+      props: { name: 'intro' },
+    }
+    const withoutSlug = SOURCE.replace("editId: 'click1'", "editId: 'other'")
+    const result = plan(inputWith({ codifyEdits: { Demo: [media] } }), {
+      [FILE]: withoutSlug,
+    })
+    expect(result.unappliable[0]!.reason).toBe('unknown-edit-id')
+    expect(result.unappliable[0]!.message).toContain('click1')
+  })
+
+  it("reports 'inside-control-flow' for a loop-locked slug", () => {
+    const media: CodifyEdit = {
+      type: 'mediaEdit',
+      id: 'm-loop',
+      kind: 'narrationCue',
+      afterEditId: 'loopclick',
+      blocking: true,
+      props: { name: 'intro' },
+    }
+    const result = plan(inputWith({ codifyEdits: { Loop: [media] } }))
+    expect(result.unappliable[0]!.reason).toBe('inside-control-flow')
+    expect(result.unappliable[0]!.message).toContain('loopclick')
+  })
+
+  it("reports 'ambiguous-edit-id' for a duplicated slug", () => {
+    const duplicated = SOURCE.replace(
+      "editId: 'fill1'",
+      "editId: 'click1'" // now two calls carry click1
+    )
+    const media: CodifyEdit = {
+      type: 'mediaEdit',
+      id: 'm-dup',
+      kind: 'narrationCue',
+      afterEditId: 'click1',
+      blocking: true,
+      props: { name: 'intro' },
+    }
+    const result = plan(inputWith({ codifyEdits: { Demo: [media] } }), {
+      [FILE]: duplicated,
+    })
+    expect(result.unappliable[0]!.reason).toBe('ambiguous-edit-id')
+  })
+
+  it("reports 'loop-repeat' and 'unstamped-action' for locked keys", () => {
+    const result = plan(
+      inputWith({
+        editableOverrides: {
+          Demo: [
+            { key: 'click1#1', values: { sleepBefore: 500 } },
+            { key: 'unstamped-one', values: { sleepBefore: 500 } },
+          ],
+        },
+      })
+    )
+    const reasons = result.unappliable.map((item) => item.reason).sort()
+    expect(reasons).toEqual(['loop-repeat', 'unstamped-action'])
+  })
+
+  it("reports 'unsupported-field' for a field with no code form", () => {
+    const result = plan(
+      inputWith({
+        editableOverrides: {
+          Demo: [{ key: 'click1', values: { bogus: 1 } }],
+        },
+      })
+    )
+    expect(result.unappliable[0]!.reason).toBe('unsupported-field')
+  })
+
+  it("reports 'invalid-edit' for an incomplete record", () => {
+    const span: CodifyEdit = {
+      type: 'gapSpanEdit',
+      id: 't-bad',
+      kind: 'time',
+      fromEditId: 'click1',
+      untilEditId: 'fill1',
+      props: {}, // time without a duration is invalid
+    }
+    const result = plan(inputWith({ codifyEdits: { Demo: [span] } }))
+    expect(result.unappliable[0]!.reason).toBe('invalid-edit')
+  })
+
+  it("reports 'unknown-video' when the declaration is missing", () => {
+    const result = plan(
+      inputWith({
+        narrationEdits: {
+          Demo: [{ cueName: 'intro', lang: 'default', value: 'Hi' }],
+        },
+      }),
+      { [FILE]: SOURCE.replace("video('Demo'", "video('Other'") }
+    )
+    expect(result.unappliable[0]!.reason).toBe('unknown-video')
+  })
+})
+
+describe('editsOverlap', () => {
+  it('detects overlapping ranges and allows touching ones', () => {
+    expect(
+      editsOverlap(
+        { start: 0, end: 5, replacement: '' },
+        { start: 4, end: 8, replacement: '' }
+      )
+    ).toBe(true)
+    expect(
+      editsOverlap(
+        { start: 0, end: 5, replacement: '' },
+        { start: 5, end: 8, replacement: '' }
+      )
+    ).toBe(false)
+    // Zero-length inserts at the same position do not overlap.
+    expect(
+      editsOverlap(
+        { start: 3, end: 3, replacement: 'a' },
+        { start: 3, end: 3, replacement: 'b' }
+      )
+    ).toBe(false)
+  })
+
+  it('guards planCodeSync against applyTextEdits overlap throws', () => {
+    // moveSpeed drops the exclusive moveDuration sibling; when the removal
+    // collapses the object the set edit targets, the ranges would overlap and
+    // the planner refuses instead of throwing.
+    const result = plan(
+      inputWith({
+        editableOverrides: {
+          Demo: [{ key: 'click1', values: { moveSpeed: 2 } }],
+        },
+      })
+    )
+    // Never throws; the entangled edit is refused, not applied.
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable[0]!.reason).toBe('unsupported-shape')
   })
 })

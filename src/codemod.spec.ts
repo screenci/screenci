@@ -4,10 +4,15 @@ import {
   applyTextEdits,
   awaitedCallHead,
   chainRootIdentifier,
+  classifyEditIdSite,
   createContext,
   diffLines,
   ensureNamedImport,
+  findCallByEditId,
   findCallNamed,
+  importTableFor,
+  resolveImportedLocalName,
+  resolvePageIdentifier,
   insertStatementAfter,
   insertStatementBefore,
   removeFullLine,
@@ -18,7 +23,9 @@ import {
   setOverlayDeclProps,
   statementAtLine,
   statementsAfter,
+  unwrapBlockCall,
   valueToSource,
+  waitForTimeoutArg,
   type CodemodContext,
   type TextEdit,
 } from './codemod.js'
@@ -344,13 +351,21 @@ describe('statementsAfter and removeFullLine', () => {
 describe('ensureNamedImport', () => {
   it('returns [] when the name is already imported', () => {
     const ctx = ctxOf("import { video, placeZoom } from 'screenci'\n")
-    expect(ensureNamedImport(ctx, 'screenci', 'placeZoom')).toEqual([])
+    expect(ensureNamedImport(ctx, 'screenci', 'placeZoom')).toEqual({
+      edits: [],
+      localName: 'placeZoom',
+    })
   })
 
   it('appends to an existing named import', () => {
     const source = "import { video } from 'screenci'\n"
     const ctx = ctxOf(source)
-    const edits = ensureNamedImport(ctx, 'screenci', 'placeZoom')!
+    const { edits, localName } = ensureNamedImport(
+      ctx,
+      'screenci',
+      'placeZoom'
+    )!
+    expect(localName).toBe('placeZoom')
     expect(applyTextEdits(source, edits)).toBe(
       "import { video, placeZoom } from 'screenci'\n"
     )
@@ -903,5 +918,165 @@ describe('diffLines', () => {
       '  d',
       '  ...',
     ])
+  })
+})
+
+describe('applyTextEdits: overlap guard', () => {
+  it('throws on overlapping edits (a planner bug, never expected input)', () => {
+    expect(() =>
+      applyTextEdits('abcdef', [
+        { start: 0, end: 4, replacement: 'x' },
+        { start: 2, end: 6, replacement: 'y' },
+      ])
+    ).toThrow('Overlapping text edits')
+  })
+
+  it('accepts zero-length inserts at the same position', () => {
+    expect(
+      applyTextEdits('ab', [
+        { start: 1, end: 1, replacement: 'x' },
+        { start: 1, end: 1, replacement: 'y' },
+      ])
+    ).toBe('axyb')
+  })
+})
+
+describe('importTableFor / resolveImportedLocalName', () => {
+  it('maps aliases both ways', () => {
+    const ctx = ctxOf(
+      "import { video, autoZoom as az, hide } from 'screenci'\n" +
+        "import { speed as fast } from 'other'\n"
+    )
+    const table = importTableFor(ctx, 'screenci')
+    expect(table.localToExport.get('az')).toBe('autoZoom')
+    expect(table.exportToLocal.get('autoZoom')).toBe('az')
+    expect(table.localToExport.get('hide')).toBe('hide')
+    expect(table.localToExport.has('fast')).toBe(false)
+    expect(resolveImportedLocalName(ctx, 'screenci', 'autoZoom')).toBe('az')
+    expect(resolveImportedLocalName(ctx, 'screenci', 'speed')).toBeNull()
+  })
+
+  it('returns null for a namespace import', () => {
+    const ctx = ctxOf("import * as sc from 'screenci'\n")
+    expect(resolveImportedLocalName(ctx, 'screenci', 'autoZoom')).toBeNull()
+  })
+})
+
+describe('ensureNamedImport: alias reuse', () => {
+  it('reuses an existing alias instead of appending a duplicate', () => {
+    const ctx = ctxOf("import { video, autoZoom as az } from 'screenci'\n")
+    expect(ensureNamedImport(ctx, 'screenci', 'autoZoom')).toEqual({
+      edits: [],
+      localName: 'az',
+    })
+  })
+})
+
+describe('classifyEditIdSite', () => {
+  const source = [
+    "import { video } from 'screenci'",
+    "video('D', async ({ page }) => {",
+    "  await page.locator('#a').click({ editId: 'one' })",
+    "  await page.locator('#b').click({ editId: 'dup' })",
+    "  await page.locator('#c').click({ editId: 'dup' })",
+    '  if (x) {',
+    "    await page.locator('#d').click({ editId: 'branchy' })",
+    '  }',
+    '})',
+    '',
+  ].join('\n')
+
+  it('classifies missing, ambiguous, control-flow and ok sites', () => {
+    const ctx = ctxOf(source)
+    expect(classifyEditIdSite(ctx, 'nope')).toBe('missing')
+    expect(classifyEditIdSite(ctx, 'dup')).toBe('ambiguous')
+    expect(classifyEditIdSite(ctx, 'branchy')).toBe('control-flow')
+    expect(classifyEditIdSite(ctx, 'one')).toBe('ok')
+  })
+})
+
+describe('plain JavaScript recording files', () => {
+  const jsSource = [
+    "import { video, hide } from 'screenci'",
+    '',
+    "video('JS', async ({ page }) => {",
+    "  await page.locator('#a').click({ editId: 'jsclick' })",
+    '  await page.waitForTimeout(750)',
+    "  await hide('mask', async () => {",
+    "    await page.locator('#b').click()",
+    '  })',
+    '})',
+    '',
+  ].join('\n')
+
+  it('parses a .js file and finds calls by editId', () => {
+    const ctx = createContext(ts, 'demo.screenci.js', jsSource)
+    const call = findCallByEditId(ctx, 'jsclick')
+    expect(call).not.toBeNull()
+    const statement = statementAtLine(ctx, 5)!
+    expect(waitForTimeoutArg(ctx, statement, 'page')!.text).toBe('750')
+  })
+
+  it('unwraps a named block in a .js file', () => {
+    const ctx = createContext(ts, 'demo.screenci.js', jsSource)
+    const edits = unwrapBlockCall(ctx, 'mask')!
+    const after = applyTextEdits(jsSource, edits)
+    expect(after).not.toContain('hide(')
+    expect(after).toContain("  await page.locator('#b').click()")
+  })
+})
+
+describe('resolvePageIdentifier: deep locator alias chains', () => {
+  it('follows a chain of stored locators back to the page', () => {
+    const source = [
+      "video('D', async ({ page }) => {",
+      "  const list = page.locator('ul')",
+      "  const row = list.locator('li').first()",
+      "  const cell = row.locator('td')",
+      "  await cell.click({ editId: 'deep' })",
+      '})',
+      '',
+    ].join('\n')
+    const ctx = ctxOf(source)
+    const call = findCallByEditId(ctx, 'deep')!
+    expect(ctx.ts.isPropertyAccessExpression(call.expression)).toBe(true)
+    const root = resolvePageIdentifier(
+      ctx.ts,
+      ctx.sourceFile,
+      (call.expression as import('typescript').PropertyAccessExpression)
+        .expression
+    )
+    expect(root).toBe('page')
+  })
+
+  it('returns null when the chain has no identifier root', () => {
+    const source = [
+      "video('D', async ({ page }) => {",
+      "  await (await helper()).click({ editId: 'odd' })",
+      '})',
+      '',
+    ].join('\n')
+    const ctx = ctxOf(source)
+    const call = findCallByEditId(ctx, 'odd')!
+    const receiver = (
+      call.expression as import('typescript').PropertyAccessExpression
+    ).expression
+    expect(resolvePageIdentifier(ctx.ts, ctx.sourceFile, receiver)).toBeNull()
+  })
+
+  it('stops at a self-referential declaration without looping forever', () => {
+    const source = [
+      "const a = a.locator('x')",
+      "video('D', async ({ page }) => {",
+      "  await a.click({ editId: 'cyc' })",
+      '})',
+      '',
+    ].join('\n')
+    const ctx = ctxOf(source)
+    const call = findCallByEditId(ctx, 'cyc')!
+    const receiver = (
+      call.expression as import('typescript').PropertyAccessExpression
+    ).expression
+    expect(resolvePageIdentifier(ctx.ts, ctx.sourceFile, receiver)).toBe('a')
   })
 })

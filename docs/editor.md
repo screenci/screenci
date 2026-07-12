@@ -410,9 +410,18 @@ actions or brackets a known run of actions.
 
 Each edit is applied to code the moment it is saved: the dev session locates
 the call site by editId and writes the call-position statement into the
-source. An edit that cannot be applied (its editId vanished, or the section is
-locked) fails the codegen request and the editor reverts the optimistic value
-instead of dropping it silently.
+source. An edit that cannot be applied fails the codegen request and the
+editor reverts the optimistic value instead of dropping it silently. The
+failure carries a typed reason plus a message, so the editor toast says what
+to fix: `unknown-edit-id`, `ambiguous-edit-id`, `inside-control-flow`,
+`unstamped-action`, `loop-repeat`, `unsupported-field`, `invalid-edit`,
+`unresolved-import` (the effect function needs a named import from
+'screenci'), `unknown-video`, `app-managed`, or `unsupported-shape`.
+
+Aliased imports are supported throughout: a file that does
+`import { autoZoom as az } from 'screenci'` has its `az(...)` wraps
+recognised, updated, and unwrapped like the canonical name, and codegen reuses
+the alias when inserting new calls.
 
 ## Effects in code: block wrappers and gap sleeps
 

@@ -612,18 +612,31 @@ stops changing once code and Editor agree. Changing only an effect's lead sleep
 rewrites the existing `waitForTimeout(...)` rather than adding another. And when
 an effect is removed in the Editor, `sync` deletes the call it authored and
 re-coalesces the gap sleep it split, so no orphaned "ghost" sleep is left
-behind. This cleanup runs only for the point effects it can identify
-unambiguously (narration cues, overlays, and
-`resizeRecording` points); a removed
-`autoZoom`/`hide`/`speed`/`time` wrap is left in place for you to delete by hand
-rather than risk unwrapping code you may have since edited.
+behind. This cleanup covers the point effects it can identify unambiguously
+(narration cues, overlays, and `resizeRecording` points) and editor-owned
+wraps: a removed `autoZoom`/`hide`/`speed`/`time` edit unwraps the anonymous
+block that directly encloses both of its anchor actions, keeping the inner
+statements and pacing sleeps (dedented one level). A NAMED block
+(`hide('name', ...)`) is treated as user-authored and never unwrapped this
+way; removing one takes an explicit block-remove edit in the Editor.
 
 Every edit locates its call site by the exact `editId` slug: there is no
 heuristic matching, so an applied edit is never a guess. An edit either applies
-by editId or its section is locked and reported as an unappliable count to edit
-by hand: an action that has not been stamped yet (record once, then sync), a
-loop execution, or a call inside control flow (`if`/`for`/...). There is no
-agent-prompt fallback.
+by editId or its section is locked and reported as an unappliable item with a
+typed reason and a message: `unknown-edit-id` (the slug vanished),
+`ambiguous-edit-id` (duplicated in the file), `inside-control-flow`
+(`if`/`for`/...), `unstamped-action` (record once, then sync), `loop-repeat`,
+`unsupported-field`, `invalid-edit`, `unresolved-import`, `unknown-video`,
+`app-managed`, or `unsupported-shape` (non-literal options, spreads). There is
+no agent-prompt fallback.
+
+Screenci imports are resolved through the file's import table, so aliased
+named imports work everywhere: `import { autoZoom as az } from 'screenci'`
+plus `az(...)` is found, updated, wrapped, and unwrapped just like the
+canonical name, and a new call reuses the existing alias instead of adding a
+duplicate import. Only a plain named import can be edited: a namespace import
+(`import * as sc`) or a re-export wrapper is refused with the
+`unresolved-import` reason.
 
 By default `screenci sync` is a dry run that prints per-file diffs. Options:
 

@@ -74,7 +74,10 @@ import {
 } from './src/linkSession.js'
 import { OVERLAY_CACHE_DIR_NAME } from './src/htmlRasterizer.js'
 import { collectEditableFromRecordings } from './src/editableSnapshot.js'
-import { applyCodegenRequest } from './src/applyCodegen.js'
+import {
+  applyCodegenRequest,
+  requireTypescriptForCodegen,
+} from './src/applyCodegen.js'
 import {
   grepMatcher,
   runDevStartupSync,
@@ -3309,12 +3312,10 @@ export async function runDevCommand(
     applyCodegen: async (request) => {
       const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.config)
       const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
-      const ts = loadTypescript(dirname(screenciDir))
-      if (ts === null) {
-        throw new Error(
-          'TypeScript is not available; install it to enable editor codegen'
-        )
-      }
+      const ts = requireTypescriptForCodegen(
+        loadTypescript,
+        dirname(screenciDir)
+      )
       applyCodegenRequest(request, {
         ts,
         readFile: (path) => {

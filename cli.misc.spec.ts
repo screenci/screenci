@@ -502,6 +502,25 @@ describe('CLI', () => {
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })
 
+    // Positional grep patterns filter managed videos by title, the same way
+    // `playwright test <pattern>` does. They must be accepted (not rejected as
+    // "too many arguments"); the command still exits asking for the secret.
+    it('accepts a positional grep pattern for the edit command', async () => {
+      process.argv = ['node', 'cli.js', 'edit', 'Auto-zoom']
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow('process.exit called')
+
+      expect(loggerErrorSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('too many arguments')
+      )
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('SCREENCI_SECRET')
+      )
+      expect(processExitSpy).toHaveBeenCalledWith(1)
+    })
+
     it('should show global help with --help', async () => {
       process.argv = ['node', 'cli.js', '--help']
       const stdoutSpy = vi

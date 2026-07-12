@@ -4250,9 +4250,11 @@ export async function main() {
 
   // dev command: connect this machine to the web editor and record on demand
   program
-    .command('edit')
+    .command('edit [grepPatterns...]')
     .description(
-      'Connect this machine to the ScreenCI editor and record videos on demand'
+      'Connect this machine to the ScreenCI editor and record videos on demand. ' +
+        'Positional patterns filter managed videos by title (same as --grep, ' +
+        'like `playwright test <pattern>`); multiple patterns are OR-combined.'
     )
     .option('-c, --config <path>', 'path to config file')
     .option('-v, --verbose', 'verbose output')
@@ -4281,16 +4283,31 @@ export async function main() {
         'changes that trigger a preview re-record'
     )
     .action(
-      async (options: {
-        config?: string
-        verbose?: boolean
-        token?: string
-        recordKillWindow?: string
-        grep?: string
-        forceRecord?: boolean
-        watch?: boolean
-      }) => {
-        await runDevCommand(options)
+      async (
+        grepPatterns: string[],
+        options: {
+          config?: string
+          verbose?: boolean
+          token?: string
+          recordKillWindow?: string
+          grep?: string
+          forceRecord?: boolean
+          watch?: boolean
+        }
+      ) => {
+        // Positional patterns act like `playwright test <pattern>`: filter the
+        // managed videos by title. `--grep` takes precedence when both are
+        // given; multiple positionals are OR-combined into one regex.
+        const positionalGrep =
+          grepPatterns.length > 0
+            ? grepPatterns.map(escapeRegExp).join('|')
+            : undefined
+        const { grep, ...rest } = options
+        const resolvedGrep = grep ?? positionalGrep
+        await runDevCommand({
+          ...rest,
+          ...(resolvedGrep !== undefined ? { grep: resolvedGrep } : {}),
+        })
       }
     )
 

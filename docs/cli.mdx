@@ -363,13 +363,23 @@ with Ctrl-C. See [Editor](/docs/guides/editor) for the editing model.
 screenci edit
 ```
 
+Limit the session to specific videos by passing filter patterns, the same way
+`playwright test <pattern>` does. Positional patterns match video titles
+(multiple are OR-combined); `--grep` does the same and takes precedence when
+both are given:
+
+```bash
+screenci edit "Auto-zoom"
+```
+
 Options:
 
 - `-c, --config <path>`: path to the ScreenCI config file.
 - `--token <token>`: personal editor token. Defaults to `SCREENCI_EDIT_TOKEN` from
   your project env file.
 - `-g, --grep <pattern>`: only manage videos whose title matches this pattern
-  (the same filter as Playwright's `--grep`). The startup check and any
+  (the same filter as Playwright's `--grep`, and the same as a positional
+  pattern above). The startup check and any
   startup records are limited to the matching videos.
 - `--force-record`: re-record every managed video at startup even when the
   kept recordings are up to date.

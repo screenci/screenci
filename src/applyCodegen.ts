@@ -9,6 +9,11 @@
  * uses; the call site is located via the editable entries of the video's kept
  * recording data. Throws when the edit cannot be applied, so the listener
  * reports the request failed and the editor reverts the optimistic value.
+ *
+ * Returns `{ outcome: 'orphaned' }` (instead of throwing) when the only reason
+ * the edit could not be applied is that its target is absent from the current
+ * recording snapshot: a stale override key, which the listener reports as a
+ * soft skip so the request is auto-discarded rather than surfaced as a failure.
  */
 import { planCodeSync } from './codeSync.js'
 import type { TsModule } from './codemod.js'
@@ -60,10 +65,12 @@ export function requireTypescriptForCodegen(
   return ts
 }
 
+export type ApplyCodegenOutcome = { outcome: 'applied' | 'orphaned' }
+
 export async function applyCodegenRequest(
   request: DevCodegenRequest,
   deps: ApplyCodegenDeps
-): Promise<void> {
+): Promise<ApplyCodegenOutcome> {
   let record: unknown
   try {
     record = JSON.parse(request.editJson)
@@ -138,7 +145,17 @@ export async function applyCodegenRequest(
   }
 
   if (plan.unappliable.length > 0) {
-    const reasons = plan.unappliable
+    // A stale override key (its action left the recording) is not a failure:
+    // there is nothing to write and nothing the user did wrong. When every
+    // refusal is that soft kind, report it as orphaned so the request is
+    // auto-discarded. Any other refusal in the mix is still a hard failure.
+    const hard = plan.unappliable.filter(
+      (item) => item.reason !== 'orphaned-override'
+    )
+    if (hard.length === 0) {
+      return { outcome: 'orphaned' }
+    }
+    const reasons = hard
       .map((item) => `[${item.reason}] ${item.message}`)
       .join('; ')
     throw new Error(
@@ -154,4 +171,5 @@ export async function applyCodegenRequest(
         : file.after
     deps.writeFile(file.path, content)
   }
+  return { outcome: 'applied' }
 }

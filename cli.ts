@@ -3397,7 +3397,7 @@ export async function runDevCommand(
         loadTypescript,
         dirname(screenciDir)
       )
-      await applyCodegenRequest(request, {
+      return await applyCodegenRequest(request, {
         ts,
         formatFile: createProjectFormatter(dirname(resolvedConfigPath), {
           warn: (message) => logger.warn(message),

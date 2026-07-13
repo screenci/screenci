@@ -1983,8 +1983,27 @@ describe('planCodeSync: typed refusal reasons', () => {
   })
 
   it("reports 'loop-repeat' and 'unstamped-action' for locked keys", () => {
+    // `unstamped-one` is present in the snapshot but carries no editId (a
+    // genuine unstamped action, stamping pending), which is distinct from a
+    // key the snapshot has never heard of (that is 'orphaned-override').
+    const snapshotWithUnstamped: EditableSnapshot = {
+      version: 1,
+      videos: {
+        ...EDITABLE_SNAPSHOT.videos,
+        Demo: [
+          ...EDITABLE_SNAPSHOT.videos.Demo!,
+          {
+            key: 'unstamped-one',
+            locked: false,
+            defaults: { sleepBefore: 0 },
+            source: { file: FILE, line: 4 },
+          },
+        ],
+      },
+    }
     const result = plan(
       inputWith({
+        editableSnapshot: snapshotWithUnstamped,
         editableOverrides: {
           Demo: [
             { key: 'click1#1', values: { sleepBefore: 500 } },
@@ -1995,6 +2014,21 @@ describe('planCodeSync: typed refusal reasons', () => {
     )
     const reasons = result.unappliable.map((item) => item.reason).sort()
     expect(reasons).toEqual(['loop-repeat', 'unstamped-action'])
+  })
+
+  it("reports 'orphaned-override' for a key absent from the snapshot", () => {
+    // A stale override (its action was removed, or an ordinal-keyed delay
+    // drifted): a soft skip the caller auto-discards, not a hard failure.
+    const result = plan(
+      inputWith({
+        editableOverrides: {
+          Demo: [{ key: 'delay|||0', values: { durationMs: 500 } }],
+        },
+      })
+    )
+    expect(result.unappliable.map((item) => item.reason)).toEqual([
+      'orphaned-override',
+    ])
   })
 
   it("reports 'unsupported-field' for a field with no code form", () => {

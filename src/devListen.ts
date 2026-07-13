@@ -96,8 +96,14 @@ export type DevListenDeps = {
    * supersedes it with a newer trigger.
    */
   runRecord: (trigger: DevTrigger, signal?: AbortSignal) => Promise<void>
-  /** Applies one codegen request to the test source; throws on failure. */
-  applyCodegen?: (request: DevCodegenRequest) => Promise<void>
+  /**
+   * Applies one codegen request to the test source; throws on failure.
+   * Resolves with `{ outcome: 'orphaned' }` when the edit targets an action no
+   * longer in the recording (a stale key), so the listener soft-skips it.
+   */
+  applyCodegen?: (
+    request: DevCodegenRequest
+  ) => Promise<{ outcome: 'applied' | 'orphaned' } | void>
   /**
    * Drains one pending machine-local record request (from the source-file
    * watcher). Checked every poll iteration; local requests share the record
@@ -222,7 +228,7 @@ export async function reportDevCodegen(
   deps: DevListenDeps,
   listenerId: string,
   requestId: string,
-  state: 'applied' | 'failed',
+  state: 'applied' | 'failed' | 'orphaned',
   errorMessage?: string
 ): Promise<void> {
   await postDev(config, deps, '/cli/dev/report-codegen', {
@@ -297,7 +303,24 @@ async function handleCodegenRequest(
     return
   }
   try {
-    await deps.applyCodegen(request)
+    const result = await deps.applyCodegen(request)
+    if (result != null && result.outcome === 'orphaned') {
+      // The edit targeted an action no longer in the recording (a stale key).
+      // Nothing to write; report a soft skip so the request is auto-discarded
+      // instead of surfacing as a failure the user has to clear.
+      await reportDevCodegen(
+        config,
+        deps,
+        listenerId,
+        request.requestId,
+        'orphaned'
+      )
+      deps.logger.info(
+        `Skipped ${describeEditId(request.editId)} on "${request.videoName}": ` +
+          `its action is no longer in the recording.`
+      )
+      return
+    }
     await reportDevCodegen(
       config,
       deps,

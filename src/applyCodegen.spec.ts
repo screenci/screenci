@@ -317,6 +317,71 @@ describe('applyCodegenRequest: typed refusal reasons in errors', () => {
   })
 })
 
+describe('applyCodegenRequest: orphaned (stale key) soft skip', () => {
+  async function applyReturning(editJson: string) {
+    const writes: Record<string, string> = {}
+    const result = await applyCodegenRequest(
+      {
+        requestId: 'req1',
+        videoName: 'Demo',
+        editId: 'param|delay|||0',
+        editJson,
+        requiresRecord: true,
+      },
+      {
+        ts,
+        readFile: (path) => (path === FILE ? SOURCE : null),
+        writeFile: (path, content) => {
+          writes[path] = content
+        },
+        editableSnapshot: SNAPSHOT,
+      }
+    )
+    return { result, writes }
+  }
+
+  // A paramEdit whose target key is absent from the current recording snapshot
+  // (SNAPSHOT only knows 'fill1'). The action drifted or was removed; there is
+  // no call site to touch.
+  const staleDelayEdit = JSON.stringify({
+    type: 'paramEdit',
+    id: 'param|delay|||0',
+    target: { key: 'delay|||0' },
+    fields: { durationMs: 500 },
+  })
+
+  it('returns { outcome: orphaned } instead of throwing', async () => {
+    const { result, writes } = await applyReturning(staleDelayEdit)
+    expect(result).toEqual({ outcome: 'orphaned' })
+    expect(writes).toEqual({})
+  })
+
+  it('returns { outcome: applied } for a real edit that writes', async () => {
+    const record = JSON.stringify({
+      type: 'paramEdit',
+      id: 'p1',
+      target: { key: 'fill1' },
+      fields: { moveDuration: 400 },
+    })
+    const result = await applyCodegenRequest(
+      {
+        requestId: 'req1',
+        videoName: 'Demo',
+        editId: 'param|fill1',
+        editJson: record,
+        requiresRecord: true,
+      },
+      {
+        ts,
+        readFile: (path) => (path === FILE ? SOURCE : null),
+        writeFile: () => {},
+        editableSnapshot: SNAPSHOT,
+      }
+    )
+    expect(result).toEqual({ outcome: 'applied' })
+  })
+})
+
 describe('applyCodegenRequest: duplicate editId self-heal', () => {
   const DUP_SOURCE = [
     "import { video } from 'screenci'",

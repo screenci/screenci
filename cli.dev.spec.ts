@@ -220,6 +220,34 @@ describe('runDevListenLoop', () => {
     ])
   })
 
+  it('reports a stale-key edit as orphaned (soft skip), not failed', async () => {
+    const controller = { stopped: false }
+    const applyCodegen = vi.fn(async () => ({ outcome: 'orphaned' as const }))
+    const deps = makeDeps({ applyCodegen })
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/cli/dev/poll')) {
+        if (deps.fetchMock.mock.calls.length === 1) {
+          return jsonResponse({
+            trigger: null,
+            codegenRequests: [codegenRequest],
+          })
+        }
+        controller.stopped = true
+        return jsonResponse({ trigger: null })
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    await runDevListenLoop(config, deps, 'lst_1', controller)
+
+    const reports = deps.fetchMock.mock.calls
+      .filter(([url]) => (url as string).endsWith('/cli/dev/report-codegen'))
+      .map(([, init]) => JSON.parse((init as RequestInit).body as string))
+    expect(reports).toEqual([
+      expect.objectContaining({ requestId: 'cgr_1', state: 'orphaned' }),
+    ])
+  })
+
   it('logs attribution when a deferred edit carries queuedBy', async () => {
     const controller = { stopped: false }
     const applyCodegen = vi.fn(async () => {})

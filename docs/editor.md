@@ -504,11 +504,19 @@ Each edit is applied to code the moment it is saved: the dev session locates
 the call site by editId and writes the call-position statement into the
 source. An edit that cannot be applied fails the codegen request and the
 editor reverts the optimistic value instead of dropping it silently. The
-failure carries a typed reason plus a message, so the editor toast says what
-to fix: `unknown-edit-id`, `ambiguous-edit-id`, `inside-control-flow`,
+failure carries a typed reason plus a message, surfaced in the editor's
+pending-sync queue (with per-row retry/discard and a clear-all), so the user
+sees what to fix: `unknown-edit-id`, `ambiguous-edit-id`, `inside-control-flow`,
 `unstamped-action`, `loop-repeat`, `unsupported-field`, `invalid-edit`,
 `unresolved-import` (the effect function needs a named import from
 'screenci'), `unknown-video`, `app-managed`, or `unsupported-shape`.
+
+One reason is not a failure: `orphaned-override` means the override's key is
+absent from the current recording snapshot (its action was removed, or an
+ordinal-keyed target such as a `waitForTimeout` delay drifted since the edit
+was authored). There is no call site to write, so the request is reported as a
+soft skip and auto-discarded (resolved as superseded, no re-record) rather than
+surfaced as something the user must clear by hand.
 
 Aliased imports are supported throughout: a file that does
 `import { autoZoom as az } from 'screenci'` has its `az(...)` wraps

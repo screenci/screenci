@@ -200,6 +200,9 @@ export type AppliedItem = {
  * - `ambiguous-edit-id`: the editId appears more than once in the file.
  * - `inside-control-flow`: the call sits inside a loop, branch, or ternary.
  * - `unstamped-action`: the action carries no editId yet (stamping pending).
+ * - `orphaned-override`: the override's key is absent from the current
+ *   recording snapshot (the action was removed, or its ordinal drifted since
+ *   the edit was authored). Nothing to write; a soft skip, not a failure.
  * - `loop-repeat`: the target is a `slug#N` repeat execution of a loop.
  * - `unsupported-field`: the edited param field has no code representation.
  * - `invalid-edit`: the edit record itself is incomplete or invalid.
@@ -218,6 +221,7 @@ export type UnappliableReason =
   | 'ambiguous-edit-id'
   | 'inside-control-flow'
   | 'unstamped-action'
+  | 'orphaned-override'
   | 'loop-repeat'
   | 'unsupported-field'
   | 'invalid-edit'
@@ -1554,14 +1558,53 @@ export function planCodeSync(
     // ── Timeline param edits (sleepBefore, autoZoom offsets) ───────────────
     for (const override of input.editableOverrides[videoName] ?? []) {
       const entry = byKey.get(override.key)
-      const editId = entry?.editId
+
+      // A `slug#N` loop repeat execution has no call site of its own: locked,
+      // regardless of whether the snapshot carries the repeat. Checked before
+      // the orphaned test below so a repeat key is never mistaken for a stale
+      // one.
+      if (override.key.includes('#')) {
+        for (const [field, value] of Object.entries(override.values)) {
+          if (value === undefined) continue
+          if (entry !== undefined && jsonEqual(entry.defaults[field], value)) {
+            continue
+          }
+          markUnappliable(
+            'loop-repeat',
+            `locked param edit '${override.key}' ${field}: the action is ` +
+              `a loop repeat execution and has no call site of its own`
+          )
+        }
+        continue
+      }
+
+      // The override's key is not in the current recording snapshot: the action
+      // it targeted was removed, or its ordinal drifted since the edit was
+      // authored (this is the classic failure mode of ordinal-keyed delays).
+      // There is no call site to write, but it is not a real failure either, so
+      // it is reported as a soft skip the caller auto-discards rather than a
+      // hard refusal the editor surfaces and the user must clear by hand.
+      if (entry === undefined) {
+        const changed = Object.entries(override.values).some(
+          ([, value]) => value !== undefined
+        )
+        if (changed) {
+          markUnappliable(
+            'orphaned-override',
+            `override '${override.key}': no matching action in the current ` +
+              `recording (the action was removed or its position drifted)`
+          )
+        }
+        continue
+      }
+      const editId = entry.editId
 
       // Recorded delay (waitForTimeout): durationMs rewrites the numeric arg in
       // place (or removes the whole call at 0). The wait has no editId of its
       // own, so it is located via a stamped neighbor action. Dragging an
       // interaction along the timeline commits durationMs on the adjacent delay,
       // which is how a move re-expresses as resizing the neighboring sleep.
-      if (entry?.schemaKind === 'delay') {
+      if (entry.schemaKind === 'delay') {
         const value = override.values.durationMs
         if (
           typeof value === 'number' &&
@@ -1622,33 +1665,23 @@ export function planCodeSync(
         continue
       }
 
-      // No editId (unstamped action or a `slug#N` loop repeat execution):
-      // never guess at a call site; the section is locked.
-      if (editId === undefined || override.key.includes('#')) {
+      // Present in the snapshot but with no editId: a genuine unstamped action
+      // (stamping pending). Never guess at a call site; the section is locked.
+      if (editId === undefined) {
         for (const [field, value] of Object.entries(override.values)) {
           if (value === undefined) continue
-          if (entry !== undefined && jsonEqual(entry.defaults[field], value)) {
-            continue
-          }
-          if (override.key.includes('#')) {
-            markUnappliable(
-              'loop-repeat',
-              `locked param edit '${override.key}' ${field}: the action is ` +
-                `a loop repeat execution and has no call site of its own`
-            )
-          } else {
-            markUnappliable(
-              'unstamped-action',
-              `locked param edit '${override.key}' ${field}: the action ` +
-                `carries no editId yet`
-            )
-          }
+          if (jsonEqual(entry.defaults[field], value)) continue
+          markUnappliable(
+            'unstamped-action',
+            `locked param edit '${override.key}' ${field}: the action ` +
+              `carries no editId yet`
+          )
         }
         continue
       }
       for (const [field, value] of Object.entries(override.values)) {
         if (value === undefined) continue
-        if (jsonEqual(entry!.defaults[field], value)) {
+        if (jsonEqual(entry.defaults[field], value)) {
           continue // in sync, nothing to do
         }
         if (field === 'sleepBefore' && typeof value === 'number' && value > 0) {

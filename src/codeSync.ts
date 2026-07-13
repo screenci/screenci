@@ -1139,6 +1139,109 @@ function planCodifyEdit(edit: CodifyEdit): {
         compute: (ctx) => unwrapBlockCall(ctx, edit.target.editId),
       }
     }
+    case 'repositionMediaEdit': {
+      // A delayed placement must be non-blocking (the offset rides on
+      // `.start({ delay })`), mirroring the mediaEdit guard.
+      if (edit.delayMs !== undefined && edit.blocking) return null
+      const media = mediaHeadAndCall({
+        type: 'mediaEdit',
+        id: edit.id,
+        kind: edit.kind,
+        afterEditId: edit.toEditId,
+        ...(edit.sleepBeforeMs !== undefined && {
+          sleepBeforeMs: edit.sleepBeforeMs,
+        }),
+        ...(edit.delayMs !== undefined && { delayMs: edit.delayMs }),
+        blocking: edit.blocking ?? false,
+        props: { ...edit.props, name: edit.name },
+      })
+      if (media === null) return null
+      const sameAnchor = edit.fromEditId === edit.toEditId
+      return {
+        editIds: sameAnchor
+          ? [edit.toEditId]
+          : [edit.fromEditId, edit.toEditId],
+        description: `move \`${media.head}\` to '${edit.toEditId}'`,
+        compute: (ctx) => {
+          // Locate the existing call next to its current anchor. If it is not
+          // there (buried among ordinary statements, or already moved), refuse
+          // rather than risk placing a duplicate.
+          const fromCall = isLinearCallSite(ctx, edit.fromEditId)
+          if (fromCall === null) return null
+          const fromStatement = enclosingStatement(ctx, fromCall)
+          if (fromStatement === null) return null
+          const fromRoot = chainRootIdentifier(ctx.ts, fromCall.expression)
+          const placedAfter =
+            fromRoot !== null
+              ? findPlacedEffect(ctx, fromStatement, fromRoot, media.head)
+              : null
+          const placedBefore = findPlacedEffectBefore(
+            ctx,
+            fromStatement,
+            fromRoot,
+            media.head
+          )
+          if (placedAfter === null && placedBefore === null) {
+            return {
+              reason: 'unsupported-shape',
+              message:
+                `cannot locate '${media.head}' next to '${edit.fromEditId}' ` +
+                `to reposition it (only a cue placed in that interaction's ` +
+                `gap can be moved from the timeline)`,
+            }
+          }
+          const edits: TextEdit[] = []
+          // Remove the call from its current anchor (unless it stays put and
+          // the placement below just reconciles the gap in place). The call
+          // lives in exactly one spot, so remove via a single path: an
+          // after-anchor placement (with its gap sleep merged back) takes
+          // precedence over a before-anchor (delayed) one.
+          if (!sameAnchor) {
+            if (placedAfter !== null) {
+              edits.push(
+                ...removeStalePlacedEffectAfter(
+                  ctx,
+                  fromStatement,
+                  fromRoot,
+                  media.head
+                )
+              )
+            } else if (placedBefore !== null) {
+              edits.push(removeFullLine(ctx, placedBefore))
+            }
+          }
+          const placement =
+            edit.delayMs !== undefined
+              ? insertBeforeAnchor(
+                  ctx,
+                  edit.toEditId,
+                  media.callCode,
+                  media.head
+                )
+              : insertInGapAfter(
+                  ctx,
+                  edit.toEditId,
+                  media.callCode,
+                  edit.sleepBeforeMs ?? 0,
+                  media.head
+                )
+          if (placement === null) return null
+          if (isRefusal(placement)) return placement
+          edits.push(...placement)
+          // The placement's own stale-cleanup and the source-side removal can
+          // both delete the moved call's line when the two anchors are
+          // adjacent (the cue sits between them). Drop exact-duplicate edits so
+          // they do not read as an overlap.
+          const seen = new Set<string>()
+          return edits.filter((e) => {
+            const key = `${e.start}:${e.end}:${e.replacement}`
+            if (seen.has(key)) return false
+            seen.add(key)
+            return true
+          })
+        },
+      }
+    }
     default: {
       const exhaustive: never = edit
       void exhaustive
@@ -1271,6 +1374,11 @@ function plannedRemoval(edit: CodifyEdit): {
   }
   if (edit.type === 'blockRemoveEdit') {
     return null // removing a block-removal record: nothing to reconcile
+  }
+  if (edit.type === 'repositionMediaEdit') {
+    // A reposition has no stored origin to restore to, so disabling one is not
+    // reverted here: the app undoes it by issuing the inverse reposition.
+    return null
   }
   const exhaustive: never = edit
   void exhaustive

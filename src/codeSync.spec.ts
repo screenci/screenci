@@ -509,6 +509,117 @@ describe('planCodeSync: media edits', () => {
   })
 })
 
+describe('planCodeSync: reposition media edits', () => {
+  // The Demo file with a narration cue already placed in click1's gap
+  // (300ms before, 700ms after), i.e. code the user (or a prior sync) authored.
+  const REPOS_SOURCE = [
+    "import { video, narration } from 'screenci'",
+    '',
+    "video('Demo', async ({ page }) => {",
+    "  await page.getByRole('button', { name: 'Save' }).click({ move: { duration: 500 }, editId: 'click1' })",
+    '  await page.waitForTimeout(300)',
+    '  await narration.intro()',
+    '  await page.waitForTimeout(700)',
+    "  await page.locator('#name').fill('Jane', { editId: 'fill1' })",
+    '})',
+    '',
+  ].join('\n')
+  const reposFiles = {
+    [FILE]: REPOS_SOURCE,
+    [ZOOM_FILE]: ZOOM_SOURCE,
+    [LOOP_FILE]: LOOP_SOURCE,
+    [DRAG_FILE]: DRAG_SOURCE,
+  }
+
+  it('reconciles the gap sleep in place when the anchor is unchanged', () => {
+    const edit: CodifyEdit = {
+      type: 'repositionMediaEdit',
+      id: 'r1',
+      kind: 'narrationCue',
+      name: 'intro',
+      fromEditId: 'click1',
+      toEditId: 'click1',
+      sleepBeforeMs: 800,
+      blocking: true,
+    }
+    const result = plan(
+      inputWith({ codifyEdits: { Demo: [edit] } }),
+      reposFiles
+    )
+    const after = afterFor(result, FILE)
+    // The preceding sleep moves 300 -> 800; the cue is not duplicated.
+    expect(after).toContain('await page.waitForTimeout(800)')
+    expect(after).toContain('await page.waitForTimeout(700)')
+    expect(after.match(/narration\.intro\(\)/g)).toHaveLength(1)
+    expect(result.fullyAppliedVideos).toEqual(['Demo'])
+  })
+
+  it('moves the cue to a different interaction, merging the vacated gap', () => {
+    const edit: CodifyEdit = {
+      type: 'repositionMediaEdit',
+      id: 'r2',
+      kind: 'narrationCue',
+      name: 'intro',
+      fromEditId: 'click1',
+      toEditId: 'fill1',
+      sleepBeforeMs: 200,
+      blocking: true,
+    }
+    const result = plan(
+      inputWith({ codifyEdits: { Demo: [edit] } }),
+      reposFiles
+    )
+    const after = afterFor(result, FILE)
+    // Exactly one cue, now after fill1 with its own 200ms lead-in.
+    expect(after.match(/narration\.intro\(\)/g)).toHaveLength(1)
+    const introIndex = after.indexOf('narration.intro()')
+    const fillIndex = after.indexOf("fill('Jane'")
+    expect(introIndex).toBeGreaterThan(fillIndex)
+    expect(after).toContain('await page.waitForTimeout(200)')
+    // The 300 + 700 split around the old position merges back to one 1000 gap.
+    expect(after).toContain('await page.waitForTimeout(1000)')
+    expect(result.fullyAppliedVideos).toEqual(['Demo'])
+  })
+
+  it('refuses (does not duplicate) when the cue is not in any interaction gap', () => {
+    // The cue is separated from every interaction by an ordinary statement, so
+    // it cannot be located next to its from-anchor: refuse rather than place a
+    // second copy.
+    const buriedFiles = {
+      ...reposFiles,
+      [FILE]: [
+        "import { video, narration } from 'screenci'",
+        '',
+        "video('Demo', async ({ page }) => {",
+        "  await page.getByRole('button', { name: 'Save' }).click({ move: { duration: 500 }, editId: 'click1' })",
+        '  await page.waitForTimeout(1000)',
+        "  await page.locator('#name').fill('Jane', { editId: 'fill1' })",
+        '  const done = true',
+        '  await narration.intro()',
+        '})',
+        '',
+      ].join('\n'),
+    }
+    const edit: CodifyEdit = {
+      type: 'repositionMediaEdit',
+      id: 'r3',
+      kind: 'narrationCue',
+      name: 'intro',
+      fromEditId: 'fill1',
+      toEditId: 'click1',
+      sleepBeforeMs: 100,
+      blocking: true,
+    }
+    const result = plan(
+      inputWith({ codifyEdits: { Demo: [edit] } }),
+      buriedFiles
+    )
+    expect(result.unappliable).toHaveLength(1)
+    // The source is left untouched (no duplicate placement).
+    expect(result.files).toHaveLength(0)
+  })
+})
+
 describe('planCodeSync: gap point edits', () => {
   it('inserts a setBackground point after the action', () => {
     const point: CodifyEdit = {

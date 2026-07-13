@@ -328,6 +328,44 @@ export type EditorMediaEdit = {
   editor: string
 }
 
+/**
+ * Repositions an EXISTING, code-authored media call (a narration cue / overlay
+ * / audio item, identified by its declaration `name`) so it plays next to a
+ * different interaction. `screenci sync` locates the current call by its callee
+ * head (`<root>.<name>`) in the gap next to `fromEditId`, removes it there, and
+ * re-places it next to `toEditId` with a preceding `waitForTimeout` gap
+ * (`sleepBeforeMs`) or, non-blocking, a `{ delay }` option (`delayMs`). When
+ * `fromEditId === toEditId` only the gap sleep / delay is reconciled in place.
+ *
+ * Unlike `mediaEdit` (which ADDS a new call), this MOVES one that already
+ * exists in source: if the call cannot be located next to `fromEditId`, the
+ * edit is refused rather than risk duplicating it.
+ */
+export type RepositionMediaEdit = {
+  type: 'repositionMediaEdit'
+  id: string
+  kind: MediaEditKind
+  /** The media's declaration name; its callee head is `<root>.<name>`. */
+  name: string
+  /** The interaction the call currently sits next to (to locate and remove). */
+  fromEditId: string
+  /** The interaction to move the call next to. */
+  toEditId: string
+  /** Gap before the call after `toEditId`. Mutually exclusive with `delayMs`. */
+  sleepBeforeMs?: number
+  /**
+   * Places the call BEFORE `toEditId` with a `{ delay: delayMs }` option (it
+   * begins `delayMs` after that interaction's start). Non-blocking only;
+   * mutually exclusive with a positive `sleepBeforeMs`.
+   */
+  delayMs?: number
+  /** Whether the call is awaited/blocking (`await head()`) vs `.start()`. */
+  blocking?: boolean
+  /** Extra call props (e.g. `fixture` for audio). `name` is taken above. */
+  props?: Record<string, unknown>
+  disabled?: boolean
+}
+
 /** Codify-only records: placed into code by `screenci sync`, never at runtime. */
 export type CodifyEdit =
   | MediaEdit
@@ -335,6 +373,7 @@ export type CodifyEdit =
   | GapSpanEdit
   | GapPointEdit
   | BlockRemoveEdit
+  | RepositionMediaEdit
 
 export type EditRecord =
   | ParamEdit

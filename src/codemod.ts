@@ -675,7 +675,7 @@ export function waitForTimeoutArg(
  * on. Null when `statement` is not such a sleep. Used by the coalescing pass,
  * which does not know the root ahead of time.
  */
-function waitStatementInfo(
+export function waitStatementInfo(
   ctx: CodemodContext,
   statement: TS.Statement
 ): { root: string; literal: TS.NumericLiteral } | null {

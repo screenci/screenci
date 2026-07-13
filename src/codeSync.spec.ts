@@ -1425,6 +1425,117 @@ describe('planCodeSync: block removal (unwrap)', () => {
   })
 })
 
+describe('planCodeSync: interaction removal', () => {
+  const RM_FILE = '/proj/rmdemo.screenci.ts'
+  const RM_SOURCE = [
+    "import { video } from 'screenci'",
+    '',
+    "video('RmDemo', async ({ page }) => {",
+    '  await page.waitForTimeout(500)',
+    "  await page.getByRole('button', { name: 'A' }).click({ editId: 'a1' })",
+    '  await page.waitForTimeout(300)',
+    "  await page.locator('#name').fill('Jane', { editId: 'b1' })",
+    '})',
+    '',
+  ].join('\n')
+  const snapshot: EditableSnapshot = {
+    version: 1,
+    videos: {
+      RmDemo: [
+        {
+          key: 'a1',
+          editId: 'a1',
+          locked: false,
+          defaults: { sleepBefore: 0 },
+          source: { file: RM_FILE, line: 5 },
+        },
+        {
+          key: 'b1',
+          editId: 'b1',
+          locked: false,
+          defaults: { sleepBefore: 0 },
+          source: { file: RM_FILE, line: 7 },
+        },
+      ],
+    },
+  }
+
+  it('removes a middle interaction and coalesces the surrounding sleeps', () => {
+    const remove: CodifyEdit = {
+      type: 'interactionRemoveEdit',
+      id: 'irm1',
+      target: { editId: 'a1' },
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshot,
+        codifyEdits: { RmDemo: [remove] },
+      }),
+      { [RM_FILE]: RM_SOURCE }
+    )
+    const after = afterFor(result, RM_FILE)
+    expect(after).not.toContain("editId: 'a1'")
+    // The 500 leading gap and the 300 trailing gap coalesce into one 800 sleep,
+    // so the fill step shifts left.
+    expect(after).toContain('await page.waitForTimeout(800)')
+    expect(after).not.toContain('await page.waitForTimeout(300)')
+    expect(after).toContain(
+      "await page.locator('#name').fill('Jane', { editId: 'b1' })"
+    )
+    expect(result.unappliable).toHaveLength(0)
+  })
+
+  it('removes a trailing interaction, leaving its leading sleep untouched', () => {
+    const remove: CodifyEdit = {
+      type: 'interactionRemoveEdit',
+      id: 'irm2',
+      target: { editId: 'b1' },
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshot,
+        codifyEdits: { RmDemo: [remove] },
+      }),
+      { [RM_FILE]: RM_SOURCE }
+    )
+    const after = afterFor(result, RM_FILE)
+    expect(after).not.toContain("editId: 'b1'")
+    // No trailing sleep to coalesce with: the 300 gap stays as-is.
+    expect(after).toContain('await page.waitForTimeout(300)')
+    expect(result.unappliable).toHaveLength(0)
+  })
+
+  it('is a no-op when disabled (undo leaves the interaction in place)', () => {
+    const remove: CodifyEdit = {
+      type: 'interactionRemoveEdit',
+      id: 'irm1',
+      target: { editId: 'a1' },
+      disabled: true,
+    }
+    const result = plan(
+      inputWith({
+        editableSnapshot: snapshot,
+        removedCodifyEdits: { RmDemo: [remove] },
+      }),
+      { [RM_FILE]: RM_SOURCE }
+    )
+    // Nothing to reconcile: the call is still present.
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(0)
+  })
+
+  it('refuses to remove an interaction inside control flow', () => {
+    const remove: CodifyEdit = {
+      type: 'interactionRemoveEdit',
+      id: 'irm3',
+      target: { editId: 'loopclick' },
+    }
+    const result = plan(inputWith({ codifyEdits: { Loop: [remove] } }))
+    expect(result.unappliable).toHaveLength(1)
+    expect(result.unappliable[0]!.reason).toBe('inside-control-flow')
+  })
+})
+
 describe('planCodeSync: splitting a code autoZoom into two', () => {
   const SPLIT_FILE = '/proj/splitzoom.screenci.ts'
   const SPLIT_SOURCE = [

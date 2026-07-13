@@ -103,7 +103,14 @@ Opening a video in the web app opens the editor. The page is laid out as:
   **Interactions**, **Recording**, and **Narration**. Click or drag to seek,
   scroll to pan, pinch or Ctrl+scroll to zoom (1x to 60x). Selecting a bar
   opens its editor in the side panel; dragging a bar moves it, and dragging an
-  overlay's right edge changes its duration.
+  overlay's right edge changes its duration. Any item can be deleted: select it
+  and press Delete or Backspace, or right-click and choose **Delete**. Deleting
+  a zoom removes the bracket (its start and end snap to the surrounding steps);
+  deleting a narration cue or overlay leaves everything else in place. Deleting
+  a recorded interaction asks to confirm first (it changes what is captured and
+  a fresh recording will run), then shifts the following steps left so the video
+  jumps forward past the removed step; a `waitForTimeout` delay deletes with no
+  prompt. If the code write later fails, the deletion is reverted.
 - **Side panel** (right): render options (canvas, background, roundness,
   shadow, padding), recording options with a visual crop editor, and the
   editor for whichever timeline item is selected.

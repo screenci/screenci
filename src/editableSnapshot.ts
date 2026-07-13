@@ -100,6 +100,7 @@ export function splitTimelineEditsByVideo(
     'gapSpanEdit',
     'gapPointEdit',
     'blockRemoveEdit',
+    'interactionRemoveEdit',
   ])
   for (const [videoName, doc] of Object.entries(docsByVideo)) {
     const edits = (doc as { edits?: unknown[] } | null)?.edits

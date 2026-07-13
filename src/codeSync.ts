@@ -82,6 +82,7 @@ import {
   unwrapWrapCallStatement,
   valueToSource,
   waitForTimeoutArg,
+  waitStatementInfo,
   wrapStatementsInBlock,
   type CodemodContext,
   type TextEdit,
@@ -859,6 +860,56 @@ function removeEffectAfter(
 }
 
 /**
+ * Remove a recorded interaction call (identified by `editId`) from source and
+ * coalesce the `waitForTimeout` sleeps that surrounded it into a single gap.
+ * The call statement is deleted; when it sat between two `waitForTimeout` sleeps
+ * on the same root (its own leading gap and the next step's), those sleeps are
+ * summed into one so the following steps shift left (the recording jumps forward
+ * past the removed step) while the deliberate surrounding pauses are preserved.
+ * Returns null when the call is missing or sits inside control flow (the caller
+ * classifies the refusal from the editId).
+ */
+function removeInteractionCall(
+  ctx: CodemodContext,
+  editId: string
+): TextEdit[] | null {
+  const call = isLinearCallSite(ctx, editId)
+  if (call === null) return null
+  const statement = enclosingStatement(ctx, call)
+  if (statement === null) return null
+  const edits: TextEdit[] = [removeFullLine(ctx, statement)]
+  // Coalesce the gap: if the removed step sat between two same-root sleeps, sum
+  // them into the leading one and drop the trailing one (a zero sum removes
+  // both). Adjacency is judged before removal, so the two waits are the removed
+  // step's immediate neighbors.
+  const prev = previousStatement(ctx, statement)
+  const next = nextStatement(ctx, statement)
+  const prevWait = prev !== null ? waitStatementInfo(ctx, prev) : null
+  const nextWait = next !== null ? waitStatementInfo(ctx, next) : null
+  if (
+    prevWait !== null &&
+    nextWait !== null &&
+    prevWait.root === nextWait.root
+  ) {
+    const sum =
+      Number(prevWait.literal.text.replace(/_/g, '')) +
+      Number(nextWait.literal.text.replace(/_/g, ''))
+    if (sum === 0) {
+      edits.push(removeFullLine(ctx, prev!))
+      edits.push(removeFullLine(ctx, next!))
+    } else {
+      edits.push({
+        start: prevWait.literal.getStart(),
+        end: prevWait.literal.getEnd(),
+        replacement: String(sum),
+      })
+      edits.push(removeFullLine(ctx, next!))
+    }
+  }
+  return edits
+}
+
+/**
  * Edits that reconcile the `{ delay }` option on an existing wrap call whose
  * callback body is `body`: update the numeric value when it changed, or
  * append the options argument when `delayMs` is set and the wrap has none.
@@ -1143,6 +1194,13 @@ function planCodifyEdit(edit: CodifyEdit): {
         compute: (ctx) => unwrapBlockCall(ctx, edit.target.editId),
       }
     }
+    case 'interactionRemoveEdit': {
+      return {
+        editIds: [edit.target.editId],
+        description: `remove interaction '${edit.target.editId}'`,
+        compute: (ctx) => removeInteractionCall(ctx, edit.target.editId),
+      }
+    }
     case 'repositionMediaEdit': {
       // A delayed placement must be non-blocking (the offset rides on
       // `.start({ delay })`), mirroring the mediaEdit guard.
@@ -1378,6 +1436,11 @@ function plannedRemoval(edit: CodifyEdit): {
   }
   if (edit.type === 'blockRemoveEdit') {
     return null // removing a block-removal record: nothing to reconcile
+  }
+  if (edit.type === 'interactionRemoveEdit') {
+    // The disabled form is a no-op: an interaction is only ever removed while
+    // its call is still in code, so undo simply leaves the call in place.
+    return null
   }
   if (edit.type === 'repositionMediaEdit') {
     // A reposition has no stored origin to restore to, so disabling one is not

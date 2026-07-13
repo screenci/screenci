@@ -199,6 +199,26 @@ export type BlockRemoveEdit = {
 }
 
 /**
+ * Removes a recorded INTERACTION call (a Playwright action like `click`/`fill`)
+ * from source, identified by its stable `editId` slug. `screenci sync` deletes
+ * the call statement and coalesces the `waitForTimeout` sleeps that surrounded
+ * it into a single gap, so everything after it shifts left (the recording just
+ * jumps forward past the removed step). `requiresRecord` is always true: the
+ * capture sequence changed, so a fresh recording confirms the new footage.
+ *
+ * The `disabled` form is a no-op (nothing to reconcile): undo restores the step
+ * because the call is only ever removed while its `editId` is still present in
+ * code. editId counters are never reused, so a removed slug cannot return as a
+ * different action.
+ */
+export type InteractionRemoveEdit = {
+  type: 'interactionRemoveEdit'
+  id: string
+  target: { editId: string }
+  disabled?: boolean
+}
+
+/**
  * A placement change to an overlay DECLARATION in `video.overlays({...})`,
  * made graphically in the web editor. `props` carries exactly one placement
  * variant to merge into the named overlay's config object:
@@ -373,6 +393,7 @@ export type CodifyEdit =
   | GapSpanEdit
   | GapPointEdit
   | BlockRemoveEdit
+  | InteractionRemoveEdit
   | RepositionMediaEdit
 
 export type EditRecord =
@@ -444,6 +465,11 @@ export function paramEditIdFor(key: string): string {
 /** Stable id of the rename edit targeting an action's editId slug. */
 export function renameEditIdFor(targetEditId: string): string {
   return `rename|${targetEditId}`
+}
+
+/** Stable id of the interaction-removal edit targeting an action's editId slug. */
+export function interactionRemoveIdFor(targetEditId: string): string {
+  return `interactionRemove|${targetEditId}`
 }
 
 /**

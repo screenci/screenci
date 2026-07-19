@@ -22,6 +22,7 @@ import {
   splitTimelineEditsByVideo,
   type EditableSnapshot,
 } from './editableSnapshot.js'
+import { describeEditId } from './timelineEdits.js'
 
 export type ApplyCodegenDeps = {
   ts: TsModule
@@ -45,6 +46,14 @@ export type ApplyCodegenDeps = {
    * before failing on an `ambiguous-edit-id`, so the edit can then reapply.
    */
   resolveDuplicateEditIds?: (paths: string[]) => Promise<boolean>
+  /**
+   * Optional lister of the project's recording source files, forwarded to
+   * `planCodeSync` as a last-resort way to locate a video's builder
+   * declaration when the editable snapshot carries no `source.file` for it
+   * (the video was edited before it was cleanly recorded). See
+   * `CodeSyncDeps.listRecordingFiles`.
+   */
+  listRecordingFiles?: () => string[]
 }
 
 /**
@@ -75,10 +84,14 @@ export async function applyCodegenRequest(
   try {
     record = JSON.parse(request.editJson)
   } catch {
-    throw new Error(`Edit "${request.editId}" carries invalid JSON`)
+    throw new Error(
+      `Edit for ${describeEditId(request.editId)} carries invalid JSON`
+    )
   }
   if (typeof record !== 'object' || record === null) {
-    throw new Error(`Edit "${request.editId}" is not an edit record`)
+    throw new Error(
+      `Edit for ${describeEditId(request.editId)} is not an edit record`
+    )
   }
 
   const split = splitTimelineEditsByVideo({
@@ -119,7 +132,13 @@ export async function applyCodegenRequest(
         languagesEdits: split.languagesEdits,
         editorMediaEdits: split.editorMediaEdits,
       },
-      { ts: deps.ts, readFile: deps.readFile }
+      {
+        ts: deps.ts,
+        readFile: deps.readFile,
+        ...(deps.listRecordingFiles !== undefined && {
+          listRecordingFiles: deps.listRecordingFiles,
+        }),
+      }
     )
 
   let plan = computePlan()
@@ -159,7 +178,7 @@ export async function applyCodegenRequest(
       .map((item) => `[${item.reason}] ${item.message}`)
       .join('; ')
     throw new Error(
-      `Edit "${request.editId}" could not be applied to code: ${reasons}`
+      `Edit for ${describeEditId(request.editId)} could not be applied to code: ${reasons}`
     )
   }
 

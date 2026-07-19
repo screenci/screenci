@@ -587,7 +587,7 @@ export function describeEditId(editId: string): string {
     case 'rename':
       return `the rename of "${parsed.targetEditId}"`
     case 'options':
-      return OPTIONS_METHOD_LABEL[parsed.method]
+      return `${OPTIONS_METHOD_LABEL[parsed.method]} (${parsed.method})`
     case 'narration':
       return `the "${parsed.cueName}" narration (${parsed.lang})`
     case 'values':

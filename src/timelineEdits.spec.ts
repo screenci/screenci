@@ -84,10 +84,10 @@ describe('parseEditId', () => {
 describe('describeEditId', () => {
   it('describes each edit kind in human-readable form', () => {
     expect(describeEditId(optionsEditIdFor('renderOptions'))).toBe(
-      'render options'
+      'render options (renderOptions)'
     )
     expect(describeEditId(optionsEditIdFor('recordOptions'))).toBe(
-      'record options'
+      'record options (recordOptions)'
     )
     expect(describeEditId(paramEditIdFor('click1'))).toBe(
       'the "click1" interaction'

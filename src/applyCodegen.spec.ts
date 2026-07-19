@@ -303,6 +303,44 @@ describe('requireTypescriptForCodegen', () => {
   })
 })
 
+describe('applyCodegenRequest: human-readable edit names in errors', () => {
+  async function applyRaw(editId: string, editJson: string) {
+    await applyCodegenRequest(
+      {
+        requestId: 'req1',
+        videoName: 'Demo',
+        editId,
+        editJson,
+        requiresRecord: false,
+      },
+      {
+        ts,
+        readFile: (path) => (path === FILE ? SOURCE : null),
+        writeFile: () => {},
+        editableSnapshot: SNAPSHOT,
+      }
+    )
+  }
+
+  it('never shows the raw pipe slug, names the edit instead', async () => {
+    const error = await applyRaw('options|renderOptions', 'not json').then(
+      () => null,
+      (thrown: unknown) => thrown as Error
+    )
+    expect(error).not.toBeNull()
+    expect(error?.message).toContain('render options (renderOptions)')
+    expect(error?.message).not.toContain('options|renderOptions')
+  })
+
+  it('describes the edit when the payload is not a record', async () => {
+    await expect(
+      applyRaw('options|recordOptions', '"just a string"')
+    ).rejects.toThrow(
+      'Edit for record options (recordOptions) is not an edit record'
+    )
+  })
+})
+
 describe('applyCodegenRequest: typed refusal reasons in errors', () => {
   it('names the reason so the editor toast is actionable', async () => {
     const record = JSON.stringify({

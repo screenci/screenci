@@ -187,11 +187,13 @@ function plan(
     [ZOOM_FILE]: ZOOM_SOURCE,
     [LOOP_FILE]: LOOP_SOURCE,
     [DRAG_FILE]: DRAG_SOURCE,
-  }
+  },
+  extraDeps: { listRecordingFiles?: () => string[] } = {}
 ) {
   return planCodeSync(input, {
     ts,
     readFile: (path) => files[path] ?? null,
+    ...extraDeps,
   })
 }
 
@@ -1278,6 +1280,59 @@ describe('planCodeSync: studio render/record option codify', () => {
     )
     expect(result.files).toHaveLength(0)
     expect(result.unappliable).toHaveLength(1)
+  })
+
+  // A video edited before it was cleanly recorded has no snapshot source file
+  // for its name. The declaration is still locatable by scanning the project's
+  // recording files (the listRecordingFiles fallback).
+  const UNRECORDED_FILE = '/proj/unrecorded.screenci.ts'
+  const UNRECORDED_SOURCE = [
+    "import { video } from 'screenci'",
+    '',
+    "video('Unrecorded', async ({ page }) => {",
+    "  await page.goto('/')",
+    '})',
+    '',
+  ].join('\n')
+
+  it('locates the declaration via listRecordingFiles when the snapshot lacks a source', () => {
+    const result = plan(
+      inputWith({
+        editorOptionsSync: {
+          videos: {
+            Unrecorded: { renderOptions: { fps: 30 }, content: CONTENT },
+          },
+        },
+      }),
+      {
+        [FILE]: SOURCE,
+        [UNRECORDED_FILE]: UNRECORDED_SOURCE,
+      },
+      { listRecordingFiles: () => [FILE, UNRECORDED_FILE] }
+    )
+    const after = result.files.find(
+      (file) => file.path === UNRECORDED_FILE
+    )!.after
+    expect(after).toContain("video.renderOptions({ fps: 30 })('Unrecorded'")
+    expect(result.applied).toHaveLength(1)
+    expect(result.unappliable).toHaveLength(0)
+  })
+
+  it('still refuses when the fallback list holds no matching declaration', () => {
+    const result = plan(
+      inputWith({
+        editorOptionsSync: {
+          videos: {
+            Ghost: { renderOptions: { fps: 30 }, content: CONTENT },
+          },
+        },
+      }),
+      { [FILE]: SOURCE, [UNRECORDED_FILE]: UNRECORDED_SOURCE },
+      { listRecordingFiles: () => [FILE, UNRECORDED_FILE] }
+    )
+    expect(result.files).toHaveLength(0)
+    expect(result.unappliable).toHaveLength(1)
+    expect(result.unappliable[0]!.reason).toBe('unknown-video')
   })
 })
 

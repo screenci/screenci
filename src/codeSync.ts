@@ -357,6 +357,16 @@ export function isValidEditId(slug: string): boolean {
 export type CodeSyncDeps = {
   ts: TsModule
   readFile: (path: string) => string | null
+  /**
+   * Optional list of the project's recording source files (e.g. every
+   * `*.screenci.ts` under the test dir). Used only as a last-resort fallback
+   * when a video's builder declaration cannot be located through the editable
+   * snapshot (a video edited before it was cleanly recorded, so no entry
+   * carries a `source.file`). The declaration is still disambiguated by the
+   * `video(...)('<name>', ...)` string literal, so a stale or over-broad list
+   * is harmless: at most one file can hold the call.
+   */
+  listRecordingFiles?: () => string[]
 }
 
 /** An edit that locates its call site by editId. */
@@ -2065,17 +2075,25 @@ export function planCodeSync(
 
     // Locate the single file that declares this video's builder call. Prefer
     // the video's editable source files; fall back to every source file in
-    // the snapshot so a video with no editable entries can still be found.
-    const declaringFile = (): string | null => {
-      const searchFiles =
-        candidateFiles.length > 0 ? candidateFiles : allSnapshotFiles
-      const holders = searchFiles.filter((file) => {
+    // the snapshot so a video with no editable entries can still be found;
+    // as a last resort scan the project's recording files (a video edited
+    // before it was cleanly recorded has no snapshot `source.file` at all).
+    const soleHolder = (files: readonly string[]): string | null => {
+      const holders = [...new Set(files)].filter((file) => {
         const text = getText(file)
         if (text === null) return false
         const ctx = createContext(deps.ts, file, text)
         return findVideoCall(ctx, videoName) !== null
       })
       return holders.length === 1 ? holders[0]! : null
+    }
+    const declaringFile = (): string | null => {
+      const fromSnapshot = soleHolder(
+        candidateFiles.length > 0 ? candidateFiles : allSnapshotFiles
+      )
+      if (fromSnapshot !== null) return fromSnapshot
+      const listed = deps.listRecordingFiles?.() ?? []
+      return listed.length > 0 ? soleHolder(listed) : null
     }
 
     // ── Overlay declaration placement edits (codify into video.overlays) ───

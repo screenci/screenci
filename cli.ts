@@ -257,6 +257,47 @@ export function collectPlaywrightListFiles(
   return [...files]
 }
 
+/** Directory names never worth descending into when scanning for sources. */
+const SCREENCI_SOURCE_SCAN_SKIP = new Set([
+  'node_modules',
+  '.screenci',
+  '.git',
+  'dist',
+  'test-results',
+])
+
+/**
+ * Recursively collect `*.screenci.ts` recording sources under `rootDir`.
+ * A cheap, synchronous last-resort used to locate a video's builder
+ * declaration when the recording snapshot carries no source file for it
+ * (see `CodeSyncDeps.listRecordingFiles`). Over-matching is harmless: the
+ * caller disambiguates by the `video(...)('<name>', ...)` string literal.
+ */
+export function listScreenciSourceFiles(rootDir: string): string[] {
+  const files: string[] = []
+  const walk = (dir: string): void => {
+    let entries: string[]
+    try {
+      entries = readdirSync(dir)
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (SCREENCI_SOURCE_SCAN_SKIP.has(entry)) continue
+      const full = resolve(dir, entry)
+      const stat = statSync(full, { throwIfNoEntry: false })
+      if (stat === undefined) continue
+      if (stat.isDirectory()) {
+        walk(full)
+      } else if (entry.endsWith('.screenci.ts')) {
+        files.push(full)
+      }
+    }
+  }
+  walk(rootDir)
+  return files
+}
+
 function parsePlaywrightListReport(stdout: string): PlaywrightListReport {
   return JSON.parse(stdout) as PlaywrightListReport
 }
@@ -3417,6 +3458,14 @@ export async function runDevCommand(
           version: 1,
           videos: collectEditableFromRecordings(screenciDir),
         },
+        // Last-resort declaration lookup for a video that was edited before it
+        // was cleanly recorded (no snapshot source file). Scanned lazily and
+        // memoized so the common path (snapshot hit) pays nothing.
+        listRecordingFiles: (() => {
+          let cached: string[] | null = null
+          return () =>
+            (cached ??= listScreenciSourceFiles(dirname(resolvedConfigPath)))
+        })(),
         resolveDuplicateEditIds: async (paths) =>
           (await resolveDuplicateEditIdsInSources(paths, {
             screenciDir,

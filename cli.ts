@@ -3482,7 +3482,7 @@ export async function runDevCommand(
     ...depsOverride,
   }
 
-  let registration: { listenerId: string; userName: string }
+  let registration: { listenerId: string }
   try {
     registration = await registerDevListener(config, deps)
   } catch (error) {
@@ -3497,7 +3497,7 @@ export async function runDevCommand(
   }
 
   logger.info(
-    `Connected as ${pc.bold(`${registration.userName}@${config.machineName}`)} for project "${screenciConfig.projectName}".`
+    `${pc.bold(config.machineName)} connected for project "${screenciConfig.projectName}".`
   )
 
   const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.config)

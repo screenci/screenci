@@ -66,13 +66,11 @@ function makeDeps(overrides: Partial<DevListenDeps> = {}): DevListenDeps & {
 describe('registerDevListener', () => {
   it('sends both credentials and the machine name', async () => {
     const deps = makeDeps()
-    deps.fetchMock.mockResolvedValueOnce(
-      jsonResponse({ listenerId: 'lst_1', userName: 'Olli' })
-    )
+    deps.fetchMock.mockResolvedValueOnce(jsonResponse({ listenerId: 'lst_1' }))
 
     const result = await registerDevListener(config, deps)
 
-    expect(result).toEqual({ listenerId: 'lst_1', userName: 'Olli' })
+    expect(result).toEqual({ listenerId: 'lst_1' })
     const [url, init] = deps.fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe('http://localhost:8787/cli/dev/register')
     const headers = init.headers as Record<string, string>

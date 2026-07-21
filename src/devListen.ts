@@ -186,7 +186,7 @@ async function postDev<T>(
 export async function registerDevListener(
   config: DevListenConfig,
   deps: DevListenDeps
-): Promise<{ listenerId: string; userName: string }> {
+): Promise<{ listenerId: string }> {
   return await postDev(config, deps, '/cli/dev/register', {
     machineName: config.machineName,
   })

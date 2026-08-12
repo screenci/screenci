@@ -213,8 +213,7 @@ export async function checkAnonSessionStatus(
 }
 
 export type AnonRecordingGate =
-  | { allowed: true }
-  | { allowed: false; reason: 'used' | 'expired' }
+  { allowed: true } | { allowed: false; reason: 'used' | 'expired' }
 
 /**
  * Decides whether a fresh anonymous `record` is allowed to START, given the

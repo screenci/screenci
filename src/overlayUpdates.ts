@@ -110,8 +110,7 @@ export type MoveNarrationOptions = OverlayTransitionOptions & {
 }
 
 export type SetBackgroundInput =
-  | { assetPath: string }
-  | { backgroundCss: string }
+  { assetPath: string } | { backgroundCss: string }
 
 const NARRATION_CORNERS: readonly NarrationCorner[] = [
   'top-left',

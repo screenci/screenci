@@ -1471,8 +1471,7 @@ describe('changeFocus', () => {
 
     const evaluateMock = vi.mocked(locator.evaluate)
     const lastScrollArgs = evaluateMock.mock.calls.at(-1)?.[1] as
-      | { easedT?: number; positionEpsilonPx?: number }
-      | undefined
+      { easedT?: number; positionEpsilonPx?: number } | undefined
 
     // The scroll is applied frame by frame; the final frame is fully eased.
     expect(lastScrollArgs?.easedT).toBeCloseTo(1, 5)

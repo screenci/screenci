@@ -390,8 +390,7 @@ export type VideoCueTranslationTTS = {
   language?: string
 }
 export type VideoCueTranslation =
-  | VideoCueTranslationFile
-  | VideoCueTranslationTTS
+  VideoCueTranslationFile | VideoCueTranslationTTS
 
 export type VideoCueStartEvent = {
   type: 'videoCueStart'
@@ -1073,8 +1072,7 @@ export type BackgroundUpdateEvent = {
   /** Web-editor metadata: identity and effective values (css/duration). */
   editable?: EditableMeta
   background:
-    | { assetPath: string; fileHash?: string }
-    | { backgroundCss: string }
+    { assetPath: string; fileHash?: string } | { backgroundCss: string }
   transition?: UpdateTransition
 }
 

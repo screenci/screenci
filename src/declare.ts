@@ -24,9 +24,7 @@ import { supportedLanguages, type Lang } from './voices.js'
  * {@link normalizeFeature}).
  */
 export type FeatureArg<V> =
-  | readonly string[]
-  | ContentMajor<V>
-  | LanguageMajor<V>
+  readonly string[] | ContentMajor<V> | LanguageMajor<V>
 
 /** Flat `name -> value`, shared across all languages. */
 export type ContentMajor<V> = Record<string, V>

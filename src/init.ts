@@ -51,20 +51,14 @@ export type YarnVersionSupport = {
   supported: boolean
   detectedVersion?: string
   reason:
-    | 'supported'
-    | 'yarn-not-found'
-    | 'malformed-version'
-    | 'version-too-old'
+    'supported' | 'yarn-not-found' | 'malformed-version' | 'version-too-old'
 }
 
 export type PnpmVersionSupport = {
   supported: boolean
   detectedVersion?: string
   reason:
-    | 'supported'
-    | 'pnpm-not-found'
-    | 'malformed-version'
-    | 'version-too-old'
+    'supported' | 'pnpm-not-found' | 'malformed-version' | 'version-too-old'
 }
 
 export function detectPackageManagerFromLockfile(

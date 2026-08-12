@@ -420,8 +420,7 @@ function withDefaultNoWaitAfter<T extends object>(
   options?: T
 ): T & { noWaitAfter: boolean } {
   const optionsWithNoWaitAfter = options as
-    | (T & { noWaitAfter?: boolean })
-    | undefined
+    (T & { noWaitAfter?: boolean }) | undefined
 
   if (
     optionsWithNoWaitAfter &&
@@ -530,8 +529,7 @@ function buildDefaultClickMouseMoveRequest(options?: {
 
 type CursorMoveOption = {
   move?: (
-    | { duration?: number; speed?: never }
-    | { duration?: never; speed?: number }
+    { duration?: number; speed?: never } | { duration?: never; speed?: number }
   ) & {
     easing?: Easing
     curve?: CursorCurve

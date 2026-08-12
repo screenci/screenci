@@ -17,8 +17,7 @@ export type ClipTarget = Locator | ClipRegion
  * object with per-side values (omitted sides default to `0`), like CSS padding.
  */
 export type ClipPadding =
-  | number
-  | { top?: number; right?: number; bottom?: number; left?: number }
+  number | { top?: number; right?: number; bottom?: number; left?: number }
 
 export type ClipOptions = {
   /**

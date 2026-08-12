@@ -138,9 +138,7 @@ export type OverlayBoxPlacement = {
  * variants' fields cannot be mixed.
  */
 export type OverlayPlacementInput =
-  | OverlayFillPlacement
-  | OverlayOverPlacement
-  | OverlayBoxPlacement
+  OverlayFillPlacement | OverlayOverPlacement | OverlayBoxPlacement
 
 /**
  * Capture and timing fields shared by every overlay variant, independent of
@@ -460,8 +458,7 @@ export const MAX_AUDIO_LEVEL = 4
  * (`animate`/`css`/`capturePadding`).
  */
 export type DependencyOverlayOptions = (
-  | OverlayFillPlacement
-  | OverlayBoxPlacement
+  OverlayFillPlacement | OverlayBoxPlacement
 ) &
   Pick<
     OverlayCaptureCommon,
@@ -644,8 +641,7 @@ export type OverlayConfigFactory<P = unknown> = (props: P) => OverlayConfig
  * {@link OverlayControllerFor} then recovers the real props type per key.
  */
 export type OverlayInputOrFactory =
-  | OverlayInput
-  | ((props: never) => OverlayConfig)
+  OverlayInput | ((props: never) => OverlayConfig)
 
 /**
  * Overlay file paths registered by {@link createOverlays}, each attributed to

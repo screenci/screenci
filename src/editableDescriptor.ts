@@ -12,13 +12,7 @@
 
 /** Top-level action category. Extend the union when new editables appear. */
 export type EditableActionKind =
-  | 'input'
-  | 'autoZoom'
-  | 'speed'
-  | 'delay'
-  | 'hide'
-  | 'time'
-  | 'update'
+  'input' | 'autoZoom' | 'speed' | 'delay' | 'hide' | 'time' | 'update'
 
 /**
  * Which option form the web editor renders for the action. The `defaults`

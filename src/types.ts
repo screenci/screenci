@@ -35,13 +35,7 @@ import type {
  * width to the base.
  */
 export type AspectRatio =
-  | '16:9'
-  | '9:16'
-  | '1:1'
-  | '4:3'
-  | '3:4'
-  | '5:4'
-  | '4:5'
+  '16:9' | '9:16' | '1:1' | '4:3' | '3:4' | '5:4' | '4:5'
 
 /**
  * Resolution quality preset – determines the shorter-side pixel count and,
@@ -275,8 +269,7 @@ export type RenderOptions = {
      */
     quality?: Quality
     background?:
-      | { assetPath: string; fileHash?: string }
-      | { backgroundCss: string }
+      { assetPath: string; fileHash?: string } | { backgroundCss: string }
   }
   /** Screenshot-only render options (format, margin, aspectRatio). */
   screenshot?: ScreenshotRenderOptions
@@ -403,8 +396,7 @@ export type ResolvedRenderOptions = {
     aspectRatio: AspectRatio
     quality: Quality
     background:
-      | { assetPath: string; fileHash?: string }
-      | { backgroundCss: string }
+      { assetPath: string; fileHash?: string } | { backgroundCss: string }
   }
   /**
    * Screenshot-only render options. Present only when at least one field was set
@@ -633,10 +625,7 @@ export const EASING_NAMES: readonly Easing[] = [
 
 /** Anchor corner for the narration (camera PIP) overlay. */
 export type NarrationCorner =
-  | 'top-left'
-  | 'top-right'
-  | 'bottom-left'
-  | 'bottom-right'
+  'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
 
 /**
  * Narration overlay position: one of the four corners, centered in the

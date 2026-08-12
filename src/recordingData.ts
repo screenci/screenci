@@ -192,8 +192,7 @@ export type VideoCueTranslationTTS = {
 }
 
 export type VideoCueTranslation =
-  | VideoCueTranslationFile
-  | VideoCueTranslationTTS
+  VideoCueTranslationFile | VideoCueTranslationTTS
 
 export type VideoCueStartEvent = {
   type: 'videoCueStart'

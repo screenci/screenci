@@ -24,8 +24,7 @@ const fixtureHtml = readFileSync(
 
 type CursorMoveOpts = {
   move?: (
-    | { duration?: number; speed?: never }
-    | { duration?: never; speed?: number }
+    { duration?: number; speed?: never } | { duration?: never; speed?: number }
   ) & {
     easing?: string
     curve?: 'none' | 'natural' | 'arc' | [number, number, number, number]

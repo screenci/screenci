@@ -61,11 +61,7 @@ type LocatorSelectActionInternal = (
 ) => Promise<string[]>
 
 export type MouseClickInteractionType =
-  | 'click'
-  | 'tap'
-  | 'check'
-  | 'uncheck'
-  | 'select'
+  'click' | 'tap' | 'check' | 'uncheck' | 'select'
 
 type PerformMouseClickActionOptions = {
   locator: Locator

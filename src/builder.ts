@@ -554,9 +554,9 @@ export type FeatureNamesOf<A> = A extends readonly string[]
  * the web app), so it keeps the plain `Record` mapping and is not navigable.
  */
 type ContentMajorControllers<A, V> = {
-  -readonly [K in keyof A as K extends LangKey
-    ? never
-    : Extract<K, string>]-?: V
+  -readonly [
+    K in keyof A as K extends LangKey ? never : Extract<K, string>
+  ]-?: V
 }
 
 type LangMajorControllers<A, V> = UnionToIntersection<

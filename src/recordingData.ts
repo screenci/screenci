@@ -5,6 +5,7 @@ import type {
   ResolvedRenderOptions,
 } from './types.js'
 import type { VoiceKey } from './voices.js'
+import type { ActionParamRecord } from './actionParams.js'
 
 export type VideoStartEvent = {
   type: 'videoStart'
@@ -28,6 +29,8 @@ export type FocusChangeEvent = {
     startMs: number
     endMs: number
     easing?: Easing
+    /** Cubic-bezier control points (absolute viewport px) for a curved path. */
+    control?: [{ x: number; y: number }, { x: number; y: number }]
   }
   scroll?: {
     startMs: number
@@ -59,6 +62,8 @@ export type MouseMoveEvent = {
   x: number
   y: number
   easing?: Easing
+  /** Cubic-bezier control points (absolute viewport px) for a curved path. */
+  control?: [{ x: number; y: number }, { x: number; y: number }]
   zoomFollow?: boolean
   elementRect?: ElementRect
 }
@@ -187,8 +192,7 @@ export type VideoCueTranslationTTS = {
 }
 
 export type VideoCueTranslation =
-  | VideoCueTranslationFile
-  | VideoCueTranslationTTS
+  VideoCueTranslationFile | VideoCueTranslationTTS
 
 export type VideoCueStartEvent = {
   type: 'videoCueStart'
@@ -208,23 +212,6 @@ export type VideoCueStartEvent = {
   volume?: number
 }
 
-/**
- * A per-language override of an overlay's file/options, used in shared-capture
- * mode where one recording carries every language. The recorder folds the active
- * language's translation into the top-level fields before serialization (see
- * `filterEventTranslationsToLanguage`), so the renderer only ever sees a single
- * resolved language.
- */
-export type AssetTranslation = {
-  path: string
-  fileHash?: string
-  durationMs?: number
-  audio?: number
-  fullScreen?: boolean
-  speed?: number
-  time?: number
-}
-
 export type ImageAssetStartEvent = {
   type: 'assetStart'
   timeMs: number
@@ -234,8 +221,6 @@ export type ImageAssetStartEvent = {
   fileHash?: string
   durationMs?: number
   fullScreen: boolean
-  /** Per-language file overrides (shared-capture mode); folded before render. */
-  translations?: Record<string, AssetTranslation>
 }
 
 export type VideoAssetStartEvent = {
@@ -255,14 +240,12 @@ export type VideoAssetStartEvent = {
   speed?: number
   /** Target playback duration (ms); an alternative to {@link speed}. */
   time?: number
-  /** Per-language file overrides (shared-capture mode); folded before render. */
-  translations?: Record<string, AssetTranslation>
 }
 
 export type AssetStartEvent = ImageAssetStartEvent | VideoAssetStartEvent
 
 /**
- * Studio-managed overlay declared via `video.overlays(editable([...]))`. The
+ * Studio-managed overlay declared via `video.overlays([...])`. The
  * file and display options are configured in Studio, so the recording only marks
  * the timeline point.
  */
@@ -321,9 +304,38 @@ export type AutoZoomEndEvent = {
   duration: number
 }
 
+/** Why an artificial sleep was performed during recording. */
+export type SleepReason = 'frameGap' | 'cueAudio' | 'postVideo'
+
+/**
+ * Marks a span of recording time that was an artificial sleep rather than real
+ * content. The renderer uses these spans to decide which gaps between
+ * overlays/hides/cues can be snapped away.
+ */
+export type SleepEvent = {
+  type: 'sleep'
+  /** Recording-relative start of the sleep. */
+  timeMs: number
+  /** Actually slept milliseconds, after recording-timing scaling. */
+  durationMs: number
+  reason: SleepReason
+}
+
+/**
+ * An instrumented action performed inside a `hide()` block: the action ran
+ * raw and its footage is cut, but the marker keeps it visible to the editor.
+ */
+export type HiddenActionEvent = {
+  type: 'hiddenAction'
+  timeMs: number
+  action: string
+  matcher?: string
+}
+
 export type RecordingEvent =
   | VideoStartEvent
   | InputEvent
+  | HiddenActionEvent
   | CueStartEvent
   | CueEndEvent
   | VideoCueStartEvent
@@ -337,12 +349,19 @@ export type RecordingEvent =
   | TimeEndEvent
   | AutoZoomStartEvent
   | AutoZoomEndEvent
+  | SleepEvent
 
 export type RecordingMetadata = {
   videoName: string
   screenciVersion: string
   languages?: string[]
   sourceFilePath?: string
+  /**
+   * SHA-256 of the test source file this recording was produced from. Used by
+   * the dev-session freshness check (recordingFreshness.ts) to skip recording
+   * when the source is unchanged and every editable action has an editId.
+   */
+  sourceHash?: string
   /** First 8 chars of the git commit the recording was made at, if available. */
   commit?: string
   /** Whether the repo had uncommitted changes (always false in CI). */
@@ -352,7 +371,7 @@ export type RecordingMetadata = {
     renderOptions?: boolean
     narration?: boolean
     assets?: boolean
-    /** Web-owned language set (`video.languages(editable())`): the app may add and
+    /** Web-owned language set (`video.languages(...)`): the app may add and
      *  render languages for this video. Absent for code-defined language sets. */
     languages?: boolean
   }
@@ -363,4 +382,9 @@ export type RecordingData = {
   renderOptions: ResolvedRenderOptions
   recordOptions?: RecordOptions
   metadata?: RecordingMetadata
+  /**
+   * The action parameters used by this recording, with per-parameter
+   * explicit/default provenance, in call order.
+   */
+  actionParams?: ActionParamRecord[]
 }

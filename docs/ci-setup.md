@@ -22,9 +22,14 @@ left untouched on re-run.
 The workflow runs on pushes to `main` and on
 [`workflow_dispatch`](https://docs.github.com/en/actions/using-workflows/manually-running-a-workflow),
 installs Node.js 24 with dependency caching, installs the Playwright Chromium
-Headless Shell, and runs `screenci record`. It mirrors
+Headless Shell, and runs `screenci export`. It mirrors
 [Playwright CI](https://playwright.dev/docs/ci). Use `push` to keep videos current
-automatically, or `workflow_dispatch` for a manual approval step before recording.
+automatically, or `workflow_dispatch` for a manual approval step before exporting.
+
+`export` re-records only the videos whose sources changed since the last
+upload, dispatches renders for the rest without re-recording them, waits for
+the renders to finish, and downloads the outputs. Export minutes are spent on
+every video that renders in the run.
 
 ## Required secret
 
@@ -37,7 +42,7 @@ early if it is missing.
 
 If your videos navigate to a locally-running app via `webServer` in
 `screenci.config.ts`, the generated workflow needs two extra steps so the app
-is built and reachable when `screenci record` runs.
+is built and reachable when `screenci export` runs.
 
 ### Update `screenci.config.ts`
 
@@ -110,18 +115,18 @@ For faster, smoother recordings:
   [Recording encoder](/docs/configuration#recording-encoder).
 
   ```ts
-  use: {
-    recordOptions: {
-      // Lightest encode on constrained CI runners; full quality locally.
-      encoder: process.env.CI ? 'fast' : 'sharp',
-    },
-  },
+  video.recordOptions({
+    // Lightest encode on constrained CI runners; full quality locally.
+    encoder: process.env.CI ? 'fast' : 'sharp',
+  })('My video', async ({ page }) => {
+    /* ... */
+  })
   ```
 
 ## Asset files do not need to be committed
 
-Overlay images and videos, background audio, and narration media (the files you
-reference with `video.overlays(...)`, `video.audio(...)`, and narration `media`
+Overlay images and videos and narration media (the files you
+reference with `video.overlays(...)` and narration `media`
 cues) are uploaded to ScreenCI the first time you record with the files present. On
 later runs they are reused: ScreenCI matches each asset to the version uploaded
 for the same video (by file path, or by overlay name) and reuses it.
@@ -141,7 +146,7 @@ If a referenced file is missing locally **and** no previously uploaded version
 exists for that video (for example a brand new overlay that has never been
 recorded with its file present), the upload fails with a clear message telling
 you to record once with the file present, or to commit it. This keeps a video
-from silently rendering without an overlay, audio track, or narration clip.
+from silently rendering without an overlay or narration clip.
 
 Notes:
 
@@ -181,7 +186,7 @@ Once connected, you can dispatch the recording workflow two ways:
 - **From the app:** click **Record all** on the project page. To record a single
   video or screenshot, use its **Record** button (on the project page or its
   detail page).
-- **From the CLI:** run [`screenci record --remote`](/docs/reference/cli#-remote).
+- **From the CLI:** run [`screenci export --remote`](/docs/reference/cli#-remote).
   It resolves the project from `SCREENCI_SECRET` and triggers the workflow without
   recording locally.
 
@@ -194,7 +199,7 @@ either surface:
 - **From the CLI:** pass `--grep` to filter by title, just like local recording:
 
   ```bash
-  screenci record --remote --grep "Onboarding"
+  screenci export --remote --grep "Onboarding"
   ```
 
 Both forward the filter to the workflow's optional `grep` input, which
@@ -206,10 +211,12 @@ from your GitHub settings.
 
 ## Reading back render status
 
-Rendering happens after `record` uploads, so a green `record` step does not mean
-videos are rendered. Run [`screenci info`](/docs/reference/cli#screenci-info) to
-read each language's render status (`finished`, `rendering`, or `failed`) and
-public URLs as JSON. A CI job can poll until `finished` or gate on `failed`.
+`screenci export` already waits for renders and exits `0` only when every
+requested video rendered and downloaded, so a green export step means the
+videos are done. To read the results back later (or from another job), run
+[`screenci info`](/docs/reference/cli#screenci-info): it reports each
+language's render status (`finished`, `rendering`, or `failed`) and public
+URLs as JSON.
 
 ## What's next
 

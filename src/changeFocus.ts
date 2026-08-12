@@ -1,12 +1,15 @@
 import type { Locator } from '@playwright/test'
 import type { ElementRect, FocusChangeEvent } from './events.js'
+import { clamp } from './clamp.js'
 import { evaluateEasingAtT } from './easing.js'
 import {
   DEFAULT_AUTO_ZOOM_CENTERING,
   DEFAULT_CLICK_MOUSE_MOVE_DURATION,
   DEFAULT_SCROLL_CENTERING,
 } from './defaults.js'
-import type { AutoZoomOptions, Easing } from './types.js'
+import type { AutoZoomOptions, CursorCurve, Easing } from './types.js'
+import { computeControlPoints } from './cursorCurve.js'
+import { getScreenCIRuntimeContext } from './runtimeContext.js'
 import {
   getMousePosition,
   getScrollDispatchIntervalMs,
@@ -56,6 +59,10 @@ export type MouseMoveRequest = {
   duration?: number
   speed?: number
   easing: Easing
+  /** Cursor path shape; resolved to control points at dispatch. */
+  curve?: CursorCurve
+  /** Bow amount for the `'natural'`/`'arc'` curve presets. */
+  curviness?: number
 }
 
 type ViewportSize = { width: number; height: number }
@@ -128,10 +135,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) =>
     setTimeout(resolve, resolveRecordingTimingDuration(ms))
   )
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value))
 }
 
 function positionsDiffer(start: number, target: number): boolean {
@@ -1643,9 +1646,18 @@ export async function changeFocus(
   })
 
   const focusChangeStartMs = Date.now()
-  if (focusOptions.preZoomDelay > 0) {
-    await sleep(focusOptions.preZoomDelay)
+  if (focusOptions.delay > 0) {
+    await sleep(focusOptions.delay)
   }
+
+  const control =
+    mouseMovePlan !== undefined && timing.duration > 0
+      ? computeControlPoints(startViewportPos, mouseMovePlan.mouseTarget, {
+          curve: mouseMove?.curve,
+          curviness: mouseMove?.curviness,
+          seq: getScreenCIRuntimeContext().editable.seq,
+        })
+      : undefined
 
   const mousePromise =
     mouseMovePlan !== undefined
@@ -1655,6 +1667,7 @@ export async function changeFocus(
           targetY: mouseMovePlan.mouseTarget.y,
           duration: timing.duration,
           easing: timing.easing,
+          ...(control !== undefined ? { control } : {}),
         })
       : Promise.resolve(undefined)
 
@@ -1710,10 +1723,11 @@ export async function changeFocus(
           startMs: mouseMoveResult.startMs,
           endMs: mouseMoveResult.endMs,
           ...(timing.duration > 0 ? { easing: timing.easing } : {}),
+          ...(control !== undefined ? { control } : {}),
         }
       : undefined
-  if (focusOptions.postZoomDelay > 0) {
-    await sleep(focusOptions.postZoomDelay)
+  if (focusOptions.delayAfter > 0) {
+    await sleep(focusOptions.delayAfter)
   }
   const focusChangeEndMs = Date.now()
   if (isTimingDebugEnabled()) {
@@ -1721,7 +1735,7 @@ export async function changeFocus(
       `[screenci:timing] changeFocus total=${focusChangeEndMs - snapshotStartMs}ms ` +
         `snapshot=${snapshotMs}ms ` +
         `animation=${animationMs}ms (planned ~${Math.round(timing.duration)}ms) ` +
-        `postZoom=${focusOptions.postZoomDelay}ms`
+        `delayAfter=${focusOptions.delayAfter}ms`
     )
   }
   const focusChange = {

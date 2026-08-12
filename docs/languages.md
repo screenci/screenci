@@ -8,10 +8,12 @@ self-localizing app renders in the right language without extra work from you.
 A plain video with no `.languages(...)` call records one round that stays
 language-agnostic (no `[en]` tag), pinned to the `en-US` browser locale.
 
-Narration, values, overlays, and audio each accept the same per-language object
-form. The language set is inferred from the union of all feature keys, so adding
-a language to any one of them is enough to produce a version. TypeScript validates
-that every language covers the same cues, which catches drift early.
+Narration accepts a per-language object form: the same cue keys under each
+language code. The language set is inferred from the union of the narration
+keys (plus any `.languages(...)` call), so adding a language there is enough to
+produce a version. TypeScript validates that every language covers the same
+cues, which catches drift early. Overlays are shared across every language (see
+below); only narration (and per-language browser locales) vary by language.
 
 <!-- screenci-doc-video:docs/guides/languages -->
 
@@ -35,7 +37,7 @@ self-recorded voice. See
 [Voices and plans](/docs/guides/narration#voices-and-plans).
 
 Upgrade to Business to render as many languages as you like. When an upload is
-blocked, `screenci record` prints the reason and a link back to this section.
+blocked, the CLI prints the reason and a link back to this section.
 
 ## Add languages
 
@@ -56,38 +58,21 @@ Use bare language keys such as `en`, `fi`, `fr`, and `cmn`. You can also add a
 the `default` value, for example
 `video.narration({ default: { intro: 'Hi' }, fr: { intro: 'Salut' } })`.
 
-The same pattern applies to `video.values(...)`, `video.overlays(...)`, and
-`video.audio(...)`: pass a language-major object and each language's assets are
-realized in that language's recording pass while the body drives the same
-controller name regardless of language:
+Overlays do not vary by language. `video.overlays(...)` takes a names-only
+array or a single shared `name -> config` object, and the same overlay is used
+in every language's recording pass:
 
 ```ts
 video.overlays({
-  en: { badge: { path: 'assets/badge.en.png', x: 1382, y: 65, width: 384 } },
-  fi: { badge: { path: 'assets/badge.fi.png', x: 1382, y: 65, width: 384 } },
+  badge: { path: 'assets/badge.png', x: 1382, y: 65, width: 384 },
 })('Landing', async ({ page, overlays }) => {
   await page.goto('/')
-  await overlays.badge() // the active language's file in each pass
+  await overlays.badge() // the same badge in every language
 })
 ```
 
-`video.audio({ en: {...}, fi: {...} })` works the same way. A `default` key
-supplies a shared fallback for any language that omits a name:
-
-```ts
-video.overlays({
-  default: { badge: { path: 'assets/badge.png', x: 1382, y: 65, width: 384 } },
-  fi: { badge: { path: 'assets/badge.fi.png', x: 1382, y: 65, width: 384 } },
-})('Landing', async ({ page, overlays }) => {
-  await overlays.badge() // shared badge for en, the Finnish one for fi
-})
-```
-
-> **Per-language overlays, audio, and injected values need per-language capture**
-> (the default mode, below): they are baked into each language's own recording
-> pass. In **shared capture mode** one recording is reused for every language and
-> only narration is overdubbed, so overlays, audio, and `values` are identical
-> across languages there.
+If you need a language-specific asset, swap the overlay file per language in the
+web editor rather than in code.
 
 ## Localized recordings (per-language capture)
 
@@ -163,11 +148,11 @@ video
 
 ### Recording only some languages
 
-To record (and render) a subset, pass `--languages` to `screenci record`:
+To record (and render) a subset, pass `--languages` to `screenci export`:
 
 ```bash
-screenci record --languages fi
-screenci record --languages fi,en
+screenci export --languages fi
+screenci export --languages fi,en
 ```
 
 Per-language videos record only the requested languages, so a run never produces
@@ -178,24 +163,6 @@ The filter only restricts which languages are recorded and rendered this run, no
 which languages your video declares. Every recording still reports the full
 code-defined language set, so the app keeps showing the languages you did not
 render this time (rather than treating them as removed from code).
-
-### Localized screenshots
-
-`screenshot.values` supports localized `values` (a still is silent, so it takes
-no narration). Each language produces its own localized still:
-
-```ts
-import { screenshot } from 'screenci'
-
-screenshot.values({
-  en: { heading: 'Dashboard' },
-  fi: { heading: 'Hallinta' },
-})('Dashboard hero', async ({ page, language, values, crop }) => {
-  await page.goto('/' + language + '/dashboard')
-  await page.getByTestId('heading').fill(values.heading)
-  await crop(page.getByTestId('revenue-card'), { padding: 0.06 })
-})
-```
 
 ### Variants with `each`
 
@@ -229,13 +196,14 @@ call: `.only(...)`, `.skip`, `.fixme`, and `.fail`. The in-body conditional
 
 ## Managing languages from Editor
 
-Pass keyless `editable()` to `video.languages(...)` to let the web app own the
-recorded language set.
+The recorded language set is the union of the code set declared with
+`video.languages([...])` and any language keys used by per-language features.
+Code is the single source of truth.
 
 ```ts
-import { video, editable } from 'screenci'
+import { video } from 'screenci'
 
-video.narration(editable(['intro'])).languages(editable())(
+video.narration({ en: { intro: 'Hi' } }).languages(['en', 'fi'])(
   'Product tour',
   async ({ page, narration }) => {
     await narration.intro()
@@ -244,66 +212,25 @@ video.narration(editable(['intro'])).languages(editable())(
 )
 ```
 
-With keyless `editable()`, nothing is seeded, so rendering is held until the web
-app selects a language set. To start from an initial set the web app can still
-change, seed it: `video.languages(editable(['en', 'fi']))` renders en and fi until
-the web app edits the set. To seed the capture options too, wrap a config in
-`editable({ ... })`, for example
-`video.languages(editable({ languages: ['en', 'fi'], mode: 'shared' }))`.
-
-The web app can edit the language **set** but not `mode`, `locales`, or
-`browserLocale` yet, so set those to their final values in code up front: they are
-seeded once and used for every render until web editing of them ships.
+To set the capture options too, pass a config object, for example
+`video.languages({ languages: ['en', 'fi'], mode: 'shared' })`. With no
+`video.languages(...)` declaration the set is inferred from the per-feature
+language keys, falling back to the implicit `en` default for a plain video.
 
 The **Languages** section on the Editor page lists the current languages and
-lets you add or remove them. Adding a language opens a short guided setup: fill
-in that language's narration (a checklist tracks what is still missing), then
-render. The render reuses the existing capture with the new narration, so you do
-not have to re-record just to get a narrated version in another language.
-
-On-screen text **values** for a newly added language start as a read-only copy
-of an existing language (English if present, otherwise the first alphabetically)
-because text is captured while the video records, not at render time. To
-localize that text, edit the values and re-record the language version once it
-exists. The re-record reuses the same Editor narration, overlays, and audio
-configuration, and runs from the web when the project is connected to GitHub.
-
-Adding languages from the web requires `video.languages(editable())` (or a seeded
-`video.languages(editable(['en', 'fi']))`): a code-defined language set (a plain
-array or config object, as shown in the sections above) is fixed by your test
-code. To add an ad-hoc language to a code-defined video from the web without
-changing your code, use a one-off language (below). See [Editor](./editor.md) for
-the full Editor guide.
-
-## One-off languages
-
-When a video's languages are defined in code (a plain array or config object,
-not `editable()`), you can still add a single language from the web as a **one-off
-language**. It renders and serves like any other language version, but it is not
-part of your code, so re-recording in CI never updates it automatically. This
-mirrors an Editor [one-off version](./editor.md#saved-edits-vs-one-off-renders),
-but at the language level.
-
-On the video's page, use the **Add a one-off language** picker in the Language
-versions section (it also works for screenshots). Picking a language opens that
-language's page with the same guided setup as an Editor-managed language: fill in
-its narration (auto-translated from an existing language, with a checklist for
-what is still missing), then render. The render reuses the existing capture with
-the new narration, so you do not have to re-record.
-
-A one-off language is marked with a purple **One-off** badge in the language list
-and a banner on its page, both noting that it is not in your code and will not
-auto-update. Because it is not declared in code, a CI re-record of the video
-leaves it untouched: it is only ever re-rendered when you explicitly render it
-again from its page.
-
-To make a one-off language permanent (so CI keeps it up to date), add it to your
-code: either list it in `video.languages([...])` or switch the video to
-`video.languages(editable())` to manage the whole set from the web.
+lets you add one. Adding a language writes it straight into your
+`video.languages([...])` declaration in code through the connected
+`screenci edit` machine (a new `.languages([...])` call is added when the video
+has none), then renders. The edit fails if no dev machine is connected: there
+is no web-side language store, so every language lives in code by the time the
+next record runs. Editing then continues with the usual guided setup: fill in
+that language's narration (a checklist tracks what is still missing), then
+render. The render reuses the existing capture with the new narration, so you
+do not have to re-record just to get a narrated version in another language.
 
 ## Available languages
 
-The language-major forms (`video.narration(...)`, `video.values(...)`) and
+The language-major forms (such as `video.narration(...)`) and
 `video.languages(...)` accept the supported language keys below.
 
 For the built-in voices, narration coverage depends on the voice's `modelType`
@@ -319,7 +246,7 @@ The per-model split applies only to the built-in voices. Your own
 record and clone from a sample) are multilingual and cover every key in either
 table, so any language below works with them regardless of `modelType`.
 
-(`values` and other non-narration features also work for every key regardless of
+(Overlays and other non-narration features also work for every key regardless of
 model, since they carry no synthesized speech.)
 
 One built-in-voice exception is worth calling out: Russian (`ru`) currently
@@ -385,10 +312,8 @@ These narrate with both the consistent (default) and expressive models:
 With the built-in voices these narrate only with the expressive model, which is
 their only built-in voice, so it is **selected automatically on every plan**: you
 do not need to set `modelType`, and Free and Starter can narrate one of these
-languages just like any other. (Choosing the expressive model as a tone upgrade
-for a language that _also_ has a consistent voice is the part that requires the
-Business tier, along with `style` prompts.) They also work with your own
-ElevenLabs or sample-cloned voice, and for non-narration features (`values`,
+languages just like any other. They also work with your own
+ElevenLabs or sample-cloned voice, and for non-narration features (such as
 locale selection) they behave like any other key.
 
 | Language          | Key   |

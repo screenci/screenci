@@ -32,15 +32,14 @@ import {
  *   recordingDir: './recordings',
  *   use: {
  *     baseURL: 'https://app.example.com',
- *     recordOptions: {
- *       aspectRatio: '16:9',  // '16:9' | '9:16' | '1:1' | '4:3' | ...
- *       quality: '1080p',     // '720p' | '1080p' | '1440p' | '2160p'
- *       fps: 60,              // 24 | 30 | 60
- *     },
  *     trace: 'retain-on-failure',
  *   },
  * })
  * ```
+ *
+ * Record and render options are declared per video with
+ * `video.recordOptions(...)` / `video.renderOptions(...)` (code values are the
+ * starting point and stay editable in the web editor), not at config level.
  *
  * @param config - screenci configuration options
  * @returns Extended Playwright configuration with screenci-managed test discovery
@@ -154,15 +153,13 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
 
   // recording does not need tracing, also it takes resources so that is why forced off
   const trace = isRecording ? 'off' : rest.use?.trace
-  const projects = isRecording
-    ? rest.projects?.map((project) => ({
-        ...project,
-        use: {
-          ...project.use,
-          trace: 'off' as const,
-        },
-      }))
-    : rest.projects
+  const projects = rest.projects?.map((project) => ({
+    ...project,
+    use: {
+      ...project.use,
+      ...(isRecording ? { trace: 'off' as const } : {}),
+    },
+  }))
   const use = {
     ...rest.use,
     ...(trace !== undefined ? { trace } : {}),

@@ -14,7 +14,7 @@ export const docsManifest = [
     navLabel: 'Overview',
     title: 'Overview',
     description:
-      'How ScreenCI works: record locally, render in the service, and serve from a CDN. The service never sees your source code, and the CLI is open source.',
+      'How ScreenCI works: record locally, refine in the web editor, export in the service, and serve from a CDN. The service never sees your source code, and the CLI is open source.',
     prev: null,
     next: 'docs/agent-integration',
   },
@@ -52,18 +52,30 @@ export const docsManifest = [
     description:
       'Author .screenci.ts files with Playwright-like APIs, ScreenCI narration and camera helpers, and workflow-aware pacing.',
     prev: 'docs/manual-setup',
+    next: 'docs/editor',
+  },
+  {
+    source: 'editor.md',
+    slug: 'docs/editor',
+    section: 'Getting Started',
+    order: 5,
+    navLabel: 'Editor',
+    title: 'Editor',
+    description:
+      'Edit videos visually in the web app: live preview, timeline cuts and pacing, narration, overlays, and render options. With screenci edit connected, edits are written back into your script, and Export renders the finished video.',
+    prev: 'docs/video-script-basics',
     next: 'docs/ci-setup',
   },
   {
     source: 'ci-setup.md',
     slug: 'docs/ci-setup',
     section: 'Getting Started',
-    order: 5,
+    order: 6,
     navLabel: 'CI setup',
     title: 'CI Setup',
     description:
       'Understand the generated GitHub Actions workflow, required secrets, and how to keep CI recordings deterministic.',
-    prev: 'docs/video-script-basics',
+    prev: 'docs/editor',
     next: 'docs/guides/animated-interactions',
   },
   {
@@ -78,6 +90,9 @@ export const docsManifest = [
     prev: 'docs/ci-setup',
     next: 'docs/guides/narration',
   },
+  // The Keyboard Shortcuts guide (docs/guides/keyboard-shortcuts) was removed
+  // for release along with the shortcut selection surfaces: its source moved
+  // to docs/removed/keyboard-shortcuts.md at the repo root.
   {
     source: 'narration.md',
     slug: 'docs/guides/narration',
@@ -88,32 +103,12 @@ export const docsManifest = [
     description:
       'Attach spoken cues to a video, overlap narration with visible UI motion, choose voices, use speech markup, and connect ElevenLabs for custom voices.',
     prev: 'docs/guides/animated-interactions',
-    next: 'docs/guides/values',
-  },
-  {
-    source: 'values.md',
-    slug: 'docs/guides/values',
-    section: 'Fixtures',
-    order: 2,
-    navLabel: 'Values',
-    title: 'Values',
-    description:
-      'Inject per-language page content with video.values() for apps that do not self-localize, and let the web editor manage field values without code changes.',
-    prev: 'docs/guides/narration',
-    next: 'docs/guides/audio',
-  },
-  {
-    source: 'audio.md',
-    slug: 'docs/guides/audio',
-    section: 'Fixtures',
-    order: 3,
-    navLabel: 'Audio',
-    title: 'Audio',
-    description:
-      'Add background music or sound effects to a video with video.audio(), control volume and looping, and let the web editor manage track files.',
-    prev: 'docs/guides/values',
     next: 'docs/guides/overlays',
   },
+  // The Values (docs/guides/values), Audio (docs/guides/audio), and Render
+  // dependencies (docs/guides/dependencies) docs were removed for release:
+  // the features are unfinished and no longer exported. Their sources moved to
+  // docs/removed/ at the repo root.
   {
     source: 'overlays.md',
     slug: 'docs/guides/overlays',
@@ -123,19 +118,7 @@ export const docsManifest = [
     title: 'Overlays',
     description:
       'Add intro clips, corner logos, transitions, and timed overlays to ScreenCI recordings from files, HTML, or React.',
-    prev: 'docs/guides/audio',
-    next: 'docs/guides/dependencies',
-  },
-  {
-    source: 'dependencies.md',
-    slug: 'docs/guides/dependencies',
-    section: 'Fixtures',
-    order: 5,
-    navLabel: 'Render dependencies',
-    title: 'Render Dependencies',
-    description:
-      'Reuse another ScreenCI video or screenshot with selected(...): embed its currently selected output, inherit its audio, optionally carry subtitles, and keep dependents updated when the source render changes.',
-    prev: 'docs/guides/overlays',
+    prev: 'docs/guides/narration',
     next: 'docs/guides/languages',
   },
   {
@@ -146,63 +129,63 @@ export const docsManifest = [
     navLabel: 'Languages',
     title: 'Languages',
     description:
-      'Record per-language video versions from one script: set browser locale automatically, localize narration, values, overlays, and audio, and control the recording mode.',
-    prev: 'docs/guides/dependencies',
+      'Record per-language video versions from one script: set browser locale automatically, localize narration and overlays, and control the recording mode.',
+    prev: 'docs/guides/overlays',
     next: 'docs/guides/camera-and-zooming',
   },
   {
     source: 'camera-and-zooming.md',
     slug: 'docs/guides/camera-and-zooming',
     section: 'Guides',
-    order: 2,
+    order: 3,
     navLabel: 'Camera and zooming',
     title: 'Camera and Zooming',
     description:
       'Choose between autoZoom and manual framing, and use camera direction to guide attention without making the video frantic.',
     prev: 'docs/guides/languages',
+    next: 'docs/guides/overlay-updates',
+  },
+  {
+    source: 'overlay-updates.md',
+    slug: 'docs/guides/overlay-updates',
+    section: 'Guides',
+    order: 4,
+    navLabel: 'Mid-video overlay updates',
+    title: 'Mid-Video Overlay Updates',
+    description:
+      'Resize, hide, and show the recording frame and narration bubble mid-video with animated transitions, and fade overlays in and out.',
+    prev: 'docs/guides/camera-and-zooming',
     next: 'docs/guides/screenshots',
   },
   {
     source: 'screenshots.md',
     slug: 'docs/guides/screenshots',
     section: 'Guides',
-    order: 3,
+    order: 5,
     navLabel: 'Screenshots',
     title: 'Screenshots',
     description:
       'Capture branded still screenshots with the screenshot() fixture: crop to a component, set quality and dark mode, and frame the shot on a background with overlays.',
-    prev: 'docs/guides/camera-and-zooming',
-    next: 'docs/guides/editor',
-  },
-  {
-    source: 'editor.md',
-    slug: 'docs/guides/editor',
-    section: 'Guides',
-    order: 4,
-    navLabel: 'Editor',
-    title: 'Editor',
-    description:
-      'Remix render options, narration text, voices, overlays, and languages from the web app, or manage them in the web editor with editable(...) declarations like video.narration(editable([...])).',
-    prev: 'docs/guides/screenshots',
+    prev: 'docs/guides/overlay-updates',
     next: 'docs/guides/public-urls-and-embeds',
   },
   {
     source: 'public-urls-and-embeds.md',
     slug: 'docs/guides/public-urls-and-embeds',
     section: 'Guides',
-    order: 5,
+    order: 6,
     navLabel: 'Public URLs and embeds',
     title: 'Public URLs and Embeds',
     description:
       'Enable public delivery for a video, understand stable language-specific URLs, and embed ScreenCI outputs in other sites.',
-    prev: 'docs/guides/editor',
+    prev: 'docs/guides/screenshots',
     next: 'docs/guides/redact',
   },
   {
     source: 'redact.md',
     slug: 'docs/guides/redact',
     section: 'Guides',
-    order: 6,
+    order: 7,
     navLabel: 'Redact sensitive content',
     title: 'Redact Sensitive Content',
     description:
@@ -214,7 +197,7 @@ export const docsManifest = [
     source: 'screen-audio.md',
     slug: 'docs/guides/screen-audio',
     section: 'Guides',
-    order: 7,
+    order: 8,
     navLabel: 'Screen audio',
     title: 'Screen Audio',
     description:
@@ -226,7 +209,7 @@ export const docsManifest = [
     source: 'update-screenci.mdx',
     slug: 'docs/guides/update-screenci',
     section: 'Guides',
-    order: 8,
+    order: 9,
     navLabel: 'Update ScreenCI',
     title: 'Update ScreenCI',
     description:
@@ -238,7 +221,7 @@ export const docsManifest = [
     source: 'version-history.md',
     slug: 'docs/guides/version-history',
     section: 'Guides',
-    order: 9,
+    order: 10,
     navLabel: 'Version history',
     title: 'Version History',
     description:
@@ -250,7 +233,7 @@ export const docsManifest = [
     source: 'organisation.md',
     slug: 'docs/guides/organisation',
     section: 'Guides',
-    order: 10,
+    order: 11,
     navLabel: 'Organisation & SSO',
     title: 'Organisation & SSO',
     description:
@@ -262,11 +245,11 @@ export const docsManifest = [
     source: 'anonymous-trial.md',
     slug: 'docs/guides/anonymous-trial',
     section: 'Guides',
-    order: 11,
+    order: 12,
     navLabel: 'Anonymous trial',
     title: 'Anonymous Trial',
     description:
-      'Record without an account: what the anonymous trial allows (including a preview of expressive narration and multiple languages), its limits, and what happens to that content after you sign up.',
+      'Record without an account: what the anonymous trial allows (including expressive narration and a preview of multiple languages), its limits, and what happens to that content after you sign up.',
     prev: 'docs/guides/organisation',
     next: 'docs/reference/cli',
   },
@@ -278,7 +261,7 @@ export const docsManifest = [
     navLabel: 'CLI',
     title: 'CLI',
     description:
-      'Command reference for screenci init, test, record, project info, and public delivery commands.',
+      'Command reference for screenci init, test, record, edit, project info, and public delivery commands.',
     prev: 'docs/guides/anonymous-trial',
     next: 'docs/reference/configuration',
   },
@@ -308,20 +291,12 @@ export const docsManifest = [
   },
 ] as const
 
-const AUDIO_VALUES_DOCS_FLAG = 'SCREENCI_ENABLE_AUDIO_VALUES_DOCS'
-
-export function isAudioValuesDocsEnabled() {
-  return process.env[AUDIO_VALUES_DOCS_FLAG] === 'true'
-}
-
+// The SCREENCI_ENABLE_AUDIO_VALUES_DOCS env flag used to gate the audio and
+// values docs from the sidebar. Those docs are now removed from the manifest
+// entirely (see docs/removed/ at the repo root), so every remaining doc is
+// visible.
 function isSidebarVisibleDoc(entry: (typeof docsManifest)[number]) {
-  if (
-    entry.slug === 'docs/guides/audio' ||
-    entry.slug === 'docs/guides/values'
-  ) {
-    return isAudioValuesDocsEnabled()
-  }
-
+  void entry
   return true
 }
 

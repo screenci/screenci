@@ -45,9 +45,9 @@ export type TopLevelVoiceConfig<L extends Lang = Lang> =
   | ElevenLabsVoiceConfig
   | {
       name: BuiltInVoiceName<L>
-      /** Speaking style prompt for expressive synthesis. Business tier only. Implies `expressive` model type. */
+      /** Speaking style prompt for expressive synthesis. Implies `expressive` model type. */
       style: string
-      /** Can be omitted when `style` is set — `expressive` is implied. Business tier only. */
+      /** Can be omitted when `style` is set, `expressive` is implied then. */
       modelType?: 'expressive'
       /**
        * Accent description for expressive synthesis.
@@ -94,9 +94,9 @@ export type LangNarrationOverride<L extends Lang = Lang> =
        * regeneration. Consistent output is not guaranteed across all voice types.
        */
       seed?: number
-      /** Speaking style prompt for expressive synthesis. Business tier only. Implies `expressive` model type. */
+      /** Speaking style prompt for expressive synthesis. Implies `expressive` model type. */
       style: string
-      /** Can be omitted when `style` is set — `expressive` is implied. Business tier only. */
+      /** Can be omitted when `style` is set, `expressive` is implied then. */
       modelType?: 'expressive'
       /**
        * Accent description for expressive synthesis.

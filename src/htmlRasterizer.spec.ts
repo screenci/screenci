@@ -135,6 +135,22 @@ describe('rasterizeHtmlOverlay caching', () => {
     })
     expect(existsSync(join(base, '.overlay-cache', `${hash}.png`))).toBe(true)
   })
+
+  it('keys distinct inline content to distinct hashes (inline source is part of the document)', () => {
+    // Inline element/jsx/html overlays embed their markup or bundle in the
+    // final document, so two different inline sources never share a cache slot.
+    const a = overlayInputHash({
+      kind: 'image',
+      deviceScaleFactor: 2,
+      html: '<div id="screenci-overlay-root"><b>one</b></div>',
+    })
+    const b = overlayInputHash({
+      kind: 'image',
+      deviceScaleFactor: 2,
+      html: '<div id="screenci-overlay-root"><b>two</b></div>',
+    })
+    expect(a).not.toBe(b)
+  })
 })
 
 describe('framesForDuration', () => {
@@ -197,6 +213,46 @@ describe('rasterizeAnimatedHtmlOverlay', () => {
     expect(await readFile(result.path)).toEqual(clipBytes)
   })
 
+  it('writes the alpha-capable preview .webm and returns its path and hash', async () => {
+    const previewBytes = Buffer.from('fake-webm-bytes')
+    setAnimatedHtmlRasterizer(async () => ({
+      buffer: clipBytes,
+      previewBuffer: previewBytes,
+      width: 320,
+      height: 80,
+    }))
+    const result = await runWithScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ recordingDir: dir }),
+      () =>
+        rasterizeAnimatedHtmlOverlay({
+          name: 'intro',
+          html: '<div>hi</div>',
+          durationMs: 1500,
+        })
+    )
+
+    expect(result.previewFileHash).toBe(
+      createHash('sha256').update(previewBytes).digest('hex')
+    )
+    expect(result.previewPath?.endsWith('.webm')).toBe(true)
+    expect(existsSync(result.previewPath!)).toBe(true)
+    expect(await readFile(result.previewPath!)).toEqual(previewBytes)
+  })
+
+  it('omits the preview fields when the rasterizer produced no preview clip', async () => {
+    const result = await runWithScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ recordingDir: dir }),
+      () =>
+        rasterizeAnimatedHtmlOverlay({
+          name: 'intro',
+          html: '<div>hi</div>',
+          durationMs: 1500,
+        })
+    )
+    expect(result.previewPath).toBeUndefined()
+    expect(result.previewFileHash).toBeUndefined()
+  })
+
   it('throws when there is no active recording directory', async () => {
     await expect(
       runWithScreenCIRuntimeContext(
@@ -223,7 +279,12 @@ describe('rasterizeAnimatedHtmlOverlay caching', () => {
     calls = 0
     setAnimatedHtmlRasterizer(async () => {
       calls += 1
-      return { buffer: Buffer.from(`mp4-${calls}`), width: 100, height: 50 }
+      return {
+        buffer: Buffer.from(`mp4-${calls}`),
+        previewBuffer: Buffer.from(`webm-${calls}`),
+        width: 100,
+        height: 50,
+      }
     })
     setOverlayCacheEnabled(true)
   })
@@ -251,6 +312,9 @@ describe('rasterizeAnimatedHtmlOverlay caching', () => {
 
     expect(calls).toBe(1)
     expect(second.fileHash).toBe(first.fileHash)
+    // The preview clip is cached alongside the main clip.
+    expect(second.previewFileHash).toBe(first.previewFileHash)
+    expect(second.previewFileHash).toBeDefined()
   })
 
   it('re-renders when the markup, fps, or duration changes', async () => {
@@ -261,6 +325,24 @@ describe('rasterizeAnimatedHtmlOverlay caching', () => {
     expect(calls).toBe(3)
     await render('<div>b</div>', { fps: 60, durationMs: 2000 })
     expect(calls).toBe(4)
+  })
+
+  it('recovers gracefully when a pre-preview cache entry cannot be re-encoded', async () => {
+    await render('<div>cached</div>')
+    // Drop the preview clip, as if the cache was written before the preview
+    // encode existed. The fake mp4 bytes cannot be re-encoded by ffmpeg, so
+    // the derivation fails and the overlay ships without a preview clip.
+    const hash = overlayInputHash({
+      kind: 'animation',
+      deviceScaleFactor: 2,
+      fps: 30,
+      durationMs: 1000,
+      html: '<div>cached</div>',
+    })
+    await rm(join(base, '.overlay-cache', `${hash}.webm`))
+    const second = await render('<div>cached</div>')
+    expect(calls).toBe(1) // still served from the cache, not re-captured
+    expect(second.previewFileHash).toBeUndefined()
   })
 
   it('keys the on-disk cache by overlayInputHash (single source of truth)', async () => {

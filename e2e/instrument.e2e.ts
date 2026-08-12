@@ -14,7 +14,6 @@ import type {
   MouseHideEvent,
   MouseWaitEvent,
 } from '../src/events.js'
-import type { Easing } from '../src/types.js'
 import type { Locator, Page } from '@playwright/test'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -24,11 +23,14 @@ const fixtureHtml = readFileSync(
 )
 
 type CursorMoveOpts = {
-  moveDuration?: number
-  moveSpeed?: number
-  moveEasing?: Easing
-  beforeClickPause?: number
-  postClickPause?: number
+  move?: (
+    { duration?: number; speed?: never } | { duration?: never; speed?: number }
+  ) & {
+    easing?: string
+    curve?: 'none' | 'natural' | 'arc' | [number, number, number, number]
+    curviness?: number
+    delayAfter?: number
+  }
 }
 
 function checkLocator(locator: Locator): {
@@ -167,12 +169,20 @@ type InstrumentedMouse = {
   click(
     x: number,
     y: number,
-    options?: { moveDuration?: number; duration?: number; fake?: boolean }
+    options?: {
+      move?: { duration?: number; easing?: string; delayAfter?: number }
+      duration?: number
+      fake?: boolean
+    }
   ): Promise<void>
   dblclick(
     x: number,
     y: number,
-    options?: { moveDuration?: number; duration?: number; fake?: boolean }
+    options?: {
+      move?: { duration?: number; easing?: string; delayAfter?: number }
+      duration?: number
+      fake?: boolean
+    }
   ): Promise<void>
 }
 
@@ -199,7 +209,7 @@ test.afterEach(() => {
 test.describe('click instrumentation', () => {
   test('records a click event', async ({ page }) => {
     await clickableLocator(page.locator('#click-button')).click({
-      moveDuration: 50,
+      move: { duration: 50 },
     })
 
     const events = clickEvents()
@@ -220,14 +230,40 @@ test.describe('click instrumentation', () => {
 
   test('actually clicks the button', async ({ page }) => {
     await clickableLocator(page.locator('#click-button')).click({
-      moveDuration: 50,
+      move: { duration: 50 },
     })
     await expect(page.locator('#click-status')).not.toHaveText('Not clicked')
   })
 
+  test('records cubic-bezier control points for a curved move', async ({
+    page,
+  }) => {
+    await clickableLocator(page.locator('#click-button')).click({
+      move: { duration: 200, curve: 'natural' },
+    })
+
+    const [event] = clickEvents()
+    const move = moveEventsIn(event!)[0] as FocusChangeEvent
+    expect(move.mouse?.control).toBeDefined()
+    expect(move.mouse!.control).toHaveLength(2)
+    const [c1, c2] = move.mouse!.control!
+    expect(typeof c1.x).toBe('number')
+    expect(typeof c2.y).toBe('number')
+  })
+
+  test('omits control points for a straight move', async ({ page }) => {
+    await clickableLocator(page.locator('#click-button')).click({
+      move: { duration: 200, curve: 'none' },
+    })
+
+    const [event] = clickEvents()
+    const move = moveEventsIn(event!)[0] as FocusChangeEvent
+    expect(move.mouse?.control).toBeUndefined()
+  })
+
   test('records elementRect', async ({ page }) => {
     await clickableLocator(page.locator('#click-button')).click({
-      moveDuration: 50,
+      move: { duration: 50 },
     })
 
     const events = clickEvents()
@@ -244,7 +280,7 @@ test.describe('click instrumentation', () => {
     expect(await scrollY(page)).toBe(0)
 
     await clickableLocator(page.locator('#offscreen-click-button')).click({
-      moveDuration: 50,
+      move: { duration: 50 },
     })
 
     expect(await scrollY(page)).toBeGreaterThan(0)
@@ -256,7 +292,7 @@ test.describe('click instrumentation', () => {
     expect(await scrollY(page)).toBe(0)
 
     await clickableLocator(page.locator('#click-button')).click({
-      moveDuration: 50,
+      move: { duration: 50 },
     })
 
     // The button is already on screen, so a plain click must not move the page.
@@ -267,7 +303,7 @@ test.describe('click instrumentation', () => {
     page,
   }) => {
     await clickableLocator(page.locator('#offscreen-click-button')).click({
-      moveDuration: 50,
+      move: { duration: 50 },
     })
     await expect(page.locator('#offscreen-click-status')).not.toHaveText(
       'Not clicked'
@@ -338,7 +374,7 @@ test.describe('fill instrumentation', () => {
   test('with click option: records click sub-events', async ({ page }) => {
     await fillableLocator(page.locator('#text-input')).fill('hi', {
       duration: 100,
-      moveDuration: 50,
+      move: { duration: 50 },
     })
 
     const events = inputEvents()
@@ -448,7 +484,7 @@ test.describe('pressSequentially instrumentation', () => {
   test('with click option: records click sub-events', async ({ page }) => {
     await typeableLocator(page.locator('#text-input')).pressSequentially('hi', {
       delay: 30,
-      moveDuration: 50,
+      move: { duration: 50 },
     })
 
     const events = inputEvents()
@@ -569,7 +605,7 @@ test.describe('check instrumentation', () => {
     page,
   }) => {
     await checkLocator(page.locator('#checkbox-unchecked')).check({
-      moveDuration: 100,
+      move: { duration: 100 },
     })
 
     const events = inputEvents()
@@ -592,7 +628,7 @@ test.describe('check instrumentation', () => {
 
   test('with click option: actually checks the checkbox', async ({ page }) => {
     await checkLocator(page.locator('#checkbox-unchecked')).check({
-      moveDuration: 50,
+      move: { duration: 50 },
     })
     await expect(page.locator('#checkbox-unchecked')).toBeChecked()
   })
@@ -671,7 +707,7 @@ test.describe('uncheck instrumentation', () => {
     page,
   }) => {
     await uncheckLocator(page.locator('#checkbox-checked')).uncheck({
-      moveDuration: 100,
+      move: { duration: 100 },
     })
 
     const events = inputEvents()
@@ -687,7 +723,7 @@ test.describe('uncheck instrumentation', () => {
     page,
   }) => {
     await uncheckLocator(page.locator('#checkbox-checked')).uncheck({
-      moveDuration: 50,
+      move: { duration: 50 },
     })
     await expect(page.locator('#checkbox-checked')).not.toBeChecked()
   })
@@ -770,7 +806,7 @@ test.describe('tap instrumentation', () => {
     page,
   }) => {
     await tapLocator(page.locator('#tap-target')).tap({
-      moveDuration: 100,
+      move: { duration: 100 },
     })
 
     const events = inputEvents()
@@ -790,7 +826,7 @@ test.describe('tap instrumentation', () => {
     page,
   }) => {
     await tapLocator(page.locator('#tap-target')).tap({
-      moveDuration: 50,
+      move: { duration: 50 },
     })
     await expect(page.locator('#tap-status')).not.toHaveText('Not yet tapped')
   })
@@ -874,7 +910,7 @@ test.describe('selectOption instrumentation', () => {
     page,
   }) => {
     await selectableLocator(page.locator('#cars')).selectOption('audi', {
-      moveDuration: 100,
+      move: { duration: 100 },
     })
 
     const events = inputEvents()
@@ -898,14 +934,14 @@ test.describe('selectOption instrumentation', () => {
 
   test('with click option: actually selects the option', async ({ page }) => {
     await selectableLocator(page.locator('#cars')).selectOption('saab', {
-      moveDuration: 50,
+      move: { duration: 50 },
     })
     await expect(page.locator('#cars')).toHaveValue('saab')
   })
 
   test('with click option: cursor y is at select center', async ({ page }) => {
     await selectableLocator(page.locator('#cars')).selectOption('audi', {
-      moveDuration: 100,
+      move: { duration: 100 },
     })
 
     const events = inputEvents()
@@ -1049,7 +1085,7 @@ test.describe('mouse.move instrumentation', () => {
     })
 
     await clickableLocator(page.locator('#click-button')).click({
-      moveDuration: 50,
+      move: { duration: 50 },
     })
 
     const [click] = clickEvents()
@@ -1085,7 +1121,7 @@ test.describe('mouse press instrumentation', () => {
   }) => {
     const { x, y } = await clickButtonCenter(page)
     await (page.mouse as unknown as InstrumentedMouse).click(x, y, {
-      moveDuration: 50,
+      move: { duration: 50 },
     })
 
     await expect(page.locator('#click-status')).not.toHaveText('Not clicked')
@@ -1097,7 +1133,7 @@ test.describe('mouse press instrumentation', () => {
   }) => {
     const { x, y } = await clickButtonCenter(page)
     await (page.mouse as unknown as InstrumentedMouse).click(x, y, {
-      moveDuration: 50,
+      move: { duration: 50 },
       fake: true,
     })
 
@@ -1118,9 +1154,9 @@ test.describe('mouse press instrumentation', () => {
 function hoverableLocator(locator: Locator): {
   hover(
     opts?: Parameters<Locator['hover']>[0] & {
-      moveDuration?: number
-      moveEasing?: string
-      hoverDuration?: number
+      move?: { duration?: number; easing?: string; delayAfter?: number }
+
+      duration?: number
     }
   ): Promise<void>
 } {
@@ -1132,8 +1168,8 @@ test.describe('hover instrumentation', () => {
     page,
   }) => {
     await hoverableLocator(page.locator('#hover-target')).hover({
-      moveDuration: 50,
-      hoverDuration: 100,
+      move: { duration: 50 },
+      duration: 100,
     })
 
     const events = inputEvents().filter((e) => e.subType === 'hover')
@@ -1151,14 +1187,14 @@ test.describe('hover instrumentation', () => {
 
   test('actually hovers the element', async ({ page }) => {
     await hoverableLocator(page.locator('#hover-target')).hover({
-      moveDuration: 50,
+      move: { duration: 50 },
     })
     await expect(page.locator('#hover-status')).toHaveText('Hovered!')
   })
 
   test('records elementRect on hover', async ({ page }) => {
     await hoverableLocator(page.locator('#hover-target')).hover({
-      moveDuration: 50,
+      move: { duration: 50 },
     })
 
     const events = inputEvents().filter((e) => e.subType === 'hover')
@@ -1177,10 +1213,9 @@ test.describe('hover instrumentation', () => {
 function selectTextLocator(locator: Locator): {
   selectText(
     opts?: Parameters<Locator['selectText']>[0] & {
-      moveDuration?: number
-      moveEasing?: string
-      beforeClickPause?: number
-      selectDuration?: number
+      move?: { duration?: number; easing?: string; delayAfter?: number }
+
+      duration?: number
     }
   ): Promise<void>
 } {
@@ -1192,8 +1227,8 @@ test.describe('selectText instrumentation', () => {
     page,
   }) => {
     await selectTextLocator(page.locator('#select-text-input')).selectText({
-      moveDuration: 50,
-      selectDuration: 60,
+      move: { duration: 50 },
+      duration: 60,
     })
 
     const events = inputEvents().filter((e) => e.subType === 'selectText')
@@ -1206,16 +1241,16 @@ test.describe('selectText instrumentation', () => {
 
   test('actually selects the text', async ({ page }) => {
     await selectTextLocator(page.locator('#select-text-input')).selectText({
-      moveDuration: 50,
-      selectDuration: 60,
+      move: { duration: 50 },
+      duration: 60,
     })
     await expect(page.locator('#select-text-status')).toHaveText('Selected!')
   })
 
   test('records elementRect on selectText', async ({ page }) => {
     await selectTextLocator(page.locator('#select-text-input')).selectText({
-      moveDuration: 50,
-      selectDuration: 60,
+      move: { duration: 50 },
+      duration: 60,
     })
 
     const events = inputEvents().filter((e) => e.subType === 'selectText')
@@ -1235,11 +1270,10 @@ function draggableLocator(locator: Locator): {
   dragTo(
     target: Locator,
     opts?: {
-      moveDuration?: number
-      moveEasing?: string
-      preDragPause?: number
-      dragDuration?: number
-      dragEasing?: string
+      move?: { duration?: number; easing?: string; delayAfter?: number }
+
+      duration?: number
+      easing?: string
       sourcePosition?: { x: number; y: number }
       targetPosition?: { x: number; y: number }
       force?: boolean
@@ -1257,7 +1291,7 @@ test.describe('dragTo instrumentation', () => {
   }) => {
     await draggableLocator(page.locator('#drag-source')).dragTo(
       page.locator('#drop-target'),
-      { moveDuration: 50, dragDuration: 50 }
+      { move: { duration: 50 }, duration: 50 }
     )
 
     const events = inputEvents().filter((e) => e.subType === 'dragTo')
@@ -1272,7 +1306,7 @@ test.describe('dragTo instrumentation', () => {
   test('actually drags the element', async ({ page }) => {
     await draggableLocator(page.locator('#drag-source')).dragTo(
       page.locator('#drop-target'),
-      { moveDuration: 50, dragDuration: 50 }
+      { move: { duration: 50 }, duration: 50 }
     )
     await expect(page.locator('#drag-status')).toHaveText('Dropped!')
   })
@@ -1280,7 +1314,7 @@ test.describe('dragTo instrumentation', () => {
   test('records elementRect on dragTo', async ({ page }) => {
     await draggableLocator(page.locator('#drag-source')).dragTo(
       page.locator('#drop-target'),
-      { moveDuration: 50, dragDuration: 50 }
+      { move: { duration: 50 }, duration: 50 }
     )
 
     const events = inputEvents().filter((e) => e.subType === 'dragTo')

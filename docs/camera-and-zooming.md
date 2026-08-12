@@ -49,6 +49,8 @@ await autoZoom(async () => {
 
 Use automatic zoom when the camera should react to the flow instead of following a storyboard you planned in advance.
 
+Note on naming: `autoZoom`'s own `delay` / `delayAfter` options are real pauses slept before and after the zoom. They are unrelated to the `delay` option on overlay updates and media `start()` calls, which offsets an event's recorded timestamp (see [Mid-Video Overlay Updates](./overlay-updates.md#delaying-an-update-into-an-interaction)). Zoom brackets do not take that offset; use the editor's lead-in instead.
+
 ## Manual zoom
 
 ```ts
@@ -141,10 +143,8 @@ By default [overlays](/docs/guides/overlays) are burned into the scene: when the
 ```ts
 import { video } from 'screenci'
 
-video.use({
-  renderOptions: {
-    recording: { size: 0.8 },
-  },
+video.renderOptions({
+  recording: { size: 0.8 },
 })
 ```
 
@@ -159,3 +159,9 @@ instead of stepping frame to frame. Tune it with `zoom.motionBlur` in
 `renderOptions` (0-1, default `0.5`, `0` disables it). The cursor has its own
 independent `mouse.motionBlur`. See
 [Configuration](/docs/reference/configuration#motion-blur) for the full reference.
+
+## Mid-video layout changes
+
+The narration bubble, the recording frame, and the background can all change
+mid-video with animated transitions: see
+[Mid-Video Overlay Updates](/docs/guides/overlay-updates).

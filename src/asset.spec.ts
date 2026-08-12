@@ -5,6 +5,7 @@ import { join } from 'path'
 import { fileURLToPath } from 'url'
 import {
   createOverlays,
+  buildOverlays,
   buildStudioOverlays,
   selected,
   setActiveAssetRecorder,
@@ -13,6 +14,7 @@ import {
   resetRegisteredAssetPaths,
   resetMissingOverlayWarnings,
 } from './asset.js'
+import { normalizeFeature } from './declare.js'
 import { logger } from './logger.js'
 import {
   setAnimatedHtmlRasterizer,
@@ -21,7 +23,13 @@ import {
 import {
   setClientOverlayBundler,
   resetClientOverlayBundler,
+  type ClientOverlayEntry,
 } from './clientOverlay.js'
+import {
+  setElementOverlayRenderer,
+  resetElementOverlayRenderer,
+  type ReactElementLike,
+} from './elementOverlay.js'
 import type { Locator } from '@playwright/test'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
@@ -29,6 +37,16 @@ import {
   createScreenCIRuntimeContext,
   runWithScreenCIRuntimeContext,
 } from './runtimeContext.js'
+
+/** A value carrying the React element runtime brand, as JSX would produce. */
+function fakeReactElement(): ReactElementLike {
+  return {
+    $$typeof: Symbol.for('react.element'),
+    type: 'span',
+    props: {},
+    key: null,
+  } as unknown as ReactElementLike
+}
 
 /** A minimal Locator stand-in exposing the box + viewport overlayRect reads. */
 function fakeLocator(
@@ -59,6 +77,7 @@ function createMockRecorder(): IEventRecorder {
     addAudioEnd: vi.fn(),
     addHideStart: vi.fn(),
     addHideEnd: vi.fn(),
+    addSleep: vi.fn(),
     addAutoZoomStart: vi.fn(),
     addAutoZoomEnd: vi.fn(),
     registerVoiceForLang: vi.fn(),
@@ -83,7 +102,7 @@ describe('createOverlays', () => {
 
   it('creates a callable controller for each key in the map', () => {
     const overlays = createOverlays({
-      logo: { path: './logo.png', duration: '1.2s' },
+      logo: { fill: 'recording', path: './logo.png', duration: 1200 },
       intro: { path: './intro.mp4', fill: 'screen' },
     })
 
@@ -96,7 +115,7 @@ describe('createOverlays', () => {
   describe('calling an overlay controller', () => {
     it('records an image start with the default recording placement', async () => {
       const overlays = createOverlays({
-        logo: { path: './logo.png', duration: '1.2s' },
+        logo: { fill: 'recording', path: './logo.png', duration: 1200 },
       })
 
       await overlays.logo()
@@ -112,7 +131,7 @@ describe('createOverlays', () => {
 
     it('accepts config duration as numeric milliseconds', async () => {
       const overlays = createOverlays({
-        logo: { path: './logo.png', duration: 1200 },
+        logo: { fill: 'recording', path: './logo.png', duration: 1200 },
       })
 
       await overlays.logo()
@@ -126,7 +145,9 @@ describe('createOverlays', () => {
     })
 
     it('records an absolute string position as an outputMs anchor', async () => {
-      const overlays = createOverlays({ logo: { path: './logo.png' } })
+      const overlays = createOverlays({
+        logo: { fill: 'recording', path: './logo.png' },
+      })
 
       await overlays.logo.until('0:10')
 
@@ -139,7 +160,9 @@ describe('createOverlays', () => {
     })
 
     it('records a percentage string position as a percent anchor', async () => {
-      const overlays = createOverlays({ logo: { path: './logo.png' } })
+      const overlays = createOverlays({
+        logo: { fill: 'recording', path: './logo.png' },
+      })
 
       await overlays.logo.until('56%')
 
@@ -152,7 +175,9 @@ describe('createOverlays', () => {
     })
 
     it('rejects a string position on a video overlay', async () => {
-      const overlays = createOverlays({ clip: { path: './clip.mp4' } })
+      const overlays = createOverlays({
+        clip: { fill: 'recording', path: './clip.mp4' },
+      })
 
       await expect(overlays.clip.until('0:10')).rejects.toThrow(
         /is a video and cannot use \.until\('0:10'\)/
@@ -162,7 +187,7 @@ describe('createOverlays', () => {
     it('accepts a bare string path', async () => {
       const overlays = createOverlays({ logo: './logo.png' })
 
-      await overlays.logo.for('1s')
+      await overlays.logo.for(1000)
 
       expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
         kind: 'image',
@@ -172,9 +197,24 @@ describe('createOverlays', () => {
       })
     })
 
+    it('routes a { editor } overlay to a studio asset start (no local file)', async () => {
+      const overlays = createOverlays({ logo: { editor: 'logo' } })
+
+      await overlays.logo.for(1000)
+
+      expect(recorder.addStudioAssetStart).toHaveBeenCalledWith('logo')
+      // A backend-hosted overlay never resolves a file, so no code assetStart.
+      expect(recorder.addAssetStart).not.toHaveBeenCalled()
+    })
+
     it('emits pinToScreen on an image overlay when set', async () => {
       const overlays = createOverlays({
-        logo: { path: './logo.png', duration: '1s', pinToScreen: true },
+        logo: {
+          fill: 'recording',
+          path: './logo.png',
+          duration: 1000,
+          pinToScreen: true,
+        },
       })
 
       await overlays.logo()
@@ -190,7 +230,7 @@ describe('createOverlays', () => {
 
     it('emits pinToScreen on a video overlay when set', async () => {
       const overlays = createOverlays({
-        clip: { path: './clip.mp4', pinToScreen: true },
+        clip: { fill: 'recording', path: './clip.mp4', pinToScreen: true },
       })
 
       await overlays.clip()
@@ -206,7 +246,12 @@ describe('createOverlays', () => {
 
     it('omits pinToScreen when it is false (byte-identical default)', async () => {
       const overlays = createOverlays({
-        logo: { path: './logo.png', duration: '1s', pinToScreen: false },
+        logo: {
+          fill: 'recording',
+          path: './logo.png',
+          duration: 1000,
+          pinToScreen: false,
+        },
       })
 
       await overlays.logo()
@@ -239,7 +284,7 @@ describe('createOverlays', () => {
 
     it('passes non-zero volume value', async () => {
       const overlays = createOverlays({
-        audio: { path: './sound.mp4', volume: 0.8 },
+        audio: { fill: 'recording', path: './sound.mp4', volume: 0.8 },
       })
 
       await overlays.audio()
@@ -278,7 +323,7 @@ describe('createOverlays', () => {
 
     it('each controller uses its own name and config', async () => {
       const overlays = createOverlays({
-        logo: { path: './logo.png', duration: '1.2s' },
+        logo: { fill: 'recording', path: './logo.png', duration: 1200 },
         intro: { path: './intro.mp4', fill: 'screen' },
       })
 
@@ -306,7 +351,7 @@ describe('createOverlays', () => {
       resetMissingOverlayWarnings()
       const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => {})
       const overlays = createOverlays({
-        logo: { path: './missing.png', duration: '1.2s' },
+        logo: { fill: 'recording', path: './missing.png', duration: 1200 },
       })
 
       try {
@@ -339,7 +384,7 @@ describe('createOverlays', () => {
       const tempDir = await mkdtemp(join(tmpdir(), 'screenci-overlay-spec-'))
       await writeFile(join(tempDir, 'logo.png'), 'logo')
       const overlays = createOverlays({
-        logo: { path: './logo.png', duration: '1.2s' },
+        logo: { fill: 'recording', path: './logo.png', duration: 1200 },
       })
 
       try {
@@ -363,19 +408,21 @@ describe('createOverlays', () => {
     })
 
     it('blocking call without a duration throws (image with no duration)', async () => {
-      const overlays = createOverlays({ logo: { path: './logo.png' } })
+      const overlays = createOverlays({
+        logo: { fill: 'recording', path: './logo.png' },
+      })
 
       await expect(overlays.logo()).rejects.toThrow(
-        '[screenci] Overlay "logo" (./logo.png) needs a length: use .for(\'2s\'), .until(\'0:05\'), set "duration" in the config, or drive it with .start()/.end().'
+        '[screenci] Overlay "logo" (./logo.png) needs a length: use .for(2000), .until(\'0:05\'), set "duration" in the config, or drive it with .start()/.end().'
       )
     })
 
     it('uses the duration passed to the blocking call over the config', async () => {
       const overlays = createOverlays({
-        logo: { path: './logo.png', duration: '1.2s' },
+        logo: { fill: 'recording', path: './logo.png', duration: 1200 },
       })
 
-      await overlays.logo.for('3s')
+      await overlays.logo.for(3000)
 
       expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
         kind: 'image',
@@ -388,17 +435,20 @@ describe('createOverlays', () => {
     it('rejects a config duration that is a percentage', () => {
       expect(() =>
         createOverlays({
-          broken: { path: './logo.png', duration: '50%' },
+          broken: { fill: 'recording', path: './logo.png', duration: '50%' },
         })
-      ).toThrow(
-        "Overlay \"broken\" duration cannot be a percentage ('50%'); a relative length needs a concrete time like '2s' or '0:02'. Use .until('50%') for an absolute position."
-      )
+      ).toThrow(/duration must be a finite number of milliseconds/)
     })
 
     it('rejects mp4 overlays with duration', () => {
       expect(() =>
         createOverlays({
-          broken: { path: './clip.mp4', duration: '1s', volume: 0 } as never,
+          broken: {
+            fill: 'recording',
+            path: './clip.mp4',
+            duration: 1000,
+            volume: 0,
+          } as never,
         })
       ).toThrow(
         'Overlay "broken" (./clip.mp4) is a video and must not provide duration. Its natural media duration is used instead.'
@@ -408,7 +458,7 @@ describe('createOverlays', () => {
     it('rejects mp4 overlays with invalid volume when specified', () => {
       expect(() =>
         createOverlays({
-          broken: { path: './clip.mp4', volume: Number.NaN },
+          broken: { fill: 'recording', path: './clip.mp4', volume: Number.NaN },
         })
       ).toThrow(
         'Overlay "broken" (./clip.mp4) must provide a finite volume between 0 and 4 for .mp4 overlays. 1 is the natural level, 0 is silent, and values above 1 boost it.'
@@ -418,7 +468,11 @@ describe('createOverlays', () => {
     it('rejects image overlays with volume', () => {
       expect(() =>
         createOverlays({
-          broken: { path: './logo.png', volume: 0.5 } as never,
+          broken: {
+            fill: 'recording',
+            path: './logo.png',
+            volume: 0.5,
+          } as never,
         })
       ).toThrow(
         'Overlay "broken" (./logo.png) is an image and must not provide volume. Use duration instead.'
@@ -462,7 +516,12 @@ describe('createOverlays', () => {
     it('rejects mp4 overlays with both speed and time', () => {
       expect(() =>
         createOverlays({
-          broken: { path: './clip.mp4', speed: 2, time: 3000 },
+          broken: {
+            fill: 'recording',
+            path: './clip.mp4',
+            speed: 2,
+            time: 3000,
+          },
         })
       ).toThrow(
         'Overlay "broken" (./clip.mp4) must set only one of speed or time, not both.'
@@ -472,7 +531,7 @@ describe('createOverlays', () => {
     it('rejects mp4 overlays with a non-positive speed', () => {
       expect(() =>
         createOverlays({
-          broken: { path: './clip.mp4', speed: 0 },
+          broken: { fill: 'recording', path: './clip.mp4', speed: 0 },
         })
       ).toThrow(/must provide a finite speed greater than 0/)
     })
@@ -480,7 +539,12 @@ describe('createOverlays', () => {
     it('rejects speed/time on a non-video overlay', () => {
       expect(() =>
         createOverlays({
-          broken: { path: './logo.png', duration: '1s', speed: 2 } as never,
+          broken: {
+            fill: 'recording',
+            path: './logo.png',
+            duration: 1000,
+            speed: 2,
+          } as never,
         })
       ).toThrow(
         'Overlay "broken" only supports speed/time on .mp4 video overlays.'
@@ -490,26 +554,30 @@ describe('createOverlays', () => {
     it('rejects unsupported extensions', () => {
       expect(() =>
         createOverlays({
-          broken: { path: './photo.webp' },
+          broken: { fill: 'recording', path: './photo.webp' },
         })
       ).toThrow(
-        'Overlay "broken" must use one of: .tsx, .html, .svg, .png, .mp4. Received: ./photo.webp'
+        'Overlay "broken" must use one of: .tsx, .solid.tsx, .vue, .svelte, .html, .svg, .png, .mp4. Received: ./photo.webp'
       )
     })
 
     it('rejects a config with no path', () => {
       expect(() => createOverlays({ broken: { width: 200 } as never })).toThrow(
-        'Overlay "broken" must provide a "path" (a .tsx, .html, .svg, .png, or .mp4 file).'
+        'Overlay "broken" must provide exactly one content source: a file "path" (.tsx, .solid.tsx, .vue, .svelte, .html, .svg, .png, or .mp4), a React "element", inline "jsx"/"solidJsx" module source, or an inline "html" fragment.'
       )
     })
 
     it('rejects "props" on a non-.tsx overlay', () => {
       expect(() =>
         createOverlays({
-          broken: { path: './card.html', props: { x: 1 } } as never,
+          broken: {
+            fill: 'recording',
+            path: './card.html',
+            props: { x: 1 },
+          } as never,
         })
       ).toThrow(
-        'Overlay "broken" (./card.html) cannot use "props": props are only supported for .tsx page overlays.'
+        'Overlay "broken" (./card.html) cannot use "props": props are only supported for bundled component overlays (.tsx, .solid.tsx, .vue, .svelte files, or inline jsx/solidJsx source).'
       )
     })
   })
@@ -519,7 +587,7 @@ describe('createOverlays', () => {
       const overlays = createOverlays({
         logo: {
           path: './logo.png',
-          duration: '1s',
+          duration: 1000,
           relativeTo: 'screen',
           x: 200,
           y: 300,
@@ -542,7 +610,7 @@ describe('createOverlays', () => {
       const overlays = createOverlays({
         logo: {
           path: './logo.png',
-          duration: '1s',
+          duration: 1000,
           relativeTo: 'recording',
           height: 540,
         },
@@ -563,7 +631,7 @@ describe('createOverlays', () => {
       const overlays = createOverlays({
         logo: {
           path: './logo.png',
-          duration: '1s',
+          duration: 1000,
           x: 100,
           y: 100,
           width: 480,
@@ -588,9 +656,9 @@ describe('createOverlays', () => {
       })
     })
 
-    it('emits no placement (fills the recording) when no fields are given', async () => {
+    it("emits no placement (fills the recording) with an explicit fill: 'recording'", async () => {
       const overlays = createOverlays({
-        logo: { path: './logo.png', duration: '1s' },
+        logo: { fill: 'recording', path: './logo.png', duration: 1000 },
       })
 
       await overlays.logo()
@@ -601,12 +669,24 @@ describe('createOverlays', () => {
       )
     })
 
+    it('rejects a config object with no placement fields', () => {
+      expect(() =>
+        createOverlays({
+          logo: { path: './logo.png', duration: 1000 },
+        })
+      ).toThrow(
+        '[screenci] Overlay "logo" must choose a placement: set "fill" (\'recording\' or \'screen\'), "over" (a locator), or an explicit box with "width" or "height" (in CSS px).'
+      )
+    })
+
     it('rejects positioning fields without a width or height', () => {
       expect(() =>
         createOverlays({
-          logo: { path: './logo.png', duration: '1s', x: 100, y: 100 },
+          logo: { path: './logo.png', duration: 1000, x: 100, y: 100 },
         })
-      ).toThrow('Overlay "logo" must set "width" or "height"')
+      ).toThrow(
+        'Overlay "logo" must choose a placement: set "fill" (\'recording\' or \'screen\'), "over" (a locator), or an explicit box with "width" or "height" (in CSS px).'
+      )
     })
 
     it('rejects setting both width and height', () => {
@@ -614,7 +694,7 @@ describe('createOverlays', () => {
         createOverlays({
           logo: {
             path: './logo.png',
-            duration: '1s',
+            duration: 1000,
             width: 300,
             height: 300,
           },
@@ -627,7 +707,7 @@ describe('createOverlays', () => {
     it('rejects a negative coordinate', () => {
       expect(() =>
         createOverlays({
-          logo: { path: './logo.png', duration: '1s', x: -5, width: 300 },
+          logo: { path: './logo.png', duration: 1000, x: -5, width: 300 },
         })
       ).toThrow(
         'Overlay "logo" x must be a non-negative number of CSS pixels. Received: -5'
@@ -637,7 +717,7 @@ describe('createOverlays', () => {
     it('rejects a non-positive size', () => {
       expect(() =>
         createOverlays({
-          logo: { path: './logo.png', duration: '1s', x: 0, width: 0 },
+          logo: { path: './logo.png', duration: 1000, x: 0, width: 0 },
         })
       ).toThrow(
         'Overlay "logo" width must be a positive number of CSS pixels. Received: 0'
@@ -649,7 +729,7 @@ describe('createOverlays', () => {
         createOverlays({
           logo: {
             path: './logo.png',
-            duration: '1s',
+            duration: 1000,
             relativeTo: 'viewport' as never,
             width: 300,
           },
@@ -674,10 +754,10 @@ describe('createOverlays', () => {
 
     it('blocking call records only assetStart with a duration', async () => {
       const overlays = createOverlays({
-        logo: { path: './logo.png', duration: '1s' },
+        logo: { fill: 'recording', path: './logo.png', duration: 1000 },
       })
 
-      await overlays.logo.for('1.5s')
+      await overlays.logo.for(1500)
 
       expect(recorder.addAssetStart).toHaveBeenCalledOnce()
       expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
@@ -690,7 +770,9 @@ describe('createOverlays', () => {
     })
 
     it('start() then end() records a live assetStart (no duration) and an assetEnd', async () => {
-      const overlays = createOverlays({ badge: { path: './badge.png' } })
+      const overlays = createOverlays({
+        badge: { fill: 'recording', path: './badge.png' },
+      })
 
       await overlays.badge.start()
       expect(recorder.addAssetStart).toHaveBeenCalledWith('badge', {
@@ -703,10 +785,38 @@ describe('createOverlays', () => {
       expect(recorder.addAssetEnd).toHaveBeenCalledWith('badge', 'wait')
     })
 
+    it('start({ delay }) passes the delay as the trailing recorder arg', async () => {
+      const overlays = createOverlays({
+        badge: { fill: 'recording', path: './badge.png' },
+      })
+
+      await overlays.badge.start({ delay: 600 })
+      expect(recorder.addAssetStart).toHaveBeenCalledWith(
+        'badge',
+        {
+          kind: 'image',
+          path: './badge.png',
+          fullScreen: false,
+        },
+        600
+      )
+      await overlays.badge.end()
+    })
+
+    it('start() rejects an invalid delay', async () => {
+      const overlays = createOverlays({
+        badge: { fill: 'recording', path: './badge.png' },
+      })
+      await expect(overlays.badge.start({ delay: -10 })).rejects.toThrow(
+        /delay/
+      )
+      expect(recorder.addAssetStart).not.toHaveBeenCalled()
+    })
+
     it('keeps overlapping overlays live and ends each by name independently', async () => {
       const overlays = createOverlays({
-        a: { path: './a.png' },
-        b: { path: './b.png' },
+        a: { fill: 'recording', path: './a.png' },
+        b: { fill: 'recording', path: './b.png' },
       })
 
       await overlays.a.start()
@@ -723,8 +833,8 @@ describe('createOverlays', () => {
 
     it('does not auto-end a live overlay when a blocking overlay runs', async () => {
       const overlays = createOverlays({
-        a: { path: './a.png' },
-        b: { path: './b.png', duration: '0.8s' },
+        a: { fill: 'recording', path: './a.png' },
+        b: { fill: 'recording', path: './b.png', duration: 800 },
       })
 
       await overlays.a.start()
@@ -744,7 +854,9 @@ describe('createOverlays', () => {
     })
 
     it('starting the same overlay twice without ending throws', async () => {
-      const overlays = createOverlays({ a: { path: './a.png' } })
+      const overlays = createOverlays({
+        a: { fill: 'recording', path: './a.png' },
+      })
 
       await overlays.a.start()
       await expect(overlays.a.start()).rejects.toThrow(
@@ -753,7 +865,9 @@ describe('createOverlays', () => {
     })
 
     it('end() without an active overlay throws', async () => {
-      const overlays = createOverlays({ a: { path: './a.png' } })
+      const overlays = createOverlays({
+        a: { fill: 'recording', path: './a.png' },
+      })
 
       await expect(overlays.a.end()).rejects.toThrow(
         'Cannot call end() for overlay "a" because it is not a started overlay'
@@ -772,7 +886,7 @@ describe('createOverlays', () => {
         width: 200,
         height: 50,
       }))
-      setClientOverlayBundler(async () => 'BUNDLE')
+      setClientOverlayBundler(async () => ({ js: 'BUNDLE', css: '' }))
     })
 
     afterEach(async () => {
@@ -803,7 +917,7 @@ describe('createOverlays', () => {
       const overlays = createOverlays({
         hint: {
           path: './hint.html',
-          duration: '1.5s',
+          duration: 1500,
           x: 200,
           y: 120,
           width: 600,
@@ -835,9 +949,10 @@ describe('createOverlays', () => {
       await writeFile(join(dir, 'Badge.tsx'), 'export default () => null')
       const overlays = createOverlays({
         badge: {
+          fill: 'recording',
           path: './Badge.tsx',
           props: { label: 'New' },
-          duration: '1.2s',
+          duration: 1200,
         },
       })
 
@@ -857,9 +972,184 @@ describe('createOverlays', () => {
       expect(payload.request.html).toContain('id="screenci-overlay-root"')
     })
 
+    const lastRequest = () => {
+      const call = vi.mocked(recorder.addPendingAssetStart).mock.calls.at(-1)
+      return call?.[1] as {
+        request: { kind: string; html: string; awaitMount?: boolean }
+      }
+    }
+
+    it.each([
+      ['./Card.solid.tsx', 'solid'],
+      ['./Card.vue', 'vue'],
+      ['./Card.svelte', 'svelte'],
+      ['./Card.tsx', 'react'],
+    ] as const)(
+      'bundles a %s file with the %s framework',
+      async (relPath, framework) => {
+        let seenEntry: ClientOverlayEntry | undefined
+        setClientOverlayBundler(async (opts) => {
+          seenEntry = opts.entry
+          return { js: 'FRAMEWORK_BUNDLE', css: '' }
+        })
+        const fileName = relPath.slice(2)
+        await writeFile(join(dir, fileName), 'component source')
+        const overlays = createOverlays({
+          card: { fill: 'recording', path: relPath, duration: 1000 } as never,
+        })
+
+        await withRun(() => overlays.card())
+
+        expect(seenEntry).toEqual({
+          kind: 'file',
+          path: join(dir, fileName),
+          framework,
+        })
+        expect(lastRequest().request.awaitMount).toBe(true)
+        expect(lastRequest().request.html).toContain('FRAMEWORK_BUNDLE')
+      }
+    )
+
+    it('bundles inline jsx source with the recording dir as resolveDir', async () => {
+      let seenEntry: ClientOverlayEntry | undefined
+      let seenProps: string | undefined
+      setClientOverlayBundler(async (opts) => {
+        seenEntry = opts.entry
+        seenProps = opts.propsJson
+        return { js: 'INLINE_JSX_BUNDLE', css: '' }
+      })
+      const overlays = createOverlays({
+        badge: {
+          fill: 'recording',
+          jsx: 'export default () => <b>Hi</b>',
+          props: { label: 'New' },
+          duration: 1000,
+        },
+      })
+
+      await withRun(() => overlays.badge())
+
+      expect(seenEntry).toEqual({
+        kind: 'source',
+        code: 'export default () => <b>Hi</b>',
+        resolveDir: dir,
+        framework: 'react',
+      })
+      expect(seenProps).toBe('{"label":"New"}')
+      expect(lastRequest().request.awaitMount).toBe(true)
+      expect(lastRequest().request.html).toContain('INLINE_JSX_BUNDLE')
+    })
+
+    it('bundles inline solidJsx source with the solid framework', async () => {
+      let seenEntry: ClientOverlayEntry | undefined
+      setClientOverlayBundler(async (opts) => {
+        seenEntry = opts.entry
+        return { js: 'SOLID_BUNDLE', css: '' }
+      })
+      const overlays = createOverlays({
+        badge: {
+          fill: 'recording',
+          solidJsx: 'export default () => <b>Hi</b>',
+          duration: 1000,
+        },
+      })
+
+      await withRun(() => overlays.badge())
+
+      expect(seenEntry).toMatchObject({ kind: 'source', framework: 'solid' })
+    })
+
+    it('renders an element overlay to static markup (no mount, no awaitMount)', async () => {
+      setElementOverlayRenderer(async () => '<span>Static</span>')
+      try {
+        const overlays = createOverlays({
+          badge: {
+            fill: 'recording',
+            element: fakeReactElement(),
+            duration: 1000,
+          },
+        })
+
+        await withRun(() => overlays.badge())
+
+        const { request } = lastRequest()
+        expect(request.awaitMount).toBeUndefined()
+        expect(request.html).toContain(
+          '<div id="screenci-overlay-root"><span>Static</span></div>'
+        )
+      } finally {
+        resetElementOverlayRenderer()
+      }
+    })
+
+    it('accepts a bare React element as shorthand for { element }', async () => {
+      setElementOverlayRenderer(async () => '<span>Bare</span>')
+      try {
+        const overlays = createOverlays({
+          badge: fakeReactElement(),
+        })
+
+        await withRun(() => overlays.badge.for(1000))
+
+        expect(lastRequest().request.html).toContain('<span>Bare</span>')
+      } finally {
+        resetElementOverlayRenderer()
+      }
+    })
+
+    it('wraps an inline html fragment in the host document', async () => {
+      const overlays = createOverlays({
+        note: {
+          fill: 'recording',
+          html: '<div class="note">Tip</div>',
+          duration: 1000,
+        },
+      })
+
+      await withRun(() => overlays.note())
+
+      const { request } = lastRequest()
+      expect(request.awaitMount).toBeUndefined()
+      expect(request.html).toContain(
+        '<div id="screenci-overlay-root"><div class="note">Tip</div></div>'
+      )
+    })
+
+    it('rejects a config combining several content sources', () => {
+      expect(() =>
+        createOverlays({
+          broken: {
+            fill: 'recording',
+            path: './x.html',
+            html: '<div/>',
+          } as never,
+        })
+      ).toThrow('several were given')
+    })
+
+    it('rejects "props" on an element overlay with a closure hint', () => {
+      expect(() =>
+        createOverlays({
+          broken: {
+            fill: 'recording',
+            element: fakeReactElement(),
+            props: { x: 1 },
+          } as never,
+        })
+      ).toThrow('an element renders in-process, so bake props into the JSX')
+    })
+
+    it('rejects an "element" that is not a React element', () => {
+      expect(() =>
+        createOverlays({
+          broken: { fill: 'recording', element: { type: 'div' } } as never,
+        })
+      ).toThrow('is not a React element')
+    })
+
     it('is a no-op outside an active recording (no page / recording dir)', async () => {
       const overlays = createOverlays({
-        hint: { path: './hint.html', duration: '1s' },
+        hint: { fill: 'recording', path: './hint.html', duration: 1000 },
       })
 
       await runWithScreenCIRuntimeContext(
@@ -880,7 +1170,7 @@ describe('createOverlays', () => {
       const overlays = createOverlays({
         ring: (p: { x: number }) => ({
           path: './ring.html',
-          duration: '1s',
+          duration: 1000,
           x: p.x,
           y: 300,
           width: 200,
@@ -918,7 +1208,7 @@ describe('createOverlays', () => {
         ring: (loc: Locator) => ({ path: './ring.html', over: loc }),
       })
 
-      await withRun(() => overlays.ring(target).for('1s'))
+      await withRun(() => overlays.ring(target).for(1000))
 
       const call = vi.mocked(recorder.addPendingAssetStart).mock.calls.at(-1)
       const payload = call?.[1] as {
@@ -931,6 +1221,9 @@ describe('createOverlays', () => {
         x: 100,
         y: 50,
         width: 300,
+        elementRect: { x: 100, y: 50, width: 300, height: 80 },
+        marginPx: 0,
+        overLocked: true,
       })
       // The element box size is injected onto the overlay root.
       expect(payload.request.html).toContain('width:300px;height:80px')
@@ -951,7 +1244,7 @@ describe('createOverlays', () => {
         }),
       })
 
-      await withRun(() => overlays.ring(target).for('1s'))
+      await withRun(() => overlays.ring(target).for(1000))
 
       const call = vi.mocked(recorder.addPendingAssetStart).mock.calls.at(-1)
       const payload = call?.[1] as {
@@ -963,6 +1256,9 @@ describe('createOverlays', () => {
         x: 80,
         y: 80,
         width: 240,
+        elementRect: { x: 100, y: 100, width: 200, height: 200 },
+        marginPx: 20,
+        overLocked: true,
       })
       expect(payload.request.html).toContain('width:240px;height:240px')
     })
@@ -996,7 +1292,12 @@ describe('createOverlays', () => {
     it('rejects margin without over', () => {
       expect(() =>
         createOverlays({
-          note: { path: './note.html', duration: '1s', margin: 10 },
+          note: {
+            fill: 'recording',
+            path: './note.html',
+            duration: 1000,
+            margin: 10,
+          },
         })
       ).toThrow('"margin" only applies when positioning over a locator')
     })
@@ -1033,17 +1334,18 @@ describe('createOverlays', () => {
     it('bundles a .tsx page and carries the host document + awaitMount in the request', async () => {
       let bundledEntry: string | undefined
       setClientOverlayBundler(async (opts) => {
-        bundledEntry = opts.entryPath
-        return 'MOUNT_SCRIPT'
+        bundledEntry = opts.entry.kind === 'file' ? opts.entry.path : undefined
+        return { js: 'MOUNT_SCRIPT', css: '' }
       })
       try {
         await writeFile(join(dir, 'App.tsx'), 'export default () => null')
         const overlays = createOverlays({
           app: {
+            fill: 'recording',
             path: './App.tsx',
             props: { isActive: true },
             animate: true,
-            duration: '1s',
+            duration: 1000,
           },
         })
 
@@ -1069,7 +1371,12 @@ describe('createOverlays', () => {
     it('records an animation start with the config duration (blocking)', async () => {
       await writeFile(join(dir, 'intro.html'), '<div>hi</div>')
       const overlays = createOverlays({
-        intro: { path: './intro.html', animate: true, duration: '1.5s' },
+        intro: {
+          fill: 'recording',
+          path: './intro.html',
+          animate: true,
+          duration: 1500,
+        },
       })
 
       await run(() => overlays.intro())
@@ -1092,10 +1399,10 @@ describe('createOverlays', () => {
     it('uses the blocking call argument as the capture duration', async () => {
       await writeFile(join(dir, 'intro.html'), '<div>hi</div>')
       const overlays = createOverlays({
-        intro: { path: './intro.html', animate: true },
+        intro: { fill: 'recording', path: './intro.html', animate: true },
       })
 
-      await run(() => overlays.intro.for('0.8s'))
+      await run(() => overlays.intro.for(800))
 
       expect(recorder.addPendingAssetStart).toHaveBeenCalledWith(
         'intro',
@@ -1112,7 +1419,12 @@ describe('createOverlays', () => {
       }))
       setAnimatedHtmlRasterizer(rasterize)
       const overlays = createOverlays({
-        intro: { path: './intro.html', animate: true, duration: '1.5s' },
+        intro: {
+          fill: 'recording',
+          path: './intro.html',
+          animate: true,
+          duration: 1500,
+        },
       })
 
       await run(() => overlays.intro())
@@ -1130,7 +1442,12 @@ describe('createOverlays', () => {
         '<!doctype html><html><body><div class="fade">hi</div></body></html>'
       await writeFile(join(dir, 'intro.html'), doc)
       const overlays = createOverlays({
-        intro: { path: './intro.html', animate: true, duration: '1s' },
+        intro: {
+          fill: 'recording',
+          path: './intro.html',
+          animate: true,
+          duration: 1000,
+        },
       })
 
       await run(() => overlays.intro())
@@ -1151,7 +1468,12 @@ describe('createOverlays', () => {
       // blocking ones).
       await writeFile(join(dir, 'badge.html'), '<div>hi</div>')
       const overlays = createOverlays({
-        badge: { path: './badge.html', animate: true, duration: '1s' },
+        badge: {
+          fill: 'recording',
+          path: './badge.html',
+          animate: true,
+          duration: 1000,
+        },
       })
 
       await run(() => overlays.badge.start())
@@ -1168,7 +1490,7 @@ describe('createOverlays', () => {
     it('throws when driven with start() and no config duration', async () => {
       await writeFile(join(dir, 'badge.html'), '<div>hi</div>')
       const overlays = createOverlays({
-        badge: { path: './badge.html', animate: true },
+        badge: { fill: 'recording', path: './badge.html', animate: true },
       })
 
       await expect(run(() => overlays.badge.start())).rejects.toThrow(
@@ -1179,7 +1501,7 @@ describe('createOverlays', () => {
     it('throws when called blocking with no duration anywhere', async () => {
       await writeFile(join(dir, 'intro.html'), '<div>hi</div>')
       const overlays = createOverlays({
-        intro: { path: './intro.html', animate: true },
+        intro: { fill: 'recording', path: './intro.html', animate: true },
       })
 
       await expect(run(() => overlays.intro())).rejects.toThrow(
@@ -1190,15 +1512,25 @@ describe('createOverlays', () => {
     it('rejects animate on an image/video file overlay', () => {
       expect(() =>
         createOverlays({
-          logo: { path: './logo.png', animate: true, duration: '1s' },
+          logo: {
+            fill: 'recording',
+            path: './logo.png',
+            animate: true,
+            duration: 1000,
+          },
         })
-      ).toThrow('only supported for .html and .tsx page overlays')
+      ).toThrow('only supported for rendered page overlays')
     })
 
     it('rejects fps without animate', () => {
       expect(() =>
         createOverlays({
-          logo: { path: './logo.png', fps: 30, duration: '1s' },
+          logo: {
+            fill: 'recording',
+            path: './logo.png',
+            fps: 30,
+            duration: 1000,
+          },
         })
       ).toThrow('only applies to animated overlays')
     })
@@ -1209,7 +1541,7 @@ describe('createOverlays', () => {
 
     it('calling the controller is a no-op', async () => {
       const overlays = createOverlays({
-        logo: { path: './logo.png', duration: '1.2s' },
+        logo: { fill: 'recording', path: './logo.png', duration: 1200 },
       })
 
       await expect(overlays.logo()).resolves.toBeUndefined()
@@ -1288,9 +1620,9 @@ describe('selected (render dependency overlays)', () => {
   })
 
   it('produces a branded dependency input carrying the target name', () => {
-    const input = selected('Intro Clip')
+    const input = selected('Intro Clip', { fill: 'recording' })
     expect(input.name).toBe('Intro Clip')
-    expect(input.config).toEqual({})
+    expect(input.config).toEqual({ fill: 'recording' })
   })
 
   it('rejects an empty target name', () => {
@@ -1299,9 +1631,11 @@ describe('selected (render dependency overlays)', () => {
   })
 
   it('records a dependency assetStart with a duration when blocking', async () => {
-    const overlays = createOverlays({ intro: selected('Intro Clip') })
+    const overlays = createOverlays({
+      intro: selected('Intro Clip', { fill: 'recording' }),
+    })
 
-    await overlays.intro.for('1.2s')
+    await overlays.intro.for(1200)
 
     expect(recorder.addAssetStart).toHaveBeenCalledOnce()
     expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
@@ -1314,7 +1648,7 @@ describe('selected (render dependency overlays)', () => {
 
   it('uses the config duration when no call duration is given', async () => {
     const overlays = createOverlays({
-      intro: selected('Intro Clip', { duration: '0.8s' }),
+      intro: selected('Intro Clip', { fill: 'recording', duration: 800 }),
     })
 
     await overlays.intro()
@@ -1329,7 +1663,7 @@ describe('selected (render dependency overlays)', () => {
 
   it('accepts dependency config duration as numeric milliseconds', async () => {
     const overlays = createOverlays({
-      intro: selected('Intro Clip', { duration: 800 }),
+      intro: selected('Intro Clip', { fill: 'recording', duration: 800 }),
     })
 
     await overlays.intro()
@@ -1343,7 +1677,9 @@ describe('selected (render dependency overlays)', () => {
   })
 
   it('records a bare dependency call with its natural length (no durationMs)', async () => {
-    const overlays = createOverlays({ intro: selected('Intro Clip') })
+    const overlays = createOverlays({
+      intro: selected('Intro Clip', { fill: 'recording' }),
+    })
 
     await overlays.intro()
 
@@ -1377,7 +1713,7 @@ describe('selected (render dependency overlays)', () => {
         x: 96,
         y: 96,
         width: 240,
-        duration: '1s',
+        duration: 1000,
       }),
     })
 
@@ -1394,7 +1730,9 @@ describe('selected (render dependency overlays)', () => {
 
   it('does not read any local file for a dependency overlay', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'screenci-dep-overlay-'))
-    const overlays = createOverlays({ intro: selected('Intro Clip') })
+    const overlays = createOverlays({
+      intro: selected('Intro Clip', { fill: 'recording' }),
+    })
 
     try {
       await runWithScreenCIRuntimeContext(
@@ -1402,7 +1740,7 @@ describe('selected (render dependency overlays)', () => {
           recorder,
           testFilePath: join(tempDir, 'demo.screenci.ts'),
         }),
-        () => overlays.intro.for('0.5s')
+        () => overlays.intro.for(500)
       )
 
       expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
@@ -1437,7 +1775,11 @@ describe('validateRegisteredAssetPaths', () => {
       await writeFile(join(tempDir, 'logo.png'), 'png')
       await writeFile(join(tempDir, 'intro.mp4'), 'mp4')
       createOverlays({
-        logo: { path: join(tempDir, 'logo.png'), duration: '1.2s' },
+        logo: {
+          fill: 'recording',
+          path: join(tempDir, 'logo.png'),
+          duration: 1200,
+        },
         intro: { path: join(tempDir, 'intro.mp4'), fill: 'screen' },
       })
 
@@ -1457,7 +1799,11 @@ describe('validateRegisteredAssetPaths', () => {
       await writeFile(join(tempDir, 'logo.png'), 'png')
       const missing = join(tempDir, 'intro.mp4')
       createOverlays({
-        logo: { path: join(tempDir, 'logo.png'), duration: '1.2s' },
+        logo: {
+          fill: 'recording',
+          path: join(tempDir, 'logo.png'),
+          duration: 1200,
+        },
         intro: { path: missing, fill: 'screen' },
       })
 
@@ -1481,7 +1827,9 @@ describe('validateRegisteredAssetPaths', () => {
       // Owned by this spec file, and the file is missing. Validating against an
       // unrelated test file must not fail: another script may legitimately
       // reference a file that does not resolve there.
-      createOverlays({ intro: { path: join(tempDir, 'gone.mp4') } })
+      createOverlays({
+        intro: { fill: 'recording', path: join(tempDir, 'gone.mp4') },
+      })
 
       await expect(
         validateRegisteredAssetPaths(join(tempDir, 'other.screenci.ts'))
@@ -1511,10 +1859,12 @@ describe('overlay length API (.for / .until)', () => {
     })
   })
 
-  it(".for('2s') records a 2000ms durationMs on the asset start", async () => {
-    const overlays = createOverlays({ logo: { path: './logo.png' } })
+  it('.for(2000) records a 2000ms durationMs on the asset start', async () => {
+    const overlays = createOverlays({
+      logo: { fill: 'recording', path: './logo.png' },
+    })
 
-    await overlays.logo.for('2s')
+    await overlays.logo.for(2000)
 
     expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
       kind: 'image',
@@ -1525,7 +1875,9 @@ describe('overlay length API (.for / .until)', () => {
   })
 
   it('.for(1200) records numeric milliseconds on the asset start', async () => {
-    const overlays = createOverlays({ logo: { path: './logo.png' } })
+    const overlays = createOverlays({
+      logo: { fill: 'recording', path: './logo.png' },
+    })
 
     await overlays.logo.for(1200)
 
@@ -1538,15 +1890,19 @@ describe('overlay length API (.for / .until)', () => {
   })
 
   it(".for('56%') rejects a percentage (a relative length has no percentage)", () => {
-    const overlays = createOverlays({ logo: { path: './logo.png' } })
+    const overlays = createOverlays({
+      logo: { fill: 'recording', path: './logo.png' },
+    })
 
     expect(() => overlays.logo.for('56%')).toThrow(
-      /\.for\(duration\) cannot be a percentage/
+      /\.for\(duration\) must be a finite number of milliseconds/
     )
   })
 
   it(".until('0:10') records an absolute outputMs anchor", async () => {
-    const overlays = createOverlays({ logo: { path: './logo.png' } })
+    const overlays = createOverlays({
+      logo: { fill: 'recording', path: './logo.png' },
+    })
 
     await overlays.logo.until('0:10')
 
@@ -1559,7 +1915,9 @@ describe('overlay length API (.for / .until)', () => {
   })
 
   it(".until('56%') records an absolute percent anchor", async () => {
-    const overlays = createOverlays({ logo: { path: './logo.png' } })
+    const overlays = createOverlays({
+      logo: { fill: 'recording', path: './logo.png' },
+    })
 
     await overlays.logo.until('56%')
 
@@ -1572,13 +1930,17 @@ describe('overlay length API (.for / .until)', () => {
   })
 
   it('a bare call on an image throws "needs a length"', async () => {
-    const overlays = createOverlays({ img: { path: './logo.png' } })
+    const overlays = createOverlays({
+      img: { fill: 'recording', path: './logo.png' },
+    })
 
     await expect(overlays.img()).rejects.toThrow(/needs a length/)
   })
 
   it('a bare call on a .mp4 records its natural length (no durationMs/until)', async () => {
-    const overlays = createOverlays({ clip: { path: './clip.mp4' } })
+    const overlays = createOverlays({
+      clip: { fill: 'recording', path: './clip.mp4' },
+    })
 
     await overlays.clip()
 
@@ -1590,9 +1952,9 @@ describe('overlay length API (.for / .until)', () => {
     })
   })
 
-  it("a config duration: '1.5s' resolves to durationMs 1500 on the event", async () => {
+  it('a config duration: 1500 resolves to durationMs 1500 on the event', async () => {
     const overlays = createOverlays({
-      logo: { path: './logo.png', duration: '1.5s' },
+      logo: { fill: 'recording', path: './logo.png', duration: 1500 },
     })
 
     await overlays.logo()
@@ -1605,16 +1967,18 @@ describe('overlay length API (.for / .until)', () => {
     })
   })
 
-  it("rejects .for('2s') on a .mp4 video (its length is fixed)", async () => {
-    const overlays = createOverlays({ clip: { path: './clip.mp4' } })
+  it('rejects .for(2000) on a .mp4 video (its length is fixed)', async () => {
+    const overlays = createOverlays({
+      clip: { fill: 'recording', path: './clip.mp4' },
+    })
 
-    await expect(overlays.clip.for('2s')).rejects.toThrow(
-      /is a video and cannot use \.for\('2s'\)/
+    await expect(overlays.clip.for(2000)).rejects.toThrow(
+      /is a video and cannot use \.for\(2000\)/
     )
   })
 })
 
-describe('overlay crop and source trim', () => {
+describe('overlay clip and source trim', () => {
   let recorder: IEventRecorder
 
   beforeEach(() => {
@@ -1633,11 +1997,12 @@ describe('overlay crop and source trim', () => {
     })
   })
 
-  it('puts crop on a video overlay asset start', async () => {
+  it('puts clip on a video overlay asset start', async () => {
     const overlays = createOverlays({
       clip: {
+        fill: 'recording',
         path: './clip.mp4',
-        crop: { x: 10, y: 20, width: 100, height: 80 },
+        clip: { x: 10, y: 20, width: 100, height: 80 },
       },
     })
 
@@ -1648,16 +2013,17 @@ describe('overlay crop and source trim', () => {
       path: './clip.mp4',
       audio: 1,
       fullScreen: false,
-      crop: { x: 10, y: 20, width: 100, height: 80 },
+      clip: { x: 10, y: 20, width: 100, height: 80 },
     })
   })
 
-  it('puts crop on an image overlay asset start', async () => {
+  it('puts clip on an image overlay asset start', async () => {
     const overlays = createOverlays({
       logo: {
+        fill: 'recording',
         path: './logo.png',
-        duration: '1s',
-        crop: { x: 5, y: 5, width: 50, height: 40 },
+        duration: 1000,
+        clip: { x: 5, y: 5, width: 50, height: 40 },
       },
     })
 
@@ -1668,47 +2034,50 @@ describe('overlay crop and source trim', () => {
       path: './logo.png',
       durationMs: 1000,
       fullScreen: false,
-      crop: { x: 5, y: 5, width: 50, height: 40 },
+      clip: { x: 5, y: 5, width: 50, height: 40 },
     })
   })
 
-  it('rejects crop on an .html file overlay at recording time', () => {
+  it('rejects clip on an .html file overlay at recording time', () => {
     expect(() =>
       createOverlays({
         hint: {
+          fill: 'recording',
           path: './hint.html',
-          duration: '1s',
-          crop: { x: 0, y: 0, width: 10, height: 10 },
+          duration: 1000,
+          clip: { x: 0, y: 0, width: 10, height: 10 },
         },
       })
-    ).toThrow(/cannot use "crop"/)
+    ).toThrow(/cannot use "clip"/)
   })
 
-  it('rejects a crop with a negative x/y', () => {
+  it('rejects a clip with a negative x/y', () => {
     expect(() =>
       createOverlays({
         clip: {
+          fill: 'recording',
           path: './clip.mp4',
-          crop: { x: -1, y: 0, width: 10, height: 10 },
+          clip: { x: -1, y: 0, width: 10, height: 10 },
         },
       })
-    ).toThrow(/crop x and y must be >= 0/)
+    ).toThrow(/clip x and y must be >= 0/)
   })
 
-  it('rejects a crop with a non-positive width/height', () => {
+  it('rejects a clip with a non-positive width/height', () => {
     expect(() =>
       createOverlays({
         clip: {
+          fill: 'recording',
           path: './clip.mp4',
-          crop: { x: 0, y: 0, width: 0, height: 10 },
+          clip: { x: 0, y: 0, width: 0, height: 10 },
         },
       })
-    ).toThrow(/crop width and height must be > 0/)
+    ).toThrow(/clip width and height must be > 0/)
   })
 
   it('records start/end source trim as ms and percent on a video overlay', async () => {
     const overlays = createOverlays({
-      clip: { path: './clip.mp4', start: '2s', end: '50%' },
+      clip: { fill: 'recording', path: './clip.mp4', start: 2000, end: '50%' },
     })
 
     await overlays.clip()
@@ -1726,7 +2095,12 @@ describe('overlay crop and source trim', () => {
   it('rejects start/end on an image (.png) overlay', () => {
     expect(() =>
       createOverlays({
-        logo: { path: './logo.png', duration: '1s', start: '1s' } as never,
+        logo: {
+          fill: 'recording',
+          path: './logo.png',
+          duration: 1000,
+          start: 1000,
+        } as never,
       })
     ).toThrow(/cannot use "start"\/"end"/)
   })
@@ -1734,17 +2108,17 @@ describe('overlay crop and source trim', () => {
   it('rejects a start that is after the end', () => {
     expect(() =>
       createOverlays({
-        clip: { path: './clip.mp4', start: '3s', end: '2s' },
+        clip: { fill: 'recording', path: './clip.mp4', start: 3000, end: 2000 },
       })
     ).toThrow(/start must be before end/)
   })
 
   it('omits inheritSubtitles by default', async () => {
-    const input = selected('Intro Clip')
+    const input = selected('Intro Clip', { fill: 'recording' })
     expect(input.config.inheritSubtitles).toBeUndefined()
 
     const overlays = createOverlays({ intro: input })
-    await overlays.intro.for('1s')
+    await overlays.intro.for(1000)
 
     expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
       kind: 'dependency',
@@ -1756,10 +2130,13 @@ describe('overlay crop and source trim', () => {
 
   it('records inheritSubtitles on the dependency ref when enabled', async () => {
     const overlays = createOverlays({
-      intro: selected('Intro Clip', { inheritSubtitles: true }),
+      intro: selected('Intro Clip', {
+        fill: 'recording',
+        inheritSubtitles: true,
+      }),
     })
 
-    await overlays.intro.for('1s')
+    await overlays.intro.for(1000)
 
     expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
       kind: 'dependency',
@@ -1771,10 +2148,13 @@ describe('overlay crop and source trim', () => {
 
   it('omits inheritSubtitles from the ref when explicitly false', async () => {
     const overlays = createOverlays({
-      intro: selected('Intro Clip', { inheritSubtitles: false }),
+      intro: selected('Intro Clip', {
+        fill: 'recording',
+        inheritSubtitles: false,
+      }),
     })
 
-    await overlays.intro.for('1s')
+    await overlays.intro.for(1000)
 
     expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
       kind: 'dependency',
@@ -1785,11 +2165,11 @@ describe('overlay crop and source trim', () => {
   })
 
   it('omits language from the ref by default', async () => {
-    const input = selected('Intro Clip')
+    const input = selected('Intro Clip', { fill: 'recording' })
     expect(input.config.language).toBeUndefined()
 
     const overlays = createOverlays({ intro: input })
-    await overlays.intro.for('1s')
+    await overlays.intro.for(1000)
 
     expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
       kind: 'dependency',
@@ -1801,10 +2181,10 @@ describe('overlay crop and source trim', () => {
 
   it('pins the language on the dependency ref when provided', async () => {
     const overlays = createOverlays({
-      intro: selected('Intro Clip', { language: 'fi' }),
+      intro: selected('Intro Clip', { fill: 'recording', language: 'fi' }),
     })
 
-    await overlays.intro.for('1s')
+    await overlays.intro.for(1000)
 
     expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
       kind: 'dependency',
@@ -1817,12 +2197,13 @@ describe('overlay crop and source trim', () => {
   it('carries both a pinned language and inheritSubtitles on the ref', async () => {
     const overlays = createOverlays({
       intro: selected('Intro Clip', {
+        fill: 'recording',
         language: 'fi',
         inheritSubtitles: true,
       }),
     })
 
-    await overlays.intro.for('1s')
+    await overlays.intro.for(1000)
 
     expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
       kind: 'dependency',
@@ -1838,10 +2219,10 @@ describe('overlay crop and source trim', () => {
 
   it('records a source start on a selected() video dependency', async () => {
     const overlays = createOverlays({
-      intro: selected('Clip', { start: '2s' }),
+      intro: selected('Clip', { fill: 'recording', start: 2000 }),
     })
 
-    await overlays.intro.for('1s')
+    await overlays.intro.for(1000)
 
     expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
       kind: 'dependency',
@@ -1872,9 +2253,14 @@ describe('overlay overMouse', () => {
 
     await runInContext(recorder, async () => {
       const overlays = createOverlays({
-        logo: { path: './logo.png', duration: '2s', overMouse: true },
+        logo: {
+          fill: 'recording',
+          path: './logo.png',
+          duration: 2000,
+          overMouse: true,
+        },
       })
-      await overlays.logo.for('2s')
+      await overlays.logo.for(2000)
     })
 
     expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
@@ -1891,7 +2277,7 @@ describe('overlay overMouse', () => {
 
     await runInContext(recorder, async () => {
       const overlays = createOverlays({
-        clip: { path: './clip.mp4', overMouse: true },
+        clip: { fill: 'recording', path: './clip.mp4', overMouse: true },
       })
       await overlays.clip()
     })
@@ -1910,9 +2296,9 @@ describe('overlay overMouse', () => {
 
     await runInContext(recorder, async () => {
       const overlays = createOverlays({
-        logo: { path: './logo.png', duration: '2s' },
+        logo: { fill: 'recording', path: './logo.png', duration: 2000 },
       })
-      await overlays.logo.for('2s')
+      await overlays.logo.for(2000)
     })
 
     const call = vi.mocked(recorder.addAssetStart).mock.calls[0]?.[1]
@@ -1924,7 +2310,7 @@ describe('overlay overMouse', () => {
 
     await runInContext(recorder, async () => {
       const overlays = createOverlays({
-        logo: { path: './logo.png', overMouse: true },
+        logo: { fill: 'recording', path: './logo.png', overMouse: true },
       })
       await overlays.logo.start()
       await overlays.logo.end()
@@ -1934,5 +2320,26 @@ describe('overlay overMouse', () => {
       'logo',
       expect.objectContaining({ overMouse: true })
     )
+  })
+})
+
+describe('buildOverlays (shared across languages)', () => {
+  it('resolves code overlays from the shared map with no per-language variance', () => {
+    const feature = normalizeFeature('overlays', {
+      logo: { path: './logo.png', fill: 'recording' },
+    })
+    const overlays = buildOverlays(feature)
+    expect(Object.keys(overlays)).toEqual(['logo'])
+    expect(overlays.logo).toBeDefined()
+  })
+
+  it('maps array (Studio) names to controllers', () => {
+    const feature = normalizeFeature('overlays', ['badge'])
+    const overlays = buildOverlays(feature)
+    expect(Object.keys(overlays)).toEqual(['badge'])
+  })
+
+  it('returns an empty map for a null feature', () => {
+    expect(buildOverlays(null)).toEqual({})
   })
 })

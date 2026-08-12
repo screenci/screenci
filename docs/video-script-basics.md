@@ -36,7 +36,9 @@ ScreenCI video yet. To turn it into one:
 - change `test(...)` to `video.narration(...)(...)`
 - add narration through `video.narration({...})` (see [Core ScreenCI APIs](#core-screenci-apis))
 
-Then follow the usual `screenci test` and `screenci record` flow. If you only
+Then follow the usual flow: `screenci test` to verify, `screenci edit` to
+record it and refine it in the web editor, and `screenci export` for a
+finished video. If you only
 have a deployed URL and want this automated, point a coding agent at it with the
 `playwright-cli` skill, see [Agent integration](/docs/agent-integration).
 
@@ -57,18 +59,23 @@ import { autoZoom, hide, video } from 'screenci'
 
 video
   .overlays({
-    logo: { path: './assets/logo.png', duration: '2s', overMouse: true },
+    logo: {
+      path: './assets/logo.png',
+      duration: 2000,
+      overMouse: true,
+      fill: 'recording',
+    },
   })
   .narration({
     docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
   })('How to find docs', async ({ page, narration, overlays }) => {
   // Run setup without showing these actions in the final recording.
   await hide(async () => {
-    await page.goto('https://screenci.com/')
+    await page.setContent(landingPageHtml())
   })
 
   // Open with a brief brand intro card before the walkthrough begins.
-  await overlays.logo.for('2s')
+  await overlays.logo.for(2000)
 
   // Play the narration line for this step.
   await narration.docs()
@@ -78,6 +85,30 @@ video
     await page.getByRole('link', { name: 'View Documentation' }).click()
   })
 })
+
+function landingPageHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ScreenCI smoke page</title>
+    <style>
+      body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #111827; color: white; }
+      main { min-height: 100vh; display: grid; place-items: center; text-align: center; }
+      a { color: #111827; background: #fbbf24; padding: 14px 18px; border-radius: 8px; text-decoration: none; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>
+        <h1>ScreenCI</h1>
+        <p>Record docs, onboarding, and changelog walkthroughs from code.</p>
+        <a href="https://screenci.com/docs">View Documentation</a>
+      </div>
+    </main>
+  </body>
+</html>`
+}
 ```
 
 <!-- screenci-doc-code-sample:starter-video:end -->
@@ -173,6 +204,16 @@ await time(1000, async () => {
 // - Narration cue audio is not retimed; these only remap the recording timeline.
 ```
 
+All three accept a trailing options object with `editId` (the block's stable
+identity slug, like an action's; one is stamped automatically when an edit
+session starts if missing) and `delay` (milliseconds), which shifts the
+recorded START of the block forward while the end still lands when
+the callback finishes. That lets the effect begin partway into the first
+wrapped interaction, for example `await speed(2, async () => { ... }, { delay:
+400 })`. See [Mid-Video Overlay
+Updates](./overlay-updates.md#delaying-an-update-into-an-interaction) for the
+time-order rules delayed events must follow.
+
 API reference: [hide()](/docs/reference/api/functions/hide). See also [Animated
 Interactions](/docs/guides/animated-interactions) for how visible actions are
 captured.
@@ -254,13 +295,13 @@ await resetZoom()
 API reference: [zoomTo()](/docs/reference/api/functions/zoomto),
 [resetZoom()](/docs/reference/api/functions/resetzoom)
 
-### `video.narration()`, `video.values()`, and `video.overlays()`
+### `video.narration()` and `video.overlays()`
 
-Use the per-feature builders to attach narration cues, localized strings, and
+Use the per-feature builders to attach narration cues and
 overlay controllers to a video. Each builder returns the same chainable `video`,
 so you can combine them and end with a `(title, body)` call. The body receives
 the fixtures matching the features you declared: `narration` markers (timing
-only), `values` field values, `overlays` controllers, and the active `language`. See
+only), `overlays` controllers, and the active `language`. See
 [Narration](/docs/guides/narration).
 
 `video.narration({...})` accepts either form:
@@ -269,35 +310,32 @@ only), `values` field values, `overlays` controllers, and the active `language`.
   per-language narration
 - a flat object of cue name to text (for example `{ intro: 'Hi' }`) = shared
   across all languages
-- `editable([...])` with cue names (for example `editable(['intro'])`) = name-only
-  cues where Editor (the web editor) owns the text. Pass an object to
-  `editable({...})` instead to seed Editor with starting text it then owns.
+- a bare array of cue names (for example `['intro']`) = name-only cues where
+  Editor (the web editor) owns the text. Object forms supply code values that
+  stay editable in Editor; an Editor edit wins over the code value.
 
 Other parts of the spec:
 
-- chain `video.values({...})` for localized strings injected into the page
 - chain `video.overlays({...})` to declare overlay controllers (see below)
 - short, sentence-sized cues instead of paragraph-sized narration blocks
 
 Voice is configured separately as a render option in `renderOptions.narration`
-(via `video.use(...)` or `screenci.config.ts`), with a default `voice` and
-per-language `voices` overrides.
+(via `video.renderOptions(...)` or `screenci.config.ts`), with a default `voice`
+and per-language `voices` overrides.
 
 ```ts
 import { video, voices } from 'screenci'
 
 // Voice is a render option (how narration is spoken).
-video.use({
-  renderOptions: { narration: { voice: { name: voices.Ava } } },
-})
-
-// Localized narration cues by language.
-video.narration({
-  en: { intro: 'Open settings and review the billing details.' },
-  es: {
-    intro: 'Abre la configuracion y revisa los detalles de facturacion.',
-  },
-})('Billing walkthrough', async ({ page, narration }) => {
+video
+  .renderOptions({ narration: { voice: { name: voices.Ava } } })
+  // Localized narration cues by language.
+  .narration({
+    en: { intro: 'Open settings and review the billing details.' },
+    es: {
+      intro: 'Abre la configuracion y revisa los detalles de facturacion.',
+    },
+  })('Billing walkthrough', async ({ page, narration }) => {
   // Play the full cue before continuing.
   await narration.intro()
 
@@ -314,9 +352,9 @@ place them where they belong in the flow. That gives you cleaner overlap
 control, makes revisions less brittle, and should save API cost when a TTS
 provider such as ElevenLabs only needs to regenerate one changed sentence.
 
-To control which languages are recorded, chain `video.languages(...)` (accepts
-keyless `editable()` for a web-owned set, a plain array of language codes, or
-`{ languages, mode }`). For example,
+To control which languages are recorded, chain `video.languages(...)` (a plain
+array of language codes, or `{ languages, mode }`). The recorded set is the
+union of the code set and per-feature language keys. For example,
 `video.narration({...}).languages({ mode: 'shared' })` records a single shared
 narration track instead of one per language. A video with no `.languages(...)`
 call records one language-agnostic round pinned to the `en-US` browser locale.
@@ -330,21 +368,26 @@ controllers are exposed through the `overlays` fixture in the body:
 import { video } from 'screenci'
 
 video.overlays({
-  logo: { image: 'logo.png', position: 'top-right' },
+  logo: { path: 'logo.png', x: 1560, y: 96, width: 288 },
 })('Branded intro', async ({ page, overlays }) => {
-  await overlays.logo.show()
+  await overlays.logo.start()
   await page.goto('/dashboard')
-  await overlays.logo.hide()
+  await overlays.logo.end()
 })
 ```
 
 For Editor-owned overlays (declared by name, with the web editor owning their
-content), wrap the names in `editable([...])`: `video.overlays(editable(['logo']))`.
-You can combine this with the `editable(...)` form of narration, for example
-`video.narration(editable(['intro'])).overlays(editable(['logo']))`. Pass an object
-to `editable({...})` to seed Editor with starting content it then owns.
+content), pass a bare array of names: `video.overlays(['logo'])`. You can
+combine this with the bare-array form of narration, for example
+`video.narration(['intro']).overlays(['logo'])`. Object forms supply code
+values that stay editable in Editor; an Editor edit wins over the code value.
 
-To let Editor own the render options for a video, declare it through
-`use({ renderOptions: editable() })` (or `editable({...})` to seed them).
+Render options work the same way: values declared per video with
+`video.renderOptions(...)` are the starting point, and web edits override
+them. Every recording also
+tracks which option values its Playwright actions used (for example
+`move.duration` or `position`) and whether each was explicit in code or a
+default, so the web editor can present and override them; see
+[Action parameter tracking and overrides](./editor.md#action-parameter-tracking-and-overrides).
 
 API reference: [voices](/docs/reference/api/variables/voices)

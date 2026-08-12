@@ -43,6 +43,7 @@ const REACT_INSTALL_PACKAGES = [
   'react-dom@^19.0.0',
   '@types/react@^19.0.0',
   '@types/react-dom@^19.0.0',
+  'vite@^7.0.0',
 ]
 
 function expectNpmDevInstalls(
@@ -74,6 +75,7 @@ function expectNpmDevInstalls(
       '--save-dev',
       `@playwright/test@^1.59.0`,
       '@types/node@^25.9.1',
+      'prettier@^3.6.0',
       ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
       ...(includeReact ? REACT_INSTALL_PACKAGES : []),
     ],
@@ -118,15 +120,11 @@ function expectPnpmDevInstalls(
       '--save-dev',
       `@playwright/test@^1.59.0`,
       '@types/node@^25.9.1',
+      'prettier@^3.6.0',
       ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
       ...(includeReact ? REACT_INSTALL_PACKAGES : []),
     ],
-    [
-      'add',
-      '--save-dev',
-      '--allow-build=ffmpeg-static',
-      `screenci@${screenciVersion}`,
-    ],
+    ['add', '--save-dev', `screenci@${screenciVersion}`],
   ]
 
   expect(pnpmInstallCalls).toEqual(
@@ -167,6 +165,7 @@ function expectYarnDevInstalls(
       '--dev',
       `@playwright/test@^1.59.0`,
       '@types/node@^25.9.1',
+      'prettier@^3.6.0',
       ...(includePlaywrightCli ? ['@playwright/cli@latest'] : []),
       ...(includeReact ? REACT_INSTALL_PACKAGES : []),
     ],
@@ -459,7 +458,7 @@ describe('CLI', () => {
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/my-app/screenci/recordings/example.screenci.ts',
-        expect.stringContaining("await page.goto('https://screenci.com/')")
+        expect.stringContaining('await page.setContent(landingPageHtml())')
       )
       // With React overlays on (the default), the screenshot example remains a
       // `.ts` file and rings a locator with a `.tsx` overlay page.
@@ -515,9 +514,22 @@ describe('CLI', () => {
       expect(islandPkg['name']).toBe('my-project')
       expect(islandPkg['scripts']).toMatchObject({
         test: 'screenci test',
-        record: 'screenci record',
+        edit: 'screenci edit',
+        export: 'screenci export',
       })
       expect(islandPkg['scripts']).not.toHaveProperty('screenci')
+      // Init enables codegen formatting: a user-editable .prettierrc gates it.
+      const prettierrcCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          call[0] === '/workspace/my-app/screenci/.prettierrc'
+      )
+      expect(prettierrcCall).toBeDefined()
+      expect(JSON.parse(prettierrcCall![1] as string)).toEqual({
+        tabWidth: 2,
+        useTabs: false,
+        semi: false,
+        singleQuote: true,
+      })
       // The island gets a minimal README documenting the run scripts and
       // linking to the docs.
       expect(mockWriteFile).toHaveBeenCalledWith(
@@ -861,7 +873,7 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         'run: pnpm exec playwright install --only-shell chromium'
       )
-      expect(workflowCall?.[1]).toContain('pnpm exec screenci record')
+      expect(workflowCall?.[1]).toContain('pnpm exec screenci export')
       // The commented local-app build hint tracks the detected package manager.
       expect(workflowCall?.[1]).toContain(
         '#     run: pnpm install --frozen-lockfile'
@@ -870,7 +882,7 @@ describe('CLI', () => {
       // Targeted recordings: optional `grep` input forwarded to record.
       expect(workflowCall?.[1]).toContain('SCREENCI_GREP: ${{ inputs.grep }}')
       expect(workflowCall?.[1]).toContain(
-        'pnpm exec screenci record --grep "$SCREENCI_GREP"'
+        'pnpm exec screenci export --grep "$SCREENCI_GREP"'
       )
       expect(workflowCall?.[1]).toMatch(/workflow_dispatch:\s*\n\s*inputs:/)
     })
@@ -962,6 +974,7 @@ describe('CLI', () => {
           '--save-dev',
           '@playwright/test@^1.59.0',
           '@types/node@^25.9.1',
+          'prettier@^3.6.0',
           '@playwright/cli@latest',
           ...REACT_INSTALL_PACKAGES,
         ],
@@ -972,7 +985,7 @@ describe('CLI', () => {
       )
       expect(mockSpawn).toHaveBeenCalledWith(
         'pnpm',
-        ['add', '--save-dev', '--allow-build=ffmpeg-static', 'screenci@0.0.32'],
+        ['add', '--save-dev', 'screenci@0.0.32'],
         expect.objectContaining({
           cwd: '/workspace/my-project/screenci',
           stdio: 'pipe',
@@ -1031,9 +1044,9 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         'run: yarn playwright install --only-shell chromium'
       )
-      expect(workflowCall?.[1]).toContain('yarn screenci record')
+      expect(workflowCall?.[1]).toContain('yarn screenci export')
       expect(workflowCall?.[1]).toContain(
-        'yarn screenci record --grep "$SCREENCI_GREP"'
+        'yarn screenci export --grep "$SCREENCI_GREP"'
       )
     })
 
@@ -1113,6 +1126,7 @@ describe('CLI', () => {
           '--dev',
           '@playwright/test@^1.59.0',
           '@types/node@^25.9.1',
+          'prettier@^3.6.0',
           '@playwright/cli@latest',
           ...REACT_INSTALL_PACKAGES,
         ],
@@ -1471,14 +1485,14 @@ describe('CLI', () => {
           call[0] === 'pnpm' &&
           Array.isArray(call[1]) &&
           call[1][0] === 'add' &&
-          call[1][2] === '--allow-build=ffmpeg-static'
+          call[1].includes('screenci@0.0.32')
       )
 
       expect(pnpmVersionCallIndex).toBeGreaterThanOrEqual(0)
       expect(screenciInstallCallIndex).toBeGreaterThan(pnpmVersionCallIndex)
       expect(mockSpawn).toHaveBeenCalledWith(
         'pnpm',
-        ['add', '--save-dev', '--allow-build=ffmpeg-static', 'screenci@0.0.32'],
+        ['add', '--save-dev', 'screenci@0.0.32'],
         expect.objectContaining({
           cwd: '/workspace/my-project/screenci',
           stdio: 'pipe',
@@ -1491,7 +1505,7 @@ describe('CLI', () => {
           call[0] === '/workspace/my-project/screenci/pnpm-workspace.yaml'
       )
       expect(workspaceCall?.[1]).toContain(
-        'allowBuilds:\n  ffmpeg-static: true'
+        'allowBuilds:\n  esbuild: true\n  ffmpeg-static: true'
       )
       expect(workspaceCall?.[1]).not.toContain('onlyBuiltDependencies')
       // The flat (host) pnpm-workspace.yaml is never written; only the island's.
@@ -1539,7 +1553,7 @@ describe('CLI', () => {
           call[0] === '/workspace/my-project/screenci/pnpm-workspace.yaml'
       )
       expect(workspaceCall?.[1]).toContain(
-        'onlyBuiltDependencies:\n  - ffmpeg-static'
+        'onlyBuiltDependencies:\n  - esbuild\n  - ffmpeg-static'
       )
       expect(workspaceCall?.[1]).not.toContain('allowBuilds')
     })
@@ -2158,7 +2172,7 @@ describe('CLI', () => {
             call[0] === 'cmd.exe' &&
             Array.isArray(call[1]) &&
             (call[1] as string[])[3] ===
-              '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0""'
+              '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "prettier@^3.6.0" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0" "vite@^7.0.0""'
         )
         expect(installCall).toEqual([
           'cmd.exe',
@@ -2166,7 +2180,7 @@ describe('CLI', () => {
             '/d',
             '/s',
             '/c',
-            '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0""',
+            '""npm.cmd" "install" "--save-dev" "@playwright/test@^1.59.0" "@types/node@^25.9.1" "prettier@^3.6.0" "@playwright/cli@latest" "react@^19.0.0" "react-dom@^19.0.0" "@types/react@^19.0.0" "@types/react-dom@^19.0.0" "vite@^7.0.0""',
           ],
           expect.objectContaining({
             cwd: '/workspace/create-app/screenci',
@@ -2268,7 +2282,7 @@ describe('CLI', () => {
         "Running 'npm exec --yes --package=skills -- skills add screenci/screenci --skill screenci --skill playwright-cli -y'..."
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        "Running 'npm install --save-dev @playwright/test@^1.59.0 @types/node@^25.9.1 @playwright/cli@latest react@^19.0.0 react-dom@^19.0.0 @types/react@^19.0.0 @types/react-dom@^19.0.0'..."
+        "Running 'npm install --save-dev @playwright/test@^1.59.0 @types/node@^25.9.1 prettier@^3.6.0 @playwright/cli@latest react@^19.0.0 react-dom@^19.0.0 @types/react@^19.0.0 @types/react-dom@^19.0.0 vite@^7.0.0'..."
       )
     })
   })
@@ -2289,13 +2303,13 @@ describe('CLI', () => {
     })
   })
 
-  describe('disallowed flags validation', () => {
+  describe('playwright flag pass-through (test command)', () => {
     beforeEach(() => {
       process.env.SCREENCI_SECRET = 'test-secret'
     })
 
     it('should allow --fully-parallel to pass through', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--fully-parallel']
+      process.argv = ['node', 'cli.js', 'test', '--fully-parallel']
       mockSpawn.mockImplementation(
         (
           _command: string,
@@ -2314,7 +2328,7 @@ describe('CLI', () => {
     })
 
     it('should allow --workers to pass through', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--workers', '4']
+      process.argv = ['node', 'cli.js', 'test', '--workers', '4']
       mockSpawn.mockImplementation(
         (
           _command: string,
@@ -2334,7 +2348,7 @@ describe('CLI', () => {
     })
 
     it('should allow --workers=N to pass through', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--workers=4']
+      process.argv = ['node', 'cli.js', 'test', '--workers=4']
       mockSpawn.mockImplementation(
         (
           _command: string,
@@ -2353,7 +2367,7 @@ describe('CLI', () => {
     })
 
     it('should allow -j to pass through', async () => {
-      process.argv = ['node', 'cli.js', 'record', '-j', '4']
+      process.argv = ['node', 'cli.js', 'test', '-j', '4']
       mockSpawn.mockImplementation(
         (
           _command: string,
@@ -2373,7 +2387,7 @@ describe('CLI', () => {
     })
 
     it('should allow -j=N to pass through', async () => {
-      process.argv = ['node', 'cli.js', 'record', '-j=4']
+      process.argv = ['node', 'cli.js', 'test', '-j=4']
       mockSpawn.mockImplementation(
         (
           _command: string,
@@ -2389,45 +2403,6 @@ describe('CLI', () => {
       const { main } = await import('./cli')
 
       await main()
-    })
-
-    it('should throw error when --retries is provided', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--retries', '2']
-
-      const { main } = await import('./cli')
-
-      await expect(main()).rejects.toThrow(
-        'Flag "--retries" is not supported by screenci'
-      )
-    })
-
-    it('should throw error when --retries=N is provided', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--retries=2']
-
-      const { main } = await import('./cli')
-
-      await expect(main()).rejects.toThrow(
-        'Flag "--retries=2" is not supported by screenci'
-      )
-    })
-
-    it('should reject retries even when other parallel flags are present', async () => {
-      process.argv = [
-        'node',
-        'cli.js',
-        'record',
-        '--workers',
-        '4',
-        '--fully-parallel',
-        '--retries',
-        '2',
-      ]
-
-      const { main } = await import('./cli')
-
-      await expect(main()).rejects.toThrow(
-        'Flag "--retries" is not supported by screenci'
-      )
     })
   })
 })

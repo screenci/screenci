@@ -7,20 +7,26 @@ import * as voicesModule from './src/voices.js'
 describe('public api surface', () => {
   it('only exports public runtime api from the root entrypoint', () => {
     expect(Object.keys(screenci).sort()).toEqual([
+      'ACTION_PARAM_DEFAULTS',
       'DEFAULT_LANGUAGE_LOCALES',
       'MAX_AUDIO_LEVEL',
       'autoZoom',
       'defineConfig',
-      'editable',
       'hide',
       'hideNarration',
+      'hideRecording',
       'modelTypes',
+      // moveNarration, resizeNarration, and setBackground are hidden for
+      // release (unfinished features); their exports are commented out in
+      // index.ts.
       'overlayRect',
       'redact',
       'resetZoom',
+      'resizeRecording',
       'resolveLocaleForLanguage',
       'screenshot',
       'showNarration',
+      'showRecording',
       'speed',
       'time',
       'unredactAll',
@@ -33,6 +39,8 @@ describe('public api surface', () => {
   it('only exports runtime recording helpers from the recording entrypoint', () => {
     expect(Object.keys(recordingModule).sort()).toEqual([
       'RENDER_OPTIONS_DEFAULTS',
+      'isSingleKeyCombo',
+      'parseKeyCombo',
     ])
   })
 
@@ -58,6 +66,7 @@ describe('public api surface', () => {
       'generateGitignore',
       'generateIslandReadme',
       'generateIslandTsconfig',
+      'generatePrettierConfig',
       'generateReactExampleScreenshot',
       'generateRingOverlayHtml',
       'generateRingOverlayTsx',

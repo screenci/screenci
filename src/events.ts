@@ -2,18 +2,32 @@ import { existsSync, readFileSync } from 'fs'
 import { writeFile } from 'fs/promises'
 import { dirname, join, resolve } from 'path'
 import { fileURLToPath } from 'url'
+import { clamp01 } from './clamp.js'
 import { invalidOptionError, ScreenciError } from './errors.js'
 import type {
   AutoZoomOptions,
   CueConfig,
   Easing,
+  NarrationFullScreenFit,
+  NarrationPosition,
+  HiddenShortcutRenderOptions,
   RecordOptions,
   RenderOptions,
   ResolvedRenderOptions,
 } from './types.js'
 import { RENDER_OPTIONS_DEFAULTS } from './types.js'
-import type { ScreenshotCropRecord } from './crop.js'
-import type { EditableOptionFlags } from './studio.js'
+import { resolveNarrationAudioCleanup } from './narrationAudioCleanup.js'
+import { assertValidRegion, type ScreenshotClipRecord } from './clip.js'
+import type { StudioOptionFlags } from './studio.js'
+import {
+  ActionParamCollector,
+  resolveSpecWithoutTracking,
+  type ActionMethod,
+  type ActionParamRecord,
+  type ActionParamSpec,
+} from './actionParams.js'
+import type { EditableMeta } from './editableDescriptor.js'
+import { hashSourceFile } from './recordingFreshness.js'
 import type { VoiceKey } from './voices.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { getGitMetadata } from './git.js'
@@ -60,6 +74,13 @@ export type FocusChangeEvent = {
     startMs: number
     endMs: number
     easing?: Easing
+    /**
+     * Cubic-bezier control points (absolute viewport pixels) for a curved path
+     * from the previous cursor position to `{x, y}`. Absent for a straight move.
+     * Resolved at record time from the move's `curve` option (or the project
+     * default) so the renderer and the web editor consume the same geometry.
+     */
+    control?: [{ x: number; y: number }, { x: number; y: number }]
   }
   scroll?: {
     startMs: number
@@ -89,8 +110,13 @@ export type MouseMoveEvent = {
   x: number
   y: number
   easing?: Easing
+  /**
+   * Cubic-bezier control points (absolute viewport pixels) for a curved path to
+   * `{x, y}`. Absent for a straight move. See {@link FocusChangeEvent.mouse}.
+   */
+  control?: [{ x: number; y: number }, { x: number; y: number }]
   zoomFollow?: boolean
-  /** Bounding rect of the element the cursor moved to — used for zoom centering hints. */
+  /** Bounding rect of the element the cursor moved to. used for zoom centering hints. */
   elementRect?: ElementRect
 }
 
@@ -162,6 +188,8 @@ export type InputEvent = {
     | MouseHideEvent
     | MouseWaitEvent
   >
+  /** Web-editor metadata: identity, lock state, and effective option values. */
+  editable?: EditableMeta
 }
 
 export type RecordingCustomVoiceRef = {
@@ -177,7 +205,7 @@ export type RecordingCustomVoiceRef = {
 export type CueTranslation = {
   text: string
   voice: VoiceKey | RecordingCustomVoiceRef
-  /** TTS model type: `'expressive'` or `'consistent'`. Defaults to `'consistent'`. Choosing `'expressive'` for a language that also has a consistent voice requires the Business tier; a language whose only built-in voice is the expressive model uses it automatically on every plan. */
+  /** TTS model type: `'expressive'` or `'consistent'`. Defaults to `'consistent'`. A language whose only built-in voice is the expressive model uses it automatically. */
   modelType?: string
   /** Gemini style prompt, or ElevenLabs `eleven_multilingual_v2` style exaggeration. */
   style?: string | number
@@ -231,12 +259,12 @@ export function timelineAnchorFields(
 }
 
 /**
- * A crop rectangle in the SOURCE file's own pixels (top-left origin), applied to
+ * A clip rectangle in the SOURCE file's own pixels (top-left origin), applied to
  * a file overlay (image/video), a narration video, or an embedded render
  * dependency before it is placed/scaled. Mirrors Playwright's
  * `page.screenshot({ clip })` shape.
  */
-export type OverlayCrop = {
+export type OverlayClip = {
   x: number
   y: number
   width: number
@@ -327,7 +355,7 @@ export type ValuesDeclareEvent = {
  */
 type VideoCueTranslationMedia = {
   subtitle?: string
-  crop?: OverlayCrop
+  clip?: OverlayClip
   sourceStart?: SourceTrimPoint
   sourceEnd?: SourceTrimPoint
 }
@@ -338,7 +366,7 @@ export type VideoCueTranslationFile =
 export type VideoCueTranslationTTS = {
   text: string
   voice: VoiceKey | RecordingCustomVoiceRef
-  /** TTS model type: `'expressive'` or `'consistent'`. Defaults to `'consistent'`. Choosing `'expressive'` for a language that also has a consistent voice requires the Business tier; a language whose only built-in voice is the expressive model uses it automatically on every plan. */
+  /** TTS model type: `'expressive'` or `'consistent'`. Defaults to `'consistent'`. A language whose only built-in voice is the expressive model uses it automatically. */
   modelType?: string
   /** Gemini style prompt, or ElevenLabs `eleven_multilingual_v2` style exaggeration. */
   style?: string | number
@@ -362,8 +390,7 @@ export type VideoCueTranslationTTS = {
   language?: string
 }
 export type VideoCueTranslation =
-  | VideoCueTranslationFile
-  | VideoCueTranslationTTS
+  VideoCueTranslationFile | VideoCueTranslationTTS
 
 export type VideoCueStartEvent = {
   type: 'videoCueStart'
@@ -405,23 +432,46 @@ export type VideoCueStartEvent = {
  *   (`relativeTo: 'recording'`, the default). Provide exactly one of `width` or
  *   `height`; the other dimension is derived from the asset's intrinsic aspect
  *   ratio, or from `aspectRatio` (width / height) when given.
+ *
+ * A positioned placement that was resolved from an `over` locator at recording
+ * time additionally carries the {@link OverlayLocatorLock} fields, so editors
+ * know the box is pinned to a live element (only its margin is adjustable).
  */
 export type OverlayPlacement =
   | { fullScreen: true }
-  | {
+  | (OverlayLocatorLock & {
       relativeTo: 'screen' | 'recording'
       x: number
       y: number
       width: number
       aspectRatio?: number
-    }
-  | {
+    })
+  | (OverlayLocatorLock & {
       relativeTo: 'screen' | 'recording'
       x: number
       y: number
       height: number
       aspectRatio?: number
-    }
+    })
+
+/**
+ * Provenance fields present on a positioned {@link OverlayPlacement} that was
+ * resolved from an `over` locator: the box is pinned to the element's rect
+ * (plus margin), so an editor may only adjust the margin, not move or resize
+ * the box freely. Absent on freely placed overlays and on recordings made
+ * before these fields existed.
+ */
+export type OverlayLocatorLock = {
+  /** Present (true) when the placement came from an `over` locator. */
+  overLocked?: true
+  /** The `margin` (CSS px) that was applied around the element's box. */
+  marginPx?: number
+  /**
+   * The element's raw bounding box (CSS px of the recording viewport) before
+   * the margin was applied and before clamping to the viewport.
+   */
+  elementRect?: { x: number; y: number; width: number; height: number }
+}
 
 /**
  * Asset format policy is recorded explicitly so renderers never need to infer
@@ -444,9 +494,13 @@ export type ImageAssetStartEvent = {
   pinToScreen?: boolean
   /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
   overMouse?: boolean
+  /** Fade-in length (ms) when the overlay appears. Omitted = instant. */
+  fadeInMs?: number
+  /** Fade-out length (ms) when the overlay disappears. Omitted = instant. */
+  fadeOutMs?: number
   placement?: OverlayPlacement
   /** Crop rect in the source image's own pixels, applied before placement/scale. */
-  crop?: OverlayCrop
+  clip?: OverlayClip
   /**
    * Absolute output position (ms) the overlay should remain visible until (from a
    * string position like `'0:10'`). Resolved into a frozen-frame hold at render
@@ -473,9 +527,13 @@ export type VideoAssetStartEvent = {
   pinToScreen?: boolean
   /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
   overMouse?: boolean
+  /** Fade-in length (ms) when the overlay appears. Omitted = instant. */
+  fadeInMs?: number
+  /** Fade-out length (ms) when the overlay disappears. Omitted = instant. */
+  fadeOutMs?: number
   placement?: OverlayPlacement
   /** Crop rect in the source video's own pixels, applied before placement/scale. */
-  crop?: OverlayCrop
+  clip?: OverlayClip
   /** Late start into the source video (a `'2s'`/timecode offset or `'50%'` fraction of source). */
   sourceStart?: SourceTrimPoint
   /** Early end into the source video (a `'2s'`/timecode offset or `'50%'` fraction of source). */
@@ -515,6 +573,17 @@ export type AnimationAssetStartEvent = {
   path: string
   fileHash?: string
   /**
+   * Alpha-capable preview encode of the same clip (VP9 .webm with a real alpha
+   * channel), playable directly in a browser `<video>`. The main `path` clip
+   * carries its transparency as a second alpha-matte stream that browsers do
+   * not composite (they show opaque black instead), so the web editor's live
+   * preview plays this clip. Optional: older recordings and ffmpeg builds
+   * without VP9 support omit it.
+   */
+  previewPath?: string
+  /** SHA-256 of the preview file bytes. Present iff `previewPath` is. */
+  previewFileHash?: string
+  /**
    * Capture length of the animation. Present for both blocking and live
    * (`start()`/`end()`) overlays: a live animated overlay plays out to this
    * length, so the renderer needs it even though a paired assetEnd also bounds
@@ -527,6 +596,10 @@ export type AnimationAssetStartEvent = {
   pinToScreen?: boolean
   /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
   overMouse?: boolean
+  /** Fade-in length (ms) when the overlay appears. Omitted = instant. */
+  fadeInMs?: number
+  /** Fade-out length (ms) when the overlay disappears. Omitted = instant. */
+  fadeOutMs?: number
   placement?: OverlayPlacement
   /** See {@link ImageAssetStartEvent.untilOutputMs}. */
   untilOutputMs?: number
@@ -593,11 +666,15 @@ export type DependencyAssetStartEvent = {
   /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
   overMouse?: boolean
   placement?: OverlayPlacement
+  /** Fade-in length (ms) when the overlay appears. Omitted = instant. */
+  fadeInMs?: number
+  /** Fade-out length (ms) when the overlay disappears. Omitted = instant. */
+  fadeOutMs?: number
   /**
    * Crop rect in the resolved output's own pixels, applied (for both a video and
    * a screenshot dependency) before placement/scale.
    */
-  crop?: OverlayCrop
+  clip?: OverlayClip
   /**
    * Late start into the embedded VIDEO (rejected by the backend for a screenshot
    * dependency, which has no timeline).
@@ -689,6 +766,10 @@ export type PendingAssetStart = {
   /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
   overMouse?: boolean
   placement?: OverlayPlacement
+  /** Fade-in length (ms) when the overlay appears. Omitted = instant. */
+  fadeInMs?: number
+  /** Fade-out length (ms) when the overlay disappears. Omitted = instant. */
+  fadeOutMs?: number
   /** See {@link ImageAssetStartEvent.untilOutputMs}. */
   untilOutputMs?: number
   /** See {@link ImageAssetStartEvent.untilPercent}. */
@@ -702,7 +783,7 @@ export type AssetStartPayload =
   | Omit<DependencyAssetStartEvent, 'type' | 'timeMs' | 'name'>
 
 /**
- * Studio-managed overlay declared via `video.overlays(editable([...]))`. The
+ * Studio-managed overlay declared via `video.overlays([...])`. The
  * file and display options are configured in Studio, so the recording only marks
  * the timeline point.
  */
@@ -773,7 +854,7 @@ export type AudioEndEvent = {
 
 /**
  * Studio-managed background audio track declared via
- * `video.audio(editable([...]))`. The file, volume, and repeat are configured
+ * `video.audio([...])`. The file, volume, and repeat are configured
  * in Studio, so the recording only marks the timeline point (mirrors
  * {@link StudioAssetStartEvent} for overlays).
  */
@@ -793,6 +874,10 @@ export type AudioStartPayload = Omit<
 export type HideStartEvent = {
   type: 'hideStart'
   timeMs: number
+  /** Optional block name from `hide('name', fn)`. */
+  name?: string
+  /** Web-editor metadata: identity for the timeline (read-only span). */
+  editable?: EditableMeta
 }
 
 export type HideEndEvent = {
@@ -804,6 +889,8 @@ export type SpeedStartEvent = {
   type: 'speedStart'
   timeMs: number
   multiplier: number
+  /** Web-editor metadata: identity, lock state, and effective option values. */
+  editable?: EditableMeta
 }
 
 export type SpeedEndEvent = {
@@ -815,11 +902,45 @@ export type TimeStartEvent = {
   type: 'timeStart'
   timeMs: number
   durationMs: number
+  /** Optional block name from `time('name', ms, fn)`. */
+  name?: string
+  /** Web-editor metadata: identity, lock state, and effective duration. */
+  editable?: EditableMeta
 }
 
 export type TimeEndEvent = {
   type: 'timeEnd'
   timeMs: number
+}
+
+/**
+ * A named marker at a single point in recording time, emitted by `timestamp()`.
+ * It carries no render behavior: it only labels a moment in the recording so the
+ * web editor can surface it on its own timeline row.
+ */
+/**
+ * A `redact()` mask applied during recording. A point marker on the editor
+ * timeline; the mask styling is web-editable and applies at the next record
+ * (masks bake into the captured pixels).
+ */
+export type RedactEvent = {
+  type: 'redact'
+  timeMs: number
+  /** Captured locator description of the masked element(s). */
+  matcher?: string
+  editable?: EditableMeta
+}
+
+/**
+ * A page navigation (`page.goto`). A hard border on the editor timeline: its
+ * duration is whatever the app took, so it is never web-editable, and timing
+ * edits cannot cross it.
+ */
+export type NavigationEvent = {
+  type: 'navigation'
+  timeMs: number
+  endMs: number
+  url: string
 }
 
 export type AutoZoomStartEvent = {
@@ -829,6 +950,8 @@ export type AutoZoomStartEvent = {
   duration: number
   amount: number
   centering?: number
+  /** Web-editor metadata: identity, lock state, and effective option values. */
+  editable?: EditableMeta
 }
 
 export type AutoZoomEndEvent = {
@@ -836,6 +959,20 @@ export type AutoZoomEndEvent = {
   timeMs: number
   easing: string
   duration: number
+}
+
+/**
+ * A recorded pause (`page.waitForTimeout`). The wait already happened during
+ * recording, so the renderer never consumes this event; it exists so the web
+ * editor can show the pause on the timeline and (when editable) let the user
+ * change its duration for the next record.
+ */
+export type DelayEvent = {
+  type: 'delay'
+  timeMs: number
+  durationMs: number
+  /** Web-editor metadata: identity, lock state, and effective option values. */
+  editable?: EditableMeta
 }
 
 /**
@@ -854,9 +991,160 @@ export type NarrationShowEvent = {
   timeMs: number
 }
 
+/**
+ * How a mid-video overlay update animates from the previous state to the new
+ * one. Absent transition (or `durationMs: 0`) means an instant switch.
+ */
+export type UpdateTransition = {
+  /** Animation length in milliseconds. 0 = instant. */
+  durationMs: number
+  easing: Easing
+}
+
+/**
+ * Mid-video update of the narration (camera PIP) overlay: move it to another
+ * corner, offset it with per-axis padding, resize it, or toggle visibility,
+ * optionally animated. Emitted by `moveNarration()`/`resizeNarration()` and by
+ * `hideNarration()`/`showNarration()` when a fade is requested. Omitted fields
+ * keep their current effective value (partial diff).
+ */
+export type NarrationUpdateEvent = {
+  type: 'narrationUpdate'
+  timeMs: number
+  /** Web-editor metadata: identity and effective values (position/size/duration). */
+  editable?: EditableMeta
+  /**
+   * Target position. Corner and center moves slide; 'full-screen' appears in
+   * place (the transition is a cross-fade, never a slide) showing the
+   * uncropped source. Omitted = unchanged.
+   */
+  position?: NarrationPosition
+  /**
+   * Per-axis inset from the anchor corner as a fraction of the shorter output
+   * side. Overrides the global `renderOptions.narration.padding` for that axis
+   * from this point on; an omitted axis keeps its current effective value.
+   * Range [-1, 1]; negative pushes the tile past the edge.
+   */
+  padding?: { x?: number; y?: number }
+  /**
+   * Signed per-axis displacement from the exact output center, as a fraction
+   * of the shorter output side. Range [-1, 1]. 'center' position only.
+   */
+  offset?: { x?: number; y?: number }
+  /**
+   * Full-screen fit: 'contain' letterboxes with black bars, 'cover' fills
+   * the frame with slight cropping. Defaults to 'contain'. 'full-screen'
+   * position only.
+   */
+  fit?: NarrationFullScreenFit
+  /** Tile size as a fraction of the shorter output side, (0, 1]. */
+  size?: number
+  visible?: boolean
+  transition?: UpdateTransition
+}
+
+/**
+ * Mid-video update of the recording (browser capture) overlay: resize it or
+ * toggle its visibility, optionally animated. `visible: false` hides ONLY the
+ * overlay; the background, narration, and timeline keep running (unlike
+ * `hide()`, which cuts footage). Emitted by `resizeRecording()`,
+ * `hideRecording()`, and `showRecording()`.
+ */
+export type RecordingUpdateEvent = {
+  type: 'recordingUpdate'
+  timeMs: number
+  /** Web-editor metadata: identity and effective values (size/duration). */
+  editable?: EditableMeta
+  /** Recording size fraction [0, 1], same semantics as `renderOptions.recording.size`. */
+  size?: number
+  visible?: boolean
+  transition?: UpdateTransition
+}
+
+/**
+ * Mid-video background change. A transition means a crossfade to the new
+ * background; absent transition means an instant cut. Emitted by
+ * `setBackground()`.
+ */
+export type BackgroundUpdateEvent = {
+  type: 'backgroundUpdate'
+  timeMs: number
+  /** Web-editor metadata: identity and effective values (css/duration). */
+  editable?: EditableMeta
+  background:
+    { assetPath: string; fileHash?: string } | { backgroundCss: string }
+  transition?: UpdateTransition
+}
+
+/** Why an artificial sleep was performed during recording. */
+export type SleepReason =
+  /** Short spin around a cue/asset boundary so at least one frame captures each state. */
+  | 'frameGap'
+  /** Sleep matching the cue's known narration audio duration (record-time pacing). */
+  | 'cueAudio'
+  /** The fixed pause at the end of the video so it does not end abruptly. */
+  | 'postVideo'
+
+/**
+ * Marks a span of recording time that was an artificial sleep rather than real
+ * content. The renderer uses these spans to decide causally which gaps between
+ * overlays/hides/cues can be snapped away, and to know how much cue audio time
+ * was already paced into the recording.
+ */
+export type SleepEvent = {
+  type: 'sleep'
+  /** Recording-relative start of the sleep. */
+  timeMs: number
+  /** Actually slept milliseconds, after recording-timing scaling. */
+  durationMs: number
+  reason: SleepReason
+}
+
+/**
+ * A keyboard shortcut press recorded from `page.keyboard.press` or
+ * `locator.press`. Rendered as an animated keycap overlay at the bottom of the
+ * video, subject to `renderOptions.shortcuts` visibility rules.
+ */
+export type KeyPressEvent = {
+  type: 'keyPress'
+  /** Stable per-recording id (`kp-0`, `kp-1`, ...) used by editor overrides. */
+  id: string
+  /** Recording-relative time of the press. */
+  timeMs: number
+  /**
+   * Normalized key parts, e.g. `['Shift', 'A']` or `['A']`. `ControlOrMeta`
+   * is resolved to the recording platform's key at record time.
+   */
+  keys: string[]
+  /**
+   * Per-call visibility override from `press(key, { show })`. When absent the
+   * global `renderOptions.shortcuts` toggles decide.
+   */
+  show?: boolean
+}
+
+/**
+ * An instrumented action performed inside a `hide()` block. The action runs
+ * raw (no cursor animation, no input event) and its footage is cut from the
+ * output, but this marker keeps the action visible to the web editor: a hide
+ * that gets unwrapped back out of code can show what it was suppressing.
+ * Renderers and timing math ignore it (it carries no output-affecting data).
+ */
+export type HiddenActionEvent = {
+  type: 'hiddenAction'
+  /** Recording-relative time the hidden action ran. */
+  timeMs: number
+  /** The instrumented method (`click`, `fill`, `press`, ...). */
+  action: string
+  /** Normalized locator description, when the action targets one. */
+  matcher?: string
+}
+
 export type RecordingEvent =
   | VideoStartEvent
   | InputEvent
+  | KeyPressEvent
+  | HiddenActionEvent
   | CueStartEvent
   | CueEndEvent
   | ValuesDeclareEvent
@@ -873,10 +1161,17 @@ export type RecordingEvent =
   | SpeedEndEvent
   | TimeStartEvent
   | TimeEndEvent
+  | NavigationEvent
+  | RedactEvent
   | AutoZoomStartEvent
   | AutoZoomEndEvent
+  | DelayEvent
   | NarrationHideEvent
   | NarrationShowEvent
+  | NarrationUpdateEvent
+  | RecordingUpdateEvent
+  | BackgroundUpdateEvent
+  | SleepEvent
 
 export type VoiceLanguageMeta = {
   /** Voice key string: a built-in voice name or an external voice key. */
@@ -886,7 +1181,7 @@ export type VoiceLanguageMeta = {
    * regeneration. Consistent output is not guaranteed across all voice types.
    */
   seed?: number
-  /** TTS model type: `'expressive'` or `'consistent'`. Defaults to `'consistent'`. Choosing `'expressive'` for a language that also has a consistent voice requires the Business tier; a language whose only built-in voice is the expressive model uses it automatically on every plan. */
+  /** TTS model type: `'expressive'` or `'consistent'`. Defaults to `'consistent'`. A language whose only built-in voice is the expressive model uses it automatically. */
   modelType?: string
   /** Gemini style prompt, or ElevenLabs `eleven_multilingual_v2` style exaggeration. */
   style?: string | number
@@ -915,11 +1210,18 @@ export type RecordingMetadata = {
   availableLanguages?: string[]
   sourceFilePath?: string
   /**
-   * Which parts of this recording opted into web-editor configuration via
-   * `editable(...)`. `renderOptions`/`recordOptions` are set when those
-   * option groups are deferred; `narration` when the recording contains
-   * Studio-managed (name-only) narration cues; `assets` for Studio overlays;
-   * `audio` for Studio background-audio tracks.
+   * SHA-256 of the test source file this recording was produced from. Together
+   * with per-event editIds it lets `screenci dev` skip re-recording when the
+   * source is unchanged (see recordingFreshness.ts). Multiple videos from the
+   * same file share the hash.
+   */
+  sourceHash?: string
+  /**
+   * Which parts of this recording are web-editor configurable. Every recording
+   * is web-editable, so `renderOptions`/`recordOptions` are always set;
+   * `narration` is set when the recording contains name-only narration cues;
+   * `assets` for name-only overlays; `audio` for name-only background-audio
+   * tracks.
    */
   studio?: {
     renderOptions?: boolean
@@ -960,7 +1262,7 @@ function readScreenciVersion(): string {
 const SCREENCI_VERSION = readScreenciVersion()
 
 /** Crop rect for a screenshot, in CSS pixels of the recording viewport. */
-export type ScreenshotCrop = {
+export type ScreenshotClip = {
   x: number
   y: number
   width: number
@@ -970,8 +1272,8 @@ export type ScreenshotCrop = {
 /**
  * Capture details for a screenshot output. The raw page capture is saved beside
  * `data.json` (as `path`) at `width`×`height` device pixels (the viewport scaled
- * by `deviceScaleFactor`). The crop is a render option
- * (`renderOptions.screenshot.crop`), not a capture detail.
+ * by `deviceScaleFactor`). The clip is a render option
+ * (`renderOptions.screenshot.clip`), not a capture detail.
  */
 export type ScreenshotInfo = {
   path: string
@@ -980,7 +1282,7 @@ export type ScreenshotInfo = {
   deviceScaleFactor: number
   /**
    * Final cursor position when the still was captured, in CSS px of the
-   * recording viewport (same coordinate space as a crop). Present only when the
+   * recording viewport (same coordinate space as a clip). Present only when the
    * body moved the cursor at least once. The renderer draws the cursor here when
    * `renderOptions.screenshot.mouse.show` is set; absent means there is nothing
    * to draw, so the cursor never appears for a still that never touched it.
@@ -1000,6 +1302,12 @@ export type RecordingData = {
   output?: 'video' | 'screenshot'
   /** Capture details. Present only when `output === 'screenshot'`. */
   screenshot?: ScreenshotInfo
+  /**
+   * The action parameters used by this recording, with per-parameter
+   * explicit/default provenance, in call order. The backend reads these to
+   * present the parameters for editing and to key its overrides.
+   */
+  actionParams?: ActionParamRecord[]
 }
 
 /** Extra, output-specific fields written into `data.json`. */
@@ -1007,11 +1315,11 @@ export type WriteRecordingOptions = {
   output?: 'video' | 'screenshot'
   screenshot?: ScreenshotInfo
   /**
-   * Crop recorded at capture time (a `crop()` call or `page.screenshot({ crop })`).
-   * Merged into `renderOptions.screenshot.crop`, overriding any crop set in
+   * Crop recorded at capture time (a `crop()` call or `page.screenshot({ clip })`).
+   * Merged into `renderOptions.screenshot.clip`, overriding any clip set in
    * config, so it is editable in Studio afterward.
    */
-  crop?: ScreenshotCropRecord
+  clip?: ScreenshotClipRecord
 }
 
 export interface IEventRecorder {
@@ -1041,9 +1349,46 @@ export interface IEventRecorder {
   addInput(
     subType: InputEvent['subType'],
     elementRect: ElementRect | undefined,
-    events: InputEvent['events']
+    events: InputEvent['events'],
+    editable?: EditableMeta
   ): void
   addInput(subType: InputEvent['subType'], events: InputEvent['events']): void
+  /**
+   * Records one instrumented action's option parameters (explicit/default
+   * provenance) and returns the effective values with any web-editor overrides
+   * applied. The no-op recorder resolves the spec without tracking.
+   */
+  applyActionParams(
+    selector: string,
+    method: ActionMethod,
+    spec: ActionParamSpec,
+    editId?: string
+  ): Record<string, unknown>
+  /**
+   * Records a pause (`page.waitForTimeout`) so the web editor can show and,
+   * when editable, adjust it. The wait itself already happened; the renderer
+   * ignores this event.
+   */
+  addDelay(durationMs: number, editable?: EditableMeta): void
+  /**
+   * Records a keyboard shortcut press (`page.keyboard.press`) at the current
+   * recording time. `keys` are the normalized combo parts (e.g.
+   * `['Shift', 'A']`); `show` is the per-call visibility override.
+   */
+  addKeyPress(keys: string[], show?: boolean): void
+  /**
+   * Records an instrumented action performed inside a `hide()` block. The
+   * action itself ran raw (no cursor animation, no input event); this marker
+   * keeps it visible to the web editor. See {@link HiddenActionEvent}.
+   */
+  addHiddenAction(action: string, matcher?: string): void
+  /**
+   * Records a narration cue start. `delayMs` (like on every `add*` method
+   * that accepts it) shifts the stamped `timeMs` forward: the call runs now
+   * but the event lands `delayMs` later, letting a call written before an
+   * interaction take effect during it. Throws when the delayed stamp lands
+   * before an already-recorded event of the same type stream.
+   */
   addCueStart(
     text: string,
     name: string,
@@ -1051,10 +1396,15 @@ export interface IEventRecorder {
     translations?: Record<string, CueTranslation>,
     volume?: number,
     until?: TimelineAnchorInput,
-    studio?: boolean
+    studio?: boolean,
+    delayMs?: number
   ): void
   /** Records a studio-mode cue start — text and voice are configured in Studio. */
-  addStudioCueStart(name: string, until?: TimelineAnchorInput): void
+  addStudioCueStart(
+    name: string,
+    until?: TimelineAnchorInput,
+    delayMs?: number
+  ): void
   /**
    * Declares the localized `values` fields used by this recording (field names,
    * Studio-managed field names, and the active language's seeds) so the backend
@@ -1074,16 +1424,21 @@ export interface IEventRecorder {
     translations?: Record<string, VideoCueTranslation>,
     volume?: number,
     until?: TimelineAnchorInput,
-    studio?: boolean
+    studio?: boolean,
+    delayMs?: number
   ): void
-  addAssetStart(name: string, asset: AssetStartPayload): void
+  addAssetStart(name: string, asset: AssetStartPayload, delayMs?: number): void
   /**
    * Records a rendered/animated overlay `assetStart` whose bytes are produced
    * after the test. The event is pushed at the current timeline position with a
    * placeholder `path` and no `fileHash`; the deferred flush rasterizes the
    * captured {@link DeferredRasterizeRequest} and patches the event in place.
    */
-  addPendingAssetStart(name: string, pending: PendingAssetStart): void
+  addPendingAssetStart(
+    name: string,
+    pending: PendingAssetStart,
+    delayMs?: number
+  ): void
   /**
    * The overlays awaiting deferred rasterization, in record order. Each entry's
    * `event` is the live object in the recording, so the flush patches it
@@ -1098,11 +1453,11 @@ export interface IEventRecorder {
    */
   addAssetEnd(name: string | undefined, reason?: 'auto' | 'wait'): void
   /** Records a studio-mode asset start — the file and options are configured in Studio. */
-  addStudioAssetStart(name: string): void
+  addStudioAssetStart(name: string, delayMs?: number): void
   /** Records the start of a background audio track (`createAudio`). */
-  addAudioStart(name: string, audio: AudioStartPayload): void
+  addAudioStart(name: string, audio: AudioStartPayload, delayMs?: number): void
   /** Records a studio-mode audio start — the file, volume, and repeat are configured in Studio. */
-  addStudioAudioStart(name: string): void
+  addStudioAudioStart(name: string, delayMs?: number): void
   /**
    * Records the end of a background audio track. `name` pairs it to its start;
    * an audio track left open plays to the end of the video.
@@ -1117,18 +1472,62 @@ export interface IEventRecorder {
    * timestamp is always 0 regardless of when it is called.
    */
   addScreenAudioTrack(audio: AudioStartPayload): void
-  addHideStart(): void
+  addHideStart(editable?: EditableMeta, name?: string, delayMs?: number): void
   addHideEnd(): void
+  /** Records a page navigation span (a hard border on the editor timeline). */
+  addNavigation(url: string, startMs: number): void
+  /** Records a redact() mask marker (styling web-editable, next record). */
+  addRedact(matcher: string | undefined, editable?: EditableMeta): void
   /** Resolved cursor/scroll dispatch intervals from `recordOptions.performance`. */
   getPerformanceIntervals(): PerformanceIntervals
-  addSpeedStart(multiplier: number): void
+  addSpeedStart(
+    multiplier: number,
+    editable?: EditableMeta,
+    delayMs?: number
+  ): void
   addSpeedEnd(): void
-  addTimeStart(durationMs: number): void
+  addTimeStart(
+    durationMs: number,
+    editable?: EditableMeta,
+    name?: string,
+    delayMs?: number
+  ): void
   addTimeEnd(): void
-  addAutoZoomStart(options?: AutoZoomOptions): void
+  addAutoZoomStart(options?: AutoZoomOptions, editable?: EditableMeta): void
   addAutoZoomEnd(options?: AutoZoomOptions): void
-  addNarrationHide(): void
-  addNarrationShow(): void
+  addNarrationHide(delayMs?: number): void
+  addNarrationShow(delayMs?: number): void
+  /**
+   * Records a mid-video narration overlay update (move/resize/visibility).
+   * Throws when the update lands at the same time as, or inside the running
+   * transition of, the previous narration update.
+   */
+  addNarrationUpdate(
+    update: Omit<NarrationUpdateEvent, 'type' | 'timeMs'>,
+    delayMs?: number
+  ): void
+  /**
+   * Records a mid-video recording overlay update (resize/visibility).
+   * Same overlap rule as {@link addNarrationUpdate}.
+   */
+  addRecordingUpdate(
+    update: Omit<RecordingUpdateEvent, 'type' | 'timeMs'>,
+    delayMs?: number
+  ): void
+  /**
+   * Records a mid-video background change. Same overlap rule as
+   * {@link addNarrationUpdate}.
+   */
+  addBackgroundUpdate(
+    update: Omit<BackgroundUpdateEvent, 'type' | 'timeMs'>,
+    delayMs?: number
+  ): void
+  /**
+   * Records an artificial sleep that just finished. `durationMs` is the actually
+   * slept time (after recording-timing scaling); the event's `timeMs` is derived
+   * as the sleep's start, i.e. now minus `durationMs`.
+   */
+  addSleep(durationMs: number, reason: SleepReason): void
   /**
    * Registers voice metadata seen during recording.
    * Kept for API compatibility; voice settings are stored per cue event.
@@ -1148,6 +1547,17 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   setActiveLanguage(): void {},
   setAvailableLanguages(): void {},
   addInput(): void {},
+  applyActionParams(
+    _selector: string,
+    _method: ActionMethod,
+    spec: ActionParamSpec,
+    _editId?: string
+  ): Record<string, unknown> {
+    return resolveSpecWithoutTracking(spec)
+  },
+  addDelay(): void {},
+  addKeyPress(): void {},
+  addHiddenAction(): void {},
   addCueStart(): void {},
   addStudioCueStart(): void {},
   addValuesDeclare(): void {},
@@ -1166,6 +1576,8 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addScreenAudioTrack(): void {},
   addHideStart(): void {},
   addHideEnd(): void {},
+  addNavigation(): void {},
+  addRedact(): void {},
   getPerformanceIntervals(): PerformanceIntervals {
     return resolvePerformanceIntervals(undefined)
   },
@@ -1177,6 +1589,10 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addAutoZoomEnd(): void {},
   addNarrationHide(): void {},
   addNarrationShow(): void {},
+  addNarrationUpdate(): void {},
+  addRecordingUpdate(): void {},
+  addBackgroundUpdate(): void {},
+  addSleep(): void {},
   registerVoiceForLang(): void {},
   getEvents(): RecordingEvent[] {
     return []
@@ -1203,20 +1619,39 @@ export class EventRecorder implements IEventRecorder {
   private availableLanguages: string[] = []
   private readonly recordOptions: RecordOptions | undefined
   private readonly renderOptions: RenderOptions | undefined
-  /** Which option groups are deferred to Studio (`video.use({ ...: editable() })`). */
-  private readonly studioOptions: EditableOptionFlags
+  /** Web-editable option groups stamped into `metadata.studio`. */
+  private readonly studioOptions: StudioOptionFlags
+  /** Per-recording action-parameter provenance and editor overrides. */
+  private readonly actionParams: ActionParamCollector
+  /** Monotonic counter for stable `KeyPressEvent.id` values. */
+  private keyPressCounter = 0
 
   constructor(
     renderOptions?: RenderOptions,
     recordOptions?: RecordOptions,
-    studioOptions?: EditableOptionFlags
+    studioOptions?: StudioOptionFlags,
+    actionParams?: ActionParamCollector
   ) {
     this.recordOptions = recordOptions
-    this.renderOptions = renderOptions
-    this.studioOptions = studioOptions ?? {
-      renderOptions: false,
-      recordOptions: false,
+    if (renderOptions?.recording?.clip !== undefined) {
+      assertValidRegion(renderOptions.recording.clip)
     }
+    this.renderOptions = renderOptions
+    // Every recording is web-editable, so option groups default to studio.
+    this.studioOptions = studioOptions ?? {
+      renderOptions: true,
+      recordOptions: true,
+    }
+    this.actionParams = actionParams ?? new ActionParamCollector()
+  }
+
+  applyActionParams(
+    selector: string,
+    method: ActionMethod,
+    spec: ActionParamSpec,
+    editId?: string
+  ): Record<string, unknown> {
+    return this.actionParams.apply(selector, method, spec, editId)
   }
 
   registerVoiceForLang(_lang: string, _meta: VoiceLanguageMeta): void {}
@@ -1273,6 +1708,44 @@ export class EventRecorder implements IEventRecorder {
       break
     }
     return timeMs
+  }
+
+  /**
+   * Recording-relative timestamp for an event being recorded now, shifted
+   * forward by an optional `delayMs`. Callers pre-scale the delay with the
+   * recording-timing mode (see `validateDelay`), like every simulated pause,
+   * so delayed stamps stay consistent with real-elapsed stamps. A delay lets
+   * a call written before an interaction take effect during or after it.
+   */
+  private stampTimeMs(delayMs?: number): number {
+    const base = Date.now() - (this.startTime ?? 0)
+    if (delayMs === undefined || delayMs <= 0) return base
+    return base + delayMs
+  }
+
+  /**
+   * Rejects an event stamped earlier than an already-recorded event of the
+   * same type stream. Same-type events must land in time order; a `delay` on
+   * an earlier call can otherwise leapfrog this one.
+   */
+  private assertInOrder(
+    types: readonly RecordingEvent['type'][],
+    label: string,
+    timeMs: number
+  ): void {
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      const event = this.events[i]!
+      if (!types.includes(event.type)) continue
+      const prevTime = (event as { timeMs?: number }).timeMs
+      if (prevTime !== undefined && timeMs < prevTime) {
+        throw new ScreenciError(
+          `${label} at ${timeMs}ms lands before an already-recorded ${label} at ${prevTime}ms. ` +
+            `Same-type events must be recorded in time order: reduce that event's delay, ` +
+            `add a delay to this call, or reorder the calls.`
+        )
+      }
+      return
+    }
   }
 
   private normalizeCentering(
@@ -1357,7 +1830,8 @@ export class EventRecorder implements IEventRecorder {
   addInput(
     subType: InputEvent['subType'],
     elementRectOrEvents: ElementRect | InputEvent['events'] | undefined,
-    maybeEvents?: InputEvent['events']
+    maybeEvents?: InputEvent['events'],
+    editable?: EditableMeta
   ): void {
     if (this.startTime === null) return
     const events = Array.isArray(elementRectOrEvents)
@@ -1408,7 +1882,43 @@ export class EventRecorder implements IEventRecorder {
       type: 'input',
       subType,
       events: relativeEvents,
+      ...(editable !== undefined && { editable }),
     } as InputEvent)
+  }
+
+  addDelay(durationMs: number, editable?: EditableMeta): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'delay',
+      timeMs,
+      durationMs,
+      ...(editable !== undefined && { editable }),
+    })
+  }
+
+  addKeyPress(keys: string[], show?: boolean): void {
+    if (this.startTime === null) return
+    if (keys.length === 0) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'keyPress',
+      id: `kp-${this.keyPressCounter++}`,
+      timeMs,
+      keys,
+      ...(show !== undefined && { show }),
+    })
+  }
+
+  addHiddenAction(action: string, matcher?: string): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'hiddenAction',
+      timeMs,
+      action,
+      ...(matcher !== undefined && { matcher }),
+    })
   }
 
   addCueStart(
@@ -1418,10 +1928,16 @@ export class EventRecorder implements IEventRecorder {
     translations?: Record<string, CueTranslation>,
     volume?: number,
     until?: TimelineAnchorInput,
-    studio?: boolean
+    studio?: boolean,
+    delayMs?: number
   ): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(
+      ['cueStart', 'videoCueStart'],
+      'narration cue start',
+      timeMs
+    )
     this.events.push({
       type: 'cueStart',
       timeMs,
@@ -1437,9 +1953,18 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addStudioCueStart(name: string, until?: TimelineAnchorInput): void {
+  addStudioCueStart(
+    name: string,
+    until?: TimelineAnchorInput,
+    delayMs?: number
+  ): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(
+      ['cueStart', 'videoCueStart'],
+      'narration cue start',
+      timeMs
+    )
     this.events.push({
       type: 'cueStart',
       timeMs,
@@ -1483,10 +2008,16 @@ export class EventRecorder implements IEventRecorder {
     translations?: Record<string, VideoCueTranslation>,
     volume?: number,
     until?: TimelineAnchorInput,
-    studio?: boolean
+    studio?: boolean,
+    delayMs?: number
   ): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(
+      ['cueStart', 'videoCueStart'],
+      'narration cue start',
+      timeMs
+    )
     this.events.push({
       type: 'videoCueStart',
       timeMs,
@@ -1502,9 +2033,14 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addAssetStart(name: string, asset: AssetStartPayload): void {
+  addAssetStart(
+    name: string,
+    asset: AssetStartPayload,
+    delayMs?: number
+  ): void {
     if (this.startTime === null) return
-    const timeMs = this.snapToAdjacentTransition(Date.now() - this.startTime)
+    const timeMs = this.snapToAdjacentTransition(this.stampTimeMs(delayMs))
+    this.assertInOrder(['assetStart'], 'overlay start', timeMs)
     if (asset.kind === 'image') {
       this.events.push({
         type: 'assetStart',
@@ -1518,7 +2054,9 @@ export class EventRecorder implements IEventRecorder {
         ...(asset.pinToScreen === true && { pinToScreen: true }),
         ...(asset.overMouse === true && { overMouse: true }),
         ...(asset.placement !== undefined && { placement: asset.placement }),
-        ...(asset.crop !== undefined && { crop: asset.crop }),
+        ...(asset.fadeInMs !== undefined && { fadeInMs: asset.fadeInMs }),
+        ...(asset.fadeOutMs !== undefined && { fadeOutMs: asset.fadeOutMs }),
+        ...(asset.clip !== undefined && { clip: asset.clip }),
         ...(asset.untilOutputMs !== undefined && {
           untilOutputMs: asset.untilOutputMs,
         }),
@@ -1542,6 +2080,8 @@ export class EventRecorder implements IEventRecorder {
         ...(asset.pinToScreen === true && { pinToScreen: true }),
         ...(asset.overMouse === true && { overMouse: true }),
         ...(asset.placement !== undefined && { placement: asset.placement }),
+        ...(asset.fadeInMs !== undefined && { fadeInMs: asset.fadeInMs }),
+        ...(asset.fadeOutMs !== undefined && { fadeOutMs: asset.fadeOutMs }),
         ...(asset.untilOutputMs !== undefined && {
           untilOutputMs: asset.untilOutputMs,
         }),
@@ -1564,7 +2104,9 @@ export class EventRecorder implements IEventRecorder {
         ...(asset.pinToScreen === true && { pinToScreen: true }),
         ...(asset.overMouse === true && { overMouse: true }),
         ...(asset.placement !== undefined && { placement: asset.placement }),
-        ...(asset.crop !== undefined && { crop: asset.crop }),
+        ...(asset.fadeInMs !== undefined && { fadeInMs: asset.fadeInMs }),
+        ...(asset.fadeOutMs !== undefined && { fadeOutMs: asset.fadeOutMs }),
+        ...(asset.clip !== undefined && { clip: asset.clip }),
         ...(asset.sourceStart !== undefined && {
           sourceStart: asset.sourceStart,
         }),
@@ -1591,7 +2133,9 @@ export class EventRecorder implements IEventRecorder {
       ...(asset.pinToScreen === true && { pinToScreen: true }),
       ...(asset.overMouse === true && { overMouse: true }),
       ...(asset.placement !== undefined && { placement: asset.placement }),
-      ...(asset.crop !== undefined && { crop: asset.crop }),
+      ...(asset.fadeInMs !== undefined && { fadeInMs: asset.fadeInMs }),
+      ...(asset.fadeOutMs !== undefined && { fadeOutMs: asset.fadeOutMs }),
+      ...(asset.clip !== undefined && { clip: asset.clip }),
       ...(asset.sourceStart !== undefined && {
         sourceStart: asset.sourceStart,
       }),
@@ -1607,9 +2151,14 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addPendingAssetStart(name: string, pending: PendingAssetStart): void {
+  addPendingAssetStart(
+    name: string,
+    pending: PendingAssetStart,
+    delayMs?: number
+  ): void {
     if (this.startTime === null) return
-    const timeMs = this.snapToAdjacentTransition(Date.now() - this.startTime)
+    const timeMs = this.snapToAdjacentTransition(this.stampTimeMs(delayMs))
+    this.assertInOrder(['assetStart'], 'overlay start', timeMs)
     const event: ImageAssetStartEvent | AnimationAssetStartEvent = {
       type: 'assetStart',
       timeMs,
@@ -1624,6 +2173,8 @@ export class EventRecorder implements IEventRecorder {
       ...(pending.pinToScreen === true && { pinToScreen: true }),
       ...(pending.overMouse === true && { overMouse: true }),
       ...(pending.placement !== undefined && { placement: pending.placement }),
+      ...(pending.fadeInMs !== undefined && { fadeInMs: pending.fadeInMs }),
+      ...(pending.fadeOutMs !== undefined && { fadeOutMs: pending.fadeOutMs }),
       ...(pending.untilOutputMs !== undefined && {
         untilOutputMs: pending.untilOutputMs,
       }),
@@ -1650,9 +2201,10 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addStudioAssetStart(name: string): void {
+  addStudioAssetStart(name: string, delayMs?: number): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(['assetStart'], 'overlay start', timeMs)
     this.events.push({
       type: 'assetStart',
       timeMs,
@@ -1661,9 +2213,14 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addAudioStart(name: string, audio: AudioStartPayload): void {
+  addAudioStart(
+    name: string,
+    audio: AudioStartPayload,
+    delayMs?: number
+  ): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(['audioStart'], 'audio start', timeMs)
     this.events.push({
       type: 'audioStart',
       timeMs,
@@ -1677,9 +2234,10 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addStudioAudioStart(name: string): void {
+  addStudioAudioStart(name: string, delayMs?: number): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(['audioStart'], 'audio start', timeMs)
     this.events.push({
       type: 'audioStart',
       timeMs,
@@ -1718,10 +2276,34 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addHideStart(): void {
+  addHideStart(editable?: EditableMeta, name?: string, delayMs?: number): void {
     if (this.startTime === null) return
-    const timeMs = this.snapToAdjacentTransition(Date.now() - this.startTime)
-    this.events.push({ type: 'hideStart', timeMs })
+    const timeMs = this.snapToAdjacentTransition(this.stampTimeMs(delayMs))
+    this.assertInOrder(['hideStart', 'hideEnd'], 'hide span', timeMs)
+    this.events.push({
+      type: 'hideStart',
+      timeMs,
+      ...(name !== undefined && { name }),
+      ...(editable !== undefined && { editable }),
+    })
+  }
+
+  addRedact(matcher: string | undefined, editable?: EditableMeta): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    this.events.push({
+      type: 'redact',
+      timeMs,
+      ...(matcher !== undefined && { matcher }),
+      ...(editable !== undefined && { editable }),
+    })
+  }
+
+  addNavigation(url: string, startMs: number): void {
+    if (this.startTime === null) return
+    const timeMs = Math.max(0, startMs - this.startTime)
+    const endMs = Date.now() - this.startTime
+    this.events.push({ type: 'navigation', timeMs, endMs, url })
   }
 
   addHideEnd(): void {
@@ -1737,10 +2319,20 @@ export class EventRecorder implements IEventRecorder {
     )
   }
 
-  addSpeedStart(multiplier: number): void {
+  addSpeedStart(
+    multiplier: number,
+    editable?: EditableMeta,
+    delayMs?: number
+  ): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
-    this.events.push({ type: 'speedStart', timeMs, multiplier })
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(['speedStart', 'speedEnd'], 'speed span', timeMs)
+    this.events.push({
+      type: 'speedStart',
+      timeMs,
+      multiplier,
+      ...(editable !== undefined && { editable }),
+    })
   }
 
   addSpeedEnd(): void {
@@ -1749,10 +2341,22 @@ export class EventRecorder implements IEventRecorder {
     this.events.push({ type: 'speedEnd', timeMs })
   }
 
-  addTimeStart(durationMs: number): void {
+  addTimeStart(
+    durationMs: number,
+    editable?: EditableMeta,
+    name?: string,
+    delayMs?: number
+  ): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
-    this.events.push({ type: 'timeStart', timeMs, durationMs })
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(['timeStart', 'timeEnd'], 'time span', timeMs)
+    this.events.push({
+      type: 'timeStart',
+      timeMs,
+      durationMs,
+      ...(name !== undefined && { name }),
+      ...(editable !== undefined && { editable }),
+    })
   }
 
   addTimeEnd(): void {
@@ -1761,7 +2365,7 @@ export class EventRecorder implements IEventRecorder {
     this.events.push({ type: 'timeEnd', timeMs })
   }
 
-  addAutoZoomStart(options?: AutoZoomOptions): void {
+  addAutoZoomStart(options?: AutoZoomOptions, editable?: EditableMeta): void {
     if (this.startTime === null) return
     const timeMs = Date.now() - this.startTime
     const centering = this.normalizeCentering(options)
@@ -1790,6 +2394,7 @@ export class EventRecorder implements IEventRecorder {
       ...(centering !== undefined && {
         centering,
       }),
+      ...(editable !== undefined && { editable }),
     })
   }
 
@@ -1819,16 +2424,105 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
-  addNarrationHide(): void {
+  addNarrationHide(delayMs?: number): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(
+      ['narrationHide', 'narrationShow'],
+      'narration visibility change',
+      timeMs
+    )
     this.events.push({ type: 'narrationHide', timeMs })
   }
 
-  addNarrationShow(): void {
+  addNarrationShow(delayMs?: number): void {
     if (this.startTime === null) return
-    const timeMs = Date.now() - this.startTime
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertInOrder(
+      ['narrationHide', 'narrationShow'],
+      'narration visibility change',
+      timeMs
+    )
     this.events.push({ type: 'narrationShow', timeMs })
+  }
+
+  /**
+   * Rejects an update that lands at the same time as, or inside the running
+   * transition of, the previous update on the same target. Overlapping
+   * transitions on one overlay have no well-defined animation, so this fails
+   * fast at record time instead of producing a surprising render.
+   */
+  private assertNoUpdateOverlap(
+    target: 'narrationUpdate' | 'recordingUpdate' | 'backgroundUpdate',
+    timeMs: number
+  ): void {
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      const event = this.events[i]!
+      if (event.type !== target) continue
+      const transitionEndMs = event.timeMs + (event.transition?.durationMs ?? 0)
+      if (timeMs <= transitionEndMs) {
+        throw new ScreenciError(
+          `${target} at ${timeMs}ms overlaps the previous update at ` +
+            `${event.timeMs}ms (its transition runs until ${transitionEndMs}ms). ` +
+            `Wait for the transition to finish before the next update, or ` +
+            `adjust the calls' delay options so the updates land in order.`
+        )
+      }
+      return
+    }
+  }
+
+  addNarrationUpdate(
+    update: Omit<NarrationUpdateEvent, 'type' | 'timeMs'>,
+    delayMs?: number
+  ): void {
+    if (this.startTime === null) return
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertNoUpdateOverlap('narrationUpdate', timeMs)
+    // Consecutive full-screen moves have no meaning (the narration is
+    // already full screen); require an exit to a corner or 'center' first.
+    if (update.position === 'full-screen') {
+      for (let i = this.events.length - 1; i >= 0; i--) {
+        const event = this.events[i]!
+        if (event.type !== 'narrationUpdate') continue
+        if (event.position === undefined) continue
+        if (event.position === 'full-screen') {
+          throw new ScreenciError(
+            'moveNarration: the narration is already full screen. Move it to a corner or center first.'
+          )
+        }
+        break
+      }
+    }
+    this.events.push({ type: 'narrationUpdate', timeMs, ...update })
+  }
+
+  addRecordingUpdate(
+    update: Omit<RecordingUpdateEvent, 'type' | 'timeMs'>,
+    delayMs?: number
+  ): void {
+    if (this.startTime === null) return
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertNoUpdateOverlap('recordingUpdate', timeMs)
+    this.events.push({ type: 'recordingUpdate', timeMs, ...update })
+  }
+
+  addBackgroundUpdate(
+    update: Omit<BackgroundUpdateEvent, 'type' | 'timeMs'>,
+    delayMs?: number
+  ): void {
+    if (this.startTime === null) return
+    const timeMs = this.stampTimeMs(delayMs)
+    this.assertNoUpdateOverlap('backgroundUpdate', timeMs)
+    this.events.push({ type: 'backgroundUpdate', timeMs, ...update })
+  }
+
+  addSleep(durationMs: number, reason: SleepReason): void {
+    if (this.startTime === null) return
+    if (durationMs <= 0) return
+    // Called right after the sleep finished, so the span starts durationMs ago.
+    const timeMs = Math.max(0, Date.now() - this.startTime - durationMs)
+    this.events.push({ type: 'sleep', timeMs, durationMs, reason })
   }
 
   getEvents(): RecordingEvent[] {
@@ -1841,6 +2535,22 @@ export class EventRecorder implements IEventRecorder {
     sourceFilePath?: string,
     options?: WriteRecordingOptions
   ): Promise<void> {
+    // A delayed event may have been stamped into the future; if the recording
+    // ended before that moment the render would reference footage that does
+    // not exist, so fail fast with the offending event.
+    if (this.startTime !== null) {
+      const recordingEndMs = Date.now() - this.startTime
+      for (const event of this.events) {
+        const timeMs = (event as { timeMs?: number }).timeMs
+        if (timeMs !== undefined && timeMs > recordingEndMs) {
+          throw new ScreenciError(
+            `${event.type} at ${timeMs}ms lands past the end of the recording ` +
+              `(${recordingEndMs}ms). Its delay pushed it beyond the last recorded ` +
+              `moment; reduce the delay or extend the recording.`
+          )
+        }
+      }
+    }
     const filePath = join(dir, 'data.json')
 
     // Studio mode: render options come from the Studio page. data.json still
@@ -1850,36 +2560,46 @@ export class EventRecorder implements IEventRecorder {
     const studioRecordOptions = this.studioOptions.recordOptions
 
     // Resolve all defaults so data.json always contains a complete set of render
-    // options. `this.renderOptions` is undefined for a blank deferral
-    // (`renderOptions: editable()`) and the seed for a seeded one
-    // (`renderOptions: editable({ ... })`), so a seed renders as the starting point
-    // while the Studio flag still marks it web-owned (the web app overrides it).
+    // options. `this.renderOptions` holds the code values when declared and is
+    // undefined otherwise, so the code values render as the starting point while
+    // the Studio flag marks the group web-editable (the web app overrides it).
     const ro = this.renderOptions
+    const narrationAudioCleanup = resolveNarrationAudioCleanup(
+      ro?.narration?.audio
+    )
     const resolved: ResolvedRenderOptions = {
       recording: {
         size: ro?.recording?.size ?? RENDER_OPTIONS_DEFAULTS.recording.size,
         roundness:
           ro?.recording?.roundness ??
           RENDER_OPTIONS_DEFAULTS.recording.roundness,
-        shape: ro?.recording?.shape ?? RENDER_OPTIONS_DEFAULTS.recording.shape,
-        dropShadow:
-          ro?.recording?.dropShadow ??
-          RENDER_OPTIONS_DEFAULTS.recording.dropShadow,
+        dropShadow: normalizeDropShadow(
+          ro?.recording?.dropShadow,
+          RENDER_OPTIONS_DEFAULTS.recording.dropShadow
+        ),
+        // Render-time crop is opt-in (no default). Recorded full-size; the
+        // renderer applies the clip so it can change without re-recording.
+        ...(ro?.recording?.clip !== undefined && { clip: ro.recording.clip }),
       },
       narration: {
         size: ro?.narration?.size ?? RENDER_OPTIONS_DEFAULTS.narration.size,
+        ...(ro?.narration?.sizeZoomed !== undefined && {
+          sizeZoomed: ro.narration.sizeZoomed,
+        }),
         roundness:
           ro?.narration?.roundness ??
           RENDER_OPTIONS_DEFAULTS.narration.roundness,
-        shape: ro?.narration?.shape ?? RENDER_OPTIONS_DEFAULTS.narration.shape,
         corner:
           ro?.narration?.corner ?? RENDER_OPTIONS_DEFAULTS.narration.corner,
         padding:
           ro?.narration?.padding ?? RENDER_OPTIONS_DEFAULTS.narration.padding,
-        dropShadow: normalizeNarrationDropShadow(
+        dropShadow: normalizeDropShadow(
           ro?.narration?.dropShadow,
           RENDER_OPTIONS_DEFAULTS.narration.dropShadow
         ),
+        ...(narrationAudioCleanup !== undefined && {
+          audio: narrationAudioCleanup,
+        }),
       },
       mouse: {
         size: ro?.mouse?.size ?? RENDER_OPTIONS_DEFAULTS.mouse.size,
@@ -1895,6 +2615,24 @@ export class EventRecorder implements IEventRecorder {
         motionBlur:
           ro?.zoom?.motionBlur ?? RENDER_OPTIONS_DEFAULTS.zoom.motionBlur,
       },
+      // Hidden for release: `shortcuts` is no longer on the public
+      // RenderOptions surface, but previously saved options (and the web
+      // editor's serialized settings) still carry it, so resolution reads it
+      // through the internal HiddenShortcutRenderOptions shape.
+      shortcuts: (() => {
+        const shortcuts = (ro as HiddenShortcutRenderOptions | undefined)
+          ?.shortcuts
+        return {
+          show: shortcuts?.show ?? RENDER_OPTIONS_DEFAULTS.shortcuts.show,
+          showSingle:
+            shortcuts?.showSingle ??
+            RENDER_OPTIONS_DEFAULTS.shortcuts.showSingle,
+          theme: shortcuts?.theme ?? RENDER_OPTIONS_DEFAULTS.shortcuts.theme,
+          ...(shortcuts?.overrides !== undefined && {
+            overrides: shortcuts.overrides,
+          }),
+        }
+      })(),
       output: {
         aspectRatio:
           ro?.output?.aspectRatio ?? RENDER_OPTIONS_DEFAULTS.output.aspectRatio,
@@ -1905,10 +2643,10 @@ export class EventRecorder implements IEventRecorder {
     }
 
     // Screenshot render group: pass through any configured fields and merge the
-    // record-time crop. The crop is never configurable, so it comes only from a
-    // `crop()` call or `page.screenshot({ crop })`. Present only when something
+    // record-time clip. The clip is never configurable, so it comes only from a
+    // `crop()` call or `page.screenshot({ clip })`. Present only when something
     // is set, so video recordings stay unaffected.
-    const cropOverride = options?.crop
+    const clipOverride = options?.clip
     const screenshotGroup = {
       ...(ro?.screenshot?.format !== undefined && {
         format: ro.screenshot.format,
@@ -1919,7 +2657,7 @@ export class EventRecorder implements IEventRecorder {
       ...(ro?.screenshot?.aspectRatio !== undefined && {
         aspectRatio: ro.screenshot.aspectRatio,
       }),
-      ...(cropOverride !== undefined && { crop: cropOverride }),
+      ...(clipOverride !== undefined && { clip: clipOverride }),
     }
     if (Object.keys(screenshotGroup).length > 0) {
       resolved.screenshot = screenshotGroup
@@ -1987,9 +2725,9 @@ export class EventRecorder implements IEventRecorder {
         'studio' in event &&
         event.studio === true
     )
-    // Whether the language set is web-owned (`video.languages(editable())`). The
-    // web uses this to decide a video may have languages added/rendered from the
-    // app (code-defined language sets cannot be changed from the web).
+    // Whether a language set was declared (`video.languages(...)`). The web
+    // uses this to decide a video may have languages added/rendered from the
+    // app.
     const studioLanguages = this.studioOptions.languages === true
     const studio: RecordingMetadata['studio'] =
       studioRenderOptions ||
@@ -2008,6 +2746,14 @@ export class EventRecorder implements IEventRecorder {
           }
         : undefined
 
+    // Source hash: lets the next dev session skip re-recording when the test
+    // file is unchanged and every editable action already has an editId.
+    const sourceHash =
+      sourceFilePath !== undefined
+        ? await hashSourceFile(sourceFilePath)
+        : undefined
+
+    const actionParamRecords = this.actionParams.getRecords()
     const data: RecordingData = {
       events: serializedEvents,
       renderOptions: resolved,
@@ -2018,12 +2764,16 @@ export class EventRecorder implements IEventRecorder {
       ...(options?.screenshot !== undefined && {
         screenshot: options.screenshot,
       }),
+      ...(actionParamRecords.length > 0 && {
+        actionParams: actionParamRecords,
+      }),
       metadata: {
         videoName,
         screenciVersion: SCREENCI_VERSION,
         ...(languages !== undefined && { languages }),
         ...(availableLanguages !== undefined && { availableLanguages }),
         ...(sourceFilePath !== undefined && { sourceFilePath }),
+        ...(sourceHash !== undefined && { sourceHash }),
         ...(git.commit !== undefined && { commit: git.commit }),
         ...(git.isDirty !== undefined && { isDirty: git.isDirty }),
         ...(studio !== undefined && { studio }),
@@ -2064,11 +2814,12 @@ export function filterEventTranslationsToLanguage(
     } as RecordingEvent
   }
 
-  // Asset/audio events have no per-language map in the renderer schema: fold the
+  // Audio events have no per-language map in the renderer schema: fold the
   // active language's override up into the top-level fields and drop the map, so
-  // the renderer only ever sees a single resolved language.
+  // the renderer only ever sees a single resolved language. (Overlays are shared
+  // across languages, so assetStart no longer carries per-language translations.)
   if (
-    (event.type === 'assetStart' || event.type === 'audioStart') &&
+    event.type === 'audioStart' &&
     'translations' in event &&
     event.translations !== undefined
   ) {
@@ -2089,7 +2840,7 @@ export function filterEventTranslationsToLanguage(
   return event
 }
 
-function normalizeNarrationDropShadow(
+function normalizeDropShadow(
   input: number | undefined,
   fallback: number
 ): number {
@@ -2098,17 +2849,4 @@ function normalizeNarrationDropShadow(
   }
 
   return fallback
-}
-
-function clamp01(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0
-  }
-  if (value < 0) {
-    return 0
-  }
-  if (value > 1) {
-    return 1
-  }
-  return value
 }

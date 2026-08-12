@@ -1,5 +1,8 @@
 import type { Page } from '@playwright/test'
-import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
+import {
+  DEFAULT_AUTO_ZOOM_CENTERING,
+  DEFAULT_ZOOM_OPTIONS,
+} from './defaults.js'
 import { invalidOptionError, ScreenciError } from './errors.js'
 import type { IEventRecorder } from './events.js'
 import type { AutoZoomOptions, Easing } from './types.js'
@@ -10,10 +13,17 @@ import {
   getRuntimeAutoZoomState,
   getRuntimeAutoZoomRecorder,
   getRuntimePage,
+  nextEditablePosition,
   setRuntimeAutoZoomState,
   setRuntimeAutoZoomRecorder,
   setRuntimePage,
 } from './runtimeContext.js'
+import {
+  buildEditableMeta,
+  editableIdentityKey,
+  type EditableMeta,
+} from './editableDescriptor.js'
+import { applyEditableOverride } from './editableRuntime.js'
 
 function assertAutoZoomUnitIntervalOption(
   value: number,
@@ -95,6 +105,41 @@ function resetAutoZoomState(): void {
 }
 
 /**
+ * Editable metadata for an `autoZoom` block. Options set in code are marked
+ * explicit (`lockedFields`): a web edit still applies but warns that it
+ * shadows the code value. A bare `autoZoom(fn)` is fully web-editable with
+ * the package defaults.
+ */
+function buildAutoZoomEditableMeta(input: {
+  options: AutoZoomOptions | undefined
+  locked: boolean
+}): EditableMeta | undefined {
+  // editId is identity, not a zoom setting: keep it out of the lock and the
+  // editable defaults.
+  const { editId, ...zoomOptions } = input.options ?? {}
+  const identity = {
+    kind: 'autoZoom' as const,
+    ...(editId !== undefined && { editId }),
+  }
+  return buildEditableMeta({
+    ...identity,
+    schemaKind: 'autoZoom',
+    locked: input.locked,
+    lockedFields: Object.entries(zoomOptions)
+      .filter(([, value]) => value !== undefined)
+      .map(([field]) => field),
+    // Element framing inside autoZoom uses the comfort-band centering, not
+    // the zoomTo centering of DEFAULT_ZOOM_OPTIONS, so display that default.
+    defaults: {
+      ...DEFAULT_ZOOM_OPTIONS,
+      centering: DEFAULT_AUTO_ZOOM_CENTERING,
+      ...zoomOptions,
+    },
+    position: nextEditablePosition(editableIdentityKey(identity)),
+  })
+}
+
+/**
  * Zooms the camera in on interactions inside `fn`, panning to follow each
  * click and fill. After `fn` resolves the camera zooms back out.
  *
@@ -120,7 +165,7 @@ function resetAutoZoomState(): void {
  */
 export async function autoZoom(
   fn: () => Promise<void> | void,
-  options?: AutoZoomOptions
+  codeOptions?: AutoZoomOptions
 ): Promise<void> {
   const currentAutoZoomState = getAutoZoomState()
   if (currentAutoZoomState.insideAutoZoom) {
@@ -131,8 +176,29 @@ export async function autoZoom(
       'Cannot call autoZoom() while manual zoom is active'
     )
   }
+  // A plain options object with any zoom key set locks the block against web
+  // timeline edits; a bare autoZoom(fn) (or one carrying only an editId)
+  // stays fully web-editable.
+  const locked =
+    codeOptions !== undefined &&
+    Object.entries(codeOptions).some(
+      ([field, value]) => field !== 'editId' && value !== undefined
+    )
+  const editable = buildAutoZoomEditableMeta({
+    options: codeOptions,
+    locked,
+  })
+  // Apply only the actual web overrides over the code values (never the full
+  // default set: an unset `centering` must stay unset so element framing
+  // keeps the auto-zoom comfort band rather than dead-centering).
+  applyEditableOverride(editable)
+  const options: AutoZoomOptions | undefined =
+    editable !== undefined && editable.applied !== undefined
+      ? ({ ...(codeOptions ?? {}), ...editable.applied } as AutoZoomOptions)
+      : codeOptions
+
   const activeRecorder = getRuntimeAutoZoomRecorder()
-  activeRecorder.addAutoZoomStart(options)
+  activeRecorder.addAutoZoomStart(options, editable)
   const resolvedOptions = {
     ...DEFAULT_ZOOM_OPTIONS,
     ...(options ?? {}),
@@ -153,8 +219,8 @@ export async function autoZoom(
       ...(options?.centering !== undefined
         ? { centering: options.centering }
         : {}),
-      preZoomDelay: resolvedOptions.preZoomDelay,
-      postZoomDelay: resolvedOptions.postZoomDelay,
+      delay: resolvedOptions.delay,
+      delayAfter: resolvedOptions.delayAfter,
     },
   })
   try {
@@ -203,8 +269,8 @@ export async function autoZoom(
         await sleep(zoomOutDuration)
       }
     }
-    if ((currentAutoZoomState.options.postZoomDelay ?? 0) > 0) {
-      await sleep(currentAutoZoomState.options.postZoomDelay ?? 0)
+    if ((currentAutoZoomState.options.delayAfter ?? 0) > 0) {
+      await sleep(currentAutoZoomState.options.delayAfter ?? 0)
     }
   } finally {
     resetAutoZoomState()

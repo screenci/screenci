@@ -4,10 +4,15 @@ import type {
   Page,
   Locator,
   Mouse,
+  Keyboard,
 } from '@playwright/test'
 import type { PerformanceOption } from './performance.js'
-import type { CropTarget, ScreenshotCropRecord } from './crop.js'
+import type { ClipRegion, ClipTarget, ScreenshotClipRecord } from './clip.js'
 import type { AnyTopLevelVoiceConfig } from './voiceConfig.js'
+import type {
+  NarrationAudioCleanupOption,
+  ResolvedNarrationAudioCleanup,
+} from './narrationAudioCleanup.js'
 
 /**
  * Aspect ratio for recording and output.
@@ -30,13 +35,7 @@ import type { AnyTopLevelVoiceConfig } from './voiceConfig.js'
  * width to the base.
  */
 export type AspectRatio =
-  | '16:9'
-  | '9:16'
-  | '1:1'
-  | '4:3'
-  | '3:4'
-  | '5:4'
-  | '4:5'
+  '16:9' | '9:16' | '1:1' | '4:3' | '3:4' | '5:4' | '4:5'
 
 /**
  * Resolution quality preset – determines the shorter-side pixel count and,
@@ -89,14 +88,14 @@ export type ScreenshotOutputFormat = 'png' | { type: 'jpeg'; quality?: number }
 /**
  * Screenshot-only render options that can be set in config or edited in Studio.
  *
- * Resolution comes from the captured crop scaled by the capture device pixel
+ * Resolution comes from the captured clip scaled by the capture device pixel
  * density (not a preset). There is no `frame` toggle: the configured background
  * (and the frame shadow and rounded corners) appear only when there is canvas
  * area around the shot for them to fill, which is created by `margin` and/or an
- * explicit `aspectRatio`. With neither, the output is the bare crop.
+ * explicit `aspectRatio`. With neither, the output is the bare clip.
  *
- * The crop itself is never set here: it is recorded only from a `crop()` call or
- * `page.screenshot({ crop })` (see {@link ResolvedScreenshotRenderOptions}).
+ * The clip itself is never set here: it is recorded only from a `crop()` call or
+ * `page.screenshot({ clip })` (see {@link ResolvedScreenshotRenderOptions}).
  */
 export type ScreenshotRenderOptions = {
   /** Output image format. Defaults to `'png'`. */
@@ -135,28 +134,36 @@ export type ScreenshotMouseOptions = {
 
 /**
  * {@link ScreenshotRenderOptions} as serialized for a recorded still. Adds the
- * `crop`, which is never set in config: it is seeded only by a `crop()` call or
- * `page.screenshot({ crop })`. In Studio, a locator crop's box is locked while
- * its padding stays editable, and a region crop is a fully editable rectangle
- * (see {@link ScreenshotCropRecord}).
+ * `clip`, which is never set in config: it is seeded only by a `clip()` call or
+ * `page.screenshot({ clip })`. In Studio, a locator clip's box is locked while
+ * its padding stays editable, and a region clip is a fully editable rectangle
+ * (see {@link ScreenshotClipRecord}).
  */
 export type ResolvedScreenshotRenderOptions = ScreenshotRenderOptions & {
-  /** Crop applied by the renderer (CSS pixels of the recording viewport). */
-  crop?: ScreenshotCropRecord
+  /** Clip applied by the renderer (CSS pixels of the recording viewport). */
+  clip?: ScreenshotClipRecord
 }
 
 export type RenderOptions = {
   recording?: {
-    /** 0-1: 0 causes warning, 1=one side touches background edge */
+    /** 0-1 fraction of the output frame: 0 causes warning, 1=one side touches background edge. */
     size?: number
-    /** 0-1: 0=sharp corners, 1=shorter side is half circle */
+    /** 0-1 fraction: 0=sharp corners, 1=shorter side is half circle. */
     roundness?: number
-    shape?: 'rounded'
-    /** CSS drop-shadow filter */
-    dropShadow?: string
+    /** Shadow strength from 0 (none) to 1 (default shadow). */
+    dropShadow?: number
+    /**
+     * Crop of the recorded video, in CSS pixels of the recording viewport
+     * (top-left origin), following Playwright's `clip` shape. The recording is
+     * always captured at the full configured resolution; the clip is applied at
+     * render time, so it can be changed and re-rendered without re-recording.
+     * Only the clipped region appears in the output, and the recording tile
+     * takes the clip's aspect ratio.
+     */
+    clip?: ClipRegion
   }
   narration?: {
-    /** 0-1: 1=mask size equals shorter side of output */
+    /** 0-1 fraction of the output frame: 1=mask size equals shorter side of output. */
     size?: number
     /**
      * Narration size when the recording is smaller than the full frame.
@@ -165,9 +172,8 @@ export type RenderOptions = {
      * 0-1: same units as `size`.
      */
     sizeZoomed?: number
-    /** 0-1: 0=square, 1=circle */
+    /** 0-1 fraction: 0=square, 1=circle. */
     roundness?: number
-    shape?: 'rounded'
     /**
      * Narration shadow strength (0-1).
      * - 0 disables shadow
@@ -175,7 +181,7 @@ export type RenderOptions = {
      */
     dropShadow?: number
     corner?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
-    /** 0-1: 0=nothing, 1=length of shorter side of the frame */
+    /** 0-1 fraction of the output frame: 0=nothing, 1=length of shorter side of the frame. */
     padding?: number
     /**
      * Global default narration voice, used as the config-level default in the
@@ -184,6 +190,18 @@ export type RenderOptions = {
      * neither is set.
      */
     voice?: AnyTopLevelVoiceConfig
+    /**
+     * Cleanup for narration audio you recorded yourself (media-file cues):
+     * background noise reduction and loudness normalization. Off by default.
+     *
+     * - `true` enables the full chain with defaults
+     * - object form enables only the listed sub-features:
+     *   `{ denoise: true | { strength: 0..1 }, normalize: true | { level: LUFS } }`
+     *
+     * Does not affect generated narration, background audio tracks, or
+     * captured screen audio.
+     */
+    audio?: NarrationAudioCleanupOption
   }
   mouse?: {
     /** 0-1: 0=missing, 1=height of video */
@@ -217,6 +235,12 @@ export type RenderOptions = {
      */
     motionBlur?: number
   }
+  // Hidden for release: the keyboard shortcut overlay selection is removed
+  // from the public options surface (the web editor no longer offers it
+  // either). The runtime still resolves the options with their defaults, see
+  // HiddenShortcutRenderOptions below. Re-enable by moving that type's
+  // `shortcuts` field back here. Docs moved to docs/removed/keyboard-shortcuts.md
+  // at the repo root.
   output?: {
     /**
      * Aspect ratio of the rendered video output.
@@ -236,7 +260,7 @@ export type RenderOptions = {
      *
      * Combined with `aspectRatio`, this determines the final pixel dimensions.
      * See {@link Quality} for available presets. Screenshots ignore this: their
-     * resolution comes from the captured crop (or the full output frame) scaled
+     * resolution comes from the captured clip (or the full output frame) scaled
      * by the capture device pixel density.
      *
      * Defaults to `'1080p'` when not specified.
@@ -245,11 +269,41 @@ export type RenderOptions = {
      */
     quality?: Quality
     background?:
-      | { assetPath: string; fileHash?: string }
-      | { backgroundCss: string }
+      { assetPath: string; fileHash?: string } | { backgroundCss: string }
   }
   /** Screenshot-only render options (format, margin, aspectRatio). */
   screenshot?: ScreenshotRenderOptions
+}
+
+/**
+ * Hidden for release: keyboard shortcut overlay options, removed from the
+ * public {@link RenderOptions} surface. Internal consumers (options
+ * resolution, the web editor's settings serialization) intersect this type so
+ * previously saved options keep resolving. Re-enable by moving the field back
+ * into {@link RenderOptions}.
+ */
+export type HiddenShortcutRenderOptions = {
+  /** Keyboard shortcut overlays recorded from `page.keyboard.press`. */
+  shortcuts?: {
+    /**
+     * Show modifier-combo shortcuts (e.g. `Shift+A`) as keycap overlays.
+     * Defaults to `true`.
+     */
+    show?: boolean
+    /**
+     * Show single-key presses (e.g. `'A'`) as keycap overlays. Defaults to
+     * `false`.
+     */
+    showSingle?: boolean
+    /** Keycap appearance. Defaults to `'dark'`. */
+    theme?: 'light' | 'dark'
+    /**
+     * Per-shortcut visibility overrides from the web editor timeline, keyed by
+     * the recorded event id. Wins over the per-call `show` option and the
+     * global toggles.
+     */
+    overrides?: Record<string, { show: boolean }>
+  }
 }
 
 /**
@@ -261,13 +315,11 @@ export const RENDER_OPTIONS_DEFAULTS = {
   recording: {
     size: 1.0,
     roundness: 0,
-    shape: 'rounded' as const,
-    dropShadow: 'drop-shadow(0 8px 24px rgba(0,0,0,0.5))',
+    dropShadow: 1,
   },
   narration: {
     size: 0.3,
     roundness: 0.2,
-    shape: 'rounded' as const,
     corner: 'bottom-right' as const,
     padding: 0.04,
     dropShadow: 1,
@@ -279,6 +331,11 @@ export const RENDER_OPTIONS_DEFAULTS = {
   },
   zoom: {
     motionBlur: 0.5,
+  },
+  shortcuts: {
+    show: true,
+    showSingle: false,
+    theme: 'dark' as 'light' | 'dark',
   },
   output: {
     aspectRatio: '16:9' as AspectRatio,
@@ -298,16 +355,22 @@ export type ResolvedRenderOptions = {
   recording: {
     size: number
     roundness: number
-    shape: 'rounded'
-    dropShadow: string
+    dropShadow: number
+    /** Render-time crop of the recording (CSS px of the recording viewport). */
+    clip?: ClipRegion
   }
   narration: {
     size: number
+    sizeZoomed?: number
     roundness: number
-    shape: 'rounded'
     dropShadow: number
     corner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
     padding: number
+    /**
+     * Resolved audio cleanup for self-recorded narration cues. Present only
+     * when the user opted in via {@link RenderOptions.narration}.
+     */
+    audio?: ResolvedNarrationAudioCleanup
   }
   mouse: {
     size: number
@@ -323,17 +386,22 @@ export type ResolvedRenderOptions = {
   zoom: {
     motionBlur: number
   }
+  shortcuts: {
+    show: boolean
+    showSingle: boolean
+    theme: 'light' | 'dark'
+    overrides?: Record<string, { show: boolean }>
+  }
   output: {
     aspectRatio: AspectRatio
     quality: Quality
     background:
-      | { assetPath: string; fileHash?: string }
-      | { backgroundCss: string }
+      { assetPath: string; fileHash?: string } | { backgroundCss: string }
   }
   /**
    * Screenshot-only render options. Present only when at least one field was set
-   * (in config) or a crop was recorded. Renderers read screenshot framing
-   * (format, margin, aspectRatio, crop) exclusively from here.
+   * (in config) or a clip was recorded. Renderers read screenshot framing
+   * (format, margin, aspectRatio, clip) exclusively from here.
    */
   screenshot?: ResolvedScreenshotRenderOptions
 }
@@ -422,7 +490,7 @@ export type RecordOptions = {
    * screenshot. It does not apply to video recording (the screencast stays at
    * the viewport resolution).
    *
-   * @default 1
+   * @default 2 for screenshots, ignored for video
    */
   deviceScaleFactor?: number
 
@@ -430,22 +498,22 @@ export type RecordOptions = {
    * Capture system audio alongside the screen recording and mix it into the
    * output video.
    *
-   * Set to a linear gain value to enable capture:
-   * - `0` (default): disabled.
-   * - `1`: capture at unity gain (natural level).
-   * - Values above `1` boost the captured audio (e.g. `2` is twice as loud).
-   * - Values between `0` and `1` reduce the level (e.g. `0.5` is half volume).
+   * Set to `true` to capture at unity gain, or pass `{ gain }` for a custom
+   * linear gain:
+   * - `true`: capture at unity gain (natural level).
+   * - `{ gain: 0.5 }`: capture at half volume.
+   * - `{ gain: 2 }`: boost to twice the natural level.
    *
-   * Audio is captured via ffmpeg from the platform default audio input and
-   * mixed into the rendered video. While capture is enabled the browser plays
-   * the page audio out loud on the host so the recorder can tap it. Each OS
-   * requires a one-time loopback source setup to capture system audio rather
-   * than the microphone. See the per-OS guide:
+   * Audio is captured via ffmpeg from an isolated per-worker virtual sink and
+   * mixed into the rendered video. The browser plays into that sink, so the
+   * host stays silent and only the recording browser's own audio is captured.
+   * Linux only, and the run-level `enableCaptureAudio` config switch must be
+   * on. See the guide:
    * https://screenci.com/docs/guides/screen-audio
    *
-   * @default 0
+   * @default false
    */
-  captureAudio?: number
+  captureAudio?: boolean | { gain: number }
 
   /**
    * CSS selectors whose matching elements are masked from the very first frame,
@@ -494,6 +562,40 @@ export type RecordOptions = {
    * @default true for screenshots, false for video
    */
   disableAnimations?: boolean
+
+  /**
+   * Project-wide default cursor path shape. Every automatic move (the approach
+   * before a `click()`, `fill()`, etc.) and every `page.mouse` move adopts this
+   * unless the call passes its own `move.curve`. See {@link CursorCurve}.
+   *
+   * @default 'none'
+   * @example 'natural'
+   */
+  cursorCurve?: CursorCurve
+
+  /**
+   * Project-wide default bow amount for the `'natural'`/`'arc'` cursor-curve
+   * presets, as a fraction of the segment length. Overridden per call by
+   * `move.curviness`. See {@link CursorMoveOptions.curviness}.
+   *
+   * @example 0.18
+   */
+  cursorCurviness?: number
+
+  /**
+   * Slow the recording run down so each narration cue's captured window already
+   * spans its synthesized audio (plus the between-cue pause). Off by default:
+   * recording stays fast and independent of narration length, and the render
+   * absorbs the full audio with frozen-frame holds instead (identical output,
+   * only the raw recording scrubs closer to final timing).
+   *
+   * Opt in when you want the local recording preview to match the final pacing.
+   * Only takes effect for a per-language recording pass with backend
+   * credentials available; otherwise it is a no-op.
+   *
+   * @default false
+   */
+  actualNarrationPace?: boolean
 }
 
 /**
@@ -510,7 +612,40 @@ export type Easing =
   | 'ease-out-strong'
   | 'ease-in-out-strong'
 
+/** Every valid {@link Easing} name, for runtime validation. */
+export const EASING_NAMES: readonly Easing[] = [
+  'linear',
+  'ease-in',
+  'ease-out',
+  'ease-in-out',
+  'ease-in-strong',
+  'ease-out-strong',
+  'ease-in-out-strong',
+]
+
+/** Anchor corner for the narration (camera PIP) overlay. */
+export type NarrationCorner =
+  'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+
+/**
+ * Narration overlay position: one of the four corners, centered in the
+ * output, or filling the whole frame (uncropped source aspect).
+ */
+export type NarrationPosition = NarrationCorner | 'center' | 'full-screen'
+
+/**
+ * How full-screen narration fits the output frame: 'contain' letterboxes
+ * with black bars, 'cover' fills the frame with slight cropping.
+ */
+export type NarrationFullScreenFit = 'contain' | 'cover'
+
 export type AutoZoomOptions = {
+  /**
+   * Stable identity slug for the web editor (e.g. `autoZoom2`). Stamped
+   * automatically by `screenci sync`; not a zoom setting and never marks the
+   * block as code-locked.
+   */
+  editId?: string
   easing?: Easing
   /** Duration in milliseconds for zoom-in transitions. */
   duration?: number
@@ -522,10 +657,10 @@ export type AutoZoomOptions = {
   padding?: number
   /** 0–1: visibility bias inside the zoomed viewport; 0 = barely fit, 1 = centered. */
   centering?: number
-  /** Delay in milliseconds to hold the zoomed-in state after the zoom-in animation completes. */
-  preZoomDelay?: number
+  /** Delay in milliseconds before the internally triggered zoom-out. */
+  delay?: number
   /** Delay in milliseconds to hold the full view after the zoom-out animation completes. */
-  postZoomDelay?: number
+  delayAfter?: number
 }
 
 export type MouseMoveTimingOption =
@@ -540,23 +675,59 @@ export type MouseMoveTimingOption =
 
 export type CursorMoveTimingOption =
   | {
-      moveDuration?: number
-      moveSpeed?: never
+      duration?: number
+      speed?: never
     }
   | {
-      moveDuration?: never
-      moveSpeed?: number
+      duration?: never
+      speed?: number
     }
 
-export type CursorDragTimingOption =
-  | {
-      dragDuration?: number
-      dragSpeed?: never
-    }
-  | {
-      dragDuration?: never
-      dragSpeed?: number
-    }
+/**
+ * The two middle handles of a cubic bezier cursor path, in a normalized,
+ * CSS-`cubic-bezier` analog frame: the straight line from the move's start to
+ * its end is the x-axis, so `x1`/`x2` are the fraction (0..1) *along* that line
+ * and `y1`/`y2` are the perpendicular deflection in the **same unit** (a
+ * fraction of the segment length). Positive `y` bends to the left of travel
+ * (upward for a left-to-right move); negative flips it. The frame is isotropic
+ * and resolution-independent.
+ *
+ * @example [0.33, 0.4, 0.66, -0.2] // an S-curve
+ * @example [0.33, 0, 0.66, 0]      // a straight line
+ */
+export type CurveTuple = [number, number, number, number]
+
+/**
+ * How a cursor move curves on its way to the target.
+ *
+ * - `'none'`: straight line (the historical behavior).
+ * - `'natural'`: a gentle, human-looking arc. Its bow direction alternates
+ *   deterministically so consecutive moves vary yet always re-render identically.
+ * - `'arc'`: a stronger, deliberate single bow.
+ * - {@link CurveTuple}: an explicit normalized cubic bezier.
+ */
+export type CursorCurve = 'none' | 'natural' | 'arc' | CurveTuple
+
+export type CursorMoveOptions = CursorMoveTimingOption & {
+  /** Easing function for the cursor move animation (default: 'ease-in-out'). */
+  easing?: Easing
+  /**
+   * Shape of the cursor path to the target (default: `'none'`, a straight line;
+   * or the project-wide `recordOptions.cursorCurve` when set). See
+   * {@link CursorCurve}.
+   */
+  curve?: CursorCurve
+  /**
+   * Bow amount for the `'natural'`/`'arc'` presets, as a fraction of the segment
+   * length. A signed value fixes the bend direction (positive = left of travel /
+   * upward for a left-to-right move); when omitted the preset picks a sensible
+   * default and, for `'natural'`, a deterministic alternating direction. Ignored
+   * when `curve` is an explicit {@link CurveTuple}.
+   */
+  curviness?: number
+  /** Delay after cursor arrival before the primary action starts, in ms. */
+  delayAfter?: number
+}
 
 /**
  * Records a cursor press/move for the video without dispatching a real browser
@@ -589,33 +760,29 @@ export type ScreenCIMouseDownUpOptions = Pick<
 
 export type ScreenCIMouseClickOptions = NonNullable<
   Parameters<Mouse['click']>[2]
-> &
-  CursorMoveTimingOption &
-  ScreenCIMousePressTiming &
-  FakeMouseOption & {
-    /** Easing function for the cursor move animation (default: 'ease-in-out'). */
-    moveEasing?: Easing
-  }
+> & { move?: CursorMoveOptions } & ScreenCIMousePressTiming &
+  FakeMouseOption
 
 /** Shared cursor-animation options available on all locator actions. */
-type CursorMoveOptions = CursorMoveTimingOption & {
-  /** Easing function for the cursor move animation (default: 'ease-in-out'). */
-  moveEasing?: Easing
-  /** Pause between cursor arrival and the action in ms (default: 50). */
-  beforeClickPause?: number
-  /** Pause after the action completes in ms. */
-  postClickPause?: number
+type CursorActionMoveOptions = {
+  move?: CursorMoveOptions
+  /**
+   * Stable identity slug for the web editor (e.g. `click1`). Stamped
+   * automatically by `screenci sync`; identity only, never affects the
+   * action's behavior.
+   */
+  editId?: string
 }
 
 export type ScreenCILocatorClickOptions = Omit<
   NonNullable<Parameters<Locator['click']>[0]>,
   'steps'
 > &
-  CursorMoveOptions & {
+  CursorActionMoveOptions & {
     autoZoomOptions?: AutoZoomOptions
   }
 
-export type ScreenCILocatorPostClickMoveOptions = CursorMoveTimingOption & {
+export type ScreenCILocatorPostClickMoveOptions = MouseMoveTimingOption & {
   direction?: 'up' | 'down' | 'left' | 'right'
   duration?: number
   easing?: Easing
@@ -690,7 +857,7 @@ export type ScreenCILocatorPressSequentiallyOptions = Omit<
   NonNullable<Parameters<Locator['pressSequentially']>[1]>,
   'delay'
 > &
-  CursorMoveOptions & {
+  CursorActionMoveOptions & {
     /**
      * When `true`, forces the pre-type click animation even if the target input
      * is already focused. By default the click is skipped when already focused.
@@ -698,6 +865,14 @@ export type ScreenCILocatorPressSequentiallyOptions = Omit<
     forceClick?: boolean
     noWaitAfter?: boolean
     delay?: number
+    /**
+     * Total typing time in milliseconds. Editable in the web app. Unlike `fill`,
+     * the default scales with the text length (about 60ms per character), so
+     * longer text types for longer. The per-keystroke `delay` is derived from
+     * this divided by the character count; an explicit `delay` (with no
+     * `duration`) is instead read as the per-character cadence.
+     */
+    duration?: number
     position?: { x: number; y: number }
     /** Hide the cursor while typing; shown again on the next mouse move. */
     hideMouse?: boolean
@@ -713,7 +888,7 @@ export type ScreenCILocatorPressSequentiallyOptions = Omit<
 export type ScreenCILocatorCheckOptions = NonNullable<
   Parameters<Locator['check']>[0]
 > &
-  CursorMoveOptions & {
+  CursorActionMoveOptions & {
     noWaitAfter?: boolean
     position?: { x: number; y: number }
     autoZoomOptions?: AutoZoomOptions
@@ -723,11 +898,9 @@ export type ScreenCILocatorHoverOptions = Omit<
   NonNullable<Parameters<Locator['hover']>[0]>,
   'steps'
 > &
-  CursorMoveTimingOption & {
-    /** Easing function for the cursor move animation (default: 'ease-in-out'). */
-    moveEasing?: Easing
+  CursorActionMoveOptions & {
     /** How long to hold the hover in ms (default: 1000). */
-    hoverDuration?: number
+    duration?: number
     position?: { x: number; y: number }
   }
 
@@ -735,26 +908,21 @@ export type ScreenCILocatorSelectTextOptions = Omit<
   NonNullable<Parameters<Locator['selectText']>[0]>,
   'steps'
 > &
-  CursorMoveTimingOption & {
-    /** Easing function for the cursor move animation (default: 'ease-in-out'). */
-    moveEasing?: Easing
-    beforeClickPause?: number
+  CursorActionMoveOptions & {
     /**
      * Total duration of the triple-click animation in ms (default: 600).
      * Divided equally across the 3 click cycles.
      */
-    selectDuration?: number
+    duration?: number
   }
 
 export type ScreenCILocatorDragToOptions = Omit<
   NonNullable<Parameters<Locator['dragTo']>[1]>,
   'steps'
 > &
-  CursorMoveTimingOption &
-  CursorDragTimingOption & {
-    moveEasing?: Easing
-    preDragPause?: number
-    dragEasing?: Easing
+  CursorActionMoveOptions &
+  MouseMoveTimingOption & {
+    easing?: Easing
     /**
      * Minimum number of intermediate cursor dispatches spread across the drag,
      * so the browser sees a dense enough stream of moves to track the gesture
@@ -769,7 +937,7 @@ export type ScreenCILocatorDragToOptions = Omit<
 export type ScreenCILocatorSelectOptionOptions = NonNullable<
   Parameters<Locator['selectOption']>[1]
 > &
-  CursorMoveOptions & {
+  CursorActionMoveOptions & {
     noWaitAfter?: boolean
     position?: { x: number; y: number }
     autoZoomOptions?: AutoZoomOptions
@@ -804,11 +972,19 @@ type ScreenCIMouse = Omit<
    *   When provided and greater than 0, the cursor is animated with easing.
    * @param options.speed - Cursor speed in pixels per second.
    * @param options.easing - Easing function for the cursor animation (default: 'ease-in-out').
+   * @param options.curve - Cursor path shape (default: `'none'`, or the project
+   *   `recordOptions.cursorCurve`). See {@link CursorCurve}.
+   * @param options.curviness - Bow amount for the `'natural'`/`'arc'` presets.
    */
   move(
     x: number,
     y: number,
-    options?: { steps?: number; easing?: Easing } & MouseMoveTimingOption
+    options?: {
+      steps?: number
+      easing?: Easing
+      curve?: CursorCurve
+      curviness?: number
+    } & MouseMoveTimingOption
   ): Promise<void>
   /**
    * Presses the mouse button down at the current cursor position, animating the
@@ -886,6 +1062,25 @@ type ScreenCIMouse = Omit<
   hide(): void
 }
 
+/** Options for {@link ScreenCIKeyboard.press}. */
+export type ScreenCIKeyboardPressOptions = NonNullable<
+  Parameters<Keyboard['press']>[1]
+>
+// Hidden for release: the per-press `show?: boolean` visibility override was
+// removed from the public press options along with the shortcut render
+// options. The runtime still records and strips it (see instrument.ts).
+// Re-enable by restoring `& { show?: boolean }` here.
+
+export type ScreenCIKeyboard = Omit<Keyboard, 'press'> & {
+  /**
+   * Presses a key or key combo (e.g. `'A'`, `'Shift+A'`, `'ControlOrMeta+K'`).
+   *
+   * The press is recorded as an animated keycap overlay shown at the bottom of
+   * the rendered video.
+   */
+  press(key: string, options?: ScreenCIKeyboardPressOptions): Promise<void>
+}
+
 export type ScreenCILocator = Omit<
   Locator,
   | 'click'
@@ -897,10 +1092,21 @@ export type ScreenCILocator = Omit<
   | 'selectOption'
   | 'selectText'
   | 'dragTo'
+  | 'press'
   | LocatorReturnMethodNames
   | 'all'
   | 'page'
 > & {
+  /**
+   * Presses a key or key combo (e.g. `'Enter'`, `'Shift+A'`) on the element.
+   *
+   * The press is recorded as an animated keycap overlay shown at the bottom of
+   * the rendered video.
+   */
+  press(
+    key: string,
+    options?: Parameters<Locator['press']>[1] & { show?: boolean }
+  ): Promise<void>
   /**
    * Clicks the element with an animated cursor move.
    *
@@ -947,7 +1153,13 @@ export type ScreenCILocator = Omit<
    * `forceClick: true` to always animate the click.
    *
    * @param text - The text to type.
-   * @param options.delay - Time between keystrokes in milliseconds.
+   * @param options.duration - Total time in milliseconds to spend typing.
+   *   Unlike `fill`, the default scales with the text length (about 60ms per
+   *   character), so longer text types for longer. The per-keystroke delay is
+   *   derived from this value divided by the number of characters.
+   * @param options.delay - Time between keystrokes in milliseconds. Read as the
+   *   per-character cadence when `duration` is not given (total = delay times
+   *   the character count).
    * @param options.timeout - Maximum time in milliseconds to wait for the
    *   element to be actionable.
    * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
@@ -1024,7 +1236,7 @@ export type ScreenCILocator = Omit<
    */
   tap(
     options?: Omit<NonNullable<Parameters<Locator['tap']>[0]>, 'steps'> &
-      CursorMoveOptions & {
+      CursorActionMoveOptions & {
         noWaitAfter?: boolean
         autoZoomOptions?: AutoZoomOptions
       }
@@ -1118,20 +1330,27 @@ export type ScreenCILocator = Omit<
  * `page.screenshot()` also writes a branded still as a separate screenshot
  * recording; these keys are stripped before delegating to Playwright.
  */
-export type ScreenCIScreenshotOptions = NonNullable<
-  Parameters<Page['screenshot']>[0]
+export type ScreenCIScreenshotOptions = Omit<
+  NonNullable<Parameters<Page['screenshot']>[0]>,
+  'clip'
 > & {
   /** Names the still recording: "<video title> - <name>". */
   name?: string
   /** Crop the still to a locator or a pixel region (CSS px of the viewport). */
-  crop?: CropTarget
+  clip?: ClipTarget
 }
 
 export type ScreenCIPage = Omit<
   Page,
-  'click' | 'mouse' | 'screenshot' | 'waitForTimeout' | LocatorReturnMethodNames
+  | 'click'
+  | 'mouse'
+  | 'keyboard'
+  | 'screenshot'
+  | 'waitForTimeout'
+  | LocatorReturnMethodNames
 > & {
   mouse: ScreenCIMouse
+  keyboard: ScreenCIKeyboard
   /**
    * Waits in the recording timeline. Plain `screenci test` collapses this to
    * 0ms so authoring runs stay fast; `screenci record` and
@@ -1140,7 +1359,7 @@ export type ScreenCIPage = Omit<
    * Use Playwright locator/action waits for application readiness instead of
    * relying on this as a real polling delay.
    */
-  waitForTimeout(...args: Parameters<Page['waitForTimeout']>): Promise<void>
+  waitForTimeout(timeout?: number): Promise<void>
   /**
    * Captures a screenshot. Inside a `video()` recording this also writes a
    * branded still as a separate screenshot recording named "<video title> -
@@ -1165,7 +1384,7 @@ export type ScreenCIPage = Omit<
   click(
     selector: string,
     options?: Parameters<Page['click']>[1] &
-      CursorMoveOptions & {
+      CursorActionMoveOptions & {
         autoZoomOptions?: AutoZoomOptions
       }
   ): Promise<void>
@@ -1268,12 +1487,6 @@ export type ScreenCIConfig = Omit<
    */
   webServer?: PlaywrightTestConfig['webServer']
   use?: Omit<NonNullable<PlaywrightTestConfig['use']>, 'trace'> & {
-    recordOptions?: RecordOptions
-    /**
-     * Render options. To configure them in Editor, use
-     * `video.use({ renderOptions: editable() })` per video instead.
-     */
-    renderOptions?: RenderOptions
     /**
      * Timeout in milliseconds for individual actions like `click()`, `fill()`, etc.
      *
@@ -1301,12 +1514,6 @@ export type ScreenCIConfig = Omit<
   }
   projects?: (Omit<Project, 'use'> & {
     use?: Omit<NonNullable<Project['use']>, 'trace'> & {
-      recordOptions?: RecordOptions
-      /**
-       * Render options. To configure them in Editor, use
-       * `video.use({ renderOptions: editable() })` per video instead.
-       */
-      renderOptions?: RenderOptions
       /**
        * When to record traces during test execution.
        * Uses Playwright's native `trace` option type.

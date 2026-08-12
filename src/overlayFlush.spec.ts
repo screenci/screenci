@@ -151,6 +151,34 @@ describe('flushPendingOverlays', () => {
     expect(seen).toBe('<div>doc</div>')
   })
 
+  it('patches an animation event with its alpha-capable preview clip', async () => {
+    setAnimatedHtmlRasterizer(async () => ({
+      buffer: Buffer.from('mp4'),
+      previewBuffer: Buffer.from('webm'),
+      width: 10,
+      height: 10,
+    }))
+    const recorder = new EventRecorder()
+    recorder.start()
+    recorder.addPendingAssetStart('anim', {
+      kind: 'animation',
+      durationMs: 1000,
+      fullScreen: false,
+      request: animationRequest('<div>x</div>'),
+    })
+
+    await withRecording(() => flushPendingOverlays(recorder))
+
+    const [event] = pendingEvents(recorder)
+    expect(event).toMatchObject({ kind: 'animation' })
+    const anim = event as unknown as {
+      previewPath?: string
+      previewFileHash?: string
+    }
+    expect(anim.previewPath?.endsWith('.webm')).toBe(true)
+    expect(anim.previewFileHash).toBeDefined()
+  })
+
   it('keys image and animation requests separately', async () => {
     const recorder = new EventRecorder()
     recorder.start()

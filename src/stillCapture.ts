@@ -5,8 +5,8 @@ import { getDimensions } from './dimensions.js'
 import { escapeFileSystemPathSegment } from './fileSystemName.js'
 import { EventRecorder } from './events.js'
 import type { IEventRecorder, ScreenshotInfo } from './events.js'
-import { resolveCrop } from './crop.js'
-import type { CropTarget, ScreenshotCropRecord } from './crop.js'
+import { resolveClip } from './clip.js'
+import type { ClipTarget, ScreenshotClipRecord } from './clip.js'
 import { getMousePosition } from './mouse.js'
 import { getScreenCIRuntimeContext } from './runtimeContext.js'
 import {
@@ -31,7 +31,7 @@ export type StillScreenshotOptions = {
    */
   name?: string
   /** Crop the still to a locator or pixel region (applied by the compositor). */
-  crop?: CropTarget
+  clip?: ClipTarget
 }
 
 type PlaywrightScreenshotOptions = NonNullable<
@@ -97,7 +97,7 @@ export async function writeStillRecording(params: {
   screenciDir: string
   dimensions: { width: number; height: number }
   deviceScaleFactor: number
-  crop?: ScreenshotCropRecord
+  clip?: ScreenshotClipRecord
   /** Final cursor position in CSS px of the viewport, if the body moved it. */
   mousePosition?: { x: number; y: number }
   testFilePath: string | null
@@ -111,7 +111,7 @@ export async function writeStillRecording(params: {
     screenciDir,
     dimensions,
     deviceScaleFactor,
-    crop,
+    clip,
     mousePosition,
     testFilePath,
     configDir,
@@ -150,13 +150,13 @@ export async function writeStillRecording(params: {
 
   const recorder = makeRecorder(renderOptions, recordOptions)
   recorder.start()
-  // The crop is a render option (renderOptions.screenshot.crop), passed through
+  // The clip is a render option (renderOptions.screenshot.clip), passed through
   // writeToFile rather than stored on ScreenshotInfo.
   await recorder.writeToFile(
     dir,
     name,
     testFilePath !== null ? relative(configDir, testFilePath) : undefined,
-    { output: 'screenshot', screenshot, ...(crop !== undefined && { crop }) }
+    { output: 'screenshot', screenshot, ...(clip !== undefined && { clip }) }
   )
 
   return buffer
@@ -186,7 +186,7 @@ export function bindStillCaptureToPage(page: Page): () => void {
   const wrapped = async (
     options?: WrappedScreenshotOptions
   ): Promise<Buffer> => {
-    const { name, crop: cropTarget, ...playwrightOptions } = options ?? {}
+    const { name, clip: clipTarget, ...playwrightOptions } = options ?? {}
 
     if (process.env.SCREENCI_RECORDING !== 'true') {
       return original(playwrightOptions)
@@ -206,9 +206,9 @@ export function bindStillCaptureToPage(page: Page): () => void {
       usedNames
     )
 
-    let crop: ScreenshotCropRecord | undefined
-    if (cropTarget !== undefined && ctx.page !== null) {
-      crop = await resolveCrop(cropTarget, ctx.page)
+    let clip: ScreenshotClipRecord | undefined
+    if (clipTarget !== undefined && ctx.page !== null) {
+      clip = await resolveClip(clipTarget, ctx.page)
     }
 
     // The cursor's last position, so the renderer can draw it on the still when
@@ -224,7 +224,7 @@ export function bindStillCaptureToPage(page: Page): () => void {
       // The video context never applies deviceScaleFactor (video.ts), so a still
       // captured mid-recording is at the viewport resolution (DSF 1).
       deviceScaleFactor: 1,
-      ...(crop !== undefined && { crop }),
+      ...(clip !== undefined && { clip }),
       ...(mousePosition !== undefined && {
         mousePosition: { x: mousePosition.x, y: mousePosition.y },
       }),

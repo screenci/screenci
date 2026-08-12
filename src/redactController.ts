@@ -268,8 +268,7 @@ export function redactApplyConfigSelectors(config: {
 }): void {
   const KEY = '__screenci_redact'
   const api = (window as unknown as Record<string, unknown>)[KEY] as
-    | RedactWindowApi
-    | undefined
+    RedactWindowApi | undefined
   if (!api || config.selectors.length === 0) return
 
   // Hide matches the instant they paint, before the JS panel can position

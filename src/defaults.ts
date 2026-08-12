@@ -14,15 +14,16 @@ import type {
 // - docs/configuration.md
 // - docs/camera-and-zooming.md
 // - README.md
-export const DEFAULT_ZOOM_OPTIONS: Required<AutoZoomOptions> = {
+// editId is identity, not a zoom setting: it has no default.
+export const DEFAULT_ZOOM_OPTIONS: Required<Omit<AutoZoomOptions, 'editId'>> = {
   easing: 'ease-out',
   duration: 750,
   zoomOutDuration: 600,
   amount: 0.72,
   padding: 0.2,
   centering: 1,
-  preZoomDelay: 0,
-  postZoomDelay: 200,
+  delay: 0,
+  delayAfter: 200,
 }
 
 /**
@@ -54,6 +55,51 @@ export const DEFAULT_AUTO_ZOOM_CENTERING = 0.6
  * Default cursor move duration for click-like actions, in milliseconds.
  */
 export const DEFAULT_CLICK_MOUSE_MOVE_DURATION: number = 900
+
+/**
+ * Default project-wide cursor path shape when `recordOptions.cursorCurve` is
+ * unset. `'none'` keeps the historical straight-line motion.
+ */
+export const DEFAULT_CURSOR_CURVE = 'none'
+
+/**
+ * Default bow amount (fraction of segment length) for the `'natural'` cursor
+ * curve preset when no `curviness` is given.
+ */
+export const DEFAULT_NATURAL_CURVINESS = 0.18
+
+/**
+ * Default bow amount (fraction of segment length) for the `'arc'` cursor curve
+ * preset when no `curviness` is given. Stronger and more deliberate than
+ * `'natural'`.
+ */
+export const DEFAULT_ARC_CURVINESS = 0.4
+
+/**
+ * Default pause between the cursor arriving on the target and the press, in
+ * milliseconds (`move.delayAfter` of click-like actions).
+ */
+export const DEFAULT_PRE_CLICK_PAUSE_MS = 50
+
+/**
+ * Default pause between the cursor arriving on the drag source and the mouse
+ * press, in milliseconds (`move.delayAfter` of `dragTo`).
+ */
+export const DEFAULT_DRAG_PRESS_DELAY_MS = 100
+
+/** Default typing animation duration for `fill`, in milliseconds. */
+export const DEFAULT_FILL_TYPING_DURATION_MS = 1000
+
+/**
+ * Default per-character typing cadence for `pressSequentially`, in milliseconds.
+ * Unlike `fill` (a fixed total spread), `pressSequentially` types key by key, so
+ * its default total duration scales with the text length: longer text types for
+ * longer. The effective total is `text.length * this`.
+ */
+export const DEFAULT_PRESS_SEQUENTIALLY_MS_PER_CHAR = 60
+
+/** Default hold duration on the target for `hover`, in milliseconds. */
+export const DEFAULT_HOVER_DURATION_MS = 1000
 
 /**
  * Minimum number of intermediate cursor dispatches spread across the drag phase

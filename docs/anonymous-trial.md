@@ -1,19 +1,22 @@
 # Anonymous Trial
 
-`screenci record` needs no account or `SCREENCI_SECRET` to try. Without one, a
-recording uploads under a local, anonymous trial session: the CLI prints a link
-to view the result, and you sign up afterward to keep it. Recording an
-anonymous trial agrees to the [Terms](https://screenci.com/legal/tos), which
-`record` prints before it starts.
+`screenci export` needs no account or `SCREENCI_SECRET` to try. Without one, a
+recording uploads under a local, anonymous trial session: it records and
+renders with the trial watermark, and the CLI prints a link to view the result
+(downloads require an account, so the trial prints the export page URL and a
+sign-up hint instead of writing files). You sign up afterward to keep it.
+Recording an anonymous trial agrees to the
+[Terms](https://screenci.com/legal/tos), which `export` prints before it
+starts.
 
 ## What the trial includes
 
-An anonymous trial gets a full preview of ScreenCI, including two Business-tier
-narration features, so you can judge the best of what a paid plan unlocks
-before creating an account:
+An anonymous trial gets a full preview of ScreenCI, including multi-language
+narration, a Business-tier feature, so you can judge the best of what a paid
+plan unlocks before creating an account:
 
-- **Expressive narration** (style prompts and tone control) is allowed
-  outright.
+- **Expressive narration** (style prompts and tone control), which is
+  available on every plan.
 - **Multiple narration languages**: up to 3 languages at once, well above the
   single-language limit that Free and Starter carry after signup (see
   [One language per plan](/docs/guides/languages#one-language-per-plan)), but
@@ -24,13 +27,13 @@ account without an active paid plan.
 
 ## Trial limits
 
-An anonymous trial gives up to three `screenci record` calls, each capped
+An anonymous trial gives up to three `screenci export` calls, each capped
 further within that call:
 
-- **Three recording calls.** You can run `screenci record` up to three times on
+- **Three recording calls.** You can run `screenci export` up to three times on
   the trial. After each successful call the CLI prints how many recordings are
   left. Once all three are used (or the trial session expires), a further
-  `screenci record` stops before it starts and prints a sign-up link instead of
+  `screenci export` stops before it starts and prints a sign-up link instead of
   recording again.
 - **Up to 3 videos and screenshots** in each call.
 - **Up to 3 narration languages at once**, combined across everything in a
@@ -58,4 +61,4 @@ on your paid plan whenever you want a watermark-free version of it.
   works once you are signed up.
 - [Narration](/docs/guides/narration) for expressive voices, style prompts,
   and tone control.
-- [CLI](/docs/reference/cli) for the full `record` command reference.
+- [CLI](/docs/reference/cli) for the full `export` command reference.

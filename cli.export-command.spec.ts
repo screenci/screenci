@@ -17,6 +17,10 @@ const mockExistsSync = vi.fn()
 const mockRealpathSync = vi.fn((path: string) => path)
 const mockMkdirSync = vi.fn()
 const mockRmSync = vi.fn()
+const mockRenameSync = vi.fn()
+const mockStatSync = vi.fn(
+  () => undefined as undefined | { isDirectory: () => boolean }
+)
 const mockReaddirSync = vi.fn(() => [] as string[])
 const mockReadFileSync = vi.fn()
 const mockReaddir = vi.fn()
@@ -180,6 +184,8 @@ vi.mock('fs', () => ({
   realpathSync: mockRealpathSync,
   mkdirSync: mockMkdirSync,
   rmSync: mockRmSync,
+  renameSync: mockRenameSync,
+  statSync: mockStatSync,
   readdirSync: mockReaddirSync,
   readFileSync: mockReadFileSync,
   default: {
@@ -188,6 +194,8 @@ vi.mock('fs', () => ({
     realpathSync: mockRealpathSync,
     mkdirSync: mockMkdirSync,
     rmSync: mockRmSync,
+    renameSync: mockRenameSync,
+    statSync: mockStatSync,
     readdirSync: mockReaddirSync,
     readFileSync: mockReadFileSync,
   },
@@ -264,6 +272,8 @@ describe('CLI', () => {
       return ''
     })
     mockStat.mockResolvedValue({ size: 4 })
+    mockStatSync.mockReturnValue(undefined)
+    mockReaddirSync.mockReturnValue([] as unknown as string[])
     mockCreateReadStream.mockImplementation(() => {
       const stream = new Readable({ read() {} })
       process.nextTick(() => {
@@ -394,6 +404,33 @@ describe('CLI', () => {
       // The cross-run overlay cache survives the wipe so unchanged overlays are
       // not re-rendered, re-encoded, and re-uploaded.
       expect(removed).not.toContain('/project/.screenci/.overlay-cache')
+    })
+
+    it('keeps a recording dir data.json as last-data.json for the freshness check', async () => {
+      const { clearRecordingDirectories } = await import('./cli')
+      const dir = '/project/.screenci'
+      mockReaddirSync.mockImplementation(((path: string) =>
+        path === dir
+          ? ['My Video [en]']
+          : ['data.json', 'recording.mp4']) as never)
+      mockStatSync.mockReturnValue({ isDirectory: () => true })
+      mockExistsSync.mockImplementation((path: string) =>
+        path.endsWith('data.json')
+      )
+
+      clearRecordingDirectories(dir)
+
+      const removed = mockRmSync.mock.calls.map((call) => call[0] as string)
+      // Media goes, the event data survives (renamed so the upload phase never
+      // mistakes it for a fresh recording).
+      expect(removed).toContain(
+        '/project/.screenci/My Video [en]/recording.mp4'
+      )
+      expect(removed).not.toContain('/project/.screenci/My Video [en]')
+      expect(mockRenameSync).toHaveBeenCalledWith(
+        '/project/.screenci/My Video [en]/data.json',
+        '/project/.screenci/My Video [en]/last-data.json'
+      )
     })
 
     it('preserves the anon trial token so one trial spans runs (cap/claim/graduate stay intact)', async () => {
@@ -538,14 +575,20 @@ describe('CLI', () => {
     })
   })
 
-  describe('record command', () => {
+  describe('export command', () => {
     beforeEach(() => {
       process.env.SCREENCI_SECRET = 'test-secret'
     })
 
+    afterEach(() => {
+      // Export sets process.exitCode on failed/empty runs; never leak it into
+      // the test runner process.
+      process.exitCode = undefined
+    })
+
     it('runs Playwright and does not exit when SCREENCI_SECRET is missing', async () => {
       delete process.env.SCREENCI_SECRET
-      process.argv = ['node', 'cli.js', 'record']
+      process.argv = ['node', 'cli.js', 'export']
       mockSpawn.mockImplementation(() => {
         process.nextTick(() => mockChildProcess.emit('close', 0))
         return mockChildProcess as unknown as ChildProcess
@@ -564,7 +607,7 @@ describe('CLI', () => {
 
     it('loads SCREENCI_SECRET from the project .env when envFile is not configured', async () => {
       delete process.env.SCREENCI_SECRET
-      process.argv = ['node', 'cli.js', 'record']
+      process.argv = ['node', 'cli.js', 'export']
       if (loadEnvFileSpy) {
         loadEnvFileSpy.mockImplementation((path?: string | URL) => {
           if (String(path) === `${process.cwd()}/.env`) {
@@ -595,7 +638,7 @@ describe('CLI', () => {
     })
 
     it('should run Playwright locally for record command', async () => {
-      process.argv = ['node', 'cli.js', 'record']
+      process.argv = ['node', 'cli.js', 'export']
       process.env.VITE_APP_BASE_URL = 'https://example.com'
       mockSpawn.mockImplementation(
         (
@@ -634,7 +677,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
         '--grep',
@@ -723,88 +766,8 @@ describe('CLI', () => {
       )
     })
 
-    it('injects Studio text overrides into the recording env', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-      const overrides = { en: { heading: 'From Studio' } }
-      mockFetch.mockImplementation(async (input: string | URL) => {
-        const url = String(input)
-        if (url.includes('/cli/text-overrides')) {
-          return {
-            ok: true,
-            status: 200,
-            json: vi.fn().mockResolvedValue({ overrides }),
-            text: vi.fn().mockResolvedValue(''),
-          }
-        }
-        return {
-          ok: true,
-          status: 200,
-          json: vi.fn().mockResolvedValue({}),
-          text: vi.fn().mockResolvedValue(''),
-        }
-      })
-      let capturedEnv: NodeJS.ProcessEnv | undefined
-      mockSpawn.mockImplementation(
-        (
-          _command: string,
-          _args: string[],
-          options?: { env?: NodeJS.ProcessEnv }
-        ) => {
-          capturedEnv = options?.env
-          process.nextTick(() => mockChildProcess.emit('close', 0))
-          return mockChildProcess as unknown as ChildProcess
-        }
-      )
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(capturedEnv?.SCREENCI_VALUES_OVERRIDES).toBe(
-        JSON.stringify(overrides)
-      )
-    })
-
-    it('records without text overrides when the endpoint fails', async () => {
-      process.argv = ['node', 'cli.js', 'record']
-      mockFetch.mockImplementation(async (input: string | URL) => {
-        const url = String(input)
-        if (url.includes('/cli/text-overrides')) {
-          return {
-            ok: false,
-            status: 500,
-            json: vi.fn().mockResolvedValue({}),
-            text: vi.fn().mockResolvedValue('boom'),
-          }
-        }
-        return {
-          ok: true,
-          status: 200,
-          json: vi.fn().mockResolvedValue({}),
-          text: vi.fn().mockResolvedValue(''),
-        }
-      })
-      let capturedEnv: NodeJS.ProcessEnv | undefined
-      mockSpawn.mockImplementation(
-        (
-          _command: string,
-          _args: string[],
-          options?: { env?: NodeJS.ProcessEnv }
-        ) => {
-          capturedEnv = options?.env
-          process.nextTick(() => mockChildProcess.emit('close', 0))
-          return mockChildProcess as unknown as ChildProcess
-        }
-      )
-
-      const { main } = await import('./cli')
-      await main()
-
-      expect(mockSpawn).toHaveBeenCalled()
-      expect(capturedEnv?.SCREENCI_VALUES_OVERRIDES).toBeUndefined()
-    })
-
     it('should only log the config path in verbose mode', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--verbose']
+      process.argv = ['node', 'cli.js', 'export', '--verbose']
       process.env.VITE_APP_BASE_URL = 'https://example.com'
       mockReadFile.mockImplementation(async (path: string | URL) => {
         if (String(path).endsWith('screenci.config.ts')) {
@@ -1043,7 +1006,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
       ]
@@ -1081,6 +1044,44 @@ describe('CLI', () => {
             text: vi.fn().mockResolvedValue(''),
           }
         }
+        if (url.includes('/cli/info')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              projectName: 'Test Project',
+              projectId: 'project_123',
+              videos: {
+                Demo: {
+                  videoId: 'video_123',
+                  languages: {
+                    en: {
+                      latestRecord: {
+                        status: 'finished',
+                        download: {
+                          video:
+                            'http://localhost:8787/cli/download/video_123/records/r1/en/video',
+                          screenshot:
+                            'http://localhost:8787/cli/download/video_123/records/r1/en/screenshot',
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        if (url.includes('/cli/download/')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+            arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
+          }
+        }
         return {
           ok: true,
           status: 200,
@@ -1101,7 +1102,7 @@ describe('CLI', () => {
         stripVTControlCharacters(String(call[0]))
       )
       expect(messages).toContain(
-        'Recording finished, rendering in progress. Results available at:'
+        'Recording finished, export render in progress. Results available at:'
       )
       expect(
         messages.some((message) => message.includes('ScreenCI watermark'))
@@ -1117,7 +1118,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
       ]
@@ -1191,7 +1192,7 @@ describe('CLI', () => {
           return (
             typeof parsed.token === 'string' &&
             typeof parsed.recordUrl === 'string' &&
-            parsed.recordUrl.startsWith('http://localhost:5173/record/')
+            parsed.recordUrl.startsWith('http://localhost:5173/export/')
           )
         })
       ).toBe(true)
@@ -1201,7 +1202,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
       ]
@@ -1239,6 +1240,44 @@ describe('CLI', () => {
             text: vi.fn().mockResolvedValue(''),
           }
         }
+        if (url.includes('/cli/info')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              projectName: 'Test Project',
+              projectId: 'project_123',
+              videos: {
+                Demo: {
+                  videoId: 'video_123',
+                  languages: {
+                    en: {
+                      latestRecord: {
+                        status: 'finished',
+                        download: {
+                          video:
+                            'http://localhost:8787/cli/download/video_123/records/r1/en/video',
+                          screenshot:
+                            'http://localhost:8787/cli/download/video_123/records/r1/en/screenshot',
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        if (url.includes('/cli/download/')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+            arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
+          }
+        }
         return {
           ok: true,
           status: 200,
@@ -1259,7 +1298,7 @@ describe('CLI', () => {
         stripVTControlCharacters(String(call[0]))
       )
       expect(messages).toContain(
-        'Recording finished, rendering in progress. Results available at:'
+        'Recording finished, export render in progress. Results available at:'
       )
       expect(messages.some((message) => message.includes('/select-plan'))).toBe(
         false
@@ -1552,7 +1591,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
       ]
@@ -1621,17 +1660,22 @@ describe('CLI', () => {
       expect(loggerWarnSpy).toHaveBeenCalledWith(
         'Some recordings failed, uploading successful videos only.'
       )
-      expect(mockRmSync).toHaveBeenCalledWith(
-        expect.stringContaining('/.screenci/demo-video'),
-        { recursive: true, force: true }
+      // Cleanup removes the uploaded media but keeps data.json for the next
+      // dev session's freshness check.
+      expect(mockReaddirSync).toHaveBeenCalledWith(
+        expect.stringContaining('/.screenci/demo-video')
       )
+      const removed = mockRmSync.mock.calls.map((call) => String(call[0]))
+      expect(
+        removed.some((path) => path.endsWith('demo-video/data.json'))
+      ).toBe(false)
     })
 
     it('skips upload after partial failure with all-or-nothing policy, then still fails', async () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload-all-or-nothing.config.ts',
       ]
@@ -2453,7 +2497,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
       ]
@@ -2532,8 +2576,12 @@ describe('CLI', () => {
       )
     })
 
-    it('removes uploaded recording directories after successful upload', async () => {
+    it('removes uploaded media but keeps data.json after successful upload', async () => {
       mockReaddir.mockResolvedValue(['demo-video'])
+      mockReaddirSync.mockReturnValue([
+        'data.json',
+        'recording.mp4',
+      ] as unknown as string[])
       mockReadFile.mockImplementation(async (path: string | URL) => {
         const pathString = String(path)
         if (pathString.endsWith('package.json')) {
@@ -2600,10 +2648,15 @@ describe('CLI', () => {
         failedVideoMessages: [],
         plan: null,
       })
-      expect(mockRmSync).toHaveBeenCalledWith('/repo/.screenci/demo-video', {
-        recursive: true,
-        force: true,
-      })
+      // Media is removed; data.json survives so the next dev session can skip
+      // re-recording when the source is unchanged.
+      expect(mockRmSync).toHaveBeenCalledWith(
+        '/repo/.screenci/demo-video/recording.mp4',
+        { recursive: true, force: true }
+      )
+      const removed = mockRmSync.mock.calls.map((call) => call[0] as string)
+      expect(removed).not.toContain('/repo/.screenci/demo-video')
+      expect(removed).not.toContain('/repo/.screenci/demo-video/data.json')
     })
 
     it('keeps uploaded recording directories when DEBUG=true', async () => {
@@ -3036,7 +3089,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
       ]
@@ -3140,11 +3193,11 @@ describe('CLI', () => {
       ).toBe(false)
     })
 
-    it('formats expressive narration tier failures with a fix suggestion', async () => {
+    it('warns with the video name and server message when an upload is refused', async () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
       ]
@@ -3181,7 +3234,7 @@ describe('CLI', () => {
             text: vi
               .fn()
               .mockResolvedValue(
-                'Expressive narration and style prompts require the Business tier. Upgrade your subscription tier at https://app.screenci.com/billing to continue rendering.'
+                'Your starter tier allows a single narration language across your organization, and this render would use 2. Upgrade your plan to render more languages at https://app.screenci.com/billing.'
               ),
           }
         }
@@ -3205,7 +3258,7 @@ describe('CLI', () => {
       )
 
       expect(loggerWarnSpy).toHaveBeenCalledWith(
-        "Find ScreenCI docs and getting started: Expressive narration and style prompts require the Business tier. Upgrade your subscription tier at https://app.screenci.com/billing to continue rendering.\nIf you want to keep using the current tier, remove `voice.style` or `modelType: 'expressive'` from the localize `voice`."
+        'Find ScreenCI docs and getting started: Your starter tier allows a single narration language across your organization, and this render would use 2. Upgrade your plan to render more languages at https://app.screenci.com/billing.'
       )
     })
 
@@ -3213,7 +3266,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload-all-or-nothing.config.js',
       ]
@@ -3239,7 +3292,7 @@ describe('CLI', () => {
 
     describe('--remote', () => {
       it('dispatches the workflow and does not record locally', async () => {
-        process.argv = ['node', 'cli.js', 'record', '--remote']
+        process.argv = ['node', 'cli.js', 'export', '--remote']
 
         const { main } = await import('./cli')
         await main()
@@ -3273,7 +3326,7 @@ describe('CLI', () => {
         process.argv = [
           'node',
           'cli.js',
-          'record',
+          'export',
           '--remote',
           '--grep',
           'Onboarding',
@@ -3295,7 +3348,7 @@ describe('CLI', () => {
       })
 
       it('throws when the backend rejects the trigger', async () => {
-        process.argv = ['node', 'cli.js', 'record', '--remote']
+        process.argv = ['node', 'cli.js', 'export', '--remote']
         mockFetch.mockResolvedValue({
           ok: false,
           status: 400,

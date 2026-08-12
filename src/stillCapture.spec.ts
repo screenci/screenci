@@ -101,7 +101,7 @@ describe('writeStillRecording', () => {
       screenciDir: '/repo/.screenci',
       dimensions: { width: 1920, height: 1080 },
       deviceScaleFactor: 1,
-      crop: {
+      clip: {
         box: { x: 100, y: 100, width: 500, height: 500 },
         padding: { top: 0, right: 0, bottom: 0, left: 0 },
         source: 'region',
@@ -127,7 +127,7 @@ describe('writeStillRecording', () => {
     expect(title).toBe('hero')
     expect(sourceFile).toBe('recordings/demo.screenci.ts')
     // Crop is a render option, passed as a sibling of `screenshot` so writeToFile
-    // merges it into renderOptions.screenshot.crop.
+    // merges it into renderOptions.screenshot.clip.
     expect(options).toEqual({
       output: 'screenshot',
       screenshot: {
@@ -136,7 +136,7 @@ describe('writeStillRecording', () => {
         height: 1080,
         deviceScaleFactor: 1,
       },
-      crop: {
+      clip: {
         box: { x: 100, y: 100, width: 500, height: 500 },
         padding: { top: 0, right: 0, bottom: 0, left: 0 },
         source: 'region',
@@ -167,7 +167,7 @@ describe('writeStillRecording', () => {
     const options = writeToFile.mock.calls[0][3]
     expect(options.screenshot.width).toBe(1600)
     expect(options.screenshot.height).toBe(1200)
-    // No crop passed -> no crop key at all.
+    // No clip passed -> no clip key at all.
     expect(options).not.toHaveProperty('crop')
     // No mouse position passed -> no cursor info recorded.
     expect(options.screenshot).not.toHaveProperty('mousePosition')

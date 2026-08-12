@@ -387,6 +387,24 @@ describe('CLI', () => {
       )
     })
 
+    it('names the offending file in a Playwright discovery error', async () => {
+      const { extractPlaywrightDiscoveryError } = await import('./cli')
+
+      const report = JSON.stringify({
+        errors: [
+          {
+            message:
+              "SyntaxError: The requested module 'screenci' does not provide an export named 'screenshot'",
+            location: { file: '/proj/recordings/pitch.screenci.ts', line: 1 },
+          },
+        ],
+      })
+      expect(extractPlaywrightDiscoveryError(report)).toBe(
+        "SyntaxError: The requested module 'screenci' does not provide an " +
+          "export named 'screenshot' (in /proj/recordings/pitch.screenci.ts:1)"
+      )
+    })
+
     it('extracts the error field from a backend JSON body', async () => {
       const { extractBackendError } = await import('./cli')
 
@@ -427,16 +445,16 @@ describe('CLI', () => {
       ).toBe(message)
     })
 
-    it('adds a fix suggestion to expressive narration tier failures', async () => {
+    it('prefixes failure messages with the video name', async () => {
       const { formatFailedVideoMessage } = await import('./cli')
 
       expect(
         formatFailedVideoMessage(
           'Find ScreenCI docs and getting started',
-          'Expressive narration and style prompts require the Business tier. Upgrade your subscription tier at https://app.screenci.com/billing to continue rendering.'
+          'Your starter tier allows a single narration language across your organization, and this render would use 2. Upgrade your plan to render more languages at https://app.screenci.com/billing.'
         )
       ).toBe(
-        "Find ScreenCI docs and getting started: Expressive narration and style prompts require the Business tier. Upgrade your subscription tier at https://app.screenci.com/billing to continue rendering.\nIf you want to keep using the current tier, remove `voice.style` or `modelType: 'expressive'` from the localize `voice`."
+        'Find ScreenCI docs and getting started: Your starter tier allows a single narration language across your organization, and this render would use 2. Upgrade your plan to render more languages at https://app.screenci.com/billing.'
       )
     })
 
@@ -485,14 +503,39 @@ describe('CLI', () => {
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })
 
-    it('should reject the removed dev command', async () => {
-      process.argv = ['node', 'cli.js', 'dev']
+    // `edit` is the editor listener command,
+    // so it must parse as a real command (here it exits asking for the secret)
+    // instead of being rejected as unknown.
+    it('recognizes the edit command', async () => {
+      process.argv = ['node', 'cli.js', 'edit']
 
       const { main } = await import('./cli')
 
       await expect(main()).rejects.toThrow('process.exit called')
 
-      expect(loggerErrorSpy).toHaveBeenCalledWith('Unknown command: dev')
+      expect(loggerErrorSpy).not.toHaveBeenCalledWith('Unknown command: dev')
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('SCREENCI_SECRET')
+      )
+      expect(processExitSpy).toHaveBeenCalledWith(1)
+    })
+
+    // Positional grep patterns filter managed videos by title, the same way
+    // `playwright test <pattern>` does. They must be accepted (not rejected as
+    // "too many arguments"); the command still exits asking for the secret.
+    it('accepts a positional grep pattern for the edit command', async () => {
+      process.argv = ['node', 'cli.js', 'edit', 'Auto-zoom']
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow('process.exit called')
+
+      expect(loggerErrorSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('too many arguments')
+      )
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('SCREENCI_SECRET')
+      )
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })
 
@@ -516,8 +559,8 @@ describe('CLI', () => {
       stdoutSpy.mockRestore()
     })
 
-    it('should show command help with record --help', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--help']
+    it('should show command help with export --help', async () => {
+      process.argv = ['node', 'cli.js', 'export', '--help']
       const stdoutSpy = vi
         .spyOn(process.stdout, 'write')
         .mockImplementation(() => true)
@@ -528,7 +571,7 @@ describe('CLI', () => {
       expect(stdoutSpy).toHaveBeenCalled()
       expect(
         stdoutSpy.mock.calls.some((call) =>
-          String(call[0]).includes('Usage: screenci record')
+          String(call[0]).includes('Usage: screenci export')
         )
       ).toBe(true)
       expect(mockSpawn).not.toHaveBeenCalled()
@@ -538,7 +581,7 @@ describe('CLI', () => {
 
     it('should exit if default config not found', async () => {
       process.env.SCREENCI_RECORDING = 'true'
-      process.argv = ['node', 'cli.js', 'record']
+      process.argv = ['node', 'cli.js', 'export']
       mockExistsSync.mockReturnValue(false)
 
       const { main } = await import('./cli')
@@ -556,7 +599,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'missing.config.ts',
       ]
@@ -575,7 +618,7 @@ describe('CLI', () => {
     })
 
     it('should exit if --config flag provided without value', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--config']
+      process.argv = ['node', 'cli.js', 'export', '--config']
 
       const { main } = await import('./cli')
 
@@ -588,7 +631,7 @@ describe('CLI', () => {
     })
 
     it('should exit if -c flag provided without value', async () => {
-      process.argv = ['node', 'cli.js', 'record', '-c']
+      process.argv = ['node', 'cli.js', 'export', '-c']
 
       const { main } = await import('./cli')
 
@@ -600,8 +643,8 @@ describe('CLI', () => {
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })
 
-    it('logs mock-record troubleshooting help when record fails', async () => {
-      process.argv = ['node', 'cli.js', 'record']
+    it('logs mock-record troubleshooting help when the export record pass fails', async () => {
+      process.argv = ['node', 'cli.js', 'export']
       process.env.SCREENCI_SECRET = 'test-secret'
       mockSpawn.mockImplementation(() => {
         process.nextTick(() => mockChildProcess.emit('close', 1))
@@ -636,7 +679,7 @@ describe('CLI', () => {
     })
 
     it('surfaces the first Playwright discovery error and snippet instead of raw JSON', async () => {
-      process.argv = ['node', 'cli.js', 'record']
+      process.argv = ['node', 'cli.js', 'export']
       process.env.SCREENCI_SECRET = 'test-secret'
       mockSpawn.mockImplementation((_command: string, args: string[]) => {
         if (args.includes('--list')) {
@@ -1050,6 +1093,36 @@ describe('CLI', () => {
     it('leaves languages undefined when not provided', async () => {
       const { parseRecordCliArgs } = await import('./cli')
       expect(parseRecordCliArgs(['--grep', 'x']).languages).toBeUndefined()
+    })
+  })
+
+  describe('formatRecordResultMessage', () => {
+    it('reports a preview refresh for a plain record', async () => {
+      const { formatRecordResultMessage } = await import('./cli')
+      expect(
+        formatRecordResultMessage({ exported: false, partial: false })
+      ).toBe('Recording finished, live preview updated. Edit and export at:')
+    })
+
+    it('reports a render only for an export run', async () => {
+      const { formatRecordResultMessage } = await import('./cli')
+      expect(
+        formatRecordResultMessage({ exported: true, partial: false })
+      ).toBe(
+        'Recording finished, export render in progress. Results available at:'
+      )
+    })
+
+    it('keeps the partial prefix in both modes', async () => {
+      const { formatRecordResultMessage } = await import('./cli')
+      expect(
+        formatRecordResultMessage({ exported: false, partial: true })
+      ).toBe(
+        'Recording partially succeeded, live preview updated. Edit and export at:'
+      )
+      expect(formatRecordResultMessage({ exported: true, partial: true })).toBe(
+        'Recording partially succeeded, export render in progress. Results available at:'
+      )
     })
   })
 })

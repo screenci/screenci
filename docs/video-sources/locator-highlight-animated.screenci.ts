@@ -12,7 +12,7 @@ video.overlays({
     over: target,
     margin: 6,
     animate: true,
-    duration: '2.4s',
+    duration: 2400,
   }),
 })('Locator highlight (animated)', async ({ page, overlays }) => {
   await page.goto('https://screenci.com/')

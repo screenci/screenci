@@ -95,6 +95,78 @@ describe('EventRecorder', () => {
     })
   })
 
+  describe('addSleep', () => {
+    it('records the sleep span starting durationMs before now', () => {
+      recorder.start()
+      now = 1500
+      recorder.addSleep(83, 'frameGap')
+
+      expect(recorder.getEvents().slice(1)).toEqual([
+        { type: 'sleep', timeMs: 417, durationMs: 83, reason: 'frameGap' },
+      ])
+    })
+
+    it('clamps the start to 0 when the sleep spans the recording start', () => {
+      recorder.start()
+      now = 1050
+      recorder.addSleep(100, 'postVideo')
+
+      expect(recorder.getEvents().slice(1)).toEqual([
+        { type: 'sleep', timeMs: 0, durationMs: 100, reason: 'postVideo' },
+      ])
+    })
+
+    it('ignores non-positive durations', () => {
+      recorder.start()
+      recorder.addSleep(0, 'frameGap')
+      recorder.addSleep(-5, 'cueAudio')
+      expect(recorder.getEvents()).toHaveLength(1)
+    })
+
+    it('is a no-op before start', () => {
+      recorder.addSleep(83, 'frameGap')
+      expect(recorder.getEvents()).toHaveLength(0)
+    })
+  })
+
+  describe('addKeyPress', () => {
+    it('records keys with a stable incrementing id and the current time', () => {
+      recorder.start()
+      now = 1200
+      recorder.addKeyPress(['Shift', 'A'])
+      now = 1500
+      recorder.addKeyPress(['Control', 'K'], true)
+
+      expect(recorder.getEvents().slice(1)).toEqual([
+        { type: 'keyPress', id: 'kp-0', timeMs: 200, keys: ['Shift', 'A'] },
+        {
+          type: 'keyPress',
+          id: 'kp-1',
+          timeMs: 500,
+          keys: ['Control', 'K'],
+          show: true,
+        },
+      ])
+    })
+
+    it('records show: false overrides', () => {
+      recorder.start()
+      recorder.addKeyPress(['A'], false)
+      expect(recorder.getEvents()[1]).toMatchObject({
+        type: 'keyPress',
+        keys: ['A'],
+        show: false,
+      })
+    })
+
+    it('ignores empty key lists and calls before start', () => {
+      recorder.addKeyPress(['A'])
+      recorder.start()
+      recorder.addKeyPress([])
+      expect(recorder.getEvents()).toHaveLength(1)
+    })
+  })
+
   describe('background audio events', () => {
     it('records an audioStart with path, volume and repeat', () => {
       recorder.start()
@@ -457,6 +529,80 @@ describe('EventRecorder', () => {
     })
   })
 
+  describe('delayed events', () => {
+    it('stamps a delayed update at call time plus the delay', () => {
+      recorder.start() // startTime = 1000
+      now = 1500
+      recorder.addBackgroundUpdate(
+        { background: { backgroundCss: '#101014' } },
+        700
+      )
+      expect(recorder.getEvents().at(-1)).toMatchObject({
+        type: 'backgroundUpdate',
+        timeMs: 1200,
+      })
+    })
+
+    it('throws when an update lands behind an already-recorded delayed update', () => {
+      recorder.start()
+      recorder.addBackgroundUpdate(
+        { background: { backgroundCss: '#111' } },
+        5000
+      )
+      now = 2000
+      expect(() =>
+        recorder.addBackgroundUpdate({ background: { backgroundCss: '#222' } })
+      ).toThrow(/overlaps the previous update/)
+    })
+
+    it('throws when a narration visibility change lands behind a delayed one', () => {
+      recorder.start()
+      recorder.addNarrationHide(5000) // lands at 5000ms
+      now = 2000
+      expect(() => recorder.addNarrationShow()).toThrow(
+        /narration visibility change at 1000ms lands before an already-recorded/
+      )
+    })
+
+    it('allows a later narration visibility change after the delayed stamp', () => {
+      recorder.start()
+      recorder.addNarrationHide(500) // lands at 500ms
+      now = 2000
+      expect(() => recorder.addNarrationShow()).not.toThrow()
+      expect(recorder.getEvents().at(-1)).toMatchObject({
+        type: 'narrationShow',
+        timeMs: 1000,
+      })
+    })
+
+    it('throws when an overlay start lands behind a delayed overlay start', () => {
+      recorder.start()
+      recorder.addAssetStart(
+        'late',
+        { kind: 'image', path: 'a.png', fullScreen: false },
+        5000
+      )
+      now = 2000
+      expect(() =>
+        recorder.addAssetStart('early', {
+          kind: 'image',
+          path: 'b.png',
+          fullScreen: false,
+        })
+      ).toThrow(/overlay start at 1000ms lands before an already-recorded/)
+    })
+
+    it('stamps delayed hide and speed starts forward', () => {
+      recorder.start()
+      now = 1400
+      recorder.addHideStart(undefined, undefined, 300)
+      recorder.addSpeedStart(2, undefined, 250)
+      const events = recorder.getEvents()
+      expect(events.at(-2)).toMatchObject({ type: 'hideStart', timeMs: 700 })
+      expect(events.at(-1)).toMatchObject({ type: 'speedStart', timeMs: 650 })
+    })
+  })
+
   describe('writeToFile', () => {
     let tmpDir: string
 
@@ -467,6 +613,19 @@ describe('EventRecorder', () => {
 
     afterEach(async () => {
       await rm(tmpDir, { recursive: true, force: true })
+    })
+
+    it('throws when a delayed event lands past the end of the recording', async () => {
+      recorder.start() // 1000
+      now = 1500
+      recorder.addBackgroundUpdate(
+        { background: { backgroundCss: '#111' } },
+        9000
+      )
+      now = 2000 // recording ends at 1000ms, event stamped at 9500ms
+      await expect(recorder.writeToFile(tmpDir, 'Test Video')).rejects.toThrow(
+        /backgroundUpdate at 9500ms lands past the end of the recording/
+      )
     })
 
     it('writes data.json with nested input events', async () => {
@@ -506,6 +665,11 @@ describe('EventRecorder', () => {
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed: RecordingData = JSON.parse(content)
       const ro = parsed.renderOptions as Record<string, unknown>
+      expect(ro.shortcuts).toEqual({
+        show: true,
+        showSingle: false,
+        theme: 'dark',
+      })
       // output: stored as aspectRatio + quality (not pre-computed resolution)
       expect((ro.output as Record<string, unknown>).aspectRatio).toBe('16:9')
       expect((ro.output as Record<string, unknown>).quality).toBe('1080p')
@@ -515,14 +679,12 @@ describe('EventRecorder', () => {
       // recording defaults
       expect((ro.recording as Record<string, unknown>).size).toBe(1.0)
       expect((ro.recording as Record<string, unknown>).roundness).toBe(0)
-      expect((ro.recording as Record<string, unknown>).shape).toBe('rounded')
-      expect((ro.recording as Record<string, unknown>).dropShadow).toBe(
-        'drop-shadow(0 8px 24px rgba(0,0,0,0.5))'
-      )
+      expect((ro.recording as Record<string, unknown>).shape).toBeUndefined()
+      expect((ro.recording as Record<string, unknown>).dropShadow).toBe(1)
       // narration defaults
       expect((ro.narration as Record<string, unknown>).size).toBe(0.3)
       expect((ro.narration as Record<string, unknown>).roundness).toBe(0.2)
-      expect((ro.narration as Record<string, unknown>).shape).toBe('rounded')
+      expect((ro.narration as Record<string, unknown>).shape).toBeUndefined()
       expect((ro.narration as Record<string, unknown>).corner).toBe(
         'bottom-right'
       )
@@ -533,6 +695,38 @@ describe('EventRecorder', () => {
       // motion blur defaults (cursor + camera)
       expect((ro.mouse as Record<string, unknown>).motionBlur).toBe(0.5)
       expect((ro.zoom as Record<string, unknown>).motionBlur).toBe(0.5)
+    })
+
+    it('omits narration.audio by default and resolves it when opted in', async () => {
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+      let parsed: RecordingData = JSON.parse(
+        await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      )
+      let ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.narration as Record<string, unknown>).audio).toBeUndefined()
+
+      recorder = new EventRecorder({ narration: { audio: true } })
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+      parsed = JSON.parse(await readFile(join(tmpDir, 'data.json'), 'utf-8'))
+      ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.narration as Record<string, unknown>).audio).toEqual({
+        denoise: { strength: 0.85 },
+        normalize: { level: -16 },
+      })
+
+      recorder = new EventRecorder({
+        narration: { audio: { normalize: { level: -14 } } },
+      })
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+      parsed = JSON.parse(await readFile(join(tmpDir, 'data.json'), 'utf-8'))
+      ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.narration as Record<string, unknown>).audio).toEqual({
+        denoise: false,
+        normalize: { level: -14 },
+      })
     })
 
     it('preserves explicit cursor and camera motion blur', async () => {
@@ -586,10 +780,60 @@ describe('EventRecorder', () => {
       expect((ro.recording as Record<string, unknown>).size).toBe(0.8)
       // other recording fields still defaulted
       expect((ro.recording as Record<string, unknown>).roundness).toBe(0)
-      expect((ro.recording as Record<string, unknown>).shape).toBe('rounded')
+      expect((ro.recording as Record<string, unknown>).shape).toBeUndefined()
       // output also defaulted
       expect((ro.output as Record<string, unknown>).aspectRatio).toBe('16:9')
       expect((ro.output as Record<string, unknown>).quality).toBe('1080p')
+    })
+
+    it('omits recording.clip by default', async () => {
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed: RecordingData = JSON.parse(content)
+      const ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.recording as Record<string, unknown>).clip).toBeUndefined()
+    })
+
+    it('passes through a recording clip and keeps sibling defaults', async () => {
+      recorder = new EventRecorder({
+        recording: { clip: { x: 100, y: 50, width: 800, height: 600 } },
+      })
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+
+      const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      const parsed: RecordingData = JSON.parse(content)
+      const ro = parsed.renderOptions as Record<string, unknown>
+      expect((ro.recording as Record<string, unknown>).clip).toEqual({
+        x: 100,
+        y: 50,
+        width: 800,
+        height: 600,
+      })
+      expect((ro.recording as Record<string, unknown>).size).toBe(1.0)
+    })
+
+    it('rejects an invalid recording clip at declare time', () => {
+      expect(
+        () =>
+          new EventRecorder({
+            recording: { clip: { x: 0, y: 0, width: 0, height: 100 } },
+          })
+      ).toThrow(/width and height must be greater than 0/)
+      expect(
+        () =>
+          new EventRecorder({
+            recording: { clip: { x: -10, y: 0, width: 100, height: 100 } },
+          })
+      ).toThrow(/non-negative/)
+      expect(
+        () =>
+          new EventRecorder({
+            recording: { clip: { x: 0, y: NaN, width: 100, height: 100 } },
+          })
+      ).toThrow(/non-negative/)
     })
 
     it('preserves explicit aspectRatio and serialises to resolution', async () => {
@@ -658,9 +902,7 @@ describe('EventRecorder', () => {
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed: RecordingData = JSON.parse(content)
       const ro = parsed.renderOptions as Record<string, unknown>
-      expect((ro.recording as Record<string, unknown>).dropShadow).toBe(
-        'drop-shadow(0 8px 24px rgba(0,0,0,0.5))'
-      )
+      expect((ro.recording as Record<string, unknown>).dropShadow).toBe(1)
       expect((ro.narration as Record<string, unknown>).dropShadow).toBe(1)
       expect((ro.output as Record<string, unknown>).background).toEqual({
         backgroundCss: 'linear-gradient(135deg, #6366f1 0%, #ec4899 100%)',
@@ -669,7 +911,7 @@ describe('EventRecorder', () => {
 
     it('overrides dropShadow and background when explicitly provided', async () => {
       recorder = new EventRecorder({
-        recording: { dropShadow: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' },
+        recording: { dropShadow: 0.2 },
         narration: { dropShadow: 0.2 },
         output: { background: { backgroundCss: '#000' } },
       })
@@ -679,9 +921,7 @@ describe('EventRecorder', () => {
       const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
       const parsed: RecordingData = JSON.parse(content)
       const ro = parsed.renderOptions as Record<string, unknown>
-      expect((ro.recording as Record<string, unknown>).dropShadow).toBe(
-        'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
-      )
+      expect((ro.recording as Record<string, unknown>).dropShadow).toBe(0.2)
       expect((ro.narration as Record<string, unknown>).dropShadow).toBe(0.2)
       expect((ro.output as Record<string, unknown>).background).toEqual({
         backgroundCss: '#000',
@@ -865,7 +1105,11 @@ describe('EventRecorder', () => {
           name: 'intro',
           studio: true,
         })
-        expect(parsed.metadata?.studio).toEqual({ narration: true })
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          recordOptions: true,
+          narration: true,
+        })
         // studio cues have no translations, so no language list is derived
         expect(parsed.metadata?.languages).toBeUndefined()
       })
@@ -901,7 +1145,11 @@ describe('EventRecorder', () => {
           name: 'intro',
           studio: true,
         })
-        expect(parsed.metadata?.studio).toEqual({ assets: true })
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          recordOptions: true,
+          assets: true,
+        })
       })
 
       it('records studio audio starts and sets metadata.studio.audio', async () => {
@@ -918,7 +1166,11 @@ describe('EventRecorder', () => {
           name: 'theme',
           studio: true,
         })
-        expect(parsed.metadata?.studio).toEqual({ audio: true })
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          recordOptions: true,
+          audio: true,
+        })
       })
 
       it('does not set metadata.studio.audio for regular audio', async () => {
@@ -933,7 +1185,11 @@ describe('EventRecorder', () => {
 
         const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
         const parsed: RecordingData = JSON.parse(content)
-        expect(parsed.metadata?.studio).toBeUndefined()
+        // Option groups are always web-editable; the audio flag stays off.
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          recordOptions: true,
+        })
       })
 
       it('sets metadata.studio.languages when the language set is web-owned', async () => {
@@ -1004,10 +1260,13 @@ describe('EventRecorder', () => {
 
         const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
         const parsed: RecordingData = JSON.parse(content)
-        expect(parsed.metadata?.studio).toBeUndefined()
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          recordOptions: true,
+        })
       })
 
-      it('writes no metadata.studio for regular recordings', async () => {
+      it('stamps the option flags into metadata.studio for regular recordings', async () => {
         recorder = new EventRecorder({ recording: { size: 0.8 } })
         recorder.start()
         recorder.addCueStart('', 'greeting', undefined, {
@@ -1017,18 +1276,24 @@ describe('EventRecorder', () => {
 
         const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
         const parsed: RecordingData = JSON.parse(content)
-        expect(parsed.metadata?.studio).toBeUndefined()
+        // Every recording is web-editable: the option flags are always stamped.
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          recordOptions: true,
+        })
       })
 
-      it('defaults both studio flags to false when no studio options are passed', async () => {
+      it('defaults both option flags to true when no studio options are passed', async () => {
         recorder = new EventRecorder()
         recorder.start()
         await recorder.writeToFile(tmpDir, 'Test Video')
 
         const content = await readFile(join(tmpDir, 'data.json'), 'utf-8')
         const parsed: RecordingData = JSON.parse(content)
-        // No deferral and no studio events: metadata.studio stays absent.
-        expect(parsed.metadata?.studio).toBeUndefined()
+        expect(parsed.metadata?.studio).toEqual({
+          renderOptions: true,
+          recordOptions: true,
+        })
       })
     })
   })
@@ -1321,5 +1586,30 @@ describe('EventRecorder', () => {
       // gap 203ms > SNAP_DIRECT_MS(5) + SNAP_CUE_COMPENSATION_MS(84) = 89ms, no snap
       expect(events[2]).toMatchObject({ type: 'assetStart', timeMs: 203 })
     })
+  })
+})
+
+describe('EventRecorder.addHiddenAction', () => {
+  it('records a hiddenAction marker with the action and matcher', () => {
+    const recorder = new EventRecorder()
+    recorder.start()
+    recorder.addHiddenAction('click', "getByRole('button')")
+    recorder.addHiddenAction('waitForTimeout')
+    const markers = recorder
+      .getEvents()
+      .filter((event) => event.type === 'hiddenAction')
+    expect(markers).toHaveLength(2)
+    expect(markers[0]).toMatchObject({
+      action: 'click',
+      matcher: "getByRole('button')",
+    })
+    expect(markers[1]).toMatchObject({ action: 'waitForTimeout' })
+    expect(markers[1]).not.toHaveProperty('matcher')
+  })
+
+  it('is a no-op before start()', () => {
+    const recorder = new EventRecorder()
+    recorder.addHiddenAction('click')
+    expect(recorder.getEvents()).toHaveLength(0)
   })
 })

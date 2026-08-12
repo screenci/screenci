@@ -7,33 +7,21 @@ import {
 const ev = (e: unknown): RecordingEvent => e as RecordingEvent
 
 describe('filterEventTranslationsToLanguage', () => {
-  it('folds an asset translation into the top-level fields and drops the map', () => {
-    const result = filterEventTranslationsToLanguage(
-      ev({
-        type: 'assetStart',
-        timeMs: 100,
-        name: 'logo',
-        kind: 'image',
-        path: './logo.png',
-        fileHash: 'shared-hash',
-        fullScreen: false,
-        translations: {
-          fi: { path: './logo.fi.png', fileHash: 'fi-hash' },
-          en: { path: './logo.en.png', fileHash: 'en-hash' },
-        },
-      }),
-      'fi'
-    )
-    expect(result).toEqual({
+  it('leaves an assetStart untouched (overlays are shared across languages)', () => {
+    // Overlays no longer vary by language, so an assetStart is never folded.
+    // Any stray per-language payload on an old recording is passed through and
+    // ignored by the renderer (its schema strips it).
+    const event = ev({
       type: 'assetStart',
       timeMs: 100,
       name: 'logo',
       kind: 'image',
-      path: './logo.fi.png',
-      fileHash: 'fi-hash',
+      path: './logo.png',
+      fileHash: 'shared-hash',
       fullScreen: false,
     })
-    expect('translations' in result).toBe(false)
+    const result = filterEventTranslationsToLanguage(event, 'fi')
+    expect(result).toEqual(event)
   })
 
   it('keeps the shared top-level fields when the language has no override', () => {

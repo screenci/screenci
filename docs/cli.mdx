@@ -3,22 +3,25 @@
 import { Tabs, TabItem } from '@astrojs/starlight/components'
 
 The `screenci` CLI keeps the workflow small: initialize a project, iterate
-locally, record final output, and manage public delivery when needed. Run
+locally with `screenci test`, refine one video with `screenci edit` and the web
+editor, export the finished videos with `screenci export`, and manage public
+delivery when needed. Run
 commands from inside your `screenci/` project directory. Most commands resolve
 `screenci.config.ts` from the current directory unless you pass
 `--config <path>`.
 
 ## Command overview
 
-| Command                            | Purpose                                                  |
-| ---------------------------------- | -------------------------------------------------------- |
-| `screenci init [name]`             | Scaffold a ScreenCI project                              |
-| `screenci test [playwrightArgs]`   | Run `.screenci.ts` files locally without final recording |
-| `screenci record [playwrightArgs]` | Record videos and upload results when configured         |
-| `screenci info`                    | Print the last record run's URLs and render status       |
-| `screenci make-public <videoId>`   | Enable public delivery for a video                       |
-| `screenci make-private <videoId>`  | Disable public delivery for a video                      |
-| `screenci delete <videoId>`        | Permanently delete a video and its renders               |
+| Command                           | Purpose                                                                            |
+| --------------------------------- | ---------------------------------------------------------------------------------- |
+| `screenci init [name]`            | Scaffold a ScreenCI project                                                        |
+| `screenci test [playwrightArgs]`  | Run `.screenci.ts` files locally without final recording                           |
+| `screenci edit [pattern]`         | Open the web editor for one video and connect this machine as its code-sync bridge |
+| `screenci export [patterns...]`   | Produce finished videos: re-record what changed, render, and download              |
+| `screenci info`                   | Print the last record run's URLs and render status                                 |
+| `screenci make-public <videoId>`  | Enable public delivery for a video                                                 |
+| `screenci make-private <videoId>` | Disable public delivery for a video                                                |
+| `screenci delete <videoId>`       | Permanently delete a video and its renders                                         |
 
 ## `screenci init`
 
@@ -52,10 +55,10 @@ The project name defaults to the repository root directory name.
 
 ### Connecting to an existing account
 
-No account or secret is needed to scaffold or record: without one, `record`
+No account or secret is needed to scaffold or record: without one, `export`
 uploads under a local, anonymous trial session and prints a link to view the
 result, then you sign up to keep it. Recording an anonymous trial agrees to the
-[Terms](https://screenci.com/legal/tos), which `record` prints before it starts.
+[Terms](https://screenci.com/legal/tos), which `export` prints before it starts.
 
 To connect the project to an account you already have, pass your
 `SCREENCI_SECRET` (from your secrets page) as `init`'s positional argument, and
@@ -153,7 +156,7 @@ Plain `screenci test` disables recording-style waits so authoring runs stay
 fast. That includes ScreenCI cursor/camera pauses and
 `page.waitForTimeout(...)`, which is collapsed to `0ms`. Use Playwright locator
 or load-state waits for real application readiness. Use `--mock-record` when you
-need to preview the same pacing that `screenci record` will capture.
+need to preview the same pacing that a real recording will capture.
 
 Common Playwright examples that also work here:
 
@@ -214,85 +217,113 @@ yarn screenci test --mock-record
 </Tabs>
 
 This keeps recording-like pacing enabled without starting the real recording
-capture path. Use it when `test` passes but `record` exposes timing
+capture path. Use it when `test` passes but a real recording exposes timing
 differences.
 
 If you want that behavior by default for a project, set
 `test.mockRecord: true` in `screenci.config.ts`.
 
-## `screenci record [playwrightArgs...]`
+## `screenci export [patterns...]`
 
-Record final output:
+Produce finished videos and download them. `export` is the one-shot command
+(also the one CI runs): it re-records only the videos whose sources changed
+since the last upload, dispatches renders for videos that are already up to
+date without re-recording them, waits for the renders to finish, and downloads
+the outputs into `./exports/`:
 
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
 
 ```bash
-npx screenci record
-npx screenci record recordings/onboarding.screenci.ts
-npx screenci record --grep "billing"
-npx screenci record --project=chromium
+npx screenci export
+npx screenci export "Onboarding"
+npx screenci export --grep "billing"
+npx screenci export --languages fi,en
 ```
 
   </TabItem>
   <TabItem label="pnpm">
 
 ```bash
-pnpm exec screenci record
-pnpm exec screenci record recordings/onboarding.screenci.ts
-pnpm exec screenci record --grep "billing"
-pnpm exec screenci record --project=chromium
+pnpm exec screenci export
+pnpm exec screenci export "Onboarding"
+pnpm exec screenci export --grep "billing"
+pnpm exec screenci export --languages fi,en
 ```
 
   </TabItem>
   <TabItem label="yarn">
 
 ```bash
-yarn screenci record
-yarn screenci record recordings/onboarding.screenci.ts
-yarn screenci record --grep "billing"
-yarn screenci record --project=chromium
+yarn screenci export
+yarn screenci export "Onboarding"
+yarn screenci export --grep "billing"
+yarn screenci export --languages fi,en
 ```
 
   </TabItem>
 </Tabs>
 
-`record` forwards normal Playwright file filters and `--grep`, so you can limit
-recording to only some videos just like with `screenci test`.
+Positional arguments are title patterns (multiple are OR-combined, like
+`playwright test <pattern>`); with no patterns, every video is exported in
+every language. Downloads are named `<title>.<lang>.mp4` (screenshots use
+`.png`). The command polls render status every 5 seconds for up to 30 minutes
+and exits `0` only when every requested video rendered and downloaded. After a
+run it prints the run's page in the app (`<app>/export/<recordId>`), which the
+project page lists under **Exports**.
 
 ### `--languages <langs>`
 
-Record (and render) only specific language versions of videos declared with
+Export only specific language versions of videos declared with
 `video.languages([...])`. Pass a comma-separated list:
 
 ```bash
-npx screenci record --languages fi
-npx screenci record --languages fi,en
+npx screenci export --languages fi
+npx screenci export --languages fi,en
 ```
 
-Per-language videos record only the requested languages, so a run never produces
-more than you asked for. Videos that do not declare those languages are skipped.
-A shared-mode recording (`{ mode: 'shared' }`) is a single capture and is not
-split by this filter. See
+Per-language videos record and render only the requested languages, so a run
+never produces more than you asked for. Videos that do not declare those
+languages are skipped. A shared-mode recording (`{ mode: 'shared' }`) is a
+single capture and is not split by this filter. See
 [Languages](/docs/guides/languages) for the recording API.
+
+### `-o, --output <dir>`
+
+Directory for the downloaded files. Defaults to `exports`:
+
+```bash
+npx screenci export -o dist/videos
+```
+
+### `--force`
+
+Re-record every requested video, even the ones whose recordings are up to
+date. Without it, `export` skips re-recording fresh videos and only dispatches
+their renders:
+
+```bash
+npx screenci export --force
+```
 
 Behavior:
 
-- enables recording timing
+- enables recording timing for any video that needs re-recording
 - writes local output into `.screenci/`
-- holds a per-project run lock at `.screenci/.record.lock` while recording and uploading. If another `screenci record` is already active, the second run exits non-zero instead of sharing the same `.screenci` output. Stale locks are reclaimed automatically when the pid is gone or the lock is older than the maximum run TTL
-- needs no `SCREENCI_SECRET` to run: without one, it uploads under a local, anonymous trial session and prints a link to view the result. Recording an anonymous trial agrees to the [Terms](https://screenci.com/legal/tos), which `record` prints before it starts. To upload straight to your organization instead, set `SCREENCI_SECRET` (from the project `.env`, the environment, or by running `init` with it) before recording
-- gives an anonymous trial exactly one recording. Once that first recording is used (or the trial expires), a second `screenci record` stops before it starts and prints a sign-up link instead of recording again, so no time is spent rendering a video that would only be refused. Sign up to keep recording; once you have, re-running `record` in the same folder links your account automatically and uploads normally. The trial previews expressive narration and up to 3 languages at once; see [Anonymous Trial](/docs/guides/anonymous-trial) for its full limits and what happens to that content after signup
-- uploads only the recordings requested by this run (for example the videos matched by `--grep` or `--languages`), with or without `SCREENCI_SECRET`
-- prints a results URL only when the requested recordings uploaded successfully. If a requested video is missing its `recording.mp4` or another upload failure occurs, `record` exits non-zero, does not save `.screenci/last-record.json`, and does not print a success URL for unrelated output
+- holds a per-project run lock at `.screenci/.record.lock` while recording and uploading. If another `screenci edit` or `screenci export` run is already active, the second run exits non-zero instead of sharing the same `.screenci` output. Stale locks are reclaimed automatically when the pid is gone or the lock is older than the maximum run TTL
+- needs no `SCREENCI_SECRET` to run: without one, it records and renders under a local, anonymous trial session with the trial watermark, and prints a link to view the result. Downloads require an account, so the trial run prints the export page URL and a sign-up hint instead of writing files. Recording an anonymous trial agrees to the [Terms](https://screenci.com/legal/tos), which `export` prints before it starts. To upload straight to your organization instead, set `SCREENCI_SECRET` (from the project `.env`, the environment, or by running `init` with it) before exporting
+- gives an anonymous trial exactly one recording. Once that first recording is used (or the trial expires), a second `screenci export` stops before it starts and prints a sign-up link instead of recording again, so no time is spent rendering a video that would only be refused. Sign up to keep going; once you have, re-running `export` in the same folder links your account automatically and uploads normally. The trial previews expressive narration and up to 3 languages at once; see [Anonymous Trial](/docs/guides/anonymous-trial) for its full limits and what happens to that content after signup
+- uploads only the recordings requested by this run (for example the videos matched by patterns, `--grep`, or `--languages`), with or without `SCREENCI_SECRET`
+- exits non-zero unless every requested video rendered and downloaded. If a requested video is missing its `recording.mp4` or another failure occurs, `export` does not save `.screenci/last-record.json` and does not print a success URL for unrelated output
 - prints any informational notices returned by the service in cyan after upload (occasional, non-error status messages such as maintenance or timing notes). These never affect the exit code
-- new accounts start on the Free plan automatically (no plan selection step). Free renders include a ScreenCI watermark; paid plans remove it and raise render and active-video limits, and unlock multiple languages plus expressive tone control
+- new accounts start on the Free plan automatically (no plan selection step). Free exports include a ScreenCI watermark; paid plans remove it and raise export and active-video limits, and unlock multiple languages
 
 Relevant options:
 
 - `-c, --config <path>`
 - `-v, --verbose`
-- `--remote` (trigger the project's GitHub Actions recording workflow instead of recording locally, see below)
+- `-g, --grep <pattern>` (same filter as Playwright's `--grep`)
+- `--remote` (trigger the project's GitHub Actions recording workflow instead of exporting locally, see below)
 
 Important restriction:
 
@@ -300,21 +331,22 @@ Important restriction:
 
 ### `--remote`
 
-`screenci record --remote` does not record on your machine. Instead it asks
+`screenci export --remote` does not record on your machine. Instead it asks
 ScreenCI to dispatch the project's GitHub Actions recording workflow, so the
-recording runs in CI on demand. The project is resolved the same way as every
-other command, from `SCREENCI_SECRET` and the config `projectName`, and exits as
-soon as the workflow has been triggered.
+export runs in CI on demand. The project is resolved the same way as every
+other command, from `SCREENCI_SECRET` and the config `projectName`, and the
+command exits as soon as the workflow has been triggered (nothing runs or
+downloads locally).
 
 ```bash
-npx screenci record --remote
+npx screenci export --remote
 ```
 
-Pass `--grep` to record only matching videos or screenshots remotely (the filter
+Pass `--grep` to export only matching videos or screenshots remotely (the filter
 is forwarded to the workflow's `grep` input):
 
 ```bash
-npx screenci record --remote --grep "Onboarding"
+npx screenci export --remote --grep "Onboarding"
 ```
 
 This requires connecting the GitHub App to the project first (a one-time setup on
@@ -323,6 +355,112 @@ the project page in the app, see
 Without a connected repository the command reports that GitHub is not connected.
 Targeted (`--grep`) runs need the workflow to declare a `grep` input; projects
 scaffolded by `screenci init` include it.
+
+## `screenci edit [pattern]`
+
+Opens the editing flow for exactly one video. `edit` re-records and uploads
+the video's live preview if it is stale, prints the web editor deep link
+(`<app>/project/<projectId>/video/<videoId>?editor`), and then stays running
+as the code-sync bridge: editing in the web editor is locked until a machine
+you own is connected, because every web edit is written back into your
+`.screenci.ts` sources by this command. While connected, the editor can also
+trigger a local record of the video on demand. The command keeps running,
+polling the service for edit and record requests, until you stop it with
+Ctrl-C. See [Editor](/docs/editor) for the editing model.
+
+```bash
+screenci edit
+```
+
+Pick the video by passing a title pattern, the same way
+`playwright test <pattern>` does; `--grep` does the same and takes precedence
+when both are given. When the project has more than one video, the pattern
+must match exactly one: a pattern that matches zero or several videos makes
+`edit` exit with an error that lists the candidate titles.
+
+```bash
+screenci edit "Auto-zoom"
+```
+
+Options:
+
+- `-c, --config <path>`: path to the ScreenCI config file.
+- `--token <token>`: personal editor token. Defaults to `SCREENCI_EDIT_TOKEN` from
+  your project env file.
+- `-g, --grep <pattern>`: only manage videos whose title matches this pattern
+  (the same filter as Playwright's `--grep`, and the same as a positional
+  pattern above). The startup check and any
+  startup records are limited to the matching videos.
+- `--force-record`: re-record every managed video at startup even when the
+  kept recordings are up to date.
+- `--record-kill-window <seconds>`: while connected, a running record younger
+  than this is killed and replaced when a newer record request arrives; an
+  older one finishes first and the new request runs right after (only the
+  latest queued request is kept). Default: 10.
+- `--no-watch`: disable the source-file watcher (see below).
+- `-v, --verbose`: verbose output.
+
+Startup check: `screenci edit` keeps each recording's `data.json` on disk after
+upload, along with a hash of the test source file. On startup it compares that
+hash with the current source and verifies every editable action carries an
+`editId`. Up-to-date videos skip recording entirely; anything stale gets its
+missing `editId` slugs stamped into the source and is re-recorded as a preview
+(no render) before the session starts serving the editor.
+
+Editor codegen: while connected, every edit made in the web editor is sent to
+this machine as a codegen request and written directly into the
+`.screenci.ts` source (the code is the single source of truth). Edits that
+change recorded behavior additionally trigger an automatic preview record.
+An edit the codegen cannot apply is reported back and the editor reverts it.
+Besides timeline edits this covers the editor's option panels: render and
+record option changes are merged into the video's `.renderOptions({...})` /
+`.recordOptions({...})` builder calls (the call is added when the section does
+not exist yet), and narration text edits are merged into the
+`video.narration(...)` declaration. Editing a narration text in a non-default
+language converts a flat declaration to the language-major form (the existing
+values move under `default`). A names-only narration declaration
+(`.narration(['intro'])`) stays app-managed: its content lives in the web app
+and is never codegen'd.
+
+Source watching: while connected, `screenci edit` watches the test source files
+backing the managed videos, plus `screenci.config.ts`. Saving a real change to
+a source file automatically re-records that file's videos as a preview (the
+same freshness hash as the startup check filters out no-op saves and the
+CLI's own codegen writes); changing the config re-records every managed video.
+Watching follows the `-g/--grep` filter and can be turned off with
+`--no-watch`.
+
+Setup:
+
+1. Create a personal editor token on the Secrets page in the app (one token per
+   machine, up to five per user).
+2. Add it to your project env file as `SCREENCI_EDIT_TOKEN=<token>`, next to
+   your `SCREENCI_SECRET`.
+3. Run `screenci edit` in your project. The editor header shows your machine as
+   connected (for example `you@laptop`) and offers "Record ... on laptop" in
+   the Export button's record menu.
+
+While connected:
+
+- Only your own account can trigger records on your machine. Teammates see
+  whose machine is connected but cannot use it.
+- A triggered record runs exactly one video in one language (the one open in
+  the editor), then uploads as a normal record run: it refreshes the live
+  preview, and renders only when the trigger was an export. The editor's
+  record menu also offers "Record raw preview footage", which records without
+  rendering at all.
+- Web edits are applied to your sources as you make them in the editor; the
+  editor shows a syncing state on your machine's chip while a change is being
+  written.
+- The regular record run lock applies: if another recording run is already
+  active on the machine, the request is reported back to the editor as failed.
+- Stopping the command (Ctrl-C) disconnects the machine; the editor updates
+  within about fifteen seconds.
+
+Editor tokens are separate from `SCREENCI_SECRET`: the secret authenticates your
+project to the service, the editor token additionally proves which user and
+machine is listening. Revoking the token on the Secrets page immediately
+disconnects the machine.
 
 ## `screenci info`
 
@@ -355,12 +493,13 @@ video name and language code. It is where you get the remote `videoId` for
 `make-public`, `make-private`, and `delete`.
 
 When this machine has recorded a successful run, `info` also reports that run.
-Each `screenci record` upload stores its unique record id in
+Each `screenci export` upload stores its unique record id in
 `.screenci/last-record.json`; `info` then attaches, **only to the videos
 produced by that run**, a per-language `latestRecord` with the run's render
 status and its record-pinned URLs, plus a `latestRecordId` on the video. Videos
 that were not part of the run are still listed, with `static` URLs only. This is
-the command to use in CI to gate on rendering or grab links right after a record.
+the command to use in CI to gate on rendering or grab links right after an
+export.
 
 ```json
 {
@@ -445,7 +584,7 @@ Because rendering happens after upload, poll `info` until each `latestRecord`
 reaches `finished` (or gate your pipeline on `failed`).
 
 **Not recorded on this machine?** If there is no `.screenci/last-record.json`
-(for example a fresh checkout that has never run `screenci record`), `info` does
+(for example a fresh checkout that has never run `screenci export`), `info` does
 not fail. It simply omits `latestRecordId` and the `latestRecord` fields and
 prints the project-wide listing with `static` URLs only.
 
@@ -561,9 +700,10 @@ You can only delete videos that belong to your own project's organization.
 The CLI currently covers:
 
 - project scaffolding with `init`
-- project auth setup (handled automatically on first `record`)
+- project auth setup (handled automatically on first `export`)
 - local iteration with `test`
-- final capture and upload with `record`
+- single-video editing sessions with `edit`
+- finished videos with `export`
 - per-run URLs and render status with `info`
 - public visibility changes with `make-public` and `make-private`
 - permanent video deletion with `delete`
@@ -579,7 +719,8 @@ Manual version pinning is currently handled in the app UI:
 These commands support `--config <path>`:
 
 - `test`
-- `record`
+- `edit`
+- `export`
 - `info`
 - `make-public`
 - `make-private`

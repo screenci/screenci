@@ -11,7 +11,6 @@ import type {
 import { mkdir, rm } from 'fs/promises'
 import { join, relative } from 'path'
 import type { RecordOptions, RenderOptions, ScreenCIPage } from './types.js'
-import type { EditableMarker } from './studio.js'
 import {
   buildOverlays,
   type OverlayController,
@@ -34,8 +33,8 @@ import {
   buildScreenCIContextOptions,
   resolveDeviceScaleFactor,
 } from './contextOptions.js'
-import { resolveCrop } from './crop.js'
-import type { CropTarget, CropOptions } from './crop.js'
+import { resolveClip } from './clip.js'
+import type { ClipTarget, ClipOptions } from './clip.js'
 import {
   installAnimationDisabling,
   resolveDisableAnimations,
@@ -45,12 +44,12 @@ import { getRuntimePage, setRuntimeCrop } from './runtimeContext.js'
 import { ScreenciError } from './errors.js'
 import {
   withActiveRecordingContext,
-  resolveEffectiveRecordOptions,
-  resolveStudioRecordOptions,
-  resolveStudioRenderOptions,
+  resolveRecordOptionsBase,
+  resolveRenderOptionsBase,
 } from './video.js'
 import {
   createVideoBuilder,
+  type HiddenFeatureMethods,
   SCREENSHOT_FEATURES,
   type MediaBuilder,
 } from './builder.js'
@@ -60,27 +59,34 @@ import {
   buildValues,
   type Values,
 } from './localizeRuntime.js'
-import { parseValuesOverrides } from './runtimeMode.js'
+import { ActionParamCollector } from './actionParams.js'
+import {
+  combineRecordOptionsLayers,
+  combineRenderOptionsLayers,
+} from './optionsDeclare.js'
 
 /**
- * The `crop` fixture argument. Call it inside a `screenshot()` body to crop the
+ * The `crop` fixture argument. Call it inside a `screenshot()` body to clip the
  * implicit end-of-body capture to a locator or pixel region. Replaces the
- * old module-level `crop()` function; the crop is recorded per test.
+ * old module-level `crop()` function; the clip is recorded per test.
  */
 export type CropFixture = (
-  target: CropTarget,
-  options?: CropOptions
+  target: ClipTarget,
+  options?: ClipOptions
 ) => Promise<void>
 
 /** File name of the raw page capture written beside `data.json`. */
 const SCREENSHOT_FILE_NAME = 'screenshot.png'
 
 type ScreenshotFixtureOptions = {
-  recordOptions: RecordOptions | EditableMarker<Partial<RecordOptions>>
-  renderOptions:
-    | RenderOptions
-    | EditableMarker<Partial<RenderOptions>>
-    | undefined
+  /** Config-level record options (`use.recordOptions`), remapped by `defineConfig`. Internal. */
+  _screenciConfigRecordOptions: RecordOptions
+  /** Config-level render options (`use.renderOptions`). Internal. */
+  _screenciConfigRenderOptions: RenderOptions | undefined
+  /** Per-still record options declared via `screenshot.recordOptions(...)`. Internal. */
+  _screenciRecordOptions: Partial<RecordOptions> | undefined
+  /** Per-still render options declared via `screenshot.renderOptions(...)`. Internal. */
+  _screenciRenderOptions: Partial<RenderOptions> | undefined
   /** Active language for this pass; see {@link video} for details. Internal. */
   _screenciLanguage: string | undefined
   /** Grouping name written to `metadata.videoName`. Internal. */
@@ -98,7 +104,7 @@ type ScreenshotFixtureOptions = {
 }
 
 type ScreenshotFixtures = {
-  crop: CropFixture
+  clip: CropFixture
   /** The language being captured in this pass; `undefined` outside per-language mode. */
   language: string | undefined
   /**
@@ -120,8 +126,10 @@ type ScreenshotFixtures = {
 const _screenshotBase = base.extend<
   ScreenshotFixtureOptions & ScreenshotFixtures
 >({
-  recordOptions: [DEFAULT_VIDEO_OPTIONS, { option: true }],
-  renderOptions: [undefined, { option: true }],
+  _screenciConfigRecordOptions: [DEFAULT_VIDEO_OPTIONS, { option: true }],
+  _screenciConfigRenderOptions: [undefined, { option: true }],
+  _screenciRecordOptions: [undefined, { option: true }],
+  _screenciRenderOptions: [undefined, { option: true }],
   _screenciLanguage: [undefined, { option: true }],
   _screenciVideoName: [undefined, { option: true }],
   _screenciValues: [undefined, { option: true }],
@@ -133,16 +141,14 @@ const _screenshotBase = base.extend<
   },
 
   values: async ({ _screenciValues, _screenciLanguage }, use) => {
-    await use(
-      buildValues(_screenciValues, _screenciLanguage, parseValuesOverrides())
-    )
+    await use(buildValues(_screenciValues, _screenciLanguage))
   },
 
   overlays: async ({ _screenciOverlays, _screenciLanguage }, use) => {
-    await use(buildOverlays(_screenciOverlays, _screenciLanguage))
+    await use(buildOverlays(_screenciOverlays))
   },
 
-  crop: async ({}, use) => {
+  clip: async ({}, use) => {
     await use(async (target, options) => {
       const page = getRuntimePage()
       if (page === null) {
@@ -150,7 +156,7 @@ const _screenshotBase = base.extend<
           'crop() requires an active ScreenCI page. Call it inside a screenshot() body.'
         )
       }
-      setRuntimeCrop(await resolveCrop(target, page, options))
+      setRuntimeCrop(await resolveClip(target, page, options))
     })
   },
 
@@ -169,7 +175,8 @@ const _screenshotBase = base.extend<
   context: async (
     {
       browser,
-      recordOptions,
+      _screenciConfigRecordOptions,
+      _screenciRecordOptions,
       _screenciVideoName,
       colorScheme,
       locale,
@@ -190,19 +197,16 @@ const _screenshotBase = base.extend<
       isMobile,
       deviceScaleFactor,
     },
-    use,
-    testInfo
+    use
   ) => {
-    const { base: baseRecordOptions, studio: studioRecord } =
-      resolveStudioRecordOptions(recordOptions)
-    const effectiveRecordOptions = resolveEffectiveRecordOptions(
-      baseRecordOptions,
-      studioRecord,
-      _screenciVideoName ?? testInfo.title
+    const { base: baseRecordOptions } = resolveRecordOptionsBase(
+      combineRecordOptionsLayers(
+        _screenciConfigRecordOptions,
+        _screenciRecordOptions
+      )
     )
-    const aspectRatio =
-      effectiveRecordOptions.aspectRatio ?? DEFAULT_ASPECT_RATIO
-    const quality = effectiveRecordOptions.quality ?? DEFAULT_QUALITY
+    const aspectRatio = baseRecordOptions.aspectRatio ?? DEFAULT_ASPECT_RATIO
+    const quality = baseRecordOptions.quality ?? DEFAULT_QUALITY
     const dimensions = getDimensions(aspectRatio, quality)
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
 
@@ -212,7 +216,7 @@ const _screenshotBase = base.extend<
         dimensions,
         applyLocaleDefault: shouldRecord,
         deviceScaleFactor: resolveDeviceScaleFactor(
-          effectiveRecordOptions,
+          baseRecordOptions,
           deviceScaleFactor,
           DEFAULT_SCREENSHOT_DEVICE_SCALE_FACTOR
         ),
@@ -250,8 +254,10 @@ const _screenshotBase = base.extend<
   page: async (
     {
       context,
-      recordOptions: codeRecordOptions,
-      renderOptions,
+      _screenciConfigRecordOptions,
+      _screenciConfigRenderOptions,
+      _screenciRecordOptions,
+      _screenciRenderOptions,
       deviceScaleFactor,
       _screenciLanguage,
       _screenciValues,
@@ -262,19 +268,33 @@ const _screenshotBase = base.extend<
     testInfo
   ) => {
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
-    const { base: baseRecordOptions, studio: studioRecord } =
-      resolveStudioRecordOptions(codeRecordOptions)
-    const { obj: renderOptionsObj, studio: studioRender } =
-      resolveStudioRenderOptions(renderOptions)
-    const recordOptions = resolveEffectiveRecordOptions(
-      baseRecordOptions,
-      studioRecord,
-      _screenciVideoName ?? testInfo.title
+    const { base: baseRecordOptions } = resolveRecordOptionsBase(
+      combineRecordOptionsLayers(
+        _screenciConfigRecordOptions,
+        _screenciRecordOptions
+      )
     )
-    const recorder = new EventRecorder(renderOptionsObj, recordOptions, {
-      renderOptions: studioRender,
-      recordOptions: studioRecord,
-    })
+    const { obj: renderOptionsObj } = resolveRenderOptionsBase(
+      combineRenderOptionsLayers(
+        _screenciConfigRenderOptions,
+        _screenciRenderOptions
+      )
+    )
+    const recordOptions = baseRecordOptions
+    const videoName = _screenciVideoName ?? testInfo.title
+    // Every capture is web-editable: render/record options are always marked
+    // studio so the app knows it may override them.
+    const recorder = new EventRecorder(
+      renderOptionsObj,
+      recordOptions,
+      {
+        renderOptions: true,
+        recordOptions: true,
+      },
+      // Action-parameter provenance for this capture (values and their
+      // explicit/default provenance, straight from code).
+      new ActionParamCollector()
+    )
     recorder.setActiveLanguage(_screenciLanguage ?? null)
     // Declared `values` fields (and the active language's seeds) emitted once at
     // recording start so the backend/Studio learn them.
@@ -282,7 +302,6 @@ const _screenshotBase = base.extend<
       _screenciValues,
       _screenciLanguage
     )
-    const videoName = _screenciVideoName ?? testInfo.title
     // Asset paths are authored relative to the user's script. Playwright reports
     // `testInfo.file` as the builder module that registered the test, so prefer
     // the script path captured at the call site.
@@ -372,7 +391,7 @@ const _screenshotBase = base.extend<
         path: join(screenshotDir, SCREENSHOT_FILE_NAME),
       })
 
-      const crop = runtimeContext.crop ?? undefined
+      const clip = runtimeContext.clip ?? undefined
       // The cursor lands at its final position even for a still (the move is
       // instant). Record it so the renderer can draw the cursor on the still
       // when `renderOptions.screenshot.mouse.show` is set. Absent when the body
@@ -389,8 +408,8 @@ const _screenshotBase = base.extend<
       }
 
       const configDir = process.env.SCREENCI_CONFIG_DIR ?? process.cwd()
-      // The crop (from the `crop` fixture) is a render option, so it goes into
-      // renderOptions.screenshot.crop (editable in Studio), not ScreenshotInfo.
+      // The clip (from the `crop` fixture) is a render option, so it goes into
+      // renderOptions.screenshot.clip (editable in Studio), not ScreenshotInfo.
       await recorder.writeToFile(
         screenshotDir,
         videoName,
@@ -398,7 +417,7 @@ const _screenshotBase = base.extend<
         {
           output: 'screenshot',
           screenshot,
-          ...(crop !== undefined && { crop }),
+          ...(clip !== undefined && { clip }),
         }
       )
     } finally {
@@ -452,9 +471,9 @@ interface ScreenshotCallSignatures {
    * ```ts
    * import { screenshot } from 'screenci'
    *
-   * screenshot('Dashboard hero', async ({ page, crop }) => {
+   * screenshot('Dashboard hero', async ({ page, clip }) => {
    *   await page.goto('https://app.example.com/dashboard')
-   *   await crop(page.getByTestId('revenue-card'), { padding: 48 })
+   *   await clip(page.getByTestId('revenue-card'), { padding: 48 })
    * })
    * ```
    */
@@ -484,18 +503,36 @@ interface Screenshot extends ScreenshotCallSignatures {
    * language, and the body receives the active `language` and `values` fields.
    * Chainable with `.each(...)`.
    */
-  /** Declare on-screen values fields (`editable([...])` = editor-owned, object = code values). */
-  values: MediaBuilder<ScreenshotArgs>['values']
+  // Hidden for release: the on-screen values feature is unfinished. The
+  // runtime method stays attached; re-enable by uncommenting (see
+  // HiddenFeatureMethods in builder.ts).
+  // /** Declare on-screen values fields (array = blank names, object = code values). */
+  // values: MediaBuilder<ScreenshotArgs>['values']
 
-  /** Declare overlays (`editable([...])` = editor-owned, object = code values/factories). */
+  /** Declare overlays (array = blank names, object = code values/factories). */
   overlays: MediaBuilder<ScreenshotArgs>['overlays']
 
   /**
-   * Declare the recorded language set / capture mode. Pass `editable()` to let the
-   * web app own the set (`editable(['en', 'fi'])` to seed it), an array
-   * `['en', 'fi']`, or an options object.
+   * Declare the recorded language set / capture mode. The web app owns the set;
+   * pass an array `['en', 'fi']` or an options object to seed it, or call with
+   * no argument to leave the set entirely to the web app.
    */
   languages: MediaBuilder<ScreenshotArgs>['languages']
+
+  /**
+   * Declare capture options (aspect ratio, quality, deviceScaleFactor, ...). A
+   * flat object applies to every language; a language-major object
+   * (`{ default, de, ... }`) overrides per language. Values stay editable in
+   * the web app.
+   */
+  recordOptions: MediaBuilder<ScreenshotArgs>['recordOptions']
+
+  /**
+   * Declare render options (framing, output, screenshot clip, ...). A flat
+   * object applies to every language; a language-major object overrides per
+   * language. Values stay editable in the web app.
+   */
+  renderOptions: MediaBuilder<ScreenshotArgs>['renderOptions']
 
   /**
    * Produce a separate screenshot per variant (viewport, theme, ...). Each
@@ -533,7 +570,8 @@ interface Screenshot extends ScreenshotCallSignatures {
  * ScreenCI screenshot test fixture.
  *
  * Extended Playwright test that captures a branded still image of the final page
- * state. Configure capture options with `screenshot.use()` or in your config.
+ * state. Configure Playwright options (colorScheme, ...) with `screenshot.use()`
+ * and capture options with `screenshot.recordOptions(...)`.
  *
  * @example
  * ```ts
@@ -543,16 +581,16 @@ interface Screenshot extends ScreenshotCallSignatures {
  *   badge: { path: '../assets/new-badge.png', x: 0.72, y: 0.06, width: 0.2 },
  * })
  *
- * screenshot.use({
- *   colorScheme: 'dark',
- *   recordOptions: { quality: '1440p', deviceScaleFactor: 2 },
- * })
+ * screenshot.use({ colorScheme: 'dark' })
  *
- * screenshot('Dashboard hero', async ({ page, crop }) => {
- *   await page.goto('https://app.example.com/dashboard')
- *   await overlays.badge()
- *   await crop(page.getByTestId('revenue-card'), { padding: 0.06 })
- * })
+ * screenshot.recordOptions({ quality: '1440p', deviceScaleFactor: 2 })(
+ *   'Dashboard hero',
+ *   async ({ page, clip }) => {
+ *     await page.goto('https://app.example.com/dashboard')
+ *     await overlays.badge()
+ *     await clip(page.getByTestId('revenue-card'), { padding: 0.06 })
+ *   }
+ * )
  * ```
  */
 export const screenshot = _screenshotBase as unknown as Screenshot
@@ -562,7 +600,13 @@ const _screenshotRootBuilder = createVideoBuilder<ScreenshotArgs>(
   _screenshotBase as unknown as Parameters<typeof createVideoBuilder>[0],
   SCREENSHOT_FEATURES
 )
-screenshot.values = _screenshotRootBuilder.values
+// values() is hidden from the public type for release but stays attached at
+// runtime (see HiddenFeatureMethods in builder.ts).
+;(screenshot as unknown as HiddenFeatureMethods<ScreenshotArgs>).values = (
+  _screenshotRootBuilder as unknown as HiddenFeatureMethods<ScreenshotArgs>
+).values
 screenshot.overlays = _screenshotRootBuilder.overlays
 screenshot.languages = _screenshotRootBuilder.languages
+screenshot.recordOptions = _screenshotRootBuilder.recordOptions
+screenshot.renderOptions = _screenshotRootBuilder.renderOptions
 screenshot.each = _screenshotRootBuilder.each

@@ -15,10 +15,20 @@ import type {
 } from './events.js'
 import { NOOP_EVENT_RECORDER } from './events.js'
 import {
+  resolveSpecWithoutTracking,
+  type ActionParamSpec,
+} from './actionParams.js'
+import {
+  bindClickRecorderToPage,
   setActiveClickRecorder,
   instrumentLocator,
   instrumentPage,
 } from './instrument.js'
+import { resetEditableRuntimeState } from './runtimeContext.js'
+import {
+  getLocatorDescription,
+  type EditableMeta,
+} from './editableDescriptor.js'
 import {
   autoZoom,
   setActiveAutoZoomRecorder,
@@ -29,6 +39,7 @@ import { hide } from './hide.js'
 import { CLICK_DURATION_MS, getMousePosition } from './mouse.js'
 import { SCREENCI_DISABLE_RECORDING_TIMINGS_ENV } from './runtimeMode.js'
 import { logger } from './logger.js'
+import { resolvePerformanceIntervals } from './performance.js'
 
 type DOMClickData = { x: number; y: number; targetRect: ElementRect }
 type ScrollLogicalPosition = 'start' | 'center' | 'end' | 'nearest'
@@ -58,6 +69,16 @@ function makeRecorder() {
           events,
         } as InputEvent)
       }
+    ),
+    applyActionParams: vi.fn(
+      (_selector: string, _method: string, spec: ActionParamSpec) =>
+        resolveSpecWithoutTracking(spec)
+    ),
+    addDelay: vi.fn(),
+    addKeyPress: vi.fn(),
+    addHiddenAction: vi.fn(),
+    getPerformanceIntervals: vi.fn(() =>
+      resolvePerformanceIntervals(undefined)
     ),
     addCueStart: vi.fn(),
     addStudioCueStart: vi.fn(),
@@ -148,6 +169,7 @@ function makePageMock(): PageMock {
     },
     keyboard: {
       type: vi.fn().mockResolvedValue(undefined),
+      press: vi.fn().mockResolvedValue(undefined),
     },
     waitForTimeout: vi.fn().mockResolvedValue(undefined),
     route: vi.fn().mockResolvedValue(undefined),
@@ -320,6 +342,7 @@ function makeLocatorMock(
   const mock = {
     click: vi.fn(),
     fill: vi.fn().mockResolvedValue(undefined),
+    press: vi.fn().mockResolvedValue(undefined),
     pressSequentially: vi.fn().mockResolvedValue(undefined),
     tap: vi.fn().mockResolvedValue(undefined),
     check: vi.fn().mockResolvedValue(undefined),
@@ -583,6 +606,64 @@ describe('instrumentPage', () => {
     expect(zoomOut).toBeDefined()
   })
 
+  it('records page.keyboard.press as a keyPress and forwards native options', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    const originalPress = (
+      page as unknown as { keyboard: { press: ReturnType<typeof vi.fn> } }
+    ).keyboard.press
+    await instrumentPage(page)
+
+    await page.keyboard.press('ControlOrMeta+A', { delay: 5, show: true })
+
+    const expectedModifier = process.platform === 'darwin' ? 'Meta' : 'Control'
+    expect(recorder.addKeyPress).toHaveBeenCalledWith(
+      [expectedModifier, 'A'],
+      true
+    )
+    expect(originalPress).toHaveBeenCalledWith('ControlOrMeta+A', { delay: 5 })
+  })
+
+  it('records locator.press as a keyPress and strips the show option', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    const originalPress = (
+      page._locatorMock as unknown as { press: ReturnType<typeof vi.fn> }
+    ).press
+    await instrumentPage(page)
+    const locator = page.locator('#input')
+
+    await locator.press('Shift+Enter', { show: false })
+
+    expect(recorder.addKeyPress).toHaveBeenCalledWith(['Shift', 'Enter'], false)
+    expect(originalPress).toHaveBeenCalledWith('Shift+Enter', {})
+  })
+
+  it('does not record keyboard presses inside hide() but still dispatches them', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    const originalPress = (
+      page as unknown as { keyboard: { press: ReturnType<typeof vi.fn> } }
+    ).keyboard.press
+    await instrumentPage(page)
+
+    await Promise.all([
+      hide(async () => {
+        await page.keyboard.press('A')
+      }),
+      vi.runAllTimersAsync(),
+    ])
+
+    expect(recorder.addKeyPress).not.toHaveBeenCalled()
+    expect(originalPress).toHaveBeenCalledWith('A', {})
+  })
+
   it('records page.mouse.down as a mouseDown InputEvent and dispatches the real press', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
@@ -803,7 +884,99 @@ describe('instrumentLocator', () => {
     expect(click.events.some((e) => e.type === 'mouseWait')).toBe(true)
   })
 
-  it('omits post-click mouseWait when click postClickPause is zero', async () => {
+  it('reports click param provenance: defaults vs explicit call-site values', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const bb = { x: 100, y: 200, width: 80, height: 40 }
+    const locator = makeLocatorMock(bb, page)
+    instrumentLocator(locator)
+    await Promise.all([
+      (
+        locator as unknown as {
+          click(options?: { move?: { duration?: number } }): Promise<void>
+        }
+      ).click({ move: { duration: 400 } }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const applySpy = recorder.applyActionParams as ReturnType<typeof vi.fn>
+    expect(applySpy).toHaveBeenCalledTimes(1)
+    const [, method, spec] = applySpy.mock.calls[0]! as [
+      string,
+      string,
+      ActionParamSpec,
+    ]
+    expect(method).toBe('click')
+    // Explicit at the call site.
+    expect(spec['move.duration']).toEqual({ explicit: 400, fallback: 900 })
+    // Defaults.
+    expect(spec['move.easing']).toEqual({
+      explicit: undefined,
+      fallback: 'ease-in-out',
+    })
+    expect(spec['noWaitAfter']).toEqual({ explicit: undefined, fallback: true })
+    // No editId at the call site: nothing forwarded.
+    expect(applySpy.mock.calls[0]![3]).toBeUndefined()
+  })
+
+  it('forwards the call-site editId to applyActionParams', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const bb = { x: 100, y: 200, width: 80, height: 40 }
+    const locator = makeLocatorMock(bb, page)
+    instrumentLocator(locator)
+    await Promise.all([
+      (
+        locator as unknown as {
+          click(options?: { editId?: string }): Promise<void>
+        }
+      ).click({ editId: 'save-button-click' }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const applySpy = recorder.applyActionParams as ReturnType<typeof vi.fn>
+    expect(applySpy).toHaveBeenCalledTimes(1)
+    expect(applySpy.mock.calls[0]![3]).toBe('save-button-click')
+  })
+
+  it('uses the effective values returned by applyActionParams (editor override)', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    // Simulate an editor override forcing move.delayAfter to 0.
+    ;(
+      recorder.applyActionParams as ReturnType<typeof vi.fn>
+    ).mockImplementation(
+      (_selector: string, _method: string, spec: ActionParamSpec) => ({
+        ...resolveSpecWithoutTracking(spec),
+        'move.delayAfter': 0,
+      })
+    )
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const bb = { x: 100, y: 200, width: 80, height: 40 }
+    const locator = makeLocatorMock(bb, page)
+    instrumentLocator(locator)
+    await Promise.all([locator.click(), vi.runAllTimersAsync()])
+
+    // The overridden zero delay drops the pre-press mouseWait, proving the
+    // effective (overridden) value was used instead of the code default.
+    expect(recordedInputEvents).toHaveLength(1)
+    expect(
+      recordedInputEvents[0]!.events.some((e) => e.type === 'mouseWait')
+    ).toBe(false)
+  })
+
+  it('omits the pre-press mouseWait when move.delayAfter is zero', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
 
@@ -816,9 +989,9 @@ describe('instrumentLocator', () => {
     await Promise.all([
       (
         locator as unknown as {
-          click(options?: { postClickPause?: number }): Promise<void>
+          click(options?: { move?: { delayAfter?: number } }): Promise<void>
         }
-      ).click({ postClickPause: 0 }),
+      ).click({ move: { delayAfter: 0 } }),
       vi.runAllTimersAsync(),
     ])
 
@@ -1109,7 +1282,7 @@ describe('instrumentLocator', () => {
     expect(down.startMs - focusChange.mouse.endMs).toBe(250)
   })
 
-  it('uses the shorter default post-click pause before fill typing', async () => {
+  it('uses a shorter default move.delayAfter before fill typing', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
 
@@ -1123,7 +1296,10 @@ describe('instrumentLocator', () => {
     instrumentLocator(locator)
 
     await Promise.all([
-      locator.fill('Acme Corporation', { duration: 100, beforeClickPause: 0 }),
+      locator.fill('Acme Corporation', {
+        duration: 100,
+        move: { delayAfter: 100 },
+      }),
       vi.runAllTimersAsync(),
     ])
 
@@ -1143,7 +1319,7 @@ describe('instrumentLocator', () => {
       throw new Error('Expected mouseDown, mouseUp, and mouseWait events')
     }
 
-    expect(wait.startMs - up.endMs).toBe(0)
+    expect(down.startMs - wait.endMs).toBe(0)
     expect(wait.endMs - wait.startMs).toBe(100)
   })
 
@@ -1264,7 +1440,7 @@ describe('instrumentLocator', () => {
     )
   })
 
-  it('keeps custom fill click.postClickPause as a pre-typing wait and still appends the settle pause', async () => {
+  it('keeps custom fill move.delayAfter as a pre-typing wait and still appends the settle pause', async () => {
     const { recorder, recordedInputEvents } = makeRecorder()
     setActiveClickRecorder(recorder)
 
@@ -1280,23 +1456,24 @@ describe('instrumentLocator', () => {
     await Promise.all([
       locator.fill('Acme', {
         duration: 100,
-        beforeClickPause: 0,
-        postClickPause: 240,
+        move: { delayAfter: 240 },
       }),
       vi.runAllTimersAsync(),
     ])
 
     const fill = recordedInputEvents[0]!
     const waits = fill.events.filter((event) => event.type === 'mouseWait')
+    const down = fill.events.find((event) => event.type === 'mouseDown')
     const up = fill.events.find((event) => event.type === 'mouseUp')
 
     expect(waits).toHaveLength(2)
+    expect(down?.type).toBe('mouseDown')
     expect(up?.type).toBe('mouseUp')
-    if (up?.type !== 'mouseUp') {
-      throw new Error('Expected a mouseUp event')
+    if (down?.type !== 'mouseDown' || up?.type !== 'mouseUp') {
+      throw new Error('Expected mouseDown and mouseUp events')
     }
 
-    expect(waits[0]!.startMs - up.endMs).toBe(0)
+    expect(down.startMs - waits[0]!.endMs).toBe(0)
     expect(waits[0]!.endMs - waits[0]!.startMs).toBe(240)
     expect(waits[1]!.endMs - waits[1]!.startMs).toBe(
       DEFAULT_POST_TYPING_SETTLE_PAUSE_MS
@@ -1483,7 +1660,7 @@ describe('instrumentLocator', () => {
           }
         ).click({ moveDuration: 1000 })
       },
-      { duration: 300, postZoomDelay: 0 }
+      { duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1575,7 +1752,7 @@ describe('instrumentLocator', () => {
           }
         ).click({ moveDuration: 1000 })
       },
-      { duration: 300, postZoomDelay: 0 }
+      { duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1612,7 +1789,7 @@ describe('instrumentLocator', () => {
       async () => {
         await locator.check()
       },
-      { duration: 300, postZoomDelay: 0 }
+      { duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1662,7 +1839,7 @@ describe('instrumentLocator', () => {
           ) => Promise<void>
         )('hi', { duration: 100 })
       },
-      { duration: 0, postZoomDelay: 0 }
+      { duration: 0, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1703,7 +1880,7 @@ describe('instrumentLocator', () => {
           postClickPause: 0,
         })
       },
-      { duration: 300, postZoomDelay: 0 }
+      { duration: 300, delayAfter: 0 }
     )
 
     await vi.runAllTimersAsync()
@@ -1716,7 +1893,8 @@ describe('instrumentLocator', () => {
       expect.arrayContaining([
         expect.objectContaining({ type: 'mouseDown' }),
         expect.objectContaining({ type: 'mouseUp' }),
-      ])
+      ]),
+      expect.objectContaining({ locked: true, schemaKind: 'cursorMove' })
     )
   })
 
@@ -2220,5 +2398,162 @@ describe('instrumentLocator', () => {
     expect(originalCheck).toHaveBeenCalledTimes(1)
     expect(originalUncheck).toHaveBeenCalledTimes(1)
     expect(originalSelectOption).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('editable descriptor capture', () => {
+  it('captures locator descriptions and stamps editable metadata with ordinals', async () => {
+    resetEditableRuntimeState()
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const first = page.getByRole('button', { name: 'Save' })
+    const second = page.getByRole('button', { name: 'Save' })
+    await Promise.all([first.click(), vi.runAllTimersAsync()])
+    await Promise.all([second.click(), vi.runAllTimersAsync()])
+
+    const addInput = recorder.addInput as ReturnType<typeof vi.fn>
+    const firstMeta = addInput.mock.calls[0]![3] as EditableMeta
+    const secondMeta = addInput.mock.calls[1]![3] as EditableMeta
+    expect(firstMeta.descriptor).toEqual({
+      kind: 'input',
+      subKind: 'click',
+      matcher: 'getByRole(button, name=Save)',
+      ordinal: 0,
+      seq: 0,
+    })
+    expect(secondMeta.descriptor.ordinal).toBe(1)
+    expect(secondMeta.descriptor.seq).toBe(1)
+    expect(firstMeta.locked).toBe(false)
+    expect(firstMeta.schemaKind).toBe('cursorMove')
+    expect(firstMeta.defaults).toMatchObject({
+      moveDuration: DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+      moveEasing: 'ease-in-out',
+    })
+  })
+
+  it('chains descriptions through sync locator methods', async () => {
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const item = page.getByRole('list').nth(2)
+    expect(getLocatorDescription(item)).toBe('getByRole(list) > nth(2)')
+  })
+
+  it('locks the whole action when any explicit option is set in code', async () => {
+    resetEditableRuntimeState()
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+    const locator = makeLocatorMock({ x: 0, y: 0, width: 10, height: 10 }, page)
+    instrumentLocator(locator)
+
+    await Promise.all([
+      (
+        locator as unknown as {
+          click(options?: { move?: { duration?: number } }): Promise<void>
+        }
+      ).click({ move: { duration: 100 } }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const addInput = recorder.addInput as ReturnType<typeof vi.fn>
+    const meta = addInput.mock.calls[0]![3] as EditableMeta
+    expect(meta.locked).toBe(true)
+    expect(meta.defaults).toMatchObject({ moveDuration: 100 })
+  })
+
+  it('scales pressSequentially typing duration by character count and derives the key delay', async () => {
+    resetEditableRuntimeState()
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+    const locator = makeLocatorMock({ x: 0, y: 0, width: 10, height: 10 }, page)
+    const originalPressSequentially = locator.pressSequentially as ReturnType<
+      typeof vi.fn
+    >
+    instrumentLocator(locator)
+
+    await Promise.all([
+      locator.pressSequentially('Acme Corp'), // 9 characters
+      vi.runAllTimersAsync(),
+    ])
+
+    const addInput = recorder.addInput as ReturnType<typeof vi.fn>
+    const meta = addInput.mock.calls[0]![3] as EditableMeta
+    // Default total = length (9) * 60ms/char.
+    expect(meta.defaults.duration).toBe(540)
+    // The per-key delay handed to Playwright is total / length = 60ms.
+    const nativeCall = originalPressSequentially.mock.calls[0]!
+    expect((nativeCall[1] as { delay: number }).delay).toBe(60)
+    // Not locked: nothing was set explicitly in code.
+    expect(meta.locked).toBe(false)
+  })
+
+  it('records an editable delay event for numeric page.waitForTimeout', async () => {
+    resetEditableRuntimeState()
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+    bindClickRecorderToPage(page, recorder)
+
+    await Promise.all([page.waitForTimeout(250), vi.runAllTimersAsync()])
+
+    const addDelay = recorder.addDelay as ReturnType<typeof vi.fn>
+    expect(addDelay).toHaveBeenCalledTimes(1)
+    const [durationMs, meta] = addDelay.mock.calls[0]! as [number, EditableMeta]
+    expect(durationMs).toBe(250)
+    expect(meta.descriptor.kind).toBe('delay')
+    // The recorded wait is now unlocked: codegen rewrites the numeric
+    // waitForTimeout arg in place, so dragging a neighboring interaction can
+    // absorb into it.
+    expect(meta.locked).toBe(false)
+    expect(meta.lockedFields).toBeUndefined()
+    expect(meta.defaults).toEqual({ durationMs: 250 })
+  })
+})
+
+describe('hidden-action markers inside hide()', () => {
+  it('records a hiddenAction marker for a locator action inside hide()', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+    const locator = makeLocatorMock()
+    instrumentLocator(locator)
+    await Promise.all([
+      hide(async () => {
+        await locator.click()
+      }),
+      vi.runAllTimersAsync(),
+    ])
+    expect(recorder.addHiddenAction).toHaveBeenCalledTimes(1)
+    expect(recorder.addHiddenAction).toHaveBeenCalledWith(
+      'click',
+      expect.any(String)
+    )
+    expect(recorder.addInput).not.toHaveBeenCalled()
+  })
+
+  it('records a hiddenAction marker for keyboard presses inside hide()', async () => {
+    const { recorder } = makeRecorder()
+    setActiveClickRecorder(recorder)
+    const page = makePageMock()
+    await instrumentPage(page)
+    await Promise.all([
+      hide(async () => {
+        await page.keyboard.press('A')
+      }),
+      vi.runAllTimersAsync(),
+    ])
+    expect(recorder.addHiddenAction).toHaveBeenCalledWith('keyboard.press')
+    expect(recorder.addKeyPress).not.toHaveBeenCalled()
   })
 })

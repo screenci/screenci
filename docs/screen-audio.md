@@ -5,8 +5,9 @@ Recording system audio takes two settings that play different roles:
 - **`enableCaptureAudio`** (root of your config, boolean): turns on audio mode
   for the whole run. It is the launch-time switch, decided once per worker
   before any individual video runs.
-- **`recordOptions.captureAudio`** (number, per config/project/video): the gain
-  for an individual recording. `0` (the default) captures nothing.
+- **`recordOptions.captureAudio`** (per video): turns capture on for an
+  individual recording. Off by default; set `true` to capture at unity gain,
+  or `{ gain }` for a custom level.
 
 Both are needed: `enableCaptureAudio` makes the browser able to emit audio, and
 `captureAudio` says which videos record it and how loud. A video that sets
@@ -29,8 +30,8 @@ video's options are known. Capturing audio requires launching it differently
 (unmuted, in Chromium's new headless mode, because the legacy headless shell
 registers an audio stream but never emits samples, producing silence). That
 launch decision therefore has to come from a run-level switch, which is what
-`enableCaptureAudio` is. `captureAudio` can then live wherever you like,
-including on an individual `video.use()`.
+`enableCaptureAudio` is. `captureAudio` is a record option, so it can then live
+wherever you like, including on an individual `video.recordOptions(...)`.
 
 ## Silent and isolated by default
 
@@ -77,7 +78,7 @@ works with no extra configuration. Install one with your package manager, e.g.
 To force a specific binary, set `SCREENCI_FFMPEG_PATH`, which always wins:
 
 ```bash
-SCREENCI_FFMPEG_PATH=/usr/bin/ffmpeg pnpm screenci record
+SCREENCI_FFMPEG_PATH=/usr/bin/ffmpeg pnpm screenci export
 ```
 
 Verify a binary has the input with `ffmpeg -hide_banner -formats | grep pulse`.
@@ -91,18 +92,27 @@ import { defineConfig } from 'screenci'
 export default defineConfig({
   // Launch the browser in audio mode for the whole run (Linux only).
   enableCaptureAudio: true,
-  use: {
-    recordOptions: {
-      // Capture every video at unity gain. Or set this per video instead.
-      captureAudio: 1,
-    },
-  },
 })
 ```
 
-`captureAudio` is a linear gain value, the same scale used by `video.audio(...)`
-tracks and overlay volumes: `1` is unity gain, `0.5` is half volume, `2` is
-double, `0` disables capture.
+`enableCaptureAudio` is the run-level switch. Turn capture on for a video with
+`captureAudio` in its `video.recordOptions(...)`:
+
+```ts
+import { video } from 'screenci'
+
+video.recordOptions({
+  // Capture this video at unity gain.
+  captureAudio: true,
+})('My video', async ({ page }) => {
+  await page.goto('/')
+})
+```
+
+`captureAudio` is `true`, or an object with a linear `gain` on the same scale
+used by overlay volumes: `captureAudio: true` captures at unity gain,
+`captureAudio: { gain: 0.5 }` at half volume, `{ gain: 2 }` at double. Leaving
+it unset (or `false`) disables capture for that video.
 
 ## Running recordings in parallel
 
@@ -142,6 +152,7 @@ it (no default sink or manual sink needed, screenci manages them):
 
 ## Interaction with narration and other audio
 
-Screen audio is mixed alongside narration cues and `video.audio(...)` tracks.
-If the captured level is too loud relative to narration, lower `captureAudio`
-(e.g. `0.3`) rather than changing the system output volume.
+Screen audio is mixed alongside narration cues.
+If the captured level is too loud relative to narration, lower the capture gain
+(e.g. `captureAudio: { gain: 0.3 }`) rather than changing the system output
+volume.

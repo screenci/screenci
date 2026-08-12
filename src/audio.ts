@@ -9,6 +9,11 @@ import {
   prewarmAssetFile,
 } from './assetHash.js'
 import { isInsideHide } from './hide.js'
+import {
+  delayArg,
+  validateDelay,
+  type StartDelayOptions,
+} from './overlayUpdates.js'
 import { logMissingAsset } from './missingAssetLog.js'
 import { MAX_AUDIO_LEVEL, validateSpeedTime } from './asset.js'
 import {
@@ -59,10 +64,30 @@ export type AudioConfig = {
 }
 
 /**
- * A value accepted by {@link createAudio} for each key: a file path string or an
- * {@link AudioConfig} object.
+ * Declares a backend-hosted (editor-uploaded) audio track: its bytes live in
+ * the ScreenCI backend under the asset name `editor`, not in a local file. The
+ * declaration keeps the track an explicit part of the video; volume and timing
+ * are edited in the web editor, and the backend merges the uploaded audio by
+ * the declaration name at render. `editor` names the backend asset
+ * (conventionally the same as the declaration key).
  */
-export type AudioInput = string | AudioConfig
+export type EditorAudioInput = { editor: string }
+
+/** Whether a value is an {@link EditorAudioInput} (`{ editor: '<name>' }`). */
+export function isEditorAudioInput(value: unknown): value is EditorAudioInput {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { editor?: unknown }).editor === 'string'
+  )
+}
+
+/**
+ * A value accepted by {@link createAudio} for each key: a file path string, an
+ * {@link AudioConfig} object, or `{ editor: '<name>' }` for a backend-hosted,
+ * editor-uploaded track.
+ */
+export type AudioInput = string | AudioConfig | EditorAudioInput
 
 /**
  * A background audio controller.
@@ -85,7 +110,8 @@ export type AudioInput = string | AudioConfig
  */
 export type AudioController = {
   (): Promise<void>
-  start(): Promise<void>
+  /** Starts the track; `delay` offsets the recorded start (see {@link StartDelayOptions}). */
+  start(options?: StartDelayOptions): Promise<void>
   end(): Promise<void>
 }
 
@@ -224,7 +250,10 @@ async function resolveAudioFile(
   return { path, fileHash }
 }
 
-function normalizeAudioConfig(name: string, input: AudioInput): AudioConfig {
+function normalizeAudioConfig(
+  name: string,
+  input: string | AudioConfig
+): AudioConfig {
   const config: AudioConfig =
     typeof input === 'string' ? { path: input } : input
   if (!hasAudioExtension(config.path)) {
@@ -281,14 +310,19 @@ export function createAudio<const T extends Record<string, AudioInput>>(
 ): AudioTracks<T> {
   const result = {} as AudioTracks<T>
   for (const name in tracks) {
-    result[name] = buildAudioController(name, tracks[name]!)
+    const input = tracks[name]!
+    // A backend-hosted `{ editor: '<name>' }` track: no local file, emit a
+    // Studio audio start under the declaration name (merged by the backend).
+    result[name] = isEditorAudioInput(input)
+      ? buildStudioAudioController(name)
+      : buildAudioController(name, input)
   }
   return result
 }
 
 /**
  * Builds audio controllers for Studio-managed tracks declared via
- * `video.audio(editable([...]))`. Each name becomes a callable controller with
+ * `video.audio([...])`. Each name becomes a callable controller with
  * the same timeline behavior as a {@link createAudio} controller, including
  * `start()`/`end()`. The audio file, volume, and repeat all come from Studio.
  *
@@ -328,6 +362,12 @@ export function buildAudio(
       (language !== undefined ? feature.byLang[language]?.[name] : undefined) ??
       feature.shared[name]
     if (input === undefined) continue
+    // A `{ editor: '<name>' }` track is backend-hosted: emit a Studio audio
+    // start under the declaration name (no local file), like the array form.
+    if (isEditorAudioInput(input)) {
+      result[name] = buildStudioAudioController(name)
+      continue
+    }
     if (anchorFile !== undefined) {
       prewarmAssetFile(
         typeof input === 'string' ? input : input.path,
@@ -346,11 +386,12 @@ export function buildAudio(
  */
 function createAudioControllerCore(
   name: string,
-  emitStart: (recorder: IEventRecorder) => Promise<void>
+  emitStart: (recorder: IEventRecorder, delayMs?: number) => Promise<void>
 ): AudioController {
   // start()/end() register a live run so end() can pair to its start and a
   // double start() is rejected.
-  const start = async (): Promise<void> => {
+  const start = async (options?: StartDelayOptions): Promise<void> => {
+    const delayMs = validateDelay(`audio "${name}" start`, options?.delay)
     if (isInsideHide()) {
       throw new Error('[screenci] Cannot start audio inside hide()')
     }
@@ -366,7 +407,7 @@ function createAudioControllerCore(
     })
     const run: ActiveAudioRun = { finished, resolveFinished }
     context.audio.activeRuns.set(name, run)
-    await emitStart(getRuntimeAudioRecorder())
+    await emitStart(getRuntimeAudioRecorder(), delayMs)
   }
 
   const end = async (): Promise<void> => {
@@ -402,7 +443,7 @@ function createAudioControllerCore(
 
 function buildAudioController(
   name: string,
-  input: AudioInput
+  input: string | AudioConfig
 ): AudioController {
   const config = normalizeAudioConfig(name, input)
 
@@ -419,15 +460,15 @@ function buildAudioController(
     }
   }
 
-  return createAudioControllerCore(name, async (recorder) => {
+  return createAudioControllerCore(name, async (recorder, delayMs) => {
     const payload = await buildPayload()
-    recorder.addAudioStart(name, payload)
+    recorder.addAudioStart(name, payload, ...delayArg(delayMs))
   })
 }
 
 function buildStudioAudioController(name: string): AudioController {
-  return createAudioControllerCore(name, (recorder) => {
-    recorder.addStudioAudioStart(name)
+  return createAudioControllerCore(name, (recorder, delayMs) => {
+    recorder.addStudioAudioStart(name, ...delayArg(delayMs))
     return Promise.resolve()
   })
 }

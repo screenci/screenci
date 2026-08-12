@@ -14,6 +14,10 @@ export type {
   Easing,
   VideoEncoderPreset,
 } from './src/types.js'
+export type {
+  NarrationAudioCleanupOption,
+  ResolvedNarrationAudioCleanup,
+} from './src/narrationAudioCleanup.js'
 
 // Re-export voices
 export { voices, modelTypes } from './src/voices.js'
@@ -32,13 +36,13 @@ export { defineConfig } from './src/config.js'
 export { video } from './src/video.js'
 export { screenshot } from './src/screenshot.js'
 export type {
-  CropTarget,
-  CropRegion,
-  CropOptions,
-  ScreenshotCrop,
-  ScreenshotCropRecord,
-  ResolvedCropPadding,
-} from './src/crop.js'
+  ClipTarget,
+  ClipRegion,
+  ClipOptions,
+  ScreenshotClip,
+  ScreenshotClipRecord,
+  ResolvedClipPadding,
+} from './src/clip.js'
 export type {
   ScreenCIPage,
   ScreenCILocator,
@@ -52,15 +56,10 @@ export type {
   ScreenCILocatorDragToOptions,
   ScreenCILocatorSelectOptionOptions,
 } from './src/types.js'
-// Narration is declared per-builder with `video.narration(...)`: `editable([...])`
-// is owned by the web editor, an object carries code values. It surfaces through the
-// injected `narration` fixture.
+// Narration is declared per-builder with `video.narration(...)`: an array declares
+// blank names owned by the web editor, an object carries code values (still
+// editable in the web app). It surfaces through the injected `narration` fixture.
 export type { NarrationCue, Cues, TopLevelVoiceConfig } from './src/cue.js'
-// `editable(...)` defers a feature/language declaration to the ScreenCI web app:
-// `editable(['name'])` blank names, `editable({ name: value })` seeded, `editable()`
-// keyless (languages only).
-export { editable } from './src/studio.js'
-export type { EditableMarker, EditablePending } from './src/studio.js'
 export type { TimelineOffset } from './src/timelineOffset.js'
 export type { LangNarrationOverride } from './src/voiceConfig.js'
 export type {
@@ -86,6 +85,45 @@ export { time } from './src/time.js'
 export { autoZoom } from './src/autoZoom.js'
 export { zoomTo, resetZoom } from './src/manualZoom.js'
 export { hideNarration, showNarration } from './src/narrationVisibility.js'
+export {
+  // Hidden for release: narration positioning (moveNarration, resizeNarration)
+  // and changing the background mid recording (setBackground) are unfinished.
+  // Re-enable by uncommenting these and the related types below. Docs moved to
+  // docs/removed/overlay-updates.md at the repo root.
+  // moveNarration,
+  // resizeNarration,
+  resizeRecording,
+  hideRecording,
+  showRecording,
+  // setBackground,
+} from './src/overlayUpdates.js'
+export type {
+  OverlayTransitionOptions,
+  // Hidden for release together with moveNarration/setBackground above.
+  // MoveNarrationOptions,
+  // SetBackgroundInput,
+} from './src/overlayUpdates.js'
+// Hidden for release together with narration positioning above.
+// export type {
+//   NarrationCorner,
+//   NarrationPosition,
+//   NarrationFullScreenFit,
+// } from './src/types.js'
+export type {
+  UpdateTransition,
+  // Hidden for release together with narration positioning and setBackground.
+  // NarrationUpdateEvent,
+  RecordingUpdateEvent,
+  // BackgroundUpdateEvent,
+} from './src/events.js'
+// Per-method defaults of every tracked action option, so the backend/editor can
+// tell an override that restates the default from a real change.
+export { ACTION_PARAM_DEFAULTS } from './src/actionParams.js'
+export type {
+  ActionMethod,
+  ActionParamRecord,
+  ActionParamValue,
+} from './src/actionParams.js'
 export { MAX_AUDIO_LEVEL } from './src/asset.js'
 export type {
   OverlayController,
@@ -100,16 +138,21 @@ export type {
   Overlays,
   OverlayControllerFor,
   OverlayPlacement,
-  OverlayCrop,
-  DependencyOverlayInput,
-  DependencyOverlayOptions,
+  OverlayClip,
+  // Hidden for release: the selected() render-dependency feature is
+  // unfinished. Docs moved to docs/removed/selected.md at the repo root.
+  // DependencyOverlayInput,
+  // DependencyOverlayOptions,
 } from './src/asset.js'
 export { overlayRect } from './src/overlayRect.js'
 export type { OverlayRect, OverlayRectOptions } from './src/overlayRect.js'
-export type {
-  AudioController,
-  AudioConfig,
-  AudioInput,
-  AudioTracks,
-} from './src/audio.js'
+// Hidden for release: the background audio feature is unfinished. Re-enable by
+// uncommenting (the video.audio() builder method is commented out alongside in
+// src/builder.ts). Docs moved to docs/removed/audio.md at the repo root.
+// export type {
+//   AudioController,
+//   AudioConfig,
+//   AudioInput,
+//   AudioTracks,
+// } from './src/audio.js'
 export type { ZoomTarget, ZoomTargetPoint } from './src/manualZoom.js'

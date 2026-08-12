@@ -36,6 +36,12 @@ export type OverlayRect = {
    * `boundingBox()` when no margin is set.
    */
   pixels: { x: number; y: number; width: number; height: number }
+  /**
+   * The element's raw `boundingBox()` in CSS pixels, before any `margin` and
+   * before clamping to the viewport. Lets a consumer reconstruct the box for a
+   * different margin.
+   */
+  element: { x: number; y: number; width: number; height: number }
 }
 
 export type OverlayRectOptions = {
@@ -119,5 +125,6 @@ export async function overlayRect(
       ? { height: pixels.height }
       : { width: pixels.width }),
     pixels,
+    element: { x: box.x, y: box.y, width: box.width, height: box.height },
   }
 }

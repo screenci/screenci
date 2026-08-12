@@ -61,7 +61,7 @@ export const docsVideoRegistry = {
     sourcePath: 'screenci/docs/video-sources/languages.screenci.ts',
     showSource: false,
   },
-  'docs/guides/editor': {
+  'docs/editor': {
     sourcePath: 'screenci/docs/video-sources/editor.screenci.ts',
     showSource: false,
   },

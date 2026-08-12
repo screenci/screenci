@@ -3,9 +3,9 @@ import type {
   AnyLangNarrationOverride,
   LangNarrationOverride,
 } from './voiceConfig.js'
-import type { OverlayCrop, SourceTrimPoint } from './events.js'
+import type { OverlayClip, SourceTrimPoint } from './events.js'
 import type { TimelineOffset } from './timelineOffset.js'
-import { validateCrop, resolveSourceTrim } from './sourceTrim.js'
+import { validateClip, resolveSourceTrim } from './sourceTrim.js'
 
 /**
  * A voice configuration used inside a `localize` spec. Allows a `seed` (it can
@@ -39,7 +39,7 @@ export type LocalizeMode = 'per-language' | 'shared'
 type LocalizeNarrationMediaFields = {
   subtitle?: string
   volume?: number
-  crop?: OverlayCrop
+  clip?: OverlayClip
   start?: TimelineOffset
   end?: TimelineOffset
   language?: never
@@ -49,6 +49,11 @@ export type LocalizeNarrationValue<L extends Lang = Lang> =
   | { cue: string; voice?: VoiceConfig<L>; language?: Lang; volume?: number }
   | ({ media: string } & LocalizeNarrationMediaFields)
   | ({ path: string } & LocalizeNarrationMediaFields)
+  // Backend-hosted (editor-uploaded) narration audio for this cue: its bytes
+  // live in the ScreenCI backend under the asset name `editor`, not in a local
+  // file. The declaration keeps the cue an explicit part of the video; the
+  // backend merges the uploaded audio by name at render.
+  | { editor: string }
 
 /** Seeded narration: language -> (cue name -> value). */
 export type NarrationByLang = Partial<{
@@ -60,10 +65,11 @@ export type ValuesByLang = Partial<Record<Lang, Record<string, string>>>
 
 /**
  * The `voice` field: a per-language map of voice overrides. Languages omitted
- * from the map fall back to the config/global default voice set via `use`
- * (`renderOptions.narration.voice`). There is deliberately no single
- * config-for-all-languages form here: the all-languages default belongs in
- * `use`, so the localize `voice` only carries per-language overrides.
+ * from the map fall back to the config/global default voice set via
+ * `video.renderOptions(...)` (`renderOptions.narration.voice`). There is
+ * deliberately no single config-for-all-languages form here: the all-languages
+ * default belongs in `renderOptions`, so the localize `voice` only carries
+ * per-language overrides.
  */
 export type LocalizeVoiceSpec = Partial<{ [L in Lang]: VoiceConfig<L> }>
 
@@ -73,17 +79,17 @@ export type LocalizeVoiceSpec = Partial<{ [L in Lang]: VoiceConfig<L> }>
  *
  * `narration` and `values` are seeded per-language maps (keys must be identical
  * across languages, enforced by TypeScript). Studio-managed cue/field names are
- * declared separately via `editable({...})`. `voice` co-locates per-language
+ * declared separately via a seeded object. `voice` co-locates per-language
  * narration voice overrides with the content; the all-languages default comes
- * from `use`.
+ * from `video.renderOptions(...)`.
  */
 export type LocalizeSpec = {
-  /** Per-language narration voice overrides. The all-languages default comes from `use`. */
+  /** Per-language narration voice overrides. The all-languages default comes from `video.renderOptions(...)`. */
   voice?: LocalizeVoiceSpec
   /**
    * Explicit language set. Required when there are no seeded maps (e.g. every
-   * cue/field is app-editable via `video.narration(editable([...]))` /
-   * `video.values(editable([...]))`).
+   * cue/field is app-editable via `video.narration([...])` /
+   * `video.values([...])`).
    */
   languages?: readonly string[]
   /** Spoken narration (video only): seeded per-language map. */
@@ -112,7 +118,7 @@ export type NormalizedCueValue =
       path: string
       subtitle?: string
       volume?: number
-      crop?: OverlayCrop
+      clip?: OverlayClip
       sourceStart?: SourceTrimPoint
       sourceEnd?: SourceTrimPoint
     }
@@ -203,7 +209,7 @@ export function normalizeCueValue<L extends Lang>(
   }
   const path = 'media' in value ? value.media : value.path
   const label = `video.narration() cue "${name}" media "${path}"`
-  if (value.crop !== undefined) validateCrop(label, value.crop)
+  if (value.clip !== undefined) validateClip(label, value.clip)
   const { sourceStart, sourceEnd } = resolveSourceTrim(
     label,
     value.start,
@@ -214,7 +220,7 @@ export function normalizeCueValue<L extends Lang>(
     path,
     ...(value.subtitle !== undefined && { subtitle: value.subtitle }),
     ...(value.volume !== undefined && { volume: value.volume }),
-    ...(value.crop !== undefined && { crop: value.crop }),
+    ...(value.clip !== undefined && { clip: value.clip }),
     ...(sourceStart !== undefined && { sourceStart }),
     ...(sourceEnd !== undefined && { sourceEnd }),
   }
@@ -329,7 +335,8 @@ function normalizeVoice(
 ): Partial<Record<Lang, AnyVoiceConfig>> {
   if (voice === undefined) return {}
   // Per-language overrides only. Languages omitted from the map fall back to the
-  // config/global default voice set via `use`, so the map may be partial; it may
+  // config/global default voice set via `video.renderOptions(...)`, so the map
+  // may be partial; it may
   // not name a language outside the declared set (catches typos).
   const extra = Object.keys(voice).filter((lang) => !languages.includes(lang))
   if (extra.length > 0) {
@@ -364,7 +371,7 @@ export function normalizeLocalizeSpec(spec: LocalizeSpec): NormalizedLocalize {
 
   if (narration === null && values === null && !hasExplicitLanguages) {
     throw new Error(
-      'localize(): nothing to localize. Provide narration and/or values (seeded maps), or pass `languages: [...]` when every cue/field is app-editable via video.narration(editable([...])) / video.values(editable([...])).'
+      'localize(): nothing to localize. Provide narration and/or values (seeded maps), or pass `languages: [...]` when every cue/field is app-editable via video.narration([...]) / video.values([...]).'
     )
   }
 

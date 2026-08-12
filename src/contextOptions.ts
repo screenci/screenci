@@ -41,8 +41,7 @@ export const FORWARDED_CONTEXT_OPTION_KEYS = [
 
 export type ForwardedContextOptions = {
   [K in (typeof FORWARDED_CONTEXT_OPTION_KEYS)[number]]?:
-    | NewContextOptions[K]
-    | undefined
+    NewContextOptions[K] | undefined
 }
 
 /**

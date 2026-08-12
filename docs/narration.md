@@ -6,7 +6,7 @@ speech should start, overlap, and end.
 
 The spoken text lives in `video.narration(...)`, owned by code or handed to
 [Editor](./editor.md) (the web app where non-developers edit it without touching
-the test). See [the three ways to declare narration](#three-ways-to-declare-narration)
+the test). See [the two ways to declare narration](#two-ways-to-declare-narration)
 just below.
 
 When you own it in code you can pass it two shapes. The **language-major** form is
@@ -18,7 +18,7 @@ language-major if every top-level key is a supported language code or the litera
 content name may not be a bare language code or `default`.
 
 The default voice is set once with `renderOptions.narration.voice`, in
-`screenci.config.ts` or `video.use(...)`. A per-cue `voice` (inside the narration
+`screenci.config.ts` or `video.renderOptions(...)`. A per-cue `voice` (inside the narration
 value) is the most specific override. Changing the voice re-renders without
 re-recording; changing the spoken text re-records.
 
@@ -27,11 +27,9 @@ exception: for Russian (`ru`), the built-in choices are `Ava`, `Daniel`, `Emma`,
 `Leo`, `Lily`, `Max`, `Miles`, and `Nora`. The built-in fallback voice is `Ava`,
 so an unconfigured video stays valid there too.
 
-`style` prompts require the Business tier, as does choosing `modelType:
-'expressive'` for a language that also has a consistent voice (a tone upgrade).
+`style` prompts and `modelType: 'expressive'` are available on every plan.
 A language whose only built-in voice is the expressive model uses it
-automatically on every plan, so Free and Starter can narrate it without setting
-`modelType`.
+automatically, so you can narrate it without setting `modelType`.
 
 Recording yourself is always possible on every tier: you can supply your own
 recorded audio for any cue with a [`media` file](#balance-narration-volume), or
@@ -50,34 +48,43 @@ you never have to use a synthesized voice if you would rather use your own.
 
 <!-- screenci-doc-video:docs/guides/narration -->
 
-## Three ways to declare narration
+## Two ways to declare narration
 
-There are three ways to declare narration. The same three forms apply to
-[`values`](./values.md), [`overlays`](./overlays.md), and [`audio`](./audio.md).
-See the [Editor guide](./editor.md) for how the web editing works.
+There are two ways to declare narration, and both are editable in the web app.
+The same two forms apply to [`overlays`](./overlays.md). See the
+[Editor guide](./editor.md) for how the web editing works.
 
-**1. Code-owned.** You write the text. Changing it re-records.
+**1. Code values.** You write the text; it is used at record time. Changing it
+re-records. The text stays editable in [Editor](./editor.md), and an Editor
+edit wins over the code value from then on.
 
 ```ts
 video.narration({ en: { intro: 'Welcome.' } })
 ```
 
-**2. Editor-owned (blank).** Wrap the cue names in `editable([...])`: the names
-exist in code (so the body can call `narration.intro`), but [Editor](./editor.md)
-owns the text. Chain `.languages([...])`, since there is no text to infer the set
+**2. Editor-owned (blank).** Pass a bare array of cue names: the names exist in
+code (so the body can call `narration.intro`), but [Editor](./editor.md) owns
+the text. Chain `.languages([...])`, since there is no text to infer the set
 from.
 
 ```ts
-import { video, editable } from 'screenci'
+import { video } from 'screenci'
 
-video.narration(editable(['intro', 'outro'])).languages(['en'])
+video.narration(['intro', 'outro']).languages(['en'])
 ```
 
-**3. Editor-owned (seeded).** Pass values to `editable({...})`: Editor starts from
-them but owns them, so an edit in Editor always wins over the seed.
+To mark a single cue as backed by editor-uploaded audio inside a map, use
+`{ editor: '<name>' }`. The cue is an explicit part of the video, but its audio
+lives in the ScreenCI backend (not a local file) and is merged by name at
+render. Uploading narration audio in the editor codegens this form.
 
 ```ts
-video.narration(editable({ intro: 'Welcome.' }))
+video.narration({
+  en: {
+    intro: 'Welcome.', // TTS text
+    outro: { editor: 'outro' }, // backend-hosted uploaded audio
+  },
+})
 ```
 
 ## Attach a narration script
@@ -85,20 +92,20 @@ video.narration(editable({ intro: 'Welcome.' }))
 Attach the narration script with `video.narration(...)`. The body receives a
 `narration` object whose markers (`narration.intro()`, `.start()`, `.end()`)
 carry timing only: the text comes from the narration spec, the voice from your
-config or `video.use(...)` default.
+config or `video.renderOptions(...)` default.
 
 ```ts
 import { video, voices } from 'screenci'
 
-// The default voice (how the narration is spoken).
-video.use({ renderOptions: { narration: { voice: { name: voices.Ava } } } })
-
-video.narration({
-  en: {
-    intro: 'Open the settings page.',
-    save: 'Save the changes when you are ready.',
-  },
-})('Settings', async ({ page, narration }) => {
+video
+  // The default voice (how the narration is spoken).
+  .renderOptions({ narration: { voice: { name: voices.Ava } } })
+  .narration({
+    en: {
+      intro: 'Open the settings page.',
+      save: 'Save the changes when you are ready.',
+    },
+  })('Settings', async ({ page, narration }) => {
   await narration.intro()
   await page.goto('/settings')
 
@@ -123,6 +130,47 @@ Use the cue markers intentionally:
 That is the main tool for overlapping speech with UI motion without losing
 control of the timeline.
 
+`start()` also accepts a `delay` (milliseconds) that offsets the recorded
+start into the future, so a cue written before an interaction can begin
+speaking during it (a call cannot execute while an interaction is awaited):
+
+```ts
+await narration.saving.start({ delay: 400 })
+await page.getByRole('button', { name: 'Save' }).click()
+// The line starts 400 ms into the click above.
+```
+
+Delayed cue starts must stay in time order; recording fails with an error when
+a delayed cue would land behind a cue recorded after it. See
+[Mid-Video Overlay Updates](./overlay-updates.md#delaying-an-update-into-an-interaction)
+for the full rules.
+
+### How recording pacing works
+
+By default recording is fast and independent of narration length: each cue keeps
+only a short gap, and the render freezes a frame to cover the remaining audio.
+The finished video is always correct either way, because the render is the
+source of truth for cue timing. Editing narration text after recording
+re-renders without re-recording: the render inserts the missing time when a line
+grew, and trims any paced-in extra when a line shrank (never cutting into mouse
+movement, scrolls, clicks, or zooms; a safety buffer is kept around them).
+
+If you want the raw recording to already match the finished pacing (so a local
+preview scrubs closer to the final video), opt in with
+`recordOptions.actualNarrationPace`:
+
+```ts
+video.recordOptions({ actualNarrationPace: true })
+```
+
+With this on, and when a recording pass targets one language (per-language mode)
+and your project is linked to an account, ScreenCI looks up each cue's real audio
+length before the cue ends and sleeps the recording to it: `await narration.key()`
+takes as long as the spoken line. Pacing is best-effort: when the length is
+unknown (offline, shared-capture multi-language mode, or an unlinked project) it
+falls back to the fast frame-gap behavior and the render freezes a frame for the
+remaining audio.
+
 ### Holding a cue until a position
 
 Pass a string position to hold the cue window until an absolute point in the
@@ -142,25 +190,23 @@ Keep cues small. In practice, one sentence per cue is the safest default for
 timing, overlap control, and subtitle readability.
 
 If only one file needs a different narration layout, pair `video.narration(...)`
-with `video.use()` instead of changing the whole project:
+with `video.renderOptions()` instead of changing the whole project:
 
 ```ts
 import { video, voices } from 'screenci'
 
-// `corner` is a visual render option; `voice` is the default voice for every
-// language. Both are render options set with `use`.
-video.use({
-  renderOptions: {
+video
+  // `corner` is a visual render option; `voice` is the default voice for every
+  // language. Both are render options set with `renderOptions`.
+  .renderOptions({
     narration: { corner: 'top-right', voice: { name: voices.Ava } },
-  },
-})
-
-video.narration({
-  en: {
-    intro: 'Open the analytics tab.',
-    summary: 'Review the latest numbers.',
-  },
-})('Analytics walkthrough', async ({ page, narration }) => {
+  })
+  .narration({
+    en: {
+      intro: 'Open the analytics tab.',
+      summary: 'Review the latest numbers.',
+    },
+  })('Analytics walkthrough', async ({ page, narration }) => {
   await narration.intro.start()
   await page.getByRole('tab', { name: 'Analytics' }).click()
   await narration.intro.end()
@@ -171,8 +217,8 @@ video.narration({
 
 ## Balance narration volume
 
-Set a per-cue `volume` to balance a spoken line against the recording and any
-background audio. Use the object form of a cue and add `volume`:
+Set a per-cue `volume` to balance a spoken line against the recording. Use the
+object form of a cue and add `volume`:
 
 ```ts
 video.narration({
@@ -205,6 +251,51 @@ on later runs, so you do not have to commit the file. If it is missing locally,
 ScreenCI reuses the version uploaded for this video (matched by file path). See
 [Asset files do not need to be committed](/docs/ci-setup#asset-files-do-not-need-to-be-committed).
 
+## Clean up recorded narration audio
+
+Narration you record yourself (a `media`/`path` cue) often carries room noise
+and uneven volume. Opt in to automatic cleanup with
+`renderOptions.narration.audio`:
+
+```ts
+video.renderOptions({
+  narration: { audio: true },
+})('Walkthrough', async ({ page, narration }) => {
+  /* ... */
+})
+```
+
+`audio: true` enables the full chain: background noise reduction (a neural
+noise-reduction filter plus a low-frequency rumble cut) and loudness
+normalization to a consistent target level. It applies only to narration you
+recorded yourself; generated narration and captured
+screen audio are never touched. It is off by default.
+
+The object form enables the two steps individually and exposes their tuning
+values:
+
+```ts
+video.renderOptions({
+  narration: {
+    audio: {
+      // Noise reduction mix, 0 (off) to 1 (full). Default 0.85; lower it if
+      // the voice starts to sound processed.
+      denoise: { strength: 0.85 },
+      // Loudness target in LUFS, -30 to -8. Default -16, the common level
+      // for spoken online video.
+      normalize: { level: -16 },
+    },
+  },
+})
+```
+
+Each step also accepts a plain boolean: `{ denoise: true }` cleans noise
+without touching loudness, `{ normalize: true }` levels the volume without
+denoising. Cleanup happens at render time, so changing these options never
+re-uploads or modifies your recording; re-render to hear the effect. A per-cue
+[`volume`](#balance-narration-volume) still applies on top of the normalized
+level.
+
 ### Crop and trim a media cue
 
 A `media`/`path` cue that is a **video** (a talking-head or webcam clip shown as a
@@ -231,7 +322,7 @@ together.
 ## Voice per language and per cue
 
 The default voice for every language is set once with `renderOptions.narration.voice`
-(in your config or `video.use(...)`). To override the voice for a specific
+(in your config or `video.renderOptions(...)`). To override the voice for a specific
 language or a single line, use the object form of the cue value and pass its own
 `voice` (a per-cue override). When a whole language needs a different voice or
 delivery profile, set that `voice` on each of its cues:
@@ -256,6 +347,8 @@ video.narration({
         name: voices.Julian,
         modelType: 'expressive',
         style: 'A friendly and energetic German speaker.',
+        accent: 'Standard German',
+        pacing: 'Measured and deliberate',
       },
     },
   },
@@ -264,8 +357,7 @@ video.narration({
 })
 ```
 
-The German entry above is a Business-tier example because it uses expressive
-narration. A per-cue voice can also carry a `seed` (an integer mixed into the
+A per-cue voice can also carry a `seed` (an integer mixed into the
 audio cache key) to force regeneration or pin a specific take.
 
 A per-cue `voice` is the most specific level of the cascade, so you can also
@@ -371,10 +463,15 @@ need to choose between consistency and expressiveness.
 
 - `consistent` is the safer default for docs and product walkthroughs
 - `expressive` is useful when you want a more natural, less uniform delivery
-- choosing `expressive` for a language that also has a consistent voice, and
-  `style` prompts, require the Business tier
+- both model types and `style` prompts are available on every plan
 - a language whose only built-in voice is the expressive model uses it
-  automatically on every plan, no `modelType` needed
+  automatically, no `modelType` needed
+
+Expressive voices take descriptive prompts: `style` (the overall delivery,
+implies `expressive`), `accent` (the more specific the better, e.g.
+`'Southern American English'`; omitted means the voice's natural default), and
+`pacing` as a text description (e.g. `'Brisk and energetic'`). Consistent
+voices instead take a numeric `pacing` rate from `0.25` to `2`.
 
 ## Inline speech markup
 
@@ -443,9 +540,8 @@ your own ElevenLabs API key.
 
 The consistent model is the default, and the expressive model is selected
 automatically for a language that has no consistent voice (its only built-in
-option), on every plan. Choosing the expressive model as a tone upgrade for a
-language that also has a consistent voice, and `style` prompts, require the
-Business tier.
+option). Choosing the expressive model as a tone upgrade, and `style` prompts,
+are available on every plan.
 
 Free and Starter also render a single narration language across the whole
 organization; multiple languages require Business. See
@@ -462,34 +558,32 @@ never shows the stored key again, only whether one is set, and every render
 (from the CLI or the app) uses it. You do not set an ElevenLabs key locally.
 
 Without a key, a video that uses an ElevenLabs or custom voice cannot render.
-`screenci record` fails that video at record time: its render is marked failed
+`screenci export` fails that video at record time: its render is marked failed
 right away (rather than being queued only to die during synthesis), the CLI
 prints an error with a link to the Secrets page, and the command exits non-zero.
 Other videos in the same run are unaffected. Add your key on the Secrets page and
 record again.
 
 Use `voices.elevenlabs({ voiceId })` when you want to target a specific
-ElevenLabs voice from your own account. Set it as the default voice in `use`, or
-as a per-cue `voice`:
+ElevenLabs voice from your own account. Set it as the default voice with
+`video.renderOptions(...)`, or as a per-cue `voice`:
 
 ```ts
 import { video, voices } from 'screenci'
 
-// The default voice for every language.
-video.use({
-  renderOptions: {
+video
+  // The default voice for every language.
+  .renderOptions({
     narration: {
       voice: { name: voices.elevenlabs({ voiceId: 'tMvyQtpCVQ0DkixuYm6J' }) },
     },
-  },
-})
-
-video.narration({
-  en: {
-    intro: 'Welcome to the dashboard.',
-    details: 'Open settings to review billing details.',
-  },
-})('Billing walkthrough', async ({ page, narration }) => {
+  })
+  .narration({
+    en: {
+      intro: 'Welcome to the dashboard.',
+      details: 'Open settings to review billing details.',
+    },
+  })('Billing walkthrough', async ({ page, narration }) => {
   await narration.intro()
 
   await narration.details.start()
@@ -572,21 +666,19 @@ Use the same `voices.elevenlabs(...)` helper, but pass `{ path }` instead of
 `{ voiceId }`:
 
 ```ts
-// The default voice for every language.
-video.use({
-  renderOptions: {
+video
+  // The default voice for every language.
+  .renderOptions({
     narration: {
       voice: { name: voices.elevenlabs({ path: './my-voice.mp3' }) },
     },
-  },
-})
-
-video.narration({
-  en: {
-    intro: 'Welcome to the dashboard.',
-    details: 'Open settings to review billing details.',
-  },
-})('Billing walkthrough', async ({ page, narration }) => {
+  })
+  .narration({
+    en: {
+      intro: 'Welcome to the dashboard.',
+      details: 'Open settings to review billing details.',
+    },
+  })('Billing walkthrough', async ({ page, narration }) => {
   await narration.intro()
 
   await narration.details.start()
@@ -653,18 +745,24 @@ voices you are licensed to reproduce, in line with the ElevenLabs
 > ElevenLabs account, delete custom voices you no longer need to free up slots,
 > then re-run the render.
 
+## Hide the bubble mid-video
+
+The narration bubble's visibility can change
+mid-video with animated transitions (`hideNarration({ duration })` and
+`showNarration({ duration })`): see
+[Mid-Video Overlay Updates](/docs/guides/overlay-updates).
+
 ## Manage narration from Editor
 
-You can manage narration text from the web app instead of code. Wrap the cue
-names in `editable([...])` (imported from `screenci`) and let Editor own the
-spoken text per language:
+You can manage narration text from the web app instead of code. Pass a bare
+array of cue names and let Editor own the spoken text per language:
 
 ```ts
-import { video, editable } from 'screenci'
+import { video } from 'screenci'
 
 video
-  // Editor fills in the text per language for these cue names (the editable(...) form).
-  .narration(editable(['intro', 'save']))
+  // Editor fills in the text per language for these cue names.
+  .narration(['intro', 'save'])
   .languages(['en', 'fi'])('Settings', async ({ page, narration }) => {
   await narration.intro()
   await page.goto('/settings')
@@ -672,13 +770,29 @@ video
 })
 ```
 
-Editor cue names are language-agnostic (declared once). Because the blank
-`editable([...])` form carries no code values, declare the recorded set with
-`video.languages([...])`, since there is no seeded text to infer it from. You can
-also seed the web app with starting text by passing an object to `editable({...})`
-(for example `video.narration(editable({ intro: 'Welcome' }))`): the web app starts
-from those values but owns them, so the seed is used only until the cue is edited
-in Editor. You can also let the web own the language set itself with
-`video.languages(editable())`. The same `editable(...)` form works for values via
-`video.values(editable([...]))`. The markers still carry timing the same way; only
-the text lives in Editor. See [Editor](/docs/guides/editor).
+Editor cue names are language-agnostic (declared once). Because the bare-array
+form carries no code values, seed the recorded set with
+`video.languages([...])`, since there is no text to infer it from. You can also
+supply starting text from code by passing a plain object (for example
+`video.narration({ intro: 'Welcome' })`): the code values are used until the
+cue is edited in Editor, and from then on the Editor value wins. You can also
+hand the language set itself to the web with `video.languages()` (no argument).
+The
+markers still carry timing the same way; only the text lives in Editor.
+
+The editor's narration panel covers more than text (editing requires a
+connected `screenci edit` machine, since every change is written back into your
+script):
+
+- **Voice controls**: pick the voice and tune `style`, `accent`, `pacing`, and
+  the model type per cue, with the same options as in code, plus a per-cue
+  volume slider.
+- **Record in the browser**: a cue can use recorded media instead of
+  synthesized speech. The **Record** button opens a dialog that records from
+  your microphone (or camera) right in the browser and attaches the result to
+  the cue, with an optional subtitle override.
+- **Clone a voice**: upload a voice sample from the narration panel to create
+  a cloned voice, the web equivalent of
+  [cloning from an audio sample](#clone-a-voice-from-an-audio-sample).
+
+See [Editor](/docs/editor).

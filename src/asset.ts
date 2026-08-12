@@ -4,19 +4,34 @@ import {
   timelineAnchorFields,
   type IEventRecorder,
   type OverlayPlacement,
-  type OverlayCrop,
+  type OverlayClip,
   type SourceTrimPoint,
   type TimelineAnchorInput,
 } from './events.js'
 import { parseTimelineOffset, type TimelineOffset } from './timelineOffset.js'
-import { validateCrop, resolveSourceTrim } from './sourceTrim.js'
+import { validateClip, resolveSourceTrim } from './sourceTrim.js'
 import { overlayRect } from './overlayRect.js'
 import { captureCallerFile } from './callerFile.js'
-import { buildClientOverlayDocument } from './clientOverlay.js'
+import {
+  buildClientOverlayDocument,
+  buildOverlayHostDocument,
+  type ClientOverlayEntry,
+  type OverlayFramework,
+} from './clientOverlay.js'
+import {
+  buildElementOverlayDocument,
+  isReactElement,
+  type ReactElementLike,
+} from './elementOverlay.js'
 import { logMissingAsset } from './missingAssetLog.js'
 import { access, readFile } from 'fs/promises'
 import { dirname, resolve } from 'path'
-import { resolveRecordingTimingDuration } from './runtimeMode.js'
+import { performRecordedSleep } from './recordedSleep.js'
+import {
+  delayArg,
+  validateDelay,
+  type StartDelayOptions,
+} from './overlayUpdates.js'
 import {
   DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
   DEFAULT_ANIMATION_FPS,
@@ -31,70 +46,125 @@ import {
   type ActiveAssetRun,
 } from './runtimeContext.js'
 
-export type { OverlayPlacement, OverlayCrop } from './events.js'
+export type { OverlayPlacement, OverlayClip } from './events.js'
 
-/** A relative overlay length: a time string (`'2s'`, `'0:02'`) or milliseconds. */
-export type OverlayDuration = TimelineOffset | number
+/** A relative overlay length, in milliseconds. */
+export type OverlayDuration = number
 
 /**
- * Placement and capture fields shared by every overlay variant. Placement is
- * flat (not nested) and uses CSS pixels in the recording viewport (the same
- * space as Playwright's `boundingBox()`, `page.mouse`, and `viewportSize()`),
- * each defaulting independently: `relativeTo: 'recording'`, `x: 0`, `y: 0`.
- * Provide exactly one of `width`/`height` (the other follows the source aspect,
- * or `aspectRatio`). When no placement field is set, the overlay fills the
- * recording area.
+ * Fill the whole frame instead of positioning the overlay. `'recording'`
+ * fills the recording area; `'screen'` fills the entire output frame,
+ * including any padding around the recording. Mutually exclusive with the
+ * box fields (`x`/`y`/`width`/`height`) and with `over`.
  */
-type OverlayCommon = {
+export type OverlayFillPlacement = {
+  /** Which frame the overlay fills: the recording area or the whole output. */
+  fill: 'recording' | 'screen'
+  over?: never
+  margin?: never
+  relativeTo?: never
+  x?: never
+  y?: never
+  width?: never
+  height?: never
+  aspectRatio?: never
+}
+
+/**
+ * Position the overlay over a live element, captured at recording time from
+ * the locator's bounding box. The overlay is sized to that box (plus
+ * {@link OverlayOverPlacement.margin}) and fills it, so it frames the element
+ * exactly (placement is always recording-relative). HTML files, inline
+ * `html`, and React elements only; your content should fill its box (for
+ * example `width:100%;height:100%`). Mutually exclusive with `fill` and the
+ * box fields.
+ */
+export type OverlayOverPlacement = {
+  /** The live element the overlay is positioned and sized over. */
+  over: Locator
+  /**
+   * Extra space (CSS px) added around the {@link over} element on every side,
+   * so the overlay surrounds it rather than sitting exactly on its edges.
+   */
+  margin?: number
+  fill?: never
+  relativeTo?: never
+  x?: never
+  y?: never
+  width?: never
+  height?: never
+  aspectRatio?: never
+}
+
+/**
+ * Explicit box placement, flat (not nested), in CSS pixels of the recording
+ * viewport (the same space as Playwright's `boundingBox()`, `page.mouse`, and
+ * `viewportSize()`), each field defaulting independently:
+ * `relativeTo: 'recording'`, `x: 0`, `y: 0`. Provide exactly one of
+ * `width`/`height` (the other follows the source aspect, or `aspectRatio`).
+ */
+export type OverlayBoxPlacement = {
   /** Reference box for placement coordinates. Defaults to `'recording'`. */
   relativeTo?: 'screen' | 'recording'
   /** Left edge in CSS px of the recording viewport. Defaults to `0`. */
   x?: number
   /** Top edge in CSS px of the recording viewport. Defaults to `0`. */
   y?: number
-  /** Width in CSS px. Provide instead of `height` (exactly one). */
-  width?: number
-  /** Height in CSS px. Provide instead of `width` (exactly one). */
-  height?: number
   /**
    * Aspect ratio (`width / height`) used to derive the unset axis from the one
    * you provide, instead of the source's intrinsic aspect. Optional.
    */
   aspectRatio?: number
+  fill?: never
+  over?: never
+  margin?: never
+} & (
+  | {
+      /** Width in CSS px. Provide instead of `height` (exactly one). */
+      width: number
+      height?: never
+    }
+  | {
+      /** Height in CSS px. Provide instead of `width` (exactly one). */
+      height: number
+      width?: never
+    }
+)
+
+/**
+ * Where an overlay goes, required on every config object: fill a frame
+ * (`fill`), track a live element (`over`), or an explicit box
+ * (`x`/`y` + `width`|`height`). Exactly one variant must be used; the
+ * variants' fields cannot be mixed.
+ */
+export type OverlayPlacementInput =
+  OverlayFillPlacement | OverlayOverPlacement | OverlayBoxPlacement
+
+/**
+ * Capture and timing fields shared by every overlay variant, independent of
+ * placement.
+ */
+type OverlayCaptureCommon = {
   /**
-   * Fill the whole frame instead of positioning the overlay. `'recording'`
-   * fills the recording area (the same as omitting every placement field);
-   * `'screen'` fills the entire output frame, including any padding around the
-   * recording. Overrides `x`/`y`/`width`/`height`.
-   */
-  fill?: 'recording' | 'screen'
-  /**
-   * Position the overlay over a live element, captured at recording time from
-   * the locator's bounding box. The overlay is sized to that box (plus
-   * {@link margin}) and fills it, so it frames the element exactly. Overrides
-   * `x`/`y`/`width`/`height`/`relativeTo`/`fill` (placement is always
-   * recording-relative). HTML files, inline `html`, and React elements only;
-   * your content should fill its box (for example `width:100%;height:100%`).
-   */
-  over?: Locator
-  /**
-   * Extra space (CSS px) added around the {@link over} element on every side,
-   * so the overlay surrounds it rather than sitting exactly on its edges. Only
-   * valid together with `over`.
-   */
-  margin?: number
-  /**
-   * Default visible length, as a relative time string (`'2s'`, `'0:02'`) or a
-   * number of milliseconds, used when the overlay is shown with a bare call
+   * Default visible length in milliseconds, used when the overlay is shown with a bare call
    * (`await overlays.logo()`) or `.for()` without its own length.
-   * Seconds/timecode only (no percentage). Omit when driving with
-   * `start()`/`end()`. Image/HTML/React overlays only.
+   * Omit when driving with `start()`/`end()`. Image/HTML/React overlays only.
    *
    * For animated overlays (`animate: true`) this is also the capture length: it
    * is required when driving with `start()`/`end()` (the capture length is
    * otherwise unknown).
    */
   duration?: OverlayDuration
+  /**
+   * Fade the overlay in over this many milliseconds when it appears.
+   * Omitted = instant.
+   */
+  fadeIn?: number
+  /**
+   * Fade the overlay out over this many milliseconds when it disappears.
+   * Omitted = instant.
+   */
+  fadeOut?: number
   /**
    * Capture the overlay as an animation so its CSS/JS animation plays back in
    * the video (`.html`/`.tsx` page overlays only). The animation is sampled over
@@ -106,12 +176,12 @@ type OverlayCommon = {
   /** Animation capture frame rate. Only valid with `animate`. Defaults to `30`. */
   fps?: number
   /**
-   * Crop a rectangle of the SOURCE file before it is placed/scaled, in the
+   * Clip a rectangle of the SOURCE file before it is placed/scaled, in the
    * source's own pixels (top-left origin), like Playwright's
    * `page.screenshot({ clip })`. File overlays only (`.svg`/`.png` images and
    * `.mp4` videos); rejected for `.html`/inline `html`/React `element`/`over`.
    */
-  crop?: OverlayCrop
+  clip?: OverlayClip
   /**
    * Keep the overlay stuck to the screen while the camera zooms: it stays at a
    * fixed position and size in the output frame, unaffected by zoom. Useful for
@@ -132,6 +202,13 @@ type OverlayCommon = {
    */
   overMouse?: boolean
 }
+
+/**
+ * Placement and capture fields shared by every overlay variant. Placement is
+ * mandatory: every config picks exactly one {@link OverlayPlacementInput}
+ * variant (`fill`, `over`, or an explicit box with `width`/`height`).
+ */
+type OverlayCommon = OverlayCaptureCommon & OverlayPlacementInput
 
 /** Fields that only apply to a `.mp4` video overlay (a file `path`). */
 type OverlayVideoFields = {
@@ -160,38 +237,93 @@ type OverlayVideoFields = {
    */
   time?: number
   /**
-   * Late start into the source video: skip to this point before playing. A time
-   * string only: `'2s'`/`'1.5s'`, a `'0:02'`/`'0:02.5'` timecode, or `'50%'` of
+   * Late start into the source video: skip to this point before playing.
+   * Numbers are ms; strings can be a `'0:02'`/`'0:02.5'` timecode or `'50%'` of
    * the source duration. `.mp4` overlays only.
    */
   start?: TimelineOffset
   /**
-   * Early end into the source video: stop playing at this point. A time string
-   * only (same forms as {@link start}; a percentage is of the source duration).
-   * `.mp4` overlays only.
+   * Early end into the source video: stop playing at this point. Same forms as
+   * {@link start}; a percentage is of the source duration. `.mp4` overlays only.
    */
   end?: TimelineOffset
 }
 
 /**
- * A full React page overlay: `path` ends in `.tsx`. The module default-exports a
- * React component that screenci bundles (with esbuild, an optional peer
- * dependency) and renders CLIENT-SIDE in the browser during capture, so the full
- * React runtime runs: function components with hooks and effects, class
+ * The inline content keys an overlay config can use instead of a file `path`.
+ * Every variant marks the keys it does not use as `never`, so a config can draw
+ * its content from exactly one source (enforced at the type level and again at
+ * recording time).
+ */
+type NoInlineContent = {
+  element?: never
+  jsx?: never
+  solidJsx?: never
+  html?: never
+}
+
+/**
+ * A full React page overlay: `path` ends in `.tsx`. The module default-exports
+ * a React component that screenci bundles (with Vite, an optional peer
+ * dependency) and renders CLIENT-SIDE in the browser during capture, so the
+ * full React runtime runs: function components with hooks and effects, class
  * components with lifecycle and state, inline styles, and `className`. With
  * `animate: true` the mounted app is advanced by the deterministic virtual clock
  * that samples each frame, so effect timers / `requestAnimationFrame` / state
  * updates drive the captured frames reproducibly.
  *
- * `props` are passed to the component. They are the ONLY overlay variant that
- * accepts `props`, enforced at the type level by the `.tsx` path suffix.
+ * `props` are passed to the component; they must be JSON-serializable.
  */
-export type TsxOverlayConfig = OverlayCommon & {
-  /** Path to a `.tsx` module that default-exports a React component, resolved relative to the recording file. */
-  path: `${string}.tsx`
-  /** Serializable props passed to the component (a `.tsx` overlay only). */
-  props?: Record<string, unknown>
-}
+export type TsxOverlayConfig = OverlayCommon &
+  NoInlineContent & {
+    /** Path to a `.tsx` module that default-exports a React component, resolved relative to the recording file. */
+    path: `${string}.tsx`
+    /** Serializable props passed to the component. */
+    props?: Record<string, unknown>
+  }
+
+/**
+ * A Solid page overlay: `path` ends in `.solid.tsx`. Works exactly like a
+ * `.tsx` React overlay, but the module default-exports a Solid component and
+ * is compiled with Solid's JSX transform (requires the optional peer
+ * dependencies `solid-js` and `vite-plugin-solid`). The extension is the only
+ * discriminator between React and Solid JSX files.
+ */
+export type SolidOverlayConfig = OverlayCommon &
+  NoInlineContent & {
+    /** Path to a `.solid.tsx` module that default-exports a Solid component, resolved relative to the recording file. */
+    path: `${string}.solid.tsx`
+    /** Serializable props passed to the component. */
+    props?: Record<string, unknown>
+  }
+
+/**
+ * A Vue single-file-component overlay: `path` ends in `.vue`. The component is
+ * bundled with Vite and mounted client-side (`createApp(Component, props)`), so
+ * the full Vue runtime runs, including its `<style>` block (requires the
+ * optional peer dependencies `vue` and `@vitejs/plugin-vue`).
+ */
+export type VueOverlayConfig = OverlayCommon &
+  NoInlineContent & {
+    /** Path to a `.vue` single-file component, resolved relative to the recording file. */
+    path: `${string}.vue`
+    /** Serializable props passed to the component (declare them with `defineProps`). */
+    props?: Record<string, unknown>
+  }
+
+/**
+ * A Svelte component overlay: `path` ends in `.svelte`. The component is
+ * bundled with Vite and mounted client-side (Svelte 5 `mount`), so the full
+ * Svelte runtime runs, including its `<style>` block (requires the optional
+ * peer dependencies `svelte` (v5+) and `@sveltejs/vite-plugin-svelte`).
+ */
+export type SvelteOverlayConfig = OverlayCommon &
+  NoInlineContent & {
+    /** Path to a `.svelte` component, resolved relative to the recording file. */
+    path: `${string}.svelte`
+    /** Serializable props passed to the component (declare them with `$props()`). */
+    props?: Record<string, unknown>
+  }
 
 /**
  * A full HTML page overlay: `path` ends in `.html`. The file is loaded as a
@@ -201,11 +333,12 @@ export type TsxOverlayConfig = OverlayCommon & {
  * tight sizing, wrap the content in `<div id="screenci-overlay-root">`. No
  * `props` (a full page owns its own content).
  */
-export type HtmlPageOverlayConfig = OverlayCommon & {
-  /** Path to a full `.html` document, resolved relative to the recording file. */
-  path: `${string}.html`
-  props?: never
-}
+export type HtmlPageOverlayConfig = OverlayCommon &
+  NoInlineContent & {
+    /** Path to a full `.html` document, resolved relative to the recording file. */
+    path: `${string}.html`
+    props?: never
+  }
 
 /**
  * An image (`.svg`/`.png`) or video (`.mp4`) file overlay. Only this variant
@@ -214,22 +347,102 @@ export type HtmlPageOverlayConfig = OverlayCommon & {
  * `props`.
  */
 export type MediaOverlayConfig = OverlayCommon &
-  OverlayVideoFields & {
+  OverlayVideoFields &
+  NoInlineContent & {
     /** File path: `.svg`/`.png` (image) or `.mp4` (video). */
     path: string
     props?: never
   }
 
 /**
- * Display options for an overlay. Content always comes from a file `path`; the
- * extension selects the variant: `.tsx` (a client-rendered React page, the only
- * variant accepting `props`), `.html` (a full HTML document), or `.svg`/`.png`/
- * `.mp4` (image/video, the only variant accepting the video-only fields).
+ * An inline React element overlay: the value of a JSX expression written
+ * directly in the recording file (`element: <Badge label="New" />`). The
+ * element is rendered in-process to static markup, so props are baked into the
+ * JSX and any test-scope value can be closed over directly; there is no
+ * separate `props` field. No client JS runs, so hooks and effects do not fire;
+ * CSS animations still play under the virtual clock with `animate: true`.
+ */
+export type ElementOverlayConfig = OverlayCommon & {
+  /** A React element rendered to static markup in-process. */
+  element: ReactElementLike
+  path?: never
+  jsx?: never
+  solidJsx?: never
+  html?: never
+  props?: never
+}
+
+/**
+ * An inline React module overlay: `jsx` is the source code of a module that
+ * default-exports a React component, written as a string in the recording
+ * file. It is bundled with Vite and mounted client-side exactly like a `.tsx`
+ * file overlay, so the full React runtime runs (hooks, effects,
+ * `requestAnimationFrame`). The source is compiled in isolation for the
+ * browser: it CANNOT close over test-scope variables; pass data through the
+ * serializable `props` instead. Imports resolve relative to the recording
+ * file's directory.
+ */
+export type JsxOverlayConfig = OverlayCommon & {
+  /** Source of a module default-exporting a React component. */
+  jsx: string
+  /** Serializable props passed to the component. */
+  props?: Record<string, unknown>
+  path?: never
+  element?: never
+  solidJsx?: never
+  html?: never
+}
+
+/**
+ * An inline Solid module overlay: like {@link JsxOverlayConfig}, but the source
+ * default-exports a Solid component and is compiled with Solid's JSX transform
+ * (requires the optional peer dependencies `solid-js` and `vite-plugin-solid`).
+ */
+export type SolidJsxOverlayConfig = OverlayCommon & {
+  /** Source of a module default-exporting a Solid component. */
+  solidJsx: string
+  /** Serializable props passed to the component. */
+  props?: Record<string, unknown>
+  path?: never
+  element?: never
+  jsx?: never
+  html?: never
+}
+
+/**
+ * An inline HTML fragment overlay: `html` is markup placed directly inside the
+ * transparent host document's overlay root. Include a `<style>` tag in the
+ * fragment for styling; scripts are not executed (use a `.html` file overlay
+ * for a page that owns its own scripts).
+ */
+export type InlineHtmlOverlayConfig = OverlayCommon & {
+  /** An HTML fragment placed inside the overlay root. */
+  html: string
+  path?: never
+  element?: never
+  jsx?: never
+  solidJsx?: never
+  props?: never
+}
+
+/**
+ * Display options for an overlay. Content comes from exactly one source: a
+ * file `path` (extension selects the variant: `.tsx` React / `.solid.tsx`
+ * Solid / `.vue` / `.svelte` / `.html` / `.svg` / `.png` / `.mp4`), an inline
+ * React `element`, inline `jsx`/`solidJsx` module source, or an inline `html`
+ * fragment. Only the `.mp4` media variant accepts the video-only fields.
  */
 export type OverlayConfig =
   | TsxOverlayConfig
+  | SolidOverlayConfig
+  | VueOverlayConfig
+  | SvelteOverlayConfig
   | HtmlPageOverlayConfig
   | MediaOverlayConfig
+  | ElementOverlayConfig
+  | JsxOverlayConfig
+  | SolidJsxOverlayConfig
+  | InlineHtmlOverlayConfig
 
 /**
  * Upper bound for an audio level (linear gain). `4` is +12 dB, plenty of
@@ -238,52 +451,46 @@ export type OverlayConfig =
 export const MAX_AUDIO_LEVEL = 4
 
 /**
- * Placement options accepted by {@link selected}. These are the subset of
- * {@link OverlayCommon} that apply to a render dependency: the embedded output
- * is a finished still or clip, so source-only fields (`over`/`margin`/`animate`/
- * `css`/`capturePadding`) do not apply.
+ * Placement options accepted by {@link selected}. Placement is mandatory
+ * (`fill`, or an explicit box with `width`/`height`); `over`/`margin` do not
+ * apply since the embedded output is a finished still or clip with no live
+ * element to size against, and neither do the other source-only fields
+ * (`animate`/`css`/`capturePadding`).
  */
-export type DependencyOverlayOptions = Pick<
-  OverlayCommon,
-  | 'relativeTo'
-  | 'x'
-  | 'y'
-  | 'width'
-  | 'height'
-  | 'aspectRatio'
-  | 'fill'
-  | 'duration'
-  | 'crop'
-  | 'pinToScreen'
-  | 'overMouse'
-> & {
-  /**
-   * Late start into the embedded VIDEO (a `'2s'`/timecode/`'50%'` position).
-   * Video dependencies only; rejected when the target resolves to a screenshot.
-   */
-  start?: TimelineOffset
-  /** Early end into the embedded VIDEO (video dependencies only). */
-  end?: TimelineOffset
-  /**
-   * Also carry the embedded target's narration subtitles up into the surrounding
-   * video. The embed always plays the target's audio; with this on, the target's
-   * subtitles are additionally shown as subtitles of the surrounding video (in
-   * its VTT track) for the window the embed plays, wherever the surrounding video
-   * has no competing narration of its own. Defaults to `false`.
-   */
-  inheritSubtitles?: boolean
-  /**
-   * Pin the embed to a specific language of the target (a language code such as
-   * `'fi'`), independent of the surrounding render's language. Use this to embed
-   * a fixed-language version of the target no matter which language the
-   * surrounding video is rendered in. When the target has no finished render in
-   * this language, the dependent render FAILS explicitly (the error lists the
-   * languages the target does have) rather than falling back to another one.
-   * Omit to inherit the surrounding render's language (embedding the target's
-   * output for the matching language, or its single language when unambiguous).
-   */
-  language?: string
-}
+export type DependencyOverlayOptions = (
+  OverlayFillPlacement | OverlayBoxPlacement
+) &
+  Pick<
+    OverlayCaptureCommon,
+    'duration' | 'clip' | 'pinToScreen' | 'overMouse' | 'fadeIn' | 'fadeOut'
+  > & {
+    /**
+     * Late start into the embedded VIDEO (ms number/timecode/`'50%'` position).
+     * Video dependencies only; rejected when the target resolves to a screenshot.
+     */
+    start?: TimelineOffset
+    /** Early end into the embedded VIDEO (video dependencies only). */
+    end?: TimelineOffset
+    /**
+     * Also carry the embedded target's narration subtitles up into the surrounding
+     * video. The embed always plays the target's audio; with this on, the target's
+     * subtitles are additionally shown as subtitles of the surrounding video (in
+     * its VTT track) for the window the embed plays, wherever the surrounding video
+     * has no competing narration of its own. Defaults to `false`.
+     */
+    inheritSubtitles?: boolean
+    /**
+     * Pin the embed to a specific language of the target (a language code such as
+     * `'fi'`), independent of the surrounding render's language. Use this to embed
+     * a fixed-language version of the target no matter which language the
+     * surrounding video is rendered in. When the target has no finished render in
+     * this language, the dependent render FAILS explicitly (the error lists the
+     * languages the target does have) rather than falling back to another one.
+     * Omit to inherit the surrounding render's language (embedding the target's
+     * output for the matching language, or its single language when unambiguous).
+     */
+    language?: string
+  }
 
 /** Brand identifying a {@link selected} render-dependency overlay input. */
 const DEPENDENCY_INPUT_BRAND = '__screenciSelectedDependency' as const
@@ -323,9 +530,12 @@ export type DependencyOverlayInput = {
  * dependent render then fails explicitly (listing the target's available
  * languages) when the target has no finished render in that language.
  *
+ * Placement is mandatory: pass `fill` or an explicit box (`x`/`y` +
+ * `width`|`height`) in the options.
+ *
  * @example
  * ```ts
- * video.overlays({ intro: selected('Intro Clip') })(
+ * video.overlays({ intro: selected('Intro Clip', { fill: 'recording' }) })(
  *   'Full Demo',
  *   async ({ page, overlays }) => {
  *     await overlays.intro()
@@ -337,17 +547,16 @@ export type DependencyOverlayInput = {
  * @example
  * ```ts
  * // Always embed the Finnish intro, whatever language the demo renders in.
- * video.overlays({ intro: selected('Intro Clip', { language: 'fi' }) })(
- *   'Full Demo',
- *   async ({ overlays }) => {
- *     await overlays.intro()
- *   }
- * )
+ * video.overlays({
+ *   intro: selected('Intro Clip', { fill: 'recording', language: 'fi' }),
+ * })('Full Demo', async ({ overlays }) => {
+ *   await overlays.intro()
+ * })
  * ```
  */
 export function selected(
   name: string,
-  options?: DependencyOverlayOptions
+  options: DependencyOverlayOptions
 ): DependencyOverlayInput {
   if (typeof name !== 'string' || name.trim().length === 0) {
     throw new Error(
@@ -372,13 +581,42 @@ function isDependencyOverlayInput(
 }
 
 /**
+ * Declares a backend-hosted (editor-uploaded) overlay: its bytes live in the
+ * ScreenCI backend under the asset name `editor`, not in a local file. The
+ * declaration exists in code so the overlay is an explicit part of the video;
+ * placement, duration, and audio level are edited in the web editor. Recording
+ * emits a Studio asset start (no local path), and the backend merges the
+ * uploaded media by the declaration name at render. `editor` names the backend
+ * asset (conventionally the same as the declaration key).
+ */
+export type EditorOverlayInput = { editor: string }
+
+/** Whether a value is an {@link EditorOverlayInput} (`{ editor: '<name>' }`). */
+export function isEditorOverlayInput(
+  value: unknown
+): value is EditorOverlayInput {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { editor?: unknown }).editor === 'string'
+  )
+}
+
+/**
  * A value accepted by {@link createOverlays} for each key:
  *
- * - a `string` file path (`.tsx`/`.html`/`.svg`/`.png`/`.mp4`),
- * - an {@link OverlayConfig} object, or
+ * - a `string` file path (`.tsx`/`.solid.tsx`/`.vue`/`.svelte`/`.html`/`.svg`/`.png`/`.mp4`),
+ * - a React element (`<Badge label="New" />`, shorthand for `{ element }`),
+ * - an {@link OverlayConfig} object,
+ * - `{ editor: '<name>' }` for a backend-hosted, editor-uploaded overlay, or
  * - a {@link selected} render dependency.
  */
-export type OverlayInput = string | OverlayConfig | DependencyOverlayInput
+export type OverlayInput =
+  | string
+  | ReactElementLike
+  | OverlayConfig
+  | EditorOverlayInput
+  | DependencyOverlayInput
 
 /**
  * A factory that builds an {@link OverlayConfig} from caller-supplied props.
@@ -391,7 +629,7 @@ export type OverlayInput = string | OverlayConfig | DependencyOverlayInput
  * const overlays = createOverlays({
  *   ring: (t: Locator) => ({ path: './ring.html', over: t, margin: 6 }),
  * })
- * await overlays.ring(saveButton).for('1.2s')
+ * await overlays.ring(saveButton).for(1200)
  * ```
  */
 export type OverlayConfigFactory<P = unknown> = (props: P) => OverlayConfig
@@ -403,8 +641,7 @@ export type OverlayConfigFactory<P = unknown> = (props: P) => OverlayConfig
  * {@link OverlayControllerFor} then recovers the real props type per key.
  */
 export type OverlayInputOrFactory =
-  | OverlayInput
-  | ((props: never) => OverlayConfig)
+  OverlayInput | ((props: never) => OverlayConfig)
 
 /**
  * Overlay file paths registered by {@link createOverlays}, each attributed to
@@ -445,9 +682,12 @@ export function setAssetSleepFn(fn: (ms: number) => void): void {
 }
 
 function sleepForAssetFrameGap(): void {
-  const durationMs = resolveRecordingTimingDuration(2 * ONE_FRAME_MS)
-  if (durationMs <= 0) return
-  sleepFn(durationMs)
+  performRecordedSleep(
+    getRuntimeAssetRecorder(),
+    2 * ONE_FRAME_MS,
+    'frameGap',
+    (ms) => sleepFn(ms)
+  )
 }
 
 export function setActiveAssetRecorder(recorder: IEventRecorder | null): void {
@@ -580,10 +820,9 @@ export type OverlayController = {
    */
   (): Promise<void>
   /**
-   * Hold the overlay for a relative length, e.g. `.for('2s')`, `.for('0:02')`,
-   * or `.for(2000)`. String seconds/timecodes and numeric milliseconds are
-   * accepted; a percentage is rejected (a relative length has nothing to take a
-   * percentage of). Not for `.mp4`/animated overlays, whose length is fixed.
+   * Hold the overlay for a relative length in milliseconds, e.g. `.for(2000)`.
+   * A percentage is rejected (a relative length has nothing to take a percentage
+   * of). Not for `.mp4`/animated overlays, whose length is fixed.
    */
   for(duration: OverlayDuration): Promise<void>
   /**
@@ -594,8 +833,11 @@ export type OverlayController = {
    * monotonic (each at or after the previous timeline point).
    */
   until(position: TimelineOffset): Promise<void>
-  /** Show the overlay live over the recording (non-blocking); pair with `end()`. */
-  start(): Promise<void>
+  /**
+   * Show the overlay live over the recording (non-blocking); pair with `end()`.
+   * `delay` offsets the recorded start (see {@link StartDelayOptions}).
+   */
+  start(options?: StartDelayOptions): Promise<void>
   /**
    * Stop a live overlay. For a length-less overlay (image/HTML/React) it ends
    * immediately. For an overlay with an intrinsic length (video / dependency /
@@ -635,9 +877,10 @@ export type Overlays<T extends Record<string, OverlayInputOrFactory>> = {
  * or passed to `.for(...)`) unless driven with `start()`/`end()`; `.mp4`
  * overlays use their natural duration and default `audio` to `1` (natural level).
  *
- * Placement defaults to the full recording area (`relativeTo: 'recording'`);
- * override any field independently. Coordinates are CSS px of the recording
- * viewport.
+ * A config object must choose a placement: `fill` ('recording' or 'screen'),
+ * `over` (a locator the overlay tracks), or an explicit box with `width` or
+ * `height` (coordinates are CSS px of the recording viewport). The bare
+ * shorthands (a path string or a React element) fill the recording area.
  *
  * @example
  * ```tsx
@@ -682,6 +925,11 @@ function buildOverlayController(
   if (isDependencyOverlayInput(input)) {
     return createDependencyOverlayController(name, input)
   }
+  // A backend-hosted `{ editor: '<name>' }` overlay: no local file, emit a
+  // Studio asset start under the declaration name (merged by the backend).
+  if (isEditorOverlayInput(input)) {
+    return createStudioAssetController(name)
+  }
   // A factory is the only callable input. Config objects are plain objects, so
   // this branch never captures them. The config (and its validation) is built
   // per call so props can vary placement and content.
@@ -689,38 +937,151 @@ function buildOverlayController(
     return (props: unknown) =>
       buildOverlayFromConfig(name, (input as OverlayConfigFactory)(props))
   }
+  // Bare shorthands (a path string or a React element) have nowhere to carry
+  // placement, so they mean "fill the recording area".
   if (typeof input === 'string') {
-    return buildOverlayFromConfig(name, { path: input })
+    return buildOverlayFromConfig(name, { path: input, fill: 'recording' })
+  }
+  // A bare React element (`badge: <Badge />`) is shorthand for `{ element }`.
+  // Matched before the config branch: an element is a plain object too, but
+  // carries the React `$$typeof` brand.
+  if (isReactElement(input)) {
+    return buildOverlayFromConfig(name, { element: input, fill: 'recording' })
   }
   return buildOverlayFromConfig(name, input)
+}
+
+/**
+ * The resolved content source of an overlay config: which variant it is, plus
+ * the fields that variant needs downstream. `label` names the overlay content
+ * in error messages (the file path, or the inline kind).
+ */
+type OverlayContent =
+  | {
+      kind: 'bundled-file'
+      path: string
+      framework: OverlayFramework
+      label: string
+    }
+  | { kind: 'html-file'; path: string; label: string }
+  | {
+      kind: 'media-file'
+      path: string
+      extension: '.svg' | '.png' | '.mp4'
+      label: string
+    }
+  | { kind: 'element'; element: ReactElementLike; label: string }
+  | {
+      kind: 'inline-source'
+      code: string
+      framework: OverlayFramework
+      label: string
+    }
+  | { kind: 'inline-html'; html: string; label: string }
+
+const CONTENT_SOURCE_HINT =
+  'exactly one content source: a file "path" (.tsx, .solid.tsx, .vue, .svelte, .html, .svg, .png, or .mp4), a React "element", inline "jsx"/"solidJsx" module source, or an inline "html" fragment'
+
+/** Resolves which content variant a config uses, rejecting zero or several sources. */
+function resolveOverlayContent(
+  name: string,
+  config: OverlayConfig
+): OverlayContent {
+  const sources = [
+    config.path,
+    config.element,
+    config.jsx,
+    config.solidJsx,
+    config.html,
+  ].filter((value) => value !== undefined)
+  if (sources.length === 0) {
+    throw new Error(
+      `[screenci] Overlay "${name}" must provide ${CONTENT_SOURCE_HINT}.`
+    )
+  }
+  if (sources.length > 1) {
+    throw new Error(
+      `[screenci] Overlay "${name}" must provide ${CONTENT_SOURCE_HINT}; several were given.`
+    )
+  }
+  if (config.element !== undefined) {
+    if (!isReactElement(config.element)) {
+      throw new Error(
+        `[screenci] Overlay "${name}" has an "element" that is not a React element. Pass the value of a JSX expression, for example element: <Badge />.`
+      )
+    }
+    return { kind: 'element', element: config.element, label: 'element' }
+  }
+  if (config.jsx !== undefined) {
+    return {
+      kind: 'inline-source',
+      code: config.jsx,
+      framework: 'react',
+      label: 'inline jsx',
+    }
+  }
+  if (config.solidJsx !== undefined) {
+    return {
+      kind: 'inline-source',
+      code: config.solidJsx,
+      framework: 'solid',
+      label: 'inline solidJsx',
+    }
+  }
+  if (config.html !== undefined) {
+    return { kind: 'inline-html', html: config.html, label: 'inline html' }
+  }
+  const path = config.path as string
+  const extension = getAssetExtension(path)
+  if (extension === null) {
+    throw new Error(
+      `[screenci] Overlay "${name}" must use one of: .tsx, .solid.tsx, .vue, .svelte, .html, .svg, .png, .mp4. Received: ${path}`
+    )
+  }
+  switch (extension) {
+    case '.solid.tsx':
+      return { kind: 'bundled-file', path, framework: 'solid', label: path }
+    case '.tsx':
+      return { kind: 'bundled-file', path, framework: 'react', label: path }
+    case '.vue':
+      return { kind: 'bundled-file', path, framework: 'vue', label: path }
+    case '.svelte':
+      return { kind: 'bundled-file', path, framework: 'svelte', label: path }
+    case '.html':
+      return { kind: 'html-file', path, label: path }
+    case '.svg':
+    case '.png':
+    case '.mp4':
+      return { kind: 'media-file', path, extension, label: path }
+  }
 }
 
 function buildOverlayFromConfig(
   name: string,
   config: OverlayConfig
 ): OverlayController {
-  if (config.path === undefined) {
-    throw new Error(
-      `[screenci] Overlay "${name}" must provide a "path" (a .tsx, .html, .svg, .png, or .mp4 file).`
-    )
-  }
-  const path = config.path
-  const extension = getAssetExtension(path)
-  if (extension === null) {
-    throw new Error(
-      `[screenci] Overlay "${name}" must use one of: .tsx, .html, .svg, .png, .mp4. Received: ${path}`
-    )
-  }
-  const isRendered = extension === '.tsx' || extension === '.html'
-  const tsxConfig = config as TsxOverlayConfig
+  const content = resolveOverlayContent(name, config)
+  const label = content.label
+  // Every content variant except a media file rasterizes a rendered page.
+  const isRendered = content.kind !== 'media-file'
+  const props = (config as TsxOverlayConfig).props
   // The video-only fields live on MediaOverlayConfig; read them through this
-  // accessor since the union member is selected at runtime by the extension.
+  // accessor since the union member is selected at runtime by the content.
   const media = config as MediaOverlayConfig
 
-  // `props` are a .tsx-page-only concept (enforced at the type level too).
-  if (tsxConfig.props !== undefined && extension !== '.tsx') {
+  // `props` are a bundled-component concept (enforced at the type level too):
+  // the component is compiled for the browser, so data crosses over as
+  // serialized props.
+  const acceptsProps =
+    content.kind === 'bundled-file' || content.kind === 'inline-source'
+  if (props !== undefined && !acceptsProps) {
+    if (content.kind === 'element') {
+      throw new Error(
+        `[screenci] Overlay "${name}" (element) cannot use "props": an element renders in-process, so bake props into the JSX (element: <Badge label={value} />) and close over any test-scope values directly.`
+      )
+    }
     throw new Error(
-      `[screenci] Overlay "${name}" (${path}) cannot use "props": props are only supported for .tsx page overlays.`
+      `[screenci] Overlay "${name}" (${label}) cannot use "props": props are only supported for bundled component overlays (.tsx, .solid.tsx, .vue, .svelte files, or inline jsx/solidJsx source).`
     )
   }
 
@@ -728,6 +1089,8 @@ function buildOverlayFromConfig(
   const fullScreen = config.fill === 'screen'
   const pinToScreen = config.pinToScreen === true
   const overMouse = config.overMouse === true
+  const fadeInMs = validateFadeMs(name, 'fadeIn', config.fadeIn)
+  const fadeOutMs = validateFadeMs(name, 'fadeOut', config.fadeOut)
   const animate = config.animate === true
   // Parse the relative `duration` string into ms once; reused by every branch.
   const configDurationMs = resolveConfigDuration(name, config.duration)
@@ -745,54 +1108,44 @@ function buildOverlayFromConfig(
   }
   if (animate && !isRendered) {
     throw new Error(
-      `[screenci] Overlay "${name}" (${path}) cannot animate: "animate" is only supported for .html and .tsx page overlays.`
+      `[screenci] Overlay "${name}" (${label}) cannot animate: "animate" is only supported for rendered page overlays (.html, .tsx, .solid.tsx, .vue, .svelte, element, jsx/solidJsx, or inline html).`
     )
   }
 
+  const isVideoFile =
+    content.kind === 'media-file' && content.extension === '.mp4'
   // speed/time/start/end re-time a moving picture, so they only apply to .mp4
   // video overlays.
-  if (
-    (media.speed !== undefined || media.time !== undefined) &&
-    extension !== '.mp4'
-  ) {
+  if ((media.speed !== undefined || media.time !== undefined) && !isVideoFile) {
     throw new Error(
       `[screenci] Overlay "${name}" only supports speed/time on .mp4 video overlays.`
     )
   }
-  if (
-    (media.start !== undefined || media.end !== undefined) &&
-    extension !== '.mp4'
-  ) {
+  if ((media.start !== undefined || media.end !== undefined) && !isVideoFile) {
     throw new Error(
-      `[screenci] Overlay "${name}" (${path}) cannot use "start"/"end": source trim is only supported for .mp4 video overlays.`
+      `[screenci] Overlay "${name}" (${label}) cannot use "start"/"end": source trim is only supported for .mp4 video overlays.`
     )
   }
-  // crop applies to image and video files only (not rendered pages).
-  if (media.crop !== undefined && isRendered) {
+  // clip applies to image and video files only (not rendered pages).
+  if (media.clip !== undefined && isRendered) {
     throw new Error(
-      `[screenci] Overlay "${name}" (${path}) cannot use "crop": crop is only supported for image (.svg/.png) and video (.mp4) file overlays.`
+      `[screenci] Overlay "${name}" (${label}) cannot use "clip": clip is only supported for image (.svg/.png) and video (.mp4) file overlays.`
     )
   }
 
-  // .tsx (client-rendered React page) and .html (full document) both rasterize
-  // to a transparent PNG (or animated clip). They differ only in how the full
-  // document is produced: a .tsx is bundled and mounts its React app into the
-  // overlay root (so we wait for it to mount before measuring); a .html file is
-  // loaded as-is.
+  // Every rendered variant rasterizes to a transparent PNG (or animated clip).
+  // They differ only in how the full document is produced: a bundled component
+  // (file or inline source) is compiled and mounts its app into the overlay
+  // root (so we wait for it to mount before measuring); an element is rendered
+  // to static markup in-process; a .html file is loaded as-is; an inline html
+  // fragment is wrapped in the host document.
   if (isRendered) {
-    registerAssetPath(path)
-    const awaitMount = extension === '.tsx'
-    const getDocument =
-      extension === '.tsx'
-        ? (): Promise<string> => {
-            const testFilePath = getScreenCIRuntimeContext().testFilePath
-            const entryPath =
-              testFilePath !== null
-                ? resolve(dirname(testFilePath), path)
-                : resolve(path)
-            return buildClientOverlayDocument(entryPath, tsxConfig.props)
-          }
-        : (): Promise<string> => readHtmlOverlayFile(path)
+    if (content.kind === 'bundled-file' || content.kind === 'html-file') {
+      registerAssetPath(content.path)
+    }
+    const awaitMount =
+      content.kind === 'bundled-file' || content.kind === 'inline-source'
+    const getDocument = buildRenderedOverlayGetDocument(content, props)
     const renderOpts: OverlayRenderOpts = awaitMount ? { awaitMount: true } : {}
     if (animate) {
       return createAnimatedOverlayController(
@@ -802,6 +1155,10 @@ function buildOverlayFromConfig(
         fullScreen,
         pinToScreen,
         overMouse,
+        {
+          ...(fadeInMs !== undefined && { fadeInMs }),
+          ...(fadeOutMs !== undefined && { fadeOutMs }),
+        },
         config.fps,
         configDurationMs,
         renderOpts
@@ -815,16 +1172,26 @@ function buildOverlayFromConfig(
       pinToScreen,
       overMouse,
       configDurationMs,
-      renderOpts
+      renderOpts,
+      {
+        ...(fadeInMs !== undefined && { fadeInMs }),
+        ...(fadeOutMs !== undefined && { fadeOutMs }),
+      }
     )
   }
 
+  // Only the media-file kind reaches here: every rendered kind returned above.
+  const path = content.path
+  const extension = content.extension
+
   // Image/video file overlays never use `over` (rejected in
   // resolvePlacementSource), so the source is always a concrete placement.
-  const placement =
-    placementSource.kind === 'fixed'
-      ? placementSource.placement
-      : resolveOverlayPlacement(name, config)
+  if (placementSource.kind !== 'fixed') {
+    throw new Error(
+      `[screenci] Overlay "${name}" (${label}) cannot use "over": file overlays have a fixed placement.`
+    )
+  }
+  const placement = placementSource.placement
 
   // File-backed image / video overlays.
   if (extension === '.svg' || extension === '.png') {
@@ -833,8 +1200,8 @@ function buildOverlayFromConfig(
         `[screenci] Overlay "${name}" (${path}) is an image and must not provide volume. Use duration instead.`
       )
     }
-    if (media.crop !== undefined) {
-      validateCrop(`Overlay "${name}" (${path})`, media.crop)
+    if (media.clip !== undefined) {
+      validateClip(`Overlay "${name}" (${path})`, media.clip)
     }
     registerAssetPath(path)
     return createFileOverlayController(name, {
@@ -844,8 +1211,10 @@ function buildOverlayFromConfig(
       fullScreen,
       ...(pinToScreen && { pinToScreen: true }),
       ...(overMouse && { overMouse: true }),
+      ...(fadeInMs !== undefined && { fadeInMs }),
+      ...(fadeOutMs !== undefined && { fadeOutMs }),
       ...(configDurationMs !== undefined && { durationMs: configDurationMs }),
-      ...(media.crop !== undefined && { crop: media.crop }),
+      ...(media.clip !== undefined && { clip: media.clip }),
     })
   }
 
@@ -866,8 +1235,8 @@ function buildOverlayFromConfig(
       )
     }
     validateSpeedTime(`Overlay "${name}" (${path})`, media.speed, media.time)
-    if (media.crop !== undefined) {
-      validateCrop(`Overlay "${name}" (${path})`, media.crop)
+    if (media.clip !== undefined) {
+      validateClip(`Overlay "${name}" (${path})`, media.clip)
     }
     const { sourceStart, sourceEnd } = resolveSourceTrim(
       `Overlay "${name}" (${path})`,
@@ -882,10 +1251,12 @@ function buildOverlayFromConfig(
       fullScreen,
       ...(pinToScreen && { pinToScreen: true }),
       ...(overMouse && { overMouse: true }),
+      ...(fadeInMs !== undefined && { fadeInMs }),
+      ...(fadeOutMs !== undefined && { fadeOutMs }),
       ...(media.volume !== undefined && { audio: media.volume }),
       ...(media.speed !== undefined && { speed: media.speed }),
       ...(media.time !== undefined && { time: media.time }),
-      ...(media.crop !== undefined && { crop: media.crop }),
+      ...(media.clip !== undefined && { clip: media.clip }),
       ...(sourceStart !== undefined && { sourceStart }),
       ...(sourceEnd !== undefined && { sourceEnd }),
     })
@@ -896,6 +1267,53 @@ function buildOverlayFromConfig(
   )
 }
 
+/**
+ * Builds the document producer for a rendered overlay variant. Bundled
+ * components and inline source resolve against the active test file at capture
+ * time (not declaration time), matching how `.html` file overlays resolve.
+ */
+function buildRenderedOverlayGetDocument(
+  content: Exclude<OverlayContent, { kind: 'media-file' }>,
+  props: Record<string, unknown> | undefined
+): () => Promise<string> {
+  switch (content.kind) {
+    case 'bundled-file':
+      return (): Promise<string> => {
+        const testFilePath = getScreenCIRuntimeContext().testFilePath
+        const entryPath =
+          testFilePath !== null
+            ? resolve(dirname(testFilePath), content.path)
+            : resolve(content.path)
+        const entry: ClientOverlayEntry = {
+          kind: 'file',
+          path: entryPath,
+          framework: content.framework,
+        }
+        return buildClientOverlayDocument(entry, props)
+      }
+    case 'inline-source':
+      return (): Promise<string> => {
+        const testFilePath = getScreenCIRuntimeContext().testFilePath
+        const resolveDir =
+          testFilePath !== null ? dirname(testFilePath) : resolve('.')
+        const entry: ClientOverlayEntry = {
+          kind: 'source',
+          code: content.code,
+          resolveDir,
+          framework: content.framework,
+        }
+        return buildClientOverlayDocument(entry, props)
+      }
+    case 'html-file':
+      return (): Promise<string> => readHtmlOverlayFile(content.path)
+    case 'element':
+      return (): Promise<string> => buildElementOverlayDocument(content.element)
+    case 'inline-html':
+      return (): Promise<string> =>
+        Promise.resolve(buildOverlayHostDocument({ rootContent: content.html }))
+  }
+}
+
 async function readHtmlOverlayFile(path: string): Promise<string> {
   const testFilePath = getScreenCIRuntimeContext().testFilePath
   const resolved = await resolveExistingAssetPath(path, testFilePath)
@@ -904,7 +1322,7 @@ async function readHtmlOverlayFile(path: string): Promise<string> {
 
 /**
  * Builds overlay controllers for Studio-managed overlays declared via
- * `video.overlays(editable([...]))`. Their file (`.svg`, `.png`, or `.mp4`),
+ * `video.overlays([...])`. Their file (`.svg`, `.png`, or `.mp4`),
  * placement, image duration, and video audio level are configured on the
  * ScreenCI Studio page instead of in code. Each name becomes a callable overlay
  * controller with the same timeline behavior as a {@link createOverlays}
@@ -924,14 +1342,12 @@ export function buildStudioOverlays(
 
 /**
  * Build overlay controllers for a `video.overlays(...)` declaration. Studio
- * (array) names become Studio-managed controllers; code (object) names resolve
- * their config for the active language (`byLang[language] ?? shared`) and become
- * regular overlay controllers. Per-language mode realizes one language per pass,
- * so the active-language config is the one captured.
+ * (array) names become Studio-managed controllers; code (object) names become
+ * regular overlay controllers. Overlays are shared across every language (no
+ * language-major form), so there is no per-language resolution.
  */
 export function buildOverlays(
-  feature: NormalizedFeature<OverlayInputOrFactory> | null | undefined,
-  language: string | undefined
+  feature: NormalizedFeature<OverlayInputOrFactory> | null | undefined
 ): Record<string, OverlayController | ((props: unknown) => OverlayController)> {
   const result: Record<
     string,
@@ -942,9 +1358,7 @@ export function buildOverlays(
     result[name] = createStudioAssetController(name)
   }
   for (const name of feature.codeNames) {
-    const input =
-      (language !== undefined ? feature.byLang[language]?.[name] : undefined) ??
-      feature.shared[name]
+    const input = feature.shared[name]
     if (input === undefined) continue
     result[name] = buildOverlayController(name, input)
   }
@@ -956,56 +1370,28 @@ type AssetStartMode =
   | { type: 'live' }
 
 /**
- * Resolves a string overlay position into the anchor recorded on the asset start.
- * Throws on a non-string value so callers that meant a numeric duration are not
- * silently misrouted into the parser.
+ * Resolves an overlay timeline position into the anchor recorded on the asset start.
  */
 function resolveOverlayAnchor(until: TimelineOffset): TimelineAnchorInput {
-  if (typeof until !== 'string') {
-    throw new Error(
-      `overlay positions must be a string such as '0:10' or '56%', got ${typeof until}`
-    )
-  }
   const parsed = parseTimelineOffset(until)
   return parsed.kind === 'percent'
     ? { percent: parsed.fraction }
     : { outputMs: parsed.ms }
 }
 
-/**
- * Resolves a relative length string (`.for('2s')` or a config `duration`) into
- * milliseconds. Numbers are already milliseconds. String seconds and timecodes
- * are accepted; a percentage is rejected because a relative length has nothing
- * to take a percentage of (use `.until('<n>%')` for an absolute position
- * instead).
- */
 function resolveRelativeDuration(
   value: OverlayDuration,
   label: string
 ): number {
-  if (typeof value === 'number') {
-    if (!isFiniteNonNegative(value)) {
-      throw new Error(
-        `[screenci] ${label} must be a finite number of milliseconds greater than or equal to 0. Received: ${String(value)}.`
-      )
-    }
-    return value
-  }
-  if (typeof value !== 'string') {
+  if (!isFiniteNonNegative(value)) {
     throw new Error(
-      `[screenci] ${label} must be a time string such as '2s' or '0:02', or a number of milliseconds, got ${typeof value}.`
+      `[screenci] ${label} must be a finite number of milliseconds greater than or equal to 0. Received: ${String(value)}.`
     )
   }
-  const parsed = parseTimelineOffset(value)
-  if (parsed.kind === 'percent') {
-    throw new Error(
-      `[screenci] ${label} cannot be a percentage ('${value}'); a relative length needs a concrete time like '2s' or '0:02'. Use .until('${value}') for an absolute position.`
-    )
-  }
-  return parsed.ms
+  return value
 }
 
-/** Parses an optional config `duration` (relative time string or ms number) into ms. */
+/** Validates an optional config `duration` (milliseconds). */
 function resolveConfigDuration(
   name: string,
   duration: OverlayDuration | undefined
@@ -1046,7 +1432,11 @@ function endLiveAsset(name: string, reason: 'auto' | 'wait'): void {
 function createAssetControllerCore(
   name: string,
   validate: () => Promise<void>,
-  emitStart: (recorder: IEventRecorder, mode: AssetStartMode) => void,
+  emitStart: (
+    recorder: IEventRecorder,
+    mode: AssetStartMode,
+    delayMs?: number
+  ) => void,
   options: {
     /**
      * Optional async step run after {@link validate} and before
@@ -1058,7 +1448,10 @@ function createAssetControllerCore(
   } = {}
 ): OverlayController {
   const { prepare } = options
-  const start = async (startedWithExplicitStart = true): Promise<void> => {
+  const start = async (
+    startedWithExplicitStart = true,
+    delayMs?: number
+  ): Promise<void> => {
     await validate()
     await prepare?.({ type: 'live' })
     const recorder = getRuntimeAssetRecorder()
@@ -1070,7 +1463,7 @@ function createAssetControllerCore(
     }
     const run = createActiveAssetRun(startedWithExplicitStart)
     context.asset.activeRuns.set(name, run)
-    emitStart(recorder, { type: 'live' })
+    emitStart(recorder, { type: 'live' }, ...delayArg(delayMs))
   }
 
   const end = async (): Promise<void> => {
@@ -1115,7 +1508,8 @@ function createAssetControllerCore(
   controller.until = (position: TimelineOffset): Promise<void> =>
     runBlocking({ type: 'blocking', until: resolveOverlayAnchor(position) })
 
-  controller.start = () => start(true)
+  controller.start = async (startOptions?: StartDelayOptions) =>
+    start(true, validateDelay(`overlay "${name}" start`, startOptions?.delay))
   controller.end = end
   return controller
 }
@@ -1124,7 +1518,8 @@ function createStudioAssetController(name: string): OverlayController {
   return createAssetControllerCore(
     name,
     () => Promise.resolve(),
-    (recorder) => recorder.addStudioAssetStart(name)
+    (recorder, _mode, delayMs) =>
+      recorder.addStudioAssetStart(name, ...delayArg(delayMs))
   )
 }
 
@@ -1142,12 +1537,22 @@ function createDependencyOverlayController(
 ): OverlayController {
   // `over`/`margin` are not in DependencyOverlayOptions, so placement is always
   // fixed here (an embedded render has no live element to size against).
-  const placement = resolveOverlayPlacement(name, input.config)
+  const dependencyVariant = classifyPlacementVariant(name, input.config)
+  if (dependencyVariant === 'over') {
+    throw new Error(
+      `[screenci] Overlay "${name}" cannot use "over" with selected(...): an embedded render has no live element to size against.`
+    )
+  }
+  const placement = resolveOverlayPlacement(
+    name,
+    input.config,
+    dependencyVariant
+  )
   const fullScreen = input.config.fill === 'screen'
   const pinToScreen = input.config.pinToScreen === true
   const configDurationMs = resolveConfigDuration(name, input.config.duration)
-  if (input.config.crop !== undefined) {
-    validateCrop(`Dependency overlay "${name}"`, input.config.crop)
+  if (input.config.clip !== undefined) {
+    validateClip(`Dependency overlay "${name}"`, input.config.clip)
   }
   // start/end are valid only when the target resolves to a VIDEO; the backend
   // rejects them for a screenshot dependency (the medium is unknown until then).
@@ -1159,7 +1564,7 @@ function createDependencyOverlayController(
   return createAssetControllerCore(
     name,
     () => Promise.resolve(),
-    (recorder, mode) => {
+    (recorder, mode, delayMs) => {
       let durationMs: number | undefined
       let until: TimelineAnchorInput | undefined
       if (mode.type === 'blocking') {
@@ -1172,27 +1577,35 @@ function createDependencyOverlayController(
           durationMs = mode.durationMs ?? configDurationMs
         }
       }
-      recorder.addAssetStart(name, {
-        kind: 'dependency',
-        dependency: {
-          name: input.name,
-          ...(input.config.language !== undefined && {
-            language: input.config.language,
-          }),
-          ...(input.config.inheritSubtitles === true && {
-            inheritSubtitles: true,
-          }),
+      recorder.addAssetStart(
+        name,
+        {
+          kind: 'dependency',
+          dependency: {
+            name: input.name,
+            ...(input.config.language !== undefined && {
+              language: input.config.language,
+            }),
+            ...(input.config.inheritSubtitles === true && {
+              inheritSubtitles: true,
+            }),
+          },
+          ...(durationMs !== undefined && { durationMs }),
+          ...timelineAnchorFields(until),
+          fullScreen,
+          ...(pinToScreen && { pinToScreen: true }),
+          ...(input.config.overMouse === true && { overMouse: true }),
+          ...(validateFadeMs(input.name, 'fadeIn', input.config.fadeIn) !==
+            undefined && { fadeInMs: input.config.fadeIn }),
+          ...(validateFadeMs(input.name, 'fadeOut', input.config.fadeOut) !==
+            undefined && { fadeOutMs: input.config.fadeOut }),
+          ...(placement !== undefined && { placement }),
+          ...(input.config.clip !== undefined && { clip: input.config.clip }),
+          ...(sourceStart !== undefined && { sourceStart }),
+          ...(sourceEnd !== undefined && { sourceEnd }),
         },
-        ...(durationMs !== undefined && { durationMs }),
-        ...timelineAnchorFields(until),
-        fullScreen,
-        ...(pinToScreen && { pinToScreen: true }),
-        ...(input.config.overMouse === true && { overMouse: true }),
-        ...(placement !== undefined && { placement }),
-        ...(input.config.crop !== undefined && { crop: input.config.crop }),
-        ...(sourceStart !== undefined && { sourceStart }),
-        ...(sourceEnd !== undefined && { sourceEnd }),
-      })
+        ...delayArg(delayMs)
+      )
     }
   )
 }
@@ -1206,8 +1619,10 @@ type ResolvedFileOverlay =
       fullScreen: boolean
       pinToScreen?: boolean
       overMouse?: boolean
+      fadeInMs?: number
+      fadeOutMs?: number
       durationMs?: number
-      crop?: OverlayCrop
+      clip?: OverlayClip
     }
   | {
       kind: 'video'
@@ -1216,10 +1631,12 @@ type ResolvedFileOverlay =
       fullScreen: boolean
       pinToScreen?: boolean
       overMouse?: boolean
+      fadeInMs?: number
+      fadeOutMs?: number
       audio?: number
       speed?: number
       time?: number
-      crop?: OverlayCrop
+      clip?: OverlayClip
       sourceStart?: SourceTrimPoint
       sourceEnd?: SourceTrimPoint
     }
@@ -1236,8 +1653,12 @@ function createFileOverlayController(
         await validateAssetPath(resolved.path, testFilePath)
       }
     },
-    (recorder, mode) => {
-      recorder.addAssetStart(name, toRecordedFileStart(name, resolved, mode))
+    (recorder, mode, delayMs) => {
+      recorder.addAssetStart(
+        name,
+        toRecordedFileStart(name, resolved, mode),
+        ...delayArg(delayMs)
+      )
     }
   )
 }
@@ -1261,10 +1682,11 @@ function createRenderedOverlayController(
   pinToScreen: boolean,
   overMouse: boolean,
   durationMs?: number,
-  renderOpts: OverlayRenderOpts = {}
+  renderOpts: OverlayRenderOpts = {},
+  fade: { fadeInMs?: number; fadeOutMs?: number } = {}
 ): OverlayController {
   // The document and placement are resolved during the test (cheap: a file read
-  // or an esbuild bundle, plus a boundingBox read for `over`), but rasterization
+  // or a component bundle, plus a boundingBox read for `over`), but rasterization
   // (a browser screenshot) is deferred to after the test so identical overlays
   // render once. See overlayFlush.ts.
   let resolvedHtml: string | undefined
@@ -1274,7 +1696,7 @@ function createRenderedOverlayController(
   return createAssetControllerCore(
     name,
     () => Promise.resolve(),
-    (recorder, mode) => {
+    (recorder, mode, delayMs) => {
       // `resolvedHtml` is set only once the overlay has resolved, so it is the
       // "is resolved" signal. `resolvedPlacement` may legitimately stay
       // undefined (a fill-the-recording overlay emits no placement).
@@ -1288,32 +1710,38 @@ function createRenderedOverlayController(
           durationMsForEvent = mode.durationMs ?? durationMs
           if (durationMsForEvent === undefined) {
             throw new Error(
-              `[screenci] Overlay "${name}" needs a length: use .for('2s'), .until('0:05'), set "duration" in the config, or drive it with .start()/.end().`
+              `[screenci] Overlay "${name}" needs a length: use .for(2000), .until('0:05'), set "duration" in the config, or drive it with .start()/.end().`
             )
           }
           validateDurationMs(name, `overlay "${name}"`, durationMsForEvent)
         }
       }
-      recorder.addPendingAssetStart(name, {
-        kind: 'image',
-        ...(durationMsForEvent !== undefined && {
-          durationMs: durationMsForEvent,
-        }),
-        ...timelineAnchorFields(until),
-        fullScreen,
-        ...(pinToScreen && { pinToScreen: true }),
-        ...(overMouse && { overMouse: true }),
-        ...(resolvedPlacement !== undefined && {
-          placement: resolvedPlacement,
-        }),
-        request: {
+      recorder.addPendingAssetStart(
+        name,
+        {
           kind: 'image',
-          name,
-          html: resolvedHtml,
-          ...(renderOpts.awaitMount === true && { awaitMount: true }),
-          deviceScaleFactor: DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
+          ...(durationMsForEvent !== undefined && {
+            durationMs: durationMsForEvent,
+          }),
+          ...timelineAnchorFields(until),
+          fullScreen,
+          ...(pinToScreen && { pinToScreen: true }),
+          ...(overMouse && { overMouse: true }),
+          ...(fade.fadeInMs !== undefined && { fadeInMs: fade.fadeInMs }),
+          ...(fade.fadeOutMs !== undefined && { fadeOutMs: fade.fadeOutMs }),
+          ...(resolvedPlacement !== undefined && {
+            placement: resolvedPlacement,
+          }),
+          request: {
+            kind: 'image',
+            name,
+            html: resolvedHtml,
+            ...(renderOpts.awaitMount === true && { awaitMount: true }),
+            deviceScaleFactor: DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
+          },
         },
-      })
+        ...delayArg(delayMs)
+      )
     },
     {
       prepare: async () => {
@@ -1355,6 +1783,7 @@ function createAnimatedOverlayController(
   fullScreen: boolean,
   pinToScreen: boolean,
   overMouse: boolean,
+  fade: { fadeInMs?: number; fadeOutMs?: number },
   fps: number | undefined,
   configDurationMs: number | undefined,
   renderOpts: OverlayRenderOpts = {}
@@ -1372,13 +1801,13 @@ function createAnimatedOverlayController(
     if (mode.type === 'blocking') {
       if (mode.until !== undefined) {
         throw new Error(
-          `[screenci] Animated overlay "${name}" cannot use .until('0:10'); its capture length must be fixed. Use .for('2s'), set "duration" in the config, or drive it with .start()/.end() (with "duration" in the config).`
+          `[screenci] Animated overlay "${name}" cannot use .until('0:10'); its capture length must be fixed. Use .for(2000), set "duration" in the config, or drive it with .start()/.end() (with "duration" in the config).`
         )
       }
       const durationMs = mode.durationMs ?? configDurationMs
       if (durationMs === undefined) {
         throw new Error(
-          `[screenci] Animated overlay "${name}" needs a length: use .for('2s'), set "duration" in the config, or drive it with .start()/.end() (with "duration" in the config).`
+          `[screenci] Animated overlay "${name}" needs a length: use .for(2000), set "duration" in the config, or drive it with .start()/.end() (with "duration" in the config).`
         )
       }
       validateDurationMs(name, `overlay "${name}"`, durationMs)
@@ -1396,31 +1825,37 @@ function createAnimatedOverlayController(
   return createAssetControllerCore(
     name,
     () => Promise.resolve(),
-    (recorder, mode) => {
+    (recorder, _mode, delayMs) => {
       if (skipped || resolved === undefined) return
-      recorder.addPendingAssetStart(name, {
-        kind: 'animation',
-        // Always carry the capture length, for blocking and live overlays alike.
-        // A live animated overlay plays out to this length (the renderer holds a
-        // frozen-frame tail when it is longer than the start()/end() window), so
-        // it needs the duration even when an assetEnd also bounds the window.
-        durationMs: resolved.durationMs,
-        fullScreen,
-        ...(pinToScreen && { pinToScreen: true }),
-        ...(overMouse && { overMouse: true }),
-        ...(resolved.placement !== undefined && {
-          placement: resolved.placement,
-        }),
-        request: {
+      recorder.addPendingAssetStart(
+        name,
+        {
           kind: 'animation',
-          name,
-          html: resolved.html,
-          ...(renderOpts.awaitMount === true && { awaitMount: true }),
-          deviceScaleFactor: DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
-          fps: fps ?? DEFAULT_ANIMATION_FPS,
+          // Always carry the capture length, for blocking and live overlays alike.
+          // A live animated overlay plays out to this length (the renderer holds a
+          // frozen-frame tail when it is longer than the start()/end() window), so
+          // it needs the duration even when an assetEnd also bounds the window.
           durationMs: resolved.durationMs,
+          fullScreen,
+          ...(pinToScreen && { pinToScreen: true }),
+          ...(overMouse && { overMouse: true }),
+          ...(fade.fadeInMs !== undefined && { fadeInMs: fade.fadeInMs }),
+          ...(fade.fadeOutMs !== undefined && { fadeOutMs: fade.fadeOutMs }),
+          ...(resolved.placement !== undefined && {
+            placement: resolved.placement,
+          }),
+          request: {
+            kind: 'animation',
+            name,
+            html: resolved.html,
+            ...(renderOpts.awaitMount === true && { awaitMount: true }),
+            deviceScaleFactor: DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
+            fps: fps ?? DEFAULT_ANIMATION_FPS,
+            durationMs: resolved.durationMs,
+          },
         },
-      })
+        ...delayArg(delayMs)
+      )
     },
     {
       prepare: async (mode) => {
@@ -1448,12 +1883,26 @@ function createAnimatedOverlayController(
 
 function getAssetExtension(
   path: string
-): '.tsx' | '.html' | '.svg' | '.png' | '.mp4' | null {
+):
+  | '.tsx'
+  | '.solid.tsx'
+  | '.vue'
+  | '.svelte'
+  | '.html'
+  | '.svg'
+  | '.png'
+  | '.mp4'
+  | null {
+  // The compound Solid extension is matched first: a `.solid.tsx` path also
+  // ends in `.tsx`, and the longer suffix decides the JSX transform.
+  if (path.toLowerCase().endsWith('.solid.tsx')) return '.solid.tsx'
   const dotIndex = path.lastIndexOf('.')
   if (dotIndex === -1) return null
   const extension = path.slice(dotIndex).toLowerCase()
   if (
     extension === '.tsx' ||
+    extension === '.vue' ||
+    extension === '.svelte' ||
     extension === '.html' ||
     extension === '.svg' ||
     extension === '.png' ||
@@ -1571,43 +2020,110 @@ function validatePlacement(name: string, placement: OverlayPlacement): void {
 }
 
 /**
+ * The placement variant a config uses: `fill` a frame, track a live element
+ * (`over`), or an explicit box. Exactly one; classified (and cross-variant
+ * mixes rejected) by {@link classifyPlacementVariant}.
+ */
+type PlacementVariantKind = 'fill' | 'over' | 'box'
+
+/**
+ * Classifies which {@link OverlayPlacementInput} variant a config uses,
+ * rejecting configs that mix variants or provide none. The union already
+ * enforces this at the type level; this re-checks it for plain-JS callers and
+ * for configs built at runtime.
+ */
+function classifyPlacementVariant(
+  name: string,
+  config: PlacementFieldBag
+): PlacementVariantKind {
+  const hasBoxField =
+    config.x !== undefined ||
+    config.y !== undefined ||
+    config.width !== undefined ||
+    config.height !== undefined ||
+    config.relativeTo !== undefined ||
+    config.aspectRatio !== undefined
+  if (config.over !== undefined) {
+    if (config.fill !== undefined) {
+      throw new Error(
+        `[screenci] Overlay "${name}" cannot set both "over" and "fill".`
+      )
+    }
+    if (hasBoxField) {
+      throw new Error(
+        `[screenci] Overlay "${name}" cannot combine "over" with x/y/width/height/relativeTo. The placement comes from the locator's box.`
+      )
+    }
+    return 'over'
+  }
+  if (config.margin !== undefined) {
+    throw new Error(
+      `[screenci] Overlay "${name}" sets "margin" without "over". "margin" only applies when positioning over a locator.`
+    )
+  }
+  if (config.fill !== undefined) {
+    if (hasBoxField) {
+      throw new Error(
+        `[screenci] Overlay "${name}" cannot combine "fill" with x/y/width/height/relativeTo. "fill" places the overlay over the whole frame.`
+      )
+    }
+    return 'fill'
+  }
+  if (config.width === undefined && config.height === undefined) {
+    throw new Error(
+      `[screenci] Overlay "${name}" must choose a placement: set "fill" ('recording' or 'screen'), "over" (a locator), or an explicit box with "width" or "height" (in CSS px).`
+    )
+  }
+  return 'box'
+}
+
+/**
+ * The flat placement fields as read off a config at runtime, without the
+ * union's `never` constraints (a plain-JS caller can pass anything).
+ */
+type PlacementFieldBag = {
+  fill?: 'recording' | 'screen'
+  over?: Locator
+  margin?: number
+  relativeTo?: 'screen' | 'recording'
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  aspectRatio?: number
+}
+
+/**
  * Resolves an {@link OverlayConfig}'s flat placement fields into the event-shape
  * {@link OverlayPlacement}. Coordinates are CSS pixels in the recording viewport,
- * with the defaults `relativeTo: 'recording'`, `x: 0`, `y: 0`. When neither
- * `width` nor `height` is given (and no other placement field is set), it returns
- * `undefined`: the overlay fills the recording area, which the renderer resolves
- * since the recording size is known there.
+ * with the defaults `relativeTo: 'recording'`, `x: 0`, `y: 0`. For
+ * `fill: 'recording'` it returns `undefined`: the overlay fills the recording
+ * area, which the renderer resolves since the recording size is known there.
+ * Only the `fill` and `box` variants resolve here; an `over` placement is
+ * deferred to recording time (see {@link resolvePlacementSource}).
  */
 function resolveOverlayPlacement(
   name: string,
-  config: OverlayCommon
+  config: PlacementFieldBag,
+  variant: Exclude<PlacementVariantKind, 'over'>
 ): OverlayPlacement | undefined {
-  if (config.fill === 'screen') {
-    return { fullScreen: true }
-  }
-  if (config.fill === 'recording') {
-    // Fill the recording area (resolved by the renderer, which knows its size).
-    return undefined
+  switch (variant) {
+    case 'fill':
+      // 'recording' fills the recording area (resolved by the renderer, which
+      // knows its size); 'screen' fills the whole output frame.
+      return config.fill === 'screen' ? { fullScreen: true } : undefined
+    case 'box':
+      break
+    default:
+      variant satisfies never
+      throw new Error(
+        `[screenci] Overlay "${name}" has an unknown placement variant.`
+      )
   }
   if (config.width !== undefined && config.height !== undefined) {
     throw new Error(
       `[screenci] Overlay "${name}" must set only one of width or height (the other is derived from the aspect ratio).`
     )
-  }
-  const hasSize = config.width !== undefined || config.height !== undefined
-  if (!hasSize) {
-    const positioned =
-      config.x !== undefined ||
-      config.y !== undefined ||
-      config.relativeTo !== undefined ||
-      config.aspectRatio !== undefined
-    if (positioned) {
-      throw new Error(
-        `[screenci] Overlay "${name}" must set "width" or "height" (in CSS px) when positioning it. Omit all placement fields to fill the recording area, or set "fill".`
-      )
-    }
-    // Fill the recording area (resolved by the renderer, which knows its size).
-    return undefined
   }
   const relativeTo = config.relativeTo ?? 'recording'
   const x = config.x ?? 0
@@ -1652,34 +2168,25 @@ function resolvePlacementSource(
   config: OverlayConfig,
   flags: { isRendered: boolean }
 ): PlacementSource {
-  if (config.margin !== undefined && config.over === undefined) {
-    throw new Error(
-      `[screenci] Overlay "${name}" sets "margin" without "over". "margin" only applies when positioning over a locator.`
-    )
+  const variant = classifyPlacementVariant(name, config)
+  switch (variant) {
+    case 'fill':
+    case 'box':
+      return {
+        kind: 'fixed',
+        placement: resolveOverlayPlacement(name, config, variant),
+      }
+    case 'over':
+      break
+    default:
+      variant satisfies never
+      throw new Error(
+        `[screenci] Overlay "${name}" has an unknown placement variant.`
+      )
   }
-  if (config.over === undefined) {
-    return { kind: 'fixed', placement: resolveOverlayPlacement(name, config) }
-  }
-
   if (!flags.isRendered) {
     throw new Error(
-      `[screenci] Overlay "${name}" can only use "over" with a .html or .tsx page overlay (the overlay is sized to the element's box).`
-    )
-  }
-  if (config.fill !== undefined) {
-    throw new Error(
-      `[screenci] Overlay "${name}" cannot set both "over" and "fill".`
-    )
-  }
-  if (
-    config.x !== undefined ||
-    config.y !== undefined ||
-    config.width !== undefined ||
-    config.height !== undefined ||
-    config.relativeTo !== undefined
-  ) {
-    throw new Error(
-      `[screenci] Overlay "${name}" cannot combine "over" with x/y/width/height/relativeTo. The placement comes from the locator's box.`
+      `[screenci] Overlay "${name}" can only use "over" with a rendered page overlay (.html, .tsx, .solid.tsx, .vue, .svelte, element, jsx/solidJsx, or inline html): the overlay is sized to the element's box.`
     )
   }
   const margin = config.margin ?? 0
@@ -1688,7 +2195,7 @@ function resolvePlacementSource(
       `[screenci] Overlay "${name}" must provide a finite "margin" greater than or equal to 0. Received: ${String(config.margin)}`
     )
   }
-  return { kind: 'over', over: config.over, margin }
+  return { kind: 'over', over: config.over!, margin }
 }
 
 /**
@@ -1711,6 +2218,11 @@ async function resolvePlacement(source: PlacementSource): Promise<{
       x: rect.x,
       y: rect.y,
       width: rect.width ?? rect.pixels.width,
+      // Locator provenance: editors treat the box as pinned to the element and
+      // only let the margin change.
+      overLocked: true,
+      marginPx: source.margin,
+      elementRect: rect.element,
     },
     sizePx: { width: rect.pixels.width, height: rect.pixels.height },
   }
@@ -1742,6 +2254,24 @@ function injectOverlayRootSize(
   return style + document
 }
 
+/**
+ * Validates an overlay fade length (ms): a finite integer >= 0. Returns the
+ * value, or undefined when unset (or 0, which means instant).
+ */
+function validateFadeMs(
+  name: string,
+  option: 'fadeIn' | 'fadeOut',
+  value: number | undefined
+): number | undefined {
+  if (value === undefined) return undefined
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(
+      `[screenci] Overlay "${name}" option "${option}" must be an integer >= 0 (milliseconds); received ${value}.`
+    )
+  }
+  return value === 0 ? undefined : value
+}
+
 function toRecordedFileStart(
   name: string,
   resolved: ResolvedFileOverlay,
@@ -1757,7 +2287,7 @@ function toRecordedFileStart(
         durationMs = mode.durationMs ?? resolved.durationMs
         if (durationMs === undefined) {
           throw new Error(
-            `[screenci] Overlay "${name}" (${resolved.path}) needs a length: use .for('2s'), .until('0:05'), set "duration" in the config, or drive it with .start()/.end().`
+            `[screenci] Overlay "${name}" (${resolved.path}) needs a length: use .for(2000), .until('0:05'), set "duration" in the config, or drive it with .start()/.end().`
           )
         }
         validateDurationMs(name, resolved.path, durationMs)
@@ -1774,7 +2304,11 @@ function toRecordedFileStart(
       ...(resolved.placement !== undefined && {
         placement: resolved.placement,
       }),
-      ...(resolved.crop !== undefined && { crop: resolved.crop }),
+      ...(resolved.fadeInMs !== undefined && { fadeInMs: resolved.fadeInMs }),
+      ...(resolved.fadeOutMs !== undefined && {
+        fadeOutMs: resolved.fadeOutMs,
+      }),
+      ...(resolved.clip !== undefined && { clip: resolved.clip }),
     }
   }
 
@@ -1785,7 +2319,7 @@ function toRecordedFileStart(
   }
   if (mode.type === 'blocking' && mode.durationMs !== undefined) {
     throw new Error(
-      `[screenci] Overlay "${name}" (${resolved.path}) is a video and cannot use .for('2s'); a video overlay plays for its natural length. Use a bare call (overlays.${name}()), speed/time to re-time it, or .start()/.end() to control its window.`
+      `[screenci] Overlay "${name}" (${resolved.path}) is a video and cannot use .for(2000); a video overlay plays for its natural length. Use a bare call (overlays.${name}()), speed/time to re-time it, or .start()/.end() to control its window.`
     )
   }
 
@@ -1797,9 +2331,11 @@ function toRecordedFileStart(
     ...(resolved.pinToScreen && { pinToScreen: true }),
     ...(resolved.overMouse && { overMouse: true }),
     ...(resolved.placement !== undefined && { placement: resolved.placement }),
+    ...(resolved.fadeInMs !== undefined && { fadeInMs: resolved.fadeInMs }),
+    ...(resolved.fadeOutMs !== undefined && { fadeOutMs: resolved.fadeOutMs }),
     ...(resolved.speed !== undefined && { speed: resolved.speed }),
     ...(resolved.time !== undefined && { time: resolved.time }),
-    ...(resolved.crop !== undefined && { crop: resolved.crop }),
+    ...(resolved.clip !== undefined && { clip: resolved.clip }),
     ...(resolved.sourceStart !== undefined && {
       sourceStart: resolved.sourceStart,
     }),

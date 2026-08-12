@@ -39,13 +39,20 @@ The brief walks the agent through these steps:
 2. **Author a video** for the flow you described, including narration via
    `video.narration({...})`, with setup wrapped in `hide()` and the demo
    driven with visible clicks.
-3. **Verify, then record.** It runs `npx screenci test` until the script is
-   green, then `npx screenci record` to capture the final video. `record`
+3. **Verify, then export.** It runs `npx screenci test` until the script is
+   green, then `npx screenci export` to capture and render the flow. `export`
    uploads immediately either way: without a `SCREENCI_SECRET`, under a local,
    anonymous trial session (it prints a link to view the result and sign up to
-   keep it); with one, straight to your organization. Renders without an
-   account, and renders on the free tier, include a ScreenCI watermark;
-   signing up (or upgrading) removes it.
+   keep it; downloads require an account); with one, straight to your
+   organization, waiting for the renders and downloading the finished files.
+   Exports without an account, and exports on the free tier, include a
+   ScreenCI watermark; signing up (or upgrading) removes it.
+
+Once the video exists, refinement moves to the browser: run
+`screenci edit "<video title>"` in the project. It records the live preview if
+needed, prints the web editor link, and stays connected, so every edit you
+make in the [Editor](/docs/editor) (narration, overlays, cuts, timings) is
+written back into the script, ready for the agent or you to build on.
 
 ## How the agent gathers context
 
@@ -67,7 +74,7 @@ see [Playwright codegen](/docs/video-script-basics#generate-a-first-draft-with-c
 
 No account or setup token is needed to record: without a `SCREENCI_SECRET`,
 `record` uploads under a local, anonymous trial session and prints a link where
-you can view the result and sign up to keep it.
+you can view the live preview, export it, and sign up to keep it.
 
 To connect a project to your organization directly, copy `SCREENCI_SECRET` from
 your secrets page into `screenci/.env` (this is also the value you set for CI

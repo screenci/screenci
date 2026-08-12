@@ -26,7 +26,15 @@ export async function flushPendingOverlays(
   const pending = recorder.getPendingOverlays()
   if (pending.length === 0) return
 
-  const byHash = new Map<string, { path: string; fileHash: string }>()
+  const byHash = new Map<
+    string,
+    {
+      path: string
+      fileHash: string
+      previewPath?: string
+      previewFileHash?: string
+    }
+  >()
   for (const { event, request } of pending) {
     const key = overlayInputHash(request)
     let resolved = byHash.get(key)
@@ -52,11 +60,29 @@ export async function flushPendingOverlays(
           }),
           deviceScaleFactor: request.deviceScaleFactor,
         })
-        resolved = { path: result.path, fileHash: result.fileHash }
+        resolved = {
+          path: result.path,
+          fileHash: result.fileHash,
+          ...(result.previewPath !== undefined && {
+            previewPath: result.previewPath,
+          }),
+          ...(result.previewFileHash !== undefined && {
+            previewFileHash: result.previewFileHash,
+          }),
+        }
       }
       byHash.set(key, resolved)
     }
     event.path = resolved.path
     event.fileHash = resolved.fileHash
+    // The alpha-capable preview clip only exists for animated overlays.
+    if (
+      event.kind === 'animation' &&
+      resolved.previewPath !== undefined &&
+      resolved.previewFileHash !== undefined
+    ) {
+      event.previewPath = resolved.previewPath
+      event.previewFileHash = resolved.previewFileHash
+    }
   }
 }

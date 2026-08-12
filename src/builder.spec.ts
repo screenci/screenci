@@ -7,7 +7,6 @@ import {
   type RecordingLocalize,
 } from './builder.js'
 import { normalizeFeature } from './declare.js'
-import { editable } from './studio.js'
 import type { LocalizeNarrationValue } from './localize.js'
 
 function state(partial: Partial<BuilderState> = {}): BuilderState {
@@ -16,6 +15,8 @@ function state(partial: Partial<BuilderState> = {}): BuilderState {
     values: null,
     overlays: null,
     audio: null,
+    recordOptions: null,
+    renderOptions: null,
     recordingLocalize: null,
     eachVariants: null,
     features: VIDEO_FEATURES,
@@ -67,7 +68,12 @@ describe('expandRegistrations', () => {
   it('does not set a locale when browserLocale is false', () => {
     const regs = expandRegistrations({
       baseTitle: 'T',
-      state: state(langs({ languages: ['en', 'fi'], browserLocale: false })),
+      state: state(
+        langs({
+          languages: ['en', 'fi'],
+          browserLocale: false,
+        })
+      ),
       requestedLanguages: null,
     })
     expect(regs.every((r) => r.locale === null)).toBe(true)
@@ -94,7 +100,7 @@ describe('expandRegistrations', () => {
       state: state({
         narration: narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } }),
         // video.languages({ mode: 'shared' }): languages inferred from narration.
-        ...langs({ mode: 'shared' } as RecordingLocalize),
+        ...langs({ mode: 'shared' }),
       }),
       requestedLanguages: null,
     })
@@ -107,102 +113,93 @@ describe('expandRegistrations', () => {
     ])
   })
 
-  it('records a single pending pass for a studio-owned set with none selected', () => {
+  it('falls back to the implicit default for an empty languages declaration', () => {
     const regs = expandRegistrations({
-      baseTitle: 'Pending',
-      state: state(langs({ languages: 'studio' })),
+      baseTitle: 'Empty',
+      state: state(langs({})),
       requestedLanguages: null,
     })
     expect(regs).toHaveLength(1)
-    expect(regs[0]).toMatchObject({ leafTitle: 'Pending', language: null })
-    expect(regs[0]?.recordingLocalize.pending).toBe(true)
+    expect(regs[0]).toMatchObject({ leafTitle: 'Empty', language: null })
+    expect(regs[0]?.recordingLocalize.explicit).toBe(false)
   })
 
-  it('renders a studio-seeded set until the web app changes it', () => {
+  it('renders every language of a code-declared set', () => {
     const regs = expandRegistrations({
       baseTitle: 'Seeded',
-      // video.languages(editable(['en', 'fi'])) -> web-owned, seeded with en + fi.
-      state: state(langs({ languages: 'studio', studioSeed: ['en', 'fi'] })),
+      // video.languages(['en', 'fi']) -> the explicit code set.
+      state: state(langs({ languages: ['en', 'fi'] })),
       requestedLanguages: null,
     })
     expect(regs.map((r) => [r.leafTitle, r.language])).toEqual([
       ['Seeded [en]', 'en'],
       ['Seeded [fi]', 'fi'],
     ])
-    expect(regs.every((r) => r.recordingLocalize.studioOwned)).toBe(true)
-    expect(regs.every((r) => r.recordingLocalize.pending)).toBe(false)
+    expect(regs.every((r) => r.recordingLocalize.explicit)).toBe(true)
   })
 
-  it('merges a web injection with the seed (the web only adds languages)', () => {
-    const regs = expandRegistrations({
-      baseTitle: 'Seeded',
-      state: state(langs({ languages: 'studio', studioSeed: ['en', 'fi'] })),
-      // The web app has 'de' selected; the seed keeps en + fi, so all three record.
-      requestedLanguages: ['de'],
-    })
-    expect(regs.map((r) => r.language).sort()).toEqual(['de', 'en', 'fi'])
-    expect(regs.every((r) => r.recordingLocalize.studioOwned)).toBe(true)
-  })
-
-  it('records code-defined feature languages for a studio-owned set on first run', () => {
+  it('unions a declared seed with per-feature language keys', () => {
     const regs = expandRegistrations({
       baseTitle: 'Tour',
-      // languages(editable()) with no web selection, but narration defines en + fi:
-      // both record (merged in) even before anything is configured in the web.
       state: state({
-        ...langs({ languages: 'studio' }),
+        ...langs({ languages: ['en'] }),
         narration: narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } }),
       }),
       requestedLanguages: null,
     })
     expect(regs.map((r) => r.language).sort()).toEqual(['en', 'fi'])
-    expect(regs.every((r) => r.recordingLocalize.studioOwned)).toBe(true)
-    expect(regs.every((r) => r.recordingLocalize.pending)).toBe(false)
+    expect(regs.every((r) => r.recordingLocalize.explicit)).toBe(true)
   })
 
-  it('combines a studio-owned set with shared mode (one web-owned pass)', () => {
+  it('combines a declared set with shared mode (one pass)', () => {
     const regs = expandRegistrations({
       baseTitle: 'Tour',
-      // The object form is how 'studio' combines with options like shared mode;
-      // `.languages('studio')` shorthand defaults to per-language mode.
-      state: state(langs({ languages: 'studio', mode: 'shared' })),
-      requestedLanguages: ['en', 'fi'],
+      state: state(langs({ languages: ['en', 'fi'], mode: 'shared' })),
+      requestedLanguages: null,
     })
     expect(regs).toHaveLength(1)
     expect(regs[0]).toMatchObject({ leafTitle: 'Tour', language: null })
-    expect(regs[0]?.recordingLocalize.studioOwned).toBe(true)
     expect(regs[0]?.recordingLocalize.mode).toBe('shared')
   })
 
-  it('intersects per-language passes with the --languages filter', () => {
+  it('restricts a declared set with the --languages filter', () => {
     const regs = expandRegistrations({
       baseTitle: 'T',
       state: state(langs({ languages: ['en', 'fi', 'de'] })),
       requestedLanguages: ['fi'],
     })
     expect(regs.map((r) => r.language)).toEqual(['fi'])
+    expect(
+      [...(regs[0]?.recordingLocalize.availableLanguages ?? [])].sort()
+    ).toEqual(['de', 'en', 'fi'])
   })
 
-  it('keeps the full declared set in availableLanguages under a --languages filter', () => {
+  it('keeps the full inferred set in availableLanguages under a --languages filter', () => {
     // Only fi is rendered, but the recorded availableLanguages stays the full
     // code-defined set so the app does not gray out en/de as removed-from-code.
     const regs = expandRegistrations({
       baseTitle: 'T',
-      state: state(langs({ languages: ['en', 'fi', 'de'] })),
+      state: state({
+        narration: narration({
+          en: { intro: 'Hi' },
+          fi: { intro: 'Moi' },
+          de: { intro: 'Hallo' },
+        }),
+      }),
       requestedLanguages: ['fi'],
     })
     expect(regs.map((r) => r.language)).toEqual(['fi'])
-    expect(regs[0]?.recordingLocalize.availableLanguages).toEqual([
-      'en',
-      'fi',
-      'de',
-    ])
+    expect(
+      [...(regs[0]?.recordingLocalize.availableLanguages ?? [])].sort()
+    ).toEqual(['de', 'en', 'fi'])
   })
 
-  it('registers nothing when the filter excludes every declared language', () => {
+  it('registers nothing when the filter excludes every inferred language', () => {
     const regs = expandRegistrations({
       baseTitle: 'T',
-      state: state(langs({ languages: ['en', 'fi'] })),
+      state: state({
+        narration: narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } }),
+      }),
       requestedLanguages: ['de'],
     })
     expect(regs).toHaveLength(0)
@@ -309,43 +306,44 @@ describe('createVideoBuilder registration', () => {
     expect(calls.uses[0]).not.toHaveProperty('locale')
   })
 
-  it('editable({ languages, mode }) is web-owned and seeded with the config', () => {
+  it('languages({ languages, mode }) records the declared config set', () => {
     const { test, calls } = createTestSink()
     createVideoBuilder(test)
       .narration({ en: { intro: 'Hi' } })
-      .languages(editable({ languages: ['en', 'fi'], mode: 'shared' }))(
+      .languages({ languages: ['en', 'fi'], mode: 'shared' })(
       'Tour',
       async () => {}
     )
     expect(calls.tests).toEqual(['Tour'])
     expect(calls.uses[0]?._screenciRecordingLocalize).toMatchObject({
-      studioOwned: true,
+      explicit: true,
       mode: 'shared',
       languages: ['en', 'fi'],
     })
   })
 
-  it('editable({ mode }) is web-owned with no seeded set (mode only)', () => {
+  it('languages({ mode }) with no set falls back to the implicit default', () => {
     const { test, calls } = createTestSink()
-    createVideoBuilder(test).languages(editable({ mode: 'shared' }))(
+    createVideoBuilder(test).languages({ mode: 'shared' })(
       'Tour',
       async () => {}
     )
-    // Web owns the set (none seeded => pending), shared mode is the seed. 'mode'
-    // is a config key, never treated as a language.
+    // No languages seeded and no per-feature keys => the implicit ['en'] default.
+    // 'mode' is a config key, never treated as a language.
     expect(calls.uses[0]?._screenciRecordingLocalize).toMatchObject({
-      studioOwned: true,
-      pending: true,
+      explicit: false,
       mode: 'shared',
-      languages: [],
+      languages: ['en'],
     })
   })
 
   it('supports the (title, details, body) signature', () => {
     const { test, calls } = createTestSink()
-    createVideoBuilder(test)
-      .values(editable(['h']))
-      .languages(['en'])('Tagged', { tag: '@critical' }, async () => {})
+    createVideoBuilder(test).values(['h']).languages(['en'])(
+      'Tagged',
+      { tag: '@critical' },
+      async () => {}
+    )
     expect(calls.tests).toEqual(['Tagged [en]'])
   })
 
@@ -354,27 +352,34 @@ describe('createVideoBuilder registration', () => {
     process.env.SCREENCI_LANGUAGES = 'de'
     try {
       const { test, calls } = createTestSink()
-      createVideoBuilder(test)
-        .values(editable(['h']))
-        .languages(['en', 'fi'])('T', async () => {})
+      // Inferred (per-feature) sets still intersect with the filter; a declared
+      // `.languages(...)` set would union instead.
+      createVideoBuilder(test).narration({
+        en: { intro: 'Hi' },
+        fi: { intro: 'Moi' },
+      })('T', async () => {})
       expect(calls.tests).toEqual([])
-      expect(warn).toHaveBeenCalledOnce()
+      // Warns about the skipped video (plus the unused en/fi narration values).
+      expect(warn).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringContaining('"T" was skipped')
+      )
     } finally {
       if (original === undefined) delete process.env.SCREENCI_LANGUAGES
       else process.env.SCREENCI_LANGUAGES = original
     }
   })
 
-  it('records code languages for a studio-owned set, so no unused warning fires', () => {
+  it('records inferred feature languages under languages({ mode }), no unused warning', () => {
     const { test, calls } = createTestSink()
-    // languages(editable({ mode })) is web-owned; the narration languages are merged
+    // languages({ mode }) seeds no set; the narration languages are inferred
     // into the recorded set, so they are genuinely used (no "unused" warning).
     createVideoBuilder(test)
       .narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })
-      .languages(editable({ mode: 'shared' }))('Tour', async () => {})
+      .languages({ mode: 'shared' })('Tour', async () => {})
     expect(warn).not.toHaveBeenCalled()
     expect(calls.uses[0]?._screenciRecordingLocalize).toMatchObject({
-      studioOwned: true,
+      explicit: true,
       mode: 'shared',
       languages: ['en', 'fi'],
     })
@@ -390,9 +395,7 @@ describe('createVideoBuilder registration', () => {
   it('throws when a screenshot declares narration (silent medium)', () => {
     const { test } = createTestSink()
     expect(() =>
-      createVideoBuilder(test, new Set(['values', 'overlays'])).narration(
-        editable(['x'])
-      )
+      createVideoBuilder(test, new Set(['values', 'overlays'])).narration(['x'])
     ).toThrow(/not available for this medium/)
   })
 
@@ -403,5 +406,128 @@ describe('createVideoBuilder registration', () => {
       .only('Focused', async () => {})
     expect(calls.tests).toEqual(['Focused [en]', 'Focused [fi]'])
     expect(only).toEqual(['Focused [en]', 'Focused [fi]'])
+  })
+
+  it('carries a flat recordOptions/renderOptions bag onto every pass', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test)
+      .recordOptions({ aspectRatio: '9:16', quality: '720p' })
+      .renderOptions({ narration: { size: 0.4 } })
+      .narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })(
+      'T',
+      async () => {}
+    )
+    for (const use of calls.uses) {
+      expect(use._screenciRecordOptions).toEqual({
+        aspectRatio: '9:16',
+        quality: '720p',
+      })
+      expect(use._screenciRenderOptions).toEqual({ narration: { size: 0.4 } })
+    }
+  })
+
+  it('merges the language-major default under each per-language override', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test)
+      .recordOptions({
+        default: { aspectRatio: '16:9', quality: '1080p' },
+        fi: { aspectRatio: '4:3' },
+      })
+      .narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })(
+      'T',
+      async () => {}
+    )
+    expect(calls.tests).toEqual(['T [en]', 'T [fi]'])
+    expect(calls.uses[0]?._screenciRecordOptions).toEqual({
+      aspectRatio: '16:9',
+      quality: '1080p',
+    })
+    expect(calls.uses[1]?._screenciRecordOptions).toEqual({
+      aspectRatio: '4:3',
+      quality: '1080p',
+    })
+  })
+
+  it('deep-merges renderOptions groups per language (voice override keeps size)', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test)
+      .renderOptions({
+        default: { narration: { size: 0.3, corner: 'bottom-right' } },
+        fi: { narration: { size: 0.5 } },
+      })
+      .narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })(
+      'T',
+      async () => {}
+    )
+    expect(calls.uses[0]?._screenciRenderOptions).toEqual({
+      narration: { size: 0.3, corner: 'bottom-right' },
+    })
+    expect(calls.uses[1]?._screenciRenderOptions).toEqual({
+      narration: { size: 0.5, corner: 'bottom-right' },
+    })
+  })
+
+  it('infers the language set from recordOptions language keys', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test).recordOptions({
+      default: { quality: '1080p' },
+      en: { aspectRatio: '16:9' },
+      fi: { aspectRatio: '9:16' },
+    })('T', async () => {})
+    expect(calls.tests).toEqual(['T [en]', 'T [fi]'])
+  })
+
+  it('passes a flat recordOptions bag through for the pass', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test).recordOptions({ aspectRatio: '9:16' })(
+      'T',
+      async () => {}
+    )
+    expect(calls.uses[0]?._screenciRecordOptions).toEqual({
+      aspectRatio: '9:16',
+    })
+  })
+
+  it('merges a per-language override over the default base', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test)
+      .recordOptions({
+        default: { quality: '1080p' },
+        fi: { aspectRatio: '4:3' },
+      })
+      .narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })(
+      'T',
+      async () => {}
+    )
+    expect(calls.uses[1]?._screenciRecordOptions).toEqual({
+      quality: '1080p',
+      aspectRatio: '4:3',
+    })
+  })
+
+  it('applies the each-variant recordOptions patch over the builder options', () => {
+    const { test, calls } = createTestSink()
+    createVideoBuilder(test)
+      .recordOptions({ aspectRatio: '16:9', quality: '1080p' })
+      .each([{ key: 'mobile', recordOptions: { aspectRatio: '9:16' } }])(
+      'Landing',
+      async () => {}
+    )
+    expect(calls.uses[0]?._screenciRecordOptions).toEqual({
+      aspectRatio: '9:16',
+      quality: '1080p',
+    })
+  })
+
+  it('throws when per-language options are set with shared mode', () => {
+    const { test } = createTestSink()
+    expect(() =>
+      createVideoBuilder(test)
+        .recordOptions({ default: {}, fi: { aspectRatio: '4:3' } })
+        .languages({ languages: ['en', 'fi'], mode: 'shared' })(
+        'T',
+        async () => {}
+      )
+    ).toThrow(/per-language/)
   })
 })

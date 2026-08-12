@@ -1,7 +1,11 @@
 import { autoZoom, hide, resetZoom, video, voices, zoomTo } from 'screenci'
 
-video.use({
-  renderOptions: {
+// Camera walkthrough for the Camera and Zooming guide. It records the public
+// marketing site (screenci.com), so it needs no login. The mirror in
+// screenci/recordings strips the screenci.com origin so the gotos route through the
+// configured baseURL.
+video
+  .renderOptions({
     narration: {
       voice: { name: voices.Ava, style: 'Friendly product guide' },
     },
@@ -10,22 +14,16 @@ video.use({
         backgroundCss: 'linear-gradient(313deg, #ffffff 0%, #d6d6d6 100%)',
       },
     },
-  },
-})
-
-// Camera walkthrough for the Camera and Zooming guide. It records the public
-// marketing site (screenci.com), so it needs no login. The mirror in
-// screenci/recordings strips the screenci.com origin so the gotos route through the
-// configured baseURL.
-video.narration({
-  en: {
-    auto: 'autoZoom [pronounce: auto zoom] follows a cluster of related actions on its own.',
-    manual:
-      'zoomTo [pronounce: zoom to] frames an exact target before you interact with it.',
-    pan: 'Give it a point instead of an element for a deliberate pan.',
-    outro: 'Treat the camera as direction, not decoration.',
-  },
-})('Camera and zooming', async ({ page, narration }) => {
+  })
+  .narration({
+    en: {
+      auto: 'autoZoom [pronounce: auto zoom] follows a cluster of related actions on its own.',
+      manual:
+        'zoomTo [pronounce: zoom to] frames an exact target before you interact with it.',
+      pan: 'Give it a point instead of an element for a deliberate pan.',
+      outro: 'Treat the camera as direction, not decoration.',
+    },
+  })('Camera and zooming', async ({ page, narration }) => {
   await hide(async () => {
     await page.goto('https://screenci.com/')
   })

@@ -9,9 +9,11 @@ import {
   setActiveCueRecorder,
   resetCueChain,
   setSleepFn,
+  setCueDurationFetchDeps,
   validateCustomVoiceRefs,
   assertNarrationLanguagesMatch,
   resetMissingNarrationAssetWarnings,
+  CUE_BETWEEN_PAUSE_MS,
 } from './cue.js'
 import * as screenci from '../index.js'
 import { hide, setActiveHideRecorder } from './hide.js'
@@ -25,6 +27,7 @@ import { logger } from './logger.js'
 import {
   createScreenCIRuntimeContext,
   runWithScreenCIRuntimeContext,
+  setActiveScreenCIRuntimeContext,
 } from './runtimeContext.js'
 
 function createMockRecorder(): IEventRecorder {
@@ -44,6 +47,7 @@ function createMockRecorder(): IEventRecorder {
     addSpeedEnd: vi.fn(),
     addTimeStart: vi.fn(),
     addTimeEnd: vi.fn(),
+    addSleep: vi.fn(),
     addAutoZoomStart: vi.fn(),
     addAutoZoomEnd: vi.fn(),
     registerVoiceForLang: vi.fn(),
@@ -614,6 +618,31 @@ describe('createNarration', () => {
       )
     })
 
+    it('start({ delay }) passes the delay as the trailing recorder arg', async () => {
+      const cues = createNarration(langInput)
+      await cues.intro.start({ delay: 500 })
+
+      expect(recorder.addCueStart).toHaveBeenCalledWith(
+        '',
+        'intro',
+        undefined,
+        {
+          en: { text: 'Hello world', voice: voices.Ava },
+          fi: { text: 'Hei maailma', voice: voices.Ava },
+        },
+        undefined,
+        undefined,
+        undefined,
+        500
+      )
+    })
+
+    it('start() rejects an invalid delay', async () => {
+      const cues = createNarration(langInput)
+      await expect(cues.intro.start({ delay: -1 })).rejects.toThrow(/delay/)
+      expect(recorder.addCueStart).not.toHaveBeenCalled()
+    })
+
     it('start() emits sleep → cueStart(multilang) sequence', async () => {
       const cues = createNarration(langInput)
       await cues.intro.start()
@@ -784,7 +813,7 @@ describe('createNarration', () => {
       infoSpy.mockRestore()
     })
 
-    it('puts crop and source trim inside the video cue translation', async () => {
+    it('puts clip and source trim inside the video cue translation', async () => {
       resetMissingNarrationAssetWarnings()
       const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
       const cues = createNarration({
@@ -792,8 +821,8 @@ describe('createNarration', () => {
         en: {
           intro: {
             media: '/tmp/intro-trim.mp4',
-            crop: { x: 4, y: 8, width: 120, height: 90 },
-            start: '1s',
+            clip: { x: 4, y: 8, width: 120, height: 90 },
+            start: 1000,
             end: '90%',
           },
         },
@@ -814,7 +843,7 @@ describe('createNarration', () => {
       ).mock.calls[0]?.[4] as Record<string, unknown>
       expect(translations.en).toEqual({
         assetPath: '/tmp/intro-trim.mp4',
-        crop: { x: 4, y: 8, width: 120, height: 90 },
+        clip: { x: 4, y: 8, width: 120, height: 90 },
         sourceStart: { ms: 1000 },
         sourceEnd: { percent: 0.9 },
       })
@@ -1125,5 +1154,139 @@ describe('assertNarrationLanguagesMatch', () => {
     expect(() =>
       assertNarrationLanguagesMatch({ en: {}, de: {} }, ['en'])
     ).toThrow(/unexpected de/)
+  })
+})
+
+describe('exact cue-audio pacing', () => {
+  let recorder: IEventRecorder
+  let sleeps: number[]
+  let originalEnv: NodeJS.ProcessEnv
+  let now: number
+
+  beforeEach(() => {
+    originalEnv = { ...process.env }
+    process.env.SCREENCI_RECORDING = 'true'
+    process.env.SCREENCI_SECRET = 'test-secret'
+    now = 100_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    sleeps = []
+    recorder = createMockRecorder()
+    setSleepFn((ms) => {
+      sleeps.push(ms)
+      now += ms
+    })
+    setActiveScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({
+        recorder,
+        activeLanguage: 'en',
+        recordOptions: { actualNarrationPace: true },
+      })
+    )
+    setCueDurationFetchDeps({
+      fetchFn: (async () =>
+        Response.json({
+          durations: [
+            { name: 'intro', inputHash: 'h1', durationMs: 2000 },
+            { name: 'outro', inputHash: 'h2', durationMs: null },
+          ],
+        })) as unknown as typeof fetch,
+      readFile: async () => {
+        throw new Error('no cache')
+      },
+      writeFile: async () => {},
+      mkdir: async () => undefined,
+    })
+  })
+
+  afterEach(() => {
+    process.env = originalEnv
+    vi.restoreAllMocks()
+    setCueDurationFetchDeps(undefined)
+    setActiveScreenCIRuntimeContext(null)
+    setActiveCueRecorder(NOOP_EVENT_RECORDER)
+    setSleepFn((ms) => {
+      const end = performance.now() + ms
+      while (performance.now() < end) {}
+    })
+  })
+
+  it('sleeps the audio duration plus the inter-cue pause, recorded as cueAudio', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro()
+
+    // Remainder is measured from cueStart: with the mocked clock only the
+    // in-block frame-gap sleep elapses before the cue end.
+    const frameGapMs = 2 * (1000 / 24)
+    const expectedRemainder = 2000 + CUE_BETWEEN_PAUSE_MS - frameGapMs
+    expect(recorder.addSleep).toHaveBeenCalledWith(
+      expect.closeTo(expectedRemainder, 5),
+      'cueAudio'
+    )
+    expect(sleeps.some((ms) => ms > 1000)).toBe(true)
+  })
+
+  it('falls back to frame gaps when the duration is unknown (null)', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.outro()
+
+    expect(recorder.addSleep).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'cueAudio'
+    )
+  })
+
+  it('skips pacing when actualNarrationPace is off (the default)', async () => {
+    setActiveScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({ recorder, activeLanguage: 'en' })
+    )
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro()
+
+    expect(recorder.addSleep).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'cueAudio'
+    )
+  })
+
+  it('skips pacing in shared mode (no active language)', async () => {
+    setActiveScreenCIRuntimeContext(
+      createScreenCIRuntimeContext({
+        recorder,
+        activeLanguage: null,
+        recordOptions: { actualNarrationPace: true },
+      })
+    )
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro()
+
+    expect(recorder.addSleep).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'cueAudio'
+    )
+  })
+
+  it('falls back to frame gaps when the duration fetch fails', async () => {
+    setCueDurationFetchDeps({
+      fetchFn: (async () => {
+        throw new Error('offline')
+      }) as unknown as typeof fetch,
+      readFile: async () => {
+        throw new Error('no cache')
+      },
+      writeFile: async () => {},
+      mkdir: async () => undefined,
+    })
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro()
+
+    expect(recorder.addSleep).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'cueAudio'
+    )
   })
 })

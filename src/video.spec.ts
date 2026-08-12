@@ -275,8 +275,8 @@ describe('assertAllOverlaysEnded', () => {
     await runWithScreenCIRuntimeContext(context, async () => {
       setActiveAssetRecorder(NOOP_EVENT_RECORDER)
       const overlays = createOverlays({
-        a: { path: './a.png' },
-        b: { path: './b.png' },
+        a: { path: './a.png', fill: 'recording' },
+        b: { path: './b.png', fill: 'recording' },
       })
       await overlays.a.start()
       await overlays.b.start()
@@ -294,8 +294,8 @@ describe('assertAllOverlaysEnded', () => {
     await runWithScreenCIRuntimeContext(context, async () => {
       setActiveAssetRecorder(NOOP_EVENT_RECORDER)
       const overlays = createOverlays({
-        a: { path: './a.png' },
-        b: { path: './b.png' },
+        a: { path: './a.png', fill: 'recording' },
+        b: { path: './b.png', fill: 'recording' },
       })
       await overlays.a.start()
       await overlays.b.start()

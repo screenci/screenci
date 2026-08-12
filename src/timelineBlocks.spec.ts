@@ -42,14 +42,79 @@ describe('timeline blocks', () => {
   it('records speed start/end with multiplier', async () => {
     await speed(0.5, async () => {})
 
-    expect(recorder.addSpeedStart).toHaveBeenCalledWith(0.5)
+    expect(recorder.addSpeedStart).toHaveBeenCalledWith(
+      0.5,
+      expect.objectContaining({ locked: true, schemaKind: 'speed' })
+    )
     expect(recorder.addSpeedEnd).toHaveBeenCalledOnce()
+  })
+
+  it('passes a validated delay through to the block start events', async () => {
+    await speed(0.5, async () => {}, { delay: 400 })
+    await time(1000, async () => {}, { delay: 300 })
+    await hide(async () => {}, { delay: 200 })
+
+    expect(recorder.addSpeedStart).toHaveBeenCalledWith(
+      0.5,
+      expect.anything(),
+      400
+    )
+    expect(recorder.addTimeStart).toHaveBeenCalledWith(
+      1000,
+      expect.anything(),
+      undefined,
+      300
+    )
+    expect(recorder.addHideStart).toHaveBeenCalledWith(
+      expect.anything(),
+      undefined,
+      200
+    )
+  })
+
+  it('supports delay alongside an editId identity', async () => {
+    await speed(async () => {}, { editId: 'fast', delay: 150 })
+    await time(500, async () => {}, { editId: 'intro', delay: 250 })
+    await hide(async () => {}, { editId: 'setup', delay: 350 })
+
+    expect(recorder.addSpeedStart).toHaveBeenCalledWith(
+      1,
+      expect.anything(),
+      150
+    )
+    expect(recorder.addTimeStart).toHaveBeenCalledWith(
+      500,
+      expect.anything(),
+      'intro',
+      250
+    )
+    expect(recorder.addHideStart).toHaveBeenCalledWith(
+      expect.anything(),
+      'setup',
+      350
+    )
+  })
+
+  it('rejects a negative or non-integer block delay', async () => {
+    await expect(speed(2, async () => {}, { delay: -5 })).rejects.toThrow(
+      /delay/
+    )
+    await expect(hide(async () => {}, { delay: 1.5 })).rejects.toThrow(/delay/)
+    expect(recorder.addSpeedStart).not.toHaveBeenCalled()
+    expect(recorder.addHideStart).not.toHaveBeenCalled()
   })
 
   it('records time start/end with duration', async () => {
     await time(1000, async () => {})
 
-    expect(recorder.addTimeStart).toHaveBeenCalledWith(1000)
+    expect(recorder.addTimeStart).toHaveBeenCalledWith(
+      1000,
+      expect.objectContaining({
+        schemaKind: 'time',
+        defaults: { durationMs: 1000 },
+      }),
+      undefined
+    )
     expect(recorder.addTimeEnd).toHaveBeenCalledOnce()
   })
 
@@ -119,7 +184,10 @@ describe('timeline blocks', () => {
       })
     ).rejects.toThrow('boom')
 
-    expect(recorder.addSpeedStart).toHaveBeenCalledWith(2)
+    expect(recorder.addSpeedStart).toHaveBeenCalledWith(
+      2,
+      expect.objectContaining({ locked: true, schemaKind: 'speed' })
+    )
     expect(recorder.addSpeedEnd).toHaveBeenCalledOnce()
   })
 
@@ -130,7 +198,14 @@ describe('timeline blocks', () => {
       })
     ).rejects.toThrow('boom')
 
-    expect(recorder.addTimeStart).toHaveBeenCalledWith(1000)
+    expect(recorder.addTimeStart).toHaveBeenCalledWith(
+      1000,
+      expect.objectContaining({
+        schemaKind: 'time',
+        defaults: { durationMs: 1000 },
+      }),
+      undefined
+    )
     expect(recorder.addTimeEnd).toHaveBeenCalledOnce()
   })
 })

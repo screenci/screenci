@@ -216,32 +216,10 @@ describe('defineConfig', () => {
       defineConfig({
         projectName: 'Test',
         use: {
-          recordOptions: {
-            aspectRatio: '16:9',
-            quality: '1080p',
-          },
+          baseURL: 'https://app.example.com',
         },
       })
     }).not.toThrow()
-  })
-
-  it('should accept recordOptions with aspectRatio and quality in use', () => {
-    const config = defineConfig({
-      projectName: 'Test',
-      use: {
-        recordOptions: {
-          aspectRatio: '16:9',
-          quality: '2160p',
-          fps: 60,
-        },
-      },
-    })
-
-    expect(config.use?.recordOptions).toEqual({
-      aspectRatio: '16:9',
-      quality: '2160p',
-      fps: 60,
-    })
   })
 
   it('should accept baseURL in use', () => {
@@ -435,63 +413,5 @@ describe('defineConfig', () => {
       command: 'npm run dev',
       url: 'http://localhost:3000',
     })
-  })
-
-  it('should accept recordOptions in project use', () => {
-    const config = defineConfig({
-      projectName: 'Test',
-      projects: [
-        {
-          name: 'chromium',
-          use: {
-            recordOptions: {
-              aspectRatio: '9:16',
-              quality: '720p',
-              fps: 24,
-            },
-          },
-        },
-      ],
-    })
-
-    expect(config.projects?.[0].use?.recordOptions).toEqual({
-      aspectRatio: '9:16',
-      quality: '720p',
-      fps: 24,
-    })
-  })
-
-  it('should accept all supported aspect ratios', () => {
-    const aspectRatios = [
-      '16:9',
-      '9:16',
-      '1:1',
-      '4:3',
-      '3:4',
-      '5:4',
-      '4:5',
-    ] as const
-
-    for (const aspectRatio of aspectRatios) {
-      expect(() => {
-        defineConfig({
-          projectName: 'Test',
-          use: { recordOptions: { aspectRatio } },
-        })
-      }).not.toThrow()
-    }
-  })
-
-  it('should accept all supported quality presets', () => {
-    const qualities = ['720p', '1080p', '1440p', '2160p'] as const
-
-    for (const quality of qualities) {
-      expect(() => {
-        defineConfig({
-          projectName: 'Test',
-          use: { recordOptions: { quality } },
-        })
-      }).not.toThrow()
-    }
   })
 })

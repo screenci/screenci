@@ -206,9 +206,10 @@ test('mounts a client-rendered (.tsx) React overlay (still) and sizes to it', as
     // Bundle a real React component into a full host document and mount it
     // client-side; awaitMount waits for React to commit before the box is
     // measured, so an empty root is not captured.
-    const html = await buildClientOverlayDocument(clientCounterEntry, {
-      to: 100,
-    })
+    const html = await buildClientOverlayDocument(
+      { kind: 'file', path: clientCounterEntry, framework: 'react' },
+      { to: 100 }
+    )
     const result = await runWithScreenCIRuntimeContext(
       createScreenCIRuntimeContext({ page, recordingDir: dir }),
       () =>
@@ -231,9 +232,10 @@ test('captures a client-rendered (.tsx) React overlay with hooks + effects (anim
 }) => {
   const dir = await mkdtemp(join(tmpdir(), 'screenci-client-anim-e2e-'))
   try {
-    const html = await buildClientOverlayDocument(clientCounterEntry, {
-      to: 100,
-    })
+    const html = await buildClientOverlayDocument(
+      { kind: 'file', path: clientCounterEntry, framework: 'react' },
+      { to: 100 }
+    )
     const result = await runWithScreenCIRuntimeContext(
       createScreenCIRuntimeContext({ page, recordingDir: dir }),
       () =>

@@ -24,11 +24,22 @@ export function isCaptureAudioEnabled(
  * muted and on the legacy headless shell and the captured track would be
  * silent. Callers throw with a docs link rather than writing a silent file.
  */
+export type CaptureAudioOption = boolean | { gain: number } | undefined
+
+export function resolveCaptureAudioGain(
+  captureAudio: CaptureAudioOption
+): number {
+  if (captureAudio === true) return 1
+  if (captureAudio === false || captureAudio === undefined) return 0
+  const gain = captureAudio.gain
+  return Number.isFinite(gain) && gain > 0 ? gain : 0
+}
+
 export function captureRequestedButNotEnabled(
-  perVideoCaptureAudio: number,
+  perVideoCaptureAudioGain: number,
   captureAudioEnabled: boolean
 ): boolean {
-  return perVideoCaptureAudio > 0 && !captureAudioEnabled
+  return perVideoCaptureAudioGain > 0 && !captureAudioEnabled
 }
 
 const RECORDING_CHROMIUM_ARGS = [

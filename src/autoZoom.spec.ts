@@ -102,7 +102,10 @@ describe('autoZoom', () => {
       const p = autoZoom(() => {})
       await vi.runAllTimersAsync()
       await p
-      expect(recorder.addAutoZoomStart).toHaveBeenCalledWith(undefined)
+      expect(recorder.addAutoZoomStart).toHaveBeenCalledWith(
+        undefined,
+        expect.objectContaining({ locked: false, schemaKind: 'autoZoom' })
+      )
       expect(recorder.addAutoZoomEnd).toHaveBeenCalledWith(undefined)
     })
 
@@ -114,11 +117,14 @@ describe('autoZoom', () => {
       })
       await vi.runAllTimersAsync()
       await p
-      expect(recorder.addAutoZoomStart).toHaveBeenCalledWith({
-        easing: 'ease-in-out',
-        duration: 400,
-        amount: 0.6,
-      })
+      expect(recorder.addAutoZoomStart).toHaveBeenCalledWith(
+        {
+          easing: 'ease-in-out',
+          duration: 400,
+          amount: 0.6,
+        },
+        expect.objectContaining({ locked: true, schemaKind: 'autoZoom' })
+      )
       expect(recorder.addAutoZoomEnd).toHaveBeenCalledWith({
         easing: 'ease-in-out',
         duration: 400,
@@ -130,9 +136,12 @@ describe('autoZoom', () => {
       const p = autoZoom(() => {}, { easing: 'linear' })
       await vi.runAllTimersAsync()
       await p
-      expect(recorder.addAutoZoomStart).toHaveBeenCalledWith({
-        easing: 'linear',
-      })
+      expect(recorder.addAutoZoomStart).toHaveBeenCalledWith(
+        {
+          easing: 'linear',
+        },
+        expect.objectContaining({ locked: true })
+      )
       expect(recorder.addAutoZoomEnd).toHaveBeenCalledWith({ easing: 'linear' })
     })
 
@@ -141,7 +150,8 @@ describe('autoZoom', () => {
       await vi.runAllTimersAsync()
       await p
       expect(recorder.addAutoZoomStart).toHaveBeenCalledWith(
-        expect.objectContaining({ centering: 0.2 })
+        expect.objectContaining({ centering: 0.2 }),
+        expect.objectContaining({ locked: true })
       )
     })
   })
@@ -217,13 +227,13 @@ describe('autoZoom', () => {
     })
 
     it('defaults post zoom delay when no option given', async () => {
-      let postZoomDelayDuringFn: number | null = null
+      let delayAfterDuringFn: number | null = null
       const p = autoZoom(() => {
-        postZoomDelayDuringFn = getAutoZoomState().options.postZoomDelay ?? null
+        delayAfterDuringFn = getAutoZoomState().options.delayAfter ?? null
       })
       await vi.runAllTimersAsync()
       await p
-      expect(postZoomDelayDuringFn).toBe(200)
+      expect(delayAfterDuringFn).toBe(200)
     })
 
     it('zoom duration is absent after fn completes', async () => {
@@ -275,7 +285,7 @@ describe('autoZoom', () => {
       setActiveAutoZoomRecorder(recorder)
     })
 
-    it('does not delay the callback for preZoomDelay and still waits postZoomDelay after addAutoZoomEnd', async () => {
+    it('does not delay the callback for delay and still waits delayAfter after addAutoZoomEnd', async () => {
       const order: string[] = []
       vi.mocked(recorder.addAutoZoomEnd).mockImplementation(() => {
         order.push('addAutoZoomEnd')
@@ -285,7 +295,7 @@ describe('autoZoom', () => {
         () => {
           order.push('callback')
         },
-        { preZoomDelay: 500, postZoomDelay: 250 }
+        { delay: 500, delayAfter: 250 }
       )
 
       await Promise.resolve()
@@ -304,7 +314,7 @@ describe('autoZoom', () => {
       })
 
       const startTime = Date.now()
-      const p = autoZoom(() => {}, { duration: 300, postZoomDelay: 0 })
+      const p = autoZoom(() => {}, { duration: 300, delayAfter: 0 })
       await Promise.resolve()
       await p
 
@@ -312,7 +322,7 @@ describe('autoZoom', () => {
       expect(endTimes[0]).toBe(startTime)
     })
 
-    it('keeps the callback running before postZoomDelay elapses', async () => {
+    it('keeps the callback running before delayAfter elapses', async () => {
       const order: string[] = []
       vi.mocked(recorder.addAutoZoomEnd).mockImplementation(() => {
         order.push('addAutoZoomEnd')
@@ -324,7 +334,7 @@ describe('autoZoom', () => {
           await vi.advanceTimersByTimeAsync(900)
           order.push('callback-end')
         },
-        { preZoomDelay: 300, postZoomDelay: 0 }
+        { delay: 300, delayAfter: 0 }
       )
 
       await Promise.resolve()
@@ -340,14 +350,14 @@ describe('autoZoom', () => {
       ])
     })
 
-    it('does not let preZoomDelay delay addAutoZoomEnd when postZoomDelay is also set', async () => {
+    it('does not let delay delay addAutoZoomEnd when delayAfter is also set', async () => {
       const callTimes: number[] = []
       vi.mocked(recorder.addAutoZoomEnd).mockImplementation(() => {
         callTimes.push(Date.now())
       })
 
       const startTime = Date.now()
-      const p = autoZoom(() => {}, { preZoomDelay: 400, postZoomDelay: 200 })
+      const p = autoZoom(() => {}, { delay: 400, delayAfter: 200 })
 
       await Promise.resolve()
       expect(callTimes).toHaveLength(1)
@@ -370,7 +380,7 @@ describe('autoZoom', () => {
         viewportSize: { width: 1280, height: 720 },
       })
 
-      const p = autoZoom(() => {}, { duration: 300, postZoomDelay: 0 })
+      const p = autoZoom(() => {}, { duration: 300, delayAfter: 0 })
       await vi.runAllTimersAsync()
       await p
 
@@ -405,7 +415,7 @@ describe('autoZoom', () => {
       const p = autoZoom(() => {}, {
         duration: 300,
         zoomOutDuration: 300,
-        postZoomDelay: 0,
+        delayAfter: 0,
       }).then(() => {
         resolved = true
       })
@@ -439,7 +449,7 @@ describe('autoZoom', () => {
       const first = autoZoom(() => {}, {
         duration: 300,
         zoomOutDuration: 300,
-        postZoomDelay: 0,
+        delayAfter: 0,
       })
       await vi.advanceTimersByTimeAsync(300)
       await first
@@ -457,13 +467,13 @@ describe('autoZoom', () => {
       const second = autoZoom(() => {}, {
         duration: 300,
         zoomOutDuration: 300,
-        postZoomDelay: 0,
+        delayAfter: 0,
       })
       await vi.advanceTimersByTimeAsync(300)
       await expect(second).resolves.toBeUndefined()
     })
 
-    it('does not delay addAutoZoomEnd when the callback takes longer than preZoomDelay', async () => {
+    it('does not delay addAutoZoomEnd when the callback takes longer than delay', async () => {
       const order: string[] = []
       vi.mocked(recorder.addAutoZoomEnd).mockImplementation(() => {
         order.push('addAutoZoomEnd')
@@ -475,7 +485,7 @@ describe('autoZoom', () => {
           await vi.advanceTimersByTimeAsync(800)
           order.push('callback-end')
         },
-        { preZoomDelay: 200, zoomOutDuration: 0, postZoomDelay: 0 }
+        { delay: 200, zoomOutDuration: 0, delayAfter: 0 }
       )
 
       await Promise.resolve()

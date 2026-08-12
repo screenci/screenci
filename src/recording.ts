@@ -5,13 +5,16 @@ export type {
   FPS,
   Quality,
   RecordOptions,
+  HiddenShortcutRenderOptions,
   RenderOptions,
   ResolvedRenderOptions,
   ResolvedScreenshotRenderOptions,
   ScreenshotOutputFormat,
 } from './types.js'
 
-export type { ScreenshotCropRecord, ResolvedCropPadding } from './crop.js'
+export type { ScreenshotClipRecord, ResolvedClipPadding } from './clip.js'
+
+export { parseKeyCombo, isSingleKeyCombo } from './keyCombo.js'
 
 export type {
   RecordingData,
@@ -19,6 +22,7 @@ export type {
   ElementRect,
   VideoStartEvent,
   InputEvent,
+  KeyPressEvent,
   FocusChangeEvent,
   MouseMoveEvent,
   MouseDownEvent,
@@ -49,6 +53,6 @@ export type {
   VideoCueTranslationFile,
   VoiceLanguageMeta,
   RecordingMetadata,
-  ScreenshotCrop,
+  ScreenshotClip,
   ScreenshotInfo,
 } from './events.js'

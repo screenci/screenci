@@ -7,8 +7,10 @@ import {
 } from './events.js'
 import type { AutoZoomOptions, RecordOptions, RenderOptions } from './types.js'
 import { DEFAULT_SCROLL_CENTERING } from './defaults.js'
-import type { ScreenshotCropRecord } from './crop.js'
+import type { ScreenshotClipRecord } from './clip.js'
+import type { CueDurationsMap } from './cueDurations.js'
 import type { ResolvedRedactStyle } from './redactController.js'
+import type { EditablePosition } from './editableDescriptor.js'
 
 export type CurrentZoomViewport = {
   focusPoint: { x: number; y: number }
@@ -39,6 +41,14 @@ export type ActiveCueRun = {
   finished: Promise<void>
   resolveFinished: () => void
   startedWithExplicitStart: boolean
+  /** Wall-clock time the cueStart event was recorded, for exact-audio pacing. */
+  startedAtMs?: number
+  /**
+   * Known narration audio durations for this cue's video (record-time pacing),
+   * captured from the controller so the cue end can sleep the audio remainder.
+   * Null when pacing is off (shared mode, fast mode, no credentials).
+   */
+  durations?: Promise<CueDurationsMap> | null
 }
 
 export type ActiveAssetRun = {
@@ -78,6 +88,12 @@ export type ScreenCIRuntimeContext = {
   page: Page | null
   testFilePath: string | null
   /**
+   * Language of a per-language recording pass, or null in shared and
+   * single-language modes. Gates exact cue-audio pacing: only a per-language
+   * pass knows which language's narration duration to sleep.
+   */
+  activeLanguage: string | null
+  /**
    * Per-recording output directory (`.screenci/<title>/`) when recording is
    * active. Generated overlay assets (HTML/React rasterized to PNG) are written
    * here so they are uploaded alongside the recording. Null when not recording.
@@ -95,9 +111,9 @@ export type ScreenCIRuntimeContext = {
   /**
    * Crop recorded for the current `screenshot()` fixture capture, or null for the
    * full image. Set via the `crop` fixture argument and read by the fixture at
-   * capture time. Replaces the previous module-global crop state.
+   * capture time. Replaces the previous module-global clip state.
    */
-  crop: ScreenshotCropRecord | null
+  clip: ScreenshotClipRecord | null
   timelineBlocks: TimelineBlockState[]
   cue: {
     activeCueName: string | null
@@ -132,6 +148,16 @@ export type ScreenCIRuntimeContext = {
     controllerInstalled: boolean
     activeMasks: Map<string, ResolvedRedactStyle>
   }
+  /**
+   * Position counters for web-editable action descriptors. `seq` is the
+   * absolute position among all editable actions in this recording; the map
+   * counts occurrences per identity key so identical actions get increasing
+   * ordinals. Fresh per runtime context, so each recording starts from zero.
+   */
+  editable: {
+    seq: number
+    ordinalByIdentity: Map<string, number>
+  }
 }
 
 const runtimeContextStorage = new AsyncLocalStorage<ScreenCIRuntimeContext>()
@@ -148,6 +174,7 @@ export function createScreenCIRuntimeContext(
     recordOptions?: RecordOptions | null
     renderOptions?: RenderOptions | undefined
     captureKind?: CaptureKind
+    activeLanguage?: string | null
   } = {}
 ): ScreenCIRuntimeContext {
   const defaultRecorder = overrides.recorder ?? NOOP_EVENT_RECORDER
@@ -160,11 +187,12 @@ export function createScreenCIRuntimeContext(
     clickRecorder: defaultRecorder,
     page: overrides.page ?? null,
     testFilePath: overrides.testFilePath ?? null,
+    activeLanguage: overrides.activeLanguage ?? null,
     recordingDir: overrides.recordingDir ?? null,
     recordOptions: overrides.recordOptions ?? null,
     renderOptions: overrides.renderOptions,
     captureKind: overrides.captureKind ?? 'video',
-    crop: null,
+    clip: null,
     timelineBlocks: [],
     cue: {
       activeCueName: null,
@@ -188,6 +216,10 @@ export function createScreenCIRuntimeContext(
     redact: {
       controllerInstalled: false,
       activeMasks: new Map<string, ResolvedRedactStyle>(),
+    },
+    editable: {
+      seq: 0,
+      ordinalByIdentity: new Map<string, number>(),
     },
   }
 }
@@ -271,6 +303,10 @@ export function getRuntimePage(): Page | null {
   return getScreenCIRuntimeContext().page
 }
 
+export function getRuntimeActiveLanguage(): string | null {
+  return getScreenCIRuntimeContext().activeLanguage
+}
+
 export function getRuntimeRecordingDir(): string | null {
   return getScreenCIRuntimeContext().recordingDir
 }
@@ -295,12 +331,12 @@ export function isScreenshotCapture(): boolean {
   return getRuntimeCaptureKind() === 'screenshot'
 }
 
-export function setRuntimeCrop(crop: ScreenshotCropRecord | null): void {
-  getScreenCIRuntimeContext().crop = crop
+export function setRuntimeCrop(clip: ScreenshotClipRecord | null): void {
+  getScreenCIRuntimeContext().clip = clip
 }
 
-export function getRuntimeCrop(): ScreenshotCropRecord | undefined {
-  return getScreenCIRuntimeContext().crop ?? undefined
+export function getRuntimeCrop(): ScreenshotClipRecord | undefined {
+  return getScreenCIRuntimeContext().clip ?? undefined
 }
 
 export function resetCueRuntimeState(): void {
@@ -362,6 +398,25 @@ export function getRuntimeTimelineBlocks(): TimelineBlockState[] {
 
 export function isRuntimeInsideHide(): boolean {
   return hasRuntimeTimelineBlock('hide')
+}
+
+/**
+ * Allocates the next editable-action position for the given identity key:
+ * the recording-wide `seq` and the per-identity `ordinal`, both 0-based.
+ */
+export function nextEditablePosition(identityKey: string): EditablePosition {
+  const state = getScreenCIRuntimeContext().editable
+  const ordinal = state.ordinalByIdentity.get(identityKey) ?? 0
+  state.ordinalByIdentity.set(identityKey, ordinal + 1)
+  const seq = state.seq
+  state.seq += 1
+  return { seq, ordinal }
+}
+
+export function resetEditableRuntimeState(): void {
+  const state = getScreenCIRuntimeContext().editable
+  state.seq = 0
+  state.ordinalByIdentity.clear()
 }
 
 export function getRuntimeAutoZoomState(): AutoZoomState {

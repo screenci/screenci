@@ -37,7 +37,7 @@ for exact dimensions.
 Public delivery can either:
 
 - follow the latest finished render automatically
-- stay pinned to the selected accepted version for each language
+- stay pinned to the exported version you chose to serve for each language
 
 That lets you choose between automatic freshness and manual editorial control.
 
@@ -72,10 +72,11 @@ Public delivery is tracked separately for each language.
 When **Auto-select latest version** is on, ScreenCI keeps moving each language
 forward to the latest finished render.
 
-When **Auto-select latest version** is off, you must select a version manually
-for each language you want to serve. If a language has no selected version, its
-public URL exists but that language will not resolve to a video until you pick
-one.
+When **Auto-select latest version** is off, you must pick a version manually
+for each language you want to serve: open it in the editor sidebar's
+**Exported** group and choose **Serve at the public URL**. If a language has
+no selected version, its public URL exists but that language will not resolve
+to a video until you pick one.
 
 Manual selection is currently done in the app, not the CLI.
 
@@ -83,7 +84,7 @@ Manual selection is currently done in the app, not the CLI.
 
 Alongside the stable URLs above, every media URL has a record-pinned form that
 adds a `records/<recordId>` segment to the path, pinning it to a specific
-`screenci record` run:
+`screenci export` run:
 
 ```text
 https://api.screenci.com/public/<videoId>/records/<recordId>/<language>/video
@@ -95,8 +96,8 @@ own render, or `404`s once the run is cleaned up. It never falls back to a
 different version, and it always honors the public switch, so it also `404`s if
 the video is made private.
 
-ScreenCI keeps only a bounded number of versions per language (3 on Free, 5 on
-Starter, 50 on Business), so older runs are eventually pruned. To keep a specific
+ScreenCI keeps only a bounded number of versions per language (the 5 most recent
+non-selected versions on every plan), so older runs are eventually pruned. To keep a specific
 run forever, download it via the authenticated URLs in
 [`screenci info`](/docs/reference/cli#screenci-info), described under
 [Keep a render forever](/docs/reference/public-delivery-api#keep-a-render-forever).

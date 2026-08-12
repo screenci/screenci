@@ -32,6 +32,7 @@ const mockSpinner = {
   start: vi.fn().mockReturnThis(),
   succeed: vi.fn().mockReturnThis(),
   fail: vi.fn().mockReturnThis(),
+  warn: vi.fn().mockReturnThis(),
   stop: vi.fn().mockReturnThis(),
 }
 const mockOra = vi.fn().mockReturnValue(mockSpinner)
@@ -305,6 +306,7 @@ describe('CLI', () => {
     mockSpinner.start.mockReturnThis()
     mockSpinner.succeed.mockReturnThis()
     mockSpinner.fail.mockReturnThis()
+    mockSpinner.warn.mockReturnThis()
     mockSpinner.stop.mockReturnThis()
 
     // Store original values
@@ -578,6 +580,45 @@ describe('CLI', () => {
       expect(mockSpinner.succeed).not.toHaveBeenCalledWith(
         'Selected AI skills added'
       )
+    })
+
+    it('continues init with a warning when the AI skills install fails', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'My Project']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-app'
+      mockExistsSync.mockReturnValue(false)
+
+      mockSpawn.mockImplementation((_command: string, args: string[]) => {
+        if (Array.isArray(args) && args[0] === '--version') {
+          process.nextTick(() => {
+            mockChildProcess.stdout.emit('data', '11.0.8\n')
+            mockChildProcess.emit('close', 0)
+          })
+          return mockChildProcess as unknown as ChildProcess
+        }
+        const isSkillsInstall =
+          Array.isArray(args) && args.includes('skills') && args.includes('add')
+        process.nextTick(() =>
+          mockChildProcess.emit('close', isSkillsInstall ? 1 : 0)
+        )
+        return mockChildProcess as unknown as ChildProcess
+      })
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockSpinner.warn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'AI skills install failed, continuing without the AI agent skills'
+        )
+      )
+      expect(mockSpinner.warn).toHaveBeenCalledWith(
+        expect.stringContaining('You can retry later with:')
+      )
+      // Init still finishes: dependencies install and success is reported.
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        `${pc.green('✔ Success!')} Created a ScreenCI project at /workspace/my-app/screenci`
+      )
+      expect(processExitSpy).not.toHaveBeenCalled()
     })
 
     it('uses the current directory basename as the default project name', async () => {

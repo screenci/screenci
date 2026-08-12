@@ -110,6 +110,10 @@ Applied defaults: create the GitHub Actions workflow, install dependencies,
 add React overlay support, install the Chromium shell, skip OS dependency
 installation, and install the AI agent skills (ScreenCI + `playwright-cli`).
 
+The AI skills install is best effort: if it fails (for example on an older
+Node.js runtime), `init` warns, prints the command to retry it later, and
+continues with the rest of the setup.
+
 Use this command in [Manual Setup & First Video](/docs/manual-setup).
 
 ## `screenci test [playwrightArgs...]`

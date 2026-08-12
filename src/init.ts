@@ -1878,23 +1878,34 @@ export async function runInit(
 
     // Install skills at the repo root so coding agents discover them when the
     // repository is opened as the workspace.
+    // The AI skills are an optional add-on: if the install fails (for example
+    // the skills CLI requires a newer Node.js runtime), warn and keep going
+    // instead of failing the whole init.
     if (skillsArgs !== null) {
+      const skillsRetryHint = `You can retry later with: ${commands.skillsCommand} ${skillsArgs.join(' ')}`
       if (verbose) {
         logger.info(`Running '${skillsCommand}'...`)
-        await spawnInherited(
-          commands.skillsCommand,
-          skillsArgs,
-          repoRoot,
-          'screenci init'
-        )
+        try {
+          await spawnInherited(
+            commands.skillsCommand,
+            skillsArgs,
+            repoRoot,
+            'screenci init'
+          )
+        } catch {
+          logger.warn(
+            `AI skills install failed, continuing without the AI agent skills. ${skillsRetryHint}`
+          )
+        }
       } else {
         const spinner = ora('Adding selected AI skills...').start()
         try {
           await spawnSilent(commands.skillsCommand, skillsArgs, repoRoot)
           spinner.succeed('Installing selected AI skills')
-        } catch (err) {
-          spinner.fail('AI skills install failed')
-          throw err
+        } catch {
+          spinner.warn(
+            `AI skills install failed, continuing without the AI agent skills. ${skillsRetryHint}`
+          )
         }
       }
     }

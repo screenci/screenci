@@ -63,17 +63,17 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          # pnpm 11 uses syntax that Node.js 18 cannot parse. Keep smoke tests on
-          # the minimum supported pnpm release so the Node.js 18 baseline remains
-          # covered end to end.
+          # Keep smoke tests on the minimum supported pnpm release so the
+          # Node.js 20 baseline remains covered end to end.
           version: 10.26.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          # Smoke tests stay on the minimum supported runtime so CLI init/test flows
-          # are continuously verified against the Node.js 18 baseline.
-          node-version: 18
+          # Smoke tests stay on the minimum supported runtime so CLI init/test
+          # flows are continuously verified against the Node.js 20 baseline
+          # (Node.js 18 is EOL and current Playwright releases require 20+).
+          node-version: 20
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 

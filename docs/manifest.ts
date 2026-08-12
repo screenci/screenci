@@ -52,18 +52,30 @@ export const docsManifest = [
     description:
       'Author .screenci.ts files with Playwright-like APIs, ScreenCI narration and camera helpers, and workflow-aware pacing.',
     prev: 'docs/manual-setup',
+    next: 'docs/editor',
+  },
+  {
+    source: 'editor.md',
+    slug: 'docs/editor',
+    section: 'Getting Started',
+    order: 5,
+    navLabel: 'Editor',
+    title: 'Editor',
+    description:
+      'Edit videos visually in the web app: live preview, timeline cuts and pacing, narration, overlays, and render options. With screenci edit connected, edits are written back into your script, and Export renders the finished video.',
+    prev: 'docs/video-script-basics',
     next: 'docs/ci-setup',
   },
   {
     source: 'ci-setup.md',
     slug: 'docs/ci-setup',
     section: 'Getting Started',
-    order: 5,
+    order: 6,
     navLabel: 'CI setup',
     title: 'CI Setup',
     description:
       'Understand the generated GitHub Actions workflow, required secrets, and how to keep CI recordings deterministic.',
-    prev: 'docs/video-script-basics',
+    prev: 'docs/editor',
     next: 'docs/guides/animated-interactions',
   },
   {
@@ -76,20 +88,11 @@ export const docsManifest = [
     description:
       'Understand how ScreenCI instruments the Playwright page so visible actions like clicks, typing, mouse movement, and scrolling are animated.',
     prev: 'docs/ci-setup',
-    next: 'docs/guides/keyboard-shortcuts',
-  },
-  {
-    source: 'keyboard-shortcuts.md',
-    slug: 'docs/guides/keyboard-shortcuts',
-    section: 'Guides',
-    order: 2,
-    navLabel: 'Keyboard shortcuts',
-    title: 'Keyboard Shortcuts',
-    description:
-      'Record keyboard shortcuts with page.keyboard.press and show them as animated keycap overlays: control visibility per press, globally, or per shortcut in the editor, and pick a light or dark keycap theme.',
-    prev: 'docs/guides/animated-interactions',
     next: 'docs/guides/narration',
   },
+  // The Keyboard Shortcuts guide (docs/guides/keyboard-shortcuts) was removed
+  // for release along with the shortcut selection surfaces: its source moved
+  // to docs/removed/keyboard-shortcuts.md at the repo root.
   {
     source: 'narration.md',
     slug: 'docs/guides/narration',
@@ -99,7 +102,7 @@ export const docsManifest = [
     title: 'Narration',
     description:
       'Attach spoken cues to a video, overlap narration with visible UI motion, choose voices, use speech markup, and connect ElevenLabs for custom voices.',
-    prev: 'docs/guides/keyboard-shortcuts',
+    prev: 'docs/guides/animated-interactions',
     next: 'docs/guides/overlays',
   },
   // The Values (docs/guides/values), Audio (docs/guides/audio), and Render
@@ -152,20 +155,17 @@ export const docsManifest = [
     description:
       'Resize, hide, and show the recording frame and narration bubble mid-video with animated transitions, and fade overlays in and out.',
     prev: 'docs/guides/camera-and-zooming',
-    next: 'docs/guides/editor',
+    next: 'docs/guides/screenshots',
   },
-  // The Screenshots doc (docs/guides/screenshots) was removed for release:
-  // the screenshot() fixture is unfinished and no longer exported. Its source
-  // moved to docs/removed/screenshots.md at the repo root.
   {
-    source: 'editor.md',
-    slug: 'docs/guides/editor',
+    source: 'screenshots.md',
+    slug: 'docs/guides/screenshots',
     section: 'Guides',
-    order: 6,
-    navLabel: 'Editor',
-    title: 'Editor',
+    order: 5,
+    navLabel: 'Screenshots',
+    title: 'Screenshots',
     description:
-      'Edit videos visually in the web app: live preview, timeline cuts and pacing, narration, overlays, and render options. Edits are written back into your script through a connected screenci edit machine, so code stays the source of truth.',
+      'Capture branded still screenshots with the screenshot() fixture: crop to a component, set quality and dark mode, and frame the shot on a background with overlays.',
     prev: 'docs/guides/overlay-updates',
     next: 'docs/guides/public-urls-and-embeds',
   },
@@ -173,19 +173,19 @@ export const docsManifest = [
     source: 'public-urls-and-embeds.md',
     slug: 'docs/guides/public-urls-and-embeds',
     section: 'Guides',
-    order: 7,
+    order: 6,
     navLabel: 'Public URLs and embeds',
     title: 'Public URLs and Embeds',
     description:
       'Enable public delivery for a video, understand stable language-specific URLs, and embed ScreenCI outputs in other sites.',
-    prev: 'docs/guides/editor',
+    prev: 'docs/guides/screenshots',
     next: 'docs/guides/redact',
   },
   {
     source: 'redact.md',
     slug: 'docs/guides/redact',
     section: 'Guides',
-    order: 8,
+    order: 7,
     navLabel: 'Redact sensitive content',
     title: 'Redact Sensitive Content',
     description:
@@ -197,7 +197,7 @@ export const docsManifest = [
     source: 'screen-audio.md',
     slug: 'docs/guides/screen-audio',
     section: 'Guides',
-    order: 9,
+    order: 8,
     navLabel: 'Screen audio',
     title: 'Screen Audio',
     description:
@@ -209,7 +209,7 @@ export const docsManifest = [
     source: 'update-screenci.mdx',
     slug: 'docs/guides/update-screenci',
     section: 'Guides',
-    order: 10,
+    order: 9,
     navLabel: 'Update ScreenCI',
     title: 'Update ScreenCI',
     description:
@@ -221,7 +221,7 @@ export const docsManifest = [
     source: 'version-history.md',
     slug: 'docs/guides/version-history',
     section: 'Guides',
-    order: 11,
+    order: 10,
     navLabel: 'Version history',
     title: 'Version History',
     description:
@@ -233,7 +233,7 @@ export const docsManifest = [
     source: 'organisation.md',
     slug: 'docs/guides/organisation',
     section: 'Guides',
-    order: 12,
+    order: 11,
     navLabel: 'Organisation & SSO',
     title: 'Organisation & SSO',
     description:
@@ -245,7 +245,7 @@ export const docsManifest = [
     source: 'anonymous-trial.md',
     slug: 'docs/guides/anonymous-trial',
     section: 'Guides',
-    order: 13,
+    order: 12,
     navLabel: 'Anonymous trial',
     title: 'Anonymous Trial',
     description:

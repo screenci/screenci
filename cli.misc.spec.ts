@@ -559,8 +559,8 @@ describe('CLI', () => {
       stdoutSpy.mockRestore()
     })
 
-    it('should show command help with record --help', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--help']
+    it('should show command help with export --help', async () => {
+      process.argv = ['node', 'cli.js', 'export', '--help']
       const stdoutSpy = vi
         .spyOn(process.stdout, 'write')
         .mockImplementation(() => true)
@@ -571,7 +571,7 @@ describe('CLI', () => {
       expect(stdoutSpy).toHaveBeenCalled()
       expect(
         stdoutSpy.mock.calls.some((call) =>
-          String(call[0]).includes('Usage: screenci record')
+          String(call[0]).includes('Usage: screenci export')
         )
       ).toBe(true)
       expect(mockSpawn).not.toHaveBeenCalled()
@@ -581,7 +581,7 @@ describe('CLI', () => {
 
     it('should exit if default config not found', async () => {
       process.env.SCREENCI_RECORDING = 'true'
-      process.argv = ['node', 'cli.js', 'record']
+      process.argv = ['node', 'cli.js', 'export']
       mockExistsSync.mockReturnValue(false)
 
       const { main } = await import('./cli')
@@ -599,7 +599,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'missing.config.ts',
       ]
@@ -618,7 +618,7 @@ describe('CLI', () => {
     })
 
     it('should exit if --config flag provided without value', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--config']
+      process.argv = ['node', 'cli.js', 'export', '--config']
 
       const { main } = await import('./cli')
 
@@ -631,7 +631,7 @@ describe('CLI', () => {
     })
 
     it('should exit if -c flag provided without value', async () => {
-      process.argv = ['node', 'cli.js', 'record', '-c']
+      process.argv = ['node', 'cli.js', 'export', '-c']
 
       const { main } = await import('./cli')
 
@@ -643,8 +643,8 @@ describe('CLI', () => {
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })
 
-    it('logs mock-record troubleshooting help when record fails', async () => {
-      process.argv = ['node', 'cli.js', 'record']
+    it('logs mock-record troubleshooting help when the export record pass fails', async () => {
+      process.argv = ['node', 'cli.js', 'export']
       process.env.SCREENCI_SECRET = 'test-secret'
       mockSpawn.mockImplementation(() => {
         process.nextTick(() => mockChildProcess.emit('close', 1))
@@ -679,7 +679,7 @@ describe('CLI', () => {
     })
 
     it('surfaces the first Playwright discovery error and snippet instead of raw JSON', async () => {
-      process.argv = ['node', 'cli.js', 'record']
+      process.argv = ['node', 'cli.js', 'export']
       process.env.SCREENCI_SECRET = 'test-secret'
       mockSpawn.mockImplementation((_command: string, args: string[]) => {
         if (args.includes('--list')) {
@@ -1093,6 +1093,36 @@ describe('CLI', () => {
     it('leaves languages undefined when not provided', async () => {
       const { parseRecordCliArgs } = await import('./cli')
       expect(parseRecordCliArgs(['--grep', 'x']).languages).toBeUndefined()
+    })
+  })
+
+  describe('formatRecordResultMessage', () => {
+    it('reports a preview refresh for a plain record', async () => {
+      const { formatRecordResultMessage } = await import('./cli')
+      expect(
+        formatRecordResultMessage({ exported: false, partial: false })
+      ).toBe('Recording finished, live preview updated. Edit and export at:')
+    })
+
+    it('reports a render only for an export run', async () => {
+      const { formatRecordResultMessage } = await import('./cli')
+      expect(
+        formatRecordResultMessage({ exported: true, partial: false })
+      ).toBe(
+        'Recording finished, export render in progress. Results available at:'
+      )
+    })
+
+    it('keeps the partial prefix in both modes', async () => {
+      const { formatRecordResultMessage } = await import('./cli')
+      expect(
+        formatRecordResultMessage({ exported: false, partial: true })
+      ).toBe(
+        'Recording partially succeeded, live preview updated. Edit and export at:'
+      )
+      expect(formatRecordResultMessage({ exported: true, partial: true })).toBe(
+        'Recording partially succeeded, export render in progress. Results available at:'
+      )
     })
   })
 })

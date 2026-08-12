@@ -168,7 +168,7 @@ Error responses:
 Every media endpoint has a record-pinned form that adds a `records/<recordId>`
 segment to the path. The static URL (no `records/` segment) serves the
 **currently selected** version. The pinned URL serves the render produced by that
-specific `screenci record` run.
+specific `screenci export` run.
 
 ```text
 GET /public/:id/:language/video                       # latest selected version

@@ -362,7 +362,7 @@ describe('applyCodegenRequest: orphaned (stale key) soft skip', () => {
       {
         requestId: 'req1',
         videoName: 'Demo',
-        editId: 'param|delay|||0',
+        editId: 'param|delay',
         editJson,
         requiresRecord: true,
       },
@@ -383,8 +383,8 @@ describe('applyCodegenRequest: orphaned (stale key) soft skip', () => {
   // no call site to touch.
   const staleDelayEdit = JSON.stringify({
     type: 'paramEdit',
-    id: 'param|delay|||0',
-    target: { key: 'delay|||0' },
+    id: 'param|delay',
+    target: { key: 'delay' },
     fields: { durationMs: 500 },
   })
 

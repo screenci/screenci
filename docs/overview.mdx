@@ -7,21 +7,20 @@ script and the video regenerates.
 
 ## How it works
 
-Record with the CLI, refine in the web editor, then export and deliver the
+Record and refine with the CLI and the web editor, then export and deliver the
 final video where your team needs it.
 
 <!-- screenci-image:VideoLifecycle -->
 
-- **Record.** `screenci record` captures the flow on your machine and uploads
-  the recording. By default this only refreshes the video's live preview in
-  the web editor, so you can iterate for free.
-- **Refine.** The [Editor](/docs/guides/editor) shows a live preview and a
-  timeline. With `screenci edit` running, every edit you make in the browser
-  (narration, overlays, cuts, timings, render options) is written back into
-  your script, so code stays the source of truth.
-- **Export.** When the preview looks right, export (the Export button, or
-  `screenci record --export`) to render the finished video, then serve it
-  from a stable public URL.
+- **Record and refine.** `screenci edit` captures the flow on your machine,
+  uploads the live preview, and opens the video in the [Editor](/docs/editor):
+  a live preview and a timeline. While `edit` stays running, every change you
+  make in the browser (narration, overlays, cuts, timings, render options) is
+  written back into your script, so code stays the source of truth.
+- **Export.** When the preview looks right, run `screenci export` (or use the
+  Export button) to render the finished videos and download them, then serve
+  them from a stable public URL. `export` re-records only the videos whose
+  sources changed, so it is also the command CI runs.
 
 The CLI runs everything that touches your app locally, so the only thing that
 leaves your machine is the raw recording plus timing data, not your source code.
@@ -36,11 +35,11 @@ Pick the path that fits how you work.
   scaffolds ScreenCI, authors a video for the flow you describe, and records it,
   with you mostly reviewing the result.
 - **[Manual setup & first video](/docs/manual-setup).** Scaffold ScreenCI
-  yourself, write the `.screenci.ts` script by hand, run it locally, and record the
-  final video.
+  yourself, write the `.screenci.ts` script by hand, run it locally, and export
+  the final video.
 
 Either way, once a video exists you can dig into the rest of the docs to refine
-it: [Editor](/docs/guides/editor),
+it: [Editor](/docs/editor),
 [Video Script Basics](/docs/video-script-basics),
 [Camera and Zooming](/docs/guides/camera-and-zooming),
 [Narration](/docs/guides/narration), and

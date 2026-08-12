@@ -331,7 +331,7 @@ async function handleCodegenRequest(
     deps.logger.info(
       `Applied ${describeEditId(request.editId)} to "${request.videoName}"${
         request.queuedBy !== undefined ? ` (queued by ${request.queuedBy})` : ''
-      }.`
+      }.${request.requiresRecord ? '' : ' Applies at render time, no re-record needed.'}`
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

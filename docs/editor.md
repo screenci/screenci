@@ -86,7 +86,7 @@ video.recordOptions({ fps: 30 })
 - [how action parameters are tracked and overridden](#action-parameter-tracking-and-overrides)
 - [how to migrate from the removed `editable()` helper](#migrating-from-editable)
 
-<!-- screenci-doc-video:docs/guides/editor -->
+<!-- screenci-doc-video:docs/editor -->
 
 ## The editor at a glance
 
@@ -142,12 +142,13 @@ or the source drifted), it stays in the list as failed with **Retry** and
 rendering.
 
 Edits that only affect rendering (narration text, overlay files, render
-options) preview and export immediately. Edits that change the capture itself
+options) preview and export immediately; when the CLI writes one into code it
+logs "Applies at render time, no re-record needed" and does not re-record. Edits that change the capture itself
 (record options, interaction timings, on-screen text, the language set) are
 badged **applies after next recording**: the preview is marked stale until a
 recording runs. A connected machine auto-records once it applies such an edit;
 otherwise trigger a re-record via CI (see the CI setup guide) or ask a developer
-to run `screenci record`. While a connected machine is actively syncing a
+to run `screenci edit`. While a connected machine is actively syncing a
 video's source, that video's editing controls lock briefly until it finishes.
 
 ## Editing in Editor
@@ -191,7 +192,7 @@ The sidebar's **Recording** group collects every way to produce fresh footage:
 
 A status line under the menu tracks the run ("Recording en on laptop...",
 "Recording synced."). The regular record run lock applies: if another
-`screenci record` is already running on the machine, the request is reported
+recording run is already active on the machine, the request is reported
 back as failed.
 
 ## Editor narration from code
@@ -705,7 +706,10 @@ stamps missing slugs automatically after a recording, allocating numbers from
 are never removed). With an editId, the action's stable key IS the slug: edits
 keep matching across re-records even after refactors, moved lines, or locator
 changes, and codegen locates the call site by the exact slug instead of
-heuristics.
+heuristics. An action that has not been stamped yet falls back to a readable
+identity key built from what was recorded (`delay`, `input click Save`, with
+`#2` appended for repeat executions); these keys can drift across re-records,
+which is why stamping exists.
 
 The slug is the action's display name on the editor timeline, and it can be
 renamed there: the rename is codegen'd by replacing the slug's string literal
@@ -761,7 +765,7 @@ The editor's option panels are codegen'd the same way as timeline edits while
 preview and the offline fallback):
 
 - **Render options** (recording size and roundness, background, aspect ratio,
-  quality, mouse size/style/motion blur, keyboard shortcut display, narration
+  quality, mouse size/style/motion blur, narration
   box styling, shadow, crop) are merged into the video's
   `.renderOptions({...})` builder call. The call is appended to the chain when
   the video has none yet; existing keys are updated in place and unrelated
@@ -778,7 +782,7 @@ preview and the offline fallback):
   sub-object.
 
 Every editor edit is codegen'd: it is written into your `.screenci.ts` sources
-through the connected `screenci dev` machine, and fails if no machine is
+through the connected `screenci edit` machine, and fails if no machine is
 connected. There is no web-side edit store. Uploaded media (narration voices
 and recorded audio, cloned-voice samples) is downloaded to local editor files
 on the dev machine and referenced from code.
@@ -808,7 +812,7 @@ it, or start it with empty placeholders. The **Languages** section on the Editor
 page shows the
 current set and lets you add a language; adding one writes it into your
 `video.languages([...])` declaration in code (a new `.languages([...])` call is
-added when the video has none) through the connected `screenci dev` machine,
+added when the video has none) through the connected `screenci edit` machine,
 then records:
 
 ```ts

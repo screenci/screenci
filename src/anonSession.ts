@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto'
 import { resolve } from 'path'
 import { getDevBackendUrl } from './linkSession.js'
 
-// Anonymous CLI trial: `screenci record` with no SCREENCI_SECRET uploads
+// Anonymous CLI trial: `screenci export` with no SCREENCI_SECRET uploads
 // under a locally generated token instead of requiring an account up front.
 // The token lives only in `.screenci/anon-session.json` and, server-side, in
 // the anonymousSessions table (never printed or embedded in any URL).
@@ -137,7 +137,7 @@ export async function readAnonSessionRecordUrl(
   return existing?.recordUrl ?? null
 }
 
-// How many separate `screenci record` runs an anonymous trial may upload before
+// How many separate `screenci export` runs an anonymous trial may upload before
 // it must sign up. Kept in sync with ANON_MAX_RECORDINGS server-side.
 export const ANON_MAX_RECORDINGS = 3
 

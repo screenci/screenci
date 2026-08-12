@@ -686,7 +686,7 @@ describe('CLI', () => {
       await main()
 
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        `Tests passed. Run ${pc.cyan('npx screenci record')} to render the videos.`
+        `Tests passed. Run ${pc.cyan('npx screenci edit')} to record and edit a video, or ${pc.cyan('npx screenci export')} to export finished videos.`
       )
     })
 
@@ -702,7 +702,7 @@ describe('CLI', () => {
       await main()
 
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        `Tests passed. Run ${pc.cyan('pnpm exec screenci record')} to render the videos.`
+        `Tests passed. Run ${pc.cyan('pnpm exec screenci edit')} to record and edit a video, or ${pc.cyan('pnpm exec screenci export')} to export finished videos.`
       )
     })
 

@@ -2188,7 +2188,7 @@ describe('planCodeSync: typed refusal reasons', () => {
     const result = plan(
       inputWith({
         editableOverrides: {
-          Demo: [{ key: 'delay|||0', values: { durationMs: 500 } }],
+          Demo: [{ key: 'delay', values: { durationMs: 500 } }],
         },
       })
     )

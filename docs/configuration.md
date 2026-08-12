@@ -91,7 +91,7 @@ YOUR_PRIVATE_SECRET=your_own_app_secret
 
 Common cases:
 
-- `SCREENCI_SECRET` authenticates `screenci record`, `screenci info`, and
+- `SCREENCI_SECRET` authenticates `screenci edit`, `screenci export`, `screenci info`, and
   public visibility commands.
 - Any other variables (for example `YOUR_PRIVATE_SECRET`) are yours to use
   inside your own app or test setup. ScreenCI reads them from the env file into
@@ -271,8 +271,8 @@ video.renderOptions({
 })
 ```
 
-The image is uploaded alongside the recording, and drawn in the video
-output. It replaces the built-in cursor entirely, so `mouse.style`
+The image is uploaded alongside the recording, and drawn in both video and
+screenshot output. It replaces the built-in cursor entirely, so `mouse.style`
 is ignored when `image` is set. A few things to know:
 
 - Use a **PNG**.
@@ -311,7 +311,7 @@ The web Editor is the source of truth for render and record options. Values
 declared in code (per video with `video.renderOptions(...)` and
 `video.recordOptions(...)`) are the starting point, and web edits override them.
 Omit them entirely to start from the system defaults. See
-[Editor](/docs/guides/editor).
+[Editor](/docs/editor).
 
 ### Example: shared `use` defaults
 

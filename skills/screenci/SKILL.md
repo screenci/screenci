@@ -28,8 +28,8 @@ npx screenci test
 # run a subset with normal Playwright filters
 npx screenci test recordings/signup.screenci.ts --grep "fills billing details"
 
-# only record after tests pass
-npx screenci record
+# only export after tests pass
+npx screenci export
 ```
 
 `test` forwards normal `playwright test` arguments and still injects the resolved `screenci.config.ts`. `--config`/`-c` and `--verbose`/`-v` are reserved for the ScreenCI CLI, not forwarded to Playwright.
@@ -112,27 +112,28 @@ await autoZoom(async () => {
 
 ## Connecting to an Account (optional)
 
-`record` needs no account: without a `SCREENCI_SECRET` it uploads under a local, anonymous trial session and prints a link to view the result. Mention this and keep going.
+`export` needs no account: without a `SCREENCI_SECRET` it records and renders under a local, anonymous trial session and prints a link to view the result (downloads require an account). Mention this and keep going.
 
-To upload straight to an existing organization, get `SCREENCI_SECRET` into `screenci/.env` before the final `record` (it does not block authoring or testing):
+To upload straight to an existing organization, get `SCREENCI_SECRET` into `screenci/.env` before the final `export` (it does not block authoring or testing):
 
 1. **Pass it to init:** `npm init screenci@latest <SCREENCI_SECRET> -- --yes` writes it into `screenci/.env`.
-2. **Secrets page:** ask the user to copy `SCREENCI_SECRET` from their secrets page into `screenci/.env`. The org secret is shared across projects. Keep building and testing while they do it; only `record` needs it.
+2. **Secrets page:** ask the user to copy `SCREENCI_SECRET` from their secrets page into `screenci/.env`. The org secret is shared across projects. Keep building and testing while they do it; only `export` needs it.
 
-Renders without an account, and renders on the free tier, include a ScreenCI watermark. Do not add a separate upgrade upsell after `record`; report the result URL unless the user asks about plans or watermark removal.
+Renders without an account, and renders on the free tier, include a ScreenCI watermark. Do not add a separate upgrade upsell after `export`; report the result URL unless the user asks about plans or watermark removal.
 
-## Recording Workflow
+## Export Workflow
 
 1. Add or edit `.screenci.ts` files in `recordings/` (remove `example.screenci.ts` if creating new videos).
 2. Run `npx screenci test` until it passes. Fix selectors/flow/narration and rerun until green.
-3. Run `npx screenci record` yourself once tests pass. Do not stop and ask the user to record. It uploads immediately, with or without `SCREENCI_SECRET`.
-4. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` per video.
-5. Report the URL `record` printed (starts with the app's domain, e.g. `https://app.screenci.com/record/...`) so the user can open it. Without a `SCREENCI_SECRET`, this is also how they view and claim the anonymous trial recording.
+3. Run `npx screenci export` yourself once tests pass. Do not stop and ask the user to export. It records what changed, renders, waits, and downloads into `./exports/`, with or without `SCREENCI_SECRET`.
+4. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` per re-recorded video.
+5. Report the URL `export` printed (starts with the app's domain, e.g. `https://app.screenci.com/export/...`) so the user can open it. Without a `SCREENCI_SECRET`, this is also how they view and claim the anonymous trial recording.
+6. To refine one video interactively, run `npx screenci edit "<title>"`: it records the live preview if stale, prints the web editor link, and stays connected so browser edits are written back into the script.
 
 `screenci init` (or `npm init screenci`) scaffolds a new project and fails on purpose if one already exists (`screenci/ already exists`). That is expected: keep working with the existing project, do not delete it to re-init.
 
 ## Specific Tasks
 
-- **Recording videos** [references/record.md](references/record.md)
+- **Exporting videos** [references/export.md](references/export.md)
   </content>
   </invoke>

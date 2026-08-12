@@ -575,14 +575,20 @@ describe('CLI', () => {
     })
   })
 
-  describe('record command', () => {
+  describe('export command', () => {
     beforeEach(() => {
       process.env.SCREENCI_SECRET = 'test-secret'
     })
 
+    afterEach(() => {
+      // Export sets process.exitCode on failed/empty runs; never leak it into
+      // the test runner process.
+      process.exitCode = undefined
+    })
+
     it('runs Playwright and does not exit when SCREENCI_SECRET is missing', async () => {
       delete process.env.SCREENCI_SECRET
-      process.argv = ['node', 'cli.js', 'record']
+      process.argv = ['node', 'cli.js', 'export']
       mockSpawn.mockImplementation(() => {
         process.nextTick(() => mockChildProcess.emit('close', 0))
         return mockChildProcess as unknown as ChildProcess
@@ -601,7 +607,7 @@ describe('CLI', () => {
 
     it('loads SCREENCI_SECRET from the project .env when envFile is not configured', async () => {
       delete process.env.SCREENCI_SECRET
-      process.argv = ['node', 'cli.js', 'record']
+      process.argv = ['node', 'cli.js', 'export']
       if (loadEnvFileSpy) {
         loadEnvFileSpy.mockImplementation((path?: string | URL) => {
           if (String(path) === `${process.cwd()}/.env`) {
@@ -632,7 +638,7 @@ describe('CLI', () => {
     })
 
     it('should run Playwright locally for record command', async () => {
-      process.argv = ['node', 'cli.js', 'record']
+      process.argv = ['node', 'cli.js', 'export']
       process.env.VITE_APP_BASE_URL = 'https://example.com'
       mockSpawn.mockImplementation(
         (
@@ -671,7 +677,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
         '--grep',
@@ -761,7 +767,7 @@ describe('CLI', () => {
     })
 
     it('should only log the config path in verbose mode', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--verbose']
+      process.argv = ['node', 'cli.js', 'export', '--verbose']
       process.env.VITE_APP_BASE_URL = 'https://example.com'
       mockReadFile.mockImplementation(async (path: string | URL) => {
         if (String(path).endsWith('screenci.config.ts')) {
@@ -1000,7 +1006,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
       ]
@@ -1038,6 +1044,44 @@ describe('CLI', () => {
             text: vi.fn().mockResolvedValue(''),
           }
         }
+        if (url.includes('/cli/info')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              projectName: 'Test Project',
+              projectId: 'project_123',
+              videos: {
+                Demo: {
+                  videoId: 'video_123',
+                  languages: {
+                    en: {
+                      latestRecord: {
+                        status: 'finished',
+                        download: {
+                          video:
+                            'http://localhost:8787/cli/download/video_123/records/r1/en/video',
+                          screenshot:
+                            'http://localhost:8787/cli/download/video_123/records/r1/en/screenshot',
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        if (url.includes('/cli/download/')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+            arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
+          }
+        }
         return {
           ok: true,
           status: 200,
@@ -1058,7 +1102,7 @@ describe('CLI', () => {
         stripVTControlCharacters(String(call[0]))
       )
       expect(messages).toContain(
-        'Recording finished, rendering in progress. Results available at:'
+        'Recording finished, export render in progress. Results available at:'
       )
       expect(
         messages.some((message) => message.includes('ScreenCI watermark'))
@@ -1074,7 +1118,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
       ]
@@ -1148,7 +1192,7 @@ describe('CLI', () => {
           return (
             typeof parsed.token === 'string' &&
             typeof parsed.recordUrl === 'string' &&
-            parsed.recordUrl.startsWith('http://localhost:5173/record/')
+            parsed.recordUrl.startsWith('http://localhost:5173/export/')
           )
         })
       ).toBe(true)
@@ -1158,7 +1202,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
       ]
@@ -1196,6 +1240,44 @@ describe('CLI', () => {
             text: vi.fn().mockResolvedValue(''),
           }
         }
+        if (url.includes('/cli/info')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              projectName: 'Test Project',
+              projectId: 'project_123',
+              videos: {
+                Demo: {
+                  videoId: 'video_123',
+                  languages: {
+                    en: {
+                      latestRecord: {
+                        status: 'finished',
+                        download: {
+                          video:
+                            'http://localhost:8787/cli/download/video_123/records/r1/en/video',
+                          screenshot:
+                            'http://localhost:8787/cli/download/video_123/records/r1/en/screenshot',
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        if (url.includes('/cli/download/')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({}),
+            text: vi.fn().mockResolvedValue(''),
+            arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
+          }
+        }
         return {
           ok: true,
           status: 200,
@@ -1216,7 +1298,7 @@ describe('CLI', () => {
         stripVTControlCharacters(String(call[0]))
       )
       expect(messages).toContain(
-        'Recording finished, rendering in progress. Results available at:'
+        'Recording finished, export render in progress. Results available at:'
       )
       expect(messages.some((message) => message.includes('/select-plan'))).toBe(
         false
@@ -1509,7 +1591,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
       ]
@@ -1593,7 +1675,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload-all-or-nothing.config.ts',
       ]
@@ -2415,7 +2497,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
       ]
@@ -3007,7 +3089,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
       ]
@@ -3115,7 +3197,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload.config.ts',
       ]
@@ -3184,7 +3266,7 @@ describe('CLI', () => {
       process.argv = [
         'node',
         'cli.js',
-        'record',
+        'export',
         '--config',
         'test-fixtures/record-upload-all-or-nothing.config.js',
       ]
@@ -3210,7 +3292,7 @@ describe('CLI', () => {
 
     describe('--remote', () => {
       it('dispatches the workflow and does not record locally', async () => {
-        process.argv = ['node', 'cli.js', 'record', '--remote']
+        process.argv = ['node', 'cli.js', 'export', '--remote']
 
         const { main } = await import('./cli')
         await main()
@@ -3244,7 +3326,7 @@ describe('CLI', () => {
         process.argv = [
           'node',
           'cli.js',
-          'record',
+          'export',
           '--remote',
           '--grep',
           'Onboarding',
@@ -3266,7 +3348,7 @@ describe('CLI', () => {
       })
 
       it('throws when the backend rejects the trigger', async () => {
-        process.argv = ['node', 'cli.js', 'record', '--remote']
+        process.argv = ['node', 'cli.js', 'export', '--remote']
         mockFetch.mockResolvedValue({
           ok: false,
           status: 400,

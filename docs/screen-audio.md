@@ -78,7 +78,7 @@ works with no extra configuration. Install one with your package manager, e.g.
 To force a specific binary, set `SCREENCI_FFMPEG_PATH`, which always wins:
 
 ```bash
-SCREENCI_FFMPEG_PATH=/usr/bin/ffmpeg pnpm screenci record
+SCREENCI_FFMPEG_PATH=/usr/bin/ffmpeg pnpm screenci export
 ```
 
 Verify a binary has the input with `ffmpeg -hide_banner -formats | grep pulse`.

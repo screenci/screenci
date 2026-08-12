@@ -57,19 +57,19 @@ describe('planEditIdStamps', () => {
     const result = stamp(
       snapshotWith([
         {
-          key: 'autoZoom|||0',
+          key: 'autoZoom',
           locked: false,
           defaults: {},
           source: { file: FILE, line: 4 },
         },
         {
-          key: 'input|click|getByRole(button, name=Save)|0',
+          key: 'input click getByRole(button, name=Save)',
           locked: false,
           defaults: {},
           source: { file: FILE, line: 5 },
         },
         {
-          key: 'input|pressSequentially|locator(#name)|0',
+          key: 'input pressSequentially locator(#name)',
           locked: false,
           defaults: {},
           source: { file: FILE, line: 7 },
@@ -150,7 +150,7 @@ describe('planEditIdStamps', () => {
           source: { file: FILE, line: 7 },
         },
         {
-          key: 'input|click|getByRole(button, name=Save)|0',
+          key: 'input click getByRole(button, name=Save)',
           locked: false,
           defaults: {},
         },
@@ -172,13 +172,13 @@ describe('planEditIdStamps', () => {
     const result = stamp(
       snapshotWith([
         {
-          key: 'input|click|locator(#x)|0',
+          key: 'input click locator(#x)',
           locked: false,
           defaults: {},
           source: { file: FILE, line: 3 },
         },
         {
-          key: 'input|click|locator(#x)|1',
+          key: 'input click locator(#x) #1',
           locked: false,
           defaults: {},
           source: { file: FILE, line: 3 },
@@ -197,7 +197,7 @@ describe('planEditIdStamps', () => {
       videos: {
         A: [
           {
-            key: 'input|click|getByRole(button, name=Save)|0',
+            key: 'input click getByRole(button, name=Save)',
             locked: false,
             defaults: {},
             source: { file: FILE, line: 5 },
@@ -205,7 +205,7 @@ describe('planEditIdStamps', () => {
         ],
         B: [
           {
-            key: 'input|click|getByRole(button, name=Save)|0',
+            key: 'input click getByRole(button, name=Save)',
             locked: false,
             defaults: {},
             source: { file: FILE, line: 5 },

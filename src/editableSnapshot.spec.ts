@@ -16,7 +16,7 @@ describe('splitTimelineEditsByVideo', () => {
           {
             type: 'paramEdit',
             id: 'p1',
-            target: { key: 'delay|||0' },
+            target: { key: 'delay' },
             fields: { durationMs: 100 },
           },
           {
@@ -45,7 +45,7 @@ describe('splitTimelineEditsByVideo', () => {
       broken: 'not a doc',
     })
     expect(overrides).toEqual({
-      demo: [{ key: 'delay|||0', values: { durationMs: 100 } }],
+      demo: [{ key: 'delay', values: { durationMs: 100 } }],
     })
     expect(codify.demo?.map((event) => event.id)).toEqual(['e1'])
     expect(codify.broken).toBeUndefined()
@@ -159,7 +159,7 @@ describe('collectEditableFromRecordings', () => {
     const collected = collectEditableFromRecordings(dir)
     expect(collected['My video']).toEqual([
       {
-        key: 'input|click|getByRole(button)|0',
+        key: 'input click getByRole(button)',
         schemaKind: 'cursorMove',
         locked: true,
         lockedFields: ['moveDuration'],

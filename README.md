@@ -3,7 +3,7 @@
 Your UI changed. Your demo videos didn't. screenci fixes that.
 
 Record product walkthroughs as code. When the UI ships, run
-`npx screenci record` and your videos regenerate. You keep the Playwright
+`npx screenci export` and your videos regenerate. You keep the Playwright
 mental model, but the output is a maintainable product video instead of a
 test report.
 
@@ -21,11 +21,12 @@ This scaffolds a self-contained `screenci/` directory with its own
 dependencies and installs Chromium. The directory is isolated from the
 surrounding workspace, which keeps installation reliable inside monorepos.
 
-Then write a video, run it locally, and record the final output:
+Then write a video, run it locally, refine it, and export the final output:
 
 ```bash
 npx screenci test      # author the video
-npx screenci record    # render and upload the final video
+npx screenci edit      # record it and open the web editor
+npx screenci export    # render and download the finished video
 ```
 
 Full docs:

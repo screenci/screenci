@@ -85,21 +85,21 @@ describe('editable keys', () => {
         name: 'save',
         matcher: 'getByRole(button)',
       })
-    ).toBe('input|click|save')
+    ).toBe('input click save')
   })
 
-  it('falls back to the matcher, then to an empty identity part', () => {
+  it('falls back to the matcher, then drops absent identity parts', () => {
     expect(
       editableIdentityKey({
         kind: 'input',
         subKind: 'click',
         matcher: 'getByRole(button)',
       })
-    ).toBe('input|click|getByRole(button)')
-    expect(editableIdentityKey({ kind: 'delay' })).toBe('delay||')
+    ).toBe('input click getByRole(button)')
+    expect(editableIdentityKey({ kind: 'delay' })).toBe('delay')
   })
 
-  it('appends the ordinal for the stable key', () => {
+  it('appends the ordinal for the stable key only when repeated', () => {
     expect(
       stableEditableKey({
         kind: 'input',
@@ -107,7 +107,8 @@ describe('editable keys', () => {
         matcher: 'getByRole(button)',
         ordinal: 3,
       })
-    ).toBe('input|click|getByRole(button)|3')
+    ).toBe('input click getByRole(button) #3')
+    expect(stableEditableKey({ kind: 'delay', ordinal: 0 })).toBe('delay')
   })
 })
 

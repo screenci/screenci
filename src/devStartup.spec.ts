@@ -10,7 +10,7 @@ import type { RecordingData } from './recordingData.js'
 
 function entry(editId?: string): EditableSnapshotEntry {
   return {
-    key: editId ?? 'delay|||0',
+    key: editId ?? 'delay',
     ...(editId !== undefined && { editId }),
     locked: false,
     defaults: { durationMs: 100 },

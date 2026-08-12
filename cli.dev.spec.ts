@@ -218,6 +218,43 @@ describe('runDevListenLoop', () => {
     ])
   })
 
+  it('logs a render-time edit as needing no re-record, a record-affecting one without the note', async () => {
+    const controller = { stopped: false }
+    const applyCodegen = vi.fn(async () => {})
+    const deps = makeDeps({ applyCodegen })
+    const renderOptionsRequest: DevCodegenRequest = {
+      requestId: 'cgr_2',
+      videoName: 'Intro video',
+      editId: 'options:renderOptions',
+      editJson: '{"type":"optionsEdit"}',
+      requiresRecord: false,
+    }
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/cli/dev/poll')) {
+        if (deps.fetchMock.mock.calls.length === 1) {
+          return jsonResponse({
+            trigger: null,
+            codegenRequests: [codegenRequest, renderOptionsRequest],
+          })
+        }
+        controller.stopped = true
+        return jsonResponse({ trigger: null })
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    await runDevListenLoop(config, deps, 'lst_1', controller)
+
+    const infoLines = (deps.logger.info as ReturnType<typeof vi.fn>).mock.calls
+      .map(([line]) => line as string)
+      .filter((line) => line.startsWith('Applied'))
+    expect(infoLines).toHaveLength(2)
+    expect(infoLines[0]).not.toContain('no re-record needed')
+    expect(infoLines[1]).toContain(
+      'Applies at render time, no re-record needed.'
+    )
+  })
+
   it('reports a stale-key edit as orphaned (soft skip), not failed', async () => {
     const controller = { stopped: false }
     const applyCodegen = vi.fn(async () => ({ outcome: 'orphaned' as const }))

@@ -84,7 +84,7 @@ Manual selection is currently done in the app, not the CLI.
 
 Alongside the stable URLs above, every media URL has a record-pinned form that
 adds a `records/<recordId>` segment to the path, pinning it to a specific
-`screenci record` run:
+`screenci export` run:
 
 ```text
 https://api.screenci.com/public/<videoId>/records/<recordId>/<language>/video

@@ -127,16 +127,20 @@ export function editableIdentityKey(
   if (descriptor.editId !== undefined) return descriptor.editId
   return [
     descriptor.kind,
-    descriptor.subKind ?? '',
-    descriptor.name ?? descriptor.matcher ?? '',
-  ].join('|')
+    descriptor.subKind,
+    descriptor.name ?? descriptor.matcher,
+  ]
+    .filter((part): part is string => part !== undefined && part.length > 0)
+    .join(' ')
 }
 
 /**
  * The stable key overrides are matched by across re-records. With an editId
  * the key is the slug itself (`fill1`), or `fill1#N` for repeat executions of
- * the same call site; without one it is the legacy matcher identity plus
- * ordinal. `seq` stays out (it shifts whenever any action is added anywhere).
+ * the same call site; without one it is the human-readable matcher identity
+ * (`delay`, `input click Save`), plus ` #N` for ordinal > 0. `seq` stays out
+ * (it shifts whenever any action is added anywhere). Keys are shown verbatim
+ * in the UI and CLI, so they must stay readable: no pipes, no empty segments.
  */
 export function stableEditableKey(
   descriptor: Pick<
@@ -149,7 +153,9 @@ export function stableEditableKey(
       ? descriptor.editId
       : `${descriptor.editId}#${descriptor.ordinal}`
   }
-  return `${editableIdentityKey(descriptor)}|${descriptor.ordinal}`
+  return descriptor.ordinal === 0
+    ? editableIdentityKey(descriptor)
+    : `${editableIdentityKey(descriptor)} #${descriptor.ordinal}`
 }
 
 /** Position allocated for a descriptor within the current recording. */

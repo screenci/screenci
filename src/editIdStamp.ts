@@ -79,9 +79,14 @@ export function allocateEditId(
   return `${prefix}${next}`
 }
 
-/** `kind|subKind|...` of a legacy stable editable key. */
+/**
+ * `kind` and `subKind` of an unstamped stable editable key (space-joined
+ * identity, e.g. `input click Save`). Only the leading segments matter here:
+ * every stampable kind either has no name (autoZoom, hide, speed, time) or
+ * always carries a subKind before the name (input).
+ */
 function parseKindSubKind(key: string): { kind: string; subKind: string } {
-  const parts = key.split('|')
+  const parts = key.split(' ')
   return { kind: parts[0] ?? '', subKind: parts[1] ?? '' }
 }
 

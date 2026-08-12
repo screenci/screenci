@@ -1635,8 +1635,9 @@ export function planCodeSync(
       // A `slug#N` loop repeat execution has no call site of its own: locked,
       // regardless of whether the snapshot carries the repeat. Checked before
       // the orphaned test below so a repeat key is never mistaken for a stale
-      // one.
-      if (override.key.includes('#')) {
+      // one. Unstamped repeat keys (`delay #2`) contain a space before the
+      // ordinal; only bare `slug#N` editId keys are loop repeats.
+      if (override.key.includes('#') && !override.key.includes(' ')) {
         for (const [field, value] of Object.entries(override.values)) {
           if (value === undefined) continue
           if (entry !== undefined && jsonEqual(entry.defaults[field], value)) {

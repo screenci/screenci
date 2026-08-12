@@ -241,27 +241,12 @@ export type RenderOptions = {
      */
     motionBlur?: number
   }
-  /** Keyboard shortcut overlays recorded from `page.keyboard.press`. */
-  shortcuts?: {
-    /**
-     * Show modifier-combo shortcuts (e.g. `Shift+A`) as keycap overlays.
-     * Defaults to `true`.
-     */
-    show?: boolean
-    /**
-     * Show single-key presses (e.g. `'A'`) as keycap overlays. Defaults to
-     * `false`.
-     */
-    showSingle?: boolean
-    /** Keycap appearance. Defaults to `'dark'`. */
-    theme?: 'light' | 'dark'
-    /**
-     * Per-shortcut visibility overrides from the web editor timeline, keyed by
-     * the recorded event id. Wins over the per-call `show` option and the
-     * global toggles.
-     */
-    overrides?: Record<string, { show: boolean }>
-  }
+  // Hidden for release: the keyboard shortcut overlay selection is removed
+  // from the public options surface (the web editor no longer offers it
+  // either). The runtime still resolves the options with their defaults, see
+  // HiddenShortcutRenderOptions below. Re-enable by moving that type's
+  // `shortcuts` field back here. Docs moved to docs/removed/keyboard-shortcuts.md
+  // at the repo root.
   output?: {
     /**
      * Aspect ratio of the rendered video output.
@@ -295,6 +280,37 @@ export type RenderOptions = {
   }
   /** Screenshot-only render options (format, margin, aspectRatio). */
   screenshot?: ScreenshotRenderOptions
+}
+
+/**
+ * Hidden for release: keyboard shortcut overlay options, removed from the
+ * public {@link RenderOptions} surface. Internal consumers (options
+ * resolution, the web editor's settings serialization) intersect this type so
+ * previously saved options keep resolving. Re-enable by moving the field back
+ * into {@link RenderOptions}.
+ */
+export type HiddenShortcutRenderOptions = {
+  /** Keyboard shortcut overlays recorded from `page.keyboard.press`. */
+  shortcuts?: {
+    /**
+     * Show modifier-combo shortcuts (e.g. `Shift+A`) as keycap overlays.
+     * Defaults to `true`.
+     */
+    show?: boolean
+    /**
+     * Show single-key presses (e.g. `'A'`) as keycap overlays. Defaults to
+     * `false`.
+     */
+    showSingle?: boolean
+    /** Keycap appearance. Defaults to `'dark'`. */
+    theme?: 'light' | 'dark'
+    /**
+     * Per-shortcut visibility overrides from the web editor timeline, keyed by
+     * the recorded event id. Wins over the per-call `show` option and the
+     * global toggles.
+     */
+    overrides?: Record<string, { show: boolean }>
+  }
 }
 
 /**
@@ -1060,23 +1076,18 @@ type ScreenCIMouse = Omit<
 /** Options for {@link ScreenCIKeyboard.press}. */
 export type ScreenCIKeyboardPressOptions = NonNullable<
   Parameters<Keyboard['press']>[1]
-> & {
-  /**
-   * Visibility override for the keyboard shortcut overlay in the rendered
-   * video. `true` shows the keycaps even when the shortcut kind is disabled
-   * globally (e.g. a single key with `shortcuts.showSingle` off); `false`
-   * always hides them. Omit to follow `renderOptions.shortcuts`.
-   */
-  show?: boolean
-}
+>
+// Hidden for release: the per-press `show?: boolean` visibility override was
+// removed from the public press options along with the shortcut render
+// options. The runtime still records and strips it (see instrument.ts).
+// Re-enable by restoring `& { show?: boolean }` here.
 
 export type ScreenCIKeyboard = Omit<Keyboard, 'press'> & {
   /**
    * Presses a key or key combo (e.g. `'A'`, `'Shift+A'`, `'ControlOrMeta+K'`).
    *
    * The press is recorded as an animated keycap overlay shown at the bottom of
-   * the rendered video, subject to `renderOptions.shortcuts` and the `show`
-   * option.
+   * the rendered video.
    */
   press(key: string, options?: ScreenCIKeyboardPressOptions): Promise<void>
 }
@@ -1101,8 +1112,7 @@ export type ScreenCILocator = Omit<
    * Presses a key or key combo (e.g. `'Enter'`, `'Shift+A'`) on the element.
    *
    * The press is recorded as an animated keycap overlay shown at the bottom of
-   * the rendered video, subject to `renderOptions.shortcuts` and the `show`
-   * option.
+   * the rendered video.
    */
   press(
     key: string,

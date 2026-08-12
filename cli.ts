@@ -90,8 +90,20 @@ import {
 import { entriesFromRecordingData } from './src/editableSnapshot.js'
 import {
   LAST_DATA_FILE,
+  hashSourceFile,
   readKeptRecordingData,
 } from './src/recordingFreshness.js'
+import type { RecordingData as KeptRecordingData } from './src/recordingData.js'
+import {
+  downloadExportOutputs,
+  exportExitCode,
+  partitionExportVideos,
+  pollExportRenders,
+  type ExportInfoResponse,
+  type ExportPollTarget,
+  type ExportRenderResult,
+  type UploadedVideoState,
+} from './src/exportRun.js'
 import { loadTypescript } from './src/codemod.js'
 import {
   planDuplicateEditIdFixes,
@@ -338,7 +350,7 @@ function logScreenCISecretGuide(): void {
 }
 
 function getSuggestedScreenciCommand(
-  command: 'record' | 'test',
+  command: 'edit' | 'export' | 'test',
   flags = ''
 ): string {
   const suffix = flags ? ` ${flags}` : ''
@@ -639,6 +651,20 @@ export function formatStudioUrl(
   // The video hub resolves `?editor` to the right language page and scrolls it
   // to Editor, so we never need to guess the language in the printed link.
   return `${appUrl}/project/${projectId}/video/${videoId}?editor`
+}
+
+export function formatRecordResultMessage(options: {
+  exported: boolean
+  partial: boolean
+}): string {
+  const prefix = options.partial
+    ? 'Recording partially succeeded'
+    : 'Recording finished'
+  // Preview-first: a plain `record` only refreshes the live preview; a render
+  // is dispatched only when this run was an export.
+  return options.exported
+    ? `${prefix}, export render in progress. Results available at:`
+    : `${prefix}, live preview updated. Edit and export at:`
 }
 
 type OrgPlan = 'free' | 'starter' | 'business'
@@ -3274,7 +3300,8 @@ async function runTriggeredRecord(
         configPath,
         playwrightFailure,
         verbose,
-        requestedVideoNames
+        requestedVideoNames,
+        'none'
       )
     } finally {
       if (previousPreviewOnly === undefined) {
@@ -3341,7 +3368,8 @@ async function runPreviewRecordPass(
         configPath,
         playwrightFailure,
         verbose,
-        requestedVideoNames
+        requestedVideoNames,
+        'none'
       )
     } finally {
       if (previousPreviewOnly === undefined) {
@@ -3358,6 +3386,439 @@ async function runPreviewRecordPass(
   }
 }
 
+const EXPORT_POLL_INTERVAL_MS = 5000
+const EXPORT_POLL_MAX_ATTEMPTS = 360 // 30 minutes at 5s
+
+type ExportCommandOptions = {
+  configPath: string | undefined
+  verbose: boolean
+  languages: string | undefined
+  grep: string | undefined
+  outputDir: string
+  force: boolean
+}
+
+/**
+ * `screenci export`: produce finished videos and download them.
+ *
+ * Records only stale videos (sources changed since the last upload) with the
+ * export flag set, dispatches backend renders for fresh ones without a local
+ * re-record, polls until every requested render is terminal, and downloads
+ * the outputs into the output directory. The CI one-shot: exit code 0 only
+ * when every requested video finished and downloaded.
+ */
+async function runExportCommand(options: ExportCommandOptions): Promise<void> {
+  const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.configPath)
+  await loadEnvFileFromConfigSource(resolvedConfigPath, false)
+  const screenciConfig =
+    await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
+  const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
+  const apiUrl = getDevBackendUrl()
+  const appUrl = getDevFrontendUrl()
+
+  const grepArgs = options.grep !== undefined ? ['--grep', options.grep] : []
+  let requestedVideoNames: string[]
+  try {
+    requestedVideoNames = await collectRequestedRecordVideoNames(
+      resolvedConfigPath,
+      grepArgs,
+      options.languages
+    )
+  } catch (error) {
+    // Discovery failures (config/test syntax errors) surface with the same
+    // troubleshooting hints a failed record run gets.
+    if (!(error instanceof Error)) throw error
+    throw new RecordFailureHintError(error)
+  }
+
+  const secret = process.env.SCREENCI_SECRET
+  const recordExportPass = async (
+    names: readonly string[] | undefined,
+    grepOverride?: string
+  ): Promise<{
+    recordId: string | null
+    projectId: string | null
+    uploadedVideoNames: string[]
+  }> => {
+    const passGrep =
+      names !== undefined
+        ? names.map((name) => escapeRegExp(name)).join('|')
+        : grepOverride
+    const passArgs = passGrep !== undefined ? ['--grep', passGrep] : []
+    const recordRunLock = await acquireRecordRunLock(
+      screenciDir,
+      screenciConfig.projectName
+    )
+    // Export runs render; scope the flag to this pass (the env survives the
+    // Playwright child boundary, so it must be set on the parent process).
+    const previousExportFlag = process.env['SCREENCI_EXPORT']
+    process.env['SCREENCI_EXPORT'] = '1'
+    try {
+      let playwrightFailure: Error | null = null
+      if (!isUploadExistingEnabled()) {
+        try {
+          await run(
+            'record',
+            passArgs,
+            options.configPath,
+            options.verbose,
+            false,
+            options.languages
+          )
+        } catch (error) {
+          if (!(error instanceof Error)) throw error
+          if (error.message.startsWith('Playwright exited with code ')) {
+            playwrightFailure = new RecordFailureHintError(error)
+          } else {
+            throw new RecordFailureHintError(error)
+          }
+        }
+      } else {
+        logger.info(
+          'UPLOAD_EXISTING set: skipping Playwright recording and re-uploading existing .screenci recordings.'
+        )
+      }
+      const uploaded = await uploadRecordedVideosForConfig(
+        options.configPath,
+        playwrightFailure,
+        options.verbose,
+        names
+      )
+      if (playwrightFailure !== null) {
+        throw playwrightFailure
+      }
+      return uploaded
+    } finally {
+      if (previousExportFlag === undefined) {
+        delete process.env['SCREENCI_EXPORT']
+      } else {
+        process.env['SCREENCI_EXPORT'] = previousExportFlag
+      }
+      await recordRunLock.release()
+    }
+  }
+
+  // Anonymous trial: record + render everything requested (the watermark
+  // path), but downloads need an account, so point at the export page instead.
+  if (!secret) {
+    await recordExportPass(
+      requestedVideoNames.length > 0 ? requestedVideoNames : undefined,
+      options.grep
+    )
+    logger.info(
+      'Sign up to download finished videos directly from the CLI: ' +
+        pc.cyan(appUrl)
+    )
+    return
+  }
+
+  const fetchInfo = async (recordId?: string): Promise<ExportInfoResponse> => {
+    const url = new URL(`${apiUrl}/cli/info`)
+    url.searchParams.set('projectName', screenciConfig.projectName)
+    if (recordId !== undefined) url.searchParams.set('record', recordId)
+    const res = await fetch(url.toString(), {
+      headers: { 'X-ScreenCI-Secret': secret },
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(
+        `Failed to fetch render status: ${res.status} ${extractBackendError(text)}${hint401(res.status, secret)}`
+      )
+    }
+    return (await res.json()) as ExportInfoResponse
+  }
+
+  // Discovery found nothing: either the project has no matching videos or the
+  // discovery pass failed silently. Run the record pass anyway so Playwright
+  // reports the real problem, and export whatever it uploads.
+  if (requestedVideoNames.length === 0) {
+    const uploaded = await recordExportPass(undefined, options.grep)
+    if (
+      uploaded.recordId === null ||
+      uploaded.uploadedVideoNames.length === 0
+    ) {
+      logger.error(
+        options.grep !== undefined
+          ? `No videos match "${options.grep}".`
+          : 'No videos found. Declare one with video(...) in your recordings.'
+      )
+      process.exitCode = 1
+      return
+    }
+    await pollAndDownloadExports({
+      targets: [
+        {
+          recordId: uploaded.recordId,
+          videoNames: uploaded.uploadedVideoNames,
+        },
+      ],
+      languagesCsv: options.languages,
+      outputDir: options.outputDir,
+      fetchInfo,
+      secret,
+    })
+    return
+  }
+
+  // Partition: fresh videos render server-side from their last upload; stale
+  // ones (or ones the server does not know) re-record first.
+  const kept = await readKeptRecordingsByVideoName(screenciDir)
+  const lastUpload = await readLastUpload(screenciDir)
+  const partition = await partitionExportVideos({
+    requestedNames: requestedVideoNames,
+    keptByVideoName: kept,
+    uploadedVideos: lastUpload.videos,
+    hashSource: hashSourceFile,
+    force: options.force,
+  })
+
+  // A "fresh" video the server has never seen cannot render remotely; demote
+  // it to the stale set so it records and uploads like any new video.
+  let fresh = partition.fresh
+  const stale = [...partition.stale]
+  let videoIdByName = new Map<string, string>()
+  if (fresh.length > 0) {
+    const info = await fetchInfo()
+    videoIdByName = new Map(
+      Object.entries(info.videos).map(([name, video]) => [name, video.videoId])
+    )
+    const unknown = fresh.filter((name) => !videoIdByName.has(name))
+    if (unknown.length > 0) {
+      stale.push(...unknown)
+      fresh = fresh.filter((name) => videoIdByName.has(name))
+    }
+  }
+
+  const targets: ExportPollTarget[] = []
+
+  if (stale.length > 0) {
+    logger.info(
+      `Recording ${stale.length} changed video${stale.length === 1 ? '' : 's'}: ${stale.join(', ')}`
+    )
+    const uploaded = await recordExportPass(stale)
+    if (uploaded.recordId === null) {
+      logger.error('Recording upload failed; nothing to export.')
+      process.exit(1)
+    }
+    targets.push({ recordId: uploaded.recordId, videoNames: stale })
+  }
+
+  if (fresh.length > 0) {
+    logger.info(
+      `Rendering ${fresh.length} up-to-date video${fresh.length === 1 ? '' : 's'} without re-recording: ${fresh.join(', ')}`
+    )
+    const requestedLanguages = options.languages
+      ?.split(',')
+      .map((language) => language.trim())
+      .filter((language) => language.length > 0)
+    for (const name of fresh) {
+      const videoId = videoIdByName.get(name)
+      if (videoId === undefined) continue
+      const res = await fetch(`${apiUrl}/cli/render`, {
+        method: 'POST',
+        headers: {
+          'X-ScreenCI-Secret': secret,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          videoId,
+          ...(requestedLanguages !== undefined && requestedLanguages.length > 0
+            ? { languages: requestedLanguages }
+            : {}),
+        }),
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        logger.error(
+          `Failed to start the render for "${name}": ${res.status} ${extractBackendError(text)}${hint401(res.status, secret)}`
+        )
+        process.exit(1)
+      }
+      const { recordId } = (await res.json()) as { recordId: string }
+      targets.push({ recordId, videoNames: [name] })
+    }
+  }
+
+  await pollAndDownloadExports({
+    targets,
+    languagesCsv: options.languages,
+    outputDir: options.outputDir,
+    fetchInfo,
+    secret,
+  })
+}
+
+/** Shared export tail: wait for the renders, download, summarize, set exit code. */
+async function pollAndDownloadExports(params: {
+  targets: readonly ExportPollTarget[]
+  languagesCsv: string | undefined
+  outputDir: string
+  fetchInfo: (recordId: string) => Promise<ExportInfoResponse>
+  secret: string
+}): Promise<void> {
+  const requestedLanguages = params.languagesCsv
+    ?.split(',')
+    .map((language) => language.trim())
+    .filter((language) => language.length > 0)
+
+  logger.info('Waiting for renders to finish...')
+  const results = await pollExportRenders({
+    targets: params.targets,
+    ...(requestedLanguages !== undefined && requestedLanguages.length > 0
+      ? { languages: requestedLanguages }
+      : {}),
+    intervalMs: EXPORT_POLL_INTERVAL_MS,
+    maxAttempts: EXPORT_POLL_MAX_ATTEMPTS,
+    deps: {
+      fetchInfo: params.fetchInfo,
+      sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+      log: (message) => logger.info(message),
+    },
+  })
+
+  const outDir = resolve(process.cwd(), params.outputDir)
+  const downloads = await downloadExportOutputs({
+    results,
+    outDir,
+    deps: {
+      fetchFn: (url) =>
+        fetch(url, { headers: { 'X-ScreenCI-Secret': params.secret } }),
+      mkdir: async (dir) => {
+        mkdirSync(dir, { recursive: true })
+      },
+      writeFile: async (path, data) => {
+        await writeFile(path, data)
+      },
+    },
+  })
+
+  printExportSummary(results, downloads, outDir)
+  process.exitCode = exportExitCode(results, downloads)
+}
+
+function printExportSummary(
+  results: readonly ExportRenderResult[],
+  downloads: readonly {
+    videoName: string
+    language: string
+    filePath: string | null
+    error?: string
+  }[],
+  outDir: string
+): void {
+  logger.info('')
+  for (const result of results) {
+    const download = downloads.find(
+      (d) => d.videoName === result.videoName && d.language === result.language
+    )
+    const label = `${result.videoName} (${result.language})`
+    if (result.status === 'finished' && download?.filePath != null) {
+      logger.info(`  ${pc.green('✓')} ${label} -> ${download.filePath}`)
+    } else if (result.status === 'finished') {
+      logger.warn(
+        `  ${pc.red('✗')} ${label}: download failed${download?.error ? ` (${download.error})` : ''}`
+      )
+    } else if (result.status === 'failed') {
+      logger.warn(
+        `  ${pc.red('✗')} ${label}: render failed${result.failureMessage ? ` (${result.failureMessage})` : ''}`
+      )
+    } else {
+      logger.warn(`  ${pc.red('✗')} ${label}: timed out waiting for the render`)
+    }
+  }
+  const finishedCount = downloads.filter((d) => d.filePath !== null).length
+  if (finishedCount > 0) {
+    logger.info('')
+    logger.info(
+      `Exported ${finishedCount} file${finishedCount === 1 ? '' : 's'} to ${outDir}`
+    )
+  }
+}
+
+/**
+ * Resolves the single video `screenci edit` manages. Edit deep-links the web
+ * editor for one video, so the pattern must match exactly one; zero or many
+ * matches exit with the matching/available titles listed.
+ */
+export function resolveSingleEditVideo(
+  allVideoNames: readonly string[],
+  grep: string | undefined,
+  suggestCommand: (name: string) => string
+): { ok: true; videoName: string } | { ok: false; message: string } {
+  const formatList = (names: readonly string[]): string =>
+    names.map((name) => `  - ${name}`).join('\n')
+  if (allVideoNames.length === 0) {
+    return {
+      ok: false,
+      message:
+        'No videos found. Declare one with video(...) in your recordings.',
+    }
+  }
+  const matches =
+    grep === undefined
+      ? [...allVideoNames]
+      : allVideoNames.filter(grepMatcher(grep))
+  if (matches.length === 1) {
+    return { ok: true, videoName: matches[0]! }
+  }
+  if (matches.length === 0) {
+    return {
+      ok: false,
+      message:
+        `No video matches "${grep}". Available videos:\n` +
+        formatList(allVideoNames),
+    }
+  }
+  const intro =
+    grep === undefined
+      ? `screenci edit opens the editor for one video at a time. This project has ${matches.length} videos:`
+      : `screenci edit opens the editor for one video at a time. "${grep}" matches ${matches.length} videos:`
+  return {
+    ok: false,
+    message:
+      `${intro}\n` +
+      formatList(matches) +
+      `\nPick one, e.g. ${suggestCommand(matches[0]!)}`,
+  }
+}
+
+/**
+ * Best-effort editor deep link for the edited video: resolves projectId and
+ * videoId from `/cli/info` and prints the studio URL. A video the server does
+ * not know yet (first upload still pending or failed) prints nothing.
+ */
+async function printEditorLink(params: {
+  apiUrl: string
+  appUrl: string
+  secret: string
+  projectName: string
+  videoName: string
+}): Promise<void> {
+  try {
+    const url = new URL(`${params.apiUrl}/cli/info`)
+    url.searchParams.set('projectName', params.projectName)
+    const res = await fetch(url.toString(), {
+      headers: { 'X-ScreenCI-Secret': params.secret },
+    })
+    if (!res.ok) return
+    const info = (await res.json()) as {
+      projectId?: string
+      videos?: Record<string, { videoId?: string }>
+    }
+    const videoId = info.videos?.[params.videoName]?.videoId
+    if (typeof info.projectId !== 'string' || typeof videoId !== 'string') {
+      return
+    }
+    logger.info('')
+    logger.info(`Edit "${params.videoName}" at:`)
+    logger.info(
+      pc.cyan(formatStudioUrl(params.appUrl, info.projectId, videoId))
+    )
+  } catch {
+    // Best-effort only: the editor link is a convenience, never a failure.
+  }
+}
+
 export async function runDevCommand(
   options: {
     config?: string
@@ -3365,6 +3826,8 @@ export async function runDevCommand(
     token?: string
     recordKillWindow?: string
     grep?: string
+    /** The single video this edit session manages (editor deep link). */
+    videoName?: string
     forceRecord?: boolean
     /** False disables the source-file watcher (--no-watch). */
     watch?: boolean
@@ -3385,6 +3848,29 @@ export async function runDevCommand(
       `No ${SCREENCI_EDIT_TOKEN_ENV} configured. Create a personal editor token at ${pc.cyan(getScreenCISecretsUrl())} and add it to your env file, or pass it with --token.`
     )
     process.exit(1)
+  }
+
+  // Edit deep-links the web editor for a single video, so the pattern must
+  // resolve to exactly one; anything else lists the candidates and exits.
+  // Skipped when the caller (tests) pre-resolved the video name.
+  if (options.videoName === undefined) {
+    const editConfigPath = resolveScreenCIConfigPathOrExit(options.config)
+    const allVideoNames = await collectRequestedRecordVideoNames(
+      editConfigPath,
+      [],
+      undefined
+    )
+    const resolution = resolveSingleEditVideo(
+      allVideoNames,
+      options.grep,
+      (name) => pc.cyan(`${getSuggestedScreenciCommand('edit')} "${name}"`)
+    )
+    if (!resolution.ok) {
+      logger.error(resolution.message)
+      process.exit(1)
+    }
+    options.videoName = resolution.videoName
+    options.grep = escapeRegExp(resolution.videoName)
   }
 
   const killWindowSeconds = Number(options.recordKillWindow)
@@ -3642,6 +4128,18 @@ export async function runDevCommand(
     )
   }
 
+  // With the managed videos up to date, point at the editor for the video
+  // this session manages instead of any run page.
+  if (options.videoName !== undefined) {
+    await printEditorLink({
+      apiUrl,
+      appUrl: getDevFrontendUrl(),
+      secret,
+      projectName: screenciConfig.projectName,
+      videoName: options.videoName,
+    })
+  }
+
   // Watch the managed videos' source files (and the config) so saving a test
   // source re-records its previews without a manual trigger.
   if (options.watch !== false) {
@@ -3888,19 +4386,32 @@ function getLastRecordFilePath(screenciDir: string): string {
 }
 
 /**
- * Persists the recordId of the just-completed `screenci record` upload so a
- * later `screenci info` can report exactly that run. Best-effort: a
- * failure to write must not fail the record command.
+ * Persists the recordId of the just-completed upload so a later `screenci
+ * info` can report exactly that run, plus a per-video map of the uploaded
+ * source hashes so `screenci export` can skip re-recording videos whose
+ * sources have not changed since the upload. Existing entries for videos not
+ * in this upload are kept. Best-effort: a failure to write must not fail the
+ * command.
  */
 async function saveLastRecordId(
   screenciDir: string,
-  recordId: string
+  recordId: string,
+  uploadedVideos: Record<string, UploadedVideoState> = {}
 ): Promise<void> {
   try {
+    const previous = await readLastUpload(screenciDir)
     mkdirSync(screenciDir, { recursive: true })
     await writeFile(
       getLastRecordFilePath(screenciDir),
-      `${JSON.stringify({ recordId, savedAt: new Date().toISOString() }, null, 2)}\n`
+      `${JSON.stringify(
+        {
+          recordId,
+          savedAt: new Date().toISOString(),
+          videos: { ...previous.videos, ...uploadedVideos },
+        },
+        null,
+        2
+      )}\n`
     )
   } catch (err) {
     logger.warn(
@@ -3909,19 +4420,88 @@ async function saveLastRecordId(
   }
 }
 
-async function readLastRecordId(screenciDir: string): Promise<string | null> {
+async function readLastUpload(screenciDir: string): Promise<{
+  recordId: string | null
+  videos: Record<string, UploadedVideoState>
+}> {
   try {
     const raw = await readFile(getLastRecordFilePath(screenciDir), 'utf-8')
-    const parsed = JSON.parse(raw) as { recordId?: unknown }
-    return typeof parsed.recordId === 'string' ? parsed.recordId : null
+    const parsed = JSON.parse(raw) as { recordId?: unknown; videos?: unknown }
+    const videos: Record<string, UploadedVideoState> = {}
+    if (typeof parsed.videos === 'object' && parsed.videos !== null) {
+      for (const [name, state] of Object.entries(
+        parsed.videos as Record<string, unknown>
+      )) {
+        if (
+          typeof state === 'object' &&
+          state !== null &&
+          typeof (state as { sourceHash?: unknown }).sourceHash === 'string'
+        ) {
+          videos[name] = {
+            sourceHash: (state as { sourceHash: string }).sourceHash,
+          }
+        }
+      }
+    }
+    return {
+      recordId: typeof parsed.recordId === 'string' ? parsed.recordId : null,
+      videos,
+    }
   } catch (err) {
     if (!isMissingFileError(err)) {
       logger.warn(
         `Ignoring invalid stored record at ${getLastRecordFilePath(screenciDir)}.`
       )
     }
-    return null
+    return { recordId: null, videos: {} }
   }
+}
+
+async function readLastRecordId(screenciDir: string): Promise<string | null> {
+  return (await readLastUpload(screenciDir)).recordId
+}
+
+/**
+ * Reads every kept recording under `.screenci` keyed by video name (the same
+ * kept data the edit handshake uses for freshness).
+ */
+async function readKeptRecordingsByVideoName(
+  screenciDir: string
+): Promise<Map<string, KeptRecordingData>> {
+  const byName = new Map<string, KeptRecordingData>()
+  if (!existsSync(screenciDir)) return byName
+  for (const entry of readdirSync(screenciDir)) {
+    const dir = resolve(screenciDir, entry)
+    if (statSync(dir, { throwIfNoEntry: false })?.isDirectory() !== true) {
+      continue
+    }
+    const data = await readKeptRecordingData(dir)
+    const videoName = data?.metadata?.videoName
+    // Per-language recordings share a videoName; one language's data suffices.
+    if (data !== null && videoName !== undefined && !byName.has(videoName)) {
+      byName.set(videoName, data)
+    }
+  }
+  return byName
+}
+
+/**
+ * Source hashes of the just-uploaded videos, read from the kept recording
+ * data, for the last-upload map that drives export's fresh/stale partition.
+ */
+async function collectUploadedSourceHashes(
+  screenciDir: string,
+  uploadedVideoNames: readonly string[]
+): Promise<Record<string, UploadedVideoState>> {
+  const kept = await readKeptRecordingsByVideoName(screenciDir)
+  const result: Record<string, UploadedVideoState> = {}
+  for (const name of uploadedVideoNames) {
+    const sourceHash = kept.get(name)?.metadata?.sourceHash
+    if (typeof sourceHash === 'string') {
+      result[name] = { sourceHash }
+    }
+  }
+  return result
 }
 
 // `screenci info` prints every project video and its public URLs as JSON. When
@@ -4053,14 +4633,26 @@ async function uploadRecordedVideosForConfig(
   configPath: string | undefined,
   playwrightFailure: Error | null,
   verbose: boolean,
-  requestedVideoNames?: readonly string[]
-): Promise<void> {
+  requestedVideoNames?: readonly string[],
+  // 'export' prints the export run page URL after a successful upload;
+  // 'none' stays quiet (edit preview uploads print the editor URL instead).
+  resultLink: 'export' | 'none' = 'export'
+): Promise<{
+  recordId: string | null
+  projectId: string | null
+  uploadedVideoNames: string[]
+}> {
   // After recording, upload results to API if configured. `run` already
   // resolved the config (or exited), so this best-effort lookup only acts
   // when a flat config is present in/under the current directory.
   const resolution = findScreenCIConfig(configPath)
-  if (resolution.kind !== 'found') return
+  if (resolution.kind !== 'found') {
+    return { recordId: null, projectId: null, uploadedVideoNames: [] }
+  }
 
+  let uploadedRecordId: string | null = null
+  let uploadedProjectId: string | null = null
+  let uploadedNames: string[] = []
   const resolvedConfigPath = resolution.path
   try {
     const screenciConfig =
@@ -4158,9 +4750,17 @@ async function uploadRecordedVideosForConfig(
           requestedVideoNames.every((videoName) =>
             uploadedVideoNames.includes(videoName)
           ))
-      // Remember this run so `screenci info` can report exactly it.
+      // Remember this run so `screenci info` can report exactly it, plus the
+      // uploaded source hashes so `screenci export` can skip fresh videos.
       if (recordId !== null && requestedUploadSucceeded) {
-        await saveLastRecordId(screenciDir, recordId)
+        uploadedRecordId = recordId
+        uploadedProjectId = projectId
+        uploadedNames = uploadedVideoNames
+        await saveLastRecordId(
+          screenciDir,
+          recordId,
+          await collectUploadedSourceHashes(screenciDir, uploadedVideoNames)
+        )
       }
       // Emit upload-failure warnings (stderr) before the results block.
       // logger.info writes to stdout, logger.warn to stderr; in non-TTY CI
@@ -4179,26 +4779,37 @@ async function uploadRecordedVideosForConfig(
         )
       }
       let resultUrl: string | null = null
-      if (requestedUploadSucceeded && recordId !== null && projectId !== null) {
-        const recordUrl = `${appUrl}/record/${recordId}`
-        resultUrl = recordUrl
-        await writeGitHubProjectOutput(recordUrl)
+      if (
+        resultLink === 'export' &&
+        requestedUploadSucceeded &&
+        recordId !== null &&
+        projectId !== null
+      ) {
+        const exportUrl = `${appUrl}/export/${recordId}`
+        resultUrl = exportUrl
+        await writeGitHubProjectOutput(exportUrl)
         logger.info('')
         logger.info(
-          playwrightFailure !== null
-            ? 'Recording partially succeeded, rendering in progress. Results available at:'
-            : 'Recording finished, rendering in progress. Results available at:'
+          formatRecordResultMessage({
+            exported: process.env['SCREENCI_EXPORT'] === '1',
+            partial: playwrightFailure !== null,
+          })
         )
-        logger.info(pc.cyan(recordUrl))
-      } else if (requestedUploadSucceeded && projectId !== null) {
+        logger.info(pc.cyan(exportUrl))
+      } else if (
+        resultLink === 'export' &&
+        requestedUploadSucceeded &&
+        projectId !== null
+      ) {
         const projectUrl = `${appUrl}/project/${projectId}`
         resultUrl = projectUrl
         await writeGitHubProjectOutput(projectUrl)
         logger.info('')
         logger.info(
-          playwrightFailure !== null
-            ? 'Recording partially succeeded, rendering in progress. Results available at:'
-            : 'Recording finished, rendering in progress. Results available at:'
+          formatRecordResultMessage({
+            exported: process.env['SCREENCI_EXPORT'] === '1',
+            partial: playwrightFailure !== null,
+          })
         )
         logger.info(pc.cyan(projectUrl))
       }
@@ -4275,13 +4886,18 @@ async function uploadRecordedVideosForConfig(
     }
     logger.warn('Failed to load config for upload:', err)
   }
+  return {
+    recordId: uploadedRecordId,
+    projectId: uploadedProjectId,
+    uploadedVideoNames: uploadedNames,
+  }
 }
 
 export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
     logger.error(
-      'Available commands: record, dev, test, info, make-public, make-private, delete, init'
+      'Available commands: edit, export, test, info, make-public, make-private, delete, init'
     )
     process.exit(1)
   }
@@ -4291,127 +4907,70 @@ export async function main() {
   program.name('screenci')
   program.exitOverride()
 
-  // record command — playwright args pass through as-is
+  // export command: record what changed, render, wait, and download mp4s
   program
-    .command('record [playwrightArgs...]')
-    .description('Record videos using Playwright')
+    .command('export [patterns...]')
+    .description(
+      'Export finished videos: re-record changed videos, render, wait, and ' +
+        'download the outputs. Positional patterns filter videos by title; ' +
+        'no patterns exports every video.'
+    )
+    .option('-c, --config <path>', 'path to config file')
     .option('-v, --verbose', 'verbose output')
     .option(
       '--remote',
-      'trigger the GitHub Actions recording workflow for this project remotely instead of recording locally'
+      'trigger the GitHub Actions recording workflow for this project remotely instead of exporting locally'
     )
     .option(
       '--languages <langs>',
-      'record/render only these languages (comma-separated, e.g. fi,en)'
+      'export only these languages (comma-separated, e.g. fi,en)'
     )
     .option(
-      '--no-render',
-      'upload the recording and its editable data without dispatching a ' +
-        'render (fast editor sync; render later with a normal record)'
+      '-g, --grep <pattern>',
+      'only export videos whose title matches this pattern (same filter as playwright --grep)'
     )
     .option(
-      '--export',
-      'export a finished video from this recording. Without it the upload ' +
-        'refreshes the live preview only; export minutes are spent on ' +
-        'export. (deprecated aliases: --publish, --render)'
+      '-o, --output <dir>',
+      'directory for the downloaded files (default: exports)'
     )
-    .allowUnknownOption(true)
-    .action(async () => {
-      const parsed = parseRecordCliArgs(getSubcommandArgv('record'))
-      if (parsed.noRender) {
-        // Read where the upload start request is built; env so the flag
-        // survives the Playwright child process boundary.
-        process.env['SCREENCI_SKIP_RENDER'] = '1'
-      }
-      if (parsed.exportVideo) {
-        // Preview-first: uploads only render when explicitly exported.
-        process.env['SCREENCI_EXPORT'] = '1'
-      }
+    .option(
+      '--force',
+      're-record every video even when its recording is up to date'
+    )
+    .action(
+      async (
+        patterns: string[],
+        options: {
+          config?: string
+          verbose?: boolean
+          remote?: boolean
+          languages?: string
+          grep?: string
+          output?: string
+          force?: boolean
+        }
+      ) => {
+        const positionalGrep =
+          patterns.length > 0 ? patterns.map(escapeRegExp).join('|') : undefined
+        const grep = options.grep ?? positionalGrep
 
-      // `--remote` is a pure dispatch: it fires the project's GitHub Actions
-      // recording workflow and exits, so there is no local Playwright run. A
-      // pass-through `--grep` becomes the remote recording filter, and
-      // `--languages` limits which language versions are recorded.
-      if (parsed.remote) {
-        await triggerRemoteRun(
-          parsed.configPath,
-          extractGrep(parsed.otherArgs),
-          parsed.languages
-        )
-        return
-      }
-
-      validateArgs(parsed.otherArgs)
-
-      const resolvedConfigPath = resolveScreenCIConfigPathOrExit(
-        parsed.configPath
-      )
-      await loadEnvFileFromConfigSource(resolvedConfigPath, false)
-      const screenciConfig =
-        await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
-      const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
-      const requestedVideoNames =
-        parsed.otherArgs.length > 0 || parsed.languages !== undefined
-          ? await collectRequestedRecordVideoNames(
-              resolvedConfigPath,
-              parsed.otherArgs,
-              parsed.languages
-            )
-          : undefined
-      const recordRunLock = await acquireRecordRunLock(
-        screenciDir,
-        screenciConfig.projectName
-      )
-
-      try {
-        let playwrightFailure: Error | null = null
-
-        // UPLOAD_EXISTING re-sends the recordings already on disk under `.screenci`
-        // without re-running Playwright (resend the last local run when only the
-        // upload failed). We skip the recording run and fall straight through to
-        // the upload below, treating the on-disk recordings as the complete set.
-        const uploadExisting = isUploadExistingEnabled()
-
-        if (!uploadExisting) {
-          try {
-            await run(
-              'record',
-              parsed.otherArgs,
-              parsed.configPath,
-              parsed.verbose,
-              false,
-              parsed.languages
-            )
-          } catch (error) {
-            if (!(error instanceof Error)) throw error
-            if (error.message.startsWith('Playwright exited with code ')) {
-              playwrightFailure = new RecordFailureHintError(error)
-            } else {
-              throw new RecordFailureHintError(error)
-            }
-          }
-        } else {
-          logger.info(
-            'UPLOAD_EXISTING set: skipping Playwright recording and re-uploading existing .screenci recordings.'
-          )
+        // `--remote` is a pure dispatch: it fires the project's GitHub Actions
+        // recording workflow and exits; there is no local run or download.
+        if (options.remote === true) {
+          await triggerRemoteRun(options.config, grep, options.languages)
+          return
         }
 
-        if (process.env.SCREENCI_RECORDING === 'true') return
-
-        await uploadRecordedVideosForConfig(
-          parsed.configPath,
-          playwrightFailure,
-          parsed.verbose,
-          requestedVideoNames
-        )
-
-        if (playwrightFailure !== null) {
-          throw playwrightFailure
-        }
-      } finally {
-        await recordRunLock.release()
+        await runExportCommand({
+          configPath: options.config,
+          verbose: options.verbose ?? false,
+          languages: options.languages,
+          grep,
+          outputDir: options.output ?? 'exports',
+          force: options.force ?? false,
+        })
       }
-    })
+    )
 
   // dev command: connect this machine to the web editor and record on demand
   program
@@ -4520,9 +5079,11 @@ export async function main() {
 
       if (process.env.SCREENCI_RECORDING === 'true') return
 
-      const recordCommand = getSuggestedScreenciCommand('record')
+      const editCommand = getSuggestedScreenciCommand('edit')
       logger.info(
-        `Tests passed. Run ${pc.cyan(recordCommand)} to render the videos.`
+        `Tests passed. Run ${pc.cyan(editCommand)} to record and edit a video, or ${pc.cyan(
+          getSuggestedScreenciCommand('export')
+        )} to export finished videos.`
       )
     })
 

@@ -1,6 +1,6 @@
 # Languages
 
-ScreenCI supports multiple language versions of a video
+ScreenCI supports multiple language versions of a video or screenshot
 from a single script. You declare the languages once and ScreenCI records a
 separate pass per language, setting the browser locale automatically so a
 self-localizing app renders in the right language without extra work from you.
@@ -20,7 +20,8 @@ below); only narration (and per-language browser locales) vary by language.
 ## One language per plan
 
 Multiple languages are a Business feature. On the Free and Starter plans, your
-organization renders a single narration language across all of its videos:
+organization renders a single narration language across all of its videos and
+screenshots:
 
 - An upload that declares more than one language is blocked.
 - Once your organization has rendered one language, an upload in a different
@@ -36,7 +37,7 @@ self-recorded voice. See
 [Voices and plans](/docs/guides/narration#voices-and-plans).
 
 Upgrade to Business to render as many languages as you like. When an upload is
-blocked, `screenci record` prints the reason and a link back to this section.
+blocked, the CLI prints the reason and a link back to this section.
 
 ## Add languages
 
@@ -147,11 +148,11 @@ video
 
 ### Recording only some languages
 
-To record (and render) a subset, pass `--languages` to `screenci record`:
+To record (and render) a subset, pass `--languages` to `screenci export`:
 
 ```bash
-screenci record --languages fi
-screenci record --languages fi,en
+screenci export --languages fi
+screenci export --languages fi,en
 ```
 
 Per-language videos record only the requested languages, so a run never produces
@@ -165,7 +166,7 @@ render this time (rather than treating them as removed from code).
 
 ### Variants with `each`
 
-`video.each([...])` produces a **separate video
+`video.each([...])` (and `screenshot.each([...])`) produce a **separate video
 per variant**, for cases like viewport or theme. Each variant has its own
 identity and history. It chains with the per-feature methods:
 
@@ -219,7 +220,7 @@ language keys, falling back to the implicit `en` default for a plain video.
 The **Languages** section on the Editor page lists the current languages and
 lets you add one. Adding a language writes it straight into your
 `video.languages([...])` declaration in code through the connected
-`screenci dev` machine (a new `.languages([...])` call is added when the video
+`screenci edit` machine (a new `.languages([...])` call is added when the video
 has none), then renders. The edit fails if no dev machine is connected: there
 is no web-side language store, so every language lives in code by the time the
 next record runs. Editing then continues with the usual guided setup: fill in

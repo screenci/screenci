@@ -5,6 +5,7 @@ export type {
   FPS,
   Quality,
   RecordOptions,
+  HiddenShortcutRenderOptions,
   RenderOptions,
   ResolvedRenderOptions,
   ResolvedScreenshotRenderOptions,

@@ -514,7 +514,8 @@ describe('CLI', () => {
       expect(islandPkg['name']).toBe('my-project')
       expect(islandPkg['scripts']).toMatchObject({
         test: 'screenci test',
-        record: 'screenci record',
+        edit: 'screenci edit',
+        export: 'screenci export',
       })
       expect(islandPkg['scripts']).not.toHaveProperty('screenci')
       // Init enables codegen formatting: a user-editable .prettierrc gates it.
@@ -872,7 +873,7 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         'run: pnpm exec playwright install --only-shell chromium'
       )
-      expect(workflowCall?.[1]).toContain('pnpm exec screenci record')
+      expect(workflowCall?.[1]).toContain('pnpm exec screenci export')
       // The commented local-app build hint tracks the detected package manager.
       expect(workflowCall?.[1]).toContain(
         '#     run: pnpm install --frozen-lockfile'
@@ -881,7 +882,7 @@ describe('CLI', () => {
       // Targeted recordings: optional `grep` input forwarded to record.
       expect(workflowCall?.[1]).toContain('SCREENCI_GREP: ${{ inputs.grep }}')
       expect(workflowCall?.[1]).toContain(
-        'pnpm exec screenci record --grep "$SCREENCI_GREP"'
+        'pnpm exec screenci export --grep "$SCREENCI_GREP"'
       )
       expect(workflowCall?.[1]).toMatch(/workflow_dispatch:\s*\n\s*inputs:/)
     })
@@ -1043,9 +1044,9 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         'run: yarn playwright install --only-shell chromium'
       )
-      expect(workflowCall?.[1]).toContain('yarn screenci record')
+      expect(workflowCall?.[1]).toContain('yarn screenci export')
       expect(workflowCall?.[1]).toContain(
-        'yarn screenci record --grep "$SCREENCI_GREP"'
+        'yarn screenci export --grep "$SCREENCI_GREP"'
       )
     })
 
@@ -2302,13 +2303,13 @@ describe('CLI', () => {
     })
   })
 
-  describe('disallowed flags validation', () => {
+  describe('playwright flag pass-through (test command)', () => {
     beforeEach(() => {
       process.env.SCREENCI_SECRET = 'test-secret'
     })
 
     it('should allow --fully-parallel to pass through', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--fully-parallel']
+      process.argv = ['node', 'cli.js', 'test', '--fully-parallel']
       mockSpawn.mockImplementation(
         (
           _command: string,
@@ -2327,7 +2328,7 @@ describe('CLI', () => {
     })
 
     it('should allow --workers to pass through', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--workers', '4']
+      process.argv = ['node', 'cli.js', 'test', '--workers', '4']
       mockSpawn.mockImplementation(
         (
           _command: string,
@@ -2347,7 +2348,7 @@ describe('CLI', () => {
     })
 
     it('should allow --workers=N to pass through', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--workers=4']
+      process.argv = ['node', 'cli.js', 'test', '--workers=4']
       mockSpawn.mockImplementation(
         (
           _command: string,
@@ -2366,7 +2367,7 @@ describe('CLI', () => {
     })
 
     it('should allow -j to pass through', async () => {
-      process.argv = ['node', 'cli.js', 'record', '-j', '4']
+      process.argv = ['node', 'cli.js', 'test', '-j', '4']
       mockSpawn.mockImplementation(
         (
           _command: string,
@@ -2386,7 +2387,7 @@ describe('CLI', () => {
     })
 
     it('should allow -j=N to pass through', async () => {
-      process.argv = ['node', 'cli.js', 'record', '-j=4']
+      process.argv = ['node', 'cli.js', 'test', '-j=4']
       mockSpawn.mockImplementation(
         (
           _command: string,
@@ -2402,45 +2403,6 @@ describe('CLI', () => {
       const { main } = await import('./cli')
 
       await main()
-    })
-
-    it('should throw error when --retries is provided', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--retries', '2']
-
-      const { main } = await import('./cli')
-
-      await expect(main()).rejects.toThrow(
-        'Flag "--retries" is not supported by screenci'
-      )
-    })
-
-    it('should throw error when --retries=N is provided', async () => {
-      process.argv = ['node', 'cli.js', 'record', '--retries=2']
-
-      const { main } = await import('./cli')
-
-      await expect(main()).rejects.toThrow(
-        'Flag "--retries=2" is not supported by screenci'
-      )
-    })
-
-    it('should reject retries even when other parallel flags are present', async () => {
-      process.argv = [
-        'node',
-        'cli.js',
-        'record',
-        '--workers',
-        '4',
-        '--fully-parallel',
-        '--retries',
-        '2',
-      ]
-
-      const { main } = await import('./cli')
-
-      await expect(main()).rejects.toThrow(
-        'Flag "--retries" is not supported by screenci'
-      )
     })
   })
 })

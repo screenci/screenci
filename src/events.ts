@@ -10,6 +10,7 @@ import type {
   Easing,
   NarrationFullScreenFit,
   NarrationPosition,
+  HiddenShortcutRenderOptions,
   RecordOptions,
   RenderOptions,
   ResolvedRenderOptions,
@@ -2616,16 +2617,24 @@ export class EventRecorder implements IEventRecorder {
         motionBlur:
           ro?.zoom?.motionBlur ?? RENDER_OPTIONS_DEFAULTS.zoom.motionBlur,
       },
-      shortcuts: {
-        show: ro?.shortcuts?.show ?? RENDER_OPTIONS_DEFAULTS.shortcuts.show,
-        showSingle:
-          ro?.shortcuts?.showSingle ??
-          RENDER_OPTIONS_DEFAULTS.shortcuts.showSingle,
-        theme: ro?.shortcuts?.theme ?? RENDER_OPTIONS_DEFAULTS.shortcuts.theme,
-        ...(ro?.shortcuts?.overrides !== undefined && {
-          overrides: ro.shortcuts.overrides,
-        }),
-      },
+      // Hidden for release: `shortcuts` is no longer on the public
+      // RenderOptions surface, but previously saved options (and the web
+      // editor's serialized settings) still carry it, so resolution reads it
+      // through the internal HiddenShortcutRenderOptions shape.
+      shortcuts: (() => {
+        const shortcuts = (ro as HiddenShortcutRenderOptions | undefined)
+          ?.shortcuts
+        return {
+          show: shortcuts?.show ?? RENDER_OPTIONS_DEFAULTS.shortcuts.show,
+          showSingle:
+            shortcuts?.showSingle ??
+            RENDER_OPTIONS_DEFAULTS.shortcuts.showSingle,
+          theme: shortcuts?.theme ?? RENDER_OPTIONS_DEFAULTS.shortcuts.theme,
+          ...(shortcuts?.overrides !== undefined && {
+            overrides: shortcuts.overrides,
+          }),
+        }
+      })(),
       output: {
         aspectRatio:
           ro?.output?.aspectRatio ?? RENDER_OPTIONS_DEFAULTS.output.aspectRatio,

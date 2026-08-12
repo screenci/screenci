@@ -169,7 +169,7 @@ Run the normal checks:
 
 ```bash
 npx screenci test
-npx screenci record
+npx screenci export
 ```
 
   </TabItem>
@@ -177,7 +177,7 @@ npx screenci record
 
 ```bash
 pnpm exec screenci test
-pnpm exec screenci record
+pnpm exec screenci export
 ```
 
   </TabItem>
@@ -185,15 +185,14 @@ pnpm exec screenci record
 
 ```bash
 yarn screenci test
-yarn screenci record
+yarn screenci export
 ```
 
   </TabItem>
 </Tabs>
 
-A plain `record` refreshes the live preview only; to verify a finished video
-end to end (including public URLs), export one with
-`screenci record --export`.
+`screenci export` verifies a finished video end to end (including public
+URLs): it re-records what changed, renders, and downloads the outputs.
 
 Focus on behavioral verification, not only compilation:
 

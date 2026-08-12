@@ -577,7 +577,8 @@ function generateIslandPackageJson(projectName: string): string {
         type: 'module',
         scripts: {
           test: 'screenci test',
-          record: 'screenci record',
+          edit: 'screenci edit',
+          export: 'screenci export',
           format: 'prettier --write .',
         },
       },
@@ -1162,7 +1163,7 @@ async function installInitDependencies(
 // How the new project is set up to authenticate: `ready` means a
 // SCREENCI_SECRET is already configured (a pasted secret was verified, or the
 // env already had one); `manual` means the user still needs to copy their
-// secret from the secrets page, or just run `screenci record` with no secret
+// secret from the secrets page, or just run `screenci export` with no secret
 // to try it anonymously first (see anonSession.ts).
 export type InitSecretOutcome = 'ready' | 'manual'
 
@@ -1209,11 +1210,11 @@ export async function setUpInitSecret(
   }
   if (!verification.ok) {
     logger.warn(
-      'Could not verify the secret right now; writing it anyway. `screenci record` will confirm it.'
+      'Could not verify the secret right now; writing it anyway. `screenci export` will confirm it.'
     )
   }
   // The generated config sets `envFile: '.env'`, so this matches what
-  // `screenci record` resolves later.
+  // `screenci export` resolves later.
   await persistScreenCISecret(envPath, options.pastedSecret)
   return 'ready'
 }
@@ -1369,16 +1370,16 @@ ${appBuildHint}      - name: Install dependencies
         run: ${commands.playwrightRun} install --only-shell chromium
 
       - id: record
-        name: Record
+        name: Export
         working-directory: ${islandWorkflowPath}
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
           SCREENCI_GREP: \${{ inputs.grep }}
         run: |
           if [ -n "$SCREENCI_GREP" ]; then
-            ${commands.screenciRun} record --grep "$SCREENCI_GREP"
+            ${commands.screenciRun} export --grep "$SCREENCI_GREP"
           else
-            ${commands.screenciRun} record
+            ${commands.screenciRun} export
           fi
 `
 }
@@ -1691,7 +1692,7 @@ export async function runInit(
 
   // The single positional is either a pasted SCREENCI_SECRET (a bare UUID,
   // written straight to `.env`) or otherwise the project name
-  // (backward-friendly). With no secret at all, `screenci record` uploads
+  // (backward-friendly). With no secret at all, `screenci export` uploads
   // anonymously instead (see anonSession.ts) — no setup token is needed.
   let projectName = projectNameArg?.trim()
   let pastedSecret: string | undefined

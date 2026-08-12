@@ -558,7 +558,7 @@ never shows the stored key again, only whether one is set, and every render
 (from the CLI or the app) uses it. You do not set an ElevenLabs key locally.
 
 Without a key, a video that uses an ElevenLabs or custom voice cannot render.
-`screenci record` fails that video at record time: its render is marked failed
+`screenci export` fails that video at record time: its render is marked failed
 right away (rather than being queued only to die during synthesis), the CLI
 prints an error with a link to the Secrets page, and the command exits non-zero.
 Other videos in the same run are unaffected. Add your key on the Secrets page and
@@ -795,4 +795,4 @@ script):
   a cloned voice, the web equivalent of
   [cloning from an audio sample](#clone-a-voice-from-an-audio-sample).
 
-See [Editor](/docs/guides/editor).
+See [Editor](/docs/editor).

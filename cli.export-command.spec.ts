@@ -586,7 +586,7 @@ describe('CLI', () => {
       process.exitCode = undefined
     })
 
-    it('runs Playwright and does not exit when SCREENCI_SECRET is missing', async () => {
+    it('refuses an anonymous export before recording (exports are account-only)', async () => {
       delete process.env.SCREENCI_SECRET
       process.argv = ['node', 'cli.js', 'export']
       mockSpawn.mockImplementation(() => {
@@ -596,13 +596,25 @@ describe('CLI', () => {
 
       const { main } = await import('./cli')
 
-      // No account is required to record: without a secret, the upload step
-      // (not tested here) falls back to an anonymous trial session, so
-      // record must still start Playwright rather than hard-exiting.
-      await main()
+      // The anonymous trial is preview-only: export exits with the sign-up
+      // message before Playwright ever starts.
+      await expect(main()).rejects.toThrow('process.exit called')
 
-      expect(processExitSpy).not.toHaveBeenCalled()
-      expect(mockSpawn).toHaveBeenCalled()
+      expect(processExitSpy).toHaveBeenCalledWith(1)
+      // Nothing was recorded or uploaded: only the test-discovery pass ran.
+      expect(
+        mockFetch.mock.calls.some((call) =>
+          String(call[0]).includes('/cli/upload/start')
+        )
+      ).toBe(false)
+      const errors = loggerErrorSpy.mock.calls.map((call) =>
+        stripVTControlCharacters(String(call[0]))
+      )
+      expect(
+        errors.some((message) =>
+          message.includes('Exporting requires an account')
+        )
+      ).toBe(true)
     })
 
     it('loads SCREENCI_SECRET from the project .env when envFile is not configured', async () => {
@@ -1112,7 +1124,7 @@ describe('CLI', () => {
       )
     })
 
-    it('stores the result URL in the anonymous session after a successful anonymous record', async () => {
+    it('points an anonymous export at edit and sign-up without touching the trial session', async () => {
       delete process.env.SCREENCI_SECRET
       process.env.SCREENCI_ENVIRONMENT = 'local'
       process.argv = [
@@ -1169,32 +1181,30 @@ describe('CLI', () => {
 
       const { main } = await import('./cli')
 
-      await main()
+      await expect(main()).rejects.toThrow('process.exit called')
 
-      const messages = loggerInfoSpy.mock.calls.map((call) =>
+      expect(processExitSpy).toHaveBeenCalledWith(1)
+      // Nothing was recorded or uploaded: only the test-discovery pass ran.
+      expect(
+        mockFetch.mock.calls.some((call) =>
+          String(call[0]).includes('/cli/upload/start')
+        )
+      ).toBe(false)
+      const errors = loggerErrorSpy.mock.calls.map((call) =>
         stripVTControlCharacters(String(call[0]))
       )
-      expect(messages).toContain(
-        'Recorded without an account. 3 free trial recordings left. Sign up to keep it and record without limits.'
+      const refusal = errors.find((message) =>
+        message.includes('Exporting requires an account')
       )
-      expect(messages).not.toContain(
-        'Recorded without an account. Sign up to keep it.'
-      )
-      const anonSessionWrites = mockWriteFile.mock.calls.filter((call) =>
+      expect(refusal).toBeDefined()
+      expect(refusal).toContain('edit')
+      expect(refusal).toContain('sign up to export')
+      // The trial session file is left alone: previews keep working.
+      const anonSessionDeletes = mockWriteFile.mock.calls.filter((call) =>
         String(call[0]).endsWith('anon-session.json')
       )
       expect(
-        anonSessionWrites.some((call) => {
-          const parsed = JSON.parse(String(call[1])) as {
-            token?: unknown
-            recordUrl?: unknown
-          }
-          return (
-            typeof parsed.token === 'string' &&
-            typeof parsed.recordUrl === 'string' &&
-            parsed.recordUrl.startsWith('http://localhost:5173/export/')
-          )
-        })
+        anonSessionDeletes.every((call) => String(call[1]).includes('token'))
       ).toBe(true)
     })
 
@@ -2493,15 +2503,10 @@ describe('CLI', () => {
       )
     })
 
-    it('prints one shared warning when every anonymous failure has the same cap message', async () => {
-      process.argv = [
-        'node',
-        'cli.js',
-        'export',
-        '--config',
-        'test-fixtures/record-upload.config.ts',
-      ]
-      delete process.env.SCREENCI_SECRET
+    it('refuses an anonymous upload run over the per-recording video cap with one shared message', async () => {
+      // The export command no longer reaches anonymous uploads (exports are
+      // account-only), but `screenci edit` preview uploads still do: the
+      // per-recording cap collapses into one shared warning for the run.
       mockReaddir.mockResolvedValue([
         'ru-video',
         'where-video',
@@ -2512,9 +2517,6 @@ describe('CLI', () => {
         const pathString = String(path)
         if (pathString.endsWith('package.json')) {
           return JSON.stringify({ version: '0.0.32' })
-        }
-        if (pathString.endsWith('record-upload.config.ts')) {
-          return "export default { projectName: 'Test Project' }"
         }
         if (pathString.endsWith('data.json')) {
           const metadata = pathString.includes('/ru-video/')
@@ -2530,50 +2532,36 @@ describe('CLI', () => {
       })
       mockExistsSync.mockImplementation(
         (path: string) =>
-          path.endsWith('test-fixtures/record-upload.config.ts') ||
-          path.endsWith('data.json') ||
-          path.endsWith('recording.mp4')
-      )
-      mockFetch.mockImplementation(async (input: string | URL) => {
-        const url = String(input)
-        if (url.endsWith('/cli/anon-session-status')) {
-          return {
-            ok: true,
-            status: 200,
-            json: vi.fn().mockResolvedValue({
-              status: 'pending',
-              remaining: 3,
-            }),
-            text: vi.fn().mockResolvedValue(''),
-          }
-        }
-
-        return {
-          ok: true,
-          status: 200,
-          json: vi.fn().mockResolvedValue({}),
-          text: vi.fn().mockResolvedValue(''),
-        }
-      })
-      mockSpawn.mockImplementation(() => {
-        process.nextTick(() => mockChildProcess.emit('close', 0))
-        return mockChildProcess as unknown as ChildProcess
-      })
-
-      const { main } = await import('./cli')
-
-      await expect(main()).rejects.toThrow(
-        'Not all recordings succeeded to upload.'
+          path.endsWith('data.json') || path.endsWith('recording.mp4')
       )
 
+      const { uploadRecordings, collapseFailedVideoWarnings, anonCredential } =
+        await import('./cli')
+
+      const result = await uploadRecordings(
+        '/tmp/.screenci',
+        'Test Project',
+        'http://localhost:8787',
+        anonCredential('anon-token-1')
+      )
+
+      expect(result.hadFailures).toBe(true)
       const anonCapWarning =
         'Anonymous trials are capped at 3 videos/screenshots per recording. Split this into smaller runs or sign up to record more in one run.'
       expect(
-        loggerWarnSpy.mock.calls.filter((call) => call[0] === anonCapWarning)
-      ).toHaveLength(1)
-      expect(loggerWarnSpy).toHaveBeenCalledWith(
-        "Not all recordings succeeded to upload. Failed videos: 'How to find docs [ru]', 'Where to find docs', 'How to find docs [en]', 'How to find docs [fi]'. Some videos may be missing from the project."
-      )
+        result.failedVideoMessages.every(
+          (failure) => failure.message === anonCapWarning
+        )
+      ).toBe(true)
+      expect(result.failedVideoNames).toEqual([
+        'How to find docs [ru]',
+        'Where to find docs',
+        'How to find docs [en]',
+        'How to find docs [fi]',
+      ])
+      expect(collapseFailedVideoWarnings(result.failedVideoMessages)).toEqual([
+        anonCapWarning,
+      ])
     })
 
     it('removes uploaded media but keeps data.json after successful upload', async () => {

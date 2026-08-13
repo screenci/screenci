@@ -137,28 +137,15 @@ export async function readAnonSessionRecordUrl(
   return existing?.recordUrl ?? null
 }
 
-// How many separate `screenci export` runs an anonymous trial may upload before
-// it must sign up. Kept in sync with ANON_MAX_RECORDINGS server-side.
+// Legacy wire constant: the server still reports a `remaining` count on
+// pending sessions for older CLIs. Anonymous trials are preview-only and
+// uncapped now; only the per-run video cap (ANON_MAX_VIDEOS_PER_RECORDING)
+// still applies.
 export const ANON_MAX_RECORDINGS = 3
 
-/** A short "N recordings left" phrase for the anonymous trial. */
-export function formatAnonRecordingsLeft(remaining: number): string {
-  if (remaining <= 0) {
-    return 'That was your last free trial recording. Sign up to record more.'
-  }
-  return `${remaining} free trial recording${
-    remaining === 1 ? '' : 's'
-  } left. Sign up to record without limits.`
-}
-
 /** A single-line notice shown after an anonymous recording succeeds. */
-export function formatAnonPostRecordNotice(remaining: number): string {
-  if (remaining <= 0) {
-    return 'Recorded without an account. That was your last free trial recording. Sign up to keep it and record more.'
-  }
-  return `Recorded without an account. ${remaining} free trial recording${
-    remaining === 1 ? '' : 's'
-  } left. Sign up to keep it and record without limits.`
+export function formatAnonPostRecordNotice(): string {
+  return 'Recorded without an account. Preview and edit for free; sign up with a plan to export the finished video.'
 }
 
 export type AnonSessionStatus =
@@ -166,7 +153,11 @@ export type AnonSessionStatus =
   | { status: 'expired' }
   // `used`: all trial recordings are spent. `remaining`: how many are left.
   | { status: 'pending'; used: boolean; remaining: number }
-  | { status: 'claimed'; secret: string }
+  // `editToken`: a personal editor token the server minted for the claiming
+  // user (absent on sessions claimed before the anonymous edit bridge, or
+  // when the user was at the token cap). Persisted next to the secret so
+  // `screenci edit` keeps working after the claim.
+  | { status: 'claimed'; secret: string; editToken?: string }
 
 /**
  * Checks the server-side status of a locally stored anon token: still pending
@@ -191,12 +182,19 @@ export async function checkAnonSessionStatus(
     const body = (await response.json().catch(() => ({}))) as {
       status?: string
       secret?: string
+      editToken?: string
       used?: boolean
       remaining?: number
     }
 
     if (body.status === 'claimed' && typeof body.secret === 'string') {
-      return { status: 'claimed', secret: body.secret }
+      return {
+        status: 'claimed',
+        secret: body.secret,
+        ...(typeof body.editToken === 'string'
+          ? { editToken: body.editToken }
+          : {}),
+      }
     }
     if (body.status === 'expired') return { status: 'expired' }
     if (body.status === 'not_found') return { status: 'not_found' }

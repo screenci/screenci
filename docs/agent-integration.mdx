@@ -44,17 +44,15 @@ The brief walks the agent through these steps:
    preview and hand you the web editor link, so you review the video before
    anything renders. `edit` stays connected, so every edit you make in the
    [Editor](/docs/editor) (narration, overlays, cuts, timings) is written back
-   into the script, ready for the agent or you to build on. It needs your
-   `SCREENCI_SECRET` and a personal `SCREENCI_EDIT_TOKEN`; without an account
-   the agent skips this step and exports directly.
+   into the script, ready for the agent or you to build on. No account is
+   needed: without a `SCREENCI_SECRET` it runs under a local, anonymous trial
+   session, and signing up in the editor claims the trial and upgrades the
+   running session automatically.
 4. **Export when you want the finished videos.** `npx screenci export` records
-   what changed, renders, and downloads the results. It uploads immediately
-   either way: without a `SCREENCI_SECRET`, under a local, anonymous trial
-   session (it prints a link to view the result and sign up to keep it;
-   downloads require an account); with one, straight to your organization,
-   waiting for the renders and downloading the finished files. Exports without
-   an account, and exports on the free tier, include a ScreenCI watermark;
-   signing up (or upgrading) removes it.
+   what changed, renders, and downloads the results into `./exports/`.
+   Exporting requires an account with an active paid subscription: the
+   anonymous trial is preview-only, and `export` without a `SCREENCI_SECRET`
+   prints a sign-up link instead of recording.
 
 ## How the agent gathers context
 
@@ -74,9 +72,10 @@ see [Playwright codegen](/docs/video-script-basics#generate-a-first-draft-with-c
 
 ## Connecting the project
 
-No account or setup token is needed to record: without a `SCREENCI_SECRET`,
-`record` uploads under a local, anonymous trial session and prints a link where
-you can view the live preview, export it, and sign up to keep it.
+No account or setup token is needed to record and preview: without a
+`SCREENCI_SECRET`, `edit` uploads under a local, anonymous trial session and
+prints a link where you can view and edit the live preview, and sign up to
+keep it. Exporting requires an account with an active paid subscription.
 
 To connect a project to your organization directly, copy `SCREENCI_SECRET` from
 your secrets page into `screenci/.env` (this is also the value you set for CI

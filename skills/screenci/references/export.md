@@ -23,11 +23,11 @@ npx screenci export -c screenci.config.ts
 
 Positional arguments are title patterns; no patterns exports every video in every language. Other flags: `-g/--grep`, `--languages fi,en`, `--force` (re-record everything), `--remote` (dispatch the project's GitHub Actions workflow instead of running locally).
 
-## Connecting to an Account (optional)
+## Connecting to an Account (required for export)
 
-`export` needs no account or setup step: without a `SCREENCI_SECRET`, it records and renders under a local, anonymous trial session (with the trial watermark) and prints a link to view the result. Downloads require an account, so a trial run prints the export page URL and a sign-up hint instead of writing files.
+`export` requires an account with an active paid subscription. Without a `SCREENCI_SECRET`, it refuses up front and prints a sign-up link; the anonymous trial is preview-only (use `screenci edit` for the free live preview). Signing up claims the trial and links the project automatically on the next run.
 
-To upload straight to an existing organization instead, get `SCREENCI_SECRET` into `screenci/.env` before the final export (it does not block authoring or testing):
+To connect an existing organization, get `SCREENCI_SECRET` into `screenci/.env` (it does not block authoring, testing, or anonymous editing):
 
 - Pass it to `init` as an argument: `npm init screenci@latest <SCREENCI_SECRET> -- --yes`.
 - Or ask the user to copy `SCREENCI_SECRET` from their secrets page into `screenci/.env`. The org secret is shared across projects.
@@ -35,9 +35,8 @@ To upload straight to an existing organization instead, get `SCREENCI_SECRET` in
 ## Runtime Behavior
 
 - Recording runs with local Playwright.
-- `export` uploads every successful recording, with or without `SCREENCI_SECRET` set.
-- Without an account, or on the free tier, renders include a ScreenCI watermark.
-- After a successful `export`, report the URL it printed (starts with the app's domain, e.g. `https://app.screenci.com/export/...`) back to the user so they can open it. Without a `SCREENCI_SECRET`, this is also how they view and claim the anonymous trial recording.
+- `export` needs an active paid subscription; renders and downloads land in `./exports/`.
+- After a successful `export`, report the URL it printed (starts with the app's domain, e.g. `https://app.screenci.com/export/...`) back to the user so they can open it.
 
 ## Recommended Workflow
 
@@ -56,9 +55,9 @@ npx screenci export
 
 Always run `npx screenci test` until it passes first. Fix failures and rerun until green.
 
-Once tests pass, prefer `npx screenci edit "<title>"` over exporting right away: it records the live preview if stale (free, no render), prints the web editor link, and stays connected so browser edits are written back into the script. Report the link so the user can review the video. `edit` needs `SCREENCI_SECRET` and a personal `SCREENCI_EDIT_TOKEN` in `screenci/.env`; without them (for example on the anonymous trial), go straight to `export`.
+Once tests pass, prefer `npx screenci edit "<title>"` over exporting right away: it records the live preview if stale (free, no render), prints the web editor link, and stays connected so browser edits are written back into the script. Report the link so the user can review the video. `edit` works with or without an account (without one it runs under the free anonymous trial).
 
-Run `npx screenci export` when the user wants the finished videos: it records what changed, renders, and downloads them.
+Run `npx screenci export` when the user wants the finished videos: it records what changed, renders, and downloads them. Exporting requires an account with an active paid subscription.
 
 ```bash
 npx screenci test          # verify selectors, flow, and narration

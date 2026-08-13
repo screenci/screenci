@@ -150,32 +150,30 @@ export async function verifyScreenCISecret(
 }
 
 /**
- * Writes (or replaces) the `SCREENCI_SECRET=` line in the given env file,
- * preserving the position of an existing entry and any surrounding lines.
+ * Writes (or replaces) a `KEY=` line in the given env file, preserving the
+ * position of an existing entry and any surrounding lines.
  */
-export async function persistScreenCISecret(
+async function persistEnvVar(
   envFilePath: string,
-  secret: string
+  key: string,
+  value: string
 ): Promise<void> {
-  const nextLine = `SCREENCI_SECRET=${secret}`
+  const prefix = `${key}=`
+  const nextLine = `${prefix}${value}`
 
   try {
     const existing = await readFile(envFilePath, 'utf-8')
     const lines = existing === '' ? [] : existing.split(/\r?\n/)
-    const firstSecretIndex = lines.findIndex((line) =>
-      line.startsWith('SCREENCI_SECRET=')
-    )
-    const linesWithoutSecret = lines.filter(
-      (line) => !line.startsWith('SCREENCI_SECRET=')
-    )
+    const firstIndex = lines.findIndex((line) => line.startsWith(prefix))
+    const linesWithoutKey = lines.filter((line) => !line.startsWith(prefix))
     const finalLines =
-      firstSecretIndex >= 0
+      firstIndex >= 0
         ? [
-            ...linesWithoutSecret.slice(0, firstSecretIndex),
+            ...linesWithoutKey.slice(0, firstIndex),
             nextLine,
-            ...linesWithoutSecret.slice(firstSecretIndex),
+            ...linesWithoutKey.slice(firstIndex),
           ]
-        : [...linesWithoutSecret, nextLine]
+        : [...linesWithoutKey, nextLine]
     let nextContent = finalLines.join('\n')
     if (!nextContent.endsWith('\n')) nextContent += '\n'
     await writeFile(envFilePath, nextContent)
@@ -185,4 +183,27 @@ export async function persistScreenCISecret(
   }
 
   await writeFile(envFilePath, `${nextLine}\n`)
+}
+
+/**
+ * Writes (or replaces) the `SCREENCI_SECRET=` line in the given env file,
+ * preserving the position of an existing entry and any surrounding lines.
+ */
+export async function persistScreenCISecret(
+  envFilePath: string,
+  secret: string
+): Promise<void> {
+  await persistEnvVar(envFilePath, 'SCREENCI_SECRET', secret)
+}
+
+/**
+ * Writes (or replaces) the `SCREENCI_EDIT_TOKEN=` line in the given env file.
+ * Used by the claimed-trial self-upgrade so a running anonymous `screenci
+ * edit` keeps working with the real personal editor token after sign-up.
+ */
+export async function persistScreenCIEditToken(
+  envFilePath: string,
+  editToken: string
+): Promise<void> {
+  await persistEnvVar(envFilePath, 'SCREENCI_EDIT_TOKEN', editToken)
 }

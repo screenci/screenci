@@ -1,64 +1,58 @@
 # Anonymous Trial
 
-`screenci export` needs no account or `SCREENCI_SECRET` to try. Without one, a
-recording uploads under a local, anonymous trial session: it records and
-renders with the trial watermark, and the CLI prints a link to view the result
-(downloads require an account, so the trial prints the export page URL and a
-sign-up hint instead of writing files). You sign up afterward to keep it.
-Recording an anonymous trial agrees to the
-[Terms](https://screenci.com/legal/tos), which `export` prints before it
-starts.
+`screenci edit` needs no account or `SCREENCI_SECRET` to try. Without one, a
+recording uploads under a local, anonymous trial session: the CLI records the
+live preview, prints the web editor link, and stays connected so every edit you
+make in the browser is written back into your script. You sign up afterward to
+keep the trial and export it. Recording an anonymous trial agrees to the
+[Terms](https://screenci.com/legal/tos), which the CLI prints before it starts.
 
 ## What the trial includes
 
-An anonymous trial gets a full preview of ScreenCI, including multi-language
-narration, a Business-tier feature, so you can judge the best of what a paid
-plan unlocks before creating an account:
+An anonymous trial is a full preview of ScreenCI's editing workflow:
 
-- **Expressive narration** (style prompts and tone control), which is
-  available on every plan.
-- **Multiple narration languages**: up to 3 languages at once, well above the
-  single-language limit that Free and Starter carry after signup (see
-  [One language per plan](/docs/guides/languages#one-language-per-plan)), but
-  short of Business's unlimited languages.
-
-Every trial render carries a ScreenCI watermark, the same as any render on an
-account without an active paid plan.
+- **Free live previews, uncapped.** `screenci edit` records and refreshes the
+  live preview as often as you like for the trial's lifetime; nothing renders
+  and nothing is billed.
+- **The full web editor.** While your machine is connected with
+  `screenci edit`, the editor is fully editable: narration, overlays, timeline
+  cuts, camera, and render options, with every change written back into your
+  `.screenci.ts` sources.
+- **Expressive narration** (style prompts and tone control) in the preview.
+- **Up to 3 narration languages at once** in a recording, a taste of the
+  Business tier's unlimited languages.
 
 ## Trial limits
 
-An anonymous trial gives up to three `screenci export` calls, each capped
-further within that call:
+- **Preview-only.** The trial never renders or exports. Exporting the finished
+  videos requires signing up and choosing a paid plan (Starter, Pro, or
+  Business); `screenci export` without an account prints a sign-up link
+  instead of recording.
+- **Up to 3 videos and screenshots** per record run.
+- **1080p maximum preview resolution.** 4K output requires the Business tier.
+- **7 days.** An unclaimed trial expires (and its uploads are deleted) after
+  seven days.
 
-- **Three recording calls.** You can run `screenci export` up to three times on
-  the trial. After each successful call the CLI prints how many recordings are
-  left. Once all three are used (or the trial session expires), a further
-  `screenci export` stops before it starts and prints a sign-up link instead of
-  recording again.
-- **Up to 3 videos and screenshots** in each call.
-- **Up to 3 narration languages at once**, combined across everything in a
-  call.
-- **1080p maximum resolution.** 4K output requires signing up for the
-  Business tier.
-
-Each of these prints a specific reason when it is hit (which limit, and what
-to do next), rather than a generic rejection.
+Each of these prints a specific reason when it is hit (which limit, and what to
+do next), rather than a generic rejection.
 
 ## After you sign up
 
 Signing in claims the trial into your account: its projects, videos, and
-versions become part of your organization. New accounts start on the Free
-plan automatically, with the same one-language limit as Starter.
+recordings become part of your organization. A running `screenci edit` session
+upgrades itself automatically: the claim writes your `SCREENCI_SECRET` and a
+personal `SCREENCI_EDIT_TOKEN` into `screenci/.env` and the session reconnects
+with your account credentials without restarting.
 
-Renders you make on a paid plan after signing up are watermark free. Renders
-that were made during the trial keep their watermark: upgrading does not
-automatically re-render existing trial videos. Re-record (or re-render) a video
-on your paid plan whenever you want a watermark-free version of it.
+With an active paid plan, `screenci export` (or the editor's Export button)
+renders and downloads the finished videos.
 
 ## What's next
 
+- [Editor](/docs/editor) for how browser edits sync back into your script.
 - [Languages](/docs/guides/languages) to learn how multi-language rendering
   works once you are signed up.
 - [Narration](/docs/guides/narration) for expressive voices, style prompts,
   and tone control.
-- [CLI](/docs/reference/cli) for the full `export` command reference.
+- [CLI](/docs/reference/cli) for the full `edit` and `export` command
+  reference.

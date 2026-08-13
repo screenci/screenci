@@ -282,21 +282,16 @@ When the preview looks right, export the finished videos:
 npx screenci export
 ```
 
-`screenci export` needs no account or secret to work: without one, it records
-and renders under a local, anonymous trial session (with the trial watermark)
-and prints a link to view the result; downloads require an account, so it
-prints the export page URL and a sign-up hint instead of writing files. Open
-that link, then sign up to keep the video and get a shareable URL. See
-[Anonymous Trial](/docs/guides/anonymous-trial) for what the trial allows
-(including a preview of expressive narration and multiple languages) and its
-limits.
+`screenci export` requires an account with an active paid subscription:
+without one it prints a sign-up link instead of recording (the anonymous trial
+is preview-only; keep iterating for free with `screenci edit`, see
+[Anonymous Trial](/docs/guides/anonymous-trial)). Signing up claims your trial
+and links the project automatically on the next run.
 
-With an account, `export` re-records anything whose sources changed, renders,
-waits, and downloads the finished files into `./exports/`.
-
-Exporting renders the video in the service and spends export minutes. Free
-exports include a ScreenCI watermark. Upgrading removes it (and raises your
-export and active-video limits).
+With an account and a plan, `export` re-records anything whose sources
+changed, renders, waits, and downloads the finished files into `./exports/`.
+Exporting renders the video in the service and spends export minutes; higher
+tiers raise export and active-video limits.
 
 It should look something like this:
 

@@ -136,6 +136,11 @@ To flush the queue into your sources:
 3. On connect, the CLI writes every queued edit into the source (logging
    "queued by <name>" for edits a teammate made) and the pending list drains.
 
+On an anonymous trial (no account), no token setup is needed: `screenci edit`
+connects with the trial session itself. Anonymous editing is live-only: the
+editor is editable while the trial's machine is connected and read-only
+otherwise (a trial has no org members to own a queued edit).
+
 If an edit can no longer be applied (its target was renamed or removed in code,
 or the source drifted), it stays in the list as failed with **Retry** and
 **Discard**. Discarding abandons only the code write: the value it set keeps

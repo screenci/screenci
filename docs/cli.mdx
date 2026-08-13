@@ -55,10 +55,11 @@ The project name defaults to the repository root directory name.
 
 ### Connecting to an existing account
 
-No account or secret is needed to scaffold or record: without one, `export`
-uploads under a local, anonymous trial session and prints a link to view the
-result, then you sign up to keep it. Recording an anonymous trial agrees to the
-[Terms](https://screenci.com/legal/tos), which `export` prints before it starts.
+No account or secret is needed to scaffold, record, or preview: without one,
+`edit` uploads under a local, anonymous trial session and prints the web
+editor link, then you sign up to keep it. Recording an anonymous trial agrees
+to the [Terms](https://screenci.com/legal/tos), which the CLI prints before it
+starts. Exporting requires an account with an active paid subscription.
 
 To connect the project to an account you already have, pass your
 `SCREENCI_SECRET` (from your secrets page) as `init`'s positional argument, and
@@ -315,12 +316,11 @@ Behavior:
 - enables recording timing for any video that needs re-recording
 - writes local output into `.screenci/`
 - holds a per-project run lock at `.screenci/.record.lock` while recording and uploading. If another `screenci edit` or `screenci export` run is already active, the second run exits non-zero instead of sharing the same `.screenci` output. Stale locks are reclaimed automatically when the pid is gone or the lock is older than the maximum run TTL
-- needs no `SCREENCI_SECRET` to run: without one, it records and renders under a local, anonymous trial session with the trial watermark, and prints a link to view the result. Downloads require an account, so the trial run prints the export page URL and a sign-up hint instead of writing files. Recording an anonymous trial agrees to the [Terms](https://screenci.com/legal/tos), which `export` prints before it starts. To upload straight to your organization instead, set `SCREENCI_SECRET` (from the project `.env`, the environment, or by running `init` with it) before exporting
-- gives an anonymous trial exactly one recording. Once that first recording is used (or the trial expires), a second `screenci export` stops before it starts and prints a sign-up link instead of recording again, so no time is spent rendering a video that would only be refused. Sign up to keep going; once you have, re-running `export` in the same folder links your account automatically and uploads normally. The trial previews expressive narration and up to 3 languages at once; see [Anonymous Trial](/docs/guides/anonymous-trial) for its full limits and what happens to that content after signup
+- requires an account with an active paid subscription: without a `SCREENCI_SECRET`, `export` refuses before recording and prints a sign-up link (the anonymous trial is preview-only; use `screenci edit` for the free live preview, see [Anonymous Trial](/docs/guides/anonymous-trial)). Once you have signed up, re-running `export` in the same folder links your account automatically. Set `SCREENCI_SECRET` from the project `.env`, the environment, or by running `init` with it
 - uploads only the recordings requested by this run (for example the videos matched by patterns, `--grep`, or `--languages`), with or without `SCREENCI_SECRET`
 - exits non-zero unless every requested video rendered and downloaded. If a requested video is missing its `recording.mp4` or another failure occurs, `export` does not save `.screenci/last-record.json` and does not print a success URL for unrelated output
 - prints any informational notices returned by the service in cyan after upload (occasional, non-error status messages such as maintenance or timing notes). These never affect the exit code
-- new accounts start on the Free plan automatically (no plan selection step). Free exports include a ScreenCI watermark; paid plans remove it and raise export and active-video limits, and unlock multiple languages
+- new accounts choose a plan before exporting: exports need an active Starter, Pro, or Business subscription. Higher tiers raise export and active-video limits and unlock multiple languages
 
 Relevant options:
 
@@ -434,7 +434,7 @@ CLI's own codegen writes); changing the config re-records every managed video.
 Watching follows the `-g/--grep` filter and can be turned off with
 `--no-watch`.
 
-Setup:
+Setup (with an account):
 
 1. Create a personal editor token on the Secrets page in the app (one token per
    machine, up to five per user).
@@ -443,6 +443,14 @@ Setup:
 3. Run `screenci edit` in your project. The editor header shows your machine as
    connected (for example `you@laptop`) and offers "Record ... on laptop" in
    the Export button's record menu.
+
+Without an account, no setup is needed: `screenci edit` runs under a local,
+anonymous trial session (see
+[Anonymous Trial](/docs/guides/anonymous-trial)), the anon session token
+doubles as the editor token, and the trial's editor page is editable while
+your machine is connected. Signing up claims the trial: the running session
+picks up your new `SCREENCI_SECRET` and a claim-minted `SCREENCI_EDIT_TOKEN`
+(written into `screenci/.env`) and reconnects without restarting.
 
 While connected:
 

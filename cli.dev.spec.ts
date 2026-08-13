@@ -17,7 +17,7 @@ import {
 
 const config: DevListenConfig = {
   apiUrl: 'http://localhost:8787',
-  secret: 'org-secret',
+  credential: { header: 'X-ScreenCI-Secret', value: 'org-secret' },
   devToken: 'dev-token',
   projectName: 'demo',
   machineName: 'laptop',

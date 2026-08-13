@@ -121,7 +121,13 @@ export type DevListenDeps = {
 
 export type DevListenConfig = {
   apiUrl: string
-  secret: string
+  /**
+   * The org credential every dev call authenticates with: a real org secret
+   * (X-ScreenCI-Secret) or, for an account-less `screenci edit`, the anon
+   * session token (X-ScreenCI-Anon-Token, resolved to the trial org's secret
+   * by the backend proxy). See src/anonSession.ts CliCredential.
+   */
+  credential: { header: string; value: string }
   devToken: string
   projectName: string
   machineName: string
@@ -150,7 +156,7 @@ async function postDev<T>(
   const res = await deps.fetchFn(`${config.apiUrl}${path}`, {
     method: 'POST',
     headers: {
-      'X-ScreenCI-Secret': config.secret,
+      [config.credential.header]: config.credential.value,
       [DEV_TOKEN_HEADER]: config.devToken,
       'Content-Type': 'application/json',
     },

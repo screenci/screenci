@@ -11,7 +11,6 @@ import {
   deleteAnonSessionFile,
   evaluateAnonRecordingGate,
   formatAnonPostRecordNotice,
-  formatAnonRecordingsLeft,
   formatAnonTermsNotice,
   getOrCreateAnonToken,
   readAnonSessionRecordUrl,
@@ -120,6 +119,24 @@ describe('checkAnonSessionStatus', () => {
     expect(result).toEqual({ status: 'claimed', secret: 'sec_123' })
   })
 
+  it('carries the claim-minted editor token when the server includes one', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      json: async () => ({
+        status: 'claimed',
+        secret: 'sec_123',
+        editToken: 'edit_456',
+      }),
+    })
+    const result = await checkAnonSessionStatus('token-a', {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    })
+    expect(result).toEqual({
+      status: 'claimed',
+      secret: 'sec_123',
+      editToken: 'edit_456',
+    })
+  })
+
   it('treats a claimed response missing a secret as pending (defensive)', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       json: async () => ({ status: 'claimed' }),
@@ -196,38 +213,10 @@ describe('evaluateAnonRecordingGate', () => {
   })
 })
 
-describe('formatAnonRecordingsLeft', () => {
-  it('pluralizes multiple remaining recordings', () => {
-    expect(formatAnonRecordingsLeft(3)).toContain(
-      '3 free trial recordings left'
-    )
-  })
-
-  it('uses the singular for exactly one remaining recording', () => {
-    expect(formatAnonRecordingsLeft(1)).toContain('1 free trial recording left')
-  })
-
-  it('reports the last recording being spent', () => {
-    expect(formatAnonRecordingsLeft(0)).toContain('last free trial recording')
-  })
-})
-
 describe('formatAnonPostRecordNotice', () => {
-  it('combines anonymous account and plural remaining recording notices', () => {
-    expect(formatAnonPostRecordNotice(2)).toBe(
-      'Recorded without an account. 2 free trial recordings left. Sign up to keep it and record without limits.'
-    )
-  })
-
-  it('uses the singular for exactly one remaining recording', () => {
-    expect(formatAnonPostRecordNotice(1)).toBe(
-      'Recorded without an account. 1 free trial recording left. Sign up to keep it and record without limits.'
-    )
-  })
-
-  it('combines anonymous account and final recording notices', () => {
-    expect(formatAnonPostRecordNotice(0)).toBe(
-      'Recorded without an account. That was your last free trial recording. Sign up to keep it and record more.'
+  it('states the preview-only trial and the paid export path', () => {
+    expect(formatAnonPostRecordNotice()).toBe(
+      'Recorded without an account. Preview and edit for free; sign up with a plan to export the finished video.'
     )
   })
 })

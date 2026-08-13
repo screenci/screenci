@@ -66,6 +66,7 @@ import {
   getDevBackendUrl,
   getDevFrontendUrl,
   getScreenCISecretsUrl,
+  persistScreenCIEditToken,
   persistScreenCISecret,
 } from './src/linkSession.js'
 import { OVERLAY_CACHE_DIR_NAME } from './src/htmlRasterizer.js'
@@ -3431,7 +3432,34 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
     throw new RecordFailureHintError(error)
   }
 
-  const secret = process.env.SCREENCI_SECRET
+  // Exporting needs an account: a claimed trial self-upgrades to the real
+  // secret here (resolveUploadCredential persists it into .env), everything
+  // else is refused up front. The anonymous trial is preview-only: point at
+  // `screenci edit` for the free live preview and at sign-up for exporting.
+  let secret = process.env.SCREENCI_SECRET
+  if (!secret) {
+    const envFilePath = await resolveProjectEnvFilePath(resolvedConfigPath)
+    const { credential, usedAnonCredential } = await resolveUploadCredential(
+      screenciDir,
+      apiUrl,
+      envFilePath,
+      secret
+    )
+    if (usedAnonCredential) {
+      logger.error(
+        'Exporting requires an account with an active subscription.\n' +
+          `Preview and edit for free with ${pc.cyan(getSuggestedScreenciCommand('edit'))}, ` +
+          `or sign up to export: ${pc.cyan(appUrl)}\n` +
+          'After signing up, re-run this command in the same folder and it links automatically.'
+      )
+      process.exit(1)
+    }
+    // A claimed trial just self-upgraded: the credential now carries the real
+    // org secret (also persisted into .env for future runs).
+    secret = credential.value
+    process.env.SCREENCI_SECRET = secret
+  }
+
   const recordExportPass = async (
     names: readonly string[] | undefined,
     grepOverride?: string
@@ -3496,20 +3524,6 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
       }
       await recordRunLock.release()
     }
-  }
-
-  // Anonymous trial: record + render everything requested (the watermark
-  // path), but downloads need an account, so point at the export page instead.
-  if (!secret) {
-    await recordExportPass(
-      requestedVideoNames.length > 0 ? requestedVideoNames : undefined,
-      options.grep
-    )
-    logger.info(
-      'Sign up to download finished videos directly from the CLI: ' +
-        pc.cyan(appUrl)
-    )
-    return
   }
 
   const fetchInfo = async (recordId?: string): Promise<ExportInfoResponse> => {
@@ -3790,7 +3804,7 @@ export function resolveSingleEditVideo(
 async function printEditorLink(params: {
   apiUrl: string
   appUrl: string
-  secret: string
+  credential: CliCredential
   projectName: string
   videoName: string
 }): Promise<void> {
@@ -3798,7 +3812,7 @@ async function printEditorLink(params: {
     const url = new URL(`${params.apiUrl}/cli/info`)
     url.searchParams.set('projectName', params.projectName)
     const res = await fetch(url.toString(), {
-      headers: { 'X-ScreenCI-Secret': params.secret },
+      headers: { [params.credential.header]: params.credential.value },
     })
     if (!res.ok) return
     const info = (await res.json()) as {
@@ -3838,17 +3852,89 @@ export async function runDevCommand(
     watchDeps?: Partial<DevWatchDeps>
   } = {}
 ): Promise<void> {
-  const { screenciConfig, secret, apiUrl } = await requireScreenCISecret(
-    options.config
-  )
+  const { resolvedConfigPath: authConfigPath, screenciConfig } =
+    await loadScreenCIConfigAndEnv(options.config)
+  const apiUrl = getDevBackendUrl()
+  const authScreenciDir = resolve(dirname(authConfigPath), '.screenci')
+  const authEnvFilePath = await resolveProjectEnvFilePath(authConfigPath)
 
-  const editorToken = options.token ?? process.env[SCREENCI_EDIT_TOKEN_ENV]
-  if (!editorToken) {
-    logger.error(
-      `No ${SCREENCI_EDIT_TOKEN_ENV} configured. Create a personal editor token at ${pc.cyan(getScreenCISecretsUrl())} and add it to your env file, or pass it with --token.`
-    )
-    process.exit(1)
+  /**
+   * Resolves the credential pair this edit session authenticates with. With a
+   * SCREENCI_SECRET, a personal SCREENCI_EDIT_TOKEN is required as before.
+   * Without one, the session runs on the anonymous trial: the anon session
+   * token doubles as the dev token (the server auto-mints the matching editor
+   * token for the trial org), and a claimed session self-upgrades by
+   * persisting the real secret plus the claim-minted editor token into .env.
+   */
+  const resolveDevAuth = async (): Promise<{
+    credential: CliCredential
+    devToken: string
+    anonToken: string | null
+  }> => {
+    const requireEditToken = (fallback?: string): string => {
+      const editorToken =
+        options.token ?? process.env[SCREENCI_EDIT_TOKEN_ENV] ?? fallback
+      if (!editorToken) {
+        logger.error(
+          `No ${SCREENCI_EDIT_TOKEN_ENV} configured. Create a personal editor token at ${pc.cyan(getScreenCISecretsUrl())} and add it to your env file, or pass it with --token.`
+        )
+        process.exit(1)
+      }
+      return editorToken
+    }
+
+    const secretFromEnv = process.env.SCREENCI_SECRET
+    if (secretFromEnv) {
+      return {
+        credential: secretCredential(secretFromEnv),
+        devToken: requireEditToken(),
+        anonToken: null,
+      }
+    }
+
+    const anonToken = await getOrCreateAnonToken(authScreenciDir)
+    const status = await checkAnonSessionStatus(anonToken, {
+      backendUrl: apiUrl,
+    })
+
+    if (status.status === 'claimed') {
+      await persistScreenCISecret(authEnvFilePath, status.secret)
+      process.env.SCREENCI_SECRET = status.secret
+      if (status.editToken !== undefined) {
+        await persistScreenCIEditToken(authEnvFilePath, status.editToken)
+        process.env[SCREENCI_EDIT_TOKEN_ENV] = status.editToken
+      }
+      await deleteAnonSessionFile(authScreenciDir)
+      logger.info(
+        `Your SCREENCI_SECRET was added to ${pathRelative(process.cwd(), authEnvFilePath)}`
+      )
+      return {
+        credential: secretCredential(status.secret),
+        devToken: requireEditToken(status.editToken),
+        anonToken: null,
+      }
+    }
+
+    if (status.status === 'expired') {
+      logger.error(
+        'Your free ScreenCI trial has expired.\n' +
+          `Sign up to keep editing: ${pc.cyan(getDevFrontendUrl())}\n` +
+          'After signing up, re-run this command in the same folder and it links automatically.'
+      )
+      process.exit(1)
+    }
+
+    // pending / not_found: proceed anonymously. Recording an anonymous trial
+    // agrees to the Terms, same as export.
+    logger.info(formatAnonTermsNotice())
+    return {
+      credential: anonCredential(anonToken),
+      devToken: anonToken,
+      anonToken,
+    }
   }
+
+  let auth = await resolveDevAuth()
 
   // Edit deep-links the web editor for a single video, so the pattern must
   // resolve to exactly one; anything else lists the candidates and exits.
@@ -3876,8 +3962,8 @@ export async function runDevCommand(
   const killWindowSeconds = Number(options.recordKillWindow)
   const config: DevListenConfig = {
     apiUrl,
-    secret,
-    devToken: editorToken,
+    credential: auth.credential,
+    devToken: auth.devToken,
     projectName: screenciConfig.projectName,
     machineName: depsOverride.machineName ?? hostname(),
     ...(Number.isFinite(killWindowSeconds) && killWindowSeconds >= 0
@@ -4134,7 +4220,7 @@ export async function runDevCommand(
     await printEditorLink({
       apiUrl,
       appUrl: getDevFrontendUrl(),
-      secret,
+      credential: auth.credential,
       projectName: screenciConfig.projectName,
       videoName: options.videoName,
     })
@@ -4195,19 +4281,73 @@ export async function runDevCommand(
   process.on('SIGTERM', shutdown)
 
   try {
-    await runDevListenLoop(config, deps, registration.listenerId, controller)
-  } catch (error) {
-    if (error instanceof DevAuthError) {
-      logger.error(error.message)
-      logger.error(
-        `Create a new editor token at ${pc.cyan(getScreenCISecretsUrl())} if yours was revoked.`
-      )
-      await deregisterDevListener(config, deps, registration.listenerId).catch(
-        () => {}
-      )
-      process.exit(1)
+    while (!controller.stopped) {
+      try {
+        await runDevListenLoop(
+          config,
+          deps,
+          registration.listenerId,
+          controller
+        )
+        break
+      } catch (error) {
+        if (!(error instanceof DevAuthError)) throw error
+
+        // Anonymous session: a 401 usually means the trial was just claimed
+        // (the claim deletes the anon org secret). Self-upgrade to the real
+        // credentials the claim minted and reconnect without stopping.
+        if (auth.anonToken !== null) {
+          const status = await checkAnonSessionStatus(auth.anonToken, {
+            backendUrl: apiUrl,
+          })
+          if (status.status === 'claimed') {
+            await persistScreenCISecret(authEnvFilePath, status.secret)
+            process.env.SCREENCI_SECRET = status.secret
+            if (status.editToken !== undefined) {
+              await persistScreenCIEditToken(authEnvFilePath, status.editToken)
+              process.env[SCREENCI_EDIT_TOKEN_ENV] = status.editToken
+            }
+            await deleteAnonSessionFile(authScreenciDir)
+            if (status.editToken === undefined) {
+              logger.error(
+                'Your trial was claimed, but no editor token is configured. ' +
+                  `Create one at ${pc.cyan(getScreenCISecretsUrl())}, add it to your env file as ${SCREENCI_EDIT_TOKEN_ENV}, and re-run this command.`
+              )
+              process.exit(1)
+            }
+            auth = {
+              credential: secretCredential(status.secret),
+              devToken: status.editToken,
+              anonToken: null,
+            }
+            config.credential = auth.credential
+            config.devToken = auth.devToken
+            registration = await registerDevListener(config, deps)
+            logger.info(
+              'Trial claimed: reconnected with your account credentials ' +
+                `(saved to ${pathRelative(process.cwd(), authEnvFilePath)}).`
+            )
+            continue
+          }
+          logger.error(
+            'This trial session is no longer valid (expired or claimed elsewhere).\n' +
+              `Sign up to keep editing: ${pc.cyan(getDevFrontendUrl())}`
+          )
+          process.exit(1)
+        }
+
+        logger.error(error.message)
+        logger.error(
+          `Create a new editor token at ${pc.cyan(getScreenCISecretsUrl())} if yours was revoked.`
+        )
+        await deregisterDevListener(
+          config,
+          deps,
+          registration.listenerId
+        ).catch(() => {})
+        process.exit(1)
+      }
     }
-    throw error
   } finally {
     controller.stopped = true
     watcher?.stop()
@@ -4618,7 +4758,7 @@ export async function ensureAnonRecordingAllowedOrExit(
       (previousRecordUrl
         ? `Previous recording: ${pc.cyan(previousRecordUrl)}\n`
         : '') +
-      `Sign up to keep recording (no watermark, no limits): ${pc.cyan(appUrl)}\n` +
+      `Sign up to keep recording and export: ${pc.cyan(appUrl)}\n` +
       'After signing up, re-run this command in the same folder and it links automatically.'
   )
   process.exit(1)
@@ -4825,17 +4965,7 @@ async function uploadRecordedVideosForConfig(
             `Failed to remember anonymous recording URL: ${err instanceof Error ? err.message : String(err)}`
           )
         }
-        // Report how many trial recordings remain after this run. Best-effort:
-        // checkAnonSessionStatus never throws (it falls back on failure), so a
-        // transient outage just shows the optimistic remaining count.
-        const postStatus = await checkAnonSessionStatus(credential.value, {
-          backendUrl: apiUrl,
-        })
-        if (postStatus.status === 'pending') {
-          logger.info(formatAnonPostRecordNotice(postStatus.remaining))
-        } else {
-          logger.info(`Recorded without an account. Sign up to keep it.`)
-        }
+        logger.info(formatAnonPostRecordNotice())
       }
       if (notices.length > 0) {
         logger.info('')

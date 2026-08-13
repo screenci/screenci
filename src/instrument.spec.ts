@@ -374,6 +374,26 @@ function makeLocatorMock(
       }
       return undefined
     }),
+    evaluateHandle: vi
+      .fn()
+      .mockImplementation(async (fn: unknown, arg: unknown) => {
+        const value =
+          typeof fn === 'function'
+            ? (fn as (el: typeof element, arg: unknown) => unknown)(
+                element,
+                arg
+              )
+            : undefined
+        return {
+          evaluate: vi.fn(
+            async (
+              fn2: (driver: unknown, arg2?: unknown) => unknown,
+              arg2?: unknown
+            ) => fn2(value, arg2)
+          ),
+          dispose: vi.fn().mockResolvedValue(undefined),
+        }
+      }),
     boundingBox: vi.fn().mockResolvedValue(bb),
     scrollIntoViewIfNeeded: vi.fn().mockResolvedValue(undefined),
     waitFor: vi.fn().mockResolvedValue(undefined),

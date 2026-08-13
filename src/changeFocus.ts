@@ -1263,75 +1263,86 @@ async function executeScrollAndZoomPlan(params: {
     const frameMs = getScrollDispatchIntervalMs(locator.page())
     const animStart = Date.now()
 
+    // Resolve the scrollable ancestor chain once up front. Re-walking it with
+    // getComputedStyle on every frame is expensive on heavy pages and would
+    // inflate the per-frame evaluate round trip.
+    const scrollDriver = await locator.evaluateHandle(
+      (element, args) => {
+        const doc = element.ownerDocument
+        const win = doc.defaultView as ScrollWindow | null
+        const ancestors: ScrollableElement[] = []
+
+        if (win && args.ancestorCount > 0) {
+          const isScrollable = (node: unknown): node is ScrollableElement => {
+            if (
+              !node ||
+              typeof node !== 'object' ||
+              !('getBoundingClientRect' in node) ||
+              !('clientHeight' in node) ||
+              !('clientWidth' in node) ||
+              !('scrollHeight' in node) ||
+              !('scrollWidth' in node) ||
+              !('scrollTop' in node) ||
+              !('scrollLeft' in node)
+            ) {
+              return false
+            }
+            const el = node as ScrollableElement
+            const style = win.getComputedStyle(node as Element)
+            return (
+              ((style.overflowY === 'auto' ||
+                style.overflowY === 'scroll' ||
+                style.overflowY === 'overlay') &&
+                el.scrollHeight > el.clientHeight) ||
+              ((style.overflowX === 'auto' ||
+                style.overflowX === 'scroll' ||
+                style.overflowX === 'overlay') &&
+                el.scrollWidth > el.clientWidth)
+            )
+          }
+
+          for (
+            let current: Element | null = element.parentElement;
+            current;
+            current = current.parentElement
+          ) {
+            if (
+              !isScrollable(current) ||
+              current === doc.documentElement ||
+              current === doc.body
+            ) {
+              continue
+            }
+            ancestors.push(current)
+          }
+        }
+
+        return { win, ancestors }
+      },
+      { ancestorCount: ancestorScrollPlans.length }
+    )
+
     const applyScrollAtProgress = (easedT: number): Promise<unknown> =>
-      locator.evaluate(
-        (element, args) => {
-          const doc = element.ownerDocument
-          const win = doc.defaultView as ScrollWindow | null
+      scrollDriver.evaluate(
+        (driver, args) => {
+          const win = driver.win
           if (!win) return
           const positionsDiffer = (start: number, target: number): boolean =>
             Math.abs(target - start) > args.positionEpsilonPx
 
-          if (args.ancestorScrollPlans.length > 0) {
-            const isScrollable = (node: unknown): node is ScrollableElement => {
-              if (
-                !node ||
-                typeof node !== 'object' ||
-                !('getBoundingClientRect' in node) ||
-                !('clientHeight' in node) ||
-                !('clientWidth' in node) ||
-                !('scrollHeight' in node) ||
-                !('scrollWidth' in node) ||
-                !('scrollTop' in node) ||
-                !('scrollLeft' in node)
-              ) {
-                return false
-              }
-              const el = node as ScrollableElement
-              const style = win.getComputedStyle(node as Element)
-              return (
-                ((style.overflowY === 'auto' ||
-                  style.overflowY === 'scroll' ||
-                  style.overflowY === 'overlay') &&
-                  el.scrollHeight > el.clientHeight) ||
-                ((style.overflowX === 'auto' ||
-                  style.overflowX === 'scroll' ||
-                  style.overflowX === 'overlay') &&
-                  el.scrollWidth > el.clientWidth)
-              )
-            }
-
-            const ancestors: ScrollableElement[] = []
-            for (
-              let current: Element | null = element.parentElement;
-              current;
-              current = current.parentElement
+          for (const [index, plan] of args.ancestorScrollPlans.entries()) {
+            const ancestor = driver.ancestors[index]
+            if (!ancestor) continue
+            if (
+              !positionsDiffer(plan.startTop, plan.targetTop) &&
+              !positionsDiffer(plan.startLeft, plan.targetLeft)
             ) {
-              if (
-                !isScrollable(current) ||
-                current === doc.documentElement ||
-                current === doc.body
-              ) {
-                continue
-              }
-              ancestors.push(current)
+              continue
             }
-
-            for (const [index, plan] of args.ancestorScrollPlans.entries()) {
-              const ancestor = ancestors[index]
-              if (!ancestor) continue
-              if (
-                !positionsDiffer(plan.startTop, plan.targetTop) &&
-                !positionsDiffer(plan.startLeft, plan.targetLeft)
-              ) {
-                continue
-              }
-              ancestor.scrollTop =
-                plan.startTop + (plan.targetTop - plan.startTop) * args.easedT
-              ancestor.scrollLeft =
-                plan.startLeft +
-                (plan.targetLeft - plan.startLeft) * args.easedT
-            }
+            ancestor.scrollTop =
+              plan.startTop + (plan.targetTop - plan.startTop) * args.easedT
+            ancestor.scrollLeft =
+              plan.startLeft + (plan.targetLeft - plan.startLeft) * args.easedT
           }
 
           win.scrollTo({
@@ -1355,13 +1366,26 @@ async function executeScrollAndZoomPlan(params: {
       )
 
     let frames = 0
-    for (;;) {
-      const elapsed = Date.now() - animStart
-      const t = duration > 0 ? Math.min(1, elapsed / duration) : 1
-      await applyScrollAtProgress(evaluateEasingAtT(t, easing))
-      frames += 1
-      if (t >= 1) break
-      await new Promise<void>((resolve) => setTimeout(resolve, frameMs))
+    try {
+      for (;;) {
+        const elapsed = Date.now() - animStart
+        const t = duration > 0 ? Math.min(1, elapsed / duration) : 1
+        await applyScrollAtProgress(evaluateEasingAtT(t, easing))
+        frames += 1
+        if (t >= 1) break
+        // Ticks are scheduled on an absolute timeline (animStart + N * frameMs)
+        // so the evaluate round trip overlaps the frame budget instead of
+        // adding to it. When a round trip exceeds the budget the delay clamps
+        // to zero and the loop dispatches at the maximum rate the page allows,
+        // while time-based progress drops frames to stay on schedule.
+        const nextTickAt = animStart + frames * frameMs
+        const delay = nextTickAt - Date.now()
+        if (delay > 0) {
+          await new Promise<void>((resolve) => setTimeout(resolve, delay))
+        }
+      }
+    } finally {
+      await scrollDriver.dispose()
     }
     if (isTimingDebugEnabled()) {
       logger.info(

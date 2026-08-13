@@ -105,6 +105,23 @@ function makeLocatorMock(options: {
         arg?: unknown
       ) => fn(element, arg)
     ),
+    evaluateHandle: vi.fn(
+      async (
+        fn: (el: typeof element, arg?: unknown) => unknown,
+        arg?: unknown
+      ) => {
+        const value = fn(element, arg)
+        return {
+          evaluate: vi.fn(
+            async (
+              fn2: (driver: unknown, arg2?: unknown) => unknown,
+              arg2?: unknown
+            ) => fn2(value, arg2)
+          ),
+          dispose: vi.fn().mockResolvedValue(undefined),
+        }
+      }
+    ),
     page: vi.fn().mockReturnValue({
       viewportSize: () => ({
         width: options.viewport.width,

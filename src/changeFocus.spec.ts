@@ -91,6 +91,7 @@ function makeLocatorMock(options: {
   __scrollToCalls: ScrollCall[]
   __nestedScrollTops: number[]
   __requestAnimationFrameCalls: number
+  __scrollHandleEvaluate: ReturnType<typeof vi.fn>
 } {
   let windowScrollY = 0
   let windowScrollX = 0
@@ -228,6 +229,27 @@ function makeLocatorMock(options: {
     }),
   }
 
+  // The scroll driver handle returned by `evaluateHandle`: the resolved
+  // in-page value is kept here so per-frame `handle.evaluate` calls receive it.
+  let scrollDriverValue: unknown
+  const scrollHandleEvaluate = vi.fn(
+    async (fn: (driver: unknown, arg?: unknown) => unknown, arg?: unknown) => {
+      // Simulate a slow per-frame cost for scroll-step applies (which carry an
+      // `easedT`), to exercise time-based frame dropping.
+      if (
+        options.evaluateDelayMs &&
+        arg !== null &&
+        typeof arg === 'object' &&
+        'easedT' in arg
+      ) {
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, options.evaluateDelayMs)
+        )
+      }
+      return fn(scrollDriverValue, arg)
+    }
+  )
+
   return {
     boundingBox: vi.fn().mockImplementation(async () => {
       const rect = element.getBoundingClientRect()
@@ -237,20 +259,18 @@ function makeLocatorMock(options: {
       async (
         fn: (el: typeof element, arg?: unknown) => unknown,
         arg?: unknown
+      ) => fn(element, arg)
+    ),
+    evaluateHandle: vi.fn(
+      async (
+        fn: (el: typeof element, arg?: unknown) => unknown,
+        arg?: unknown
       ) => {
-        // Simulate a slow per-frame cost for scroll-step applies (which carry an
-        // `easedT`), to exercise time-based frame dropping.
-        if (
-          options.evaluateDelayMs &&
-          arg !== null &&
-          typeof arg === 'object' &&
-          'easedT' in arg
-        ) {
-          await new Promise<void>((resolve) =>
-            setTimeout(resolve, options.evaluateDelayMs)
-          )
+        scrollDriverValue = fn(element, arg)
+        return {
+          evaluate: scrollHandleEvaluate,
+          dispose: vi.fn().mockResolvedValue(undefined),
         }
-        return fn(element, arg)
       }
     ),
     page: vi.fn().mockReturnValue({
@@ -267,10 +287,12 @@ function makeLocatorMock(options: {
     get __requestAnimationFrameCalls() {
       return requestAnimationFrameCalls
     },
+    __scrollHandleEvaluate: scrollHandleEvaluate,
   } as unknown as Locator & {
     __scrollToCalls: ScrollCall[]
     __nestedScrollTops: number[]
     __requestAnimationFrameCalls: number
+    __scrollHandleEvaluate: ReturnType<typeof vi.fn>
   }
 }
 
@@ -1469,13 +1491,31 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     await promise
 
-    const evaluateMock = vi.mocked(locator.evaluate)
-    const lastScrollArgs = evaluateMock.mock.calls.at(-1)?.[1] as
-      { easedT?: number; positionEpsilonPx?: number } | undefined
+    const lastScrollArgs = locator.__scrollHandleEvaluate.mock.calls.at(
+      -1
+    )?.[1] as { easedT?: number; positionEpsilonPx?: number } | undefined
 
     // The scroll is applied frame by frame; the final frame is fully eased.
     expect(lastScrollArgs?.easedT).toBeCloseTo(1, 5)
     expect(lastScrollArgs?.positionEpsilonPx).toBeGreaterThan(0)
+  })
+
+  it('keeps the dispatch rate when the evaluate round trip eats into the frame budget', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2200 },
+      // A 10ms round trip fits inside the ~16.7ms frame budget. Ticks are
+      // scheduled on an absolute timeline, so this must not stretch the
+      // interval to ~26.7ms (which would drop a 500ms scroll to ~19 frames).
+      evaluateDelayMs: 10,
+    })
+
+    const promise = changeFocus(locator, { duration: 500 })
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(locator.__scrollToCalls.length).toBeGreaterThanOrEqual(28)
   })
 
   it('does not try to scroll fixed-position targets', async () => {

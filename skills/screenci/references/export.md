@@ -45,17 +45,23 @@ To upload straight to an existing organization instead, get `SCREENCI_SECRET` in
 # first verify the flow
 npx screenci test
 
-# then export
+# once green, preview and refine in the web editor
+npx screenci edit "Video title"
+
+# export when the finished videos are wanted
 npx screenci export
 ```
 
 ## Workflow
 
-Always run `npx screenci test` until it passes before running `npx screenci export`. Fix failures and rerun until green.
+Always run `npx screenci test` until it passes first. Fix failures and rerun until green.
+
+Once tests pass, prefer `npx screenci edit "<title>"` over exporting right away: it records the live preview if stale (free, no render), prints the web editor link, and stays connected so browser edits are written back into the script. Report the link so the user can review the video. `edit` needs `SCREENCI_SECRET` and a personal `SCREENCI_EDIT_TOKEN` in `screenci/.env`; without them (for example on the anonymous trial), go straight to `export`.
+
+Run `npx screenci export` when the user wants the finished videos: it records what changed, renders, and downloads them.
 
 ```bash
-npx screenci test   # verify selectors, flow, and narration
-npx screenci export # record, render, and download the finished videos
+npx screenci test          # verify selectors, flow, and narration
+npx screenci edit "Title"  # record the live preview and open the web editor
+npx screenci export        # record, render, and download the finished videos
 ```
-
-To refine a single video interactively instead of exporting, run `npx screenci edit "<title>"`: it records the live preview if stale, prints the web editor link, and stays connected so browser edits are written back into the script.

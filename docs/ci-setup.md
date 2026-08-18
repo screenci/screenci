@@ -160,55 +160,6 @@ Notes:
 - This is independent of `.screenci/`, which is always gitignored and holds the
   local recording output.
 
-## Trigger recordings remotely
-
-Because the workflow accepts
-[`workflow_dispatch`](https://docs.github.com/en/actions/using-workflows/manually-running-a-workflow),
-you can start a recording run on demand without pushing a commit, from either the
-app or the CLI.
-
-To enable this, connect the GitHub App to your project once. ScreenCI uses a
-[GitHub App](https://docs.github.com/en/apps/overview) rather than a personal
-access token: **no long-lived credential is stored**. Access is granted by the
-installation and revoked the moment you uninstall the App, and each trigger uses
-a short-lived token scoped to only `Actions: write` on the repositories you pick.
-
-1. Open the project page in [app.screenci.com](https://app.screenci.com).
-2. In **GitHub recording workflow**, click **Connect GitHub** and install the App
-   on the repository you want to record (you choose exactly which repos it can
-   access).
-3. Back on the project page, pick the **repository**, and (optionally) the
-   workflow file (defaults to `screenci.yaml`) and git ref (defaults to `main`),
-   then **Save**.
-
-Once connected, you can dispatch the recording workflow two ways:
-
-- **From the app:** click **Record all** on the project page. To record a single
-  video or screenshot, use its **Record** button (on the project page or its
-  detail page).
-- **From the CLI:** run [`screenci export --remote`](/docs/reference/cli#-remote).
-  It resolves the project from `SCREENCI_SECRET` and triggers the workflow without
-  recording locally.
-
-### Targeted recordings
-
-You can record only some videos or screenshots instead of all of them, from
-either surface:
-
-- **From the app:** the per-item **Record** buttons.
-- **From the CLI:** pass `--grep` to filter by title, just like local recording:
-
-  ```bash
-  screenci export --remote --grep "Onboarding"
-  ```
-
-Both forward the filter to the workflow's optional `grep` input, which
-`screenci init` includes in the generated `screenci.yaml`. If your workflow
-predates that input, add it (or re-run `screenci init`) so targeted runs work.
-
-To revoke access, click **Disconnect** on the project page or uninstall the App
-from your GitHub settings.
-
 ## Reading back render status
 
 `screenci export` already waits for renders and exits `0` only when every

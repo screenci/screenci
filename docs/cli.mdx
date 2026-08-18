@@ -327,38 +327,10 @@ Relevant options:
 - `-c, --config <path>`
 - `-v, --verbose`
 - `-g, --grep <pattern>` (same filter as Playwright's `--grep`)
-- `--remote` (trigger the project's GitHub Actions recording workflow instead of exporting locally, see below)
 
 Important restriction:
 
 - `--retries` is not supported because ScreenCI forces retries to `0`
-
-### `--remote`
-
-`screenci export --remote` does not record on your machine. Instead it asks
-ScreenCI to dispatch the project's GitHub Actions recording workflow, so the
-export runs in CI on demand. The project is resolved the same way as every
-other command, from `SCREENCI_SECRET` and the config `projectName`, and the
-command exits as soon as the workflow has been triggered (nothing runs or
-downloads locally).
-
-```bash
-npx screenci export --remote
-```
-
-Pass `--grep` to export only matching videos or screenshots remotely (the filter
-is forwarded to the workflow's `grep` input):
-
-```bash
-npx screenci export --remote --grep "Onboarding"
-```
-
-This requires connecting the GitHub App to the project first (a one-time setup on
-the project page in the app, see
-[Trigger recordings remotely](/docs/ci-setup#trigger-recordings-remotely)).
-Without a connected repository the command reports that GitHub is not connected.
-Targeted (`--grep`) runs need the workflow to declare a `grep` input; projects
-scaffolded by `screenci init` include it.
 
 ## `screenci edit [pattern]`
 

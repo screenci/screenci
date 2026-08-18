@@ -1285,10 +1285,10 @@ function printInitNextSteps(
   logger.info('')
   if (secretOutcome === 'ready') {
     logger.info(
-      `${pc.green('✔')} You're set up on the free tier. Run ${pc.cyan(`${commands.screenciRun} record`)} to render your first video.`
+      `${pc.green('✔')} You're set up on the free tier. Run ${pc.cyan(`${commands.screenciRun} record`)} to preview your first video.`
     )
     logger.info(
-      'Free renders include a ScreenCI watermark. Upgrade any time to remove it.'
+      'The free tier previews without rendering. Choose a paid plan any time to export finished videos.'
     )
   } else {
     logger.info(

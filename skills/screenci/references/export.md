@@ -25,7 +25,7 @@ Positional arguments are title patterns; no patterns exports every video in ever
 
 ## Connecting to an Account (required for export)
 
-`export` requires an account with an active paid subscription. Without a `SCREENCI_SECRET`, it refuses up front and prints a sign-up link; the anonymous trial is preview-only (use `screenci edit` for the free live preview). Signing up claims the trial and links the project automatically on the next run.
+`export` requires an account with an active paid subscription. Without a `SCREENCI_SECRET`, it refuses up front and prints a sign-up link; the anonymous trial is preview-only (use `screenci preview` for the free live preview). Signing up claims the trial and links the project automatically on the next run.
 
 To connect an existing organization, get `SCREENCI_SECRET` into `screenci/.env` (it does not block authoring, testing, or anonymous editing):
 
@@ -45,7 +45,7 @@ To connect an existing organization, get `SCREENCI_SECRET` into `screenci/.env` 
 npx screenci test
 
 # once green, preview and refine in the web editor
-npx screenci edit "Video title"
+npx screenci preview "Video title"
 
 # export when the finished videos are wanted
 npx screenci export
@@ -55,12 +55,12 @@ npx screenci export
 
 Always run `npx screenci test` until it passes first. Fix failures and rerun until green.
 
-Once tests pass, prefer `npx screenci edit "<title>"` over exporting right away: it records the live preview if stale (free, no render), prints the web editor link, and stays connected so browser edits are written back into the script. Report the link so the user can review the video. `edit` works with or without an account (without one it runs under the free anonymous trial).
+Once tests pass, prefer `npx screenci preview "<title>"` over exporting right away: it records the live preview if stale (free, no render), prints the web editor link, and exits; browser edits queue server-side and land in the script on the next `screenci` command. Report the link so the user can review the video. `preview` works with or without an account (without one it runs under the free anonymous trial).
 
 Run `npx screenci export` when the user wants the finished videos: it records what changed, renders, and downloads them. Exporting requires an account with an active paid subscription.
 
 ```bash
 npx screenci test          # verify selectors, flow, and narration
-npx screenci edit "Title"  # record the live preview and open the web editor
+npx screenci preview "Title"  # record the live preview and open the web editor
 npx screenci export        # record, render, and download the finished videos
 ```

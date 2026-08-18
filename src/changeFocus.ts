@@ -1213,6 +1213,15 @@ export function combineFocusPlan(params: {
   }
 }
 
+/** Samples an easing curve into a lookup table the page can lerp over. */
+const EASING_TABLE_SIZE = 129
+
+export function sampleEasingTable(easing: Easing): number[] {
+  return Array.from({ length: EASING_TABLE_SIZE }, (_, index) =>
+    evaluateEasingAtT(index / (EASING_TABLE_SIZE - 1), easing)
+  )
+}
+
 async function executeScrollAndZoomPlan(params: {
   locator: Locator
   ancestorScrollPlans: ScrollPlan[]
@@ -1262,6 +1271,13 @@ async function executeScrollAndZoomPlan(params: {
     // and either way the scroll finishes in ~duration.
     const frameMs = getScrollDispatchIntervalMs(locator.page())
     const animStart = Date.now()
+
+    // The page computes eased progress from its own clock at apply time. If
+    // Node computed it at dispatch time, the variable evaluate round trip
+    // would land each position early or late relative to the paint it appears
+    // in, which reads as jagged scrolling. Easing is shipped as a sampled
+    // table so the page only lerps.
+    const easingTable = sampleEasingTable(easing)
 
     // Resolve the scrollable ancestor chain once up front. Re-walking it with
     // getComputedStyle on every frame is expensive on heavy pages and would
@@ -1317,21 +1333,24 @@ async function executeScrollAndZoomPlan(params: {
           }
         }
 
-        return { win, ancestors }
-      },
-      { ancestorCount: ancestorScrollPlans.length }
-    )
+        const positionsDiffer = (start: number, target: number): boolean =>
+          Math.abs(target - start) > args.positionEpsilonPx
 
-    const applyScrollAtProgress = (easedT: number): Promise<unknown> =>
-      scrollDriver.evaluate(
-        (driver, args) => {
-          const win = driver.win
+        const easeAt = (t: number): number => {
+          if (t <= 0) return 0
+          if (t >= 1) return 1
+          const table = args.easingTable
+          const pos = t * (table.length - 1)
+          const index = Math.floor(pos)
+          const low = table[index]!
+          const high = table[Math.min(index + 1, table.length - 1)]!
+          return low + (high - low) * (pos - index)
+        }
+
+        const applyAtProgress = (easedT: number): void => {
           if (!win) return
-          const positionsDiffer = (start: number, target: number): boolean =>
-            Math.abs(target - start) > args.positionEpsilonPx
-
           for (const [index, plan] of args.ancestorScrollPlans.entries()) {
-            const ancestor = driver.ancestors[index]
+            const ancestor = ancestors[index]
             if (!ancestor) continue
             if (
               !positionsDiffer(plan.startTop, plan.targetTop) &&
@@ -1340,37 +1359,82 @@ async function executeScrollAndZoomPlan(params: {
               continue
             }
             ancestor.scrollTop =
-              plan.startTop + (plan.targetTop - plan.startTop) * args.easedT
+              plan.startTop + (plan.targetTop - plan.startTop) * easedT
             ancestor.scrollLeft =
-              plan.startLeft + (plan.targetLeft - plan.startLeft) * args.easedT
+              plan.startLeft + (plan.targetLeft - plan.startLeft) * easedT
           }
 
           win.scrollTo({
             top:
               args.pageScrollPlan.startY +
               (args.pageScrollPlan.targetY - args.pageScrollPlan.startY) *
-                args.easedT,
+                easedT,
             left:
               args.pageScrollPlan.startX +
               (args.pageScrollPlan.targetX - args.pageScrollPlan.startX) *
-                args.easedT,
+                easedT,
             behavior: 'auto',
           })
-        },
-        {
-          ancestorScrollPlans,
-          pageScrollPlan,
-          easedT,
-          positionEpsilonPx: POSITION_EPSILON_PX,
         }
-      )
+
+        // Progress is anchored to the page clock at the first step, so each
+        // applied position matches the moment it actually lands in the page,
+        // independent of the Node round-trip latency.
+        const state: { startMs: number | null; done: boolean } = {
+          startMs: null,
+          done: false,
+        }
+
+        const step = (forceFinish: boolean): number => {
+          if (state.done) return 1
+          const now = performance.now()
+          if (state.startMs === null) state.startMs = now
+          const t =
+            forceFinish || args.duration <= 0
+              ? 1
+              : Math.min(1, (now - state.startMs) / args.duration)
+          applyAtProgress(easeAt(t))
+          if (t >= 1) state.done = true
+          return t
+        }
+
+        // In-page rAF loop for per-paint smoothness. While the page is being
+        // captured the browser may pause/throttle rAF, so this is best-effort;
+        // the Node-driven ticks below guarantee the scroll still progresses
+        // and finishes in ~duration.
+        const raf = win?.requestAnimationFrame?.bind(win)
+        if (raf && args.duration > 0) {
+          const tick = (): void => {
+            if (state.done) return
+            step(false)
+            if (!state.done) raf(tick)
+          }
+          raf(tick)
+        }
+
+        return { step }
+      },
+      {
+        ancestorCount: ancestorScrollPlans.length,
+        ancestorScrollPlans,
+        pageScrollPlan,
+        duration,
+        easingTable,
+        positionEpsilonPx: POSITION_EPSILON_PX,
+      }
+    )
 
     let frames = 0
     try {
       for (;;) {
         const elapsed = Date.now() - animStart
-        const t = duration > 0 ? Math.min(1, elapsed / duration) : 1
-        await applyScrollAtProgress(evaluateEasingAtT(t, easing))
+        // Safety net: if the page clock stalls or drifts, force the final
+        // position once the planned duration (plus one frame of slack) is up.
+        const forceFinish = duration <= 0 || elapsed >= duration + frameMs
+        const t = await scrollDriver.evaluate(
+          (driver, force) => driver.step(force),
+          forceFinish
+        )
         frames += 1
         if (t >= 1) break
         // Ticks are scheduled on an absolute timeline (animStart + N * frameMs)

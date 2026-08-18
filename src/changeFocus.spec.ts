@@ -234,14 +234,9 @@ function makeLocatorMock(options: {
   let scrollDriverValue: unknown
   const scrollHandleEvaluate = vi.fn(
     async (fn: (driver: unknown, arg?: unknown) => unknown, arg?: unknown) => {
-      // Simulate a slow per-frame cost for scroll-step applies (which carry an
-      // `easedT`), to exercise time-based frame dropping.
-      if (
-        options.evaluateDelayMs &&
-        arg !== null &&
-        typeof arg === 'object' &&
-        'easedT' in arg
-      ) {
+      // Simulate a slow per-frame cost for scroll-step applies (which carry a
+      // boolean `forceFinish`), to exercise time-based frame dropping.
+      if (options.evaluateDelayMs && typeof arg === 'boolean') {
         await new Promise<void>((resolve) =>
           setTimeout(resolve, options.evaluateDelayMs)
         )
@@ -1173,14 +1168,17 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     await promise
 
-    // The scroll never uses the page's requestAnimationFrame (which the browser
-    // freezes while recording); it is paced from Node instead.
-    expect(locator.__requestAnimationFrameCalls).toBe(0)
-    // Time-based progress drops frames instead of stretching: a 1000ms scroll
-    // at 250ms/frame finishes in a handful of frames, not the ~60 a 60fps run
-    // would emit.
+    // The in-page requestAnimationFrame loop is best-effort smoothing on top
+    // of the Node-paced ticks (the browser may freeze rAF while recording).
+    expect(locator.__requestAnimationFrameCalls).toBeGreaterThan(0)
+    // Time-based progress drops Node-paced frames instead of stretching: a
+    // 1000ms scroll at 250ms/frame emits a handful of Node ticks, not ~60.
+    const nodeTicks = locator.__scrollHandleEvaluate.mock.calls.filter(
+      (call) => typeof call[1] === 'boolean'
+    )
+    expect(nodeTicks.length).toBeGreaterThan(0)
+    expect(nodeTicks.length).toBeLessThanOrEqual(10)
     expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
-    expect(locator.__scrollToCalls.length).toBeLessThanOrEqual(10)
     // The final scroll position is still reached exactly.
     expect(locator.__scrollToCalls.at(-1)?.left).toBeCloseTo(170, 0)
   })
@@ -1491,13 +1489,23 @@ describe('changeFocus', () => {
     await vi.runAllTimersAsync()
     await promise
 
-    const lastScrollArgs = locator.__scrollHandleEvaluate.mock.calls.at(
-      -1
-    )?.[1] as { easedT?: number; positionEpsilonPx?: number } | undefined
+    const handleArgs = (
+      locator.evaluateHandle as unknown as ReturnType<typeof vi.fn>
+    ).mock.calls.at(-1)?.[1] as {
+      pageScrollPlan: { targetY: number }
+      easingTable: number[]
+      positionEpsilonPx: number
+    }
 
-    // The scroll is applied frame by frame; the final frame is fully eased.
-    expect(lastScrollArgs?.easedT).toBeCloseTo(1, 5)
-    expect(lastScrollArgs?.positionEpsilonPx).toBeGreaterThan(0)
+    // The scroll is applied frame by frame; the final frame is fully eased,
+    // landing exactly on the planned target.
+    expect(handleArgs.positionEpsilonPx).toBeGreaterThan(0)
+    expect(handleArgs.easingTable.at(0)).toBe(0)
+    expect(handleArgs.easingTable.at(-1)).toBe(1)
+    expect(locator.__scrollToCalls.at(-1)?.top).toBeCloseTo(
+      handleArgs.pageScrollPlan.targetY,
+      5
+    )
   })
 
   it('keeps the dispatch rate when the evaluate round trip eats into the frame budget', async () => {

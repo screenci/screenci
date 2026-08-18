@@ -1508,6 +1508,28 @@ describe('changeFocus', () => {
     )
   })
 
+  it('backs off to a sparse watchdog while the in-page rAF loop is alive', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 2200 },
+    })
+
+    const promise = changeFocus(locator, { duration: 500 })
+    await vi.runAllTimersAsync()
+    await promise
+
+    // The rAF loop supplies per-paint smoothness (~30 applies over 500ms),
+    // so Node only pings a sparse watchdog instead of dispatching every frame.
+    expect(locator.__requestAnimationFrameCalls).toBeGreaterThanOrEqual(25)
+    const nodeTicks = locator.__scrollHandleEvaluate.mock.calls.filter(
+      (call) => typeof call[1] === 'boolean'
+    )
+    expect(nodeTicks.length).toBeGreaterThan(0)
+    expect(nodeTicks.length).toBeLessThanOrEqual(10)
+    expect(locator.__scrollToCalls.length).toBeGreaterThanOrEqual(25)
+  })
+
   it('keeps the dispatch rate when the evaluate round trip eats into the frame budget', async () => {
     const locator = makeLocatorMock({
       rect: { x: 20, y: 900, width: 120, height: 40 },

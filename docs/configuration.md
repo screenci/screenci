@@ -225,9 +225,11 @@ each dispatch overlaps the frame budget instead of adding to it, so latency does
 not lower the effective scroll frame rate. When a round trip exceeds the budget
 (a heavy page or slow runner), screenci drops frames and keeps the scroll on
 schedule rather than stretching it. Scroll progress is computed inside the page
-at the moment each position is applied (with an in-page animation-frame loop
-smoothing between dispatches when the browser allows it), so round-trip jitter
-does not make the scroll look jagged.
+at the moment each position is applied, and an in-page animation-frame loop
+supplies per-paint smoothness whenever the browser allows it. While that loop is
+running, dispatches back off to a sparse watchdog so the animation costs almost
+nothing on a low-resource machine; if the browser freezes the loop, dispatches
+take over at full frame rate so the scroll still finishes on schedule.
 
 ### Rendering defaults
 

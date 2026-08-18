@@ -1213,6 +1213,13 @@ export function combineFocusPlan(params: {
   }
 }
 
+/**
+ * Node dispatch interval while the in-page rAF loop is confirmed alive. The
+ * rAF loop supplies the per-paint smoothness; Node only needs to notice a
+ * frozen loop quickly enough to take over without a visible stall.
+ */
+const WATCHDOG_INTERVAL_MS = 100
+
 /** Samples an easing curve into a lookup table the page can lerp over. */
 const EASING_TABLE_SIZE = 129
 
@@ -1336,6 +1343,32 @@ async function executeScrollAndZoomPlan(params: {
         const positionsDiffer = (start: number, target: number): boolean =>
           Math.abs(target - start) > args.positionEpsilonPx
 
+        // Filter the work down once: only plans that actually move anything
+        // are touched per frame, and the page-level scrollTo is skipped
+        // entirely when the page itself does not scroll.
+        const activePlans = args.ancestorScrollPlans
+          .map((plan, index) => ({ plan, ancestor: ancestors[index] }))
+          .filter(
+            (
+              entry
+            ): entry is {
+              plan: (typeof entry)['plan']
+              ancestor: ScrollableElement
+            } =>
+              entry.ancestor !== undefined &&
+              (positionsDiffer(entry.plan.startTop, entry.plan.targetTop) ||
+                positionsDiffer(entry.plan.startLeft, entry.plan.targetLeft))
+          )
+        const pageScrolls =
+          positionsDiffer(
+            args.pageScrollPlan.startY,
+            args.pageScrollPlan.targetY
+          ) ||
+          positionsDiffer(
+            args.pageScrollPlan.startX,
+            args.pageScrollPlan.targetX
+          )
+
         const easeAt = (t: number): number => {
           if (t <= 0) return 0
           if (t >= 1) return 1
@@ -1349,21 +1382,14 @@ async function executeScrollAndZoomPlan(params: {
 
         const applyAtProgress = (easedT: number): void => {
           if (!win) return
-          for (const [index, plan] of args.ancestorScrollPlans.entries()) {
-            const ancestor = ancestors[index]
-            if (!ancestor) continue
-            if (
-              !positionsDiffer(plan.startTop, plan.targetTop) &&
-              !positionsDiffer(plan.startLeft, plan.targetLeft)
-            ) {
-              continue
-            }
+          for (const { plan, ancestor } of activePlans) {
             ancestor.scrollTop =
               plan.startTop + (plan.targetTop - plan.startTop) * easedT
             ancestor.scrollLeft =
               plan.startLeft + (plan.targetLeft - plan.startLeft) * easedT
           }
 
+          if (!pageScrolls) return
           win.scrollTo({
             top:
               args.pageScrollPlan.startY +
@@ -1380,32 +1406,49 @@ async function executeScrollAndZoomPlan(params: {
         // Progress is anchored to the page clock at the first step, so each
         // applied position matches the moment it actually lands in the page,
         // independent of the Node round-trip latency.
-        const state: { startMs: number | null; done: boolean } = {
+        const state: {
+          startMs: number | null
+          done: boolean
+          rafTicks: number
+          lastEasedT: number | null
+        } = {
           startMs: null,
           done: false,
+          rafTicks: 0,
+          lastEasedT: null,
         }
 
-        const step = (forceFinish: boolean): number => {
-          if (state.done) return 1
+        const step = (
+          forceFinish: boolean
+        ): { t: number; rafTicks: number } => {
+          if (state.done) return { t: 1, rafTicks: state.rafTicks }
           const now = performance.now()
           if (state.startMs === null) state.startMs = now
           const t =
             forceFinish || args.duration <= 0
               ? 1
               : Math.min(1, (now - state.startMs) / args.duration)
-          applyAtProgress(easeAt(t))
+          const easedT = easeAt(t)
+          // A step that lands on the already-applied position is a no-op;
+          // skipping the writes avoids redundant style/layout work.
+          if (easedT !== state.lastEasedT) {
+            applyAtProgress(easedT)
+            state.lastEasedT = easedT
+          }
           if (t >= 1) state.done = true
-          return t
+          return { t, rafTicks: state.rafTicks }
         }
 
         // In-page rAF loop for per-paint smoothness. While the page is being
         // captured the browser may pause/throttle rAF, so this is best-effort;
-        // the Node-driven ticks below guarantee the scroll still progresses
-        // and finishes in ~duration.
+        // the Node-driven ticks guarantee the scroll still progresses and
+        // finishes in ~duration. The tick counter lets Node see whether this
+        // loop is alive and back its own dispatch rate off accordingly.
         const raf = win?.requestAnimationFrame?.bind(win)
         if (raf && args.duration > 0) {
           const tick = (): void => {
             if (state.done) return
+            state.rafTicks += 1
             step(false)
             if (!state.done) raf(tick)
           }
@@ -1425,25 +1468,39 @@ async function executeScrollAndZoomPlan(params: {
     )
 
     let frames = 0
+    let lastRafTicks = 0
+    let plannedTickAt = animStart
     try {
       for (;;) {
         const elapsed = Date.now() - animStart
         // Safety net: if the page clock stalls or drifts, force the final
         // position once the planned duration (plus one frame of slack) is up.
         const forceFinish = duration <= 0 || elapsed >= duration + frameMs
-        const t = await scrollDriver.evaluate(
+        const { t, rafTicks } = await scrollDriver.evaluate(
           (driver, force) => driver.step(force),
           forceFinish
         )
         frames += 1
         if (t >= 1) break
-        // Ticks are scheduled on an absolute timeline (animStart + N * frameMs)
-        // so the evaluate round trip overlaps the frame budget instead of
-        // adding to it. When a round trip exceeds the budget the delay clamps
-        // to zero and the loop dispatches at the maximum rate the page allows,
-        // while time-based progress drops frames to stay on schedule.
-        const nextTickAt = animStart + frames * frameMs
-        const delay = nextTickAt - Date.now()
+        // Adaptive pacing: when the in-page rAF loop is confirmed advancing,
+        // it already applies a step on every paint, so Node backs off to a
+        // sparse watchdog and stops competing for the renderer's main thread
+        // (a real cost on a low-resource machine). When rAF is frozen or
+        // throttled (as it can be while recording), Node drives at frame rate.
+        const rafAlive = rafTicks > lastRafTicks
+        lastRafTicks = rafTicks
+        const tickMs = rafAlive
+          ? Math.max(frameMs, WATCHDOG_INTERVAL_MS)
+          : frameMs
+        // Ticks are scheduled on an absolute timeline so the evaluate round
+        // trip overlaps the tick budget instead of adding to it. When a round
+        // trip exceeds the budget the delay clamps to zero and the loop
+        // dispatches at the maximum rate the page allows, while time-based
+        // progress drops frames to stay on schedule.
+        plannedTickAt += tickMs
+        const now = Date.now()
+        if (plannedTickAt < now) plannedTickAt = now
+        const delay = plannedTickAt - now
         if (delay > 0) {
           await new Promise<void>((resolve) => setTimeout(resolve, delay))
         }

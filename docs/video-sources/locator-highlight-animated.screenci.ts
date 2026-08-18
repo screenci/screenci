@@ -1,7 +1,7 @@
 import type { Locator } from '@playwright/test'
 import { video } from 'screenci'
 
-// Animates the same ring as the Screenshots still: it pulses while the page is
+// Animates a margin ring around a live element: it pulses while the page is
 // driven underneath, then closes before the recording stops. An opacity-only
 // pulse keeps the ring landed exactly on the element (no scale, so no capture
 // padding is needed).

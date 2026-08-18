@@ -18,7 +18,7 @@ npx screenci export -c screenci.config.ts
 - Re-records only the videos whose sources changed since the last upload (local Playwright), saving output under `.screenci/<video-name>/` (`recording.mp4` and `data.json`)
 - Dispatches server-side renders for up-to-date videos without re-recording them
 - Waits for the renders to finish (polls every 5 seconds, up to 30 minutes)
-- Downloads the outputs into `./exports/` (or `-o <dir>`), named `<title>.<lang>.mp4` (screenshots `.png`)
+- Downloads the outputs into `./exports/` (or `-o <dir>`), named `<title>.<lang>.mp4`
 - Exits `0` only when every requested video rendered and downloaded
 
 Positional arguments are title patterns; no patterns exports every video in every language. Other flags: `-g/--grep`, `--languages fi,en`, `--force` (re-record everything), `--remote` (dispatch the project's GitHub Actions workflow instead of running locally).

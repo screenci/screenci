@@ -34,10 +34,12 @@ describe('generateConfig', () => {
     )
   })
 
-  it('sets shared render options (framing) for videos and screenshots', () => {
+  it('sets shared render options (framing) for videos', () => {
     const config = generateConfig('My Demo')
     expect(config).toContain('renderOptions: {')
-    expect(config).toContain('screenshot: { margin: 64 }')
+    // Hidden for release: the screenshots feature is unfinished, so the
+    // generated config no longer sets screenshot framing.
+    expect(config).not.toContain('screenshot: { margin: 64 }')
     expect(config).toContain('backgroundCss:')
     expect(config).toContain(
       'radial-gradient(circle at 14% 10%, oklch(0.93 0.07 78) 0%, transparent 42%)'
@@ -383,7 +385,7 @@ describe('generateIslandReadme', () => {
 
   it('points users at recordings and the config file', () => {
     expect(generateIslandReadme('Demo', 'npm')).toContain(
-      'Check `recordings/` for videos and screenshots, and `screenci.config.ts`\nfor configuration.'
+      'Check `recordings/` for videos, and `screenci.config.ts`\nfor configuration.'
     )
   })
 

@@ -6,8 +6,11 @@ export type {
   RecordUploadPolicy,
   RecordOptions,
   RenderOptions,
-  ScreenshotOutputFormat,
-  ScreenshotRenderOptions,
+  // Hidden for release: the screenshots feature is unfinished. Re-enable by
+  // uncommenting these exports (and the ones marked below). The removed docs
+  // live in docs/removed/ at the repo root.
+  // ScreenshotOutputFormat,
+  // ScreenshotRenderOptions,
   ScreenCIConfig,
   ExtendedScreenCIConfig,
   AutoZoomOptions,
@@ -34,13 +37,16 @@ export { defineConfig } from './src/config.js'
 
 // Re-export video fixture and narration cue
 export { video } from './src/video.js'
-export { screenshot } from './src/screenshot.js'
+// Hidden for release: the screenshots feature is unfinished. Re-enable by
+// uncommenting. Docs moved to docs/removed/screenshots.md at the repo root.
+// export { screenshot } from './src/screenshot.js'
 export type {
   ClipTarget,
   ClipRegion,
   ClipOptions,
-  ScreenshotClip,
-  ScreenshotClipRecord,
+  // Hidden for release together with screenshot() above.
+  // ScreenshotClip,
+  // ScreenshotClipRecord,
   ResolvedClipPadding,
 } from './src/clip.js'
 export type {

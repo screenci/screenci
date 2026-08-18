@@ -35,15 +35,9 @@ export const docsVideoRegistry = {
     sourcePath:
       'screenci/docs/video-sources/locator-highlight-animated.screenci.ts',
   },
-  // The locator-highlight still in the Screenshots guide. Published as a
-  // screenshot recording.
-  'docs/guides/screenshots': {
-    publicId: 'kh7405zt507ht1qr1mg5hgxxpx892amb',
-    kind: 'screenshot',
-    alt: 'A marketing-site link highlighted by a pink ring with margin around it, framed as a branded still',
-    sourcePath:
-      'screenci/docs/video-sources/locator-highlight-still.screenci.ts',
-  },
+  // The Screenshots guide and its locator-highlight still were removed for
+  // release (the screenshot() fixture is unfinished); the demo source moved to
+  // docs/removed/video-sources/ at the repo root.
   // The narrated walkthroughs below are authored but not yet recorded: they have
   // no publicId, so the page injects an invisible placeholder until the video is
   // recorded and published, then a publicId is added here (see videos.ts docs).

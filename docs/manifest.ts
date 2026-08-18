@@ -155,20 +155,11 @@ export const docsManifest = [
     description:
       'Resize, hide, and show the recording frame and narration bubble mid-video with animated transitions, and fade overlays in and out.',
     prev: 'docs/guides/camera-and-zooming',
-    next: 'docs/guides/screenshots',
-  },
-  {
-    source: 'screenshots.md',
-    slug: 'docs/guides/screenshots',
-    section: 'Guides',
-    order: 5,
-    navLabel: 'Screenshots',
-    title: 'Screenshots',
-    description:
-      'Capture branded still screenshots with the screenshot() fixture: crop to a component, set quality and dark mode, and frame the shot on a background with overlays.',
-    prev: 'docs/guides/overlay-updates',
     next: 'docs/guides/public-urls-and-embeds',
   },
+  // The Screenshots doc (docs/guides/screenshots) was removed for release:
+  // the screenshot() fixture is unfinished and no longer exported. Its source
+  // moved to docs/removed/screenshots.md at the repo root.
   {
     source: 'public-urls-and-embeds.md',
     slug: 'docs/guides/public-urls-and-embeds',
@@ -178,7 +169,7 @@ export const docsManifest = [
     title: 'Public URLs and Embeds',
     description:
       'Enable public delivery for a video, understand stable language-specific URLs, and embed ScreenCI outputs in other sites.',
-    prev: 'docs/guides/screenshots',
+    prev: 'docs/guides/overlay-updates',
     next: 'docs/guides/redact',
   },
   {

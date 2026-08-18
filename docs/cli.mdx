@@ -271,8 +271,8 @@ yarn screenci export --languages fi,en
 
 Positional arguments are title patterns (multiple are OR-combined, like
 `playwright test <pattern>`); with no patterns, every video is exported in
-every language. Downloads are named `<title>.<lang>.mp4` (screenshots use
-`.png`). The command polls render status every 5 seconds for up to 30 minutes
+every language. Downloads are named `<title>.<lang>.mp4`.
+The command polls render status every 5 seconds for up to 30 minutes
 and exits `0` only when every requested video rendered and downloaded. After a
 run it prints the run's page in the app (`<app>/export/<recordId>`), which the
 project page lists under **Exports**.

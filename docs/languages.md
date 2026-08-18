@@ -1,6 +1,6 @@
 # Languages
 
-ScreenCI supports multiple language versions of a video or screenshot
+ScreenCI supports multiple language versions of a video
 from a single script. You declare the languages once and ScreenCI records a
 separate pass per language, setting the browser locale automatically so a
 self-localizing app renders in the right language without extra work from you.
@@ -20,8 +20,7 @@ below); only narration (and per-language browser locales) vary by language.
 ## One language per plan
 
 Multiple languages are a Business feature. On the Free and Starter plans, your
-organization renders a single narration language across all of its videos and
-screenshots:
+organization renders a single narration language across all of its videos:
 
 - An upload that declares more than one language is blocked.
 - Once your organization has rendered one language, an upload in a different
@@ -166,7 +165,7 @@ render this time (rather than treating them as removed from code).
 
 ### Variants with `each`
 
-`video.each([...])` (and `screenshot.each([...])`) produce a **separate video
+`video.each([...])` produces a **separate video
 per variant**, for cases like viewport or theme. Each variant has its own
 identity and history. It chains with the per-feature methods:
 

@@ -682,7 +682,7 @@ export function generateIslandReadme(
   const scripts = getIslandScriptInvocations(packageManager)
   return `# ${projectName}
 
-Check \`recordings/\` for videos and screenshots, and \`screenci.config.ts\`
+Check \`recordings/\` for videos, and \`screenci.config.ts\`
 for configuration.
 
 ## Commands
@@ -1275,7 +1275,7 @@ function printInitNextSteps(
   logger.info(`    ${pc.cyan(`${commands.screenciRun} test`)}`)
   logger.info('')
   logger.info('And check out:')
-  logger.info(`  - ./${islandDirName}/recordings/ - Videos and screenshots`)
+  logger.info(`  - ./${islandDirName}/recordings/ - Videos`)
   logger.info(
     `  - ./${islandDirName}/screenci.config.ts - ScreenCI configuration`
   )
@@ -1865,25 +1865,24 @@ export async function runInit(
       resolve(islandDir, 'recordings', 'example.screenci.ts'),
       generateExampleVideo()
     )
-    // Also scaffold a screenshot example: a branded still that rings one element.
-    // With React overlays it renders the ring from a `.tsx` overlay page while
-    // the test file remains `.ts`; under `--no-react` it uses a plain `.html`
-    // overlay page. Each references its overlay source under recordings/assets/,
-    // scaffolded alongside it.
-    await writeFile(
-      resolve(islandDir, 'recordings', 'example-screenshot.screenci.ts'),
-      shouldAddReactOverlays
-        ? generateReactExampleScreenshot()
-        : generateExampleScreenshot()
-    )
-    if (shouldAddReactOverlays) {
-      await writeFile(resolve(assetsDir, 'Ring.tsx'), generateRingOverlayTsx())
-    } else {
-      await writeFile(
-        resolve(assetsDir, 'ring.html'),
-        generateRingOverlayHtml()
-      )
-    }
+    // Hidden for release: the screenshots feature is unfinished, so init no
+    // longer scaffolds the screenshot example (a branded still that rings one
+    // element) or its Ring overlay source. Re-enable by uncommenting. Docs
+    // moved to docs/removed/screenshots.md at the repo root.
+    // await writeFile(
+    //   resolve(islandDir, 'recordings', 'example-screenshot.screenci.ts'),
+    //   shouldAddReactOverlays
+    //     ? generateReactExampleScreenshot()
+    //     : generateExampleScreenshot()
+    // )
+    // if (shouldAddReactOverlays) {
+    //   await writeFile(resolve(assetsDir, 'Ring.tsx'), generateRingOverlayTsx())
+    // } else {
+    //   await writeFile(
+    //     resolve(assetsDir, 'ring.html'),
+    //     generateRingOverlayHtml()
+    //   )
+    // }
     if (packageManager === 'pnpm') {
       // Resolve (and gate on) the pnpm version before writing the workspace
       // file so the build-approval key matches the installed pnpm.
@@ -2131,9 +2130,7 @@ export default defineConfig({
       // Lightest encode on constrained CI runners; full quality locally.
       encoder: process.env.CI ? 'fast' : 'sharp',
     },
-    // Shared framing for videos and screenshots
     renderOptions: {
-      screenshot: { margin: 64 },
       output: {
         background: {
           // ScreenCI brand orange, baked into layered gradients (the renderer

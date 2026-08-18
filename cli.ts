@@ -108,6 +108,7 @@ import {
 } from './src/exportRun.js'
 import { loadTypescript } from './src/codemod.js'
 import {
+  AUTO_EDIT_ID_STAMPING,
   planDuplicateEditIdFixes,
   planEditIdStamps,
   readEditIdCounters,
@@ -3942,6 +3943,7 @@ function createApplyCodegenDep(
 export async function stampEditIdsForProject(
   configOption: string | undefined
 ): Promise<number> {
+  if (!AUTO_EDIT_ID_STAMPING) return 0
   const resolution = findScreenCIConfig(configOption)
   if (resolution.kind !== 'found') return 0
   const resolvedConfigPath = resolution.path
@@ -4439,6 +4441,7 @@ export async function runDevCommand(
         ...(options.forceRecord !== undefined && {
           forceRecord: options.forceRecord,
         }),
+        autoStamp: AUTO_EDIT_ID_STAMPING,
       },
       {
         readKeptRecordings,

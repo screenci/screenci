@@ -27,6 +27,15 @@ import type {
   EditableSnapshotEntry,
 } from './editableSnapshot.js'
 
+/**
+ * Kill switch for automatic editId stamping. The editor currently only
+ * supports editing narration, renderOptions and recordOptions, none of which
+ * need editIds (they are applied by video name). While that is the case,
+ * stamping only rewrites user sources and prints noise. Flip to true when
+ * action-level editing returns.
+ */
+export const AUTO_EDIT_ID_STAMPING = false
+
 /** File name of the allocation counters inside `.screenci`. Committed. */
 export const EDIT_IDS_FILE = 'edit-ids.json'
 

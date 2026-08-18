@@ -706,6 +706,13 @@ and a warning is logged.
 
 ## Action identity: editId
 
+> **Note:** automatic editId stamping is currently disabled. The editor only
+> supports editing narration, `renderOptions` and `recordOptions`, which are
+> applied by video name and need no editIds, so the CLI does not rewrite
+> sources to stamp slugs and does not warn about missing ones. Existing
+> stamped editIds remain valid. The rest of this section describes the
+> mechanism as it works when stamping is enabled.
+
 Every editable action can carry a stable, human-readable identity slug in
 code, e.g. `.click({ editId: 'click1' })` or
 `autoZoom(fn, { editId: 'autoZoom1' })`. The `screenci preview` startup handshake

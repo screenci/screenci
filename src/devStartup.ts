@@ -64,6 +64,13 @@ export type DevStartupOptions = {
   grep?: string
   /** Re-record everything regardless of freshness. */
   forceRecord?: boolean
+  /**
+   * Stamp missing editIds (and resolve duplicates) into the sources during
+   * the handshake. Defaults to true. When false, sources are never rewritten
+   * and the missing-editId warning is suppressed; entries simply keep
+   * `editId: undefined`.
+   */
+  autoStamp?: boolean
 }
 
 export type DevStartupResult = {
@@ -129,6 +136,7 @@ export async function runDevStartupSync(
   deps: DevStartupDeps
 ): Promise<DevStartupResult> {
   const matches = grepMatcher(options.grep)
+  const autoStamp = options.autoStamp !== false
   const recorded = new Set<string>()
   let fresh: string[] = []
   let missingEditIds: string[] = []
@@ -153,7 +161,7 @@ export async function runDevStartupSync(
     // Resolve duplicate editIds (one slug at two distinct call sites) before
     // anything else: the rewrite changes the source, so re-collect freshness so
     // the affected videos re-record this pass.
-    if (deps.resolveDuplicateEditIds) {
+    if (autoStamp && deps.resolveDuplicateEditIds) {
       const sourcePaths = [
         ...new Set(
           states
@@ -173,7 +181,7 @@ export async function runDevStartupSync(
 
     // Stamp missing editIds first so the (re-)record's data.json carries them.
     const missing = states.filter((state) => state.missingIds)
-    if (missing.length > 0) {
+    if (autoStamp && missing.length > 0) {
       const stamps = await deps.stampEditIds(
         Object.fromEntries(
           missing.map((state) => [state.videoName, state.entries])
@@ -187,8 +195,10 @@ export async function runDevStartupSync(
     }
 
     const force = options.forceRecord === true && pass === 1
+    // Without stamping, re-recording cannot fix a missing editId, so it does
+    // not make a recording stale.
     const stale = states.filter(
-      (state) => force || !state.fresh || state.missingIds
+      (state) => force || !state.fresh || (autoStamp && state.missingIds)
     )
     fresh = states
       .filter((state) => !stale.includes(state))
@@ -217,7 +227,7 @@ export async function runDevStartupSync(
     for (const name of names) recorded.add(name)
   }
 
-  if (missingEditIds.length > 0) {
+  if (autoStamp && missingEditIds.length > 0) {
     deps.logger.warn(
       `Some actions still have no editId (loop call sites cannot be stamped): ${missingEditIds.join(', ')}. Their timings stay web-editable only.`
     )

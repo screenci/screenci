@@ -204,4 +204,20 @@ describe('runDevStartupSync', () => {
       expect.stringContaining('Demo')
     )
   })
+
+  it('does not stamp, resolve duplicates, or warn when autoStamp is false', async () => {
+    const resolveDuplicateEditIds = vi.fn(async () => 1)
+    const deps = makeDeps([kept('Demo', 'hash-a', [entry()])], {
+      resolveDuplicateEditIds,
+    })
+
+    const result = await runDevStartupSync({ autoStamp: false }, deps)
+
+    expect(deps.stampEditIds).not.toHaveBeenCalled()
+    expect(resolveDuplicateEditIds).not.toHaveBeenCalled()
+    expect(deps.logger.warn).not.toHaveBeenCalled()
+    // A fresh recording with missing ids is not stale when stamping is off.
+    expect(deps.recordPreview).not.toHaveBeenCalled()
+    expect(result.fresh).toEqual(['Demo'])
+  })
 })

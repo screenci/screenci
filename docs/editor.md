@@ -4,14 +4,14 @@ Editor is the ScreenCI web app's editing surface for a video: a live preview of
 the raw recording, a multi-track timeline, and panels for narration, overlays,
 and render options. You edit visually in the browser, and every change is
 written back into your `.screenci.ts` source through a connected
-`screenci edit` machine, so code stays the single source of truth.
+`screenci preview` machine, so code stays the single source of truth.
 
 **You can edit without a connected machine.** Anyone in your org can open a
 video and change narration, overlays, render options, and the rest right away.
 Those edits render immediately in the preview and in exports. Because code stays
 the single source of truth, each edit is also queued to be written into your
 `.screenci.ts` source: the sidebar shows an "N edits pending" list ("not yet in
-code"). Run `screenci edit` in your project and the next connect drains that
+code"). Run `screenci preview` in your project and the next connect drains that
 queue into the sources, attributing each edit to whoever made it. A teammate can
 make the edits and a developer's machine can pick them up later.
 
@@ -38,7 +38,7 @@ make in code is where the content starts:
   wins over the code value on every later upload.
 
 - **Edits write back to code.** Whichever form declared a value, editing it in
-  the web app produces a code change applied by your connected `screenci edit`
+  the web app produces a code change applied by your connected `screenci preview`
   machine, so the sources always show what the video renders with.
 
 The `video.narration` and `video.overlays`
@@ -116,7 +116,7 @@ Opening a video in the web app opens the editor. The page is laid out as:
   editor for whichever timeline item is selected.
 - **Sidebar** (left): the language picker, the **Editor** view, the
   **Exported** group listing every exported version, and the **Recording**
-  group showing your connected `screenci edit` machine and record actions.
+  group showing your connected `screenci preview` machine and record actions.
 - **Top right**: undo and redo (up to 20 steps, Cmd+Z / Shift+Cmd+Z), export
   status, and the **Export** button.
 
@@ -129,14 +129,14 @@ video, and the edits render immediately while they wait to be written into the
 "not yet in code" and who queued each one.
 
 To flush the queue into your sources, run any `screenci` command in the
-project: `sync`, `test`, `edit`, and `export` all drain it on start. On
+project: `sync`, `test`, `preview`, and `export` all drain it on start. On
 connect, the CLI writes every queued edit into the source (logging "queued by
 <name>" for edits a teammate made) and the pending list drains. No token
 setup is needed: with a `SCREENCI_SECRET` configured, the CLI mints this
 machine's personal editor token automatically (it stays listed and revocable
 on the Secrets page).
 
-On an anonymous trial (no account), `screenci edit` connects with the trial
+On an anonymous trial (no account), `screenci preview` connects with the trial
 session itself, and the trial's editor queues edits the same way while no
 machine is connected.
 
@@ -152,7 +152,7 @@ logs "Applies at render time, no re-record needed" and does not re-record. Edits
 badged **applies after next recording**: the preview is marked stale until a
 recording runs. A connected machine auto-records once it applies such an edit;
 otherwise trigger a re-record via CI (see the CI setup guide) or ask a developer
-to run `screenci edit`. While a connected machine is actively syncing a
+to run `screenci preview`. While a connected machine is actively syncing a
 video's source, that video's editing controls lock briefly until it finishes.
 
 ## Editing in Editor
@@ -186,13 +186,17 @@ Editor configuration applied for "Checkout walkthrough".
 
 The sidebar's **Recording** group collects every way to produce fresh footage:
 
-- **Record on your machine**: with `screenci edit` connected, the record menu
+- **Record on your machine**: with `screenci preview` connected, the record menu
   offers "Record <language> on <machine>". This runs a normal local record of
   the open video and language on your machine and syncs the result back.
 - **Record raw preview footage**: records without rendering, refreshing the
   live preview only. This is also what automatic preview re-records use.
 - **Record via CI**: when the project is connected to GitHub, queues the
   project's recording workflow for this video, no local machine needed.
+
+When the CLI starts recording a preview, the open web preview page shows a
+live "Recording preview..." indicator, and it updates automatically (with a
+"New preview loaded" toast) once the new preview lands.
 
 A status line under the menu tracks the run ("Recording en on laptop...",
 "Recording synced."). The regular record run lock applies: if another
@@ -237,7 +241,7 @@ the hold together with a direct link to Editor:
 
 ```
 Rendering for "Checkout walkthrough" is on hold. Configure it in Editor:
-https://app.screenci.com/project/<projectId>/video/<videoId>?editor
+https://app.screenci.com/project/<projectId>/video/<videoId>/preview
 ```
 
 After the video has been configured once, subsequent uploads reuse the saved
@@ -404,7 +408,7 @@ Every interaction is editable from the web, whether its values come from
 package defaults or from explicit options in code. Its identity is the
 captured locator description (for example `getByRole(button, name=Save)`)
 plus its position on the timeline. Code is the single source of truth: while
-`screenci edit` is connected, each edit you save in the editor is codegen'd
+`screenci preview` is connected, each edit you save in the editor is codegen'd
 straight into the `.screenci.ts` sources (keyed by the action's `editId`
 slug), so the code always shows the current values and the next record simply
 runs from code.
@@ -475,7 +479,7 @@ only its parameters (durations, sleeps) are editable.
 
 Everything the timeline adds is one unified edit record keyed to a call
 position, and it is codegen'd into the sources the moment it is saved (via
-the connected `screenci edit` session). A newly added event appears on the
+the connected `screenci preview` session). A newly added event appears on the
 timeline as a pending item until the next record confirms it.
 
 A web-authored event can be deleted again: select it and press **Delete** or
@@ -651,7 +655,7 @@ the two interaction sub-runs, each carrying the original zoom options
 (`amount`/`duration`/`easing`/`centering`) so the halves are identical apart
 from their time. The unwrap is ordered before the two re-wraps in one sync
 pass, so the result is two sibling `autoZoom(...)` blocks. Because this
-rewrites the source, splitting a code zoom needs a connected `screenci edit`
+rewrites the source, splitting a code zoom needs a connected `screenci preview`
 session; with no machine connected the editor declines rather than storing a
 deferred edit. A zoom framing a single interaction cannot be split.
 
@@ -671,7 +675,7 @@ was suppressing.
 
 Code is the single source of truth, and the loop is a single step:
 
-1. **Connect.** Run `screenci edit` in the project. The startup handshake
+1. **Connect.** Run `screenci preview --watch` in the project. The startup handshake
    brings every managed video up to date, then the machine serves the editor.
 2. **Edit in the web timeline.** Each saved edit arrives over the dev channel
    as a codegen request and is written into the `.screenci.ts` sources
@@ -704,7 +708,7 @@ and a warning is logged.
 
 Every editable action can carry a stable, human-readable identity slug in
 code, e.g. `.click({ editId: 'click1' })` or
-`autoZoom(fn, { editId: 'autoZoom1' })`. The `screenci edit` startup handshake
+`autoZoom(fn, { editId: 'autoZoom1' })`. The `screenci preview` startup handshake
 stamps missing slugs automatically after a recording, allocating numbers from
 `.screenci/edit-ids.json` (commit it; numbers are never reused and stamped ids
 are never removed). With an editId, the action's stable key IS the slug: edits
@@ -723,7 +727,7 @@ Because the slug IS the identity, two distinct actions must never share one. A
 copy-pasted `editId` silently merges both into a single identity (the second
 looks like a loop repeat and its edits cannot reach code). Static analysis
 guards against this automatically: before recording, and during the
-`screenci edit` startup handshake and its codegen apply, any slug found at two
+`screenci preview` startup handshake and its codegen apply, any slug found at two
 or more distinct call sites is resolved by keeping the first occurrence and
 re-stamping the rest with fresh slugs (allocated from `.screenci/edit-ids.json`,
 so they never collide with an existing id). A genuine loop (one call site that
@@ -765,7 +769,7 @@ actions) with any gap expressed as a `waitForTimeout` sleep.
 ## Option panels and narration text reach code too
 
 The editor's option panels are codegen'd the same way as timeline edits while
-`screenci edit` is connected (the studio config keeps working as the instant
+`screenci preview` is connected (the studio config keeps working as the instant
 preview and the offline fallback):
 
 - **Render options** (recording size and roundness, background, aspect ratio,
@@ -786,7 +790,7 @@ preview and the offline fallback):
   sub-object.
 
 Every editor edit is codegen'd: it is written into your `.screenci.ts` sources
-through the connected `screenci edit` machine, and fails if no machine is
+through the connected `screenci preview` machine, and fails if no machine is
 connected. There is no web-side edit store. Uploaded media (narration voices
 and recorded audio, cloned-voice samples) is downloaded to local editor files
 on the dev machine and referenced from code.
@@ -816,7 +820,7 @@ it, or start it with empty placeholders. The **Languages** section on the Editor
 page shows the
 current set and lets you add a language; adding one writes it into your
 `video.languages([...])` declaration in code (a new `.languages([...])` call is
-added when the video has none) through the connected `screenci edit` machine,
+added when the video has none) through the connected `screenci preview` machine,
 then records:
 
 ```ts
@@ -861,7 +865,7 @@ into the uploaded recording data (`actionParams` in `data.json`), so the
 backend and Editor can present the parameters for editing.
 
 Editing a parameter in the web editor writes it into the call site as an
-explicit option (via the connected `screenci edit` session), whether the value
+explicit option (via the connected `screenci preview` session), whether the value
 previously came from code or from a default. The recording always runs with
 whatever the code says.
 

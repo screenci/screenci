@@ -115,6 +115,10 @@ import {
 } from './src/editIdStamp.js'
 import { maybeExtractVoiceSampleAudio } from './src/voiceSampleAudio.js'
 import {
+  notifyPreviewRecordingStarted,
+  type PreviewStartNotice,
+} from './src/previewStarted.js'
+import {
   type CliCredential,
   ANON_MAX_VIDEOS_PER_RECORDING,
   ANON_SESSION_FILE,
@@ -355,7 +359,7 @@ function logScreenCISecretGuide(): void {
 }
 
 function getSuggestedScreenciCommand(
-  command: 'edit' | 'export' | 'test',
+  command: 'preview' | 'export' | 'test',
   flags = ''
 ): string {
   const suffix = flags ? ` ${flags}` : ''
@@ -648,14 +652,14 @@ export type StudioUploadNotice = {
   studio: UploadStudioInfo
 }
 
-export function formatStudioUrl(
+export function formatPreviewUrl(
   appUrl: string,
   projectId: string,
   videoId: string
 ): string {
-  // The video hub resolves `?editor` to the right language page and scrolls it
-  // to Editor, so we never need to guess the language in the printed link.
-  return `${appUrl}/project/${projectId}/video/${videoId}?editor`
+  // The preview page resolves a default language itself, so we never need to
+  // guess the language in the printed link.
+  return `${appUrl}/project/${projectId}/video/${videoId}/preview`
 }
 
 export function formatRecordResultMessage(options: {
@@ -3331,7 +3335,10 @@ async function runPreviewRecordPass(
   configPath: string | undefined,
   grepPattern: string | undefined,
   verbose: boolean,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  // When present, the backend is told which videos are about to record so the
+  // web preview page can show a live "recording in progress" indicator.
+  startNotice?: PreviewStartNotice
 ): Promise<void> {
   const resolvedConfigPath = resolveScreenCIConfigPathOrExit(configPath)
   const screenciConfig =
@@ -3348,6 +3355,10 @@ async function runPreviewRecordPass(
     screenciConfig.projectName
   )
   try {
+    if (startNotice !== undefined) {
+      // Fire-and-forget: never blocks or fails the recording.
+      void notifyPreviewRecordingStarted(startNotice, requestedVideoNames)
+    }
     let playwrightFailure: Error | null = null
     try {
       await run(
@@ -3452,7 +3463,7 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
     if (usedAnonCredential) {
       logger.error(
         'Exporting requires an account with an active subscription.\n' +
-          `Preview and edit for free with ${pc.cyan(getSuggestedScreenciCommand('edit'))}, ` +
+          `Preview and edit for free with ${pc.cyan(getSuggestedScreenciCommand('preview'))}, ` +
           `or sign up to export: ${pc.cyan(appUrl)}\n` +
           'After signing up, re-run this command in the same folder and it links automatically.'
       )
@@ -3779,9 +3790,10 @@ function printExportSummary(
 }
 
 /**
- * Resolves the single video `screenci edit` manages. Edit deep-links the web
- * editor for one video, so the pattern must match exactly one; zero or many
- * matches exit with the matching/available titles listed.
+ * Resolves the single video a `screenci preview --watch` session manages. The
+ * live bridge deep-links the web editor for one video, so the pattern must
+ * match exactly one; zero or many matches exit with the matching/available
+ * titles listed. A one-shot `screenci preview` has no such limit.
  */
 export function resolveSingleEditVideo(
   allVideoNames: readonly string[],
@@ -3814,8 +3826,8 @@ export function resolveSingleEditVideo(
   }
   const intro =
     grep === undefined
-      ? `screenci edit opens the editor for one video at a time. This project has ${matches.length} videos:`
-      : `screenci edit opens the editor for one video at a time. "${grep}" matches ${matches.length} videos:`
+      ? `screenci preview --watch manages one video at a time. This project has ${matches.length} videos:`
+      : `screenci preview --watch manages one video at a time. "${grep}" matches ${matches.length} videos:`
   return {
     ok: false,
     message:
@@ -3853,9 +3865,9 @@ async function printEditorLink(params: {
       return
     }
     logger.info('')
-    logger.info(`Edit "${params.videoName}" at:`)
+    logger.info(`Open the live preview for "${params.videoName}" at:`)
     logger.info(
-      pc.cyan(formatStudioUrl(params.appUrl, info.projectId, videoId))
+      pc.cyan(formatPreviewUrl(params.appUrl, info.projectId, videoId))
     )
   } catch {
     // Best-effort only: the editor link is a convenience, never a failure.
@@ -4222,9 +4234,12 @@ export async function runDevCommand(
 
   let auth = await resolveDevAuth()
 
-  // Edit deep-links the web editor for a single video, so the pattern must
-  // resolve to exactly one; anything else lists the candidates and exits.
-  // Skipped when the caller (tests) pre-resolved the video name.
+  // A --watch live bridge deep-links the web editor for a single video, so
+  // the pattern must resolve to exactly one; anything else lists the
+  // candidates and exits. A one-shot preview records ANY number of matched
+  // videos: a single match still deep-links its preview page, several link
+  // the run listing (/preview/:recordId). Skipped when the caller (tests)
+  // pre-resolved the video name.
   if (options.videoName === undefined) {
     const editConfigPath = resolveScreenCIConfigPathOrExit(options.config)
     const allVideoNames = await collectRequestedRecordVideoNames(
@@ -4232,17 +4247,37 @@ export async function runDevCommand(
       [],
       undefined
     )
-    const resolution = resolveSingleEditVideo(
-      allVideoNames,
-      options.grep,
-      (name) => pc.cyan(`${getSuggestedScreenciCommand('edit')} "${name}"`)
-    )
-    if (!resolution.ok) {
-      logger.error(resolution.message)
-      process.exit(1)
+    if (options.once === true) {
+      const matches =
+        options.grep === undefined
+          ? allVideoNames
+          : allVideoNames.filter(grepMatcher(options.grep))
+      if (matches.length === 0) {
+        logger.error(
+          options.grep === undefined
+            ? 'No videos found. Declare one with video(...) in your recordings.'
+            : `No video matches "${options.grep}". Available videos:\n` +
+                allVideoNames.map((name) => `  - ${name}`).join('\n')
+        )
+        process.exit(1)
+      }
+      if (matches.length === 1) {
+        options.videoName = matches[0]!
+        options.grep = escapeRegExp(matches[0]!)
+      }
+    } else {
+      const resolution = resolveSingleEditVideo(
+        allVideoNames,
+        options.grep,
+        (name) => pc.cyan(`${getSuggestedScreenciCommand('preview')} "${name}"`)
+      )
+      if (!resolution.ok) {
+        logger.error(resolution.message)
+        process.exit(1)
+      }
+      options.videoName = resolution.videoName
+      options.grep = escapeRegExp(resolution.videoName)
     }
-    options.videoName = resolution.videoName
-    options.grep = escapeRegExp(resolution.videoName)
   }
 
   const killWindowSeconds = Number(options.recordKillWindow)
@@ -4379,7 +4414,12 @@ export async function runDevCommand(
         options.config,
         videoNames.map(escapeRegExp).join('|'),
         options.verbose ?? false,
-        signal
+        signal,
+        {
+          apiUrl,
+          credential: auth.credential,
+          projectName: screenciConfig.projectName,
+        }
       )
     } finally {
       await reportDevSyncState(config, deps, registration.listenerId, []).catch(
@@ -4453,7 +4493,13 @@ export async function runDevCommand(
           await runPreviewRecordPass(
             options.config,
             grepPattern,
-            options.verbose ?? false
+            options.verbose ?? false,
+            undefined,
+            {
+              apiUrl,
+              credential: auth.credential,
+              projectName: screenciConfig.projectName,
+            }
           )
         },
         entriesFromData: entriesFromRecordingData,
@@ -4476,8 +4522,9 @@ export async function runDevCommand(
     )
   }
 
-  // With the managed videos up to date, point at the editor for the video
-  // this session manages instead of any run page.
+  // With the managed videos up to date, point at the preview page for the
+  // video this session manages, or at the run listing when a one-shot preview
+  // recorded several videos.
   if (options.videoName !== undefined) {
     await printEditorLink({
       apiUrl,
@@ -4486,6 +4533,13 @@ export async function runDevCommand(
       projectName: screenciConfig.projectName,
       videoName: options.videoName,
     })
+  } else if (options.once === true) {
+    const lastRecordId = await readLastRecordId(screenciDir)
+    if (lastRecordId !== null) {
+      logger.info('')
+      logger.info('Open your previews at:')
+      logger.info(pc.cyan(`${getDevFrontendUrl()}/preview/${lastRecordId}`))
+    }
   }
 
   // One-shot: edits are synced and the preview is fresh; nothing else needs
@@ -4495,7 +4549,7 @@ export async function runDevCommand(
     await drainQueuedEdits()
     logger.info(
       'Done. Browser edits queue while you are offline and sync on the next ' +
-        `screenci command; use ${pc.cyan(getSuggestedScreenciCommand('edit', '--watch'))} for a live editing session.`
+        `screenci command; use ${pc.cyan(getSuggestedScreenciCommand('preview', '--watch'))} for a live editing session.`
     )
     await deregisterDevListener(config, deps, registration.listenerId).catch(
       () => {}
@@ -4520,7 +4574,7 @@ export async function runDevCommand(
         onConfigChanged: () => {
           logger.info(
             'screenci.config.ts changed: re-recording every managed video. ' +
-              'Restart screenci edit if the project itself changed.'
+              'Restart screenci preview if the project itself changed.'
           )
           void (async () => {
             const targets = await currentWatchTargets()
@@ -5290,7 +5344,7 @@ async function uploadRecordedVideosForConfig(
         if ('held' in notice.studio) {
           const resolveUrl =
             projectId !== null && notice.videoId !== null
-              ? formatStudioUrl(appUrl, projectId, notice.videoId)
+              ? formatPreviewUrl(appUrl, projectId, notice.videoId)
               : null
           logger.info('')
           logger.info(
@@ -5345,7 +5399,7 @@ export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
     logger.error(
-      'Available commands: edit, sync, export, test, info, make-public, make-private, delete, init'
+      'Available commands: test, preview, export, sync, info, make-public, make-private, delete, init'
     )
     process.exit(1)
   }
@@ -5454,7 +5508,7 @@ export async function main() {
       if (result === null) {
         logger.info(
           'Nothing to sync: this project is not connected yet. Run ' +
-            `${pc.cyan(getSuggestedScreenciCommand('edit'))} first.`
+            `${pc.cyan(getSuggestedScreenciCommand('preview'))} first.`
         )
         return
       }
@@ -5467,13 +5521,14 @@ export async function main() {
   // One-shot by default; --watch keeps the machine connected as the live
   // code-sync bridge.
   program
-    .command('edit [grepPatterns...]')
+    .command('preview [grepPatterns...]')
     .description(
-      'Sync browser edits into your sources, record a fresh preview, and ' +
-        'print the web editor link. Add --watch to stay connected: records ' +
-        'on demand and applies editor changes to code live. Positional ' +
-        'patterns filter managed videos by title (same as --grep, like ' +
-        '`playwright test <pattern>`); multiple patterns are OR-combined.'
+      'Sync browser edits into your sources, record fresh live previews, and ' +
+        'print the preview link (one video links its preview page directly; ' +
+        'several link the run listing). Add --watch to stay connected: ' +
+        'records on demand and applies editor changes to code live. ' +
+        'Positional patterns filter managed videos by title (same as --grep, ' +
+        'like `playwright test <pattern>`); multiple patterns are OR-combined.'
     )
     .option(
       '-w, --watch',
@@ -5606,7 +5661,7 @@ export async function main() {
         logger.warn('Could not stamp editIds:', err)
       }
 
-      const editCommand = getSuggestedScreenciCommand('edit')
+      const editCommand = getSuggestedScreenciCommand('preview')
       logger.info(
         `Tests passed. Run ${pc.cyan(editCommand)} to record and edit a video, or ${pc.cyan(
           getSuggestedScreenciCommand('export')

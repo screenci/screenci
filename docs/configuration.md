@@ -91,7 +91,7 @@ YOUR_PRIVATE_SECRET=your_own_app_secret
 
 Common cases:
 
-- `SCREENCI_SECRET` authenticates `screenci edit`, `screenci export`, `screenci info`, and
+- `SCREENCI_SECRET` authenticates `screenci preview`, `screenci export`, `screenci info`, and
   public visibility commands.
 - Any other variables (for example `YOUR_PRIVATE_SECRET`) are yours to use
   inside your own app or test setup. ScreenCI reads them from the env file into

@@ -36,7 +36,7 @@ ScreenCI video yet. To turn it into one:
 - change `test(...)` to `video.narration(...)(...)`
 - add narration through `video.narration({...})` (see [Core ScreenCI APIs](#core-screenci-apis))
 
-Then follow the usual flow: `screenci test` to verify, `screenci edit` to
+Then follow the usual flow: `screenci test` to verify, `screenci preview` to
 record it and refine it in the web editor, and `screenci export` for a
 finished video. If you only
 have a deployed URL and want this automated, point a coding agent at it with the

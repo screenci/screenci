@@ -1431,12 +1431,14 @@ describe('CLI', () => {
       ])
     })
 
-    it('formats studio URLs', async () => {
-      const { formatStudioUrl } = await import('./cli')
+    it('formats preview URLs', async () => {
+      const { formatPreviewUrl } = await import('./cli')
 
       expect(
-        formatStudioUrl('https://app.screenci.test', 'project_1', 'video_2')
-      ).toBe('https://app.screenci.test/project/project_1/video/video_2?editor')
+        formatPreviewUrl('https://app.screenci.test', 'project_1', 'video_2')
+      ).toBe(
+        'https://app.screenci.test/project/project_1/video/video_2/preview'
+      )
     })
 
     it('never forwards an ElevenLabs key: the key lives only in the app now', async () => {

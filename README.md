@@ -25,7 +25,7 @@ Then write a video, run it locally, refine it, and export the final output:
 
 ```bash
 npx screenci test      # author the video
-npx screenci edit      # record it and open the web editor
+npx screenci preview   # record live previews and print the link
 npx screenci export    # render and download the finished video
 ```
 

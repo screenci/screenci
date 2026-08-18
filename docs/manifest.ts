@@ -62,7 +62,7 @@ export const docsManifest = [
     navLabel: 'Editor',
     title: 'Editor',
     description:
-      'Edit videos visually in the web app: live preview, timeline cuts and pacing, narration, overlays, and render options. With screenci edit connected, edits are written back into your script, and Export renders the finished video.',
+      'Edit videos visually in the web app: live preview, timeline cuts and pacing, narration, overlays, and render options. With screenci preview connected, edits are written back into your script, and Export renders the finished video.',
     prev: 'docs/video-script-basics',
     next: 'docs/ci-setup',
   },
@@ -252,7 +252,7 @@ export const docsManifest = [
     navLabel: 'CLI',
     title: 'CLI',
     description:
-      'Command reference for screenci init, test, record, edit, project info, and public delivery commands.',
+      'Command reference for screenci init, test, record, preview, project info, and public delivery commands.',
     prev: 'docs/guides/anonymous-trial',
     next: 'docs/reference/configuration',
   },

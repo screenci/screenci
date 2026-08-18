@@ -40,12 +40,12 @@ The brief walks the agent through these steps:
    `video.narration({...})`, with setup wrapped in `hide()` and the demo
    driven with visible clicks.
 3. **Verify, then preview.** It runs `npx screenci test` until the script is
-   green, then `npx screenci edit "<video title>"` to record the free live
-   preview and hand you the web editor link, so you review the video before
+   green, then `npx screenci preview "<video title>"` to record the free live
+   preview and hand you the preview link, so you review the video before
    anything renders. Every edit you make in the [Editor](/docs/editor)
    (narration, overlays, cuts, timings) is written back into the script,
    ready for the agent or you to build on: live while a
-   `screenci edit --watch` session is connected, and otherwise queued and
+   `screenci preview --watch` session is connected, and otherwise queued and
    applied by the next `screenci` command. No account is needed: without a
    `SCREENCI_SECRET` it runs under a local, anonymous trial session, and
    signing up in the editor claims the trial and upgrades a running session
@@ -75,7 +75,7 @@ see [Playwright codegen](/docs/video-script-basics#generate-a-first-draft-with-c
 ## Connecting the project
 
 No account or setup token is needed to record and preview: without a
-`SCREENCI_SECRET`, `edit` uploads under a local, anonymous trial session and
+`SCREENCI_SECRET`, `preview` uploads under a local, anonymous trial session and
 prints a link where you can view and edit the live preview, and sign up to
 keep it. Exporting requires an account with an active paid subscription.
 

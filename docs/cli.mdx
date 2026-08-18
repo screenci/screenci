@@ -3,7 +3,7 @@
 import { Tabs, TabItem } from '@astrojs/starlight/components'
 
 The `screenci` CLI keeps the workflow small: initialize a project, iterate
-locally with `screenci test`, refine one video with `screenci edit` and the web
+locally with `screenci test`, refine videos with `screenci preview` and the web
 editor, export the finished videos with `screenci export`, and manage public
 delivery when needed. Run
 commands from inside your `screenci/` project directory. Most commands resolve
@@ -12,16 +12,16 @@ commands from inside your `screenci/` project directory. Most commands resolve
 
 ## Command overview
 
-| Command                           | Purpose                                                                            |
-| --------------------------------- | ---------------------------------------------------------------------------------- |
-| `screenci init [name]`            | Scaffold a ScreenCI project                                                        |
-| `screenci test [playwrightArgs]`  | Run `.screenci.ts` files locally without final recording                           |
-| `screenci edit [pattern]`         | Open the web editor for one video and connect this machine as its code-sync bridge |
-| `screenci export [patterns...]`   | Produce finished videos: re-record what changed, render, and download              |
-| `screenci info`                   | Print the last record run's URLs and render status                                 |
-| `screenci make-public <videoId>`  | Enable public delivery for a video                                                 |
-| `screenci make-private <videoId>` | Disable public delivery for a video                                                |
-| `screenci delete <videoId>`       | Permanently delete a video and its renders                                         |
+| Command                           | Purpose                                                                                                          |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `screenci init [name]`            | Scaffold a ScreenCI project                                                                                      |
+| `screenci test [playwrightArgs]`  | Run `.screenci.ts` files locally without final recording                                                         |
+| `screenci preview [pattern]`      | Record live previews and print their links; with `--watch`, connect this machine as one video's code-sync bridge |
+| `screenci export [patterns...]`   | Produce finished videos: re-record what changed, render, and download                                            |
+| `screenci info`                   | Print the last record run's URLs and render status                                                               |
+| `screenci make-public <videoId>`  | Enable public delivery for a video                                                                               |
+| `screenci make-private <videoId>` | Disable public delivery for a video                                                                              |
+| `screenci delete <videoId>`       | Permanently delete a video and its renders                                                                       |
 
 ## `screenci init`
 
@@ -56,8 +56,8 @@ The project name defaults to the repository root directory name.
 ### Connecting to an existing account
 
 No account or secret is needed to scaffold, record, or preview: without one,
-`edit` uploads under a local, anonymous trial session and prints the web
-editor link, then you sign up to keep it. Recording an anonymous trial agrees
+`preview` uploads under a local, anonymous trial session and prints the web
+preview link, then you sign up to keep it. Recording an anonymous trial agrees
 to the [Terms](https://screenci.com/legal/tos), which the CLI prints before it
 starts. Exporting requires an account with an active paid subscription.
 
@@ -315,8 +315,8 @@ Behavior:
 
 - enables recording timing for any video that needs re-recording
 - writes local output into `.screenci/`
-- holds a per-project run lock at `.screenci/.record.lock` while recording and uploading. If another `screenci edit` or `screenci export` run is already active, the second run exits non-zero instead of sharing the same `.screenci` output. Stale locks are reclaimed automatically when the pid is gone or the lock is older than the maximum run TTL
-- requires an account with an active paid subscription: without a `SCREENCI_SECRET`, `export` refuses before recording and prints a sign-up link (the anonymous trial is preview-only; use `screenci edit` for the free live preview, see [Anonymous Trial](/docs/guides/anonymous-trial)). Once you have signed up, re-running `export` in the same folder links your account automatically. Set `SCREENCI_SECRET` from the project `.env`, the environment, or by running `init` with it
+- holds a per-project run lock at `.screenci/.record.lock` while recording and uploading. If another `screenci preview` or `screenci export` run is already active, the second run exits non-zero instead of sharing the same `.screenci` output. Stale locks are reclaimed automatically when the pid is gone or the lock is older than the maximum run TTL
+- requires an account with an active paid subscription: without a `SCREENCI_SECRET`, `export` refuses before recording and prints a sign-up link (the anonymous trial is preview-only; use `screenci preview` for the free live preview, see [Anonymous Trial](/docs/guides/anonymous-trial)). Once you have signed up, re-running `export` in the same folder links your account automatically. Set `SCREENCI_SECRET` from the project `.env`, the environment, or by running `init` with it
 - uploads only the recordings requested by this run (for example the videos matched by patterns, `--grep`, or `--languages`), with or without `SCREENCI_SECRET`
 - exits non-zero unless every requested video rendered and downloaded. If a requested video is missing its `recording.mp4` or another failure occurs, `export` does not save `.screenci/last-record.json` and does not print a success URL for unrelated output
 - prints any informational notices returned by the service in cyan after upload (occasional, non-error status messages such as maintenance or timing notes). These never affect the exit code
@@ -332,35 +332,45 @@ Important restriction:
 
 - `--retries` is not supported because ScreenCI forces retries to `0`
 
-## `screenci edit [pattern]`
+## `screenci preview [pattern]`
 
-Opens the editing flow for exactly one video. `edit` syncs any queued web
-edits into your `.screenci.ts` sources, re-records and uploads the video's
-live preview if it is stale, prints the web editor deep link
-(`<app>/project/<projectId>/video/<videoId>?editor`), and exits. Edits made
-in the web editor while no machine is connected queue server-side and are
-written into your sources by the next `screenci` command (`sync`, `test`,
-`edit`, or `export`).
+Records live previews and prints their links. One-shot `preview` (no
+`--watch`) syncs any queued web edits into your `.screenci.ts` sources,
+re-records and uploads the live preview of every matched video that is stale
+(all managed videos when no pattern is given), prints the link, and exits.
+When exactly one video was recorded it prints that video's preview page
+(`<app>/project/<projectId>/video/<videoId>/preview`); when several were
+recorded it prints the run listing page (`<app>/preview/<recordId>`), which
+links each video's preview page. Edits made in the web editor while no
+machine is connected queue server-side and are written into your sources by
+the next `screenci` command (`sync`, `test`, `preview`, or `export`).
 
 With `--watch`, the command instead stays running as the live code-sync
-bridge: every web edit is written back into your sources within seconds, and
-the editor can trigger a local record of the video on demand. It keeps
-polling the service for edit and record requests until you stop it with
-Ctrl-C. See [Editor](/docs/editor) for the editing model.
+bridge for exactly one video: every web edit is written back into your
+sources within seconds, and the editor can trigger a local record of the
+video on demand. It keeps polling the service for edit and record requests
+until you stop it with Ctrl-C. See [Editor](/docs/editor) for the editing
+model.
 
 ```bash
-screenci edit
+screenci preview
 ```
 
-Pick the video by passing a title pattern, the same way
+Filter videos by passing a title pattern, the same way
 `playwright test <pattern>` does; `--grep` does the same and takes precedence
-when both are given. When the project has more than one video, the pattern
-must match exactly one: a pattern that matches zero or several videos makes
-`edit` exit with an error that lists the candidate titles.
+when both are given. With `--watch`, the pattern must match exactly one
+video: a pattern that matches zero or several videos makes the command exit
+with an error ("screenci preview --watch manages one video at a time") that
+lists the candidate titles.
 
 ```bash
-screenci edit "Auto-zoom"
+screenci preview "Auto-zoom"
 ```
+
+Right before recording a preview, the CLI sends a best-effort "preview
+recording started" notice to the backend, so an open web preview page shows a
+live "Recording preview..." indicator and refreshes automatically when the
+new preview lands.
 
 Options:
 
@@ -384,7 +394,7 @@ Options:
   watcher (see below).
 - `-v, --verbose`: verbose output.
 
-Startup check: `screenci edit` keeps each recording's `data.json` on disk after
+Startup check: `screenci preview` keeps each recording's `data.json` on disk after
 upload, along with a hash of the test source file. On startup it compares that
 hash with the current source and verifies every editable action carries an
 `editId`. Up-to-date videos skip recording entirely; anything stale gets its
@@ -406,7 +416,7 @@ values move under `default`). A names-only narration declaration
 (`.narration(['intro'])`) stays app-managed: its content lives in the web app
 and is never codegen'd.
 
-Source watching: while connected with `--watch`, `screenci edit` watches the test source files
+Source watching: while connected with `--watch`, `screenci preview` watches the test source files
 backing the managed videos, plus `screenci.config.ts`. Saving a real change to
 a source file automatically re-records that file's videos as a preview (the
 same freshness hash as the startup check filters out no-op saves and the
@@ -419,12 +429,12 @@ your project env file, the CLI exchanges it for this machine's personal
 editor token automatically on first use and saves it as
 `SCREENCI_EDIT_TOKEN` (exchanged tokens are named after the machine and stay
 listed and revocable on the Secrets page, up to five per user; you can still
-create one by hand there and set it yourself). Run `screenci edit --watch` in
+create one by hand there and set it yourself). Run `screenci preview --watch` in
 your project and the editor header shows your machine as connected (for
 example `you@laptop`) and offers "Record ... on laptop" in the Export
 button's record menu.
 
-Without an account, no setup is needed: `screenci edit` runs under a local,
+Without an account, no setup is needed: `screenci preview` runs under a local,
 anonymous trial session (see
 [Anonymous Trial](/docs/guides/anonymous-trial)), and the anon session token
 doubles as the editor token. The trial's editor page stays editable even
@@ -462,7 +472,7 @@ Pulls queued web edits into your `.screenci.ts` sources in one shot and
 exits: it connects briefly, claims every edit queued while no machine was
 connected, writes each into the source by its `editId`, and reports the
 result back so the editor's pending queue clears. `test`, `export`, and
-`edit` run the same sync automatically on start (`export` accepts
+`preview` run the same sync automatically on start (`export` accepts
 `--no-sync` to skip it), so `sync` is mostly useful to converge sources
 without doing anything else.
 
@@ -714,7 +724,7 @@ The CLI currently covers:
 - project scaffolding with `init`
 - project auth setup (handled automatically on first `export`)
 - local iteration with `test`
-- single-video editing sessions with `edit`
+- live previews and editing sessions with `preview`
 - finished videos with `export`
 - per-run URLs and render status with `info`
 - public visibility changes with `make-public` and `make-private`
@@ -731,7 +741,7 @@ Manual version pinning is currently handled in the app UI:
 These commands support `--config <path>`:
 
 - `test`
-- `edit`
+- `preview`
 - `export`
 - `info`
 - `make-public`

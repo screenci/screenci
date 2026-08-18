@@ -503,12 +503,12 @@ describe('CLI', () => {
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })
 
-    // `edit` is the editor listener command, so it must parse as a real
+    // `preview` is the editor listener command, so it must parse as a real
     // command instead of being rejected as unknown. Without a secret it runs
     // anonymously; an expired trial session makes it exit deterministically
     // here with the sign-up message.
-    it('recognizes the edit command', async () => {
-      process.argv = ['node', 'cli.js', 'edit']
+    it('recognizes the preview command', async () => {
+      process.argv = ['node', 'cli.js', 'preview']
       delete process.env.SCREENCI_SECRET
       mockFetch.mockImplementation(async (input: string | URL) => {
         if (String(input).endsWith('/cli/anon-session-status')) {
@@ -531,7 +531,9 @@ describe('CLI', () => {
 
       await expect(main()).rejects.toThrow('process.exit called')
 
-      expect(loggerErrorSpy).not.toHaveBeenCalledWith('Unknown command: edit')
+      expect(loggerErrorSpy).not.toHaveBeenCalledWith(
+        'Unknown command: preview'
+      )
       expect(loggerErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining('trial has expired')
       )
@@ -542,8 +544,8 @@ describe('CLI', () => {
     // `playwright test <pattern>` does. They must be accepted (not rejected as
     // "too many arguments"); the command still exits deterministically on the
     // expired trial session.
-    it('accepts a positional grep pattern for the edit command', async () => {
-      process.argv = ['node', 'cli.js', 'edit', 'Auto-zoom']
+    it('accepts a positional grep pattern for the preview command', async () => {
+      process.argv = ['node', 'cli.js', 'preview', 'Auto-zoom']
       delete process.env.SCREENCI_SECRET
       mockFetch.mockImplementation(async (input: string | URL) => {
         if (String(input).endsWith('/cli/anon-session-status')) {

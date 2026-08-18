@@ -219,7 +219,7 @@ language keys, falling back to the implicit `en` default for a plain video.
 The **Languages** section on the Editor page lists the current languages and
 lets you add one. Adding a language writes it straight into your
 `video.languages([...])` declaration in code through the connected
-`screenci edit` machine (a new `.languages([...])` call is added when the video
+`screenci preview` machine (a new `.languages([...])` call is added when the video
 has none), then renders. The edit fails if no dev machine is connected: there
 is no web-side language store, so every language lives in code by the time the
 next record runs. Editing then continues with the usual guided setup: fill in

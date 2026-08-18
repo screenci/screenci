@@ -1,7 +1,7 @@
 # Version History
 
 Every export of a video is kept as a **version** (versions are created on
-export, not on preview recordings from `screenci edit`, which only refresh the
+export, not on preview recordings from `screenci preview`, which only refresh the
 live preview). One version is always the **selected** one: it is what a public URL
 serves and what embeds display. Version history lets you keep older renders
 around, compare them, and roll back by selecting a previous one, without

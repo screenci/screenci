@@ -1,9 +1,9 @@
 # Anonymous Trial
 
-`screenci edit` needs no account or `SCREENCI_SECRET` to try. Without one, a
+`screenci preview` needs no account or `SCREENCI_SECRET` to try. Without one, a
 recording uploads under a local, anonymous trial session: the CLI records the
-live preview and prints the web editor link, and every edit you make in the
-browser is written back into your script (live with `screenci edit --watch`,
+live preview and prints the preview link, and every edit you make in the
+browser is written back into your script (live with `screenci preview --watch`,
 otherwise queued and applied by the next `screenci` command). You sign up afterward to
 keep the trial and export it. Recording an anonymous trial agrees to the
 [Terms](https://screenci.com/legal/tos), which the CLI prints before it starts.
@@ -12,12 +12,12 @@ keep the trial and export it. Recording an anonymous trial agrees to the
 
 An anonymous trial is a full preview of ScreenCI's editing workflow:
 
-- **Free live previews, uncapped.** `screenci edit` records and refreshes the
+- **Free live previews, uncapped.** `screenci preview` records and refreshes the
   live preview as often as you like for the trial's lifetime; nothing renders
   and nothing is billed.
 - **The full web editor.** The editor is fully editable: narration, overlays,
   timeline cuts, camera, and render options, with every change written back
-  into your `.screenci.ts` sources (live while a `screenci edit --watch`
+  into your `.screenci.ts` sources (live while a `screenci preview --watch`
   session is connected, otherwise on the next `screenci` command).
 - **Expressive narration** (style prompts and tone control) in the preview.
 - **Up to 3 narration languages at once** in a recording, a taste of the
@@ -40,7 +40,7 @@ do next), rather than a generic rejection.
 ## After you sign up
 
 Signing in claims the trial into your account: its projects, videos, and
-recordings become part of your organization. A running `screenci edit` session
+recordings become part of your organization. A running `screenci preview` session
 upgrades itself automatically: the claim writes your `SCREENCI_SECRET` and a
 personal `SCREENCI_EDIT_TOKEN` into `screenci/.env` and the session reconnects
 with your account credentials without restarting.
@@ -55,5 +55,5 @@ renders and downloads the finished videos.
   works once you are signed up.
 - [Narration](/docs/guides/narration) for expressive voices, style prompts,
   and tone control.
-- [CLI](/docs/reference/cli) for the full `edit` and `export` command
+- [CLI](/docs/reference/cli) for the full `preview` and `export` command
   reference.

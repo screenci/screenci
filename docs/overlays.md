@@ -680,7 +680,7 @@ box.
 ### Position overlays in the web app
 
 Overlay placement is also editable visually in the editor (with a connected
-`screenci edit` machine, since placement edits are written back into your
+`screenci preview` machine, since placement edits are written back into your
 script):
 
 - **Drag in the live preview.** Drag an overlay on the video to move it, or

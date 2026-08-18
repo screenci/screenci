@@ -362,14 +362,18 @@ scaffolded by `screenci init` include it.
 
 ## `screenci edit [pattern]`
 
-Opens the editing flow for exactly one video. `edit` re-records and uploads
-the video's live preview if it is stale, prints the web editor deep link
-(`<app>/project/<projectId>/video/<videoId>?editor`), and then stays running
-as the code-sync bridge: editing in the web editor is locked until a machine
-you own is connected, because every web edit is written back into your
-`.screenci.ts` sources by this command. While connected, the editor can also
-trigger a local record of the video on demand. The command keeps running,
-polling the service for edit and record requests, until you stop it with
+Opens the editing flow for exactly one video. `edit` syncs any queued web
+edits into your `.screenci.ts` sources, re-records and uploads the video's
+live preview if it is stale, prints the web editor deep link
+(`<app>/project/<projectId>/video/<videoId>?editor`), and exits. Edits made
+in the web editor while no machine is connected queue server-side and are
+written into your sources by the next `screenci` command (`sync`, `test`,
+`edit`, or `export`).
+
+With `--watch`, the command instead stays running as the live code-sync
+bridge: every web edit is written back into your sources within seconds, and
+the editor can trigger a local record of the video on demand. It keeps
+polling the service for edit and record requests until you stop it with
 Ctrl-C. See [Editor](/docs/editor) for the editing model.
 
 ```bash
@@ -388,9 +392,12 @@ screenci edit "Auto-zoom"
 
 Options:
 
+- `-w, --watch`: stay connected as the live bridge (see above) instead of the
+  one-shot default.
 - `-c, --config <path>`: path to the ScreenCI config file.
 - `--token <token>`: personal editor token. Defaults to `SCREENCI_EDIT_TOKEN` from
-  your project env file.
+  your project env file; when neither is set and a `SCREENCI_SECRET` is
+  configured, the CLI mints a machine token from it automatically.
 - `-g, --grep <pattern>`: only manage videos whose title matches this pattern
   (the same filter as Playwright's `--grep`, and the same as a positional
   pattern above). The startup check and any
@@ -401,7 +408,8 @@ Options:
   than this is killed and replaced when a newer record request arrives; an
   older one finishes first and the new request runs right after (only the
   latest queued request is kept). Default: 10.
-- `--no-watch`: disable the source-file watcher (see below).
+- `--no-watch`: stay connected like `--watch`, but without the source-file
+  watcher (see below).
 - `-v, --verbose`: verbose output.
 
 Startup check: `screenci edit` keeps each recording's `data.json` on disk after
@@ -411,8 +419,8 @@ hash with the current source and verifies every editable action carries an
 missing `editId` slugs stamped into the source and is re-recorded as a preview
 (no render) before the session starts serving the editor.
 
-Editor codegen: while connected, every edit made in the web editor is sent to
-this machine as a codegen request and written directly into the
+Editor codegen: while connected with `--watch`, every edit made in the web
+editor is sent to this machine as a codegen request and written directly into the
 `.screenci.ts` source (the code is the single source of truth). Edits that
 change recorded behavior additionally trigger an automatic preview record.
 An edit the codegen cannot apply is reported back and the editor reverts it.
@@ -426,7 +434,7 @@ values move under `default`). A names-only narration declaration
 (`.narration(['intro'])`) stays app-managed: its content lives in the web app
 and is never codegen'd.
 
-Source watching: while connected, `screenci edit` watches the test source files
+Source watching: while connected with `--watch`, `screenci edit` watches the test source files
 backing the managed videos, plus `screenci.config.ts`. Saving a real change to
 a source file automatically re-records that file's videos as a preview (the
 same freshness hash as the startup check filters out no-op saves and the
@@ -434,23 +442,25 @@ CLI's own codegen writes); changing the config re-records every managed video.
 Watching follows the `-g/--grep` filter and can be turned off with
 `--no-watch`.
 
-Setup (with an account):
-
-1. Create a personal editor token on the Secrets page in the app (one token per
-   machine, up to five per user).
-2. Add it to your project env file as `SCREENCI_EDIT_TOKEN=<token>`, next to
-   your `SCREENCI_SECRET`.
-3. Run `screenci edit` in your project. The editor header shows your machine as
-   connected (for example `you@laptop`) and offers "Record ... on laptop" in
-   the Export button's record menu.
+Setup (with an account): none beyond `SCREENCI_SECRET`. With the secret in
+your project env file, the CLI exchanges it for this machine's personal
+editor token automatically on first use and saves it as
+`SCREENCI_EDIT_TOKEN` (exchanged tokens are named after the machine and stay
+listed and revocable on the Secrets page, up to five per user; you can still
+create one by hand there and set it yourself). Run `screenci edit --watch` in
+your project and the editor header shows your machine as connected (for
+example `you@laptop`) and offers "Record ... on laptop" in the Export
+button's record menu.
 
 Without an account, no setup is needed: `screenci edit` runs under a local,
 anonymous trial session (see
-[Anonymous Trial](/docs/guides/anonymous-trial)), the anon session token
-doubles as the editor token, and the trial's editor page is editable while
-your machine is connected. Signing up claims the trial: the running session
-picks up your new `SCREENCI_SECRET` and a claim-minted `SCREENCI_EDIT_TOKEN`
-(written into `screenci/.env`) and reconnects without restarting.
+[Anonymous Trial](/docs/guides/anonymous-trial)), and the anon session token
+doubles as the editor token. The trial's editor page stays editable even
+while no machine is connected: edits queue server-side and land in your
+sources on the next `screenci` command. Signing up claims the trial: a
+running `--watch` session picks up your new `SCREENCI_SECRET` and a
+claim-minted `SCREENCI_EDIT_TOKEN` (written into `screenci/.env`) and
+reconnects without restarting.
 
 While connected:
 
@@ -473,6 +483,24 @@ Editor tokens are separate from `SCREENCI_SECRET`: the secret authenticates your
 project to the service, the editor token additionally proves which user and
 machine is listening. Revoking the token on the Secrets page immediately
 disconnects the machine.
+
+## `screenci sync`
+
+Pulls queued web edits into your `.screenci.ts` sources in one shot and
+exits: it connects briefly, claims every edit queued while no machine was
+connected, writes each into the source by its `editId`, and reports the
+result back so the editor's pending queue clears. `test`, `export`, and
+`edit` run the same sync automatically on start (`export` accepts
+`--no-sync` to skip it), so `sync` is mostly useful to converge sources
+without doing anything else.
+
+```bash
+screenci sync
+```
+
+Options:
+
+- `-c, --config <path>`: path to the ScreenCI config file.
 
 ## `screenci info`
 

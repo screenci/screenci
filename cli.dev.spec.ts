@@ -8,7 +8,9 @@ import type {
 import {
   DEV_TOKEN_HEADER,
   DevAuthError,
+  ONE_SHOT_TRIGGER_MESSAGE,
   deregisterDevListener,
+  drainDevCodegenRequests,
   pollDevListener,
   registerDevListener,
   reportDevTrigger,
@@ -126,6 +128,87 @@ describe('pollDevListener', () => {
     await expect(pollDevListener(config, deps, 'lst_1')).resolves.toEqual({
       trigger: null,
       codegenRequests: [],
+    })
+  })
+})
+
+describe('drainDevCodegenRequests', () => {
+  it('applies queued requests across polls until a poll comes back empty', async () => {
+    const applied: string[] = []
+    const deps = makeDeps({
+      applyCodegen: vi.fn(async (request: DevCodegenRequest) => {
+        applied.push(request.requestId)
+      }),
+    })
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).endsWith('/cli/dev/poll')) {
+        // First poll returns two requests, second returns one, third is empty.
+        const call = deps.fetchMock.mock.calls.filter(([u]) =>
+          String(u).endsWith('/cli/dev/poll')
+        ).length
+        if (call === 1) {
+          return jsonResponse({
+            trigger: null,
+            codegenRequests: [
+              { ...codegenRequest, requestId: 'cgr_1' },
+              { ...codegenRequest, requestId: 'cgr_2' },
+            ],
+          })
+        }
+        if (call === 2) {
+          return jsonResponse({
+            trigger: null,
+            codegenRequests: [{ ...codegenRequest, requestId: 'cgr_3' }],
+          })
+        }
+        return jsonResponse({ trigger: null, codegenRequests: [] })
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    const result = await drainDevCodegenRequests(config, deps, 'lst_1')
+
+    expect(result).toEqual({ handled: 3 })
+    expect(applied).toEqual(['cgr_1', 'cgr_2', 'cgr_3'])
+  })
+
+  it('returns zero handled when nothing is queued', async () => {
+    const deps = makeDeps({ applyCodegen: vi.fn(async () => {}) })
+    deps.fetchMock.mockResolvedValue(
+      jsonResponse({ trigger: null, codegenRequests: [] })
+    )
+
+    await expect(
+      drainDevCodegenRequests(config, deps, 'lst_1')
+    ).resolves.toEqual({ handled: 0 })
+  })
+
+  it('fails a claimed trigger with the one-shot pointer message', async () => {
+    const deps = makeDeps({ applyCodegen: vi.fn(async () => {}) })
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).endsWith('/cli/dev/poll')) {
+        const call = deps.fetchMock.mock.calls.filter(([u]) =>
+          String(u).endsWith('/cli/dev/poll')
+        ).length
+        if (call === 1) {
+          return jsonResponse({ trigger, codegenRequests: [] })
+        }
+        return jsonResponse({ trigger: null, codegenRequests: [] })
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    await drainDevCodegenRequests(config, deps, 'lst_1')
+
+    const reportCall = deps.fetchMock.mock.calls.find(([u]) =>
+      String(u).endsWith('/cli/dev/report')
+    )
+    expect(reportCall).toBeDefined()
+    const body = JSON.parse((reportCall?.[1] as RequestInit).body as string)
+    expect(body).toMatchObject({
+      triggerId: 'trg_1',
+      state: 'failed',
+      errorMessage: ONE_SHOT_TRIGGER_MESSAGE,
     })
   })
 })

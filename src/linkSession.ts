@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'fs/promises'
 
 // Shared CLI helpers for resolving the ScreenCI environment/URLs and for
-// writing/verifying a SCREENCI_SECRET. `screenci record` with no
+// writing/verifying a SCREENCI_SECRET. `screenci export` with no
 // SCREENCI_SECRET set uploads anonymously instead (see anonSession.ts); this
 // module no longer handles the (removed) init-OTP handoff.
 

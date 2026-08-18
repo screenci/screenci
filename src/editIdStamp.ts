@@ -1,5 +1,5 @@
 /**
- * editId allocation and stamping for `screenci sync` / `screenci dev --sync`.
+ * editId allocation and stamping for `screenci sync` / `screenci edit`.
  *
  * Every editable action can carry a stable, human-readable identity slug in
  * code (`editId: 'fill1'`). This module assigns slugs to actions recorded

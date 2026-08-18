@@ -2,8 +2,9 @@
 
 `screenci edit` needs no account or `SCREENCI_SECRET` to try. Without one, a
 recording uploads under a local, anonymous trial session: the CLI records the
-live preview, prints the web editor link, and stays connected so every edit you
-make in the browser is written back into your script. You sign up afterward to
+live preview and prints the web editor link, and every edit you make in the
+browser is written back into your script (live with `screenci edit --watch`,
+otherwise queued and applied by the next `screenci` command). You sign up afterward to
 keep the trial and export it. Recording an anonymous trial agrees to the
 [Terms](https://screenci.com/legal/tos), which the CLI prints before it starts.
 
@@ -14,10 +15,10 @@ An anonymous trial is a full preview of ScreenCI's editing workflow:
 - **Free live previews, uncapped.** `screenci edit` records and refreshes the
   live preview as often as you like for the trial's lifetime; nothing renders
   and nothing is billed.
-- **The full web editor.** While your machine is connected with
-  `screenci edit`, the editor is fully editable: narration, overlays, timeline
-  cuts, camera, and render options, with every change written back into your
-  `.screenci.ts` sources.
+- **The full web editor.** The editor is fully editable: narration, overlays,
+  timeline cuts, camera, and render options, with every change written back
+  into your `.screenci.ts` sources (live while a `screenci edit --watch`
+  session is connected, otherwise on the next `screenci` command).
 - **Expressive narration** (style prompts and tone control) in the preview.
 - **Up to 3 narration languages at once** in a recording, a taste of the
   Business tier's unlimited languages.

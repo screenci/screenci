@@ -42,12 +42,14 @@ The brief walks the agent through these steps:
 3. **Verify, then preview.** It runs `npx screenci test` until the script is
    green, then `npx screenci edit "<video title>"` to record the free live
    preview and hand you the web editor link, so you review the video before
-   anything renders. `edit` stays connected, so every edit you make in the
-   [Editor](/docs/editor) (narration, overlays, cuts, timings) is written back
-   into the script, ready for the agent or you to build on. No account is
-   needed: without a `SCREENCI_SECRET` it runs under a local, anonymous trial
-   session, and signing up in the editor claims the trial and upgrades the
-   running session automatically.
+   anything renders. Every edit you make in the [Editor](/docs/editor)
+   (narration, overlays, cuts, timings) is written back into the script,
+   ready for the agent or you to build on: live while a
+   `screenci edit --watch` session is connected, and otherwise queued and
+   applied by the next `screenci` command. No account is needed: without a
+   `SCREENCI_SECRET` it runs under a local, anonymous trial session, and
+   signing up in the editor claims the trial and upgrades a running session
+   automatically.
 4. **Export when you want the finished videos.** `npx screenci export` records
    what changed, renders, and downloads the results into `./exports/`.
    Exporting requires an account with an active paid subscription: the

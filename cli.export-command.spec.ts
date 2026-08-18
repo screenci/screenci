@@ -483,7 +483,7 @@ describe('CLI', () => {
           removeLockSync: vi.fn(),
         })
       ).rejects.toThrow(
-        `Another 'screenci record' is in progress (pid 456, started 2026-07-05T10:00:00.000Z, project "Other Project"). Wait for it or remove .screenci/.record.lock.`
+        `Another screenci recording run is in progress (pid 456, started 2026-07-05T10:00:00.000Z, project "Other Project"). Wait for it or remove .screenci/.record.lock.`
       )
 
       expect(addSignalListener).not.toHaveBeenCalled()

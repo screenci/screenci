@@ -1,7 +1,7 @@
 /**
  * Planner for editor codegen: turns the web editor's edits into concrete
  * text changes to the user's .screenci.ts files, using the codemod primitives.
- * Driven by `screenci dev` (applyCodegen.ts), which applies each edit to the
+ * Driven by `screenci edit` (applyCodegen.ts), which applies each edit to the
  * sources the moment it arrives; code is the single source of truth.
  *
  * Every code edit locates its call site by an action's `editId` slug: an exact

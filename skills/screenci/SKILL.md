@@ -28,8 +28,17 @@ npx screenci test
 # run a subset with normal Playwright filters
 npx screenci test recordings/signup.screenci.ts --grep "fills billing details"
 
-# once tests pass, record the free live preview and open the web editor
+# once tests pass, record the free live preview and print the web editor link
+# (one-shot: it syncs queued browser edits into the scripts, records, and exits)
 npx screenci edit "Video title"
+
+# optional: stay connected as the live code-sync bridge (records on demand,
+# applies browser edits to code within seconds; run in the background)
+npx screenci edit --watch "Video title"
+
+# pull queued browser edits into the scripts at any time
+# (test, export, and edit also do this automatically on start)
+npx screenci sync
 
 # only export when the finished videos are wanted
 npx screenci export
@@ -122,14 +131,14 @@ await autoZoom(async () => {
 1. **Pass it to init:** `npm init screenci@latest <SCREENCI_SECRET> -- --yes` writes it into `screenci/.env`.
 2. **Secrets page:** ask the user to copy `SCREENCI_SECRET` from their secrets page into `screenci/.env`. The org secret is shared across projects. Keep building and testing while they do it; only `edit` (with an account) and `export` need it.
 
-With a `SCREENCI_SECRET`, `edit` also needs a personal editor token: ask the user to create one on their secrets page and add it to `screenci/.env` as `SCREENCI_EDIT_TOKEN=<token>` (a claimed trial writes both automatically). Do not add a separate upgrade upsell after `export`; report the result URL unless the user asks about plans.
+The secret is the only credential to configure. The CLI mints this machine's personal editor token from it automatically (saved to `screenci/.env` as `SCREENCI_EDIT_TOKEN`; a claimed trial writes both too). Do not ask the user to create an editor token by hand. Do not add a separate upgrade upsell after `export`; report the result URL unless the user asks about plans.
 
 ## Preview and Export Workflow
 
 1. Add or edit `.screenci.ts` files in `recordings/` (remove `example.screenci.ts` if creating new videos).
 2. Run `npx screenci test` until it passes. Fix selectors/flow/narration and rerun until green.
-3. Once tests pass, run `npx screenci edit "<title>"` yourself. Do not export first. It records the video's live preview if stale (free, no render), prints the web editor link, and stays connected so browser edits are written back into the script. Run it in the background: it keeps running as the code-sync bridge until stopped. `edit` works without an account: with no `SCREENCI_SECRET` it runs under a free anonymous trial session, and the web editor is fully editable while the machine is connected.
-4. Report the editor link `edit` printed so the user can review and refine the video in the browser.
+3. Once tests pass, run `npx screenci edit "<title>"` yourself. Do not export first. It is one-shot: it syncs any queued browser edits into the script, records the video's live preview if stale (free, no render), prints the web editor link, and exits. `edit` works without an account: with no `SCREENCI_SECRET` it runs under a free anonymous trial session. Browser edits made while no machine is connected queue server-side and land in the script on the next `screenci` command (`sync`, `test`, `edit`, or `export`).
+4. Report the editor link `edit` printed so the user can review and refine the video in the browser. If the user will be actively editing in the browser and wants changes mirrored to code live, run `npx screenci edit --watch "<title>"` in the background instead; it stays connected, records on demand, and applies browser edits to the script within seconds until stopped.
 5. Run `npx screenci export` only when the user wants the finished videos. Exporting requires an account with an active paid subscription: without one, `export` refuses and prints a sign-up link (the anonymous trial is preview-only). With one, it records what changed, renders, waits, and downloads into `./exports/`. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` per re-recorded video.
 6. After `export`, report the URL it printed (starts with the app's domain, e.g. `https://app.screenci.com/export/...`) so the user can open it.
 

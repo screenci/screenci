@@ -89,6 +89,7 @@ import {
   type DevWatcherController,
 } from './src/devWatch.js'
 import { entriesFromRecordingData } from './src/editableSnapshot.js'
+import type { EditableSnapshotEntry } from './src/editableSnapshot.js'
 import {
   LAST_DATA_FILE,
   hashSourceFile,
@@ -125,6 +126,7 @@ import {
   formatAnonPostRecordNotice,
   formatAnonTermsNotice,
   getOrCreateAnonToken,
+  peekAnonToken,
   readAnonSessionRecordUrl,
   saveAnonSessionRecordUrl,
   secretCredential,
@@ -136,10 +138,12 @@ import {
   DevAuthError,
   SCREENCI_EDIT_TOKEN_ENV,
   deregisterDevListener,
+  drainDevCodegenRequests,
   registerDevListener,
   reportDevSyncState,
   runDevListenLoop,
 } from './src/devListen.js'
+import { exchangeEditToken } from './src/editTokenExchange.js'
 
 // Re-export the environment-aware URL helpers so existing importers (and tests)
 // can keep importing them from the CLI entrypoint.
@@ -154,7 +158,7 @@ const SCREENCI_MOCK_RECORD_DOCS_URL =
   'https://screenci.com/docs/reference/cli/#--mock-record'
 const SCREENCI_RECORD_DOCS_URL =
   'https://screenci.com/docs/reference/cli/#screenci-record'
-// Records the recordId of the most recent `screenci record` upload so
+// Records the recordId of the most recent `screenci export` upload so
 // `screenci info` can report exactly the run that was just made.
 const SCREENCI_LAST_RECORD_FILE = 'last-record.json'
 const SCREENCI_RECORD_LOCK_FILE = '.record.lock'
@@ -2735,7 +2739,7 @@ async function writeGitHubProjectOutput(projectUrl: string): Promise<void> {
  * The builder titles each per-language Playwright test `${videoName} [${lang}]`
  * (src/builder.ts) so every language pass has a unique test title, while the
  * shared grouping key it writes to `metadata.videoName` carries NO language
- * suffix. `screenci record` discovers the videos to expect by their test titles,
+ * suffix. `screenci export` discovers the videos to expect by their test titles,
  * but the uploader matches those against each recording's `metadata.videoName`.
  * Strip the trailing ` [<lang>]` so the requested name matches the recorded one;
  * otherwise a language-decorated title never matches and every upload reports
@@ -3195,7 +3199,7 @@ export function extractGrep(args: string[]): string | undefined {
   return undefined
 }
 
-// `screenci record --remote` triggers the project's GitHub Actions recording
+// `screenci export --remote` triggers the project's GitHub Actions recording
 // workflow instead of recording locally. The project is resolved from the
 // existing SCREENCI_SECRET + config `projectName`, exactly like the other
 // authenticated commands; the backend dispatches the workflow using the GitHub
@@ -3467,6 +3471,7 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
     recordId: string | null
     projectId: string | null
     uploadedVideoNames: string[]
+    heldVideoNames: string[]
   }> => {
     const passGrep =
       names !== undefined
@@ -3559,11 +3564,22 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
       process.exitCode = 1
       return
     }
+    // Held videos never render until configured in the editor; waiting on
+    // them would only time out.
+    const exportable = uploaded.uploadedVideoNames.filter(
+      (name) => !uploaded.heldVideoNames.includes(name)
+    )
+    if (exportable.length === 0) {
+      logger.info(
+        'Every uploaded video is on hold pending editor configuration; nothing to download yet.'
+      )
+      return
+    }
     await pollAndDownloadExports({
       targets: [
         {
           recordId: uploaded.recordId,
-          videoNames: uploaded.uploadedVideoNames,
+          videoNames: exportable,
         },
       ],
       languagesCsv: options.languages,
@@ -3614,7 +3630,13 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
       logger.error('Recording upload failed; nothing to export.')
       process.exit(1)
     }
-    targets.push({ recordId: uploaded.recordId, videoNames: stale })
+    // Skip held videos: they render only after editor configuration.
+    const exportableStale = stale.filter(
+      (name) => !uploaded.heldVideoNames.includes(name)
+    )
+    if (exportableStale.length > 0) {
+      targets.push({ recordId: uploaded.recordId, videoNames: exportableStale })
+    }
   }
 
   if (fresh.length > 0) {
@@ -3651,6 +3673,13 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
       const { recordId } = (await res.json()) as { recordId: string }
       targets.push({ recordId, videoNames: [name] })
     }
+  }
+
+  if (targets.length === 0) {
+    logger.info(
+      'Nothing to export: every requested video is on hold pending editor configuration.'
+    )
+    return
   }
 
   await pollAndDownloadExports({
@@ -3833,6 +3862,236 @@ async function printEditorLink(params: {
   }
 }
 
+/**
+ * Builds the codegen-apply dependency shared by the live bridge and one-shot
+ * syncs: locates the target call site by editId and rewrites the test source
+ * via static analysis, formatting with the project's Prettier.
+ */
+function createApplyCodegenDep(
+  configOption: string | undefined,
+  onFileWritten: (path: string) => void
+): NonNullable<DevListenDeps['applyCodegen']> {
+  return async (request) => {
+    const resolvedConfigPath = resolveScreenCIConfigPathOrExit(configOption)
+    const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
+    const ts = requireTypescriptForCodegen(loadTypescript, dirname(screenciDir))
+    return await applyCodegenRequest(request, {
+      ts,
+      formatFile: createProjectFormatter(dirname(resolvedConfigPath), {
+        warn: (message) => logger.warn(message),
+      }),
+      readFile: (path) => {
+        try {
+          return readFileSync(path, 'utf8')
+        } catch {
+          return null
+        }
+      },
+      writeFile: (path, content) => {
+        writeFileSync(path, content)
+        onFileWritten(path)
+      },
+      editableSnapshot: {
+        version: 1,
+        videos: collectEditableFromRecordings(screenciDir),
+      },
+      // Last-resort declaration lookup for a video that was edited before it
+      // was cleanly recorded (no snapshot source file). Scanned lazily and
+      // memoized so the common path (snapshot hit) pays nothing.
+      listRecordingFiles: (() => {
+        let cached: string[] | null = null
+        return () =>
+          (cached ??= listScreenciSourceFiles(dirname(resolvedConfigPath)))
+      })(),
+      resolveDuplicateEditIds: async (paths) =>
+        (await resolveDuplicateEditIdsInSources(paths, {
+          screenciDir,
+          projectDir: dirname(screenciDir),
+          log: (message) => logger.info(message),
+          warn: (message) => logger.warn(message),
+          formatFile: createProjectFormatter(dirname(resolvedConfigPath), {
+            warn: (message) => logger.warn(message),
+          }),
+          onFileWritten,
+        })) > 0,
+    })
+  }
+}
+
+/**
+ * Stamps missing editIds into the sources from the kept recordings, outside
+ * a live edit session. Run after `screenci test` and before `screenci
+ * export`'s record pass so uploads always carry stable editIds: browser edits
+ * made before any `edit` session ever connected then resolve to stable ids
+ * and queue as normal deferred edits instead of failing as unstamped.
+ * Best-effort: silently a no-op without a config, kept recordings, or
+ * TypeScript.
+ */
+export async function stampEditIdsForProject(
+  configOption: string | undefined
+): Promise<number> {
+  const resolution = findScreenCIConfig(configOption)
+  if (resolution.kind !== 'found') return 0
+  const resolvedConfigPath = resolution.path
+  const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
+  if (!existsSync(screenciDir)) return 0
+
+  const videos: Record<string, EditableSnapshotEntry[]> = {}
+  for (const entry of readdirSync(screenciDir)) {
+    const dir = resolve(screenciDir, entry)
+    if (statSync(dir, { throwIfNoEntry: false })?.isDirectory() !== true) {
+      continue
+    }
+    const data = await readKeptRecordingData(dir)
+    const videoName = data?.metadata?.videoName
+    if (data === null || videoName === undefined) continue
+    if (videos[videoName] !== undefined) continue
+    const entries = entriesFromRecordingData(data)
+    if (entries.some((e) => e.editId === undefined)) {
+      videos[videoName] = entries
+    }
+  }
+  if (Object.keys(videos).length === 0) return 0
+
+  const ts = loadTypescript(dirname(screenciDir))
+  if (ts === null) return 0
+
+  const plan = planEditIdStamps(
+    { version: 1, videos },
+    readEditIdCounters(screenciDir),
+    {
+      ts,
+      readFile: (path) => {
+        try {
+          return readFileSync(path, 'utf8')
+        } catch {
+          return null
+        }
+      },
+    }
+  )
+  const formatFile = createProjectFormatter(dirname(screenciDir), {
+    warn: (message) => logger.warn(message),
+  })
+  for (const file of plan.files) {
+    if (file.after !== file.before) {
+      writeFileSync(file.path, await formatFile(file.path, file.after))
+    }
+  }
+  if (plan.stamped.length > 0) {
+    writeEditIdCounters(screenciDir, plan.counters)
+    logger.info(
+      `Stamped ${plan.stamped.length} missing editId${plan.stamped.length === 1 ? '' : 's'} into the sources.`
+    )
+  }
+  return plan.stamped.length
+}
+
+/**
+ * Best-effort one-shot drain of queued browser edits into the sources,
+ * without recording anything. Run by `screenci sync` and at the start of
+ * `test`/`export` so code and editor state converge at every CLI touchpoint.
+ *
+ * Deliberately silent when the project has no usable credentials: it never
+ * creates an anonymous session or prompts, and network failures only warn
+ * (never block the host command).
+ */
+export async function runQuickEditSync(
+  options: {
+    config?: string
+    /** Suppress failure warnings (applied-edit logs always show). */
+    quiet?: boolean
+  } = {},
+  depsOverride: Partial<DevListenDeps> & { machineName?: string } = {}
+): Promise<{ handled: number } | null> {
+  let projectName: string
+  let configPath: string
+  try {
+    const loaded = await loadScreenCIConfigAndEnv(options.config)
+    projectName = loaded.screenciConfig.projectName
+    configPath = loaded.resolvedConfigPath
+  } catch {
+    return null
+  }
+  const apiUrl = getDevBackendUrl()
+  const screenciDir = resolve(dirname(configPath), '.screenci')
+
+  // Resolve credentials without side effects: an org secret (minting this
+  // machine's editor token when missing), or an anon session that already
+  // exists on disk. Anything else: skip silently.
+  let credential: CliCredential
+  let devToken: string
+  const secretFromEnv = process.env.SCREENCI_SECRET
+  if (secretFromEnv) {
+    let editorToken = process.env[SCREENCI_EDIT_TOKEN_ENV]
+    if (!editorToken) {
+      const exchanged = await exchangeEditToken({
+        apiUrl,
+        secret: secretFromEnv,
+        machineName: depsOverride.machineName ?? hostname(),
+        ...(depsOverride.fetchFn ? { fetchFn: depsOverride.fetchFn } : {}),
+      })
+      if (!exchanged.ok) return null
+      editorToken = exchanged.editToken
+      const envFilePath = await resolveProjectEnvFilePath(configPath)
+      await persistScreenCIEditToken(envFilePath, editorToken)
+      process.env[SCREENCI_EDIT_TOKEN_ENV] = editorToken
+    }
+    credential = secretCredential(secretFromEnv)
+    devToken = editorToken
+  } else {
+    const anonToken = await peekAnonToken(screenciDir)
+    if (anonToken === null) return null
+    credential = anonCredential(anonToken)
+    devToken = anonToken
+  }
+
+  const config: DevListenConfig = {
+    apiUrl,
+    credential,
+    devToken,
+    projectName,
+    machineName: depsOverride.machineName ?? hostname(),
+  }
+  const deps: DevListenDeps = {
+    fetchFn: fetch,
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    logger,
+    runRecord: async () => {
+      throw new Error('One-shot sync cannot record')
+    },
+    applyCodegen: createApplyCodegenDep(options.config, () => {}),
+    ...depsOverride,
+  }
+
+  try {
+    const registration = await registerDevListener(config, deps)
+    try {
+      const result = await drainDevCodegenRequests(
+        config,
+        deps,
+        registration.listenerId
+      )
+      if (result.handled > 0) {
+        logger.info(
+          `Synced ${result.handled} queued editor ${result.handled === 1 ? 'edit' : 'edits'} into your sources.`
+        )
+      }
+      return result
+    } finally {
+      await deregisterDevListener(config, deps, registration.listenerId).catch(
+        () => {}
+      )
+    }
+  } catch (error) {
+    if (options.quiet !== true) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.warn(`Could not sync queued editor edits: ${message}`)
+    }
+    return null
+  }
+}
+
 export async function runDevCommand(
   options: {
     config?: string
@@ -3845,6 +4104,12 @@ export async function runDevCommand(
     forceRecord?: boolean
     /** False disables the source-file watcher (--no-watch). */
     watch?: boolean
+    /**
+     * One-shot mode (`edit` without --watch): sync queued browser edits into
+     * the sources, bring previews up to date, print the editor link, and
+     * exit instead of staying connected as the live bridge.
+     */
+    once?: boolean
   },
   depsOverride: Partial<DevListenDeps> & {
     machineName?: string
@@ -3860,34 +4125,55 @@ export async function runDevCommand(
 
   /**
    * Resolves the credential pair this edit session authenticates with. With a
-   * SCREENCI_SECRET, a personal SCREENCI_EDIT_TOKEN is required as before.
-   * Without one, the session runs on the anonymous trial: the anon session
-   * token doubles as the dev token (the server auto-mints the matching editor
-   * token for the trial org), and a claimed session self-upgrades by
-   * persisting the real secret plus the claim-minted editor token into .env.
+   * SCREENCI_SECRET, a personal SCREENCI_EDIT_TOKEN is used when configured,
+   * and otherwise auto-minted from the secret via the token exchange (one
+   * credential paste connects the project). Without a secret, the session runs
+   * on the anonymous trial: the anon session token doubles as the dev token
+   * (the server auto-mints the matching editor token for the trial org), and a
+   * claimed session self-upgrades by persisting the real secret plus the
+   * claim-minted editor token into .env.
    */
   const resolveDevAuth = async (): Promise<{
     credential: CliCredential
     devToken: string
     anonToken: string | null
   }> => {
-    const requireEditToken = (fallback?: string): string => {
+    const requireEditToken = async (
+      fallback?: string,
+      secretForExchange?: string
+    ): Promise<string> => {
       const editorToken =
         options.token ?? process.env[SCREENCI_EDIT_TOKEN_ENV] ?? fallback
-      if (!editorToken) {
-        logger.error(
-          `No ${SCREENCI_EDIT_TOKEN_ENV} configured. Create a personal editor token at ${pc.cyan(getScreenCISecretsUrl())} and add it to your env file, or pass it with --token.`
-        )
-        process.exit(1)
+      if (editorToken) return editorToken
+
+      if (secretForExchange) {
+        const exchanged = await exchangeEditToken({
+          apiUrl,
+          secret: secretForExchange,
+          machineName: depsOverride.machineName ?? hostname(),
+        })
+        if (exchanged.ok) {
+          await persistScreenCIEditToken(authEnvFilePath, exchanged.editToken)
+          process.env[SCREENCI_EDIT_TOKEN_ENV] = exchanged.editToken
+          logger.info(
+            `Minted a personal editor token for this machine (saved to ${pathRelative(process.cwd(), authEnvFilePath)}).`
+          )
+          return exchanged.editToken
+        }
+        logger.warn(`Could not mint an editor token: ${exchanged.error}`)
       }
-      return editorToken
+
+      logger.error(
+        `No ${SCREENCI_EDIT_TOKEN_ENV} configured. Create a personal editor token at ${pc.cyan(getScreenCISecretsUrl())} and add it to your env file, or pass it with --token.`
+      )
+      process.exit(1)
     }
 
     const secretFromEnv = process.env.SCREENCI_SECRET
     if (secretFromEnv) {
       return {
         credential: secretCredential(secretFromEnv),
-        devToken: requireEditToken(),
+        devToken: await requireEditToken(undefined, secretFromEnv),
         anonToken: null,
       }
     }
@@ -3910,7 +4196,7 @@ export async function runDevCommand(
       )
       return {
         credential: secretCredential(status.secret),
-        devToken: requireEditToken(status.editToken),
+        devToken: await requireEditToken(status.editToken, status.secret),
         anonToken: null,
       }
     }
@@ -4003,54 +4289,9 @@ export async function runDevCommand(
       pendingLocal = null
       return request
     },
-    applyCodegen: async (request) => {
-      const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.config)
-      const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
-      const ts = requireTypescriptForCodegen(
-        loadTypescript,
-        dirname(screenciDir)
-      )
-      return await applyCodegenRequest(request, {
-        ts,
-        formatFile: createProjectFormatter(dirname(resolvedConfigPath), {
-          warn: (message) => logger.warn(message),
-        }),
-        readFile: (path) => {
-          try {
-            return readFileSync(path, 'utf8')
-          } catch {
-            return null
-          }
-        },
-        writeFile: (path, content) => {
-          writeFileSync(path, content)
-          void watcher?.refreshBaseline(path)
-        },
-        editableSnapshot: {
-          version: 1,
-          videos: collectEditableFromRecordings(screenciDir),
-        },
-        // Last-resort declaration lookup for a video that was edited before it
-        // was cleanly recorded (no snapshot source file). Scanned lazily and
-        // memoized so the common path (snapshot hit) pays nothing.
-        listRecordingFiles: (() => {
-          let cached: string[] | null = null
-          return () =>
-            (cached ??= listScreenciSourceFiles(dirname(resolvedConfigPath)))
-        })(),
-        resolveDuplicateEditIds: async (paths) =>
-          (await resolveDuplicateEditIdsInSources(paths, {
-            screenciDir,
-            projectDir: dirname(screenciDir),
-            log: (message) => logger.info(message),
-            warn: (message) => logger.warn(message),
-            formatFile: createProjectFormatter(dirname(resolvedConfigPath), {
-              warn: (message) => logger.warn(message),
-            }),
-            onFileWritten: (path) => void watcher?.refreshBaseline(path),
-          })) > 0,
-      })
-    },
+    applyCodegen: createApplyCodegenDep(options.config, (path) => {
+      void watcher?.refreshBaseline(path)
+    }),
     ...depsOverride,
   }
 
@@ -4071,6 +4312,27 @@ export async function runDevCommand(
   logger.info(
     `${pc.bold(config.machineName)} connected for project "${screenciConfig.projectName}".`
   )
+
+  // Sync queued browser edits into the sources on every connect, so edits
+  // made while no machine was running land in code without a live bridge.
+  const drainQueuedEdits = async (): Promise<void> => {
+    try {
+      const { handled } = await drainDevCodegenRequests(
+        config,
+        deps,
+        registration.listenerId
+      )
+      if (handled > 0) {
+        logger.info(
+          `Synced ${handled} queued editor ${handled === 1 ? 'edit' : 'edits'} into your sources.`
+        )
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.warn(`Could not sync queued editor edits: ${message}`)
+    }
+  }
+  await drainQueuedEdits()
 
   const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.config)
   const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
@@ -4226,6 +4488,21 @@ export async function runDevCommand(
     })
   }
 
+  // One-shot: edits are synced and the preview is fresh; nothing else needs
+  // this process, so disconnect instead of staying resident. Queued edits
+  // authored while the preview recorded are picked up by one final drain.
+  if (options.once === true) {
+    await drainQueuedEdits()
+    logger.info(
+      'Done. Browser edits queue while you are offline and sync on the next ' +
+        `screenci command; use ${pc.cyan(getSuggestedScreenciCommand('edit', '--watch'))} for a live editing session.`
+    )
+    await deregisterDevListener(config, deps, registration.listenerId).catch(
+      () => {}
+    )
+    return
+  }
+
   // Watch the managed videos' source files (and the config) so saving a test
   // source re-records its previews without a manual trigger.
   if (options.watch !== false) {
@@ -4308,7 +4585,25 @@ export async function runDevCommand(
               process.env[SCREENCI_EDIT_TOKEN_ENV] = status.editToken
             }
             await deleteAnonSessionFile(authScreenciDir)
-            if (status.editToken === undefined) {
+            let claimedEditToken = status.editToken
+            if (claimedEditToken === undefined) {
+              // The claim mints a token unless the user is at the cap; fall
+              // back to exchanging the fresh secret for a machine token.
+              const exchanged = await exchangeEditToken({
+                apiUrl,
+                secret: status.secret,
+                machineName: depsOverride.machineName ?? hostname(),
+              })
+              if (exchanged.ok) {
+                claimedEditToken = exchanged.editToken
+                await persistScreenCIEditToken(
+                  authEnvFilePath,
+                  claimedEditToken
+                )
+                process.env[SCREENCI_EDIT_TOKEN_ENV] = claimedEditToken
+              }
+            }
+            if (claimedEditToken === undefined) {
               logger.error(
                 'Your trial was claimed, but no editor token is configured. ' +
                   `Create one at ${pc.cyan(getScreenCISecretsUrl())}, add it to your env file as ${SCREENCI_EDIT_TOKEN_ENV}, and re-run this command.`
@@ -4317,7 +4612,7 @@ export async function runDevCommand(
             }
             auth = {
               credential: secretCredential(status.secret),
-              devToken: status.editToken,
+              devToken: claimedEditToken,
               anonToken: null,
             }
             config.credential = auth.credential
@@ -4412,7 +4707,7 @@ function isRecordRunLockStale(
 }
 
 function formatRecordRunLockError(lock: RecordRunLock): string {
-  return `Another 'screenci record' is in progress (pid ${lock.pid}, started ${lock.startedAt}, project "${lock.projectName}"). Wait for it or remove .screenci/.record.lock.`
+  return `Another screenci recording run is in progress (pid ${lock.pid}, started ${lock.startedAt}, project "${lock.projectName}"). Wait for it or remove .screenci/.record.lock.`
 }
 
 export async function acquireRecordRunLock(
@@ -4781,18 +5076,26 @@ async function uploadRecordedVideosForConfig(
   recordId: string | null
   projectId: string | null
   uploadedVideoNames: string[]
+  /** Videos whose render is held server-side pending Studio configuration. */
+  heldVideoNames: string[]
 }> {
   // After recording, upload results to API if configured. `run` already
   // resolved the config (or exited), so this best-effort lookup only acts
   // when a flat config is present in/under the current directory.
   const resolution = findScreenCIConfig(configPath)
   if (resolution.kind !== 'found') {
-    return { recordId: null, projectId: null, uploadedVideoNames: [] }
+    return {
+      recordId: null,
+      projectId: null,
+      uploadedVideoNames: [],
+      heldVideoNames: [],
+    }
   }
 
   let uploadedRecordId: string | null = null
   let uploadedProjectId: string | null = null
   let uploadedNames: string[] = []
+  let heldNames: string[] = []
   const resolvedConfigPath = resolution.path
   try {
     const screenciConfig =
@@ -4980,17 +5283,31 @@ async function uploadRecordedVideosForConfig(
         )
         logger.info(pc.cyan(`${appUrl}/select-plan`))
       }
+      heldNames = studioNotices
+        .filter((notice) => 'held' in notice.studio)
+        .map((notice) => notice.videoName)
       for (const notice of studioNotices) {
         if ('held' in notice.studio) {
+          const resolveUrl =
+            projectId !== null && notice.videoId !== null
+              ? formatStudioUrl(appUrl, projectId, notice.videoId)
+              : null
           logger.info('')
           logger.info(
             `Rendering for "${notice.videoName}" is on hold. Configure it in Editor:`
           )
-          if (projectId !== null && notice.videoId !== null) {
-            logger.info(
-              pc.cyan(formatStudioUrl(appUrl, projectId, notice.videoId))
-            )
+          if (resolveUrl !== null) {
+            logger.info(pc.cyan(resolveUrl))
           }
+          // Machine-readable status line so agents can relay the hold
+          // instead of treating a missing render as a silent failure.
+          logger.info(
+            JSON.stringify({
+              status: 'held',
+              videoName: notice.videoName,
+              ...(resolveUrl !== null ? { resolveUrl } : {}),
+            })
+          )
         } else if (notice.studio.applied) {
           logger.info('')
           logger.info(`Editor configuration applied for "${notice.videoName}".`)
@@ -5020,6 +5337,7 @@ async function uploadRecordedVideosForConfig(
     recordId: uploadedRecordId,
     projectId: uploadedProjectId,
     uploadedVideoNames: uploadedNames,
+    heldVideoNames: heldNames,
   }
 }
 
@@ -5027,7 +5345,7 @@ export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
     logger.error(
-      'Available commands: edit, export, test, info, make-public, make-private, delete, init'
+      'Available commands: edit, sync, export, test, info, make-public, make-private, delete, init'
     )
     process.exit(1)
   }
@@ -5067,6 +5385,10 @@ export async function main() {
       '--force',
       're-record every video even when its recording is up to date'
     )
+    .option(
+      '--no-sync',
+      'skip pulling queued browser edits into the sources before exporting'
+    )
     .action(
       async (
         patterns: string[],
@@ -5078,6 +5400,7 @@ export async function main() {
           grep?: string
           output?: string
           force?: boolean
+          sync?: boolean
         }
       ) => {
         const positionalGrep =
@@ -5091,6 +5414,20 @@ export async function main() {
           return
         }
 
+        // Pull queued browser edits into the sources first so the export
+        // renders what the editor shows. Best-effort, never blocks.
+        if (options.sync !== false) {
+          await runQuickEditSync({
+            ...(options.config !== undefined ? { config: options.config } : {}),
+            quiet: true,
+          })
+          try {
+            await stampEditIdsForProject(options.config)
+          } catch (err) {
+            logger.warn('Could not stamp editIds:', err)
+          }
+        }
+
         await runExportCommand({
           configPath: options.config,
           verbose: options.verbose ?? false,
@@ -5102,13 +5439,47 @@ export async function main() {
       }
     )
 
-  // dev command: connect this machine to the web editor and record on demand
+  // sync command: one-shot drain of queued browser edits into the sources.
+  program
+    .command('sync')
+    .description(
+      'Pull queued browser edits from the ScreenCI editor into your test ' +
+        'sources (also runs automatically before test, export, and edit)'
+    )
+    .option('-c, --config <path>', 'path to config file')
+    .action(async (options: { config?: string }) => {
+      const result = await runQuickEditSync({
+        ...(options.config !== undefined ? { config: options.config } : {}),
+      })
+      if (result === null) {
+        logger.info(
+          'Nothing to sync: this project is not connected yet. Run ' +
+            `${pc.cyan(getSuggestedScreenciCommand('edit'))} first.`
+        )
+        return
+      }
+      if (result.handled === 0) {
+        logger.info('No queued editor edits; sources are up to date.')
+      }
+    })
+
+  // dev command: sync edits, record a preview, and print the editor link.
+  // One-shot by default; --watch keeps the machine connected as the live
+  // code-sync bridge.
   program
     .command('edit [grepPatterns...]')
     .description(
-      'Connect this machine to the ScreenCI editor and record videos on demand. ' +
-        'Positional patterns filter managed videos by title (same as --grep, ' +
-        'like `playwright test <pattern>`); multiple patterns are OR-combined.'
+      'Sync browser edits into your sources, record a fresh preview, and ' +
+        'print the web editor link. Add --watch to stay connected: records ' +
+        'on demand and applies editor changes to code live. Positional ' +
+        'patterns filter managed videos by title (same as --grep, like ' +
+        '`playwright test <pattern>`); multiple patterns are OR-combined.'
+    )
+    .option(
+      '-w, --watch',
+      'stay connected as the live bridge: watch test sources, record on ' +
+        'demand from the editor, and apply editor changes to code as they ' +
+        'happen (Ctrl-C to stop)'
     )
     .option('-c, --config <path>', 'path to config file')
     .option('-v, --verbose', 'verbose output')
@@ -5133,8 +5504,8 @@ export async function main() {
     )
     .option(
       '--no-watch',
-      'do not watch the managed test sources (and screenci.config.ts) for ' +
-        'changes that trigger a preview re-record'
+      'with --watch semantics but without the source-file watcher: stay ' +
+        'connected, but do not re-record previews on source changes'
     )
     .action(
       async (
@@ -5156,10 +5527,15 @@ export async function main() {
           grepPatterns.length > 0
             ? grepPatterns.map(escapeRegExp).join('|')
             : undefined
-        const { grep, ...rest } = options
+        const { grep, watch, ...rest } = options
         const resolvedGrep = grep ?? positionalGrep
+        // No --watch flag at all: one-shot (sync edits, record a preview,
+        // print the link, exit). --watch or --no-watch keep the session
+        // connected as before.
         await runDevCommand({
           ...rest,
+          once: watch === undefined,
+          watch: watch ?? false,
           ...(resolvedGrep !== undefined ? { grep: resolvedGrep } : {}),
         })
       }
@@ -5199,6 +5575,18 @@ export async function main() {
         }
       }
 
+      // Pull queued browser edits into the sources before running, so the
+      // test exercises what the editor shows. Best-effort and silent when
+      // the project has no credentials or the backend is unreachable.
+      if (process.env.SCREENCI_RECORDING !== 'true') {
+        await runQuickEditSync({
+          ...(parsed.configPath !== undefined
+            ? { config: parsed.configPath }
+            : {}),
+          quiet: true,
+        })
+      }
+
       await run(
         'test',
         parsed.otherArgs,
@@ -5208,6 +5596,15 @@ export async function main() {
       )
 
       if (process.env.SCREENCI_RECORDING === 'true') return
+
+      // Stamp editIds while the sources and kept recordings are known-good,
+      // so browser edits resolve to stable ids even before the first
+      // `screenci edit` session.
+      try {
+        await stampEditIdsForProject(parsed.configPath)
+      } catch (err) {
+        logger.warn('Could not stamp editIds:', err)
+      }
 
       const editCommand = getSuggestedScreenciCommand('edit')
       logger.info(
@@ -5665,9 +6062,7 @@ async function run(
 function logRecordFailureHint(): void {
   logger.info('')
   logger.info(
-    `If ${pc.cyan('screenci test')} works but ${pc.cyan(
-      'screenci record'
-    )} fails, try ${pc.cyan('screenci test --mock-record')}.`
+    `If ${pc.cyan('screenci test')} works but recording fails, try ${pc.cyan('screenci test --mock-record')}.`
   )
   logger.info(`More info: ${pc.cyan(SCREENCI_MOCK_RECORD_DOCS_URL)}`)
 }

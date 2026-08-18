@@ -89,12 +89,43 @@ describe('setUpInitSecret', () => {
     )
   })
 
-  it("returns 'ready' without verifying when a secret is already configured", async () => {
-    const fetchMock = vi.fn()
+  it("returns 'ready' without verifying when a secret is already configured, minting an editor token", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ editToken: 'edit_tok_1' }),
+      text: async () => '',
+    })
     global.fetch = fetchMock as unknown as typeof fetch
 
     const outcome = await setUpInitSecret(islandDir, {
       env: { SCREENCI_SECRET: 'already-set' },
+      pastedSecret: 'sec_init_123',
+    })
+
+    expect(outcome).toBe('ready')
+    // No whoami verification, only the one-and-done editor-token exchange.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/cli/dev/exchange-token'),
+      expect.objectContaining({ method: 'POST' })
+    )
+    const envPath = path.join(islandDir, '.env')
+    expect(readFileSync(envPath, 'utf-8')).toContain(
+      'SCREENCI_EDIT_TOKEN=edit_tok_1'
+    )
+    expect(readFileSync(envPath, 'utf-8')).not.toContain('SCREENCI_SECRET=')
+  })
+
+  it('skips the token exchange when an editor token is already configured', async () => {
+    const fetchMock = vi.fn()
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    const outcome = await setUpInitSecret(islandDir, {
+      env: {
+        SCREENCI_SECRET: 'already-set',
+        SCREENCI_EDIT_TOKEN: 'already-minted',
+      },
       pastedSecret: 'sec_init_123',
     })
 
@@ -360,26 +391,26 @@ describe('generateIslandReadme', () => {
     const readme = generateIslandReadme('Demo', 'npm')
     expect(readme).toContain('`npm test` tests')
     expect(readme).toContain('`npm test -- --ui` tests')
-    expect(readme).toContain('`npm run record` records')
+    expect(readme).toContain('`npm run edit` records the free live preview')
   })
 
   it('uses pnpm invocations for pnpm', () => {
     const readme = generateIslandReadme('Demo', 'pnpm')
     expect(readme).toContain('`pnpm test` tests')
     expect(readme).toContain('`pnpm test --ui` tests')
-    expect(readme).toContain('`pnpm record` records')
+    expect(readme).toContain('`pnpm edit` records the free live preview')
   })
 
   it('uses yarn invocations for yarn', () => {
     const readme = generateIslandReadme('Demo', 'yarn')
     expect(readme).toContain('`yarn test` tests')
     expect(readme).toContain('`yarn test --ui` tests')
-    expect(readme).toContain('`yarn record` records')
+    expect(readme).toContain('`yarn edit` records the free live preview')
   })
 
   it('notes that the first recording works without an account', () => {
     const readme = generateIslandReadme('Demo', 'npm')
-    expect(readme).toContain('before signing up, you can record once for free')
+    expect(readme).toContain('before signing up, you can preview for free')
     expect(readme).toContain('anonymously')
   })
 

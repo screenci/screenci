@@ -1,5 +1,5 @@
 /**
- * Source-file watcher behind `screenci dev`: watches the test sources backing
+ * Source-file watcher behind `screenci edit`: watches the test sources backing
  * the session's managed videos (plus screenci.config.ts) and raises a
  * machine-local preview re-record when one of them changes.
  *

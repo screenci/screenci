@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { hostname } from 'os'
 import type { ChildProcess } from 'child_process'
 import { existsSync, readFileSync, realpathSync, rmSync } from 'fs'
 import { appendFile, copyFile, mkdir, readFile, writeFile } from 'fs/promises'
@@ -10,12 +11,15 @@ import ora from 'ora'
 import pc from 'picocolors'
 import { logger } from './logger.js'
 import {
+  getDevBackendUrl,
   getScreenCISecretsUrl,
   looksLikeScreenCISecret,
+  persistScreenCIEditToken,
   persistScreenCISecret,
   verifyScreenCISecret,
 } from './linkSession.js'
 import { SCREENCI_TERMS_URL } from './anonSession.js'
+import { exchangeEditToken } from './editTokenExchange.js'
 
 const PLAYWRIGHT_TEST_VERSION = '^1.59.0'
 const PLAYWRIGHT_CLI_VERSION = 'latest'
@@ -638,32 +642,36 @@ export function generateIslandTsconfig(withReact = false): string {
 
 /**
  * Resolve the package-manager-specific command a user types to run the island's
- * own `test` / `record` scripts. npm needs `run` for non-`test` scripts and `--`
- * to forward flags; pnpm and yarn forward both implicitly.
+ * own `test` / `edit` / `export` scripts. npm needs `run` for non-`test`
+ * scripts and `--` to forward flags; pnpm and yarn forward both implicitly.
  */
 function getIslandScriptInvocations(packageManager: PackageManager): {
   test: string
   testUi: string
-  record: string
+  edit: string
+  export: string
 } {
   if (packageManager === 'pnpm') {
     return {
       test: 'pnpm test',
       testUi: 'pnpm test --ui',
-      record: 'pnpm record',
+      edit: 'pnpm edit',
+      export: 'pnpm export',
     }
   }
   if (packageManager === 'yarn') {
     return {
       test: 'yarn test',
       testUi: 'yarn test --ui',
-      record: 'yarn record',
+      edit: 'yarn edit',
+      export: 'yarn export',
     }
   }
   return {
     test: 'npm test',
     testUi: 'npm test -- --ui',
-    record: 'npm run record',
+    edit: 'npm run edit',
+    export: 'npm run export',
   }
 }
 
@@ -681,7 +689,8 @@ for configuration.
 
 - \`${scripts.test}\` tests your video scripts fast locally.
 - \`${scripts.testUi}\` tests your video scripts in interactive UI mode.
-- \`${scripts.record}\` records and pauses for first-time setup if needed.
+- \`${scripts.edit}\` records the free live preview and prints the web editor link.
+- \`${scripts.export}\` records, renders, and downloads the finished videos.
 
 ## Formatting
 
@@ -690,9 +699,9 @@ Edit that file to change the style, or delete it to disable formatting.
 
 ## Recording without an account
 
-Note: before signing up, you can record once for free. Just run
-\`${scripts.record}\` with no SCREENCI_SECRET and your first video uploads
-anonymously. Sign up to claim it and keep recording.
+Note: before signing up, you can preview for free. Just run
+\`${scripts.edit}\` with no SCREENCI_SECRET and your video uploads
+anonymously. Sign up to claim it and keep editing.
 
 ## Learn more
 
@@ -1177,12 +1186,34 @@ export async function setUpInitSecret(
     pastedSecret?: string
     fetchImpl?: typeof fetch
     backendUrl?: string
+    machineName?: string
   } = {}
 ): Promise<InitSecretOutcome> {
   const env = options.env ?? process.env
-  if (env.SCREENCI_SECRET) return 'ready'
-
   const envPath = resolve(islandDir, '.env')
+
+  // One-and-done connect: with a secret on hand, also mint this machine's
+  // personal editor token now so `screenci edit` never has to ask for one.
+  // Best-effort: `edit` retries the exchange itself when this fails.
+  const mintEditToken = async (secret: string): Promise<void> => {
+    if (env.SCREENCI_EDIT_TOKEN) return
+    const exchanged = await exchangeEditToken({
+      apiUrl: options.backendUrl ?? getDevBackendUrl(),
+      secret,
+      machineName: options.machineName ?? hostname(),
+      ...(options.fetchImpl ? { fetchFn: options.fetchImpl } : {}),
+    })
+    if (exchanged.ok) {
+      await persistScreenCIEditToken(envPath, exchanged.editToken)
+      logger.info('Minted a personal editor token for this machine.')
+    }
+  }
+
+  if (env.SCREENCI_SECRET) {
+    await mintEditToken(env.SCREENCI_SECRET)
+    return 'ready'
+  }
+
   if (!options.pastedSecret) return 'manual'
 
   // Only include keys that are set: `exactOptionalPropertyTypes` forbids passing
@@ -1210,6 +1241,7 @@ export async function setUpInitSecret(
   // The generated config sets `envFile: '.env'`, so this matches what
   // `screenci export` resolves later.
   await persistScreenCISecret(envPath, options.pastedSecret)
+  await mintEditToken(options.pastedSecret)
   return 'ready'
 }
 

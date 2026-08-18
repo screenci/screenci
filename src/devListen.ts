@@ -1,5 +1,5 @@
 /**
- * Poll loop behind `screenci dev`: registers this machine as a dev listener,
+ * Poll loop behind `screenci edit`: registers this machine as a dev listener,
  * heartbeats via short polling, runs records when the web editor asks for
  * them, and applies editor codegen requests to the test sources. All side
  * effects (fetch, sleeping, the record run, the codegen apply) are injected
@@ -36,7 +36,7 @@ export const DEV_FAST_POLL_WINDOW_MS = 60_000
 /**
  * A running record younger than this is killed and replaced when a new
  * trigger arrives; an older one finishes first and the new trigger queues
- * (queue depth 1, latest wins). Configurable via `screenci dev
+ * (queue depth 1, latest wins). Configurable via `screenci edit
  * --record-kill-window <seconds>`.
  */
 export const DEV_RECORD_KILL_WINDOW_MS = 10_000
@@ -352,6 +352,46 @@ async function handleCodegenRequest(
       'failed',
       message
     )
+  }
+}
+
+export const ONE_SHOT_TRIGGER_MESSAGE =
+  'This machine connected briefly to sync edits. Start `screenci edit --watch` for live record requests.'
+
+/**
+ * Drains every queued (deferred) codegen request for this listener in one
+ * pass: polls, applies each returned request, and repeats until a poll comes
+ * back empty. Used by one-shot commands (`edit` without --watch, `sync`, and
+ * the pre-run sync in `test`/`export`) so browser edits reach the sources at
+ * every CLI touchpoint without a long-running bridge. A record trigger
+ * claimed during the drain is failed with a pointer to `edit --watch`, since
+ * nothing will be around to run it.
+ */
+export async function drainDevCodegenRequests(
+  config: DevListenConfig,
+  deps: DevListenDeps,
+  listenerId: string
+): Promise<{ handled: number }> {
+  let handled = 0
+  for (;;) {
+    const result = await pollDevListener(config, deps, listenerId)
+    for (const request of result.codegenRequests) {
+      await handleCodegenRequest(config, deps, listenerId, request)
+      handled++
+    }
+    if (result.trigger !== null) {
+      await reportDevTrigger(
+        config,
+        deps,
+        listenerId,
+        result.trigger.triggerId,
+        'failed',
+        ONE_SHOT_TRIGGER_MESSAGE
+      ).catch(() => {})
+    }
+    if (result.codegenRequests.length === 0 && result.trigger === null) {
+      return { handled }
+    }
   }
 }
 

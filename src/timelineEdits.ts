@@ -8,7 +8,7 @@
  * sleeps.
  *
  * Code is the single source of truth: edits arrive over the dev channel as
- * codegen requests (`screenci dev`, see applyCodegen.ts) and are written
+ * codegen requests (`screenci edit`, see applyCodegen.ts) and are written
  * straight into the .screenci.ts sources. Nothing is applied at record time;
  * a recording always runs purely from code values.
  *

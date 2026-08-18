@@ -64,7 +64,7 @@ export type Quality = '720p' | '1080p' | '1440p' | '2160p'
 export type FPS = 24 | 30 | 60
 
 /**
- * Upload policy for `screenci record`.
+ * Upload policy for `screenci export`.
  *
  * - `'passed-only'` uploads completed recordings even if other videos failed.
  * - `'all-or-nothing'` skips all uploads when any video fails.
@@ -1353,7 +1353,7 @@ export type ScreenCIPage = Omit<
   keyboard: ScreenCIKeyboard
   /**
    * Waits in the recording timeline. Plain `screenci test` collapses this to
-   * 0ms so authoring runs stay fast; `screenci record` and
+   * 0ms so authoring runs stay fast; `screenci export` and
    * `screenci test --mock-record` keep the requested duration.
    *
    * Use Playwright locator/action waits for application readiness instead of
@@ -1457,7 +1457,7 @@ export type ScreenCIConfig = Omit<
    */
   enableCaptureAudio?: boolean
   /**
-   * Options that only affect the `screenci record` command.
+   * Options that only affect the `screenci export` command.
    */
   record?: {
     /**

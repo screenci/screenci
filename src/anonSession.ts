@@ -97,6 +97,18 @@ export async function deleteAnonSessionFile(
 }
 
 /**
+ * Reads the locally stored anon session token without ever creating one.
+ * Used by side-effect-free flows (the pre-run edit sync in test/export) that
+ * must not start a trial on their own.
+ */
+export async function peekAnonToken(
+  screenciDir: string
+): Promise<string | null> {
+  const existing = await readAnonSessionFile(screenciDir)
+  return existing?.token ?? null
+}
+
+/**
  * Reads the locally stored anon session token, minting and persisting a new
  * one on first use in this project directory. Reused across every subsequent
  * `record` so multiple videos land under the same anonymous trial.

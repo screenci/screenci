@@ -128,18 +128,17 @@ video, and the edits render immediately while they wait to be written into the
 `.screenci.ts` source. The sidebar's **pending** list shows how many edits are
 "not yet in code" and who queued each one.
 
-To flush the queue into your sources:
+To flush the queue into your sources, run any `screenci` command in the
+project: `sync`, `test`, `edit`, and `export` all drain it on start. On
+connect, the CLI writes every queued edit into the source (logging "queued by
+<name>" for edits a teammate made) and the pending list drains. No token
+setup is needed: with a `SCREENCI_SECRET` configured, the CLI mints this
+machine's personal editor token automatically (it stays listed and revocable
+on the Secrets page).
 
-1. Create a personal editor token on the Secrets page and add it to your project
-   env file as `SCREENCI_EDIT_TOKEN=<token>`.
-2. Run `screenci edit` in your project.
-3. On connect, the CLI writes every queued edit into the source (logging
-   "queued by <name>" for edits a teammate made) and the pending list drains.
-
-On an anonymous trial (no account), no token setup is needed: `screenci edit`
-connects with the trial session itself. Anonymous editing is live-only: the
-editor is editable while the trial's machine is connected and read-only
-otherwise (a trial has no org members to own a queued edit).
+On an anonymous trial (no account), `screenci edit` connects with the trial
+session itself, and the trial's editor queues edits the same way while no
+machine is connected.
 
 If an edit can no longer be applied (its target was renamed or removed in code,
 or the source drifted), it stays in the list as failed with **Retry** and

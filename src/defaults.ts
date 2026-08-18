@@ -140,7 +140,7 @@ export const DEFAULT_FPS: FPS = 60
 export const DEFAULT_RECORDING_DIR: string = './recordings'
 
 /**
- * Default upload policy for `screenci record`
+ * Default upload policy for `screenci export`
  */
 export const DEFAULT_RECORD_UPLOAD_POLICY: RecordUploadPolicy = 'passed-only'
 

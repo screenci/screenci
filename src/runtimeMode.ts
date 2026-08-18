@@ -9,7 +9,7 @@ export const SCREENCI_DEBUG_TIMING_ENV = 'SCREENCI_DEBUG_TIMING'
 export const SCREENCI_UPLOAD_EXISTING_ENV = 'UPLOAD_EXISTING'
 
 /**
- * When set, `screenci record` skips the Playwright recording run entirely and
+ * When set, `screenci export` skips the Playwright recording run entirely and
  * re-uploads whatever is already on disk under `.screenci`. Useful for resending
  * the most recent local recordings when only the upload failed, without paying
  * to re-record. Internal/debug-only: not surfaced as a documented flag.
@@ -77,7 +77,7 @@ export function resolveRecordingTimingDuration(
 }
 
 /**
- * Parse the comma-separated language filter set by `screenci record
+ * Parse the comma-separated language filter set by `screenci export
  * --languages fi,en`. Returns `null` when unset or empty (meaning "record every
  * declared language"); otherwise the trimmed, de-duplicated list in the order
  * given. The per-language builder intersects this with each video's declared

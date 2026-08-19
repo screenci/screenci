@@ -13,8 +13,6 @@ import {
   formatAnonPostRecordNotice,
   formatAnonTermsNotice,
   getOrCreateAnonToken,
-  readAnonSessionRecordUrl,
-  saveAnonSessionRecordUrl,
   secretCredential,
 } from './anonSession.js'
 
@@ -44,20 +42,6 @@ describe('getOrCreateAnonToken', () => {
     expect(second).toBe(first)
   })
 
-  it('stores the successful anonymous recording URL alongside the token', async () => {
-    const token = await getOrCreateAnonToken(screenciDir)
-    const recordUrl = 'https://app.example.com/record/record_123'
-
-    await saveAnonSessionRecordUrl(screenciDir, token, recordUrl)
-
-    expect(await readAnonSessionRecordUrl(screenciDir)).toBe(recordUrl)
-    expect(
-      JSON.parse(
-        readFileSync(path.join(screenciDir, 'anon-session.json'), 'utf-8')
-      )
-    ).toEqual({ token, recordUrl })
-  })
-
   it('deleteAnonSessionFile removes the persisted token so a new one is minted', async () => {
     const first = await getOrCreateAnonToken(screenciDir)
     await deleteAnonSessionFile(screenciDir)
@@ -71,7 +55,7 @@ describe('getOrCreateAnonToken', () => {
 })
 
 describe('checkAnonSessionStatus', () => {
-  it('returns pending with the full allowance when the server reports pending with no usage', async () => {
+  it('returns pending when the server reports pending', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       json: async () => ({ status: 'pending' }),
     })
@@ -79,7 +63,7 @@ describe('checkAnonSessionStatus', () => {
       fetchImpl: fetchImpl as unknown as typeof fetch,
       backendUrl: 'https://api.example.com',
     })
-    expect(result).toEqual({ status: 'pending', used: false, remaining: 3 })
+    expect(result).toEqual({ status: 'pending' })
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://api.example.com/cli/anon-session-status',
       expect.objectContaining({
@@ -89,24 +73,14 @@ describe('checkAnonSessionStatus', () => {
     )
   })
 
-  it('carries the remaining recording count the server reports', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue({
-      json: async () => ({ status: 'pending', used: false, remaining: 1 }),
-    })
-    const result = await checkAnonSessionStatus('token-a', {
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-    })
-    expect(result).toEqual({ status: 'pending', used: false, remaining: 1 })
-  })
-
-  it('carries used:true (0 remaining) when the pending session spent its trial', async () => {
+  it('ignores the legacy used/remaining wire fields on a pending session', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       json: async () => ({ status: 'pending', used: true, remaining: 0 }),
     })
     const result = await checkAnonSessionStatus('token-a', {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })
-    expect(result).toEqual({ status: 'pending', used: true, remaining: 0 })
+    expect(result).toEqual({ status: 'pending' })
   })
 
   it('returns claimed with the secret when the server reports claimed', async () => {
@@ -144,7 +118,7 @@ describe('checkAnonSessionStatus', () => {
     const result = await checkAnonSessionStatus('token-a', {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })
-    expect(result).toEqual({ status: 'pending', used: false, remaining: 3 })
+    expect(result).toEqual({ status: 'pending' })
   })
 
   it('returns expired when the server reports expired', async () => {
@@ -167,12 +141,12 @@ describe('checkAnonSessionStatus', () => {
     expect(result).toEqual({ status: 'not_found' })
   })
 
-  it('defaults to pending (unused) on a network failure so a transient outage does not block the first upload', async () => {
+  it('defaults to pending on a network failure so a transient outage does not block the first upload', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error('network down'))
     const result = await checkAnonSessionStatus('token-a', {
       fetchImpl: fetchImpl as unknown as typeof fetch,
     })
-    expect(result).toEqual({ status: 'pending', used: false, remaining: 3 })
+    expect(result).toEqual({ status: 'pending' })
   })
 })
 
@@ -183,20 +157,10 @@ describe('evaluateAnonRecordingGate', () => {
     })
   })
 
-  it('allows a pending session that has not spent its trial', () => {
-    expect(
-      evaluateAnonRecordingGate({
-        status: 'pending',
-        used: false,
-        remaining: 2,
-      })
-    ).toEqual({ allowed: true })
-  })
-
-  it('blocks a pending session that has spent all its free trial recordings', () => {
-    expect(
-      evaluateAnonRecordingGate({ status: 'pending', used: true, remaining: 0 })
-    ).toEqual({ allowed: false, reason: 'used' })
+  it('always allows a pending session (anonymous previews are uncapped)', () => {
+    expect(evaluateAnonRecordingGate({ status: 'pending' })).toEqual({
+      allowed: true,
+    })
   })
 
   it('blocks an expired session rather than silently starting a new trial', () => {

@@ -132,8 +132,6 @@ import {
   formatAnonTermsNotice,
   getOrCreateAnonToken,
   peekAnonToken,
-  readAnonSessionRecordUrl,
-  saveAnonSessionRecordUrl,
   secretCredential,
 } from './src/anonSession.js'
 import {
@@ -5070,13 +5068,12 @@ export async function resolveUploadCredential(
 }
 
 /**
- * Pre-recording gate for anonymous trials. Runs before Playwright so a spent
- * or expired trial never wastes a full recording only to be refused at upload.
+ * Pre-recording gate for anonymous trials. Runs before Playwright so an
+ * expired trial never wastes a full recording only to be refused at upload.
  * With a real SCREENCI_SECRET present this is a no-op. Otherwise it checks the
- * local anon token's server status and, when the one free trial is already
- * used or the session has expired, prints a sign-up message and exits without
- * recording. A first-run, pending-unused, or claimed session proceeds (the
- * upload path handles the claimed self-upgrade).
+ * local anon token's server status and, when the session has expired, prints a
+ * sign-up message and exits without recording. A first-run, pending, or
+ * claimed session proceeds (the upload path handles the claimed self-upgrade).
  */
 export async function ensureAnonRecordingAllowedOrExit(
   screenciDir: string,
@@ -5099,17 +5096,8 @@ export async function ensureAnonRecordingAllowedOrExit(
     return
   }
 
-  const intro =
-    gate.reason === 'expired'
-      ? 'Your free ScreenCI trial has expired.'
-      : "You've used all your free ScreenCI trial recordings."
-  const previousRecordUrl =
-    gate.reason === 'used' ? await readAnonSessionRecordUrl(screenciDir) : null
   logger.error(
-    `${intro}\n` +
-      (previousRecordUrl
-        ? `Previous recording: ${pc.cyan(previousRecordUrl)}\n`
-        : '') +
+    'Your free ScreenCI trial has expired.\n' +
       `Sign up to keep recording and export: ${pc.cyan(appUrl)}\n` +
       'After signing up, re-run this command in the same folder and it links automatically.'
   )
@@ -5314,17 +5302,6 @@ async function uploadRecordedVideosForConfig(
         logger.info(pc.cyan(projectUrl))
       }
       if (usedAnonCredential && resultUrl !== null) {
-        try {
-          await saveAnonSessionRecordUrl(
-            screenciDir,
-            credential.value,
-            resultUrl
-          )
-        } catch (err) {
-          logger.warn(
-            `Failed to remember anonymous recording URL: ${err instanceof Error ? err.message : String(err)}`
-          )
-        }
         logger.info(formatAnonPostRecordNotice())
       }
       if (notices.length > 0) {

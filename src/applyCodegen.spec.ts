@@ -511,3 +511,67 @@ describe('applyCodegenRequest: duplicate editId self-heal', () => {
     ).rejects.toThrow(/\[ambiguous-edit-id\]/)
   })
 })
+
+describe('applyCodegenRequest: onSourcesRewritten', () => {
+  const OPTIONS_EDIT = JSON.stringify({
+    type: 'optionsEdit',
+    id: 'options|renderOptions',
+    method: 'renderOptions',
+    values: { fps: 60 },
+  })
+
+  async function applyWithHook(params: {
+    editJson: string
+    requiresRecord: boolean
+    source?: string
+  }) {
+    const rewritten: string[][] = []
+    await applyCodegenRequest(
+      {
+        requestId: 'req1',
+        videoName: 'Demo',
+        editId: 'edit1',
+        editJson: params.editJson,
+        requiresRecord: params.requiresRecord,
+      },
+      {
+        ts,
+        readFile: (path) => (path === FILE ? (params.source ?? SOURCE) : null),
+        writeFile: () => {},
+        editableSnapshot: SNAPSHOT,
+        onSourcesRewritten: async (paths) => {
+          rewritten.push(paths)
+        },
+      }
+    )
+    return rewritten
+  }
+
+  it('reports the written paths for a render-time edit', async () => {
+    const rewritten = await applyWithHook({
+      editJson: OPTIONS_EDIT,
+      requiresRecord: false,
+    })
+    expect(rewritten).toEqual([[FILE]])
+  })
+
+  it('is not called for a record-requiring edit', async () => {
+    const rewritten = await applyWithHook({
+      editJson: OPTIONS_EDIT,
+      requiresRecord: true,
+    })
+    expect(rewritten).toEqual([])
+  })
+
+  it('is not called when the edit changes nothing', async () => {
+    const rewritten = await applyWithHook({
+      editJson: OPTIONS_EDIT,
+      requiresRecord: false,
+      source: SOURCE.replace(
+        "video('Demo'",
+        "video.renderOptions({ fps: 60 })('Demo'"
+      ),
+    })
+    expect(rewritten).toEqual([])
+  })
+})

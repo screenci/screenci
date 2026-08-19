@@ -303,6 +303,29 @@ export type DuplicateEditIdFixDeps = {
 }
 
 /**
+ * Cheap TypeScript-free pre-check: does any editId string literal appear at
+ * two or more places across the given files? Intentionally over-matches (a
+ * slug repeated inside a comment counts), because it only gates whether the
+ * AST-based fix planner, and the warning when TypeScript is missing, need to
+ * run at all. A `false` result is definitive: no slug repeats textually, so
+ * no call-site collision can exist either.
+ */
+export function mayHaveDuplicateEditIds(
+  files: readonly DuplicateEditIdFile[]
+): boolean {
+  const pattern = /\beditId\s*:\s*(['"`])((?:(?!\1)[^\\\n])+)\1/g
+  const seen = new Set<string>()
+  for (const file of files) {
+    for (const match of file.text.matchAll(pattern)) {
+      const slug = match[2]!
+      if (seen.has(slug)) return true
+      seen.add(slug)
+    }
+  }
+  return false
+}
+
+/**
  * Resolve editId collisions across the given source files: a slug used at two
  * or more distinct call sites silently merges those actions into one runtime
  * identity (the second becomes a phantom `slug#1` loop-repeat) and makes the

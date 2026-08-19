@@ -6,6 +6,7 @@ import {
   hashSourceFile,
   isRecordingFresh,
   readKeptRecordingData,
+  rebaselineKeptSourceHashes,
   LAST_DATA_FILE,
 } from './recordingFreshness.js'
 import type { RecordingData } from './recordingData.js'
@@ -178,5 +179,149 @@ describe('readKeptRecordingData', () => {
       throw new Error('ENOENT')
     })
     expect(data).toBeNull()
+  })
+})
+
+describe('rebaselineKeptSourceHashes', () => {
+  function makeFiles(initial: Record<string, string>): {
+    files: Record<string, string>
+    readFileFn: (path: string) => Promise<Buffer>
+    writeFileFn: (path: string, content: string) => Promise<void>
+    written: string[]
+  } {
+    const files = { ...initial }
+    const written: string[] = []
+    return {
+      files,
+      written,
+      readFileFn: async (path) => {
+        const content = files[path]
+        if (content === undefined) throw new Error('ENOENT')
+        return Buffer.from(content)
+      },
+      writeFileFn: async (path, content) => {
+        files[path] = content
+        written.push(path)
+      },
+    }
+  }
+
+  function dataFor(videoName: string, sourceFilePath: string): string {
+    return JSON.stringify(
+      makeData({
+        metadata: {
+          videoName,
+          screenciVersion: '0.0.0',
+          sourceHash: 'stale-hash',
+          sourceFilePath,
+        },
+      })
+    )
+  }
+
+  it('rewrites the stored hash of recordings whose source was rewritten', async () => {
+    const io = makeFiles({
+      '/s/.screenci/rec-a/data.json': dataFor('Login', '/p/login.screenci.ts'),
+      '/p/login.screenci.ts': 'new source',
+    })
+    const names = await rebaselineKeptSourceHashes(
+      {
+        screenciDir: '/s/.screenci',
+        changedSourcePaths: ['/p/login.screenci.ts'],
+      },
+      {
+        listRecordingDirs: () => ['/s/.screenci/rec-a'],
+        readFileFn: io.readFileFn,
+        writeFileFn: io.writeFileFn,
+      }
+    )
+    expect(names).toEqual(['Login'])
+    const updated = JSON.parse(
+      io.files['/s/.screenci/rec-a/data.json']!
+    ) as RecordingData
+    expect(updated.metadata?.sourceHash).toBe(computeSourceHash('new source'))
+    expect(isRecordingFresh(updated, computeSourceHash('new source'))).toBe(
+      true
+    )
+  })
+
+  it('re-baselines every recording sharing the rewritten source file', async () => {
+    // A multi-video source file plus a per-language sibling directory.
+    const io = makeFiles({
+      '/s/.screenci/rec-a/data.json': dataFor('Login', '/p/flows.screenci.ts'),
+      '/s/.screenci/rec-b/data.json': dataFor('Signup', '/p/flows.screenci.ts'),
+      [`/s/.screenci/rec-a-fi/${LAST_DATA_FILE}`]: dataFor(
+        'Login',
+        '/p/flows.screenci.ts'
+      ),
+      '/s/.screenci/rec-c/data.json': dataFor('Other', '/p/other.screenci.ts'),
+      '/p/flows.screenci.ts': 'v2',
+    })
+    const names = await rebaselineKeptSourceHashes(
+      {
+        screenciDir: '/s/.screenci',
+        changedSourcePaths: ['/p/flows.screenci.ts'],
+      },
+      {
+        listRecordingDirs: () => [
+          '/s/.screenci/rec-a',
+          '/s/.screenci/rec-b',
+          '/s/.screenci/rec-a-fi',
+          '/s/.screenci/rec-c',
+        ],
+        readFileFn: io.readFileFn,
+        writeFileFn: io.writeFileFn,
+      }
+    )
+    expect(names).toEqual(['Login', 'Signup'])
+    // The per-language dir's last-data.json was rewritten in place.
+    expect(io.written).toContain(`/s/.screenci/rec-a-fi/${LAST_DATA_FILE}`)
+    // The unrelated recording was left alone.
+    expect(io.written).not.toContain('/s/.screenci/rec-c/data.json')
+    const updatedFi = JSON.parse(
+      io.files[`/s/.screenci/rec-a-fi/${LAST_DATA_FILE}`]!
+    ) as RecordingData
+    expect(updatedFi.metadata?.sourceHash).toBe(computeSourceHash('v2'))
+  })
+
+  it('skips unreadable data and never throws on a write failure', async () => {
+    const io = makeFiles({
+      '/s/.screenci/broken/data.json': 'not json',
+      '/s/.screenci/rec-a/data.json': dataFor('Login', '/p/login.screenci.ts'),
+      '/p/login.screenci.ts': 'v2',
+    })
+    const names = await rebaselineKeptSourceHashes(
+      {
+        screenciDir: '/s/.screenci',
+        changedSourcePaths: ['/p/login.screenci.ts'],
+      },
+      {
+        listRecordingDirs: () => ['/s/.screenci/broken', '/s/.screenci/rec-a'],
+        readFileFn: io.readFileFn,
+        writeFileFn: async () => {
+          throw new Error('EACCES')
+        },
+      }
+    )
+    expect(names).toEqual([])
+  })
+
+  it('does not touch recordings whose source cannot be hashed', async () => {
+    const io = makeFiles({
+      '/s/.screenci/rec-a/data.json': dataFor('Login', '/p/gone.screenci.ts'),
+    })
+    const names = await rebaselineKeptSourceHashes(
+      {
+        screenciDir: '/s/.screenci',
+        changedSourcePaths: ['/p/gone.screenci.ts'],
+      },
+      {
+        listRecordingDirs: () => ['/s/.screenci/rec-a'],
+        readFileFn: io.readFileFn,
+        writeFileFn: io.writeFileFn,
+      }
+    )
+    expect(names).toEqual([])
+    expect(io.written).toEqual([])
   })
 })

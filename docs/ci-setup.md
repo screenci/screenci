@@ -26,10 +26,9 @@ Headless Shell, and runs `screenci export`. It mirrors
 [Playwright CI](https://playwright.dev/docs/ci). Use `push` to keep videos current
 automatically, or `workflow_dispatch` for a manual approval step before exporting.
 
-`export` re-records only the videos whose sources changed since the last
-upload, dispatches renders for the rest without re-recording them, waits for
-the renders to finish, and downloads the outputs. Export minutes are spent on
-every video that renders in the run.
+`export` pulls any queued editor edits into the sources, re-records every
+requested video, waits for the renders to finish, and downloads the outputs.
+Export minutes are spent on every video that renders in the run.
 
 ## Required secret
 

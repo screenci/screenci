@@ -54,6 +54,15 @@ export type ApplyCodegenDeps = {
    * `CodeSyncDeps.listRecordingFiles`.
    */
   listRecordingFiles?: () => string[]
+  /**
+   * Optional hook invoked after the CLI wrote source files for an edit that
+   * applies at render time (`requiresRecord: false`), with the paths actually
+   * rewritten. Used to re-baseline kept recordings' source hashes so applying
+   * a web edit never marks recordings stale (and never causes a re-record).
+   * Not invoked for `requiresRecord: true` edits or for the duplicate-editId
+   * self-heal writes: those are real semantic changes that need fresh footage.
+   */
+  onSourcesRewritten?: (changedPaths: string[]) => Promise<void>
 }
 
 /**
@@ -182,6 +191,7 @@ export async function applyCodegenRequest(
     )
   }
 
+  const writtenPaths: string[] = []
   for (const file of plan.files) {
     if (file.after === file.before) continue
     const content =
@@ -189,6 +199,14 @@ export async function applyCodegenRequest(
         ? await deps.formatFile(file.path, file.after)
         : file.after
     deps.writeFile(file.path, content)
+    writtenPaths.push(file.path)
+  }
+  if (
+    !request.requiresRecord &&
+    writtenPaths.length > 0 &&
+    deps.onSourcesRewritten !== undefined
+  ) {
+    await deps.onSourcesRewritten(writtenPaths)
   }
   return { outcome: 'applied' }
 }

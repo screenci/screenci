@@ -1,6 +1,7 @@
 import { createHash } from 'crypto'
-import { readFile } from 'fs/promises'
-import { join } from 'path'
+import { existsSync, readdirSync, statSync } from 'fs'
+import { readFile, writeFile } from 'fs/promises'
+import { join, resolve } from 'path'
 
 import type { RecordingData, RecordingEvent } from './recordingData.js'
 import type { EditableMeta } from './editableDescriptor.js'
@@ -102,4 +103,98 @@ export function isRecordingFresh(
   if (storedHash === undefined || currentSourceHash === undefined) return false
   if (storedHash !== currentSourceHash) return false
   return allEventsHaveEditIds(data)
+}
+
+export type RebaselineDeps = {
+  /** Lists recording directories under the `.screenci` directory. */
+  listRecordingDirs: (screenciDir: string) => string[]
+  readFileFn: ReadFileFn
+  writeFileFn: (path: string, content: string) => Promise<void>
+}
+
+function defaultListRecordingDirs(screenciDir: string): string[] {
+  if (!existsSync(screenciDir)) return []
+  return readdirSync(screenciDir)
+    .map((entry) => resolve(screenciDir, entry))
+    .filter(
+      (dir) => statSync(dir, { throwIfNoEntry: false })?.isDirectory() === true
+    )
+}
+
+/**
+ * Re-baselines kept recordings after the CLI itself rewrote their test
+ * sources for an edit that applies at render time (`requiresRecord: false`):
+ * the recorded footage is still valid for the new source bytes, so the stored
+ * `metadata.sourceHash` is updated to the current file hash and the recording
+ * stays fresh (no re-record on the next preview or export).
+ *
+ * Every recording directory is visited (per-language recordings share a video
+ * name but each keeps its own data file). A directory is re-baselined when
+ * its `sourceFilePath` matches one of `changedSourcePaths`; matching by
+ * source path re-baselines every video declared in a rewritten multi-video
+ * file. The same file that was read (`data.json` or `last-data.json`) is
+ * rewritten. Best-effort: unreadable or unparsable files are skipped and a
+ * write failure never throws.
+ *
+ * Returns the video names that were re-baselined.
+ */
+export async function rebaselineKeptSourceHashes(
+  params: {
+    screenciDir: string
+    changedSourcePaths: readonly string[]
+  },
+  deps?: Partial<RebaselineDeps>
+): Promise<string[]> {
+  const listRecordingDirs = deps?.listRecordingDirs ?? defaultListRecordingDirs
+  const readFileFn = deps?.readFileFn ?? ((p: string) => readFile(p))
+  const writeFileFn =
+    deps?.writeFileFn ??
+    (async (p: string, content: string) => {
+      await writeFile(p, content)
+    })
+
+  const changed = new Set(params.changedSourcePaths.map((p) => resolve(p)))
+  const rebaselined: string[] = []
+  for (const dir of listRecordingDirs(params.screenciDir)) {
+    for (const name of ['data.json', LAST_DATA_FILE]) {
+      const filePath = join(dir, name)
+      let data: RecordingData
+      try {
+        data = JSON.parse(
+          (await readFileFn(filePath)).toString()
+        ) as RecordingData
+      } catch {
+        // Missing or unparsable: try the next candidate file.
+        continue
+      }
+      const sourceFilePath = data.metadata?.sourceFilePath
+      if (
+        sourceFilePath !== undefined &&
+        changed.has(resolve(sourceFilePath))
+      ) {
+        const currentHash = await hashSourceFile(sourceFilePath, readFileFn)
+        if (
+          currentHash !== undefined &&
+          data.metadata !== undefined &&
+          data.metadata.sourceHash !== currentHash
+        ) {
+          data.metadata.sourceHash = currentHash
+          try {
+            await writeFileFn(filePath, JSON.stringify(data, null, 2))
+            const videoName = data.metadata.videoName
+            if (videoName !== undefined && !rebaselined.includes(videoName)) {
+              rebaselined.push(videoName)
+            }
+          } catch {
+            // Best-effort: a failed rewrite only means the recording stays
+            // stale and re-records later; never fail the apply.
+          }
+        }
+      }
+      // Only the first readable data file per directory counts, mirroring
+      // readKeptRecordingData's data.json-then-last-data.json fallback.
+      break
+    }
+  }
+  return rebaselined
 }

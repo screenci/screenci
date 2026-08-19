@@ -92,14 +92,13 @@ import { entriesFromRecordingData } from './src/editableSnapshot.js'
 import type { EditableSnapshotEntry } from './src/editableSnapshot.js'
 import {
   LAST_DATA_FILE,
-  hashSourceFile,
   readKeptRecordingData,
+  rebaselineKeptSourceHashes,
 } from './src/recordingFreshness.js'
 import type { RecordingData as KeptRecordingData } from './src/recordingData.js'
 import {
   downloadExportOutputs,
   exportExitCode,
-  partitionExportVideos,
   pollExportRenders,
   type ExportInfoResponse,
   type ExportPollTarget,
@@ -109,6 +108,7 @@ import {
 import { loadTypescript } from './src/codemod.js'
 import {
   AUTO_EDIT_ID_STAMPING,
+  mayHaveDuplicateEditIds,
   planDuplicateEditIdFixes,
   planEditIdStamps,
   readEditIdCounters,
@@ -492,13 +492,6 @@ async function resolveDuplicateEditIdsInSources(
     onFileWritten?: (path: string) => void
   }
 ): Promise<number> {
-  const ts = loadTypescript(args.projectDir)
-  if (ts === null) {
-    args.warn(
-      'TypeScript is not available; duplicate editIds cannot be resolved.'
-    )
-    return 0
-  }
   const files: Array<{ path: string; text: string }> = []
   for (const path of new Set(sourcePaths)) {
     try {
@@ -508,6 +501,17 @@ async function resolveDuplicateEditIdsInSources(
     }
   }
   if (files.length === 0) return 0
+  // Cheap textual pre-check so a missing TypeScript only warns when there is
+  // actually something to resolve.
+  if (!mayHaveDuplicateEditIds(files)) return 0
+
+  const ts = loadTypescript(args.projectDir)
+  if (ts === null) {
+    args.warn(
+      'Possible duplicate editIds found, but TypeScript is not available to resolve them. Install typescript in your project to enable automatic resolution.'
+    )
+    return 0
+  }
 
   const plan = planDuplicateEditIdFixes(
     files,
@@ -3410,17 +3414,16 @@ type ExportCommandOptions = {
   languages: string | undefined
   grep: string | undefined
   outputDir: string
-  force: boolean
 }
 
 /**
  * `screenci export`: produce finished videos and download them.
  *
- * Records only stale videos (sources changed since the last upload) with the
- * export flag set, dispatches backend renders for fresh ones without a local
- * re-record, polls until every requested render is terminal, and downloads
- * the outputs into the output directory. The CI one-shot: exit code 0 only
- * when every requested video finished and downloaded.
+ * Re-records every requested video with the export flag set (sources can
+ * carry changes the freshness hash does not see, and export is the moment to
+ * capture them), polls until every requested render is terminal, and
+ * downloads the outputs into the output directory. The CI one-shot: exit
+ * code 0 only when every requested video finished and downloaded.
  */
 async function runExportCommand(options: ExportCommandOptions): Promise<void> {
   const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.configPath)
@@ -3600,89 +3603,25 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
     return
   }
 
-  // Partition: fresh videos render server-side from their last upload; stale
-  // ones (or ones the server does not know) re-record first.
-  const kept = await readKeptRecordingsByVideoName(screenciDir)
-  const lastUpload = await readLastUpload(screenciDir)
-  const partition = await partitionExportVideos({
-    requestedNames: requestedVideoNames,
-    keptByVideoName: kept,
-    uploadedVideos: lastUpload.videos,
-    hashSource: hashSourceFile,
-    force: options.force,
-  })
-
-  // A "fresh" video the server has never seen cannot render remotely; demote
-  // it to the stale set so it records and uploads like any new video.
-  let fresh = partition.fresh
-  const stale = [...partition.stale]
-  let videoIdByName = new Map<string, string>()
-  if (fresh.length > 0) {
-    const info = await fetchInfo()
-    videoIdByName = new Map(
-      Object.entries(info.videos).map(([name, video]) => [name, video.videoId])
-    )
-    const unknown = fresh.filter((name) => !videoIdByName.has(name))
-    if (unknown.length > 0) {
-      stale.push(...unknown)
-      fresh = fresh.filter((name) => videoIdByName.has(name))
-    }
+  // Every requested video records fresh footage: sources can carry changes
+  // the freshness hash does not see, and export is the moment to capture
+  // them.
+  logger.info(
+    `Recording ${requestedVideoNames.length} video${requestedVideoNames.length === 1 ? '' : 's'}: ${requestedVideoNames.join(', ')}`
+  )
+  const uploaded = await recordExportPass(requestedVideoNames)
+  if (uploaded.recordId === null) {
+    logger.error('Recording upload failed; nothing to export.')
+    process.exit(1)
   }
 
   const targets: ExportPollTarget[] = []
-
-  if (stale.length > 0) {
-    logger.info(
-      `Recording ${stale.length} changed video${stale.length === 1 ? '' : 's'}: ${stale.join(', ')}`
-    )
-    const uploaded = await recordExportPass(stale)
-    if (uploaded.recordId === null) {
-      logger.error('Recording upload failed; nothing to export.')
-      process.exit(1)
-    }
-    // Skip held videos: they render only after editor configuration.
-    const exportableStale = stale.filter(
-      (name) => !uploaded.heldVideoNames.includes(name)
-    )
-    if (exportableStale.length > 0) {
-      targets.push({ recordId: uploaded.recordId, videoNames: exportableStale })
-    }
-  }
-
-  if (fresh.length > 0) {
-    logger.info(
-      `Rendering ${fresh.length} up-to-date video${fresh.length === 1 ? '' : 's'} without re-recording: ${fresh.join(', ')}`
-    )
-    const requestedLanguages = options.languages
-      ?.split(',')
-      .map((language) => language.trim())
-      .filter((language) => language.length > 0)
-    for (const name of fresh) {
-      const videoId = videoIdByName.get(name)
-      if (videoId === undefined) continue
-      const res = await fetch(`${apiUrl}/cli/render`, {
-        method: 'POST',
-        headers: {
-          'X-ScreenCI-Secret': secret,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          videoId,
-          ...(requestedLanguages !== undefined && requestedLanguages.length > 0
-            ? { languages: requestedLanguages }
-            : {}),
-        }),
-      })
-      if (!res.ok) {
-        const text = await res.text()
-        logger.error(
-          `Failed to start the render for "${name}": ${res.status} ${extractBackendError(text)}${hint401(res.status, secret)}`
-        )
-        process.exit(1)
-      }
-      const { recordId } = (await res.json()) as { recordId: string }
-      targets.push({ recordId, videoNames: [name] })
-    }
+  // Skip held videos: they render only after editor configuration.
+  const exportableNames = requestedVideoNames.filter(
+    (name) => !uploaded.heldVideoNames.includes(name)
+  )
+  if (exportableNames.length > 0) {
+    targets.push({ recordId: uploaded.recordId, videoNames: exportableNames })
   }
 
   if (targets.length === 0) {
@@ -3914,6 +3853,22 @@ function createApplyCodegenDep(
         return () =>
           (cached ??= listScreenciSourceFiles(dirname(resolvedConfigPath)))
       })(),
+      // An applied render-time edit keeps the recorded footage valid, so the
+      // kept recordings are re-baselined to the rewritten sources: applying a
+      // web edit must never mark a recording stale or cause a re-record.
+      onSourcesRewritten: async (changedPaths) => {
+        try {
+          const videoNames = await rebaselineKeptSourceHashes({
+            screenciDir,
+            changedSourcePaths: changedPaths,
+          })
+          await updateLastUploadSourceHashes(screenciDir, videoNames)
+        } catch (err) {
+          logger.warn(
+            `Could not re-baseline recordings after the edit: ${err instanceof Error ? err.message : String(err)}`
+          )
+        }
+      },
       resolveDuplicateEditIds: async (paths) =>
         (await resolveDuplicateEditIdsInSources(paths, {
           screenciDir,
@@ -4910,6 +4865,31 @@ async function saveLastRecordId(
   }
 }
 
+/**
+ * Refreshes the stored per-video source hashes in `.screenci/last-record.json`
+ * after kept recordings were re-baselined, so the uploaded-state map keeps
+ * matching the recordings on disk. Only videos already present in the map are
+ * touched. Best-effort: a failure must never fail the caller.
+ */
+async function updateLastUploadSourceHashes(
+  screenciDir: string,
+  videoNames: readonly string[]
+): Promise<void> {
+  try {
+    const previous = await readLastUpload(screenciDir)
+    if (previous.recordId === null) return
+    const known = videoNames.filter(
+      (name) => previous.videos[name] !== undefined
+    )
+    if (known.length === 0) return
+    const updated = await collectUploadedSourceHashes(screenciDir, known)
+    if (Object.keys(updated).length === 0) return
+    await saveLastRecordId(screenciDir, previous.recordId, updated)
+  } catch {
+    // Best-effort bookkeeping only.
+  }
+}
+
 async function readLastUpload(screenciDir: string): Promise<{
   recordId: string | null
   videos: Record<string, UploadedVideoState>
@@ -5389,11 +5369,11 @@ export async function main() {
   program.name('screenci')
   program.exitOverride()
 
-  // export command: record what changed, render, wait, and download mp4s
+  // export command: record every video, render, wait, and download mp4s
   program
     .command('export [patterns...]')
     .description(
-      'Export finished videos: re-record changed videos, render, wait, and ' +
+      'Export finished videos: re-record every video, render, wait, and ' +
         'download the outputs. Positional patterns filter videos by title; ' +
         'no patterns exports every video.'
     )
@@ -5417,7 +5397,7 @@ export async function main() {
     )
     .option(
       '--force',
-      're-record every video even when its recording is up to date'
+      'deprecated no-op: export always re-records every requested video'
     )
     .option(
       '--no-sync',
@@ -5468,7 +5448,6 @@ export async function main() {
           languages: options.languages,
           grep,
           outputDir: options.output ?? 'exports',
-          force: options.force ?? false,
         })
       }
     )

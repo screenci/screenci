@@ -1,120 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { RecordingData } from './src/recordingData'
-import { computeSourceHash } from './src/recordingFreshness'
 import {
   downloadExportOutputs,
   exportExitCode,
   exportFileName,
-  partitionExportVideos,
   pollExportRenders,
   type ExportInfoResponse,
   type ExportRenderResult,
 } from './src/exportRun'
-
-function keptData(params: {
-  videoName: string
-  sourceFilePath?: string
-  sourceHash?: string
-}): RecordingData {
-  return {
-    events: [],
-    metadata: {
-      videoName: params.videoName,
-      ...(params.sourceFilePath !== undefined && {
-        sourceFilePath: params.sourceFilePath,
-      }),
-      ...(params.sourceHash !== undefined && {
-        sourceHash: params.sourceHash,
-      }),
-    },
-  } as unknown as RecordingData
-}
-
-describe('partitionExportVideos', () => {
-  const hash = computeSourceHash('source-v1')
-
-  it('marks a video fresh when its kept upload matches the current source', async () => {
-    const partition = await partitionExportVideos({
-      requestedNames: ['Login'],
-      keptByVideoName: new Map([
-        [
-          'Login',
-          keptData({
-            videoName: 'Login',
-            sourceFilePath: '/p/login.screenci.ts',
-            sourceHash: hash,
-          }),
-        ],
-      ]),
-      uploadedVideos: { Login: { sourceHash: hash } },
-      hashSource: async () => hash,
-      force: false,
-    })
-    expect(partition).toEqual({ fresh: ['Login'], stale: [] })
-  })
-
-  it('marks a video stale when the source changed since the upload', async () => {
-    const partition = await partitionExportVideos({
-      requestedNames: ['Login'],
-      keptByVideoName: new Map([
-        [
-          'Login',
-          keptData({
-            videoName: 'Login',
-            sourceFilePath: '/p/login.screenci.ts',
-            sourceHash: hash,
-          }),
-        ],
-      ]),
-      uploadedVideos: { Login: { sourceHash: hash } },
-      // The file on disk changed after the upload.
-      hashSource: async () => computeSourceHash('source-v2'),
-      force: false,
-    })
-    expect(partition).toEqual({ fresh: [], stale: ['Login'] })
-  })
-
-  it('marks a video stale when it was never uploaded or has no kept data', async () => {
-    const partition = await partitionExportVideos({
-      requestedNames: ['Login', 'Signup'],
-      keptByVideoName: new Map([
-        [
-          'Login',
-          keptData({
-            videoName: 'Login',
-            sourceFilePath: '/p/login.screenci.ts',
-            sourceHash: hash,
-          }),
-        ],
-      ]),
-      // Login has kept data but no recorded upload; Signup has neither.
-      uploadedVideos: {},
-      hashSource: async () => hash,
-      force: false,
-    })
-    expect(partition).toEqual({ fresh: [], stale: ['Login', 'Signup'] })
-  })
-
-  it('marks everything stale with force', async () => {
-    const partition = await partitionExportVideos({
-      requestedNames: ['Login'],
-      keptByVideoName: new Map([
-        [
-          'Login',
-          keptData({
-            videoName: 'Login',
-            sourceFilePath: '/p/login.screenci.ts',
-            sourceHash: hash,
-          }),
-        ],
-      ]),
-      uploadedVideos: { Login: { sourceHash: hash } },
-      hashSource: async () => hash,
-      force: true,
-    })
-    expect(partition).toEqual({ fresh: [], stale: ['Login'] })
-  })
-})
 
 function infoResponse(
   entries: Record<

@@ -3,6 +3,7 @@ import ts from 'typescript'
 import type { EditableSnapshot } from './editableSnapshot.js'
 import {
   allocateEditId,
+  mayHaveDuplicateEditIds,
   planDuplicateEditIdFixes,
   planEditIdStamps,
   type EditIdCounters,
@@ -219,6 +220,57 @@ describe('planEditIdStamps', () => {
       expect.objectContaining({ videoName: 'A', editId: 'click1' }),
       expect.objectContaining({ videoName: 'B', editId: 'click1' }),
     ])
+  })
+})
+
+describe('mayHaveDuplicateEditIds', () => {
+  it('is false when every slug is unique', () => {
+    expect(
+      mayHaveDuplicateEditIds([
+        {
+          path: '/proj/a.ts',
+          text: "click({ editId: 'click1' })\nfill({ editId: 'fill1' })\n",
+        },
+        { path: '/proj/b.ts', text: "click({ editId: 'click2' })\n" },
+      ])
+    ).toBe(false)
+  })
+
+  it('is true when a slug repeats within one file', () => {
+    expect(
+      mayHaveDuplicateEditIds([
+        {
+          path: '/proj/a.ts',
+          text: "click({ editId: 'click1' })\nclick({ editId: 'click1' })\n",
+        },
+      ])
+    ).toBe(true)
+  })
+
+  it('is true when a slug repeats across files', () => {
+    expect(
+      mayHaveDuplicateEditIds([
+        { path: '/proj/a.ts', text: 'click({ editId: "click1" })\n' },
+        { path: '/proj/b.ts', text: "click({ editId: 'click1' })\n" },
+      ])
+    ).toBe(true)
+  })
+
+  it('matches double-quoted and template literals', () => {
+    expect(
+      mayHaveDuplicateEditIds([
+        { path: '/proj/a.ts', text: 'click({ editId: "fill1" })\n' },
+        { path: '/proj/b.ts', text: 'click({ editId: `fill1` })\n' },
+      ])
+    ).toBe(true)
+  })
+
+  it('ignores files with no editIds', () => {
+    expect(
+      mayHaveDuplicateEditIds([
+        { path: '/proj/a.ts', text: 'const editIdea = 1\n' },
+      ])
+    ).toBe(false)
   })
 })
 

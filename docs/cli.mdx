@@ -17,7 +17,7 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | `screenci init [name]`            | Scaffold a ScreenCI project                                                                                      |
 | `screenci test [playwrightArgs]`  | Run `.screenci.ts` files locally without final recording                                                         |
 | `screenci preview [pattern]`      | Record live previews and print their links; with `--watch`, connect this machine as one video's code-sync bridge |
-| `screenci export [patterns...]`   | Produce finished videos: re-record what changed, render, and download                                            |
+| `screenci export [patterns...]`   | Produce finished videos: re-record every requested video, render, and download                                   |
 | `screenci info`                   | Print the last record run's URLs and render status                                                               |
 | `screenci make-public <videoId>`  | Enable public delivery for a video                                                                               |
 | `screenci make-private <videoId>` | Disable public delivery for a video                                                                              |
@@ -231,10 +231,10 @@ If you want that behavior by default for a project, set
 ## `screenci export [patterns...]`
 
 Produce finished videos and download them. `export` is the one-shot command
-(also the one CI runs): it re-records only the videos whose sources changed
-since the last upload, dispatches renders for videos that are already up to
-date without re-recording them, waits for the renders to finish, and downloads
-the outputs into `./exports/`:
+(also the one CI runs): it pulls any queued editor edits into the sources,
+re-records every requested video (sources can carry changes a hash check would
+miss, so export always captures fresh footage), waits for the renders to
+finish, and downloads the outputs into `./exports/`:
 
 <Tabs syncKey="package-manager">
   <TabItem label="npm">
@@ -303,17 +303,12 @@ npx screenci export -o dist/videos
 
 ### `--force`
 
-Re-record every requested video, even the ones whose recordings are up to
-date. Without it, `export` skips re-recording fresh videos and only dispatches
-their renders:
-
-```bash
-npx screenci export --force
-```
+Deprecated no-op, kept so existing scripts do not break: `export` always
+re-records every requested video.
 
 Behavior:
 
-- enables recording timing for any video that needs re-recording
+- enables recording timing for every requested video
 - writes local output into `.screenci/`
 - holds a per-project run lock at `.screenci/.record.lock` while recording and uploading. If another `screenci preview` or `screenci export` run is already active, the second run exits non-zero instead of sharing the same `.screenci` output. Stale locks are reclaimed automatically when the pid is gone or the lock is older than the maximum run TTL
 - requires an account with an active paid subscription: without a `SCREENCI_SECRET`, `export` refuses before recording and prints a sign-up link (the anonymous trial is preview-only; use `screenci preview` for the free live preview, see [Anonymous Trial](/docs/guides/anonymous-trial)). Once you have signed up, re-running `export` in the same folder links your account automatically. Set `SCREENCI_SECRET` from the project `.env`, the environment, or by running `init` with it
@@ -403,8 +398,10 @@ missing `editId` slugs stamped into the source and is re-recorded as a preview
 
 Editor codegen: while connected with `--watch`, every edit made in the web
 editor is sent to this machine as a codegen request and written directly into the
-`.screenci.ts` source (the code is the single source of truth). Edits that
-change recorded behavior additionally trigger an automatic preview record.
+`.screenci.ts` source (the code is the single source of truth). Applying an
+edit never re-records on its own: render-time edits re-baseline the kept
+recording's source hash so it stays fresh, while a capture-affecting edit
+leaves the recording stale and takes effect at the next preview or export.
 An edit the codegen cannot apply is reported back and the editor reverts it.
 Besides timeline edits this covers the editor's option panels: render and
 record option changes are merged into the video's `.renderOptions({...})` /

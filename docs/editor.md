@@ -19,8 +19,9 @@ Edits that change what is captured (record options, interaction timings,
 on-screen text, the language set) cannot take effect until a recording runs.
 They are queued the same way, but the editor badges them "applies after next
 recording" and marks the preview stale rather than pretending they took effect.
-Trigger a re-record (via CI, or a connected machine, which auto-records once it
-applies the edit) to bake them in. While a connected machine is actively syncing
+Applying the edit to code never re-records on its own; the next recording
+(a connected machine's preview, CI, or `screenci export`) bakes them in.
+While a connected machine is actively syncing
 a video's source, that video's editing controls lock briefly until it finishes.
 
 **Everything is editable by default.** Every feature a video declares
@@ -147,12 +148,14 @@ rendering.
 
 Edits that only affect rendering (narration text, overlay files, render
 options) preview and export immediately; when the CLI writes one into code it
-logs "Applies at render time, no re-record needed" and does not re-record. Edits that change the capture itself
+logs "Applies at render time, no re-record needed" and does not re-record (the
+kept recording is re-baselined to the rewritten source, so it stays fresh).
+Edits that change the capture itself
 (record options, interaction timings, on-screen text, the language set) are
 badged **applies after next recording**: the preview is marked stale until a
-recording runs. A connected machine auto-records once it applies such an edit;
-otherwise trigger a re-record via CI (see the CI setup guide) or ask a developer
-to run `screenci preview`. While a connected machine is actively syncing a
+recording runs. Applying such an edit to code never re-records on its own;
+trigger a re-record from the editor or via CI (see the CI setup guide), or ask
+a developer to run `screenci preview` or `screenci export`. While a connected machine is actively syncing a
 video's source, that video's editing controls lock briefly until it finishes.
 
 ## Editing in Editor
@@ -739,6 +742,9 @@ or more distinct call sites is resolved by keeping the first occurrence and
 re-stamping the rest with fresh slugs (allocated from `.screenci/edit-ids.json`,
 so they never collide with an existing id). A genuine loop (one call site that
 runs repeatedly) is a single occurrence in source and is left untouched.
+Resolving needs the `typescript` package resolvable from your project; when it
+is missing, the CLI warns only if a possible duplicate was actually detected,
+and leaves the sources unchanged.
 
 editId is optional until edits need to reach code. Actions without one keep
 the matcher-based identity (locator description + occurrence) for display, but
@@ -785,8 +791,8 @@ preview and the offline fallback):
   `.renderOptions({...})` builder call. The call is appended to the chain when
   the video has none yet; existing keys are updated in place and unrelated
   keys are left untouched.
-- **Record options** are merged into `.recordOptions({...})` the same way and
-  trigger a preview re-record, since they change recorded behavior.
+- **Record options** are merged into `.recordOptions({...})` the same way.
+  Since they change recorded behavior, they apply at the next recording.
 - **Narration text** is merged into the `video.narration(...)` declaration:
   a new cue key is added, an existing value replaced, and per-cue volume is
   written as the `{ cue, volume }` object form (a plain text edit never

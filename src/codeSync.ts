@@ -2261,21 +2261,30 @@ export function planCodeSync(
 
     // ── Language set (codify into video.languages) ─────────────────────────
     const languagesEdit = input.languagesEdits?.[videoName]
-    if (languagesEdit !== undefined && languagesEdit.languages.length > 0) {
+    const removeLanguages = languagesEdit?.removeLanguages ?? []
+    if (
+      languagesEdit !== undefined &&
+      (languagesEdit.languages.length > 0 || removeLanguages.length > 0)
+    ) {
       const file = declaringFile()
       const refusal =
         file === null
           ? unknownVideoRefusal(videoName)
           : tryApply(file, (ctx) =>
-              setVideoLanguages(ctx, videoName, languagesEdit.languages)
+              setVideoLanguages(ctx, videoName, languagesEdit.languages, {
+                remove: removeLanguages,
+              })
             )
       if (refusal === null) {
         applied.push({
           videoName,
           file: file!,
           description:
-            `set languages [${languagesEdit.languages.join(', ')}] ` +
-            `on video '${videoName}'`,
+            `set languages [${languagesEdit.languages.join(', ')}]` +
+            (removeLanguages.length > 0
+              ? ` minus [${removeLanguages.join(', ')}]`
+              : '') +
+            ` on video '${videoName}'`,
         })
         bump(appliedCounts, videoName)
       } else {

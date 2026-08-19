@@ -216,16 +216,20 @@ To set the capture options too, pass a config object, for example
 `video.languages(...)` declaration the set is inferred from the per-feature
 language keys, falling back to the implicit `en` default for a plain video.
 
-The **Languages** section on the Editor page lists the current languages and
-lets you add one. Adding a language writes it straight into your
-`video.languages([...])` declaration in code through the connected
-`screenci preview` machine (a new `.languages([...])` call is added when the video
-has none), then renders. The edit fails if no dev machine is connected: there
-is no web-side language store, so every language lives in code by the time the
-next record runs. Editing then continues with the usual guided setup: fill in
-that language's narration (a checklist tracks what is still missing), then
-render. The render reuses the existing capture with the new narration, so you
-do not have to re-record just to get a narrated version in another language.
+The language menu on the Editor page lists the current languages and lets you
+add one. Adding a language auto-translates the existing narration from the
+language you are viewing and writes the new language into your
+`video.languages([...])` declaration in code (a new `.languages([...])` call is
+added when the video has none). The code edit applies through the connected
+`screenci edit` machine; with no machine connected it is queued and applies
+automatically the next time one connects. The new language is watchable in the
+live preview immediately (it borrows another language's footage until its
+first record) and you can edit every translated line afterwards.
+
+Deleting a language from the same menu removes its exports and narrations and
+removes the language from the `video.languages([...])` declaration the same
+way (queued when no machine is connected). The default language cannot be
+deleted.
 
 ## Available languages
 

@@ -1554,40 +1554,53 @@ function unionLanguages(existing: string[], desired: string[]): string[] {
  * ambiguous, or when an existing `.languages()` argument (or its `languages`
  * property) is not a plain array of string literals. Idempotent: re-applying a
  * subset already present produces no edit.
+ *
+ * `options.remove` lists languages to drop from the declared set AFTER the
+ * union, so a language can be REMOVED (the app's delete-language flow) while
+ * the union still never clobbers languages added in code between the edit
+ * being queued and applied.
  */
 export function setVideoLanguages(
   ctx: CodemodContext,
   videoName: string,
-  languages: string[]
+  languages: string[],
+  options: { remove?: string[] } = {}
 ): TextEdit[] | null {
   const { ts } = ctx
+  const removed = new Set(options.remove ?? [])
+  const desiredSet = (current: string[]): string[] =>
+    unionLanguages(current, languages).filter((lang) => !removed.has(lang))
   const call = findVideoCall(ctx, videoName)
   if (call === null) return null
   const arraySource = (langs: string[]): string =>
     `[${langs.map((lang) => valueToSource(lang)).join(', ')}]`
   const existing = findMethodCallInChain(ts, call.expression, 'languages')
   if (existing === null) {
+    // No declaration to edit: a remove-only edit has nothing to do (the set
+    // is inferred from per-feature keys, not this call). Adding creates one.
+    const seed = desiredSet([])
+    if (seed.length === 0) return []
     const insertAt = call.expression.getEnd()
     return [
       {
         start: insertAt,
         end: insertAt,
-        replacement: `.languages(${arraySource(languages)})`,
+        replacement: `.languages(${arraySource(seed)})`,
       },
     ]
   }
   const arg = existing.arguments[0]
   if (arg === undefined) {
     // `video.languages()` with no argument: seed it with the desired set.
+    const seed = desiredSet([])
+    if (seed.length === 0) return []
     const insertAt = arg === undefined ? existing.getEnd() - 1 : 0
-    return [
-      { start: insertAt, end: insertAt, replacement: arraySource(languages) },
-    ]
+    return [{ start: insertAt, end: insertAt, replacement: arraySource(seed) }]
   }
   if (ts.isArrayLiteralExpression(arg)) {
     const current = stringArrayElements(ts, arg)
     if (current === null) return null
-    const merged = unionLanguages(current, languages)
+    const merged = desiredSet(current)
     if (
       merged.length === current.length &&
       merged.every((lang, index) => lang === current[index])
@@ -1612,7 +1625,7 @@ export function setVideoLanguages(
     if (!ts.isArrayLiteralExpression(initializer)) return null
     const current = stringArrayElements(ts, initializer)
     if (current === null) return null
-    const merged = unionLanguages(current, languages)
+    const merged = desiredSet(current)
     if (
       merged.length === current.length &&
       merged.every((lang, index) => lang === current[index])

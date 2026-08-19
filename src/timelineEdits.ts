@@ -324,6 +324,12 @@ export type LanguagesEdit = {
   type: 'languagesEdit'
   id: string
   languages: string[]
+  /** Languages to REMOVE from the declared set after the union with
+   *  `languages` (the app's delete-language flow). Union-then-remove never
+   *  clobbers languages added in code meanwhile, and a pre-`removeLanguages`
+   *  CLI skips an empty-`languages` edit entirely instead of resurrecting the
+   *  deleted language. Absent means plain union (backwards compatible). */
+  removeLanguages?: string[]
 }
 
 export const EDITOR_MEDIA_METHODS = ['overlays', 'narration', 'audio'] as const

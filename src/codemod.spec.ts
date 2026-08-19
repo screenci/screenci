@@ -976,6 +976,52 @@ describe('setVideoLanguages', () => {
     const source = "video('Other', async () => {})"
     expect(setVideoLanguages(ctxOf(source), 'Demo', ['en'])).toBeNull()
   })
+
+  it('remove drops the listed language from the declared set', () => {
+    const source = "video.languages(['en', 'fi', 'de'])('Demo', async () => {})"
+    const edits = setVideoLanguages(ctxOf(source), 'Demo', [], {
+      remove: ['fi'],
+    })
+    expect(applyAll(source, edits)).toBe(
+      "video.languages(['en', 'de'])('Demo', async () => {})"
+    )
+  })
+
+  it('remove still unions the kept languages (never clobbers code additions)', () => {
+    // 'sv' was added in code after the edit was queued: it must survive.
+    const source = "video.languages(['en', 'fi', 'sv'])('Demo', async () => {})"
+    const edits = setVideoLanguages(ctxOf(source), 'Demo', ['en', 'de'], {
+      remove: ['fi'],
+    })
+    expect(applyAll(source, edits)).toBe(
+      "video.languages(['en', 'sv', 'de'])('Demo', async () => {})"
+    )
+  })
+
+  it('remove is a no-op when the language is not declared', () => {
+    const source = "video.languages(['en'])('Demo', async () => {})"
+    expect(
+      setVideoLanguages(ctxOf(source), 'Demo', [], { remove: ['fi'] })
+    ).toEqual([])
+  })
+
+  it('remove-only edit is a no-op when there is no languages declaration', () => {
+    const source = "video('Demo', async () => {})"
+    expect(
+      setVideoLanguages(ctxOf(source), 'Demo', [], { remove: ['fi'] })
+    ).toEqual([])
+  })
+
+  it('remove edits the languages array of an object config', () => {
+    const source =
+      "video.languages({ languages: ['en', 'fi'], mode: 'shared' })('Demo', async () => {})"
+    const edits = setVideoLanguages(ctxOf(source), 'Demo', [], {
+      remove: ['fi'],
+    })
+    expect(applyAll(source, edits)).toBe(
+      "video.languages({ languages: ['en'], mode: 'shared' })('Demo', async () => {})"
+    )
+  })
 })
 
 describe('setValuesValue', () => {

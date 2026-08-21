@@ -104,6 +104,29 @@ type VideoState = {
   entries: EditableSnapshotEntry[]
   fresh: boolean
   missingIds: boolean
+  /** Why the recording is not fresh, for the out-of-date log line. */
+  staleReason: string | null
+}
+
+/** Human reason a kept recording fails the freshness check, or null when
+ *  fresh. Logged with the out-of-date record announcement so a re-record
+ *  (especially a repeated one) is explainable instead of mysterious. */
+export function staleReasonOf(
+  data: RecordingData,
+  currentSourceHash: string | undefined
+): string | null {
+  const storedHash = data.metadata?.sourceHash
+  if (storedHash === undefined) return 'recording has no source baseline'
+  if (currentSourceHash === undefined) {
+    return `source file not readable (${data.metadata?.sourceFilePath ?? 'unknown path'})`
+  }
+  if (storedHash !== currentSourceHash) {
+    return 'test source changed since its last recording'
+  }
+  if (!isRecordingFresh(data, currentSourceHash)) {
+    return 'recorded actions are missing editIds'
+  }
+  return null
 }
 
 async function collectStates(
@@ -126,6 +149,7 @@ async function collectStates(
       entries,
       fresh: isRecordingFresh(kept.data, currentHash),
       missingIds: entries.some((entry) => entry.editId === undefined),
+      staleReason: staleReasonOf(kept.data, currentHash),
     })
   }
   return [...states.values()]
@@ -213,8 +237,19 @@ export async function runDevStartupSync(
     }
 
     const names = stale.map((state) => state.videoName)
+    // Name the reason per video: a repeated re-record (e.g. a source that
+    // keeps hash-mismatching) must be explainable from the log alone.
+    const described = stale.map((state) => {
+      const reason = force
+        ? 'forced'
+        : (state.staleReason ??
+          (state.missingIds ? 'recorded actions are missing editIds' : null))
+      return reason === null
+        ? state.videoName
+        : `${state.videoName} (${reason})`
+    })
     deps.logger.info(
-      `Recording ${names.length} out-of-date video${names.length === 1 ? '' : 's'}: ${names.join(', ')}`
+      `Recording ${names.length} out-of-date video${names.length === 1 ? '' : 's'}: ${described.join(', ')}`
     )
     if (deps.setSyncing) await deps.setSyncing(names).catch(() => {})
     try {

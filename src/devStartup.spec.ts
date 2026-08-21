@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   runDevStartupSync,
+  staleReasonOf,
   type DevStartupDeps,
   type KeptRecording,
 } from './devStartup.js'
@@ -219,5 +220,29 @@ describe('runDevStartupSync', () => {
     // A fresh recording with missing ids is not stale when stamping is off.
     expect(deps.recordPreview).not.toHaveBeenCalled()
     expect(result.fresh).toEqual(['Demo'])
+  })
+})
+
+describe('staleReasonOf', () => {
+  const data = (metadata: Record<string, unknown>) =>
+    ({ events: [], metadata }) as unknown as Parameters<typeof staleReasonOf>[0]
+
+  it('names each way a kept recording can be stale', () => {
+    expect(staleReasonOf(data({}), 'h')).toBe(
+      'recording has no source baseline'
+    )
+    expect(
+      staleReasonOf(
+        data({ sourceHash: 'h', sourceFilePath: 'a.ts' }),
+        undefined
+      )
+    ).toBe('source file not readable (a.ts)')
+    expect(staleReasonOf(data({ sourceHash: 'h' }), 'other')).toBe(
+      'test source changed since its last recording'
+    )
+  })
+
+  it('is null for a fresh recording', () => {
+    expect(staleReasonOf(data({ sourceHash: 'h' }), 'h')).toBeNull()
   })
 })

@@ -784,6 +784,47 @@ describe('setNarrationValue', () => {
     ).toBe("video.narration({ intro: 'Hi' })('Demo', async () => {})")
   })
 
+  it('replaces a declared voice config wholesale on a model change', () => {
+    // A key merge would leave the old `style` behind, which is invalid with
+    // `modelType: 'consistent'` (the SDK voice union forbids the pair), so
+    // the voice object is swapped as one leaf.
+    const source =
+      "video.narration({ intro: { cue: 'Hi', volume: 0.5, voice: " +
+      "{ name: voices.Nora, modelType: 'expressive', style: 'Warm' } } })" +
+      "('Demo', async () => {})"
+    expect(
+      narrated(source, {
+        cueName: 'intro',
+        lang: 'default',
+        value: {
+          cue: 'Hi',
+          voice: { name: 'Nora', modelType: 'consistent' },
+        },
+      })
+    ).toBe(
+      "video.narration({ intro: { cue: 'Hi', volume: 0.5, voice: " +
+        "{ name: 'Nora', modelType: 'consistent' } } })" +
+        "('Demo', async () => {})"
+    )
+  })
+
+  it('upgrades a plain-string cue to an object with a voice config', () => {
+    const source = "video.narration({ intro: 'Hi' })('Demo', async () => {})"
+    expect(
+      narrated(source, {
+        cueName: 'intro',
+        lang: 'default',
+        value: {
+          cue: 'Hi',
+          voice: { name: 'Ava', modelType: 'consistent' },
+        },
+      })
+    ).toBe(
+      "video.narration({ intro: { cue: 'Hi', voice: " +
+        "{ name: 'Ava', modelType: 'consistent' } } })('Demo', async () => {})"
+    )
+  })
+
   it('quotes cue names that are not identifiers', () => {
     const source = "video('Demo', async () => {})"
     expect(

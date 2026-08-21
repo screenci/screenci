@@ -18,6 +18,10 @@
  */
 
 import { describeEditId } from './timelineEdits.js'
+import {
+  createCodegenFailureLog,
+  type CodegenFailureLog,
+} from './codegenFailureLog.js'
 
 export const DEV_TOKEN_HEADER = 'X-ScreenCI-Dev-Token'
 export const SCREENCI_EDIT_TOKEN_ENV = 'SCREENCI_EDIT_TOKEN'
@@ -78,6 +82,18 @@ export type DevListenLogger = {
   info: (message: string) => void
   warn: (message: string) => void
   error: (message: string) => void
+}
+
+/** One coalescing failure log per logger, so identical-cause codegen failures
+ *  across a drain burst collapse into a single line (see codegenFailureLog). */
+const codegenFailureLogs = new WeakMap<DevListenLogger, CodegenFailureLog>()
+function codegenFailureLogFor(logger: DevListenLogger): CodegenFailureLog {
+  let log = codegenFailureLogs.get(logger)
+  if (log === undefined) {
+    log = createCodegenFailureLog((line) => logger.error(line))
+    codegenFailureLogs.set(logger, log)
+  }
+  return log
 }
 
 /**
@@ -341,9 +357,13 @@ async function handleCodegenRequest(
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    deps.logger.error(
-      `Codegen for ${describeEditId(request.editId)} (${request.videoName}) failed: ${message}`
-    )
+    // Coalesced: a burst of identical-cause failures (e.g. every cue of an
+    // added language hitting the same missing declaration) logs one line.
+    codegenFailureLogFor(deps.logger).logFailure({
+      videoName: request.videoName,
+      editDescription: describeEditId(request.editId),
+      message,
+    })
     await reportDevCodegen(
       config,
       deps,

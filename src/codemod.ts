@@ -1414,7 +1414,13 @@ export function findMethodCallInChain(
 /** Flatten a plain-object value to `{ path, value }` leaves (arrays are leaves). */
 function optionLeaves(
   value: Record<string, unknown>,
-  prefix: string[] = []
+  prefix: string[] = [],
+  // Top-level keys whose OBJECT value is written as one leaf (a wholesale
+  // replacement) instead of being flattened into per-key merges. Used for a
+  // narration cue's `voice`: its discriminated shape (style implies
+  // expressive, consistent forbids style) cannot be reached by merging keys
+  // into the previous shape.
+  leafKeys?: ReadonlySet<string>
 ): Array<{ path: string[]; value: unknown }> {
   const leaves: Array<{ path: string[]; value: unknown }> = []
   for (const [key, entryValue] of Object.entries(value)) {
@@ -1422,7 +1428,8 @@ function optionLeaves(
     if (
       entryValue !== null &&
       typeof entryValue === 'object' &&
-      !Array.isArray(entryValue)
+      !Array.isArray(entryValue) &&
+      !(prefix.length === 0 && leafKeys?.has(key) === true)
     ) {
       leaves.push(...optionLeaves(entryValue as Record<string, unknown>, path))
     } else {
@@ -1442,10 +1449,11 @@ function optionLeaves(
 function mergeObjectLiteralText(
   ts: TsModule,
   objectText: string,
-  valueObject: Record<string, unknown>
+  valueObject: Record<string, unknown>,
+  leafKeys?: ReadonlySet<string>
 ): string | null {
   let text = objectText
-  for (const leaf of optionLeaves(valueObject)) {
+  for (const leaf of optionLeaves(valueObject, [], leafKeys)) {
     const source = `__m(${text})`
     const ctx = createContext(ts, 'merge.ts', source)
     const statement = ctx.sourceFile.statements[0]
@@ -1806,6 +1814,12 @@ export type NarrationValueResult =
   | { kind: 'unsupported' }
 
 /** Merge one cue value into a `name -> value` object literal. */
+/** A narration cue's `voice` config is replaced wholesale, never key-merged:
+ *  its discriminated union (style implies expressive; consistent forbids
+ *  style and takes numeric pacing) cannot be reached by merging keys onto
+ *  the previous shape (a leftover `style` would make the result invalid). */
+const NARRATION_VOICE_LEAF: ReadonlySet<string> = new Set(['voice'])
+
 function mergeCueIntoObject(
   ctx: CodemodContext,
   object: TS.ObjectLiteralExpression,
@@ -1843,7 +1857,12 @@ function mergeCueIntoObject(
       initializer.getStart(),
       initializer.getEnd()
     )
-    const merged = mergeObjectLiteralText(ts, objectText, mergeValue)
+    const merged = mergeObjectLiteralText(
+      ts,
+      objectText,
+      mergeValue,
+      NARRATION_VOICE_LEAF
+    )
     if (merged === null) return { kind: 'unsupported' }
     if (merged === objectText) return { kind: 'edits', edits: [] }
     return {

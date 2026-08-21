@@ -204,6 +204,24 @@ describe('runDevStartupSync', () => {
     expect(deps.logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('Demo')
     )
+    // Re-recording cannot add editIds (they come from source stamps), so an
+    // unstampable video must NOT re-record on every startup. This used to
+    // record it twice per run, forever.
+    expect(deps.recordPreview).not.toHaveBeenCalled()
+  })
+
+  it('re-records after a partial stamp, then stops once stamping is dry', async () => {
+    // Pass 1: one id stamped into the source, so a re-record picks it up.
+    // Pass 2: stamping yields nothing more; the remaining id-less entry must
+    // not trigger another record.
+    const recording = kept('Demo', 'hash-a', [entry()])
+    const deps = makeDeps([recording])
+    deps.stampEditIds.mockResolvedValueOnce(1).mockResolvedValue(0)
+
+    const result = await runDevStartupSync({}, deps)
+
+    expect(deps.recordPreview).toHaveBeenCalledTimes(1)
+    expect(result.recorded).toEqual(['Demo'])
   })
 
   it('does not stamp, resolve duplicates, or warn when autoStamp is false', async () => {

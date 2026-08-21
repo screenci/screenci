@@ -108,6 +108,11 @@ type VideoState = {
   staleReason: string | null
 }
 
+export const NO_BASELINE_REASON = 'recording has no source baseline'
+export const SOURCE_CHANGED_REASON =
+  'test source changed since its last recording'
+export const MISSING_EDIT_IDS_REASON = 'recorded actions are missing editIds'
+
 /** Human reason a kept recording fails the freshness check, or null when
  *  fresh. Logged with the out-of-date record announcement so a re-record
  *  (especially a repeated one) is explainable instead of mysterious. */
@@ -116,16 +121,12 @@ export function staleReasonOf(
   currentSourceHash: string | undefined
 ): string | null {
   const storedHash = data.metadata?.sourceHash
-  if (storedHash === undefined) return 'recording has no source baseline'
+  if (storedHash === undefined) return NO_BASELINE_REASON
   if (currentSourceHash === undefined) {
     return `source file not readable (${data.metadata?.sourceFilePath ?? 'unknown path'})`
   }
-  if (storedHash !== currentSourceHash) {
-    return 'test source changed since its last recording'
-  }
-  if (!isRecordingFresh(data, currentSourceHash)) {
-    return 'recorded actions are missing editIds'
-  }
+  if (storedHash !== currentSourceHash) return SOURCE_CHANGED_REASON
+  if (!isRecordingFresh(data, currentSourceHash)) return MISSING_EDIT_IDS_REASON
   return null
 }
 
@@ -205,8 +206,9 @@ export async function runDevStartupSync(
 
     // Stamp missing editIds first so the (re-)record's data.json carries them.
     const missing = states.filter((state) => state.missingIds)
+    let stamps = 0
     if (autoStamp && missing.length > 0) {
-      const stamps = await deps.stampEditIds(
+      stamps = await deps.stampEditIds(
         Object.fromEntries(
           missing.map((state) => [state.videoName, state.entries])
         )
@@ -219,10 +221,17 @@ export async function runDevStartupSync(
     }
 
     const force = options.forceRecord === true && pass === 1
-    // Without stamping, re-recording cannot fix a missing editId, so it does
-    // not make a recording stale.
+    // Missing editIds only make a recording stale when stamping actually
+    // WROTE something this pass: the ids come from the source stamps, so
+    // re-recording an unstampable video (loop call sites) can never fix it
+    // and previously re-recorded it on every single startup, twice per run.
+    const missingIdsFixable = stamps > 0
     const stale = states.filter(
-      (state) => force || !state.fresh || (autoStamp && state.missingIds)
+      (state) =>
+        force ||
+        (state.staleReason !== null &&
+          state.staleReason !== MISSING_EDIT_IDS_REASON) ||
+        (autoStamp && state.missingIds && missingIdsFixable)
     )
     fresh = states
       .filter((state) => !stale.includes(state))

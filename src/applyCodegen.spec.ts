@@ -543,6 +543,7 @@ describe('applyCodegenRequest: onSourcesRewritten', () => {
     source?: string
   }) {
     const rewritten: string[][] = []
+    const recordRequired: string[][] = []
     await applyCodegenRequest(
       {
         requestId: 'req1',
@@ -559,29 +560,35 @@ describe('applyCodegenRequest: onSourcesRewritten', () => {
         onSourcesRewritten: async (paths) => {
           rewritten.push(paths)
         },
+        onRecordRequiredRewrite: (paths) => {
+          recordRequired.push(paths)
+        },
       }
     )
-    return rewritten
+    return { rewritten, recordRequired }
   }
 
   it('reports the written paths for a render-time edit', async () => {
-    const rewritten = await applyWithHook({
+    const { rewritten } = await applyWithHook({
       editJson: OPTIONS_EDIT,
       requiresRecord: false,
     })
     expect(rewritten).toEqual([[FILE]])
   })
 
-  it('is not called for a record-requiring edit', async () => {
-    const rewritten = await applyWithHook({
+  it('is not called for a record-requiring edit, which reports separately', async () => {
+    const { rewritten, recordRequired } = await applyWithHook({
       editJson: OPTIONS_EDIT,
       requiresRecord: true,
     })
     expect(rewritten).toEqual([])
+    // The record-requiring hook fires instead, so the caller can keep the
+    // file out of later render-time re-baselines until a record runs.
+    expect(recordRequired).toEqual([[FILE]])
   })
 
   it('is not called when the edit changes nothing', async () => {
-    const rewritten = await applyWithHook({
+    const { rewritten } = await applyWithHook({
       editJson: OPTIONS_EDIT,
       requiresRecord: false,
       source: SOURCE.replace(

@@ -63,6 +63,15 @@ export type ApplyCodegenDeps = {
    * self-heal writes: those are real semantic changes that need fresh footage.
    */
   onSourcesRewritten?: (changedPaths: string[]) => Promise<void>
+  /**
+   * Optional hook invoked after the CLI wrote source files for an edit that
+   * REQUIRES a record (`requiresRecord: true`), with the paths actually
+   * rewritten. Callers use it to protect those files from a later render-time
+   * edit's re-baseline in the same session: without it, a narration edit
+   * applied right after a languages edit re-hashed the whole file and erased
+   * the record-requiring change's staleness, so the needed record never ran.
+   */
+  onRecordRequiredRewrite?: (changedPaths: string[]) => void
 }
 
 /**
@@ -200,6 +209,9 @@ export async function applyCodegenRequest(
         : file.after
     deps.writeFile(file.path, content)
     writtenPaths.push(file.path)
+  }
+  if (request.requiresRecord && writtenPaths.length > 0) {
+    deps.onRecordRequiredRewrite?.(writtenPaths)
   }
   if (
     !request.requiresRecord &&

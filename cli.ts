@@ -95,6 +95,7 @@ import {
   readKeptRecordingData,
   rebaselineKeptSourceHashes,
 } from './src/recordingFreshness.js'
+import { createRebaselineGate } from './src/rebaselineGate.js'
 import type { RecordingData as KeptRecordingData } from './src/recordingData.js'
 import {
   downloadExportOutputs,
@@ -3400,6 +3401,9 @@ async function runPreviewRecordPass(
     if (playwrightFailure !== null) {
       throw playwrightFailure
     }
+    // Fresh footage now covers the sources: record-requiring rewrites are
+    // captured, so render-time re-baselines are safe again.
+    codegenRebaselineGate.clearAfterRecord()
   } finally {
     await recordRunLock.release()
   }
@@ -3817,6 +3821,10 @@ async function printEditorLink(params: {
  * syncs: locates the target call site by editId and rewrites the test source
  * via static analysis, formatting with the project's Prettier.
  */
+/** Session-wide guard: files a record-requiring codegen edit rewrote stay
+ *  stale (excluded from render-time re-baselines) until a record runs. */
+const codegenRebaselineGate = createRebaselineGate()
+
 function createApplyCodegenDep(
   configOption: string | undefined,
   onFileWritten: (path: string) => void
@@ -3853,14 +3861,23 @@ function createApplyCodegenDep(
         return () =>
           (cached ??= listScreenciSourceFiles(dirname(resolvedConfigPath)))
       })(),
+      // A record-requiring edit (e.g. the language set) must leave its file
+      // stale until the next record; the gate keeps a later render-time
+      // edit's re-baseline from re-hashing that file and swallowing the
+      // needed record.
+      onRecordRequiredRewrite: (changedPaths) =>
+        codegenRebaselineGate.noteRecordRequired(changedPaths),
       // An applied render-time edit keeps the recorded footage valid, so the
       // kept recordings are re-baselined to the rewritten sources: applying a
       // web edit must never mark a recording stale or cause a re-record.
       onSourcesRewritten: async (changedPaths) => {
+        const rebaselinable =
+          codegenRebaselineGate.rebaselinablePaths(changedPaths)
+        if (rebaselinable.length === 0) return
         try {
           const videoNames = await rebaselineKeptSourceHashes({
             screenciDir,
-            changedSourcePaths: changedPaths,
+            changedSourcePaths: rebaselinable,
           })
           await updateLastUploadSourceHashes(screenciDir, videoNames)
         } catch (err) {

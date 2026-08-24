@@ -149,7 +149,6 @@ import {
   runDevListenLoop,
 } from './src/devListen.js'
 import {
-  baseVideoName,
   dedupeAppliedStudioNotices,
   formatDrainSummary,
   formatStudioNoticeLine,
@@ -664,7 +663,10 @@ export type UploadStudioInfo =
   | { applied: true }
 
 export type StudioUploadNotice = {
+  /** Display name of the pass (per-language passes carry a ` [lang]` suffix). */
   videoName: string
+  /** Declared video name without a language suffix. */
+  baseVideoName: string
   videoId: string | null
   studio: UploadStudioInfo
 }
@@ -699,7 +701,16 @@ type UploadJobResult = {
   projectId: string | null
   videoId: string | null
   hadFailure: boolean
+  /** Display name of the uploaded pass; per-language passes carry a
+   *  ` [lang]` suffix so parallel upload lines stay tellable apart. */
   videoName: string
+  /**
+   * The declared video name (no per-language suffix). Success checks, held
+   * filtering, and source-hash bookkeeping match against this: comparing the
+   * suffixed display name against requested/kept names silently never
+   * matches for multi-language videos.
+   */
+  baseVideoName: string
   failureMessage?: string
   recordId: string
   studio?: UploadStudioInfo
@@ -956,6 +967,7 @@ async function uploadRecordingCandidate(
         videoId: null,
         hadFailure: true,
         videoName: displayVideoName,
+        baseVideoName: videoName,
         failureMessage: `Missing ${recordingFileName} for "${displayVideoName}"`,
         recordId,
       }
@@ -981,6 +993,7 @@ async function uploadRecordingCandidate(
         videoId: null,
         hadFailure: true,
         videoName: displayVideoName,
+        baseVideoName: videoName,
         failureMessage: formatUnresolvedAssetMessage(
           displayVideoName,
           unresolved
@@ -1058,6 +1071,7 @@ async function uploadRecordingCandidate(
           hadFailure: true,
           elevenLabsKeyMissing: true,
           videoName: displayVideoName,
+          baseVideoName: videoName,
           recordId,
         }
       }
@@ -1066,6 +1080,7 @@ async function uploadRecordingCandidate(
         videoId: null,
         hadFailure: true,
         videoName: displayVideoName,
+        baseVideoName: videoName,
         failureMessage: formatUploadStartFailureMessage(
           displayVideoName,
           startResponse.status,
@@ -1193,6 +1208,7 @@ async function uploadRecordingCandidate(
         videoId,
         hadFailure: true,
         videoName: displayVideoName,
+        baseVideoName: videoName,
         failureMessage: `Failed to upload recording for "${displayVideoName}": ${recordingResponse.status} ${extractBackendError(text)}${hint401(recordingResponse.status, credential.value)}`,
         recordId,
         ...(plan !== null && { plan }),
@@ -1206,6 +1222,7 @@ async function uploadRecordingCandidate(
       videoId,
       hadFailure: false,
       videoName: displayVideoName,
+      baseVideoName: videoName,
       recordId,
       ...(studio !== undefined && { studio }),
       ...(plan !== null && { plan }),
@@ -1229,6 +1246,7 @@ async function uploadRecordingCandidate(
         videoId,
         hadFailure: true,
         videoName: displayVideoName,
+        baseVideoName: videoName,
         failureMessage: err instanceof Error ? err.message : String(err),
         recordId,
         ...(plan !== null && { plan }),
@@ -1241,6 +1259,7 @@ async function uploadRecordingCandidate(
       videoId,
       hadFailure: true,
       videoName: displayVideoName,
+      baseVideoName: videoName,
       failureMessage: `Network error uploading "${displayVideoName}": ${err instanceof Error ? err.message : String(err)}`,
       recordId,
       ...(plan !== null && { plan }),
@@ -2687,9 +2706,17 @@ export async function uploadRecordings(
     const resolvedPlan =
       results.find((result) => result.plan !== undefined)?.plan ?? null
     const hadFailures = results.some((result) => result.hadFailure)
-    const uploadedVideoNames = results
-      .filter((result) => !result.hadFailure)
-      .map((result) => result.videoName)
+    // Declared (base) names, deduped across per-language passes: consumers
+    // compare these against requested and kept video names, which never carry
+    // a language suffix. Failure lists keep the display names so per-pass
+    // failures stay tellable apart.
+    const uploadedVideoNames = [
+      ...new Set(
+        results
+          .filter((result) => !result.hadFailure)
+          .map((result) => result.baseVideoName)
+      ),
+    ]
     const failedVideoNames = results
       .filter((result) => result.hadFailure)
       .map((result) => result.videoName)
@@ -2704,6 +2731,7 @@ export async function uploadRecordings(
         ? [
             {
               videoName: result.videoName,
+              baseVideoName: result.baseVideoName,
               videoId: result.videoId,
               studio: result.studio,
             },
@@ -5378,9 +5406,15 @@ async function uploadRecordedVideosForConfig(
         )
         logger.info(pc.cyan(`${appUrl}/select-plan`))
       }
-      heldNames = studioNotices
-        .filter((notice) => 'held' in notice.studio)
-        .map((notice) => notice.videoName)
+      // Base names, deduped: export filters requested (base) names against
+      // this list, so suffixed per-pass names would silently never match.
+      heldNames = [
+        ...new Set(
+          studioNotices
+            .filter((notice) => 'held' in notice.studio)
+            .map((notice) => notice.baseVideoName)
+        ),
+      ]
       for (const notice of studioNotices) {
         if ('held' in notice.studio) {
           const resolveUrl =
@@ -5420,7 +5454,7 @@ async function uploadRecordedVideosForConfig(
       )
       if (appliedNotices.length > 0) logger.info('')
       for (const notice of appliedNotices) {
-        logger.info(formatStudioNoticeLine(baseVideoName(notice.videoName)))
+        logger.info(formatStudioNoticeLine(notice.baseVideoName))
       }
       if (elevenLabsKeyMissingVideos.length > 0) {
         const names = elevenLabsKeyMissingVideos

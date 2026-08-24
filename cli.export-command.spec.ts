@@ -1367,6 +1367,7 @@ describe('CLI', () => {
       expect(result.studioNotices).toEqual([
         {
           videoName: 'Demo',
+          baseVideoName: 'Demo',
           videoId: 'video_123',
           studio: { held: true },
         },
@@ -1425,10 +1426,74 @@ describe('CLI', () => {
       expect(result.studioNotices).toEqual([
         {
           videoName: 'Demo',
+          baseVideoName: 'Demo',
           videoId: 'video_123',
           studio: { applied: true },
         },
       ])
+    })
+
+    it('reports declared (base) names for multi-language uploads', async () => {
+      // Two per-language passes of one video: the display names carry [lang]
+      // suffixes, but uploadedVideoNames must dedupe to the declared name so
+      // export's requested-vs-uploaded success check can ever match.
+      mockReaddir.mockResolvedValue(['demo-en', 'demo-fi'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.includes('demo-en')) {
+          return JSON.stringify({
+            events: [],
+            metadata: { videoName: 'Demo', languages: ['en'] },
+          })
+        }
+        if (pathString.includes('demo-fi')) {
+          return JSON.stringify({
+            events: [],
+            metadata: { videoName: 'Demo', languages: ['fi'] },
+          })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') || path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+              videoId: 'video_123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+
+      const { uploadRecordings, secretCredential } = await import('./cli')
+
+      const result = await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        secretCredential('test-secret')
+      )
+
+      expect(result.hadFailures).toBe(false)
+      expect(result.uploadedVideoNames).toEqual(['Demo'])
     })
 
     it('formats preview URLs', async () => {

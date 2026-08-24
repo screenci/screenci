@@ -460,7 +460,7 @@ describe('CLI', () => {
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/my-app/screenci/recordings/example.screenci.ts',
-        expect.stringContaining('await page.setContent(landingPageHtml())')
+        expect.stringContaining("await page.goto('https://screenci.com/')")
       )
       // Hidden for release: the screenshot example and its Ring overlay are
       // no longer scaffolded (the screenshots feature is unfinished).

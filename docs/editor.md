@@ -34,9 +34,10 @@ make in code is where the content starts:
   content is filled in on the Editor page.
 
 - **Plain objects are code values.** `video.narration({ intro: 'Welcome' })`
-  supplies the content from code. It is used at record time and stays fully
-  editable in the web app: once a value is edited in Editor, the Editor value
-  wins over the code value on every later upload.
+  supplies the content from code. It stays fully editable in the web app:
+  editing it queues a code write, and once the write syncs, the code (now
+  carrying the edited value) is what every later upload renders with. There
+  is no app-side override that shadows code.
 
 - **Edits write back to code.** Whichever form declared a value, editing it in
   the web app produces a code change applied by your connected `screenci preview`
@@ -129,13 +130,15 @@ video, and the edits render immediately while they wait to be written into the
 `.screenci.ts` source. The sidebar's **pending** list shows how many edits are
 "not yet in code" and who queued each one.
 
-To flush the queue into your sources, run any `screenci` command in the
-project: `sync`, `test`, `preview`, and `export` all drain it on start. On
-connect, the CLI writes every queued edit into the source (logging "queued by
-<name>" for edits a teammate made) and the pending list drains. No token
-setup is needed: with a `SCREENCI_SECRET` configured, the CLI mints this
-machine's personal editor token automatically (it stays listed and revocable
-on the Secrets page).
+To flush the queue into your sources, run `screenci sync`, `test`, or
+`preview` in the project: they all drain it on start. (`export` deliberately
+does not apply edits: it warns about queued ones and renders your sources
+exactly as they are.) On connect, the CLI writes every queued edit into the
+source and prints one summary line ("Synced 3 editor edits into your
+sources."); a live `screenci preview --watch` session logs each edit as it
+lands, naming the teammate who queued it. No token setup is needed: with a
+`SCREENCI_SECRET` configured, the CLI mints this machine's personal editor
+token automatically (it stays listed and revocable on the Secrets page).
 
 On an anonymous trial (no account), `screenci preview` connects with the trial
 session itself, and the trial's editor queues edits the same way while no
@@ -147,9 +150,10 @@ or the source drifted), it stays in the list as failed with **Retry** and
 rendering.
 
 Edits that only affect rendering (narration text, overlay files, render
-options) preview and export immediately; when the CLI writes one into code it
-logs "Applies at render time, no re-record needed" and does not re-record (the
-kept recording is re-baselined to the rewritten source, so it stays fresh).
+options) preview and export immediately; when a live `--watch` session writes
+one into code it logs "Applies at render time, no re-record needed" and does
+not re-record (the kept recording is re-baselined to the rewritten source, so
+it stays fresh).
 Edits that change the capture itself
 (record options, interaction timings, on-screen text, the language set) are
 badged **applies after next recording**: the preview is marked stale until a
@@ -177,12 +181,21 @@ renders. Exported versions appear in the sidebar's **Exported** group, with a
 status glyph while rendering and a marker on the version served at the public
 URL.
 
-Saved editor values are applied automatically to every later upload, so CI
-keeps rendering with them. When this happens the CLI prints a line in the
-upload output, so it is visible in CI logs:
+How editing works, in one loop: edit in the web editor; edits queue; the
+next `screenci sync`, `test`, or `preview` writes them into your code; both
+recordings and renders then run purely from what the code says. Until the
+sync happens, the editor keeps showing your pending edits (they are the
+queue itself), and the pending list names each edit still "not yet in code".
+
+The one exception is editor-uploaded media: overlay files, audio tracks,
+uploaded narration audio, and cloned voices. Their bytes live in the ScreenCI
+backend (code references them as `{ editor: '<name>' }`), so they are merged
+onto every later upload automatically and apply at render time. When that
+happens the CLI prints one line per video in the upload output, so it is
+visible in CI logs:
 
 ```
-Editor configuration applied for "Checkout walkthrough".
+Editor-uploaded media for "Checkout walkthrough" applies at render time; recordings always run from code.
 ```
 
 ## Recording from the editor
@@ -802,11 +815,13 @@ preview and the offline fallback):
   move under `default` verbatim and the edited language gets its own
   sub-object.
 
-Every editor edit is codegen'd: it is written into your `.screenci.ts` sources
-through the connected `screenci preview` machine, and fails if no machine is
-connected. There is no web-side edit store. Uploaded media (narration voices
-and recorded audio, cloned-voice samples) is downloaded to local editor files
-on the dev machine and referenced from code.
+Every editor edit is codegen'd: it is written into your `.screenci.ts`
+sources by the next connected `screenci` command (queuing server-side while
+no machine is connected). There is no web-side edit store: an unsynced edit
+exists only as its queued code write, which the editor also renders as a
+pending overlay. The exception is uploaded media bytes (overlay files, audio
+tracks, uploaded narration audio, cloned-voice samples): those live in the
+ScreenCI backend and are referenced from code as `{ editor: '<name>' }`.
 
 Loop repeats stay locked: an action that runs more than once from a single
 call site (keys like `click1#1`) cannot be edited per execution, in the editor

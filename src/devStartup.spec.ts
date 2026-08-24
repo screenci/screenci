@@ -65,14 +65,25 @@ function makeDeps(
 }
 
 describe('runDevStartupSync', () => {
-  it('skips recording when everything is fresh and stamped', async () => {
+  it('skips recording when everything is fresh and stamped (with grep)', async () => {
     const deps = makeDeps([kept('Demo', 'hash-a', [entry('delay1')])])
 
-    const result = await runDevStartupSync({}, deps)
+    const result = await runDevStartupSync({ grep: 'Demo' }, deps)
 
     expect(deps.recordPreview).not.toHaveBeenCalled()
     expect(result.fresh).toEqual(['Demo'])
     expect(result.recorded).toEqual([])
+  })
+
+  it('records everything on the first pass when no grep is provided', async () => {
+    // Kept recordings only cover videos that recorded before: without a grep
+    // the record pass runs unfiltered so new/renamed videos are picked up.
+    const deps = makeDeps([kept('Demo', 'hash-a', [entry('delay1')])])
+
+    const result = await runDevStartupSync({}, deps)
+
+    expect(deps.recordPreview).toHaveBeenCalledWith(undefined)
+    expect(result.recorded).toEqual(['Demo'])
   })
 
   it('resolves duplicate editIds and re-records the affected video', async () => {
@@ -88,7 +99,7 @@ describe('runDevStartupSync', () => {
       return 1
     })
 
-    const result = await runDevStartupSync({}, deps)
+    const result = await runDevStartupSync({ grep: 'Demo' }, deps)
 
     expect(resolveDuplicateEditIds).toHaveBeenCalledWith([
       '/proj/demo.screenci.ts',
@@ -100,7 +111,7 @@ describe('runDevStartupSync', () => {
   it('re-records a video whose source hash changed', async () => {
     const deps = makeDeps([kept('Demo', 'old-hash', [entry('delay1')])])
 
-    const result = await runDevStartupSync({}, deps)
+    const result = await runDevStartupSync({ grep: 'Demo' }, deps)
 
     expect(deps.recordPreview).toHaveBeenCalledWith('Demo')
     expect(result.recorded).toEqual(['Demo'])
@@ -137,7 +148,7 @@ describe('runDevStartupSync', () => {
   it('escapes video names in the re-record grep pattern', async () => {
     const deps = makeDeps([kept('My Video (v2)', 'stale', [entry('a1')])])
 
-    await runDevStartupSync({}, deps)
+    await runDevStartupSync({ grep: 'My Video' }, deps)
 
     expect(deps.recordPreview).toHaveBeenCalledWith('My Video \\(v2\\)')
   })
@@ -145,7 +156,10 @@ describe('runDevStartupSync', () => {
   it('force-records fresh videos when forceRecord is set', async () => {
     const deps = makeDeps([kept('Demo', 'hash-a', [entry('delay1')])])
 
-    const result = await runDevStartupSync({ forceRecord: true }, deps)
+    const result = await runDevStartupSync(
+      { forceRecord: true, grep: 'Demo' },
+      deps
+    )
 
     expect(deps.recordPreview).toHaveBeenCalledWith('Demo')
     expect(result.recorded).toEqual(['Demo'])
@@ -198,7 +212,7 @@ describe('runDevStartupSync', () => {
     // stampEditIds returns 0: nothing could be stamped, entries stay id-less.
     const deps = makeDeps([kept('Demo', 'hash-a', [entry()])])
 
-    const result = await runDevStartupSync({}, deps)
+    const result = await runDevStartupSync({ grep: 'Demo' }, deps)
 
     expect(result.missingEditIds).toEqual(['Demo'])
     expect(deps.logger.warn).toHaveBeenCalledWith(
@@ -218,7 +232,7 @@ describe('runDevStartupSync', () => {
     const deps = makeDeps([recording])
     deps.stampEditIds.mockResolvedValueOnce(1).mockResolvedValue(0)
 
-    const result = await runDevStartupSync({}, deps)
+    const result = await runDevStartupSync({ grep: 'Demo' }, deps)
 
     expect(deps.recordPreview).toHaveBeenCalledTimes(1)
     expect(result.recorded).toEqual(['Demo'])
@@ -230,7 +244,10 @@ describe('runDevStartupSync', () => {
       resolveDuplicateEditIds,
     })
 
-    const result = await runDevStartupSync({ autoStamp: false }, deps)
+    const result = await runDevStartupSync(
+      { autoStamp: false, grep: 'Demo' },
+      deps
+    )
 
     expect(deps.stampEditIds).not.toHaveBeenCalled()
     expect(resolveDuplicateEditIds).not.toHaveBeenCalled()

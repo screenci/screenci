@@ -1804,9 +1804,10 @@ export type NarrationValueEdit = {
 
 /**
  * Result of {@link setNarrationValue}: computed edits (empty when already
- * up to date), `appManaged` for a names-only declaration whose content lives
- * in the web app, or `unsupported` when the declaration resists a mechanical
- * edit.
+ * up to date), or `unsupported` when the declaration resists a mechanical
+ * edit. (`appManaged` is historical: names-only narration arrays now convert
+ * to the object form instead of refusing; the variant is kept for callers
+ * still switching over it.)
  */
 export type NarrationValueResult =
   | { kind: 'edits'; edits: TextEdit[] }
@@ -1911,12 +1912,17 @@ function mergeCueIntoObject(
  *   when present. A default-language edit without an explicit `[lang]` key
  *   targets the shared `default` sub-object (added when missing); any other
  *   missing language key is added.
- * - Names-only array: content is app-managed by design; reported as such.
+ * - Names-only array: CONVERTED to the object form on a default-language
+ *   edit (the edited cue seeded with its value, every other name kept
+ *   editor-owned as `{ editor: '<name>' }` so it stays blank and holds
+ *   rendering until edited). There is no app-side store of narration
+ *   overrides, so conversion is the only way the cue becomes code-owned.
  *
  * Conservative by design: `unsupported` whenever the declaration or the video
  * call resists a mechanical edit (missing/ambiguous declaration, spreads,
- * shorthand properties, non-literal arguments). Idempotent: re-applying the
- * same value produces no edit.
+ * shorthand properties, non-literal arguments, a non-default-language first
+ * edit on a names-only array). Idempotent: re-applying the same value
+ * produces no edit.
  */
 export function setNarrationValue(
   ctx: CodemodContext,
@@ -1930,10 +1936,52 @@ export function setNarrationValue(
     'narration',
     edit,
     isLanguageKey,
-    () => ({
-      kind: 'appManaged',
-    })
+    (arg) => convertNamesOnlyNarrationArray(ctx, ctx.ts, arg, edit)
   )
+}
+
+/**
+ * Convert a names-only `narration([...])` array literal into an object
+ * literal. The edited cue gets its new value; every other listed name becomes
+ * `{ editor: '<name>' }`, which keeps it editor-owned and blank (rendering
+ * still holds until it is edited), exactly like {@link setEditorMedia}'s
+ * names-only conversion. Only a default-language edit converts: the flat
+ * object is content-major, so seeding a non-default language here would put
+ * its text in the shared position (`unsupported` instead; edit the default
+ * language first). Refuses when the array holds anything but plain string
+ * literals.
+ */
+function convertNamesOnlyNarrationArray(
+  ctx: CodemodContext,
+  ts: TsModule,
+  arg: TS.ArrayLiteralExpression,
+  edit: NarrationValueEdit
+): NarrationValueResult {
+  const isDefault = edit.isDefault === true || edit.lang === 'default'
+  if (!isDefault) return { kind: 'unsupported' }
+  const names: string[] = []
+  for (const element of arg.elements) {
+    if (!ts.isStringLiteralLike(element)) return { kind: 'unsupported' }
+    names.push(element.text)
+  }
+  if (!names.includes(edit.cueName)) names.push(edit.cueName)
+  const valueSource = valueToSource(edit.value)
+  if (valueSource === null) return { kind: 'unsupported' }
+  const entries = names.map((name) => {
+    const rendered =
+      name === edit.cueName ? valueSource : `{ editor: ${valueToSource(name)} }`
+    return `${propertyNameSource(name)}: ${rendered}`
+  })
+  return {
+    kind: 'edits',
+    edits: [
+      {
+        start: arg.getStart(),
+        end: arg.getEnd(),
+        replacement: `{ ${entries.join(', ')} }`,
+      },
+    ],
+  }
 }
 
 /**

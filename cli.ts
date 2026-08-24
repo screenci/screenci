@@ -144,9 +144,16 @@ import {
   deregisterDevListener,
   drainDevCodegenRequests,
   registerDevListener,
+  fetchPendingCodegenCount,
   reportDevSyncState,
   runDevListenLoop,
 } from './src/devListen.js'
+import {
+  baseVideoName,
+  dedupeAppliedStudioNotices,
+  formatDrainSummary,
+  formatStudioNoticeLine,
+} from './src/previewOutput.js'
 import { exchangeEditToken } from './src/editTokenExchange.js'
 
 // Re-export the environment-aware URL helpers so existing importers (and tests)
@@ -359,7 +366,7 @@ function logScreenCISecretGuide(): void {
 }
 
 function getSuggestedScreenciCommand(
-  command: 'preview' | 'export' | 'test',
+  command: 'preview' | 'export' | 'test' | 'sync',
   flags = ''
 ): string {
   const suffix = flags ? ` ${flags}` : ''
@@ -648,7 +655,13 @@ type UploadCandidate = {
   preparedUploadAssets: PreparedUploadAsset[]
 }
 
-export type UploadStudioInfo = { held: true } | { applied: true }
+export type UploadStudioInfo =
+  | {
+      held: true
+      /** Blank narration cues (no text in code) that caused the hold. */
+      blankNarrationCues?: string[]
+    }
+  | { applied: true }
 
 export type StudioUploadNotice = {
   videoName: string
@@ -3980,14 +3993,16 @@ export async function stampEditIdsForProject(
  * creates an anonymous session or prompts, and network failures only warn
  * (never block the host command).
  */
-export async function runQuickEditSync(
-  options: {
-    config?: string
-    /** Suppress failure warnings (applied-edit logs always show). */
-    quiet?: boolean
-  } = {},
+/**
+ * Resolves the dev-channel config (project, credentials, editor token) for a
+ * one-shot touchpoint without side effects beyond minting a missing editor
+ * token from the org secret. Null when the project is not connected yet (no
+ * config, no credentials): callers skip silently.
+ */
+async function resolveQuickDevConfig(
+  options: { config?: string } = {},
   depsOverride: Partial<DevListenDeps> & { machineName?: string } = {}
-): Promise<{ handled: number } | null> {
+): Promise<DevListenConfig | null> {
   let projectName: string
   let configPath: string
   try {
@@ -4030,13 +4045,51 @@ export async function runQuickEditSync(
     devToken = anonToken
   }
 
-  const config: DevListenConfig = {
+  return {
     apiUrl,
     credential,
     devToken,
     projectName,
     machineName: depsOverride.machineName ?? hostname(),
   }
+}
+
+/**
+ * Warns when editor edits are still queued for this project without applying
+ * them. `screenci export` uses this instead of a sync: an export renders
+ * exactly what the sources say, so edits are never silently written during
+ * one. Best-effort: any failure (offline, not connected) stays silent.
+ */
+export async function warnUnsyncedEditsBeforeExport(
+  options: { config?: string } = {},
+  depsOverride: Partial<DevListenDeps> & { machineName?: string } = {}
+): Promise<void> {
+  try {
+    const config = await resolveQuickDevConfig(options, depsOverride)
+    if (config === null) return
+    const pending = await fetchPendingCodegenCount(config, {
+      fetchFn: depsOverride.fetchFn ?? fetch,
+    })
+    if (pending > 0) {
+      logger.warn(
+        `${pending} editor edit${pending === 1 ? ' is' : 's are'} not yet in your sources; run ${pc.cyan(getSuggestedScreenciCommand('sync'))} or ${pc.cyan(getSuggestedScreenciCommand('preview'))} first. Exporting without ${pending === 1 ? 'it' : 'them'}.`
+      )
+    }
+  } catch {
+    // Best-effort peek: never block or fail an export over it.
+  }
+}
+
+export async function runQuickEditSync(
+  options: {
+    config?: string
+    /** Suppress failure warnings (the drain summary always shows). */
+    quiet?: boolean
+  } = {},
+  depsOverride: Partial<DevListenDeps> & { machineName?: string } = {}
+): Promise<{ handled: number; failed: number; skipped: number } | null> {
+  const config = await resolveQuickDevConfig(options, depsOverride)
+  if (config === null) return null
   const deps: DevListenDeps = {
     fetchFn: fetch,
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
@@ -4045,6 +4098,9 @@ export async function runQuickEditSync(
       throw new Error('One-shot sync cannot record')
     },
     applyCodegen: createApplyCodegenDep(options.config, () => {}),
+    // One-shot: the drain summary is the feedback; per-edit lines are for
+    // live --watch sessions. Skipped and failed edits still log.
+    logAppliedEdits: false,
     ...depsOverride,
   }
 
@@ -4056,11 +4112,8 @@ export async function runQuickEditSync(
         deps,
         registration.listenerId
       )
-      if (result.handled > 0) {
-        logger.info(
-          `Synced ${result.handled} queued editor ${result.handled === 1 ? 'edit' : 'edits'} into your sources.`
-        )
-      }
+      const summary = formatDrainSummary(result)
+      if (summary !== null) logger.info(summary)
       return result
     } finally {
       await deregisterDevListener(config, deps, registration.listenerId).catch(
@@ -4206,6 +4259,12 @@ export async function runDevCommand(
 
   let auth = await resolveDevAuth()
 
+  // Whether the user scoped this session with --grep themselves. The
+  // resolution below may auto-narrow options.grep to a single video name;
+  // record-all-on-startup and unknown-video failure logging key off the
+  // user's own grep, not the auto-narrowed one.
+  const userGrep = options.grep
+
   // A --watch live bridge deep-links the web editor for a single video, so
   // the pattern must resolve to exactly one; anything else lists the
   // candidates and exits. A one-shot preview records ANY number of matched
@@ -4299,6 +4358,14 @@ export async function runDevCommand(
     applyCodegen: createApplyCodegenDep(options.config, (path) => {
       void watcher?.refreshBaseline(path)
     }),
+    // Edits addressed to a video name no longer declared (usually a rename in
+    // code) only log when the user's own --grep targets that name; without a
+    // grep they fail silently in the log (still reported to the editor).
+    shouldLogUnknownVideo: (videoName) =>
+      userGrep !== undefined && grepMatcher(userGrep)(videoName),
+    // One-shot runs print only the drain summary; live sessions keep the
+    // per-edit apply lines as their feedback.
+    logAppliedEdits: options.once !== true,
     ...depsOverride,
   }
 
@@ -4316,24 +4383,25 @@ export async function runDevCommand(
     process.exit(1)
   }
 
-  logger.info(
-    `${pc.bold(config.machineName)} connected for project "${screenciConfig.projectName}".`
-  )
+  // The connect banner only earns its line in a long-running session; a
+  // one-shot preview keeps its output to the phases the user cares about.
+  if (options.once !== true) {
+    logger.info(
+      `${pc.bold(config.machineName)} connected for project "${screenciConfig.projectName}".`
+    )
+  }
 
   // Sync queued browser edits into the sources on every connect, so edits
   // made while no machine was running land in code without a live bridge.
   const drainQueuedEdits = async (): Promise<void> => {
     try {
-      const { handled } = await drainDevCodegenRequests(
+      const result = await drainDevCodegenRequests(
         config,
         deps,
         registration.listenerId
       )
-      if (handled > 0) {
-        logger.info(
-          `Synced ${handled} queued editor ${handled === 1 ? 'edit' : 'edits'} into your sources.`
-        )
-      }
+      const summary = formatDrainSummary(result)
+      if (summary !== null) logger.info(summary)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       logger.warn(`Could not sync queued editor edits: ${message}`)
@@ -4408,9 +4476,9 @@ export async function runDevCommand(
     await runDevStartupSync(
       {
         ...(options.grep !== undefined && { grep: options.grep }),
-        ...(options.forceRecord !== undefined && {
-          forceRecord: options.forceRecord,
-        }),
+        // No user --grep means record everything on startup, even when the
+        // grep was auto-narrowed to a single resolved video above.
+        forceRecord: options.forceRecord === true || userGrep === undefined,
         autoStamp: AUTO_EDIT_ID_STAMPING,
       },
       {
@@ -4520,10 +4588,6 @@ export async function runDevCommand(
   // authored while the preview recorded are picked up by one final drain.
   if (options.once === true) {
     await drainQueuedEdits()
-    logger.info(
-      'Done. Browser edits queue while you are offline and sync on the next ' +
-        `screenci command; use ${pc.cyan(getSuggestedScreenciCommand('preview', '--watch'))} for a live editing session.`
-    )
     await deregisterDevListener(config, deps, registration.listenerId).catch(
       () => {}
     )
@@ -5330,6 +5394,12 @@ async function uploadRecordedVideosForConfig(
           if (resolveUrl !== null) {
             logger.info(pc.cyan(resolveUrl))
           }
+          const blankCues = notice.studio.blankNarrationCues ?? []
+          if (blankCues.length > 0) {
+            logger.info(
+              `Narration ${blankCues.map((cue) => `"${cue}"`).join(', ')} has no text in code yet. Write it in the editor, then run ${pc.cyan(getSuggestedScreenciCommand('preview'))} to sync it into your sources and re-record.`
+            )
+          }
           // Machine-readable status line so agents can relay the hold
           // instead of treating a missing render as a silent failure.
           logger.info(
@@ -5339,10 +5409,18 @@ async function uploadRecordedVideosForConfig(
               ...(resolveUrl !== null ? { resolveUrl } : {}),
             })
           )
-        } else if (notice.studio.applied) {
-          logger.info('')
-          logger.info(`Editor configuration applied for "${notice.videoName}".`)
         }
+      }
+      // Per-language passes of one video each report the same applied
+      // settings; print one line per video, not one per pass.
+      const appliedNotices = dedupeAppliedStudioNotices(
+        studioNotices.filter(
+          (notice) => 'applied' in notice.studio && notice.studio.applied
+        )
+      )
+      if (appliedNotices.length > 0) logger.info('')
+      for (const notice of appliedNotices) {
+        logger.info(formatStudioNoticeLine(baseVideoName(notice.videoName)))
       }
       if (elevenLabsKeyMissingVideos.length > 0) {
         const names = elevenLabsKeyMissingVideos
@@ -5418,7 +5496,8 @@ export async function main() {
     )
     .option(
       '--no-sync',
-      'skip pulling queued browser edits into the sources before exporting'
+      'deprecated no-op: export never applies queued browser edits (it warns ' +
+        'about them instead; run screenci sync to apply)'
     )
     .action(
       async (
@@ -5445,18 +5524,16 @@ export async function main() {
           return
         }
 
-        // Pull queued browser edits into the sources first so the export
-        // renders what the editor shows. Best-effort, never blocks.
-        if (options.sync !== false) {
-          await runQuickEditSync({
-            ...(options.config !== undefined ? { config: options.config } : {}),
-            quiet: true,
-          })
-          try {
-            await stampEditIdsForProject(options.config)
-          } catch (err) {
-            logger.warn('Could not stamp editIds:', err)
-          }
+        // Export never applies queued browser edits: an export renders
+        // exactly what the sources say. Queued edits only produce a warning
+        // (apply them with `screenci sync` or `screenci preview`).
+        await warnUnsyncedEditsBeforeExport({
+          ...(options.config !== undefined ? { config: options.config } : {}),
+        })
+        try {
+          await stampEditIdsForProject(options.config)
+        } catch (err) {
+          logger.warn('Could not stamp editIds:', err)
         }
 
         await runExportCommand({
@@ -5488,7 +5565,7 @@ export async function main() {
         )
         return
       }
-      if (result.handled === 0) {
+      if (result.handled === 0 && result.failed === 0 && result.skipped === 0) {
         logger.info('No queued editor edits; sources are up to date.')
       }
     })

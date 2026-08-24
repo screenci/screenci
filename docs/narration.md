@@ -62,10 +62,16 @@ edit wins over the code value from then on.
 video.narration({ en: { intro: 'Welcome.' } })
 ```
 
-**2. Editor-owned (blank).** Pass a bare array of cue names: the names exist in
-code (so the body can call `narration.intro`), but [Editor](./editor.md) owns
-the text. Chain `.languages([...])`, since there is no text to infer the set
-from.
+**2. Blank names (start empty, filled from the editor).** Pass a bare array
+of cue names: the names exist in code (so the body can call
+`narration.intro`), and their content starts empty. Rendering holds until
+each cue gets content. Writing a cue's text in [Editor](./editor.md) codegens
+it into your sources, converting the array to the object form on the first
+edit: the edited cue becomes a seeded value, untouched names stay blank as
+`{ editor: '<name>' }`, and the next synced recording renders it. (A cue can
+instead be satisfied by editor-uploaded audio or a cloned voice, which stay
+backend-hosted.) Chain `.languages([...])`, since there is no text to infer
+the set from.
 
 ```ts
 import { video } from 'screenci'

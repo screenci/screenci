@@ -11,6 +11,7 @@ import {
   ONE_SHOT_TRIGGER_MESSAGE,
   deregisterDevListener,
   drainDevCodegenRequests,
+  fetchPendingCodegenCount,
   pollDevListener,
   registerDevListener,
   reportDevTrigger,
@@ -132,6 +133,26 @@ describe('pollDevListener', () => {
   })
 })
 
+describe('fetchPendingCodegenCount', () => {
+  it('posts the project name and returns the pending count', async () => {
+    const deps = makeDeps()
+    deps.fetchMock.mockResolvedValueOnce(jsonResponse({ pending: 3 }))
+
+    await expect(fetchPendingCodegenCount(config, deps)).resolves.toBe(3)
+
+    const [url, init] = deps.fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('http://localhost:8787/cli/dev/pending-codegen-count')
+    expect(JSON.parse(init.body as string)).toEqual({ projectName: 'demo' })
+  })
+
+  it('treats a missing count as zero', async () => {
+    const deps = makeDeps()
+    deps.fetchMock.mockResolvedValueOnce(jsonResponse({}))
+
+    await expect(fetchPendingCodegenCount(config, deps)).resolves.toBe(0)
+  })
+})
+
 describe('drainDevCodegenRequests', () => {
   it('applies queued requests across polls until a poll comes back empty', async () => {
     const applied: string[] = []
@@ -168,7 +189,7 @@ describe('drainDevCodegenRequests', () => {
 
     const result = await drainDevCodegenRequests(config, deps, 'lst_1')
 
-    expect(result).toEqual({ handled: 3 })
+    expect(result).toEqual({ handled: 3, failed: 0, skipped: 0 })
     expect(applied).toEqual(['cgr_1', 'cgr_2', 'cgr_3'])
   })
 
@@ -180,7 +201,191 @@ describe('drainDevCodegenRequests', () => {
 
     await expect(
       drainDevCodegenRequests(config, deps, 'lst_1')
-    ).resolves.toEqual({ handled: 0 })
+    ).resolves.toEqual({ handled: 0, failed: 0, skipped: 0 })
+  })
+
+  it('counts orphaned (skipped) edits separately from synced ones', async () => {
+    const deps = makeDeps({
+      applyCodegen: vi.fn(async () => ({ outcome: 'orphaned' as const })),
+    })
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).endsWith('/cli/dev/poll')) {
+        const call = deps.fetchMock.mock.calls.filter(([u]) =>
+          String(u).endsWith('/cli/dev/poll')
+        ).length
+        if (call === 1) {
+          return jsonResponse({
+            trigger: null,
+            codegenRequests: [codegenRequest],
+          })
+        }
+        return jsonResponse({ trigger: null, codegenRequests: [] })
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    // A skipped edit was never written into the sources, so it must not be
+    // counted into the "Synced N editor edits" summary.
+    await expect(
+      drainDevCodegenRequests(config, deps, 'lst_1')
+    ).resolves.toEqual({ handled: 0, failed: 0, skipped: 1 })
+  })
+
+  it('counts failed edits separately from handled ones', async () => {
+    const deps = makeDeps({
+      applyCodegen: vi.fn(async () => {
+        throw new Error('editId not found in source')
+      }),
+    })
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).endsWith('/cli/dev/poll')) {
+        const call = deps.fetchMock.mock.calls.filter(([u]) =>
+          String(u).endsWith('/cli/dev/poll')
+        ).length
+        if (call === 1) {
+          return jsonResponse({
+            trigger: null,
+            codegenRequests: [codegenRequest],
+          })
+        }
+        return jsonResponse({ trigger: null, codegenRequests: [] })
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    await expect(
+      drainDevCodegenRequests(config, deps, 'lst_1')
+    ).resolves.toEqual({ handled: 0, failed: 1, skipped: 0 })
+  })
+
+  it('suppresses applied-edit lines when logAppliedEdits is false', async () => {
+    const deps = makeDeps({
+      applyCodegen: vi.fn(async () => {}),
+      logAppliedEdits: false,
+    })
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).endsWith('/cli/dev/poll')) {
+        const call = deps.fetchMock.mock.calls.filter(([u]) =>
+          String(u).endsWith('/cli/dev/poll')
+        ).length
+        if (call === 1) {
+          return jsonResponse({
+            trigger: null,
+            codegenRequests: [codegenRequest],
+          })
+        }
+        return jsonResponse({ trigger: null, codegenRequests: [] })
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    const result = await drainDevCodegenRequests(config, deps, 'lst_1')
+
+    expect(result).toEqual({ handled: 1, failed: 0, skipped: 0 })
+    expect(deps.logger.info).not.toHaveBeenCalledWith(
+      expect.stringContaining('Applied')
+    )
+    // The edit is still reported applied to the backend.
+    const reportCall = deps.fetchMock.mock.calls.find(([u]) =>
+      String(u).endsWith('/cli/dev/report-codegen')
+    )
+    const body = JSON.parse((reportCall?.[1] as RequestInit).body as string)
+    expect(body).toMatchObject({ requestId: 'cgr_1', state: 'applied' })
+  })
+
+  it('suppresses unknown-video failure logs when the filter rejects the name', async () => {
+    const deps = makeDeps({
+      applyCodegen: vi.fn(async () => {
+        throw new Error('refused [unknown-video]')
+      }),
+      shouldLogUnknownVideo: () => false,
+    })
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).endsWith('/cli/dev/poll')) {
+        const call = deps.fetchMock.mock.calls.filter(([u]) =>
+          String(u).endsWith('/cli/dev/poll')
+        ).length
+        if (call === 1) {
+          return jsonResponse({
+            trigger: null,
+            codegenRequests: [codegenRequest],
+          })
+        }
+        return jsonResponse({ trigger: null, codegenRequests: [] })
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    await drainDevCodegenRequests(config, deps, 'lst_1')
+
+    expect(deps.logger.error).not.toHaveBeenCalled()
+    // The failure still reaches the backend so the editor marks the edit.
+    const reportCall = deps.fetchMock.mock.calls.find(([u]) =>
+      String(u).endsWith('/cli/dev/report-codegen')
+    )
+    expect(reportCall).toBeDefined()
+    const body = JSON.parse((reportCall?.[1] as RequestInit).body as string)
+    expect(body).toMatchObject({ requestId: 'cgr_1', state: 'failed' })
+  })
+
+  it('logs unknown-video failures when the filter accepts the name', async () => {
+    const deps = makeDeps({
+      applyCodegen: vi.fn(async () => {
+        throw new Error('refused [unknown-video]')
+      }),
+      shouldLogUnknownVideo: (videoName) => videoName === 'Intro video',
+    })
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).endsWith('/cli/dev/poll')) {
+        const call = deps.fetchMock.mock.calls.filter(([u]) =>
+          String(u).endsWith('/cli/dev/poll')
+        ).length
+        if (call === 1) {
+          return jsonResponse({
+            trigger: null,
+            codegenRequests: [codegenRequest],
+          })
+        }
+        return jsonResponse({ trigger: null, codegenRequests: [] })
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    await drainDevCodegenRequests(config, deps, 'lst_1')
+
+    expect(deps.logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('no video with that name is declared')
+    )
+  })
+
+  it('still logs other codegen failures without a filter', async () => {
+    const deps = makeDeps({
+      applyCodegen: vi.fn(async () => {
+        throw new Error('some other apply failure')
+      }),
+      shouldLogUnknownVideo: () => false,
+    })
+    deps.fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).endsWith('/cli/dev/poll')) {
+        const call = deps.fetchMock.mock.calls.filter(([u]) =>
+          String(u).endsWith('/cli/dev/poll')
+        ).length
+        if (call === 1) {
+          return jsonResponse({
+            trigger: null,
+            codegenRequests: [codegenRequest],
+          })
+        }
+        return jsonResponse({ trigger: null, codegenRequests: [] })
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    await drainDevCodegenRequests(config, deps, 'lst_1')
+
+    expect(deps.logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('some other apply failure')
+    )
   })
 
   it('fails a claimed trigger with the one-shot pointer message', async () => {

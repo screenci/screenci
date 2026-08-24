@@ -7,6 +7,8 @@
  * editable action must carry an editId, so editor edits can always be
  * codegen'd by id. Videos failing the check get their missing editIds
  * stamped into the source and are re-recorded as a preview (no render).
+ * Without a grep filter, the first pass records EVERY declared video
+ * regardless of freshness, so new and renamed videos are always picked up.
  *
  * A brand-new project has no kept data at all: the first pass records
  * everything, the second stamps the freshly learned editIds and re-records,
@@ -60,7 +62,12 @@ export type DevStartupDeps = {
 }
 
 export type DevStartupOptions = {
-  /** Only manage videos whose name matches this pattern (regex, like --grep). */
+  /**
+   * Only manage videos whose name matches this pattern (regex, like --grep).
+   * Without a grep, the first pass records EVERY declared video regardless of
+   * freshness, so newly declared or renamed videos (which have no kept
+   * recording to look stale) are always picked up.
+   */
   grep?: string
   /** Re-record everything regardless of freshness. */
   forceRecord?: boolean
@@ -220,7 +227,11 @@ export async function runDevStartupSync(
       }
     }
 
-    const force = options.forceRecord === true && pass === 1
+    // Without a grep the first pass records every declared video: kept
+    // recordings only cover videos that recorded before, so a freshness scan
+    // alone can never surface a newly declared or renamed video.
+    const recordAll = options.grep === undefined && pass === 1
+    const force = (options.forceRecord === true || recordAll) && pass === 1
     // Missing editIds only make a recording stale when stamping actually
     // WROTE something this pass: the ids come from the source stamps, so
     // re-recording an unstampable video (loop call sites) can never fix it
@@ -246,24 +257,35 @@ export async function runDevStartupSync(
     }
 
     const names = stale.map((state) => state.videoName)
-    // Name the reason per video: a repeated re-record (e.g. a source that
-    // keeps hash-mismatching) must be explainable from the log alone.
-    const described = stale.map((state) => {
-      const reason = force
-        ? 'forced'
-        : (state.staleReason ??
-          (state.missingIds ? 'recorded actions are missing editIds' : null))
-      return reason === null
-        ? state.videoName
-        : `${state.videoName} (${reason})`
-    })
-    deps.logger.info(
-      `Recording ${names.length} out-of-date video${names.length === 1 ? '' : 's'}: ${described.join(', ')}`
-    )
+    if (recordAll) {
+      deps.logger.info('Recording all videos (no grep provided).')
+    } else {
+      // Name the genuine staleness reason per video: a repeated re-record
+      // (e.g. a source that keeps hash-mismatching) must be explainable from
+      // the log alone. A forced record (--force-record, or the no-grep
+      // default recording everything) gets no suffix; labeling routine runs
+      // "(forced)" only confuses.
+      const described = stale.map((state) => {
+        const reason = force
+          ? null
+          : (state.staleReason ??
+            (state.missingIds ? 'recorded actions are missing editIds' : null))
+        return reason === null
+          ? state.videoName
+          : `${state.videoName} (${reason})`
+      })
+      deps.logger.info(
+        `Recording ${names.length} video${names.length === 1 ? '' : 's'}: ${described.join(', ')}`
+      )
+    }
     if (deps.setSyncing) await deps.setSyncing(names).catch(() => {})
     try {
+      // recordAll passes no pattern: declared videos without any kept
+      // recording are not in `names`, and they must record too.
       await deps.recordPreview(
-        names.map((name) => escapeRegExp(name)).join('|')
+        recordAll
+          ? undefined
+          : names.map((name) => escapeRegExp(name)).join('|')
       )
     } finally {
       if (deps.setSyncing) await deps.setSyncing([]).catch(() => {})
@@ -277,9 +299,7 @@ export async function runDevStartupSync(
     )
   }
   if (recorded.size === 0 && fresh.length > 0) {
-    deps.logger.info(
-      'All recordings are up to date with the test sources, skipping record.'
-    )
+    deps.logger.info('All recordings are up to date, skipping record.')
   }
 
   return { recorded: [...recorded], fresh, missingEditIds }

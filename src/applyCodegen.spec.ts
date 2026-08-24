@@ -238,23 +238,22 @@ describe('applyCodegenRequest: options and narration records', () => {
     )
   })
 
-  it('throws with the reason when a narration edit is app-managed', async () => {
+  it('converts a names-only narration declaration instead of refusing', async () => {
     const source = SOURCE.replace(
       "video('Demo'",
       "video.narration(['intro'])('Demo'"
     )
-    await expect(
-      apply(
-        JSON.stringify({
-          type: 'narrationEdit',
-          id: 'narration|intro|default',
-          cueName: 'intro',
-          lang: 'default',
-          value: 'Hi',
-        }),
-        source
-      )
-    ).rejects.toThrow(/app-managed/)
+    const writes = await apply(
+      JSON.stringify({
+        type: 'narrationEdit',
+        id: 'narration|intro|default',
+        cueName: 'intro',
+        lang: 'default',
+        value: 'Hi',
+      }),
+      source
+    )
+    expect(writes[FILE]).toContain("video.narration({ intro: 'Hi' })('Demo'")
   })
 })
 

@@ -1749,10 +1749,10 @@ describe('planCodeSync: narration cue value codify', () => {
     expect(result.applied).toHaveLength(1)
   })
 
-  it('marks a names-only declaration app-managed', () => {
+  it('converts a names-only declaration into a seeded object on edit', () => {
     const namesOnlySource = SOURCE.replace(
       "video('Demo'",
-      "video.narration(['intro'])('Demo'"
+      "video.narration(['intro', 'cta'])('Demo'"
     )
     const result = plan(
       inputWith({
@@ -1770,9 +1770,12 @@ describe('planCodeSync: narration cue value codify', () => {
       }),
       { [FILE]: namesOnlySource }
     )
-    expect(result.files).toHaveLength(0)
-    expect(result.unappliable).toHaveLength(1)
-    expect(result.unappliable[0]!.reason).toBe('app-managed')
+    const after = afterFor(result, FILE)
+    expect(after).toContain(
+      "video.narration({ intro: 'Hi', cta: { editor: 'cta' } })"
+    )
+    expect(result.applied).toHaveLength(1)
+    expect(result.unappliable).toHaveLength(0)
   })
 
   it('marks the video unappliable when its declaration is absent', () => {

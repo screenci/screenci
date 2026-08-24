@@ -22,6 +22,7 @@ import {
   createCodegenFailureLog,
   type CodegenFailureLog,
 } from './codegenFailureLog.js'
+import { formatAppliedEditLine } from './previewOutput.js'
 
 export const DEV_TOKEN_HEADER = 'X-ScreenCI-Dev-Token'
 export const SCREENCI_EDIT_TOKEN_ENV = 'SCREENCI_EDIT_TOKEN'
@@ -129,6 +130,21 @@ export type DevListenDeps = {
   takeLocalRequest?: () => LocalRecordRequest | null
   /** Runs a machine-local preview record for the given video names. */
   runLocalRecord?: (videoNames: string[], signal?: AbortSignal) => Promise<void>
+  /**
+   * Whether an unknown-video codegen failure (an edit addressed to a video
+   * name no longer declared in the project) should be logged. Wired to the
+   * session's grep filter: without a grep these lines stay silent, with a
+   * grep only matching video names are logged. The edit is still reported
+   * failed to the backend either way. Defaults to logging.
+   */
+  shouldLogUnknownVideo?: (videoName: string) => boolean
+  /**
+   * Whether each successfully applied codegen request logs its own line.
+   * Defaults to true (live `--watch` sessions want per-edit feedback).
+   * One-shot commands set false and print only the drain summary; skipped
+   * and failed edits always log regardless.
+   */
+  logAppliedEdits?: boolean
   /** Registers a heartbeat timer during a run; returns a cancel function. */
   setIntervalFn?: (fn: () => void, ms: number) => () => void
   /** Time source, injectable for tests. */
@@ -165,7 +181,7 @@ function defaultSetInterval(fn: () => void, ms: number): () => void {
 
 async function postDev<T>(
   config: DevListenConfig,
-  deps: DevListenDeps,
+  deps: Pick<DevListenDeps, 'fetchFn'>,
   path: string,
   body: Record<string, unknown>
 ): Promise<T> {
@@ -312,7 +328,7 @@ async function handleCodegenRequest(
   deps: DevListenDeps,
   listenerId: string,
   request: DevCodegenRequest
-): Promise<void> {
+): Promise<'applied' | 'orphaned' | 'failed'> {
   if (deps.applyCodegen === undefined) {
     await reportDevCodegen(
       config,
@@ -322,7 +338,7 @@ async function handleCodegenRequest(
       'failed',
       'This listener does not support codegen'
     )
-    return
+    return 'failed'
   }
   try {
     const result = await deps.applyCodegen(request)
@@ -341,7 +357,7 @@ async function handleCodegenRequest(
         `Skipped ${describeEditId(request.editId)} on "${request.videoName}": ` +
           `its action is no longer in the recording.`
       )
-      return
+      return 'orphaned'
     }
     await reportDevCodegen(
       config,
@@ -350,20 +366,35 @@ async function handleCodegenRequest(
       request.requestId,
       'applied'
     )
-    deps.logger.info(
-      `Applied ${describeEditId(request.editId)} to "${request.videoName}"${
-        request.queuedBy !== undefined ? ` (queued by ${request.queuedBy})` : ''
-      }.${request.requiresRecord ? '' : ' Applies at render time, no re-record needed.'}`
-    )
+    if (deps.logAppliedEdits !== false) {
+      deps.logger.info(
+        formatAppliedEditLine({
+          editDescription: describeEditId(request.editId),
+          videoName: request.videoName,
+          queuedBy: request.queuedBy,
+          requiresRecord: request.requiresRecord,
+        })
+      )
+    }
+    return 'applied'
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    // Coalesced: a burst of identical-cause failures (e.g. every cue of an
-    // added language hitting the same missing declaration) logs one line.
-    codegenFailureLogFor(deps.logger).logFailure({
-      videoName: request.videoName,
-      editDescription: describeEditId(request.editId),
-      message,
-    })
+    // Unknown-video refusals (usually a rename in code) are only worth a log
+    // line when the session's grep specifically targets that video; the
+    // failure still reaches the backend below either way.
+    const suppress =
+      message.includes('[unknown-video]') &&
+      deps.shouldLogUnknownVideo !== undefined &&
+      !deps.shouldLogUnknownVideo(request.videoName)
+    if (!suppress) {
+      // Coalesced: a burst of identical-cause failures (e.g. every cue of an
+      // added language hitting the same missing declaration) logs one line.
+      codegenFailureLogFor(deps.logger).logFailure({
+        videoName: request.videoName,
+        editDescription: describeEditId(request.editId),
+        message,
+      })
+    }
     await reportDevCodegen(
       config,
       deps,
@@ -372,6 +403,7 @@ async function handleCodegenRequest(
       'failed',
       message
     )
+    return 'failed'
   }
 }
 
@@ -391,13 +423,25 @@ export async function drainDevCodegenRequests(
   config: DevListenConfig,
   deps: DevListenDeps,
   listenerId: string
-): Promise<{ handled: number }> {
+): Promise<{ handled: number; failed: number; skipped: number }> {
+  // handled counts edits actually written into the sources; orphaned edits
+  // (their action is gone from the recording, logged as skipped) and failures
+  // are counted separately so the summary never overstates what synced.
   let handled = 0
+  let failed = 0
+  let skipped = 0
   for (;;) {
     const result = await pollDevListener(config, deps, listenerId)
     for (const request of result.codegenRequests) {
-      await handleCodegenRequest(config, deps, listenerId, request)
-      handled++
+      const outcome = await handleCodegenRequest(
+        config,
+        deps,
+        listenerId,
+        request
+      )
+      if (outcome === 'failed') failed++
+      else if (outcome === 'orphaned') skipped++
+      else handled++
     }
     if (result.trigger !== null) {
       await reportDevTrigger(
@@ -410,9 +454,27 @@ export async function drainDevCodegenRequests(
       ).catch(() => {})
     }
     if (result.codegenRequests.length === 0 && result.trigger === null) {
-      return { handled }
+      return { handled, failed, skipped }
     }
   }
+}
+
+/**
+ * Read-only count of editor edits queued for this project that are not yet
+ * written into any source. Unlike a poll, this claims nothing: `screenci
+ * export` uses it to warn about unsynced edits without applying them.
+ */
+export async function fetchPendingCodegenCount(
+  config: DevListenConfig,
+  deps: Pick<DevListenDeps, 'fetchFn'>
+): Promise<number> {
+  const result = await postDev<{ pending?: number }>(
+    config,
+    deps,
+    '/cli/dev/pending-codegen-count',
+    {}
+  )
+  return typeof result.pending === 'number' ? result.pending : 0
 }
 
 export type DevListenController = {

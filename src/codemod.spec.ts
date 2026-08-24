@@ -665,11 +665,33 @@ describe('setNarrationValue', () => {
     expect(result).toEqual({ kind: 'edits', edits: [] })
   })
 
-  it('reports a names-only declaration as app-managed', () => {
+  it('converts a names-only declaration to an object, keeping the rest editor-owned', () => {
     const source = "video.narration(['intro', 'cta'])('Demo', async () => {})"
     expect(
-      narrate(source, { cueName: 'intro', lang: 'default', value: 'Hi' })
-    ).toEqual({ kind: 'appManaged' })
+      narrated(source, { cueName: 'intro', lang: 'default', value: 'Hi' })
+    ).toBe(
+      "video.narration({ intro: 'Hi', cta: { editor: 'cta' } })" +
+        "('Demo', async () => {})"
+    )
+  })
+
+  it('appends a cue missing from the names-only array on conversion', () => {
+    const source = "video.narration(['cta'])('Demo', async () => {})"
+    expect(
+      narrated(source, { cueName: 'intro', lang: 'default', value: 'Hi' })
+    ).toBe(
+      "video.narration({ cta: { editor: 'cta' }, intro: 'Hi' })" +
+        "('Demo', async () => {})"
+    )
+  })
+
+  it('refuses a non-default-language first edit on a names-only array', () => {
+    // The converted flat object is content-major; seeding a non-default
+    // language there would put its text in the shared position.
+    const source = "video.narration(['intro'])('Demo', async () => {})"
+    expect(
+      narrate(source, { cueName: 'intro', lang: 'fr', value: 'Salut' })
+    ).toEqual({ kind: 'unsupported' })
   })
 
   it('is unsupported when the declaration argument is not a literal', () => {

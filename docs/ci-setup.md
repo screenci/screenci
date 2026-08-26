@@ -22,13 +22,23 @@ left untouched on re-run.
 The workflow runs on pushes to `main` and on
 [`workflow_dispatch`](https://docs.github.com/en/actions/using-workflows/manually-running-a-workflow),
 installs Node.js 24 with dependency caching, installs the Playwright Chromium
-Headless Shell, and runs `screenci export`. It mirrors
-[Playwright CI](https://playwright.dev/docs/ci). Use `push` to keep videos current
-automatically, or `workflow_dispatch` for a manual approval step before exporting.
+Headless Shell, and runs `screenci preview --no-sync`. It mirrors
+[Playwright CI](https://playwright.dev/docs/ci). Use `push` to keep previews
+current automatically, or `workflow_dispatch` for a manual, targeted run.
 
-`export` pulls any queued editor edits into the sources, re-records every
-requested video, waits for the renders to finish, and downloads the outputs.
-Export minutes are spent on every video that renders in the run.
+`preview --no-sync` re-records every requested video and updates the live
+previews. `--no-sync` keeps the CI checkout read-only: queued editor edits are
+not pulled into the sources there (edits drained on a throwaway CI runner
+would be lost); they stay queued for your next local `preview` or `sync`, and
+the step logs a warning when edits are pending.
+
+Prefer final rendered videos instead of live previews? The generated workflow
+contains a commented-out alternative that swaps the record step for
+`screenci export --no-wait`. `export` re-records and starts the final renders;
+`--no-wait` exits right after the upload instead of waiting for rendering to
+finish and downloading the results, which keeps the CI job short (the finished
+renders are available in the ScreenCI app). Export minutes are spent on every
+video that renders in the run.
 
 ## Required secret
 
@@ -41,7 +51,7 @@ early if it is missing.
 
 If your videos navigate to a locally-running app via `webServer` in
 `screenci.config.ts`, the generated workflow needs two extra steps so the app
-is built and reachable when `screenci export` runs.
+is built and reachable when the record step runs.
 
 ### Update `screenci.config.ts`
 
@@ -161,9 +171,13 @@ Notes:
 
 ## Reading back render status
 
-`screenci export` already waits for renders and exits `0` only when every
+When CI runs the `export` alternative,
+`screenci export` waits for renders and exits `0` only when every
 requested video rendered and downloaded, so a green export step means the
-videos are done. To read the results back later (or from another job), run
+videos are done. When the videos are consumed from the web instead of as
+files, `screenci export --no-wait` skips the wait and the download; the step
+then only verifies that recording and uploading succeeded. To read the
+results back later (or from another job), run
 [`screenci info`](/docs/reference/cli#screenci-info): it reports each
 language's render status (`finished`, `rendering`, or `failed`) and public
 URLs as JSON.

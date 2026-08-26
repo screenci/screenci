@@ -3459,6 +3459,8 @@ type ExportCommandOptions = {
   languages: string | undefined
   grep: string | undefined
   outputDir: string
+  /** False (--no-wait) dispatches the renders and exits without downloading. */
+  wait: boolean
 }
 
 /**
@@ -3468,7 +3470,9 @@ type ExportCommandOptions = {
  * carry changes the freshness hash does not see, and export is the moment to
  * capture them), polls until every requested render is terminal, and
  * downloads the outputs into the output directory. The CI one-shot: exit
- * code 0 only when every requested video finished and downloaded.
+ * code 0 only when every requested video finished and downloaded. With
+ * `wait: false` (--no-wait) the renders are dispatched and the command exits
+ * right after the upload, without polling or downloading.
  */
 async function runExportCommand(options: ExportCommandOptions): Promise<void> {
   const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.configPath)
@@ -3633,6 +3637,10 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
       )
       return
     }
+    if (!options.wait) {
+      logNoWaitExportNotice()
+      return
+    }
     await pollAndDownloadExports({
       targets: [
         {
@@ -3676,6 +3684,10 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
     return
   }
 
+  if (!options.wait) {
+    logNoWaitExportNotice()
+    return
+  }
   await pollAndDownloadExports({
     targets,
     languagesCsv: options.languages,
@@ -3683,6 +3695,16 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
     fetchInfo,
     secret,
   })
+}
+
+/**
+ * Printed instead of the poll/download tail when `--no-wait` is set. The
+ * renders were dispatched; the results URL was already printed above.
+ */
+function logNoWaitExportNotice(): void {
+  logger.info(
+    'Not waiting for renders (--no-wait). Track progress and download from the URL above.'
+  )
 }
 
 /** Shared export tail: wait for the renders, download, summarize, set exit code. */
@@ -4090,7 +4112,9 @@ async function resolveQuickDevConfig(
  */
 export async function warnUnsyncedEditsBeforeExport(
   options: { config?: string } = {},
-  depsOverride: Partial<DevListenDeps> & { machineName?: string } = {}
+  depsOverride: Partial<DevListenDeps> & { machineName?: string } = {},
+  /** Verb naming the operation proceeding without the edits. */
+  action: 'Exporting' | 'Recording' = 'Exporting'
 ): Promise<void> {
   try {
     const config = await resolveQuickDevConfig(options, depsOverride)
@@ -4100,11 +4124,39 @@ export async function warnUnsyncedEditsBeforeExport(
     })
     if (pending > 0) {
       logger.warn(
-        `${pending} editor edit${pending === 1 ? ' is' : 's are'} not yet in your sources; run ${pc.cyan(getSuggestedScreenciCommand('sync'))} or ${pc.cyan(getSuggestedScreenciCommand('preview'))} first. Exporting without ${pending === 1 ? 'it' : 'them'}.`
+        `${pending} editor edit${pending === 1 ? ' is' : 's are'} not yet in your sources; run ${pc.cyan(getSuggestedScreenciCommand('sync'))} or ${pc.cyan(getSuggestedScreenciCommand('preview'))} first. ${action} without ${pending === 1 ? 'it' : 'them'}.`
       )
     }
   } catch {
-    // Best-effort peek: never block or fail an export over it.
+    // Best-effort peek: never block or fail the run over it.
+  }
+}
+
+/**
+ * Builds the queued-edits drainer an edit session runs on connect and, in
+ * one-shot mode, once more before disconnecting. With syncEnabled false
+ * (preview --no-sync, CI runners) the drainer is a no-op so the checkout
+ * stays read-only; queued edits remain on the server for the next syncing
+ * run. Drain failures only warn: a broken sync should not take down the
+ * session.
+ */
+export function createQueuedEditsDrainer(params: {
+  syncEnabled: boolean
+  config: DevListenConfig
+  deps: DevListenDeps
+  listenerId: string
+}): () => Promise<void> {
+  const { syncEnabled, config, deps, listenerId } = params
+  return async () => {
+    if (!syncEnabled) return
+    try {
+      const result = await drainDevCodegenRequests(config, deps, listenerId)
+      const summary = formatDrainSummary(result)
+      if (summary !== null) deps.logger.info(summary)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      deps.logger.warn(`Could not sync queued editor edits: ${message}`)
+    }
   }
 }
 
@@ -4175,6 +4227,12 @@ export async function runDevCommand(
      * exit instead of staying connected as the live bridge.
      */
     once?: boolean
+    /**
+     * False skips draining queued editor edits into the sources (--no-sync).
+     * Meant for CI runners, whose checkouts must stay read-only; the edits
+     * stay queued for the next syncing preview/sync/test run.
+     */
+    sync?: boolean
   },
   depsOverride: Partial<DevListenDeps> & {
     machineName?: string
@@ -4421,21 +4479,19 @@ export async function runDevCommand(
 
   // Sync queued browser edits into the sources on every connect, so edits
   // made while no machine was running land in code without a live bridge.
-  const drainQueuedEdits = async (): Promise<void> => {
-    try {
-      const result = await drainDevCodegenRequests(
-        config,
-        deps,
-        registration.listenerId
-      )
-      const summary = formatDrainSummary(result)
-      if (summary !== null) logger.info(summary)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      logger.warn(`Could not sync queued editor edits: ${message}`)
-    }
+  // With --no-sync (CI runners) the drain is skipped and queued edits only
+  // get a best-effort warning so the log surfaces them.
+  const drainQueuedEdits = createQueuedEditsDrainer({
+    syncEnabled: options.sync !== false,
+    config,
+    deps,
+    listenerId: registration.listenerId,
+  })
+  if (options.sync !== false) {
+    await drainQueuedEdits()
+  } else {
+    await warnUnsyncedEditsBeforeExport(options, depsOverride, 'Recording')
   }
-  await drainQueuedEdits()
 
   const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.config)
   const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
@@ -4605,9 +4661,13 @@ export async function runDevCommand(
   } else if (options.once === true) {
     const lastRecordId = await readLastRecordId(screenciDir)
     if (lastRecordId !== null) {
+      const previewUrl = `${getDevFrontendUrl()}/preview/${lastRecordId}`
+      // In GitHub Actions the generated workflow surfaces this as the
+      // deployment environment URL (steps.record.outputs.screenci_project_url).
+      await writeGitHubProjectOutput(previewUrl)
       logger.info('')
       logger.info('Open your previews at:')
-      logger.info(pc.cyan(`${getDevFrontendUrl()}/preview/${lastRecordId}`))
+      logger.info(pc.cyan(previewUrl))
     }
   }
 
@@ -5503,8 +5563,9 @@ export async function main() {
     .command('export [patterns...]')
     .description(
       'Export finished videos: re-record every video, render, wait, and ' +
-        'download the outputs. Positional patterns filter videos by title; ' +
-        'no patterns exports every video.'
+        'download the outputs (--no-wait skips the wait and download). ' +
+        'Positional patterns filter videos by title; no patterns exports ' +
+        'every video.'
     )
     .option('-c, --config <path>', 'path to config file')
     .option('-v, --verbose', 'verbose output')
@@ -5525,6 +5586,10 @@ export async function main() {
       'directory for the downloaded files (default: exports)'
     )
     .option(
+      '--no-wait',
+      'start the renders and exit immediately without waiting for them or downloading files'
+    )
+    .option(
       '--force',
       'deprecated no-op: export always re-records every requested video'
     )
@@ -5543,6 +5608,7 @@ export async function main() {
           languages?: string
           grep?: string
           output?: string
+          wait?: boolean
           force?: boolean
           sync?: boolean
         }
@@ -5576,6 +5642,7 @@ export async function main() {
           languages: options.languages,
           grep,
           outputDir: options.output ?? 'exports',
+          wait: options.wait !== false,
         })
       }
     )
@@ -5649,6 +5716,12 @@ export async function main() {
       'with --watch semantics but without the source-file watcher: stay ' +
         'connected, but do not re-record previews on source changes'
     )
+    .option(
+      '--no-sync',
+      'do not pull queued browser edits into the sources (for CI runners, ' +
+        'whose checkouts must stay read-only; edits stay queued for your ' +
+        'next local preview or sync)'
+    )
     .action(
       async (
         grepPatterns: string[],
@@ -5660,6 +5733,7 @@ export async function main() {
           grep?: string
           forceRecord?: boolean
           watch?: boolean
+          sync?: boolean
         }
       ) => {
         // Positional patterns act like `playwright test <pattern>`: filter the

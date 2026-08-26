@@ -1395,18 +1395,29 @@ ${appBuildHint}      - name: Install dependencies
         working-directory: ${islandWorkflowPath}
         run: ${commands.playwrightRun} install --only-shell chromium
 
+      # --no-sync keeps the CI checkout read-only: queued browser edits are
+      # not pulled into the sources here, they stay queued for your next
+      # local preview or sync.
       - id: record
-        name: Export
+        name: Record previews
         working-directory: ${islandWorkflowPath}
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
           SCREENCI_GREP: \${{ inputs.grep }}
         run: |
           if [ -n "$SCREENCI_GREP" ]; then
-            ${commands.screenciRun} export --grep "$SCREENCI_GREP"
+            ${commands.screenciRun} preview --no-sync --grep "$SCREENCI_GREP"
           else
-            ${commands.screenciRun} export
+            ${commands.screenciRun} preview --no-sync
           fi
+
+      # Prefer final rendered videos over live previews? Replace the run
+      # lines above with export. --no-wait exits right after the upload
+      # instead of waiting for rendering to finish and downloading the
+      # results (keeps the CI job short; the finished renders are available
+      # in the ScreenCI app):
+      #
+      #   ${commands.screenciRun} export --no-wait
 `
 }
 

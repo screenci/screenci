@@ -301,6 +301,21 @@ Directory for the downloaded files. Defaults to `exports`:
 npx screenci export -o dist/videos
 ```
 
+### `--no-wait`
+
+Start the renders and exit immediately, without waiting for them or
+downloading files. Use this when the finished videos are consumed from the
+web (public URLs or embeds) and the run only needs to publish fresh footage:
+
+```bash
+npx screenci export --no-wait
+```
+
+The command still records, uploads, and dispatches the renders, and prints
+the results URL. It exits `0` as soon as the upload succeeds; render failures
+are visible on the results page, not in the exit code. Without this flag,
+`export` waits for every render and exits non-zero if any of them fails.
+
 ### `--force`
 
 Deprecated no-op, kept so existing scripts do not break: `export` always
@@ -311,7 +326,9 @@ re-records every requested video.
 Deprecated no-op: `export` never applies queued browser edits. An export
 renders exactly what your sources say. When edits are still queued in the
 editor, `export` prints a warning naming the count and proceeds without them;
-apply them first with `screenci sync` or `screenci preview`.
+apply them first with `screenci sync` or `screenci preview`. (On
+`screenci preview` the flag is real: there it disables the edit sync, see
+[`preview --no-sync`](#screenci-preview-pattern).)
 
 Behavior:
 
@@ -337,7 +354,8 @@ Important restriction:
 ## `screenci preview [pattern]`
 
 Records live previews and prints their links. One-shot `preview` (no
-`--watch`) syncs any queued web edits into your `.screenci.ts` sources,
+`--watch`) syncs any queued web edits into your `.screenci.ts` sources
+(skipped with `--no-sync`, see the option below),
 re-records and uploads the live preview of every matched video that is stale
 (all managed videos when no pattern is given), prints the link, and exits.
 When exactly one video was recorded it prints that video's preview page
@@ -416,6 +434,11 @@ Options:
   latest queued request is kept). Default: 10.
 - `--no-watch`: stay connected like `--watch`, but without the source-file
   watcher (see below).
+- `--no-sync`: do not pull queued browser edits into the sources. Meant for
+  CI runners, whose checkouts must stay read-only (the generated GitHub
+  workflow uses it, see [CI Setup](/docs/ci-setup)); edits stay queued
+  for your next local `preview` or `sync`, and the run warns when edits are
+  pending.
 - `-v, --verbose`: verbose output.
 
 Startup check: without a pattern or `--grep`, `screenci preview` records every

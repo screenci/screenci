@@ -914,7 +914,13 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         'run: pnpm exec playwright install --only-shell chromium'
       )
-      expect(workflowCall?.[1]).toContain('pnpm exec screenci export')
+      expect(workflowCall?.[1]).toContain(
+        'pnpm exec screenci preview --no-sync'
+      )
+      // Export stays available as a commented-out alternative.
+      expect(workflowCall?.[1]).toContain(
+        '#   pnpm exec screenci export --no-wait'
+      )
       // The commented local-app build hint tracks the detected package manager.
       expect(workflowCall?.[1]).toContain(
         '#     run: pnpm install --frozen-lockfile'
@@ -923,7 +929,7 @@ describe('CLI', () => {
       // Targeted recordings: optional `grep` input forwarded to record.
       expect(workflowCall?.[1]).toContain('SCREENCI_GREP: ${{ inputs.grep }}')
       expect(workflowCall?.[1]).toContain(
-        'pnpm exec screenci export --grep "$SCREENCI_GREP"'
+        'pnpm exec screenci preview --no-sync --grep "$SCREENCI_GREP"'
       )
       expect(workflowCall?.[1]).toMatch(/workflow_dispatch:\s*\n\s*inputs:/)
     })
@@ -1085,9 +1091,9 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         'run: yarn playwright install --only-shell chromium'
       )
-      expect(workflowCall?.[1]).toContain('yarn screenci export')
+      expect(workflowCall?.[1]).toContain('yarn screenci preview --no-sync')
       expect(workflowCall?.[1]).toContain(
-        'yarn screenci export --grep "$SCREENCI_GREP"'
+        'yarn screenci preview --no-sync --grep "$SCREENCI_GREP"'
       )
     })
 

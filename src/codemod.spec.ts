@@ -23,6 +23,7 @@ import {
   setNarrationValue,
   setValuesValue,
   setVideoLanguages,
+  removeDeclarationLanguages,
   setEditorMedia,
   setOptionValue,
   setOverlayDeclProps,
@@ -36,6 +37,7 @@ import {
   type CodemodContext,
   type TextEdit,
 } from './codemod.js'
+import { isLanguageKey } from './declare.js'
 
 function ctxOf(source: string): CodemodContext {
   return createContext(ts, 'test.screenci.ts', source)
@@ -1084,6 +1086,161 @@ describe('setVideoLanguages', () => {
     expect(applyAll(source, edits)).toBe(
       "video.languages({ languages: ['en'], mode: 'shared' })('Demo', async () => {})"
     )
+  })
+})
+
+describe('removeDeclarationLanguages', () => {
+  function applyAll(source: string, edits: TextEdit[] | null): string {
+    expect(edits).not.toBeNull()
+    return applyTextEdits(source, edits!)
+  }
+
+  it('removes the deleted language sub-object from a language-major narration', () => {
+    const source =
+      "video.narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })('Demo', async () => {})"
+    const edits = removeDeclarationLanguages(
+      ctxOf(source),
+      'Demo',
+      'narration',
+      ['fi'],
+      isLanguageKey
+    )
+    expect(applyAll(source, edits)).toBe(
+      "video.narration({ en: { intro: 'Hi' } })('Demo', async () => {})"
+    )
+  })
+
+  it('removes several languages at once', () => {
+    const source =
+      "video.narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' }, de: { intro: 'Hallo' } })('Demo', async () => {})"
+    const edits = removeDeclarationLanguages(
+      ctxOf(source),
+      'Demo',
+      'narration',
+      ['fi', 'de'],
+      isLanguageKey
+    )
+    expect(applyAll(source, edits)).toBe(
+      "video.narration({ en: { intro: 'Hi' } })('Demo', async () => {})"
+    )
+  })
+
+  it('collapses to {} when the only language is removed', () => {
+    const source =
+      "video.narration({ fi: { intro: 'Moi' } })('Demo', async () => {})"
+    const edits = removeDeclarationLanguages(
+      ctxOf(source),
+      'Demo',
+      'narration',
+      ['fi'],
+      isLanguageKey
+    )
+    expect(applyAll(source, edits)).toBe(
+      "video.narration({})('Demo', async () => {})"
+    )
+  })
+
+  it('leaves the shared default sub-object alone', () => {
+    const source =
+      "video.narration({ default: { intro: 'Hi' }, fi: { intro: 'Moi' } })('Demo', async () => {})"
+    const edits = removeDeclarationLanguages(
+      ctxOf(source),
+      'Demo',
+      'narration',
+      ['fi'],
+      isLanguageKey
+    )
+    expect(applyAll(source, edits)).toBe(
+      "video.narration({ default: { intro: 'Hi' } })('Demo', async () => {})"
+    )
+  })
+
+  it('also cleans a language-major values declaration', () => {
+    const source =
+      "video.values({ en: { title: 'Hi' }, fi: { title: 'Moi' } })('Demo', async () => {})"
+    const edits = removeDeclarationLanguages(
+      ctxOf(source),
+      'Demo',
+      'values',
+      ['fi'],
+      isLanguageKey
+    )
+    expect(applyAll(source, edits)).toBe(
+      "video.values({ en: { title: 'Hi' } })('Demo', async () => {})"
+    )
+  })
+
+  it('is a no-op on a content-major declaration', () => {
+    const source = "video.narration({ intro: 'Hi' })('Demo', async () => {})"
+    expect(
+      removeDeclarationLanguages(
+        ctxOf(source),
+        'Demo',
+        'narration',
+        ['fi'],
+        isLanguageKey
+      )
+    ).toEqual([])
+  })
+
+  it('is a no-op on a names-only array or a missing declaration', () => {
+    const array = "video.narration(['intro'])('Demo', async () => {})"
+    expect(
+      removeDeclarationLanguages(
+        ctxOf(array),
+        'Demo',
+        'narration',
+        ['fi'],
+        isLanguageKey
+      )
+    ).toEqual([])
+    const missing = "video('Demo', async () => {})"
+    expect(
+      removeDeclarationLanguages(
+        ctxOf(missing),
+        'Demo',
+        'narration',
+        ['fi'],
+        isLanguageKey
+      )
+    ).toEqual([])
+  })
+
+  it('is a no-op when the removed language is not declared', () => {
+    const source =
+      "video.narration({ en: { intro: 'Hi' } })('Demo', async () => {})"
+    expect(
+      removeDeclarationLanguages(
+        ctxOf(source),
+        'Demo',
+        'narration',
+        ['fi'],
+        isLanguageKey
+      )
+    ).toEqual([])
+  })
+
+  it('refuses a spread argument and a missing video declaration', () => {
+    const spread = "video.narration({ ...base })('Demo', async () => {})"
+    expect(
+      removeDeclarationLanguages(
+        ctxOf(spread),
+        'Demo',
+        'narration',
+        ['fi'],
+        isLanguageKey
+      )
+    ).toBeNull()
+    const other = "video('Other', async () => {})"
+    expect(
+      removeDeclarationLanguages(
+        ctxOf(other),
+        'Demo',
+        'narration',
+        ['fi'],
+        isLanguageKey
+      )
+    ).toBeNull()
   })
 })
 

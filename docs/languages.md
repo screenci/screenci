@@ -228,8 +228,10 @@ first record) and you can edit every translated line afterwards.
 
 Deleting a language from the same menu removes its exports and narrations and
 removes the language from the `video.languages([...])` declaration the same
-way (queued when no machine is connected). The default language cannot be
-deleted.
+way (queued when no machine is connected). The code edit also removes the
+language's entries from language-major `video.narration({...})` and
+`video.values({...})` declarations, so its cue texts do not linger in your
+sources. The default language cannot be deleted.
 
 ## Available languages
 

@@ -72,6 +72,7 @@ import {
   setNarrationValue,
   setValuesValue,
   setVideoLanguages,
+  removeDeclarationLanguages,
   setEditorMedia,
   setOptionValue,
   setOverlayDeclProps,
@@ -2270,11 +2271,32 @@ export function planCodeSync(
       const refusal =
         file === null
           ? unknownVideoRefusal(videoName)
-          : tryApply(file, (ctx) =>
-              setVideoLanguages(ctx, videoName, languagesEdit.languages, {
-                remove: removeLanguages,
-              })
-            )
+          : tryApply(file, (ctx) => {
+              const langEdits = setVideoLanguages(
+                ctx,
+                videoName,
+                languagesEdit.languages,
+                { remove: removeLanguages }
+              )
+              if (langEdits === null) return null
+              // Deleting a language also drops its per-language entries from
+              // the narration/values declarations, so its cue texts do not
+              // linger in code. Offsets are all against the same pre-edit
+              // text and target disjoint call arguments.
+              const edits = [...langEdits]
+              for (const method of ['narration', 'values'] as const) {
+                const cleanup = removeDeclarationLanguages(
+                  ctx,
+                  videoName,
+                  method,
+                  removeLanguages,
+                  isLanguageKey
+                )
+                if (cleanup === null) return null
+                edits.push(...cleanup)
+              }
+              return edits
+            })
       if (refusal === null) {
         applied.push({
           videoName,
@@ -2282,7 +2304,8 @@ export function planCodeSync(
           description:
             `set languages [${languagesEdit.languages.join(', ')}]` +
             (removeLanguages.length > 0
-              ? ` minus [${removeLanguages.join(', ')}]`
+              ? ` minus [${removeLanguages.join(', ')}]` +
+                ' (their narration entries removed)'
               : '') +
             ` on video '${videoName}'`,
         })

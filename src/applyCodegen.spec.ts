@@ -223,6 +223,26 @@ describe('applyCodegenRequest: options and narration records', () => {
     expect(writes[FILE]).toContain("video.languages(['en', 'de'])('Demo'")
   })
 
+  it('removeLanguages also drops the narration entries of the language', async () => {
+    const source = SOURCE.replace(
+      "video('Demo'",
+      "video.languages(['en', 'fi'])" +
+        ".narration({ en: { intro: 'Hi' }, fi: { intro: 'Moi' } })('Demo'"
+    )
+    const writes = await apply(
+      JSON.stringify({
+        type: 'languagesEdit',
+        id: 'languages',
+        languages: ['en'],
+        removeLanguages: ['fi'],
+      }),
+      source
+    )
+    expect(writes[FILE]).toContain(".languages(['en'])")
+    expect(writes[FILE]).toContain(".narration({ en: { intro: 'Hi' } })")
+    expect(writes[FILE]).not.toContain('Moi')
+  })
+
   it('writes an editorMediaEdit as a backend-hosted overlay declaration', async () => {
     const writes = await apply(
       JSON.stringify({

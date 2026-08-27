@@ -1652,6 +1652,50 @@ export function setVideoLanguages(
 }
 
 /**
+ * Remove the per-language entries of deleted languages from a language-major
+ * `video.narration({...})` or `video.values({...})` declaration of
+ * `videoName`. Used by the delete-language flow together with
+ * {@link setVideoLanguages}, so a removed language does not leave its cue
+ * texts behind in code.
+ *
+ * No-op (empty edits) when there is nothing per-language to remove: a missing
+ * declaration, a names-only array, a content-major object (shared entries
+ * only), or none of the removed languages present as keys. Conservative:
+ * returns null when the video declaration is missing or the argument resists
+ * a mechanical edit (spreads, computed keys, a non-literal argument).
+ * Idempotent: re-applying after removal produces no edit.
+ */
+export function removeDeclarationLanguages(
+  ctx: CodemodContext,
+  videoName: string,
+  method: 'narration' | 'values',
+  remove: readonly string[],
+  isLanguageKey: (key: string) => boolean
+): TextEdit[] | null {
+  const { ts } = ctx
+  if (remove.length === 0) return []
+  const call = findVideoCall(ctx, videoName)
+  if (call === null) return null
+  const existing = findMethodCallInChain(ts, call.expression, method)
+  if (existing === null) return []
+  const arg = existing.arguments[0]
+  if (arg === undefined) return []
+  if (ts.isArrayLiteralExpression(arg)) return [] // names-only: no languages
+  if (!ts.isObjectLiteralExpression(arg)) return null
+  const keys = objectLiteralKeys(ts, arg)
+  if (keys === null) return null
+  const languageMajor = keys.length > 0 && keys.every(isLanguageKey)
+  if (!languageMajor) return [] // content-major: shared entries only
+  const present = remove.filter((lang) => keys.includes(lang))
+  if (present.length === 0) return []
+  const objectText = ctx.source.slice(arg.getStart(), arg.getEnd())
+  const cleaned = removeObjectLiteralKeys(ts, objectText, present)
+  if (cleaned === null) return null
+  if (cleaned === objectText) return []
+  return [{ start: arg.getStart(), end: arg.getEnd(), replacement: cleaned }]
+}
+
+/**
  * Declare an editor-uploaded media item as backend-hosted in a
  * `video.<method>({...})` call (`overlays` / `narration` / `audio`), writing
  * `{ <name>: { editor: '<editorName>' } }`:

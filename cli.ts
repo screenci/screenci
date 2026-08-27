@@ -4113,8 +4113,12 @@ async function resolveQuickDevConfig(
 export async function warnUnsyncedEditsBeforeExport(
   options: { config?: string } = {},
   depsOverride: Partial<DevListenDeps> & { machineName?: string } = {},
-  /** Verb naming the operation proceeding without the edits. */
-  action: 'Exporting' | 'Recording' = 'Exporting'
+  /**
+   * export: exports never sync, so pending edits get a warning with the fix.
+   * no-sync: the user opted out (preview --no-sync), so pending edits only
+   * get a short informational note.
+   */
+  mode: 'export' | 'no-sync' = 'export'
 ): Promise<void> {
   try {
     const config = await resolveQuickDevConfig(options, depsOverride)
@@ -4123,9 +4127,15 @@ export async function warnUnsyncedEditsBeforeExport(
       fetchFn: depsOverride.fetchFn ?? fetch,
     })
     if (pending > 0) {
-      logger.warn(
-        `${pending} editor edit${pending === 1 ? ' is' : 's are'} not yet in your sources; run ${pc.cyan(getSuggestedScreenciCommand('sync'))} or ${pc.cyan(getSuggestedScreenciCommand('preview'))} first. ${action} without ${pending === 1 ? 'it' : 'them'}.`
-      )
+      if (mode === 'no-sync') {
+        logger.info(
+          `${pending} editor edit${pending === 1 ? '' : 's'} left queued (--no-sync).`
+        )
+      } else {
+        logger.warn(
+          `${pending} editor edit${pending === 1 ? ' is' : 's are'} not yet in your sources; run ${pc.cyan(getSuggestedScreenciCommand('sync'))} or ${pc.cyan(getSuggestedScreenciCommand('preview'))} first. Exporting without ${pending === 1 ? 'it' : 'them'}.`
+        )
+      }
     }
   } catch {
     // Best-effort peek: never block or fail the run over it.
@@ -4480,7 +4490,7 @@ export async function runDevCommand(
   // Sync queued browser edits into the sources on every connect, so edits
   // made while no machine was running land in code without a live bridge.
   // With --no-sync (CI runners) the drain is skipped and queued edits only
-  // get a best-effort warning so the log surfaces them.
+  // get a short best-effort note so the log surfaces them.
   const drainQueuedEdits = createQueuedEditsDrainer({
     syncEnabled: options.sync !== false,
     config,
@@ -4490,7 +4500,7 @@ export async function runDevCommand(
   if (options.sync !== false) {
     await drainQueuedEdits()
   } else {
-    await warnUnsyncedEditsBeforeExport(options, depsOverride, 'Recording')
+    await warnUnsyncedEditsBeforeExport(options, depsOverride, 'no-sync')
   }
 
   const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.config)

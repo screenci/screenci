@@ -30,7 +30,7 @@ current automatically, or `workflow_dispatch` for a manual, targeted run.
 previews. `--no-sync` keeps the CI checkout read-only: queued editor edits are
 not pulled into the sources there (edits drained on a throwaway CI runner
 would be lost); they stay queued for your next local `preview` or `sync`, and
-the step logs a warning when edits are pending.
+the step logs a short note when edits are pending.
 
 Prefer final rendered videos instead of live previews? The generated workflow
 contains a commented-out alternative that swaps the record step for

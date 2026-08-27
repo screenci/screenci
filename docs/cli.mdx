@@ -437,8 +437,8 @@ Options:
 - `--no-sync`: do not pull queued browser edits into the sources. Meant for
   CI runners, whose checkouts must stay read-only (the generated GitHub
   workflow uses it, see [CI Setup](/docs/ci-setup)); edits stay queued
-  for your next local `preview` or `sync`, and the run warns when edits are
-  pending.
+  for your next local `preview` or `sync`, and the run prints a short note
+  when edits are pending.
 - `-v, --verbose`: verbose output.
 
 Startup check: without a pattern or `--grep`, `screenci preview` records every

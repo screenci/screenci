@@ -12,16 +12,16 @@ commands from inside your `screenci/` project directory. Most commands resolve
 
 ## Command overview
 
-| Command                           | Purpose                                                                                                          |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `screenci init [name]`            | Scaffold a ScreenCI project                                                                                      |
-| `screenci test [playwrightArgs]`  | Run `.screenci.ts` files locally without final recording                                                         |
-| `screenci preview [pattern]`      | Record live previews and print their links; with `--watch`, connect this machine as one video's code-sync bridge |
-| `screenci export [patterns...]`   | Produce finished videos: re-record every requested video, render, and download                                   |
-| `screenci info`                   | Print the last record run's URLs and render status                                                               |
-| `screenci make-public <videoId>`  | Enable public delivery for a video                                                                               |
-| `screenci make-private <videoId>` | Disable public delivery for a video                                                                              |
-| `screenci delete <videoId>`       | Permanently delete a video and its renders                                                                       |
+| Command                           | Purpose                                                                        |
+| --------------------------------- | ------------------------------------------------------------------------------ |
+| `screenci init [name]`            | Scaffold a ScreenCI project                                                    |
+| `screenci test [playwrightArgs]`  | Run `.screenci.ts` files locally without final recording                       |
+| `screenci preview [pattern]`      | Record live previews and print their links                                     |
+| `screenci export [patterns...]`   | Produce finished videos: re-record every requested video, render, and download |
+| `screenci info`                   | Print the last record run's URLs and render status                             |
+| `screenci make-public <videoId>`  | Enable public delivery for a video                                             |
+| `screenci make-private <videoId>` | Disable public delivery for a video                                            |
+| `screenci delete <videoId>`       | Permanently delete a video and its renders                                     |
 
 ## `screenci init`
 
@@ -274,8 +274,11 @@ Positional arguments are title patterns (multiple are OR-combined, like
 every language. Downloads are named `<title>.<lang>.mp4`.
 The command polls render status every 5 seconds for up to 30 minutes
 and exits `0` only when every requested video rendered and downloaded. After a
-run it prints the run's page in the app (`<app>/export/<recordId>`), which the
-project page lists under **Exports**.
+run it prints the video's page in the app: a single-video run links that
+video's overview page with the run preselected
+(`<app>/project/<projectId>/video/<videoId>?export=<recordId>`), a run with
+several videos links the run's page (`<app>/export/<recordId>`), which links
+each video's page.
 
 ### `--languages <langs>`
 
@@ -321,15 +324,6 @@ are visible on the results page, not in the exit code. Without this flag,
 Deprecated no-op, kept so existing scripts do not break: `export` always
 re-records every requested video.
 
-### `--no-sync`
-
-Deprecated no-op: `export` never applies queued browser edits. An export
-renders exactly what your sources say. When edits are still queued in the
-editor, `export` prints a warning naming the count and proceeds without them;
-apply them first with `screenci sync` or `screenci preview`. (On
-`screenci preview` the flag is real: there it disables the edit sync, see
-[`preview --no-sync`](#screenci-preview-pattern).)
-
 Behavior:
 
 - enables recording timing for every requested video
@@ -353,25 +347,13 @@ Important restriction:
 
 ## `screenci preview [pattern]`
 
-Records live previews and prints their links. One-shot `preview` (no
-`--watch`) syncs any queued web edits into your `.screenci.ts` sources
-(skipped with `--no-sync`, see the option below),
-re-records and uploads the live preview of every matched video that is stale
-(all managed videos when no pattern is given), prints the link, and exits.
-When exactly one video was recorded it prints that video's preview page
-(`<app>/project/<projectId>/video/<videoId>/preview`); when several were
-recorded it prints the run listing page (`<app>/preview/<recordId>`), which
-links each video's preview page. Edits made in the web editor while no
-machine is connected queue server-side and are written into your sources by
-the next `screenci sync`, `test`, or `preview` (`export` never applies edits;
-it warns about queued ones and renders your sources as they are).
-
-With `--watch`, the command instead stays running as the live code-sync
-bridge for exactly one video: every web edit is written back into your
-sources within seconds, and the editor can trigger a local record of the
-video on demand. It keeps polling the service for edit and record requests
-until you stop it with Ctrl-C. See [Editor](/docs/editor) for the editing
-model.
+Records live previews and prints their links: it re-records and uploads the
+live preview of every matched video that is stale (all managed videos when no
+pattern is given), prints the link, and exits. When exactly one video was
+recorded it prints that video's overview page
+(`<app>/project/<projectId>/video/<videoId>`); when several were recorded it
+prints the run listing page (`<app>/preview/<recordId>`), which links each
+video's page.
 
 ```bash
 screenci preview
@@ -379,10 +361,7 @@ screenci preview
 
 Filter videos by passing a title pattern, the same way
 `playwright test <pattern>` does; `--grep` does the same and takes precedence
-when both are given. With `--watch`, the pattern must match exactly one
-video: a pattern that matches zero or several videos makes the command exit
-with an error ("screenci preview --watch manages one video at a time") that
-lists the candidate titles.
+when both are given.
 
 ```bash
 screenci preview "Auto-zoom"
@@ -393,13 +372,11 @@ recording started" notice to the backend, so an open web preview page shows a
 live "Recording preview..." indicator and refreshes automatically when the
 new preview lands.
 
-A one-shot run prints one line per phase: the sync summary, the record
-announcement, the upload results, one line per video whose editor-uploaded
-media (overlays, audio, narration audio, cloned voices) shapes the render,
-and the preview link:
+A run prints one line per phase: the record announcement, the upload results,
+one line per video whose editor-uploaded media (overlays, audio, narration
+audio, cloned voices) shapes the render, and the video link:
 
 ```
-Synced 3 editor edits into your sources.
 Recording 1 video: Search for Alfa Forni Moderno 2
 ...
 ✔ Uploaded "Search for Alfa Forni Moderno 2 [en]"
@@ -407,17 +384,11 @@ Recording 1 video: Search for Alfa Forni Moderno 2
 Editor-uploaded media for "Search for Alfa Forni Moderno 2" applies at render time; recordings always run from code.
 
 Open the live preview for "Search for Alfa Forni Moderno 2" at:
-<app>/project/<projectId>/video/<videoId>/preview
+<app>/project/<projectId>/video/<videoId>
 ```
-
-Per-edit sync details are not printed by the one-shot run (the editor's
-pending list shows each edit and who queued it); a live `--watch` session
-logs every edit as it is written. Edits an apply skips or fails always log.
 
 Options:
 
-- `-w, --watch`: stay connected as the live bridge (see above) instead of the
-  one-shot default.
 - `-c, --config <path>`: path to the ScreenCI config file.
 - `--token <token>`: personal editor token. Defaults to `SCREENCI_EDIT_TOKEN` from
   your project env file; when neither is set and a `SCREENCI_SECRET` is
@@ -428,17 +399,6 @@ Options:
   startup records are limited to the matching videos.
 - `--force-record`: re-record every managed video at startup even when the
   kept recordings are up to date.
-- `--record-kill-window <seconds>`: while connected, a running record younger
-  than this is killed and replaced when a newer record request arrives; an
-  older one finishes first and the new request runs right after (only the
-  latest queued request is kept). Default: 10.
-- `--no-watch`: stay connected like `--watch`, but without the source-file
-  watcher (see below).
-- `--no-sync`: do not pull queued browser edits into the sources. Meant for
-  CI runners, whose checkouts must stay read-only (the generated GitHub
-  workflow uses it, see [CI Setup](/docs/ci-setup)); edits stay queued
-  for your next local `preview` or `sync`, and the run prints a short note
-  when edits are pending.
 - `-v, --verbose`: verbose output.
 
 Startup check: without a pattern or `--grep`, `screenci preview` records every
@@ -448,99 +408,26 @@ recording's `data.json` on disk after upload, along with a hash of the test
 source file, and on startup compares that hash with the current source and
 verifies every editable action carries an `editId`. Up-to-date videos skip
 recording entirely; anything stale gets its missing `editId` slugs stamped
-into the source and is re-recorded as a preview (no render) before the
-session starts serving the editor.
-
-Edits queued in the editor for a video name that is no longer declared in
-your code (usually a rename) are marked failed in the editor; the CLI only
-logs about them when your own `--grep` (or pattern) matches that name.
-
-Editor codegen: while connected with `--watch`, every edit made in the web
-editor is sent to this machine as a codegen request and written directly into the
-`.screenci.ts` source (the code is the single source of truth). Applying an
-edit never re-records on its own: render-time edits re-baseline the kept
-recording's source hash so it stays fresh, while a capture-affecting edit
-leaves the recording stale and takes effect at the next preview or export.
-An edit the codegen cannot apply is reported back and the editor reverts it.
-Besides timeline edits this covers the editor's option panels: render and
-record option changes are merged into the video's `.renderOptions({...})` /
-`.recordOptions({...})` builder calls (the call is added when the section does
-not exist yet), and narration text edits are merged into the
-`video.narration(...)` declaration. Editing a narration text in a non-default
-language converts a flat declaration to the language-major form (the existing
-values move under `default`). A names-only narration declaration
-(`.narration(['intro'])`) stays app-managed: its content lives in the web app
-and is never codegen'd.
-
-Source watching: while connected with `--watch`, `screenci preview` watches the test source files
-backing the managed videos, plus `screenci.config.ts`. Saving a real change to
-a source file automatically re-records that file's videos as a preview (the
-same freshness hash as the startup check filters out no-op saves and the
-CLI's own codegen writes); changing the config re-records every managed video.
-Watching follows the `-g/--grep` filter and can be turned off with
-`--no-watch`.
+into the source and is re-recorded as a preview (no render).
 
 Setup (with an account): none beyond `SCREENCI_SECRET`. With the secret in
 your project env file, the CLI exchanges it for this machine's personal
 editor token automatically on first use and saves it as
 `SCREENCI_EDIT_TOKEN` (exchanged tokens are named after the machine and stay
 listed and revocable on the Secrets page, up to five per user; you can still
-create one by hand there and set it yourself). Run `screenci preview --watch` in
-your project and the editor header shows your machine as connected (for
-example `you@laptop`) and offers "Record ... on laptop" in the Export
-button's record menu.
+create one by hand there and set it yourself).
 
 Without an account, no setup is needed: `screenci preview` runs under a local,
 anonymous trial session (see
 [Anonymous Trial](/docs/guides/anonymous-trial)), and the anon session token
-doubles as the editor token. The trial's editor page stays editable even
-while no machine is connected: edits queue server-side and land in your
-sources on the next `screenci` command. Signing up claims the trial: a
-running `--watch` session picks up your new `SCREENCI_SECRET` and a
-claim-minted `SCREENCI_EDIT_TOKEN` (written into `screenci/.env`) and
-reconnects without restarting.
-
-While connected:
-
-- Only your own account can trigger records on your machine. Teammates see
-  whose machine is connected but cannot use it.
-- A triggered record runs exactly one video in one language (the one open in
-  the editor), then uploads as a normal record run: it refreshes the live
-  preview, and renders only when the trigger was an export. The editor's
-  record menu also offers "Record raw preview footage", which records without
-  rendering at all.
-- Web edits are applied to your sources as you make them in the editor; the
-  editor shows a syncing state on your machine's chip while a change is being
-  written.
-- The regular record run lock applies: if another recording run is already
-  active on the machine, the request is reported back to the editor as failed.
-- Stopping the command (Ctrl-C) disconnects the machine; the editor updates
-  within about fifteen seconds.
+doubles as the editor token. Signing up claims the trial: the next
+`screenci` command picks up your new `SCREENCI_SECRET` and a claim-minted
+`SCREENCI_EDIT_TOKEN` (written into `screenci/.env`).
 
 Editor tokens are separate from `SCREENCI_SECRET`: the secret authenticates your
 project to the service, the editor token additionally proves which user and
-machine is listening. Revoking the token on the Secrets page immediately
-disconnects the machine.
-
-## `screenci sync`
-
-Pulls queued web edits into your `.screenci.ts` sources in one shot and
-exits: it connects briefly, claims every edit queued while no machine was
-connected, writes each into the source by its `editId`, and reports the
-result back so the editor's pending queue clears. This is the editing loop in
-its smallest form: edit in the web editor, edits queue, and the next sync
-writes them into your code. `test` and `preview` run the same sync
-automatically on start; `export` deliberately does not (it warns about queued
-edits and renders your sources exactly as they are), so run `sync` or
-`preview` first when you want those edits in the export.
-
-```bash
-screenci sync
-```
-
-Options:
-
-- `-c, --config <path>`: path to the ScreenCI config file.
+machine recorded. Revoking the token on the Secrets page immediately
+invalidates it.
 
 ## `screenci info`
 

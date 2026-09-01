@@ -8,7 +8,7 @@
  * sleeps.
  *
  * Code is the single source of truth: edits arrive over the dev channel as
- * codegen requests (`screenci edit`, see applyCodegen.ts) and are written
+ * editor edits and are applied
  * straight into the .screenci.ts sources. Nothing is applied at record time;
  * a recording always runs purely from code values.
  *
@@ -74,7 +74,7 @@ export type ParamEdit = {
 
 /**
  * Rename of an action's stable `editId` slug, made in the web editor. Applied
- * to code by `screenci sync` (the slug's string literal is replaced); until
+ * by the editor (the slug is the stable identity); until
  * then the recorded slug keeps matching, so nothing goes stale in between.
  */
 export type RenameEdit = {
@@ -186,7 +186,7 @@ export type GapPointEdit = {
 
 /**
  * Removes a code-owned NAMED wrapper block (`hide('name', ...)` /
- * `speed('name', ...)` / `time('name', ...)`) from source. `screenci sync`
+ * `speed('name', ...)` / `time('name', ...)`) from source. The editor
  * unwraps the block, keeping the wrapped calls (any `waitForTimeout` pacing
  * inside the block survives as plain gap sleeps). `target.editId` is the
  * block's stable name slug. Anonymous blocks cannot be targeted.
@@ -200,7 +200,7 @@ export type BlockRemoveEdit = {
 
 /**
  * Removes a recorded INTERACTION call (a Playwright action like `click`/`fill`)
- * from source, identified by its stable `editId` slug. `screenci sync` deletes
+ * from source, identified by its stable `editId` slug. The editor treats
  * the call statement and coalesces the `waitForTimeout` sleeps that surrounded
  * it into a single gap, so everything after it shifts left (the recording just
  * jumps forward past the removed step). `requiresRecord` is always true: the
@@ -224,7 +224,7 @@ export type InteractionRemoveEdit = {
  * variant to merge into the named overlay's config object:
  * - `{ margin }` for a locator-locked overlay (declared with `over`),
  * - `{ x?, y?, width | height }` or `{ fill }` for a freely placed one.
- * Applied by `screenci sync` only (nothing to do at record time); stale
+ * Applied by the editor only (nothing to do at record time); stale
  * variant keys (e.g. `fill` when switching to a box) are removed by the
  * codemod. The id is `overlaydecl-<overlayName>` so upserts are
  * last-write-wins per overlay.
@@ -357,7 +357,7 @@ export type EditorMediaEdit = {
 /**
  * Repositions an EXISTING, code-authored media call (a narration cue / overlay
  * / audio item, identified by its declaration `name`) so it plays next to a
- * different interaction. `screenci sync` locates the current call by its callee
+ * different interaction. The editor locates the current call by its callee
  * head (`<root>.<name>`) in the gap next to `fromEditId`, removes it there, and
  * re-places it next to `toEditId` with a preceding `waitForTimeout` gap
  * (`sleepBeforeMs`) or, non-blocking, a `{ delay }` option (`delayMs`). When
@@ -392,7 +392,7 @@ export type RepositionMediaEdit = {
   disabled?: boolean
 }
 
-/** Codify-only records: placed into code by `screenci sync`, never at runtime. */
+/** Codify-only records: authored in the editor, never at runtime. */
 export type CodifyEdit =
   | MediaEdit
   | ZoomEdit

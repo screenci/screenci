@@ -36,7 +36,7 @@ To connect an existing organization, get `SCREENCI_SECRET` into `screenci/.env` 
 
 - Recording runs with local Playwright.
 - `export` needs an active paid subscription; renders and downloads land in `./exports/`.
-- After a successful `export`, report the URL it printed (starts with the app's domain, e.g. `https://app.screenci.com/export/...`) back to the user so they can open it.
+- After a successful `export`, report the URL it printed back to the user so they can open it (a single video links its page, e.g. `https://app.screenci.com/project/<projectId>/video/<videoId>?export=...`; several videos link the run page `https://app.screenci.com/export/...`).
 
 ## Recommended Workflow
 
@@ -55,7 +55,7 @@ npx screenci export
 
 Always run `npx screenci test` until it passes first. Fix failures and rerun until green.
 
-Once tests pass, prefer `npx screenci preview "<title>"` over exporting right away: it records the live preview if stale (free, no render), prints the web editor link, and exits; browser edits queue server-side and land in the script on the next `screenci sync`, `test`, or `preview` (`export` never applies edits; it warns about queued ones and renders the sources as they are). Report the link so the user can review the video. `preview` works with or without an account (without one it runs under the free anonymous trial).
+Once tests pass, prefer `npx screenci preview "<title>"` over exporting right away: it records the live preview if stale (free, no render), prints the video link, and exits. Report the link so the user can review the video. `preview` works with or without an account (without one it runs under the free anonymous trial).
 
 Run `npx screenci export` when the user wants the finished videos: it records what changed, renders, and downloads them. Exporting requires an account with an active paid subscription.
 

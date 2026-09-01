@@ -65,10 +65,9 @@ video.narration({ en: { intro: 'Welcome.' } })
 **2. Blank names (start empty, filled from the editor).** Pass a bare array
 of cue names: the names exist in code (so the body can call
 `narration.intro`), and their content starts empty. Rendering holds until
-each cue gets content. Writing a cue's text in [Editor](./editor.md) codegens
-it into your sources, converting the array to the object form on the first
-edit: the edited cue becomes a seeded value, untouched names stay blank as
-`{ editor: '<name>' }`, and the next synced recording renders it. (A cue can
+each cue gets content. Write the cue's text in [Editor](./editor.md) (the
+edit lives in the editor and applies to every later render), or fill it in
+code. (A cue can
 instead be satisfied by editor-uploaded audio or a cloned voice, which stay
 backend-hosted.) Chain `.languages([...])`, since there is no text to infer
 the set from.
@@ -194,6 +193,16 @@ even starts is ignored with a warning.
 
 Keep cues small. In practice, one sentence per cue is the safest default for
 timing, overlap control, and subtitle readability.
+
+## Writing narration
+
+Narrate what the flow accomplishes, not each click. Viewers can see the
+cursor; the narration's job is to explain the goal ("Invite your teammates
+and set their roles"), so a few broad cues cover a whole section of the
+video. Borrow the product's own vocabulary from its source code, UI copy, and
+domain terms, so the voice-over sounds native to the app. When a demo fills
+in a form, use plausible fictitious details ("Emma Carter",
+"emma@aperturebio.com"), never real names, emails, or addresses.
 
 If only one file needs a different narration layout, pair `video.narration(...)`
 with `video.renderOptions()` instead of changing the whole project:

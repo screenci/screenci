@@ -1,7 +1,7 @@
 /**
  * Editable-action entries collected from the per-recording `data.json` files
  * (stable key, editId, effective defaults, call-site source). Editor codegen
- * (`screenci edit`) uses them to locate call sites by editId when writing an
+ * uses them to locate call sites by editId when writing an
  * edit into the .screenci.ts sources; code is the single source of truth.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs'

@@ -577,42 +577,6 @@ describe('CLI', () => {
       expect(processExitSpy).toHaveBeenCalledWith(1)
     })
 
-    // --no-sync (CI runners keep their checkout read-only) must parse as a
-    // known preview option; the command still exits deterministically on the
-    // expired trial session.
-    it('accepts --no-sync for the preview command', async () => {
-      process.argv = ['node', 'cli.js', 'preview', '--no-sync']
-      delete process.env.SCREENCI_SECRET
-      mockFetch.mockImplementation(async (input: string | URL) => {
-        if (String(input).endsWith('/cli/anon-session-status')) {
-          return {
-            ok: true,
-            status: 200,
-            json: vi.fn().mockResolvedValue({ status: 'expired' }),
-            text: vi.fn().mockResolvedValue(''),
-          }
-        }
-        return {
-          ok: true,
-          status: 200,
-          json: vi.fn().mockResolvedValue({}),
-          text: vi.fn().mockResolvedValue(''),
-        }
-      })
-
-      const { main } = await import('./cli')
-
-      await expect(main()).rejects.toThrow('process.exit called')
-
-      expect(loggerErrorSpy).not.toHaveBeenCalledWith(
-        expect.stringContaining('unknown option')
-      )
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('trial has expired')
-      )
-      expect(processExitSpy).toHaveBeenCalledWith(1)
-    })
-
     it('should show global help with --help', async () => {
       process.argv = ['node', 'cli.js', '--help']
       const stdoutSpy = vi
@@ -1196,86 +1160,6 @@ describe('CLI', () => {
       )
       expect(formatRecordResultMessage({ exported: true, partial: true })).toBe(
         'Recording partially succeeded, export render in progress. Results available at:'
-      )
-    })
-  })
-
-  describe('createQueuedEditsDrainer', () => {
-    const drainerConfig = {
-      apiUrl: 'http://localhost:8787',
-      credential: { header: 'X-ScreenCI-Secret', value: 'org-secret' },
-      devToken: 'dev-token',
-      projectName: 'demo',
-      machineName: 'laptop',
-    }
-
-    function makeDrainerDeps() {
-      const fetchMock = vi.fn(
-        async () =>
-          new Response(JSON.stringify({ codegenRequests: [] }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          })
-      )
-      return {
-        fetchMock,
-        deps: {
-          fetchFn: fetchMock as unknown as typeof fetch,
-          sleep: vi.fn(async () => {}),
-          logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-          runRecord: vi.fn(async () => {}),
-        },
-      }
-    }
-
-    it('drains queued edits when sync is enabled', async () => {
-      const { createQueuedEditsDrainer } = await import('./cli')
-      const { fetchMock, deps } = makeDrainerDeps()
-
-      const drain = createQueuedEditsDrainer({
-        syncEnabled: true,
-        config: drainerConfig,
-        deps,
-        listenerId: 'lst_1',
-      })
-      await drain()
-
-      expect(fetchMock).toHaveBeenCalled()
-    })
-
-    // preview --no-sync: CI checkouts stay read-only, so the drainer must not
-    // even reach the server for queued edits.
-    it('is a no-op when sync is disabled', async () => {
-      const { createQueuedEditsDrainer } = await import('./cli')
-      const { fetchMock, deps } = makeDrainerDeps()
-
-      const drain = createQueuedEditsDrainer({
-        syncEnabled: false,
-        config: drainerConfig,
-        deps,
-        listenerId: 'lst_1',
-      })
-      await drain()
-
-      expect(fetchMock).not.toHaveBeenCalled()
-      expect(deps.logger.warn).not.toHaveBeenCalled()
-    })
-
-    it('warns instead of throwing when the drain fails', async () => {
-      const { createQueuedEditsDrainer } = await import('./cli')
-      const { fetchMock, deps } = makeDrainerDeps()
-      fetchMock.mockRejectedValueOnce(new Error('network down'))
-
-      const drain = createQueuedEditsDrainer({
-        syncEnabled: true,
-        config: drainerConfig,
-        deps,
-        listenerId: 'lst_1',
-      })
-      await expect(drain()).resolves.toBeUndefined()
-
-      expect(deps.logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Could not sync queued editor edits')
       )
     })
   })

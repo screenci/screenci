@@ -22,7 +22,7 @@ video('Edit profile', async ({ page }) => {
   await page.goto('/settings/profile')
 
   await autoZoom(async () => {
-    await page.getByLabel('Name').fill('Jane Doe')
+    await page.getByLabel('Name').fill('Emma Carter')
     await page.getByLabel('Email').fill('jane@screenci.com')
     await page.getByRole('button', { name: 'Save' }).click()
   })

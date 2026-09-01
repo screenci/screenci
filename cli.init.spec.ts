@@ -516,7 +516,7 @@ describe('CLI', () => {
       expect(islandPkg['name']).toBe('my-project')
       expect(islandPkg['scripts']).toMatchObject({
         test: 'screenci test',
-        edit: 'screenci edit',
+        preview: 'screenci preview',
         export: 'screenci export',
       })
       expect(islandPkg['scripts']).not.toHaveProperty('screenci')
@@ -914,9 +914,7 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         'run: pnpm exec playwright install --only-shell chromium'
       )
-      expect(workflowCall?.[1]).toContain(
-        'pnpm exec screenci preview --no-sync'
-      )
+      expect(workflowCall?.[1]).toContain('pnpm exec screenci preview')
       // Export stays available as a commented-out alternative.
       expect(workflowCall?.[1]).toContain(
         '#   pnpm exec screenci export --no-wait'
@@ -929,7 +927,7 @@ describe('CLI', () => {
       // Targeted recordings: optional `grep` input forwarded to record.
       expect(workflowCall?.[1]).toContain('SCREENCI_GREP: ${{ inputs.grep }}')
       expect(workflowCall?.[1]).toContain(
-        'pnpm exec screenci preview --no-sync --grep "$SCREENCI_GREP"'
+        'pnpm exec screenci preview --grep "$SCREENCI_GREP"'
       )
       expect(workflowCall?.[1]).toMatch(/workflow_dispatch:\s*\n\s*inputs:/)
     })
@@ -1091,9 +1089,9 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         'run: yarn playwright install --only-shell chromium'
       )
-      expect(workflowCall?.[1]).toContain('yarn screenci preview --no-sync')
+      expect(workflowCall?.[1]).toContain('yarn screenci preview')
       expect(workflowCall?.[1]).toContain(
-        'yarn screenci preview --no-sync --grep "$SCREENCI_GREP"'
+        'yarn screenci preview --grep "$SCREENCI_GREP"'
       )
     })
 

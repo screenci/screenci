@@ -1211,7 +1211,7 @@ export type RecordingMetadata = {
   sourceFilePath?: string
   /**
    * SHA-256 of the test source file this recording was produced from. Together
-   * with per-event editIds it lets `screenci edit` skip re-recording when the
+   * with per-event editIds it lets `screenci preview` skip re-recording when the
    * source is unchanged (see recordingFreshness.ts). Multiple videos from the
    * same file share the hash.
    */

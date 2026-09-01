@@ -20,7 +20,7 @@ video
   // Open with a brief brand intro card before the walkthrough begins.
   await overlays.logo.for(2000)
 
-  // Play the narration line for this step.
+  // Play the narration for this part of the flow.
   await narration.docs()
 
   // Automatically zoom into interactions so they are easier to follow.

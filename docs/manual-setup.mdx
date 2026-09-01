@@ -127,7 +127,7 @@ video
   // Open with a brief brand intro card before the walkthrough begins.
   await overlays.logo.for(2000)
 
-  // Play the narration line for this step.
+  // Play the narration for this part of the flow.
   await narration.docs()
 
   // Automatically zoom into interactions so they are easier to follow.
@@ -235,13 +235,11 @@ yarn screenci preview
 </Tabs>
 
 `preview` records every video whose live preview is stale, uploads the
-previews, and prints the link: a single recorded video gets its preview page
-directly, several get a run listing page that links each one. Run it with
-`--watch` to connect your machine as the code-sync bridge for one video,
-which unlocks editing in the browser: narration text and voices, overlays,
-cuts and pacing on the timeline, and render options. Every edit is written
-back into your `.screenci.ts` script through the connected machine, so the
-code always matches what you see. The live preview is free to iterate on:
+previews, and prints the link: a single recorded video gets its video page
+directly, several get a run listing page that links each one. From the video
+page you can open the editor and refine the video in the browser: narration
+text and voices, overlays, cuts and pacing on the timeline, and render
+options. The live preview is free to iterate on:
 record, watch, adjust, and record again without spending anything. See
 [Editor](/docs/editor) for the full tour. To narrow the run to one video,
 pass a title pattern (`npx screenci preview "Onboarding"`).

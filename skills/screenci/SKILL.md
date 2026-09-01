@@ -28,13 +28,8 @@ npx screenci test
 # run a subset with normal Playwright filters
 npx screenci test recordings/signup.screenci.ts --grep "fills billing details"
 
-# once tests pass, record the free live preview and print the web editor link
-# (one-shot: it syncs queued browser edits into the scripts, records, and exits)
+# once tests pass, record the free live preview and print the video link
 npx screenci preview "Video title"
-
-# pull queued browser edits into the scripts at any time
-# (test, export, and preview also do this automatically on start)
-npx screenci sync
 
 # only export when the finished videos are wanted
 npx screenci export
@@ -81,6 +76,8 @@ video.renderOptions({ narration: { voice: { name: voices.Ava } } }).narration({
 
 - Declare `video.narration({ ... })` on every video and speak throughout the demo. Pass a flat `cue -> text` object (shared across languages) or one keyed by language (`en`, `es`, ...).
 - The opening line must state the video's purpose, then continue with the walkthrough.
+- **Narrate the flow, not the clicks.** Each cue describes what the user is achieving ("Invite your teammates and set their roles"), never the mechanics ("Now click the blue button"). A handful of broad cues covering the whole flow beats one cue per action.
+- **Use the product's own vocabulary.** Pull nouns and verbs from the recorded app's source code and on-screen copy (page titles, button labels, domain terms) so the narration sounds native to the product.
 - Trigger cues from the `narration` fixture: `await narration.key()` runs the full line before moving on. Use `await narration.key.start()` when narration should overlap the next action, and `await narration.key.end()` to close that cue later, especially before visible navigation or route changes.
 - Use inline speech tags when needed: `[pronounce: ...]`, `[short pause]`, `[medium pause]`, `[long pause]`. Always guide pronunciation for URLs and domains, e.g. `screenci.com [pronounce: screen see eye dot com]`.
 
@@ -89,7 +86,8 @@ video.renderOptions({ narration: { voice: { name: voices.Ava } } }).narration({
 Every video MUST follow these:
 
 - **Narration on every video, no exceptions.** Videos without narration are not acceptable.
-- **Open with the video's purpose** before the step-by-step.
+- **Open with the video's purpose**, then narrate the flow at a high level.
+- **Example data only in forms.** Fill forms with plausible fictitious names, emails, and addresses (e.g. `Emma Carter`, `emma@aperturebio.com`), never real people or real contact details.
 - **Start on the requested page.** The visible video begins on the page the user asked for.
 - **Hide initial setup.** Wrap page load, auth, navigation to the start page, loading spinners, and cookie-banner dismissal in `hide()`. After the initial navigation, find and click any cookie consent accept button inside that hidden block.
 - **Navigate visibly with clicks** after hidden setup, not `page.goto()`.
@@ -104,7 +102,7 @@ Prefer stable manual zoom for edit-heavy sections; use `autoZoom()` for movement
 ```ts
 // Forms and steady editing: fixed frame.
 await zoomTo(page.getByRole('form', { name: /profile settings/i }))
-await page.getByLabel('Name').fill('Jane Doe')
+await page.getByLabel('Name').fill('Emma Carter')
 await page.getByRole('checkbox', { name: 'Email notifications' }).check()
 await page.getByRole('button', { name: 'Save changes' }).click()
 await resetZoom()
@@ -133,10 +131,10 @@ The secret is the only credential to configure. The CLI mints this machine's per
 
 1. Add or edit `.screenci.ts` files in `recordings/` (remove `example.screenci.ts` if creating new videos).
 2. Run `npx screenci test` until it passes. Fix selectors/flow/narration and rerun until green.
-3. Once tests pass, run `npx screenci preview "<title>"` yourself. Do not export first. It is one-shot: it syncs any queued browser edits into the script, records the video's live preview if stale (free, no render), prints the web editor link, and exits. `preview` works without an account: with no `SCREENCI_SECRET` it runs under a free anonymous trial session. Browser edits made while no machine is connected queue server-side and land in the script on the next `screenci sync`, `test`, or `preview` (`export` never applies edits; in CI, `preview --no-sync` also skips the edit sync so the checkout stays read-only).
-4. Report the editor link `preview` printed so the user can review and refine the video in the browser. Browser edits queue server-side and land in the script on the next `screenci` command, so there is no need to keep a session running.
+3. Once tests pass, run `npx screenci preview "<title>"` yourself. Do not export first. It records the video's live preview if stale (free, no render), prints the video link, and exits. `preview` works without an account: with no `SCREENCI_SECRET` it runs under a free anonymous trial session.
+4. Report the video link `preview` printed so the user can review and refine the video in the browser.
 5. Run `npx screenci export` only when the user wants the finished videos. Exporting requires an account with an active paid subscription: without one, `export` refuses and prints a sign-up link (the anonymous trial is preview-only). With one, it records what changed, renders, waits, and downloads into `./exports/`. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` per re-recorded video.
-6. After `export`, report the URL it printed (starts with the app's domain, e.g. `https://app.screenci.com/export/...`) so the user can open it.
+6. After `export`, report the URL it printed so the user can open it (a single video links its page, e.g. `https://app.screenci.com/project/<projectId>/video/<videoId>?export=...`; several videos link the run page `https://app.screenci.com/export/...`).
 
 `screenci init` (or `npm init screenci`) scaffolds a new project and fails on purpose if one already exists (`screenci/ already exists`). That is expected: keep working with the existing project, do not delete it to re-init.
 

@@ -134,7 +134,7 @@ export type AnonSessionStatus =
   // `editToken`: a personal editor token the server minted for the claiming
   // user (absent on sessions claimed before the anonymous edit bridge, or
   // when the user was at the token cap). Persisted next to the secret so
-  // `screenci edit` keeps working after the claim.
+  // `screenci preview` keeps working after the claim.
   | { status: 'claimed'; secret: string; editToken?: string }
 
 /**

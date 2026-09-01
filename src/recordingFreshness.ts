@@ -10,7 +10,7 @@ import type { EditableMeta } from './editableDescriptor.js'
  * Freshness check for kept recordings.
  *
  * `data.json` survives uploads (only the media files are cleaned up) so the
- * next `screenci edit` session can decide whether a recording needs to be
+ * next `screenci preview` run can decide whether a recording needs to be
  * re-recorded at all. A recording is fresh when the test source it came from
  * is byte-identical (same `sourceHash`) AND every editable action in it is
  * addressable by an `editId`. Anything less means the code changed or some

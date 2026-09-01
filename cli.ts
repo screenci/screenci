@@ -70,11 +70,6 @@ import {
   persistScreenCISecret,
 } from './src/linkSession.js'
 import { OVERLAY_CACHE_DIR_NAME } from './src/htmlRasterizer.js'
-import { collectEditableFromRecordings } from './src/editableSnapshot.js'
-import {
-  applyCodegenRequest,
-  requireTypescriptForCodegen,
-} from './src/applyCodegen.js'
 import { createProjectFormatter } from './src/format.js'
 import {
   grepMatcher,
@@ -82,20 +77,12 @@ import {
   type DevStartupDeps,
   type KeptRecording,
 } from './src/devStartup.js'
-import {
-  buildWatchTargets,
-  startDevWatcher,
-  type DevWatchDeps,
-  type DevWatcherController,
-} from './src/devWatch.js'
 import { entriesFromRecordingData } from './src/editableSnapshot.js'
 import type { EditableSnapshotEntry } from './src/editableSnapshot.js'
 import {
   LAST_DATA_FILE,
   readKeptRecordingData,
-  rebaselineKeptSourceHashes,
 } from './src/recordingFreshness.js'
-import { createRebaselineGate } from './src/rebaselineGate.js'
 import type { RecordingData as KeptRecordingData } from './src/recordingData.js'
 import {
   downloadExportOutputs,
@@ -132,25 +119,19 @@ import {
   formatAnonPostRecordNotice,
   formatAnonTermsNotice,
   getOrCreateAnonToken,
-  peekAnonToken,
   secretCredential,
 } from './src/anonSession.js'
 import {
   type DevListenConfig,
   type DevListenDeps,
-  type LocalRecordRequest,
   DevAuthError,
   SCREENCI_EDIT_TOKEN_ENV,
   deregisterDevListener,
-  drainDevCodegenRequests,
   registerDevListener,
-  fetchPendingCodegenCount,
   reportDevSyncState,
-  runDevListenLoop,
 } from './src/devListen.js'
 import {
   dedupeAppliedStudioNotices,
-  formatDrainSummary,
   formatStudioNoticeLine,
 } from './src/previewOutput.js'
 import { exchangeEditToken } from './src/editTokenExchange.js'
@@ -365,7 +346,7 @@ function logScreenCISecretGuide(): void {
 }
 
 function getSuggestedScreenciCommand(
-  command: 'preview' | 'export' | 'test' | 'sync',
+  command: 'preview' | 'export' | 'test',
   flags = ''
 ): string {
   const suffix = flags ? ` ${flags}` : ''
@@ -676,9 +657,20 @@ export function formatPreviewUrl(
   projectId: string,
   videoId: string
 ): string {
-  // The preview page resolves a default language itself, so we never need to
-  // guess the language in the printed link.
-  return `${appUrl}/project/${projectId}/video/${videoId}/preview`
+  // The video overview page resolves a default language itself, so we never
+  // need to guess the language in the printed link.
+  return `${appUrl}/project/${projectId}/video/${videoId}`
+}
+
+export function formatVideoExportUrl(
+  appUrl: string,
+  projectId: string,
+  videoId: string,
+  recordId: string
+): string {
+  // Points at the video overview page with the export run preselected; the
+  // page resolves the run to its newest version once the render lands.
+  return `${appUrl}/project/${projectId}/video/${videoId}?export=${recordId}`
 }
 
 export function formatRecordResultMessage(options: {
@@ -2565,6 +2557,8 @@ export async function uploadRecordings(
   recordId: string | null
   hadFailures: boolean
   uploadedVideoNames: string[]
+  /** One entry per uploaded (base) video, with its server-side id when known. */
+  uploadedVideos: Array<{ baseVideoName: string; videoId: string | null }>
   failedVideoNames: string[]
   failedVideoMessages: Array<{ videoName: string; message: string }>
   studioNotices: StudioUploadNotice[]
@@ -2584,6 +2578,7 @@ export async function uploadRecordings(
       recordId: null,
       hadFailures: false,
       uploadedVideoNames: [],
+      uploadedVideos: [],
       failedVideoNames: [],
       failedVideoMessages: [],
       studioNotices: [],
@@ -2634,6 +2629,7 @@ export async function uploadRecordings(
         recordId: null,
         hadFailures: missingRequestedVideoNames.length > 0,
         uploadedVideoNames: [],
+        uploadedVideos: [],
         failedVideoNames: missingRequestedVideoNames,
         failedVideoMessages: missingRequestedVideoNames.map((videoName) => ({
           videoName,
@@ -2656,6 +2652,7 @@ export async function uploadRecordings(
         recordId: null,
         hadFailures: true,
         uploadedVideoNames: [],
+        uploadedVideos: [],
         failedVideoNames: filteredCandidates.map(
           (candidate) => candidate.displayVideoName
         ),
@@ -2717,6 +2714,16 @@ export async function uploadRecordings(
           .map((result) => result.baseVideoName)
       ),
     ]
+    const uploadedVideos = uploadedVideoNames.map((baseVideoName) => ({
+      baseVideoName,
+      videoId:
+        results.find(
+          (result) =>
+            !result.hadFailure &&
+            result.baseVideoName === baseVideoName &&
+            result.videoId !== null
+        )?.videoId ?? null,
+    }))
     const failedVideoNames = results
       .filter((result) => result.hadFailure)
       .map((result) => result.videoName)
@@ -2752,6 +2759,7 @@ export async function uploadRecordings(
       recordId,
       hadFailures,
       uploadedVideoNames,
+      uploadedVideos,
       failedVideoNames,
       failedVideoMessages,
       studioNotices,
@@ -3297,82 +3305,6 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-// Runs the record for one web-editor dev trigger: exactly one video (grep by
-// its title) in exactly one language, then uploads. Mirrors the `record`
-// command's local path, minus its remote/UPLOAD_EXISTING/hint concerns; the
-// error message is reported back to the editor instead of the console.
-async function runTriggeredRecord(
-  configPath: string | undefined,
-  trigger: { videoName: string; language: string; previewOnly?: boolean },
-  verbose: boolean,
-  abortSignal?: AbortSignal
-): Promise<void> {
-  const resolvedConfigPath = resolveScreenCIConfigPathOrExit(configPath)
-  const screenciConfig =
-    await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
-  const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
-  const grepArgs = ['--grep', escapeRegExp(trigger.videoName)]
-  const requestedVideoNames = await collectRequestedRecordVideoNames(
-    resolvedConfigPath,
-    grepArgs,
-    trigger.language
-  )
-  const recordRunLock = await acquireRecordRunLock(
-    screenciDir,
-    screenciConfig.projectName
-  )
-
-  try {
-    let playwrightFailure: Error | null = null
-    try {
-      await run(
-        'record',
-        grepArgs,
-        configPath,
-        verbose,
-        false,
-        trigger.language,
-        abortSignal
-      )
-    } catch (error) {
-      // A killed (superseded) run uploads nothing: the replacing record is
-      // already on its way and would race this upload.
-      if (error instanceof RecordAbortedError) throw error
-      if (!(error instanceof Error)) throw error
-      playwrightFailure = error
-    }
-
-    // A preview-only trigger uploads into the video's preview slot without a
-    // render. The upload body reads this from the env, mirroring
-    // SCREENCI_SKIP_RENDER; scope it to this upload and restore it after.
-    const previousPreviewOnly = process.env['SCREENCI_PREVIEW_ONLY']
-    if (trigger.previewOnly === true) {
-      process.env['SCREENCI_PREVIEW_ONLY'] = '1'
-    }
-    try {
-      await uploadRecordedVideosForConfig(
-        configPath,
-        playwrightFailure,
-        verbose,
-        requestedVideoNames,
-        'none'
-      )
-    } finally {
-      if (previousPreviewOnly === undefined) {
-        delete process.env['SCREENCI_PREVIEW_ONLY']
-      } else {
-        process.env['SCREENCI_PREVIEW_ONLY'] = previousPreviewOnly
-      }
-    }
-
-    if (playwrightFailure !== null) {
-      throw playwrightFailure
-    }
-  } finally {
-    await recordRunLock.release()
-  }
-}
-
 // One preview record pass over the videos matching `grepPattern` (all when
 // undefined): records, then uploads into the preview slots without a render.
 // Used by the dev startup handshake to bring stale recordings up to date.
@@ -3442,9 +3374,6 @@ async function runPreviewRecordPass(
     if (playwrightFailure !== null) {
       throw playwrightFailure
     }
-    // Fresh footage now covers the sources: record-requiring rewrites are
-    // captured, so render-time re-baselines are safe again.
-    codegenRebaselineGate.clearAfterRecord()
   } finally {
     await recordRunLock.release()
   }
@@ -3501,7 +3430,7 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
   // Exporting needs an account: a claimed trial self-upgrades to the real
   // secret here (resolveUploadCredential persists it into .env), everything
   // else is refused up front. The anonymous trial is preview-only: point at
-  // `screenci edit` for the free live preview and at sign-up for exporting.
+  // `screenci preview` for the free live preview and at sign-up for exporting.
   let secret = process.env.SCREENCI_SECRET
   if (!secret) {
     const envFilePath = await resolveProjectEnvFilePath(resolvedConfigPath)
@@ -3795,57 +3724,10 @@ function printExportSummary(
 }
 
 /**
- * Resolves the single video a `screenci preview --watch` session manages. The
- * live bridge deep-links the web editor for one video, so the pattern must
- * match exactly one; zero or many matches exit with the matching/available
- * titles listed. A one-shot `screenci preview` has no such limit.
- */
-export function resolveSingleEditVideo(
-  allVideoNames: readonly string[],
-  grep: string | undefined,
-  suggestCommand: (name: string) => string
-): { ok: true; videoName: string } | { ok: false; message: string } {
-  const formatList = (names: readonly string[]): string =>
-    names.map((name) => `  - ${name}`).join('\n')
-  if (allVideoNames.length === 0) {
-    return {
-      ok: false,
-      message:
-        'No videos found. Declare one with video(...) in your recordings.',
-    }
-  }
-  const matches =
-    grep === undefined
-      ? [...allVideoNames]
-      : allVideoNames.filter(grepMatcher(grep))
-  if (matches.length === 1) {
-    return { ok: true, videoName: matches[0]! }
-  }
-  if (matches.length === 0) {
-    return {
-      ok: false,
-      message:
-        `No video matches "${grep}". Available videos:\n` +
-        formatList(allVideoNames),
-    }
-  }
-  const intro =
-    grep === undefined
-      ? `screenci preview --watch manages one video at a time. This project has ${matches.length} videos:`
-      : `screenci preview --watch manages one video at a time. "${grep}" matches ${matches.length} videos:`
-  return {
-    ok: false,
-    message:
-      `${intro}\n` +
-      formatList(matches) +
-      `\nPick one, e.g. ${suggestCommand(matches[0]!)}`,
-  }
-}
-
-/**
- * Best-effort editor deep link for the edited video: resolves projectId and
- * videoId from `/cli/info` and prints the studio URL. A video the server does
- * not know yet (first upload still pending or failed) prints nothing.
+ * Best-effort overview-page link for the recorded video: resolves projectId
+ * and videoId from `/cli/info` and prints the video overview URL. A video the
+ * server does not know yet (first upload still pending or failed) prints
+ * nothing.
  */
 async function printEditorLink(params: {
   apiUrl: string
@@ -3876,91 +3758,6 @@ async function printEditorLink(params: {
     )
   } catch {
     // Best-effort only: the editor link is a convenience, never a failure.
-  }
-}
-
-/**
- * Builds the codegen-apply dependency shared by the live bridge and one-shot
- * syncs: locates the target call site by editId and rewrites the test source
- * via static analysis, formatting with the project's Prettier.
- */
-/** Session-wide guard: files a record-requiring codegen edit rewrote stay
- *  stale (excluded from render-time re-baselines) until a record runs. */
-const codegenRebaselineGate = createRebaselineGate()
-
-function createApplyCodegenDep(
-  configOption: string | undefined,
-  onFileWritten: (path: string) => void
-): NonNullable<DevListenDeps['applyCodegen']> {
-  return async (request) => {
-    const resolvedConfigPath = resolveScreenCIConfigPathOrExit(configOption)
-    const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
-    const ts = requireTypescriptForCodegen(loadTypescript, dirname(screenciDir))
-    return await applyCodegenRequest(request, {
-      ts,
-      formatFile: createProjectFormatter(dirname(resolvedConfigPath), {
-        warn: (message) => logger.warn(message),
-      }),
-      readFile: (path) => {
-        try {
-          return readFileSync(path, 'utf8')
-        } catch {
-          return null
-        }
-      },
-      writeFile: (path, content) => {
-        writeFileSync(path, content)
-        onFileWritten(path)
-      },
-      editableSnapshot: {
-        version: 1,
-        videos: collectEditableFromRecordings(screenciDir),
-      },
-      // Last-resort declaration lookup for a video that was edited before it
-      // was cleanly recorded (no snapshot source file). Scanned lazily and
-      // memoized so the common path (snapshot hit) pays nothing.
-      listRecordingFiles: (() => {
-        let cached: string[] | null = null
-        return () =>
-          (cached ??= listScreenciSourceFiles(dirname(resolvedConfigPath)))
-      })(),
-      // A record-requiring edit (e.g. the language set) must leave its file
-      // stale until the next record; the gate keeps a later render-time
-      // edit's re-baseline from re-hashing that file and swallowing the
-      // needed record.
-      onRecordRequiredRewrite: (changedPaths) =>
-        codegenRebaselineGate.noteRecordRequired(changedPaths),
-      // An applied render-time edit keeps the recorded footage valid, so the
-      // kept recordings are re-baselined to the rewritten sources: applying a
-      // web edit must never mark a recording stale or cause a re-record.
-      onSourcesRewritten: async (changedPaths) => {
-        const rebaselinable =
-          codegenRebaselineGate.rebaselinablePaths(changedPaths)
-        if (rebaselinable.length === 0) return
-        try {
-          const videoNames = await rebaselineKeptSourceHashes({
-            screenciDir,
-            changedSourcePaths: rebaselinable,
-          })
-          await updateLastUploadSourceHashes(screenciDir, videoNames)
-        } catch (err) {
-          logger.warn(
-            `Could not re-baseline recordings after the edit: ${err instanceof Error ? err.message : String(err)}`
-          )
-        }
-      },
-      resolveDuplicateEditIds: async (paths) =>
-        (await resolveDuplicateEditIdsInSources(paths, {
-          screenciDir,
-          projectDir: dirname(screenciDir),
-          log: (message) => logger.info(message),
-          warn: (message) => logger.warn(message),
-          formatFile: createProjectFormatter(dirname(resolvedConfigPath), {
-            warn: (message) => logger.warn(message),
-          }),
-          onFileWritten,
-        })) > 0,
-    })
   }
 }
 
@@ -4034,220 +3831,19 @@ export async function stampEditIdsForProject(
   return plan.stamped.length
 }
 
-/**
- * Best-effort one-shot drain of queued browser edits into the sources,
- * without recording anything. Run by `screenci sync` and at the start of
- * `test`/`export` so code and editor state converge at every CLI touchpoint.
- *
- * Deliberately silent when the project has no usable credentials: it never
- * creates an anonymous session or prompts, and network failures only warn
- * (never block the host command).
- */
-/**
- * Resolves the dev-channel config (project, credentials, editor token) for a
- * one-shot touchpoint without side effects beyond minting a missing editor
- * token from the org secret. Null when the project is not connected yet (no
- * config, no credentials): callers skip silently.
- */
-async function resolveQuickDevConfig(
-  options: { config?: string } = {},
-  depsOverride: Partial<DevListenDeps> & { machineName?: string } = {}
-): Promise<DevListenConfig | null> {
-  let projectName: string
-  let configPath: string
-  try {
-    const loaded = await loadScreenCIConfigAndEnv(options.config)
-    projectName = loaded.screenciConfig.projectName
-    configPath = loaded.resolvedConfigPath
-  } catch {
-    return null
-  }
-  const apiUrl = getDevBackendUrl()
-  const screenciDir = resolve(dirname(configPath), '.screenci')
-
-  // Resolve credentials without side effects: an org secret (minting this
-  // machine's editor token when missing), or an anon session that already
-  // exists on disk. Anything else: skip silently.
-  let credential: CliCredential
-  let devToken: string
-  const secretFromEnv = process.env.SCREENCI_SECRET
-  if (secretFromEnv) {
-    let editorToken = process.env[SCREENCI_EDIT_TOKEN_ENV]
-    if (!editorToken) {
-      const exchanged = await exchangeEditToken({
-        apiUrl,
-        secret: secretFromEnv,
-        machineName: depsOverride.machineName ?? hostname(),
-        ...(depsOverride.fetchFn ? { fetchFn: depsOverride.fetchFn } : {}),
-      })
-      if (!exchanged.ok) return null
-      editorToken = exchanged.editToken
-      const envFilePath = await resolveProjectEnvFilePath(configPath)
-      await persistScreenCIEditToken(envFilePath, editorToken)
-      process.env[SCREENCI_EDIT_TOKEN_ENV] = editorToken
-    }
-    credential = secretCredential(secretFromEnv)
-    devToken = editorToken
-  } else {
-    const anonToken = await peekAnonToken(screenciDir)
-    if (anonToken === null) return null
-    credential = anonCredential(anonToken)
-    devToken = anonToken
-  }
-
-  return {
-    apiUrl,
-    credential,
-    devToken,
-    projectName,
-    machineName: depsOverride.machineName ?? hostname(),
-  }
-}
-
-/**
- * Warns when editor edits are still queued for this project without applying
- * them. `screenci export` uses this instead of a sync: an export renders
- * exactly what the sources say, so edits are never silently written during
- * one. Best-effort: any failure (offline, not connected) stays silent.
- */
-export async function warnUnsyncedEditsBeforeExport(
-  options: { config?: string } = {},
-  depsOverride: Partial<DevListenDeps> & { machineName?: string } = {},
-  /**
-   * export: exports never sync, so pending edits get a warning with the fix.
-   * no-sync: the user opted out (preview --no-sync), so pending edits only
-   * get a short informational note.
-   */
-  mode: 'export' | 'no-sync' = 'export'
-): Promise<void> {
-  try {
-    const config = await resolveQuickDevConfig(options, depsOverride)
-    if (config === null) return
-    const pending = await fetchPendingCodegenCount(config, {
-      fetchFn: depsOverride.fetchFn ?? fetch,
-    })
-    if (pending > 0) {
-      if (mode === 'no-sync') {
-        logger.info(
-          `${pending} editor edit${pending === 1 ? '' : 's'} left queued (--no-sync).`
-        )
-      } else {
-        logger.warn(
-          `${pending} editor edit${pending === 1 ? ' is' : 's are'} not yet in your sources; run ${pc.cyan(getSuggestedScreenciCommand('sync'))} or ${pc.cyan(getSuggestedScreenciCommand('preview'))} first. Exporting without ${pending === 1 ? 'it' : 'them'}.`
-        )
-      }
-    }
-  } catch {
-    // Best-effort peek: never block or fail the run over it.
-  }
-}
-
-/**
- * Builds the queued-edits drainer an edit session runs on connect and, in
- * one-shot mode, once more before disconnecting. With syncEnabled false
- * (preview --no-sync, CI runners) the drainer is a no-op so the checkout
- * stays read-only; queued edits remain on the server for the next syncing
- * run. Drain failures only warn: a broken sync should not take down the
- * session.
- */
-export function createQueuedEditsDrainer(params: {
-  syncEnabled: boolean
-  config: DevListenConfig
-  deps: DevListenDeps
-  listenerId: string
-}): () => Promise<void> {
-  const { syncEnabled, config, deps, listenerId } = params
-  return async () => {
-    if (!syncEnabled) return
-    try {
-      const result = await drainDevCodegenRequests(config, deps, listenerId)
-      const summary = formatDrainSummary(result)
-      if (summary !== null) deps.logger.info(summary)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      deps.logger.warn(`Could not sync queued editor edits: ${message}`)
-    }
-  }
-}
-
-export async function runQuickEditSync(
-  options: {
-    config?: string
-    /** Suppress failure warnings (the drain summary always shows). */
-    quiet?: boolean
-  } = {},
-  depsOverride: Partial<DevListenDeps> & { machineName?: string } = {}
-): Promise<{ handled: number; failed: number; skipped: number } | null> {
-  const config = await resolveQuickDevConfig(options, depsOverride)
-  if (config === null) return null
-  const deps: DevListenDeps = {
-    fetchFn: fetch,
-    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-    logger,
-    runRecord: async () => {
-      throw new Error('One-shot sync cannot record')
-    },
-    applyCodegen: createApplyCodegenDep(options.config, () => {}),
-    // One-shot: the drain summary is the feedback; per-edit lines are for
-    // live --watch sessions. Skipped and failed edits still log.
-    logAppliedEdits: false,
-    ...depsOverride,
-  }
-
-  try {
-    const registration = await registerDevListener(config, deps)
-    try {
-      const result = await drainDevCodegenRequests(
-        config,
-        deps,
-        registration.listenerId
-      )
-      const summary = formatDrainSummary(result)
-      if (summary !== null) logger.info(summary)
-      return result
-    } finally {
-      await deregisterDevListener(config, deps, registration.listenerId).catch(
-        () => {}
-      )
-    }
-  } catch (error) {
-    if (options.quiet !== true) {
-      const message = error instanceof Error ? error.message : String(error)
-      logger.warn(`Could not sync queued editor edits: ${message}`)
-    }
-    return null
-  }
-}
-
 export async function runDevCommand(
   options: {
     config?: string
     verbose?: boolean
     token?: string
-    recordKillWindow?: string
     grep?: string
-    /** The single video this edit session manages (editor deep link). */
+    /** The single video this preview run records (overview deep link). */
     videoName?: string
     forceRecord?: boolean
-    /** False disables the source-file watcher (--no-watch). */
-    watch?: boolean
-    /**
-     * One-shot mode (`edit` without --watch): sync queued browser edits into
-     * the sources, bring previews up to date, print the editor link, and
-     * exit instead of staying connected as the live bridge.
-     */
-    once?: boolean
-    /**
-     * False skips draining queued editor edits into the sources (--no-sync).
-     * Meant for CI runners, whose checkouts must stay read-only; the edits
-     * stay queued for the next syncing preview/sync/test run.
-     */
-    sync?: boolean
   },
   depsOverride: Partial<DevListenDeps> & {
     machineName?: string
     startupDeps?: Partial<DevStartupDeps>
-    watchDeps?: Partial<DevWatchDeps>
   } = {}
 ): Promise<void> {
   const { resolvedConfigPath: authConfigPath, screenciConfig } =
@@ -4353,7 +3949,7 @@ export async function runDevCommand(
     }
   }
 
-  let auth = await resolveDevAuth()
+  const auth = await resolveDevAuth()
 
   // Whether the user scoped this session with --grep themselves. The
   // resolution below may auto-narrow options.grep to a single video name;
@@ -4361,12 +3957,9 @@ export async function runDevCommand(
   // user's own grep, not the auto-narrowed one.
   const userGrep = options.grep
 
-  // A --watch live bridge deep-links the web editor for a single video, so
-  // the pattern must resolve to exactly one; anything else lists the
-  // candidates and exits. A one-shot preview records ANY number of matched
-  // videos: a single match still deep-links its preview page, several link
-  // the run listing (/preview/:recordId). Skipped when the caller (tests)
-  // pre-resolved the video name.
+  // A preview records ANY number of matched videos: a single match deep-links
+  // its overview page, several link the run listing (/preview/:recordId).
+  // Skipped when the caller (tests) pre-resolved the video name.
   if (options.videoName === undefined) {
     const editConfigPath = resolveScreenCIConfigPathOrExit(options.config)
     const allVideoNames = await collectRequestedRecordVideoNames(
@@ -4374,94 +3967,37 @@ export async function runDevCommand(
       [],
       undefined
     )
-    if (options.once === true) {
-      const matches =
+    const matches =
+      options.grep === undefined
+        ? allVideoNames
+        : allVideoNames.filter(grepMatcher(options.grep))
+    if (matches.length === 0) {
+      logger.error(
         options.grep === undefined
-          ? allVideoNames
-          : allVideoNames.filter(grepMatcher(options.grep))
-      if (matches.length === 0) {
-        logger.error(
-          options.grep === undefined
-            ? 'No videos found. Declare one with video(...) in your recordings.'
-            : `No video matches "${options.grep}". Available videos:\n` +
-                allVideoNames.map((name) => `  - ${name}`).join('\n')
-        )
-        process.exit(1)
-      }
-      if (matches.length === 1) {
-        options.videoName = matches[0]!
-        options.grep = escapeRegExp(matches[0]!)
-      }
-    } else {
-      const resolution = resolveSingleEditVideo(
-        allVideoNames,
-        options.grep,
-        (name) => pc.cyan(`${getSuggestedScreenciCommand('preview')} "${name}"`)
+          ? 'No videos found. Declare one with video(...) in your recordings.'
+          : `No video matches "${options.grep}". Available videos:\n` +
+              allVideoNames.map((name) => `  - ${name}`).join('\n')
       )
-      if (!resolution.ok) {
-        logger.error(resolution.message)
-        process.exit(1)
-      }
-      options.videoName = resolution.videoName
-      options.grep = escapeRegExp(resolution.videoName)
+      process.exit(1)
+    }
+    if (matches.length === 1) {
+      options.videoName = matches[0]!
+      options.grep = escapeRegExp(matches[0]!)
     }
   }
 
-  const killWindowSeconds = Number(options.recordKillWindow)
   const config: DevListenConfig = {
     apiUrl,
     credential: auth.credential,
     devToken: auth.devToken,
     projectName: screenciConfig.projectName,
     machineName: depsOverride.machineName ?? hostname(),
-    ...(Number.isFinite(killWindowSeconds) && killWindowSeconds >= 0
-      ? { recordKillWindowMs: killWindowSeconds * 1000 }
-      : {}),
-  }
-  // Source-file watcher state: created after the startup handshake; the
-  // codegen/stamp write paths re-baseline files through it so the CLI's own
-  // writes never trigger a watch re-record.
-  let watcher: DevWatcherController | null = null
-  let pendingLocal: LocalRecordRequest | null = null
-  const enqueueLocalRecord = (videoNames: string[]): void => {
-    const names = new Set([...(pendingLocal?.videoNames ?? []), ...videoNames])
-    if (names.size === 0) return
-    pendingLocal = { videoNames: [...names] }
   }
 
   const deps: DevListenDeps = {
     fetchFn: fetch,
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     logger,
-    runRecord: async (trigger, signal) => {
-      try {
-        await runTriggeredRecord(
-          options.config,
-          trigger,
-          options.verbose ?? false,
-          signal
-        )
-      } finally {
-        // A record may have learned new source files; watch them too.
-        await refreshWatchTargets()
-      }
-    },
-    takeLocalRequest: () => {
-      const request = pendingLocal
-      pendingLocal = null
-      return request
-    },
-    applyCodegen: createApplyCodegenDep(options.config, (path) => {
-      void watcher?.refreshBaseline(path)
-    }),
-    // Edits addressed to a video name no longer declared (usually a rename in
-    // code) only log when the user's own --grep targets that name; without a
-    // grep they fail silently in the log (still reported to the editor).
-    shouldLogUnknownVideo: (videoName) =>
-      userGrep !== undefined && grepMatcher(userGrep)(videoName),
-    // One-shot runs print only the drain summary; live sessions keep the
-    // per-edit apply lines as their feedback.
-    logAppliedEdits: options.once !== true,
     ...depsOverride,
   }
 
@@ -4479,30 +4015,6 @@ export async function runDevCommand(
     process.exit(1)
   }
 
-  // The connect banner only earns its line in a long-running session; a
-  // one-shot preview keeps its output to the phases the user cares about.
-  if (options.once !== true) {
-    logger.info(
-      `${pc.bold(config.machineName)} connected for project "${screenciConfig.projectName}".`
-    )
-  }
-
-  // Sync queued browser edits into the sources on every connect, so edits
-  // made while no machine was running land in code without a live bridge.
-  // With --no-sync (CI runners) the drain is skipped and queued edits only
-  // get a short best-effort note so the log surfaces them.
-  const drainQueuedEdits = createQueuedEditsDrainer({
-    syncEnabled: options.sync !== false,
-    config,
-    deps,
-    listenerId: registration.listenerId,
-  })
-  if (options.sync !== false) {
-    await drainQueuedEdits()
-  } else {
-    await warnUnsyncedEditsBeforeExport(options, depsOverride, 'no-sync')
-  }
-
   const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.config)
   const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
   const readKeptRecordings = async (): Promise<KeptRecording[]> => {
@@ -4516,51 +4028,6 @@ export async function runDevCommand(
       if (data !== null) recordings.push({ entry, data })
     }
     return recordings
-  }
-  const managedMatcher = grepMatcher(options.grep)
-  const currentWatchTargets = async () =>
-    buildWatchTargets(
-      await readKeptRecordings(),
-      managedMatcher,
-      resolvedConfigPath
-    )
-  const refreshWatchTargets = async (): Promise<void> => {
-    if (watcher === null) return
-    try {
-      await watcher.refreshTargets(await currentWatchTargets())
-    } catch {
-      // Best-effort: a failed refresh keeps the previous watch set.
-    }
-  }
-
-  // Machine-local preview record for the watcher's video names: the editor
-  // sees it through the sync state, and freshly learned sources are watched
-  // afterwards.
-  deps.runLocalRecord ??= async (videoNames, signal) => {
-    await reportDevSyncState(
-      config,
-      deps,
-      registration.listenerId,
-      videoNames
-    ).catch(() => {})
-    try {
-      await runPreviewRecordPass(
-        options.config,
-        videoNames.map(escapeRegExp).join('|'),
-        options.verbose ?? false,
-        signal,
-        {
-          apiUrl,
-          credential: auth.credential,
-          projectName: screenciConfig.projectName,
-        }
-      )
-    } finally {
-      await reportDevSyncState(config, deps, registration.listenerId, []).catch(
-        () => {}
-      )
-      await refreshWatchTargets()
-    }
   }
 
   // Startup handshake: bring every managed video up to date (source hash
@@ -4605,7 +4072,6 @@ export async function runDevCommand(
           for (const file of plan.files) {
             if (file.after !== file.before) {
               writeFileSync(file.path, await formatFile(file.path, file.after))
-              void watcher?.refreshBaseline(file.path)
             }
           }
           if (plan.stamped.length > 0) {
@@ -4622,7 +4088,7 @@ export async function runDevCommand(
             formatFile: createProjectFormatter(dirname(screenciDir), {
               warn: (message) => logger.warn(message),
             }),
-            onFileWritten: (path) => void watcher?.refreshBaseline(path),
+            onFileWritten: () => {},
           }),
         recordPreview: async (grepPattern) => {
           await runPreviewRecordPass(
@@ -4657,9 +4123,9 @@ export async function runDevCommand(
     )
   }
 
-  // With the managed videos up to date, point at the preview page for the
-  // video this session manages, or at the run listing when a one-shot preview
-  // recorded several videos.
+  // With the managed videos up to date, point at the overview page for the
+  // recorded video, or at the run listing when the preview recorded several
+  // videos.
   if (options.videoName !== undefined) {
     await printEditorLink({
       apiUrl,
@@ -4668,7 +4134,7 @@ export async function runDevCommand(
       projectName: screenciConfig.projectName,
       videoName: options.videoName,
     })
-  } else if (options.once === true) {
+  } else {
     const lastRecordId = await readLastRecordId(screenciDir)
     if (lastRecordId !== null) {
       const previewUrl = `${getDevFrontendUrl()}/preview/${lastRecordId}`
@@ -4681,163 +4147,11 @@ export async function runDevCommand(
     }
   }
 
-  // One-shot: edits are synced and the preview is fresh; nothing else needs
-  // this process, so disconnect instead of staying resident. Queued edits
-  // authored while the preview recorded are picked up by one final drain.
-  if (options.once === true) {
-    await drainQueuedEdits()
-    await deregisterDevListener(config, deps, registration.listenerId).catch(
-      () => {}
-    )
-    return
-  }
-
-  // Watch the managed videos' source files (and the config) so saving a test
-  // source re-records its previews without a manual trigger.
-  if (options.watch !== false) {
-    try {
-      watcher = await startDevWatcher(await currentWatchTargets(), {
-        logger,
-        onSourcesChanged: (videoNames) => {
-          logger.info(
-            `Source change detected: ${videoNames
-              .map((name) => `"${name}"`)
-              .join(', ')}`
-          )
-          enqueueLocalRecord(videoNames)
-        },
-        onConfigChanged: () => {
-          logger.info(
-            'screenci.config.ts changed: re-recording every managed video. ' +
-              'Restart screenci preview if the project itself changed.'
-          )
-          void (async () => {
-            const targets = await currentWatchTargets()
-            enqueueLocalRecord(
-              [...targets.files.values()].flatMap((names) => [...names])
-            )
-          })()
-        },
-        ...depsOverride.watchDeps,
-      })
-      logger.info(
-        'Watching test sources for changes (disable with --no-watch).'
-      )
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      logger.warn(`Source watching unavailable: ${message}`)
-    }
-  }
-
-  logger.info(
-    `Waiting for record requests from ${pc.cyan(getDevFrontendUrl())}. Press Ctrl-C to stop.`
+  // The preview is fresh and the link is printed; nothing else needs this
+  // process, so disconnect.
+  await deregisterDevListener(config, deps, registration.listenerId).catch(
+    () => {}
   )
-
-  const controller = { stopped: false }
-  const shutdown = () => {
-    if (controller.stopped) return
-    controller.stopped = true
-    watcher?.stop()
-    logger.info('Disconnecting...')
-    void deregisterDevListener(config, deps, registration.listenerId)
-      .catch(() => {})
-      .finally(() => process.exit(0))
-  }
-  process.on('SIGINT', shutdown)
-  process.on('SIGTERM', shutdown)
-
-  try {
-    while (!controller.stopped) {
-      try {
-        await runDevListenLoop(
-          config,
-          deps,
-          registration.listenerId,
-          controller
-        )
-        break
-      } catch (error) {
-        if (!(error instanceof DevAuthError)) throw error
-
-        // Anonymous session: a 401 usually means the trial was just claimed
-        // (the claim deletes the anon org secret). Self-upgrade to the real
-        // credentials the claim minted and reconnect without stopping.
-        if (auth.anonToken !== null) {
-          const status = await checkAnonSessionStatus(auth.anonToken, {
-            backendUrl: apiUrl,
-          })
-          if (status.status === 'claimed') {
-            await persistScreenCISecret(authEnvFilePath, status.secret)
-            process.env.SCREENCI_SECRET = status.secret
-            if (status.editToken !== undefined) {
-              await persistScreenCIEditToken(authEnvFilePath, status.editToken)
-              process.env[SCREENCI_EDIT_TOKEN_ENV] = status.editToken
-            }
-            await deleteAnonSessionFile(authScreenciDir)
-            let claimedEditToken = status.editToken
-            if (claimedEditToken === undefined) {
-              // The claim mints a token unless the user is at the cap; fall
-              // back to exchanging the fresh secret for a machine token.
-              const exchanged = await exchangeEditToken({
-                apiUrl,
-                secret: status.secret,
-                machineName: depsOverride.machineName ?? hostname(),
-              })
-              if (exchanged.ok) {
-                claimedEditToken = exchanged.editToken
-                await persistScreenCIEditToken(
-                  authEnvFilePath,
-                  claimedEditToken
-                )
-                process.env[SCREENCI_EDIT_TOKEN_ENV] = claimedEditToken
-              }
-            }
-            if (claimedEditToken === undefined) {
-              logger.error(
-                'Your trial was claimed, but no editor token is configured. ' +
-                  `Create one at ${pc.cyan(getScreenCISecretsUrl())}, add it to your env file as ${SCREENCI_EDIT_TOKEN_ENV}, and re-run this command.`
-              )
-              process.exit(1)
-            }
-            auth = {
-              credential: secretCredential(status.secret),
-              devToken: claimedEditToken,
-              anonToken: null,
-            }
-            config.credential = auth.credential
-            config.devToken = auth.devToken
-            registration = await registerDevListener(config, deps)
-            logger.info(
-              'Trial claimed: reconnected with your account credentials ' +
-                `(saved to ${pathRelative(process.cwd(), authEnvFilePath)}).`
-            )
-            continue
-          }
-          logger.error(
-            'This trial session is no longer valid (expired or claimed elsewhere).\n' +
-              `Sign up to keep editing: ${pc.cyan(getDevFrontendUrl())}`
-          )
-          process.exit(1)
-        }
-
-        logger.error(error.message)
-        logger.error(
-          `Create a new editor token at ${pc.cyan(getScreenCISecretsUrl())} if yours was revoked.`
-        )
-        await deregisterDevListener(
-          config,
-          deps,
-          registration.listenerId
-        ).catch(() => {})
-        process.exit(1)
-      }
-    }
-  } finally {
-    controller.stopped = true
-    watcher?.stop()
-    process.off('SIGINT', shutdown)
-    process.off('SIGTERM', shutdown)
-  }
 }
 
 function getRecordRunLockPath(screenciDir: string): string {
@@ -5345,6 +4659,7 @@ async function uploadRecordedVideosForConfig(
         recordId: string | null
         hadFailures: boolean
         uploadedVideoNames: string[]
+        uploadedVideos: Array<{ baseVideoName: string; videoId: string | null }>
         failedVideoNames: string[]
         failedVideoMessages: Array<{ videoName: string; message: string }>
         studioNotices: StudioUploadNotice[]
@@ -5356,6 +4671,7 @@ async function uploadRecordedVideosForConfig(
         recordId: null,
         hadFailures: false,
         uploadedVideoNames: [],
+        uploadedVideos: [],
         failedVideoNames: [],
         failedVideoMessages: [],
         studioNotices: [],
@@ -5384,6 +4700,7 @@ async function uploadRecordedVideosForConfig(
         recordId,
         hadFailures,
         uploadedVideoNames,
+        uploadedVideos,
         failedVideoNames,
         failedVideoMessages,
         studioNotices,
@@ -5432,7 +4749,14 @@ async function uploadRecordedVideosForConfig(
         recordId !== null &&
         projectId !== null
       ) {
-        const exportUrl = `${appUrl}/export/${recordId}`
+        // A single-video run deep-links that video's overview page with the
+        // run preselected; several videos link the combined run page.
+        const singleVideoId =
+          uploadedVideos.length === 1 ? uploadedVideos[0]!.videoId : null
+        const exportUrl =
+          singleVideoId !== null
+            ? formatVideoExportUrl(appUrl, projectId, singleVideoId, recordId)
+            : `${appUrl}/export/${recordId}`
         resultUrl = exportUrl
         await writeGitHubProjectOutput(exportUrl)
         logger.info('')
@@ -5487,9 +4811,10 @@ async function uploadRecordedVideosForConfig(
       ]
       for (const notice of studioNotices) {
         if ('held' in notice.studio) {
+          // The hold is resolved in the editor, so the link deep-links it.
           const resolveUrl =
             projectId !== null && notice.videoId !== null
-              ? formatPreviewUrl(appUrl, projectId, notice.videoId)
+              ? `${formatPreviewUrl(appUrl, projectId, notice.videoId)}?editor`
               : null
           logger.info('')
           logger.info(
@@ -5501,7 +4826,7 @@ async function uploadRecordedVideosForConfig(
           const blankCues = notice.studio.blankNarrationCues ?? []
           if (blankCues.length > 0) {
             logger.info(
-              `Narration ${blankCues.map((cue) => `"${cue}"`).join(', ')} has no text in code yet. Write it in the editor, then run ${pc.cyan(getSuggestedScreenciCommand('preview'))} to sync it into your sources and re-record.`
+              `Narration ${blankCues.map((cue) => `"${cue}"`).join(', ')} has no text in code yet. Write the narration text in your test source, then re-run ${pc.cyan(getSuggestedScreenciCommand('preview'))} to re-record.`
             )
           }
           // Machine-readable status line so agents can relay the hold
@@ -5603,11 +4928,6 @@ export async function main() {
       '--force',
       'deprecated no-op: export always re-records every requested video'
     )
-    .option(
-      '--no-sync',
-      'deprecated no-op: export never applies queued browser edits (it warns ' +
-        'about them instead; run screenci sync to apply)'
-    )
     .action(
       async (
         patterns: string[],
@@ -5620,7 +4940,6 @@ export async function main() {
           output?: string
           wait?: boolean
           force?: boolean
-          sync?: boolean
         }
       ) => {
         const positionalGrep =
@@ -5634,12 +4953,6 @@ export async function main() {
           return
         }
 
-        // Export never applies queued browser edits: an export renders
-        // exactly what the sources say. Queued edits only produce a warning
-        // (apply them with `screenci sync` or `screenci preview`).
-        await warnUnsyncedEditsBeforeExport({
-          ...(options.config !== undefined ? { config: options.config } : {}),
-        })
         try {
           await stampEditIdsForProject(options.config)
         } catch (err) {
@@ -5657,59 +4970,20 @@ export async function main() {
       }
     )
 
-  // sync command: one-shot drain of queued browser edits into the sources.
-  program
-    .command('sync')
-    .description(
-      'Pull queued browser edits from the ScreenCI editor into your test ' +
-        'sources (also runs automatically before test, export, and edit)'
-    )
-    .option('-c, --config <path>', 'path to config file')
-    .action(async (options: { config?: string }) => {
-      const result = await runQuickEditSync({
-        ...(options.config !== undefined ? { config: options.config } : {}),
-      })
-      if (result === null) {
-        logger.info(
-          'Nothing to sync: this project is not connected yet. Run ' +
-            `${pc.cyan(getSuggestedScreenciCommand('preview'))} first.`
-        )
-        return
-      }
-      if (result.handled === 0 && result.failed === 0 && result.skipped === 0) {
-        logger.info('No queued editor edits; sources are up to date.')
-      }
-    })
-
-  // dev command: sync edits, record a preview, and print the editor link.
-  // One-shot by default; --watch keeps the machine connected as the live
-  // code-sync bridge.
+  // preview command: record fresh live previews and print the video link.
   program
     .command('preview [grepPatterns...]')
     .description(
-      'Sync browser edits into your sources, record fresh live previews, and ' +
-        'print the preview link (one video links its preview page directly; ' +
-        'several link the run listing). Add --watch to stay connected: ' +
-        'records on demand and applies editor changes to code live. ' +
+      'Record fresh live previews and print the video link (one video links ' +
+        'its overview page directly; several link the run listing). ' +
         'Positional patterns filter managed videos by title (same as --grep, ' +
         'like `playwright test <pattern>`); multiple patterns are OR-combined.'
-    )
-    .option(
-      '-w, --watch',
-      'stay connected as the live bridge: watch test sources, record on ' +
-        'demand from the editor, and apply editor changes to code as they ' +
-        'happen (Ctrl-C to stop)'
     )
     .option('-c, --config <path>', 'path to config file')
     .option('-v, --verbose', 'verbose output')
     .option(
       '--token <token>',
       `personal editor token (defaults to ${SCREENCI_EDIT_TOKEN_ENV} from your env file)`
-    )
-    .option(
-      '--record-kill-window <seconds>',
-      'a running record younger than this is killed and replaced when a new ' +
-        'record request arrives; an older one finishes first (default: 10)'
     )
     .option(
       '-g, --grep <pattern>',
@@ -5721,17 +4995,6 @@ export async function main() {
       're-record every managed video at startup even when the kept ' +
         'recordings are up to date'
     )
-    .option(
-      '--no-watch',
-      'with --watch semantics but without the source-file watcher: stay ' +
-        'connected, but do not re-record previews on source changes'
-    )
-    .option(
-      '--no-sync',
-      'do not pull queued browser edits into the sources (for CI runners, ' +
-        'whose checkouts must stay read-only; edits stay queued for your ' +
-        'next local preview or sync)'
-    )
     .action(
       async (
         grepPatterns: string[],
@@ -5739,11 +5002,8 @@ export async function main() {
           config?: string
           verbose?: boolean
           token?: string
-          recordKillWindow?: string
           grep?: string
           forceRecord?: boolean
-          watch?: boolean
-          sync?: boolean
         }
       ) => {
         // Positional patterns act like `playwright test <pattern>`: filter the
@@ -5753,15 +5013,10 @@ export async function main() {
           grepPatterns.length > 0
             ? grepPatterns.map(escapeRegExp).join('|')
             : undefined
-        const { grep, watch, ...rest } = options
+        const { grep, ...rest } = options
         const resolvedGrep = grep ?? positionalGrep
-        // No --watch flag at all: one-shot (sync edits, record a preview,
-        // print the link, exit). --watch or --no-watch keep the session
-        // connected as before.
         await runDevCommand({
           ...rest,
-          once: watch === undefined,
-          watch: watch ?? false,
           ...(resolvedGrep !== undefined ? { grep: resolvedGrep } : {}),
         })
       }
@@ -5801,18 +5056,6 @@ export async function main() {
         }
       }
 
-      // Pull queued browser edits into the sources before running, so the
-      // test exercises what the editor shows. Best-effort and silent when
-      // the project has no credentials or the backend is unreachable.
-      if (process.env.SCREENCI_RECORDING !== 'true') {
-        await runQuickEditSync({
-          ...(parsed.configPath !== undefined
-            ? { config: parsed.configPath }
-            : {}),
-          quiet: true,
-        })
-      }
-
       await run(
         'test',
         parsed.otherArgs,
@@ -5825,7 +5068,7 @@ export async function main() {
 
       // Stamp editIds while the sources and kept recordings are known-good,
       // so browser edits resolve to stable ids even before the first
-      // `screenci edit` session.
+      // `screenci preview` run.
       try {
         await stampEditIdsForProject(parsed.configPath)
       } catch (err) {

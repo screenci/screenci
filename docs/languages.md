@@ -218,20 +218,15 @@ language keys, falling back to the implicit `en` default for a plain video.
 
 The language menu on the Editor page lists the current languages and lets you
 add one. Adding a language auto-translates the existing narration from the
-language you are viewing and writes the new language into your
-`video.languages([...])` declaration in code (a new `.languages([...])` call is
-added when the video has none). The code edit applies through the connected
-`screenci edit` machine; with no machine connected it is queued and applies
-automatically the next time one connects. The new language is watchable in the
+language you are viewing and adds the new language on top of your
+`video.languages([...])` code set. The new language is watchable in the
 live preview immediately (it borrows another language's footage until its
 first record) and you can edit every translated line afterwards.
 
-Deleting a language from the same menu removes its exports and narrations and
-removes the language from the `video.languages([...])` declaration the same
-way (queued when no machine is connected). The code edit also removes the
-language's entries from language-major `video.narration({...})` and
-`video.values({...})` declarations, so its cue texts do not linger in your
-sources. The default language cannot be deleted.
+Deleting a language from the same menu removes its exports and narrations.
+A language declared in code (in `video.languages([...])` or a language-major
+`video.narration({...})`) comes back on the next recording unless it is also
+removed from the sources. The default language cannot be deleted.
 
 ## Available languages
 

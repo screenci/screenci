@@ -880,6 +880,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: false,
         uploadedVideoNames: expect.any(Array),
+        uploadedVideos: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -1573,13 +1574,26 @@ describe('CLI', () => {
       expect(result.uploadedVideoNames).toEqual(['Demo'])
     })
 
-    it('formats preview URLs', async () => {
+    it('formats video overview URLs', async () => {
       const { formatPreviewUrl } = await import('./cli')
 
       expect(
         formatPreviewUrl('https://app.screenci.test', 'project_1', 'video_2')
+      ).toBe('https://app.screenci.test/project/project_1/video/video_2')
+    })
+
+    it('formats single-video export URLs with the run preselected', async () => {
+      const { formatVideoExportUrl } = await import('./cli')
+
+      expect(
+        formatVideoExportUrl(
+          'https://app.screenci.test',
+          'project_1',
+          'video_2',
+          'rec_3'
+        )
       ).toBe(
-        'https://app.screenci.test/project/project_1/video/video_2/preview'
+        'https://app.screenci.test/project/project_1/video/video_2?export=rec_3'
       )
     })
 
@@ -1895,6 +1909,7 @@ describe('CLI', () => {
         recordId: null,
         hadFailures: false,
         uploadedVideoNames: expect.any(Array),
+        uploadedVideos: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -1935,6 +1950,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: true,
         uploadedVideoNames: expect.any(Array),
+        uploadedVideos: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -2030,6 +2046,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: false,
         uploadedVideoNames: expect.any(Array),
+        uploadedVideos: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -2136,6 +2153,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: true,
         uploadedVideoNames: expect.any(Array),
+        uploadedVideos: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -2346,6 +2364,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: false,
         uploadedVideoNames: expect.any(Array),
+        uploadedVideos: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -2556,6 +2575,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: true,
         uploadedVideoNames: expect.any(Array),
+        uploadedVideos: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -2613,6 +2633,7 @@ describe('CLI', () => {
         recordId: null,
         hadFailures: true,
         uploadedVideoNames: expect.any(Array),
+        uploadedVideos: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -2773,6 +2794,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: false,
         uploadedVideoNames: expect.any(Array),
+        uploadedVideos: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -2853,6 +2875,7 @@ describe('CLI', () => {
         recordId: expect.any(String),
         hadFailures: false,
         uploadedVideoNames: expect.any(Array),
+        uploadedVideos: expect.any(Array),
         studioNotices: [],
         elevenLabsKeyMissingVideos: [],
         notices: [],
@@ -2959,6 +2982,8 @@ describe('CLI', () => {
           recordId: expect.any(String),
           hadFailures: false,
           uploadedVideoNames: expect.any(Array),
+          uploadedVideos: expect.any(Array),
+          uploadedVideos: expect.any(Array),
           studioNotices: [],
           elevenLabsKeyMissingVideos: [],
           notices: [],

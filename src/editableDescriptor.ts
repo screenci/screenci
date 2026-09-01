@@ -36,7 +36,7 @@ export type EditableActionDescriptor = {
   subKind?: string
   /**
    * Stable, human-readable identity slug from code (e.g. `fill1`, `autoZoom2`),
-   * set via the `editId` option and stamped automatically by `screenci sync`.
+   * set via the `editId` option and stamped automatically at startup.
    * When present it IS the action's stable key: matching survives refactors,
    * moved lines, and locator changes. The matcher-based identity below is the
    * bootstrap fallback for not-yet-stamped actions.
@@ -57,7 +57,7 @@ export type EditableActionDescriptor = {
   /**
    * The user-code call site that produced the action, captured from the
    * stack at instrumentation time. Not part of the stable identity; used by
-   * `screenci sync` and `screenci status` to point at where a change lands.
+   * tooling to point at where a change lands.
    */
   source?: { file: string; line: number }
 }

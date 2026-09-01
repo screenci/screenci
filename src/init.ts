@@ -575,7 +575,7 @@ function generateIslandPackageJson(projectName: string): string {
         type: 'module',
         scripts: {
           test: 'screenci test',
-          edit: 'screenci edit',
+          preview: 'screenci preview',
           export: 'screenci export',
           format: 'prettier --write .',
         },
@@ -1193,7 +1193,7 @@ export async function setUpInitSecret(
   const envPath = resolve(islandDir, '.env')
 
   // One-and-done connect: with a secret on hand, also mint this machine's
-  // personal editor token now so `screenci edit` never has to ask for one.
+  // personal editor token now so `screenci preview` never has to ask for one.
   // Best-effort: `edit` retries the exchange itself when this fails.
   const mintEditToken = async (secret: string): Promise<void> => {
     if (env.SCREENCI_EDIT_TOKEN) return
@@ -1395,9 +1395,6 @@ ${appBuildHint}      - name: Install dependencies
         working-directory: ${islandWorkflowPath}
         run: ${commands.playwrightRun} install --only-shell chromium
 
-      # --no-sync keeps the CI checkout read-only: queued browser edits are
-      # not pulled into the sources here, they stay queued for your next
-      # local preview or sync.
       - id: record
         name: Record previews
         working-directory: ${islandWorkflowPath}
@@ -1406,9 +1403,9 @@ ${appBuildHint}      - name: Install dependencies
           SCREENCI_GREP: \${{ inputs.grep }}
         run: |
           if [ -n "$SCREENCI_GREP" ]; then
-            ${commands.screenciRun} preview --no-sync --grep "$SCREENCI_GREP"
+            ${commands.screenciRun} preview --grep "$SCREENCI_GREP"
           else
-            ${commands.screenciRun} preview --no-sync
+            ${commands.screenciRun} preview
           fi
 
       # Prefer final rendered videos over live previews? Replace the run
@@ -1444,7 +1441,7 @@ video
   // Open with a brief brand intro card before the walkthrough begins.
   await overlays.logo.for(2000)
 
-  // Play the narration line for this step.
+  // Play the narration for this part of the flow.
   await narration.docs()
 
   // Automatically zoom into interactions so they are easier to follow.

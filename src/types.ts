@@ -642,7 +642,7 @@ export type NarrationFullScreenFit = 'contain' | 'cover'
 export type AutoZoomOptions = {
   /**
    * Stable identity slug for the web editor (e.g. `autoZoom2`). Stamped
-   * automatically by `screenci sync`; not a zoom setting and never marks the
+   * automatically at preview startup; not a zoom setting and never marks the
    * block as code-locked.
    */
   editId?: string
@@ -768,7 +768,7 @@ type CursorActionMoveOptions = {
   move?: CursorMoveOptions
   /**
    * Stable identity slug for the web editor (e.g. `click1`). Stamped
-   * automatically by `screenci sync`; identity only, never affects the
+   * automatically at preview startup; identity only, never affects the
    * action's behavior.
    */
   editId?: string

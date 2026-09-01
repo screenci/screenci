@@ -1,5 +1,5 @@
 /**
- * `screenci edit` startup handshake.
+ * `screenci preview` startup handshake.
  *
  * Before the poll loop starts serving the editor, every video this session
  * manages must be up to date: its kept recording data (data.json preserved

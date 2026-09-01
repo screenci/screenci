@@ -1,5 +1,5 @@
 /**
- * Static-analysis primitives for `screenci sync`: surgical text edits to
+ * Static-analysis primitives for source codemods: surgical text edits to
  * .screenci.ts files, computed with the TypeScript compiler API used purely as
  * a parser. Only the edited ranges change; untouched text is never reprinted,
  * so the user's formatting and comments survive exactly.

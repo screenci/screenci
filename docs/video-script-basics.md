@@ -77,7 +77,7 @@ video
   // Open with a brief brand intro card before the walkthrough begins.
   await overlays.logo.for(2000)
 
-  // Play the narration line for this step.
+  // Play the narration for this part of the flow.
   await narration.docs()
 
   // Automatically zoom into interactions so they are easier to follow.
@@ -327,6 +327,9 @@ Prefer one sentence per cue. Split longer narration into separate named cues and
 place them where they belong in the flow. That gives you cleaner overlap
 control, makes revisions less brittle, and should save API cost when a TTS
 provider such as ElevenLabs only needs to regenerate one changed sentence.
+Write cues about what the flow accomplishes rather than individual clicks,
+and fill forms with fictitious example data; see
+[Narration](/docs/guides/narration) for style guidance.
 
 To control which languages are recorded, chain `video.languages(...)` (a plain
 array of language codes, or `{ languages, mode }`). The recorded set is the

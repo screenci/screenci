@@ -4,7 +4,7 @@
  * was explicit at the call site or a default. The records are serialized into
  * `data.json` so the backend learns the used values and their provenance; the
  * web editor's edits themselves are codegen'd straight into the sources by
- * `screenci edit`, so the recorded code values are always what a run used.
+ * the editor, so the recorded code values are always what a run used.
  */
 import {
   DEFAULT_CLICK_MOUSE_MOVE_DURATION,

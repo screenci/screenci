@@ -22,15 +22,11 @@ left untouched on re-run.
 The workflow runs on pushes to `main` and on
 [`workflow_dispatch`](https://docs.github.com/en/actions/using-workflows/manually-running-a-workflow),
 installs Node.js 24 with dependency caching, installs the Playwright Chromium
-Headless Shell, and runs `screenci preview --no-sync`. It mirrors
+Headless Shell, and runs `screenci preview`. It mirrors
 [Playwright CI](https://playwright.dev/docs/ci). Use `push` to keep previews
 current automatically, or `workflow_dispatch` for a manual, targeted run.
 
-`preview --no-sync` re-records every requested video and updates the live
-previews. `--no-sync` keeps the CI checkout read-only: queued editor edits are
-not pulled into the sources there (edits drained on a throwaway CI runner
-would be lost); they stay queued for your next local `preview` or `sync`, and
-the step logs a short note when edits are pending.
+`preview` re-records every requested video and updates the live previews.
 
 Prefer final rendered videos instead of live previews? The generated workflow
 contains a commented-out alternative that swaps the record step for

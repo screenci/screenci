@@ -33,7 +33,7 @@ export const SCREENCI_TERMS_URL = 'https://screenci.com/legal/tos'
  * the up-front record gate and the post-upload summary.
  */
 export function formatAnonTermsNotice(): string {
-  return `Recording during an anonymous trial agrees to the Terms: ${SCREENCI_TERMS_URL}`
+  return `Recording during an anonymous trial agrees to the terms: ${SCREENCI_TERMS_URL}`
 }
 
 export type CliCredential =

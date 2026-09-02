@@ -131,6 +131,7 @@ import {
   reportDevSyncState,
 } from './src/devListen.js'
 import {
+  baseVideoName,
   dedupeAppliedStudioNotices,
   formatStudioNoticeLine,
 } from './src/previewOutput.js'
@@ -2573,6 +2574,8 @@ export async function uploadRecordings(
   uploadedVideoNames: string[]
   /** One entry per uploaded (base) video, with its server-side id when known. */
   uploadedVideos: Array<{ baseVideoName: string; videoId: string | null }>
+  /** Successful upload passes (per-language passes count separately). */
+  uploadedPassCount: number
   failedVideoNames: string[]
   failedVideoMessages: Array<{ videoName: string; message: string }>
   studioNotices: StudioUploadNotice[]
@@ -2593,6 +2596,7 @@ export async function uploadRecordings(
       hadFailures: false,
       uploadedVideoNames: [],
       uploadedVideos: [],
+      uploadedPassCount: 0,
       failedVideoNames: [],
       failedVideoMessages: [],
       studioNotices: [],
@@ -2644,6 +2648,7 @@ export async function uploadRecordings(
         hadFailures: missingRequestedVideoNames.length > 0,
         uploadedVideoNames: [],
         uploadedVideos: [],
+        uploadedPassCount: 0,
         failedVideoNames: missingRequestedVideoNames,
         failedVideoMessages: missingRequestedVideoNames.map((videoName) => ({
           videoName,
@@ -2667,6 +2672,7 @@ export async function uploadRecordings(
         hadFailures: true,
         uploadedVideoNames: [],
         uploadedVideos: [],
+        uploadedPassCount: 0,
         failedVideoNames: filteredCandidates.map(
           (candidate) => candidate.displayVideoName
         ),
@@ -2774,6 +2780,7 @@ export async function uploadRecordings(
       hadFailures,
       uploadedVideoNames,
       uploadedVideos,
+      uploadedPassCount: results.filter((result) => !result.hadFailure).length,
       failedVideoNames,
       failedVideoMessages,
       studioNotices,
@@ -4139,16 +4146,26 @@ export async function runDevCommand(
     )
   }
 
-  // With the managed videos up to date, point at the overview page for the
-  // recorded video, or at the run listing when the preview recorded several
-  // videos.
-  if (options.videoName !== undefined) {
+  // With the managed videos up to date, point at the overview page when the
+  // run covered exactly one recording pass. Several passes (several videos,
+  // or one video recorded in several languages) get the run listing page,
+  // whose rows carry the per-language links.
+  const singlePassVideoName = await (async () => {
+    if (options.videoName === undefined) return null
+    const passes = (await readKeptRecordings()).filter(
+      (recording) =>
+        baseVideoName(recording.data.metadata?.videoName ?? '') ===
+        options.videoName
+    )
+    return passes.length <= 1 ? options.videoName : null
+  })()
+  if (singlePassVideoName !== null) {
     await printEditorLink({
       apiUrl,
       appUrl: getDevFrontendUrl(),
       credential: auth.credential,
       projectName: screenciConfig.projectName,
-      videoName: options.videoName,
+      videoName: singlePassVideoName,
     })
   } else {
     const lastRecordId = await readLastRecordId(screenciDir)
@@ -4676,6 +4693,7 @@ async function uploadRecordedVideosForConfig(
         hadFailures: boolean
         uploadedVideoNames: string[]
         uploadedVideos: Array<{ baseVideoName: string; videoId: string | null }>
+        uploadedPassCount: number
         failedVideoNames: string[]
         failedVideoMessages: Array<{ videoName: string; message: string }>
         studioNotices: StudioUploadNotice[]
@@ -4688,6 +4706,7 @@ async function uploadRecordedVideosForConfig(
         hadFailures: false,
         uploadedVideoNames: [],
         uploadedVideos: [],
+        uploadedPassCount: 0,
         failedVideoNames: [],
         failedVideoMessages: [],
         studioNotices: [],
@@ -4717,6 +4736,7 @@ async function uploadRecordedVideosForConfig(
         hadFailures,
         uploadedVideoNames,
         uploadedVideos,
+        uploadedPassCount,
         failedVideoNames,
         failedVideoMessages,
         studioNotices,
@@ -4765,10 +4785,13 @@ async function uploadRecordedVideosForConfig(
         recordId !== null &&
         projectId !== null
       ) {
-        // A single-video run deep-links that video's overview page with the
-        // run preselected; several videos link the combined run page.
+        // A single-pass run deep-links that video's overview page with the
+        // run preselected; several passes (several videos, or one video in
+        // several languages) link the combined run page.
         const singleVideoId =
-          uploadedVideos.length === 1 ? uploadedVideos[0]!.videoId : null
+          uploadedVideos.length === 1 && uploadedPassCount === 1
+            ? uploadedVideos[0]!.videoId
+            : null
         const exportUrl =
           singleVideoId !== null
             ? formatVideoExportUrl(appUrl, projectId, singleVideoId, recordId)
@@ -4990,8 +5013,9 @@ export async function main() {
   program
     .command('preview [grepPatterns...]')
     .description(
-      'Record fresh live previews and print the video link (one video links ' +
-        'its overview page directly; several link the run listing). ' +
+      'Record fresh live previews and print the video link (a single ' +
+        'recording links its video page directly; several videos or ' +
+        'languages link the run listing). ' +
         'Positional patterns filter managed videos by title (same as --grep, ' +
         'like `playwright test <pattern>`); multiple patterns are OR-combined.'
     )

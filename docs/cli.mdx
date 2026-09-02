@@ -274,11 +274,11 @@ Positional arguments are title patterns (multiple are OR-combined, like
 every language. Downloads are named `<title>.<lang>.mp4`.
 The command polls render status every 5 seconds for up to 30 minutes
 and exits `0` only when every requested video rendered and downloaded. After a
-run it prints the video's page in the app: a single-video run links that
-video's overview page with the run preselected
-(`<app>/project/<projectId>/video/<videoId>?export=<recordId>`), a run with
-several videos links the run's page (`<app>/export/<recordId>`), which links
-each video's page.
+run it prints the video's page in the app: a run with exactly one rendered
+pass links that video's overview page with the run preselected
+(`<app>/project/<projectId>/video/<videoId>?export=<recordId>`); several
+passes (several videos, or one video exported in several languages) link the
+run's page (`<app>/export/<recordId>`), which links each version.
 
 ### `--languages <langs>`
 
@@ -349,11 +349,11 @@ Important restriction:
 
 Records live previews and prints their links: it re-records and uploads the
 live preview of every matched video that is stale (all managed videos when no
-pattern is given), prints the link, and exits. When exactly one video was
-recorded it prints that video's overview page
-(`<app>/project/<projectId>/video/<videoId>`); when several were recorded it
-prints the run listing page (`<app>/preview/<recordId>`), which links each
-video's page.
+pattern is given), prints the link, and exits. A run with exactly one
+recording pass prints that video's overview page
+(`<app>/project/<projectId>/video/<videoId>`); several passes (several
+videos, or one video recorded in several languages) print the run listing
+page (`<app>/preview/<recordId>`), which links each video and language.
 
 ```bash
 screenci preview

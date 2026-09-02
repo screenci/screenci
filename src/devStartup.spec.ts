@@ -54,6 +54,18 @@ describe('runDevStartupSync', () => {
     expect(deps.logger.info).toHaveBeenCalledWith('Recording all videos.')
   })
 
+  it('hints how to preview just one video when a formatter is wired', async () => {
+    const deps = makeDeps([kept('Demo'), kept('Other')], {
+      suggestPreviewCommand: (videoName) =>
+        `npx screenci preview "${videoName}"`,
+    })
+    await runDevStartupSync({}, deps)
+
+    expect(deps.logger.info).toHaveBeenCalledWith(
+      'Recording all videos. Preview just one with npx screenci preview "Demo".'
+    )
+  })
+
   it('records with the grep even when no kept recording matches (new video)', async () => {
     const deps = makeDeps([])
     const result = await runDevStartupSync({ grep: 'Brand new' }, deps)

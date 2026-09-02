@@ -4048,6 +4048,8 @@ export async function runDevCommand(
             videoNames
           )
         },
+        suggestPreviewCommand: (videoName) =>
+          pc.cyan(`${getSuggestedScreenciCommand('preview')} "${videoName}"`),
         logger,
         ...depsOverride.startupDeps,
       }

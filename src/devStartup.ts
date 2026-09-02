@@ -29,6 +29,12 @@ export type DevStartupDeps = {
    * once it finishes. Best-effort.
    */
   setSyncing?: (videoNames: string[]) => Promise<void>
+  /**
+   * Formats the (color-highlighted) preview command scoped to one video, for
+   * the record-all announcement's "preview just one" hint. Optional; the hint
+   * is omitted when unwired or when no video name is known yet.
+   */
+  suggestPreviewCommand?: (videoName: string) => string
   logger: DevListenLogger
 }
 
@@ -76,7 +82,11 @@ export async function runDevStartupSync(
   ]
 
   if (options.grep === undefined) {
-    deps.logger.info('Recording all videos.')
+    const hint =
+      deps.suggestPreviewCommand !== undefined && names[0] !== undefined
+        ? ` Preview just one with ${deps.suggestPreviewCommand(names[0])}.`
+        : ''
+    deps.logger.info(`Recording all videos.${hint}`)
   } else if (names.length === 1) {
     deps.logger.info(`Recording: ${names[0]}`)
   } else if (names.length > 1) {

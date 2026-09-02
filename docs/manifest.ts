@@ -254,6 +254,18 @@ export const docsManifest = [
     description:
       'Make and change videos without a repository: the Add project, Add video, and Edit buttons hand your coding agent a one-time setup code, and the browser opens the result when the recording lands.',
     prev: 'docs/guides/anonymous-trial',
+    next: 'docs/guides/ai-context',
+  },
+  {
+    source: 'ai-context.md',
+    slug: 'docs/guides/ai-context',
+    section: 'Guides',
+    order: 14,
+    navLabel: 'AI context',
+    title: 'AI Context',
+    description:
+      'What coding agents learn about your product before they record: the repository, the site URL, whether they may start the app, team notes, per-project overrides, personal site logins, and moving sources into the repository.',
+    prev: 'docs/guides/create-from-web-app',
     next: 'docs/reference/cli',
   },
   {
@@ -264,8 +276,8 @@ export const docsManifest = [
     navLabel: 'CLI',
     title: 'CLI',
     description:
-      'Command reference for screenci start, init, test, preview, export, project info, and public delivery commands.',
-    prev: 'docs/guides/create-from-web-app',
+      'Command reference for screenci start, context, pull-login, merge-complete, init, test, preview, export, project info, and public delivery commands.',
+    prev: 'docs/guides/ai-context',
     next: 'docs/reference/configuration',
   },
   {

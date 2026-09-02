@@ -43,6 +43,11 @@ as a repository secret, from
 [app.screenci.com/secrets](https://app.screenci.com/secrets). The workflow fails
 early if it is missing.
 
+Videos that sign in read `APP_USERNAME` and `APP_PASSWORD` (see
+[Configuration](/docs/reference/configuration#example-env-file)). Locally
+they come from each member's personal login; in CI add them as repository
+secrets and pass them to the record step's `env` like `SCREENCI_SECRET`.
+
 ## Recording your own app
 
 If your videos navigate to a locally-running app via `webServer` in

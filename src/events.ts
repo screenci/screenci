@@ -31,6 +31,8 @@ import { hashSourceFile } from './recordingFreshness.js'
 import type { VoiceKey } from './voices.js'
 import { DEFAULT_ZOOM_OPTIONS } from './defaults.js'
 import { getGitMetadata } from './git.js'
+import type { Page } from '@playwright/test'
+import { buildSiteMetadata, toSiteOrigin } from './siteOrigin.js'
 import {
   resolvePerformanceIntervals,
   type PerformanceIntervals,
@@ -1322,6 +1324,12 @@ export type WriteRecordingOptions = {
   clip?: ScreenshotClipRecord
 }
 
+/** What the page fixture knows about the site the script targets. */
+export type SiteContext = {
+  baseURL?: string | undefined
+  webServerConfigured: boolean
+}
+
 export interface IEventRecorder {
   start(): void
   /**
@@ -1533,6 +1541,14 @@ export interface IEventRecorder {
    * Kept for API compatibility; voice settings are stored per cue event.
    */
   registerVoiceForLang(lang: string, meta: VoiceLanguageMeta): void
+  /**
+   * Remembers the first http(s) origin the main frame navigated to, for
+   * `metadata.site`. Later navigations are ignored; non-http URLs are skipped.
+   */
+  noteNavigation(url: string): void
+  /** What the fixture knows about the site: the baseURL fallback and whether
+   *  Playwright's `webServer` started the app. */
+  setSiteContext(context: SiteContext): void
   getEvents(): RecordingEvent[]
   writeToFile(
     dir: string,
@@ -1594,6 +1610,8 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addBackgroundUpdate(): void {},
   addSleep(): void {},
   registerVoiceForLang(): void {},
+  noteNavigation(): void {},
+  setSiteContext(): void {},
   getEvents(): RecordingEvent[] {
     return []
   },
@@ -1610,6 +1628,19 @@ const SNAP_DIRECT_MS = 5
  */
 const SNAP_CUE_COMPENSATION_MS = Math.ceil(2 * (1000 / 24))
 
+/**
+ * Feeds main-frame navigations to the recorder so `metadata.site` records the
+ * origin the script actually opened (about:blank and data: URLs are ignored).
+ */
+export function trackSiteNavigation(
+  page: Page,
+  recorder: Pick<IEventRecorder, 'noteNavigation'>
+): void {
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) recorder.noteNavigation(frame.url())
+  })
+}
+
 export class EventRecorder implements IEventRecorder {
   private readonly events: RecordingEvent[] = []
   private readonly pendingOverlays: PendingOverlay[] = []
@@ -1625,6 +1656,9 @@ export class EventRecorder implements IEventRecorder {
   private readonly actionParams: ActionParamCollector
   /** Monotonic counter for stable `KeyPressEvent.id` values. */
   private keyPressCounter = 0
+  /** Origin of the first http(s) navigation, for `metadata.site`. */
+  private navigatedOrigin: string | null = null
+  private siteContext: SiteContext = { webServerConfigured: false }
 
   constructor(
     renderOptions?: RenderOptions,
@@ -1662,6 +1696,16 @@ export class EventRecorder implements IEventRecorder {
 
   setAvailableLanguages(languages: string[]): void {
     this.availableLanguages = languages
+  }
+
+  noteNavigation(url: string): void {
+    if (this.navigatedOrigin !== null) return
+    const origin = toSiteOrigin(url)
+    if (origin !== null) this.navigatedOrigin = origin
+  }
+
+  setSiteContext(context: SiteContext): void {
+    this.siteContext = context
   }
 
   /**
@@ -2709,6 +2753,12 @@ export class EventRecorder implements IEventRecorder {
         : undefined
 
     const git = getGitMetadata()
+    const site = buildSiteMetadata({
+      navigatedOrigin: this.navigatedOrigin,
+      baseURL: this.siteContext.baseURL,
+      webServerConfigured: this.siteContext.webServerConfigured,
+      env: process.env,
+    })
 
     const studioNarration = this.events.some(
       (event) => event.type === 'cueStart' && event.studio === true
@@ -2776,6 +2826,7 @@ export class EventRecorder implements IEventRecorder {
         ...(sourceHash !== undefined && { sourceHash }),
         ...(git.commit !== undefined && { commit: git.commit }),
         ...(git.isDirty !== undefined && { isDirty: git.isDirty }),
+        ...(site !== undefined && { site }),
         ...(studio !== undefined && { studio }),
       },
     }

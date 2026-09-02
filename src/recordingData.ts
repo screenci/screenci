@@ -366,6 +366,16 @@ export type RecordingMetadata = {
   commit?: string
   /** Whether the repo had uncommitted changes (always false in CI). */
   isDirty?: boolean
+  /**
+   * The site the recording ran against: the origin of the first navigation
+   * (fallback `use.baseURL`), whether it is a local dev server or a deployed
+   * site, and who started it when known. See siteOrigin.ts.
+   */
+  site?: {
+    origin: string
+    kind: 'local' | 'deployed'
+    launchedBy?: 'config' | 'agent' | 'existing'
+  }
   /** Which parts of this recording opted into Studio configuration. */
   studio?: {
     renderOptions?: boolean

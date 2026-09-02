@@ -151,3 +151,5 @@ The secret is the only credential to configure. The CLI mints this machine's per
 ## Specific Tasks
 
 - **Exporting videos** [references/export.md](references/export.md)
+- **Signing in during a video**: read `process.env.APP_USERNAME` and `process.env.APP_PASSWORD` inside `hide()`. They come from the person's saved login (`screenci start` writes them; `screenci pull-login` refreshes them). Never print or commit them.
+- **Learning about the product**: `screenci context` prints the organisation's AI context (repository, site URL, whether you may start the app, notes from the team). Set `SCREENCI_APP_LAUNCHED_BY=agent` when you started the app yourself before `preview`.

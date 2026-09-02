@@ -23,7 +23,7 @@ import {
   DEFAULT_QUALITY,
   DEFAULT_SCREENSHOT_DEVICE_SCALE_FACTOR,
 } from './defaults.js'
-import { EventRecorder } from './events.js'
+import { EventRecorder, trackSiteNavigation } from './events.js'
 import type { ScreenshotInfo } from './events.js'
 import { instrumentBrowser, instrumentContext } from './instrument.js'
 import { getChromiumLaunchOptions } from './browserLaunchOptions.js'
@@ -263,6 +263,7 @@ const _screenshotBase = base.extend<
       _screenciValues,
       _screenciVideoName,
       _screenciSourceFile,
+      baseURL,
     },
     use,
     testInfo
@@ -296,6 +297,10 @@ const _screenshotBase = base.extend<
       new ActionParamCollector()
     )
     recorder.setActiveLanguage(_screenciLanguage ?? null)
+    recorder.setSiteContext({
+      baseURL,
+      webServerConfigured: testInfo.config.webServer !== null,
+    })
     // Declared `values` fields (and the active language's seeds) emitted once at
     // recording start so the backend/Studio learn them.
     const valuesDeclaration = buildValuesDeclaration(
@@ -310,6 +315,7 @@ const _screenshotBase = base.extend<
     if (!shouldRecord) {
       // Preview run (`screenci test`): exercise the body without capturing.
       const page = await context.newPage()
+      trackSiteNavigation(page, recorder)
       if (
         resolveDisableAnimations(recordOptions.disableAnimations, 'screenshot')
       ) {
@@ -357,6 +363,7 @@ const _screenshotBase = base.extend<
     await mkdir(screenshotDir, { recursive: true })
 
     const page = await context.newPage()
+    trackSiteNavigation(page, recorder)
     if (
       resolveDisableAnimations(recordOptions.disableAnimations, 'screenshot')
     ) {

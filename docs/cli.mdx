@@ -15,6 +15,9 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | Command                           | Purpose                                                                        |
 | --------------------------------- | ------------------------------------------------------------------------------ |
 | `screenci start <code>`           | Set up a workspace from a setup code created in the web app                    |
+| `screenci context`                | Print the organisation's AI context for this project                           |
+| `screenci pull-login`             | Write your saved site login into the env file                                  |
+| `screenci merge-complete`         | Report that sources pulled by a "Move to repository" code were committed       |
 | `screenci init [name]`            | Scaffold a ScreenCI project                                                    |
 | `screenci test [playwrightArgs]`  | Run `.screenci.ts` files locally without final recording                       |
 | `screenci preview [pattern]`      | Record live previews and print their links                                     |
@@ -27,11 +30,12 @@ commands from inside your `screenci/` project directory. Most commands resolve
 ## `screenci start <code>`
 
 The entry point of the [web-app flow](/docs/guides/create-from-web-app). The
-**Add project**, **Add video**, and **Edit** buttons in the app produce a
-prompt that carries a one-time setup code and points the agent at the brief
-for that button (`screenci.com/add-project.md`, `/add-video.md`, or
-`/edit-video.md`); the coding agent runs the command in the repository of the
-app to record, or in an empty folder:
+**Add project**, **Add video**, **Edit**, and **Move to repository** buttons
+in the app produce a prompt that carries a one-time setup code and points the
+agent at the brief for that button (`screenci.com/add-project.md`,
+`/add-video.md`, `/edit-video.md`, or `/merge-sources.md`); the coding agent
+runs the command in the repository of the app to record, or in an empty
+folder:
 
 ```bash
 npx screenci@latest start SC-7K3Q-M9XA
@@ -44,21 +48,40 @@ It runs without a config file (there is no island yet) and does the following:
    secret only addresses that project. A code belongs to the first machine
    that exchanges it (rerunning there resumes it until a run lands; other
    machines are refused) and expires 24 hours after it was created.
-2. Prepares `./screenci`:
+2. Reads the organisation's [AI context](/docs/guides/ai-context) (with the
+   project's overrides) and locates the repository: the current checkout when
+   its `origin` is the configured repository, else a shallow clone in
+   `.screenci/repo` (refreshed when it exists). A failed clone is reported and
+   the command continues when the site answers.
+3. Prepares the workspace, `screenci/` inside the repository when one exists
+   there, else `./screenci`:
    - **Absent, new project:** scaffolds the island like `init --yes` (agent
      skills on, no GitHub workflow) and writes `projectId` into
      `screenci.config.ts`.
-   - **Absent, existing project:** pulls the project's latest uploaded
-     sources, installs dependencies and the Playwright browser, and installs
-     the agent skills at the repository root. Binary media is not pulled;
-     recordings reuse the project's uploaded assets.
+   - **Absent, existing service-managed project:** pulls the project's latest
+     uploaded sources, installs dependencies and the Playwright browser, and
+     installs the agent skills at the repository root. Binary media is not
+     pulled; recordings reuse the project's uploaded assets.
    - **Present, same `projectId`:** syncs the sources in place. Local files
      that differ from the project's sources are refused (listed, nothing
      written) unless `--force` is given.
-   - **Present, another project (or no `projectId`):** refuses; use `--dir`.
-3. Prints a brief for the agent (the task, the app URL, which script to edit,
-   the commands to run) followed by one machine-readable JSON line
-   (`{"status":"started", ...}`).
+   - **Present, repository-managed (no `projectId`), same project name:** used
+     as is; the agent commits its change to git.
+   - **Present, another project:** refuses; use `--dir`.
+   - **Merge code:** pulls the sources into `screenci/` inside the repository,
+     removes `projectId` from the config, and writes
+     `.screenci/pending-merge.json` for `merge-complete`.
+4. Writes the person's saved site login into the env file as `APP_USERNAME`
+   and `APP_PASSWORD` (empty placeholders when none is saved; hand-typed
+   values are kept).
+5. Probes the site (the prompt's app URL, else the context's site URL). When
+   nothing answers and the agent may not start the app, the brief says
+   **STOP** and the command exits with code 2; see
+   [Running the app locally](/docs/guides/ai-context#running-the-app-locally).
+6. Prints a brief for the agent (the task, the repository, the site, the login
+   note, the team's notes, which script to edit, the commands to run) followed
+   by one machine-readable JSON line (`{"status":"started", ...}`, or
+   `"stopped"` with a `stop` object).
 
 Options:
 
@@ -68,6 +91,8 @@ Options:
 - `--force` overwrites local files that differ from the project's sources.
 - `--package-manager <npm|pnpm|yarn>` overrides the auto-detected manager.
 - `--agent <name>` targets a specific coding agent for the skills install.
+- `--skip-site-check` records even when the site does not answer.
+- `--no-clone` never clones the repository when running outside it.
 - `-v, --verbose` prints underlying command output.
 
 After `start`, the usual commands run from inside the workspace: `test`,
@@ -75,6 +100,45 @@ After `start`, the usual commands run from inside the workspace: `test`,
 island's text sources (see [Source sync](#source-sync)) and report the
 finished run, which is what makes the originating browser tab open the
 result.
+
+## `screenci context`
+
+Prints the organisation's [AI context](/docs/guides/ai-context) as resolved
+for the workspace's project (repository URL, site URL, whether the agent may
+start the app, the team's notes), whether the current person saved a site
+login, and one JSON line. Runs inside a workspace; uses `SCREENCI_SECRET` and,
+for the login state, `SCREENCI_EDIT_TOKEN` from the env file.
+
+```bash
+npx screenci context
+npx screenci context --json   # the JSON line only
+```
+
+## `screenci pull-login`
+
+Writes the personal site login of the person behind `SCREENCI_EDIT_TOKEN`
+into the workspace env file as `APP_USERNAME` and `APP_PASSWORD`, replacing
+existing values. Prints only whether a login was saved, never the values. Run
+it after the person saved their login on the AI context page.
+
+```bash
+npx screenci pull-login
+```
+
+## `screenci merge-complete`
+
+The last step of **Move to repository**. Run it from the `screenci/` workspace
+inside the repository after committing and pushing the sources `start` pulled:
+
+```bash
+npx screenci merge-complete --pr https://github.com/acme/app/pull/42
+```
+
+The commit (HEAD), branch, and repository URL (`origin`) come from git, and the
+pulled source bundle from `.screenci/pending-merge.json`; `--commit`,
+`--branch`, `--git-url`, and `--bundle` override them. ScreenCI then marks the
+project as repository-managed and shows an **In repository** badge on every
+version recorded from those sources.
 
 ## `screenci init`
 
@@ -472,6 +536,9 @@ the finished run afterwards:
 - Both steps are best effort. A failed upload warns and the recording still
   runs (the next run retries); the run report never fails a command.
 - Anonymous previews (no `SCREENCI_SECRET`) never sync sources.
+- A project-scoped secret that pins a different project than the island's
+  `projectId` (an env file copied from another workspace) stops the run
+  before recording, with the pinned project's name in the message.
 
 A run prints one line per phase: the record announcement, the upload results,
 one line per video whose editor-uploaded media (overlays, audio, narration
@@ -756,6 +823,9 @@ You can only delete videos that belong to your own project's organization.
 The CLI currently covers:
 
 - workspace setup from a web-app setup code with `start`
+- reading the organisation's AI context with `context`
+- refreshing the personal site login with `pull-login`
+- finishing a move to the repository with `merge-complete`
 - project scaffolding with `init`
 - project auth setup (handled automatically on first `export`)
 - local iteration with `test`
@@ -775,6 +845,9 @@ Manual version pinning is currently handled in the app UI:
 
 These commands support `--config <path>`:
 
+- `context`
+- `pull-login`
+- `merge-complete`
 - `test`
 - `preview`
 - `export`

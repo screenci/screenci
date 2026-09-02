@@ -658,6 +658,51 @@ describe('EventRecorder', () => {
       expect(click.events[1]).toMatchObject({ type: 'mouseUp' })
     })
 
+    it('stamps metadata.site from the first http navigation', async () => {
+      recorder.setSiteContext({
+        baseURL: 'https://app.example.com',
+        webServerConfigured: false,
+      })
+      recorder.noteNavigation('about:blank')
+      recorder.noteNavigation('http://localhost:3000/login?next=/x')
+      recorder.noteNavigation('https://other.example.com/')
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+      const parsed: RecordingData = JSON.parse(
+        await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      )
+      expect(parsed.metadata?.site).toEqual({
+        origin: 'http://localhost:3000',
+        kind: 'local',
+      })
+    })
+
+    it('falls back to baseURL and marks a configured webServer', async () => {
+      recorder.setSiteContext({
+        baseURL: 'https://app.example.com/base/',
+        webServerConfigured: true,
+      })
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+      const parsed: RecordingData = JSON.parse(
+        await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      )
+      expect(parsed.metadata?.site).toEqual({
+        origin: 'https://app.example.com',
+        kind: 'deployed',
+        launchedBy: 'config',
+      })
+    })
+
+    it('omits metadata.site when no origin is known', async () => {
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+      const parsed: RecordingData = JSON.parse(
+        await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      )
+      expect(parsed.metadata?.site).toBeUndefined()
+    })
+
     it('writes all render option defaults when no renderOptions provided', async () => {
       recorder.start()
       await recorder.writeToFile(tmpDir, 'Test Video')

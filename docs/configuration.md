@@ -95,6 +95,8 @@ A typical local env file looks like this:
 
 ```bash
 SCREENCI_SECRET=sc_live_your_project_secret
+APP_USERNAME=demo@example.com
+APP_PASSWORD=your_demo_account_password
 YOUR_PRIVATE_SECRET=your_own_app_secret
 ```
 
@@ -102,9 +104,26 @@ Common cases:
 
 - `SCREENCI_SECRET` authenticates `screenci preview`, `screenci export`, `screenci info`, and
   public visibility commands.
+- `APP_USERNAME` and `APP_PASSWORD` are the convention for the account a video
+  signs in with (read them with `process.env` inside `hide()`). `screenci
+start` and `screenci pull-login` fill them from the personal login each
+  member saves under [AI context](/docs/guides/ai-context#your-login-for-the-site);
+  in CI, set them as secrets.
 - Any other variables (for example `YOUR_PRIVATE_SECRET`) are yours to use
   inside your own app or test setup. ScreenCI reads them from the env file into
   `process.env` like any normal environment variable, but never transmits them.
+
+### `SCREENCI_APP_LAUNCHED_BY`
+
+Every recording notes the site it ran against (origin and whether it is a
+local address) in its metadata, shown on run pages. Set this variable when
+running `preview` or `export` to also record who started the app:
+
+- `agent`: a coding agent started it by hand from the repository.
+- `existing`: it was already running (or is a deployed site).
+
+A configured `webServer` records `config` on its own and wins over the
+variable. See [AI context](/docs/guides/ai-context#site-metadata).
 
 ### What ScreenCI sends to the service
 

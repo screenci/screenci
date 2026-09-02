@@ -153,7 +153,7 @@ export async function verifyScreenCISecret(
  * Writes (or replaces) a `KEY=` line in the given env file, preserving the
  * position of an existing entry and any surrounding lines.
  */
-async function persistEnvVar(
+export async function persistEnvVar(
   envFilePath: string,
   key: string,
   value: string

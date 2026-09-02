@@ -73,7 +73,7 @@ import {
   DEFAULT_FPS,
   DEFAULT_VIDEO_ENCODER,
 } from './defaults.js'
-import { EventRecorder } from './events.js'
+import { EventRecorder, trackSiteNavigation } from './events.js'
 import {
   bindClickRecorderToPage,
   instrumentBrowser,
@@ -841,6 +841,7 @@ const _videoBase = base.extend<
       _screenciVideoName,
       _screenciSourceFile,
       _screenciRecordingLocalize,
+      baseURL,
     },
     use,
     testInfo
@@ -904,9 +905,14 @@ const _videoBase = base.extend<
         _screenciRecordingLocalize.availableLanguages ?? []
       )
     }
+    recorder.setSiteContext({
+      baseURL,
+      webServerConfigured: testInfo.config.webServer !== null,
+    })
 
     if (!shouldRecord) {
       const page = await context.newPage()
+      trackSiteNavigation(page, recorder)
       const runtimeContext = createScreenCIRuntimeContext({
         recorder,
         page,
@@ -966,6 +972,7 @@ const _videoBase = base.extend<
 
     // Create page FIRST to ensure browser window is rendered
     const page = await context.newPage()
+    trackSiteNavigation(page, recorder)
     const runtimeContext = createScreenCIRuntimeContext({
       recorder,
       page,

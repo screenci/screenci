@@ -41,9 +41,17 @@ import {
   ensureSourceBundleUploaded,
   notifyRunComplete,
   shouldUploadSources,
+  verifyIslandCredential,
 } from './src/sourceSync.js'
 import { nodeSourceBundleFs } from './src/sourceBundle.js'
 import { createDefaultStartDeps, registerStartCommand } from './src/start.js'
+import {
+  createDefaultAiContextCommandDeps,
+  registerAiContextCommands,
+  type IslandCredentials,
+} from './src/aiContextCommands.js'
+import { registerMergeCompleteCommand } from './src/mergeComplete.js'
+import { nodeStartGit } from './src/repo.js'
 import {
   determinePackageManager,
   initToggleOptionsFromCommander,
@@ -948,6 +956,19 @@ const sourceSyncDeps = {
   logger,
   fs: nodeSourceBundleFs,
   gitMetadata: getGitMetadata,
+}
+
+/** Fails the run when the secret pins a different project than the island. */
+async function requireIslandCredential(
+  apiUrl: string,
+  credential: CliCredential,
+  projectId: string
+): Promise<void> {
+  const check = await verifyIslandCredential(
+    { apiUrl, credential, projectId },
+    sourceSyncDeps
+  )
+  if (!check.ok) throw new Error(check.message)
 }
 
 async function uploadRecordingCandidate(
@@ -3326,6 +3347,13 @@ async function runPreviewRecordPass(
     // Service-managed projects sync their island sources before recording so
     // the web app's copy always matches the footage. Best effort: a failed
     // sync warns and the preview still records.
+    if (startNotice !== undefined && screenciConfig.projectId !== undefined) {
+      await requireIslandCredential(
+        startNotice.apiUrl,
+        startNotice.credential,
+        screenciConfig.projectId
+      )
+    }
     const sourceBundleId =
       startNotice !== undefined && shouldUploadSources(screenciConfig)
         ? await ensureSourceBundleUploaded(
@@ -3497,6 +3525,13 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
     const previousExportFlag = process.env['SCREENCI_EXPORT']
     process.env['SCREENCI_EXPORT'] = '1'
     try {
+      if (screenciConfig.projectId !== undefined) {
+        await requireIslandCredential(
+          apiUrl,
+          secretCredential(secret),
+          screenciConfig.projectId
+        )
+      }
       const sourceBundleId = shouldUploadSources(screenciConfig)
         ? await ensureSourceBundleUploaded(
             {
@@ -5299,6 +5334,45 @@ export async function main() {
     .option('-v, --verbose', 'verbose output')
   // start command: exchange a setup code from the web app for a workspace
   registerStartCommand(program, createDefaultStartDeps(), defaultPackageManager)
+  const loadIslandCredentials = async (
+    configPath: string | undefined
+  ): Promise<IslandCredentials> => {
+    const { resolvedConfigPath, screenciConfig, secret, apiUrl } =
+      await requireScreenCISecret(configPath)
+    const editToken = process.env[SCREENCI_EDIT_TOKEN_ENV]
+    return {
+      secret,
+      editToken:
+        typeof editToken === 'string' && editToken.length > 0
+          ? editToken
+          : null,
+      apiUrl,
+      appUrl: getDevFrontendUrl(),
+      envFilePath: await resolveProjectEnvFilePath(resolvedConfigPath),
+      islandDir: dirname(resolvedConfigPath),
+      projectName: screenciConfig.projectName,
+    }
+  }
+  registerAiContextCommands(
+    program,
+    createDefaultAiContextCommandDeps(loadIslandCredentials, logger)
+  )
+  registerMergeCompleteCommand(program, {
+    fetchFn: fetch,
+    loadCredentials: loadIslandCredentials,
+    readIslandFile: async (islandDir, relativePath) => {
+      try {
+        return await readFile(resolve(islandDir, relativePath), 'utf-8')
+      } catch {
+        return null
+      }
+    },
+    removeIslandFile: async (islandDir, relativePath) => {
+      await rm(resolve(islandDir, relativePath), { force: true })
+    },
+    git: nodeStartGit,
+    logger,
+  })
 
   registerInitToggleOptions(initCommand)
   initCommand.action(

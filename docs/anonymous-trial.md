@@ -18,8 +18,9 @@ An anonymous trial is a full preview of ScreenCI's editing workflow:
   timeline cuts, camera, and render options; every change applies to the
   preview and later exports right away.
 - **Expressive narration** (style prompts and tone control) in the preview.
-- **Up to 3 narration languages at once** in a recording, a taste of the
-  Business tier's unlimited languages.
+- **Multi-language previews, up to 3 languages at once** in a recording, a
+  taste of the Business tier's unlimited languages. There is no need to trim
+  a video down to one language for the trial.
 
 ## Trial limits
 

@@ -19,8 +19,10 @@ below); only narration (and per-language browser locales) vary by language.
 
 ## One language per plan
 
-Multiple languages are a Business feature. On the Free and Starter plans, your
-organization renders a single narration language across all of its videos:
+Rendering multiple languages is a Business feature. On the Free and Starter
+plans, your organization renders a single narration language across all of its
+videos (the anonymous trial is more generous: it previews up to 3 languages at
+once, see [Anonymous Trial](/docs/guides/anonymous-trial)):
 
 - An upload that declares more than one language is blocked.
 - Once your organization has rendered one language, an upload in a different

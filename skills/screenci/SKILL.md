@@ -118,7 +118,7 @@ await autoZoom(async () => {
 
 ## Connecting to an Account (optional)
 
-`test` and `preview` need no account: without a `SCREENCI_SECRET`, `preview` records and previews under a local, anonymous trial session (preview-only, no renders). Signing up in the web editor claims the trial and upgrades the running `preview` session automatically. Mention this and keep going.
+`test` and `preview` need no account: without a `SCREENCI_SECRET`, `preview` records and previews under a local, anonymous trial session (preview-only, no renders). The trial previews multi-language videos too (up to 3 languages at once), so keep a video's declared languages; do not reduce it to one language for the trial. Signing up in the web editor claims the trial and upgrades the running `preview` session automatically. Mention this and keep going.
 
 `export` requires an account with an active paid subscription. To connect an existing organization, get `SCREENCI_SECRET` into `screenci/.env` (it does not block authoring, testing, or anonymous editing):
 

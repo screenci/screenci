@@ -84,7 +84,7 @@ export async function runDevStartupSync(
   if (options.grep === undefined) {
     const hint =
       deps.suggestPreviewCommand !== undefined && names[0] !== undefined
-        ? ` Preview just one with ${deps.suggestPreviewCommand(names[0])}.`
+        ? ` Preview just one with a command such as ${deps.suggestPreviewCommand(names[0])}.`
         : ''
     deps.logger.info(`Recording all videos.${hint}`)
   } else if (names.length === 1) {

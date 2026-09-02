@@ -62,7 +62,7 @@ describe('runDevStartupSync', () => {
     await runDevStartupSync({}, deps)
 
     expect(deps.logger.info).toHaveBeenCalledWith(
-      'Recording all videos. Preview just one with npx screenci preview "Demo".'
+      'Recording all videos. Preview just one with a command such as npx screenci preview "Demo".'
     )
   })
 

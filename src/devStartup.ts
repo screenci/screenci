@@ -275,7 +275,9 @@ export async function runDevStartupSync(
           : `${state.videoName} (${reason})`
       })
       deps.logger.info(
-        `Recording ${names.length} video${names.length === 1 ? '' : 's'}: ${described.join(', ')}`
+        described.length === 1
+          ? `Recording: ${described[0]}`
+          : `Recording ${described.length} videos: ${described.join(', ')}`
       )
     }
     if (deps.setSyncing) await deps.setSyncing(names).catch(() => {})

@@ -673,6 +673,20 @@ export function formatVideoExportUrl(
   return `${appUrl}/project/${projectId}/video/${videoId}?export=${recordId}`
 }
 
+/** The anonymous-trial Terms notice prints at most once per CLI invocation
+ *  (the preview flow both resolves auth and gates recording, and each step
+ *  would otherwise repeat it). */
+let anonTermsNoticeShown = false
+function logAnonTermsNoticeOnce(): void {
+  if (anonTermsNoticeShown) return
+  anonTermsNoticeShown = true
+  logger.info(formatAnonTermsNotice())
+}
+
+export function resetAnonTermsNoticeShownForTests(): void {
+  anonTermsNoticeShown = false
+}
+
 export function formatRecordResultMessage(options: {
   exported: boolean
   partial: boolean
@@ -3589,7 +3603,9 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
   // the freshness hash does not see, and export is the moment to capture
   // them.
   logger.info(
-    `Recording ${requestedVideoNames.length} video${requestedVideoNames.length === 1 ? '' : 's'}: ${requestedVideoNames.join(', ')}`
+    requestedVideoNames.length === 1
+      ? `Recording: ${requestedVideoNames[0]}`
+      : `Recording ${requestedVideoNames.length} videos: ${requestedVideoNames.join(', ')}`
   )
   const uploaded = await recordExportPass(requestedVideoNames)
   if (uploaded.recordId === null) {
@@ -3941,7 +3957,7 @@ export async function runDevCommand(
 
     // pending / not_found: proceed anonymously. Recording an anonymous trial
     // agrees to the Terms, same as export.
-    logger.info(formatAnonTermsNotice())
+    logAnonTermsNoticeOnce()
     return {
       credential: anonCredential(anonToken),
       devToken: anonToken,
@@ -4564,7 +4580,7 @@ export async function ensureAnonRecordingAllowedOrExit(
     // upload. Skip a `claimed` session: that user already accepted the
     // versioned Terms when they signed up (the upload path self-upgrades).
     if (status.status !== 'claimed') {
-      logger.info(formatAnonTermsNotice())
+      logAnonTermsNoticeOnce()
     }
     return
   }

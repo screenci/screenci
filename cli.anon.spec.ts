@@ -15,7 +15,10 @@ describe('resolveUploadCredential', () => {
   const originalFetch = global.fetch
   const envFilePath = () => path.join(screenciDir, '.env')
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // The Terms notice is once-per-invocation; each test starts fresh.
+    const { resetAnonTermsNoticeShownForTests } = await import('./cli')
+    resetAnonTermsNoticeShownForTests()
     screenciDir = mkdtempSync(path.join(tmpdir(), 'screenci-upload-cred-'))
     vi.spyOn(logger, 'info').mockImplementation(() => {})
   })
@@ -112,7 +115,10 @@ describe('ensureAnonRecordingAllowedOrExit', () => {
   const originalFetch = global.fetch
   let exitSpy: ReturnType<typeof vi.spyOn>
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    // The Terms notice is once-per-invocation; each test starts fresh.
+    const { resetAnonTermsNoticeShownForTests } = await import('./cli')
+    resetAnonTermsNoticeShownForTests()
     screenciDir = mkdtempSync(path.join(tmpdir(), 'screenci-anon-gate-'))
     vi.spyOn(logger, 'error').mockImplementation(() => {})
     vi.spyOn(logger, 'info').mockImplementation(() => {})

@@ -189,8 +189,10 @@ A record-pinned URL is an **immutable** contract: it serves that exact run's
 render, or it `404`s. It never silently swaps to a different video.
 
 1. **Public gate.** If the video has no public delivery configured, the request
-   `404`s immediately, for both the static and pinned URLs. Making a video
-   private takes every URL (static and pinned) offline at once.
+   `404`s immediately, for both the static and record-pinned URLs. Making a
+   video private takes the static and record-pinned URLs offline at once
+   ([version-pinned URLs](#version-pinned-urls-shared-versions) for shared
+   versions are the exception: they keep serving).
 2. **Pinned render.** With `records/<recordId>` in the path, if that run's render
    for the requested language still exists, it is served exactly.
 3. **404 once cleaned up.** If that run's render has been pruned (or the run
@@ -204,12 +206,55 @@ render, or it `404`s. It never silently swaps to a different video.
 The stable `static` URL (no `records/` segment) always follows the currently
 selected version, which always exists, so use it whenever you just want "the latest."
 
+## Version-pinned URLs (shared versions)
+
+A specific version can be **shared**: it gets a stable, version-pinned public
+URL that serves that exact render permanently, until you unshare or delete the
+version. Share from the app (the version's menu on the video overview page) or
+share a whole export run from the CLI with
+[`screenci export --share`](/docs/reference/cli#--share).
+
+```text
+GET /public/:id/versions/<versionId>/video
+GET /public/:id/versions/<versionId>/thumbnail
+GET /public/:id/versions/<versionId>/subtitle
+GET /public/:id/versions/<versionId>/screenshot
+```
+
+A shared version pins one language, so these URLs carry no language segment.
+The `thumbnail` route accepts the same `size` parameter as the static form,
+and every route accepts `filename` and `download=1`.
+
+How shared versions differ from record-pinned URLs:
+
+- **Retention-exempt.** A shared version is never pruned by version retention.
+  The URL keeps working no matter how many newer versions arrive. It goes
+  offline only when you unshare the version or delete it manually.
+- **Independent of the public switch.** Version-pinned URLs work even when the
+  video's own public URL is off. Only the versions you explicitly shared are
+  reachable; the static and record-pinned URLs still `404` for a private video.
+- **Revocable.** Unsharing (or deleting the version) takes the URL offline, so
+  these URLs are cached with a short TTL rather than as immutable.
+
+Shared versions count toward your organization's shared-version limit (1000 by
+default), shown on the billing page. The limit assumes reasonable usage and can
+be increased by contacting sales.
+
+Error responses:
+
+| Status | Condition                                                                    |
+| ------ | ---------------------------------------------------------------------------- |
+| `404`  | The version is not shared (or was unshared/deleted), or the asset is missing |
+
 ### Version retention
 
 Renders do not live forever. ScreenCI keeps the currently selected version plus
 the 5 most recent non-selected versions per language, on every plan, then prunes
 the rest. Freshly created versions are given a short grace period before they can
 be pruned, so a burst of quick re-renders is never deleted out from under you.
+Shared versions (see [version-pinned URLs](#version-pinned-urls-shared-versions))
+are exempt: they are kept in addition to the retained window until unshared or
+deleted.
 
 Once a run is pruned, its record-pinned URLs `404` (see above).
 

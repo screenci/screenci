@@ -49,3 +49,8 @@ they are never pruned, even beyond the kept count, so a burst of quick
 re-renders is not deleted out from under you. Once they age past the grace
 period they are swept automatically back down to the kept count. To keep a
 render forever, download it via the authenticated `screenci info` download URLs.
+
+Versions shared with a permanent public URL (see
+[shared versions](/docs/guides/public-urls-and-embeds#shared-versions-permanent-version-pinned-urls))
+are also exempt from pruning: they are kept in addition to the retained window
+until you unshare or delete them.

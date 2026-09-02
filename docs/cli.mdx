@@ -319,6 +319,32 @@ the results URL. It exits `0` as soon as the upload succeeds; render failures
 are visible on the results page, not in the exit code. Without this flag,
 `export` waits for every render and exits non-zero if any of them fails.
 
+### `--share`
+
+Instead of downloading files, share each finished version with a permanent,
+version-pinned public URL and print the URLs:
+
+```bash
+npx screenci export --share
+```
+
+The command records, renders, and waits like a normal export, then shares the
+run's finished versions and prints one public URL per video and language
+(plus thumbnail and subtitle URLs when they exist). A shared version keeps
+serving that exact render until it is unshared or deleted from the app: it is
+exempt from version retention, and the URL works even when the video's own
+public URL is switched off. See
+[version-pinned URLs](/docs/reference/public-delivery-api#version-pinned-urls-shared-versions)
+for the URL shape and behavior.
+
+Shared versions count against your organization's shared-version limit
+(1000 by default, shown on the billing page). When the limit is reached the
+remaining versions are not shared and the command exits non-zero with the
+refusal message.
+
+`--share` needs finished renders, so combining it with `--no-wait` is an
+error. It exits `0` only when every requested render finished and was shared.
+
 ### `--force`
 
 Deprecated no-op, kept so existing scripts do not break: `export` always

@@ -8,6 +8,7 @@ Public URLs give a ScreenCI video a stable delivery surface outside the app. Onc
 - [how language-specific outputs behave](#latest-vs-selected-output)
 - [how to make a video public in the app](#enable-public-delivery-in-the-app)
 - [how selection works per language](#how-selection-works)
+- [how to keep one exact render online forever](#shared-versions-permanent-version-pinned-urls)
 - [where to use them](#good-use-cases)
 - [how they relate to the public delivery API](#whats-next)
 
@@ -107,6 +108,33 @@ record-pinned URL when you want to reference exactly the run a given CI build
 produced. The [`screenci info`](/docs/reference/cli#screenci-info) command prints
 both URL sets (as `static` and `latestRecord`) when run on a machine that made
 the record.
+
+## Shared versions (permanent version-pinned URLs)
+
+When you want one exact render to stay online forever, share the version
+itself. A shared version gets a version-pinned public URL:
+
+```text
+https://api.screenci.com/public/<videoId>/versions/<versionId>/video
+```
+
+Share a version from its row menu on the video overview page (**Share with
+public URL**), or share a whole export run from CI with
+[`screenci export --share`](/docs/reference/cli#--share). Shared versions show
+a blue **Shared** pill in the version list.
+
+Unlike record-pinned URLs, a shared version:
+
+- is never pruned by version retention; the URL serves that exact render until
+  you unshare or delete the version
+- keeps working even if the video's own public URL is switched off (only the
+  explicitly shared versions stay reachable)
+
+Your organization can share up to 1000 versions by default; usage and the
+limit are shown on the billing page, and the limit can be increased by
+contacting sales. See
+[version-pinned URLs](/docs/reference/public-delivery-api#version-pinned-urls-shared-versions)
+for endpoint details.
 
 ## Typical embed
 

@@ -1617,6 +1617,81 @@ describe('CLI', () => {
       )
     })
 
+    it('stamps the run context source bundle onto every upload start', async () => {
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') || path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+
+      const { uploadRecordings, secretCredential } = await import('./cli')
+
+      await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        secretCredential('test-secret'),
+        undefined,
+        false,
+        undefined,
+        { sourceBundleId: 'sb_42' }
+      )
+
+      const startCall = mockFetch.mock.calls.find(
+        ([url]) => String(url) === 'https://api.screenci.test/cli/upload/start'
+      )
+      expect(JSON.parse(startCall?.[1].body as string)).toMatchObject({
+        projectName: 'Test Project',
+        videoName: 'Demo',
+        sourceBundleId: 'sb_42',
+      })
+
+      // Without a run context the field is absent, not null.
+      mockFetch.mockClear()
+      await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        secretCredential('test-secret')
+      )
+      const plainCall = mockFetch.mock.calls.find(
+        ([url]) => String(url) === 'https://api.screenci.test/cli/upload/start'
+      )
+      expect(JSON.parse(plainCall?.[1].body as string)).not.toHaveProperty(
+        'sourceBundleId'
+      )
+    })
+
     it('never forwards an ElevenLabs key: the key lives only in the app now', async () => {
       // Even if a legacy ELEVENLABS_API_KEY is present in the environment, the
       // CLI must not send it: the key is stored (encrypted) in the app instead.

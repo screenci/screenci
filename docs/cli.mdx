@@ -14,6 +14,7 @@ commands from inside your `screenci/` project directory. Most commands resolve
 
 | Command                           | Purpose                                                                        |
 | --------------------------------- | ------------------------------------------------------------------------------ |
+| `screenci start <code>`           | Set up a workspace from a setup code created in the web app                    |
 | `screenci init [name]`            | Scaffold a ScreenCI project                                                    |
 | `screenci test [playwrightArgs]`  | Run `.screenci.ts` files locally without final recording                       |
 | `screenci preview [pattern]`      | Record live previews and print their links                                     |
@@ -22,6 +23,58 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | `screenci make-public <videoId>`  | Enable public delivery for a video                                             |
 | `screenci make-private <videoId>` | Disable public delivery for a video                                            |
 | `screenci delete <videoId>`       | Permanently delete a video and its renders                                     |
+
+## `screenci start <code>`
+
+The entry point of the [web-app flow](/docs/guides/create-from-web-app). The
+**Add project**, **Add video**, and **Edit** buttons in the app produce a
+prompt that carries a one-time setup code and points the agent at the brief
+for that button (`screenci.com/add-project.md`, `/add-video.md`, or
+`/edit-video.md`); the coding agent runs the command in the repository of the
+app to record, or in an empty folder:
+
+```bash
+npx screenci@latest start SC-7K3Q-M9XA
+```
+
+It runs without a config file (there is no island yet) and does the following:
+
+1. Exchanges the code for a project-scoped `SCREENCI_SECRET` and a personal
+   `SCREENCI_EDIT_TOKEN`, and writes both into the workspace's env file. The
+   secret only addresses that project. A code belongs to the first machine
+   that exchanges it (rerunning there resumes it until a run lands; other
+   machines are refused) and expires 24 hours after it was created.
+2. Prepares `./screenci`:
+   - **Absent, new project:** scaffolds the island like `init --yes` (agent
+     skills on, no GitHub workflow) and writes `projectId` into
+     `screenci.config.ts`.
+   - **Absent, existing project:** pulls the project's latest uploaded
+     sources, installs dependencies and the Playwright browser, and installs
+     the agent skills at the repository root. Binary media is not pulled;
+     recordings reuse the project's uploaded assets.
+   - **Present, same `projectId`:** syncs the sources in place. Local files
+     that differ from the project's sources are refused (listed, nothing
+     written) unless `--force` is given.
+   - **Present, another project (or no `projectId`):** refuses; use `--dir`.
+3. Prints a brief for the agent (the task, the app URL, which script to edit,
+   the commands to run) followed by one machine-readable JSON line
+   (`{"status":"started", ...}`).
+
+Options:
+
+- `--name <projectName>` names a new project. Precedence: this flag, then the
+  name typed in the web dialog, then the current folder name.
+- `--dir <path>` uses another workspace folder than `./screenci`.
+- `--force` overwrites local files that differ from the project's sources.
+- `--package-manager <npm|pnpm|yarn>` overrides the auto-detected manager.
+- `--agent <name>` targets a specific coding agent for the skills install.
+- `-v, --verbose` prints underlying command output.
+
+After `start`, the usual commands run from inside the workspace: `test`,
+`preview`, `export`. For a service-managed project they also upload the
+island's text sources (see [Source sync](#source-sync)) and report the
+finished run, which is what makes the originating browser tab open the
+result.
 
 ## `screenci init`
 
@@ -271,7 +324,9 @@ yarn screenci export --languages fi,en
 
 Positional arguments are title patterns (multiple are OR-combined, like
 `playwright test <pattern>`); with no patterns, every video is exported in
-every language. Downloads are named `<title>.<lang>.mp4`.
+every language. Downloads are named `<title>.<lang>.mp4`. A service-managed
+project uploads its island sources first (see
+[Source sync](#source-sync)).
 The command polls render status every 5 seconds for up to 30 minutes
 and exits `0` only when every requested video rendered and downloaded. After a
 run it prints the video's page in the app: a run with exactly one rendered
@@ -398,6 +453,25 @@ Right before recording a preview, the CLI sends a best-effort "preview
 recording started" notice to the backend, so an open web preview page shows a
 live "Recording preview..." indicator and refreshes automatically when the
 new preview lands.
+
+### Source sync
+
+For a service-managed project (`projectId` in `screenci.config.ts`, written by
+`screenci start`) or a project with `uploadSources: true`, `preview` and
+`export` upload the island's text sources right before recording, and report
+the finished run afterwards:
+
+- The bundle holds `screenci.config.ts`, `package.json`, `tsconfig.json`,
+  `.prettierrc`, `.gitignore`, `README.md`, the package-manager workspace
+  files, and every text file under `recordings/`. Env files, lockfiles,
+  `node_modules`, `.screenci`, `exports`, and binary media are never included.
+  Files over 256 KB and anything past 2 MB in total are skipped with a warning.
+- The bundle is content addressed: an unchanged island is not re-uploaded.
+  Its canonical form is `{ "files": [{ "path", "content" }] }` sorted by path
+  (plain code-unit order), hashed with SHA-256 over the JSON text.
+- Both steps are best effort. A failed upload warns and the recording still
+  runs (the next run retries); the run report never fails a command.
+- Anonymous previews (no `SCREENCI_SECRET`) never sync sources.
 
 A run prints one line per phase: the record announcement, the upload results,
 one line per video whose editor-uploaded media (overlays, audio, narration
@@ -681,6 +755,7 @@ You can only delete videos that belong to your own project's organization.
 
 The CLI currently covers:
 
+- workspace setup from a web-app setup code with `start`
 - project scaffolding with `init`
 - project auth setup (handled automatically on first `export`)
 - local iteration with `test`

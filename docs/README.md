@@ -27,6 +27,8 @@ reference material to drill into.
 - [Public URLs and Embeds](./public-urls-and-embeds.md)
 - [Redact Sensitive Content](./redact.md)
 - [Update ScreenCI](./update-screenci.mdx)
+- [Anonymous Trial](./anonymous-trial.md)
+- [Create Videos from the Web App](./create-from-web-app.md)
 
 ### Reference
 

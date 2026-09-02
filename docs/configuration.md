@@ -68,6 +68,15 @@ set here: declare them per video with `video.recordOptions(...)` and
 ### Project identity
 
 - `projectName` identifies the project in ScreenCI.
+- `projectId` is written by `screenci start` for a project created from the
+  web app (a service-managed project). Leave it alone: the project-scoped
+  secret pins the project server-side, and the CLI uses the id to detect a
+  `screenci/` folder that belongs to another project and to upload the
+  folder's sources before every preview and export.
+- `uploadSources: true` makes a repository-managed project upload its
+  `screenci/` text sources too (see
+  [What ScreenCI sends](#what-screenci-sends-to-the-service)), which lets the
+  web app hand them to a coding agent. Implied by `projectId`.
 - `envFile` points to the file that holds `SCREENCI_SECRET` and other local
   runtime variables your ScreenCI workflow needs.
 - If `envFile` is configured, ScreenCI loads it automatically.
@@ -107,6 +116,15 @@ encrypted in the app and used server-side at render time.
 No other environment variable is forwarded. Your app secrets, database URLs, and
 any other entries in the env file stay on your machine. ScreenCI does not store
 raw API keys from your env file.
+
+Your app's source code never leaves your machine. The `screenci/` folder's own
+text sources (`screenci.config.ts`, `package.json`, `tsconfig.json`, and
+`recordings/**`) are uploaded before each preview and export when the project
+is service-managed (`projectId` set) or opts in with `uploadSources: true`, so
+the web app can hand the scripts to a coding agent. Env files, lockfiles,
+`node_modules`, and binary media are never part of that upload; the bundle is
+capped at 2 MB and 256 KB per file, and larger files are skipped with a
+warning.
 
 The uploaded `recording.mp4` is a screen capture, so secrets that are visible
 **on the page** would be uploaded with it. To keep on-screen secrets out of the

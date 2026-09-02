@@ -22,14 +22,22 @@ final video where your team needs it.
   them from a stable public URL. `export` re-records only the videos whose
   sources changed, so it is also the command CI runs.
 
-The CLI runs everything that touches your app locally, so the only thing that
-leaves your machine is the raw recording plus timing data, not your source code.
-The CLI itself is [open source](https://github.com/screenci/screenci).
+The CLI runs everything that touches your app locally, so what leaves your
+machine is the raw recording plus timing data, never your app's source code.
+Projects created from the web app also upload their `screenci/` scripts so the
+next editor can pull them (see
+[Create Videos from the Web App](/docs/guides/create-from-web-app)); a
+repository-managed project keeps its scripts local unless it opts in. The CLI
+itself is [open source](https://github.com/screenci/screenci).
 
-## Two ways to set up
+## Three ways to set up
 
 Pick the path that fits how you work.
 
+- **[From the web app](/docs/guides/create-from-web-app) (no repository
+  needed).** Click Add project, paste the prompt into your coding agent, and
+  the browser opens the video when the recording lands. Anyone in your org can
+  add or change videos this way.
 - **[Agent integration](/docs/agent-integration) (recommended).** Point a coding
   agent (Claude Code, Codex, Cursor, or similar) at the integration brief. It
   scaffolds ScreenCI, authors a video for the flow you describe, and records it,

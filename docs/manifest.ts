@@ -14,7 +14,7 @@ export const docsManifest = [
     navLabel: 'Overview',
     title: 'Overview',
     description:
-      'How ScreenCI works: record locally, refine in the web editor, export in the service, and serve from a CDN. The service never sees your source code, and the CLI is open source.',
+      "How ScreenCI works: record locally, refine in the web editor, export in the service, and serve from a CDN. The service never sees your app's source code, and the CLI is open source.",
     prev: null,
     next: 'docs/agent-integration',
   },
@@ -242,6 +242,18 @@ export const docsManifest = [
     description:
       'Record, preview, and edit without an account: what the anonymous trial allows, its limits (preview-only, no exports), and how signing up claims the trial and unlocks exporting.',
     prev: 'docs/guides/organisation',
+    next: 'docs/guides/create-from-web-app',
+  },
+  {
+    source: 'create-from-web-app.md',
+    slug: 'docs/guides/create-from-web-app',
+    section: 'Guides',
+    order: 13,
+    navLabel: 'Create from the web app',
+    title: 'Create Videos from the Web App',
+    description:
+      'Make and change videos without a repository: the Add project, Add video, and Edit buttons hand your coding agent a one-time setup code, and the browser opens the result when the recording lands.',
+    prev: 'docs/guides/anonymous-trial',
     next: 'docs/reference/cli',
   },
   {
@@ -252,8 +264,8 @@ export const docsManifest = [
     navLabel: 'CLI',
     title: 'CLI',
     description:
-      'Command reference for screenci init, test, record, preview, project info, and public delivery commands.',
-    prev: 'docs/guides/anonymous-trial',
+      'Command reference for screenci start, init, test, preview, export, project info, and public delivery commands.',
+    prev: 'docs/guides/create-from-web-app',
     next: 'docs/reference/configuration',
   },
   {

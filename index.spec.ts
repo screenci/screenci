@@ -55,10 +55,12 @@ describe('public api surface', () => {
 
   it('only exports the supported init helpers from the init entrypoint', () => {
     expect(Object.keys(initModule).sort()).toEqual([
+      'SOURCE_BUNDLE_MEDIA_EXTENSIONS',
       'detectPackageManagerFromLockfile',
       'detectPackageManagerFromPackageJson',
       'detectPnpmWorkspace',
       'determinePackageManager',
+      'findRepositoryRoot',
       'generateConfig',
       'generateExampleScreenshot',
       'generateExampleVideo',
@@ -69,7 +71,11 @@ describe('public api surface', () => {
       'generateReactExampleScreenshot',
       'generateRingOverlayHtml',
       'generateRingOverlayTsx',
+      'getIslandRunCommand',
       'initToggleOptionsFromCommander',
+      'installAgentSkills',
+      'installIslandFromPackageJson',
+      'installPlaywrightShell',
       'parsePackageManager',
       'parsePnpmVersionSupport',
       'parseYarnVersionSupport',
@@ -77,6 +83,7 @@ describe('public api surface', () => {
       'resolveBundledLogoPath',
       'runCreateScreenciCli',
       'runInit',
+      'scaffoldScreenciIsland',
       'setUpInitSecret',
       'toIslandPackageName',
     ])

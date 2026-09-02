@@ -17,6 +17,14 @@ describe('skill guidance', () => {
     )
   })
 
+  it('routes a pasted setup code through screenci start, not init', () => {
+    const skill = readPackageFile('skills/screenci/SKILL.md')
+
+    expect(skill).toContain('npx screenci@latest start SC-XXXX-XXXX')
+    expect(skill).toContain('--name "<project name>"')
+    expect(skill).not.toContain('</content>')
+  })
+
   it('tells playwright-cli inspection flows to look for cookie consent accept actions', () => {
     const skill = readPackageFile('skills/playwright-cli/SKILL.md')
 

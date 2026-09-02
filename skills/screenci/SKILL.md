@@ -19,7 +19,17 @@ Routing:
 
 ## Quick Start
 
-The project is already initialized. Add or edit scripts in `recordings/`. If you are creating new videos, remove the starter `recordings/example.screenci.ts`.
+If the user pasted a prompt with a setup code (`SC-XXXX-XXXX`), the project is set up by that code, not by `init`. Run this in the repository of the app to record (or an empty folder) and follow the brief it prints:
+
+```bash
+npx screenci@latest start SC-XXXX-XXXX
+# --name "<project name>" picks the new project's name (default: the folder name)
+# --dir <path> when ./screenci already belongs to another project
+```
+
+The brief carries the task, the app URL, and (for an edit) which script to change. `start` writes the project-scoped `SCREENCI_SECRET` and `SCREENCI_EDIT_TOKEN` into `screenci/.env`; `preview` and `export` of such a project also upload the `screenci/` scripts so the web app can hand them to the next editor, and the person who created the code sees the result open in their browser.
+
+Otherwise the project is already initialized. Add or edit scripts in `recordings/`. If you are creating new videos, remove the starter `recordings/example.screenci.ts`.
 
 ```bash
 # verify repeatedly until green
@@ -136,10 +146,8 @@ The secret is the only credential to configure. The CLI mints this machine's per
 5. Run `npx screenci export` only when the user wants the finished videos. Exporting requires an account with an active paid subscription: without one, `export` refuses and prints a sign-up link (the anonymous trial is preview-only). With one, it records what changed, renders, waits, and downloads into `./exports/`. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` per re-recorded video.
 6. After `export`, report the URL it printed so the user can open it (a single video links its page, e.g. `https://app.screenci.com/project/<projectId>/video/<videoId>?export=...`; several videos link the run page `https://app.screenci.com/export/...`).
 
-`screenci init` (or `npm init screenci`) scaffolds a new project and fails on purpose if one already exists (`screenci/ already exists`). That is expected: keep working with the existing project, do not delete it to re-init.
+`screenci init` (or `npm init screenci`) scaffolds a new project and fails on purpose if one already exists (`screenci/ already exists`). That is expected: keep working with the existing project, do not delete it to re-init. A setup code (`screenci start`) refuses an island of another project instead; pass `--dir <path>` then.
 
 ## Specific Tasks
 
 - **Exporting videos** [references/export.md](references/export.md)
-  </content>
-  </invoke>

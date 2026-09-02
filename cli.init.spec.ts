@@ -1364,7 +1364,10 @@ describe('CLI', () => {
       )
       expect(rawMessages).not.toContain(`  ${pc.cyan('npx screenci login')}`)
       expect(messages).toContain(
-        '    Records locally and uploads the result to ScreenCI.'
+        '    Records the free live preview and prints the video link.'
+      )
+      expect(messages).toContain(
+        '    Renders and downloads the finished videos.'
       )
       expect(rawMessages).toContain(
         'Visit ' +

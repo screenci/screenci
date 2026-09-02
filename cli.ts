@@ -36,6 +36,14 @@ import { Command, CommanderError } from 'commander'
 import { confirm } from '@inquirer/prompts'
 import pc from 'picocolors'
 import { logger } from './src/logger.js'
+import { getGitMetadata } from './src/git.js'
+import {
+  ensureSourceBundleUploaded,
+  notifyRunComplete,
+  shouldUploadSources,
+} from './src/sourceSync.js'
+import { nodeSourceBundleFs } from './src/sourceBundle.js'
+import { createDefaultStartDeps, registerStartCommand } from './src/start.js'
 import {
   determinePackageManager,
   initToggleOptionsFromCommander,
@@ -927,6 +935,21 @@ function disambiguateUploadCandidateDisplayNames(
   })
 }
 
+/**
+ * Per-run values every upload of one `preview`/`export` invocation carries.
+ * `sourceBundleId` links the run's recordings to the island sources uploaded
+ * just before recording (service-managed projects); null when none was.
+ */
+export type UploadRunContext = { sourceBundleId: string | null }
+const EMPTY_UPLOAD_RUN_CONTEXT: UploadRunContext = { sourceBundleId: null }
+
+const sourceSyncDeps = {
+  fetchFn: fetch,
+  logger,
+  fs: nodeSourceBundleFs,
+  gitMetadata: getGitMetadata,
+}
+
 async function uploadRecordingCandidate(
   candidate: UploadCandidate,
   screenciDir: string,
@@ -941,7 +964,8 @@ async function uploadRecordingCandidate(
   },
   progressIndex: number,
   recordId: string,
-  expectedScreenshotCount: number
+  expectedScreenshotCount: number,
+  runContext: UploadRunContext = EMPTY_UPLOAD_RUN_CONTEXT
 ): Promise<UploadJobResult> {
   const {
     entry,
@@ -1047,6 +1071,12 @@ async function uploadRecordingCandidate(
               ? { publish: true }
               : {}),
             ...(isScreenshot ? { expectedScreenshotCount } : {}),
+            // Service-managed projects: the island sources uploaded for
+            // this run, so the web app can hand the matching scripts to the
+            // next person who clicks Edit.
+            ...(runContext.sourceBundleId !== null
+              ? { sourceBundleId: runContext.sourceBundleId }
+              : {}),
             expectedAssets: preparedUploadAssets.map((asset) => ({
               fileHash: asset.fileHash,
               size: asset.size,
@@ -2564,7 +2594,8 @@ export async function uploadRecordings(
   credential: CliCredential,
   specificEntry?: string,
   verbose = false,
-  allowedVideoNames?: readonly string[]
+  allowedVideoNames?: readonly string[],
+  runContext: UploadRunContext = EMPTY_UPLOAD_RUN_CONTEXT
 ): Promise<{
   projectId: string | null
   recordId: string | null
@@ -2685,7 +2716,8 @@ export async function uploadRecordings(
             progressReporter,
             index,
             recordId,
-            screenshotCount
+            screenshotCount,
+            runContext
           )
       )
     )
@@ -2998,60 +3030,19 @@ async function resolveProjectEnvFilePath(
   )
 }
 
-export function extractConfigStringLiteral(
-  configSource: string,
-  property: 'projectName' | 'envFile'
-): string | undefined {
-  const singleQuoteMatch = configSource.match(
-    new RegExp(property + "\\s*:\\s*'([^'\\n]+)'")
-  )
-  if (singleQuoteMatch) return singleQuoteMatch[1]
-
-  const doubleQuoteMatch = configSource.match(
-    new RegExp(property + '\\s*:\\s*"([^"\\n]+)"')
-  )
-  if (doubleQuoteMatch) return doubleQuoteMatch[1]
-
-  const templateLiteralMatch = configSource.match(
-    new RegExp(property + '\\s*:\\s*`([^`\\n]+)`')
-  )
-  return templateLiteralMatch?.[1]
-}
-
-export function extractRecordUploadPolicyLiteral(
-  configSource: string
-): RecordUploadPolicy | undefined {
-  const singleQuoteMatch = configSource.match(
-    /record\s*:\s*\{[\s\S]*?upload\s*:\s*'(passed-only|all-or-nothing)'/
-  )
-  if (singleQuoteMatch) {
-    return singleQuoteMatch[1] as RecordUploadPolicy
-  }
-
-  const doubleQuoteMatch = configSource.match(
-    /record\s*:\s*\{[\s\S]*?upload\s*:\s*"(passed-only|all-or-nothing)"/
-  )
-  if (doubleQuoteMatch) {
-    return doubleQuoteMatch[1] as RecordUploadPolicy
-  }
-
-  const templateLiteralMatch = configSource.match(
-    /record\s*:\s*\{[\s\S]*?upload\s*:\s*`(passed-only|all-or-nothing)`/
-  )
-  return templateLiteralMatch?.[1] as RecordUploadPolicy | undefined
-}
-
-export function extractMockRecordLiteral(
-  configSource: string
-): boolean | undefined {
-  const match = configSource.match(
-    /test\s*:\s*\{[\s\S]*?mockRecord\s*:\s*(true|false)/
-  )
-
-  if (!match) return undefined
-
-  return match[1] === 'true'
-}
+// The import-free config readers live in src/configLite.ts (shared with
+// `screenci start`, which runs before any island exists); re-exported here so
+// existing importers and specs keep working.
+export {
+  extractConfigStringLiteral,
+  extractMockRecordLiteral,
+  extractRecordUploadPolicyLiteral,
+} from './src/configLite.js'
+import {
+  extractConfigStringLiteral,
+  extractMockRecordLiteral,
+  extractRecordUploadPolicyLiteral,
+} from './src/configLite.js'
 
 function resolveRecordUploadPolicy(config: ScreenCIConfig): RecordUploadPolicy {
   return config.record?.upload ?? DEFAULT_RECORD_UPLOAD_POLICY
@@ -3059,6 +3050,7 @@ function resolveRecordUploadPolicy(config: ScreenCIConfig): RecordUploadPolicy {
 
 async function tryReadConfigFromSource(resolvedConfigPath: string): Promise<
   Pick<ScreenCIConfig, 'projectName'> & {
+    projectId?: string
     envFile?: string
     record?: { upload?: RecordUploadPolicy }
     test?: { mockRecord?: boolean }
@@ -3073,12 +3065,14 @@ async function tryReadConfigFromSource(resolvedConfigPath: string): Promise<
     )
   }
 
+  const projectId = extractConfigStringLiteral(configSource, 'projectId')
   const envFile = extractConfigStringLiteral(configSource, 'envFile')
   const recordUpload = extractRecordUploadPolicyLiteral(configSource)
   const mockRecord = extractMockRecordLiteral(configSource)
 
   return {
     projectName,
+    ...(projectId !== undefined ? { projectId } : {}),
     ...(envFile !== undefined ? { envFile } : {}),
     ...(recordUpload !== undefined ? { record: { upload: recordUpload } } : {}),
     ...(mockRecord !== undefined ? { test: { mockRecord } } : {}),
@@ -3329,6 +3323,22 @@ async function runPreviewRecordPass(
       // Fire-and-forget: never blocks or fails the recording.
       void notifyPreviewRecordingStarted(startNotice, requestedVideoNames)
     }
+    // Service-managed projects sync their island sources before recording so
+    // the web app's copy always matches the footage. Best effort: a failed
+    // sync warns and the preview still records.
+    const sourceBundleId =
+      startNotice !== undefined && shouldUploadSources(screenciConfig)
+        ? await ensureSourceBundleUploaded(
+            {
+              islandDir: dirname(resolvedConfigPath),
+              apiUrl: startNotice.apiUrl,
+              credential: startNotice.credential,
+              projectName: screenciConfig.projectName,
+              verbose,
+            },
+            sourceSyncDeps
+          )
+        : null
     let playwrightFailure: Error | null = null
     try {
       await run(
@@ -3350,13 +3360,26 @@ async function runPreviewRecordPass(
     const previousPreviewOnly = process.env['SCREENCI_PREVIEW_ONLY']
     process.env['SCREENCI_PREVIEW_ONLY'] = '1'
     try {
-      await uploadRecordedVideosForConfig(
+      const uploaded = await uploadRecordedVideosForConfig(
         configPath,
         playwrightFailure,
         verbose,
         requestedVideoNames,
-        'none'
+        'none',
+        { sourceBundleId }
       )
+      if (startNotice !== undefined && uploaded.recordId !== null) {
+        await notifyRunComplete(
+          {
+            apiUrl: startNotice.apiUrl,
+            credential: startNotice.credential,
+            recordId: uploaded.recordId,
+            kind: 'preview',
+            verbose,
+          },
+          sourceSyncDeps
+        )
+      }
     } finally {
       if (previousPreviewOnly === undefined) {
         delete process.env['SCREENCI_PREVIEW_ONLY']
@@ -3474,6 +3497,18 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
     const previousExportFlag = process.env['SCREENCI_EXPORT']
     process.env['SCREENCI_EXPORT'] = '1'
     try {
+      const sourceBundleId = shouldUploadSources(screenciConfig)
+        ? await ensureSourceBundleUploaded(
+            {
+              islandDir: dirname(resolvedConfigPath),
+              apiUrl,
+              credential: secretCredential(secret),
+              projectName: screenciConfig.projectName,
+              verbose: options.verbose,
+            },
+            sourceSyncDeps
+          )
+        : null
       let playwrightFailure: Error | null = null
       if (!isUploadExistingEnabled()) {
         try {
@@ -3502,8 +3537,22 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
         options.configPath,
         playwrightFailure,
         options.verbose,
-        names
+        names,
+        'export',
+        { sourceBundleId }
       )
+      if (uploaded.recordId !== null) {
+        await notifyRunComplete(
+          {
+            apiUrl,
+            credential: secretCredential(secret),
+            recordId: uploaded.recordId,
+            kind: 'export',
+            verbose: options.verbose,
+          },
+          sourceSyncDeps
+        )
+      }
       if (playwrightFailure !== null) {
         throw playwrightFailure
       }
@@ -4672,7 +4721,8 @@ async function uploadRecordedVideosForConfig(
   requestedVideoNames?: readonly string[],
   // 'export' prints the export run page URL after a successful upload;
   // 'none' stays quiet (edit preview uploads print the editor URL instead).
-  resultLink: 'export' | 'none' = 'export'
+  resultLink: 'export' | 'none' = 'export',
+  runContext: UploadRunContext = EMPTY_UPLOAD_RUN_CONTEXT
 ): Promise<{
   recordId: string | null
   projectId: string | null
@@ -4772,7 +4822,8 @@ async function uploadRecordedVideosForConfig(
           credential,
           undefined,
           verbose,
-          requestedVideoNames
+          requestedVideoNames,
+          runContext
         )
       } catch (err) {
         if (isUploadCancelledError(err)) {
@@ -4972,7 +5023,7 @@ export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
     logger.error(
-      'Available commands: test, preview, export, info, make-public, make-private, delete, init'
+      'Available commands: start, test, preview, export, info, make-public, make-private, delete, init'
     )
     process.exit(1)
   }
@@ -5246,6 +5297,9 @@ export async function main() {
     )
     .option('-y, --yes', 'accept init defaults')
     .option('-v, --verbose', 'verbose output')
+  // start command: exchange a setup code from the web app for a workspace
+  registerStartCommand(program, createDefaultStartDeps(), defaultPackageManager)
+
   registerInitToggleOptions(initCommand)
   initCommand.action(
     async (name: string | undefined, options: Record<string, unknown>) => {

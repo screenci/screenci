@@ -405,6 +405,28 @@ describe('CLI', () => {
       expect(extractConfigStringLiteral(configSource, 'envFile')).toBe('./.env')
     })
 
+    it('should extract the projectId of a service-managed island', async () => {
+      const { extractConfigStringLiteral } = await import('./cli')
+      const { readIslandEnvFile, readIslandProjectId } =
+        await import('./src/configLite')
+      const configSource = `export default defineConfig({
+  projectName: 'Acme',
+  projectId: "proj_123",
+})`
+
+      expect(extractConfigStringLiteral(configSource, 'projectId')).toBe(
+        'proj_123'
+      )
+      expect(readIslandProjectId(configSource)).toBe('proj_123')
+      expect(readIslandProjectId("export default { projectName: 'x' }")).toBe(
+        undefined
+      )
+      expect(readIslandEnvFile(configSource)).toBe('.env')
+      expect(
+        readIslandEnvFile("export default { envFile: '.env.local' }")
+      ).toBe('.env.local')
+    })
+
     it('should extract record upload policy literals', async () => {
       const { extractRecordUploadPolicyLiteral } = await import('./cli')
       const configSource = `export default defineConfig({

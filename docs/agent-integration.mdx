@@ -11,6 +11,22 @@ your manager's commands: `/integrate.md` (npm), `/integrate-pnpm.md` (pnpm), and
 `/integrate-yarn.md` (yarn). The Get Started page hands you the matching prompt
 for your selection.
 
+## Have a setup code from the web app?
+
+If someone clicked **Add project**, **Add video**, or **Edit** in the ScreenCI
+app, the prompt they sent you already carries a one-time code. Run it in the
+repository of the app to record (or an empty folder):
+
+```bash
+npx screenci@latest start SC-XXXX-XXXX
+```
+
+It creates or pulls the `./screenci` workspace, writes the credentials, and
+prints its own brief; there is nothing else to integrate. Add
+`--name "<project name>"` to choose the new project's name (it defaults to the
+folder name). See
+[Create Videos from the Web App](/docs/guides/create-from-web-app).
+
 ## Start with one paste
 
 Copy the ready-made prompt from the Get Started page in the ScreenCI app, or

@@ -1429,6 +1429,21 @@ export type ScreenCIConfig = Omit<
    */
   projectName: string
   /**
+   * Set by `screenci start` for a service-managed project (one created from
+   * the web app with a setup code). Informational for the CLI: the
+   * project-scoped secret pins the project server-side; the CLI uses this to
+   * detect an island that belongs to another project and to upload the
+   * island's text sources before every preview and export.
+   */
+  projectId?: string
+  /**
+   * Upload the island's text sources (scripts and config, never `.env`,
+   * lockfiles, or media) before each preview/export so the web app can hand
+   * them to a coding agent. Implied by `projectId`.
+   * @default false
+   */
+  uploadSources?: boolean
+  /**
    * Path to a .env file to load before uploading.
    * Relative to the screenci.config.ts file.
    * Use this to load SCREENCI_SECRET and other env vars.

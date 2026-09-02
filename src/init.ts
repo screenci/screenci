@@ -1266,8 +1266,11 @@ function printInitNextSteps(
   logger.info(`  ${pc.cyan(`${commands.screenciRun} test --ui`)}`)
   logger.info('    Tests your video scripts in interactive UI mode.')
   logger.info('')
-  logger.info(`  ${pc.cyan(`${commands.screenciRun} record`)}`)
-  logger.info('    Records locally and uploads the result to ScreenCI.')
+  logger.info(`  ${pc.cyan(`${commands.screenciRun} preview`)}`)
+  logger.info('    Records the free live preview and prints the video link.')
+  logger.info('')
+  logger.info(`  ${pc.cyan(`${commands.screenciRun} export`)}`)
+  logger.info('    Renders and downloads the finished videos.')
   logger.info('')
   logger.info('We suggest that you begin by typing:')
   logger.info('')
@@ -1285,14 +1288,14 @@ function printInitNextSteps(
   logger.info('')
   if (secretOutcome === 'ready') {
     logger.info(
-      `${pc.green('✔')} You're set up on the free tier. Run ${pc.cyan(`${commands.screenciRun} record`)} to preview your first video.`
+      `${pc.green('✔')} You're connected. Run ${pc.cyan(`${commands.screenciRun} preview`)} to preview your first video.`
     )
     logger.info(
       'The free tier previews without rendering. Choose a paid plan any time to export finished videos.'
     )
   } else {
     logger.info(
-      `Before your first ${pc.cyan(`${commands.screenciRun} record`)}, add your SCREENCI_SECRET:`
+      `To export finished videos, add your SCREENCI_SECRET (previews need no account):`
     )
     logger.info(
       `Copy it from ${pc.cyan(getScreenCISecretsUrl())} into ${pc.cyan(`${islandDirName}/.env`)}.`
@@ -1629,7 +1632,6 @@ export async function runInit(
 ): Promise<void> {
   const { verbose, yes, agent, packageManager } = options
   const initCwd = getInitProjectRoot()
-  const commands = getPackageManagerCommand(packageManager)
 
   // ScreenCI scaffolds a self-contained `screenci/` island under the current
   // directory: its own package.json + local install, deliberately NOT a member
@@ -1726,6 +1728,81 @@ export async function runInit(
   const shouldWriteGithubActionWorkflow =
     shouldAddGithubActionWorkflow && !workflowAlreadyExists
 
+  await scaffoldScreenciIsland({
+    islandDir,
+    repoRoot,
+    islandWorkflowPath,
+    projectName,
+    packageManager,
+    verbose,
+    ...(agent !== undefined ? { agent } : {}),
+    addReactOverlays: shouldAddReactOverlays,
+    installPlaywrightBrowsers: shouldInstallPlaywrightBrowsers,
+    installPlaywrightOsDeps: shouldInstallPlaywrightOsDependencies,
+    installScreenCISkill: shouldInstallScreenCISkill,
+    installPlaywrightCli: shouldInstallPlaywrightCli,
+    writeGithubWorkflow: shouldWriteGithubActionWorkflow,
+  })
+
+  const secretOutcome = await setUpInitSecret(
+    islandDir,
+    pastedSecret ? { pastedSecret } : {}
+  )
+
+  printInitNextSteps(islandDir, islandDirName, packageManager, secretOutcome)
+}
+
+export type ScaffoldIslandParams = {
+  /** Absolute path of the `screenci/` island to create (must not exist). */
+  islandDir: string
+  /** Repository root: where the workflow and agent skills are placed. */
+  repoRoot: string
+  /** Island path relative to the repo root, POSIX-style (workflow fields). */
+  islandWorkflowPath: string
+  projectName: string
+  /** Written into the config for a service-managed project. */
+  projectId?: string
+  packageManager: PackageManager
+  verbose: boolean
+  agent?: string
+  addReactOverlays: boolean
+  installPlaywrightBrowsers: boolean
+  installPlaywrightOsDeps: boolean
+  installScreenCISkill: boolean
+  installPlaywrightCli: boolean
+  /** Write `.github/workflows/screenci.yaml` (callers skip an existing one). */
+  writeGithubWorkflow: boolean
+}
+
+/**
+ * The file-writing and installing core of `screenci init`, without the
+ * prompts, the secret setup, and the next-steps banner. `runInit` and
+ * `screenci start` (which already holds a project-scoped secret) share it.
+ * Rolls back the island on failure or interruption.
+ */
+export async function scaffoldScreenciIsland(
+  params: ScaffoldIslandParams
+): Promise<void> {
+  const {
+    islandDir,
+    repoRoot,
+    islandWorkflowPath,
+    projectName,
+    projectId,
+    packageManager,
+    verbose,
+    agent,
+  } = params
+  const shouldAddReactOverlays = params.addReactOverlays
+  const shouldInstallPlaywrightBrowsers = params.installPlaywrightBrowsers
+  const shouldInstallPlaywrightOsDependencies = params.installPlaywrightOsDeps
+  const shouldInstallScreenCISkill = params.installScreenCISkill
+  const shouldInstallPlaywrightCli = params.installPlaywrightCli
+  const shouldWriteGithubActionWorkflow = params.writeGithubWorkflow
+  const commands = getPackageManagerCommand(packageManager)
+  const githubWorkflowsDir = resolve(repoRoot, '.github', 'workflows')
+  const githubActionPath = resolve(githubWorkflowsDir, 'screenci.yaml')
+
   const skills: string[] = []
   if (shouldInstallScreenCISkill) {
     skills.push('screenci')
@@ -1781,7 +1858,7 @@ export async function runInit(
 
     await writeFile(
       resolve(islandDir, 'screenci.config.ts'),
-      generateConfig(projectName)
+      generateConfig(projectName, projectId !== undefined ? { projectId } : {})
     )
     await writeFile(
       resolve(islandDir, 'package.json'),
@@ -1926,14 +2003,118 @@ export async function runInit(
     process.off('SIGTERM', onSigterm)
     process.off('exit', removePartialIsland)
   }
-
-  const secretOutcome = await setUpInitSecret(
-    islandDir,
-    pastedSecret ? { pastedSecret } : {}
-  )
-
-  printInitNextSteps(islandDir, islandDirName, packageManager, secretOutcome)
 }
+
+/** Runs the package manager's skills installer at the repository root.
+ *  Best effort: a failure warns and continues, like init. */
+export async function installAgentSkills(params: {
+  repoRoot: string
+  packageManager: PackageManager
+  skills: readonly string[]
+  agent?: string
+  verbose: boolean
+}): Promise<void> {
+  if (params.skills.length === 0) return
+  const commands = getPackageManagerCommand(params.packageManager)
+  const skillsArgs = commands.skillsArgs([...params.skills], params.agent)
+  const skillsRetryHint = `You can retry later with: ${commands.skillsCommand} ${skillsArgs.join(' ')}`
+  if (params.verbose) {
+    logger.info(
+      `Running '${commands.skillsCommand} ${skillsArgs.join(' ')}'...`
+    )
+    try {
+      await spawnInherited(
+        commands.skillsCommand,
+        skillsArgs,
+        params.repoRoot,
+        'screenci start'
+      )
+    } catch {
+      logger.warn(
+        `AI skills install failed, continuing without the AI agent skills. ${skillsRetryHint}`
+      )
+    }
+    return
+  }
+  const spinner = ora('Adding selected AI skills...').start()
+  try {
+    await spawnSilent(commands.skillsCommand, skillsArgs, params.repoRoot)
+    spinner.succeed('Installing selected AI skills')
+  } catch {
+    spinner.warn(
+      `AI skills install failed, continuing without the AI agent skills. ${skillsRetryHint}`
+    )
+  }
+}
+
+/** Installs the island's declared dependencies from its package.json (a pulled
+ *  island carries no lockfile, so this is a plain install). */
+export async function installIslandFromPackageJson(params: {
+  islandDir: string
+  packageManager: PackageManager
+  verbose: boolean
+}): Promise<void> {
+  const commands = getPackageManagerCommand(params.packageManager)
+  const args = ['install']
+  if (params.verbose) {
+    logger.info(`Running '${commands.installCommand} ${args.join(' ')}'...`)
+    await spawnInherited(
+      commands.installCommand,
+      args,
+      params.islandDir,
+      'screenci start'
+    )
+    return
+  }
+  const spinner = ora('Installing dependencies...').start()
+  try {
+    await spawnSilent(commands.installCommand, args, params.islandDir)
+    spinner.succeed('Installing dependencies')
+  } catch (err) {
+    spinner.fail('Installing dependencies failed')
+    throw err
+  }
+}
+
+/** Installs the Playwright Chromium headless shell into the island. */
+export async function installPlaywrightShell(params: {
+  islandDir: string
+  packageManager: PackageManager
+}): Promise<void> {
+  const commands = getPackageManagerCommand(params.packageManager)
+  logger.info(
+    `Installing Playwright Chromium headless shell with '${commands.playwrightRun} install --only-shell chromium'...`
+  )
+  const [browserCmd, ...browserArgs] = buildPlaywrightSpawnArgs(
+    params.packageManager,
+    'install',
+    '--only-shell',
+    'chromium'
+  )
+  await spawnInherited(
+    browserCmd!,
+    browserArgs,
+    params.islandDir,
+    'screenci start'
+  )
+  logger.info(
+    `${pc.green('✔')} Playwright Chromium headless shell installed successfully`
+  )
+}
+
+/** The `screenci` run prefix for the package manager (e.g. `npx screenci`). */
+export function getIslandRunCommand(packageManager: PackageManager): string {
+  return getPackageManagerCommand(packageManager).screenciRun
+}
+
+/** Repository root lookup for callers outside this module (see findRepoRoot). */
+export function findRepositoryRoot(startDir: string): string {
+  return findRepoRoot(startDir)
+}
+
+/** Binary media extensions that never belong in a source bundle. */
+export const SOURCE_BUNDLE_MEDIA_EXTENSIONS: readonly string[] =
+  IGNORED_ASSET_MEDIA_EXTENSIONS
 
 function handleCreateCommanderError(err: unknown): void {
   if (!(err instanceof CommanderError)) {
@@ -2043,13 +2224,23 @@ export async function runCreateScreenciCli(
   }
 }
 
-export function generateConfig(projectName: string): string {
+export function generateConfig(
+  projectName: string,
+  options: { projectId?: string } = {}
+): string {
+  const projectIdLine =
+    options.projectId !== undefined
+      ? `  // Service-managed project created with \`screenci start\`; the sources of
+  // this folder are uploaded with every preview and export. Do not edit.
+  projectId: ${JSON.stringify(options.projectId)},
+`
+      : ''
   return `import { defineConfig } from 'screenci'
 
 export default defineConfig({
   // Used to identify this project in ScreenCI.
   projectName: ${JSON.stringify(projectName)},
-  // Load SCREENCI_SECRET and other env vars from this file.
+${projectIdLine}  // Load SCREENCI_SECRET and other env vars from this file.
   envFile: '.env',
   // Look for *.screenci.ts files in this directory.
   recordingDir: './recordings',

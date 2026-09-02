@@ -1,283 +1,112 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  grepMatcher,
   runDevStartupSync,
-  staleReasonOf,
   type DevStartupDeps,
   type KeptRecording,
 } from './devStartup.js'
-import type { EditableSnapshotEntry } from './editableSnapshot.js'
 import type { RecordingData } from './recordingData.js'
 
-function entry(editId?: string): EditableSnapshotEntry {
+function kept(videoName: string, entry?: string): KeptRecording {
   return {
-    key: editId ?? 'delay',
-    ...(editId !== undefined && { editId }),
-    locked: false,
-    defaults: { durationMs: 100 },
-    source: { file: '/proj/demo.screenci.ts', line: 3 },
-  }
-}
-
-function kept(
-  videoName: string,
-  sourceHash: string | undefined,
-  entries: EditableSnapshotEntry[]
-): KeptRecording & { entries: EditableSnapshotEntry[] } {
-  return {
-    entry: `${videoName} [en]`,
-    entries,
+    entry: entry ?? `${videoName} [en]`,
     data: {
       events: [],
       renderOptions: {} as RecordingData['renderOptions'],
       metadata: {
         videoName,
         screenciVersion: '0.0.0',
-        sourceFilePath: '/proj/demo.screenci.ts',
-        ...(sourceHash !== undefined && { sourceHash }),
       },
     },
   }
 }
 
 function makeDeps(
-  recordings: Array<KeptRecording & { entries: EditableSnapshotEntry[] }>,
+  recordings: KeptRecording[],
   overrides: Partial<DevStartupDeps> = {}
 ): DevStartupDeps & {
-  stampEditIds: ReturnType<typeof vi.fn>
   recordPreview: ReturnType<typeof vi.fn>
 } {
-  const byVideo = new Map(
-    recordings.map((r) => [r.data.metadata?.videoName, r])
-  )
-  const stampEditIds = vi.fn(async () => 0)
   const recordPreview = vi.fn(async () => {})
   return {
     readKeptRecordings: async () => recordings,
-    hashSource: async () => 'hash-a',
-    stampEditIds,
     recordPreview,
-    entriesFromData: (data) =>
-      byVideo.get(data.metadata?.videoName)?.entries ?? [],
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     ...overrides,
   }
 }
 
 describe('runDevStartupSync', () => {
-  it('skips recording when everything is fresh and stamped (with grep)', async () => {
-    const deps = makeDeps([kept('Demo', 'hash-a', [entry('delay1')])])
-
+  it('always records, even when kept recordings exist', async () => {
+    const deps = makeDeps([kept('Demo')])
     const result = await runDevStartupSync({ grep: 'Demo' }, deps)
 
-    expect(deps.recordPreview).not.toHaveBeenCalled()
-    expect(result.fresh).toEqual(['Demo'])
+    expect(deps.recordPreview).toHaveBeenCalledWith('Demo')
+    expect(result.recorded).toEqual(['Demo'])
+  })
+
+  it('records everything with no pattern (undefined grep)', async () => {
+    const deps = makeDeps([kept('Demo'), kept('Other')])
+    await runDevStartupSync({}, deps)
+
+    expect(deps.recordPreview).toHaveBeenCalledWith(undefined)
+    expect(deps.logger.info).toHaveBeenCalledWith('Recording all videos.')
+  })
+
+  it('records with the grep even when no kept recording matches (new video)', async () => {
+    const deps = makeDeps([])
+    const result = await runDevStartupSync({ grep: 'Brand new' }, deps)
+
+    expect(deps.recordPreview).toHaveBeenCalledWith('Brand new')
+    expect(deps.logger.info).toHaveBeenCalledWith('Recording matched videos.')
     expect(result.recorded).toEqual([])
   })
 
-  it('records everything on the first pass when no grep is provided', async () => {
-    // Kept recordings only cover videos that recorded before: without a grep
-    // the record pass runs unfiltered so new/renamed videos are picked up.
-    const deps = makeDeps([kept('Demo', 'hash-a', [entry('delay1')])])
-
-    const result = await runDevStartupSync({}, deps)
-
-    expect(deps.recordPreview).toHaveBeenCalledWith(undefined)
-    expect(result.recorded).toEqual(['Demo'])
-  })
-
-  it('resolves duplicate editIds and re-records the affected video', async () => {
-    const resolveDuplicateEditIds = vi.fn(async () => 1)
-    let hash = 'hash-a'
-    const deps = makeDeps([kept('Demo', 'hash-a', [entry('fill1')])], {
-      resolveDuplicateEditIds,
-      // The rewrite changes the source, so the re-collected hash is stale.
-      hashSource: async () => hash,
-    })
-    resolveDuplicateEditIds.mockImplementation(async () => {
-      hash = 'hash-b'
-      return 1
-    })
-
-    const result = await runDevStartupSync({ grep: 'Demo' }, deps)
-
-    expect(resolveDuplicateEditIds).toHaveBeenCalledWith([
-      '/proj/demo.screenci.ts',
-    ])
-    expect(deps.recordPreview).toHaveBeenCalledWith('Demo')
-    expect(result.recorded).toEqual(['Demo'])
-  })
-
-  it('re-records a video whose source hash changed', async () => {
-    const deps = makeDeps([kept('Demo', 'old-hash', [entry('delay1')])])
-
-    const result = await runDevStartupSync({ grep: 'Demo' }, deps)
-
-    expect(deps.recordPreview).toHaveBeenCalledWith('Demo')
-    expect(result.recorded).toEqual(['Demo'])
-  })
-
-  it('stamps missing editIds before re-recording', async () => {
-    const calls: string[] = []
-    const deps = makeDeps([kept('Demo', 'hash-a', [entry()])], {})
-    deps.stampEditIds.mockImplementation(async () => {
-      calls.push('stamp')
-      return 1
-    })
-    deps.recordPreview.mockImplementation(async () => {
-      calls.push('record')
-    })
-
-    await runDevStartupSync({}, deps)
-
-    expect(calls[0]).toBe('stamp')
-    expect(calls).toContain('record')
-    expect(deps.stampEditIds).toHaveBeenCalledWith({
-      Demo: [entry()],
-    })
-  })
-
-  it('records everything first when no kept data exists', async () => {
-    const deps = makeDeps([])
-
-    await runDevStartupSync({ grep: 'Intro' }, deps)
-
-    expect(deps.recordPreview).toHaveBeenCalledWith('Intro')
-  })
-
-  it('escapes video names in the re-record grep pattern', async () => {
-    const deps = makeDeps([kept('My Video (v2)', 'stale', [entry('a1')])])
-
-    await runDevStartupSync({ grep: 'My Video' }, deps)
-
-    expect(deps.recordPreview).toHaveBeenCalledWith('My Video \\(v2\\)')
-  })
-
-  it('force-records fresh videos when forceRecord is set', async () => {
-    const deps = makeDeps([kept('Demo', 'hash-a', [entry('delay1')])])
-
-    const result = await runDevStartupSync(
-      { forceRecord: true, grep: 'Demo' },
-      deps
-    )
-
-    expect(deps.recordPreview).toHaveBeenCalledWith('Demo')
-    expect(result.recorded).toEqual(['Demo'])
-  })
-
-  it('filters managed videos by grep', async () => {
+  it('announces one line per video, deduped across language passes', async () => {
     const deps = makeDeps([
-      kept('Intro', 'stale', [entry('a1')]),
-      kept('Outro', 'stale', [entry('b1')]),
+      kept('Demo', 'Demo [en]'),
+      kept('Demo', 'Demo [fi]'),
+      kept('Other'),
     ])
+    await runDevStartupSync({ grep: 'Demo|Other' }, deps)
 
-    const result = await runDevStartupSync({ grep: 'Intro' }, deps)
-
-    expect(deps.recordPreview).toHaveBeenCalledWith('Intro')
-    expect(result.recorded).toEqual(['Intro'])
-  })
-
-  it('reports syncing video names around the record pass and clears them', async () => {
-    const calls: string[][] = []
-    const recording = kept('Demo', 'stale', [entry('a1')])
-    const deps = makeDeps([recording], {
-      setSyncing: async (names) => {
-        calls.push(names)
-      },
-    })
-    // The record pass writes a fresh data.json whose hash matches the source.
-    deps.recordPreview.mockImplementation(async () => {
-      recording.data.metadata!.sourceHash = 'hash-a'
-    })
-
-    await runDevStartupSync({}, deps)
-
-    expect(calls).toEqual([['Demo'], []])
-  })
-
-  it('clears the syncing state even when the record pass fails', async () => {
-    const calls: string[][] = []
-    const deps = makeDeps([kept('Demo', 'stale', [entry('a1')])], {
-      setSyncing: async (names) => {
-        calls.push(names)
-      },
-    })
-    deps.recordPreview.mockRejectedValue(new Error('record failed'))
-
-    await expect(runDevStartupSync({}, deps)).rejects.toThrow('record failed')
-    expect(calls).toEqual([['Demo'], []])
-  })
-
-  it('warns about videos whose editIds cannot be stamped (loops)', async () => {
-    // stampEditIds returns 0: nothing could be stamped, entries stay id-less.
-    const deps = makeDeps([kept('Demo', 'hash-a', [entry()])])
-
-    const result = await runDevStartupSync({ grep: 'Demo' }, deps)
-
-    expect(result.missingEditIds).toEqual(['Demo'])
-    expect(deps.logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('Demo')
+    expect(deps.logger.info).toHaveBeenCalledWith(
+      'Recording 2 videos: Demo, Other'
     )
-    // Re-recording cannot add editIds (they come from source stamps), so an
-    // unstampable video must NOT re-record on every startup. This used to
-    // record it twice per run, forever.
-    expect(deps.recordPreview).not.toHaveBeenCalled()
   })
 
-  it('re-records after a partial stamp, then stops once stamping is dry', async () => {
-    // Pass 1: one id stamped into the source, so a re-record picks it up.
-    // Pass 2: stamping yields nothing more; the remaining id-less entry must
-    // not trigger another record.
-    const recording = kept('Demo', 'hash-a', [entry()])
-    const deps = makeDeps([recording])
-    deps.stampEditIds.mockResolvedValueOnce(1).mockResolvedValue(0)
-
-    const result = await runDevStartupSync({ grep: 'Demo' }, deps)
-
-    expect(deps.recordPreview).toHaveBeenCalledTimes(1)
-    expect(result.recorded).toEqual(['Demo'])
-  })
-
-  it('does not stamp, resolve duplicates, or warn when autoStamp is false', async () => {
-    const resolveDuplicateEditIds = vi.fn(async () => 1)
-    const deps = makeDeps([kept('Demo', 'hash-a', [entry()])], {
-      resolveDuplicateEditIds,
+  it('reports the syncing names around the record pass, clearing on failure too', async () => {
+    const setSyncing = vi.fn(async () => {})
+    const deps = makeDeps([kept('Demo')], {
+      setSyncing,
+      recordPreview: vi.fn(async () => {
+        throw new Error('record failed')
+      }),
     })
 
-    const result = await runDevStartupSync(
-      { autoStamp: false, grep: 'Demo' },
-      deps
+    await expect(runDevStartupSync({ grep: 'Demo' }, deps)).rejects.toThrow(
+      'record failed'
     )
-
-    expect(deps.stampEditIds).not.toHaveBeenCalled()
-    expect(resolveDuplicateEditIds).not.toHaveBeenCalled()
-    expect(deps.logger.warn).not.toHaveBeenCalled()
-    // A fresh recording with missing ids is not stale when stamping is off.
-    expect(deps.recordPreview).not.toHaveBeenCalled()
-    expect(result.fresh).toEqual(['Demo'])
+    expect(setSyncing).toHaveBeenNthCalledWith(1, ['Demo'])
+    expect(setSyncing).toHaveBeenNthCalledWith(2, [])
   })
 })
 
-describe('staleReasonOf', () => {
-  const data = (metadata: Record<string, unknown>) =>
-    ({ events: [], metadata }) as unknown as Parameters<typeof staleReasonOf>[0]
-
-  it('names each way a kept recording can be stale', () => {
-    expect(staleReasonOf(data({}), 'h')).toBe(
-      'recording has no source baseline'
-    )
-    expect(
-      staleReasonOf(
-        data({ sourceHash: 'h', sourceFilePath: 'a.ts' }),
-        undefined
-      )
-    ).toBe('source file not readable (a.ts)')
-    expect(staleReasonOf(data({ sourceHash: 'h' }), 'other')).toBe(
-      'test source changed since its last recording'
-    )
+describe('grepMatcher', () => {
+  it('matches everything without a grep', () => {
+    expect(grepMatcher(undefined)('anything')).toBe(true)
   })
 
-  it('is null for a fresh recording', () => {
-    expect(staleReasonOf(data({ sourceHash: 'h' }), 'h')).toBeNull()
+  it('matches as a regex', () => {
+    const matches = grepMatcher('Demo|Other')
+    expect(matches('Demo')).toBe(true)
+    expect(matches('Third')).toBe(false)
+  })
+
+  it('falls back to substring matching on an invalid regex', () => {
+    const matches = grepMatcher('a(b')
+    expect(matches('the a(b video')).toBe(true)
+    expect(matches('nope')).toBe(false)
   })
 })

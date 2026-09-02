@@ -131,7 +131,7 @@ The secret is the only credential to configure. The CLI mints this machine's per
 
 1. Add or edit `.screenci.ts` files in `recordings/` (remove `example.screenci.ts` if creating new videos).
 2. Run `npx screenci test` until it passes. Fix selectors/flow/narration and rerun until green.
-3. Once tests pass, run `npx screenci preview "<title>"` yourself. Do not export first. It records the video's live preview if stale (free, no render), prints the video link, and exits. `preview` works without an account: with no `SCREENCI_SECRET` it runs under a free anonymous trial session.
+3. Once tests pass, run `npx screenci preview "<title>"` yourself. Do not export first. It records the video's live preview (free, no render), prints the video link, and exits. `preview` works without an account: with no `SCREENCI_SECRET` it runs under a free anonymous trial session.
 4. Report the video link `preview` printed so the user can review and refine the video in the browser.
 5. Run `npx screenci export` only when the user wants the finished videos. Exporting requires an account with an active paid subscription: without one, `export` refuses and prints a sign-up link (the anonymous trial is preview-only). With one, it records what changed, renders, waits, and downloads into `./exports/`. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` per re-recorded video.
 6. After `export`, report the URL it printed so the user can open it (a single video links its page, e.g. `https://app.screenci.com/project/<projectId>/video/<videoId>?export=...`; several videos link the run page `https://app.screenci.com/export/...`).

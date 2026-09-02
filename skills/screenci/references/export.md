@@ -55,7 +55,7 @@ npx screenci export
 
 Always run `npx screenci test` until it passes first. Fix failures and rerun until green.
 
-Once tests pass, prefer `npx screenci preview "<title>"` over exporting right away: it records the live preview if stale (free, no render), prints the video link, and exits. Report the link so the user can review the video. `preview` works with or without an account (without one it runs under the free anonymous trial).
+Once tests pass, prefer `npx screenci preview "<title>"` over exporting right away: it records the live preview (free, no render), prints the video link, and exits. Report the link so the user can review the video. `preview` works with or without an account (without one it runs under the free anonymous trial).
 
 Run `npx screenci export` when the user wants the finished videos: it records what changed, renders, and downloads them. Exporting requires an account with an active paid subscription.
 

@@ -18,7 +18,6 @@ export const ANON_SESSION_FILE = 'anon-session.json'
 
 export const ANON_TOKEN_HEADER = 'X-ScreenCI-Anon-Token'
 export const SECRET_HEADER = 'X-ScreenCI-Secret'
-export const ANON_MAX_VIDEOS_PER_RECORDING = 3
 
 // Canonical Terms of Service URL. Hardcoded like the docs links elsewhere in
 // the CLI (the legal pages are not environment-specific). Anonymous trial
@@ -127,8 +126,7 @@ export function formatAnonPostRecordNotice(): string {
 export type AnonSessionStatus =
   | { status: 'not_found' }
   | { status: 'expired' }
-  // Anonymous trials are preview-only and uncapped; only the per-run video
-  // cap (ANON_MAX_VIDEOS_PER_RECORDING) still applies. The server's legacy
+  // Anonymous trials are preview-only and uncapped. The server's legacy
   // `used`/`remaining` wire fields are ignored.
   | { status: 'pending' }
   // `editToken`: a personal editor token the server minted for the claiming

@@ -109,9 +109,7 @@ import {
 } from './src/previewStarted.js'
 import {
   type CliCredential,
-  ANON_MAX_VIDEOS_PER_RECORDING,
   ANON_SESSION_FILE,
-  ANON_TOKEN_HEADER,
   anonCredential,
   checkAnonSessionStatus,
   deleteAnonSessionFile,
@@ -2661,32 +2659,6 @@ export async function uploadRecordings(
       }
     }
 
-    if (
-      credential.header === ANON_TOKEN_HEADER &&
-      filteredCandidates.length > ANON_MAX_VIDEOS_PER_RECORDING
-    ) {
-      const failureMessage = `Anonymous trials are capped at ${ANON_MAX_VIDEOS_PER_RECORDING} videos/screenshots per recording. Split this into smaller runs or sign up to record more in one run.`
-      return {
-        projectId: null,
-        recordId: null,
-        hadFailures: true,
-        uploadedVideoNames: [],
-        uploadedVideos: [],
-        uploadedPassCount: 0,
-        failedVideoNames: filteredCandidates.map(
-          (candidate) => candidate.displayVideoName
-        ),
-        failedVideoMessages: filteredCandidates.map((candidate) => ({
-          videoName: candidate.displayVideoName,
-          message: failureMessage,
-        })),
-        studioNotices: [],
-        elevenLabsKeyMissingVideos: [],
-        notices: [],
-        plan: null,
-      }
-    }
-
     const progressReporter = createUploadProgressReporter(
       filteredCandidates.map((candidate) => candidate.displayVideoName),
       verbose
@@ -3862,7 +3834,6 @@ export async function runDevCommand(
     grep?: string
     /** The single video this preview run records (overview deep link). */
     videoName?: string
-    forceRecord?: boolean
   },
   depsOverride: Partial<DevListenDeps> & {
     machineName?: string
@@ -3974,12 +3945,6 @@ export async function runDevCommand(
 
   const auth = await resolveDevAuth()
 
-  // Whether the user scoped this session with --grep themselves. The
-  // resolution below may auto-narrow options.grep to a single video name;
-  // record-all-on-startup and unknown-video failure logging key off the
-  // user's own grep, not the auto-narrowed one.
-  const userGrep = options.grep
-
   // A preview records ANY number of matched videos: a single match deep-links
   // its overview page, several link the run listing (/preview/:recordId).
   // Skipped when the caller (tests) pre-resolved the video name.
@@ -4053,66 +4018,15 @@ export async function runDevCommand(
     return recordings
   }
 
-  // Startup handshake: bring every managed video up to date (source hash
-  // matches, all editable actions carry editIds) before serving the editor.
-  // Fresh recordings skip the record entirely.
+  // Startup record pass: a preview always records the managed videos; there
+  // is no freshness skip.
   try {
     await runDevStartupSync(
       {
         ...(options.grep !== undefined && { grep: options.grep }),
-        // No user --grep means record everything on startup, even when the
-        // grep was auto-narrowed to a single resolved video above.
-        forceRecord: options.forceRecord === true || userGrep === undefined,
-        autoStamp: AUTO_EDIT_ID_STAMPING,
       },
       {
         readKeptRecordings,
-        stampEditIds: async (videos) => {
-          const ts = loadTypescript(dirname(screenciDir))
-          if (ts === null) {
-            logger.warn(
-              'TypeScript is not available; editIds cannot be stamped.'
-            )
-            return 0
-          }
-          const plan = planEditIdStamps(
-            { version: 1, videos },
-            readEditIdCounters(screenciDir),
-            {
-              ts,
-              readFile: (path) => {
-                try {
-                  return readFileSync(path, 'utf8')
-                } catch {
-                  return null
-                }
-              },
-            }
-          )
-          const formatFile = createProjectFormatter(dirname(screenciDir), {
-            warn: (message) => logger.warn(message),
-          })
-          for (const file of plan.files) {
-            if (file.after !== file.before) {
-              writeFileSync(file.path, await formatFile(file.path, file.after))
-            }
-          }
-          if (plan.stamped.length > 0) {
-            writeEditIdCounters(screenciDir, plan.counters)
-          }
-          return plan.stamped.length
-        },
-        resolveDuplicateEditIds: async (sourcePaths) =>
-          resolveDuplicateEditIdsInSources(sourcePaths, {
-            screenciDir,
-            projectDir: dirname(screenciDir),
-            log: (message) => logger.info(message),
-            warn: (message) => logger.warn(message),
-            formatFile: createProjectFormatter(dirname(screenciDir), {
-              warn: (message) => logger.warn(message),
-            }),
-            onFileWritten: () => {},
-          }),
         recordPreview: async (grepPattern) => {
           await runPreviewRecordPass(
             options.config,
@@ -4126,7 +4040,6 @@ export async function runDevCommand(
             }
           )
         },
-        entriesFromData: entriesFromRecordingData,
         setSyncing: async (videoNames) => {
           await reportDevSyncState(
             config,
@@ -4388,31 +4301,6 @@ async function saveLastRecordId(
     logger.warn(
       `Failed to record run id for info: ${err instanceof Error ? err.message : String(err)}`
     )
-  }
-}
-
-/**
- * Refreshes the stored per-video source hashes in `.screenci/last-record.json`
- * after kept recordings were re-baselined, so the uploaded-state map keeps
- * matching the recordings on disk. Only videos already present in the map are
- * touched. Best-effort: a failure must never fail the caller.
- */
-async function updateLastUploadSourceHashes(
-  screenciDir: string,
-  videoNames: readonly string[]
-): Promise<void> {
-  try {
-    const previous = await readLastUpload(screenciDir)
-    if (previous.recordId === null) return
-    const known = videoNames.filter(
-      (name) => previous.videos[name] !== undefined
-    )
-    if (known.length === 0) return
-    const updated = await collectUploadedSourceHashes(screenciDir, known)
-    if (Object.keys(updated).length === 0) return
-    await saveLastRecordId(screenciDir, previous.recordId, updated)
-  } catch {
-    // Best-effort bookkeeping only.
   }
 }
 
@@ -5030,11 +4918,6 @@ export async function main() {
       'only manage videos whose title matches this pattern (same filter as ' +
         'playwright --grep)'
     )
-    .option(
-      '--force-record',
-      're-record every managed video at startup even when the kept ' +
-        'recordings are up to date'
-    )
     .action(
       async (
         grepPatterns: string[],
@@ -5043,7 +4926,6 @@ export async function main() {
           verbose?: boolean
           token?: string
           grep?: string
-          forceRecord?: boolean
         }
       ) => {
         // Positional patterns act like `playwright test <pattern>`: filter the

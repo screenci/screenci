@@ -348,8 +348,9 @@ Important restriction:
 ## `screenci preview [pattern]`
 
 Records live previews and prints their links: it re-records and uploads the
-live preview of every matched video that is stale (all managed videos when no
-pattern is given), prints the link, and exits. A run with exactly one
+live preview of every matched video (all declared videos when no pattern is
+given), prints the link, and exits. A preview always records fresh footage;
+there is no freshness skip. A run with exactly one
 recording pass prints that video's overview page
 (`<app>/project/<projectId>/video/<videoId>`); several passes (several
 videos, or one video recorded in several languages) print the run listing
@@ -395,20 +396,8 @@ Options:
   configured, the CLI mints a machine token from it automatically.
 - `-g, --grep <pattern>`: only manage videos whose title matches this pattern
   (the same filter as Playwright's `--grep`, and the same as a positional
-  pattern above). The startup check and any
-  startup records are limited to the matching videos.
-- `--force-record`: re-record every managed video at startup even when the
-  kept recordings are up to date.
+  pattern above). The record pass is limited to the matching videos.
 - `-v, --verbose`: verbose output.
-
-Startup check: without a pattern or `--grep`, `screenci preview` records every
-declared video at startup, so new and renamed videos are always picked up.
-With a pattern, a freshness check decides instead: the CLI keeps each
-recording's `data.json` on disk after upload, along with a hash of the test
-source file, and on startup compares that hash with the current source and
-verifies every editable action carries an `editId`. Up-to-date videos skip
-recording entirely; anything stale gets its missing `editId` slugs stamped
-into the source and is re-recorded as a preview (no render).
 
 Setup (with an account): none beyond `SCREENCI_SECRET`. With the secret in
 your project env file, the CLI exchanges it for this machine's personal

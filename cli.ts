@@ -3383,6 +3383,9 @@ type ExportCommandOptions = {
   outputDir: string
   /** False (--no-wait) dispatches the renders and exits without downloading. */
   wait: boolean
+  /** --share: wait for the renders, then share each finished version with a
+   *  permanent public URL and print the URLs instead of downloading files. */
+  share: boolean
 }
 
 /**
@@ -3563,13 +3566,24 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
       logNoWaitExportNotice()
       return
     }
+    const soloTargets = [
+      {
+        recordId: uploaded.recordId,
+        videoNames: exportable,
+      },
+    ]
+    if (options.share) {
+      await pollAndShareExports({
+        targets: soloTargets,
+        languagesCsv: options.languages,
+        fetchInfo,
+        secret,
+        apiUrl,
+      })
+      return
+    }
     await pollAndDownloadExports({
-      targets: [
-        {
-          recordId: uploaded.recordId,
-          videoNames: exportable,
-        },
-      ],
+      targets: soloTargets,
       languagesCsv: options.languages,
       outputDir: options.outputDir,
       fetchInfo,
@@ -3612,6 +3626,16 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
     logNoWaitExportNotice()
     return
   }
+  if (options.share) {
+    await pollAndShareExports({
+      targets,
+      languagesCsv: options.languages,
+      fetchInfo,
+      secret,
+      apiUrl,
+    })
+    return
+  }
   await pollAndDownloadExports({
     targets,
     languagesCsv: options.languages,
@@ -3619,6 +3643,142 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
     fetchInfo,
     secret,
   })
+}
+
+type SharedVersionUrlEntry = {
+  videoName: string
+  language: string
+  versionId: string
+  alreadyShared: boolean
+  urls: Record<string, string>
+}
+
+type ShareVersionsResponse = {
+  shared: SharedVersionUrlEntry[]
+  limitRefusal: { message: string; count: number; limit: number } | null
+}
+
+/**
+ * `--share` export tail: wait for the renders like a normal export, then share
+ * every finished version with a permanent version-pinned public URL and print
+ * the URLs instead of downloading files. Exit code 0 only when every requested
+ * render finished and was shared.
+ */
+async function pollAndShareExports(params: {
+  targets: readonly ExportPollTarget[]
+  languagesCsv: string | undefined
+  fetchInfo: (recordId: string) => Promise<ExportInfoResponse>
+  secret: string
+  apiUrl: string
+}): Promise<void> {
+  const requestedLanguages = params.languagesCsv
+    ?.split(',')
+    .map((language) => language.trim())
+    .filter((language) => language.length > 0)
+
+  logger.info('Waiting for renders to finish...')
+  const results = await pollExportRenders({
+    targets: params.targets,
+    ...(requestedLanguages !== undefined && requestedLanguages.length > 0
+      ? { languages: requestedLanguages }
+      : {}),
+    intervalMs: EXPORT_POLL_INTERVAL_MS,
+    maxAttempts: EXPORT_POLL_MAX_ATTEMPTS,
+    deps: {
+      fetchInfo: params.fetchInfo,
+      sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+      log: (message) => logger.info(message),
+    },
+  })
+
+  const shared: SharedVersionUrlEntry[] = []
+  let limitRefusal: ShareVersionsResponse['limitRefusal'] = null
+  let shareFailed = false
+  for (const target of params.targets) {
+    const res = await fetch(`${params.apiUrl}/cli/share-versions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-ScreenCI-Secret': params.secret,
+      },
+      body: JSON.stringify({
+        recordId: target.recordId,
+        videoNames: [...target.videoNames],
+        ...(requestedLanguages !== undefined && requestedLanguages.length > 0
+          ? { languages: requestedLanguages }
+          : {}),
+      }),
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      logger.error(
+        `Failed to share versions: ${res.status} ${extractBackendError(text)}${hint401(res.status, params.secret)}`
+      )
+      shareFailed = true
+      continue
+    }
+    const body = (await res.json()) as ShareVersionsResponse
+    shared.push(...body.shared)
+    if (body.limitRefusal !== null) limitRefusal = body.limitRefusal
+  }
+
+  logger.info('')
+  for (const result of results) {
+    const label = `${result.videoName} (${result.language})`
+    if (result.status === 'finished') {
+      const entry = shared.find(
+        (item) =>
+          item.videoName === result.videoName &&
+          item.language === result.language
+      )
+      if (entry !== undefined) {
+        const primaryUrl = entry.urls.video ?? entry.urls.screenshot
+        logger.info(`  ${pc.green('✓')} ${label} -> ${primaryUrl}`)
+        if (entry.urls.thumbnail !== undefined) {
+          logger.info(`      thumbnail: ${entry.urls.thumbnail}`)
+        }
+        if (entry.urls.subtitle !== undefined) {
+          logger.info(`      subtitles: ${entry.urls.subtitle}`)
+        }
+      } else {
+        logger.warn(`  ${pc.red('✗')} ${label}: sharing failed`)
+      }
+    } else if (result.status === 'failed') {
+      logger.warn(
+        `  ${pc.red('✗')} ${label}: render failed${result.failureMessage ? ` (${result.failureMessage})` : ''}`
+      )
+    } else {
+      logger.warn(`  ${pc.red('✗')} ${label}: timed out waiting for the render`)
+    }
+  }
+  if (limitRefusal !== null) {
+    logger.warn('')
+    logger.warn(limitRefusal.message)
+  }
+  const finishedCount = results.filter(
+    (result) => result.status === 'finished'
+  ).length
+  const sharedCount = shared.length
+  if (sharedCount > 0) {
+    logger.info('')
+    logger.info(
+      `Shared ${sharedCount} version${sharedCount === 1 ? '' : 's'} with a permanent public URL. These exact renders keep serving until unshared.`
+    )
+  }
+  const allShared =
+    !shareFailed &&
+    limitRefusal === null &&
+    results.every(
+      (result) =>
+        result.status === 'finished' &&
+        shared.some(
+          (item) =>
+            item.videoName === result.videoName &&
+            item.language === result.language
+        )
+    ) &&
+    finishedCount > 0
+  process.exitCode = allShared ? 0 : 1
 }
 
 /**
@@ -4854,6 +5014,10 @@ export async function main() {
       'start the renders and exit immediately without waiting for them or downloading files'
     )
     .option(
+      '--share',
+      'instead of downloading, share each finished version with a permanent public URL and print the URLs'
+    )
+    .option(
       '--force',
       'deprecated no-op: export always re-records every requested video'
     )
@@ -4868,9 +5032,16 @@ export async function main() {
           grep?: string
           output?: string
           wait?: boolean
+          share?: boolean
           force?: boolean
         }
       ) => {
+        if (options.share === true && options.wait === false) {
+          logger.error(
+            '--share needs finished renders, so it cannot be combined with --no-wait.'
+          )
+          process.exit(1)
+        }
         const positionalGrep =
           patterns.length > 0 ? patterns.map(escapeRegExp).join('|') : undefined
         const grep = options.grep ?? positionalGrep
@@ -4895,6 +5066,7 @@ export async function main() {
           grep,
           outputDir: options.output ?? 'exports',
           wait: options.wait !== false,
+          share: options.share === true,
         })
       }
     )

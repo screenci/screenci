@@ -586,6 +586,25 @@ describe('CLI', () => {
       process.exitCode = undefined
     })
 
+    it('refuses --share combined with --no-wait (sharing needs finished renders)', async () => {
+      process.argv = ['node', 'cli.js', 'export', '--share', '--no-wait']
+
+      const { main } = await import('./cli')
+
+      await expect(main()).rejects.toThrow('process.exit called')
+      expect(processExitSpy).toHaveBeenCalledWith(1)
+      const errors = loggerErrorSpy.mock.calls.map((call) =>
+        stripVTControlCharacters(String(call[0]))
+      )
+      expect(
+        errors.some((message) =>
+          message.includes('--share needs finished renders')
+        )
+      ).toBe(true)
+      // Refused before any recording or upload work started.
+      expect(mockSpawn).not.toHaveBeenCalled()
+    })
+
     it('refuses an anonymous export before recording (exports are account-only)', async () => {
       delete process.env.SCREENCI_SECRET
       process.argv = ['node', 'cli.js', 'export']

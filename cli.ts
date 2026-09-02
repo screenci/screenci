@@ -4883,7 +4883,7 @@ export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
     logger.error(
-      'Available commands: test, preview, export, sync, info, make-public, make-private, delete, init'
+      'Available commands: test, preview, export, info, make-public, make-private, delete, init'
     )
     process.exit(1)
   }

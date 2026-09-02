@@ -2983,7 +2983,6 @@ describe('CLI', () => {
           hadFailures: false,
           uploadedVideoNames: expect.any(Array),
           uploadedVideos: expect.any(Array),
-          uploadedVideos: expect.any(Array),
           studioNotices: [],
           elevenLabsKeyMissingVideos: [],
           notices: [],

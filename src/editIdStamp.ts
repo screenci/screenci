@@ -14,27 +14,12 @@ import {
   applyTextEdits,
   collectEditIdOccurrences,
   createContext,
-  findCallNamed,
   renameEditIdAtCall,
-  setOptionValue,
-  statementAtLine,
   type CodemodContext,
   type TextEdit,
   type TsModule,
 } from './codemod.js'
-import type {
-  EditableSnapshot,
-  EditableSnapshotEntry,
-} from './editableSnapshot.js'
-
-/**
- * Kill switch for automatic editId stamping. The editor currently only
- * supports editing narration, renderOptions and recordOptions, none of which
- * need editIds (they are applied by video name). While that is the case,
- * stamping only rewrites user sources and prints noise. Flip to true when
- * action-level editing returns.
- */
-export const AUTO_EDIT_ID_STAMPING = false
+import type { EditableSnapshotEntry } from './editableSnapshot.js'
 
 /** File name of the allocation counters inside `.screenci`. Committed. */
 export const EDIT_IDS_FILE = 'edit-ids.json'
@@ -163,126 +148,6 @@ function blockOptionsIndex(
   return fnIndex === -1 ? null : fnIndex + 1
 }
 
-export type EditIdStampPlan = {
-  /** Files with stamps inserted: original and edited text (not yet written). */
-  files: Array<{ path: string; before: string; after: string }>
-  /** One line per stamped action, for logging. */
-  stamped: Array<{ videoName: string; key: string; editId: string }>
-  /** Mutated counters to persist when the stamps are written. */
-  counters: EditIdCounters
-}
-
-export type EditIdStampDeps = {
-  ts: TsModule
-  readFile: (path: string) => string | null
-}
-
-/**
- * Plan editId stamps for every snapshot entry that has a source anchor but no
- * editId. Loop call sites are skipped: entries sharing one identity and one
- * source location ran more than once, so a single slug cannot distinguish
- * their executions and the action stays web-runtime-only until refactored.
- * Call sites shared across videos get one slug (dedup by file:line).
- */
-export function planEditIdStamps(
-  snapshot: EditableSnapshot,
-  counters: EditIdCounters,
-  deps: EditIdStampDeps
-): EditIdStampPlan {
-  const texts = new Map<string, string>()
-  const originals = new Map<string, string>()
-  const slugBySite = new Map<string, string>()
-  const stamped: EditIdStampPlan['stamped'] = []
-
-  const getText = (file: string): string | null => {
-    if (!texts.has(file)) {
-      const content = deps.readFile(file)
-      if (content === null) return null
-      texts.set(file, content)
-      originals.set(file, content)
-    }
-    return texts.get(file)!
-  }
-
-  for (const [videoName, entries] of Object.entries(snapshot.videos)) {
-    // Loop detection: identical identity at the same call site means the
-    // statement executed repeatedly in one recording.
-    const siteCounts = new Map<string, number>()
-    for (const entry of entries) {
-      if (entry.source === undefined) continue
-      const { kind, subKind } = parseKindSubKind(entry.key)
-      const site = `${kind}|${subKind}|${entry.source.file}:${entry.source.line}`
-      siteCounts.set(site, (siteCounts.get(site) ?? 0) + 1)
-    }
-
-    // Stamp bottom-up so an insert never shifts a lower entry's line anchor.
-    const candidates = entries
-      .filter(
-        (entry) => entry.editId === undefined && entry.source !== undefined
-      )
-      .sort((a, b) =>
-        a.source!.file === b.source!.file
-          ? b.source!.line - a.source!.line
-          : a.source!.file.localeCompare(b.source!.file)
-      )
-    for (const entry of candidates) {
-      const source = entry.source!
-      const target = stampTarget(entry)
-      if (target === null) continue
-      const { kind, subKind } = parseKindSubKind(entry.key)
-      if (
-        (siteCounts.get(`${kind}|${subKind}|${source.file}:${source.line}`) ??
-          0) > 1
-      ) {
-        continue // loop: no code identity can distinguish the executions
-      }
-      const siteKey = `${source.file}:${source.line}`
-      const alreadyStamped = slugBySite.get(siteKey)
-      if (alreadyStamped !== undefined) {
-        // A helper shared between videos: one call site, one slug.
-        stamped.push({ videoName, key: entry.key, editId: alreadyStamped })
-        continue
-      }
-      const text = getText(source.file)
-      if (text === null) continue
-      const ctx: CodemodContext = createContext(deps.ts, source.file, text)
-      const statement = statementAtLine(ctx, source.line)
-      if (statement === null) continue
-      let call = null
-      let callName = ''
-      for (const name of target.callNames) {
-        call = findCallNamed(ctx, statement, name)
-        if (call !== null) {
-          callName = name
-          break
-        }
-      }
-      if (call === null) continue
-      // Block wrappers signal a shape-dependent options index with -1: it
-      // sits right after the callback argument.
-      const declaredIndex = target.optionsIndex(callName)
-      const optionsIndex =
-        declaredIndex === -1 ? blockOptionsIndex(deps.ts, call) : declaredIndex
-      if (optionsIndex === null) continue
-      const slug = allocateEditId(counters, prefixFor(callName))
-      const edit = setOptionValue(ctx, call, optionsIndex, ['editId'], slug)
-      if (edit === null) {
-        // Allocation is not rolled back: the counter gap is harmless and
-        // reuse is forbidden by design.
-        continue
-      }
-      texts.set(source.file, applyTextEdits(text, [edit]))
-      slugBySite.set(siteKey, slug)
-      stamped.push({ videoName, key: entry.key, editId: slug })
-    }
-  }
-
-  const files = [...texts.entries()]
-    .filter(([path, after]) => originals.get(path) !== after)
-    .map(([path, after]) => ({ path, before: originals.get(path)!, after }))
-  return { files, stamped, counters }
-}
-
 // ─── Duplicate editId resolution ──────────────────────────────────────────────
 
 export type DuplicateEditIdFile = { path: string; text: string }
@@ -329,7 +194,7 @@ export function mayHaveDuplicateEditIds(
  * Resolve editId collisions across the given source files: a slug used at two
  * or more distinct call sites silently merges those actions into one runtime
  * identity (the second becomes a phantom `slug#1` loop-repeat) and makes the
- * slug ambiguous for codegen. Static analysis finds every occurrence, keeps the
+ * slug ambiguous. Static analysis finds every occurrence, keeps the
  * first (by file path, then position), and re-stamps the rest with a fresh,
  * never-reused slug allocated from `counters`.
  *

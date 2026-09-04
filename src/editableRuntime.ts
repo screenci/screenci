@@ -1,8 +1,8 @@
 /**
  * Effective values of editable actions at runtime. Code is the single source
- * of truth: the web editor's edits are codegen'd into the .screenci.ts
- * sources by editor edits, so a recording always runs
- * with the code-declared values; nothing is overridden at record time.
+ * of truth: the web editor stores its edits server-side and applies them when
+ * rendering, so a recording always runs with the code-declared values;
+ * nothing is overridden at record time.
  */
 import type { EditableMeta } from './editableDescriptor.js'
 

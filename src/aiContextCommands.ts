@@ -1,30 +1,42 @@
 import type { Command } from 'commander'
 import pc from 'picocolors'
 import {
-  APP_PASSWORD_ENV,
-  APP_USERNAME_ENV,
   fetchAiContext,
-  fetchAppLogin,
-  persistAppLogin,
-  type AppLogin,
   type CliAiContext,
   type FetchAiContextResult,
-  type FetchAppLoginResult,
-  type PersistAppLoginOutcome,
 } from './aiContext.js'
+import {
+  describeAppSessionStatus,
+  readAppSessionStatus,
+  resolveProfileName,
+  type AppSessionStatus,
+} from './appSession.js'
+import {
+  defaultDownloadSampleDeps,
+  brandingAssetPaths as brandingAssetPathsOf,
+  downloadBrandingAssets,
+  downloadBrandingVoiceSample,
+  type CliBrandingAsset,
+  fetchBranding,
+  formatBrandingLines,
+  type CliBranding,
+  type DownloadBrandingSampleResult,
+  type FetchBrandingResult,
+} from './branding.js'
 
 /**
- * `screenci context` and `screenci pull-login`: the two commands a coding
- * agent runs after `start` to re-read the organisation's AI context and to
- * refresh the person's site login in the island env file. Both read the
- * island's credentials (SCREENCI_SECRET, SCREENCI_EDIT_TOKEN) the way every
- * other account command does; the loader is injected so the commands are
- * unit-testable.
+ * `screenci context`: what a coding agent runs after `start` to re-read the
+ * organisation's AI context and branding. It reads the island's credentials
+ * (SCREENCI_SECRET) the way every other account command
+ * does; the loader is injected so the command is unit-testable.
+ *
+ * It also reports whether a signed-in session for the product is saved on this
+ * machine. That is read from disk, never from the service: `screenci login`
+ * captures it locally and nothing uploads it.
  */
 
 export type IslandCredentials = {
   secret: string
-  editToken: string | null
   apiUrl: string
   appUrl: string
   envFilePath: string
@@ -43,20 +55,44 @@ export interface AiContextCommandDeps {
     params: {
       apiUrl: string
       secret: string
-      editToken?: string | undefined
       projectName?: string | undefined
     },
     fetchFn: typeof fetch
   ) => Promise<FetchAiContextResult>
-  fetchAppLogin: (
-    params: { apiUrl: string; secret: string; editToken: string },
+  now: () => Date
+  readAppSessionStatus: (params: {
+    configDir: string
+    profile: string
+    now: Date
+  }) => Promise<AppSessionStatus>
+  fetchBranding: (
+    params: {
+      apiUrl: string
+      secret: string
+      projectName?: string | undefined
+    },
     fetchFn: typeof fetch
-  ) => Promise<FetchAppLoginResult>
-  persistAppLogin: (
-    envFilePath: string,
-    login: AppLogin | null,
-    options: { overwrite: boolean }
-  ) => Promise<PersistAppLoginOutcome>
+  ) => Promise<FetchBrandingResult>
+  downloadBrandingVoiceSample: (
+    params: {
+      apiUrl: string
+      secret: string
+      islandDir: string
+      projectName?: string | undefined
+    },
+    fetchFn: typeof fetch
+  ) => Promise<DownloadBrandingSampleResult>
+  /** Saves the shared branding assets into the island (see branding.ts). */
+  downloadBrandingAssets: (
+    params: {
+      apiUrl: string
+      secret: string
+      islandDir: string
+      projectName?: string | undefined
+    },
+    assets: readonly CliBrandingAsset[],
+    fetchFn: typeof fetch
+  ) => Promise<Record<string, DownloadBrandingSampleResult>>
   logger: { info(message: string): void; warn(message: string): void }
 }
 
@@ -71,14 +107,20 @@ export type ContextCommandResult = {
   context: CliAiContext
   projectName: string | null
   sourceMode: 'service' | 'local' | null
-  login: { saved: boolean }
+  /** The signed-in session on this machine, read from `.screenci/auth/`. */
+  session: AppSessionStatus
+  /** Null when the branding could not be fetched (a warning was logged). */
+  branding: CliBranding | null
+  /** Workspace-relative path of the downloaded voice sample, when any. */
+  brandingSamplePath: string | null
+  /** Workspace-relative paths of the shared branding assets saved locally. */
+  brandingAssetPaths: Record<string, string>
 }
 
 /** Human summary of the context, followed by the JSON line agents parse. */
 export function formatContextSummary(
   result: ContextCommandResult,
-  envFilePath: string,
-  appUrl: string
+  now: Date
 ): string {
   const { context } = result
   const lines: string[] = []
@@ -96,15 +138,28 @@ export function formatContextSummary(
     `Agent may start the app from the repository: ${context.runLocallyIfNeeded ? 'yes' : 'no'}`
   )
   lines.push(
-    `Site login: ${
-      result.login.saved
-        ? `saved; run \`screenci pull-login\` to write it into ${envFilePath} as ${APP_USERNAME_ENV} / ${APP_PASSWORD_ENV}`
-        : `not saved; the person can add theirs at ${appUrl.replace(/\/+$/, '')}/ai-context#login`
+    `Site needs a sign-in: ${context.siteRequiresLogin ? 'yes' : 'not according to the team'}`
+  )
+  lines.push(
+    `${describeAppSessionStatus(result.session, now)}${
+      result.session.saved && !result.session.expired
+        ? ' Recordings start signed in, so do not script a sign-in.'
+        : ' Run `npx screenci login` and have the person sign in in the browser it opens.'
     }`
   )
   if (context.guide !== null) {
     lines.push('', 'Notes from the team:', '', context.guide.trim())
   }
+  lines.push('', 'Branding (apply it in the video code; see the start brief):')
+  lines.push(
+    ...(result.branding !== null
+      ? formatBrandingLines(
+          result.branding,
+          result.brandingSamplePath,
+          result.brandingAssetPaths
+        )
+      : [pc.dim('could not be fetched')])
+  )
   lines.push('')
   return lines.join('\n')
 }
@@ -118,69 +173,102 @@ export async function runContextCommand(
     {
       apiUrl: creds.apiUrl,
       secret: creds.secret,
-      ...(creds.editToken !== null ? { editToken: creds.editToken } : {}),
       projectName: creds.projectName,
     },
     deps.fetchFn
   )
   if (!fetched.ok) throw new AiContextCommandError(fetched.message)
+  // The branding is best-effort: an older server has none, and a transient
+  // failure must not hide the context itself.
+  const brandingFetch = await deps.fetchBranding(
+    {
+      apiUrl: creds.apiUrl,
+      secret: creds.secret,
+      projectName: creds.projectName,
+    },
+    deps.fetchFn
+  )
+  if (!brandingFetch.ok) deps.logger.warn(brandingFetch.message)
+  const branding = brandingFetch.ok ? brandingFetch.branding : null
+  let brandingSamplePath: string | null = null
+  if (branding?.voice?.kind === 'sample') {
+    const download = await deps.downloadBrandingVoiceSample(
+      {
+        apiUrl: creds.apiUrl,
+        secret: creds.secret,
+        islandDir: creds.islandDir,
+        projectName: creds.projectName,
+      },
+      deps.fetchFn
+    )
+    if (download.status === 'error') {
+      deps.logger.warn(
+        `Could not download the branding voice sample: ${download.message}`
+      )
+    } else if (download.status !== 'none') {
+      brandingSamplePath = download.relativePath
+    }
+  }
+  // Local copies of the shared assets, so the agent can inspect them and a
+  // local preview can show them. The reference in code stays the name.
+  let brandingAssetPaths: Record<string, string> = {}
+  if (branding !== null && branding.assets.length > 0) {
+    const results = await deps.downloadBrandingAssets(
+      {
+        apiUrl: creds.apiUrl,
+        secret: creds.secret,
+        islandDir: creds.islandDir,
+        projectName: creds.projectName,
+      },
+      branding.assets,
+      deps.fetchFn
+    )
+    brandingAssetPaths = brandingAssetPathsOf(results)
+    for (const [name, download] of Object.entries(results)) {
+      if (download.status === 'error') {
+        deps.logger.warn(
+          `Could not download the branding asset "${name}": ${download.message}`
+        )
+      }
+    }
+  }
+  const now = deps.now()
   const result: ContextCommandResult = {
     context: fetched.context,
     projectName: fetched.projectName,
     sourceMode: fetched.sourceMode,
-    login: fetched.login,
+    session: await deps.readAppSessionStatus({
+      configDir: creds.islandDir,
+      profile: resolveProfileName(undefined),
+      now,
+    }),
+    branding,
+    brandingSamplePath,
+    brandingAssetPaths,
   }
   if (!options.json) {
-    deps.logger.info(
-      formatContextSummary(result, creds.envFilePath, creds.appUrl)
-    )
+    deps.logger.info(formatContextSummary(result, now))
   }
   deps.logger.info(
     JSON.stringify({
       ...result.context,
       projectName: result.projectName,
       sourceMode: result.sourceMode,
-      login: result.login,
+      session: {
+        saved: result.session.saved,
+        expired: result.session.saved && result.session.expired,
+      },
       envFile: creds.envFilePath,
+      branding: result.branding,
+      ...(result.brandingSamplePath !== null
+        ? { brandingSamplePath: result.brandingSamplePath }
+        : {}),
+      ...(Object.keys(result.brandingAssetPaths).length > 0
+        ? { brandingAssetPaths: result.brandingAssetPaths }
+        : {}),
     })
   )
   return result
-}
-
-export type PullLoginResult = {
-  saved: boolean
-  outcome: PersistAppLoginOutcome
-  envFilePath: string
-}
-
-export async function runPullLoginCommand(
-  options: { config?: string | undefined },
-  deps: AiContextCommandDeps
-): Promise<PullLoginResult> {
-  const creds = await deps.loadCredentials(options.config)
-  if (creds.editToken === null) {
-    throw new AiContextCommandError(
-      'No SCREENCI_EDIT_TOKEN in the env file: the site login is personal and needs the editor token that `screenci start` writes. Rerun the setup prompt, or add a personal editor token from the Secrets page.'
-    )
-  }
-  const fetched = await deps.fetchAppLogin(
-    { apiUrl: creds.apiUrl, secret: creds.secret, editToken: creds.editToken },
-    deps.fetchFn
-  )
-  if (!fetched.ok) throw new AiContextCommandError(fetched.message)
-  const outcome = await deps.persistAppLogin(creds.envFilePath, fetched.login, {
-    overwrite: true,
-  })
-  const saved = fetched.login !== null
-  deps.logger.info(
-    saved
-      ? `${pc.green('✔')} Wrote the site login into ${creds.envFilePath} (${APP_USERNAME_ENV}, ${APP_PASSWORD_ENV}).`
-      : `No site login is saved for you. Add it at ${creds.appUrl.replace(/\/+$/, '')}/ai-context#login and rerun, or paste it into ${creds.envFilePath} (${APP_USERNAME_ENV}, ${APP_PASSWORD_ENV}).`
-  )
-  deps.logger.info(
-    JSON.stringify({ login: { saved }, outcome, envFile: creds.envFilePath })
-  )
-  return { saved, outcome, envFilePath: creds.envFilePath }
 }
 
 export function registerAiContextCommands(
@@ -190,7 +278,7 @@ export function registerAiContextCommands(
   program
     .command('context')
     .description(
-      "Print the organisation's AI context for this project: repository, site, whether the agent may start the app, notes"
+      "Print the organisation's AI context and branding for this project: repository, site, whether the agent may start the app, notes, and the look and voice new videos start from"
     )
     .option('-c, --config <path>', 'path to screenci.config.ts')
     .option('--json', 'print only the JSON line')
@@ -200,19 +288,6 @@ export function registerAiContextCommands(
           config: options['config'] as string | undefined,
           json: options['json'] === true,
         },
-        deps
-      )
-    })
-
-  program
-    .command('pull-login')
-    .description(
-      `Write your saved site login into the env file as ${APP_USERNAME_ENV} / ${APP_PASSWORD_ENV}`
-    )
-    .option('-c, --config <path>', 'path to screenci.config.ts')
-    .action(async (options: Record<string, unknown>) => {
-      await runPullLoginCommand(
-        { config: options['config'] as string | undefined },
         deps
       )
     })
@@ -226,9 +301,19 @@ export function createDefaultAiContextCommandDeps(
     fetchFn: fetch,
     loadCredentials,
     fetchAiContext,
-    fetchAppLogin,
-    persistAppLogin: (envFilePath, login, options) =>
-      persistAppLogin(envFilePath, login, options),
+    now: () => new Date(),
+    readAppSessionStatus: (params) => readAppSessionStatus(params),
+    fetchBranding,
+    downloadBrandingVoiceSample: (params, fetchFn) =>
+      downloadBrandingVoiceSample(params, {
+        ...defaultDownloadSampleDeps,
+        fetchFn,
+      }),
+    downloadBrandingAssets: (params, assets, fetchFn) =>
+      downloadBrandingAssets(params, assets, {
+        ...defaultDownloadSampleDeps,
+        fetchFn,
+      }),
     logger,
   }
 }

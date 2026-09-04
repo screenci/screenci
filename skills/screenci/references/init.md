@@ -18,7 +18,9 @@ npm init screenci "My Project" -- --verbose
 screenci.config.ts
 recordings/
   example.screenci.ts                  # base video (logo intro overlay)
+  example-screenshot.screenci.ts       # screenshot with an overlay ring
   assets/logo.png
+  assets/Ring.tsx                      # screenshot overlay source (React on)
 package.json
 tsconfig.json
 README.md
@@ -26,7 +28,7 @@ README.md
 .github/workflows/screenci.yaml (optional)
 ```
 
-Under `--no-react`, no `.tsx` files are scaffolded. The generated `.gitignore` ignores only binary media under `recordings/assets/` (image, video, and audio files); HTML, TSX, and SVG overlay sources there stay committed.
+Under `--no-react`, no `.tsx` files are scaffolded: the screenshot example still uses `example-screenshot.screenci.ts`, but references a plain HTML/CSS overlay instead of `assets/Ring.tsx`. The generated `.gitignore` ignores only binary media under `recordings/assets/` (image, video, and audio files); HTML, TSX, and SVG overlay sources there stay committed.
 
 ## Requirements
 

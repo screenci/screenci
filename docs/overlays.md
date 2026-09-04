@@ -50,7 +50,7 @@ import { video } from 'screenci'
 video.overlays(['intro', 'logo'])
 ```
 
-You can also mark a single overlay as editor-owned inside a map with `{ editor: '<name>' }`. The overlay is an explicit part of the video (unlike a whole-array declaration), but its uploaded file lives in the ScreenCI backend, not in a local file. The `editor` string names the backend asset (conventionally the same as the key). Uploading a file in the editor codegens this form for you.
+You can also mark a single overlay as editor-owned inside a map with `{ editor: '<name>' }`. The overlay is an explicit part of the video (unlike a whole-array declaration), but its uploaded file lives in the ScreenCI backend, not in a local file. The `editor` string names the backend asset (conventionally the same as the key). Upload the file in the editor, then reference it from the script with this form.
 
 ```ts
 video.overlays({
@@ -59,6 +59,27 @@ video.overlays({
 })
 ```
 
+**3. A shared branding asset.** Pass `{ branding: '<name>' }` to use an image or
+video from the [Branding](./branding.md) page. The name is a live reference: the
+export resolves it to whatever file the Branding page holds then, so replacing
+the logo there updates every video that uses it on its next export. Nothing is
+uploaded from your machine.
+
+```ts
+video.overlays({
+  logo: { branding: 'logo', x: 1560, y: 960, width: 288 },
+  intro: { branding: 'intro-clip', fill: 'screen' },
+})
+```
+
+A branding **image** needs a length (`duration`, `.for()`, `.until()`, or a live
+`start()`/`end()` window); a branding **video** plays its own length and takes
+the video options (`volume`, `speed`, `time`, `start`, `end`). `over` is not
+available: a stored file has no live element to size against. A name that is not
+on the Branding page fails the record before the upload, and an export whose
+asset was deleted fails with the same message rather than quietly dropping the
+overlay.
+
 ## Define overlays
 
 `video.overlays(...)` takes a map. Each value is one of:
@@ -66,7 +87,8 @@ video.overlays({
 - a **file path** string (`.tsx`, `.solid.tsx`, `.vue`, `.svelte`, `.html`, `.svg`, `.png`, `.mp4`),
 - a **React element** (`badge: <Badge label="New" />`, shorthand for `{ element: ... }`),
 - a **config object** (`{ path, ...placement }`, or one of the inline sources `element`/`jsx`/`solidJsx`/`html`),
-- `{ editor: '<name>' }` for a **backend-hosted** (editor-uploaded) overlay, or
+- `{ editor: '<name>' }` for a **backend-hosted** (editor-uploaded) overlay,
+- `{ branding: '<name>' }` for a **shared branding asset** (resolved at export), or
 - a **factory** `(props) => config` (see [Programmatic overlays](#programmatic-overlays-props)), or
 
 A config draws its content from exactly one source. Component overlays (`.tsx`/`.solid.tsx`/`.vue`/`.svelte` files, `jsx`/`solidJsx` source) accept serializable `props`; only `.mp4`/image files accept the video/crop fields.
@@ -98,7 +120,9 @@ video.overlays({
 
 `video.overlays({...})` returns a builder you call with the usual
 `(title, body)` arguments. Each key becomes a callable overlay controller,
-delivered to the body through the injected `overlays` fixture.
+delivered to the body through the injected `overlays` fixture. The same pattern
+works for screenshots:
+`screenshot.overlays({...})('Title', async ({ page, crop, overlays }) => {...})`.
 
 You can also declare overlay names alone with a bare array and upload the files
 plus display options on the Editor page instead of keeping them in the
@@ -589,6 +613,7 @@ video.overlays({
 
 - The overlay keeps its placement: a `pinToScreen` overlay stays fixed in screen space, a burned overlay still moves and scales with the camera during zoom. `overMouse` only changes its stacking order relative to the cursor.
 - Overlapping `overMouse` overlays each draw above the cursor.
+- It has no effect on screenshots, whose cursor is hidden by default (see `renderOptions.screenshot.mouse.show`).
 
 ### Positioning over a live element
 
@@ -653,7 +678,9 @@ same element box rasterize only once.
 
 Add [`animate: true`](#animated-overlays) and the ring plays its CSS animation
 back in the video while the page keeps being driven underneath. Here is that same
-margin ring, pulsing around a live element:
+margin ring, pulsing around a live element (the
+[Screenshots guide](/docs/guides/screenshots#highlight-a-locator) shows the
+still version):
 
 <!-- screenci-doc-video:docs/guides/overlays -->
 
@@ -679,9 +706,9 @@ box.
 
 ### Position overlays in the web app
 
-Overlay placement is also editable visually in the editor (with a connected
-`screenci preview` machine, since placement edits are written back into your
-script):
+Overlay placement is also editable visually in the editor. Placement edits are
+stored in the editor and applied when the video renders, so your script stays
+as you wrote it:
 
 - **Drag in the live preview.** Drag an overlay on the video to move it, or
   drag a corner to resize. For an element-locked overlay, dragging adjusts its

@@ -1,8 +1,8 @@
 /**
  * Editable-action entries collected from the per-recording `data.json` files
- * (stable key, editId, effective defaults, call-site source). Editor codegen
- * uses them to locate call sites by editId when writing an
- * edit into the .screenci.ts sources; code is the single source of truth.
+ * (stable key, editId, effective defaults, call-site source). Duplicate-editId
+ * resolution uses them to locate call sites by editId; code is the single
+ * source of truth.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
 import { join } from 'path'
@@ -225,7 +225,7 @@ export type EditableSnapshotEntry = {
   key: string
   /** Stable code identity slug (e.g. `fill1`) when the action is stamped. */
   editId?: string
-  /** The edit schema (e.g. `delay`, `cursorMove`); lets codegen tell a
+  /** The edit schema (e.g. `delay`, `cursorMove`); lets a rewrite tell a
    *  recorded waitForTimeout apart from other unstamped entries. */
   schemaKind?: string
   locked: boolean

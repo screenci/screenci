@@ -195,15 +195,3 @@ export async function persistScreenCISecret(
 ): Promise<void> {
   await persistEnvVar(envFilePath, 'SCREENCI_SECRET', secret)
 }
-
-/**
- * Writes (or replaces) the `SCREENCI_EDIT_TOKEN=` line in the given env file.
- * Used by the claimed-trial self-upgrade so a running anonymous `screenci
- * edit` keeps working with the real personal editor token after sign-up.
- */
-export async function persistScreenCIEditToken(
-  envFilePath: string,
-  editToken: string
-): Promise<void> {
-  await persistEnvVar(envFilePath, 'SCREENCI_EDIT_TOKEN', editToken)
-}

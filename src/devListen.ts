@@ -6,9 +6,6 @@
  * helpers are unit-testable.
  */
 
-export const DEV_TOKEN_HEADER = 'X-ScreenCI-Dev-Token'
-export const SCREENCI_EDIT_TOKEN_ENV = 'SCREENCI_EDIT_TOKEN'
-
 export type DevListenLogger = {
   info: (message: string) => void
   warn: (message: string) => void
@@ -30,7 +27,6 @@ export type DevListenConfig = {
    * by the backend proxy). See src/anonSession.ts CliCredential.
    */
   credential: { header: string; value: string }
-  devToken: string
   projectName: string
   machineName: string
 }
@@ -48,7 +44,6 @@ async function postDev<T>(
     method: 'POST',
     headers: {
       [config.credential.header]: config.credential.value,
-      [DEV_TOKEN_HEADER]: config.devToken,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ projectName: config.projectName, ...body }),
@@ -57,7 +52,7 @@ async function postDev<T>(
   if (res.status === 401) {
     const text = await res.text().catch(() => '')
     throw new DevAuthError(
-      `The backend rejected this session (401). Your editor token may have been revoked. ${text}`.trim()
+      `The backend rejected this session (401). Check your SCREENCI_SECRET. ${text}`.trim()
     )
   }
   if (!res.ok) {

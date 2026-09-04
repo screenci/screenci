@@ -16,7 +16,8 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | --------------------------------- | ------------------------------------------------------------------------------ |
 | `screenci start <code>`           | Set up a workspace from a setup code created in the web app                    |
 | `screenci context`                | Print the organisation's AI context for this project                           |
-| `screenci pull-login`             | Write your saved site login into the env file                                  |
+| `screenci login [url]`            | Sign in to your own app once and reuse that session in every recording         |
+| `screenci logout`                 | Forget the signed-in session saved on this machine                             |
 | `screenci merge-complete`         | Report that sources pulled by a "Move to repository" code were committed       |
 | `screenci init [name]`            | Scaffold a ScreenCI project                                                    |
 | `screenci test [playwrightArgs]`  | Run `.screenci.ts` files locally without final recording                       |
@@ -44,7 +45,7 @@ npx screenci@latest start SC-7K3Q-M9XA
 It runs without a config file (there is no island yet) and does the following:
 
 1. Exchanges the code for a project-scoped `SCREENCI_SECRET` and a personal
-   `SCREENCI_EDIT_TOKEN`, and writes both into the workspace's env file. The
+   and writes it into the workspace's env file. The
    secret only addresses that project. A code belongs to the first machine
    that exchanges it (rerunning there resumes it until a run lands; other
    machines are refused) and expires 24 hours after it was created.
@@ -71,15 +72,17 @@ It runs without a config file (there is no island yet) and does the following:
    - **Merge code:** pulls the sources into `screenci/` inside the repository,
      removes `projectId` from the config, and writes
      `.screenci/pending-merge.json` for `merge-complete`.
-4. Writes the person's saved site login into the env file as `APP_USERNAME`
-   and `APP_PASSWORD` (empty placeholders when none is saved; hand-typed
-   values are kept).
+4. Looks for a signed-in session on this machine
+   (`.screenci/auth/default.json`, saved by [`login`](#screenci-login)) and
+   reports it in the brief. Nothing about your own product's credentials comes
+   from, or goes to, ScreenCI.
 5. Probes the site (the prompt's app URL, else the context's site URL). When
    nothing answers and the agent may not start the app, the brief says
    **STOP** and the command exits with code 2; see
    [Running the app locally](/docs/guides/ai-context#running-the-app-locally).
-6. Prints a brief for the agent (the task, the repository, the site, the login
-   note, the team's notes, which script to edit, the commands to run) followed
+6. Prints a brief for the agent (the task, the repository, the site, how to
+   sign in, the team's notes, which script to edit, the commands to run)
+   followed
    by one machine-readable JSON line (`{"status":"started", ...}`, or
    `"stopped"` with a `stop` object).
 
@@ -105,24 +108,78 @@ result.
 
 Prints the organisation's [AI context](/docs/guides/ai-context) as resolved
 for the workspace's project (repository URL, site URL, whether the agent may
-start the app, the team's notes), whether the current person saved a site
-login, and one JSON line. Runs inside a workspace; uses `SCREENCI_SECRET` and,
-for the login state, `SCREENCI_EDIT_TOKEN` from the env file.
+start the app, whether the site needs a sign-in, the team's notes), whether a
+signed-in session is saved on this machine, the
+[branding](/docs/guides/branding) new videos start from, and one
+JSON line (with a `branding` key). When the branding voice is cloned from a
+sample, the sample is saved as `branding/<file>` in the workspace and the JSON
+line names it as `brandingSamplePath`. The
+[shared branding assets](/docs/guides/branding#shared-assets) are listed with
+their kind and guide, saved as `branding/<name>`, and named in the JSON line as
+`brandingAssetPaths`. Runs inside a workspace; uses `SCREENCI_SECRET`
+from the env file. The session line is read from disk,
+not from the service.
 
 ```bash
 npx screenci context
 npx screenci context --json   # the JSON line only
 ```
 
-## `screenci pull-login`
+## `screenci login`
 
-Writes the personal site login of the person behind `SCREENCI_EDIT_TOKEN`
-into the workspace env file as `APP_USERNAME` and `APP_PASSWORD`, replacing
-existing values. Prints only whether a login was saved, never the values. Run
-it after the person saved their login on the AI context page.
+Captures the signed-in session of **your own app**, so recordings start signed
+in and your video scripts contain no sign-in steps. It opens a real browser you
+sign in to yourself, which is why two-factor, single sign-on, passkeys, and
+magic links all work. See [Signing In](/docs/guides/signing-in) for the whole
+picture.
+
+Run it from the `screenci/` workspace. It needs no ScreenCI account and no
+secret: an address is enough.
 
 ```bash
-npx screenci pull-login
+npx screenci login https://app.example.com   # opens a browser, returns at once
+npx screenci login                           # uses use.baseURL from the config
+npx screenci login --wait                    # blocks until you finish signing in
+npx screenci login --done                    # finish it now, from the terminal
+npx screenci login --status                  # what is saved, and until when
+npx screenci login --cancel                  # close it, save nothing
+```
+
+The command returns immediately so whoever started it can tell you to sign in.
+Finish by clicking **I'm signed in** on the small ScreenCI card floating over
+the page (drag it if it is in the way); closing the window finishes it too.
+
+An agent then runs `--wait`, which blocks until you do, so your click actually
+reaches it. Without that the agent has ended its turn and the click tells it
+nothing. `--wait` gives up after eight minutes and says the sign-in is still
+going, so it fits inside an agent's command timeout and can simply be run
+again. `--done` is the other direction: it finishes the sign-in right now, for
+when you say you are done rather than clicking.
+
+Options:
+
+- `--profile <name>` names the session, for a video that needs a second role.
+  Pick it for a run with `SCREENCI_AUTH_PROFILE=<name>`.
+- `--timeout <minutes>` closes the browser by itself after this long
+  (default 30).
+- `-c, --config <path>` points at another `screenci.config.ts`.
+
+The session is written to `.screenci/auth/<profile>.json`, owner-readable only
+and gitignored, and `screenci.config.ts` picks it up automatically. It never
+leaves the machine: ScreenCI stores no credential and no session for your app.
+Nothing prints its contents, `--status` included.
+
+On a machine with no display (a server, a container, CI) the command refuses
+and points at [CI Setup](/docs/ci-setup), which is where an unattended session
+comes from.
+
+## `screenci logout`
+
+Forgets the saved session on this machine.
+
+```bash
+npx screenci logout
+npx screenci logout --profile admin
 ```
 
 ## `screenci merge-complete`
@@ -388,7 +445,8 @@ yarn screenci export --languages fi,en
 
 Positional arguments are title patterns (multiple are OR-combined, like
 `playwright test <pattern>`); with no patterns, every video is exported in
-every language. Downloads are named `<title>.<lang>.mp4`. A service-managed
+every language. Downloads are named `<title>.<lang>.mp4` (screenshots use
+`.png`). A service-managed
 project uploads its island sources first (see
 [Source sync](#source-sync)).
 The command polls render status every 5 seconds for up to 30 minutes
@@ -558,32 +616,19 @@ Open the live preview for "Search for Alfa Forni Moderno 2" at:
 Options:
 
 - `-c, --config <path>`: path to the ScreenCI config file.
-- `--token <token>`: personal editor token. Defaults to `SCREENCI_EDIT_TOKEN` from
-  your project env file; when neither is set and a `SCREENCI_SECRET` is
-  configured, the CLI mints a machine token from it automatically.
 - `-g, --grep <pattern>`: only manage videos whose title matches this pattern
   (the same filter as Playwright's `--grep`, and the same as a positional
   pattern above). The record pass is limited to the matching videos.
 - `-v, --verbose`: verbose output.
 
-Setup (with an account): none beyond `SCREENCI_SECRET`. With the secret in
-your project env file, the CLI exchanges it for this machine's personal
-editor token automatically on first use and saves it as
-`SCREENCI_EDIT_TOKEN` (exchanged tokens are named after the machine and stay
-listed and revocable on the Secrets page, up to five per user; you can still
-create one by hand there and set it yourself).
+Setup (with an account): none beyond `SCREENCI_SECRET`. That secret is the
+only credential ScreenCI needs; there is nothing else to paste.
 
-Without an account, no setup is needed: `screenci preview` runs under a local,
-anonymous trial session (see
-[Anonymous Trial](/docs/guides/anonymous-trial)), and the anon session token
-doubles as the editor token. Signing up claims the trial: the next
-`screenci` command picks up your new `SCREENCI_SECRET` and a claim-minted
-`SCREENCI_EDIT_TOKEN` (written into `screenci/.env`).
-
-Editor tokens are separate from `SCREENCI_SECRET`: the secret authenticates your
-project to the service, the editor token additionally proves which user and
-machine recorded. Revoking the token on the Secrets page immediately
-invalidates it.
+Without an account, no setup is needed either: `screenci preview` runs under a
+local, anonymous trial session (see
+[Anonymous Trial](/docs/guides/anonymous-trial)). Signing up claims the trial,
+and the next `screenci` command picks up your new `SCREENCI_SECRET` (written
+into `screenci/.env`).
 
 ## `screenci info`
 
@@ -824,7 +869,7 @@ The CLI currently covers:
 
 - workspace setup from a web-app setup code with `start`
 - reading the organisation's AI context with `context`
-- refreshing the personal site login with `pull-login`
+- signing in to your own app with `login` and `logout`
 - finishing a move to the repository with `merge-complete`
 - project scaffolding with `init`
 - project auth setup (handled automatically on first `export`)
@@ -846,7 +891,8 @@ Manual version pinning is currently handled in the app UI:
 These commands support `--config <path>`:
 
 - `context`
-- `pull-login`
+- `login`
+- `logout`
 - `merge-complete`
 - `test`
 - `preview`
@@ -872,7 +918,7 @@ run time.
 
 That env file is the recommended place to keep `SCREENCI_SECRET` and other
 runtime variables your setup needs. Your ElevenLabs key is not kept here: add it
-on the Secrets page in the app instead (see
+on the Branding page in the app instead (see
 [Narration](/docs/guides/narration#elevenlabs-voices)).
 
 ## Related pages

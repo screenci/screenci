@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { DevListenConfig, DevListenDeps } from './src/devListen'
 import {
-  DEV_TOKEN_HEADER,
   DevAuthError,
   deregisterDevListener,
   registerDevListener,
@@ -11,7 +10,6 @@ import {
 const config: DevListenConfig = {
   apiUrl: 'http://localhost:8787',
   credential: { header: 'X-ScreenCI-Secret', value: 'org-secret' },
-  devToken: 'dev-token',
   projectName: 'demo',
   machineName: 'laptop',
 }
@@ -37,7 +35,7 @@ function makeDeps(overrides: Partial<DevListenDeps> = {}): DevListenDeps & {
 }
 
 describe('registerDevListener', () => {
-  it('sends both credentials and the machine name', async () => {
+  it('sends the org credential and the machine name', async () => {
     const deps = makeDeps()
     deps.fetchMock.mockResolvedValueOnce(jsonResponse({ listenerId: 'lst_1' }))
 
@@ -48,7 +46,6 @@ describe('registerDevListener', () => {
     expect(url).toBe('http://localhost:8787/cli/dev/register')
     const headers = init.headers as Record<string, string>
     expect(headers['X-ScreenCI-Secret']).toBe('org-secret')
-    expect(headers[DEV_TOKEN_HEADER]).toBe('dev-token')
     expect(JSON.parse(init.body as string)).toEqual({
       projectName: 'demo',
       machineName: 'laptop',

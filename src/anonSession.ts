@@ -129,11 +129,7 @@ export type AnonSessionStatus =
   // Anonymous trials are preview-only and uncapped. The server's legacy
   // `used`/`remaining` wire fields are ignored.
   | { status: 'pending' }
-  // `editToken`: a personal editor token the server minted for the claiming
-  // user (absent on sessions claimed before the anonymous edit bridge, or
-  // when the user was at the token cap). Persisted next to the secret so
-  // `screenci preview` keeps working after the claim.
-  | { status: 'claimed'; secret: string; editToken?: string }
+  | { status: 'claimed'; secret: string }
 
 /**
  * Checks the server-side status of a locally stored anon token: still pending,
@@ -157,16 +153,12 @@ export async function checkAnonSessionStatus(
     const body = (await response.json().catch(() => ({}))) as {
       status?: string
       secret?: string
-      editToken?: string
     }
 
     if (body.status === 'claimed' && typeof body.secret === 'string') {
       return {
         status: 'claimed',
         secret: body.secret,
-        ...(typeof body.editToken === 'string'
-          ? { editToken: body.editToken }
-          : {}),
       }
     }
     if (body.status === 'expired') return { status: 'expired' }

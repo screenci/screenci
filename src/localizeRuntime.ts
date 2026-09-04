@@ -113,7 +113,7 @@ export function buildNarrationMarkers(
 /**
  * Resolve the `values` fields for the active language: the per-language seed
  * wins over the shared value, then the empty string. Every field's content is
- * code-owned now (edits are codegenned into `video.values(...)`).
+ * code-owned now: `video.values(...)` in the script is the only source.
  */
 export function buildValues(
   feature: NormalizedFeature<string> | null | undefined,

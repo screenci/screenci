@@ -51,8 +51,8 @@ the agent connected and, once the recording lands, opens the video.
 
 `npx screenci@latest start <code>` runs on the agent's machine:
 
-1. **Exchanges the code** for a project-scoped `SCREENCI_SECRET` and a personal
-   `SCREENCI_EDIT_TOKEN`, written into `screenci/.env`. The secret can only
+1. **Exchanges the code** for a project-scoped `SCREENCI_SECRET`, written into
+   `screenci/.env`. It is the only credential, and it can only
    upload to that one project. A code belongs to the first machine that
    exchanges it: rerunning `start` there resumes it until a recording lands,
    another machine is refused, and it expires 24 hours after it was created.
@@ -60,8 +60,8 @@ the agent connected and, once the recording lands, opens the video.
 2. **Locates the product** from the organisation's
    [AI context](/docs/guides/ai-context): uses the current repository when it
    is the configured one, otherwise clones it into `.screenci/repo`; checks
-   that the site answers; and writes the person's saved site login into the
-   workspace env file as `APP_USERNAME` and `APP_PASSWORD`.
+   that the site answers; and looks for a signed-in session already saved on
+   the machine (see [Signing In](/docs/guides/signing-in)).
 3. **Prepares the workspace**: a `screenci/` folder found inside the
    repository, else `./screenci` in the current folder. A new project is
    scaffolded like `screenci init` does (with the agent skill, without a CI
@@ -71,7 +71,7 @@ the agent connected and, once the recording lands, opens the video.
    images, audio) is not downloaded; recordings reuse the assets the project
    already uploaded.
 4. **Prints a brief** for the agent: the task you typed, the repository and
-   site sections, the login note, the team's notes, which script to edit (for
+   site sections, how to sign in, the team's notes, which script to edit (for
    an Edit code), the authoring rules, and the commands to run:
    `screenci test`, then `screenci preview "<title>"`. When the site does not
    answer and the agent may not start it, the brief says **STOP** and the

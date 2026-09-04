@@ -34,12 +34,10 @@ describe('generateConfig', () => {
     )
   })
 
-  it('sets shared render options (framing) for videos', () => {
+  it('sets shared render options (framing) for videos and screenshots', () => {
     const config = generateConfig('My Demo')
     expect(config).toContain('renderOptions: {')
-    // Hidden for release: the screenshots feature is unfinished, so the
-    // generated config no longer sets screenshot framing.
-    expect(config).not.toContain('screenshot: { margin: 64 }')
+    expect(config).toContain('screenshot: { margin: 64 }')
     expect(config).toContain('backgroundCss:')
     expect(config).toContain(
       'radial-gradient(circle at 14% 10%, oklch(0.93 0.07 78) 0%, transparent 42%)'
@@ -91,13 +89,8 @@ describe('setUpInitSecret', () => {
     )
   })
 
-  it("returns 'ready' without verifying when a secret is already configured, minting an editor token", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ editToken: 'edit_tok_1' }),
-      text: async () => '',
-    })
+  it("returns 'ready' without any request when a secret is already configured", async () => {
+    const fetchMock = vi.fn()
     global.fetch = fetchMock as unknown as typeof fetch
 
     const outcome = await setUpInitSecret(islandDir, {
@@ -106,32 +99,7 @@ describe('setUpInitSecret', () => {
     })
 
     expect(outcome).toBe('ready')
-    // No whoami verification, only the one-and-done editor-token exchange.
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/cli/dev/exchange-token'),
-      expect.objectContaining({ method: 'POST' })
-    )
-    const envPath = path.join(islandDir, '.env')
-    expect(readFileSync(envPath, 'utf-8')).toContain(
-      'SCREENCI_EDIT_TOKEN=edit_tok_1'
-    )
-    expect(readFileSync(envPath, 'utf-8')).not.toContain('SCREENCI_SECRET=')
-  })
-
-  it('skips the token exchange when an editor token is already configured', async () => {
-    const fetchMock = vi.fn()
-    global.fetch = fetchMock as unknown as typeof fetch
-
-    const outcome = await setUpInitSecret(islandDir, {
-      env: {
-        SCREENCI_SECRET: 'already-set',
-        SCREENCI_EDIT_TOKEN: 'already-minted',
-      },
-      pastedSecret: 'sec_init_123',
-    })
-
-    expect(outcome).toBe('ready')
+    // SCREENCI_SECRET is the only credential: nothing is exchanged or minted.
     expect(fetchMock).not.toHaveBeenCalled()
     expect(existsSync(path.join(islandDir, '.env'))).toBe(false)
   })
@@ -385,7 +353,7 @@ describe('generateIslandReadme', () => {
 
   it('points users at recordings and the config file', () => {
     expect(generateIslandReadme('Demo', 'npm')).toContain(
-      'Check `recordings/` for videos, and `screenci.config.ts`\nfor configuration.'
+      'Check `recordings/` for videos and screenshots, and `screenci.config.ts`\nfor configuration.'
     )
   })
 

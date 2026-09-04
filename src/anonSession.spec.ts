@@ -93,24 +93,6 @@ describe('checkAnonSessionStatus', () => {
     expect(result).toEqual({ status: 'claimed', secret: 'sec_123' })
   })
 
-  it('carries the claim-minted editor token when the server includes one', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue({
-      json: async () => ({
-        status: 'claimed',
-        secret: 'sec_123',
-        editToken: 'edit_456',
-      }),
-    })
-    const result = await checkAnonSessionStatus('token-a', {
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-    })
-    expect(result).toEqual({
-      status: 'claimed',
-      secret: 'sec_123',
-      editToken: 'edit_456',
-    })
-  })
-
   it('treats a claimed response missing a secret as pending (defensive)', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       json: async () => ({ status: 'claimed' }),

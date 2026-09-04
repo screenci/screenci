@@ -52,9 +52,8 @@ export type LocalizeMode = 'shared' | 'per-language'
  *
  * Code is the single source of truth: the recorded set is the union of the code
  * seed (`video.languages(['en', 'fi'])`) and the per-feature language keys, then
- * restricted by the `--languages` filter. Adding a language in the web editor
- * codegens it into this `video.languages([...])` block, so it is code again by
- * the next record.
+ * restricted by the `--languages` filter. A language is added by putting it in
+ * this `video.languages([...])` block, so the set is always code-defined.
  */
 export type RecordingLocalize = {
   /** Explicit code seed from `video.languages(['en', ...])`, if any. */

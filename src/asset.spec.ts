@@ -207,6 +207,59 @@ describe('createOverlays', () => {
       expect(recorder.addAssetStart).not.toHaveBeenCalled()
     })
 
+    it('routes a { branding } overlay to a name-only asset start', async () => {
+      // No path and no hash: the export resolves the name against the
+      // Branding page, so replacing the file updates the next export.
+      const overlays = createOverlays({
+        logo: { branding: 'logo', fill: 'recording' },
+      })
+
+      await overlays.logo.for(3000)
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
+        kind: 'branding',
+        branding: { name: 'logo' },
+        durationMs: 3000,
+        fullScreen: false,
+      })
+    })
+
+    it('carries placement and video options on a branding overlay', async () => {
+      const overlays = createOverlays({
+        intro: {
+          branding: 'intro-clip',
+          fill: 'screen',
+          volume: 0.5,
+          speed: 2,
+        },
+      })
+
+      await overlays.intro()
+
+      expect(recorder.addAssetStart).toHaveBeenCalledWith('intro', {
+        kind: 'branding',
+        branding: { name: 'intro-clip' },
+        fullScreen: true,
+        placement: { fullScreen: true },
+        audio: 0.5,
+        speed: 2,
+      })
+    })
+
+    it('refuses a branding name the Branding page could not hold', () => {
+      expect(() =>
+        createOverlays({ logo: { branding: 'My Logo', fill: 'recording' } })
+      ).toThrow(/not a valid name/)
+    })
+
+    it('refuses "over" on a branding overlay', () => {
+      expect(() =>
+        createOverlays({
+          logo: { branding: 'logo', over: {} as never, margin: 4 },
+        })
+      ).toThrow(/no live element/)
+    })
+
     it('emits pinToScreen on an image overlay when set', async () => {
       const overlays = createOverlays({
         logo: {

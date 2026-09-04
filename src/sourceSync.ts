@@ -177,6 +177,50 @@ export async function ensureSourceBundleUploaded(
   }
 }
 
+export type IslandCredentialCheck =
+  { ok: true } | { ok: false; message: string }
+
+/**
+ * Refuses a project-scoped secret that pins a different project than the
+ * island's `projectId`: a `.env` copied between islands would otherwise send
+ * this island's recordings (and sources) to the other project silently. An
+ * org-wide secret, an anonymous credential, or an unreachable backend pass
+ * (the upload itself authenticates again).
+ */
+export async function verifyIslandCredential(
+  params: { apiUrl: string; credential: CliCredential; projectId: string },
+  deps: Pick<SourceSyncDeps, 'fetchFn'>
+): Promise<IslandCredentialCheck> {
+  if (params.credential.header !== SECRET_HEADER) return { ok: true }
+  type WhoAmI = { projectId?: unknown; projectName?: unknown }
+  let body: WhoAmI | null = null
+  try {
+    const response = await deps.fetchFn(`${params.apiUrl}/cli/whoami`, {
+      headers: { [params.credential.header]: params.credential.value },
+    })
+    if (!response.ok) return { ok: true }
+    body = (await response.json()) as WhoAmI
+  } catch {
+    return { ok: true }
+  }
+  const pinnedProjectId = body?.projectId
+  if (
+    typeof pinnedProjectId !== 'string' ||
+    pinnedProjectId === params.projectId
+  ) {
+    return { ok: true }
+  }
+  const pinnedProjectName = body?.projectName
+  const pinnedName =
+    typeof pinnedProjectName === 'string' ? ` ("${pinnedProjectName}")` : ''
+  return {
+    ok: false,
+    message:
+      `The SCREENCI_SECRET in this workspace belongs to another project${pinnedName}, not to this one (projectId ${params.projectId}). ` +
+      'Run `screenci start <code>` for this project, or remove the copied secret from the env file.',
+  }
+}
+
 export type RunCompleteKind = 'preview' | 'export'
 
 /**

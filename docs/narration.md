@@ -81,7 +81,8 @@ video.narration(['intro', 'outro']).languages(['en'])
 To mark a single cue as backed by editor-uploaded audio inside a map, use
 `{ editor: '<name>' }`. The cue is an explicit part of the video, but its audio
 lives in the ScreenCI backend (not a local file) and is merged by name at
-render. Uploading narration audio in the editor codegens this form.
+render. Upload the audio in the editor, then reference it from the script with this
+form.
 
 ```ts
 video.narration({
@@ -566,7 +567,7 @@ organization; multiple languages require Business. See
 
 Hosted ElevenLabs voices (`voices.elevenlabs({ voiceId })`) require the ScreenCI
 Business tier and use your own ElevenLabs API key. (A self-recorded clone works
-on every plan, see below.) Add your key once on the **Secrets** page in the
+on every plan, see below.) Add your key once on the **Branding** page in the
 ScreenCI app. It is
 encrypted at rest and used only to synthesize narration for your videos. The app
 never shows the stored key again, only whether one is set, and every render
@@ -575,8 +576,8 @@ never shows the stored key again, only whether one is set, and every render
 Without a key, a video that uses an ElevenLabs or custom voice cannot render.
 `screenci export` fails that video at record time: its render is marked failed
 right away (rather than being queued only to die during synthesis), the CLI
-prints an error with a link to the Secrets page, and the command exits non-zero.
-Other videos in the same run are unaffected. Add your key on the Secrets page and
+prints an error with a link to the Branding page, and the command exits non-zero.
+Other videos in the same run are unaffected. Add your key on the Branding page and
 record again.
 
 Use `voices.elevenlabs({ voiceId })` when you want to target a specific
@@ -675,7 +676,9 @@ Instead of a `voiceId` from your account, you can clone a voice from a local
 audio or video sample using ElevenLabs Instant Voice Cloning. A self-recorded
 clone is available on every plan (it does not require the Business tier that
 hosted ElevenLabs voices do), but it still uses your ElevenLabs key on the
-Secrets page (see the setup above).
+Branding page (see the setup above). The organisation can also store one sample
+as the default voice for every new video, see
+[Branding](/docs/guides/branding#the-narration-voice).
 
 Use the same `voices.elevenlabs(...)` helper, but pass `{ path }` instead of
 `{ voiceId }`:
@@ -795,9 +798,9 @@ hand the language set itself to the web with `video.languages()` (no argument).
 The
 markers still carry timing the same way; only the text lives in Editor.
 
-The editor's narration panel covers more than text (editing requires a
-connected `screenci preview` machine, since every change is written back into your
-script):
+The editor's narration panel covers more than text. Every change is stored in
+the editor and applied to the preview and every later render; your script is
+never modified:
 
 - **Voice controls**: pick the voice and tune `style`, `accent`, `pacing`, and
   the model type per cue, with the same options as in code, plus a per-cue

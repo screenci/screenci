@@ -490,6 +490,33 @@ describe('CLI', () => {
       expect(loggerWarnSpy).not.toHaveBeenCalled()
     })
 
+    it('skips branding asset events when collecting upload assets', async () => {
+      // A branding overlay has no local bytes: the export resolves its name
+      // against the Branding page.
+      const { collectUploadAssets } = await import('./cli')
+
+      const assets = await collectUploadAssets(
+        {
+          events: [
+            { type: 'videoStart', timeMs: 0 },
+            {
+              type: 'assetStart',
+              timeMs: 100,
+              name: 'logo',
+              kind: 'branding',
+              branding: { name: 'logo' },
+              durationMs: 1000,
+              fullScreen: false,
+            },
+          ],
+        } as unknown as RecordingData,
+        '/project'
+      )
+
+      expect(assets).toEqual([])
+      expect(loggerWarnSpy).not.toHaveBeenCalled()
+    })
+
     it('collects a custom cursor image referenced by renderOptions.mouse.image', async () => {
       const { collectUploadAssets } = await import('./cli')
       const cursorBytes = Buffer.from('cursor-png-bytes')

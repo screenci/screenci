@@ -384,7 +384,7 @@ slug so they survive re-records.
 
 Cursor-move fields (`move.duration`/`move.speed`, `move.easing`, `move.curve`,
 `move.curviness`, `move.delayAfter`), action durations, and pre-action pauses
-are all edited as the matching option of the `editId`-stamped call. The
+are all edited as the matching option of the `editId`-keyed call. The
 cursor path's curve can be edited visually in the preview by dragging its
 bezier handles.
 
@@ -398,15 +398,15 @@ The main editable action forms:
 import { autoZoom, speed } from 'screenci'
 
 // Editable block: the multiplier is owned by the web editor (defaults to 1).
-// The editId identity slug is stamped automatically when an edit session
-// starts; you can also set it yourself.
+// Give it an editId so the edit stays attached across re-records.
 await speed(async () => { ... }, { editId: 'intro-speedup' })
 
-// Without an editId yet, the block is identified by its timeline position
-// until the next edit session stamps one.
+// Without an editId the block is identified by its timeline position, which
+// can drift when the surrounding steps change.
 await speed(async () => { ... })
 
-// Explicit: the multiplier comes from code (a web edit rewrites this call).
+// Explicit: the multiplier comes from code, and a web edit overrides it at
+// render time without touching this call.
 await speed(3, async () => { ... })
 
 // Bare autoZoom stays fully web-editable, starting from the package defaults.
@@ -627,39 +627,21 @@ top:
 
 ## Action identity: editId
 
-> **Note:** automatic editId stamping is currently disabled. The editor only
-> supports editing narration, `renderOptions` and `recordOptions`, which are
-> applied by video name and need no editIds, so the CLI does not rewrite
-> sources to stamp slugs and does not warn about missing ones. Existing
-> stamped editIds remain valid. The rest of this section describes the
-> mechanism as it works when stamping is enabled.
-
 Every editable action can carry a stable, human-readable identity slug in
 code, e.g. `.click({ editId: 'click1' })` or
-`autoZoom(fn, { editId: 'autoZoom1' })`. The `screenci preview` startup handshake
-stamps missing slugs automatically after a recording, allocating numbers from
-`.screenci/edit-ids.json` (commit it; numbers are never reused and stamped ids
-are never removed). With an editId, the action's stable key IS the slug: edits
-keep matching across re-records even after refactors, moved lines, or locator
-changes. An action that has not been stamped yet falls back to a readable
-identity key built from what was recorded (`delay`, `input click Save`, with
-`#2` appended for repeat executions); these keys can drift across re-records,
-which is why stamping exists.
+`autoZoom(fn, { editId: 'autoZoom1' })`. You write it yourself: ScreenCI never
+rewrites your sources. With an editId, the action's stable key IS the slug, so
+edits keep matching across re-records even after refactors, moved lines, or
+locator changes. An action without one falls back to a readable identity key
+built from what was recorded (`delay`, `input click Save`, with `#2` appended
+for repeat executions); those keys can drift across re-records, which is the
+reason to add a slug to anything you edit often.
 
 The slug is the action's display name on the editor timeline.
 
 Because the slug IS the identity, two distinct actions must never share one. A
 copy-pasted `editId` silently merges both into a single identity (the second
-looks like a loop repeat and cannot hold its own edits). Static analysis
-guards against this automatically: before recording, and during the
-`screenci preview` startup handshake, any slug found at two
-or more distinct call sites is resolved by keeping the first occurrence and
-re-stamping the rest with fresh slugs (allocated from `.screenci/edit-ids.json`,
-so they never collide with an existing id). A genuine loop (one call site that
-runs repeatedly) is a single occurrence in source and is left untouched.
-Resolving needs the `typescript` package resolvable from your project; when it
-is missing, the CLI warns only if a possible duplicate was actually detected,
-and leaves the sources unchanged.
+looks like a loop repeat and cannot hold its own edits), so keep them unique.
 
 editId is optional. Actions without one keep the matcher-based identity
 (locator description + occurrence), which can drift across re-records. An
@@ -778,10 +760,11 @@ explicitly at the call site or came from a default. This provenance is written
 into the uploaded recording data (`actionParams` in `data.json`), so the
 backend and Editor can present the parameters for editing.
 
-Editing a parameter in the web editor writes it into the call site as an
-explicit option (via the connected `screenci preview` session), whether the value
-previously came from code or from a default. The recording always runs with
-whatever the code says.
+Editing a parameter in the web editor stores the new value as an editor edit,
+keyed to the action's identity, whether the value previously came from code or
+from a default. Your sources are never modified: the recording always runs
+exactly what the code says, and the edit is applied on top when the video
+renders.
 
 The SDK also exports `ACTION_PARAM_DEFAULTS`, the default value of every
 tracked option per action method, so integrations can tell an edit that merely

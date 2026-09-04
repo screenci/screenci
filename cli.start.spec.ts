@@ -17,7 +17,12 @@ import {
 } from './src/start.js'
 import type { SourceBundleFs } from './src/sourceBundle.js'
 import type { StartGit } from './src/repo.js'
-import { EMPTY_AI_CONTEXT, type AppLogin } from './src/aiContext.js'
+import { EMPTY_AI_CONTEXT } from './src/aiContext.js'
+import type { AppSessionStatus } from './src/appSession.js'
+import {
+  EMPTY_BRANDING,
+  type DownloadBrandingSampleResult,
+} from './src/branding.js'
 
 function jsonResponse(
   body: unknown,
@@ -40,13 +45,12 @@ function exchange(overrides: Partial<SetupExchange> = {}): SetupExchange {
     projectId: 'proj_1',
     projectName: 'my-app',
     secret: 'secret-1',
-    editToken: 'token-1',
     task: { description: 'Show the onboarding flow' },
     sourcesAvailable: false,
     appUrl: 'https://app.example.com',
     sourceMode: 'service',
     aiContext: EMPTY_AI_CONTEXT,
-    login: { saved: false },
+    branding: EMPTY_BRANDING,
     ...overrides,
   }
 }
@@ -112,17 +116,18 @@ function makeDeps(
     shell: [] as string[],
     skills: [] as Array<Record<string, unknown>>,
     secrets: [] as Array<[string, string]>,
-    tokens: [] as Array<[string, string]>,
     clones: [] as Array<[string, string]>,
     updates: [] as string[],
     probes: [] as string[],
-    logins: [] as Array<[string, AppLogin | null, boolean]>,
+    sessionReads: [] as Array<{ configDir: string; profile: string }>,
+    sampleDownloads: [] as string[],
   }
+  let sampleDownload: DownloadBrandingSampleResult = { status: 'none' }
   /** Remotes by directory; set by tests that simulate a repository. */
   const remotes = new Map<string, string>()
   let cloneResult: { ok: true } | { ok: false; message: string } = { ok: true }
   let siteReachable = true
-  let savedLogin: AppLogin | null = null
+  let session: AppSessionStatus = { saved: false }
   const git: StartGit = {
     remoteUrl: async (dir) => remotes.get(dir) ?? null,
     clone: async (url, dir) => {
@@ -170,8 +175,9 @@ function makeDeps(
     persistSecret: async (path, secret) => {
       calls.secrets.push([path, secret])
     },
-    persistEditToken: async (path, token) => {
-      calls.tokens.push([path, token])
+    downloadBrandingVoiceSample: async (params) => {
+      calls.sampleDownloads.push(params.islandDir)
+      return sampleDownload
     },
     readConfigSource: async (path) => mem.files.get(path) ?? null,
     git,
@@ -179,10 +185,10 @@ function makeDeps(
       calls.probes.push(url)
       return siteReachable
     },
-    fetchAppLogin: async () => ({ ok: true, login: savedLogin }),
-    persistAppLogin: async (path, login, options) => {
-      calls.logins.push([path, login, options.overwrite])
-      return login !== null ? 'written' : 'placeholders'
+    now: () => new Date('2026-09-03T12:00:00.000Z'),
+    readAppSessionStatus: async ({ configDir, profile }) => {
+      calls.sessionReads.push({ configDir, profile })
+      return session
     },
   }
   return {
@@ -198,8 +204,11 @@ function makeDeps(
     setSiteReachable: (next: boolean) => {
       siteReachable = next
     },
-    setSavedLogin: (next: AppLogin | null) => {
-      savedLogin = next
+    setSession: (next: AppSessionStatus) => {
+      session = next
+    },
+    setSampleDownload: (next: DownloadBrandingSampleResult) => {
+      sampleDownload = next
     },
   }
 }
@@ -378,7 +387,6 @@ describe('runStartCommand', () => {
       writeGithubWorkflow: false,
     })
     expect(calls.secrets).toEqual([['/work/my-app/screenci/.env', 'secret-1']])
-    expect(calls.tokens).toEqual([['/work/my-app/screenci/.env', 'token-1']])
     // The exchange request carried the folder name as the default and no --name.
     const [, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit]
     const body = JSON.parse(init.body as string) as Record<string, unknown>
@@ -795,34 +803,104 @@ describe('runStartCommand', () => {
     expect(calls.probes).toEqual(['https://staging.acme.com'])
   })
 
-  it('writes the saved login into the env file, else placeholders, and says so', async () => {
+  it('tells the agent to open a sign-in browser when no session is saved', async () => {
     const fetchFn = vi.fn(async () => jsonResponse(exchangeBody()))
-    const withLogin = makeDeps(fetchFn)
-    withLogin.setSavedLogin({ username: 'demo@acme.com', password: 'pw' })
-    const saved = await runStartCommand(baseOptions, withLogin.deps)
-    expect(withLogin.calls.logins).toEqual([
-      [
-        '/work/my-app/screenci/.env',
-        { username: 'demo@acme.com', password: 'pw' },
-        false,
-      ],
-    ])
-    expect(saved.login).toEqual({ saved: true, envOutcome: 'written' })
-    const brief = withLogin.logs.join('\n')
-    expect(brief).toContain('APP_USERNAME and APP_PASSWORD')
-    expect(brief).not.toContain('demo@acme.com')
-    expect(brief).not.toContain('pw\n')
+    const { deps, calls, logs } = makeDeps(fetchFn)
+    const result = await runStartCommand(baseOptions, deps)
 
-    const without = makeDeps(fetchFn)
-    const placeholders = await runStartCommand(baseOptions, without.deps)
-    expect(placeholders.login).toEqual({
-      saved: false,
-      envOutcome: 'placeholders',
-    })
-    expect(without.logs.join('\n')).toContain(
-      'https://app.example.com/ai-context#login'
+    // Read from the island on disk, never from the service.
+    expect(calls.sessionReads).toEqual([
+      { configDir: '/work/my-app/screenci', profile: 'default' },
+    ])
+    expect(result.session).toEqual({ saved: false })
+    const brief = logs.join('\n')
+    expect(brief).toContain('## Signing in')
+    expect(brief).toContain('npx screenci login')
+    expect(brief).toContain('npx screenci login --done')
+    expect(brief).toContain('never ask them for a password or a code yourself')
+    // The credential path is gone for good.
+    expect(brief).not.toContain('APP_USERNAME')
+    expect(brief).not.toContain('APP_PASSWORD')
+    expect(brief).not.toContain('pull-login')
+  })
+
+  it('hands over the session file path and forbids a hand-rolled explore script', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse(exchangeBody()))
+    const { deps, logs } = makeDeps(fetchFn)
+    await runStartCommand(baseOptions, deps)
+    const brief = logs.join('\n')
+
+    // Exploring with its own Playwright script is what sent an agent chasing
+    // selectors on a signed-out page for several minutes.
+    expect(brief).toContain('never a Playwright script of your own')
+    expect(brief).toContain(
+      'playwright-cli state-load screenci/.screenci/auth/default.json'
     )
-    expect(without.logs.join('\n')).toContain('npx screenci pull-login')
+  })
+
+  it('tells the agent not to script a sign-in when a session is already saved', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse(exchangeBody()))
+    const withSession = makeDeps(fetchFn)
+    withSession.setSession({
+      saved: true,
+      path: '/work/my-app/screenci/.screenci/auth/default.json',
+      meta: {
+        profile: 'default',
+        origin: 'https://app.example.com',
+        savedAt: '2026-09-03T11:00:00.000Z',
+        expiresAt: null,
+      },
+      expired: false,
+    })
+    await runStartCommand(baseOptions, withSession.deps)
+    const brief = withSession.logs.join('\n')
+    expect(brief).toContain('already saved on this machine')
+    expect(brief).toContain('WITHOUT any sign-in steps')
+    // The exact file, so `state-load` can be copied rather than guessed at.
+    expect(brief).toContain('screenci/.screenci/auth/default.json')
+    expect(brief).toContain('playwright-cli state-load')
+  })
+
+  it('says the session expired and how to renew it', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse(exchangeBody()))
+    const expired = makeDeps(fetchFn)
+    expired.setSession({
+      saved: true,
+      path: '/work/my-app/screenci/.screenci/auth/default.json',
+      meta: {
+        profile: 'default',
+        origin: 'https://app.example.com',
+        savedAt: '2026-08-01T12:00:00.000Z',
+        expiresAt: '2026-08-30T12:00:00.000Z',
+      },
+      expired: true,
+    })
+    await runStartCommand(baseOptions, expired.deps)
+    expect(expired.logs.join('\n')).toContain('The saved session expired.')
+  })
+
+  it('states the sign-in as a fact when the team said the site needs one', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        exchangeBody({
+          aiContext: { ...EMPTY_AI_CONTEXT, siteRequiresLogin: true },
+        })
+      )
+    )
+    const { deps, logs } = makeDeps(fetchFn)
+    await runStartCommand(baseOptions, deps)
+    const brief = logs.join('\n')
+    expect(brief).toContain('The team says this site needs a sign-in.')
+    expect(brief).not.toContain('If the flow you are asked to record sits')
+  })
+
+  it('leaves the sign-in conditional when the team said nothing', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse(exchangeBody()))
+    const { deps, logs } = makeDeps(fetchFn)
+    await runStartCommand(baseOptions, deps)
+    const brief = logs.join('\n')
+    expect(brief).toContain('If the flow you are asked to record sits behind')
+    expect(brief).not.toContain('The team says this site needs a sign-in.')
   })
 
   it('prepares a merge: pulls sources into the repository, strips projectId, writes the marker', async () => {
@@ -974,6 +1052,8 @@ describe('formatStartBrief', () => {
   function result(overrides: Partial<StartResult> = {}): StartResult {
     return {
       exchange: exchange(),
+      brandingSample: { status: 'none' },
+      brandingAssetPaths: {},
       shellSecretOverride: false,
       islandDir: '/work/my-app/screenci',
       islandDisplayDir: 'screenci',
@@ -985,7 +1065,7 @@ describe('formatStartBrief', () => {
       appUrl: 'https://app.example.com',
       repo: { state: 'not-configured' },
       site: { state: 'none' },
-      login: { saved: false, envOutcome: 'placeholders' },
+      session: { saved: false },
       stop: null,
       pendingMerge: null,
       ...overrides,
@@ -1099,8 +1179,10 @@ describe('formatStartBrief', () => {
       description: 'Show the onboarding flow',
       repo: { state: 'not-configured' },
       site: { state: 'none' },
-      login: { saved: false, envFile: '/work/my-app/screenci/.env' },
+      session: { saved: false, expired: false },
+      siteRequiresLogin: false,
       runLocallyIfNeeded: false,
+      branding: EMPTY_BRANDING,
     })
   })
 })
@@ -1165,5 +1247,120 @@ describe('registerStartCommand', () => {
     } finally {
       process.exitCode = previous
     }
+  })
+})
+
+describe('branding', () => {
+  const HASH = 'a'.repeat(64)
+  const branded = {
+    ...EMPTY_BRANDING,
+    backgroundCss: '#334155',
+    aspectRatio: '9:16' as const,
+    cursorStyle: 'black' as const,
+    voice: { kind: 'builtIn' as const, name: 'Ava' },
+    sources: {
+      ...EMPTY_BRANDING.sources,
+      backgroundCss: 'org' as const,
+      aspectRatio: 'project' as const,
+      cursorStyle: 'org' as const,
+      voice: 'org' as const,
+    },
+  }
+
+  it('falls back to the empty branding for an older server', async () => {
+    const body = exchangeBody() as Record<string, unknown>
+    delete body.branding
+    const fetchFn = vi.fn(async () => jsonResponse(body))
+    const { deps, logs } = makeDeps(fetchFn)
+    const result = await runStartCommand(baseOptions, deps)
+    expect(result.exchange.branding).toEqual(EMPTY_BRANDING)
+    expect(result.brandingSample).toEqual({ status: 'none' })
+    const brief = logs.join('\n')
+    expect(brief).toContain('## Branding')
+    expect(brief).toContain('No organisation branding is set')
+  })
+
+  it('prints the branding with its code snippet and the JSON line', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(exchangeBody({ branding: branded }))
+    )
+    const { deps, logs, calls } = makeDeps(fetchFn)
+    await runStartCommand(baseOptions, deps)
+    expect(calls.sampleDownloads).toEqual([])
+    const brief = logs.join('\n')
+    expect(brief).toContain('## Branding')
+    expect(brief).toContain('- Aspect ratio: 9:16 (project override)')
+    expect(brief).toContain('- Narration voice: Ava (built-in)')
+    expect(brief).toContain('mouse: { style: "black" }')
+    expect(brief).toContain('.recordOptions({ aspectRatio: "9:16" })')
+    expect(brief).toContain('/docs/guides/branding')
+    const jsonLine = logs.find((line) => line.startsWith('{'))
+    expect(jsonLine && JSON.parse(jsonLine)).toMatchObject({
+      branding: {
+        cursorStyle: 'black',
+        voice: { kind: 'builtIn', name: 'Ava' },
+      },
+    })
+  })
+
+  it('downloads the voice sample into the island and points the snippet at it', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        exchangeBody({
+          branding: {
+            ...EMPTY_BRANDING,
+            voice: {
+              kind: 'sample',
+              fileHash: HASH,
+              fileName: 'brand voice.mp3',
+            },
+            sources: { ...EMPTY_BRANDING.sources, voice: 'org' },
+          },
+        })
+      )
+    )
+    const harness = makeDeps(fetchFn)
+    harness.setSampleDownload({
+      status: 'written',
+      relativePath: 'branding/brand-voice.mp3',
+      fileName: 'brand-voice.mp3',
+    })
+    const result = await runStartCommand(baseOptions, harness.deps)
+    expect(harness.calls.sampleDownloads).toEqual(['/work/my-app/screenci'])
+    expect(result.brandingSample).toEqual({
+      status: 'downloaded',
+      relativePath: 'branding/brand-voice.mp3',
+    })
+    const brief = harness.logs.join('\n')
+    expect(brief).toContain(
+      'voices.elevenlabs({ path: "./branding/brand-voice.mp3" })'
+    )
+    expect(brief).toContain("import { video, voices } from 'screenci'")
+    const jsonLine = harness.logs.find((line) => line.startsWith('{'))
+    expect(jsonLine && JSON.parse(jsonLine)).toMatchObject({
+      brandingSamplePath: 'branding/brand-voice.mp3',
+    })
+  })
+
+  it('warns when the sample download fails and says how to retry', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        exchangeBody({
+          branding: {
+            ...EMPTY_BRANDING,
+            voice: { kind: 'sample', fileHash: HASH, fileName: 'v.mp3' },
+            sources: { ...EMPTY_BRANDING.sources, voice: 'org' },
+          },
+        })
+      )
+    )
+    const harness = makeDeps(fetchFn)
+    harness.setSampleDownload({ status: 'error', message: 'boom' })
+    const result = await runStartCommand(baseOptions, harness.deps)
+    expect(result.brandingSample).toEqual({ status: 'failed', message: 'boom' })
+    expect(harness.warnings.join('\n')).toContain('boom')
+    const brief = harness.logs.join('\n')
+    expect(brief).toContain('npx screenci context')
+    expect(brief).not.toContain('voices.elevenlabs')
   })
 })

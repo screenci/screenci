@@ -1,9 +1,10 @@
 # Overview
 
-ScreenCI treats product videos as code. You describe a flow once as a
-Playwright-based script. ScreenCI drives your app, adds narration and camera
-motion, and produces a polished video. When the UI changes, you rerun the
-script and the video regenerates.
+ScreenCI makes product videos by prompting a coding agent. You describe the
+flow you want in a sentence, paste one prompt into Claude Code, Codex, Cursor
+or a similar agent, and it drives your real app, adds narration and camera
+motion, and hands back a polished video. When the UI changes, prompt it again
+(or rerun the recording) and the video regenerates.
 
 ## How it works
 
@@ -30,28 +31,43 @@ next editor can pull them (see
 repository-managed project keeps its scripts local unless it opts in. The CLI
 itself is [open source](https://github.com/screenci/screenci).
 
-## Three ways to set up
+## Two ways to start
 
-Pick the path that fits how you work.
+Both hand the work to your coding agent. Pick the one that matches where you
+are standing.
 
 - **[From the web app](/docs/guides/create-from-web-app) (no repository
   needed).** Click Add project, paste the prompt into your coding agent, and
   the browser opens the video when the recording lands. Anyone in your org can
-  add or change videos this way.
-- **[Agent integration](/docs/agent-integration) (recommended).** Point a coding
-  agent (Claude Code, Codex, Cursor, or similar) at the integration brief. It
-  scaffolds ScreenCI, authors a video for the flow you describe, and records it,
-  with you mostly reviewing the result.
-- **[Manual setup & first video](/docs/manual-setup).** Scaffold ScreenCI
-  yourself, write the `.screenci.ts` script by hand, run it locally, and export
-  the final video.
+  add or change videos this way, including people who never open the code.
+- **[Agent integration](/docs/agent-integration).** Already in a repository?
+  Paste the integration prompt into the agent there. It scaffolds ScreenCI,
+  authors a video for the flow you describe, and records it, with you mostly
+  reviewing the result.
 
-Either way, once a video exists you can dig into the rest of the docs to refine
-it: [Editor](/docs/editor),
-[Video Script Basics](/docs/video-script-basics),
+Tell the agent once what it needs to know about your product (repository, site
+URL, whether the site needs a sign-in, package manager, team notes) under
+[AI context](/docs/guides/ai-context), and every later prompt starts from it.
+Set the look and voice new videos start from under
+[Branding](/docs/guides/branding).
+
+Once a video exists, refine it in the [Editor](/docs/editor) or by prompting
+the agent again, and add [Narration](/docs/guides/narration) detail,
 [Camera and Zooming](/docs/guides/camera-and-zooming),
-[Narration](/docs/guides/narration), and
-[Public URLs and Embeds](/docs/guides/public-urls-and-embeds).
+[Overlays](/docs/guides/overlays), or extra
+[Languages](/docs/guides/languages).
+
+## Videos as E2E tests
+
+Under the hood every video is a `.screenci.ts` file driven by Playwright, so
+you never depend on the agent to reproduce a recording. Ask the agent to commit
+the scripts into your repository and each video becomes an E2E test your own CI
+can rerun on every release: when the flow breaks, the run fails; when the UI
+changes, the video re-renders. That path (writing the scripts yourself,
+running them locally, and wiring up CI) is covered in
+[Manual setup & first video](/docs/manual-setup),
+[Video Script Basics](/docs/video-script-basics) and
+[CI Setup](/docs/ci-setup).
 
 ## Community
 

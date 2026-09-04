@@ -581,6 +581,66 @@ function isDependencyOverlayInput(
 }
 
 /**
+ * Declares an overlay whose file is a **shared branding asset**: an image or
+ * video uploaded once on the Branding page and referenced from code by name.
+ *
+ * Unlike a `{ path }` overlay, no bytes are recorded or uploaded. The export
+ * resolves the name against the Branding page (the project's override first,
+ * then the organisation's), so replacing the file there updates every video on
+ * its next export without re-recording. An export whose name no longer exists
+ * fails with a clear message rather than silently dropping the overlay.
+ *
+ * An image asset needs a length (`duration`, `.for()`, `.until()`, or a live
+ * `start()`/`end()` window); a video asset plays its own length and accepts the
+ * video options (`volume`, `speed`, `time`, `start`, `end`).
+ *
+ * @example
+ * ```ts
+ * const overlays = createOverlays({
+ *   logo: { branding: 'logo', x: 1560, y: 960, width: 288 },
+ *   intro: { branding: 'intro-clip', fill: 'screen' },
+ * })
+ * await overlays.intro()
+ * await overlays.logo.for(3000)
+ * ```
+ */
+export type BrandingOverlayOptions = (
+  OverlayFillPlacement | OverlayBoxPlacement
+) &
+  Pick<
+    OverlayCaptureCommon,
+    'duration' | 'clip' | 'pinToScreen' | 'overMouse' | 'fadeIn' | 'fadeOut'
+  > & {
+    /** Linear gain for a branding VIDEO (rejected for an image asset). */
+    volume?: number
+    /** Playback-rate multiplier for a branding VIDEO. */
+    speed?: number
+    /** Target playback duration (ms) for a branding VIDEO. */
+    time?: number
+    /** Late start into a branding VIDEO. */
+    start?: TimelineOffset
+    /** Early end into a branding VIDEO. */
+    end?: TimelineOffset
+  }
+
+/** An overlay backed by a shared branding asset (`{ branding: '<name>' }`). */
+export type BrandingOverlayInput = { branding: string } & BrandingOverlayOptions
+
+/** Names must match the Branding page's slugs (see convex/lib/brandingAssets). */
+const BRANDING_ASSET_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/
+
+/** Whether a value is a {@link BrandingOverlayInput} (`{ branding: '<name>' }`). */
+export function isBrandingOverlayInput(
+  value: unknown
+): value is BrandingOverlayInput {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { branding?: unknown }).branding === 'string'
+  )
+}
+
+/**
  * Declares a backend-hosted (editor-uploaded) overlay: its bytes live in the
  * ScreenCI backend under the asset name `editor`, not in a local file. The
  * declaration exists in code so the overlay is an explicit part of the video;
@@ -608,7 +668,8 @@ export function isEditorOverlayInput(
  * - a `string` file path (`.tsx`/`.solid.tsx`/`.vue`/`.svelte`/`.html`/`.svg`/`.png`/`.mp4`),
  * - a React element (`<Badge label="New" />`, shorthand for `{ element }`),
  * - an {@link OverlayConfig} object,
- * - `{ editor: '<name>' }` for a backend-hosted, editor-uploaded overlay, or
+ * - `{ editor: '<name>' }` for a backend-hosted, editor-uploaded overlay,
+ * - `{ branding: '<name>' }` for a shared branding asset, or
  * - a {@link selected} render dependency.
  */
 export type OverlayInput =
@@ -616,6 +677,7 @@ export type OverlayInput =
   | ReactElementLike
   | OverlayConfig
   | EditorOverlayInput
+  | BrandingOverlayInput
   | DependencyOverlayInput
 
 /**
@@ -924,6 +986,11 @@ function buildOverlayController(
   // which would otherwise reject it for having no path.
   if (isDependencyOverlayInput(input)) {
     return createDependencyOverlayController(name, input)
+  }
+  // A shared branding asset `{ branding: '<name>' }`: no local file either,
+  // resolved by name at export.
+  if (isBrandingOverlayInput(input)) {
+    return createBrandingOverlayController(name, input)
   }
   // A backend-hosted `{ editor: '<name>' }` overlay: no local file, emit a
   // Studio asset start under the declaration name (merged by the backend).
@@ -1531,6 +1598,93 @@ function createStudioAssetController(name: string): OverlayController {
  * front. A blocking call needs a duration (from the call or config); a
  * `start()`/`end()` window needs none.
  */
+function createBrandingOverlayController(
+  name: string,
+  input: BrandingOverlayInput
+): OverlayController {
+  if (!BRANDING_ASSET_NAME_PATTERN.test(input.branding)) {
+    throw new Error(
+      `[screenci] Overlay "${name}" references the branding asset "${input.branding}", which is not a valid name. Use the name shown on the Branding page (lowercase letters, digits and dashes).`
+    )
+  }
+  // `over`/`margin` are not in BrandingOverlayOptions: a stored file has no
+  // live element to size against, exactly as for selected(...).
+  const variant = classifyPlacementVariant(name, input)
+  if (variant === 'over') {
+    throw new Error(
+      `[screenci] Overlay "${name}" cannot use "over" with a branding asset: a stored file has no live element to size against.`
+    )
+  }
+  const placement = resolveOverlayPlacement(name, input, variant)
+  const fullScreen = input.fill === 'screen'
+  const pinToScreen = input.pinToScreen === true
+  const configDurationMs = resolveConfigDuration(name, input.duration)
+  if (input.clip !== undefined) {
+    validateClip(`Branding overlay "${name}"`, input.clip)
+  }
+  const { sourceStart, sourceEnd } = resolveSourceTrim(
+    `Branding overlay "${name}"`,
+    input.start,
+    input.end
+  )
+  if (
+    input.volume !== undefined &&
+    (!Number.isFinite(input.volume) ||
+      input.volume < 0 ||
+      input.volume > MAX_AUDIO_LEVEL)
+  ) {
+    throw new Error(
+      `[screenci] Branding overlay "${name}" must provide a finite volume between 0 and ${MAX_AUDIO_LEVEL}. 1 is the natural level, 0 is silent, and values above 1 boost it.`
+    )
+  }
+  validateSpeedTime(`Branding overlay "${name}"`, input.speed, input.time)
+  const audio = input.volume
+
+  return createAssetControllerCore(
+    name,
+    () => Promise.resolve(),
+    (recorder, mode, delayMs) => {
+      let durationMs: number | undefined
+      let until: TimelineAnchorInput | undefined
+      if (mode.type === 'blocking') {
+        if (mode.until !== undefined) {
+          until = mode.until
+        } else {
+          // No length means "natural duration": valid for a branding video,
+          // refused by the export for an image (whose kind is only known there).
+          durationMs = mode.durationMs ?? configDurationMs
+        }
+      }
+      recorder.addAssetStart(
+        name,
+        {
+          kind: 'branding',
+          branding: { name: input.branding },
+          ...(durationMs !== undefined && { durationMs }),
+          ...timelineAnchorFields(until),
+          fullScreen,
+          ...(pinToScreen && { pinToScreen: true }),
+          ...(input.overMouse === true && { overMouse: true }),
+          ...(validateFadeMs(name, 'fadeIn', input.fadeIn) !== undefined && {
+            fadeInMs: input.fadeIn,
+          }),
+          ...(validateFadeMs(name, 'fadeOut', input.fadeOut) !== undefined && {
+            fadeOutMs: input.fadeOut,
+          }),
+          ...(placement !== undefined && { placement }),
+          ...(input.clip !== undefined && { clip: input.clip }),
+          ...(audio !== undefined && { audio }),
+          ...(input.speed !== undefined && { speed: input.speed }),
+          ...(input.time !== undefined && { time: input.time }),
+          ...(sourceStart !== undefined && { sourceStart }),
+          ...(sourceEnd !== undefined && { sourceEnd }),
+        },
+        ...delayArg(delayMs)
+      )
+    }
+  )
+}
+
 function createDependencyOverlayController(
   name: string,
   input: DependencyOverlayInput

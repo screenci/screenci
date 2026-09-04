@@ -30,6 +30,8 @@ reference material to drill into.
 - [Anonymous Trial](./anonymous-trial.md)
 - [Create Videos from the Web App](./create-from-web-app.md)
 - [AI Context](./ai-context.md)
+- [Signing In to Your App](./signing-in.md)
+- [Branding](./branding.md)
 
 ### Reference
 

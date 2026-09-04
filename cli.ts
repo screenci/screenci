@@ -50,6 +50,16 @@ import {
   registerAiContextCommands,
   type IslandCredentials,
 } from './src/aiContextCommands.js'
+import {
+  APP_SESSION_DIR_NAME,
+  describeAppSessionStatus,
+  readAppSessionStatus,
+  resolveProfileName,
+} from './src/appSession.js'
+import {
+  createDefaultLoginDeps,
+  registerLoginCommand,
+} from './src/loginCommand.js'
 import { registerMergeCompleteCommand } from './src/mergeComplete.js'
 import { nodeStartGit } from './src/repo.js'
 import {
@@ -82,7 +92,6 @@ import {
   getDevBackendUrl,
   getDevFrontendUrl,
   getScreenCISecretsUrl,
-  persistScreenCIEditToken,
   persistScreenCISecret,
 } from './src/linkSession.js'
 import { OVERLAY_CACHE_DIR_NAME } from './src/htmlRasterizer.js'
@@ -93,8 +102,6 @@ import {
   type DevStartupDeps,
   type KeptRecording,
 } from './src/devStartup.js'
-import { entriesFromRecordingData } from './src/editableSnapshot.js'
-import type { EditableSnapshotEntry } from './src/editableSnapshot.js'
 import {
   LAST_DATA_FILE,
   readKeptRecordingData,
@@ -111,10 +118,8 @@ import {
 } from './src/exportRun.js'
 import { loadTypescript } from './src/codemod.js'
 import {
-  AUTO_EDIT_ID_STAMPING,
   mayHaveDuplicateEditIds,
   planDuplicateEditIdFixes,
-  planEditIdStamps,
   readEditIdCounters,
   writeEditIdCounters,
 } from './src/editIdStamp.js'
@@ -139,7 +144,6 @@ import {
   type DevListenConfig,
   type DevListenDeps,
   DevAuthError,
-  SCREENCI_EDIT_TOKEN_ENV,
   deregisterDevListener,
   registerDevListener,
   reportDevSyncState,
@@ -149,7 +153,11 @@ import {
   dedupeAppliedStudioNotices,
   formatStudioNoticeLine,
 } from './src/previewOutput.js'
-import { exchangeEditToken } from './src/editTokenExchange.js'
+import { fetchBranding, type CliBrandingAsset } from './src/branding.js'
+import {
+  collectBrandingAssetRefs,
+  validateBrandingAssetRefs,
+} from './src/brandingAssetRefs.js'
 
 // Re-export the environment-aware URL helpers so existing importers (and tests)
 // can keep importing them from the CLI entrypoint.
@@ -948,7 +956,15 @@ function disambiguateUploadCandidateDisplayNames(
  * `sourceBundleId` links the run's recordings to the island sources uploaded
  * just before recording (service-managed projects); null when none was.
  */
-export type UploadRunContext = { sourceBundleId: string | null }
+export type UploadRunContext = {
+  sourceBundleId: string | null
+  /**
+   * The shared branding assets the org holds, fetched once per run so a
+   * `{ branding: '<name>' }` overlay with a typo fails before the upload
+   * rather than at export. Null when the branding could not be fetched.
+   */
+  brandingAssets?: CliBrandingAsset[] | null
+}
 const EMPTY_UPLOAD_RUN_CONTEXT: UploadRunContext = { sourceBundleId: null }
 
 const sourceSyncDeps = {
@@ -1020,6 +1036,29 @@ async function uploadRecordingCandidate(
         baseVideoName: videoName,
         failureMessage: `Missing ${recordingFileName} for "${displayVideoName}"`,
         recordId,
+      }
+    }
+
+    // A `{ branding: '<name>' }` overlay has no local bytes: the export
+    // resolves it by name. Check the names now so a typo fails here, with the
+    // available names listed, instead of minutes later in the export.
+    const brandingRefs = collectBrandingAssetRefs(rawData)
+    if (brandingRefs.length > 0) {
+      const problems = validateBrandingAssetRefs(
+        brandingRefs,
+        runContext.brandingAssets ?? null
+      )
+      if (problems.length > 0) {
+        progressReporter.complete(progressIndex, 'failure')
+        return {
+          projectId: null,
+          videoId: null,
+          hadFailure: true,
+          videoName: displayVideoName,
+          baseVideoName: videoName,
+          failureMessage: problems.join(' '),
+          recordId,
+        }
       }
     }
 
@@ -1587,6 +1626,11 @@ export function clearRecordingDirectories(dir: string): void {
     // runs. Wiping it would mint a fresh trial every record, so the one-record
     // cap, the claim, and the auto-graduate to a real secret would all break.
     if (entry === ANON_SESSION_FILE) continue
+    // Preserve the saved sign-in sessions: they are what lets a recording of an
+    // app behind a login start signed in. Wiping them would sign every
+    // recording out again after the first run, so `screenci login` would have
+    // to be repeated before each one.
+    if (entry === APP_SESSION_DIR_NAME) continue
     // Per-recording directories keep their event data across runs: the dev
     // session freshness check (recordingFreshness.ts) reads it to decide
     // whether a re-record is needed at all. The kept file is renamed to
@@ -1833,6 +1877,10 @@ export async function collectUploadAssets(
       // Render dependencies (selected(...)) have no local file: the backend
       // resolves the target render's output and injects it at dispatch time.
       if ('dependency' in event) continue
+      // A shared branding asset is referenced by name only: the export
+      // resolves it to whatever file the Branding page holds then, so there
+      // are no local bytes to upload.
+      if ('branding' in event) continue
       // The alpha-capable preview clip of an animated overlay (see
       // AnimationAssetStartEvent.previewPath). Its hash is stamped at
       // rasterize time, so it only needs uploading; the `::preview` name keeps
@@ -2148,7 +2196,9 @@ export function annotateRecordingDataWithAssetHashes(
     renderOptions,
     events: data.events.map((event) => {
       if (event.type === 'assetStart') {
-        if ('studio' in event || 'dependency' in event) return event
+        if ('studio' in event || 'dependency' in event || 'branding' in event) {
+          return event
+        }
         const fileHash = byName.get(event.name) ?? event.fileHash
         return fileHash ? { ...event, fileHash } : event
       }
@@ -4000,76 +4050,6 @@ async function printEditorLink(params: {
   }
 }
 
-/**
- * Stamps missing editIds into the sources from the kept recordings, outside
- * a live edit session. Run after `screenci test` and before `screenci
- * export`'s record pass so uploads always carry stable editIds: browser edits
- * made before any `edit` session ever connected then resolve to stable ids
- * and queue as normal deferred edits instead of failing as unstamped.
- * Best-effort: silently a no-op without a config, kept recordings, or
- * TypeScript.
- */
-export async function stampEditIdsForProject(
-  configOption: string | undefined
-): Promise<number> {
-  if (!AUTO_EDIT_ID_STAMPING) return 0
-  const resolution = findScreenCIConfig(configOption)
-  if (resolution.kind !== 'found') return 0
-  const resolvedConfigPath = resolution.path
-  const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
-  if (!existsSync(screenciDir)) return 0
-
-  const videos: Record<string, EditableSnapshotEntry[]> = {}
-  for (const entry of readdirSync(screenciDir)) {
-    const dir = resolve(screenciDir, entry)
-    if (statSync(dir, { throwIfNoEntry: false })?.isDirectory() !== true) {
-      continue
-    }
-    const data = await readKeptRecordingData(dir)
-    const videoName = data?.metadata?.videoName
-    if (data === null || videoName === undefined) continue
-    if (videos[videoName] !== undefined) continue
-    const entries = entriesFromRecordingData(data)
-    if (entries.some((e) => e.editId === undefined)) {
-      videos[videoName] = entries
-    }
-  }
-  if (Object.keys(videos).length === 0) return 0
-
-  const ts = loadTypescript(dirname(screenciDir))
-  if (ts === null) return 0
-
-  const plan = planEditIdStamps(
-    { version: 1, videos },
-    readEditIdCounters(screenciDir),
-    {
-      ts,
-      readFile: (path) => {
-        try {
-          return readFileSync(path, 'utf8')
-        } catch {
-          return null
-        }
-      },
-    }
-  )
-  const formatFile = createProjectFormatter(dirname(screenciDir), {
-    warn: (message) => logger.warn(message),
-  })
-  for (const file of plan.files) {
-    if (file.after !== file.before) {
-      writeFileSync(file.path, await formatFile(file.path, file.after))
-    }
-  }
-  if (plan.stamped.length > 0) {
-    writeEditIdCounters(screenciDir, plan.counters)
-    logger.info(
-      `Stamped ${plan.stamped.length} missing editId${plan.stamped.length === 1 ? '' : 's'} into the sources.`
-    )
-  }
-  return plan.stamped.length
-}
-
 export async function runDevCommand(
   options: {
     config?: string
@@ -4091,58 +4071,18 @@ export async function runDevCommand(
   const authEnvFilePath = await resolveProjectEnvFilePath(authConfigPath)
 
   /**
-   * Resolves the credential pair this edit session authenticates with. With a
-   * SCREENCI_SECRET, a personal SCREENCI_EDIT_TOKEN is used when configured,
-   * and otherwise auto-minted from the secret via the token exchange (one
-   * credential paste connects the project). Without a secret, the session runs
-   * on the anonymous trial: the anon session token doubles as the dev token
-   * (the server auto-mints the matching editor token for the trial org), and a
-   * claimed session self-upgrades by persisting the real secret plus the
-   * claim-minted editor token into .env.
+   * Resolves the credential this preview session authenticates with: the
+   * project's SCREENCI_SECRET when configured, otherwise the anonymous trial
+   * session token (a claimed trial self-upgrades by persisting the real
+   * secret into the env file). One credential, nothing else to paste.
    */
   const resolveDevAuth = async (): Promise<{
     credential: CliCredential
-    devToken: string
     anonToken: string | null
   }> => {
-    const requireEditToken = async (
-      fallback?: string,
-      secretForExchange?: string
-    ): Promise<string> => {
-      const editorToken =
-        options.token ?? process.env[SCREENCI_EDIT_TOKEN_ENV] ?? fallback
-      if (editorToken) return editorToken
-
-      if (secretForExchange) {
-        const exchanged = await exchangeEditToken({
-          apiUrl,
-          secret: secretForExchange,
-          machineName: depsOverride.machineName ?? hostname(),
-        })
-        if (exchanged.ok) {
-          await persistScreenCIEditToken(authEnvFilePath, exchanged.editToken)
-          process.env[SCREENCI_EDIT_TOKEN_ENV] = exchanged.editToken
-          logger.info(
-            `Minted a personal editor token for this machine (saved to ${pathRelative(process.cwd(), authEnvFilePath)}).`
-          )
-          return exchanged.editToken
-        }
-        logger.warn(`Could not mint an editor token: ${exchanged.error}`)
-      }
-
-      logger.error(
-        `No ${SCREENCI_EDIT_TOKEN_ENV} configured. Create a personal editor token at ${pc.cyan(getScreenCISecretsUrl())} and add it to your env file, or pass it with --token.`
-      )
-      process.exit(1)
-    }
-
     const secretFromEnv = process.env.SCREENCI_SECRET
     if (secretFromEnv) {
-      return {
-        credential: secretCredential(secretFromEnv),
-        devToken: await requireEditToken(undefined, secretFromEnv),
-        anonToken: null,
-      }
+      return { credential: secretCredential(secretFromEnv), anonToken: null }
     }
 
     const anonToken = await getOrCreateAnonToken(authScreenciDir)
@@ -4153,19 +4093,11 @@ export async function runDevCommand(
     if (status.status === 'claimed') {
       await persistScreenCISecret(authEnvFilePath, status.secret)
       process.env.SCREENCI_SECRET = status.secret
-      if (status.editToken !== undefined) {
-        await persistScreenCIEditToken(authEnvFilePath, status.editToken)
-        process.env[SCREENCI_EDIT_TOKEN_ENV] = status.editToken
-      }
       await deleteAnonSessionFile(authScreenciDir)
       logger.info(
         `Your SCREENCI_SECRET was added to ${pathRelative(process.cwd(), authEnvFilePath)}`
       )
-      return {
-        credential: secretCredential(status.secret),
-        devToken: await requireEditToken(status.editToken, status.secret),
-        anonToken: null,
-      }
+      return { credential: secretCredential(status.secret), anonToken: null }
     }
 
     if (status.status === 'expired') {
@@ -4180,11 +4112,7 @@ export async function runDevCommand(
     // pending / not_found: proceed anonymously. Recording an anonymous trial
     // agrees to the Terms, same as export.
     logAnonTermsNoticeOnce()
-    return {
-      credential: anonCredential(anonToken),
-      devToken: anonToken,
-      anonToken,
-    }
+    return { credential: anonCredential(anonToken), anonToken }
   }
 
   const auth = await resolveDevAuth()
@@ -4221,7 +4149,6 @@ export async function runDevCommand(
   const config: DevListenConfig = {
     apiUrl,
     credential: auth.credential,
-    devToken: auth.devToken,
     projectName: screenciConfig.projectName,
     machineName: depsOverride.machineName ?? hostname(),
   }
@@ -4241,7 +4168,7 @@ export async function runDevCommand(
     logger.error(`Failed to connect: ${message}`)
     if (error instanceof DevAuthError) {
       logger.error(
-        `Check your editor token at ${pc.cyan(getScreenCISecretsUrl())}.`
+        `Check your SCREENCI_SECRET at ${pc.cyan(getScreenCISecretsUrl())}.`
       )
     }
     process.exit(1)
@@ -4749,6 +4676,28 @@ export async function ensureAnonRecordingAllowedOrExit(
 // re-sends the existing recordings without re-running Playwright). A non-null
 // `playwrightFailure` means the preceding record run had failures, which tunes
 // the messaging and the upload policy; `retry` always passes null.
+/**
+ * The org's shared branding assets, for the pre-upload name check. A failure
+ * (an older service, no network) yields null: the check is then skipped rather
+ * than blocking an otherwise valid upload.
+ */
+async function fetchRunBrandingAssets(
+  apiUrl: string,
+  credential: CliCredential,
+  projectName: string
+): Promise<CliBrandingAsset[] | null> {
+  const result = await fetchBranding(
+    { apiUrl, secret: credential.value, projectName },
+    fetch
+  )
+  // Null means "could not be verified", which the reference check skips. A
+  // service with no branding route answers 404 and yields the empty branding,
+  // and treating its empty asset list as fact would fail every
+  // `{ branding: '<name>' }` overlay with "none are defined yet".
+  if (!result.ok || !result.supported) return null
+  return result.branding.assets
+}
+
 async function uploadRecordedVideosForConfig(
   configPath: string | undefined,
   playwrightFailure: Error | null,
@@ -4849,6 +4798,17 @@ async function uploadRecordedVideosForConfig(
         notices: [],
         plan: null,
       }
+      // Shared branding assets are referenced by name and resolved at export,
+      // so the names are checked against the service once per run. An
+      // anonymous trial has no organisation and therefore no assets.
+      const brandingAssets = usedAnonCredential
+        ? []
+        : await fetchRunBrandingAssets(
+            apiUrl,
+            credential,
+            screenciConfig.projectName
+          )
+      const uploadContext: UploadRunContext = { ...runContext, brandingAssets }
       try {
         uploadResult = await uploadRecordings(
           screenciDir,
@@ -4858,7 +4818,7 @@ async function uploadRecordedVideosForConfig(
           undefined,
           verbose,
           requestedVideoNames,
-          runContext
+          uploadContext
         )
       } catch (err) {
         if (isUploadCancelledError(err)) {
@@ -5139,12 +5099,6 @@ export async function main() {
           return
         }
 
-        try {
-          await stampEditIdsForProject(options.config)
-        } catch (err) {
-          logger.warn('Could not stamp editIds:', err)
-        }
-
         await runExportCommand({
           configPath: options.config,
           verbose: options.verbose ?? false,
@@ -5169,10 +5123,6 @@ export async function main() {
     )
     .option('-c, --config <path>', 'path to config file')
     .option('-v, --verbose', 'verbose output')
-    .option(
-      '--token <token>',
-      `personal editor token (defaults to ${SCREENCI_EDIT_TOKEN_ENV} from your env file)`
-    )
     .option(
       '-g, --grep <pattern>',
       'only manage videos whose title matches this pattern (same filter as ' +
@@ -5247,15 +5197,6 @@ export async function main() {
       )
 
       if (process.env.SCREENCI_RECORDING === 'true') return
-
-      // Stamp editIds while the sources and kept recordings are known-good,
-      // so browser edits resolve to stable ids even before the first
-      // `screenci preview` run.
-      try {
-        await stampEditIdsForProject(parsed.configPath)
-      } catch (err) {
-        logger.warn('Could not stamp editIds:', err)
-      }
 
       const editCommand = getSuggestedScreenciCommand('preview')
       logger.info(
@@ -5339,13 +5280,8 @@ export async function main() {
   ): Promise<IslandCredentials> => {
     const { resolvedConfigPath, screenciConfig, secret, apiUrl } =
       await requireScreenCISecret(configPath)
-    const editToken = process.env[SCREENCI_EDIT_TOKEN_ENV]
     return {
       secret,
-      editToken:
-        typeof editToken === 'string' && editToken.length > 0
-          ? editToken
-          : null,
       apiUrl,
       appUrl: getDevFrontendUrl(),
       envFilePath: await resolveProjectEnvFilePath(resolvedConfigPath),
@@ -5357,6 +5293,39 @@ export async function main() {
     program,
     createDefaultAiContextCommandDeps(loadIslandCredentials, logger)
   )
+  // `login` deliberately needs no account: signing in to the person's own app
+  // is between them and their app, so an address is enough.
+  registerLoginCommand(
+    program,
+    createDefaultLoginDeps(logger),
+    async (configPath) => {
+      const resolvedConfigPath = resolveScreenCIConfigPathOrExit(configPath)
+      const screenciConfig = await loadRecordConfigWithoutPlaywrightCollision(
+        resolvedConfigPath
+      ).catch(() => null)
+      return {
+        configPath: resolvedConfigPath,
+        configDir: dirname(resolvedConfigPath),
+        baseURL: screenciConfig?.use?.baseURL,
+      }
+    }
+  )
+  // `pull-login` wrote APP_USERNAME / APP_PASSWORD from a login ScreenCI kept
+  // for each member. Nothing stores those any more: the person signs in to
+  // their own product themselves. Kept for one release so an agent following a
+  // stale brief gets the new instruction instead of "unknown command".
+  program
+    .command('pull-login', { hidden: true })
+    .option('-c, --config <path>', 'path to screenci.config.ts')
+    .action(() => {
+      logger.error(
+        'Error: `screenci pull-login` is gone. ScreenCI no longer stores a login for your app.\n' +
+          'Run `npx screenci login` instead: it opens a browser, the person signs in there themselves, and the session is saved on this machine only.\n' +
+          'See https://screenci.com/docs/guides/signing-in'
+      )
+      process.exit(1)
+    })
+
   registerMergeCompleteCommand(program, {
     fetchFn: fetch,
     loadCredentials: loadIslandCredentials,
@@ -5571,6 +5540,26 @@ export class RecordAbortedError extends Error {
   }
 }
 
+/**
+ * A session whose cookies have all expired records a login page instead of the
+ * app, and the failure is otherwise silent (the video just looks wrong). Say so
+ * before Playwright starts. Reports metadata only, never the session itself.
+ */
+export async function warnIfAppSessionExpired(
+  configDir: string
+): Promise<void> {
+  const now = new Date()
+  const status = await readAppSessionStatus({
+    configDir,
+    profile: resolveProfileName(undefined),
+    now,
+  })
+  if (!status.saved || !status.expired) return
+  logger.warn(
+    `${describeAppSessionStatus(status, now)} Sign in again with \`npx screenci login\`, or the recording will show a signed-out app.`
+  )
+}
+
 async function run(
   command: 'record' | 'test',
   additionalArgs: string[],
@@ -5589,6 +5578,8 @@ async function run(
   // Only validate args for record command. No secret is required here: record
   // can upload anonymously (see resolveUploadCredential), so this must not
   // hard-exit the way requireScreenCISecret does for account-only commands.
+  await warnIfAppSessionExpired(dirname(configPath))
+
   if (command === 'record') {
     validateArgs(additionalArgs)
     const screenciDir = resolve(dirname(configPath), '.screenci')

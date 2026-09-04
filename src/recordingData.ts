@@ -242,7 +242,25 @@ export type VideoAssetStartEvent = {
   time?: number
 }
 
-export type AssetStartEvent = ImageAssetStartEvent | VideoAssetStartEvent
+/**
+ * An overlay whose file is a shared branding asset, referenced by name. It
+ * carries no path and no hash: the export resolves the name against the
+ * Branding page, so replacing the file there updates the next export.
+ */
+export type BrandingAssetStartEvent = {
+  type: 'assetStart'
+  timeMs: number
+  name: string
+  kind: 'branding'
+  branding: { name: string }
+  durationMs?: number
+  fullScreen: boolean
+  /** Linear gain for a branding VIDEO. */
+  audio?: number
+}
+
+export type AssetStartEvent =
+  ImageAssetStartEvent | VideoAssetStartEvent | BrandingAssetStartEvent
 
 /**
  * Studio-managed overlay declared via `video.overlays([...])`. The

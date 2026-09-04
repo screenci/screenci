@@ -1,4 +1,5 @@
 import type { ScreenCIConfig, ExtendedScreenCIConfig } from './types.js'
+import { defaultAppSessionFsDeps, resolveAppSession } from './appSession.js'
 import { CAPTURE_AUDIO_ENV } from './browserLaunchOptions.js'
 import { screenAudioUnsupportedMessage } from './screenAudio.js'
 import {
@@ -160,8 +161,21 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
       ...(isRecording ? { trace: 'off' as const } : {}),
     },
   }))
+  // The session `screenci login` saved, so recordings of an app behind a login
+  // start signed in without the script ever typing a credential. An explicit
+  // `use.storageState` always wins, so this can never surprise a config that
+  // already points somewhere; see `resolveAppSession` for the full order.
+  const appSession = resolveAppSession({
+    configDir: process.env.SCREENCI_CONFIG_DIR ?? process.cwd(),
+    ...(rest.use !== undefined && 'storageState' in rest.use
+      ? { configuredStorageState: rest.use.storageState }
+      : {}),
+    exists: defaultAppSessionFsDeps.exists,
+  })
+
   const use = {
     ...rest.use,
+    ...(appSession.path !== null ? { storageState: appSession.path } : {}),
     ...(trace !== undefined ? { trace } : {}),
     actionTimeout: rest.use?.actionTimeout ?? DEFAULT_ACTION_TIMEOUT,
     navigationTimeout:

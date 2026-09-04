@@ -1,11 +1,15 @@
 # AI Context
 
 Coding agents make the best videos when they know where your product's code
-lives, where it runs, whether they may start it, and how to sign in. The
-**AI context** page in the web app (top-right menu) stores that once for the
-whole organisation, so nobody has to type it into every prompt. Projects can
-override each field, and every member keeps a personal, encrypted login for the
-site. `screenci start` reads it all when an agent runs a setup prompt.
+lives, where it runs, whether they may start it, and whether it sits behind a
+login. The **AI context** page in the web app (top-right menu) stores that once
+for the whole organisation, so nobody has to type it into every prompt.
+Projects can override each field. `screenci start` reads it all when an agent
+runs a setup prompt.
+
+No credential is ever part of it. Signing in to your own product happens on
+your own machine, in a browser you drive yourself, and ScreenCI never receives
+what you type: see [Signing In](/docs/guides/signing-in).
 
 #### You will learn
 
@@ -13,7 +17,7 @@ site. `screenci start` reads it all when an agent runs a setup prompt.
 - [how a project overrides the organisation](#project-overrides)
 - [what the agent does with the repository](#the-repository)
 - [what happens when the site is not running](#running-the-app-locally)
-- [how personal site logins reach the agent](#your-login-for-the-site)
+- [how the agent finds out the site needs a sign-in](#sites-that-need-a-sign-in)
 - [what each version records about the site it ran against](#site-metadata)
 - [moving service-managed sources into the repository](#move-to-repository)
 
@@ -24,10 +28,14 @@ site. `screenci start` reads it all when an agent runs a setup prompt.
 | **Repository URL**              | Reads the product's routes, components, and README for real URLs and selectors. Clones it when the prompt runs outside the repository. Use a URL without credentials.  |
 | **Site URL**                    | The address to record: a deployed site, or a `localhost` address for a dev server. Prefills the App URL field of every prompt dialog.                                  |
 | **Let the agent start the app** | Off by default. When a localhost site does not answer, the agent stops and reports. On, the agent reads the repository, starts the dev server, and records.            |
+| **This site needs a sign-in**   | Off by default. On, the brief tells the agent to run `screenci login` and have you sign in before it starts authoring, instead of discovering the login page later.    |
 | **Notes for the agent**         | Free text, up to 4000 characters: how to run the app, which demo workspace to use, flows to avoid, vocabulary. Printed to the agent verbatim as "Notes from the team". |
 
 Any member can edit the organisation values. The agent can re-read them at any
-time with [`screenci context`](/docs/reference/cli#screenci-context).
+time with [`screenci context`](/docs/reference/cli#screenci-context). The look
+and voice new videos start from is a separate page, see
+[Branding](/docs/guides/branding); the brief also lists the shared image and
+video assets the code can reference by name.
 
 ## Project overrides
 
@@ -80,25 +88,29 @@ URL). Any HTTP answer counts, including a login page. When nothing answers:
 - **Deployed address:** STOP with `site-unreachable`, unless the agent passes
   `--skip-site-check`.
 
-## Your login for the site
+## Sites that need a sign-in
 
-Videos that need to sign in read `process.env.APP_USERNAME` and
-`process.env.APP_PASSWORD` inside `hide()`. Each member saves their own
-username and password on the AI context page ("Your login for the site"). It
-is stored encrypted, it is never shown again in the app, and it never appears
-in a prompt or in agent output.
+You sign in to your own product once, in a browser ScreenCI opens for you, and
+every recording replays that session. The full flow is in
+[Signing In](/docs/guides/signing-in); what matters here is the switch.
 
-- `screenci start` fetches the login of the person who created the setup code
-  (through their personal editor token) and writes both variables into the
-  workspace env file. Values a person typed by hand are kept.
-- Without a saved login the env file gets empty placeholders, and the brief
-  tells the agent to ask the person to save theirs and then run
-  [`screenci pull-login`](/docs/reference/cli#screenci-pull-login), or to paste
-  the values into the env file directly.
-- Use a demo or test account, never a personal one with real data; the videos
-  show whatever that account sees.
-- CI does not have a personal login: set `APP_USERNAME` and `APP_PASSWORD` as
-  CI secrets (see [CI Setup](/docs/ci-setup)).
+Turn **This site needs a sign-in** on and the brief tells the agent, before it
+writes anything, to:
+
+1. run `npx screenci login`,
+2. ask you to sign in in the browser that opens,
+3. run `npx screenci login --done` once you say you have,
+4. and then write the video with no sign-in steps in it.
+
+Leave it off and the brief still explains the flow, but as something to reach
+for only if the agent runs into a login page.
+
+Either way, the agent never asks you for a password or a code, and nothing you
+type reaches ScreenCI. Use a demo or test account where you can: the video
+shows whatever that account sees.
+
+CI cannot open a browser, so it is handed a session instead. See
+[CI Setup](/docs/ci-setup).
 
 ## Site metadata
 
@@ -136,5 +148,6 @@ sources from ScreenCI.
 
 - [Create Videos from the Web App](/docs/guides/create-from-web-app) for the
   prompt flow itself.
-- [CLI](/docs/reference/cli) for `start`, `context`, `pull-login`, and
+- [Signing In](/docs/guides/signing-in) for recording an app behind a login.
+- [CLI](/docs/reference/cli) for `start`, `context`, `login`, and
   `merge-complete`.

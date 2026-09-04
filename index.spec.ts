@@ -16,14 +16,15 @@ describe('public api surface', () => {
       'hideNarration',
       'hideRecording',
       'modelTypes',
-      // moveNarration, resizeNarration, setBackground, and screenshot are
-      // hidden for release (unfinished features); their exports are commented
-      // out in index.ts.
+      // moveNarration, resizeNarration, and setBackground are hidden for
+      // release (unfinished features); their exports are commented out in
+      // index.ts.
       'overlayRect',
       'redact',
       'resetZoom',
       'resizeRecording',
       'resolveLocaleForLanguage',
+      'screenshot',
       'showNarration',
       'showRecording',
       'speed',

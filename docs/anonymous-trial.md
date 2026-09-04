@@ -39,9 +39,9 @@ do next), rather than a generic rejection.
 
 Signing in claims the trial into your account: its projects, videos, and
 recordings become part of your organization. A running `screenci preview` session
-upgrades itself automatically: the claim writes your `SCREENCI_SECRET` and a
-personal `SCREENCI_EDIT_TOKEN` into `screenci/.env` and the session reconnects
-with your account credentials without restarting.
+upgrades itself automatically: the claim writes your `SCREENCI_SECRET` into
+`screenci/.env` and the session reconnects with your account credentials
+without restarting.
 
 With an active paid plan, `screenci export` (or the editor's Export button)
 renders and downloads the finished videos.

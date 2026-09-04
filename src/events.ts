@@ -691,6 +691,51 @@ export type DependencyAssetStartEvent = {
 }
 
 /**
+ * An overlay whose file is a shared branding asset, referenced by name.
+ *
+ * Unlike every other asset event this carries no bytes and no `fileHash`: the
+ * export resolves the name against the Branding page and rewrites this into a
+ * concrete image or video event. Replacing the file there therefore changes
+ * every video's next export without a re-record.
+ */
+export type BrandingAssetStartEvent = {
+  type: 'assetStart'
+  timeMs: number
+  name: string
+  kind: 'branding'
+  /** The shared asset's name on the Branding page. */
+  branding: { name: string }
+  /** Set for an image overlay with a length; a video plays its own length. */
+  durationMs?: number
+  fullScreen: boolean
+  /** Keep the overlay fixed in screen space during zoom (composited after zoom). */
+  pinToScreen?: boolean
+  /** Draw the overlay above the mouse cursor, so the cursor passes underneath it. */
+  overMouse?: boolean
+  placement?: OverlayPlacement
+  /** Fade-in length (ms) when the overlay appears. Omitted = instant. */
+  fadeInMs?: number
+  /** Fade-out length (ms) when the overlay disappears. Omitted = instant. */
+  fadeOutMs?: number
+  /** Crop rect in the asset's own pixels, applied before placement/scale. */
+  clip?: OverlayClip
+  /** Linear gain for a branding VIDEO (rejected for an image asset). */
+  audio?: number
+  /** Late start into a branding VIDEO. */
+  sourceStart?: SourceTrimPoint
+  /** Early end into a branding VIDEO. */
+  sourceEnd?: SourceTrimPoint
+  /** See {@link VideoAssetStartEvent.speed}. Branding VIDEO only. */
+  speed?: number
+  /** See {@link VideoAssetStartEvent.time}. Branding VIDEO only. */
+  time?: number
+  /** See {@link ImageAssetStartEvent.untilOutputMs}. */
+  untilOutputMs?: number
+  /** See {@link ImageAssetStartEvent.untilPercent}. */
+  untilPercent?: number
+}
+
+/**
  * End marker for an asset overlay driven by `start()`/`end()`. The asset is
  * visible from its `assetStart` until this event (a live overlay over the
  * recording, no frozen frame). For an overlay with an intrinsic length (a video
@@ -717,6 +762,7 @@ export type AssetStartEvent =
   | VideoAssetStartEvent
   | AnimationAssetStartEvent
   | DependencyAssetStartEvent
+  | BrandingAssetStartEvent
 
 /**
  * The resolved markup and render parameters captured during the test for a
@@ -783,6 +829,7 @@ export type AssetStartPayload =
   | Omit<VideoAssetStartEvent, 'type' | 'timeMs' | 'name'>
   | Omit<AnimationAssetStartEvent, 'type' | 'timeMs' | 'name'>
   | Omit<DependencyAssetStartEvent, 'type' | 'timeMs' | 'name'>
+  | Omit<BrandingAssetStartEvent, 'type' | 'timeMs' | 'name'>
 
 /**
  * Studio-managed overlay declared via `video.overlays([...])`. The
@@ -2155,6 +2202,38 @@ export class EventRecorder implements IEventRecorder {
           sourceStart: asset.sourceStart,
         }),
         ...(asset.sourceEnd !== undefined && { sourceEnd: asset.sourceEnd }),
+        ...(asset.untilOutputMs !== undefined && {
+          untilOutputMs: asset.untilOutputMs,
+        }),
+        ...(asset.untilPercent !== undefined && {
+          untilPercent: asset.untilPercent,
+        }),
+      })
+      return
+    }
+
+    if (asset.kind === 'branding') {
+      this.events.push({
+        type: 'assetStart',
+        timeMs,
+        name,
+        kind: 'branding',
+        branding: asset.branding,
+        ...(asset.durationMs !== undefined && { durationMs: asset.durationMs }),
+        fullScreen: asset.fullScreen,
+        ...(asset.pinToScreen === true && { pinToScreen: true }),
+        ...(asset.overMouse === true && { overMouse: true }),
+        ...(asset.placement !== undefined && { placement: asset.placement }),
+        ...(asset.fadeInMs !== undefined && { fadeInMs: asset.fadeInMs }),
+        ...(asset.fadeOutMs !== undefined && { fadeOutMs: asset.fadeOutMs }),
+        ...(asset.clip !== undefined && { clip: asset.clip }),
+        ...(asset.audio !== undefined && { audio: asset.audio }),
+        ...(asset.sourceStart !== undefined && {
+          sourceStart: asset.sourceStart,
+        }),
+        ...(asset.sourceEnd !== undefined && { sourceEnd: asset.sourceEnd }),
+        ...(asset.speed !== undefined && { speed: asset.speed }),
+        ...(asset.time !== undefined && { time: asset.time }),
         ...(asset.untilOutputMs !== undefined && {
           untilOutputMs: asset.untilOutputMs,
         }),

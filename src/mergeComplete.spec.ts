@@ -21,7 +21,6 @@ function makeDeps(overrides: Partial<MergeCompleteDeps> = {}) {
   const requests: Array<{ url: string; body: unknown }> = []
   const creds: IslandCredentials = {
     secret: 'sec',
-    editToken: 'tok',
     apiUrl: 'https://api.example.com',
     appUrl: 'https://app.example.com',
     envFilePath: '/repo/screenci/.env',

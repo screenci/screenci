@@ -86,7 +86,7 @@ set here: declare them per video with `video.recordOptions(...)` and
   `SCREENCI_ENVIRONMENT === 'local'` and `.env` otherwise).
 
 For example, keep `SCREENCI_SECRET` there. Your ElevenLabs key is not stored in
-your env file: add it on the Secrets page in the app instead (see
+your env file: add it on the Branding page in the app instead (see
 [Narration](/docs/guides/narration#elevenlabs-voices)).
 
 ### Example: `.env` file
@@ -95,8 +95,6 @@ A typical local env file looks like this:
 
 ```bash
 SCREENCI_SECRET=sc_live_your_project_secret
-APP_USERNAME=demo@example.com
-APP_PASSWORD=your_demo_account_password
 YOUR_PRIVATE_SECRET=your_own_app_secret
 ```
 
@@ -104,14 +102,28 @@ Common cases:
 
 - `SCREENCI_SECRET` authenticates `screenci preview`, `screenci export`, `screenci info`, and
   public visibility commands.
-- `APP_USERNAME` and `APP_PASSWORD` are the convention for the account a video
-  signs in with (read them with `process.env` inside `hide()`). `screenci
-start` and `screenci pull-login` fill them from the personal login each
-  member saves under [AI context](/docs/guides/ai-context#your-login-for-the-site);
-  in CI, set them as secrets.
 - Any other variables (for example `YOUR_PRIVATE_SECRET`) are yours to use
   inside your own app or test setup. ScreenCI reads them from the env file into
   `process.env` like any normal environment variable, but never transmits them.
+
+Your app's own login does not belong here. Run
+[`screenci login`](/docs/guides/signing-in) instead: you sign in once in a real
+browser and the session is saved outside the env file, so no password ever
+lands in a file your scripts read.
+
+### The signed-in session
+
+`screenci login` writes `.screenci/auth/<profile>.json` (a Playwright
+`storageState`) and `defineConfig` points `use.storageState` at it, so
+recordings start signed in. Two variables tune that:
+
+| Variable                     | Effect                                                                                                                                        |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SCREENCI_APP_STORAGE_STATE` | Use this `storageState` file instead of the saved one. Relative paths resolve against the config's folder. This is how CI supplies a session. |
+| `SCREENCI_AUTH_PROFILE`      | Use a named session, e.g. `admin`, saved by `screenci login --profile admin`.                                                                 |
+
+An explicit `use.storageState` in `screenci.config.ts` beats both. See
+[Signing In](/docs/guides/signing-in) and [CI Setup](/docs/ci-setup).
 
 ### `SCREENCI_APP_LAUNCHED_BY`
 
@@ -319,8 +331,8 @@ video.renderOptions({
 })
 ```
 
-The image is uploaded alongside the recording, and drawn in the video
-output. It replaces the built-in cursor entirely, so `mouse.style`
+The image is uploaded alongside the recording, and drawn in both video and
+screenshot output. It replaces the built-in cursor entirely, so `mouse.style`
 is ignored when `image` is set. A few things to know:
 
 - Use a **PNG**.
@@ -353,7 +365,11 @@ video.renderOptions({
 ```
 
 Reuse the same render options across videos for branding and layout
-consistency, then override only the files that need a different look.
+consistency, then override only the files that need a different look. The
+organisation's [Branding](/docs/guides/branding) page is where those shared
+values live for coding agents: `screenci start` prints them with a snippet and
+the agent puts them on each new video. They are not applied behind the code's
+back; a video without them renders with the system defaults.
 
 The web Editor is the source of truth for render and record options. Values
 declared in code (per video with `video.renderOptions(...)` and
@@ -414,7 +430,27 @@ ScreenCI passes through most normal Playwright config such as:
 
 That means you can keep using familiar Playwright options like `baseURL`,
 `storageState`, `trace`, `launchOptions`, `webServer`, and browser-specific
-projects in the same file.
+projects in the same file. `storageState` is filled in for you from the session
+[`screenci login`](/docs/guides/signing-in) saved; setting it yourself wins.
+
+#### Recording a site behind bot protection
+
+If a recording stops on a challenge page ("Just a moment...", "Performing
+security verification") while the same URL loads fine in your own browser, the
+site is rejecting the recorder, not your script. Recording runs Chromium's
+headless shell, whose user agent some bot protection refuses. Give it a normal
+desktop one:
+
+```ts
+use: {
+  userAgent:
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+}
+```
+
+This is a property of the environment, not of the flow, so no amount of
+rewriting the video code will help. Being signed in does not help either: the
+challenge comes before the session is ever consulted.
 
 For the Playwright side of the config model, see
 [Configuration](https://playwright.dev/docs/test-configuration).

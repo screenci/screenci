@@ -1,5 +1,4 @@
 import { spawn } from 'child_process'
-import { hostname } from 'os'
 import type { ChildProcess } from 'child_process'
 import { existsSync, readFileSync, realpathSync, rmSync } from 'fs'
 import { appendFile, copyFile, mkdir, readFile, writeFile } from 'fs/promises'
@@ -11,15 +10,12 @@ import ora from 'ora'
 import pc from 'picocolors'
 import { logger } from './logger.js'
 import {
-  getDevBackendUrl,
   getScreenCISecretsUrl,
   looksLikeScreenCISecret,
-  persistScreenCIEditToken,
   persistScreenCISecret,
   verifyScreenCISecret,
 } from './linkSession.js'
 import { SCREENCI_TERMS_URL } from './anonSession.js'
-import { exchangeEditToken } from './editTokenExchange.js'
 
 const PLAYWRIGHT_TEST_VERSION = '^1.59.0'
 const PLAYWRIGHT_CLI_VERSION = 'latest'
@@ -588,11 +584,11 @@ function generateIslandPackageJson(projectName: string): string {
 
 /**
  * Prettier config scaffolded into the island. It gates automatic formatting
- * of codegen-edited recording files: screenci formats an edited file only
- * when prettier is installed and a config file resolves for it, so deleting
- * this file disables the feature and editing it changes the style. The
- * values match the style of the generated example recordings so the first
- * codegen edit does not reformat whole files.
+ * of recording files screenci rewrites (duplicate-editId resolution): screenci
+ * formats an edited file only when prettier is installed and a config file
+ * resolves for it, so deleting this file disables the feature and editing it
+ * changes the style. The values match the style of the generated example
+ * recordings so the first rewrite does not reformat whole files.
  */
 export function generatePrettierConfig(): string {
   return (
@@ -682,7 +678,7 @@ export function generateIslandReadme(
   const scripts = getIslandScriptInvocations(packageManager)
   return `# ${projectName}
 
-Check \`recordings/\` for videos, and \`screenci.config.ts\`
+Check \`recordings/\` for videos and screenshots, and \`screenci.config.ts\`
 for configuration.
 
 ## Commands
@@ -1108,8 +1104,8 @@ async function installInitDependencies(
   const sharedPackages = [
     `@playwright/test@${PLAYWRIGHT_TEST_VERSION}`,
     `@types/node@${NODE_TYPES_VERSION}`,
-    // Formats codegen-edited recording files; screenci skips formatting when
-    // prettier or the .prettierrc scaffolded by init is removed.
+    // Formats recording files screenci rewrites; screenci skips formatting
+    // when prettier or the .prettierrc scaffolded by init is removed.
     `prettier@${PRETTIER_VERSION}`,
     ...(includePlaywrightCli
       ? [`@playwright/cli@${PLAYWRIGHT_CLI_VERSION}`]
@@ -1192,25 +1188,7 @@ export async function setUpInitSecret(
   const env = options.env ?? process.env
   const envPath = resolve(islandDir, '.env')
 
-  // One-and-done connect: with a secret on hand, also mint this machine's
-  // personal editor token now so `screenci preview` never has to ask for one.
-  // Best-effort: `edit` retries the exchange itself when this fails.
-  const mintEditToken = async (secret: string): Promise<void> => {
-    if (env.SCREENCI_EDIT_TOKEN) return
-    const exchanged = await exchangeEditToken({
-      apiUrl: options.backendUrl ?? getDevBackendUrl(),
-      secret,
-      machineName: options.machineName ?? hostname(),
-      ...(options.fetchImpl ? { fetchFn: options.fetchImpl } : {}),
-    })
-    if (exchanged.ok) {
-      await persistScreenCIEditToken(envPath, exchanged.editToken)
-      logger.info('Minted a personal editor token for this machine.')
-    }
-  }
-
   if (env.SCREENCI_SECRET) {
-    await mintEditToken(env.SCREENCI_SECRET)
     return 'ready'
   }
 
@@ -1241,7 +1219,6 @@ export async function setUpInitSecret(
   // The generated config sets `envFile: '.env'`, so this matches what
   // `screenci export` resolves later.
   await persistScreenCISecret(envPath, options.pastedSecret)
-  await mintEditToken(options.pastedSecret)
   return 'ready'
 }
 
@@ -1278,7 +1255,7 @@ function printInitNextSteps(
   logger.info(`    ${pc.cyan(`${commands.screenciRun} test`)}`)
   logger.info('')
   logger.info('And check out:')
-  logger.info(`  - ./${islandDirName}/recordings/ - Videos`)
+  logger.info(`  - ./${islandDirName}/recordings/ - Videos and screenshots`)
   logger.info(
     `  - ./${islandDirName}/screenci.config.ts - ScreenCI configuration`
   )
@@ -1878,24 +1855,25 @@ export async function scaffoldScreenciIsland(
       resolve(islandDir, 'recordings', 'example.screenci.ts'),
       generateExampleVideo()
     )
-    // Hidden for release: the screenshots feature is unfinished, so init no
-    // longer scaffolds the screenshot example (a branded still that rings one
-    // element) or its Ring overlay source. Re-enable by uncommenting. Docs
-    // moved to docs/removed/screenshots.md at the repo root.
-    // await writeFile(
-    //   resolve(islandDir, 'recordings', 'example-screenshot.screenci.ts'),
-    //   shouldAddReactOverlays
-    //     ? generateReactExampleScreenshot()
-    //     : generateExampleScreenshot()
-    // )
-    // if (shouldAddReactOverlays) {
-    //   await writeFile(resolve(assetsDir, 'Ring.tsx'), generateRingOverlayTsx())
-    // } else {
-    //   await writeFile(
-    //     resolve(assetsDir, 'ring.html'),
-    //     generateRingOverlayHtml()
-    //   )
-    // }
+    // Also scaffold a screenshot example: a branded still that rings one element.
+    // With React overlays it renders the ring from a `.tsx` overlay page while
+    // the test file remains `.ts`; under `--no-react` it uses a plain `.html`
+    // overlay page. Each references its overlay source under recordings/assets/,
+    // scaffolded alongside it.
+    await writeFile(
+      resolve(islandDir, 'recordings', 'example-screenshot.screenci.ts'),
+      shouldAddReactOverlays
+        ? generateReactExampleScreenshot()
+        : generateExampleScreenshot()
+    )
+    if (shouldAddReactOverlays) {
+      await writeFile(resolve(assetsDir, 'Ring.tsx'), generateRingOverlayTsx())
+    } else {
+      await writeFile(
+        resolve(assetsDir, 'ring.html'),
+        generateRingOverlayHtml()
+      )
+    }
     if (packageManager === 'pnpm') {
       // Resolve (and gate on) the pnpm version before writing the workspace
       // file so the build-approval key matches the installed pnpm.
@@ -2244,6 +2222,16 @@ ${projectIdLine}  // Load SCREENCI_SECRET and other env vars from this file.
   envFile: '.env',
   // Look for *.screenci.ts files in this directory.
   recordingDir: './recordings',
+  // Recording an app behind a login? Run \`npx screenci login\` once: it opens
+  // a browser you sign in to yourself, and every recording replays that
+  // session, so the videos need no sign-in steps. Nothing to configure here.
+  // https://screenci.com/docs/guides/signing-in
+  //
+  // If a recording stops at a bot check ("Just a moment...") that a normal
+  // browser sails through, it is the headless shell's user agent being
+  // rejected, not your script. Set a desktop one in \`use\` below:
+  //   userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' +
+  //     '(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
   // Let independent video files run in parallel.
   fullyParallel: true,
   // Make sure CI recordings are smooth even if resources are constrained
@@ -2257,7 +2245,9 @@ ${projectIdLine}  // Load SCREENCI_SECRET and other env vars from this file.
       // Lightest encode on constrained CI runners; full quality locally.
       encoder: process.env.CI ? 'fast' : 'sharp',
     },
+    // Shared framing for videos and screenshots
     renderOptions: {
+      screenshot: { margin: 64 },
       output: {
         background: {
           // ScreenCI brand orange, baked into layered gradients (the renderer

@@ -865,9 +865,10 @@ const _videoBase = base.extend<
     // versions of one video. Plain videos fall back to the test title.
     const videoName = _screenciVideoName ?? testInfo.title
     // Every recording is web-editable: render/record options are always marked
-    // editable so the app knows the editor may change them (edits codegen into
-    // code). No language set is web-owned any more: adding a language codegens a
-    // `video.languages([...])` block, so the set is always code-defined.
+    // editable so the app knows the editor may change them (the edits are
+    // stored and applied at render time). No language set is web-owned any
+    // more: a language is added to the `video.languages([...])` block in the
+    // script, so the set is always code-defined.
     const recorder = new EventRecorder(
       renderOptionsObj,
       recordOptions,

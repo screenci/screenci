@@ -2721,9 +2721,9 @@ export async function instrumentPage(page: Page): Promise<Page> {
     // Two forms: a number from code (explicit, overriding it warns) and no
     // argument (a web-editable pause defaulting to 0).
     const requested = typeof timeout === 'number' ? timeout : 0
-    // Both forms are web-editable: a numeric literal is rewritten in place by
-    // codegen (durationMs), and the no-arg pause defaults to 0. Neither is
-    // locked, so dragging a neighboring interaction can absorb into this sleep.
+    // Both forms are web-editable: the editor stores a durationMs edit against
+    // the call, and the no-arg pause defaults to 0. Neither is locked, so
+    // dragging a neighboring interaction can absorb into this sleep.
     const editable = buildEditableMeta({
       kind: 'delay',
       schemaKind: 'delay',

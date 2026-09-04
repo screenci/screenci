@@ -5,6 +5,7 @@ import {
   fetchLatestSourceBundle,
   notifyRunComplete,
   shouldUploadSources,
+  verifyIslandCredential,
   type SourceSyncDeps,
 } from './sourceSync.js'
 import type { SourceBundleFs } from './sourceBundle.js'
@@ -281,5 +282,56 @@ describe('fetchLatestSourceBundle', () => {
         })) as unknown as typeof fetch
     )
     expect(unsafe).toMatchObject({ ok: false, status: 'error' })
+  })
+})
+
+describe('verifyIslandCredential', () => {
+  const params = {
+    apiUrl: 'https://api.example.com',
+    credential: secretCredential('secret-1'),
+    projectId: 'proj_1',
+  }
+
+  it('accepts an org-wide secret, the pinned project, and an unreachable backend', async () => {
+    expect(
+      await verifyIslandCredential(params, {
+        fetchFn: (async () => jsonResponse({ orgId: 'org' })) as never,
+      })
+    ).toEqual({ ok: true })
+    expect(
+      await verifyIslandCredential(params, {
+        fetchFn: (async () =>
+          jsonResponse({ orgId: 'org', projectId: 'proj_1' })) as never,
+      })
+    ).toEqual({ ok: true })
+    expect(
+      await verifyIslandCredential(params, {
+        fetchFn: (async () => {
+          throw new Error('offline')
+        }) as never,
+      })
+    ).toEqual({ ok: true })
+    expect(
+      await verifyIslandCredential(
+        { ...params, credential: anonCredential('t') },
+        { fetchFn: vi.fn() as never }
+      )
+    ).toEqual({ ok: true })
+  })
+
+  it('refuses a secret pinned to another project', async () => {
+    const result = await verifyIslandCredential(params, {
+      fetchFn: (async () =>
+        jsonResponse({
+          orgId: 'org',
+          projectId: 'proj_2',
+          projectName: 'Other',
+        })) as never,
+    })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.message).toMatch(/"Other"/)
+    expect(result.message).toMatch(/proj_1/)
+    expect(result.message).toMatch(/screenci start/)
   })
 })

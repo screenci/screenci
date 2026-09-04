@@ -1,12 +1,12 @@
 /**
- * Formats codegen-edited sources with the user's own Prettier install.
+ * Formats screenci-rewritten sources with the user's own Prettier install.
+ * The only rewrite left is duplicate-editId resolution before a record.
  *
  * The formatter is opt-in by presence: it only runs when `prettier` is
  * resolvable from the project directory AND a Prettier config file resolves
  * for the edited file. Projects without Prettier (or after deleting the
  * config) get the raw codemod splice output, exactly as before. Formatting
- * failures never fail the codegen write; the content passes through
- * unchanged.
+ * failures never fail the write; the content passes through unchanged.
  */
 import { createRequire } from 'node:module'
 import { join } from 'node:path'

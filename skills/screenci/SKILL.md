@@ -13,7 +13,7 @@ Use this skill when the task is about ScreenCI video recording in an existing pr
 
 Routing:
 
-- If the user gives a URL for video context, use the `playwright-cli` skill first to discover the real page flow, stable selectors, and cookie/consent steps before editing the script.
+- If the user gives a URL for video context, use the `playwright-cli` skill first to discover the real page flow, stable selectors, and cookie/consent steps before editing the script. Never write your own Playwright script to explore: it starts signed out and behaves nothing like the recorder.
 - If the user gives source code for the target page, browser exploration is usually not needed first.
 - If the request is only about application/source-code changes (not recording), do not use this skill.
 
@@ -27,7 +27,7 @@ npx screenci@latest start SC-XXXX-XXXX
 # --dir <path> when ./screenci already belongs to another project
 ```
 
-The brief carries the task, the app URL, and (for an edit) which script to change. `start` writes the project-scoped `SCREENCI_SECRET` and `SCREENCI_EDIT_TOKEN` into `screenci/.env`; `preview` and `export` of such a project also upload the `screenci/` scripts so the web app can hand them to the next editor, and the person who created the code sees the result open in their browser.
+The brief carries the task, the app URL, and (for an edit) which script to change. `start` writes the project-scoped `SCREENCI_SECRET` into `screenci/.env`; `preview` and `export` of such a project also upload the `screenci/` scripts so the web app can hand them to the next editor, and the person who created the code sees the result open in their browser.
 
 Otherwise the project is already initialized. Add or edit scripts in `recordings/`. If you are creating new videos, remove the starter `recordings/example.screenci.ts`.
 
@@ -55,7 +55,8 @@ ScreenCI uses Playwright-style `.screenci.ts` files plus recording helpers:
 - `hide()` cuts setup and loading sections from the final recording.
 - `autoZoom()` follows navigation and click-driven flows with smooth camera motion. Use it for movement between targets.
 - `zoomTo()` / `resetZoom()` hold a fixed frame for forms and steady editing sections.
-- `video.narration({ ... })` is mandatory (see below).
+- `video.narration({ ... })` is mandatory on every video (see below).
+- `screenshot()` declares one still image per test instead of a video (see [Screenshots](#screenshots)).
 
 ```ts
 import { video, voices } from 'screenci'
@@ -99,11 +100,33 @@ Every video MUST follow these:
 - **Open with the video's purpose**, then narrate the flow at a high level.
 - **Example data only in forms.** Fill forms with plausible fictitious names, emails, and addresses (e.g. `Emma Carter`, `emma@aperturebio.com`), never real people or real contact details.
 - **Start on the requested page.** The visible video begins on the page the user asked for.
-- **Hide initial setup.** Wrap page load, auth, navigation to the start page, loading spinners, and cookie-banner dismissal in `hide()`. After the initial navigation, find and click any cookie consent accept button inside that hidden block.
+- **Hide initial setup.** Wrap page load, navigation to the start page, loading spinners, and cookie-banner dismissal in `hide()`. After the initial navigation, find and click any cookie consent accept button inside that hidden block. Signing in is not part of this: the recording already starts signed in, see [references/login.md](references/login.md).
 - **Navigate visibly with clicks** after hidden setup, not `page.goto()`.
 - **Prefer mouse-driven selection after typing** into search boxes, comboboxes, autocomplete, or command menus: click the visible result rather than `press('Enter')` when a clickable target exists.
 - **Prefer native Playwright APIs over `page.evaluate()`** when a locator method already covers the interaction (e.g. `locator.blur()`).
 - **Prefer default action options.** For `autoZoom()` and locator actions (`click`, `fill`, `pressSequentially`, `check`, `selectOption`, ...), start with ScreenCI's defaults. Do not add a separate `click()` before `fill()`/`pressSequentially()` just to focus, and do not add `zoom`/`click`/`position`/timing overrides unless the user asks or the flow clearly needs it.
+
+## Screenshots
+
+`screenshot()` produces a still image instead of a video: same Playwright-style body, same overlays and branding, no narration and no camera. Use it when the user asks for an image (a README shot, a social card, a docs figure), not a walkthrough.
+
+```ts
+import { screenshot } from 'screenci'
+
+screenshot('Billing overview', async ({ page, crop }) => {
+  await page.goto('https://app.example.com/settings/billing')
+  // Crop to the part that matters. A locator crop re-resolves on every
+  // re-record; padding frames it on your configured background.
+  await crop(page.getByRole('region', { name: 'Plan' }), { padding: 48 })
+})
+```
+
+- The narration rule does not apply: a still is silent, so never add `narration` to a `screenshot()`. Camera motion and audio are ignored too.
+- Only the final page state is kept, so `hide()` is a no-op (screenci warns) and `autoZoom()` / `zoomTo()` have nothing to animate. Drive the page to the state you want, then crop.
+- Stills and videos share the same `.screenci.ts` files: a file can mix `video()` and `screenshot()` calls freely. To grab a still of a moment that also appears in a video, call `page.screenshot({ name: 'Dashboard' })` inside the `video()` body instead.
+- Framing is authored in code with `screenshot.renderOptions({ screenshot: { margin, aspectRatio, format } })`. Stills have no browser editor, so a look change means editing the script and re-exporting.
+- `preview` and `export` treat stills like videos; exported files are named `<title>.<lang>.png`.
+- Full reference: [Screenshots](https://screenci.com/docs/guides/screenshots).
 
 ## Zooming
 
@@ -135,7 +158,7 @@ await autoZoom(async () => {
 1. **Pass it to init:** `npm init screenci@latest <SCREENCI_SECRET> -- --yes` writes it into `screenci/.env`.
 2. **Secrets page:** ask the user to copy `SCREENCI_SECRET` from their secrets page into `screenci/.env`. The org secret is shared across projects. Keep building and testing while they do it; only `preview` (with an account) and `export` need it.
 
-The secret is the only credential to configure. The CLI mints this machine's personal editor token from it automatically (saved to `screenci/.env` as `SCREENCI_EDIT_TOKEN`; a claimed trial writes both too). Do not ask the user to create an editor token by hand. Do not add a separate upgrade upsell after `export`; report the result URL unless the user asks about plans.
+`SCREENCI_SECRET` is the only credential to configure: there is no second token to create or paste. Do not add a separate upgrade upsell after `export`; report the result URL unless the user asks about plans.
 
 ## Preview and Export Workflow
 
@@ -151,5 +174,16 @@ The secret is the only credential to configure. The CLI mints this machine's per
 ## Specific Tasks
 
 - **Exporting videos** [references/export.md](references/export.md)
-- **Signing in during a video**: read `process.env.APP_USERNAME` and `process.env.APP_PASSWORD` inside `hide()`. They come from the person's saved login (`screenci start` writes them; `screenci pull-login` refreshes them). Never print or commit them.
+- **Recording an app behind a sign-in** [references/login.md](references/login.md). In short: never script a sign-in and never ask the person for a password or a code. Run `npx screenci login`, have them sign in in the browser it opens and click the card's button, then run `npx screenci login --wait` (which blocks until they do; never just end your turn instead). The recording starts from that session, so the video itself contains no sign-in at all.
 - **Learning about the product**: `screenci context` prints the organisation's AI context (repository, site URL, whether you may start the app, notes from the team). Set `SCREENCI_APP_LAUNCHED_BY=agent` when you started the app yourself before `preview`.
+- **Exploring the app before you write selectors**: use the `playwright-cli` skill, never a Playwright script of your own. A hand-rolled script starts signed out, launches a different browser than the recorder, and sends you chasing selectors the recording will never see. Load the saved session first when the app needs one: `playwright-cli state-load screenci/.screenci/auth/default.json`.
+- **The recording lands on a bot check** ("Just a moment...", "Performing security verification", a challenge page) while a normal browser loads the site fine: the recorder runs Chromium's headless shell, and its user agent is what some bot protection rejects. Set a normal desktop user agent in `use` in `screenci.config.ts` and re-run:
+
+  ```ts
+  use: {
+    userAgent:
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+  }
+  ```
+
+  Do this once, in the config, rather than probing launch options in throwaway scripts. It is a recording-environment problem, not a selector problem, so no amount of rewriting the video code fixes it.

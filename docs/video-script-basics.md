@@ -149,13 +149,17 @@ API endpoint intercepted an app asset.
 
 Timeline helpers that decide whether a step is removed from the final video or
 just retimed. Not every automated step belongs in the recording: use `hide()`
-for non-viewer setup the viewer does not need to watch, such as signing in,
-accepting cookies, waiting for app state, or opening the right screen before the
-visible flow begins.
+for non-viewer setup the viewer does not need to watch, such as accepting
+cookies, waiting for app state, or opening the right screen before the visible
+flow begins.
+
+Signing in is not one of them: the recording already starts from the session
+[`screenci login`](/docs/guides/signing-in) saved, so a video of an app behind a
+login contains no sign-in steps and no credentials at all.
 
 ```ts
 // hide(): run the step but remove it from the output.
-// Use for navigation, sign-in, waiting, or dismissing banners.
+// Use for navigation, waiting, or dismissing banners.
 await hide(async () => {
   await page.goto('/reports')
   await page.getByRole('button', { name: 'Accept cookies' }).click()

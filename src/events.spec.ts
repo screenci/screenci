@@ -1471,6 +1471,47 @@ describe('EventRecorder', () => {
     })
   })
 
+  describe('addAssetStart with a branding asset', () => {
+    it('carries the video playback options through to the event', () => {
+      recorder.start()
+      recorder.addAssetStart('intro', {
+        kind: 'branding',
+        branding: { name: 'intro-clip' },
+        fullScreen: true,
+        audio: 0.5,
+        speed: 2,
+        time: 4000,
+      })
+
+      // Dropping these here is invisible: the export plays the clip at its
+      // natural rate with no warning, and the pre-upload image check that keys
+      // off video-only options goes blind at the same time.
+      expect(
+        recorder.getEvents().find((e) => e.type === 'assetStart')
+      ).toMatchObject({
+        kind: 'branding',
+        branding: { name: 'intro-clip' },
+        audio: 0.5,
+        speed: 2,
+        time: 4000,
+      })
+    })
+
+    it('omits the playback options when the overlay set none', () => {
+      recorder.start()
+      recorder.addAssetStart('logo', {
+        kind: 'branding',
+        branding: { name: 'logo' },
+        fullScreen: false,
+        durationMs: 1200,
+      })
+
+      const start = recorder.getEvents().find((e) => e.type === 'assetStart')
+      expect(start).not.toHaveProperty('speed')
+      expect(start).not.toHaveProperty('time')
+    })
+  })
+
   describe('transition snapping', () => {
     it('snaps assetStart to hideEnd when they are back-to-back within a few ms (hide + overlay)', () => {
       recorder.start()

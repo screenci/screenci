@@ -21,7 +21,27 @@ Use `playwright-cli` to inspect a live page and discover the real flow, stable
 selectors, and cookie/consent steps before authoring a ScreenCI `.screenci.ts`
 script. It drives a real browser from the CLI: navigate, snapshot, click, type.
 
+**Use these commands rather than writing a Playwright script of your own.** A
+throwaway script starts signed out, launches whichever browser it defaults to,
+and needs its own teardown; every one of those differences sends you chasing
+selectors the recording will never see.
+
 ## When Inspecting Pages For ScreenCI
+
+- If the app needs a sign-in, load the session ScreenCI already saved instead of
+  signing in here. Otherwise you explore a signed-out app while the recording
+  runs signed in, and every selector you find is the wrong one:
+
+  ```bash
+  playwright-cli open
+  playwright-cli state-load screenci/.screenci/auth/default.json
+  playwright-cli goto https://app.example.com
+  ```
+
+  When that file does not exist, run `npx screenci login`, have the person sign
+  in in the browser it opens, then `npx screenci login --done`, and load it.
+  Never type the person's credentials into this browser, and never save state
+  back over that file (`state-save` would overwrite the real session).
 
 - After the first navigation and snapshot, check whether a cookie consent or
   cookie policy banner appeared.

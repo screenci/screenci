@@ -1,4 +1,8 @@
-import { describe, it, expect, vi } from 'vitest'
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import { APP_SESSION_DIR, APP_SESSION_PATH_ENV } from './appSession.js'
 import { defineConfig } from './config.js'
 
 describe('defineConfig', () => {
@@ -413,5 +417,56 @@ describe('defineConfig', () => {
       command: 'npm run dev',
       url: 'http://localhost:3000',
     })
+  })
+})
+
+describe('defineConfig and the saved sign-in session', () => {
+  const originalEnv = { ...process.env }
+
+  afterEach(() => {
+    process.env = { ...originalEnv }
+  })
+
+  /** A workspace with a session already captured by `screenci login`. */
+  function workspaceWithSession(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'screenci-config-'))
+    mkdirSync(join(dir, APP_SESSION_DIR), { recursive: true })
+    writeFileSync(join(dir, APP_SESSION_DIR, 'default.json'), '{"cookies":[]}')
+    process.env.SCREENCI_CONFIG_DIR = dir
+    return dir
+  }
+
+  it('replays the saved session so a recording starts signed in', () => {
+    const dir = workspaceWithSession()
+    expect(defineConfig({ projectName: 'Test' }).use?.storageState).toBe(
+      join(dir, APP_SESSION_DIR, 'default.json')
+    )
+  })
+
+  it('never overrides a storageState the config sets itself', () => {
+    workspaceWithSession()
+    expect(
+      defineConfig({
+        projectName: 'Test',
+        use: { storageState: './my-own.json' },
+      }).use?.storageState
+    ).toBe('./my-own.json')
+  })
+
+  it('lets CI point somewhere else through the env var', () => {
+    const dir = workspaceWithSession()
+    process.env[APP_SESSION_PATH_ENV] = 'ci/user.json'
+    expect(defineConfig({ projectName: 'Test' }).use?.storageState).toBe(
+      join(dir, 'ci/user.json')
+    )
+  })
+
+  it('records signed out when nobody has signed in yet', () => {
+    process.env.SCREENCI_CONFIG_DIR = mkdtempSync(
+      join(tmpdir(), 'screenci-config-')
+    )
+    expect(
+      defineConfig({ projectName: 'Test' }).use?.storageState
+    ).toBeUndefined()
   })
 })

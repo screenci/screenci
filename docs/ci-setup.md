@@ -1,5 +1,13 @@
 # CI Setup
 
+This page is for videos whose scripts live in your repository. Every video is a
+Playwright E2E test, so your own CI can re-record it on every release and fail
+the build when the flow breaks. If your videos are made and edited from the web
+app instead, you do not need any of this: see
+[Create Videos from the Web App](/docs/guides/create-from-web-app), which also
+covers moving a project's scripts into the repository when you want them
+committed.
+
 `init` can generate a ready-to-use [GitHub Actions](https://docs.github.com/en/actions)
 workflow that records the same way you do locally, using a repository secret and a
 deterministic CI environment.
@@ -8,6 +16,7 @@ deterministic CI environment.
 
 - [what the generated workflow does](#generated-workflow)
 - [which secret is required](#required-secret)
+- [how CI signs in to your app](#signing-in-from-ci)
 - [how to keep CI recordings predictable](#keep-recordings-deterministic)
 - [why asset files do not need to be committed](#asset-files-do-not-need-to-be-committed)
 
@@ -43,10 +52,100 @@ as a repository secret, from
 [app.screenci.com/secrets](https://app.screenci.com/secrets). The workflow fails
 early if it is missing.
 
-Videos that sign in read `APP_USERNAME` and `APP_PASSWORD` (see
-[Configuration](/docs/reference/configuration#example-env-file)). Locally
-they come from each member's personal login; in CI add them as repository
-secrets and pass them to the record step's `env` like `SCREENCI_SECRET`.
+## Signing in from CI
+
+Locally you sign in once in a browser and every recording replays that session
+([Signing In](/docs/guides/signing-in)). CI has nobody to open a browser for,
+so it has to be handed a session instead.
+
+**Use a dedicated CI test account.** Never a real person's, and never one with
+access to real customer data: the videos show whatever that account sees, and
+its credentials end up in your repository's secrets.
+
+### Option 1: carry a saved session
+
+Copy the contents of `screenci/.screenci/auth/default.json` into a repository
+secret (`APP_SESSION_STATE` below) and write it back to a file before the
+record step:
+
+```yaml
+- name: Restore the app session
+  working-directory: screenci
+  run: |
+    mkdir -p .screenci/auth
+    printf '%s' "$APP_SESSION_STATE" > .screenci/auth/default.json
+  env:
+    APP_SESSION_STATE: ${{ secrets.APP_SESSION_STATE }}
+```
+
+Nothing else changes: the config picks that file up the same way it does
+locally. The catch is that the session expires like any other, so someone has
+to run `npx screenci login` and refresh the secret when it does.
+
+### Option 2: sign in from a script in the repository
+
+A small Playwright script signs the CI test account in before the record step
+and saves the session where `SCREENCI_APP_STORAGE_STATE` points. It keeps
+working without anyone tending to it.
+
+```ts
+// screenci/auth/sign-in.ts
+import { chromium } from '@playwright/test'
+
+const statePath = process.env.SCREENCI_APP_STORAGE_STATE!
+const browser = await chromium.launch()
+const context = await browser.newContext()
+const page = await context.newPage()
+
+await page.goto(`${process.env.APP_URL}/login`)
+await page.getByLabel('Email').fill(process.env.CI_APP_USERNAME!)
+await page.getByLabel('Password').fill(process.env.CI_APP_PASSWORD!)
+await page.getByRole('button', { name: 'Sign in' }).click()
+await page.waitForURL('**/dashboard')
+
+await context.storageState({ path: statePath })
+await browser.close()
+```
+
+```yaml
+- name: Sign in to the app
+  working-directory: screenci
+  run: npx tsx auth/sign-in.ts
+  env:
+    APP_URL: https://staging.example.com
+    CI_APP_USERNAME: ${{ secrets.CI_APP_USERNAME }}
+    CI_APP_PASSWORD: ${{ secrets.CI_APP_PASSWORD }}
+    SCREENCI_APP_STORAGE_STATE: .screenci/auth/default.json
+```
+
+Set `SCREENCI_APP_STORAGE_STATE` on the record step too, so it replays the
+session the script just wrote.
+
+### When the CI account has two-factor
+
+An authenticator app does not need a phone in CI. When you enrol the account,
+the QR code encodes an `otpauth://` URI whose `secret` parameter is the shared
+key; any TOTP library turns that key plus the current time into the same
+six-digit code the app expects.
+[`otpauth`](https://www.npmjs.com/package/otpauth) is one such library. Save
+the key as a repository secret and add a step to the script:
+
+```ts
+import { TOTP } from 'otpauth'
+
+if (process.env.CI_APP_TOTP_SECRET) {
+  const code = new TOTP({ secret: process.env.CI_APP_TOTP_SECRET }).generate()
+  await page.getByLabel('Authentication code').fill(code)
+  await page.getByRole('button', { name: 'Verify' }).click()
+}
+```
+
+Treat that key as seriously as the password: it produces valid codes forever,
+and it is enough on its own to defeat the second factor. It belongs in a
+repository secret on a dedicated CI test account, and nowhere else. Never put
+one on a real person's account, and never add one to a laptop's
+`screenci/.env`: `screenci login` needs nothing of the sort, because a person
+types the code themselves once.
 
 ## Recording your own app
 
@@ -167,6 +266,10 @@ Notes:
 - Custom voice sample files (the clip you clone a voice from) follow the same
   rule: record once with the sample present so it uploads, and later runs reuse
   the cloned voice from that upload even when the file is absent locally.
+- Overlays that use a [shared branding asset](./branding.md#shared-assets)
+  (`{ branding: '<name>' }`) never need a local file at all: nothing is
+  uploaded for them, and the export resolves the name against the Branding
+  page. The name is checked before the upload, so a typo fails right away.
 - This is independent of `.screenci/`, which is always gitignored and holds the
   local recording output.
 

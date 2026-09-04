@@ -5,17 +5,30 @@ import { basename, posix, relative, resolve, sep } from 'node:path'
 import type { Command } from 'commander'
 import pc from 'picocolors'
 import {
-  APP_PASSWORD_ENV,
-  APP_USERNAME_ENV,
   EMPTY_AI_CONTEXT,
-  fetchAppLogin,
   parseAiContext,
-  persistAppLogin,
-  type AppLogin,
   type CliAiContext,
-  type FetchAppLoginResult,
-  type PersistAppLoginOutcome,
 } from './aiContext.js'
+import {
+  readAppSessionStatus,
+  resolveProfileName,
+  type AppSessionStatus,
+} from './appSession.js'
+import {
+  EMPTY_BRANDING,
+  brandingAssetsSnippet,
+  brandingRenderOptionsSnippet,
+  defaultDownloadSampleDeps,
+  downloadBrandingAssets,
+  brandingAssetPaths as brandingAssetPathsOf,
+  type CliBrandingAsset,
+  downloadBrandingVoiceSample,
+  formatBrandingLines,
+  isEmptyBranding,
+  parseBranding,
+  type CliBranding,
+  type DownloadBrandingSampleResult,
+} from './branding.js'
 import {
   extractConfigStringLiteral,
   readIslandEnvFile,
@@ -37,7 +50,6 @@ import {
 import {
   getDevBackendUrl,
   getDevFrontendUrl,
-  persistScreenCIEditToken,
   persistScreenCISecret,
 } from './linkSession.js'
 import { logger } from './logger.js'
@@ -66,12 +78,15 @@ import { fetchLatestSourceBundle } from './sourceSync.js'
  * clicks Add project / Add video / Edit in the web app, pastes the prompt it
  * produced into their coding agent, and the agent runs this command in the
  * app's repository (or an empty folder). It exchanges the one-time setup code
- * for a project-scoped secret plus a personal editor token, works out where
+ * for a project-scoped secret, works out where
  * the product's source code and site are (the organisation's AI context),
- * creates or pulls the `./screenci` island, writes the person's site login
- * into its env file, and prints a brief the agent follows. When the site is
- * unreachable and the agent may not start it, the brief says STOP and the
- * command exits with code 2.
+ * creates or pulls the `./screenci` island, and prints a brief the agent
+ * follows. When the site is unreachable and the agent may not start it, the
+ * brief says STOP and the command exits with code 2.
+ *
+ * No credential for the person's own product is involved anywhere here. When
+ * the site needs a sign-in, the brief has the agent run `screenci login`, and
+ * the person signs in themselves in the browser that opens.
  *
  * Everything is dependency-injected (`StartDeps`) so the whole command is
  * unit-testable without a network, a disk, git, or a package manager.
@@ -87,7 +102,6 @@ export interface SetupExchange {
   videoId?: string
   videoName?: string
   secret: string
-  editToken: string
   task: { description: string; appUrl?: string }
   sourcesAvailable: boolean
   appUrl: string | null
@@ -95,8 +109,8 @@ export interface SetupExchange {
   sourceMode: 'service' | 'local'
   /** The resolved AI context (org defaults plus project overrides). */
   aiContext: CliAiContext
-  /** Whether the person who created the code saved a personal site login. */
-  login: { saved: boolean }
+  /** The resolved branding (org defaults plus project overrides). */
+  branding: CliBranding
 }
 
 export type SetupExchangeFailureKind =
@@ -141,11 +155,8 @@ export type StartSite =
   | { state: 'unchecked'; url: string; kind: SiteKind }
   | { state: 'checked'; url: string; kind: SiteKind; reachable: boolean }
 
-export type StartLogin = {
-  /** A login was fetched and is in the env file (or was already there). */
-  saved: boolean
-  envOutcome: PersistAppLoginOutcome
-}
+/** The signed-in session found on this machine, if any. */
+export type StartSession = AppSessionStatus
 
 export type StartStopReason =
   'site-unreachable-local' | 'site-unreachable' | 'repo-unavailable'
@@ -156,8 +167,17 @@ export type StartStop = {
   docsUrl: string
 }
 
+/** Where the branding voice sample ended up, when the branding uses one. */
+export type StartBrandingSample =
+  | { status: 'downloaded'; relativePath: string }
+  | { status: 'failed'; message: string }
+  | { status: 'none' }
+
 export interface StartResult {
   exchange: SetupExchange
+  brandingSample: StartBrandingSample
+  /** Workspace-relative paths of the shared branding assets saved locally. */
+  brandingAssetPaths: Record<string, string>
   /** The shell exports a different SCREENCI_SECRET that will shadow .env. */
   shellSecretOverride: boolean
   islandDir: string
@@ -173,7 +193,7 @@ export interface StartResult {
   appUrl: string
   repo: StartRepo
   site: StartSite
-  login: StartLogin
+  session: StartSession
   /** Set when the agent must stop and report instead of recording. */
   stop: StartStop | null
   /** Merge code: what `screenci merge-complete` reports afterwards. */
@@ -229,20 +249,32 @@ export interface StartDeps {
   }) => Promise<void>
   findRepoRoot: (startDir: string) => string
   persistSecret: (envFilePath: string, secret: string) => Promise<void>
-  persistEditToken: (envFilePath: string, token: string) => Promise<void>
   /** Source text of a config file, or null when it cannot be read. */
   readConfigSource: (path: string) => Promise<string | null>
   git: StartGit
   probeSite: (url: string) => Promise<boolean>
-  fetchAppLogin: (
-    params: { apiUrl: string; secret: string; editToken: string },
+  now: () => Date
+  /** Reads the signed-in session `screenci login` saved, from disk only. */
+  readAppSessionStatus: (params: {
+    configDir: string
+    profile: string
+    now: Date
+  }) => Promise<AppSessionStatus>
+  /** Saves the branding voice sample into the island (see branding.ts). */
+  downloadBrandingVoiceSample: (
+    params: { apiUrl: string; secret: string; islandDir: string },
     fetchFn: typeof fetch
-  ) => Promise<FetchAppLoginResult>
-  persistAppLogin: (
-    envFilePath: string,
-    login: AppLogin | null,
-    options: { overwrite: boolean }
-  ) => Promise<PersistAppLoginOutcome>
+  ) => Promise<DownloadBrandingSampleResult>
+  /**
+   * Saves the shared branding assets into the island. The upload still sends
+   * only their names; these local copies let the agent inspect them and let
+   * `screenci dev` show them before the first export.
+   */
+  downloadBrandingAssets: (
+    params: { apiUrl: string; secret: string; islandDir: string },
+    assets: readonly CliBrandingAsset[],
+    fetchFn: typeof fetch
+  ) => Promise<Record<string, DownloadBrandingSampleResult>>
 }
 
 export function createDefaultStartDeps(): StartDeps {
@@ -262,7 +294,6 @@ export function createDefaultStartDeps(): StartDeps {
     installAgentSkills,
     findRepoRoot: findRepositoryRoot,
     persistSecret: persistScreenCISecret,
-    persistEditToken: persistScreenCIEditToken,
     readConfigSource: async (path) => {
       try {
         return await readFile(path, 'utf-8')
@@ -272,9 +303,18 @@ export function createDefaultStartDeps(): StartDeps {
     },
     git: nodeStartGit,
     probeSite: (url) => probeSite(url, fetch),
-    fetchAppLogin,
-    persistAppLogin: (envFilePath, login, options) =>
-      persistAppLogin(envFilePath, login, options),
+    now: () => new Date(),
+    readAppSessionStatus: (params) => readAppSessionStatus(params),
+    downloadBrandingVoiceSample: (params, fetchFn) =>
+      downloadBrandingVoiceSample(params, {
+        ...defaultDownloadSampleDeps,
+        fetchFn,
+      }),
+    downloadBrandingAssets: (params, assets, fetchFn) =>
+      downloadBrandingAssets(params, assets, {
+        ...defaultDownloadSampleDeps,
+        fetchFn,
+      }),
   }
 }
 
@@ -305,12 +345,12 @@ function mapExchangeErrorCode(code: unknown): SetupExchangeFailureKind | null {
 
 type RawSetupExchange = Omit<
   SetupExchange,
-  'appUrl' | 'sourceMode' | 'aiContext' | 'login'
+  'appUrl' | 'sourceMode' | 'aiContext' | 'branding'
 > & {
   appUrl?: string | null
   sourceMode?: unknown
   aiContext?: unknown
-  login?: unknown
+  branding?: unknown
 }
 
 function isSetupExchange(value: unknown): value is RawSetupExchange {
@@ -328,7 +368,6 @@ function isSetupExchange(value: unknown): value is RawSetupExchange {
     typeof v.projectId === 'string' &&
     typeof v.projectName === 'string' &&
     typeof v.secret === 'string' &&
-    typeof v.editToken === 'string' &&
     typeof task === 'object' &&
     task !== null &&
     typeof task.description === 'string' &&
@@ -338,15 +377,14 @@ function isSetupExchange(value: unknown): value is RawSetupExchange {
 
 /** Fills the fields an older server omits. */
 function toSetupExchange(raw: RawSetupExchange): SetupExchange {
-  const { appUrl, sourceMode, aiContext, login, ...rest } = raw
-  const loginRow = (login ?? {}) as Record<string, unknown>
+  const { appUrl, sourceMode, aiContext, branding, ...rest } = raw
   return {
     ...rest,
     appUrl: typeof appUrl === 'string' ? appUrl : null,
     sourceMode: sourceMode === 'local' ? 'local' : 'service',
     aiContext:
       aiContext === undefined ? EMPTY_AI_CONTEXT : parseAiContext(aiContext),
-    login: { saved: loginRow.saved === true },
+    branding: branding === undefined ? EMPTY_BRANDING : parseBranding(branding),
   }
 }
 
@@ -927,28 +965,65 @@ export async function runStartCommand(
     configSource !== null ? readIslandEnvFile(configSource) : '.env'
   const envFilePath = resolve(islandDir, envFileName)
   await deps.persistSecret(envFilePath, exchange.secret)
-  await deps.persistEditToken(envFilePath, exchange.editToken)
 
-  // The person's site login (theirs alone) goes into the env file the
-  // scripts read; placeholders when none is saved. Never printed.
-  const loginFetch = await deps.fetchAppLogin(
-    {
-      apiUrl: deps.apiUrl,
-      secret: exchange.secret,
-      editToken: exchange.editToken,
-    },
-    deps.fetchFn
-  )
-  if (!loginFetch.ok) {
-    deps.logger.warn(`Could not fetch the site login: ${loginFetch.message}`)
-  }
-  const fetchedLogin = loginFetch.ok ? loginFetch.login : null
-  const envOutcome = await deps.persistAppLogin(envFilePath, fetchedLogin, {
-    overwrite: false,
+  // Whether this machine already holds a signed-in session for the product.
+  // Read from disk: nothing about the person's own product ever comes from,
+  // or goes to, the service.
+  const session = await deps.readAppSessionStatus({
+    configDir: islandDir,
+    profile: resolveProfileName(undefined, deps.env),
+    now: deps.now(),
   })
-  const login: StartLogin = {
-    saved: fetchedLogin !== null || envOutcome === 'kept',
-    envOutcome,
+
+  // A cloned branding voice needs its sample next to the scripts, so the
+  // agent can point voices.elevenlabs({ path }) at it. Best-effort: the brief
+  // says how to fetch it later when this fails.
+  let brandingSample: StartBrandingSample = { status: 'none' }
+  if (exchange.branding.voice?.kind === 'sample') {
+    const download = await deps.downloadBrandingVoiceSample(
+      { apiUrl: deps.apiUrl, secret: exchange.secret, islandDir },
+      deps.fetchFn
+    )
+    switch (download.status) {
+      case 'written':
+      case 'kept':
+        brandingSample = {
+          status: 'downloaded',
+          relativePath: download.relativePath,
+        }
+        break
+      case 'none':
+        break
+      case 'error':
+        deps.logger.warn(
+          `Could not download the branding voice sample: ${download.message}`
+        )
+        brandingSample = { status: 'failed', message: download.message }
+        break
+      default: {
+        const exhaustive: never = download
+        throw new Error(`Unhandled download: ${JSON.stringify(exhaustive)}`)
+      }
+    }
+  }
+
+  // The shared assets the video code may reference by name. Best-effort: a
+  // failure only costs the local preview copy, never the reference itself.
+  let brandingAssetPaths: Record<string, string> = {}
+  if (exchange.branding.assets.length > 0) {
+    const results = await deps.downloadBrandingAssets(
+      { apiUrl: deps.apiUrl, secret: exchange.secret, islandDir },
+      exchange.branding.assets,
+      deps.fetchFn
+    )
+    brandingAssetPaths = brandingAssetPathsOf(results)
+    for (const [name, result] of Object.entries(results)) {
+      if (result.status === 'error') {
+        deps.logger.warn(
+          `Could not download the branding asset "${name}": ${result.message}`
+        )
+      }
+    }
   }
 
   const videoSourcePath =
@@ -977,12 +1052,14 @@ export async function runStartCommand(
     shellSecret !== exchange.secret
   if (shellSecretOverride) {
     deps.logger.warn(
-      'SCREENCI_SECRET is exported in this shell and takes precedence over the credentials written to the workspace. Run `unset SCREENCI_SECRET` (and SCREENCI_EDIT_TOKEN) before `preview`, or uploads go to that key and the web app never opens the result.'
+      'SCREENCI_SECRET is exported in this shell and takes precedence over the credentials written to the workspace. Run `unset SCREENCI_SECRET` before `preview`, or uploads go to that key and the web app never opens the result.'
     )
   }
 
   const startResult: StartResult = {
     exchange,
+    brandingSample,
+    brandingAssetPaths,
     shellSecretOverride,
     islandDir,
     islandDisplayDir,
@@ -995,7 +1072,7 @@ export async function runStartCommand(
     appUrl,
     repo,
     site,
-    login,
+    session,
     stop,
     pendingMerge,
   }
@@ -1042,7 +1119,7 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   if (result.shellSecretOverride) {
     lines.push('')
     lines.push(
-      'WARNING: this shell exports a different SCREENCI_SECRET, which wins over the workspace credentials. Run `unset SCREENCI_SECRET SCREENCI_EDIT_TOKEN` before the commands below, or the uploads go to that key and the person waiting never sees the result.'
+      'WARNING: this shell exports a different SCREENCI_SECRET, which wins over the workspace credentials. Run `unset SCREENCI_SECRET` before the commands below, or the uploads go to that key and the person waiting never sees the result.'
     )
   }
   lines.push('')
@@ -1087,7 +1164,10 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   lines.push('')
   lines.push(...formatRepoSection(result, cwd))
   lines.push(...formatSiteSection(result, islandDisplayDir))
-  lines.push(...formatLoginSection(result))
+  lines.push(
+    ...formatSessionSection(result, exchange.aiContext.siteRequiresLogin)
+  )
+  lines.push(...formatBrandingSection(result))
   if (exchange.aiContext.guide !== null) {
     lines.push(
       '## Notes from the team',
@@ -1100,8 +1180,10 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   lines.push('')
   lines.push(
     '- Every video needs video.narration({...}) and opens by stating its purpose; narrate the flow, not the clicks.',
-    '- Wrap setup (login, initial navigation, cookie banners, loading) in hide(); then move through the demo with visible clicks.',
+    '- Wrap setup (initial navigation, cookie banners, loading) in hide(); then move through the demo with visible clicks. Signing in is not setup you script: see the Signing in section.',
     '- Use plausible fictitious data in forms, never real people.',
+    '- Explore the app with the installed playwright-cli skill, never a Playwright script of your own. A hand-rolled script starts signed out and behaves nothing like the recorder, so the selectors it finds are the wrong ones.',
+    '- Give a new video the organisation branding from the Branding section (background, size, cursor, voice) unless the person asks for a different look.',
     '- The installed screenci skill has the full authoring guide.'
   )
   lines.push('')
@@ -1133,7 +1215,7 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   }
   lines.push('')
   lines.push(
-    `Docs: ${siteRootOf(result.appUrl)}/docs/video-script-basics, /docs/reference/cli and /docs/guides/ai-context`
+    `Docs: ${siteRootOf(result.appUrl)}/docs/video-script-basics, /docs/reference/cli, /docs/guides/ai-context and /docs/guides/branding`
   )
   lines.push('')
   return lines.join('\n')
@@ -1143,6 +1225,17 @@ function formatRepoSection(result: StartResult, cwd?: string): string[] {
   const { repo } = result
   const display = (dir: string): string =>
     cwd !== undefined ? toDisplayPath(cwd, dir) : dir
+  // The team's package manager applies to the PRODUCT repository (installing
+  // its dependencies, starting its dev server). The screenci workspace keeps
+  // the manager it was scaffolded with, which the commands below already use.
+  const preferred = result.exchange.aiContext.packageManager
+  const managerLine =
+    preferred === null
+      ? []
+      : [
+          `The team uses ${preferred} in this repository: install its dependencies and run its scripts with ${preferred}.`,
+          '',
+        ]
   switch (repo.state) {
     case 'not-configured':
       return [
@@ -1157,6 +1250,7 @@ function formatRepoSection(result: StartResult, cwd?: string): string[] {
         '',
         `You are inside the product's repository (${repo.gitUrl}) at ${display(repo.dir)}/. Read its routes, components and README to learn the real URLs and selectors.`,
         '',
+        ...managerLine,
       ]
     case 'cloned':
       return [
@@ -1164,6 +1258,7 @@ function formatRepoSection(result: StartResult, cwd?: string): string[] {
         '',
         `The product's repository (${repo.gitUrl}) is ${repo.fresh ? 'cloned' : 'already cloned and refreshed'} at ${display(repo.dir)}/. Use it as context: read its routes, components and README to learn the real URLs and selectors. Do not commit there unless the workspace lives in it.`,
         '',
+        ...managerLine,
       ]
     case 'clone-skipped':
       return [
@@ -1246,23 +1341,101 @@ function formatSiteSection(
   }
 }
 
-function formatLoginSection(result: StartResult): string[] {
-  const env = toRelativeEnv(result)
-  const loginUrl = `${result.appUrl.replace(/\/+$/, '')}/ai-context#login`
-  if (result.login.saved) {
-    return [
-      '## Login',
-      '',
-      `The person's login for the site is in ${env} as ${APP_USERNAME_ENV} and ${APP_PASSWORD_ENV}. Read them with process.env inside hide() when the flow needs to sign in. Never print, log, or commit them.`,
-      '',
-    ]
+/**
+ * The organisation's branding and how to apply it in code.
+ *
+ * The VALUES only inform new videos: nothing is applied at record time, so the
+ * agent writes them into the script (code wins, and may deviate on request).
+ * The shared ASSETS are different: code references them by name and the export
+ * resolves the name, so replacing the file on the Branding page updates every
+ * video that uses it on its next export.
+ */
+function formatBrandingSection(result: StartResult): string[] {
+  const { branding } = result.exchange
+  const samplePath =
+    result.brandingSample.status === 'downloaded'
+      ? result.brandingSample.relativePath
+      : null
+  const assetPaths = result.brandingAssetPaths
+  const lines = ['## Branding', '']
+  if (isEmptyBranding(branding)) {
+    lines.push(...formatBrandingLines(branding, samplePath, assetPaths), '')
+    return lines
   }
-  return [
-    '## Login',
+  lines.push(
+    'The organisation set these defaults for new videos. Apply them in the video code: pass them to video.recordOptions(...) and video.renderOptions(...) on the new video (reuse an existing shared options object when the project already has one that matches). Values in code are what render, so only deviate when the person asks.',
     '',
-    `No site login is saved for the person. ${env} has empty ${APP_USERNAME_ENV} and ${APP_PASSWORD_ENV} placeholders. If the flow needs to sign in, read them with process.env inside hide(), and ask the person to save their login at ${loginUrl} (it is personal and encrypted) and then run \`npx screenci pull-login\` in the workspace, or to paste the values into ${env} themselves. Never print, log, or commit them.`,
+    ...formatBrandingLines(branding, samplePath, assetPaths)
+  )
+  if (result.brandingSample.status === 'failed') {
+    lines.push(
+      `- The voice sample could not be downloaded (${result.brandingSample.message}); run \`npx screenci context\` in ${result.islandDisplayDir}/ to retry, or leave narration.voice out.`
+    )
+  }
+  const snippet = brandingRenderOptionsSnippet(branding, samplePath)
+  if (snippet !== null) {
+    lines.push('', '```ts', snippet, '```')
+  }
+  const assetsSnippet = brandingAssetsSnippet(branding)
+  if (assetsSnippet !== null) {
+    lines.push(
+      '',
+      'The shared assets above are referenced by name, not copied into the code. The export resolves each name to the file the Branding page holds then, so replacing it there updates every video on its next export. Use an asset instead of inventing a logo or an intro of your own; place and time it in code (an image needs a length, a video plays its own).',
+      '',
+      '```ts',
+      assetsSnippet,
+      '```'
+    )
+  }
+  lines.push('')
+  return lines
+}
+
+/**
+ * How the agent gets the product signed in. Never a credential: the person
+ * signs in themselves in the browser `screenci login` opens, and the session
+ * it captures stays on their machine. A video that starts from a saved session
+ * needs no sign-in steps at all, which is both faster and the only thing that
+ * works when the account has two-factor, single sign-on, or a passkey.
+ */
+function formatSessionSection(
+  result: StartResult,
+  siteRequiresLogin: boolean
+): string[] {
+  const sessionFile = `${result.islandDisplayDir}/.screenci/auth/default.json`
+  const lines = ['## Signing in', '']
+  if (result.session.saved && !result.session.expired) {
+    lines.push(
+      `A signed-in session for the product is already saved on this machine (${sessionFile}). Recordings start signed in, so write the video WITHOUT any sign-in steps: no credentials, no login form, no hide() block that types a password.`,
+      '',
+      'Load it into the browser you explore with, or you will be reading a signed-out app and writing selectors that do not exist in the recording:',
+      '',
+      '```bash',
+      'playwright-cli open',
+      `playwright-cli state-load ${sessionFile}`,
+      '```',
+      '',
+      'If a page still shows a signed-out state, the session expired: run `npx screenci login`, ask the person to sign in in the browser that opens, and then run `npx screenci login --wait`.'
+    )
+    return [...lines, '']
+  }
+  const expiredNote =
+    result.session.saved && result.session.expired
+      ? 'The saved session expired. '
+      : ''
+  const needNote = siteRequiresLogin
+    ? 'The team says this site needs a sign-in. '
+    : 'If the flow you are asked to record sits behind a sign-in: '
+  lines.push(
+    `${expiredNote}${needNote}Do this, in order:`,
     '',
-  ]
+    '1. Run `npx screenci login` (add the address if the config has no baseURL). It opens a browser and returns immediately.',
+    '2. Tell the person to sign in in that browser the way they normally do, then click the button on the small ScreenCI card floating over the page. Two-factor codes, single sign-on, passkeys, and magic links all work. Nothing they type is sent to ScreenCI, and you must never ask them for a password or a code yourself.',
+    '3. Run `npx screenci login --wait`, which blocks until they finish. Do NOT end your turn instead: clicking the card saves the session in the browser but tells you nothing, so if nothing is waiting the person clicks and sees no reply. If the wait reports it is still going, run it again. If they tell you they are done some other way, run `npx screenci login --done`.',
+    '',
+    `Then write the video WITHOUT any sign-in steps: the recording starts from that session. Load it into the browser you explore with too (\`playwright-cli state-load ${sessionFile}\`), or you will be reading a signed-out app. Never put a username, a password, or a one-time code in the video code or in the env file.`
+  )
+  return [...lines, '']
 }
 
 function describeOutcome(outcome: StartOutcome): string {
@@ -1316,8 +1489,19 @@ export function formatStartJsonLine(
     description: exchange.task.description,
     repo: result.repo,
     site: result.site,
-    login: { saved: result.login.saved, envFile: result.envFilePath },
+    session: {
+      saved: result.session.saved,
+      expired: result.session.saved && result.session.expired,
+    },
+    siteRequiresLogin: exchange.aiContext.siteRequiresLogin,
     runLocallyIfNeeded: exchange.aiContext.runLocallyIfNeeded,
+    branding: exchange.branding,
+    ...(result.brandingSample.status === 'downloaded'
+      ? { brandingSamplePath: result.brandingSample.relativePath }
+      : {}),
+    ...(Object.keys(result.brandingAssetPaths).length > 0
+      ? { brandingAssetPaths: result.brandingAssetPaths }
+      : {}),
     ...(exchange.aiContext.guide !== null
       ? { guide: exchange.aiContext.guide }
       : {}),

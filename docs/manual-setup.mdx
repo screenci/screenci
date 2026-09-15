@@ -5,7 +5,7 @@ import { Tabs, TabItem } from '@astrojs/starlight/components'
 This is the by-hand path for adding ScreenCI. If you would rather have a coding
 agent do it for you, see [Agent integration](/docs/agent-integration); if you
 would rather not touch a repository at all, start from the web app instead
-(see [Create Videos from the Web App](/docs/guides/create-from-web-app)). For how
+(see [Make videos by prompt](/docs/make-videos)). For how
 recording and rendering are split (and why the service never sees your source
 code), see the [Overview](/docs).
 
@@ -89,7 +89,7 @@ copy of `@playwright/test` and ScreenCI instead of relying on a surrounding
 workspace. This is what makes installation reliable inside complex monorepos.
 ScreenCI never touches your app's `package.json` and is immune to pnpm/yarn
 workspace hoisting. It still drives your app the normal Playwright way, using
-your project's standard Playwright settings. See [Configuration](/docs/configuration).
+your project's standard Playwright settings. See [Configuration](/docs/reference/configuration).
 
 Two things must live at the repository root rather than inside `screenci/`,
 because that is where they are discovered:

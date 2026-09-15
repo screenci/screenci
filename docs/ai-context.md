@@ -1,9 +1,11 @@
 # AI Context
 
-Coding agents make the best videos when they know where your product's code
-lives, where it runs, whether they may start it, and whether it sits behind a
-login. The **AI context** page in the web app (top-right menu) stores that once
-for the whole organisation, so nobody has to type it into every prompt.
+Tell the agent once, for the whole team. Coding agents make the best videos
+when they know where your product's code lives, where it runs, whether they
+may start it, and whether it sits behind a login. The **AI context** page in
+the web app (top-right menu) stores that once for the whole organisation, so
+a marketer's Add video prompt and an engineer's Add to CI prompt start from
+the same facts and nobody types them into a prompt.
 Projects can override each field. `screenci start` reads it all when an agent
 runs a setup prompt.
 
@@ -150,8 +152,8 @@ them.
 
 ## What's next
 
-- [Create Videos from the Web App](/docs/guides/create-from-web-app) for the
-  prompt flow itself.
+- [Make videos by prompt](/docs/make-videos) for the prompt flow itself.
+- [Repository and CI](/docs/repository-and-ci) for the engineering hand-off.
 - [Signing In](/docs/guides/signing-in) for recording an app behind a login.
 - [CLI](/docs/reference/cli) for `start`, `context`, `login`, and
   `merge-complete`.

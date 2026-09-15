@@ -84,4 +84,22 @@ describe('skill guidance', () => {
     )
     expect(skill).toContain('inside its initial\n  `hide()` block')
   })
+  it('tells authors to report in plain language and finish with the video link', () => {
+    const skill = readPackageFile('skills/screenci/SKILL.md')
+    const login = readPackageFile('skills/screenci/references/login.md')
+    const exportRef = readPackageFile('skills/screenci/references/export.md')
+
+    expect(skill).toContain('## Reporting back to the person')
+    expect(skill).toContain('may not be a developer')
+    expect(skill).toContain('Report in plain language')
+    expect(skill).toContain('on its own last line')
+    expect(skill).toContain(
+      'only the codes that ask for a pipeline run complete on one'
+    )
+    expect(login).toContain('The person may not be technical')
+    expect(exportRef).toContain('The person may not be technical')
+    for (const text of [skill, login, exportRef]) {
+      expect(text).not.toContain('\u2014')
+    }
+  })
 })

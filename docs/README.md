@@ -4,34 +4,47 @@ Source docs for the ScreenCI documentation site.
 
 ## IA
 
-The docs lead with the agent-first integration: an overview of how ScreenCI
-works, the recommended agent path, then the manual path, and finally guides and
-reference material to drill into.
+The docs are organised by audience: anyone on the team starts with the
+prompt flow, the browser-editing and publishing guides follow, and the code
+path (scripts in the repository, CI recording) comes after, because most
+videos are made by prompt. `manifest.ts` is the source of truth for sections,
+order, and prev/next links.
 
-### Getting Started
+### Start here
 
 - [Overview](./overview.mdx)
-- [Agent Integration](./agent-integration.mdx)
-- [Manual Setup & First Video](./manual-setup.mdx)
-- [Video Script Basics](./video-script-basics.md)
-- [CI Setup](./ci-setup.md)
+- [Make Videos by Prompt](./make-videos.md)
+- [Who Does What](./roles.md)
+- [Prompt Cookbook](./prompt-cookbook.md)
 
-### Guides
+### For the team
 
-- [Animated Interactions](./animated-interactions.md)
-- [Narration](./narration.md)
-- [Overlays](./overlays.md)
+- [Edit in the Browser](./editor.md)
+- [Narration and Voices](./narration.md)
 - [Languages](./languages.md)
-- [Camera and Zooming](./camera-and-zooming.md)
-- [Editor](./editor.md)
-- [Public URLs and Embeds](./public-urls-and-embeds.md)
-- [Redact Sensitive Content](./redact.md)
-- [Update ScreenCI](./update-screenci.mdx)
-- [Anonymous Trial](./anonymous-trial.md)
-- [Create Videos from the Web App](./create-from-web-app.md)
-- [AI Context](./ai-context.md)
-- [Signing In to Your App](./signing-in.md)
+- [Overlays](./overlays.md)
 - [Branding](./branding.md)
+- [AI Context](./ai-context.md)
+- [Screenshots](./screenshots.md)
+- [Public URLs and Embeds](./public-urls-and-embeds.md)
+- [Version History](./version-history.md)
+- [Organisation and SSO](./organisation.md)
+- [Signing In to Your App](./signing-in.md)
+- [Free Trial Without an Account](./anonymous-trial.md)
+
+### For engineers
+
+- [Repository and CI](./repository-and-ci.md)
+- [Start in a Repository](./agent-integration.mdx)
+- [Video Script Basics](./video-script-basics.md)
+- [Animated Interactions](./animated-interactions.md)
+- [Camera and Zooming](./camera-and-zooming.md)
+- [Mid-Video Overlay Updates](./overlay-updates.md)
+- [Redact Sensitive Content](./redact.md)
+- [Screen Audio](./screen-audio.md)
+- [CI Setup](./ci-setup.md)
+- [Manual Setup](./manual-setup.mdx)
+- [Update ScreenCI](./update-screenci.mdx)
 
 ### Reference
 

@@ -6,19 +6,19 @@ An overlay's content comes from **exactly one source**: a file `path`, an inline
 
 For a file `path`, the extension selects what it is:
 
-- **`.tsx`** — a React component module rendered client-side in the browser (hooks, effects, class lifecycle all run). See [Component page overlays](#component-and-html-page-overlays).
-- **`.solid.tsx`** — a Solid component module, same treatment with Solid's compiler.
-- **`.vue`** — a Vue single-file component (its `<style>` block included).
-- **`.svelte`** — a Svelte component (its `<style>` block included).
-- **`.html`** — a full standalone HTML document, loaded as-is (its own `<style>`/`<script>` run).
-- **`.svg` / `.png`** — an image.
-- **`.mp4`** — a video.
+- **`.tsx`**: a React component module rendered client-side in the browser (hooks, effects, class lifecycle all run). See [Component page overlays](#component-and-html-page-overlays).
+- **`.solid.tsx`**: a Solid component module, same treatment with Solid's compiler.
+- **`.vue`**: a Vue single-file component (its `<style>` block included).
+- **`.svelte`**: a Svelte component (its `<style>` block included).
+- **`.html`**: a full standalone HTML document, loaded as-is (its own `<style>`/`<script>` run).
+- **`.svg` / `.png`**: an image.
+- **`.mp4`**: a video.
 
 The inline variants keep small overlays in the recording file itself (see [Inline overlays](#inline-overlays)):
 
-- **`element`** — a React element (`element: <Badge label="New" />`), rendered in-process to static markup.
-- **`jsx` / `solidJsx`** — the source of a component module as a string, bundled and mounted client-side like a `.tsx`/`.solid.tsx` file.
-- **`html`** — an HTML fragment placed in the overlay root.
+- **`element`**: a React element (`element: <Badge label="New" />`), rendered in-process to static markup.
+- **`jsx` / `solidJsx`**: the source of a component module as a string, bundled and mounted client-side like a `.tsx`/`.solid.tsx` file.
+- **`html`**: an HTML fragment placed in the overlay root.
 
 Every rendered variant (everything except image/video files) is rendered to a transparent PNG at recording time and then behaves exactly like an image overlay, or, with `animate: true`, is captured as a transparent animated clip (see [Animated overlays](#animated-overlays)).
 
@@ -272,7 +272,7 @@ component: import React, hooks, helpers, child components. Only serializable
 or elements.
 
 ```tsx
-// overlays/Counter.tsx — hooks and effects run during capture
+// overlays/Counter.tsx: hooks and effects run during capture
 import { useEffect, useState } from 'react'
 
 export default function Counter({ to }: { to: number }) {

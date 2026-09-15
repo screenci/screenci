@@ -1,22 +1,57 @@
-# Create Videos from the Web App
+# Make Videos by Prompt
 
-You do not need a repository, a CI pipeline, or an `.env` file to make a
-ScreenCI video. Everything in the web app works by a prompt: every org page
-has **Add project**, every project page has **Add video**, **Add
-screenshot**, **Add to repository**, and **Add to CI**, and every video page
-has **Edit** and **Add a language**. Each button produces a short prompt with
-a one-time setup code. Paste the prompt into your coding agent (Claude Code,
-Cursor, Codex, or similar) and the agent does the rest: it sets up a
-workspace, writes or changes the script, records the live preview, and the
-browser tab you started from opens the result.
+Anyone in your organisation can make or change a product video: product
+marketing, support, docs, engineering. You do not need a repository, a CI
+pipeline, or an `.env` file, and you never open the video's code. Every
+button in the web app works by a prompt: the org page has **Add project**,
+every project page has **Add video**, **Add screenshot**, **Record all**,
+**Add to repository**, and **Add to CI**, and every video page has **Edit**,
+**Re-record**, and **Add a language**. Each button produces a short prompt
+with a one-time setup code. Paste the prompt into your coding agent, and the
+agent does the rest: it sets up a workspace, writes or changes the script,
+records the live preview, and the browser tab you started from opens the
+result.
+
+The three steps are the same for every button:
+
+1. **Describe.** Click the button and type one sentence: what the video
+   should show, or what should change.
+2. **Paste.** Copy the prompt into your coding agent. It records your real
+   app on its own machine.
+3. **Watch.** Leave the tab open. It opens the video when the recording
+   lands. From there, change narration, voices, and languages in the
+   [browser editor](/docs/editor) without any further prompt.
+
+Not sure which button is yours? See [Who does what](/docs/roles) and the
+[Prompt cookbook](/docs/prompt-cookbook) for descriptions that work.
 
 #### You will learn
 
+- [which agents work](#which-agent)
 - [how the buttons work](#the-buttons)
 - [what the agent does with the prompt](#what-the-agent-does)
 - [where the video scripts live](#where-the-scripts-live)
 - [what happens when the recording lands](#when-the-recording-lands)
 - [the limits of the flow](#limits)
+
+## Which agent
+
+Any coding agent or agent harness that can run a shell command works: Claude
+Code, Cursor, Codex, a desktop agent app, or one your company runs. More
+non-technical people have one every month, and the prompt does not care
+which one reads it. The agent needs Node.js on its machine and a way to
+reach your product (a deployed URL, or a dev server it may start from the
+repository when [AI context](/docs/guides/ai-context) allows it).
+
+If you do not have an agent yet, any teammate who has one can paste the
+prompt once. After the first recording lands, edits to narration, voices,
+overlays, and languages happen in the [browser editor](/docs/editor), and
+[Record all](#the-buttons) is one click once CI records the project.
+
+The agent will only ever ask you for one thing: to sign in to your own
+product in a browser window it opens on its machine. It never asks for a
+password, a one-time code, or an API key, and ScreenCI never receives what
+you type. See [Signing In](/docs/guides/signing-in).
 
 ## The buttons
 
@@ -41,7 +76,8 @@ browser tab you started from opens the result.
 - **Add to repository** (project and video pages, while ScreenCI holds
   sources the repository does not have) hands the agent the scripts to commit
   into your product repository (see
-  [AI context](/docs/guides/ai-context#move-to-repository)).
+  [AI context](/docs/guides/ai-context#move-to-repository) and
+  [Repository and CI](/docs/repository-and-ci)).
 - **Add to CI** (project and video pages, until CI records the project) has
   the agent store a CI key in your CI provider, add a pipeline that records on
   every push, and trigger the first run. Any provider works; see
@@ -166,6 +202,10 @@ or click **Edit** again to hand the next change to an agent.
 ## What's next
 
 - [Editor](/docs/editor) to refine the preview in the browser.
+- [Who does what](/docs/roles) and the [Prompt cookbook](/docs/prompt-cookbook)
+  for descriptions per role.
+- [Repository and CI](/docs/repository-and-ci) when an engineer wants the
+  videos in the repository.
 - [Public URLs and Embeds](/docs/guides/public-urls-and-embeds) to publish the
   finished video.
 - [AI context](/docs/guides/ai-context) to tell agents about the repository,

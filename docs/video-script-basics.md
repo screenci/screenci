@@ -226,7 +226,7 @@ not supported on `.mp4` or animated overlays, whose length is fixed. See
 ### `autoZoom()`
 
 Use `autoZoom()` when the camera should follow a visible interaction
-automatically. See [Camera and Zooming](/docs/camera-and-zooming).
+automatically. See [Camera and Zooming](/docs/guides/camera-and-zooming).
 
 Common options:
 
@@ -250,7 +250,7 @@ API reference: [autoZoom()](/docs/reference/api/functions/autozoom)
 
 Use `zoomTo()` when you want exact manual framing, and `resetZoom()` when you
 want to return to the default view afterward. See [Camera and
-Zooming](/docs/camera-and-zooming).
+Zooming](/docs/guides/camera-and-zooming).
 
 `zoomTo()` accepts either:
 

@@ -1,10 +1,16 @@
-# Agent Integration
+# Start in a Repository
 
-The fastest way to add ScreenCI is to let a coding agent do it. ScreenCI
-publishes an agent-readable integration brief at
-[`/integrate.md`](https://screenci.com/integrate.md). Point your agent at it and
-describe the flow you want, and the agent scaffolds ScreenCI, authors a video,
-and records it.
+This is the engineer's way in: you are already in the product's repository
+with a coding agent open, and you want ScreenCI and the first video committed
+there from the start. ScreenCI publishes an agent-readable integration brief
+at [`/integrate.md`](https://screenci.com/integrate.md). Point your agent at
+it and describe the flow you want, and the agent scaffolds ScreenCI, authors
+a video, and records it.
+
+Teammates who are not in the repository do not need this page: they start
+from the web app ([Make videos by prompt](/docs/make-videos)), and their
+videos reach the repository and CI through
+[Add to repository and Add to CI](/docs/repository-and-ci).
 
 The brief comes in a variant per package manager, so the agent only ever sees
 your manager's commands: `/integrate.md` (npm), `/integrate-pnpm.md` (pnpm), and
@@ -25,7 +31,7 @@ It creates or pulls the `./screenci` workspace, writes the credentials, and
 prints its own brief; there is nothing else to integrate. Add
 `--name "<project name>"` to choose the new project's name (it defaults to the
 folder name). See
-[Create Videos from the Web App](/docs/guides/create-from-web-app).
+[Make videos by prompt](/docs/make-videos).
 
 ## Start with one paste
 

@@ -77,7 +77,7 @@ export const LOGIN_DONE_TIMEOUT_MS = 90_000
  */
 export const LOGIN_WAIT_TIMEOUT_MS = 8 * 60_000
 
-export const CI_DOCS_URL = 'https://screenci.com/docs/guides/ci-setup'
+export const CI_DOCS_URL = 'https://screenci.com/docs/ci-setup'
 
 export type LoginHandshake = {
   pid: number

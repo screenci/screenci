@@ -1,76 +1,83 @@
 # Overview
 
-ScreenCI makes product videos by prompting a coding agent. You describe the
-flow you want in a sentence, paste one prompt into Claude Code, Codex, Cursor
-or a similar agent, and it drives your real app, adds narration and camera
-motion, and hands back a polished video. When the UI changes, prompt it again
-(or rerun the recording) and the video regenerates.
+ScreenCI makes product videos for the whole SaaS team. Anyone, not just the
+person with the screen recorder, describes the video they want in one
+sentence, pastes one prompt into a coding agent (Claude Code, Cursor, Codex,
+or any other), and gets back a narrated, auto-zoomed walkthrough of the real
+app. Marketing and support then edit narration, voices, and languages in the
+browser. Engineers keep the videos in the repository, where each one is a
+Playwright E2E test that CI re-records on every release, so a video never
+goes stale and a broken flow fails the run before customers see it.
 
 ## How it works
 
-Record and refine with the CLI and the web editor, then export and deliver the
-final video where your team needs it.
+Record on your machine (or in CI), refine in the browser, export in the
+service, and deliver from a stable URL.
 
 <!-- screenci-image:VideoLifecycle -->
 
-- **Record and refine.** `screenci preview` captures the flow on your machine,
-  uploads the live preview, and opens the video in the [Editor](/docs/editor):
-  a live preview and a timeline. Every change you make in the browser
-  (narration, overlays, cuts, timings, render options) applies to the preview
-  and later exports right away.
-- **Export.** When the preview looks right, run `screenci export` (or use the
-  Export button) to render the finished videos and download them, then serve
-  them from a stable public URL. `export` re-records only the videos whose
-  sources changed, so it is also the command CI runs.
+- **Record.** A prompt from the web app has the agent run
+  `screenci preview` on its machine: it drives your app with Playwright,
+  captures the flow, uploads the live preview, and the browser tab that made
+  the prompt opens the video.
+- **Refine.** In the [Editor](/docs/editor) anyone on the team changes
+  narration, voices, overlays, cuts, timings, languages, and render options.
+  Every change applies to the preview and to later exports right away.
+- **Export and deliver.** When the preview looks right, click **Export** (or
+  run `screenci export`) to render the finished videos, then serve them from
+  a [public URL](/docs/guides/public-urls-and-embeds) that always points at
+  the version you selected. `export` re-records only the videos whose sources
+  changed, so it is also what CI runs.
 
-The CLI runs everything that touches your app locally, so what leaves your
-machine is the raw recording plus timing data, never your app's source code.
-Projects created from the web app also upload their `screenci/` scripts so the
-next editor can pull them (see
-[Create Videos from the Web App](/docs/guides/create-from-web-app)); a
-repository-managed project keeps its scripts local unless it opts in. The CLI
-itself is [open source](https://github.com/screenci/screenci).
+## Three ways in
 
-## Two ways to start
+All three hand the work to a coding agent. Pick the one that matches where
+you are standing.
 
-Both hand the work to your coding agent. Pick the one that matches where you
-are standing.
+- **[From the web app](/docs/make-videos), for everyone.** Click Add project
+  or Add video, type one sentence, paste the prompt into your agent, and the
+  tab opens the video when the recording lands. No repository, no setup on
+  your side. See [Who does what](/docs/roles) for the buttons each role uses.
+- **[In a repository](/docs/agent-integration), for engineers.** Paste the
+  integration prompt into the agent inside the product's repository. It
+  scaffolds ScreenCI, authors a video for the flow you describe, and records
+  it. Videos made from the web app get there too with
+  [Add to repository and Add to CI](/docs/repository-and-ci).
+- **[By hand](/docs/manual-setup).** Write the `.screenci.ts` scripts
+  yourself with the Playwright APIs you already know.
 
-- **[From the web app](/docs/guides/create-from-web-app) (no repository
-  needed).** Click Add project, paste the prompt into your coding agent, and
-  the browser opens the video when the recording lands. Anyone in your org can
-  add or change videos this way, including people who never open the code.
-- **[Agent integration](/docs/agent-integration).** Already in a repository?
-  Paste the integration prompt into the agent there. It scaffolds ScreenCI,
-  authors a video for the flow you describe, and records it, with you mostly
-  reviewing the result.
-
-Tell the agent once what it needs to know about your product (repository, site
-URL, whether the site needs a sign-in, package manager, team notes) under
-[AI context](/docs/guides/ai-context), and every later prompt starts from it.
-Set the look and voice new videos start from under
-[Branding](/docs/guides/branding).
-
-Once a video exists, refine it in the [Editor](/docs/editor) or by prompting
-the agent again, and add [Narration](/docs/guides/narration) detail,
-[Camera and Zooming](/docs/guides/camera-and-zooming),
-[Overlays](/docs/guides/overlays), or extra
-[Languages](/docs/guides/languages).
+Tell the agent once what it needs to know about your product (repository,
+site URL, whether the site needs a sign-in, package manager, team notes)
+under [AI context](/docs/guides/ai-context), and every later prompt in the
+organisation starts from it. Set the look and voice new videos start from
+under [Branding](/docs/guides/branding).
 
 ## Videos as E2E tests
 
 Under the hood every video is a `.screenci.ts` file driven by Playwright, so
-you never depend on the agent to reproduce a recording. Ask the agent to commit
-the scripts into your repository and each video becomes an E2E test your own CI
-can rerun on every release: when the flow breaks, the run fails; when the UI
-changes, the video re-renders. That path (writing the scripts yourself,
-running them locally, and wiring up CI) is covered in
-[Manual setup & first video](/docs/manual-setup),
-[Video Script Basics](/docs/video-script-basics) and
-[CI Setup](/docs/ci-setup).
+you never depend on the agent to reproduce a recording. Once the scripts are
+in your repository, each video is an E2E test your own CI reruns on every
+release: when the flow breaks, the run fails; when the UI changes, the video
+re-renders. [Repository and CI](/docs/repository-and-ci) is the plain-language
+walkthrough; [Video Script Basics](/docs/video-script-basics) and
+[CI Setup](/docs/ci-setup) are the reference.
+
+## What leaves your machine
+
+The CLI runs everything that touches your app locally, so what leaves the
+machine is the raw screen recording plus its timing data, never your app's
+source code. Projects created from the web app also upload the text files of
+the `screenci/` folder (the config and the video scripts, never `.env`,
+lockfiles, or media) so the web app can hand them to the next agent; a
+repository-managed project keeps its scripts local unless it opts in with
+`uploadSources`. Signing in to your product happens in a browser you drive
+yourself, and ScreenCI never receives what you type
+([Signing In](/docs/guides/signing-in)). The full list is under
+[Configuration](/docs/reference/configuration), and the CLI is
+[open source](https://github.com/screenci/screenci).
 
 ## Community
 
 Need support, hit a bug, or want to share what you recorded? Join the
-[ScreenCI community on Discord](https://discord.gg/DyjSRFzeBc) to get help, report
-issues, and talk to other users.
+[ScreenCI community on Discord](https://discord.gg/DyjSRFzeBc) to get help,
+report issues, and talk to other users.

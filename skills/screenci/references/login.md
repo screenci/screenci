@@ -8,6 +8,8 @@ video starts already signed in and contains no sign-in at all.
 one-time code, or a recovery code.** You do not need them, and asking for them
 is the one thing this flow exists to avoid.
 
+The person may not be technical: tell them exactly what to click (sign in in the window that opened, then the card's button), and nothing else.
+
 ## The flow
 
 ```bash

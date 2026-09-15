@@ -1,13 +1,20 @@
 # screenci
 
-Your UI changed. Your demo videos didn't. screenci fixes that.
+Product videos your whole team makes with one prompt.
 
-Record product walkthroughs as code. When the UI ships, run
-`npx screenci export` and your videos regenerate. You keep the Playwright
-mental model, but the output is a maintainable product video instead of a
-test report.
+Anyone on the team describes the video they want in the
+[ScreenCI web app](https://app.screenci.com), pastes one prompt into a coding
+agent, and gets back a narrated, auto-zoomed walkthrough of the real app. They
+edit narration, voices, and languages in the browser. Engineers keep the
+videos in the repository, where each one is a Playwright E2E test: when the
+UI ships, CI runs `npx screenci export` and the videos regenerate, and a flow
+that broke fails the run. This package is the CLI and the authoring API behind
+all of it.
 
-Learn more at [screenci.com](https://screenci.com).
+Learn more at [screenci.com](https://screenci.com), or start from
+[Make videos by prompt](https://screenci.com/docs/make-videos) (no
+repository needed) and [Repository and CI](https://screenci.com/docs/repository-and-ci)
+(the engineering hand-off).
 
 ## Get started
 
@@ -31,7 +38,8 @@ npx screenci export    # render and download the finished video
 
 Full docs:
 
-- [Getting started](https://screenci.com/docs)
+- [Overview](https://screenci.com/docs)
+- [Start in a repository](https://screenci.com/docs/agent-integration)
 - [Writing scripts](https://screenci.com/docs/video-script-basics)
 - [CLI reference](https://screenci.com/docs/reference/cli)
 

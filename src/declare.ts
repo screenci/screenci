@@ -99,7 +99,7 @@ export function normalizeFeature<V>(
           `({ en: { ... } }). ${feature} are shared across every language: ` +
           `use .narration for per-language content, or swap the ${feature} ` +
           `file per language in the web editor. ` +
-          `See https://screenci.com/docs/overlays`
+          `See https://screenci.com/docs/guides/overlays`
       )
     }
     const shared = (obj[DEFAULT_KEY] as Record<string, V> | undefined) ?? {}

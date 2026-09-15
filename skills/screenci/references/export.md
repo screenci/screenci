@@ -5,6 +5,8 @@ Use `screenci export` to produce finished ScreenCI videos from `.screenci.ts` sc
 Assume the ScreenCI project is already initialized. Add new video scripts under `recordings/`.
 If you are creating new videos, remove the starter `recordings/example.screenci.ts` file.
 
+The person may not be technical: report what was exported and the link to open it, not the command output. Tell them exactly what to click when you need them.
+
 ## Commands
 
 ```bash

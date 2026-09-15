@@ -11,6 +11,9 @@ CI provider, adds a pipeline (generated for GitHub Actions, from the templates
 below for the others), pushes, and triggers the first run. The project page
 then shows that recording as the **CI preview**. This page is the reference
 behind that prompt, and the manual path when you prefer to wire CI yourself.
+For the plain-language walkthrough of the hand-off (Add to repository, Add to
+CI, what a failed run means), see
+[Repository and CI](/docs/repository-and-ci).
 
 #### You will learn
 
@@ -21,6 +24,7 @@ behind that prompt, and the manual path when you prefer to wire CI yourself.
 - [how CI signs in to your app](#signing-in-from-ci)
 - [how to keep CI recordings predictable](#keep-recordings-deterministic)
 - [why asset files do not need to be committed](#asset-files-do-not-need-to-be-committed)
+- [how to trigger recordings remotely](#trigger-recordings-remotely)
 
 ## What the pipeline does
 
@@ -430,7 +434,26 @@ results back later (or from another job), run
 language's render status (`finished`, `rendering`, or `failed`) and public
 URLs as JSON.
 
+## Trigger recordings remotely
+
+Besides the push trigger, the generated GitHub Actions workflow declares
+`workflow_dispatch`, so a recording can be started without a terminal:
+
+- **Record all** on the project page (and **Re-record** on a video) dispatch
+  the workflow in one click once the repository is linked through the
+  ScreenCI GitHub App (**Set up recording trigger** in the project's GitHub
+  card). The run's status streams back to the project page.
+- `screenci export --remote` dispatches the same workflow from any machine,
+  for example from a release script.
+- Without the GitHub App, the **Record all** prompt has the agent trigger the
+  pipeline (`gh workflow run screenci.yaml`, a push to the recording branch,
+  or the provider's run button).
+
+See [Repository and CI](/docs/repository-and-ci#trigger-recordings-remotely)
+for how the team uses this.
+
 ## What's next
 
+- [Repository and CI](/docs/repository-and-ci) for the plain-language hand-off.
 - [Screen Audio](/docs/guides/screen-audio) for capturing system audio in CI with a virtual audio device.
 - [Public URLs and Embeds](/docs/guides/public-urls-and-embeds) for delivery.

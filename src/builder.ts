@@ -248,7 +248,7 @@ function warnUnusedLanguages(
       for (const name of Object.keys(entries)) {
         logger.warn(
           `[screenci] ${label} ${name} (${lang}) is not used: the video's ` +
-            `languages are [${langList}]. See https://screenci.com/docs/localization`
+            `languages are [${langList}]. See https://screenci.com/docs/guides/languages`
         )
       }
     }
@@ -263,7 +263,7 @@ function warnUnusedLanguages(
       if (active.has(lang)) continue
       logger.warn(
         `[screenci] ${label} for language ${lang} are not used: the video's ` +
-          `languages are [${langList}]. See https://screenci.com/docs/localization`
+          `languages are [${langList}]. See https://screenci.com/docs/guides/languages`
       )
     }
   }

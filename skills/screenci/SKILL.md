@@ -9,7 +9,7 @@ allowed-tools:
 
 # ScreenCI Video and Guide Skill
 
-Use this skill when the task is about ScreenCI video recording in an existing project: creating a video, showing a flow as a video, or editing `.screenci.ts` / `screenci.config.ts` files.
+Use this skill when the task is about ScreenCI video recording in an existing project: creating a video, showing a flow as a video, or editing `.screenci.ts` / `screenci.config.ts` files. The person asking may not be a developer: a marketer, a support lead, or a docs writer who pasted a prompt from the ScreenCI web app. See [Reporting back to the person](#reporting-back-to-the-person).
 
 Routing:
 
@@ -46,6 +46,15 @@ npx screenci export
 ```
 
 `test` forwards normal `playwright test` arguments and still injects the resolved `screenci.config.ts`. `--config`/`-c` and `--verbose`/`-v` are reserved for the ScreenCI CLI, not forwarded to Playwright.
+
+## Reporting back to the person
+
+- The person who sent you the prompt may not be a developer and may never have opened a terminal. Do not ask them to run commands, open files, or read the script.
+- Report in plain language: what the video shows, what you changed, and what needs their attention. No selectors, file paths, or command output unless they ask.
+- If you need them, say exactly what to click (the sign-in card in the browser you opened, a new prompt in the ScreenCI app) and wait for them.
+- Never ask for a password, a one-time code, or an API key; `screenci login` is the only sign-in path.
+- Finish your final message with the video link that `preview` printed (or the pipeline run link) on its own last line.
+- Deliver the result the way the brief printed by `start` says: a live preview you record yourself, a pipeline run you trigger, or a pull request you open. Do not switch to another path because the repository happens to have CI; only the codes that ask for a pipeline run complete on one.
 
 ## What ScreenCI Adds
 

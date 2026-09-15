@@ -1,15 +1,18 @@
-# Editor
+# Edit in the Browser
 
-Editor is the ScreenCI web app's editing surface for a video: a live preview of
-the raw recording, a multi-track timeline, and panels for narration, overlays,
-and render options. Your `.screenci.ts` sources declare the video and record
-the footage; edits made in the editor live in the web app and shape every
-preview and render of that video. Editor edits are not written back into your
-sources.
+The editor is where the team changes a video after the agent recorded it,
+without a prompt and without touching code: rewrite a narration line, swap
+the voice, move an overlay, cut a slow section, add subtitles, change the
+background or output size. It shows a live preview of the recording, a
+multi-track timeline, and panels for narration, overlays, and render
+options. Every plan includes it for every member of the organisation.
 
 **Anyone in your org can edit.** Open a video and change narration, overlays,
 render options, and the rest right away; the edits render immediately in the
-preview and in exports, no connected machine needed.
+preview and in exports, no connected machine needed. Your `.screenci.ts`
+sources declare the video and record the footage; edits made in the editor
+live in the web app and shape every preview and render of that video. Editor
+edits are not written back into your sources.
 
 Edits that change what is captured (record options, interaction timings,
 on-screen text, the language set) cannot take effect until a recording runs.

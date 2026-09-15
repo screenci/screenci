@@ -1292,6 +1292,21 @@ export async function runStartCommand(
 }
 
 /** The brief printed for the coding agent after a successful start. */
+/**
+ * Rules for working with the person who sent the prompt. They may not be a
+ * developer, so every brief (and the skill) tells the agent how to report.
+ */
+export function personRules(run: string): readonly string[] {
+  return [
+    'The person who sent you the prompt may not be a developer and may never have opened a terminal. Do not ask them to run commands, open files, or read the script.',
+    'Report in plain language: what the video shows, what you changed, and what needs their attention. No selectors, file paths, or command output unless they ask.',
+    'If you need them, say exactly what to click (the sign-in card in the browser you opened, a new prompt in the ScreenCI app) and wait for them.',
+    `Never ask for a password, a one-time code, or an API key; \`${run} login\` is the only sign-in path.`,
+    'Finish your final message with the video link that `preview` printed (or the pipeline run link) on its own last line.',
+    'Deliver the result the way the "What to do" section above says: a live preview you record yourself, a pipeline run you trigger, or a pull request you open. Do not switch to another path because the repository happens to have CI; only the codes that ask for a pipeline run complete on one.',
+  ]
+}
+
 export function formatStartBrief(result: StartResult, cwd?: string): string {
   const { exchange, islandDisplayDir } = result
   const run = getIslandRunCommand(result.packageManager)
@@ -1442,6 +1457,10 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
     '- The installed screenci skill has the full authoring guide.'
   )
   lines.push('')
+  lines.push('## Working with the person')
+  lines.push('')
+  lines.push(...personRules(run).map((rule) => `- ${rule}`))
+  lines.push('')
   lines.push('## Commands (run them yourself, in order)')
   lines.push('')
   lines.push('```bash')
@@ -1470,7 +1489,7 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   }
   lines.push('')
   lines.push(
-    `Docs: ${siteRootOf(result.appUrl)}/docs/video-script-basics, /docs/reference/cli, /docs/guides/ai-context and /docs/guides/branding`
+    `Docs: ${siteRootOf(result.appUrl)}/docs/make-videos, /docs/video-script-basics, /docs/reference/cli, /docs/guides/ai-context and /docs/guides/branding`
   )
   lines.push('')
   return lines.join('\n')
@@ -1600,6 +1619,9 @@ function formatCiBrief(
     `A local \`${run} preview\` is not a substitute: only a run made by the pipeline completes this setup. A run failing on a missing SCREENCI_SECRET means the secret store or the job's environment is wrong; fix that first.`,
     ''
   )
+  lines.push('## Working with the person', '')
+  lines.push(...personRules(run).map((rule) => `- ${rule}`))
+  lines.push('')
   lines.push(...formatRepoSection(result, cwd))
   if (exchange.aiContext.guide !== null) {
     lines.push(
@@ -1610,7 +1632,7 @@ function formatCiBrief(
     )
   }
   lines.push(
-    `Docs: ${docs}/docs/ci-setup, /docs/reference/cli and /docs/guides/ai-context`,
+    `Docs: ${docs}/docs/repository-and-ci, /docs/ci-setup, /docs/reference/cli and /docs/guides/ai-context`,
     ''
   )
   return lines

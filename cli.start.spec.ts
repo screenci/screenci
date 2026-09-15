@@ -1150,6 +1150,55 @@ describe('runStartCommand', () => {
     )
   })
 
+  it('uses the repository the merge runs in when no URL is configured', async () => {
+    const fetchFn = vi.fn(async (input: string | URL) => {
+      const url = String(input)
+      if (url.endsWith('/cli/setup/exchange')) {
+        return jsonResponse(
+          exchangeBody({
+            kind: 'merge',
+            sourcesAvailable: true,
+            sourcesUnmerged: true,
+          })
+        )
+      }
+      if (url.includes('/cli/sources/latest')) {
+        return jsonResponse(
+          {
+            files: [
+              {
+                path: 'screenci.config.ts',
+                content:
+                  "export default defineConfig({ projectName: 'my-app', projectId: 'proj_1' })\n",
+              },
+            ],
+          },
+          200,
+          { 'X-ScreenCI-Source-Bundle-Id': 'sb_1' }
+        )
+      }
+      return jsonResponse({}, 404)
+    })
+    const { deps, remotes, calls } = makeDeps(fetchFn)
+    // The prompt says "run this inside the repository"; nobody told ScreenCI
+    // the URL, so the cwd's remote is the answer.
+    remotes.set('/work/my-app', 'git@github.com:acme/app.git')
+
+    const result = await runStartCommand(baseOptions, deps)
+
+    expect(result.repo).toEqual({
+      state: 'inside',
+      dir: '/work/my-app',
+      gitUrl: 'git@github.com:acme/app.git',
+    })
+    expect(result.outcome).toBe('merge-prepared')
+    expect(result.pendingMerge).toEqual({
+      sourceBundleId: 'sb_1',
+      gitUrl: 'git@github.com:acme/app.git',
+    })
+    expect(calls.clones).toHaveLength(0)
+  })
+
   it('prepares CI for a repository project: detects providers, skips the site check, prints the CI brief', async () => {
     const fetchFn = vi.fn(async () =>
       jsonResponse(

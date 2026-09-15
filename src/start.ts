@@ -635,6 +635,12 @@ export async function resolveRepository(
     clone: boolean
     projectId: string
     projectName: string
+    /**
+     * Treat the cwd's repository as the product's even without a configured
+     * URL, as long as it has a remote (merge and CI codes: their brief has
+     * the agent run the prompt inside the repository).
+     */
+    assumeCwdRepository?: boolean
   },
   deps: Pick<
     StartDeps,
@@ -658,7 +664,12 @@ export async function resolveRepository(
   ) {
     return { state: 'inside', dir: repoRoot, gitUrl: remote ?? gitUrl }
   }
-  if (gitUrl === null) return { state: 'not-configured' }
+  if (gitUrl === null) {
+    if (params.assumeCwdRepository === true && remote !== null) {
+      return { state: 'inside', dir: repoRoot, gitUrl: remote }
+    }
+    return { state: 'not-configured' }
+  }
   if (!params.clone) return { state: 'clone-skipped', gitUrl }
 
   const cloneDir = resolve(params.cwd, REPO_CLONE_DIR)
@@ -851,6 +862,7 @@ export async function runStartCommand(
       clone: options.clone !== false,
       projectId: exchange.projectId,
       projectName: exchange.projectName,
+      assumeCwdRepository: exchange.kind === 'merge' || exchange.kind === 'ci',
     },
     deps
   )
